@@ -18,6 +18,7 @@
  */
 
 import { randomInt } from "node:crypto";
+import { DEFAULT_INVITE_GRANT_DAYS } from "./libraryInvitationDisplay.ts";
 
 // ── Code format ──────────────────────────────────────────────────────────
 
@@ -68,22 +69,21 @@ const MAX_MAX_USES = 1000;
 /** `maxUses`: required, integer, 1..1000 — matches the DB's own `default 1`. */
 export function validateMaxUses(raw: unknown): FieldValidation<number> {
   if (typeof raw !== "number" || !Number.isFinite(raw) || !Number.isInteger(raw)) {
-    return { ok: false, error: "الحد الأقصى لعدد الاستخدامات يجب أن يكون عدداً صحيحاً" };
+    return { ok: false, error: "عدد المقاعد يجب أن يكون عدداً صحيحاً" };
   }
   if (raw < MIN_MAX_USES || raw > MAX_MAX_USES) {
     return {
       ok: false,
-      error: `الحد الأقصى لعدد الاستخدامات يجب أن يكون بين ${MIN_MAX_USES} و${MAX_MAX_USES}`,
+      error: `عدد المقاعد يجب أن يكون بين ${MIN_MAX_USES} و${MAX_MAX_USES}`,
     };
   }
   return { ok: true, value: raw };
 }
 
-/**
- * The length of a code without its own grant_days: every code made before
- * 20261103_11, and any code the admin made without a length (owner ٢٠١–٢٠٣).
- */
-export const DEFAULT_INVITE_GRANT_DAYS = 30;
+// The length of a code without its own grant_days (owner ٢٠١–٢٠٣). Defined in
+// the pure display module so the admin page (a client component, which cannot
+// import this node:crypto module) reads the same constant.
+export { DEFAULT_INVITE_GRANT_DAYS };
 
 const MIN_GRANT_DAYS = 1;
 /** grantLibraryAccess's (and library_grant_access's) upper bound — the same as the column's CHECK. */

@@ -25,8 +25,20 @@
 --      auto_lock_hours (no settings row: 24 h).
 --   3. library_monitor_evaluate — RE-CREATED with the SAME signature (copied
 --      from 20261031_10 §9). The 'activity_flag' lock gets the same end.
---   Admin locks (reason 'admin') are not touched: their end is what the admin
---   chose. No trigger. No new function, so no overload (PGRST203).
+--   4. library_security_lock_create — RE-CREATED with the SAME signature
+--      (uuid, uuid, text, timestamptz default null) and return type (copied
+--      from 20261030_80 §4, the only file that defines it). Before this file
+--      it returned ANY open lock as it was. With automatic locks now ending
+--      after 24 h, a staff lock placed on an already auto-locked reader would
+--      silently have become that 24-hour lock (the admin's note and end
+--      discarded). Now an open AUTOMATIC lock (quota_breach / activity_flag)
+--      is CONVERTED into the admin's lock: reason 'admin', the admin's note,
+--      locked_by and locked_until (null = until lifted). The SEC reference,
+--      locked_at and details are kept; details records converted_from,
+--      converted_at and converted_locked_until. An open ADMIN lock is still
+--      returned as it is (unchanged behaviour).
+--   Existing admin locks are not touched: their end is what the admin chose.
+--   No trigger. No new function, so no overload (PGRST203).
 --
 -- NOT DONE HERE (a production data choice — S1_RUN_NOTES.md has the optional
 --   statement): automatic locks that are ALREADY open keep locked_until NULL.
@@ -36,8 +48,9 @@
 --   their unchanged arguments. The new code survives the other order too: the
 --   settings route retries without auto_lock_hours on 42703.
 --
--- ROLLBACK — run 20261031_10 §8 and §9 again (the two functions, verbatim),
---   then `alter table public.library_monitor_settings drop column auto_lock_hours;`
+-- ROLLBACK — run 20261031_10 §8 and §9 and 20261030_80 §4 again (the three
+--   functions, verbatim), then
+--   `alter table public.library_monitor_settings drop column auto_lock_hours;`
 -- =============================================================================
 
 begin;
@@ -48,7 +61,8 @@ do $$
 begin
   if to_regclass('public.library_monitor_settings') is null
      or to_regprocedure('public.library_read_quota_hit(uuid,text,int,int,int,int)') is null
-     or to_regprocedure('public.library_monitor_evaluate(uuid)') is null then
+     or to_regprocedure('public.library_monitor_evaluate(uuid)') is null
+     or to_regprocedure('public.library_security_lock_create(uuid,uuid,text,timestamptz)') is null then
     raise exception '20261103_10: run 20261031_10_library_activity_monitor.sql first';
   end if;
 end $$;
@@ -349,6 +363,73 @@ $$;
 revoke all on function public.library_monitor_evaluate(uuid) from public, anon, authenticated;
 grant execute on function public.library_monitor_evaluate(uuid) to service_role;
 
+-- ── 3b. library_security_lock_create, re-created (same signature, same return) ─
+-- Copied from 20261030_80 §4. The only change: an open AUTOMATIC lock is
+-- converted into the admin's lock (see "WHAT THIS FILE DOES" 4).
+create or replace function public.library_security_lock_create(
+  p_user  uuid,
+  p_admin uuid,
+  p_note  text,
+  p_until timestamptz default null)
+returns setof public.library_security_locks
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_lock public.library_security_locks;
+begin
+  if p_user is null or p_admin is null or p_note is null or length(btrim(p_note)) = 0 or length(p_note) > 1000
+     or (p_until is not null and p_until <= now()) then
+    raise exception 'library_security_lock_create: invalid arguments' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.profiles pr where pr.id = p_user and pr.user_type = 'admin') then
+    raise exception 'admin_target' using errcode = 'P0001';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('library_read_quota:' || p_user::text, 0));
+
+  update public.library_security_locks l
+     set lifted_at = now(), lift_note = coalesce(l.lift_note, 'expired')
+   where l.user_id = p_user and l.lifted_at is null
+     and l.locked_until is not null and l.locked_until <= now();
+
+  select * into v_lock from public.library_security_locks l
+   where l.user_id = p_user and l.lifted_at is null;
+  if found then
+    -- 20261103_10: an open AUTOMATIC lock now ends by itself, so the staff
+    -- decision replaces it (same row, same SEC reference) instead of being lost.
+    if v_lock.reason <> 'admin' then
+      update public.library_security_locks l
+         set reason       = 'admin',
+             note         = btrim(p_note),
+             locked_by    = p_admin,
+             locked_until = p_until,
+             details      = coalesce(l.details, '{}'::jsonb) || jsonb_build_object(
+                              'converted_from', l.reason,
+                              'converted_at', now(),
+                              'converted_locked_until', l.locked_until)
+       where l.id = v_lock.id
+       returning * into v_lock;
+    end if;
+    return next v_lock;
+    return;
+  end if;
+
+  insert into public.library_security_locks (user_id, reason, note, locked_until, locked_by)
+    values (p_user, 'admin', btrim(p_note), p_until, p_admin)
+    returning * into v_lock;
+  return next v_lock;
+end;
+$$;
+
+comment on function public.library_security_lock_create(uuid, uuid, text, timestamptz) is
+  'An admin locks a user out of the library (owner note ١٣ C09, 20261030_80): never an admin; an open admin lock is returned as it is; an open AUTOMATIC lock is converted into this admin lock, keeping its reference (20261103_10). Service role only.';
+
+revoke all on function public.library_security_lock_create(uuid, uuid, text, timestamptz) from public, anon, authenticated;
+grant execute on function public.library_security_lock_create(uuid, uuid, text, timestamptz) to service_role;
+
 -- ── 4. verify (raises on a failure) ─────────────────────────────────────────
 do $$
 declare fn text;
@@ -383,6 +464,18 @@ begin
        where n.nspname = 'public' and p.proname in ('library_read_quota_hit', 'library_monitor_evaluate')) <> 2 then
     raise exception '20261103_10 verify: library_read_quota_hit / library_monitor_evaluate must have exactly one overload each';
   end if;
+  -- library_security_lock_create: one overload, the same identity arguments, the converting body
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'library_security_lock_create') <> 1
+     or pg_get_function_identity_arguments('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)
+        <> 'p_user uuid, p_admin uuid, p_note text, p_until timestamp with time zone'
+     or position('converted_from' in pg_get_functiondef('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)) = 0 then
+    raise exception '20261103_10 verify: library_security_lock_create is not the single converting version';
+  end if;
+  if has_function_privilege('anon', 'public.library_security_lock_create(uuid,uuid,text,timestamptz)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.library_security_lock_create(uuid,uuid,text,timestamptz)', 'EXECUTE') then
+    raise exception '20261103_10 verify: a session role can EXECUTE library_security_lock_create';
+  end if;
 end $$;
 
 commit;
@@ -398,6 +491,10 @@ select
     where n.nspname = 'public' and p.proname = 'library_read_quota_hit')                        as quota_fn_overloads,
   (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'library_monitor_evaluate')                      as evaluate_fn_overloads,
+  (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'library_security_lock_create')                  as lock_create_overloads,
+  position('converted_from' in pg_get_functiondef('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)) > 0
+                                                                                               as staff_lock_converts_auto,
   coalesce(
     (select c.column_default = '24' and c.is_nullable = 'NO' from information_schema.columns c
       where c.table_schema = 'public' and c.table_name = 'library_monitor_settings'
@@ -407,5 +504,8 @@ select
     and (select count(*) = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
           where n.nspname = 'public' and p.proname = 'library_monitor_evaluate')
     and position('auto_lock_hours' in pg_get_functiondef('public.library_read_quota_hit(uuid,text,int,int,int,int)'::regprocedure)) > 0
-    and position('auto_lock_hours' in pg_get_functiondef('public.library_monitor_evaluate(uuid)'::regprocedure)) > 0,
+    and position('auto_lock_hours' in pg_get_functiondef('public.library_monitor_evaluate(uuid)'::regprocedure)) > 0
+    and (select count(*) = 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'library_security_lock_create')
+    and position('converted_from' in pg_get_functiondef('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)) > 0,
     false)                                                                                       as ok;

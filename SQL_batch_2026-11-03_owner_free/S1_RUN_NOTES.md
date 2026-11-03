@@ -129,13 +129,17 @@ Rolling back takes the same lock for the same time.
 
 **What it does:** an automatic library lock (too many documents after the daily limit, or the «نشاط المكتبة» review rule set to «إيقاف») now ends by itself after `auto_lock_hours`, 24 by default (owner q362). Before this file such a lock lasted until an admin lifted it. An admin's own lock is not touched. The admin page «نشاط المكتبة» → «الحدود» shows the new number after the deploy; 0 means "until an admin lifts it".
 
-It adds one column to `public.library_monitor_settings` and re-creates `library_read_quota_hit` and `library_monitor_evaluate` with the same arguments. No grant changes; no new function.
+It adds one column to `public.library_monitor_settings` and re-creates `library_read_quota_hit`, `library_monitor_evaluate` and `library_security_lock_create` with the same arguments. No grant changes; no new function.
+
+**A staff lock now wins over an automatic one.** When staff lock a reader («قفل المكتبة») who already has an open automatic lock, that lock becomes the staff lock: the staff's note, the staff's end (empty = until lifted), the same SEC reference. Before this file the staff lock was silently ignored, and the reader would have been let back in when the automatic 24 hours ran out. A reader who already has a staff lock is unchanged.
+
+**On a value under 24:** the daily count starts again at midnight Riyadh time. A lock shorter than 24 hours can end while the reader's day is still over the limit, so the next refused documents lock that reader again on the same day. The admin page says this under the field.
 
 The file is in two places:
 - On your PC, after `git pull` on main: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_10_library_auto_lock_hours.sql`
 - On the server: `/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_10_library_auto_lock_hours.sql`
 
-Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `column_default_24 = t`, `auto_lock_hours_now = 24`, `quota_fn_overloads = 1`, `evaluate_fn_overloads = 1`, `ok = t`. A second run gives the same row.
+Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `column_default_24 = t`, `auto_lock_hours_now = 24`, `quota_fn_overloads = 1`, `evaluate_fn_overloads = 1`, `lock_create_overloads = 1`, `staff_lock_converts_auto = t`, `ok = t`. A second run gives the same row.
 
 If it stops with `run 20261031_10_library_activity_monitor.sql first`, nothing changed: that earlier file is missing on this database.
 

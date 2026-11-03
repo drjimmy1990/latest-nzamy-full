@@ -5526,9 +5526,10 @@ end $$;
 -- lifts it). Read-only, safe to repeat: SELECTs and RAISE.
 -- RAISES (naming the file to run) when the column or its check is missing,
 -- when either function no longer reads it (20261031_10 re-run after
--- 20261103_10 puts the old bodies back), or when a function has more than one
--- overload. No library_monitor_settings (20261031_10 not applied): one NOTICE,
--- passes.
+-- 20261103_10 puts the old bodies back), when library_security_lock_create
+-- no longer converts an open automatic lock into the staff lock (20261030_80
+-- re-run after it), or when a function has more than one overload. No
+-- library_monitor_settings (20261031_10 not applied): one NOTICE, passes.
 -- Docker: supabase/tests/rls/library_auto_lock_hours.test.sql runs this block
 -- (its header has the chain, the negative controls and the sed line).
 do $$
@@ -5560,8 +5561,18 @@ begin
        where n.nspname = 'public' and p.proname in ('library_read_quota_hit', 'library_monitor_evaluate')) <> 2 then
     raise exception '_verify: 20261103_10 — library_read_quota_hit / library_monitor_evaluate has more than one overload (PostgREST would refuse the call with PGRST203)';
   end if;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'library_security_lock_create') <> 1
+     or to_regprocedure('public.library_security_lock_create(uuid,uuid,text,timestamptz)') is null
+     or pg_get_function_identity_arguments('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)
+        <> 'p_user uuid, p_admin uuid, p_note text, p_until timestamp with time zone' then
+    raise exception '_verify: 20261103_10 — library_security_lock_create is missing, changed its arguments or has more than one overload (PGRST203). Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)';
+  end if;
+  if position('converted_from' in pg_get_functiondef('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)) = 0 then
+    raise exception '_verify: 20261103_10 — library_security_lock_create returns an open automatic lock unchanged (20261030_80 was re-run after it): a staff lock on an auto-locked reader ends with the automatic one. Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)';
+  end if;
   select string_agg(auto_lock_hours::text, ',') into v_hours from public.library_monitor_settings;
-  raise notice '_verify: 20261103_10 OK — automatic library locks end after % hour(s) (0 = until an admin lifts it)', coalesce(v_hours, 'no settings row: 24');
+  raise notice '_verify: 20261103_10 OK — automatic library locks end after % hour(s) (0 = until an admin lifts it); a staff lock replaces an open automatic one', coalesce(v_hours, 'no settings row: 24');
 end $$;
 -- <<< verify:library_auto_lock_hours
 -- >>> verify:library_invitation_grant_days

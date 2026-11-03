@@ -3,8 +3,10 @@
 -- library_read_quota_hit, activity_flag from library_monitor_evaluate) ends
 -- after library_monitor_settings.auto_lock_hours (default 24; 0 = until an
 -- admin lifts it); an admin lock is never touched; an expired lock closes
--- itself; the function signatures are unchanged (one overload each). Also
--- runs the _verify block verify:library_auto_lock_hours.
+-- itself; the function signatures are unchanged (one overload each); a staff
+-- lock (library_security_lock_create) placed on a reader with an open
+-- AUTOMATIC lock converts that lock into the staff lock (A10). Also runs the
+-- _verify block verify:library_auto_lock_hours.
 --
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). 20261103_10
 -- runs TWICE (it must be re-runnable). From the repo root, in Git Bash:
@@ -28,6 +30,16 @@
 --      bash $R/run.sh $M/20261030_80_library_read_quota.sql $M/20261031_10_library_activity_monitor.sql $R/library_auto_lock_hours.test.sql
 --   2. without 20261103_10 the _verify block RAISES «run 20261103_10 … (BEFORE the deploy)»:
 --      bash $R/run.sh $M/20261030_80_library_read_quota.sql $M/20261031_10_library_activity_monitor.sql "$V" $R/library_auto_lock_hours.test.sql
+--   3. the OLD library_security_lock_create body (20261030_80 §4, extracted
+--      verbatim) put back after 20261103_10: the test stops at A10 (the staff
+--      lock silently stays the 24-hour quota_breach lock):
+--      sed -n '/^create or replace function public.library_security_lock_create/,/^grant execute on function public.library_security_lock_create/p' \
+--        $M/20261030_80_library_read_quota.sql > $D/old_lock_create.sql
+--      bash $R/run.sh $M/20261030_80_library_read_quota.sql $M/20261031_10_library_activity_monitor.sql \
+--        $M/20261103_10_library_auto_lock_hours.sql $D/old_lock_create.sql $R/library_auto_lock_hours.test.sql
+--   4. the same old body: the _verify block RAISES «… returns an open automatic lock unchanged …»:
+--      bash $R/run.sh $M/20261030_80_library_read_quota.sql $M/20261031_10_library_activity_monitor.sql \
+--        $M/20261103_10_library_auto_lock_hours.sql $D/old_lock_create.sql "$V"
 --
 -- Every assertion RAISES on failure.
 
@@ -43,14 +55,16 @@ end $$;
 
 -- ── fixtures as postgres ────────────────────────────────────────────────────
 insert into auth.users
-  select ('00000000-0000-0000-0000-00000000e1' || lpad(i::text, 2, '0'))::uuid from generate_series(1, 6) i;
+  select ('00000000-0000-0000-0000-00000000e1' || lpad(i::text, 2, '0'))::uuid from generate_series(1, 8) i;
 insert into public.profiles (id, user_type, display_name) values
   ('00000000-0000-0000-0000-00000000e101', 'individual', 'A'),   -- quota_breach
   ('00000000-0000-0000-0000-00000000e102', 'individual', 'B'),   -- activity_flag
   ('00000000-0000-0000-0000-00000000e103', 'individual', 'C'),   -- admin lock
   ('00000000-0000-0000-0000-00000000e104', 'individual', 'D'),   -- expired lock
   ('00000000-0000-0000-0000-00000000e105', 'individual', 'E'),   -- A7 (no settings row, at the start)
-  ('00000000-0000-0000-0000-00000000e106', 'individual', 'F');   -- A7 (no settings row, at the end)
+  ('00000000-0000-0000-0000-00000000e106', 'individual', 'F'),   -- A7 (no settings row, at the end)
+  ('00000000-0000-0000-0000-00000000e107', 'individual', 'G'),   -- A10 staff lock over quota_breach
+  ('00000000-0000-0000-0000-00000000e108', 'individual', 'H');   -- A10 staff lock over activity_flag
 
 create or replace function pg_temp.expect(label text, got text, want text) returns void language plpgsql as $$
 begin
@@ -200,6 +214,78 @@ begin
     raise exception 'A9 FAIL: a session role holds a privilege';
   end if;
 end $$;
+
+-- A10 a staff lock on a reader with an open AUTOMATIC lock converts that lock
+-- (20261103_10 §3b): reason 'admin', the staff note, locked_by, locked_until
+-- = what the staff chose (null = until lifted); same row, same SEC reference;
+-- details records what it was. A second staff lock returns the admin lock
+-- unchanged (20261030_80 behaviour). One overload, the same identity arguments.
+do $$
+declare before_lk public.library_security_locks; lk public.library_security_locks;
+        lk2 public.library_security_locks; v_until timestamptz := now() + interval '3 days';
+begin
+  perform pg_temp.expect('A10 lock_create overloads', (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'library_security_lock_create'), '1');
+  perform pg_temp.expect('A10 lock_create identity args',
+    pg_get_function_identity_arguments('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure),
+    'p_user uuid, p_admin uuid, p_note text, p_until timestamp with time zone');
+  if has_function_privilege('authenticated', 'public.library_security_lock_create(uuid,uuid,text,timestamptz)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.library_security_lock_create(uuid,uuid,text,timestamptz)', 'EXECUTE') then
+    raise exception 'A10 FAIL: a session role can EXECUTE library_security_lock_create';
+  end if;
+
+  -- (a) over a quota_breach lock that ends in 24 h, no end chosen → indefinite
+  perform pg_temp.lock_about_24h('A10a setup', '00000000-0000-0000-0000-00000000e107');
+  select * into before_lk from public.library_security_locks l
+   where l.user_id = '00000000-0000-0000-0000-00000000e107' and l.lifted_at is null;
+  select * into lk from public.library_security_lock_create(
+    '00000000-0000-0000-0000-00000000e107', '00000000-0000-0000-0000-00000000e101', '  x  ', null);
+  perform pg_temp.expect('A10a reason', lk.reason, 'admin');
+  perform pg_temp.expect('A10a no end', (lk.locked_until is null)::text, 'true');
+  perform pg_temp.expect('A10a note saved', lk.note, 'x');
+  perform pg_temp.expect('A10a locked_by', lk.locked_by::text, '00000000-0000-0000-0000-00000000e101');
+  perform pg_temp.expect('A10a same row', lk.id::text, before_lk.id::text);
+  perform pg_temp.expect('A10a same reference', lk.reference, before_lk.reference);
+  perform pg_temp.expect('A10a locked_at kept', lk.locked_at::text, before_lk.locked_at::text);
+  perform pg_temp.expect('A10a converted_from', lk.details->>'converted_from', 'quota_breach');
+  perform pg_temp.expect('A10a old end recorded', (lk.details->>'converted_locked_until' is not null)::text, 'true');
+  perform pg_temp.expect('A10a the table agrees',
+    (select (reason = 'admin' and locked_until is null and note = 'x')::text from public.library_security_locks
+      where user_id = '00000000-0000-0000-0000-00000000e107' and lifted_at is null), 'true');
+  perform pg_temp.expect('A10a one lock row',
+    (select count(*)::text from public.library_security_locks where user_id = '00000000-0000-0000-0000-00000000e107'), '1');
+  perform pg_temp.expect('A10a reader still locked',
+    (select status from pg_temp.q('00000000-0000-0000-0000-00000000e107', 'law:9')), 'locked');
+
+  -- (b) a second staff lock: the admin lock comes back unchanged
+  select * into lk2 from public.library_security_lock_create(
+    '00000000-0000-0000-0000-00000000e107', '00000000-0000-0000-0000-00000000e102', 'second', v_until);
+  perform pg_temp.expect('A10b same lock', lk2.id::text, lk.id::text);
+  perform pg_temp.expect('A10b note unchanged', lk2.note, 'x');
+  perform pg_temp.expect('A10b end unchanged', (lk2.locked_until is null)::text, 'true');
+  perform pg_temp.expect('A10b locked_by unchanged', lk2.locked_by::text, '00000000-0000-0000-0000-00000000e101');
+end $$;
+
+-- (c) over an activity_flag lock, with an end chosen by the staff
+update public.library_monitor_settings set flag_action = 'lock', rule_hour_requests_on = true, rule_hour_requests = 10;
+do $$
+declare before_lk public.library_security_locks; lk public.library_security_locks;
+        v_until timestamptz := date_trunc('second', now() + interval '3 days');
+begin
+  perform pg_temp.bump('00000000-0000-0000-0000-00000000e108', 20);
+  select * into before_lk from public.library_security_locks l
+   where l.user_id = '00000000-0000-0000-0000-00000000e108' and l.lifted_at is null;
+  perform pg_temp.expect('A10c setup reason', before_lk.reason, 'activity_flag');
+  select * into lk from public.library_security_lock_create(
+    '00000000-0000-0000-0000-00000000e108', '00000000-0000-0000-0000-00000000e101', 'three days', v_until);
+  perform pg_temp.expect('A10c reason', lk.reason, 'admin');
+  perform pg_temp.expect('A10c the staff end', lk.locked_until::text, v_until::text);
+  perform pg_temp.expect('A10c same reference', lk.reference, before_lk.reference);
+  perform pg_temp.expect('A10c converted_from', lk.details->>'converted_from', 'activity_flag');
+  perform pg_temp.expect('A10c rule details kept', (lk.details - 'converted_from' - 'converted_at' - 'converted_locked_until')::text,
+    (before_lk.details)::text);
+end $$;
+update public.library_monitor_settings set flag_action = 'notify', rule_hour_requests_on = false;
 
 -- A7 (normal state): delete the settings row → an automatic lock still gets ≈ 24 h (the coalesce)
 delete from public.library_monitor_settings;

@@ -6,6 +6,7 @@ import {
   LOCK_SELECT,
   LOCKS_MIGRATION_MISSING_AR,
   isMigrationMissing,
+  lockConvertedFrom,
   lockDbError,
   parseCreateLockBody,
   toLockDto,
@@ -138,7 +139,18 @@ export async function POST(request: NextRequest) {
       action: "library_security_lock_created",
       targetType: "library_security_lock",
       targetId: row.id,
-      after: { user_id: row.user_id, reference: row.reference, locked_until: row.locked_until, reason: row.reason },
+      // 20261103_10: an open automatic lock is CONVERTED into this staff lock
+      // (same row and reference); converted_from names what it was, null for
+      // a new lock or an existing admin lock returned as it is.
+      after: {
+        user_id: row.user_id,
+        reference: row.reference,
+        locked_until: row.locked_until,
+        reason: row.reason,
+        note: row.note,
+        locked_by: row.locked_by,
+        converted_from: lockConvertedFrom(row),
+      },
     });
 
     const people = await peopleFor([row.user_id, gate.userId]);

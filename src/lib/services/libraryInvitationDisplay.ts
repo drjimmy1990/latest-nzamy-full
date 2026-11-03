@@ -12,6 +12,14 @@ import { formatArabicDate } from "./clientDashboardCards.ts";
 import { countPhraseAr } from "./arabicCount.ts";
 
 /**
+ * The length of a code without its own grant_days: every code made before
+ * 20261103_11, and any code the admin made without a length (owner ٢٠١–٢٠٣).
+ * Lives here (pure) so the server rules and the admin page share one value;
+ * libraryInvitationRules.ts re-exports it.
+ */
+export const DEFAULT_INVITE_GRANT_DAYS = 30;
+
+/**
  * The redeem route grants the legal library, not a plan (owner answers
  * ٢٠١–٢٠٣, 2026-10-18), and answers `tier: "library"` — that case has its own
  * sentence below. Any other tier (a response from before that change) keeps

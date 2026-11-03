@@ -29,6 +29,8 @@ export interface IntField {
   group: SettingsGroup;
   /** The on/off switch this number belongs to, if any. */
   toggle?: string;
+  /** A line shown under the field. */
+  hintAr?: string;
 }
 export interface BoolField {
   key: string;
@@ -58,7 +60,13 @@ export const MONITOR_SETTINGS_FIELDS: readonly SettingsField[] = [
   int("hourlyDocs", "hourly_docs", 1, 100000, "حد الوثائق المختلفة في الساعة", "caps"),
   int("lockAfterRefused", "lock_after_refused", 0, 100000, "إيقاف تلقائي بعد محاولة فتح هذا العدد من الوثائق بعد بلوغ الحد اليومي (٠ = لا إيقاف تلقائي)", "caps"),
   // 20261103_10 (owner q362): how long an AUTOMATIC lock lasts; admin locks keep the end the admin chose.
-  int("autoLockHours", "auto_lock_hours", 0, 720, "مدة الإيقاف التلقائي بالساعات (٠ = حتى يرفعه المسؤول)", "caps"),
+  // The daily count restarts at Riyadh midnight, so an end under 24 h can lift a
+  // lock while the reader's day is still over the limit — the next refused
+  // documents lock again the same day (hintAr says so on the page).
+  {
+    ...int("autoLockHours", "auto_lock_hours", 0, 720, "مدة الإيقاف التلقائي بالساعات (٠ = حتى يرفعه المسؤول)", "caps"),
+    hintAr: "أقل من ٢٤ ساعة قد يُوقف القارئ مرة أخرى في اليوم نفسه (اليوم يبدأ منتصف الليل بتوقيت الرياض).",
+  },
 
   bool("ruleHourRequestsOn", "rule_hour_requests_on", "طلبات كثيرة في ساعة واحدة (فتح الوثائق والبحث ومساعد المكتبة)", "rules"),
   int("ruleHourRequests", "rule_hour_requests", 10, 1000000, "عدد الطلبات في الساعة", "rules", "ruleHourRequestsOn"),

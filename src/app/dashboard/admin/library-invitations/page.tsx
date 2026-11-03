@@ -8,7 +8,7 @@ import {
 } from "@/lib/services/libraryInvitationsService";
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { formatArabicDate, toArabicDigits } from "@/lib/services/clientDashboardCards";
-import { invitationTermsAr } from "@/lib/services/libraryInvitationDisplay";
+import { DEFAULT_INVITE_GRANT_DAYS, invitationTermsAr } from "@/lib/services/libraryInvitationDisplay";
 
 /**
  * Admin → Library invitation codes (Phase 6).
@@ -36,8 +36,8 @@ const STATUS_BADGE: Record<LibraryInvitationStatus, string> = {
 };
 
 const DEFAULT_MAX_USES = 1;
-/** The days a code without its own length gives — DEFAULT_INVITE_GRANT_DAYS on the server (not imported: that module needs node:crypto). */
-const DEFAULT_GRANT_DAYS_LABEL = "٣٠";
+/** The days a code without its own length gives — the same constant the server uses. */
+const DEFAULT_GRANT_DAYS_LABEL = toArabicDigits(DEFAULT_INVITE_GRANT_DAYS);
 
 export default function AdminLibraryInvitationsPage() {
   const [read, setRead] = useState<ListRead<LibraryInvitation> | null>(null);

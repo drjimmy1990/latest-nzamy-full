@@ -106,6 +106,18 @@ export const LOCK_REASON_AR: Readonly<Record<string, string>> = {
   activity_flag: "نشاط قراءة غير معتاد — مراجعة تلقائية",
 };
 
+/**
+ * What an admin lock was before library_security_lock_create converted it
+ * (20261103_10 writes details.converted_from when a staff lock replaces an open
+ * automatic lock). Null for a lock that was created as an admin lock.
+ */
+export function lockConvertedFrom(row: Pick<LockRow, "details">): string | null {
+  const d = row.details;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  const v = (d as Record<string, unknown>).converted_from;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
 export function toLockDto(row: LockRow, people: ReadonlyMap<string, PersonRef>, now: number): LockDto {
   const person = (id: string | null) => (id ? people.get(id) ?? { name: null, email: null } : null);
   const ended = row.locked_until !== null && Date.parse(row.locked_until) <= now;

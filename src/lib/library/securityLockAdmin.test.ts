@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isMigrationMissing, lockDbError, parseCreateLockBody, parseLiftLockBody, toLockDto, type LockRow } from "./securityLockAdmin.ts";
+import { isMigrationMissing, lockConvertedFrom, lockDbError, parseCreateLockBody, parseLiftLockBody, toLockDto, type LockRow } from "./securityLockAdmin.ts";
 
 const NOW = Date.parse("2026-10-30T12:00:00Z");
 const UID = "00000000-0000-0000-0000-00000000c001";
@@ -62,4 +62,12 @@ test("lockDbError: database refusals become honest Arabic answers", () => {
   assert.equal(lockDbError({ code: "XX000" }).status, 500);
   assert.equal(isMigrationMissing("42P01"), true);
   assert.equal(isMigrationMissing("23505"), false);
+});
+
+test("lockConvertedFrom: names the automatic lock a staff lock replaced (20261103_10)", () => {
+  assert.equal(lockConvertedFrom(row({ reason: "admin", details: { converted_from: "quota_breach" } })), "quota_breach");
+  assert.equal(lockConvertedFrom(row({ reason: "admin", details: {} })), null);
+  assert.equal(lockConvertedFrom(row({ details: null })), null);
+  assert.equal(lockConvertedFrom(row({ details: [1] })), null);
+  assert.equal(lockConvertedFrom(row({ details: { converted_from: 7 } })), null);
 });
