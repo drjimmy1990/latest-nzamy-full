@@ -37,7 +37,14 @@
 --   (1) the chain without the three 20261103_20 runs and both preludes
 --       ("$F" _10 _11 this-file) → "T1 FAIL (a): … 0 row(s) …";
 --   (2) the chain without "$F" → the migration raises
---       "20261103_20: public.admin_pricing_catalog is missing …".
+--       "20261103_20: public.admin_pricing_catalog is missing …";
+--   (3) the idempotence guard bites: the full chain with each 20261103_20 run
+--       replaced by a copy whose ON CONFLICT DO NOTHING is DO UPDATE —
+--         U=$D/upd.sql
+--         sed 's/on conflict (service_id) do nothing;/on conflict (service_id) do update set base_price = excluded.base_price, updated_at = now();/' \
+--           $M/20261103_20_contract_review_business_row.sql > "$U"
+--       → "T3 FAIL (c): the second run rewrote 1 row(s)".
+--   All three checked 2026-11-03.
 --
 -- Every assertion RAISES on failure.
 

@@ -18,7 +18,14 @@ import { useUser } from "@/hooks/useUser";
  * audience (S6, q327): "corporate" for a company account or a company member,
  * else "individual". Pass both to resolveClientService for a price; the
  * server re-prices the stored estimate on its own (S6-T5), so this is display.
+ *
+ * `audienceLoading` (fix round 1, M4): true while the session is still
+ * resolving — the audience then reads "individual" for everyone, so a screen
+ * that shows an audience price shows PRICE_PENDING_AR instead, rather than
+ * flashing the individuals' 600 to a company before its 800.
  */
+export const PRICE_PENDING_AR = "…";
+
 export function useClientPricingCatalog() {
   const user = useUser();
   const audience = clientPricingAudience({
@@ -52,5 +59,5 @@ export function useClientPricingCatalog() {
     };
   }, []);
 
-  return { catalog, source, loading, audience };
+  return { catalog, source, loading, audience, audienceLoading: user.loading };
 }

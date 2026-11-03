@@ -9,7 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { businessIntakeNoticeAr } from "@/lib/services/businessOverview";
-import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { PRICE_PENDING_AR, useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { useTheme } from "@/components/ThemeProvider";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { VaultAttachPicker } from "@/components/documents/VaultAttachPicker";
@@ -77,7 +77,7 @@ export default function NewRequestWizard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { catalog, source: pricingSource, audience } = useClientPricingCatalog();
+  const { catalog, source: pricingSource, audience, audienceLoading } = useClientPricingCatalog();
   // Real uploads, identical to the four lawyer wizards. `attachments` holds
   // OrderAttachment[] — a documentId that exists server-side — not File
   // objects that never left the browser.
@@ -90,7 +90,8 @@ export default function NewRequestWizard() {
   const serviceInfo = resolveClientService(typeParam, audience, catalog);
   const price = serviceInfo.requiresPayment ? serviceInfo.basePrice : 0;
   const serviceLabel = serviceInfo.label;
-  const estimateLabel = formatClientServicePrice(serviceInfo);
+  // M4: no audience price until the session resolves (no 600 → 800 flash).
+  const estimateLabel = audienceLoading ? PRICE_PENDING_AR : formatClientServicePrice(serviceInfo);
 
   const handleNext = () => {
     if (currentStep < STEPS.length - 1) setCurrentStep(c => c + 1);
@@ -351,7 +352,7 @@ export default function NewRequestWizard() {
                 </span>
                 <span className="text-lg font-black text-[#0B3D2E] dark:text-[#C8A762]">{estimateLabel}</span>
               </div>
-              {serviceInfo.priceNote && (
+              {!audienceLoading && serviceInfo.priceNote && (
                 <p className="text-xs leading-relaxed text-gray-600 dark:text-gray-400">{serviceInfo.priceNote}</p>
               )}
               <p className="pt-3 border-t border-gray-200 dark:border-white/10 text-xs leading-relaxed text-gray-600 dark:text-gray-400">

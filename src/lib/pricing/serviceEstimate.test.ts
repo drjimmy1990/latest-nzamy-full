@@ -75,3 +75,40 @@ test("S6: an admin-edited DB variant prices the estimate", () => {
   const out = stampServiceEstimate({ service: "contract-review", originalPrice: 800 }, "corporate", catalog) as Record<string, unknown>;
   assert.equal(out.originalPrice, 850);
 });
+
+test("fix round 1 (I-1): the forged body from the review stores neither priceAudience nor a server source", () => {
+  const forged = {
+    service: "contract-review-business",
+    originalPrice: 100,
+    priceMode: "starting_from",
+    priceAudience: "individual",
+    quoteSource: "server",
+    intake: { subject: "x" },
+  };
+  const out = stampServiceEstimate(forged, "corporate", CLIENT_SERVICE_CATALOG) as Record<string, unknown>;
+  assert.equal("priceAudience" in out, false);
+  assert.equal("quoteSource" in out, false);
+  assert.deepEqual(out, { service: "contract-review-business", originalPrice: 100, priceMode: "starting_from", intake: { subject: "x" } });
+  assert.equal(forged.priceAudience, "individual", "the input is not mutated");
+  // No originalPrice at all (any other intake path): marks stripped, rest kept.
+  assert.deepEqual(
+    stampServiceEstimate({ service: "draft", priceAudience: "corporate", quoteSource: "server", x: 1 }, "corporate", []),
+    { service: "draft", x: 1 },
+  );
+  // A browser quoteSource that is not "server" is the browser's own note: kept.
+  assert.deepEqual(
+    stampServiceEstimate({ service: "xyz", originalPrice: 5, quoteSource: "backend" }, "individual", CLIENT_SERVICE_CATALOG),
+    { service: "xyz", originalPrice: 5, quoteSource: "backend" },
+  );
+});
+
+test("fix round 1 (M1): an unknown audience (profile read failed) is never stamped or labelled", () => {
+  const out = stampServiceEstimate(
+    { service: "contract-review", originalPrice: 600, priceMode: "starting_from", priceAudience: "individual" },
+    null,
+    CLIENT_SERVICE_CATALOG,
+  ) as Record<string, unknown>;
+  assert.equal(out.quoteSource, undefined);
+  assert.equal("priceAudience" in out, false);
+  assert.equal(out.originalPrice, 600, "the browser figure stays, unmarked (the queue prints no line for it)");
+});

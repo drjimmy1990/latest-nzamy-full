@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { AppleLogo, Bank, CreditCard, DeviceMobile } from "@phosphor-icons/react";
 import { staggerListVariants, staggerItemVariants } from "./WaShared";
 import type { WaStep } from "../types";
-import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { PRICE_PENDING_AR, useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { WA_VAT_NOTICE_AR, waPrice, waServiceId } from "../waChatPrices";
 
 interface Props {
@@ -27,7 +27,7 @@ const PAYMENT_METHODS = [
 export default function StepPayment({ step, isDark, history, selections, onNavigate, onSelect, onPaymentComplete }: Props) {
   // P7: the price line is the catalogue's (admin_pricing_catalog merged —
   // the same source as the service pages), never a literal (waChatPrices.ts).
-  const { catalog, audience } = useClientPricingCatalog();
+  const { catalog, audience, audienceLoading } = useClientPricingCatalog();
 
   // ── payment-summary ──
   if (step === "payment-summary") {
@@ -40,7 +40,8 @@ export default function StepPayment({ step, isDark, history, selections, onNavig
     })();
 
     const priced = waPrice(catalog, waServiceId(selections), { audience });
-    const price = priced.text;
+    // M4: no audience price until the session resolves.
+    const price = audienceLoading ? PRICE_PENDING_AR : priced.text;
     // The catalogue decides whether this is a paid service, not the wording
     // of the price line (a free AI question no longer goes to «طريقة الدفع»).
     const requiresPaymentChoice = priced.requiresPayment;

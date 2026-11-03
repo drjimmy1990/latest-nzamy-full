@@ -15,7 +15,7 @@ import {
 import { rowBtnClass, staggerListVariants, staggerItemVariants } from "./WaShared";
 import type { WaStep, UserCategory } from "../types";
 import type { FloatingActorContext } from "../roleContext";
-import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { PRICE_PENDING_AR, useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { WA_VAT_NOTICE_AR, consultServiceId, waPrice } from "../waChatPrices";
 
 /**
@@ -76,7 +76,7 @@ export default function StepConsult({
   // five months the hard-coded April table was out by.
   const calendarDays = useMemo(() => buildConsultationDays(new Date()), []);
   // P7: the provider prices are the catalogue's (admin_pricing_catalog merged), never literals.
-  const { catalog, audience } = useClientPricingCatalog();
+  const { catalog, audience, audienceLoading } = useClientPricingCatalog();
 
   // ── consult-timing ──
   if (step === "consult-timing") {
@@ -169,7 +169,7 @@ export default function StepConsult({
     const providers = [
       ...(isTextMode ? [{
         icon: <Robot size={20} weight="fill" />, label: "ذكاء نظامي",
-        price: aiPrice.text, sub: aiPrice.note ?? "", val: "ai",
+        price: audienceLoading ? PRICE_PENDING_AR : aiPrice.text, sub: aiPrice.note ?? "", val: "ai",
         borderClass: "border-emerald-400 dark:border-emerald-500",
         badgeClass: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400", badge: "AI",
       }] : []),
@@ -178,7 +178,7 @@ export default function StepConsult({
         // sat directly under the lawyer's price, so it read as a response time
         // the client had paid for. No rota, no paging, no fifteen minutes.
         icon: <Gavel size={20} weight="fill" />, label: "محامي متخصص",
-        price: lawyerPrice.text, sub: "تقدير غير مُلزِم — يؤكد الفريق الأتعاب والموعد قبل البدء", val: "lawyer",
+        price: audienceLoading ? PRICE_PENDING_AR : lawyerPrice.text, sub: "تقدير غير مُلزِم — يؤكد الفريق الأتعاب والموعد قبل البدء", val: "lawyer",
         borderClass: "border-[#C8A762] dark:border-[#C8A762]",
         badgeClass: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", badge: "محامي",
       },

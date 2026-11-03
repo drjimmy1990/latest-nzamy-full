@@ -205,3 +205,24 @@ test("S6: an enabled=false row without adminHidden does not hide its card", () =
     assert.ok(ids.includes("appeal"));
   }
 });
+
+test("fix round 1 (M6): a hung catalogue read times out to the code catalogue (3 s by default)", async () => {
+  const { CLIENT_PRICING_TIMEOUT_MS } = await import("./clientPricingServer.ts");
+  assert.equal(CLIENT_PRICING_TIMEOUT_MS, 3000);
+  await withEnv(async () => {
+    let signal: AbortSignal | undefined;
+    // Never answers; rejects only when the signal aborts (as real fetch does).
+    const hung = ((_u: unknown, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        signal = init?.signal ?? undefined;
+        signal?.addEventListener("abort", () => reject(signal?.reason));
+      })) as typeof fetch;
+    const started = Date.now();
+    const out = await loadClientPricingCatalog(hung, 30);
+    assert.ok(signal, "the loader passes an AbortSignal");
+    assert.equal(signal?.aborted, true);
+    assert.equal(out.source, "admin-seed");
+    assert.equal(out.catalog.find((s) => s.serviceId === "contract-review-business")?.basePrice, 800);
+    assert.ok(Date.now() - started < 2000, "returned on the timeout, not later");
+  });
+});

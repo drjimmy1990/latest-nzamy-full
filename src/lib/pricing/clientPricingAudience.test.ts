@@ -12,3 +12,13 @@ test("S6: who pays the business price", () => {
   assert.equal(clientPricingAudience({ userType: null, hasBusinessScope: false }), "individual");
   assert.equal(clientPricingAudience({ userType: undefined, hasBusinessScope: false }), "individual");
 });
+
+test("fix round 1 (M1): the server's request audience — unknown when the profile read failed", async () => {
+  const { requestPricingAudience } = await import("./clientPricingAudience.ts");
+  assert.equal(requestPricingAudience({ userType: "corporate", profileReadFailed: false, hasBusinessScope: false }), "corporate");
+  assert.equal(requestPricingAudience({ userType: "individual", profileReadFailed: false, hasBusinessScope: false }), "individual");
+  assert.equal(requestPricingAudience({ userType: null, profileReadFailed: false, hasBusinessScope: false }), "individual");
+  assert.equal(requestPricingAudience({ userType: null, profileReadFailed: true, hasBusinessScope: false }), null);
+  // A resolved business scope is corporate whatever the profile read did.
+  assert.equal(requestPricingAudience({ userType: null, profileReadFailed: true, hasBusinessScope: true }), "corporate");
+});

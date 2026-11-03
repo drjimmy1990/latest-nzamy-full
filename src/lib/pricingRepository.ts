@@ -75,7 +75,10 @@ export function adminHiddenPatch(
 // never a card and never a lookup result — it only lends its price to its
 // base item through resolveClientService (src/lib/pricing/clientPricingAudience.ts).
 // Each helper below skips it, so a variant id resolves like an unknown id.
-const isCard = (service: ClientServiceCatalogItem) => !service.variantOf;
+// Fix round 1 (M3): a "corporate" item is never a card either — with or
+// without a variantOf — since the loader now fetches corporate rows and a
+// company-only row must not be listed (or priced) for everyone.
+const isCard = (service: ClientServiceCatalogItem) => !service.variantOf && service.audience !== "corporate";
 
 export function getClientServiceById(
   serviceId: string | null | undefined,
@@ -136,6 +139,17 @@ export function mergeAdminPricingCatalogRows(rows: AdminPricingCatalogRow[]): Cl
   for (const row of rows) {
     const existing = byId.get(row.service_id);
     const metadata = row.metadata ?? {};
+    // Fix round 1 (M3): a corporate row with no variant link never replaces
+    // an individuals' code entry of the same id (that would hide the
+    // individuals' card); the code entry stays.
+    if (
+      row.audience === "corporate" &&
+      !(metadata.variantOf ?? existing?.variantOf) &&
+      existing &&
+      existing.audience !== "corporate"
+    ) {
+      continue;
+    }
     const next: ClientServiceCatalogItem = {
       serviceId: row.service_id,
       categoryId: row.category_id,

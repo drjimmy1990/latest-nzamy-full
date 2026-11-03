@@ -5334,9 +5334,15 @@ end $$;
 -- safe to repeat: SELECTs and RAISE.
 -- RAISES (naming the file to run) when the row is missing, has another
 -- audience, no variantOf, or no positive price. Passes (NOTICE) on any
--- positive base_price and on enabled = false: both are legal admin edits. The
--- file is ON CONFLICT DO NOTHING, so a wrong row is not fixed by a re-run —
--- the message says to delete it first.
+-- positive base_price: an admin may edit it. HIDING the business price takes
+-- effect ONLY through metadata.adminHidden = true (written together with
+-- enabled = false by adminHiddenPatch, src/lib/pricingRepository.ts): the
+-- server loader reads a disabled row only with that flag. A raw
+-- enabled = false WITHOUT the flag is ignored — the row is never fetched and
+-- the code catalogue keeps serving companies 800 — so the NOTICE says so
+-- instead of reporting it as a working hide. The file is ON CONFLICT DO
+-- NOTHING, so a wrong row is not fixed by a re-run — the message says to
+-- delete it first.
 -- Docker, from the repo root in Git Bash (R, M and "$F" as in the header of
 -- supabase/tests/rls/contract_review_business_row.test.sql):
 --   B=$(mktemp -d)/verify_s6_crb.sql
@@ -5366,6 +5372,12 @@ begin
     raise exception '_verify: 20261103_20 — contract-review-business has price %, not a positive business price: set a positive base_price by hand (update … where service_id = ''contract-review-business''), or delete the row and run 20261103_20_contract_review_business_row.sql (AFTER the deploy)',
       coalesce(r.base_price::text, 'null');
   end if;
-  raise notice '_verify: 20261103_20 OK — business contract review % SAR (enabled %; any positive price an admin sets is accepted)', r.base_price, r.enabled;
+  if r.enabled then
+    raise notice '_verify: 20261103_20 OK — companies see contract review from % SAR (any positive price an admin sets is accepted)', r.base_price;
+  elsif coalesce(r.metadata->>'adminHidden', '') = 'true' then
+    raise notice '_verify: 20261103_20 OK — the business price is HIDDEN by an admin (enabled = false + metadata.adminHidden): companies are quoted the individuals'' contract-review price';
+  else
+    raise notice '_verify: 20261103_20 OK, but note — contract-review-business has enabled = false WITHOUT metadata.adminHidden: the server ignores that row, so companies still see the code catalogue''s 800. To hide the business price, use the admin toggle (adminHiddenPatch), which also writes metadata.adminHidden = true';
+  end if;
 end $$;
 -- <<< verify:s6_contract_review_business

@@ -18,7 +18,7 @@ import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntit
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { createStatusFor } from "@/lib/services/ownCaseStatus";
-import { clientPricingAudience } from "@/lib/pricing/clientPricingAudience";
+import { requestPricingAudience } from "@/lib/pricing/clientPricingAudience";
 import { loadClientPricingCatalog } from "@/lib/pricing/clientPricingServer";
 import { carriesServiceEstimate, stampServiceEstimate } from "@/lib/pricing/serviceEstimate";
 
@@ -478,13 +478,17 @@ export async function POST(request: NextRequest) {
     // company's name (businessId, resolved above from active membership) gets
     // the business price. The catalogue is fetched only when the metadata
     // carries an estimate (today: /dashboard/client/requests/new), so no
-    // other intake path makes an extra request; without one the stamp is a
-    // no-op. payment / status are untouched: the request is still free.
-    const estimateAudience = clientPricingAudience({
+    // other intake path makes an extra request; without one the stamp only
+    // strips body-sent server marks (priceAudience, quoteSource "server").
+    // A failed profile read with no business scope leaves the audience
+    // unknown (null): no stamp, no «أفراد» label (fix round 1, M1).
+    // payment / status are untouched: the request is still free.
+    const estimateAudience = requestPricingAudience({
       userType: actorProfile && typeof actorProfile.user_type === "string" ? actorProfile.user_type : null,
+      profileReadFailed: Boolean(actorProfileResult.error),
       hasBusinessScope: businessId != null,
     });
-    const estimateCatalog = carriesServiceEstimate(requestData.metadata)
+    const estimateCatalog = estimateAudience !== null && carriesServiceEstimate(requestData.metadata)
       ? (await loadClientPricingCatalog()).catalog
       : [];
 

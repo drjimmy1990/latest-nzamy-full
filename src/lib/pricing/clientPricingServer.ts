@@ -38,11 +38,17 @@ function codeCatalog(): { catalog: ClientServiceCatalogItem[]; source: PricingCa
 
 /**
  * The client-service catalogue: admin_pricing_catalog merged over the code
- * catalogue. Missing env, a non-ok response, a non-array body or a throw →
- * the code catalogue (source "admin-seed").
+ * catalogue. Missing env, a non-ok response, a non-array body, a throw or a
+ * TIMEOUT → the code catalogue (source "admin-seed"). The timeout (3 s,
+ * fix round 1, M6) matters because POST /api/v1/service-requests awaits this
+ * read: a hung PostgREST must not stall request creation. The code catalogue
+ * still carries the business variant (800).
  */
+export const CLIENT_PRICING_TIMEOUT_MS = 3000;
+
 export async function loadClientPricingCatalog(
   fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = CLIENT_PRICING_TIMEOUT_MS,
 ): Promise<{ catalog: ClientServiceCatalogItem[]; source: PricingCatalogSource }> {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -55,6 +61,7 @@ export async function loadClientPricingCatalog(
         Authorization: `Bearer ${serviceRoleKey}`,
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) return codeCatalog();
     const rows = (await response.json()) as unknown;

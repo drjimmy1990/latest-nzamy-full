@@ -108,3 +108,24 @@ test("S6: the admin toggle contract — disabling flags adminHidden, enabling re
   assert.deepEqual(adminHiddenPatch(true, undefined), { enabled: true, metadata: {} });
   assert.deepEqual(meta, { route: "/x", priceNote: "n" }, "the input is not mutated");
 });
+
+test("fix round 1 (M3): a corporate item without a variant link is never a card, and never replaces an individuals' entry", () => {
+  const orphan = mergeAdminPricingCatalogRows([
+    variantRow({ service_id: "corp-only-service", metadata: { priceNote: "x" } }),
+  ]);
+  const item = orphan.find((s) => s.serviceId === "corp-only-service");
+  assert.equal(item?.audience, "corporate");
+  assert.equal(item?.variantOf, undefined);
+  assert.ok(!getClientServicesByCategory("contracts", orphan).some((s) => s.serviceId === "corp-only-service"));
+  assert.equal(getClientServiceById("corp-only-service", orphan).serviceId, "general");
+  // A corporate row keyed on an individuals' id, with no variantOf: ignored.
+  const clash = mergeAdminPricingCatalogRows([
+    variantRow({ service_id: "contract-review", base_price: "999", metadata: { priceNote: "x" } }),
+  ]);
+  const review = getClientServiceById("contract-review", clash);
+  assert.equal(review.basePrice, 600);
+  assert.notEqual(review.audience, "corporate");
+  assert.ok(getClientServicesByCategory("contracts", clash).some((s) => s.serviceId === "contract-review"));
+  // The real variant still prices companies.
+  assert.equal(resolveClientService("contract-review", "corporate", clash).basePrice, 800);
+});

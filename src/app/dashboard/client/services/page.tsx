@@ -15,7 +15,7 @@ import {
   getClientServiceCategories,
   getClientServicesByCategory,
 } from "@/lib/pricingRepository";
-import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { PRICE_PENDING_AR, useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import type { ClientPricingAudience, ClientServiceCatalogItem } from "@/constants/clientServiceCatalog";
 import { resolveClientService } from "@/lib/pricing/clientPricingAudience";
 import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
@@ -76,7 +76,11 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Envelope,
 };
 
-function buildCategories(catalog: ClientServiceCatalogItem[], audience: ClientPricingAudience): ServiceCategory[] {
+function buildCategories(
+  catalog: ClientServiceCatalogItem[],
+  audience: ClientPricingAudience,
+  audienceLoading: boolean,
+): ServiceCategory[] {
   return getClientServiceCategories({ includeBeta: true })
     .map((cat) => ({
       id: cat.categoryId,
@@ -102,8 +106,9 @@ function buildCategories(catalog: ClientServiceCatalogItem[], audience: ClientPr
           id: service.serviceId,
           label: service.label,
           desc: service.description,
-          price: soon ? COMING_SOON_BADGE_AR : formatClientServicePrice(service),
-          priceNote: soon ? undefined : service.priceNote,
+          // M4: no audience price until the session resolves.
+          price: soon ? COMING_SOON_BADGE_AR : audienceLoading ? PRICE_PENDING_AR : formatClientServicePrice(service),
+          priceNote: soon || audienceLoading ? undefined : service.priceNote,
           comingSoon: soon,
           icon: ICON_MAP[service.icon] ?? ShieldStar,
           href: service.route,
@@ -286,9 +291,12 @@ function SubServiceCard({ svc }: { svc: SubService }) {
 
 export default function RequestServicePage() {
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
-  const { catalog, audience } = useClientPricingCatalog();
+  const { catalog, audience, audienceLoading } = useClientPricingCatalog();
 
-  const visibleCategories = useMemo(() => buildCategories(catalog, audience), [catalog, audience]);
+  const visibleCategories = useMemo(
+    () => buildCategories(catalog, audience, audienceLoading),
+    [catalog, audience, audienceLoading],
+  );
 
   return (
     <div className="max-w-5xl mx-auto" dir="rtl">

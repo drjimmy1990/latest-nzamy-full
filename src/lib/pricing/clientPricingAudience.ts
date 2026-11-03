@@ -34,6 +34,23 @@ export function clientPricingAudience(input: {
 }
 
 /**
+ * The audience the SERVER prices a request for (POST /api/v1/service-requests).
+ * A resolved business scope (businessId from active membership) is corporate
+ * whatever the profile says. Otherwise the profile decides — and when its read
+ * FAILED the audience is unknown (null): the caller must not stamp a price,
+ * since "individual" would label a company's request «أفراد» (review M1).
+ */
+export function requestPricingAudience(input: {
+  userType: string | null | undefined;
+  profileReadFailed: boolean;
+  hasBusinessScope: boolean;
+}): ClientPricingAudience | null {
+  if (input.hasBusinessScope) return "corporate";
+  if (input.profileReadFailed) return null;
+  return clientPricingAudience({ userType: input.userType, hasBusinessScope: false });
+}
+
+/**
  * The service `serviceId` as the given audience pays for it.
  *  - corporate, with an enabled variant (`variantOf === serviceId`,
  *    `audience === "corporate"`): the BASE item (its id, route, label,
