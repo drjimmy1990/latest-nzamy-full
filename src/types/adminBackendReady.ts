@@ -35,6 +35,14 @@ export interface AdminCoupon {
   eligibleRoles: AdminEligibleRole[];
   /** صافي الطلب الأدنى قبل الضريبة (ر.س) — مطلوب لكوبون الخصم (P7) */
   minOrderAmount?: number;
+  /** سقف الخصم ٪ من صافي الطلب (max_discount_pct، ≤ ٢٥) — S6-T12 */
+  maxDiscountPct?: number;
+  /** أنواع الطلبات المستثناة (excluded_kinds؛ الشحن دائماً) — S6-T12 */
+  excludedKinds?: string[];
+  /** للطلب المدفوع الأول فقط (metadata.first_paid_order_only) — S6-T12 */
+  firstPaidOrderOnly?: boolean;
+  /** منتجات دفتر الأسعار المستثناة (metadata.excluded_items) — S6-T12 */
+  excludedItems?: string[];
   // 🆕 حقول التتبع — Backend-ready
   couponType?: AdminCouponType;
   pointsGranted?: number;
