@@ -27,7 +27,9 @@ import {
   writeStoredAdminSimulation,
   type AdminSimulation,
 } from "./adminSimulation.ts";
-import type { ViewStorage } from "./shellContext.ts";
+import type { AdminView, ViewStorage } from "./shellContext.ts";
+import { getSidebarByUserType } from "../../constants/navigation.sidebars.ts";
+import type { SidebarGroup } from "../../constants/navigation.types.ts";
 
 function memoryStorage(initial: Record<string, string> = {}): ViewStorage & { data: Map<string, string> } {
   const data = new Map(Object.entries(initial));
@@ -136,6 +138,72 @@ test("S6-T16: the selected «عرض كـ» entry follows the drawn dashboard and
   assert.equal(isUnderHref("/ai/draft", "/dashboard/firm"), false);
 });
 
+// ─── S6-T17: menus follow the simulated sub-role ─────────────────────────────
+
+const labels = (groups: SidebarGroup[]) => groups.map((g) => `${g.title}:${g.items.map((i) => i.label).join(",")}`);
+
+/** What SharedSidebar / GlobalSearch pass, for an admin session (own values all null). */
+function adminMenu(sim: AdminSimulation | null, navView: AdminView) {
+  const simId = simulatedNavIdentity("admin", sim, navView);
+  return getSidebarByUserType(
+    navView, "full", null, [],
+    simId ? simId.governmentRole : null, null,
+    simId ? simId.affiliationRole : null, false, null,
+    simId ? simId.practiceKind : null, null,
+  );
+}
+
+test("S6: an admin simulating a judge gets the judge's menu", () => {
+  const judge = getSidebarByUserType("government", "full", null, [], "judge");
+  assert.deepEqual(labels(adminMenu({ view: "government", governmentRole: "judge", mode: "override" }, "government")), labels(judge));
+  for (const role of ["prosecutor", "officer", "gov_counsel"] as const) {
+    assert.deepEqual(
+      labels(adminMenu({ view: "government", governmentRole: role, mode: "simulate" }, "government")),
+      labels(getSidebarByUserType("government", "full", null, [], role)),
+      role,
+    );
+  }
+  // «مستشار (م ١٨)»: the consultant lawyer menu — no pleading items.
+  assert.deepEqual(
+    labels(adminMenu({ view: "lawyer", practiceKind: "consultant", mode: "override" }, "lawyer")),
+    labels(getSidebarByUserType("lawyer", "full", null, [], null, null, null, false, null, "consultant")),
+  );
+  assert.notDeepEqual(
+    labels(adminMenu({ view: "lawyer", practiceKind: "consultant", mode: "override" }, "lawyer")),
+    labels(adminMenu(null, "lawyer")),
+    "the consultant menu is not the advocate's",
+  );
+  // A firm member's menu is the lawyer-role firm menu.
+  assert.deepEqual(
+    labels(adminMenu({ view: "firm", affiliationRole: "lawyer", mode: "override" }, "firm")),
+    labels(getSidebarByUserType("firm", "full", null, [], null, null, "lawyer")),
+  );
+  // A sim for another dashboard leaves the menu as the plain view's.
+  assert.deepEqual(
+    labels(adminMenu({ view: "lawyer", practiceKind: "consultant", mode: "override" }, "government")),
+    labels(getSidebarByUserType("government", "full", null, [], null)),
+  );
+});
+
+test("S6-T17: the shells take the menu sub-role from simulatedNavIdentity, else the user's own", () => {
+  for (const r of ["components/dashboard/SharedSidebar.tsx", "components/dashboard/GlobalSearch.tsx"]) {
+    const c = code(readSrc(r));
+    assert.match(c, /const simId = simulatedNavIdentity\(sessionUserType, adminSim, userType\);/, r);
+    assert.match(c, /simId \? simId\.governmentRole : governmentRole/, r);
+    assert.match(c, /simId \? simId\.affiliationRole : affiliation\?\.role/, r);
+    assert.match(c, /simId \? simId\.practiceKind : practiceKind/, r);
+  }
+  assert.match(code(readSrc("app/dashboard/government/page.tsx")),
+    /resolveGovernmentRole\(simId\?\.governmentRole \?\? user\.governmentRole\)/);
+});
+
+test("S6-T17 guard: the request and consultation intake files never import the simulation", () => {
+  for (const r of REQUEST_FILES) {
+    const c = code(readSrc(r));
+    assert.doesNotMatch(c, /useAdminSimulation|adminSimulation/, r);
+  }
+});
+
 // ─── R27: the simulation is UI only (source scan) ────────────────────────────
 //
 // Three layers, so a later change that wires the simulation into a request
@@ -153,9 +221,37 @@ const SRC = fileURLToPath(new URL("../../", import.meta.url));
 const rel = (abs: string) => relative(SRC, abs).split(sep).join("/");
 const readSrc = (r: string) => readFileSync(join(SRC, r), "utf8");
 
-/** Source without comments (the docblocks quote the very names this bans). */
+/**
+ * Source without comments (the docblocks quote the very names this bans).
+ * A small scanner, not a regex: a line comment like «every /ai/* tool» must
+ * not open a block comment, and "https://…" in a string is not a comment.
+ */
 function code(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const n = src[i + 1];
+    if (c === "/" && n === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+    } else if (c === "/" && n === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end === -1 ? src.length : end + 2;
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) {
+        if (src[j] === "\\") j++;
+        else if (c !== "`" && src[j] === "\n") break;
+        j++;
+      }
+      out += src.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
 }
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -233,6 +329,9 @@ function bannedInSimModule(src: string): string[] {
 const ALLOWED_IMPORTERS = new Set<string>([
   "hooks/useAdminSimulation.ts",
   "components/dashboard/AdminViewSwitch.tsx",   // S6-T16: writes this tab's sim; no request code
+  "components/dashboard/SharedSidebar.tsx",     // S6-T17: menu sub-role only
+  "components/dashboard/GlobalSearch.tsx",      // S6-T17: menu sub-role only (its reads never carry it)
+  "app/dashboard/government/page.tsx",          // S6-T17: the home's role panel only
 ]);
 
 /** Importers that are not on the reviewed list. */
@@ -277,6 +376,8 @@ test("R27 negative control: each predicate flags a planted leak and passes a cle
   assert.equal(importsSimulation('const m = await import("../lib/nav/adminSimulation.ts");'), true);
   assert.equal(importsSimulation('// import { x } from "@/lib/nav/adminSimulation";'), false, "a comment imports nothing");
   assert.equal(readsSimulationKey('sessionStorage.getItem("nzamy_admin_sim")'), true);
+  // The comment stripper: «/ai/*» in a line comment opens nothing; a URL in a string stays.
+  assert.equal(code('// every /ai/* tool\nconst simId = 1; /* gone */ const u = "https://x";'), '\nconst simId = 1;  const u = "https://x";');
 
   const clean = 'import { useUser } from "@/hooks/useUser";\nfetch("/api/v1/x", { body: JSON.stringify({ role: user.userType }) });';
   assert.equal(importsSimulation(clean), false);

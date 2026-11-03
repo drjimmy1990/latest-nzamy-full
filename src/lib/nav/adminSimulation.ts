@@ -160,7 +160,7 @@ export function simulatedNavIdentity(
   realUserType: UserType,
   sim: AdminSimulation | null,
   navView: UserType,
-): { practiceKind: PracticeKind | null; affiliationRole: string | null; governmentRole: GovernmentRole | null } | null {
+): { practiceKind: PracticeKind | null; affiliationRole: AdminSimAffiliationRole | null; governmentRole: GovernmentRole | null } | null {
   if (realUserType !== "admin" || !sim || sim.view !== navView) return null;
   return {
     practiceKind: sim.practiceKind ?? null,

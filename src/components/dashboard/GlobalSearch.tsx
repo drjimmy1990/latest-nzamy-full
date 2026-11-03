@@ -46,6 +46,8 @@ import { Hl } from "@/components/search/MultiColorHighlight";
 // so an admin in lawyer mode searches the lawyer's tools (owner LIVE-F01).
 import { resolveNavUserType } from "@/lib/nav/shellContext";
 import { useAdminView } from "@/hooks/useAdminView";
+import { useAdminSimulation } from "@/hooks/useAdminSimulation";
+import { simulatedNavIdentity } from "@/lib/nav/adminSimulation";
 import { SERVER_SHORTCUT_MODIFIER, platformOf, shortcutModifierFor } from "@/lib/nav/platformShortcut";
 
 // UX17: the hint prints the platform's own modifier — Ctrl on Windows, ⌘ on
@@ -127,7 +129,16 @@ export function GlobalSearch() {
   // Gather all tools for this user — the same list as the sidebar, so a
   // consultant (Art. 18) finds no pleading or hearings tool here either, and
   // an admin only the tools of their staff role (owner ٢١٠).
-  const groups = getSidebarByUserType(userType, "full", subRole, active_roles ?? [], governmentRole, businessRole, affiliation?.role, isDemoBypass, country, practiceKind, staffRole);
+  // S6-T17: the same simulated sub-role as SharedSidebar (menu only, R27) —
+  // null for every non-admin session, which keeps its own values.
+  const adminSim = useAdminSimulation(!userLoading && sessionUserType === "admin");
+  const simId = simulatedNavIdentity(sessionUserType, adminSim, userType);
+  const groups = getSidebarByUserType(
+    userType, "full", subRole, active_roles ?? [],
+    simId ? simId.governmentRole : governmentRole, businessRole,
+    simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
+    simId ? simId.practiceKind : practiceKind, staffRole,
+  );
   const allTools = extractTools(groups, hasClientGroup);
 
   // ── The account's own content ─────────────────────────────────────────────
