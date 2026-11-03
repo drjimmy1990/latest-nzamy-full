@@ -8,6 +8,8 @@ import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { Storefront } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { useAdminSimulation } from "@/hooks/useAdminSimulation";
+import { adminBypassesUiGates } from "@/lib/nav/adminSimulation";
 import { isHiddenBusinessSection } from "@/constants/navigation.sidebars.business";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
@@ -66,7 +68,10 @@ export default function BusinessDashboardLayout({
   const { lang } = useTheme();
   const isAr = lang === "ar";
   const pathname = usePathname() ?? "";
-  const { userType } = useUser();
+  const { userType, loading } = useUser();
+  // S6-T18: «محاكاة القيود» — an admin who chose it sees the notice a company
+  // would. UI only (R27): UserTypeGuard and the server are untouched.
+  const adminSim = useAdminSimulation(!loading && userType === "admin");
 
   // The nineteen hidden sections stay in the tree, so the URL still resolves.
   // Refuse to RENDER them rather than redirecting after the fact: a
@@ -85,7 +90,7 @@ export default function BusinessDashboardLayout({
   // a company that clicked its own order was told the section was not ready
   // and that what used to be there was not its own data. See the predicate's
   // docblock for the full trace.
-  const sectionHidden = userType !== "admin" && isHiddenBusinessSection(pathname);
+  const sectionHidden = !adminBypassesUiGates(userType, adminSim) && isHiddenBusinessSection(pathname);
 
   return (
     <UserTypeGuard allowedTypes={["corporate", "admin"]}>

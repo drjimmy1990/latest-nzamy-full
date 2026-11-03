@@ -192,3 +192,29 @@ export function switchOptionFor(current: AdminView | null, sim: AdminSimulation 
 export function isUnderHref(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
+
+// ─── S6-T18: «محاكاة القيود» — the dashboards' UI gates (never a server check) ─
+
+/**
+ * True iff the REAL role is admin and the admin has not chosen «محاكاة القيود».
+ * Replaces the layouts' bare `userType === "admin"` UI bypass; a non-admin is
+ * never bypassed, whatever is stored.
+ */
+export function adminBypassesUiGates(realUserType: UserType, sim: AdminSimulation | null): boolean {
+  return realUserType === "admin" && sim?.mode !== "simulate";
+}
+
+/** An admin simulating «مستشار (م ١٨)» with restrictions on: ConsultantGate shows its lock. */
+export function adminSimulatesConsultant(realUserType: UserType, sim: AdminSimulation | null): boolean {
+  return realUserType === "admin" && sim?.mode === "simulate" && sim.practiceKind === "consultant";
+}
+
+/**
+ * The firm role whose sections the firm layout shows an admin simulating a
+ * firm account with restrictions on (managing_partner → managing_partner,
+ * lawyer → lawyer); null otherwise — the layout keeps its own role.
+ */
+export function simulatedFirmRole(realUserType: UserType, sim: AdminSimulation | null): AdminSimAffiliationRole | null {
+  if (realUserType !== "admin" || sim?.mode !== "simulate" || sim.view !== "firm") return null;
+  return sim.affiliationRole ?? null;
+}

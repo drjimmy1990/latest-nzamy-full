@@ -4,6 +4,8 @@ import Link from "next/link";
 import { LockSimple, ArrowRight } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { useAdminSimulation } from "@/hooks/useAdminSimulation";
+import { adminSimulatesConsultant } from "@/lib/nav/adminSimulation";
 import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
 
 /**
@@ -16,11 +18,15 @@ import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
  *
  * It renders nothing while the session is still loading, so a consultant never
  * sees the tool for a moment before the lock replaces it.
+ *
+ * S6-T18: an admin simulating «مستشار (م ١٨)» in «محاكاة القيود» mode sees the
+ * lock too — UI only (R27); the court write routes still treat him as admin.
  */
 export default function ConsultantGate({ children }: { children: React.ReactNode }) {
-  const { practiceKind, loading } = useUser();
+  const { practiceKind, loading, userType } = useUser();
+  const adminSim = useAdminSimulation(!loading && userType === "admin");
   if (loading) return null;
-  if (practiceKind === "consultant") return <ConsultantBlockedPanel />;
+  if (practiceKind === "consultant" || adminSimulatesConsultant(userType, adminSim)) return <ConsultantBlockedPanel />;
   return <>{children}</>;
 }
 

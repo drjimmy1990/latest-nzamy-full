@@ -11,6 +11,8 @@ import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { QuickAddProvider } from "@/components/dashboard/quickAdd/QuickAdd";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { FIRM_ROLES, FirmRoleContext } from "./firmRoleContext";
+import { useAdminSimulation } from "@/hooks/useAdminSimulation";
+import { simulatedFirmRole } from "@/lib/nav/adminSimulation";
 
 function getSessionFirmRole(role?: string | null): FirmRole {
   return FIRM_ROLES.some((r) => r.role === role) ? (role as FirmRole) : "managing_partner";
@@ -50,7 +52,14 @@ export default function FirmDashboardLayout({
     setActiveRole(sessionRole);
   }, [sessionRole]);
 
-  const roleConfig = FIRM_ROLES.find((r) => r.role === activeRole)!;
+  // S6-T18: an admin in «محاكاة القيود» sees the sections of the simulated
+  // firm role (الشريك المدير / محامٍ عضو). UI only (R27): quick add below and
+  // every server check keep the session's role.
+  const adminSim = useAdminSimulation(!user.loading && user.userType === "admin");
+  const simulatedRole: FirmRole | null = simulatedFirmRole(user.userType, adminSim);
+  const effectiveRole: FirmRole = simulatedRole ?? activeRole;
+
+  const roleConfig = FIRM_ROLES.find((r) => r.role === effectiveRole)!;
   // Quick add reads the SESSION role, never the demo switcher's.
   const sessionRoleConfig = FIRM_ROLES.find((r) => r.role === sessionRole)!;
   const RoleIcon = roleConfig.icon;
@@ -95,7 +104,7 @@ export default function FirmDashboardLayout({
                   </span>
                   <span>{isAr ? roleConfig.labelAr : roleConfig.labelEn}</span>
                   <span className={`rounded-full px-2 py-0.5 text-[10px] ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-500"}`}>
-                    {isAr ? "دور حسابك" : "Your role"}
+                    {simulatedRole ? (isAr ? "محاكاة القيود" : "Simulated") : isAr ? "دور حسابك" : "Your role"}
                   </span>
                 </div>
               )}
@@ -110,7 +119,7 @@ export default function FirmDashboardLayout({
                   </div>
                   {FIRM_ROLES.map((r) => {
                     const Icon = r.icon;
-                    const isActive = r.role === activeRole;
+                    const isActive = r.role === effectiveRole;
                     return (
                       <button
                         key={r.role}

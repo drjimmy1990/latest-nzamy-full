@@ -22,6 +22,9 @@ import {
   parseStoredAdminSimulation,
   readStoredAdminSimulation,
   isUnderHref,
+  adminBypassesUiGates,
+  adminSimulatesConsultant,
+  simulatedFirmRole,
   simulatedNavIdentity,
   switchOptionFor,
   writeStoredAdminSimulation,
@@ -204,6 +207,46 @@ test("S6-T17 guard: the request and consultation intake files never import the s
   }
 });
 
+// ─── S6-T18: «محاكاة القيود» applies the UI gates ─────────────────────────────
+
+test("S6: simulate mode drops the admin's UI bypass only", () => {
+  assert.equal(adminBypassesUiGates("admin", null), true);
+  assert.equal(adminBypassesUiGates("admin", { view: "corporate", mode: "override" }), true);
+  assert.equal(adminBypassesUiGates("admin", { view: "corporate", mode: "simulate" }), false);
+  assert.equal(adminBypassesUiGates("corporate", null), false);
+  for (const t of ["lawyer", "firm", "individual", "corporate", "micro", "government", "ngo", "provider", null] as const) {
+    assert.equal(adminBypassesUiGates(t, { view: "corporate", mode: "override" }), false, `${t}: never bypassed`);
+  }
+
+  const consultant: AdminSimulation = { view: "lawyer", practiceKind: "consultant", mode: "simulate" };
+  assert.equal(adminSimulatesConsultant("admin", consultant), true);
+  assert.equal(adminSimulatesConsultant("admin", { ...consultant, mode: "override" }), false);
+  assert.equal(adminSimulatesConsultant("admin", { view: "lawyer", practiceKind: "advocate", mode: "simulate" }), false);
+  assert.equal(adminSimulatesConsultant("lawyer", consultant), false, "a hand-edited value in a lawyer's tab is ignored");
+
+  assert.equal(simulatedFirmRole("admin", { view: "firm", affiliationRole: "lawyer", mode: "simulate" }), "lawyer");
+  assert.equal(simulatedFirmRole("admin", { view: "firm", affiliationRole: "managing_partner", mode: "simulate" }), "managing_partner");
+  assert.equal(simulatedFirmRole("admin", { view: "firm", affiliationRole: "lawyer", mode: "override" }), null);
+  assert.equal(simulatedFirmRole("admin", { view: "lawyer", practiceKind: "consultant", mode: "simulate" }), null);
+  assert.equal(simulatedFirmRole("firm", { view: "firm", affiliationRole: "lawyer", mode: "simulate" }), null);
+});
+
+test("S6-T18: the three gates use the helpers; the session role still feeds quick add and the guards", () => {
+  const business = code(readSrc("app/dashboard/business/layout.tsx"));
+  assert.match(business, /const sectionHidden = !adminBypassesUiGates\(userType, adminSim\) && isHiddenBusinessSection\(pathname\);/);
+  assert.match(business, /<UserTypeGuard allowedTypes=\{\["corporate", "admin"\]\}>/);
+
+  const gate = code(readSrc("components/dashboard/ConsultantGate.tsx"));
+  assert.match(gate, /practiceKind === "consultant" \|\| adminSimulatesConsultant\(userType, adminSim\)/);
+
+  const firm = code(readSrc("app/dashboard/firm/layout.tsx"));
+  assert.match(firm, /const effectiveRole: FirmRole = simulatedRole \?\? activeRole;/);
+  assert.match(firm, /FIRM_ROLES\.find\(\(r\) => r\.role === effectiveRole\)!/);
+  assert.match(firm, /<QuickAddProvider scope="firm" firmRole=\{sessionRole\}/, "quick add keeps the session role");
+  assert.match(firm, /<UserTypeGuard allowedTypes=\{\["firm", "admin"\]\}>/);
+  assert.doesNotMatch(firm.slice(firm.indexOf("simulatedFirmRole(")), /setDemoSession\([^)]*simulated/, "the simulation never rewrites the session");
+});
+
 // ─── R27: the simulation is UI only (source scan) ────────────────────────────
 //
 // Three layers, so a later change that wires the simulation into a request
@@ -332,6 +375,9 @@ const ALLOWED_IMPORTERS = new Set<string>([
   "components/dashboard/SharedSidebar.tsx",     // S6-T17: menu sub-role only
   "components/dashboard/GlobalSearch.tsx",      // S6-T17: menu sub-role only (its reads never carry it)
   "app/dashboard/government/page.tsx",          // S6-T17: the home's role panel only
+  "app/dashboard/business/layout.tsx",          // S6-T18: the hidden-section notice only
+  "components/dashboard/ConsultantGate.tsx",    // S6-T18: the Art. 18 lock panel only
+  "app/dashboard/firm/layout.tsx",              // S6-T18: FirmRoleContext only (quick add keeps the session role)
 ]);
 
 /** Importers that are not on the reviewed list. */
