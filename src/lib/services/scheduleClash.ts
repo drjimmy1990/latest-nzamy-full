@@ -175,18 +175,21 @@ export function hearingQueryDays(startMs: number, durationMinutes: number): { fr
  * (toDay, toTime). The day bounds alone let a busy diary's other sittings on
  * the end day (after the slot) fill the read's row limit (final review M1).
  * Null when the instant is not a real time (the caller keeps the day bounds).
+ * Every value is double-quoted: ":" is one of PostgREST's reserved filter
+ * characters, and a quoted value is read the same whether or not it needs it.
  */
 export function hearingQueryMinuteFilter(startMs: number, durationMinutes: number): string | null {
   const from = riyadhWallClock(startMs - MAX_HEARING_MINUTES * MINUTE_MS);
   const to = riyadhWallClock(startMs + durationMinutes * MINUTE_MS);
   if (!from || !to) return null;
+  const q = (v: string) => `"${v}"`;
   if (from.date === to.date) {
-    return `and(hearing_date.eq.${from.date},hearing_time.gte.${from.time},hearing_time.lt.${to.time})`;
+    return `and(hearing_date.eq.${q(from.date)},hearing_time.gte.${q(from.time)},hearing_time.lt.${q(to.time)})`;
   }
   return [
-    `and(hearing_date.eq.${from.date},hearing_time.gte.${from.time})`,
-    `and(hearing_date.gt.${from.date},hearing_date.lt.${to.date})`,
-    `and(hearing_date.eq.${to.date},hearing_time.lt.${to.time})`,
+    `and(hearing_date.eq.${q(from.date)},hearing_time.gte.${q(from.time)})`,
+    `and(hearing_date.gt.${q(from.date)},hearing_date.lt.${q(to.date)})`,
+    `and(hearing_date.eq.${q(to.date)},hearing_time.lt.${q(to.time)})`,
   ].join(",");
 }
 

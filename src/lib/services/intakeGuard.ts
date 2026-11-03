@@ -117,12 +117,16 @@ function checkWizardIntake(
 /**
  * The `metadata` POST /api/v1/service-requests stores, once checkOrderIntake
  * has passed it. Every key goes through as sent, except two:
- *   - `intake` of the four wizard services is the validator's own `value`, not
- *     the raw body (Wave 1 task 8 re-review). The wizards already send that
- *     value, and every validator returns its own output unchanged
- *     (intakeGuard.test.ts), so a live submit stores the same object; a direct
- *     POST can no longer store fields the validator drops, such as a hidden
- *     party's leftover representative ID or «أخرى» text.
+ *   - in `intake` of the four wizard services, every key the validator
+ *     returns holds the validator's own `value`, not the raw body (Wave 1
+ *     task 8 re-review): a direct POST can no longer store what the validator
+ *     cleans, such as a hidden party's leftover representative ID or «أخرى»
+ *     text (`parties` is replaced whole). Keys the validator does not know
+ *     are kept as sent: محترف العقود adds `contractId` / `contractTitle` after
+ *     validating (useContractsState.ts), and the order view prints them. The
+ *     other wizards send the validator's value itself, and every validator
+ *     returns its own output unchanged (intakeGuard.test.ts), so a live
+ *     submit stores the same object as before.
  *   - `courtClass` is kept only when it is one of the 14 classifications
  *     (COURT_CHOICES) and dropped otherwise (Wave 1 task 10 re-review), as
  *     courtClassOf already ignores it on read.
@@ -135,7 +139,9 @@ export function persistedRequestMetadata(metadata: unknown): unknown {
   const briefReview =
     metadata.service === BRIEF_REVIEW_SERVICE || (isRecord(metadata.intake) && metadata.intake.service === BRIEF_REVIEW_SERVICE);
   const checked = briefReview ? null : checkWizardIntake(metadata);
-  if (checked?.result.ok) out.intake = checked.result.value;
+  if (checked?.result.ok && isRecord(metadata.intake) && isRecord(checked.result.value)) {
+    out.intake = { ...metadata.intake, ...checked.result.value };
+  }
   if ("courtClass" in out && !(typeof out.courtClass === "string" && (COURT_CHOICES as readonly string[]).includes(out.courtClass))) {
     delete out.courtClass;
   }

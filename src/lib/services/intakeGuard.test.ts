@@ -290,6 +290,17 @@ test("task 8 re-review: a direct POST stores the validated intake — a non-comp
   assert.equal((metadata.intake.parties.two as Record<string, unknown>).representativeId, "3000000000");
 });
 
+test("the keys محترف العقود adds after validating (contractId / contractTitle) are stored, not dropped", () => {
+  const check = validateContractsIntake(contractsDraftRaw);
+  assert.ok(check.ok);
+  if (!check.ok) return;
+  // Exactly what useContractsState.ts submits for a linked contract.
+  const intake = { ...(check.value as unknown as Record<string, unknown>), contractId: "c-77", contractTitle: "عقد توريد" };
+  const metadata = { service: "contracts", intake, attachments: [] };
+  assert.equal(checkOrderIntake(metadata).kind, "ok");
+  assert.deepEqual(persistedRequestMetadata(metadata), metadata);
+});
+
 test("task 10 re-review: metadata.courtClass is kept only when it is one of the 14 classifications", () => {
   const caseMeta = { court: "المحكمة العامة بالرياض", caseNumber: "1" };
   assert.deepEqual(persistedRequestMetadata({ ...caseMeta, courtClass: "المحكمة العامة" }), { ...caseMeta, courtClass: "المحكمة العامة" });

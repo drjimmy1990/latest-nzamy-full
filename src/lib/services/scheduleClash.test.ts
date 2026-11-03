@@ -82,16 +82,16 @@ test("final review M1: the hearing read is cut to the minute — from 1440 minut
   // 09:00–10:00 on 10 Nov: from 09:00 on the 9th, up to (not including) 10:00 on the 10th.
   assert.equal(
     hearingQueryMinuteFilter(at("2026-11-10", "09:00"), 60),
-    "and(hearing_date.eq.2026-11-09,hearing_time.gte.09:00)," +
-      "and(hearing_date.gt.2026-11-09,hearing_date.lt.2026-11-10)," +
-      "and(hearing_date.eq.2026-11-10,hearing_time.lt.10:00)",
+    'and(hearing_date.eq."2026-11-09",hearing_time.gte."09:00"),' +
+      'and(hearing_date.gt."2026-11-09",hearing_date.lt."2026-11-10"),' +
+      'and(hearing_date.eq."2026-11-10",hearing_time.lt."10:00")',
   );
   // A slot past midnight: three days, the middle one whole.
   assert.equal(
     hearingQueryMinuteFilter(at("2026-11-10", "23:30"), 60),
-    "and(hearing_date.eq.2026-11-09,hearing_time.gte.23:30)," +
-      "and(hearing_date.gt.2026-11-09,hearing_date.lt.2026-11-11)," +
-      "and(hearing_date.eq.2026-11-11,hearing_time.lt.00:30)",
+    'and(hearing_date.eq."2026-11-09",hearing_time.gte."23:30"),' +
+      'and(hearing_date.gt."2026-11-09",hearing_date.lt."2026-11-11"),' +
+      'and(hearing_date.eq."2026-11-11",hearing_time.lt."00:30")',
   );
   assert.equal(hearingQueryMinuteFilter(Number.NaN, 60), null);
 });
@@ -105,7 +105,8 @@ test("final review M1: every hearing the filter drops is one the clash rule woul
   const keeps = (date: string, time: string) =>
     branches.some((conds) =>
       conds.every((c) => {
-        const [col, op, value] = c.split(".");
+        const [col, op, quoted] = c.split(".");
+        const value = quoted.replace(/^"(.*)"$/, "$1");
         const v = col === "hearing_date" ? date : time;
         return op === "eq" ? v === value : op === "gt" ? v > value : op === "gte" ? v >= value : op === "lt" ? v < value : false;
       }),
