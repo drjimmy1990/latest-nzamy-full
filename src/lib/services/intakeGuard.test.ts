@@ -314,7 +314,8 @@ test("POST /api/v1/service-requests inserts persistedRequestMetadata, after the 
   const src = readFileSync(new URL("../../app/api/v1/service-requests/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const check = src.indexOf("const intakeCheck = checkOrderIntake(requestData.metadata);");
   const insert = src.search(/\.from\("service_requests"\)\s*\.insert\(/);
-  const stored = src.indexOf("metadata: persistedRequestMetadata(requestData.metadata),");
+  // S6-T5 (P13): the server's estimate stamp wraps the guard's output.
+  const stored = src.indexOf("metadata: stampServiceEstimate(persistedRequestMetadata(requestData.metadata), estimateAudience, estimateCatalog),");
   assert.ok(check > 0 && insert > check && stored > insert, "check → insert(persistedRequestMetadata)");
   assert.doesNotMatch(src, /metadata: requestData\.metadata \?\? \{\}/);
 });
