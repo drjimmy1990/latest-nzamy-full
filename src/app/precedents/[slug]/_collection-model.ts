@@ -4,12 +4,12 @@
  *
  * The API serves a collection in windows (it holds up to 2,323 principles,
  * above PostgREST's 1000-row cap). The page appends windows as the reader
- * scrolls, and loads the rest when they search. These helpers keep that safe:
+ * scrolls (never the whole collection, q390). These helpers keep that safe:
  *   - normalizePrinciple() never lets a missing array reach `.slice`/`.join`
  *     (classification_keywords was absent from the API and crashed the index);
  *   - mergePrinciples() de-duplicates by id, so a retried or overlapping window
  *     cannot render the same principle twice;
- *   - nextOffset()/hasMorePrinciples() advance by what is actually held.
+ *   - hasMorePrinciples() decides whether another window exists.
  *
  * q390-ب: the reader may open at a principle deep in the collection
  * (`?target=`), so what it holds is a RUN — a contiguous slice that starts at
@@ -66,11 +66,6 @@ export function mergePrinciples<T extends { id: string }>(existing: T[], incomin
     return true;
   });
   return added.length === 0 ? existing : [...existing, ...added];
-}
-
-/** The offset of the next window: the number of principles already held. */
-export function nextOffset(held: { length: number }): number {
-  return held.length;
 }
 
 /**

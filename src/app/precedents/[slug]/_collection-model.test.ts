@@ -10,7 +10,6 @@ import {
   appendRun,
   hasMorePrinciples,
   mergePrinciples,
-  nextOffset,
   normalizePrinciple,
   prependRun,
   runHasMore,
@@ -54,21 +53,24 @@ test("more-ness follows the exact total, else the server flag", () => {
   assert.equal(hasMorePrinciples(10, null, false), false);
 });
 
-test("a simulated scroll-then-search walk holds all 2,323 principles once", () => {
+test("a simulated scroll walk at 50 per window holds all 2,323 principles once", () => {
   const server = Array.from({ length: 2323 }, (_, i) => ({ id: `p-${i}` }));
-  let held: { id: string }[] = [];
+  let held: CollectionRun<{ id: string }> = { start: 0, items: [] };
   const windowAt = (offset: number, limit: number) => server.slice(offset, offset + limit);
-  // Scroll twice at 100, then search loads the rest at 500 — plus one retried window.
-  held = mergePrinciples(held, windowAt(nextOffset(held), 100));
-  held = mergePrinciples(held, windowAt(nextOffset(held), 100));
-  held = mergePrinciples(held, windowAt(100, 100)); // a retry of an old window
-  while (hasMorePrinciples(held.length, server.length, true)) {
-    const before = held.length;
-    held = mergePrinciples(held, windowAt(nextOffset(held), 500));
-    if (held.length === before) break;
+  // Scroll twice, then one retried old window (merged away), then scroll to the end.
+  held = appendRun(held, windowAt(runNextOffset(held), 50));
+  held = appendRun(held, windowAt(runNextOffset(held), 50));
+  held = appendRun(held, windowAt(50, 50)); // a retry of an old window
+  assert.equal(held.items.length, 100);
+  while (runHasMore(held, server.length, true)) {
+    const before: number = held.items.length;
+    held = appendRun(held, windowAt(runNextOffset(held), 50));
+    if (held.items.length === before) break;
   }
-  assert.equal(held.length, 2323);
-  assert.equal(new Set(held.map((p) => p.id)).size, 2323);
+  assert.equal(held.items.length, 2323);
+  assert.equal(new Set(held.items.map((p) => p.id)).size, 2323);
+  // mergePrinciples stays the de-duplicating core of appendRun.
+  assert.equal(mergePrinciples(held.items, windowAt(0, 50)), held.items);
 });
 
 // ── q390-ب: a run of principles that may start mid-collection (?target=) ──
