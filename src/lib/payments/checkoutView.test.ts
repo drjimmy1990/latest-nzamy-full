@@ -28,7 +28,6 @@ import {
   refreshDecision,
   INTENT_EXPIRY_MARGIN_MS,
   INTENT_REFRESH_MS,
-  LITIGATION_COVERAGE_AR,
   billingLabelAr,
 } from "./checkoutView.ts";
 
@@ -153,9 +152,10 @@ test("billingLabelAr names every cycle in Arabic", () => {
   assert.equal(billingLabelAr("once"), "دفعة واحدة");
 });
 
-test("checkoutItemNotes: ind-litigation states the main-subscriber coverage, and no family option (LIVE-F11, conflict ١٠)", () => {
-  assert.equal(LITIGATION_COVERAGE_AR, "تغطية المشترك الرئيسي");
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), [LITIGATION_COVERAGE_AR]);
+test("task 5 review M5: retired ind-litigation keeps resolving by id, but /checkout never shows it, so it has no note line", () => {
+  assert.equal(PAYABLE_ITEMS["ind-litigation"].id, "ind-litigation");
+  assert.deepEqual(parseCheckoutQuery("ind-litigation", "yearly"), { ok: false, notForSale: true });
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), []);
 });
 
 test("checkoutItemNotes: each top-up states the validity the catalog grants; the points are in its label already", () => {

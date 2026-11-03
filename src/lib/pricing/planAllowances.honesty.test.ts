@@ -31,20 +31,34 @@ const MARKED = /بطلب يراجعه الفريق|request the team reviews|on r
 
 test("every counted allowance on an individual plan says the team applies it on a request", () => {
   let seen = 0;
+  let strings = 0;
   for (const file of FILES) {
     const src = readFileSync(join(ROOT, file), "utf8");
     for (const m of src.matchAll(/"([^"\n]*)"/g)) {
+      strings++;
       const text = m[1];
       if (!ALLOWANCE.some((re) => re.test(text))) continue;
       seen++;
       assert.match(text, MARKED, `${file}: «${text}»`);
     }
   }
-  // Zero since q329 (owner package of 1 Nov 2026): the two plans that carried
-  // these lines — ind-preventive and ind-litigation — are retired and have no
-  // card, column or plan entry. A plan that promises one again must say how
-  // it is applied (the match above).
-  assert.equal(seen, 0);
+  // The scan read the real plan files, so a zero below is not an empty read.
+  assert.ok(strings > 50, `only ${strings} quoted strings in ${FILES.join(", ")}`);
+  // Zero today: since q329 (owner package of 1 Nov 2026) the two plans that
+  // carried these lines — ind-preventive and ind-litigation — are retired and
+  // have no card, column or plan entry. No count is pinned (task 5 review
+  // M6): a plan may promise one again, and passes when the line says how it
+  // is applied (the match above), instead of failing on the count.
+  assert.ok(seen >= 0);
+});
+
+test("the matchers themselves: an unmarked allowance is caught, a marked one passes", () => {
+  for (const line of ["٤ استشارات/سنة", "عقدان مجاناً/سنة", "4 annual consultations"]) {
+    assert.ok(ALLOWANCE.some((re) => re.test(line)), line);
+    assert.doesNotMatch(line, MARKED, line);
+  }
+  assert.match("٤ استشارات/سنة بطلب يراجعه الفريق", MARKED);
+  assert.match("4 annual consultations, on request, team-reviewed", MARKED);
 });
 
 test("the grant behind those plans is a tier only — nothing counts consultations or contract reviews", () => {

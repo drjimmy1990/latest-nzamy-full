@@ -17,6 +17,7 @@ import {
   PROFESSIONAL_CYCLES,
   activeLaunchPrice,
   activeLaunchPrices,
+  bookCardOnSale,
   bookEntry,
   bookPriceText,
   bookSar,
@@ -283,6 +284,20 @@ test("a retired entry is not on sale and offers no billing, but is still found b
   assert.equal(isOnSale(old), false);
   assert.deepEqual(offeredBillings(old), []);
   assert.equal(offeredSar(old, "monthly"), null);
+});
+
+test("task 5 review M3: bookCardOnSale hides a card only when its id is a book entry not on sale", () => {
+  // the fixture book: retired, a retired cycle only, coming soon, not in the book
+  assert.equal(bookCardOnSale("old-plan", FIXTURE), false);
+  assert.equal(bookCardOnSale("firm-x", FIXTURE), true);
+  assert.equal(bookCardOnSale("soon", FIXTURE), false);
+  assert.equal(bookCardOnSale("pay-per-piece", FIXTURE), true);
+  assert.equal(bookCardOnSale("constructor", FIXTURE), true, "an inherited key is not an entry");
+  // the real book (q329): the retired individual plans, and the one still sold
+  assert.equal(bookCardOnSale("ind-preventive"), false);
+  assert.equal(bookCardOnSale("ind-litigation"), false);
+  assert.equal(bookCardOnSale("ind-ai"), true);
+  assert.equal(bookCardOnSale("topup-100"), true);
 });
 
 test("a retired cycle is refused while the entry's other cycles stay on sale", () => {

@@ -1,6 +1,6 @@
 import { User, Buildings, Storefront, Scales, Briefcase, Users, Gavel, Handshake } from "@phosphor-icons/react";
 import { AudienceTab, FaqItem, Plan, ComparisonCategory, BillingNote, CompanySize } from "./pricing.types";
-import { bookEntry, bookPriceText, isOnSale } from "../../lib/pricing/priceBook";
+import { bookCardOnSale, bookPriceText } from "../../lib/pricing/priceBook";
 
 const libAr = (id: string) => bookPriceText(id, "once", "ar");
 const libEn = (id: string) => bookPriceText(id, "once", "en");
@@ -117,13 +117,7 @@ export function getPlanList(
   // A card whose id is a price-book entry no longer on sale (retired, coming
   // soon) is dropped too: no card, no comparison column, and no `?plan=` on
   // /register/client or /onboarding resolves to it (Wave 1 task 5).
-  return (map[audience] ?? map.individuals).filter((plan) => !plan.isBetaHidden && bookCardOnSale(plan));
-}
-
-/** False only for a card whose id is a price-book entry that is not on sale. */
-function bookCardOnSale(plan: Pick<Plan, "id">): boolean {
-  const entry = bookEntry(plan.id);
-  return entry === undefined || isOnSale(entry);
+  return (map[audience] ?? map.individuals).filter((plan) => !plan.isBetaHidden && bookCardOnSale(plan.id));
 }
 
 export function getComparisonList(audience: AudienceTab, isAr: boolean): ComparisonCategory[] {

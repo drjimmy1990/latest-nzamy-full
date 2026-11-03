@@ -27,7 +27,7 @@ import { ServiceCard, FAQItem } from "@/components/services/ServiceComponents";
 import { INDIVIDUALS_PYRAMID_PLANS } from "@/lib/pricing/plans";
 import { bookEntry, offeredSar } from "@/lib/pricing/priceBook";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
-import { Warning, UsersThree, Sparkle } from "@phosphor-icons/react";
+import { UsersThree, Sparkle } from "@phosphor-icons/react";
 
 type PyramidCycle = "monthly" | "yearly";
 const PYRAMID_CYCLES: readonly PyramidCycle[] = ["monthly", "yearly"];
@@ -392,13 +392,10 @@ export default function IndividualsPage() {
                       {plan.badgeAr && (
                         <div className="mb-4">
                           <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-bold border ${
-                            plan.requiresUnderwriting
-                              ? "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
-                              : plan.highlighted
+                            plan.highlighted
                               ? "bg-royal/10 border-royal/30 text-royal dark:text-gold"
                               : "bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-zinc-300"
                           }`}>
-                            {plan.requiresUnderwriting && <Warning size={12} weight="fill" />}
                             {isAr ? plan.badgeAr : plan.badgeEn}
                           </span>
                         </div>
@@ -422,16 +419,6 @@ export default function IndividualsPage() {
                           </span>
                         </div>
                       </div>
-
-                      {/* Underwriting Alert for Litigation */}
-                      {plan.requiresUnderwriting && (
-                        <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-2.5 text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
-                          <strong>{isAr ? "تنبيه اكتتاب:" : "Underwriting Notice:"}</strong>{" "}
-                          {isAr
-                            ? "تخضع القضايا للتحقق المهني ودراسة الأهلية وخلو النزاع من التعارض قبل التفعيل."
-                            : "Cases undergo strict intake qualification and conflict checks before activation."}
-                        </div>
-                      )}
 
                       {/* Features */}
                       <ul className="space-y-2.5 mb-6 text-xs text-ink-muted dark:text-gray-300">

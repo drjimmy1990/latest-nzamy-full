@@ -446,7 +446,7 @@ test("٢١٣: the footnote renders, small and grey, under the card on both pages
   const services = readFileSync(new URL("../../app/services/individuals/page.tsx", import.meta.url), "utf8");
   assert.match(services, /\{\(isAr \? plan\.footnoteAr : plan\.footnoteEn\) && \(/);
   assert.match(services, /text-\[11px\] text-ink-faint[^"]*">\s*\{isAr \? plan\.footnoteAr : plan\.footnoteEn\}/);
-  // Three plans now, so three columns.
+  // One plan is sold now (ind-ai, q329): never the old four-column grid.
   assert.doesNotMatch(services, /lg:grid-cols-4/);
   assert.match(pricingCards, /\{plan\.footnote && \(/);
   assert.match(pricingCards, /text-\[11px\][\s\S]{0,120}\{plan\.footnote\}/);

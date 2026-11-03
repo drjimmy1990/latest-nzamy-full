@@ -352,6 +352,17 @@ export function isOnSale(entry: BookEntry): boolean {
   return !entry.retired && !entry.comingSoon && offeredBillings(entry).length > 0;
 }
 
+/**
+ * Whether a pricing card may be shown (pricing.common.ts getPlanList): false
+ * only when its id is a book entry that is not on sale (retired, coming
+ * soon, every cycle retired). A card whose id is not in the book (pay per
+ * piece, a top-up card of another audience's list) is not the book's to hide.
+ */
+export function bookCardOnSale(planId: string, book: Readonly<Record<string, BookEntry>> = PRICE_BOOK): boolean {
+  const entry = bookEntry(planId, book);
+  return entry === undefined || isOnSale(entry);
+}
+
 /** The billings the entry is SOLD in today, in book order (retired cycles left out). */
 export function offeredBillings(entry: BookEntry): Billing[] {
   if (entry.retired || entry.comingSoon) return [];

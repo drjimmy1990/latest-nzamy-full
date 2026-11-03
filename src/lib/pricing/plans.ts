@@ -48,7 +48,6 @@ export interface PricingPlan {
   featuresAr: string[];
   featuresEn: string[];
   highlighted?: boolean;
-  requiresUnderwriting?: boolean;
   article18Restricted?: boolean;
   ctaTextAr: string;
   ctaTextEn: string;
@@ -254,8 +253,4 @@ export function getIndividualPyramidPlan(id: string): PricingPlan | undefined {
 export function isArticle18Restricted(planId: string): boolean {
   if (planId === INDEPENDENT_CONSULTANT_PLAN.id) return true;
   return false;
-}
-
-export function requiresLitigationUnderwriting(planId: string): boolean {
-  return INDIVIDUALS_PYRAMID_PLANS[planId]?.requiresUnderwriting === true;
 }
