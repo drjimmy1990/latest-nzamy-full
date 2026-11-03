@@ -16,10 +16,11 @@ import IdentityPanel from "./_identity-panel";
 import VolumeSelector from "./_volume-selector";
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
-import { cleanPrincipleText } from "./_principle-text";
+import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
-import { HighlightProvider, SearchLegendBar, useScrollToFirstMark } from "@/components/search/MultiColorHighlight";
-import { withSearchQuery } from "@/lib/search/multiColorSearch";
+import { HighlightProvider, SearchLegendBar } from "@/components/search/MultiColorHighlight";
+import { stepPrincipleIndex } from "@/components/search/highlightScope";
+import { countTermMatches, parseHighlightQuery, withSearchQuery } from "@/lib/search/multiColorSearch";
 import { readerArrival, withoutSearchQuery } from "@/lib/search/readerArrival";
 import { legacyTarget } from "@/lib/library/legacyLibrarySlugs";
 import { collectionNotice, type ReaderNotice } from "@/lib/library/readerNotice";
@@ -68,10 +69,33 @@ type WindowResult = "more" | "done" | "error";
 
 const EMPTY_RUN: CollectionRun = { start: 0, items: [] };
 
-/** Lives inside the HighlightProvider: arriving with ?q= and no target, scroll to the first match once. */
-function ScrollToFirstMark({ enabled, deps }: { enabled: boolean; deps: readonly unknown[] }) {
-  useScrollToFirstMark(enabled, deps);
-  return null;
+const isReferenceText = (txt: string) => txt.includes("الجهة:") || txt.includes("المرجع:") || txt.startsWith("**الجهة:**");
+
+const cleanTextOfRef = (text: string) => text ? text.split("\n").filter(line => !isReferenceText(line)).join("\n").trim() : "";
+/**
+ * BUG-LIB-01: the strings a PrincipleBlock passes to <Hl> (header labels,
+ * body paragraphs, the source's reference, the details), so the legend can
+ * count a principle's matches without rendering its marks. The reference
+ * built from the collection when the source has none is not counted.
+ */
+function principleHighlightTexts(p: JudicialPrincipleItem, isRTL: boolean): string[] {
+  const texts: string[] = [isRTL ? `مبدأ رقم (${p.number})` : `Principle #${p.number}`];
+  if (p.decision_number) texts.push(isRTL ? `قرار رقم (${p.decision_number})` : `Decision #${p.decision_number}`);
+  texts.push(p.issuing_body);
+  if (p.session_date) texts.push(p.session_date);
+  const paras = (p.paragraphs ?? []).filter((para) => cleanPrincipleText(para.text) !== "" && !isReferenceText(para.text));
+  if (paras.length > 0) for (const para of paras) texts.push(...principleParagraphs(para.text));
+  else texts.push(...principleParagraphs(cleanTextOfRef(p.text)));
+  const ref = p.paragraphs?.find((para) => isReferenceText(para.text))?.text
+    ?? p.text?.split("\n").find((line) => isReferenceText(line))
+    ?? p.reference;
+  if (ref) texts.push(cleanPrincipleText(ref));
+  const details = (p.details ?? {}) as Record<string, unknown>;
+  for (const key of ["ruling_basis", "الحيثيات_والقرار", "facts", "reasons", "ruling"]) {
+    const value = details[key];
+    if (typeof value === "string") texts.push(...principleParagraphs(value));
+  }
+  return texts;
 }
 
 /** The `?target=` window: the one 50-principle window that holds that principle. */
@@ -177,10 +201,6 @@ export default function JudicialPrinciplesPage() {
       (p?.issuing_body && p.issuing_body !== "جهة غير محددة") ||
         (collection?.court && collection.court !== "جهة غير محددة"),
     );
-
-  const isReferenceText = (txt: string) => txt.includes("الجهة:") || txt.includes("المرجع:") || txt.startsWith("**الجهة:**");
-
-  const cleanTextOfRef = (text: string) => text ? text.split("\n").filter(line => !isReferenceText(line)).join("\n").trim() : "";
 
   const getReferenceForPrinciple = (p: JudicialPrincipleItem) => {
     if (!p) return "";
@@ -621,6 +641,48 @@ export default function JudicialPrinciplesPage() {
   // colouring never blocks the page.
   const highlightQuery = useDeferredValue(urlQuery);
 
+  // BUG-LIB-01: blocks colour only near the viewport, so the legend counts
+  // every loaded principle here (not the rendered marks) and ↑/↓ step from
+  // one matching principle to the next; its marks render once it is near.
+  const parsedHighlight = useMemo(() => parseHighlightQuery(highlightQuery), [highlightQuery]);
+  const matchCounts = useMemo(
+    () => (parsedHighlight.terms.length === 0
+      ? []
+      : shownPrinciples.map((p) => countTermMatches(principleHighlightTexts(p, isRTL), parsedHighlight.terms))),
+    [shownPrinciples, parsedHighlight, isRTL],
+  );
+  const legendCounts = useMemo(
+    () => parsedHighlight.terms.map((_, t) => matchCounts.reduce((sum, c) => sum + (c[t] ?? 0), 0)),
+    [parsedHighlight, matchCounts],
+  );
+  const stepToMatch = useCallback((dir: 1 | -1, term: number | null): boolean => {
+    const matching: number[] = [];
+    matchCounts.forEach((c, i) => {
+      if (term === null ? c.some((n) => n > 0) : (c[term] ?? 0) > 0) matching.push(i);
+    });
+    const current = shownPrinciples.findIndex((p) => p.id === activePrincipleId);
+    const next = stepPrincipleIndex(matching, current, dir);
+    if (next === null) return true;
+    const id = shownPrinciples[next].id;
+    isScrolling.current = true;
+    setActivePrincipleId(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => { isScrolling.current = false; }, 1000);
+    return true;
+  }, [matchCounts, shownPrinciples, activePrincipleId]);
+
+  // Arriving with ?q= and no target: scroll to the first matching principle
+  // once (its marks render only when it is near, so not to a mark).
+  const firstMatchScrolled = useRef(false);
+  useEffect(() => { firstMatchScrolled.current = false; }, [slug]);
+  useEffect(() => {
+    if (firstMatchScrolled.current || !urlQuery || jump || loading) return;
+    const i = matchCounts.findIndex((c) => c.some((n) => n > 0));
+    if (i < 0) return;
+    firstMatchScrolled.current = true;
+    document.getElementById(shownPrinciples[i].id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [urlQuery, jump, loading, matchCounts, shownPrinciples]);
+
   /** ✕ «مسح الألوان»: drop ?q= (the hash stays). */
   const clearHighlight = () => {
     setUrlQuery("");
@@ -966,10 +1028,11 @@ export default function JudicialPrinciplesPage() {
             {/* The provider's wrapper is display:contents, which space-y-6
                 above no longer reaches: the spacing lives on this div. */}
             <div className="space-y-6">
-            <ScrollToFirstMark enabled={Boolean(urlQuery) && !jump} deps={[collection.principles.length]} />
             <SearchLegendBar
               onClear={clearHighlight}
               partial={hasMore || runStart > 0}
+              counts={legendCounts}
+              onStep={stepToMatch}
               className="sticky top-32 z-30 shadow-sm print:hidden"
             />
 

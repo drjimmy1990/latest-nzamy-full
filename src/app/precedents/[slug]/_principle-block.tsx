@@ -4,7 +4,8 @@ import { memo, useEffect, useMemo, useRef } from "react";
 import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
 import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
-import { Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
+import { HighlightScope, Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
+import { useNearViewport } from "@/hooks/useNearViewport";
 
 /**
  * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
@@ -17,6 +18,10 @@ import { Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight
  * of the nearest HighlightProvider (the reader's ?q= or its own filter box)
  * and renders plain text when there is none. <Hl> reads context, so the memo
  * still re-renders when the search changes.
+ *
+ * BUG-LIB-01: the block colours its text only while it is near the viewport
+ * (HighlightScope + useNearViewport); the page's legend counts every loaded
+ * principle itself and steps block to block.
  */
 const Paragraphs = memo(function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
   const paragraphs = useMemo(() => principleParagraphs(text), [text]);
@@ -76,6 +81,8 @@ export default function PrincipleBlock({
   isLinkTarget = false,
 }: PrincipleBlockProps) {
   const isHighlighted = activePrincipleId === p.id;
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const nearViewport = useNearViewport(cardRef);
   const lock = p as MaybeLocked;
   const isLocked = lock.locked === true;
   // Cleaned once per principle, not on every render.
@@ -106,7 +113,9 @@ export default function PrincipleBlock({
   }, [detailsHaveMatch]);
 
   return (
+    <HighlightScope active={nearViewport}>
     <div
+      ref={cardRef}
       id={p.id}
       // Clears the fixed navbar when the page scrolls a linked principle into view.
       style={{ scrollMarginTop: "calc(8rem + env(safe-area-inset-top, 0px))" }}
@@ -296,5 +305,6 @@ export default function PrincipleBlock({
         </div>
       )}
     </div>
+    </HighlightScope>
   );
 }
