@@ -5420,3 +5420,29 @@ begin
   end if;
 end $$;
 -- <<< verify:s6_newclient_flag
+-- >>> verify:s6_coupon_business_role
+-- 2026-11-03 — 20261103_22_coupon_business_role.sql (owner-free wave,
+-- S6-T11): a coupon for «الشركات» targets profiles.user_type 'corporate'; the
+-- old page stored 'business', which no profile has. Read-only, safe to
+-- repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) while any coupon still holds 'business' in
+-- eligible_user_types — such a coupon matches no company. No coupons table
+-- (or no eligible_user_types column): one NOTICE, passes.
+-- Docker: supabase/tests/rls/coupon_business_role.test.sql runs this block
+-- (its header has the chain, the negative control and the sed line).
+do $$
+declare left_codes text;
+begin
+  if to_regclass('public.coupons') is null
+     or not exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'coupons' and column_name = 'eligible_user_types') then
+    raise notice '_verify: 20261103_22 — public.coupons.eligible_user_types is missing (20260603_phase1_003 not applied): nothing to check'; return;
+  end if;
+  select string_agg(code, ', ' order by code) into left_codes
+    from public.coupons where 'business' = any (eligible_user_types);
+  if left_codes is not null then
+    raise exception '_verify: 20261103_22 — coupon(s) % still target the user type ''business'', which no profile has: they reach no company. Run 20261103_22_coupon_business_role.sql (AFTER the deploy)', left_codes;
+  end if;
+  raise notice '_verify: 20261103_22 OK — no coupon targets ''business''; company coupons target ''corporate''';
+end $$;
+-- <<< verify:s6_coupon_business_role
