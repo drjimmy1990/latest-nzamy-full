@@ -377,3 +377,7 @@ test("/pro/marketplace: no hero stats", () => {
   const page = src("app/pro/marketplace/page.tsx");
   assert.doesNotMatch(page, /value: "٥٠\+"|value: "١٠٠٪"|موثّقة ومعتمدة/);
 });
+
+test("consultations: no wait time is promised anywhere on the page", () => {
+  assert.doesNotMatch(src("app/services/consultations/page.tsx"), /في دقائق|خلال دقائق|in minutes/i);
+});
