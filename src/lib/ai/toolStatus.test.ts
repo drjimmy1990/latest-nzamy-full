@@ -87,7 +87,9 @@ test("closed on any doubt: no profile, a failed read, a throw", async () => {
 });
 
 test("the route: signed in, per caller, no-store, and it answers nothing but the helper's boolean", () => {
-  const route = readFileSync(join(process.cwd(), "src/app/api/v1/ai/tool-status/route.ts"), "utf8").replace(/\r\n/g, "\n");
+  const route = readFileSync(join(process.cwd(), "src/app/api/v1/ai/tool-status/route.ts"), "utf8")
+    .replace(/\r\n/g, "\n")
+    .replace(/\/\*\*[\s\S]*?\*\//g, ""); // the header comment explains prices; the code names none
   assert.match(route, /requireApiUser\(supabase,/);
   assert.ok(route.indexOf("requireApiUser(") < route.indexOf("getAiTool("), "the sign-in check comes first, so a guest cannot probe tool ids");
   assert.match(route, /if \(auth instanceof NextResponse\) return auth;/);
