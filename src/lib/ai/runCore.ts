@@ -48,6 +48,7 @@ import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import { textPages } from "./textExtract.ts";
 import {
   STEP_LABEL_AR,
+  cleanLabel,
   fileEvents,
   queryEvents,
   sourceEvents,
@@ -785,6 +786,13 @@ export async function callbackWith(
       return { status: 400, body: { error: "invalid step" } };
     }
     await admin.from("ai_runs").update({ progress_step: body.step }).eq("id", runId).eq("status", "running");
+    // n8n may add a line of its own (E6); a post that arrives after the run ended
+    // adds nothing to a finished run's screen. Either side may be the older one: an
+    // old n8n sends neither field, and an old app ignores both.
+    if (run.status === "running") {
+      const label = cleanLabel(body.detail) ?? STEP_LABEL_AR[body.step as keyof typeof STEP_LABEL_AR];
+      report(deps.progress, runId, run.user_id, [{ kind: body.kind === "note" ? "note" : "step", label }]);
+    }
     return { status: 200, body: { ok: true } };
   }
 

@@ -8,6 +8,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { AI_WORKFLOWS, CODE, MODEL, toWorkflow } from "../../../n8n/ai/workflows.mjs";
 import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
 
@@ -607,4 +608,112 @@ test("B10: drafter prompt with a branch quotes it and asks for no inference", ()
   const content = promptOf("legal-drafter", { ...DRAFTER_BASE, branch: "عمالي" });
   assert.ok(content.includes("الفرع القانوني: «عمالي»."));
   assert.equal(content.includes("استنتجه من الوقائع"), false);
+});
+
+// ── E6: progress branches ───────────────────────────────────────────────────
+
+type Wf = { nodes: Node[]; connections: Record<string, any> };
+const READING = "Progress · reading";
+const DRAFTING = "Progress · drafting";
+const CASE_JOBS = ["wargaming", "analyze-strength", "contract-drafter", "legal-opinion-consult", "legal-opinion-letter", "legal-drafter"];
+const DOC_JOBS = ["case-brief", "brief-check"];
+const JOBS = [...DOC_JOBS, ...CASE_JOBS, "contracts-pro"];
+const wfOf = (tool: string) => toWorkflow(def(tool)) as Wf;
+const targets = (wf: Wf, from: string, output = 0) => (wf.connections[from]?.main?.[output] ?? []).map((c: { node: string }) => c.node) as string[];
+const bodyOf = (node: Node, webhookBody: Record<string, unknown>) => JSON.parse(evalCondition(node.parameters.jsonBody, webhookBody) as string);
+
+test("E6: the job list is every job workflow the registry has", () => {
+  const kinds = AI_WORKFLOWS.filter((d: { kind?: string }) => /Job$/.test(d.kind ?? "")).map((d: { tool: string }) => d.tool);
+  assert.deepEqual([...kinds].sort(), [...JOBS].sort());
+});
+
+for (const tool of DOC_JOBS) {
+  test(`E6: ${tool} (always has files) reports reading on a dead-end branch beside Files`, () => {
+    const wf = wfOf(tool);
+    assert.deepEqual(targets(wf, "Accepted 202"), ["Files", READING]);
+    assert.equal(wf.connections[READING], undefined);
+  });
+}
+
+for (const tool of CASE_JOBS) {
+  test(`E6: ${tool} reports reading only on its files path, never with nothing to read`, () => {
+    const wf = wfOf(tool);
+    assert.deepEqual(targets(wf, "Accepted 202"), ["Has files?"]);
+    assert.deepEqual(targets(wf, "Has files?", 0), ["Files", READING]);
+    assert.deepEqual(targets(wf, "Has files?", 1), ["Build prompt"]);
+    assert.equal(wf.connections[READING], undefined);
+  });
+
+  test(`E6: ${tool} reports drafting once on both paths, through one node`, () => {
+    const wf = wfOf(tool);
+    assert.deepEqual(targets(wf, "Ready?", 0), ["Read", DRAFTING]);
+    assert.deepEqual(targets(wf, "Ready?", 1), ["Download failed"]);
+    assert.deepEqual(targets(wf, "Build prompt"), ["Write", DRAFTING]);
+    assert.equal(wf.connections[DRAFTING], undefined);
+    assert.equal(wf.nodes.filter((n) => n.name === DRAFTING).length, 1);
+  });
+}
+
+test("E6: contracts-pro has no files, so it reports no reading; drafting comes before the first clause, once", () => {
+  const wf = wfOf("contracts-pro");
+  assert.equal(wf.nodes.some((n) => n.name === READING), false);
+  assert.deepEqual(targets(wf, "Accepted 202"), ["Build outline"]);
+  assert.deepEqual(targets(wf, "Outline ok?", 0), ["Write clause", DRAFTING]);
+  assert.deepEqual(targets(wf, "Outline ok?", 1), ["Outline failed"]);
+  assert.equal(wf.connections[DRAFTING], undefined);
+  assert.equal(wf.nodes.find((n) => n.name === DRAFTING)!.executeOnce, true, "one item per clause must still post once");
+});
+
+for (const tool of JOBS) {
+  test(`E6: ${tool}: a progress post can never fail or slow the run, and runs before its sibling`, () => {
+    const wf = wfOf(tool);
+    const progress = wf.nodes.filter((n) => n.name.startsWith("Progress · "));
+    assert.ok(progress.length >= 1);
+    assert.equal(new Set(wf.nodes.map((n) => n.name)).size, wf.nodes.length, "node names are unique");
+    assert.equal(new Set(wf.nodes.map((n) => n.id)).size, wf.nodes.length, "node ids are unique");
+    for (const node of progress) {
+      assert.equal(node.onError, "continueRegularOutput", node.name);
+      assert.equal(node.retryOnFail, undefined, node.name);
+      assert.equal(node.executeOnce, true, node.name);
+      assert.equal(node.parameters.options.timeout, 5000, node.name);
+      assert.equal(node.parameters.method, "POST", node.name);
+      assert.equal(node.credentials.httpHeaderAuth.name, "NZAMY AI · callback", node.name);
+      assert.equal(evalCondition(node.parameters.url, { respond: { callback_url: "https://x/cb" } }), "https://x/cb", node.name);
+      // Execution order v1 runs sibling branches top to bottom: a node below its
+      // sibling would post only after the run's own callback.
+      for (const [from, conn] of Object.entries(wf.connections)) {
+        for (const output of (conn as { main?: { node: string }[][] }).main ?? []) {
+          if (!output.some((c) => c.node === node.name)) continue;
+          for (const sibling of output) {
+            if (sibling.node === node.name) continue;
+            const y = wf.nodes.find((n) => n.name === sibling.node)!.position[1];
+            assert.ok(node.position[1] < y, `${tool}: ${node.name} must sit above ${sibling.node} (from ${from})`);
+          }
+        }
+      }
+    }
+    for (const from of Object.keys(wf.connections)) assert.equal(from.startsWith("Progress · "), false, "a dead end");
+  });
+}
+
+test("E6: the bodies the app reads: run id, step, kind and a detail with the real file count", () => {
+  const wf = wfOf("wargaming");
+  const hook = { run_id: "r1", files: [{ url: "u", name: "a.pdf", mime: "application/pdf" }, { url: "v", name: "b.pdf", mime: "application/pdf" }] };
+  assert.deepEqual(bodyOf(wf.nodes.find((n) => n.name === READING)!, hook), {
+    run_id: "r1", status: "progress", step: "reading", kind: "note", detail: "يقرأ 2 ملف",
+  });
+  assert.deepEqual(bodyOf(wf.nodes.find((n) => n.name === DRAFTING)!, hook), { run_id: "r1", status: "progress", step: "drafting", kind: "step" });
+});
+
+test("E6: the JSON a user imports matches the source, for every job", () => {
+  for (const tool of JOBS) {
+    const file = JSON.parse(readFileSync(new URL(`../../../n8n/ai/${tool}.json`, import.meta.url), "utf8"));
+    assert.deepEqual(file, JSON.parse(JSON.stringify(wfOf(tool))), tool);
+  }
+});
+
+test("E6: brief-check carries the progress branches and not S3-11's new report prompt (R34: any time)", () => {
+  const raw = readFileSync(new URL("../../../n8n/ai/brief-check.json", import.meta.url), "utf8");
+  assert.equal(raw.includes(READING), true);
+  assert.doesNotMatch(raw, /dimension/);
 });

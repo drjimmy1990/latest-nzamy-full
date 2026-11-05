@@ -1113,11 +1113,58 @@ function toClauseJobWorkflow(def) {
   };
 }
 
+/**
+ * E6: what the waiting screen hears from a job. Each post is a dead end beside the
+ * main path: nothing reads its output, so `$json` there never changes, and a failed
+ * post (`continueRegularOutput`, no retry, 5 s at most) never touches the run.
+ *
+ * - Execution order v1 runs sibling branches top to bottom, so a post sits above its
+ *   sibling; below it, it would run only after the run's own callback.
+ * - `executeOnce`: contracts-pro reaches its drafting post with one item per clause.
+ * - «reading» goes only on a path that has files. contracts-pro has none, and a case
+ *   job's no-files path has nothing to read.
+ * - One drafting node may have two parents, because a run takes only one of the paths.
+ */
+function progressPost(id, name, position, fields) {
+  return {
+    id, name, type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position,
+    onError: "continueRegularOutput",
+    executeOnce: true,
+    parameters: {
+      method: "POST",
+      url: "={{ $('Webhook').first().json.body.respond.callback_url }}",
+      authentication: "genericCredentialType",
+      genericAuthType: "httpHeaderAuth",
+      sendBody: true,
+      specifyBody: "json",
+      jsonBody: `={{ JSON.stringify({ run_id: $('Webhook').first().json.body.run_id, status: "progress", ${fields} }) }}`,
+      options: { timeout: 5000 },
+    },
+    credentials: { httpHeaderAuth: CREDENTIALS.callback },
+  };
+}
+
+const READING_FIELDS = `step: "reading", kind: "note", detail: "يقرأ " + ($('Webhook').first().json.body.files || []).length + " ملف"`;
+const DRAFTING_FIELDS = `step: "drafting", kind: "step"`;
+
+function withProgressBranches(wf, { readingAfter, draftingAfter }) {
+  const attach = (id, name, parents, fields) => {
+    const position = (node) => wf.nodes.find((n) => n.name === node).position;
+    const parts = parents.map((p) => wf.connections[p].main[0]);
+    const top = Math.min(...parts.flat().map((c) => position(c.node)[1]));
+    wf.nodes.push(progressPost(id, name, [position(parents[0])[0] + 220, top - 160], fields));
+    for (const part of parts) part.push({ node: name, type: "main", index: 0 });
+  };
+  if (readingAfter) attach("p1", "Progress · reading", [readingAfter], READING_FIELDS);
+  attach("p2", "Progress · drafting", draftingAfter, DRAFTING_FIELDS);
+  return wf;
+}
+
 /** The importable n8n workflow for one tool definition. */
 export function toWorkflow(def) {
-  if (def.kind === "docJob") return toDocJobWorkflow(def);
-  if (def.kind === "caseJob") return toCaseJobWorkflow(def);
-  if (def.kind === "clauseJob") return toClauseJobWorkflow(def);
+  if (def.kind === "docJob") return withProgressBranches(toDocJobWorkflow(def), { readingAfter: "Accepted 202", draftingAfter: ["Ready?"] });
+  if (def.kind === "caseJob") return withProgressBranches(toCaseJobWorkflow(def), { readingAfter: "Has files?", draftingAfter: ["Ready?", "Build prompt"] });
+  if (def.kind === "clauseJob") return withProgressBranches(toClauseJobWorkflow(def), { draftingAfter: ["Outline ok?"] });
   return {
     name: def.name,
     nodes: [

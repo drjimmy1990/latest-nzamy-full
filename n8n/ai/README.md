@@ -280,3 +280,14 @@ None of the four tools needs SQL or new server variables. They reuse the inbound
 8. **Who can use them:**
    - **L5:** every account type, on Pro or higher, plus admins.
    - **L3, L4 and L6:** lawyers and firms on Pro or higher, plus admins. This is the library assistant's rule, because the answer quotes paywalled library texts. Whether lawyers below Pro may use it is an owner question.
+
+## Live progress on the job workflows (S2 E6)
+
+Every job workflow posts its stage to the callback URL on a dead-end branch. A failed post never touches the run: `continueRegularOutput`, no retry, 5 s at most. Either the app or the workflow may be updated first: an old app ignores the new fields, and an old workflow sends none.
+
+| Node | Attached to | Posts |
+|---|---|---|
+| `Progress · reading` | `Accepted 202` in a doc job, `Has files?` true in a case job, none in contracts-pro (it has no files) | `step: "reading"`, `kind: "note"`, the file count |
+| `Progress · drafting` | `Ready?` true, plus `Build prompt` in a case job, `Outline ok?` true in contracts-pro | `step: "drafting"`, `kind: "step"` |
+
+Each sits above its sibling on the canvas. Execution order v1 runs sibling branches top to bottom, so a node moved below its sibling would post only after the run's own callback.

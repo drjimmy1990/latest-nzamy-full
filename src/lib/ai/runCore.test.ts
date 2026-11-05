@@ -1321,3 +1321,56 @@ test("E4: nothing protected reaches a log or the progress on any path through th
     assert.ok(reported.length > 0, `${name}: the progress did run`);
   }
 });
+
+// ── E6: progress details from n8n ───────────────────────────────────────────
+
+const E6_RUN = { id: RUN, user_id: "owner-1", tool: "echo-job", status: "running", class: "job", source_ids: {} };
+
+test("E6: a progress callback with detail records a note", async () => {
+  const reported: Reported[] = [];
+  const { client } = db({ run: E6_RUN });
+  const r = await callbackWith(
+    client as never,
+    { run_id: RUN, status: "progress", step: "reading", kind: "note", detail: "يقرأ ٢ ملف" },
+    { progress: collector(reported) },
+  );
+  assert.equal(r.status, 200);
+  assert.deepEqual(reported, [{ runId: RUN, userId: "owner-1", events: [{ kind: "note", label: "يقرأ ٢ ملف" }] }]);
+});
+
+test("E6: without detail the step label is used", async () => {
+  const reported: Reported[] = [];
+  const { client } = db({ run: E6_RUN });
+  await callbackWith(client as never, { run_id: RUN, status: "progress", step: "drafting" }, { progress: collector(reported) });
+  assert.deepEqual(reported[0].events, [{ kind: "step", label: "يكتب الناتج" }]);
+});
+
+test("E6: a strange kind is a step, a detail is cleaned, a blank one falls back to the label", async () => {
+  const reported: Reported[] = [];
+  const { client } = db({ run: E6_RUN });
+  const progress = collector(reported);
+  await callbackWith(client as never, { run_id: RUN, status: "progress", step: "reading", kind: "law", detail: "  سطر\n\tثانٍ " }, { progress });
+  await callbackWith(client as never, { run_id: RUN, status: "progress", step: "reviewing", detail: " \n " }, { progress });
+  await callbackWith(client as never, { run_id: RUN, status: "progress", step: "reading", detail: 42 }, { progress });
+  assert.deepEqual(reported.flatMap((x) => x.events), [
+    { kind: "step", label: "سطر ثانٍ" },
+    { kind: "step", label: "يراجع الناتج" },
+    { kind: "step", label: "يقرأ المستندات" },
+  ]);
+});
+
+test("E6: a bad step, or a post that arrives after the run ended, records nothing and the app still answers", async () => {
+  const reported: Reported[] = [];
+  const progress = collector(reported);
+  const running = db({ run: E6_RUN });
+  assert.equal((await callbackWith(running.client as never, { run_id: RUN, status: "progress", step: "hacking", detail: "x" }, { progress })).status, 400);
+  const ended = db({ run: { ...E6_RUN, status: "succeeded" } });
+  assert.equal((await callbackWith(ended.client as never, { run_id: RUN, status: "progress", step: "drafting", detail: "متأخر" }, { progress })).status, 200);
+  assert.deepEqual(reported, []);
+});
+
+test("E6: an old n8n's bare progress post still moves the step, with no progress sink at all", async () => {
+  const { client, log } = db({ run: E6_RUN });
+  assert.equal((await callbackWith(client as never, { run_id: RUN, status: "progress", step: "reading" })).status, 200);
+  assert.deepEqual(log.find((q) => q.op === "update")!.payload, { progress_step: "reading" });
+});

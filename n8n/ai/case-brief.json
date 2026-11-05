@@ -226,6 +226,66 @@
           "name": "NZAMY AI · callback"
         }
       }
+    },
+    {
+      "id": "p1",
+      "name": "Progress · reading",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        140
+      ],
+      "onError": "continueRegularOutput",
+      "executeOnce": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').first().json.body.respond.callback_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run_id: $('Webhook').first().json.body.run_id, status: \"progress\", step: \"reading\", kind: \"note\", detail: \"يقرأ \" + ($('Webhook').first().json.body.files || []).length + \" ملف\" }) }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "S29iidQ71jpn1rQD",
+          "name": "NZAMY AI · callback"
+        }
+      }
+    },
+    {
+      "id": "p2",
+      "name": "Progress · drafting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        40
+      ],
+      "onError": "continueRegularOutput",
+      "executeOnce": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').first().json.body.respond.callback_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ run_id: $('Webhook').first().json.body.run_id, status: \"progress\", step: \"drafting\", kind: \"step\" }) }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "S29iidQ71jpn1rQD",
+          "name": "NZAMY AI · callback"
+        }
+      }
     }
   ],
   "connections": {
@@ -245,6 +305,11 @@
         [
           {
             "node": "Files",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Progress · reading",
             "type": "main",
             "index": 0
           }
@@ -289,6 +354,11 @@
         [
           {
             "node": "Read",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Progress · drafting",
             "type": "main",
             "index": 0
           }
