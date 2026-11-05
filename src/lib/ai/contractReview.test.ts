@@ -451,3 +451,18 @@ test("the library decides each cited article, not the model: the stored result h
   assert.equal(out.cited, undefined);
   assert.deepEqual((out.citation_check as Array<{ article: number; status: string }>).map((c) => [c.article, c.status]), [[80, "ok"], [999, "not_found"]]);
 });
+
+test("a risk the model wrote differently is normalised: case, spaces, and the three Arabic words; anything else still refuses", () => {
+  const read = (overall: unknown, risk: unknown) =>
+    TOOL.validateOutput(output({ overall_risk: overall, clauses: [clause({ risk })] }), input) as { overall_risk: string; clauses: Array<{ risk: string }> } | null;
+  for (const [written, word] of [["High", "high"], [" MEDIUM ", "medium"], ["low\n", "low"], ["مرتفع", "high"], ["متوسط", "medium"], [" منخفض ", "low"]]) {
+    const r = read(written, written);
+    assert.ok(r, written);
+    assert.equal(r.overall_risk, word, written);
+    assert.equal(r.clauses[0].risk, word, written);
+  }
+  for (const bad of ["critical", "حرج", "", "   ", "high risk", "constructor", "__proto__", null, 1, ["high"]]) {
+    assert.equal(read(bad, "high"), null, `overall ${String(bad)}`);
+    assert.equal(read("high", bad), null, `clause ${String(bad)}`);
+  }
+});

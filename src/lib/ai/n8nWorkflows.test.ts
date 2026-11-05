@@ -817,3 +817,16 @@ test("E6: brief-check carries the progress branches and not S3-11's new report p
   assert.equal(raw.includes(READING), true);
   assert.doesNotMatch(raw, /dimension/);
 });
+
+test("the two contract prompts ask for what their validators keep: no Arabic enum, and caps below the limits", () => {
+  const review = JSON.stringify(def("contract-review"));
+  const negotiator = JSON.stringify(def("contract-negotiator"));
+  for (const prompt of [review, negotiator]) {
+    assert.ok(!prompt.includes("كل القيم بالعربية"), "an enum in Arabic was refused, so the prompt no longer asks for one");
+    assert.ok(prompt.includes("القيم النصية بالعربية"));
+    assert.match(prompt, /وفي summary لخّص[^']*\(حتى ١٥٠٠ حرف\)/, "summary: 3000 at the validator");
+  }
+  assert.match(review, /ref موضعه في العقد كما ورد \(حتى ١٠٠ حرف\)/, "ref: 200 at the validator");
+  assert.ok(review.includes("أما category وrisk وoverall_risk فبالإنجليزية كما وردت"));
+  assert.ok(negotiator.includes("أما risk وstance فبالإنجليزية كما وردت"));
+});

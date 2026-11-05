@@ -344,3 +344,12 @@ test("a cited article the library does not hold is stored as not_found, and the 
   assert.equal(out.cited, undefined);
   assert.deepEqual((out.citation_check as Array<{ article: number; status: string }>).map((c) => [c.article, c.status]), [[80, "ok"], [999, "not_found"]]);
 });
+
+test("a risk the model wrote differently is normalised here too; anything else still refuses", () => {
+  const read = (risk: unknown) =>
+    TOOL.validateOutput(output({ clauses: [clauseOut(0, { risk }), clauseOut(1), clauseOut(2)] }), input) as { clauses: Array<{ risk: string }> } | null;
+  for (const [written, word] of [["High", "high"], [" MEDIUM ", "medium"], ["مرتفع", "high"], ["متوسط", "medium"], ["منخفض", "low"]]) {
+    assert.equal(read(written)?.clauses[0].risk, word, written);
+  }
+  for (const bad of ["critical", "", "constructor", null, 1]) assert.equal(read(bad), null, String(bad));
+});

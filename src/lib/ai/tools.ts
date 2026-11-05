@@ -1056,6 +1056,15 @@ export const CONTRACT_REVIEW_PASTE_MIN = 100;
 /** 15 pages by textPages: a paste this long is priced and capped like the file it replaces. */
 export const CONTRACT_REVIEW_PASTE_MAX = 45_000;
 export const REVIEW_RISKS = ["high", "medium", "low"] as const;
+const REVIEW_RISK_AR: Readonly<Record<string, (typeof REVIEW_RISKS)[number]>> = { "مرتفع": "high", "متوسط": "medium", "منخفض": "low" };
+
+/** The word the model meant: spaces and case aside, and the three Arabic words. Anything else is null, and refuses the run. */
+function reviewRisk(v: unknown): (typeof REVIEW_RISKS)[number] | null {
+  if (typeof v !== "string") return null;
+  const word = v.trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(REVIEW_RISK_AR, word)) return REVIEW_RISK_AR[word];
+  return (REVIEW_RISKS as readonly string[]).includes(word) ? (word as (typeof REVIEW_RISKS)[number]) : null;
+}
 export const REVIEW_CATEGORIES = ["obligations", "payment", "liability", "termination", "dispute", "confidentiality", "ip", "compliance", "other"] as const;
 const CONTRACT_REVIEW_CLAUSES_MAX = 40;
 const CONTRACT_REVIEW_MISSING_MAX = 15;
@@ -1092,7 +1101,9 @@ function contractReviewInput(raw: unknown): InputCheck {
 }
 
 function reviewClause(c: unknown): Record<string, string> | null {
-  if (!isPlainObject(c) || !(REVIEW_RISKS as readonly unknown[]).includes(c.risk)) return null;
+  if (!isPlainObject(c)) return null;
+  const risk = reviewRisk(c.risk);
+  if (!risk) return null;
   const issue = boundedText(c.issue, 1200);
   const ref = optionalField(c.ref, 200);
   const quote = optionalField(c.quote, 600);
@@ -1103,7 +1114,7 @@ function reviewClause(c: unknown): Record<string, string> | null {
     ref: ref ?? "",
     quote: quote ?? "",
     category: oneOf(c.category, REVIEW_CATEGORIES, "other"),
-    risk: c.risk as string,
+    risk,
     issue,
     defensive_edit: defensive ?? "",
     negotiating_edit: negotiating ?? "",
@@ -1118,7 +1129,8 @@ function reviewClause(c: unknown): Record<string, string> | null {
 function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
   if (!isPlainObject(raw) || !Array.isArray(raw.clauses)) return null;
   const summary = boundedText(raw.summary, 3000);
-  if (!summary || !(REVIEW_RISKS as readonly unknown[]).includes(raw.overall_risk)) return null;
+  const overallRisk = reviewRisk(raw.overall_risk);
+  if (!summary || !overallRisk) return null;
   if (raw.clauses.length < 1 || raw.clauses.length > CONTRACT_REVIEW_CLAUSES_MAX) return null;
   const clauses: Array<Record<string, string>> = [];
   for (const c of raw.clauses) {
@@ -1138,7 +1150,7 @@ function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
   }
   const output = {
     summary,
-    overall_risk: raw.overall_risk,
+    overall_risk: overallRisk,
     clauses,
     missing,
     cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
@@ -1187,7 +1199,9 @@ function negotiatorAlternative(a: unknown): Record<string, string> | null {
 
 function negotiatorClause(c: unknown, position: number): Record<string, unknown> | null {
   // The answer to clause N says it is clause N: anything else answers a clause that was not asked.
-  if (!isPlainObject(c) || c.index !== position || !(REVIEW_RISKS as readonly unknown[]).includes(c.risk)) return null;
+  if (!isPlainObject(c) || c.index !== position) return null;
+  const risk = reviewRisk(c.risk);
+  if (!risk) return null;
   const issue = optionalField(c.issue, 1500);
   const fallback = optionalField(c.fallback, 1500);
   if (issue === null || fallback === null) return null;
@@ -1198,7 +1212,7 @@ function negotiatorClause(c: unknown, position: number): Record<string, unknown>
     if (!alternative) return null;
     alternatives.push(alternative);
   }
-  return { index: position, issue: issue ?? "", risk: c.risk, alternatives, fallback: fallback ?? "" };
+  return { index: position, issue: issue ?? "", risk, alternatives, fallback: fallback ?? "" };
 }
 
 /**
