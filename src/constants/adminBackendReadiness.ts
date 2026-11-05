@@ -16,7 +16,7 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     route: "/dashboard/admin/subscriptions/coupons",
     status: "Backend-ready",
     contract: "AdminCoupon",
-    note: "إضافة وتعديل وتعطيل تعمل محلياً، والحفظ الحقيقي ينتظر API الكوبونات.",
+    note: "إضافة وتعديل وتعطيل عبر /api/v1/admin/coupons، مع سجلّ استخدام لكل كوبون.",
   },
   {
     id: "team",
