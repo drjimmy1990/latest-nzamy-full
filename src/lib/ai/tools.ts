@@ -59,6 +59,14 @@ export interface AiToolSpec {
   /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
   filesRequired?: (input: Record<string, unknown>) => boolean;
   /**
+   * The input field the user may paste text into instead of uploading: the text
+   * reaches n8n as one virtual text/plain file (runCore, the link in
+   * fileTextServe.ts), so the tool's workflow does not change. The field stays
+   * in ai_runs.input, because the link reads it there, and is left out of the
+   * package's input, so the text travels once.
+   */
+  pasteAsFile?: { field: string; name: string; maxChars: number };
+  /**
    * Wave 3: the tool reads the user's vault files (aiFiles.ts). The files are
    * checked, counted and signed before the charge, and `price` gets the total
    * `pages`. A tool without this refuses any fileIds.
@@ -396,6 +404,8 @@ function caseBriefOutput(raw: unknown): Record<string, unknown> | null {
 /** L8: one memo, the gaps report (the full revision stays a team order). */
 export const BRIEF_CHECK_PRICE = 200;
 export const BRIEF_CHECK_FILES: FileRules = { max: 1, maxPages: 30, maxBytes: 22 * 1024 * 1024 };
+export const BRIEF_CHECK_PASTE_MIN = 200;
+export const BRIEF_CHECK_PASTE_MAX = 60_000;
 const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
 
 /** L8 مراجعة وتدقيق مذكرة: the client's capacity and the case's frame for the memo's gaps report. */
@@ -444,6 +454,8 @@ function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
 
 export const WAVE4_PRICE = 250;
 export const WAVE4_FILES: FileRules = { max: 6, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
+export const WARGAMING_PASTE_MIN = 50;
+export const WARGAMING_PASTE_MAX = 30_000;
 export const CASE_SUMMARY_MIN = 20;
 export const CASE_SUMMARY_MAX = 6000;
 
@@ -1290,6 +1302,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
     files: BRIEF_CHECK_FILES,
+    pasteAsFile: { field: "memo_text", name: "نص المذكرة (ملصق).txt", maxChars: BRIEF_CHECK_PASTE_MAX },
     validateInput: briefCheckInput,
     validateOutput: briefCheckOutput,
   },
@@ -1306,6 +1319,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
     files: WAVE4_FILES,
+    pasteAsFile: { field: "docs_text", name: "نص المستندات (ملصق).txt", maxChars: WARGAMING_PASTE_MAX },
     validateInput: wargamingInput,
     validateOutput: wargamingOutput,
   },
