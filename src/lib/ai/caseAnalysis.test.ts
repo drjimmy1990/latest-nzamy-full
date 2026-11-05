@@ -129,6 +129,19 @@ test("wargaming input: role, area, a 20+ character summary, known targets; criti
   assert.deepEqual(dropped.ok && [dropped.input.memo_text, dropped.input.memo_in_files], [null, false]);
 });
 
+test("B4: pasted case documents are optional, 50..30,000 characters after trim, refused rather than cut", () => {
+  const v = AI_TOOLS.wargaming.validateInput;
+  assert.deepEqual(v({ ...war, docs_text: "x".repeat(49) }), { ok: false, error: "النص الملصق قصير — الصق المستندات كاملة (٥٠ حرفاً على الأقل)" });
+  assert.deepEqual(v({ ...war, docs_text: "x".repeat(30_001) }), { ok: false, error: "النص الملصق أطول من ٣٠٬٠٠٠ حرف — ارفعه ملفاً" });
+  const fits = v({ ...war, docs_text: ` ${"x".repeat(50)} ` });
+  assert.ok(fits.ok);
+  assert.equal((fits.input.docs_text as string).length, 50);
+  const none = v({ ...war, docs_text: "  " });
+  assert.ok(none.ok);
+  assert.equal("docs_text" in none.input, false, "no paste, no key");
+  assert.deepEqual(AI_TOOLS.wargaming.pasteAsFile, { field: "docs_text", name: "نص المستندات (ملصق).txt", maxChars: 30_000 });
+});
+
 test("wargaming output: points only for the targets asked, no probability field, the plea script only for «plea»", () => {
   const out = AI_TOOLS.wargaming.validateOutput(
     {

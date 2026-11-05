@@ -58,6 +58,8 @@ export interface AiToolSpec {
   checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
   /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
   filesRequired?: (input: Record<string, unknown>) => boolean;
+  /** What `filesRequired` says when the general «مستندات الوقائع» copy would name the wrong thing. */
+  filesRequiredCopy?: string;
   /**
    * The input field the user may paste text into instead of uploading: the text
    * reaches n8n as one virtual text/plain file (runCore, the link in
@@ -403,10 +405,24 @@ function caseBriefOutput(raw: unknown): Record<string, unknown> | null {
 
 /** L8: one memo, the gaps report (the full revision stays a team order). */
 export const BRIEF_CHECK_PRICE = 200;
-export const BRIEF_CHECK_FILES: FileRules = { max: 1, maxPages: 30, maxBytes: 22 * 1024 * 1024 };
+// `optional`: the memo may be pasted instead. filesRequired below still refuses a
+// run with neither, because a doc job with no file never calls back.
+export const BRIEF_CHECK_FILES: FileRules = { max: 1, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
 export const BRIEF_CHECK_PASTE_MIN = 200;
 export const BRIEF_CHECK_PASTE_MAX = 60_000;
 const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
+
+/**
+ * A pasted text (AiToolSpec.pasteAsFile): absent, or within its limits after
+ * trim. Over the limit is refused, never cut: the user sees what was not sent.
+ */
+function pastedText(v: unknown, limits: { min: number; max: number; tooShort: string; tooLong: string }): { text: string | null } | { error: string } {
+  const text = typeof v === "string" ? v.trim() : "";
+  if (!text) return { text: null };
+  if (text.length < limits.min) return { error: limits.tooShort };
+  if (text.length > limits.max) return { error: limits.tooLong };
+  return { text };
+}
 
 /** L8 مراجعة وتدقيق مذكرة: the client's capacity and the case's frame for the memo's gaps report. */
 function briefCheckInput(raw: unknown): InputCheck {
@@ -414,9 +430,22 @@ function briefCheckInput(raw: unknown): InputCheck {
   const capacity = boundedText(raw.client_capacity, 100);
   if (!capacity) return { ok: false, error: "اختر صفة موكّلك" };
   const optional = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+  const memo = pastedText(raw.memo_text, {
+    min: BRIEF_CHECK_PASTE_MIN,
+    max: BRIEF_CHECK_PASTE_MAX,
+    tooShort: "النص الملصق قصير — الصق المذكرة كاملة (٢٠٠ حرف على الأقل)",
+    tooLong: "النص الملصق أطول من ٦٠٬٠٠٠ حرف — ارفعه ملفاً",
+  });
+  if ("error" in memo) return { ok: false, error: memo.error };
   return {
     ok: true,
-    input: { client_capacity: capacity, court: optional(raw.court, 150), case_type: optional(raw.case_type, 150), notes: optional(raw.notes, 2000) },
+    input: {
+      client_capacity: capacity,
+      court: optional(raw.court, 150),
+      case_type: optional(raw.case_type, 150),
+      notes: optional(raw.notes, 2000),
+      ...(memo.text ? { memo_text: memo.text } : {}),
+    },
   };
 }
 
@@ -491,6 +520,13 @@ function wargamingInput(raw: unknown): InputCheck {
   if (targets.includes("critique") && !memoText && !memoInFiles) {
     return { ok: false, error: "«نقض المذكرة» يحتاج نص المذكرة أو ملفها" };
   }
+  const docs = pastedText(raw.docs_text, {
+    min: WARGAMING_PASTE_MIN,
+    max: WARGAMING_PASTE_MAX,
+    tooShort: "النص الملصق قصير — الصق المستندات كاملة (٥٠ حرفاً على الأقل)",
+    tooLong: "النص الملصق أطول من ٣٠٬٠٠٠ حرف — ارفعه ملفاً",
+  });
+  if ("error" in docs) return { ok: false, error: docs.error };
   return {
     ok: true,
     input: {
@@ -500,6 +536,7 @@ function wargamingInput(raw: unknown): InputCheck {
       targets,
       memo_text: targets.includes("critique") ? memoText : null,
       memo_in_files: targets.includes("critique") && memoInFiles,
+      ...(docs.text ? { docs_text: docs.text } : {}),
     },
   };
 }
@@ -1302,6 +1339,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
     files: BRIEF_CHECK_FILES,
+    filesRequired: (input) => !input.memo_text,
+    filesRequiredCopy: "أرفق ملفاً واحداً على الأقل",
     pasteAsFile: { field: "memo_text", name: "نص المذكرة (ملصق).txt", maxChars: BRIEF_CHECK_PASTE_MAX },
     validateInput: briefCheckInput,
     validateOutput: briefCheckOutput,

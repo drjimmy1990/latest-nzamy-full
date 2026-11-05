@@ -6,6 +6,7 @@
  *   startRunWith     the browser's POST /api/v1/ai/runs, after the route has
  *                    signed the user in and refused a frozen account:
  *                      tool → role → Art. 18 → mode → input → key → files
+ *                      → pasted text (its limits, refused here when off)
  *                      → [library tool: the library gate + tier rule]
  *                      → ai_start_run (daily limit + balance + debit, one
  *                        transaction) — or, when the body asks `useCredit`
@@ -36,6 +37,8 @@ import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun } from "../membership/founderPlan.ts";
+import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
+import { textPages } from "./textExtract.ts";
 
 /**
  * Tools whose result the app completes from its own data before storing it.
@@ -94,6 +97,11 @@ export interface StartRunDeps {
   retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
   /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
   resolveFiles?: (userId: string, fileIds: unknown, rules: FileRules) => Promise<FilesCheck>;
+  /**
+   * Pasted text (AiToolSpec.pasteAsFile): the signed link n8n fetches it from.
+   * Absent while NZAMY_AI_TEXT_FILES is off: a paste is then refused, uncharged.
+   */
+  pastedFileUrl?: (runId: string, userId: string, field: string) => string;
   /** The clock for the fast tools' time budget, in ms (tests replace it). */
   clock?: () => number;
 }
@@ -121,6 +129,9 @@ export const AI_COPY = {
   filesRequired: "أرفق مستندات الوقائع أو اكتبها",
   noCredit: "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة",
   creditNotEligible: "هذه الأداة لا تُدفع من رصيد باقة المؤسس",
+  pasteUnavailable: "لصق النص غير متاح بعد — ارفع ملفاً",
+  pasteOrFile: "اختر طريقة واحدة: ملف أو نص ملصق",
+  pastedPages: (n: number) => `عدد الصفحات أكثر من ${n.toLocaleString("ar-SA")} صفحة — قسّم الملفات على طلبين`,
 } as const;
 
 /** The search writer's wait: short, so the answer keeps most of the fast budget. */
@@ -395,8 +406,21 @@ export async function startRunWith(
     files = got.files;
     pages = got.pages;
   }
+  // A pasted text becomes one more file after the run exists (it needs the run
+  // id), so its refusals and its pages are settled here, before the charge.
+  const paste = spec.pasteAsFile && spec.files ? spec.pasteAsFile : null;
+  const pasted = paste && typeof checked.input[paste.field] === "string" ? (checked.input[paste.field] as string) : "";
+  if (paste && pasted) {
+    if (!deps.pastedFileUrl) return { status: 422, body: { error: AI_COPY.pasteUnavailable, code: "paste_unavailable" } };
+    if (files.length + 1 > spec.files!.max) return { status: 422, body: { error: AI_COPY.pasteOrFile, code: "too_many_files" } };
+    const total = (pages ?? 0) + textPages(pasted);
+    if (total > spec.files!.maxPages) {
+      return { status: 422, body: { error: AI_COPY.pastedPages(spec.files!.maxPages), code: "too_many_pages" } };
+    }
+    pages = total;
+  }
   if (spec.filesRequired?.(checked.input) && files.length === 0) {
-    return { status: 422, body: { error: AI_COPY.filesRequired, code: "files_required" } };
+    return { status: 422, body: { error: spec.filesRequiredCopy ?? AI_COPY.filesRequired, code: "files_required" } };
   }
   const price = spec.price(checked.input, { pages, turn });
   const now = deps.now?.() ?? new Date();
@@ -474,6 +498,30 @@ export async function startRunWith(
     ...(conversationId ? { conversationId } : {}),
   };
 
+  // The pasted text's file. p_file_ids above stays attachment ids only.
+  if (paste && pasted) {
+    try {
+      const expiresAt = (deps.now?.() ?? new Date()).getTime() + FILE_TEXT_TTL_MS;
+      files = [
+        ...files,
+        {
+          id: `paste:${paste.field}`,
+          name: paste.name,
+          mime: "text/plain",
+          bytes: new TextEncoder().encode(pasted).length,
+          pages: textPages(pasted),
+          url: deps.pastedFileUrl!(run.run_id, actor.userId, paste.field),
+          url_expires_at: new Date(expiresAt).toISOString(),
+        },
+      ];
+    } catch (err) {
+      // Already charged: an exception would leave the refund to the sweeper.
+      console.error("[ai] signing the pasted text's link failed for", run.run_id, (err as Error)?.name);
+      await failRun(admin, run.run_id, "paste_link_failed", "the pasted text's link could not be signed");
+      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+    }
+  }
+
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
   let pkgSources: PackageSource[] = [];
@@ -535,6 +583,8 @@ export async function startRunWith(
   }
 
   const sync = spec.class === "fast";
+  // A pasted text travels once, as the file; ai_runs.input keeps it for the link.
+  const pkgInput = paste ? Object.fromEntries(Object.entries(checked.input).filter(([k]) => k !== paste.field)) : checked.input;
   const pkg = {
     v: 1,
     run_id: run.run_id,
@@ -548,7 +598,7 @@ export async function startRunWith(
       practice_kind: actor.practiceKind,
       display_name: spec.sendsDisplayName ? actor.displayName : null,
     },
-    input: checked.input,
+    input: pkgInput,
     sources: pkgSources,
     case: null,
     history,

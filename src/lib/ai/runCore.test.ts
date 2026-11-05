@@ -7,8 +7,14 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { AI_COPY, callbackWith, mapCitations, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
+import { resolveAiFiles } from "./aiFiles.ts";
+import { serveFileText } from "./fileTextServe.ts";
+import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
+import { pastedFileUrlFrom } from "./textFilesConfig.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
 import { resolveToolRuntime, aiToolsSettingIssue, effectiveToolMode, REVIEW_MODE_REFUSED_AR } from "./aiToolsConfig.ts";
 import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
@@ -592,4 +598,223 @@ test("founder: no credit left → 402 with the Arabic message; not eligible → 
   const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "appeal" })));
   assert.equal(r.body.error, "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة");
   assert.equal(r.body.error, AI_COPY.noCredit);
+});
+
+// ── B4: pasted text travels as one virtual text file ─────────────────────────
+
+const PASTE_ON = { "brief-check": { mode: "live" }, wargaming: { mode: "live" } };
+const PASTED_MEMO = "م".repeat(300);
+const WAR_INPUT = { role: "plaintiff", area: "عمالي", case_summary: "فُصل الموظف بعد سبع سنوات دون إنذار ودون صرف مستحقاته", targets: ["opponent"] };
+const REAL_FILE = { id: "37", name: "ملف.pdf", mime: "application/pdf", bytes: 10, pages: 2, url: "https://s/f", url_expires_at: "2026-11-05T00:15:00.000Z" };
+
+function pasteDeps(over: Partial<StartRunDeps> = {}, seen: Array<{ body: Record<string, unknown> }> = []): StartRunDeps {
+  return {
+    callbackUrl: "https://app.test/api/v1/ai/callback",
+    n8n: async (call) => {
+      seen.push(call as never);
+      return { kind: "accepted" };
+    },
+    resolveFiles: async () => ({ ok: true, files: [REAL_FILE], pages: 2 }),
+    pastedFileUrl: (r, _u, f) => `https://s/t/${r}/${f}`,
+    ...over,
+  };
+}
+const briefBody = (input: Record<string, unknown> = { client_capacity: "مدعٍ", memo_text: PASTED_MEMO }, over: Record<string, unknown> = {}) => ({
+  tool: "brief-check",
+  input,
+  fileIds: [],
+  idempotencyKey: "key-abcdef01",
+  ...over,
+});
+const warBody = (input: Record<string, unknown>, over: Record<string, unknown> = {}) => ({ tool: "wargaming", input, idempotencyKey: "key-abcdef01", ...over });
+
+test("B4: a pasted memo is sent as one text file and left out of the package input", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  const now = new Date("2026-11-05T10:00:00Z");
+  const r = await startRunWith(client as never, pasteDeps({ now: () => now }, seen), LAWYER, briefBody());
+  assert.equal(r.status, 202);
+  const pkg = seen[0].body as { files: Array<Record<string, unknown>>; input: Record<string, unknown> };
+  assert.equal(pkg.files.length, 1);
+  assert.deepEqual(pkg.files[0], {
+    id: "paste:memo_text",
+    name: "نص المذكرة (ملصق).txt",
+    mime: "text/plain",
+    bytes: new TextEncoder().encode(PASTED_MEMO).length,
+    pages: 1,
+    url: `https://s/t/${RUN}/memo_text`,
+    url_expires_at: new Date(now.getTime() + FILE_TEXT_TTL_MS).toISOString(),
+  });
+  assert.equal("memo_text" in pkg.input, false, "the text travels once, as the file");
+  assert.equal(pkg.input.client_capacity, "مدعٍ");
+  const start = log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>;
+  assert.equal((start.p_input as Record<string, unknown>).memo_text, PASTED_MEMO, "the link reads it from ai_runs.input");
+  assert.deepEqual(start.p_file_ids, [], "a virtual file is not an attachment id");
+  assert.equal(start.p_pages, 1);
+  assert.equal(JSON.stringify(r.body).includes("https://s/t/"), false, "the link never reaches the browser");
+});
+
+test("B4: no pastedFileUrl (the flag off) → 422 paste_unavailable, nothing charged, n8n not called", async () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["brief-check", briefBody()],
+    ["wargaming", warBody({ ...WAR_INPUT, docs_text: "و".repeat(60) })],
+  ];
+  for (const [name, b] of cases) {
+    const { client, log } = db({ setting: PASTE_ON });
+    const seen: Array<{ body: Record<string, unknown> }> = [];
+    const r = await startRunWith(client as never, pasteDeps({ pastedFileUrl: undefined }, seen), LAWYER, b);
+    assert.equal(r.status, 422, name);
+    assert.equal(r.body.code, "paste_unavailable", name);
+    assert.equal(r.body.error, "لصق النص غير متاح بعد — ارفع ملفاً", name);
+    assert.deepEqual(rpcs(log), [], `${name}: no money function ran`);
+    assert.equal(seen.length, 0, `${name}: n8n was not called`);
+  }
+});
+
+test("B4: the flag off refuses a .docx through the real file check, nothing charged", async () => {
+  const { client, log } = fakeDb((q: FakeQuery) => {
+    if (q.table === "platform_settings") return { data: { value: PASTE_ON } };
+    if (q.table === "attachments") {
+      return { data: [{ id: 37, file_name: "مذكرة.docx", storage_path: "u-1/37.docx", mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size_bytes: 10 }] };
+    }
+    return {};
+  });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  const deps = pasteDeps({ pastedFileUrl: undefined, resolveFiles: (userId, ids, rules) => resolveAiFiles(client, userId, ids, rules) }, seen);
+  const r = await startRunWith(client as never, deps, LAWYER, briefBody({ client_capacity: "مدعٍ" }, { fileIds: [37] }));
+  assert.equal(r.status, 422);
+  assert.equal(r.body.code, "file_type");
+  assert.deepEqual(rpcs(log), []);
+  assert.equal(seen.length, 0);
+});
+
+test("B4: a file and a pasted memo together → 422 too_many_files, nothing charged", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const r = await startRunWith(client as never, pasteDeps(), LAWYER, briefBody(undefined, { fileIds: [37] }));
+  assert.equal(r.status, 422);
+  assert.equal(r.body.code, "too_many_files");
+  assert.equal(r.body.error, "اختر طريقة واحدة: ملف أو نص ملصق");
+  assert.deepEqual(rpcs(log), []);
+});
+
+test("B4: brief-check with neither a file nor a memo is refused uncharged, or n8n would never call back", async () => {
+  for (const over of [{}, { pastedFileUrl: undefined }]) {
+    const { client, log } = db({ setting: PASTE_ON });
+    const seen: Array<{ body: Record<string, unknown> }> = [];
+    const r = await startRunWith(client as never, pasteDeps(over, seen), LAWYER, briefBody({ client_capacity: "مدعٍ" }));
+    assert.equal(r.status, 422);
+    assert.equal(r.body.code, "files_required");
+    assert.equal(r.body.error, "أرفق ملفاً واحداً على الأقل");
+    assert.deepEqual(rpcs(log), []);
+    assert.equal(seen.length, 0);
+  }
+});
+
+test("B4: brief-check with an uploaded memo is unchanged", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  const r = await startRunWith(client as never, pasteDeps({ pastedFileUrl: undefined }, seen), LAWYER, briefBody({ client_capacity: "مدعٍ" }, { fileIds: [37] }));
+  assert.equal(r.status, 202);
+  assert.deepEqual((seen[0].body as { files: unknown[] }).files, [REAL_FILE]);
+  const start = log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>;
+  assert.deepEqual(start.p_file_ids, ["37"]);
+  assert.equal(start.p_pages, 2);
+});
+
+test("B4: wargaming's pasted documents join its files, and the pages add up", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  const docs = "و".repeat(3001);
+  const r = await startRunWith(client as never, pasteDeps({}, seen), LAWYER, warBody({ ...WAR_INPUT, docs_text: docs }, { fileIds: [37] }));
+  assert.equal(r.status, 202);
+  const pkg = seen[0].body as { files: Array<{ id: string; pages: number }>; input: Record<string, unknown> };
+  assert.deepEqual(pkg.files.map((f) => [f.id, f.pages]), [["37", 2], ["paste:docs_text", 2]]);
+  assert.equal("docs_text" in pkg.input, false);
+  const start = log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>;
+  assert.equal(start.p_pages, 4);
+  assert.deepEqual(start.p_file_ids, ["37"]);
+});
+
+test("B4: wargaming with no paste needs no link and sends no file", async () => {
+  const { client } = db({ setting: PASTE_ON });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  const r = await startRunWith(client as never, pasteDeps({ pastedFileUrl: undefined }, seen), LAWYER, warBody(WAR_INPUT));
+  assert.equal(r.status, 202);
+  assert.deepEqual((seen[0].body as { files: unknown[] }).files, []);
+});
+
+test("B4: pasted pages over the tool's cap → 422 too_many_pages, nothing charged", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const deps = pasteDeps({ resolveFiles: async () => ({ ok: true, files: [REAL_FILE], pages: 30 }) });
+  const r = await startRunWith(client as never, deps, LAWYER, warBody({ ...WAR_INPUT, docs_text: "و".repeat(60) }, { fileIds: [37] }));
+  assert.equal(r.status, 422);
+  assert.equal(r.body.code, "too_many_pages");
+  assert.deepEqual(rpcs(log), []);
+});
+
+test("B4: more files than the tool takes, once the paste is counted → 422 too_many_files, nothing charged", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const six = Array.from({ length: 6 }, (_, i) => ({ ...REAL_FILE, id: String(i + 1), pages: 1 }));
+  const deps = pasteDeps({ resolveFiles: async () => ({ ok: true, files: six, pages: 6 }) });
+  const r = await startRunWith(client as never, deps, LAWYER, warBody({ ...WAR_INPUT, docs_text: "و".repeat(60) }, { fileIds: [1, 2, 3, 4, 5, 6] }));
+  assert.equal(r.status, 422);
+  assert.equal(r.body.code, "too_many_files");
+  assert.deepEqual(rpcs(log), []);
+});
+
+test("B4: a link that cannot be signed after the charge refunds the run; n8n is not called", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  const logged = console.error;
+  console.error = () => {};
+  try {
+    const deps = pasteDeps({ pastedFileUrl: () => { throw new Error("no secret"); } }, seen);
+    const r = await startRunWith(client as never, deps, LAWYER, briefBody());
+    assert.equal(r.status, 502);
+    assert.equal(r.body.code, "tool_failed");
+    assert.equal(r.body.runId, RUN);
+  } finally {
+    console.error = logged;
+  }
+  assert.deepEqual(rpcs(log), ["ai_start_run", "ai_fail_run"]);
+  assert.equal(seen.length, 0);
+});
+
+test("B4: n8n unreachable after a paste refunds the run once", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const deps = pasteDeps({ n8n: async () => ({ kind: "failed", code: "n8n_unreachable", detail: "down" }) });
+  const r = await startRunWith(client as never, deps, LAWYER, briefBody());
+  assert.equal(r.status, 502);
+  assert.deepEqual(rpcs(log), ["ai_start_run", "ai_fail_run"]);
+});
+
+test("B4: a repeated request is the duplicate reply: no second charge and no link signed", async () => {
+  const { client } = db({ setting: PASTE_ON, start: { data: [{ run_id: RUN, created: false, status: "running", charged: true, charged_points: 200 }] } });
+  let signed = 0;
+  const r = await startRunWith(client as never, pasteDeps({ pastedFileUrl: () => (signed++, "x") }), LAWYER, briefBody());
+  assert.equal(r.status, 409);
+  assert.equal(signed, 0);
+});
+
+test("B4: the whole way — the link runCore sends serves the pasted text, and only while the run runs", async () => {
+  const option = { secret: "test-secret-not-a-real-key", baseUrl: "https://site.test" };
+  const { client, log } = db({ setting: PASTE_ON });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  await startRunWith(client as never, pasteDeps({ pastedFileUrl: pastedFileUrlFrom(option) }, seen), LAWYER, briefBody());
+  const url = (seen[0].body as { files: Array<{ url: string }> }).files[0].url;
+  assert.ok(url.startsWith("https://site.test/api/v1/ai/file-text/"));
+  const token = url.split("/").at(-1)!;
+  const stored = (log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_input;
+  const reader = (status: string) =>
+    fakeDb((q) => (q.table === "ai_runs" ? { data: { tool: "brief-check", status, input: stored } } : {})).client;
+  const opts = { secret: option.secret, now: Date.now() };
+  assert.deepEqual(await serveFileText(reader("running"), token, opts), { status: 200, text: PASTED_MEMO });
+  assert.deepEqual(await serveFileText(reader("succeeded"), token, opts), { status: 404 });
+  assert.deepEqual(await serveFileText(reader("running"), token, { secret: option.secret, now: Date.now() + FILE_TEXT_TTL_MS + 1000 }), { status: 404 });
+});
+
+test("the runs route: the paste link is passed only under the same flag as the file text", () => {
+  const route = readFileSync(join(process.cwd(), "src", "app", "api", "v1", "ai", "runs", "route.ts"), "utf8");
+  assert.match(route, /\.\.\.\(textFiles \? \{ pastedFileUrl: pastedFileUrlFrom\(textFiles\) \} : \{\}\)/);
+  assert.equal(route.match(/pastedFileUrl:/g)?.length, 1, "no other way in");
 });

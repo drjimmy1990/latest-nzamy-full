@@ -7,8 +7,10 @@
  * The route passes the variables one by one, because Next inlines
  * NEXT_PUBLIC_SITE_URL only where it is written out in full.
  *
- * Pure and import-free, so `node --test` runs it.
+ * Pure: node:crypto through fileTextToken.ts only, so `node --test` runs it.
+ * Server code only.
  */
+import { FILE_TEXT_TTL_MS, signFileTextToken } from "./fileTextToken.ts";
 
 export interface TextFilesOption {
   secret: string;
@@ -28,4 +30,10 @@ export function aiTextFilesConfig(env: {
 /** The link n8n downloads a text from. */
 export function fileTextUrl(baseUrl: string, token: string): string {
   return `${baseUrl}/api/v1/ai/file-text/${token}`;
+}
+
+/** runCore's StartRunDeps.pastedFileUrl: a signed link to one run's pasted field. */
+export function pastedFileUrlFrom(option: TextFilesOption, now: () => number = Date.now) {
+  return (runId: string, userId: string, field: string): string =>
+    fileTextUrl(option.baseUrl, signFileTextToken({ r: runId, f: field, u: userId, e: now() + FILE_TEXT_TTL_MS }, option.secret));
 }
