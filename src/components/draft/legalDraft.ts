@@ -10,6 +10,9 @@
  * Pure: `node --test` runs it.
  */
 import type { CitationVerdict } from "@/components/ai/CitationCheckList";
+import { stripCitationMarkers } from "../../lib/ai/citationMarkers.ts";
+import { documentParagraphs } from "../../lib/docx/exportPolicy.ts";
+import type { DocBlock } from "../../lib/docx/ooxml.ts";
 
 export const FACTS_MIN = 30;
 
@@ -49,7 +52,7 @@ const strings = (v: unknown): string[] =>
 
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 
-const stripMarkers = (t: string) => t.replace(/\s?\[S\d{1,3}\]/g, "");
+const stripMarkers = stripCitationMarkers;
 
 /** The analysis run's input. Typed facts too short count as "in the files" when there are files to read. */
 export function analysisInput(w: WizardFacts): Record<string, unknown> {
@@ -144,12 +147,24 @@ export function pleadingText(p: Pleading): string {
   return parts.join("\n\n");
 }
 
+/** The pleading for the letterhead export (q345): no source markers anywhere. */
+export function pleadingBlocks(p: Pleading): DocBlock[] {
+  const blocks: DocBlock[] = [{ kind: "title", text: stripMarkers(p.title).trim() }];
+  for (const s of p.sections) {
+    blocks.push({ kind: "heading", text: stripMarkers(s.heading).trim() }, ...documentParagraphs(s.body));
+  }
+  if (p.requests.length > 0) {
+    blocks.push({ kind: "heading", text: "الطلبات" }, { kind: "list", ordered: true, items: p.requests.map((r) => stripMarkers(r).trim()) });
+  }
+  return blocks;
+}
+
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
  * The pleading as a Word document: HTML that Word opens as a .doc, right to
- * left, one heading per section. No letterhead — that is the firm's own
- * export (not built here).
+ * left, one heading per section. No letterhead: pleadingBlocks is the
+ * letterhead's export (q345). This stays for those who have no letterhead.
  */
 export function pleadingWordHtml(p: Pleading): string {
   const para = (t: string) => esc(t).split(/\n+/).map((l) => `<p>${l}</p>`).join("");

@@ -16,9 +16,8 @@
  * NO LETTER EDITOR (owner note 09 §٢-ثانياً, NOTE-09-C03/C04): the «الخطاب»
  * section (date / to / subject / body / signature, never saved) is gone. This
  * page sets up the identity and prints the letterhead BLANK; letters are
- * written in the platform's document tools. Those tools do not adopt the
- * sheet yet (Letterhead.tsx lists the candidates) — that wiring lives in
- * src/app/ai/* and is recorded as open in the 2026-10-30 ledger.
+ * written in the platform's document tools. The AI drafter, the legal opinion
+ * and contract pro export onto this identity (q345, LetterheadExportBar).
  *
  * PRINT: «طباعة الورق فارغاً / حفظ PDF» opens the browser's print dialog; what
  * prints is a second, blank copy of the sheet portalled straight under <body>,
@@ -396,7 +395,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
             <h3 className={`text-[14px] font-bold ${tp}`}>أين أكتب الخطاب؟</h3>
             <p className={`text-[12px] leading-6 ${ts}`}>
               هذه الصفحة لإعداد الهوية وطباعة الورق المروّس فارغاً فقط. تُكتب الخطابات والمذكرات والآراء في أدوات المستندات بالمنصة؛
-              ولا تطبّق تلك الأدوات هذه الهوية تلقائياً بعد — اطبع الورق فارغاً هنا أو استعمل قالبك المرفوع إلى أن يُفعَّل الربط.
+              وتتيح الصياغة بالذكاء الاصطناعي والرأي القانوني وصياغة العقود تصدير الناتج على هذا الورق، ملف Word أو طباعة PDF. أما بقية الأدوات فاطبع لها الورق فارغاً هنا.
             </p>
           </section>
         </div>

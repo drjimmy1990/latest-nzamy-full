@@ -11,7 +11,13 @@ import type { BrandingOwner, VaultRow } from "../branding/brandingServer.ts";
 import { letterheadPermissionsFor } from "../branding/firmLetterheadPermissions.ts";
 import type { VaultForPrint } from "../branding/vaultForPrint.ts";
 import { exportFileAnswer, parseExportKind, type ExportFileDeps } from "./exportFile.ts";
-import { exportableBlocks, letterheadScopesFor, waitUntil } from "./exportPolicy.ts";
+import { strFromU8, unzipSync } from "fflate";
+import { consultAnswerBlocks, letterDraftBlocks } from "../../app/ai/legal-opinion/_components/aiOpinion.ts";
+import { contractBlocks } from "../../app/ai/contract-drafter/_components/contractDraft.ts";
+import { pleadingBlocks } from "../../components/draft/legalDraft.ts";
+import { documentParagraphs, exportableBlocks, letterheadScopesFor, waitUntil } from "./exportPolicy.ts";
+import { buildLetterheadDocx } from "./letterheadDocx.ts";
+import { assertPackageOpens } from "./packageCheck.testkit.ts";
 
 const read = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
 const FIRM = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -211,4 +217,75 @@ test("fflate and qrcode load only when the person exports", () => {
   assert.ok(bar.includes('import("./exportKit")'));
   assert.ok(!/^import .*exportKit/m.test(bar));
   assert.ok(!/^import .*(fflate|qrcode)/m.test(bar));
+});
+
+test("documentParagraphs: markers out, each line a paragraph, no empties", () => {
+  assert.deepEqual(documentParagraphs("أ [S1]\n\n  ب  \r\n[S2]\n"), [{ kind: "para", text: "أ" }, { kind: "para", text: "ب" }]);
+  assert.deepEqual(documentParagraphs(""), []);
+});
+
+const MARKED = "نص [S1] مع [S22] وأيضاً [S333]";
+const IDENTITY = {
+  nameAr: "مكتب العدل", nameEn: "", licenceLine: null, contacts: [], logoUrl: null, accent: "#C8A762",
+  qr: { kind: "platform" as const, url: "https://nezamy.sa", caption: "امسح", reason: "firm" as const },
+};
+
+test("from each tool to the file: the .docx opens and carries no raw citation marker", () => {
+  const documents = [
+    pleadingBlocks({ title: MARKED, sections: [{ heading: MARKED, body: MARKED }], requests: [MARKED], citation_check: [] }),
+    consultAnswerBlocks({ summary: MARKED, sections: [{ heading: MARKED, body: MARKED }] }),
+    letterDraftBlocks({ title: MARKED, body: MARKED, citation_check: [] }),
+    contractBlocks({ title: MARKED, preamble: MARKED, sections: [{ heading: MARKED, body: MARKED }], citation_check: [] }),
+  ];
+  for (const blocks of documents) {
+    const files = assertPackageOpens(buildLetterheadDocx({ blocks: exportableBlocks(blocks), identity: IDENTITY }).bytes);
+    assert.ok(strFromU8(files["word/document.xml"]).includes("مع"));
+    for (const name of Object.keys(files)) {
+      if (name.endsWith(".xml")) assert.ok(!/\[S\d/.test(strFromU8(files[name])), name);
+    }
+  }
+});
+
+test("the wall holds even for a block a tool's helper left raw", () => {
+  const raw = [{ kind: "para" as const, text: MARKED }, { kind: "list" as const, ordered: false, items: [MARKED] }];
+  const files = unzipSync(buildLetterheadDocx({ blocks: exportableBlocks(raw), identity: IDENTITY }).bytes);
+  assert.ok(!/\[S\d/.test(strFromU8(files["word/document.xml"])));
+});
+
+test("the print document shows only what the wall passed", () => {
+  const bar = read("src/components/letterhead/LetterheadExportBar.tsx");
+  assert.ok(/<LetterheadPrintDocument[^>]*blocks=\{safe\}/.test(bar));
+  assert.ok(!bar.includes("blocks={blocks}"));
+});
+
+const TOOLS: [string, RegExp][] = [
+  ["src/components/draft/steps/StepAiDraft.tsx", /<LetterheadExportBar title=\{pleading\.title\} blocks=\{pleadingBlocks\(pleading\)\}/],
+  ["src/app/ai/legal-opinion/_components/AiOpinionPanel.tsx", /<LetterheadExportBar[\s\S]{0,200}consultAnswerBlocks\(answer\)[\s\S]{0,100}letterDraftBlocks\(letter\)/],
+  ["src/app/ai/contract-drafter/_components/StepContractResult.tsx", /aiDraft && \([\s\S]{0,80}<LetterheadExportBar[\s\S]{0,120}contractBlocks\(aiDraft\.draft\)/],
+];
+
+test("the three live tools mount the bar, and keep the actions they had", () => {
+  for (const [path, mount] of TOOLS) assert.ok(mount.test(read(path)), path);
+  const step = read("src/components/draft/steps/StepAiDraft.tsx");
+  assert.ok(step.includes("downloadWord"), "the plain Word button stays for everyone else");
+  assert.ok(step.includes("<AiResultActions"));
+  assert.ok(read("src/app/ai/legal-opinion/_components/AiOpinionPanel.tsx").includes("<AiResultActions"));
+  assert.ok(read("src/app/ai/contract-drafter/_components/StepContractResult.tsx").includes("<AiResultActions"));
+  assert.ok(read("src/app/ai/contract-drafter/page.tsx").includes("aiDraft={{ citations: draft.citation_check, chargedPoints: run.chargedPoints, draft }}"));
+});
+
+test("no mock surface was wired (section's list)", () => {
+  for (const path of ["src/components/letterhead/LetterheadWorkspace.tsx", "src/components/draft/steps/StepApproval.tsx", "src/components/draft/steps/StepDrafting.tsx"]) {
+    if (existsSync(path)) assert.ok(!read(path).includes("<LetterheadExportBar"), path);
+  }
+});
+
+test("the screens stop saying the tools cannot do this, and keep what is still not done", () => {
+  const panel = read("src/components/letterhead/BrandingAssetsPanel.tsx");
+  assert.ok(!panel.includes("لا تدمج المنصة بعدُ"));
+  assert.ok(panel.includes("لا تطبع المنصة فوق ملف PDF"));
+  assert.ok(panel.includes("الختم والتوقيع"));
+  const workspace = read("src/components/letterhead/LetterheadWorkspace.tsx");
+  assert.ok(!workspace.includes("ولا تطبّق تلك الأدوات هذه الهوية تلقائياً بعد"));
+  assert.ok(!read("src/lib/branding/brandingAssets.ts").includes("does NOT yet\n * merge a document"));
 });

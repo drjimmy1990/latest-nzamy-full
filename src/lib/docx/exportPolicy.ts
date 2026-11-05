@@ -44,6 +44,18 @@ export function exportableBlocks(blocks: DocBlock[]): DocBlock[] {
   return out;
 }
 
+/**
+ * A text from the AI as paragraphs: no source markers, one paragraph per line
+ * (Word stretches a justified line that ends in a line break), none empty.
+ */
+export function documentParagraphs(text: string): DocBlock[] {
+  return stripCitationMarkers(text)
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => ({ kind: "para", text: line }));
+}
+
 /** Resolves when `check` is true or the time is up: printing must never hang on a slow image. */
 export function waitUntil(check: () => boolean, opts: { timeoutMs: number; intervalMs: number }): Promise<boolean> {
   return new Promise((resolve) => {

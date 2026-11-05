@@ -245,7 +245,7 @@ export default function ContractDrafterPage() {
                 onRequestLawyer={() => setStep(5)}
                 ArrowBack={ArrowBack}
                 Arrow={Arrow}
-                aiDraft={{ citations: draft.citation_check, chargedPoints: run.chargedPoints }}
+                aiDraft={{ citations: draft.citation_check, chargedPoints: run.chargedPoints, draft }}
               />
             )}
 

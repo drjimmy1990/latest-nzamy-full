@@ -19,10 +19,11 @@ import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import AiResultActions from "@/components/AiResultActions";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
-  AI_OPINION_TOOL, aiOpinionErrorText, asConsultAnswer, asLetterDraft, consultAnswerText, type AiOpinionKind,
+  AI_OPINION_TOOL, aiOpinionErrorText, asConsultAnswer, asLetterDraft, letterDraftBlocks, consultAnswerBlocks, consultAnswerText, type AiOpinionKind,
 } from "./aiOpinion";
 
 interface Props {
@@ -157,6 +158,11 @@ export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card 
               <ArrowCounterClockwise size={11} />توليد جديد ({price.toLocaleString("ar-SA")} نقطة)
             </button>
           </div>
+          <LetterheadExportBar
+            title={letter ? letter.title : "استشارة قانونية"}
+            blocks={answer ? consultAnswerBlocks(answer) : letter ? letterDraftBlocks(letter) : []}
+            filename={kind === "consult" ? "legal-consultation" : "legal-letter"}
+          />
           <AiResultActions
             text={resultText}
             filename={kind === "consult" ? "legal-consultation" : "legal-letter"}

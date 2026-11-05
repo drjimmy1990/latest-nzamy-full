@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
 import AiResultActions from "@/components/AiResultActions";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import CitationCheckList from "@/components/ai/CitationCheckList";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
@@ -15,7 +16,7 @@ import { DRAFT_KINDS, type DraftKindId } from "@/lib/ai/draftKinds";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { creditKindForRun, founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
-  analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingText, pleadingWordHtml,
+  analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingBlocks, pleadingText, pleadingWordHtml,
   type DraftAnalysis, type WizardFacts,
 } from "@/components/draft/legalDraft";
 import { aiSkippedNote } from "@/components/ai/aiReadable";
@@ -303,6 +304,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
           <p className={`text-[11px] ${muted}`}>
             مسودة يكتبها الذكاء الاصطناعي من الوقائع والدفوع التي اعتمدتها — راجعها قبل تقديمها؛ المسؤولية المهنية عن المذكرة لك.
           </p>
+          <LetterheadExportBar title={pleading.title} blocks={pleadingBlocks(pleading)} filename={spec.label} />
           <div className="flex flex-wrap items-center gap-2">
             <AiResultActions text={written} filename={spec.label} collectorSource="other" />
             <button type="button" onClick={downloadWord}
