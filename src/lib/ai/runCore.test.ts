@@ -91,7 +91,7 @@ test("an admin passes the role check and is exempt from the charge", async () =>
 test("the start call carries the price, the limit and the deadline; the package is complete", async () => {
   const { client, log } = db({ setting: { "echo-fast": { mode: "live", daily_limit: 7 } } });
   const seen: Array<{ path: string; mode: string; body: Record<string, unknown>; timeoutMs: number }> = [];
-  const r = await startRunWith(client as never, deps(okReply(), seen as never), LAWYER, body());
+  const r = await startRunWith(client as never, { ...deps(okReply(), seen as never), clock: () => 0 }, LAWYER, body());
   assert.equal(r.status, 200);
   const p = log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>;
   assert.equal(p.p_price, 1);
