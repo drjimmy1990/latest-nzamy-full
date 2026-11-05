@@ -15,9 +15,11 @@ export const DOCX_EXPORT_FAILED_AR = "تعذّر إنشاء ملف Word — ان
 
 const LOGO_MAX_SIDE = 1600;
 const QR_PIXELS = 400;
+/** A stalled download ends in the failure message, never in a spinner that stays. */
+const FILE_TIMEOUT_MS = 20_000;
 
 async function fileBytes(scope: BrandingScope, kind: ExportFileKind): Promise<Blob> {
-  const res = await fetch(`/api/v1/branding/export-file?scope=${scope}&kind=${kind}`, { cache: "no-store" });
+  const res = await fetch(`/api/v1/branding/export-file?scope=${scope}&kind=${kind}`, { cache: "no-store", signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
   if (!res.ok) throw new Error(kind);
   return res.blob();
 }

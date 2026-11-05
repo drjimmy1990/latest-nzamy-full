@@ -289,3 +289,12 @@ test("the screens stop saying the tools cannot do this, and keep what is still n
   assert.ok(!workspace.includes("ولا تطبّق تلك الأدوات هذه الهوية تلقائياً بعد"));
   assert.ok(!read("src/lib/branding/brandingAssets.ts").includes("does NOT yet\n * merge a document"));
 });
+
+test("neither export can hang: the file fetch has a deadline, and a print that never reports back can be repeated", () => {
+  assert.ok(read("src/components/letterhead/exportKit.ts").includes("AbortSignal.timeout(FILE_TIMEOUT_MS)"));
+  const bar = read("src/components/letterhead/LetterheadExportBar.tsx");
+  assert.ok(bar.includes("key={printRun}"));
+  assert.ok(!/disabled=\{[^}]*printRun/.test(bar));
+  const doc = read("src/components/letterhead/LetterheadPrintDocument.tsx");
+  assert.ok(doc.includes("waitUntil(") && doc.includes("READY_TIMEOUT_MS"));
+});

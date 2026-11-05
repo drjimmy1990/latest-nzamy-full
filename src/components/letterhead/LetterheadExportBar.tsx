@@ -39,7 +39,8 @@ function ExportButtons({ scope, scopes, onScope, title, blocks, filename }: BarP
   const identity = identityFor();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [printing, setPrinting] = useState(false);
+  // A count, not a flag: some browsers never fire afterprint, and the next click must still print.
+  const [printRun, setPrintRun] = useState(0);
   const safe = useMemo(() => exportableBlocks(blocks), [blocks]);
 
   // No print permission, or no firm: nothing to offer.
@@ -81,7 +82,7 @@ function ExportButtons({ scope, scopes, onScope, title, blocks, filename }: BarP
         <button type="button" onClick={() => void downloadWord()} disabled={disabled || busy} className={button}>
           {busy ? <SpinnerGap size={14} className="animate-spin" /> : <FileDoc size={14} />} Word على الورق الرسمي (.docx)
         </button>
-        <button type="button" onClick={() => setPrinting(true)} disabled={disabled || printing} className={button}>
+        <button type="button" onClick={() => setPrintRun((n) => n + 1)} disabled={disabled} className={button}>
           <Printer size={14} /> طباعة / حفظ PDF على الورق الرسمي
         </button>
       </div>
@@ -92,8 +93,8 @@ function ExportButtons({ scope, scopes, onScope, title, blocks, filename }: BarP
         <p className={`flex items-center gap-1 text-[11px] ${muted}`}><Info size={12} /> ملف PDF المرفوع لا يُدمج؛ تُطبع ترويسة الهوية</p>
       )}
       {message && <p className={`flex items-center gap-1 text-[11px] ${muted}`} role="status"><Warning size={12} /> {message}</p>}
-      {printing && identity && (
-        <LetterheadPrintDocument identity={identity} blocks={safe} title={title} onDone={() => setPrinting(false)} />
+      {printRun > 0 && identity && (
+        <LetterheadPrintDocument key={printRun} identity={identity} blocks={safe} title={title} onDone={() => setPrintRun(0)} />
       )}
     </div>
   );
