@@ -228,3 +228,14 @@ test("N2.5: the owner loader never sends the generated sort key (a generated col
   const laws = loader.match(/name: "laws",[\s\S]*?stripKeys: \[([^\]]*)\]/)?.[1] ?? "";
   for (const key of ["summary_brief", "catalogue_recency_key"]) assert.match(laws, new RegExp(`"${key}"`));
 });
+
+test("S5-B12: the successor read is one counted request, with the full walk behind it", () => {
+  const start = source.indexOf("let successorRows");
+  const end = source.indexOf("const successors = successorsBySupersededSlug");
+  assert.ok(start > 0 && end > start, "the successor block moved");
+  const block = source.slice(start, end);
+  assert.match(block, /readSuccessorRows\(/);
+  assert.match(block, /count: "exact"/);
+  assert.match(block, /\.range\(0, 999\)/);
+  assert.match(block, /selectAllPages</, "the walk stays behind it for a larger set");
+});
