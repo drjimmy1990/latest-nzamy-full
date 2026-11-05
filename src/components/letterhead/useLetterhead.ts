@@ -19,6 +19,10 @@ export interface LetterheadData extends BrandingResponse {
   role: string | null;
   /** Owner ٣١٥: what this caller may do — from the server, never recomputed here. */
   permissions?: LetterheadPermissions;
+  /** q345: the office's Word template (signed, 10 minutes), or null when none. */
+  letterheadDocxUrl?: string | null;
+  /** q345: the office uploaded a full-page PDF letterhead, which is never merged. */
+  hasLetterheadPdf?: boolean;
 }
 
 export type LetterheadState =

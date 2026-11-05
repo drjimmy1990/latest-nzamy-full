@@ -178,3 +178,13 @@ test("GET reads the vault through the print path (q344, R32), with no print kit"
   assert.ok(!server.includes("firm_member_permissions"));
   assert.ok(get.indexOf("denied") < get.indexOf("createSignedUrl"), "no signing before the print gate answered");
 });
+
+test("GET adds the Word template, signed only after the print read (q345)", () => {
+  const get = handler(main, "GET");
+  assert.ok(get.includes("letterheadDocxUrl"));
+  assert.ok(get.includes("hasLetterheadPdf"));
+  const read = get.indexOf("readVaultForPrint(supabase, owner)");
+  const sign = get.indexOf("createSignedUrl(docxPath, 600)");
+  assert.ok(read > 0 && sign > read, "signed for 600 s, after readVaultForPrint");
+  assert.ok(get.includes("if (docxPath)"), "no template, no URL");
+});

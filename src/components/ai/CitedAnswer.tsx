@@ -27,7 +27,7 @@ export function asCitations(raw: unknown): Citation[] {
 }
 
 /** The text without its markers, for copying. */
-export const stripCitationMarkers = (text: string) => text.replace(/\s?\[S\d{1,3}\]/g, "");
+export { stripCitationMarkers } from "@/lib/ai/citationMarkers";
 
 export function CitedText({ text, cites, isDark, className = "" }: { text: string; cites: Citation[]; isDark: boolean; className?: string }) {
   const bySid = new Map(cites.map((c, i) => [c.sid, { ...c, n: i + 1 }]));

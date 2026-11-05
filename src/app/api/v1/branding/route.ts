@@ -10,6 +10,7 @@ import {
   validateBrandingFields,
   type BrandingFields,
 } from "@/lib/branding/brandingVault";
+import { BRANDING_FILES_BUCKET } from "@/lib/branding/brandingAssets";
 import { readOwnVault, readVaultForPrint, resolveBrandingCaller, type VaultRow } from "@/lib/branding/brandingServer";
 import { base32Token, resolveLawyerVerifyCard, type VerifyCardState } from "@/lib/branding/verifyCard";
 
@@ -113,7 +114,7 @@ export async function GET(request: NextRequest) {
     licence = { number: verified ? ((f?.license_number as string | null) || null) : null, verified };
   }
 
-  const { row, error, denied } = await readVaultForPrint(supabase, owner);
+  const { row, error, denied, docxPath, hasPdf } = await readVaultForPrint(supabase, owner);
   if (denied) {
     return NextResponse.json({ error: "لا تملك صلاحية طباعة هذا الورق المروّس" }, { status: 403, headers: NO_STORE });
   }
@@ -133,6 +134,13 @@ export async function GET(request: NextRequest) {
   if (row?.logo_path && isOwnLogoPath(row.logo_path, owner.scope, owner.ownerId)) {
     const signed = await service.storage.from(BRANDING_BUCKET).createSignedUrl(row.logo_path, 600);
     logoUrl = signed.data?.signedUrl ?? null;
+  }
+
+  // q345: the Word template, signed only for a path the print read vouched for.
+  let letterheadDocxUrl: string | null = null;
+  if (docxPath) {
+    const signed = await service.storage.from(BRANDING_FILES_BUCKET).createSignedUrl(docxPath, 600);
+    letterheadDocxUrl = signed.data?.signedUrl ?? null;
   }
 
   let verifyCard: VerifyCardState | null = null;
@@ -169,6 +177,8 @@ export async function GET(request: NextRequest) {
       defaults,
       hasLogo: !!row?.logo_path,
       logoUrl,
+      letterheadDocxUrl,
+      hasLetterheadPdf: hasPdf,
       licence,
       profile,
       verifyCard,

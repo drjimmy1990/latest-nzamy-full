@@ -139,8 +139,8 @@ export function generatedHeaderXml(
     const { cx, cy } = logoExtent(logoSize);
     paragraphs.push(centred(inlineImage(logoRelId, 1, "Logo", cx, cy)));
   }
-  paragraphs.push(centred(runXml(identity.nameAr, 32, true)));
-  if (identity.nameEn) paragraphs.push(centred(runXml(identity.nameEn, 22, false, true)));
+  if (identity.nameAr) paragraphs.push(centred(runXml(identity.nameAr, 32, true)));
+  if (identity.nameEn) paragraphs.push(centred(runXml(identity.nameEn, identity.nameAr ? 22 : 32, !identity.nameAr, true)));
   if (identity.licenceLine) paragraphs.push(centred(runXml(identity.licenceLine, 20)));
   const contacts = identity.contacts.map((c) => runXml(c.text, 18, false, c.ltr));
   const separator = runXml(" · ", 18);
