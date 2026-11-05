@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { previewKindOf } from "./previewKind.ts";
 import { previewAttachment, PREVIEW_TEXT_MAX_CHARS, type PreviewClients } from "./previewServe.ts";
 import { READ_LINK_SECONDS } from "./cappedRead.ts";
+import { strToU8, zipSync } from "fflate";
 
 const OWNER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -175,6 +176,18 @@ test("a size lie: an object past the cap answers too_large, as a file recorded t
   assert.deepEqual(await previewAttachment(deps, "7"), { status: 200, body: { kind: "none", name: "m.docx", reason: "too_large" } });
   assert.ok(pulls <= 24, `pulled ${pulls} MB for a cap of 22`);
   assert.equal(cancelled, true);
+});
+
+test("a long .docx keeps the preview's reply: its first 20,000 characters, marked as cut", async () => {
+  const para = `<w:p><w:r><w:t>${"ن".repeat(1000)}</w:t></w:r></w:p>`;
+  const xml = `<w:document xmlns:w="w"><w:body>${para.repeat(500)}</w:body></w:document>`;
+  const row = { ...PDF_ROW, file_name: "m.docx", mime_type: "", storage_path: `${OWNER}/1-m.docx` };
+  const r = await previewAttachment(clients(row, { download: zipSync({ "word/document.xml": strToU8(xml) }) }).deps, "7");
+  assert.equal(r.status, 200);
+  if (r.status === 200 && r.body.kind === "text") {
+    assert.equal(r.body.text.length, PREVIEW_TEXT_MAX_CHARS);
+    assert.equal(r.body.truncated, true);
+  } else assert.fail("expected text");
 });
 
 test("a file that cannot be read says so, with no fake preview", async () => {

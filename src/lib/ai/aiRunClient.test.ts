@@ -525,6 +525,15 @@ test("the server's own refusal stays as written; a credit run's says the credit 
   assertOver(h);
 });
 
+test("a run start refused by the proxy (429 before any charge) is a normal error with nothing left running", async () => {
+  const h = harness(() => json({ error: "طلبات كثيرة — حاول بعد قليل." }, 429, { "Retry-After": "30" }));
+  await h.client.start("contract-review", {});
+  assert.equal(h.last().phase, "error");
+  assert.equal(h.last().error, "طلبات كثيرة — حاول بعد قليل.");
+  assert.equal(h.last().chargedPoints, 0);
+  assertOver(h);
+});
+
 test("the POST sends the key the poll looks for", async () => {
   let body: Record<string, unknown> = {};
   const h = harness((_url, init) => {

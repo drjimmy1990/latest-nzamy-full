@@ -195,6 +195,18 @@ export function isToolStatusRoute(method: string, pathname: string): boolean {
   return (method === "GET" || method === "HEAD") && TOOL_STATUS_RE.test(pathname);
 }
 
+// POST /api/v1/ai/runs may read and unzip up to 22 MB of a caller's files before it
+// charges anything, so a script could spend server CPU for free. Keyed like the
+// tracking buckets (visitor key plus a wider per-IP ceiling), on top of the general
+// write bucket. A 429 here comes before any charge, and every caller shows its error
+// text as any refusal. The exact path only: the polls under it stay free.
+export const AI_RUN_START_RE = /^\/api\/v1\/ai\/runs$/;
+
+/** True for a POST of /api/v1/ai/runs. */
+export function isAiRunStartRoute(method: string, pathname: string): boolean {
+  return method === "POST" && AI_RUN_START_RE.test(pathname);
+}
+
 // GET /api/v1/ai/runs/progress (useAiRun while a POST is in flight): a session
 // check plus up to two service reads, about 40 times a minute per open run. The
 // same arrangement as points-standing: the general policy under its own name, so

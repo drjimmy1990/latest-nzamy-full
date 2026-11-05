@@ -197,3 +197,31 @@ test("extractText: a source over the byte cap is refused before it is read", () 
   assert.deepEqual(extractText("txt", huge), { ok: false, code: "text_too_large" });
   assert.deepEqual(extractText("docx", huge), { ok: false, code: "docx_too_large" });
 });
+
+// ── a hostile .docx: the walk stops once the text passes the most one file may carry ──
+
+test("the walk stops past TEXT_FILE_MAX_CHARS: a long document comes back just over the cap, not whole", () => {
+  const piece = 1000;
+  const r = extractDocxText(docx(para("س".repeat(piece)).repeat(500)));
+  assert.ok(r.ok);
+  assert.ok(r.text.length > TEXT_FILE_MAX_CHARS, "still over the cap, so every caller refuses it as today");
+  assert.ok(r.text.length <= TEXT_FILE_MAX_CHARS + piece + 2, `came back at ${r.text.length}`);
+});
+
+test("blank paragraphs do not count: text that fits once collapsed comes back whole", () => {
+  const blanks = "<w:p></w:p>".repeat(200_000);
+  const half = "س".repeat(TEXT_FILE_MAX_CHARS / 2 - 1);
+  const r = extractDocxText(docx(para(half) + blanks + para(half)));
+  assert.deepEqual(r, { ok: true, text: `${half}\n\n${half}` });
+  assert.equal(r.ok && r.text.length, TEXT_FILE_MAX_CHARS);
+});
+
+test("a run of tabs past the cap, with text after it, is not cut back to the text before it", () => {
+  const r = extractDocxText(docx(`<w:p><w:r><w:t>أ</w:t>${"<w:tab/>".repeat(TEXT_FILE_MAX_CHARS + 10)}<w:t>ب</w:t></w:r></w:p>`));
+  assert.ok(r.ok);
+  assert.equal(r.text.length, TEXT_FILE_MAX_CHARS + 12);
+});
+
+test("a document that is only tabs and blanks stays unreadable, however long", () => {
+  assert.deepEqual(extractDocxText(docx(`<w:p><w:r>${"<w:tab/>".repeat(TEXT_FILE_MAX_CHARS + 10)}</w:r></w:p>`)), { ok: false, code: "docx_unreadable" });
+});

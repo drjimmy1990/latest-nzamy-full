@@ -17,6 +17,7 @@ import {
   isPointsStandingRoute,
   isAiRunProgressRoute,
   isToolStatusRoute,
+  isAiRunStartRoute,
   libraryBudgetBuckets,
   canonicalApiPath,
 } from "./rateLimitRoutes.ts";
@@ -255,6 +256,32 @@ test("proxy: the key poll is in the early-return guard and has its own bucket on
   assert.match(src, /const isAiRunProgressMatch = isAiRunProgressRoute\(method, pathname\);/);
   assert.match(src, /!isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets\.length === 0\n\s*\) return null;/);
   assert.match(src, /if \(isAiRunProgressMatch\) \{\n\s*const decision = rateLimiter\.check\("ai-run-progress", ip, GENERAL_RATE_LIMIT\);/);
+});
+
+test("isAiRunStartRoute: starting a run, POST and the exact path only — never a poll, never the key's progress", () => {
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs"), true);
+  assert.equal(isAiRunStartRoute("GET", "/api/v1/ai/runs"), false);
+  assert.equal(isAiRunStartRoute("HEAD", "/api/v1/ai/runs"), false);
+  assert.equal(isAiRunStartRoute("PUT", "/api/v1/ai/runs"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs/"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs/progress"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs/0b6d0c4e-1111-4222-8333-444455556666"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/callback"), false);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/runs"), true, "it still counts toward the write budget");
+});
+
+test("proxy: a run start is keyed like the per-visitor buckets, with a wider ceiling per IP", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const AI_RUN_START_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 20 \};/);
+  assert.match(src, /const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 200 \};/);
+  assert.match(src, /const isAiRunStartMatch = isAiRunStartRoute\(method, pathname\);/);
+  assert.match(src, /!isAiRunStartMatch &&/);
+  assert.match(
+    src,
+    /if \(isAiRunStartMatch\) \{\n\s*const perIp = rateLimiter\.check\("ai-run-start-ip", ip, AI_RUN_START_IP_RATE_LIMIT\);\n\s*if \(!perIp\.allowed\) return rateLimitResponse\(perIp\);\n\s*const key = libraryReadClientKey\(\(name\) => req\.headers\.get\(name\), ip\);\n\s*const decision = rateLimiter\.check\("ai-run-start", key, AI_RUN_START_RATE_LIMIT\);\n\s*if \(!decision\.allowed\) return rateLimitResponse\(decision\);/,
+  );
 });
 
 test("isGeneralRateLimitedApiPath: n8n's AI callback is exempt, the browser's AI runs route is not", () => {

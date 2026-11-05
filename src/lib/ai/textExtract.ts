@@ -236,13 +236,38 @@ function withoutFallbacks(xml: string): string {
   return kept.join("");
 }
 
+/**
+ * The walk stops once the text is past TEXT_FILE_MAX_CHARS: a hostile document can
+ * hold millions of tiny runs, and no caller keeps more than that. The answer stays
+ * over the cap, so aiFiles refuses it as before and the preview cuts the same first
+ * characters. What counts is the text after the collapse and the trim, so blank
+ * paragraphs or a run of tabs never cut a document that fits: the count here is only
+ * a hint, and the normalized text decides, at doubling intervals to stay linear.
+ */
 function documentText(xml: string): string {
   const out: string[] = [];
+  const normalized = () => out.join("").replace(/\n{3,}/g, "\n\n").trim();
+  let newlines = 0;
+  let length = 0;
+  let nextCheck = TEXT_FILE_MAX_CHARS;
   for (const m of withoutFallbacks(xml).matchAll(DOCX_TOKEN)) {
-    if (m[1] !== undefined) out.push(decodeEntities(m[1]));
-    else out.push(m[2] ? "\t" : "\n");
+    const piece = m[1] !== undefined ? decodeEntities(m[1]) : m[2] ? "\t" : "\n";
+    if (piece === "\n") {
+      // The collapse would drop a third newline in a row.
+      if (newlines >= 2) continue;
+      newlines += 1;
+    } else if (piece) {
+      newlines = 0;
+    }
+    out.push(piece);
+    length += piece.length;
+    if (length > nextCheck) {
+      const text = normalized();
+      if (text.length > TEXT_FILE_MAX_CHARS) return text;
+      nextCheck = length * 2;
+    }
   }
-  return out.join("").replace(/\n{3,}/g, "\n\n").trim();
+  return normalized();
 }
 
 export function extractDocxText(

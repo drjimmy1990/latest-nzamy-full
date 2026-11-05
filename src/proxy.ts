@@ -38,6 +38,7 @@ import {
   isPointsStandingRoute,
   isAiRunProgressRoute,
   isToolStatusRoute,
+  isAiRunStartRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -113,6 +114,12 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 // request: 60 looks per visitor per 10 minutes, wider per proxy-resolved IP.
 const DOCUMENT_PREVIEW_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 60 };
 const DOCUMENT_PREVIEW_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 600 };
+// Starting an AI run (POST /api/v1/ai/runs) may unzip a caller's files before any
+// charge. Every run starts from one click or one chat message, and a chat waits for
+// its answer, so 20 a minute per visitor is above any real screen. Ten times that per
+// proxy-resolved IP, for an office or a shared edge behind one address.
+const AI_RUN_START_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 20 };
+const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 200 };
 // Owner note ١٣ C03 — every library and library-invitation route
 // (src/lib/rateLimitRoutes.ts libraryBudgetBuckets). Per visitor (Cloudflare's
 // CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
@@ -172,12 +179,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isPointsStandingMatch = isPointsStandingRoute(method, pathname);
     const isAiRunProgressMatch = isAiRunProgressRoute(method, pathname);
     const isToolStatusMatch = isToolStatusRoute(method, pathname);
+    const isAiRunStartMatch = isAiRunStartRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
-      !isToolStatusMatch &&
+      !isToolStatusMatch && !isAiRunStartMatch &&
       !isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
@@ -213,6 +221,14 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 
     if (isCouponMatch) {
       const decision = rateLimiter.check("coupon-validate-ip", ip, COUPON_VALIDATE_IP_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isAiRunStartMatch) {
+      const perIp = rateLimiter.check("ai-run-start-ip", ip, AI_RUN_START_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("ai-run-start", key, AI_RUN_START_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

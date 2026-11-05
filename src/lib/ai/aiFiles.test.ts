@@ -352,3 +352,9 @@ test("an object gone from the bucket is the same «missing» answer a failed dow
   const { admin } = fakeAdmin([row(A, "application/pdf")], {});
   assert.deepEqual(await resolveAiFiles(admin as never, "u-1", [A], RULES), { ok: false, error: FILE_COPY.missing, code: "file_not_found" });
 });
+
+test("a .docx past the text cap keeps today's refusal, whichever way the walk ended", async () => {
+  const objects = { "u-1/37.bin": docx("س".repeat(500_000)) };
+  const got = await on(fakeAdmin([row(37, DOCX)], objects).admin, [37]);
+  assert.deepEqual(got, { ok: false, error: FILE_COPY.pages(RULES.maxPages), code: "too_many_pages" });
+});
