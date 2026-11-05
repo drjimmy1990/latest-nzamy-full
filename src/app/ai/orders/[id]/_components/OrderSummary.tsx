@@ -42,6 +42,7 @@ import { DownloadSimple } from "@phosphor-icons/react";
 import type { ServiceOrder } from "@/lib/services/serviceOrders";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { buildSummaryRows, type SummaryValue } from "@/lib/services/intakeValues";
+import PastedContractBlock from "@/components/orders/PastedContractBlock";
 
 function renderSummaryValue(value: SummaryValue, isDark: boolean): ReactNode {
   if (value.kind === "text") return value.text;
@@ -126,7 +127,10 @@ export function OrderSummary({ order, isDark }: { order: ServiceOrder; isDark: b
     : "bg-white border border-zinc-200/70 rounded-2xl";
   const mutedText = isDark ? "text-zinc-400" : "text-zinc-600";
 
-  const rows = buildSummaryRows(order.metadata?.intake ?? {});
+  // A pasted contract gets its own collapsed block below, not a 50,000-character row.
+  const allRows = buildSummaryRows(order.metadata?.intake ?? {});
+  const rows = allRows.filter((r) => r.key !== "contractText");
+  const contractText = order.metadata?.intake?.contractText;
 
   // documentId is typed `string` on OrderAttachment, but that's a TS-level
   // promise only: attachments.id is a Postgres bigserial, and PostgREST
@@ -167,7 +171,7 @@ export function OrderSummary({ order, isDark }: { order: ServiceOrder; isDark: b
     }
   }
 
-  if (rows.length === 0 && attachments.length === 0) return null;
+  if (allRows.length === 0 && attachments.length === 0) return null;
 
   return (
     <div className={`${card} p-5 space-y-4`} dir="rtl">
@@ -187,6 +191,8 @@ export function OrderSummary({ order, isDark }: { order: ServiceOrder; isDark: b
           ))}
         </div>
       )}
+
+      <PastedContractBlock text={contractText} isDark={isDark} />
 
       {attachments.length > 0 && (
         <div className="space-y-1.5 border-t pt-3 border-white/[0.06]">

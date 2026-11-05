@@ -7,6 +7,7 @@ import { uploadDocumentFile } from "@/lib/services/documentService";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { validateUploadFile } from "@/lib/services/fileValidation";
 import { buildOrderPrompt } from "@/lib/services/orderPrompt";
+import PastedContractBlock from "@/components/orders/PastedContractBlock";
 import { ReceiptPanel } from "./_components/ReceiptPanel";
 import { uploadErrorMessage } from "./_errorCopy";
 import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
@@ -1394,6 +1395,8 @@ export default function AdminServiceOrdersPage() {
                 {/* The client's own files had no container of their own — one
                     faint grey line above a list of links, indistinguishable at
                     a glance from the deliverable controls below it. */}
+                <PastedContractBlock text={(o.metadata?.intake as Record<string, unknown> | undefined)?.contractText} isDark={isDark} />
+
                 {Array.isArray(o.metadata?.attachments) && (o.metadata.attachments as OrderAttachment[]).length > 0 && (
                   <div className={`space-y-1.5 rounded-xl border p-3 ${
                     isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-zinc-200 bg-zinc-50/70"}`}>

@@ -40,6 +40,10 @@ export interface ContractsIntakeV1 {
   representing?: string;
   concerns?: string;
   otherParty?: string;
+  // The contract pasted instead of (or beside) an uploaded file (S2-B7). It
+  // lives inside the validated value (ruling R12): persistedRequestMetadata
+  // stores that value, so a key left outside it would not reach the team.
+  contractText?: string;
   attachments: OrderAttachment[];
 }
 
@@ -73,10 +77,33 @@ function strArray(v: unknown): string[] | undefined {
 /**
  * Draft mode has no uploaded document to fall back on — contractDesc IS the
  * brief the admin drafts from. Review mode has no free-text minimum: the
- * uploaded contract (attachments, required below) is the deliverable.
+ * uploaded contract (attachments or contractText, required below) is the deliverable.
  * Ruling: coordinator review of af0929e, 2026-08-16.
  */
 const MIN_CONTRACT_DESC = 20;
+
+export const CONTRACT_TEXT_MIN = 100;
+export const CONTRACT_TEXT_MAX = 50_000;
+/** Where the two order screens collapse a pasted contract. */
+export const CONTRACT_TEXT_PREVIEW_CHARS = 600;
+
+/**
+ * May the review wizard leave its upload step? The same limits as
+ * validateContractsIntake, so the client is stopped at the form and not at
+ * submit. `!uploading`: a file still in flight has not reached `attachments`.
+ */
+export function reviewUploadReady(attachments: readonly unknown[], contractText: string, uploading: boolean): boolean {
+  const chars = contractText.trim().length;
+  if (uploading || chars > CONTRACT_TEXT_MAX) return false;
+  return attachments.length > 0 || chars >= CONTRACT_TEXT_MIN;
+}
+
+/** What an order screen shows of a pasted contract before «عرض الكل». */
+export function pastedTextPreview(text: string): { shown: string; truncated: boolean } {
+  return text.length > CONTRACT_TEXT_PREVIEW_CHARS
+    ? { shown: `${text.slice(0, CONTRACT_TEXT_PREVIEW_CHARS)}…`, truncated: true }
+    : { shown: text, truncated: false };
+}
 
 export function validateContractsIntake(input: unknown): ValidationResult<ContractsIntakeV1> {
   const errors: string[] = [];
@@ -132,8 +159,13 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
   }
 
   const attachments = collectAttachments(input.attachments, errors);
-  if (mode === "review" && attachments.length === 0) {
-    errors.push("مراجعة العقد تتطلب إرفاق العقد على الأقل");
+  // Review only: a draft order has no contract to paste, so a stray value is not kept.
+  const contractText = mode === "review" ? str(input.contractText) : "";
+  if (contractText.length > CONTRACT_TEXT_MAX) {
+    errors.push("نص العقد أطول من ٥٠٬٠٠٠ حرف — ارفعه ملفاً");
+  } else if (mode === "review" && attachments.length === 0) {
+    if (!contractText) errors.push("ارفع ملف العقد أو الصق نصه");
+    else if (contractText.length < CONTRACT_TEXT_MIN) errors.push("النص الملصق قصير — الصق العقد كاملاً (١٠٠ حرف على الأقل)");
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -173,6 +205,7 @@ export function validateContractsIntake(input: unknown): ValidationResult<Contra
       ...(selectedClauses ? { selectedClauses } : {}),
       ...(additionalClauses ? { additionalClauses } : {}),
       ...(representing ? { representing } : {}),
+      ...(contractText ? { contractText } : {}),
       ...(concerns ? { concerns } : {}),
       ...(otherParty ? { otherParty } : {}),
       attachments,

@@ -160,6 +160,10 @@ function AIContractsPageInner() {
       value: s.rFears.trim().slice(0, 150) + (s.rFears.trim().length > 150 ? "…" : ""),
     }] : []),
     ...(s.rOtherParty.trim() ? [{ label: "الطرف الآخر", value: s.rOtherParty.trim() }] : []),
+    ...(s.rContractText.trim() ? [{
+      label: "نص العقد الملصق",
+      value: s.rContractText.trim().slice(0, 150) + (s.rContractText.trim().length > 150 ? "…" : ""),
+    }] : []),
     ...(reviewContractLabel ? [{ label: "مجال العقد", value: reviewContractLabel }] : []),
   ];
 
@@ -436,6 +440,8 @@ function AIContractsPageInner() {
               attachFiles={s.attachFiles}
               removeAttachment={s.removeAttachment}
               clearAttachError={s.clearAttachError}
+              contractText={s.rContractText}
+              setContractText={s.setRContractText}
             />
           )}
 

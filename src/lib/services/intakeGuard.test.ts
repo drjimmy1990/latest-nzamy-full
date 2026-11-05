@@ -191,10 +191,10 @@ test("rejects a contracts draft whose parties are unnamed", () => {
   }
 });
 
-test("rejects a contract review with no contract file attached", () => {
+test("rejects a contract review with neither a file nor a pasted text", () => {
   const r = checkOrderIntake({ service: "contracts", intake: { ...contractsReviewRaw, attachments: [] } });
   assert.equal(r.kind, "invalid");
-  if (r.kind === "invalid") assert.ok(r.errors.some((e) => e.includes("إرفاق العقد")));
+  if (r.kind === "invalid") assert.ok(r.errors.includes("ارفع ملف العقد أو الصق نصه"));
 });
 
 test("rejects a critique order carrying neither memo text nor memo file", () => {
@@ -337,4 +337,14 @@ test("the 400 message names every missing piece, in Arabic", () => {
   assert.ok(msg.includes("نوع المذكرة مطلوب"));
   assert.ok(msg.includes("الفرع القانوني مطلوب"));
   assert.ok(!/[a-zA-Z]/.test(msg));
+});
+
+test("R12: a pasted contract survives the guard and what is stored", () => {
+  const raw = { schemaVersion: 1, service: "contracts", mode: "review", representing: "الطرف الأول", attachments: [], contractText: "ع".repeat(100) };
+  const check = validateContractsIntake(raw);
+  assert.equal(check.ok, true);
+  const metadata = { service: "contracts", serviceTitleAr: "خدمة", intake: check.value, attachments: [] };
+  assert.equal(checkOrderIntake(metadata).kind, "ok");
+  const stored = persistedRequestMetadata(metadata) as { intake: { contractText?: string } };
+  assert.equal(stored.intake.contractText, "ع".repeat(100));
 });
