@@ -559,3 +559,52 @@ test("legal-opinion-letter prompt: every fact quoted as data, the sender as type
   assert.match(full, /1\. «صورة العقد»/);
   assert.match(full, /نص نظامي ذكره المرسِل: «المادة ٧٧ من نظام العمل»/);
 });
+
+// S2-B10: the app stops requiring a specialty (S2-B9). A run with none must ask the
+// model to infer it, and never print an empty «» or the word undefined.
+function promptOf(tool: string, input: Record<string, unknown>): string {
+  const out = runCode(def(tool).build, pkg(tool, input))[0].json as { content: string };
+  return String(out.content);
+}
+const WAR_BASE = { role: "plaintiff", case_summary: "نزاع عمالي حول مستحقات نهاية الخدمة", targets: ["pretrial"] };
+const STRENGTH_BASE = { role: "plaintiff", case_summary: "نزاع عمالي حول مستحقات نهاية الخدمة" };
+const DRAFTER_BASE = { phase: "issues", kind: "claim", client_role: "plaintiff", facts: "وقائع القضية كاملة كما رواها الموكل", search_text: "دعوى" };
+
+for (const area of [undefined, null, ""]) {
+  test(`B10: wargaming prompt with no area (${String(area)}) asks the model to infer it`, () => {
+    const content = promptOf("wargaming", { ...WAR_BASE, area });
+    assert.ok(content.includes("استنتجه من الوقائع"), content.slice(0, 400));
+    assert.equal(content.includes("«»"), false);
+    assert.equal(content.includes("undefined"), false);
+    assert.equal(content.includes("«null»"), false);
+  });
+}
+
+test("B10: wargaming prompt with area عمالي quotes it and asks for no inference", () => {
+  const content = promptOf("wargaming", { ...WAR_BASE, area: "عمالي" });
+  assert.ok(content.includes("تخصص القضية: «عمالي»."));
+  assert.equal(content.includes("استنتجه من الوقائع"), false);
+});
+
+test("B10: analyze-strength takes no area and has no area line, so it never prints an empty one", () => {
+  const content = promptOf("analyze-strength", STRENGTH_BASE);
+  assert.equal(content.includes("تخصص القضية"), false);
+  assert.equal(content.includes("«»"), false);
+  assert.equal(content.includes("undefined"), false);
+});
+
+for (const branch of [undefined, null, ""]) {
+  test(`B10: drafter prompt with no branch (${String(branch)}) asks the model to infer it`, () => {
+    const content = promptOf("legal-drafter", { ...DRAFTER_BASE, branch });
+    assert.ok(content.includes("استنتجه من الوقائع"), content.slice(0, 400));
+    assert.equal(content.includes("«»"), false);
+    assert.equal(content.includes("undefined"), false);
+    assert.equal(content.includes("«null»"), false);
+  });
+}
+
+test("B10: drafter prompt with a branch quotes it and asks for no inference", () => {
+  const content = promptOf("legal-drafter", { ...DRAFTER_BASE, branch: "عمالي" });
+  assert.ok(content.includes("الفرع القانوني: «عمالي»."));
+  assert.equal(content.includes("استنتجه من الوقائع"), false);
+});
