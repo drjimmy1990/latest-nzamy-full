@@ -29,7 +29,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       // ١: الخطوة صفر — فهم الملف أولاً
-      { label: "الموجز القضائي",           labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",     icon: "Scan",         badge: "جديد" },
+      { label: "عصارة المرفقات",           labelEn: "Attachment Analyzer", href: "/ai/analyze",     icon: "Scan" },
       { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
       // ٢: الصياغة — العمل اليومي الأكثر تكراراً
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",            href: "/ai/draft",         icon: "PencilSimple", divider: true },
@@ -37,7 +37,6 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "محترف العقود",      labelEn: "Contract Pro",             href: "/ai/contracts",     icon: "FileText" },
       // ٣: الاستراتيجية — للقضايا الكبيرة
       { label: "المحاكي الشامل",   labelEn: "Litigation Studio",        href: "/ai/wargaming",     icon: "Scales",       divider: true, badge: "مُدمَج" },
-      { label: "عصارة المرفقات",    labelEn: "Attachment Analyzer",      href: "/ai/analyze",       icon: "MagnifyingGlass", badge: "قريباً" },
       { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb" },
       // ٤: المساعدة والمتابعة
       { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true, badge: "قريباً" },
@@ -259,7 +258,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     defaultOpen: true,
     items: [
       // ① الخطوة صفر — فهم الملف أولاً (مضاف S59)
-      { label: "الموجز القضائي",              labelEn: "ParaLegal (AI Briefing)", href: "/ai/case-brief",        icon: "Scan",         badge: "جديد" },
+      { label: "عصارة المرفقات",              labelEn: "Attachment Analyzer", href: "/ai/analyze",        icon: "Scan" },
       { label: "سؤال قانوني سريع",     labelEn: "Quick Legal Q&A",   href: "/ai/quick-answer",      icon: "ChatCircle",   badge: "جديد" },
       // ② الصياغة والتحرير
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
@@ -271,7 +270,6 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
       { label: "المحاكي الشامل للقضايا",labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales",       divider: true, badge: "مُدمَج" },
-      { label: "فاحص المستندات",        labelEn: "Doc Analyzer",     href: "/ai/analyze?source=firm", icon: "MagnifyingGlass", gateKey: "firm-ai", badge: "قريباً" },
       // ④ البحث والمراقبة
       { label: "المرشد القضائي",        labelEn: "Court Guide",      href: "/ai/procedures",       icon: "MapTrifold",   divider: true },
       { label: "راصد التشريعات",        labelEn: "Law Monitor",      href: "/ai/monitor",          icon: "Bell" },

@@ -39,7 +39,7 @@ export const AI_TOOL_PAGES: Readonly<Record<string, string | null>> = {
   "library-assistant": null,
   assistant: "/ai/assistant",
   "canvas-card": null,
-  "case-brief": "/ai/case-brief",
+  "case-brief": "/ai/analyze",
   "brief-check": "/ai/brief-check",
   wargaming: "/ai/wargaming",
   "analyze-strength": "/ai/analyze-strength",

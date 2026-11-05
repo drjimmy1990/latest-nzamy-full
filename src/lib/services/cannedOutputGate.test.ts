@@ -254,8 +254,6 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
     "/ai/legal-translate", "/ai/compare", "/ai/transcriber", "/ai/mail-advisor", "/ai/share-history",
     "/ai/corp/clm", "/ai/corp/corpmind", "/ai/corp/hr", "/ai/corp/compliance",
     "/dashboard/admin/system", "/dashboard/admin/system/backup", "/dashboard/admin/reports",
-    // عصارة المرفقات: lawyer and firm rows land on the gated AttachmentSqueezer.
-    "/ai/analyze?source=firm",
     // The secretary's page says it is postponed by the owner (fix round 1).
     "/ai/secretary",
   ]);
@@ -275,11 +273,11 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
   }
   assert.ok(seen >= 19, `found only ${seen} rows — the parser broke`);
   assert.deepEqual(wrong, []);
-  // The LAWYER row to /ai/analyze (the firm rows use ?source=firm). There were
-  // two until owner ٢٦٤ removed LAWYER_SIDEBAR_LITE, which carried the second.
-  const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => r.href === "/ai/analyze");
-  assert.equal(lawyerAnalyze.length, 1);
-  for (const r of lawyerAnalyze) assert.equal(r.badge, "قريباً");
+  // /ai/analyze is the live case brief for lawyer and firm (S3-01, S3-02): one
+  // unbadged row in each of the two sidebars this file holds.
+  const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => r.href.startsWith("/ai/analyze"));
+  assert.equal(lawyerAnalyze.length, 2);
+  for (const r of lawyerAnalyze) assert.equal(r.badge, null);
 });
 
 // ── Fix round 2: no other surface sells the secretary or the attachment tool ──

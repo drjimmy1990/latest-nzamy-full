@@ -31,7 +31,6 @@ import type { LawyerAiPermission, LawyerAiTool } from "./lawyerAiCatalog.ts";
  */
 export const TOOL_POINT_SOURCES: Readonly<Partial<Record<LawyerAiPermission, PricedAiToolRef>>> = {
   "ai:quick-answer": "quick-answer",
-  "ai:case-brief": "case-brief",
   // عصارة المرفقات is the case-brief job since S3-01; the registry prices it.
   "ai:analyze": "case-brief",
   "ai:draft": "legal-drafter",

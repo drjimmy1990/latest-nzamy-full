@@ -78,7 +78,6 @@ const publicRoutes: SitemapRoute[] = [
   // src/constants/betaGatedRoutes.ts; sitemap-tools.test.ts holds it).
   { url: "/ai/analyze-strength", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/assistant", priority: 0.85, changeFrequency: "monthly" },
-  { url: "/ai/case-brief", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/communicate", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/contract-drafter", priority: 0.85, changeFrequency: "monthly" },

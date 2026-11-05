@@ -373,6 +373,8 @@ const PROTECTED = [
 // ─── Deprecated route redirects ────────────────────────────────────────────────
 const REDIRECTS: Record<string, string> = {
   "/ai/share-history":   "/settings",
+  // S3-02: the case brief lives on /ai/analyze now.
+  "/ai/case-brief":      "/ai/analyze",
   "/ai/corp/privacy":    "/ai/corp/compliance",
   "/dashboard/lawyer/ai/secretary": "/ai/secretary",
   "/law":                "/laws",

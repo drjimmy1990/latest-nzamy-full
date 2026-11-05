@@ -144,6 +144,8 @@ test("every nav / sidebar / floating-menu row that opens a gated tool says «ق�
     read(rel).split("\n").forEach((line, i) => {
       for (const m of line.matchAll(/href: "([^"]+)"/g)) {
         if (!isTerminalToolHref(m[1])) continue;
+        // The lawyer and firm sidebars open the live case brief on this route.
+        if (rel === "constants/navigation.sidebars.legal.ts" && isLiveForLawyerAndFirm(m[1])) continue;
         terminalRows++;
         assert.match(line, /label: "/, `${rel}:${i + 1}: a row split over lines — check its badge by hand`);
         const badge = /badge: "([^"]+)"/.exec(line)?.[1] ?? null;

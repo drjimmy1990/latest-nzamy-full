@@ -220,7 +220,6 @@ test("٢١٦: the comparator and the translator are not priced (both still retur
 /** Catalog id → the registry tool(s) its hub card sells, written here independently of the catalog. */
 const HUB_TOOLS: Record<string, string[]> = {
   "ai:quick-answer": ["quick-answer"],
-  "ai:case-brief": ["case-brief"],
   "ai:analyze": ["case-brief"],
   "ai:draft": ["legal-drafter"],
   "ai:brief-check": ["brief-check"],

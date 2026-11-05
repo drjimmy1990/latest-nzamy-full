@@ -47,9 +47,9 @@ const PERMISSIONS: Record<string, Record<UserTier, UserPermission[]>> = {
   firm: {
     free:       ["ai:consult", "ai:quick-answer"],
     shield:     ["ai:consult", "ai:quick-answer"],
-    ai:         ["ai:consult", "ai:quick-answer", "ai:draft", "ai:case-brief", "ai:contracts", "ai:analyze", "ai:brief-check", "ai:fee-calculator", "dashboard:team"],
-    pro:        ["ai:consult", "ai:quick-answer", "ai:draft", "ai:case-brief", "ai:contracts", "ai:analyze", "ai:brief-check", "ai:fee-calculator", "ai:wargaming", "ai:analyze-strength", "ai:legal-opinion", "ai:monitor", "ai:procedures", "ai:secretary", "ai:report-generator", "ai:corp:clm", "ai:corp:compliance", "ai:corp:advisor", "ai:corp:hr", "dashboard:team", "dashboard:finance", "dashboard:analytics", "dashboard:hrm", "cases:assign"],
-    max:        ["ai:consult", "ai:quick-answer", "ai:draft", "ai:case-brief", "ai:contracts", "ai:analyze", "ai:brief-check", "ai:fee-calculator", "ai:wargaming", "ai:analyze-strength", "ai:legal-opinion", "ai:monitor", "ai:procedures", "ai:secretary", "ai:report-generator", "ai:corp:clm", "ai:corp:compliance", "ai:corp:advisor", "ai:corp:hr", "dashboard:team", "dashboard:finance", "dashboard:analytics", "dashboard:hrm", "cases:assign"],
+    ai:         ["ai:consult", "ai:quick-answer", "ai:draft", "ai:contracts", "ai:analyze", "ai:brief-check", "ai:fee-calculator", "dashboard:team"],
+    pro:        ["ai:consult", "ai:quick-answer", "ai:draft", "ai:contracts", "ai:analyze", "ai:brief-check", "ai:fee-calculator", "ai:wargaming", "ai:analyze-strength", "ai:legal-opinion", "ai:monitor", "ai:procedures", "ai:secretary", "ai:report-generator", "ai:corp:clm", "ai:corp:compliance", "ai:corp:advisor", "ai:corp:hr", "dashboard:team", "dashboard:finance", "dashboard:analytics", "dashboard:hrm", "cases:assign"],
+    max:        ["ai:consult", "ai:quick-answer", "ai:draft", "ai:contracts", "ai:analyze", "ai:brief-check", "ai:fee-calculator", "ai:wargaming", "ai:analyze-strength", "ai:legal-opinion", "ai:monitor", "ai:procedures", "ai:secretary", "ai:report-generator", "ai:corp:clm", "ai:corp:compliance", "ai:corp:advisor", "ai:corp:hr", "dashboard:team", "dashboard:finance", "dashboard:analytics", "dashboard:hrm", "cases:assign"],
     corp:       [],
     enterprise: [],
   },

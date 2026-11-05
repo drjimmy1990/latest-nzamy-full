@@ -207,7 +207,6 @@ export interface UserSession {
 
 export type UserPermission =
   | "ai:draft"
-  | "ai:case-brief"
   | "ai:quick-answer"
   | "ai:contracts"
   | "ai:collector"
