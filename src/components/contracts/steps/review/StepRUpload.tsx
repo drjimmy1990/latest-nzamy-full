@@ -6,6 +6,7 @@ import { CloudArrowUp, UploadSimple, Spinner, X, Warning } from "@phosphor-icons
 import { CONTRACT_TYPES } from "@/components/contracts/constants";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { RequiredMark } from "@/components/ui/RequiredMark";
+import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
 import { CONTRACT_TEXT_MAX, CONTRACT_TEXT_MIN } from "@/lib/services/orderIntake.contracts";
 
 interface StepRUploadProps {
@@ -130,6 +131,7 @@ export function StepRUpload({
               <div key={a.documentId} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] ${isDark ? "bg-emerald-900/15 border border-emerald-700/25" : "bg-emerald-50 border border-emerald-200"}`}>
                 <UploadSimple size={13} className="text-emerald-500" />
                 <span className={`flex-1 truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{a.name}</span>
+                <AttachmentPreviewButton documentId={String(a.documentId)} name={a.name} className="text-emerald-500" />
                 <button onClick={() => removeAttachment(a.documentId)}><X size={13} className="text-emerald-500" /></button>
               </div>
             ))}

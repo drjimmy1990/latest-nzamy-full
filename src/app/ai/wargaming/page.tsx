@@ -27,6 +27,7 @@ import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { useAiRun } from "@/hooks/useAiRun";
 import { aiSkippedNote, pasteState, splitAiReadable, withTextAccept } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
+import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
 import { WARGAMING_PASTE_MAX, WARGAMING_PASTE_MIN, WAVE4_FILES, WAVE4_PRICE } from "@/lib/ai/tools";
 import { asSimResult } from "./_simResult";
 import SimResultView from "./_SimResultView";
@@ -447,6 +448,7 @@ function CaseSetup({
           <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 border ${D?"border-emerald-700/30 bg-emerald-900/10":"border-emerald-200 bg-emerald-50"}`}>
             <FileText size={14} className="text-emerald-500"/>
             <span className={`flex-1 truncate text-[12px] ${D?"text-emerald-300":"text-emerald-700"}`}>{attachments[0].name}</span>
+            <AttachmentPreviewButton documentId={String(attachments[0].documentId)} name={attachments[0].name} className="text-emerald-500"/>
             <button onClick={()=>removeAttachment(attachments[0].documentId)}><X size={13} className="text-emerald-500"/></button>
           </div>
         ):(
@@ -608,6 +610,7 @@ function TargetSelect({
                   <div key={a.documentId} className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${D?"border-emerald-700/30 bg-emerald-900/10":"border-emerald-200 bg-emerald-50"}`}>
                     <FileText size={13} className="text-emerald-500"/>
                     <span className={`flex-1 truncate text-[11px] ${D?"text-emerald-300":"text-emerald-700"}`}>{a.name}</span>
+                    <AttachmentPreviewButton documentId={String(a.documentId)} name={a.name} size={12} className="text-emerald-500"/>
                     <button onClick={()=>removeMemoAttachment(a.documentId)}><X size={12} className="text-emerald-500"/></button>
                   </div>
                 ))}

@@ -13,6 +13,7 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isDocumentPreviewRoute,
   isPointsStandingRoute,
   libraryBudgetBuckets,
   canonicalApiPath,
@@ -179,6 +180,23 @@ test("isAttachmentsZipRoute: the ZIP download (D3), GET and HEAD, the exact path
   assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zipper"), false);
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/attachments/zip"), false, "reads are not in the general bucket");
 });
+test("isDocumentPreviewRoute: «معاينة» (S2-B8), GET and HEAD, one id segment only, wired to its own buckets", () => {
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/42/preview"), true);
+  assert.equal(isDocumentPreviewRoute("HEAD", "/api/v1/documents/42/preview"), true);
+  assert.equal(isDocumentPreviewRoute("POST", "/api/v1/documents/42/preview"), false);
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/42"), false);
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/4/2/preview"), false);
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/42/preview/x"), false);
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/documents/42/preview"), false, "reads are not in the general bucket");
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const isDocumentPreviewMatch = isDocumentPreviewRoute\(method, pathname\);/);
+  assert.match(src, /!isDocumentPreviewMatch &&/);
+  assert.match(src, /rateLimiter\.check\("document-preview", key, DOCUMENT_PREVIEW_RATE_LIMIT\)/);
+  assert.match(src, /rateLimiter\.check\("document-preview-ip", ip, DOCUMENT_PREVIEW_IP_RATE_LIMIT\)/);
+});
+
 test("isPointsStandingRoute: the banner's GET (final review M2), GET and HEAD, the exact path only — never the run polls", () => {
   assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/points-standing"), true);
   assert.equal(isPointsStandingRoute("HEAD", "/api/v1/ai/points-standing"), true);

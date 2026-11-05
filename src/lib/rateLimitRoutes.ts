@@ -163,6 +163,15 @@ export function isAttachmentsZipRoute(method: string, pathname: string): boolean
   return (method === "GET" || method === "HEAD") && ATTACHMENTS_ZIP_RE.test(pathname);
 }
 
+// «معاينة» (S2-B8): a GET that may unzip a Word file of up to 22 MB, so it gets
+// its own bucket, as the ZIP download does: the general bucket counts only writes.
+export const DOCUMENT_PREVIEW_RE = /^\/api\/v1\/documents\/[^/]+\/preview$/;
+
+/** True for a GET/HEAD of /api/v1/documents/<one segment>/preview. */
+export function isDocumentPreviewRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && DOCUMENT_PREVIEW_RE.test(pathname);
+}
+
 // GET /api/v1/ai/points-standing (the «رصيدك من النقاط لا يكفي» banner): three
 // database reads per call, and a GET, so the general bucket (writes only)
 // never counted it (final review M2). The proxy gives it the general bucket's

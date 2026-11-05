@@ -34,6 +34,7 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isDocumentPreviewRoute,
   isPointsStandingRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
@@ -106,6 +107,10 @@ const TRACKING_UNLOCK_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 // and a wider ceiling per proxy-resolved IP (an office behind one address).
 const ATTACHMENTS_ZIP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 20 };
 const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
+// «معاينة» (S2-B8, GET /api/v1/documents/<id>/preview) may unzip a Word file per
+// request: 60 looks per visitor per 10 minutes, wider per proxy-resolved IP.
+const DOCUMENT_PREVIEW_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 60 };
+const DOCUMENT_PREVIEW_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 600 };
 // Owner note ١٣ C03 — every library and library-invitation route
 // (src/lib/rateLimitRoutes.ts libraryBudgetBuckets). Per visitor (Cloudflare's
 // CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
@@ -161,12 +166,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isCouponMatch = isCouponValidateRoute(method, pathname);
     const isTrackingUnlockMatch = isTrackingUnlockRoute(method, pathname);
     const isAttachmentsZipMatch = isAttachmentsZipRoute(method, pathname);
+    const isDocumentPreviewMatch = isDocumentPreviewRoute(method, pathname);
     const isPointsStandingMatch = isPointsStandingRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
-      !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isCouponMatch &&
+      !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
       !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
@@ -221,6 +227,14 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       if (!perIp.allowed) return rateLimitResponse(perIp);
       const key = libraryReadClientKey((name) => req.headers.get(name), ip);
       const decision = rateLimiter.check("attachments-zip", key, ATTACHMENTS_ZIP_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isDocumentPreviewMatch) {
+      const perIp = rateLimiter.check("document-preview-ip", ip, DOCUMENT_PREVIEW_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("document-preview", key, DOCUMENT_PREVIEW_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

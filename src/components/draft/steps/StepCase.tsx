@@ -11,6 +11,7 @@ import { JudgmentHeader } from "@/components/draft/JudgmentHeader";
 import { COMMITTEE_BRANCH_IDS, PartyData, SupportDoc, REQUIRES_JUDGMENT_HEADER } from "@/components/draft/draftConstants";
 import { draftPartiesShown, type OrderAttachment } from "@/lib/services/orderIntake";
 import { withTextAccept } from "@/components/ai/aiReadable";
+import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 
 const DRAFT_FILE_ACCEPT = withTextAccept(".pdf,.doc,.docx,.jpg,.png", AI_TEXT_FILES_ON);
@@ -218,6 +219,7 @@ export function StepCase({
             <div className="flex items-center justify-center gap-2">
               <UploadSimple size={14} className="text-emerald-500" />
               <span className={`text-[12px] font-medium truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{caseFile}</span>
+              {caseFileDocId && <AttachmentPreviewButton documentId={String(caseFileDocId)} name={caseFile} className="text-emerald-500" />}
               <button onClick={e => {
                 e.stopPropagation();
                 setCaseFile(null);
@@ -291,6 +293,7 @@ export function StepCase({
                   <div className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px] ${isDark ? "bg-emerald-900/15 border border-emerald-700/25" : "bg-emerald-50 border border-emerald-200"}`}>
                     <UploadSimple size={11} className="text-emerald-500" />
                     <span className={`flex-1 truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{doc.file}</span>
+                    {docAttachmentIds[doc.id] && <AttachmentPreviewButton documentId={String(docAttachmentIds[doc.id])} name={doc.file} size={11} className="text-emerald-500" />}
                     <button onClick={() => {
                       updateDoc(doc.id, "file", null);
                       const docId = docAttachmentIds[doc.id];
@@ -365,6 +368,7 @@ export function StepCase({
               <div key={a.documentId} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px] ${isDark ? "bg-emerald-900/15 border border-emerald-700/25" : "bg-emerald-50 border border-emerald-200"}`}>
                 <UploadSimple size={11} className="text-emerald-500" />
                 <span className={`flex-1 truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{a.name}</span>
+                <AttachmentPreviewButton documentId={String(a.documentId)} name={a.name} size={11} className="text-emerald-500" />
                 <button onClick={() => {
                   removeAttachment(a.documentId);
                   setBulkAttached(prev => prev.filter(x => x.documentId !== a.documentId));

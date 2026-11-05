@@ -43,6 +43,7 @@ import {
 import { useAiRun } from "@/hooks/useAiRun";
 import { BRIEF_CHECK_PASTE_MAX, BRIEF_CHECK_PASTE_MIN, BRIEF_CHECK_PRICE } from "@/lib/ai/tools";
 import { isAiReadable, pasteState } from "@/components/ai/aiReadable";
+import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import BriefCheckReportView, { asBriefCheckReport } from "./_BriefCheckReport";
 import { useTheme } from "@/components/ThemeProvider";
@@ -285,6 +286,7 @@ function AIBriefCheckPage() {
               <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${isDark ? "border-white/[0.07] bg-zinc-950" : "border-zinc-200 bg-zinc-50"}`}>
                 <Paperclip size={16} className="flex-shrink-0 text-[#C8A762]" />
                 <p className={`flex-1 min-w-0 truncate text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{memo.name}</p>
+                <AttachmentPreviewButton documentId={String(memo.documentId)} name={memo.name} size={15} className={`flex h-8 w-8 items-center justify-center rounded-xl ${isDark ? "hover:bg-white/[0.07] text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"}`} />
                 <button
                   onClick={removeMemo}
                   disabled={submitting}

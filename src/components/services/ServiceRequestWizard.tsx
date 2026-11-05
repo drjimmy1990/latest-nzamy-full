@@ -8,6 +8,7 @@ import {
   Scales, FileText, Lock, Warning, Spinner,
   PaperPlaneRight,
 } from "@phosphor-icons/react";
+import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
@@ -556,13 +557,16 @@ export default function ServiceRequestWizard({
                                   </p>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => removeAttachment(attachment.documentId)}
-                                aria-label={isRTL ? `إزالة ${attachment.name}` : `Remove ${attachment.name}`}
-                                className="text-red-400 hover:text-red-500 transition shrink-0"
-                              >
-                                <X size={16} weight="bold" />
-                              </button>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <AttachmentPreviewButton documentId={String(attachment.documentId)} name={attachment.name} size={16} className={muted} />
+                                <button
+                                  onClick={() => removeAttachment(attachment.documentId)}
+                                  aria-label={isRTL ? `إزالة ${attachment.name}` : `Remove ${attachment.name}`}
+                                  className="text-red-400 hover:text-red-500 transition shrink-0"
+                                >
+                                  <X size={16} weight="bold" />
+                                </button>
+                              </div>
                             </motion.div>
                           ))}
                         </div>
