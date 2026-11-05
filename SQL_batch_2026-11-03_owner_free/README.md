@@ -562,6 +562,7 @@ Send us the rows with `already_known = f`: `summary`, `laws` and `example_slug`,
 
 ### Admin
 - [ ] `/dashboard/admin/pricing`: change the company row to 850; the company request form shows it; set it back to 800.
+- [ ] While it reads 850, `/services/contracts` still shows 800. That is correct: public pages read the compiled `CLIENT_SERVICE_CATALOG`, so they change only with a code change and a deploy. The page and the owner report say so.
 - [ ] `/dashboard/admin/subscriptions/coupons`: open NZAMY50 and save with no change: no request is sent. Change the value to 40: only the value is sent. Then put it back.
 - [ ] «عرض كـ»: as judge, it opens `/dashboard/government`, and the tab survives a reload. As «مستشار (م ١٨)», the menu has no pleading items. As company with simulate on, a hidden business route shows «قريباً».
 - [ ] `/dashboard/admin/security` → «نشاط المكتبة» → «الحدود»: the new hours field.

@@ -147,7 +147,7 @@ export default function PricingPage() {
           ? listOk(current.items.map((r) => (r.service_id === saved.service_id ? saved : r)), current.total)
           : current,
       );
-      setToast(`حُفظ «${label}» — يراه العملاء الآن.`);
+      setToast(`حُفظ «${label}» — يقرؤه نموذج الطلب والتقدير المحفوظ الآن؛ الصفحات العامة لا تتغير إلا بتعديل الكود ونشره.`);
       return true;
     } catch (err) {
       console.error("[admin/pricing] save failed:", err);
@@ -195,7 +195,7 @@ export default function PricingPage() {
       <div>
         <h1 className="text-2xl font-black mb-1 text-white">إدارة التسعير</h1>
         <p className={`text-sm ${muted}`}>
-          أسعار خدمات العملاء تُحفظ في قاعدة البيانات ويراها العملاء فور الحفظ. كل تعديل يُسجَّل في سجل الإدارة.
+          أسعار خدمات العملاء تُحفظ في قاعدة البيانات، ويقرؤها نموذج الطلب والتقدير المحفوظ فور الحفظ. أما الصفحات العامة (مثل صفحة خدمات العقود) فتعرض السعر المكتوب في الكود، ولا تتغير إلا بتعديل الكود ونشره. كل تعديل يُسجَّل في سجل الإدارة.
         </p>
       </div>
 

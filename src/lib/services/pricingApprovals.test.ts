@@ -656,3 +656,14 @@ test("admin pricing: «Beta free AI» never counts a «قريباً» tool", () 
   assert.equal(catalog.LAWYER_AI_TOOLS.filter((t) => t.betaStatus === "beta-free" && !t.comingSoon).length, 0);
   assert.ok(catalog.LAWYER_AI_TOOLS.some((t) => t.betaStatus === "beta-free" && t.comingSoon), "fixture: a «قريباً» beta-free tool exists");
 });
+
+test("the admin pricing page says what a save reaches: the request form and the estimate, not the public pages", () => {
+  const admin = readFileSync(new URL("../../app/dashboard/admin/pricing/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(admin, /يراه العملاء/, "a public page reads the compiled catalogue, so no «يراه العملاء»");
+  assert.ok(admin.includes("نموذج الطلب"));
+  assert.ok(admin.includes("الصفحات العامة"));
+  assert.ok(admin.includes("تعديل الكود ونشره"));
+  // What that sentence rests on: the public page still reads the compiled catalogue.
+  const services = readFileSync(new URL("../../app/services/contracts/page.tsx", import.meta.url), "utf8");
+  assert.match(services, /dualAudiencePriceLabel\("contract-review", CLIENT_SERVICE_CATALOG, lang\)/);
+});
