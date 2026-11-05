@@ -24,7 +24,9 @@ import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
  *       (requireApiUser); startRunWith (src/lib/ai/runCore.ts) does the rest
  *       of the checks, the charge, the n8n call and the settlement.
  *       Fast tool: 200 { runId, status, output, citations, chargedPoints }.
- *       Job tool:  202 { runId, status: "running" } — poll GET …/runs/<id>.
+ *       Job tool:  202 { runId, status: "running" } as soon as it is charged,
+ *       before its searches and the n8n call — poll GET …/runs/<id>. A failure
+ *       after the 202 is the run's error_code, refunded.
  * GET   the user's last 50 runs (?tool= to filter), own rows through RLS.
  *
  * /api/v1/ai/* is not in PROTECTED_API_PREFIXES, so the proxy adds no 401 or
@@ -130,6 +132,8 @@ export async function POST(request: NextRequest) {
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
         ...(textFiles ? { pastedFileUrl: pastedFileUrlFrom(textFiles) } : {}),
         progress: progressSink(admin, (work) => after(work)),
+        // A job run answers 202 before its searches; n8n is called after the reply.
+        defer: (task) => after(task),
       },
       actor,
       body,

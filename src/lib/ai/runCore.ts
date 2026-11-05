@@ -12,10 +12,17 @@
  *                        transaction) — or, when the body asks `useCredit`
  *                        and the run qualifies, ai_start_run_with_credit
  *                        (a founder credit instead of points, P3)
- *                      → [library tool: searches → texts, refunded when none]
+ *                    A job tool answers 202 here, with the route's `defer`
+ *                    running the rest after the reply (nginx cuts at 60 s, and
+ *                    a consultation's searches alone can take most of that).
+ *   dispatchRunWith  [library tool: searches → texts, refunded when none]
  *                      → the package → n8n
  *                    fast tool: n8n's reply is settled here, in the request;
  *                    job tool:  n8n's 202 leaves the run `running`.
+ *                    Every way out of a charged run refunds it, a throw
+ *                    included (dispatchSafely), and a run left `running` past
+ *                    its deadline, by a restart for one, is ai_sweep_runs' to
+ *                    fail and refund.
  *   settleRunWith    a result (the fast reply or the job callback) → the
  *                    output checked against the tool's shape, citations kept
  *                    only when they name a source the app sent, the run
@@ -114,6 +121,11 @@ export interface StartRunDeps {
   /** The clock for the fast tools' time budget, in ms (tests replace it). */
   clock?: () => number;
   /**
+   * Runs a job tool's dispatch after the reply (`after` from next/server). With
+   * no `defer`, or when it throws, the dispatch stays in the request.
+   */
+  defer?: (task: () => Promise<void>) => void;
+  /**
    * The run's waiting screen: file names, searches, law titles (R7, never a text,
    * a token or a link). Fire-and-forget, never awaited on the money path, and a
    * throw is swallowed by `report`.
@@ -185,11 +197,18 @@ async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
   return (data as { value?: unknown } | null)?.value ?? null;
 }
 
+/** Never the thrown value's message or body: it can carry a text, a token or a link. */
+const errorName = (err: unknown) => (err as { name?: unknown } | null)?.name?.toString() ?? "error";
+
 async function failRun(admin: SupabaseClient, runId: string, code: string, message: string): Promise<void> {
-  const { error } = await admin.rpc("ai_fail_run", { p_run: runId, p_code: code, p_message: message.slice(0, 500) });
   // The sweeper retries a run left `running` past its deadline, so a failed
   // refund here is logged, not lost.
-  if (error) console.error("[ai] ai_fail_run failed for", runId, error.code, error.message);
+  try {
+    const { error } = await admin.rpc("ai_fail_run", { p_run: runId, p_code: code, p_message: message.slice(0, 500) });
+    if (error) console.error("[ai] ai_fail_run failed for", runId, error.code, error.message);
+  } catch (err) {
+    console.error("[ai] ai_fail_run threw for", runId, errorName(err));
+  }
 }
 
 function report(progress: ProgressReporter | undefined, runId: string, userId: string, events: ProgressEvent[]): void {
@@ -198,7 +217,7 @@ function report(progress: ProgressReporter | undefined, runId: string, userId: s
     progress(runId, userId, events);
   } catch (err) {
     // The waiting screen must never fail a run that is already charged.
-    console.error("[ai] reporting progress threw for", runId, (err as { name?: string } | null)?.name ?? "error");
+    console.error("[ai] reporting progress threw for", runId, errorName(err));
   }
 }
 
@@ -265,7 +284,7 @@ export async function settleRunWith(
     try {
       output = await enrich(admin, checked);
     } catch (err) {
-      console.error("[ai] enriching the result failed for", ctx.runId, err);
+      console.error("[ai] enriching the result failed for", ctx.runId, errorName(err));
       return fail("store_failed", "the result could not be completed");
     }
   }
@@ -310,6 +329,27 @@ interface StartedRun {
   /** ai_start_run_with_credit only: true when this call spent a founder credit. */
   credit_used?: boolean;
 }
+
+/** What a charged run needs from startRunWith to go on, in the request or after it. */
+export interface DispatchContext {
+  spec: AiToolSpec;
+  run: StartedRun;
+  checked: { input: Record<string, unknown> };
+  files: AiFile[];
+  pages: number | null;
+  history: Array<{ role: "user" | "assistant"; text: string }>;
+  conversationId: string | null;
+  isAdmin: boolean;
+  deadline: Date;
+  startedAt: number;
+  actor: RunActor;
+}
+
+const chargedBody = (run: StartedRun, conversationId: string | null) => ({
+  chargedPoints: run.charged_points,
+  creditUsed: run.credit_used === true,
+  ...(conversationId ? { conversationId } : {}),
+});
 
 export async function startRunWith(
   admin: SupabaseClient,
@@ -454,9 +494,7 @@ export async function startRunWith(
   const deadline = new Date(
     now.getTime() + 1000 * (spec.class === "fast" ? FAST_DEADLINE_SECONDS : spec.jobDeadlineSeconds ?? DEFAULT_JOB_DEADLINE_SECONDS),
   );
-  const clock = deps.clock ?? (() => Date.now());
-  const startedAt = clock();
-  let sources: SourceMap = {};
+  const startedAt = (deps.clock ?? (() => Date.now()))();
 
   // A founder credit pays instead of points when the client asks and the run
   // qualifies (founderPlan.creditKindForRun). The turn is the one read above
@@ -480,7 +518,7 @@ export async function startRunWith(
     p_file_ids: files.map((f) => f.id),
     p_pages: pages,
     p_conversation: conversationId,
-    p_source_ids: sources,
+    p_source_ids: {},
     ...(creditKind ? { p_credit_kind: creditKind } : {}),
   });
   if (error) {
@@ -519,12 +557,6 @@ export async function startRunWith(
     console.error("[ai] onRunCreated threw:", spec.id, err);
   }
 
-  const charged = {
-    chargedPoints: run.charged_points,
-    creditUsed: run.credit_used === true,
-    ...(conversationId ? { conversationId } : {}),
-  };
-
   // The pasted text's file. p_file_ids above stays attachment ids only.
   if (paste && pasted) {
     try {
@@ -550,6 +582,45 @@ export async function startRunWith(
   }
 
   report(deps.progress, run.run_id, actor.userId, fileEvents(files));
+
+  const ctx: DispatchContext = { spec, run, checked, files, pages, history, conversationId, isAdmin, deadline, startedAt, actor };
+  if (spec.class === "job" && deps.defer) {
+    try {
+      deps.defer(async () => {
+        await dispatchSafely(admin, deps, ctx);
+      });
+      return { status: 202, body: { runId: run.run_id, status: "running", ...chargedBody(run, conversationId) } };
+    } catch (err) {
+      // `after` refused to schedule it, so nothing will run later: the dispatch
+      // goes on in the request below, as it did before there was a defer.
+      console.error("[ai] deferring the dispatch failed for", run.run_id, errorName(err));
+    }
+  }
+  return dispatchSafely(admin, deps, ctx);
+}
+
+/** dispatchRunWith, where a throw refunds the run like any other failure. */
+async function dispatchSafely(admin: SupabaseClient, deps: StartRunDeps, ctx: DispatchContext): Promise<RouteReply> {
+  try {
+    return await dispatchRunWith(admin, deps, ctx);
+  } catch (err) {
+    const name = errorName(err);
+    console.error("[ai] the dispatch threw for", ctx.run.run_id, name);
+    await failRun(admin, ctx.run.run_id, "internal", `the dispatch threw: ${name}`);
+    return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: ctx.run.run_id } };
+  }
+}
+
+/**
+ * A charged run, from its searches to n8n's answer. A job's caller may already
+ * have had its 202, so a failure here reaches the user by polling, as the run's
+ * error_code.
+ */
+export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps, ctx: DispatchContext): Promise<RouteReply> {
+  const { spec, run, checked, files, history, conversationId, deadline, startedAt, actor } = ctx;
+  const clock = deps.clock ?? (() => Date.now());
+  const charged = chargedBody(run, conversationId);
+  let sources: SourceMap = {};
 
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
@@ -595,7 +666,7 @@ export async function startRunWith(
     try {
       found = await deps.retrieve(queries, { laws, principles }, pin);
     } catch (err) {
-      console.error("[ai] retrieval threw for", run.run_id, err);
+      console.error("[ai] retrieval threw for", run.run_id, errorName(err));
       found = { sources: [], map: {} };
     }
     if (found.sources.length === 0) {
@@ -615,6 +686,7 @@ export async function startRunWith(
 
   const sync = spec.class === "fast";
   // A pasted text travels once, as the file; ai_runs.input keeps it for the link.
+  const paste = spec.pasteAsFile && spec.files ? spec.pasteAsFile : null;
   const pkgInput = paste ? Object.fromEntries(Object.entries(checked.input).filter(([k]) => k !== paste.field)) : checked.input;
   const pkg = {
     v: 1,

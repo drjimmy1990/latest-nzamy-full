@@ -983,3 +983,334 @@ test("E3: both routes bind progress through progressSink and after", () => {
     assert.match(route, /progress: progressSink\(admin, \(work\) => after\(work\)\)/, segs[0]);
   }
 });
+
+// ── E4: a job run answers before its searches; every way out ends visibly ─────
+
+const CONSULT_ON = { "legal-opinion-consult": { mode: "live" } };
+const CONSULT_BODY = {
+  tool: "legal-opinion-consult",
+  input: { question: "هل يحق لصاحب العمل فصل العامل دون إنذار؟" },
+  idempotencyKey: "key-abcdef01",
+};
+const CONSULT_START = { data: [{ run_id: RUN, created: true, status: "running", charged: true, charged_points: 75 }] };
+const failCalls = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc" && q.table === "ai_fail_run");
+const failCode = (q: FakeQuery) => (q.payload as Record<string, unknown>).p_code;
+
+function capture() {
+  const tasks: Array<() => Promise<void>> = [];
+  return { tasks, defer: (task: () => Promise<void>) => void tasks.push(task) };
+}
+
+async function quietly<T>(fn: () => Promise<T> | T, seen: { text: string } = { text: "" }): Promise<T> {
+  const saved = { error: console.error, warn: console.warn, info: console.info, log: console.log };
+  const spy = (...args: unknown[]) => {
+    seen.text += `${args.map((a) => (a instanceof Error ? `${a.name}: ${a.message}: ${a.stack}` : typeof a === "string" ? a : JSON.stringify(a))).join(" ")}\n`;
+  };
+  console.error = spy;
+  console.warn = spy;
+  console.info = spy;
+  console.log = spy;
+  try {
+    return await fn();
+  } finally {
+    Object.assign(console, saved);
+  }
+}
+
+test("E4: a job tool answers 202 before lib-queries, retrieval and the webhook, then dispatches", async () => {
+  const { client, log } = db({ setting: CONSULT_ON, start: CONSULT_START });
+  const calls: Array<{ path: string }> = [];
+  const { tasks, defer } = capture();
+  let retrieved = 0;
+  const deps = libraryDeps({ defer, retrieve: async () => ((retrieved += 1), SECRET_FOUND) }, calls);
+  const r = await startRunWith(client as never, deps, LAWYER, CONSULT_BODY);
+  assert.equal(r.status, 202);
+  assert.deepEqual(r.body, { runId: RUN, status: "running", chargedPoints: 75, creditUsed: false });
+  assert.deepEqual(rpcs(log), ["ai_start_run"], "charged, nothing refunded");
+  assert.equal(calls.length, 0, "no call to n8n yet");
+  assert.equal(retrieved, 0, "no retrieval yet");
+  assert.equal(tasks.length, 1);
+
+  await tasks[0]();
+  assert.deepEqual(calls.map((c) => c.path), [LIB_QUERIES_PATH, "nzamy-ai/legal-opinion-consult"]);
+  assert.equal(retrieved, 1);
+  assert.equal(failCalls(log).length, 0, "accepted by n8n: the run stays running for its callback");
+  const sent = (calls[1] as unknown as { body: Record<string, unknown> }).body;
+  assert.equal((sent.respond as Record<string, unknown>).mode, "async", "the package is unchanged");
+  assert.equal((sent.sources as unknown[]).length, 1);
+});
+
+test("E4 (must prove): a debit taken before the 202 is refunded once when the dispatch fails", async () => {
+  const outcomes: Array<[N8nOutcome, string]> = [
+    [{ kind: "failed", code: "n8n_unreachable", detail: "connection refused" }, "n8n_unreachable"],
+    [{ kind: "failed", code: "n8n_unconfigured", detail: "unset" }, "n8n_unconfigured"],
+    [{ kind: "failed", code: "n8n_http", detail: "HTTP 500" }, "n8n_http"],
+    [{ kind: "failed", code: "timeout", detail: "no answer" }, "timeout"],
+    [{ kind: "failed", code: "bad_reply", detail: "not JSON" }, "bad_reply"],
+  ];
+  for (const [outcome, code] of outcomes) {
+    const { client, log } = db({ setting: { "echo-job": { mode: "live" } } });
+    const { tasks, defer } = capture();
+    const r = await startRunWith(client as never, { ...deps(outcome), defer }, LAWYER, body({ tool: "echo-job" }));
+    assert.equal(r.status, 202, code);
+    assert.equal(failCalls(log).length, 0, `${code}: nothing refunded before the dispatch ran`);
+    await tasks[0]();
+    assert.deepEqual(failCalls(log).map(failCode), [code], `${code}: refunded exactly once`);
+  }
+});
+
+test("E4: every failure in the background searches refunds under its own code", async () => {
+  const none: Retrieved = { sources: [], map: {} };
+  {
+    // The search writer answered nothing.
+    const { client, log } = db({ setting: CONSULT_ON, start: CONSULT_START });
+    const { tasks, defer } = capture();
+    const deps = libraryDeps({ defer, n8n: async () => ({ kind: "failed", code: "n8n_unreachable", detail: "down" }) });
+    assert.equal((await startRunWith(client as never, deps, LAWYER, CONSULT_BODY)).status, 202);
+    await tasks[0]();
+    assert.deepEqual(failCalls(log).map(failCode), ["no_queries"]);
+  }
+  {
+    // No library text matched.
+    const { client, log } = db({ setting: CONSULT_ON, start: CONSULT_START });
+    const { tasks, defer } = capture();
+    const calls: Array<{ path: string }> = [];
+    assert.equal((await startRunWith(client as never, libraryDeps({ defer, retrieve: async () => none }, calls), LAWYER, CONSULT_BODY)).status, 202);
+    await tasks[0]();
+    assert.deepEqual(failCalls(log).map(failCode), ["no_sources"]);
+    assert.deepEqual(calls.map((c) => c.path), [LIB_QUERIES_PATH], "the tool itself is never called");
+  }
+  {
+    // The sources could not be stored.
+    const { client, log } = fakeDb((q: FakeQuery) => {
+      if (q.table === "platform_settings") return { data: { value: CONSULT_ON } };
+      if (q.op === "rpc" && q.table === "ai_start_run") return CONSULT_START;
+      if (q.op === "rpc" && q.table === "ai_fail_run") return { data: true };
+      if (q.table === "ai_runs" && q.op === "update") return { error: { code: "XX000", message: "down" } };
+      return {};
+    });
+    const { tasks, defer } = capture();
+    await quietly(async () => {
+      assert.equal((await startRunWith(client as never, libraryDeps({ defer }), LAWYER, CONSULT_BODY)).status, 202);
+      await tasks[0]();
+    });
+    assert.deepEqual(failCalls(log).map(failCode), ["store_failed"]);
+  }
+});
+
+test("E4: a retrieval that throws refunds as no_sources, and its message is not logged", async () => {
+  const { client, log } = db({ setting: CONSULT_ON, start: CONSULT_START });
+  const { tasks, defer } = capture();
+  const seen = { text: "" };
+  await quietly(async () => {
+    const deps = libraryDeps({ defer, retrieve: async () => { throw new Error("SECRET law text"); } });
+    assert.equal((await startRunWith(client as never, deps, LAWYER, CONSULT_BODY)).status, 202);
+    await tasks[0]();
+  }, seen);
+  assert.deepEqual(failCalls(log).map(failCode), ["no_sources"]);
+  assert.match(seen.text, /retrieval threw/);
+  assert.ok(!seen.text.includes("SECRET"));
+});
+
+test("E4: a background throw refunds as internal, carries no text to the log or the row, and the task itself never rejects", async () => {
+  const thrown: unknown[] = ["SECRET non-error", new Error("SECRET error with a token"), { message: "SECRET" }, null];
+  for (const value of thrown) {
+    const { client, log } = db({ setting: CONSULT_ON, start: CONSULT_START });
+    const { tasks, defer } = capture();
+    const seen = { text: "" };
+    await quietly(async () => {
+      const deps = libraryDeps({ defer, n8n: async () => { throw value; } });
+      assert.equal((await startRunWith(client as never, deps, LAWYER, CONSULT_BODY)).status, 202);
+      await tasks[0]();
+    }, seen);
+    assert.deepEqual(failCalls(log).map(failCode), ["internal"]);
+    const message = (failCalls(log)[0].payload as Record<string, unknown>).p_message as string;
+    assert.ok(!message.includes("SECRET"), message);
+    assert.ok(!seen.text.includes("SECRET"), seen.text);
+  }
+});
+
+test("E4: a refund that cannot be recorded leaves the task resolved, for the sweeper to retry", async () => {
+  const replies: Array<() => Promise<{ data: unknown; error: unknown }> | never> = [
+    () => Promise.resolve({ data: null, error: { code: "XX000", message: "down" } }),
+    () => Promise.reject(new Error("SECRET network")),
+  ];
+  for (const reply of replies) {
+    const { client } = db({ setting: { "echo-job": { mode: "live" } } });
+    const realRpc = (client as unknown as { rpc: (fn: string, args: unknown) => unknown }).rpc;
+    (client as unknown as { rpc: unknown }).rpc = (fn: string, args: unknown) => (fn === "ai_fail_run" ? reply() : realRpc(fn, args));
+    const { tasks, defer } = capture();
+    const seen = { text: "" };
+    await quietly(async () => {
+      const r = await startRunWith(client as never, { ...deps({ kind: "failed", code: "n8n_unreachable", detail: "x" }), defer }, LAWYER, body({ tool: "echo-job" }));
+      assert.equal(r.status, 202);
+      await tasks[0]();
+    }, seen);
+    assert.match(seen.text, /ai_fail_run/, "the operator is told");
+    assert.ok(!seen.text.includes("SECRET"));
+  }
+});
+
+test("E4: when the background cannot be scheduled, the run goes the old way: dispatched in the request, refunded if it fails", async () => {
+  const refuse = () => { throw new Error("`after` was called outside a request scope"); };
+  {
+    const { client, log } = db({ setting: { "echo-job": { mode: "live" } } });
+    const seen: unknown[] = [];
+    const r = await quietly(() => startRunWith(client as never, { ...deps({ kind: "accepted" }, seen), defer: refuse }, LAWYER, body({ tool: "echo-job" })));
+    assert.equal(r.status, 202);
+    assert.equal(seen.length, 1, "dispatched once, in the request");
+    assert.equal(failCalls(log).length, 0);
+  }
+  {
+    const { client, log } = db({ setting: { "echo-job": { mode: "live" } } });
+    const r = await quietly(() =>
+      startRunWith(client as never, { ...deps({ kind: "failed", code: "n8n_unreachable", detail: "x" }), defer: refuse }, LAWYER, body({ tool: "echo-job" })),
+    );
+    assert.equal(r.status, 502);
+    assert.equal(r.body.runId, RUN);
+    assert.deepEqual(failCalls(log).map(failCode), ["n8n_unreachable"]);
+  }
+});
+
+test("E4 (must prove): a duplicate request is not charged again, not dispatched again, and not refunded", async () => {
+  const replies = [
+    { data: [{ run_id: RUN, created: true, status: "running", charged: true, charged_points: 1 }] },
+    { data: [{ run_id: RUN, created: false, status: "running", charged: true, charged_points: 1 }] },
+  ];
+  let starts = 0;
+  const { client, log } = fakeDb((q: FakeQuery) => {
+    if (q.table === "platform_settings") return { data: { value: ON } };
+    if (q.op === "rpc" && q.table === "ai_start_run") return replies[starts++];
+    return {};
+  });
+  const seen: unknown[] = [];
+  const { tasks, defer } = capture();
+  const d = { ...deps({ kind: "accepted" }, seen), defer };
+  const first = await startRunWith(client as never, d, LAWYER, body({ tool: "echo-job" }));
+  const second = await startRunWith(client as never, d, LAWYER, body({ tool: "echo-job" }));
+  assert.equal(first.status, 202);
+  assert.equal(second.status, 409);
+  assert.equal(second.body.code, "duplicate");
+  assert.equal(second.body.runId, RUN);
+  assert.equal(tasks.length, 1, "scheduled once");
+  await tasks[0]();
+  assert.equal(seen.length, 1, "dispatched once");
+  assert.equal(failCalls(log).length, 0, "the first run is not refunded by the second request");
+  // The charge itself is one transaction keyed on (user_id, idempotency_key):
+  // supabase/tests/rls/progress_events.test.sql T7 proves one debit in Postgres.
+});
+
+test("E4: refusals before the charge never schedule anything", async () => {
+  const { client } = db({ setting: CONSULT_ON, start: { error: { code: "P0001", message: "insufficient_points" } } });
+  const { tasks, defer } = capture();
+  const r = await startRunWith(client as never, libraryDeps({ defer }), LAWYER, CONSULT_BODY);
+  assert.equal(r.status, 402);
+  assert.equal(tasks.length, 0);
+});
+
+test("E4: a link that cannot be signed still refunds in the request, before anything is scheduled", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const { tasks, defer } = capture();
+  const r = await quietly(() =>
+    startRunWith(client as never, { ...pasteDeps({ pastedFileUrl: () => { throw new Error("SECRET"); } }), defer }, LAWYER, briefBody()),
+  );
+  assert.equal(r.status, 502);
+  assert.equal(tasks.length, 0);
+  assert.deepEqual(failCalls(log).map(failCode), ["paste_link_failed"]);
+});
+
+test("E4: a pasted run dispatches after the 202 with its link in the file, and only there", async () => {
+  const { client, log } = db({ setting: PASTE_ON });
+  const seen: Array<{ body: Record<string, unknown> }> = [];
+  const { tasks, defer } = capture();
+  const r = await startRunWith(client as never, { ...pasteDeps({}, seen), defer }, LAWYER, briefBody());
+  assert.equal(r.status, 202);
+  assert.equal(JSON.stringify(r.body).includes("https://s/t/"), false, "the link never reaches the browser");
+  assert.equal(seen.length, 0);
+  await tasks[0]();
+  assert.equal(seen.length, 1);
+  assert.equal(((seen[0].body.files as Array<{ url: string }>)[0]).url, `https://s/t/${RUN}/memo_text`);
+  assert.equal("memo_text" in (seen[0].body.input as Record<string, unknown>), false);
+  assert.equal(failCalls(log).length, 0);
+});
+
+test("E4: a credit run answers 202 with creditUsed, and a failed dispatch still goes through ai_fail_run", async () => {
+  const { client, log } = creditDb();
+  const { tasks, defer } = capture();
+  const d: StartRunDeps = { ...drafterDeps(), defer, n8n: async () => ({ kind: "failed", code: "n8n_unreachable", detail: "x" }) };
+  const r = await startRunWith(client as never, d, LAWYER, drafterBody(issuesInput({ kind: "appeal" })));
+  assert.equal(r.status, 202);
+  assert.equal(r.body.creditUsed, true);
+  assert.equal(r.body.chargedPoints, 0);
+  assert.equal(typeof r.body.conversationId, "string", "the next turn can still join this conversation");
+  await tasks[0]();
+  assert.deepEqual(failCalls(log).map(failCode), ["no_queries"]);
+});
+
+test("E4: fast tools stay in the request even when defer is given: their callers read the answer in the reply", async () => {
+  const { client } = db();
+  const { tasks, defer } = capture();
+  const r = await startRunWith(client as never, { ...deps(okReply()), defer }, LAWYER, body());
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.output, { echo: "مرحبا" });
+  assert.equal(tasks.length, 0);
+});
+
+test("E4: a fast tool that throws is refunded in the request too, not left to the sweeper", async () => {
+  const { client, log } = db();
+  const r = await quietly(() =>
+    startRunWith(client as never, { ...deps(okReply()), n8n: async () => { throw new Error("SECRET"); } }, LAWYER, body()),
+  );
+  assert.equal(r.status, 502);
+  assert.equal(r.body.code, "tool_failed");
+  assert.deepEqual(failCalls(log).map(failCode), ["internal"]);
+});
+
+test("E4 (must prove): the callers that read an answer in the reply call only fast tools", () => {
+  for (const [segs, tool] of [
+    [["app", "ai", "assistant", "_assistant-client.ts"], "assistant"],
+    [["app", "laws", "[slug]", "_library-assistant.ts"], "library-assistant"],
+    [["app", "dashboard", "business", "kanban", "_graph-ai-card.ts"], "canvas-card"],
+  ] as Array<[string[], string]>) {
+    const src = readFileSync(join(process.cwd(), "src", ...segs), "utf8");
+    assert.ok(src.includes(`tool: "${tool}"`), `${segs.join("/")} still calls ${tool}`);
+    assert.equal(AI_TOOLS[tool].class, "fast", `${tool} stays in the request`);
+  }
+});
+
+test("E4: the runs route defers through after", () => {
+  const route = readFileSync(join(process.cwd(), "src", "app", "api", "v1", "ai", "runs", "route.ts"), "utf8");
+  assert.match(route, /defer: \(task\) => after\(task\)/);
+});
+
+test("E4: nothing protected reaches a log or the progress on any path through the background", async () => {
+  const PASTED = `SECRET-PASTED ${"م".repeat(300)}`;
+  const LINK = "https://site.test/api/v1/ai/file-text/SECRET-TOKEN";
+  const paths: Array<[string, N8nOutcome | "throw"]> = [
+    ["accepted", { kind: "accepted" }],
+    ["unreachable", { kind: "failed", code: "n8n_unreachable", detail: "SECRET-DETAIL" }],
+    ["throw", "throw"],
+  ];
+  for (const [name, outcome] of paths) {
+    const { client } = db({ setting: PASTE_ON });
+    const reported: Reported[] = [];
+    const { tasks, defer } = capture();
+    const seen = { text: "" };
+    await quietly(async () => {
+      const d = pasteDeps({
+        defer,
+        progress: collector(reported),
+        pastedFileUrl: () => LINK,
+        n8n: async () => {
+          if (outcome === "throw") throw new Error(`SECRET-THROW ${LINK}`);
+          return outcome;
+        },
+      });
+      assert.equal((await startRunWith(client as never, d, LAWYER, briefBody({ client_capacity: "مدعٍ", memo_text: PASTED }))).status, 202, name);
+      await tasks[0]();
+    }, seen);
+    assert.ok(!seen.text.includes("SECRET"), `${name}: the log is clean: ${seen.text}`);
+    assert.ok(!JSON.stringify(reported).includes("SECRET"), `${name}: the progress is clean`);
+    assert.ok(reported.length > 0, `${name}: the progress did run`);
+  }
+});
