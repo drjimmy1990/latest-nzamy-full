@@ -28,6 +28,7 @@ import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 import { PAYABLE_ITEMS } from "../payments/catalog.ts";
 import { VAT_NOTICE, vatNoticeFor } from "./vatNotice.ts";
 import { USER_TYPE_TO_AUDIENCE } from "./audienceForUserType.ts";
+import { isArticle18Restricted } from "./plans.ts";
 
 function src(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -728,4 +729,9 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   assert.deepEqual([3, 6, 12].map(validityAr), ["صالحة ٣ أشهر", "صالحة ٦ أشهر", "صالحة ١٢ شهراً"]);
   // …and the helper's own agreement, so a future 1- or 2-month pack is held to correct Arabic.
   assert.deepEqual([1, 2, 10, 11].map(validityAr), ["صالحة شهراً واحداً", "صالحة شهرين", "صالحة ١٠ أشهر", "صالحة ١١ شهراً"]);
+});
+
+test("Art. 18: the independent consultant plan is restricted, an individual plan is not", () => {
+  assert.equal(isArticle18Restricted("consultant-independent"), true);
+  assert.equal(isArticle18Restricted("ind-ai"), false);
 });
