@@ -157,3 +157,11 @@ test("the card's own note says what it shows and where it is switched off", () =
   const qr = qrTargetFor({ scope: "lawyer", profile: unpublished, verifyCard: { token: CARD_TOKEN, enabled: true } }, ORIGIN);
   assert.match(qrNoteAr(qr, { token: CARD_TOKEN, enabled: true }) ?? "", /إعدادات الخصوصية/);
 });
+
+test("a verified lawyer with no vault row or no token: the note does not say an unpublished profile is the only cause", () => {
+  const qr = qrTargetFor({ scope: "lawyer", profile: unpublished, verifyCard: { token: null, enabled: true } }, ORIGIN);
+  const note = qrNoteAr(qr, { token: null, enabled: true }) ?? "";
+  assert.doesNotMatch(note, /لكنه غير منشور/);
+  assert.match(note, /فعّل الظهور/);
+  assert.match(note, /احفظ هويتك/, "saving his identity is what creates the row a card needs");
+});

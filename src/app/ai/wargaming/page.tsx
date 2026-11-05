@@ -28,6 +28,7 @@ import { useAiRun } from "@/hooks/useAiRun";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
+import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { aiSkippedNote, pasteState, splitAiReadable, withTextAccept } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
@@ -1215,6 +1216,7 @@ function AIWargamingPage() {
               {docsPaste.tooShort && <p className="text-[11px] text-amber-500">النص الملصق قصير — الصق المستندات كاملة (٥٠ حرفاً على الأقل)</p>}
               {docsPaste.tooLong && <p className="text-[11px] text-red-500">النص الملصق أطول من ٣٠٬٠٠٠ حرف — ارفعه ملفاً</p>}
               {docsNoRoom && <p className="text-[11px] text-amber-500">النص الملصق يُحسب ملفاً، والحد {WAVE4_FILES.max.toLocaleString("ar-SA")} ملفات — احذف ملفاً أو أفرغ النص.</p>}
+              {ai.code !== RUN_STILL_RUNNING_CODE && (<>
               <FounderCreditChoice key={founderCreditChoiceKey(ai.phase, ai.creditUsed, ai.runId)} kind="independent_output"
                 value={useCredit} onChange={setUseCredit} isDark={D} disabled={ai.busy}/>
               <button type="button" onClick={runAi} disabled={aiBlocked}
@@ -1222,6 +1224,7 @@ function AIWargamingPage() {
                 <Sparkle size={14} weight="fill"/>
                 {ai.busy ? "جارٍ المحاكاة… (دقيقة أو أكثر)" : `شغّل المحاكاة الآن (${useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة`})`}
               </button>
+              </>)}
               {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
               {ai.phase === "review" && <p role="status" className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>{RUN_HELD_MESSAGE_AR}</p>}
               <AiThinkingStage run={ai} isDark={D} toolLabel={aiToolLabelAr("wargaming")} />

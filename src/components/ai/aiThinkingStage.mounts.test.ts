@@ -88,3 +88,24 @@ test("the three tools the section leaves out keep their own waiting UI: a stage 
     assert.doesNotMatch(src(file), /<AiThinkingStage/, file);
   }
 });
+
+test("while a run is still going, the named screens offer no charged button: a retry would be a second charge", () => {
+  const review = src("components/contracts/steps/review/StepRAiReview.tsx");
+  assert.match(review, /const stillRunning = phase === "error" && run\.code === RUN_STILL_RUNNING_CODE;/);
+  assert.match(review, /const settled = phase === "review" \|\| phase === "done" \|\| stillRunning;/);
+  assert.match(review, /\{stillRunning && error && \(/, "StepSubmit carried the sentence, and it is gone in this state");
+
+  const negotiator = src("app/ai/contract-negotiator/page.tsx");
+  assert.match(negotiator, /const settled = run\.phase === "review" \|\| run\.phase === "done" \|\| run\.code === RUN_STILL_RUNNING_CODE;/);
+
+  const brief = src("components/ai/caseBrief/CaseBriefStudio.tsx");
+  assert.match(brief, /\{run\.code !== RUN_STILL_RUNNING_CODE && \(<>\n\s*<motion\.button[\s\S]{0,200}onClick=\{runBrief\}[\s\S]*?CASE_BRIEF_PRICES\.large[\s\S]*?<\/>\)\}/);
+
+  const wargaming = src("app/ai/wargaming/page.tsx");
+  assert.match(wargaming, /\{ai\.code !== RUN_STILL_RUNNING_CODE && \(<>\n\s*<FounderCreditChoice[\s\S]{0,400}onClick=\{runAi\}[\s\S]*?<\/button>\n\s*<\/>\)\}/);
+
+  // A retry here answers 409 conversation_full and wipes the link: only the run link stays.
+  const draft = src("components/draft/steps/StepAiDraft.tsx");
+  assert.match(draft, /\{writing\.code !== RUN_STILL_RUNNING_CODE && \(<>\n\s*<button[\s\S]{0,120}onClick=\{startDraft\}[\s\S]*?الصياغة مشمولة بنقاط التحليل\.<\/p>\n\s*<\/>\)\}/);
+  assert.match(draft, /<RunStatus isDark=\{isDark\} run=\{writing\} \/>/, "the link itself stays");
+});

@@ -9,7 +9,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createAiRunClient, IDLE_RUN, type AiRunState } from "./aiRunClient.ts";
+import { createAiRunClient, IDLE_RUN, LOST_POST_WATCH_MS, type AiRunState } from "./aiRunClient.ts";
 import { RUN_ERROR_AR, RUN_STILL_RUNNING_AR, RUN_SESSION_LOST_AR } from "./runErrors.ts";
 import { FOUNDER_CREDIT_REFUNDED_FAILURE } from "../membership/founderPlan.ts";
 
@@ -431,6 +431,13 @@ test("the give-up copy names the run page and promises no alert, no refund, no r
   }
 });
 
+test("the session-lost copy says the run may still be going and points may have been taken, and promises nothing", () => {
+  assert.match(RUN_SESSION_LOST_AR, /قد يكون الطلب ما زال يعمل/);
+  assert.match(RUN_SESSION_LOST_AR, /نقاطه خُصمت/);
+  assert.match(RUN_SESSION_LOST_AR, /صفحة الطلب/);
+  assert.doesNotMatch(RUN_SESSION_LOST_AR, /ستصل|ستظهر|سنعيد|تُعاد/);
+});
+
 test("a signed-out or refused poll stops and points to the run page", async () => {
   for (const status of [401, 403]) {
     const h = acceptedJob(() => json({ error: "سجّل الدخول لعرض الطلب" }, status));
@@ -508,12 +515,76 @@ test("a POST cut at the gateway with a run already seen: it follows the run, and
   assertOver(h);
 });
 
-test("a POST lost with no run seen: the old honest failure, with nothing left running", async () => {
+test("a POST lost with no run seen: it asks about the key for a minute, then the old honest failure, with nothing left running", async () => {
+  assert.equal(LOST_POST_WATCH_MS, 60_000);
   const h = harness((url, init) => (init?.method === "POST" ? offline() : json({ runId: null, status: null, events: [] })));
   await h.client.start("quick-answer", {});
+  assert.equal(h.last().phase, "starting", "the button stays busy: the server may have taken the request");
+  assert.equal(h.pending(), 1);
+  await h.advance(LOST_POST_WATCH_MS - 3000);
+  assert.equal(h.last().phase, "starting");
+  assert.equal(h.last().error, null);
+  await h.advance(4500);
   assert.equal(h.last().phase, "error");
   assert.match(h.last().error!, /تعذّر الاتصال بالخادم/);
   assertOver(h);
+});
+
+test("a run that shows up on the key in that minute is followed, and never reads «حاول مرة أخرى»", async () => {
+  let progress = 0;
+  const h = harness((url, init) => {
+    if (init?.method === "POST") return offline();
+    if (url.startsWith(PROGRESS)) {
+      progress += 1;
+      return json(progress < 4 ? { runId: null, status: null, events: [] } : { runId: RUN_ID, status: "running", events: [ev(1)] });
+    }
+    return running();
+  });
+  await h.client.start("wargaming", {});
+  await h.advance(10_000);
+  assert.equal(h.last().phase, "running");
+  assert.equal(h.last().runId, RUN_ID);
+  assert.equal(h.last().error, null);
+  assert.deepEqual(h.last().events.map((e) => e.id), [1]);
+  await h.advance(3000);
+  assert.ok(h.calls.at(-1)!.url.startsWith(EVENTS), "it now follows the run");
+  h.client.stop();
+  assertOver(h);
+});
+
+test("a run that was already over when the key showed it still reaches its result", async () => {
+  const h = harness((url, init) => {
+    if (init?.method === "POST") return offline();
+    if (url.startsWith(PROGRESS)) return json({ runId: RUN_ID, status: "succeeded", events: [], final: true });
+    if (url.startsWith(EVENTS)) return finalEvents("succeeded");
+    return json({ run: { status: "succeeded", output: { answer: "ج" }, citations: [], charged_points: 20 } });
+  });
+  await h.client.start("quick-answer", {});
+  await h.advance(10_000);
+  assert.equal(h.last().phase, "done");
+  assertOver(h);
+});
+
+test("a signed-out key poll in that minute ends it at once, with the old failure", async () => {
+  const h = harness((url, init) => (init?.method === "POST" ? offline() : json({ error: "x" }, 401)));
+  await h.client.start("quick-answer", {});
+  await h.advance(1500);
+  assert.equal(h.last().phase, "error");
+  assert.match(h.last().error!, /تعذّر الاتصال بالخادم/);
+  assertOver(h);
+});
+
+test("stop (unmount) in that minute: the timer goes, nothing more is fetched or written", async () => {
+  const h = harness((url, init) => (init?.method === "POST" ? offline() : json({ runId: null, status: null, events: [] })));
+  await h.client.start("quick-answer", {});
+  await h.advance(3000);
+  const seen = h.calls.length;
+  const states = h.states.length;
+  h.client.stop();
+  assertOver(h);
+  await h.advance(120_000);
+  assert.equal(h.calls.length, seen);
+  assert.equal(h.states.length, states);
 });
 
 test("the server's own refusal stays as written; a credit run's says the credit came back", async () => {

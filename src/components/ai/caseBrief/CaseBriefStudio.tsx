@@ -18,6 +18,7 @@ import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
+import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import { CASE_BRIEF_FILES, CASE_BRIEF_PRICES, CASE_BRIEF_SMALL_PAGES } from "@/lib/ai/tools";
 
@@ -298,7 +299,8 @@ function CaseBriefTool() {
               </div>
             )}
 
-            {/* CTA */}
+            {/* CTA. Not while a run may still be going: running it again would be a second charge. */}
+            {run.code !== RUN_STILL_RUNNING_CODE && (<>
             <motion.button
               whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
               onClick={runBrief}
@@ -311,6 +313,7 @@ function CaseBriefTool() {
             <p className={`text-[11px] leading-relaxed text-center ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
               {CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_SMALL_PAGES.toLocaleString("ar-SA")} صفحات، و{CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_FILES.maxPages.toLocaleString("ar-SA")} صفحة · تُحفظ الملفات في مستنداتك، وتُرسل نسخة منها إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
             </p>
+            </>)}
           </motion.div>
         )}
 

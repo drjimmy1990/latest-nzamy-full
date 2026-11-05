@@ -22,6 +22,7 @@ import { useAiRun } from "@/hooks/useAiRun";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
+import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { CONTRACT_NEGOTIATOR_PRICE, NEGOTIATOR_CLAUSES_MAX } from "@/lib/ai/tools";
 
 /**
@@ -91,8 +92,9 @@ function NegotiatorTool({ isDark }: { isDark: boolean }) {
   const form = { ourParty, contractType, clauses };
   const problem = negotiatorFormProblem(form);
   const negotiation = run.phase === "done" ? asNegotiation(run.output) : null;
-  // A run that ended without a result on this screen was still paid for: no second charge from here.
-  const settled = run.phase === "review" || run.phase === "done";
+  // A run that ended without a result on this screen was still paid for, and one the
+  // page stopped watching may still be going: no second charge from here.
+  const settled = run.phase === "review" || run.phase === "done" || run.code === RUN_STILL_RUNNING_CODE;
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const label = `mb-1.5 block text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`;

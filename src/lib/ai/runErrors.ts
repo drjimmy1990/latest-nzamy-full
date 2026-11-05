@@ -41,7 +41,7 @@ export function runFailureMessage(code: string | null, refunded: boolean, credit
  * so no result or refund is promised either.
  */
 export const RUN_STILL_RUNNING_AR = "ما زال الطلب قيد التنفيذ — تابعه من صفحة الطلب، ولا تُعِد تشغيله الآن حتى لا يُحتسب مرتين";
-export const RUN_SESSION_LOST_AR = "توقفت متابعة الطلب لأن جلستك انتهت — سجّل الدخول ثم تابعه من صفحة الطلب";
+export const RUN_SESSION_LOST_AR = "توقفت متابعة الطلب لأن جلستك انتهت. قد يكون الطلب ما زال يعمل وقد تكون نقاطه خُصمت — سجّل الدخول وتحقق من صفحة الطلب قبل تشغيله مرة أخرى";
 export const RUN_NOT_FOUND_AR = "تعذّر العثور على هذا الطلب";
 
 export interface ProgressItem {

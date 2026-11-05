@@ -9,6 +9,7 @@
 --   sed -n '/^-- >>> verify:letterhead_verify_card/,/^-- <<< verify:letterhead_verify_card/p' $M/_verify.sql > "$B"
 --   bash $R/run.sh \
 --     $R/prelude_storage_objects_stub.sql $R/prelude_storage_buckets_stub.sql \
+--     $R/prelude_account_deletion_requests_stub.sql \
 --     $M/20261026_63_branding_vault.sql \
 --     $R/prelude_lawyer_profiles_live.sql \
 --     $M/20261016_10_lawyer_profiles_select_column_lock.sql \
@@ -25,6 +26,10 @@
 --   NC3 — grant update (qr_verify_card) to authenticated → the _verify block
 --     stops first: "authenticated can write branding_vaults.qr_verify_card"
 --     (T7 proves the same refusal for a real session).
+--   NC4 — the card without its frozen-account test (sed the "not exists" out of a
+--     copy of the migration) → "T10 FAIL: a frozen account (requested) still shows a card".
+--   NC5 — the chain without the account_deletion_requests prelude → the migration
+--     stops: "20261103_69: public.account_deletion_requests does not exist".
 --
 -- People: L verified, unpublished · L2 verified, published · U unverified ·
 --         S suspended · firm F (a vault with a token, to prove firms get no card).
@@ -223,5 +228,29 @@ begin
   raise notice 'T8d PASS: a guest is refused for real';
 end $$;
 reset role;
+
+-- ── T10 a frozen account shows no card: printed paper must not vouch for it ──
+-- The same statuses as account_frozen_never_listed (20261026_70).
+insert into public.account_deletion_requests (user_id, status)
+  values ('00000000-0000-0000-0000-0000000000a1', 'requested');
+do $$
+declare s text;
+begin
+  foreach s in array array['requested', 'purging', 'blocked'] loop
+    update public.account_deletion_requests set status = s where user_id = '00000000-0000-0000-0000-0000000000a1';
+    if public.letterhead_verification_card('abcdefghijklmnopqrstuvwxyz234567') is distinct from '{"state": "home"}'::jsonb then
+      raise exception 'T10 FAIL: a frozen account (%) still shows a card', s;
+    end if;
+  end loop;
+  -- Someone else's freeze changes nothing for him.
+  if public.letterhead_verification_card('22222222222222222222222222222222')->>'state' <> 'card' then
+    raise exception 'T10b FAIL: another account''s freeze took this card';
+  end if;
+  update public.account_deletion_requests set status = 'cancelled' where user_id = '00000000-0000-0000-0000-0000000000a1';
+  if public.letterhead_verification_card('abcdefghijklmnopqrstuvwxyz234567')->>'state' <> 'card' then
+    raise exception 'T10c FAIL: a cancelled deletion did not bring the card back';
+  end if;
+  raise notice 'T10 PASS: requested, purging and blocked answer home; cancelled brings the same token back';
+end $$;
 
 select 'letterhead_verify_card.test.sql: ALL PASS';

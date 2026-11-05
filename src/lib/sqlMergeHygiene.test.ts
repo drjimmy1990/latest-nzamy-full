@@ -82,3 +82,11 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });
+
+test("20261103_22: the last SELECT is the check, since the SQL editor shows only the last result", () => {
+  const sql = readFileSync(new URL("../../supabase/migrations/20261103_22_coupon_business_role.sql", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const selects = sql.slice(sql.lastIndexOf("commit;")).split(/^(?=select )/m).filter((s) => s.startsWith("select "));
+  assert.equal(selects.length, 2);
+  assert.match(selects[1], /as ok\b/);
+  assert.doesNotMatch(selects[0], /as ok\b/);
+});

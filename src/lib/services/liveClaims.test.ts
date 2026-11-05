@@ -387,3 +387,13 @@ test("templates: the download is not a dead button", () => {
   assert.doesNotMatch(page, /<button className[^>]*>\s*<Download size=\{16\} \/> تنزيل القالب/);
   assert.match(page, /تنزيل القالب[\s\S]{0,120}COMING_SOON_BADGE_AR/);
 });
+
+test("no alert and no instant answer are promised where nothing delivers them; ٤٤٣ names both lines", () => {
+  assert.doesNotMatch(src("lib/notificationsStore.ts"), /نُعلمك عند إطلاقه/);
+  assert.doesNotMatch(src("app/services/labor/page.tsx"), /بما تستحقه فوراً/);
+  const questions = readFileSync(new URL("../../../docs/audits/2026-11-02-owner-package/owner-questions.ar.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const q443 = questions.slice(questions.indexOf("**٤٤٣"), questions.indexOf("**٤٤٤"));
+  assert.ok(q443.includes("أجب على ٤ أسئلة فقط"), "services/labor/page.tsx");
+  assert.ok(q443.includes("استخدم المجيب السريع"), "OnboardingBanner.tsx, the client's body");
+  assert.doesNotMatch(questions, /^---\n\n---$/m, "one rule between sections");
+});

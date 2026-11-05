@@ -11,7 +11,9 @@
 --                                    owner's choice), written by the server only.
 --   letterhead_verification_card()   what the public page may show: the name,
 --                                    the licence number and the state. Every
---                                    other case answers the same {"state":"home"},
+--                                    other case, a frozen account included (the
+--                                    statuses of account_frozen_never_listed in
+--                                    20261026_70), answers the same {"state":"home"},
 --                                    so a token reveals nothing and printed paper
 --                                    never leads to a 404.
 --   mint_letterhead_verify_token()   sets the token once and returns the stored
@@ -22,8 +24,9 @@
 --   column is 42501. No RLS policy changes on any table, and nothing here reads
 --   a migration of the skipped firm tasks (R32).
 --
--- DEPENDS ON — public.branding_vaults (20261026_63), public.lawyer_profiles with
---   slug and marketplace_visible, public.profiles.
+-- DEPENDS ON — public.branding_vaults (20261026_63), public.account_deletion_requests
+--   (20261026_70), public.lawyer_profiles with slug and marketplace_visible,
+--   public.profiles. Without the deletion table this file stops and changes nothing.
 --
 -- DEPLOY ORDER — BEFORE the deploy. The new code survives its absence: the
 --   branding route answers verifyCard null (42703, PGRST202), the public page
@@ -41,6 +44,13 @@
 -- =============================================================================
 
 begin;
+
+do $$
+begin
+  if to_regclass('public.account_deletion_requests') is null then
+    raise exception '20261103_69: public.account_deletion_requests does not exist — run 20261026_70_account_deletion.sql first; nothing changed';
+  end if;
+end $$;
 
 alter table public.branding_vaults
   add column if not exists verify_token text
@@ -81,7 +91,9 @@ begin
    where b.verify_token = p_token
      and b.lawyer_user_id is not null
      and b.qr_verify_card
-     and lp.verification_status = 'verified';
+     and lp.verification_status = 'verified'
+     and not exists (select 1 from public.account_deletion_requests r
+                      where r.user_id = b.lawyer_user_id and r.status in ('requested', 'purging', 'blocked'));
 
   if not found then
     return jsonb_build_object('state', 'home');

@@ -79,3 +79,9 @@ test("the page reads the run only through the route that applies runVisibility",
   assert.doesNotMatch(page, /supabase/i, "never reads ai_runs from the browser client");
   assert.doesNotMatch(page, /سيصلك تنبيه/, "no alert exists (R30)");
 });
+
+test("a running run's page promises no result: a run a restart abandoned ends only when the sweep reaches it", () => {
+  const { message } = runPageView({ status: "running" });
+  assert.match(message ?? "", /قيد التنفيذ/);
+  assert.doesNotMatch(message ?? "", /النتيجة|ستظهر|سترى/);
+});

@@ -161,7 +161,7 @@ export default function LaborServicePage() {
                   اعرف حقوقك الآن
                 </h2>
                 <p className="text-white/70 text-sm max-w-[40ch]">
-                  أجب على ٤ أسئلة فقط — وسيُخبرك AI قانوني بما تستحقه فوراً.
+                  أجب على ٤ أسئلة فقط — وسيُخبرك AI قانوني بما تستحقه.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">

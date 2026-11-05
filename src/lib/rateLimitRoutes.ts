@@ -207,6 +207,18 @@ export function isAiRunStartRoute(method: string, pathname: string): boolean {
   return method === "POST" && AI_RUN_START_RE.test(pathname);
 }
 
+// The card a printed QR opens (q343): /verify/<token> and the service-role read it
+// makes. Public and keyed only by an unguessable token, as the tracking page, so
+// the same arrangement: the visitor key plus a wider ceiling per proxy-resolved IP.
+// One scan costs two requests here. A refused read sends the visitor home, as any
+// other answer that is not a card does.
+export const LETTERHEAD_VERIFY_RE = /^(?:\/verify|\/api\/v1\/letterhead\/verify)\/[^/]+$/;
+
+/** True for a GET/HEAD of /verify/<one segment> or /api/v1/letterhead/verify/<one segment>. */
+export function isLetterheadVerifyRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && LETTERHEAD_VERIFY_RE.test(pathname);
+}
+
 // GET /api/v1/ai/runs/progress (useAiRun while a POST is in flight): a session
 // check plus up to two service reads, about 40 times a minute per open run. The
 // same arrangement as points-standing: the general policy under its own name, so

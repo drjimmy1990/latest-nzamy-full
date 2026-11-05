@@ -16,7 +16,7 @@ import { runFailureMessage } from "./runErrors.ts";
 import { runOutputBlocks, type RunOutputBlock } from "./runOutputBlocks.ts";
 
 export const RUN_HELD_MESSAGE_AR = "هذه النتيجة محجوبة بانتظار قرار فريق نظامي";
-const RUN_RUNNING_MESSAGE_AR = "الطلب قيد التنفيذ — حدّث الصفحة بعد قليل لترى النتيجة";
+const RUN_RUNNING_MESSAGE_AR = "الطلب قيد التنفيذ — حدّث الصفحة بعد قليل لمعرفة حالته";
 const RUN_OUTPUT_GONE_AR = "لم يعد ناتج هذا الطلب محفوظاً";
 
 export interface RunPageView {

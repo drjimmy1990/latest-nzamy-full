@@ -11,6 +11,7 @@ import CitationCheckList from "@/components/ai/CitationCheckList";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
+import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { CitedText, SourceList, asCitations } from "@/components/ai/CitedAnswer";
 import { DRAFT_KINDS, type DraftKindId } from "@/lib/ai/draftKinds";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
@@ -261,6 +262,8 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
               <div className="space-y-2">
                 <RunStatus isDark={isDark} run={writing} />
                 {blocker && <p className={`text-[11px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>{blocker}</p>}
+                {/* While a run may still be going a retry answers 409 conversation_full and wipes the link. */}
+                {writing.code !== RUN_STILL_RUNNING_CODE && (<>
                 <button
                   type="button"
                   onClick={startDraft}
@@ -270,6 +273,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
                   <FileDoc size={15} /> {writing.busy ? "جارٍ الكتابة..." : writing.phase === "error" ? "أعد المحاولة — دون خصم" : "اكتب المذكرة"}
                 </button>
                 <p className={`text-center text-[10px] ${muted}`}>الصياغة مشمولة بنقاط التحليل.</p>
+                </>)}
               </div>
             )}
           </div>

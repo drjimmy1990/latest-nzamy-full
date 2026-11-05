@@ -61,12 +61,13 @@ update public.coupons
 commit;
 
 -- ── 3. The check you can see in the SQL editor ───────────────────────────────
--- Expect left_business = 0, ok = t; then the codes now holding 'corporate'.
-select count(*) filter (where 'business' = any (eligible_user_types)) as left_business,
-       (count(*) filter (where 'business' = any (eligible_user_types)) = 0) as ok
-  from public.coupons;
-
+-- First the codes now holding 'corporate'. The last result, the one the editor
+-- shows, is one row: left_business = 0, ok = t.
 select code, eligible_user_types, active
   from public.coupons
  where 'corporate' = any (eligible_user_types)
  order by code;
+
+select count(*) filter (where 'business' = any (eligible_user_types)) as left_business,
+       (count(*) filter (where 'business' = any (eligible_user_types)) = 0) as ok
+  from public.coupons;

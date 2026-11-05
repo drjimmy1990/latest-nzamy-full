@@ -4,7 +4,7 @@
 
 **Screen or file.** Every SQL result and every command's output in this file appears on the screen. None of them is saved to a file, except the deploy log, which is named in Step 3. Paste the results back to us.
 
-**The SQL Editor hides NOTICEs and shows only the last result.** So each file below ends with a SELECT you can read. `_22` ends with two, so it has its own check in Step 4.
+**The SQL Editor hides NOTICEs and shows only the last result.** So each file below ends with a SELECT you can read.
 
 ## The whole order
 
@@ -166,7 +166,7 @@ D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migra
 /www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_69_letterhead_verify_card.sql
 ```
 
-Expect one row, `ok = t`. It depends on `20261026_63`, which is already on production.
+Expect one row, `ok = t`. It depends on `20261026_63` and `20261026_70`, which are already on production. Without `_70` it stops and changes nothing.
 
 ---
 
@@ -243,13 +243,7 @@ D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migra
 /www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_22_coupon_business_role.sql
 ```
 
-The file ends with two SELECTs, and the editor shows only the second: the codes that now target companies (it may be empty). Then run this in a new query:
-
-```sql
-select count(*) filter (where 'business' = any (eligible_user_types)) as left_business,
-       (count(*) filter (where 'business' = any (eligible_user_types)) = 0) as ok
-  from public.coupons;
-```
+The file ends with two SELECTs: the codes that now target companies (it may be empty), then the check. The editor shows only the last one:
 
 ```
 left_business | ok

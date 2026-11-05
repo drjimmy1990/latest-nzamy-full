@@ -39,6 +39,7 @@ import {
   isAiRunProgressRoute,
   isToolStatusRoute,
   isAiRunStartRoute,
+  isLetterheadVerifyRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -120,6 +121,9 @@ const DOCUMENT_PREVIEW_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 10
 // proxy-resolved IP, for an office or a shared edge behind one address.
 const AI_RUN_START_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 20 };
 const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 200 };
+// The printed QR's public card: the tracking page's numbers, for the same reason.
+const LETTERHEAD_VERIFY_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 30 };
+const LETTERHEAD_VERIFY_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
 // Owner note ١٣ C03 — every library and library-invitation route
 // (src/lib/rateLimitRoutes.ts libraryBudgetBuckets). Per visitor (Cloudflare's
 // CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
@@ -133,7 +137,7 @@ const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 
 //                                as the reader scrolls (no whole-collection
 //                                walk), a book in batches of 50 blocks
 //   library-init   60 / 10 min — catalogue pages of up to 200 rows
-// (The library AI is POST /api/v1/ai/runs, in the general bucket.)
+// (The library AI is POST /api/v1/ai/runs, in the general and ai-run-start buckets.)
 // The durable per-USER daily quota is separate (applyLibraryReadQuota below).
 const LIBRARY_BUDGETS: Readonly<Record<LibraryBudgetBucket, { visitor: RateLimitPolicy; ip: RateLimitPolicy }>> = {
   "library-any": { visitor: { windowMs: 60 * 1000, max: 300 }, ip: { windowMs: 60 * 1000, max: 3000 } },
@@ -180,12 +184,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isAiRunProgressMatch = isAiRunProgressRoute(method, pathname);
     const isToolStatusMatch = isToolStatusRoute(method, pathname);
     const isAiRunStartMatch = isAiRunStartRoute(method, pathname);
+    const isLetterheadVerifyMatch = isLetterheadVerifyRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
-      !isToolStatusMatch && !isAiRunStartMatch &&
+      !isToolStatusMatch && !isAiRunStartMatch && !isLetterheadVerifyMatch &&
       !isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
@@ -244,6 +249,14 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       // Same visitor key as the library bucket (Cloudflare's CF-Connecting-IP).
       const key = libraryReadClientKey((name) => req.headers.get(name), ip);
       const decision = rateLimiter.check("tracking-page", key, TRACKING_PAGE_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isLetterheadVerifyMatch) {
+      const perIp = rateLimiter.check("letterhead-verify-ip", ip, LETTERHEAD_VERIFY_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("letterhead-verify", key, LETTERHEAD_VERIFY_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

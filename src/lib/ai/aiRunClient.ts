@@ -83,6 +83,8 @@ export const RUN_STILL_RUNNING_CODE = "still_running";
 export const KEY_POLL_MS = 1500;
 export const JOB_POLL_MS = 3000;
 export const POLL_LIMIT_MS = 20 * 60 * 1000;
+/** A POST's reply was lost with no run seen: how long the key is still asked about. */
+export const LOST_POST_WATCH_MS = 60_000;
 const RETRY_AFTER_MAX_MS = 30_000;
 const FALLBACK_ERROR = "تعذّر الاتصال بالخادم — حاول مرة أخرى";
 
@@ -268,15 +270,41 @@ export function createAiRunClient(deps: AiRunClientDeps) {
     const key = newKey();
     watchKey(key);
 
-    /** A reply that is not an answer: follow a run that was seen, or say we lost it. */
+    const followSeen = (runId: string) => {
+      put({ phase: "running", runId, creditUsed: opts.useCredit === true, conversationId: opts.conversationId ?? null });
+      follow(runId);
+    };
+
+    /**
+     * A reply that is not an answer: follow a run that was seen. With none seen the
+     * server may still have taken the request and charged it, so the key is asked
+     * about for a minute before «حاول مرة أخرى». The phase stays "starting", so the
+     * button stays busy. stop() ends this like any poll.
+     */
     const lost = () => {
       stopPolling();
-      if (seenRunId) {
-        put({ phase: "running", runId: seenRunId, creditUsed: opts.useCredit === true, conversationId: opts.conversationId ?? null });
-        follow(seenRunId);
-      } else {
+      if (seenRunId) return followSeen(seenRunId);
+      const giveUp = () => {
+        stopPolling();
         put({ phase: "error", error: FALLBACK_ERROR });
-      }
+      };
+      const watch = ++pollGen;
+      const since = now();
+      const tick = async () => {
+        const reading = await read(`/api/v1/ai/runs/progress?key=${encodeURIComponent(key)}&after=${cursor}`, KEY_POLL_MS);
+        if (watch !== pollGen) return;
+        if (reading.kind === "denied") return giveUp();
+        if (reading.kind === "ok") {
+          take(reading.body);
+          if (typeof reading.body.runId === "string") {
+            seenRunId = reading.body.runId;
+            return followSeen(seenRunId);
+          }
+        }
+        if (now() - since >= LOST_POST_WATCH_MS) return giveUp();
+        next(watch, tick, reading.kind === "limited" ? reading.wait : KEY_POLL_MS);
+      };
+      next(watch, tick, KEY_POLL_MS);
     };
 
     let res: Response;

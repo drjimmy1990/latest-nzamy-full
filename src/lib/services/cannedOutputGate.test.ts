@@ -376,13 +376,13 @@ test("a client sees the working analyzer card on the hub, not the lawyer tool's 
 
 test("a settled run never offers a charged button again: the review step and the negotiator", () => {
   const step = code("components/contracts/steps/review/StepRAiReview.tsx");
-  assert.ok(step.includes('const settled = phase === "review" || phase === "done";'));
+  assert.ok(step.includes('const settled = phase === "review" || phase === "done" || stillRunning;'));
   const usable = step.slice(step.indexOf("function UsableReview"));
   assert.ok(usable.indexOf("settled ?") < usable.indexOf("<StepSubmit"), "the settled branch comes before the charged form");
   assert.ok(usable.indexOf("settled ?") > -1);
 
   const page = code("app/ai/contract-negotiator/page.tsx");
-  assert.ok(page.includes('const settled = run.phase === "review" || run.phase === "done";'));
+  assert.ok(page.includes('const settled = run.phase === "review" || run.phase === "done" || run.code === RUN_STILL_RUNNING_CODE;'));
   assert.ok(page.indexOf("{!settled && (") > -1);
   assert.ok(page.indexOf("{!settled && (") < page.indexOf("حلّل وفاوض"), "the charged button is inside it");
 });

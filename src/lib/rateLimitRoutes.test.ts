@@ -18,6 +18,7 @@ import {
   isAiRunProgressRoute,
   isToolStatusRoute,
   isAiRunStartRoute,
+  isLetterheadVerifyRoute,
   libraryBudgetBuckets,
   canonicalApiPath,
 } from "./rateLimitRoutes.ts";
@@ -281,6 +282,32 @@ test("proxy: a run start is keyed like the per-visitor buckets, with a wider cei
   assert.match(
     src,
     /if \(isAiRunStartMatch\) \{\n\s*const perIp = rateLimiter\.check\("ai-run-start-ip", ip, AI_RUN_START_IP_RATE_LIMIT\);\n\s*if \(!perIp\.allowed\) return rateLimitResponse\(perIp\);\n\s*const key = libraryReadClientKey\(\(name\) => req\.headers\.get\(name\), ip\);\n\s*const decision = rateLimiter\.check\("ai-run-start", key, AI_RUN_START_RATE_LIMIT\);\n\s*if \(!decision\.allowed\) return rateLimitResponse\(decision\);/,
+  );
+});
+
+test("isLetterheadVerifyRoute: the printed QR's page and its read, GET and HEAD, one token segment only", () => {
+  for (const p of ["/verify/abc", "/api/v1/letterhead/verify/abc"]) {
+    assert.equal(isLetterheadVerifyRoute("GET", p), true, p);
+    assert.equal(isLetterheadVerifyRoute("HEAD", p), true, p);
+    assert.equal(isLetterheadVerifyRoute("POST", p), false, p);
+    assert.equal(isLetterheadVerifyRoute("GET", `${p}/x`), false, p);
+  }
+  assert.equal(isLetterheadVerifyRoute("GET", "/verify"), false);
+  assert.equal(isLetterheadVerifyRoute("GET", "/api/v1/branding/verify-card"), false);
+  assert.equal(isLetterheadVerifyRoute("GET", "/api/v1/share/abc/verify"), false);
+});
+
+test("proxy: the verify read is keyed like the tracking page, the visitor key plus a wider ceiling per IP", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const LETTERHEAD_VERIFY_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 30 \};/);
+  assert.match(src, /const LETTERHEAD_VERIFY_IP_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 300 \};/);
+  assert.match(src, /const isLetterheadVerifyMatch = isLetterheadVerifyRoute\(method, pathname\);/);
+  assert.match(src, /!isLetterheadVerifyMatch &&/);
+  assert.match(
+    src,
+    /if \(isLetterheadVerifyMatch\) \{\n\s*const perIp = rateLimiter\.check\("letterhead-verify-ip", ip, LETTERHEAD_VERIFY_IP_RATE_LIMIT\);\n\s*if \(!perIp\.allowed\) return rateLimitResponse\(perIp\);\n\s*const key = libraryReadClientKey\(\(name\) => req\.headers\.get\(name\), ip\);\n\s*const decision = rateLimiter\.check\("letterhead-verify", key, LETTERHEAD_VERIFY_RATE_LIMIT\);\n\s*if \(!decision\.allowed\) return rateLimitResponse\(decision\);/,
   );
 });
 

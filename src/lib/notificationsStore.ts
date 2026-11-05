@@ -116,7 +116,7 @@ const SEED: Notification[] = [
     id: "n8",
     type: "system",
     title: "المستشار الذكي — قريباً",
-    body: "قيد الإعداد؛ نُعلمك عند إطلاقه.",
+    body: "قيد الإعداد.",
     href: "/ai",
     time: "منذ أسبوع",
     read: true,

@@ -6,6 +6,7 @@ import { Info, UsersThree, Warning } from "@phosphor-icons/react";
 import { AiThinkingStage, type AiStageRun } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
+import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { CONTRACT_REVIEW_PRICE } from "@/lib/ai/tools";
 import { ContractReviewReport } from "@/components/contracts/ContractReviewReport";
 import type { ContractReview, ContractReviewSource } from "@/components/contracts/contractReviewRun";
@@ -79,8 +80,10 @@ function UsableReview({
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const muted = isDark ? "text-zinc-400" : "text-zinc-500";
   const busy = phase === "starting" || phase === "running";
+  // The page stopped watching a run that may still be going: running it again would be a second charge.
+  const stillRunning = phase === "error" && run.code === RUN_STILL_RUNNING_CODE;
   // A run that ended without a report on this screen was still paid for: no second charge from here.
-  const settled = phase === "review" || phase === "done";
+  const settled = phase === "review" || phase === "done" || stillRunning;
   const points = CONTRACT_REVIEW_PRICE.toLocaleString("ar-SA");
   const left = source.kind === "none" ? [] : source.left;
   const pasteIgnored = source.kind === "file" && source.pasteIgnored;
@@ -101,6 +104,11 @@ function UsableReview({
           {phase === "done" && (
             <p role="alert" className={`rounded-2xl border px-4 py-3 text-[13px] leading-relaxed ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>
               اكتملت المراجعة لكن تعذّر عرض التقرير هنا — تواصل مع الدعم.
+            </p>
+          )}
+          {stillRunning && error && (
+            <p role="alert" className={`rounded-2xl border px-4 py-3 text-[13px] leading-relaxed ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+              {error}
             </p>
           )}
           {settled ? (
