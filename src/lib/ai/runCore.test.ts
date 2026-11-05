@@ -1278,6 +1278,13 @@ test("E4 (must prove): the callers that read an answer in the reply call only fa
   }
 });
 
+test("E4: the outer catch of both routes logs a thrown value by name only", () => {
+  for (const segs of [["runs"], ["callback"]]) {
+    const route = readFileSync(join(process.cwd(), "src", "app", "api", "v1", "ai", ...segs, "route.ts"), "utf8");
+    assert.doesNotMatch(route, /(POST failed:|\/callback\] threw:)", err\)/, segs[0]);
+  }
+});
+
 test("E4: the runs route defers through after", () => {
   const route = readFileSync(join(process.cwd(), "src", "app", "api", "v1", "ai", "runs", "route.ts"), "utf8");
   assert.match(route, /defer: \(task\) => after\(task\)/);

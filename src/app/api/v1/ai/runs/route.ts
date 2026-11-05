@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json(reply.body, { status: reply.status, headers: NO_STORE });
   } catch (err) {
-    console.error("[ai/runs] POST failed:", err);
+    console.error("[ai/runs] POST failed:", (err as { name?: string } | null)?.name ?? "error");
     return NextResponse.json({ error: "تعذّر بدء الأداة الآن — حاول بعد قليل" }, { status: 503, headers: NO_STORE });
   }
 }

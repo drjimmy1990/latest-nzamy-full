@@ -31,5 +31,5 @@ export const RUN_ERROR_AR: Readonly<Record<string, string>> = {
 export function runFailureMessage(code: string | null, refunded: boolean, creditUsed: boolean): string {
   if (creditUsed) return FOUNDER_CREDIT_REFUNDED_FAILURE;
   if (!refunded) return "تعذّر إكمال الطلب";
-  return code !== null && Object.hasOwn(RUN_ERROR_AR, code) ? RUN_ERROR_AR[code] : REFUNDED_FAILURE;
+  return code !== null && Object.prototype.hasOwnProperty.call(RUN_ERROR_AR, code) ? RUN_ERROR_AR[code] : REFUNDED_FAILURE;
 }

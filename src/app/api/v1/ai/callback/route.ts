@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const reply = await callbackWith(admin, body, { progress: progressSink(admin, (work) => after(work)) });
     return NextResponse.json(reply.body, { status: reply.status });
   } catch (err) {
-    console.error("[ai/callback] threw:", err);
+    console.error("[ai/callback] threw:", (err as { name?: string } | null)?.name ?? "error");
     // 503 → n8n retries; the sweeper refunds the run if it never lands.
     return NextResponse.json({ error: "unavailable" }, { status: 503 });
   }
