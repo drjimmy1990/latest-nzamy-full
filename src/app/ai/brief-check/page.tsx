@@ -41,6 +41,9 @@ import {
   FileMagnifyingGlass, CloudArrowUp, X, Warning, PaperPlaneTilt, SignIn, Paperclip, Sparkle,
 } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { BRIEF_CHECK_PASTE_MAX, BRIEF_CHECK_PASTE_MIN, BRIEF_CHECK_PRICE } from "@/lib/ai/tools";
 import { isAiReadable, pasteState } from "@/components/ai/aiReadable";
 import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
@@ -403,7 +406,8 @@ function AIBriefCheckPage() {
               </button>
               {!ai.busy && aiBlocked && <p className="text-[11px] text-amber-500">{aiBlocked}</p>}
               {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
-              {ai.phase === "review" && <p role="status" className={hint}>التقرير جاهز وينتظر مراجعة الفريق قبل عرضه.</p>}
+              {ai.phase === "review" && <p role="status" className={hint}>{RUN_HELD_MESSAGE_AR}</p>}
+              <AiThinkingStage run={ai} isDark={isDark} toolLabel={aiToolLabelAr("brief-check")} />
             </div>
           )}
         </div>

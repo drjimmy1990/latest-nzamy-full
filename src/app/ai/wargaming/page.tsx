@@ -25,6 +25,9 @@ import {
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { useAiRun } from "@/hooks/useAiRun";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { aiSkippedNote, pasteState, splitAiReadable, withTextAccept } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
@@ -1220,7 +1223,8 @@ function AIWargamingPage() {
                 {ai.busy ? "جارٍ المحاكاة… (دقيقة أو أكثر)" : `شغّل المحاكاة الآن (${useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة`})`}
               </button>
               {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
-              {ai.phase === "review" && <p role="status" className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>النتيجة جاهزة وتنتظر مراجعة الفريق قبل عرضها.</p>}
+              {ai.phase === "review" && <p role="status" className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>{RUN_HELD_MESSAGE_AR}</p>}
+              <AiThinkingStage run={ai} isDark={D} toolLabel={aiToolLabelAr("wargaming")} />
             </div>
 
             {simResult && (

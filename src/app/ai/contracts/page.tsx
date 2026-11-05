@@ -400,6 +400,7 @@ function AIContractsPageInner() {
               price={CONTRACTS_PRO_PRICE}
               phase={run.phase}
               error={run.error}
+              run={run}
               chargedPoints={run.chargedPoints}
               creditUsed={run.creditUsed}
               useCredit={useCredit}
