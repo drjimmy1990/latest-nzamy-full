@@ -70,6 +70,7 @@ const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: 
   "legal-opinion-letter": (admin, output) => enrichBriefCheck(admin as never, output),
   "contracts-pro": (admin, output) => enrichBriefCheck(admin as never, output),
   "contract-review": (admin, output) => enrichBriefCheck(admin as never, output),
+  "contract-negotiator": (admin, output) => enrichBriefCheck(admin as never, output),
   "legal-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
 };
 import {

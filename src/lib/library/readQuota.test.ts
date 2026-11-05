@@ -98,6 +98,7 @@ test("isLibraryAiTool: no other AI tool is locked — contract tools, L9–L11 a
     "contract-drafter", // L11
     "contracts-pro", // L13
     "contract-review",
+    "contract-negotiator",
     "wargaming", // L9
     "analyze-strength", // L10
     "legal-drafter",

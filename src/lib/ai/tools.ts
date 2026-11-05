@@ -1146,6 +1146,80 @@ function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
   return hasPercent(output) ? null : output;
 }
 
+// ── مفاوض العقود: three positions for each clause the user pastes ─────────────
+export const CONTRACT_NEGOTIATOR_PRICE = 150;
+export const NEGOTIATOR_CLAUSES_MAX = 10;
+export const NEGOTIATOR_STANCES = ["firm", "balanced", "flexible"] as const;
+const NEGOTIATOR_ALTERNATIVES_MAX = 3;
+
+function contractNegotiatorInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const party = typeof raw.our_party === "string" ? raw.our_party.trim() : "";
+  if (!party) return { ok: false, error: "حدّد الطرف الذي تمثّله" };
+  if (party.length > 150) return { ok: false, error: "اسم الطرف الذي تمثّله أطول من ١٥٠ حرفاً" };
+  const contractType = optionalField(raw.contract_type, 150);
+  if (contractType === null) return { ok: false, error: "نوع العقد أطول من ١٥٠ حرفاً" };
+  if (!Array.isArray(raw.clauses) || raw.clauses.length < 1 || raw.clauses.length > NEGOTIATOR_CLAUSES_MAX) {
+    return { ok: false, error: "ألصق بنداً واحداً على الأقل (حتى ١٠ بنود)" };
+  }
+  const clauses: Array<Record<string, string | null>> = [];
+  for (const c of raw.clauses) {
+    if (!isPlainObject(c)) return { ok: false, error: "المدخلات غير صالحة" };
+    const text = typeof c.text === "string" ? c.text.trim() : "";
+    if (text.length < 20) return { ok: false, error: "نص البند قصير — ألصق البند كاملاً (٢٠ حرفاً على الأقل)" };
+    if (text.length > 4000) return { ok: false, error: "نص البند أطول من ٤٬٠٠٠ حرف" };
+    const demand = optionalField(c.their_demand, 1500);
+    if (demand === null) return { ok: false, error: "طلب الطرف الآخر أطول من ١٬٥٠٠ حرف" };
+    const goal = optionalField(c.our_goal, 1500);
+    if (goal === null) return { ok: false, error: "هدفك من البند أطول من ١٬٥٠٠ حرف" };
+    clauses.push({ text, their_demand: demand ?? null, our_goal: goal ?? null });
+  }
+  return { ok: true, input: { our_party: party, contract_type: contractType ?? null, clauses } };
+}
+
+function negotiatorAlternative(a: unknown): Record<string, string> | null {
+  if (!isPlainObject(a) || !(NEGOTIATOR_STANCES as readonly unknown[]).includes(a.stance)) return null;
+  const text = boundedText(a.text, 4000);
+  const rationale = optionalField(a.rationale, 1500);
+  if (!text || rationale === null) return null;
+  return { stance: a.stance as string, text, rationale: rationale ?? "" };
+}
+
+function negotiatorClause(c: unknown, position: number): Record<string, unknown> | null {
+  // The answer to clause N says it is clause N: anything else answers a clause that was not asked.
+  if (!isPlainObject(c) || c.index !== position || !(REVIEW_RISKS as readonly unknown[]).includes(c.risk)) return null;
+  const issue = optionalField(c.issue, 1500);
+  const fallback = optionalField(c.fallback, 1500);
+  if (issue === null || fallback === null) return null;
+  if (!Array.isArray(c.alternatives) || c.alternatives.length < 1 || c.alternatives.length > NEGOTIATOR_ALTERNATIVES_MAX) return null;
+  const alternatives: Array<Record<string, string>> = [];
+  for (const a of c.alternatives) {
+    const alternative = negotiatorAlternative(a);
+    if (!alternative) return null;
+    alternatives.push(alternative);
+  }
+  return { index: position, issue: issue ?? "", risk: c.risk, alternatives, fallback: fallback ?? "" };
+}
+
+/**
+ * The negotiation. All or nothing: one answer for each clause the user gave, in his
+ * order, or the run fails and is refunded. A clause the model invented or skipped
+ * cannot reach the screen. `cited` becomes the library's verdict (runCore's enricher).
+ */
+function contractNegotiatorOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.clauses) || !Array.isArray(input.clauses)) return null;
+  const summary = boundedText(raw.summary, 3000);
+  if (!summary || raw.clauses.length !== input.clauses.length) return null;
+  const clauses: Array<Record<string, unknown>> = [];
+  for (let position = 0; position < raw.clauses.length; position += 1) {
+    const clause = negotiatorClause(raw.clauses[position], position);
+    if (!clause) return null;
+    clauses.push(clause);
+  }
+  const output = { summary, clauses, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [] };
+  return hasPercent(output) ? null : output;
+}
+
 // ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
 // Turn 0 «issues»: the facts → the issues, the proposed defences and requests,
 // which the lawyer confirms or edits. Turn 1 «draft»: what he confirmed → the
@@ -1582,6 +1656,21 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     pasteAsFile: { field: "contract_text", name: "نص العقد (ملصق).txt", maxChars: CONTRACT_REVIEW_PASTE_MAX },
     validateInput: contractReviewInput,
     validateOutput: contractReviewOutput,
+  },
+  "contract-negotiator": {
+    id: "contract-negotiator",
+    n8nPath: "nzamy-ai/contract-negotiator",
+    class: "job",
+    tier: "deep",
+    // The only nav rows are the firm and lawyer sidebars.
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    price: () => CONTRACT_NEGOTIATOR_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: contractNegotiatorInput,
+    validateOutput: contractNegotiatorOutput,
   },
   "legal-drafter": {
     id: "legal-drafter",

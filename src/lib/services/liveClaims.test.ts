@@ -65,7 +65,7 @@ test("/pricing disclaimer: the unlisted tools really are charged and really are 
   );
   assert.ok(listed.size >= 8, `parsed only ${listed.size} priced rows`);
   const unlisted = PRICED_AI_TOOL_IDS.filter((id) => !listed.has(id));
-  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "contract-review", "quick-answer"]);
+  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "contract-negotiator", "contract-review", "quick-answer"]);
 });
 
 // ── item B: no comparative-law tool exists ───────────────────────────────────

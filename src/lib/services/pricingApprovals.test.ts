@@ -110,6 +110,7 @@ const TODAY: Record<string, [number, number]> = {
   "case-brief": [30, 150],
   "brief-check": [200, 200],
   "contract-review": [250, 250],
+  "contract-negotiator": [150, 150],
 };
 
 test("task 4: the registry charges today's prices, and the display helper reads exactly that", () => {
