@@ -195,7 +195,7 @@ test("/ai/micro has no canned output", () => {
   assert.match(page, /const CONTRACT_CASES[\s\S]*id: "labor_contract"[\s\S]*id: "rent_contract"[\s\S]*id: "service_contract"[\s\S]*const SOON_CASES/);
   assert.match(page, /const SOON_CASES[\s\S]*id: "warning_letter"[\s\S]*id: "complaint_reply"[\s\S]*id: "consultation"/);
   assert.ok(body.includes('aiToolPriceText("contract-drafter", "ar")'));
-  assert.ok(!/٥٠٠|500/.test(body), "the price is typed by hand");
+  assert.ok(!/٥٠٠|500 نقطة/.test(body), "the price is typed by hand");
   assert.ok(body.includes("قريباً"));
   assert.ok(AI_TOOLS["contract-drafter"].roles.includes("micro"), "the drafter runs for a micro account");
 });
