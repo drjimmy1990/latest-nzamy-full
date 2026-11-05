@@ -31,7 +31,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   try {
     const { token } = await params;
     const reply = await serveFileText(await createServiceClient(), token, { secret, now: Date.now() });
-    if (reply.status === 200) return new NextResponse(reply.text, { status: 200, headers: HEADERS });
+    if (reply.status === 200) {
+      // A named file: without it, n8n would take the name from the URL, whose
+      // last segment is the token.
+      return new NextResponse(reply.text, {
+        status: 200,
+        headers: { ...HEADERS, "Content-Disposition": 'attachment; filename="document.txt"' },
+      });
+    }
     return new NextResponse(reply.status === 503 ? "unavailable" : "not found", { status: reply.status, headers: HEADERS });
   } catch (err) {
     console.error("[ai/file-text] route threw:", (err as { name?: string } | null)?.name ?? "error");

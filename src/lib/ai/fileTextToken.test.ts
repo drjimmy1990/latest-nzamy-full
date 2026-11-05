@@ -362,5 +362,6 @@ test("the route: thin, server-only, never cached, and outside every session gate
   assert.match(route, /private, no-store/);
   assert.match(route, /text\/plain; charset=utf-8/);
   assert.match(route, /nosniff/);
+  assert.match(route, /filename="document\.txt"/);
   assert.equal(isProtectedApiPath("/api/v1/ai/file-text/abc.def"), false, "n8n has no session");
 });
