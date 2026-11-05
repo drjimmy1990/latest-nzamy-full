@@ -166,3 +166,15 @@ test("the switch sits with the other privacy switches, and the letterhead page l
   assert.match(ws, /qrNoteAr\(identity\.qr, data\.verifyCard\)/);
   assert.match(ws, /\/settings\?tab=profession/);
 });
+
+test("GET reads the vault through the print path (q344, R32), with no print kit", () => {
+  const server = readFileSync("src/lib/branding/brandingServer.ts", "utf8");
+  const route = readFileSync("src/app/api/v1/branding/route.ts", "utf8");
+  assert.match(server, /export async function readVaultForPrint\(/);
+  const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function PUT"));
+  assert.ok(get.includes("readVaultForPrint(supabase, owner)"));
+  assert.ok(!get.includes("readOwnVault("), "PUT keeps the plain read; GET does not");
+  assert.ok(!server.includes("firm_letterhead_print_kit") && !get.includes("firm_letterhead_print_kit"));
+  assert.ok(!server.includes("firm_member_permissions"));
+  assert.ok(get.indexOf("denied") < get.indexOf("createSignedUrl"), "no signing before the print gate answered");
+});

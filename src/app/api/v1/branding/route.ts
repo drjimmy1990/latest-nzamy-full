@@ -10,7 +10,7 @@ import {
   validateBrandingFields,
   type BrandingFields,
 } from "@/lib/branding/brandingVault";
-import { readOwnVault, resolveBrandingCaller, type VaultRow } from "@/lib/branding/brandingServer";
+import { readOwnVault, readVaultForPrint, resolveBrandingCaller, type VaultRow } from "@/lib/branding/brandingServer";
 import { base32Token, resolveLawyerVerifyCard, type VerifyCardState } from "@/lib/branding/verifyCard";
 
 /**
@@ -113,7 +113,10 @@ export async function GET(request: NextRequest) {
     licence = { number: verified ? ((f?.license_number as string | null) || null) : null, verified };
   }
 
-  const { row, error } = await readOwnVault(supabase, owner);
+  const { row, error, denied } = await readVaultForPrint(supabase, owner);
+  if (denied) {
+    return NextResponse.json({ error: "لا تملك صلاحية طباعة هذا الورق المروّس" }, { status: 403, headers: NO_STORE });
+  }
   if (error && isMissingBrandingTable(error)) {
     return NextResponse.json(
       { available: false, message: BRANDING_NEEDS_MIGRATION_AR, scope: owner.scope, role: owner.firmRole ?? null,
