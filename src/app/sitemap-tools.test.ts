@@ -27,7 +27,7 @@ test("task 6 review M1: no gate-only or «قريباً» tool route is advertise
 });
 
 test("the tools with a working path stay listed", () => {
-  for (const route of ["/ai/draft", "/ai/legal-opinion", "/ai/contract-drafter", "/ai/wargaming", "/ai/quick-answer"]) {
+  for (const route of ["/ai/draft", "/ai/legal-opinion", "/ai/contract-drafter", "/ai/wargaming"]) {
     assert.ok(urls.includes(route), route);
   }
 });

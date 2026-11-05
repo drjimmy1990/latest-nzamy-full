@@ -90,7 +90,6 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/najiz-optimizer", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/quick-answer", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/secretary", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/templates", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/wargaming", priority: 0.75, changeFrequency: "monthly" },

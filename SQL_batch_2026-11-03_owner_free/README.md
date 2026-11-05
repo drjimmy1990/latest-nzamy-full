@@ -380,7 +380,7 @@ select t.tool, s.value -> t.tool ->> 'mode' as mode
 
 - An empty `mode` means the default, which is off.
 - **`case-brief`:** without `staff` or `live`, the card on `/ai/analyze` shows a «قريباً» card, with no price and no form.
-- **`quick-answer`:** the same at `/ai/quick-answer`; the plan's "visible at the deploy" holds only if it is already `live`.
+- **`quick-answer`:** the same at `/ai/quick-answer`; the plan's "visible at the deploy" holds only if it is already `live`. **If this already reads `live`, say so before the deploy:** sidebar rows 33 and 263 of `src/constants/navigation.sidebars.legal.ts` need a code change, or they say «قريباً» on a working tool that charges 20 points. A guest at this page now goes to the login page.
 - **To change a mode:** as an admin, open `https://nezamy.sa/dashboard/admin/ai-usage`, choose the mode for the row, and press **حفظ**. `staff` is «للمشرفين فقط», and `live` is «مفعّلة».
 
 Send us this table. `contract-review` and `contract-negotiator` should be empty until Step 9.
@@ -390,10 +390,10 @@ Send us this table. `contract-review` and `contract-negotiator` should be empty 
 These workflows set `saveDataErrorExecution: "all"`, so a failed execution stays in n8n with its data, and that data can hold text the tool was served: a pasted contract or a file's text. The app's 90-day retention does not reach it. On the n8n server, read the two settings:
 
 ```
-docker exec <n8n container> printenv EXECUTIONS_DATA_PRUNE EXECUTIONS_DATA_MAX_AGE
+docker exec <n8n container> sh -c 'echo PRUNE=${EXECUTIONS_DATA_PRUNE-unset}; echo MAX_AGE=${EXECUTIONS_DATA_MAX_AGE-unset}'
 ```
 
-This prints their values on the screen; nothing is written. `EXECUTIONS_DATA_MAX_AGE` is in hours. Pruning should be on, with an age you accept for that text. If a line is empty, the variable is not set and n8n uses its own default: check that version's documentation, and send us the result.
+This prints their values on the screen; nothing is written. `EXECUTIONS_DATA_MAX_AGE` is in hours. Pruning should be on, with an age you accept for that text. `unset` means the variable is not set, and n8n uses its default.
 
 ---
 
@@ -477,7 +477,7 @@ Both are built and **off**. No real model has run them. While off, nobody is cha
 **Three things to watch after go-live:**
 - **Percentages fail the run.** Any figure with `%` or `٪` in the result refunds the run, including a contract's own rate («غرامة ٥٪»); the prompts ask for rates in words. If refunds run high, look here first. This is owner question ٤٤٠.
 - **A long reply can be cut.** Review can reach about 26,000 characters at 20 clauses against 12,000 tokens, and the negotiator about 19,000 at 10 clauses against 10,000 tokens. A cut reply fails and refunds.
-- **A shared rate limit.** `/ai/contracts` reads tool-status on every load, in the same per-IP bucket as points-standing. A 429 reads as "unusable", so AI review can vanish behind a shared office IP. No one is charged.
+- **The tool-status limit.** tool-status has its own per-IP bucket at 120 a minute and retries once after `Retry-After`. A second 429 shows «قريباً» until the page is reloaded. No one is charged.
 
 ---
 
@@ -543,7 +543,7 @@ Send us the rows with `already_known = f`: `summary`, `laws` and `example_slug`,
 
 ### Lawyer
 - [ ] **Case brief studio** in `/ai/analyze`: upload, run and result, with the mode on (Step 7b).
-- [ ] **Quick answer** at `/ai/quick-answer`: examples, sources, «المجمّع», follow-ups; 20 points charged.
+- [ ] **Quick answer** at `/ai/quick-answer`, with the mode on (Step 7b): examples, sources, «المجمّع», follow-ups; 20 points charged.
 - [ ] **The waiting screen (`AiThinkingStage`)**, on a job tool with one PDF, such as wargaming: file names, the stages, a real clock; layout in dark mode. `GET /api/v1/ai/runs/<id>/events` shows a `note` «يقرأ 1 ملف» and a `step` «يكتب الناتج».
 - [ ] **`/ai/runs/<id>`:** a finished run, a failed one, and a running one.
 - [ ] **`/dashboard/lawyer/activity`:** the run appears with the robot badge and a link.

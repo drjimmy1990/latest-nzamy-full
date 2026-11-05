@@ -152,6 +152,8 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
               </p>
             )}
             <RunStatus isDark={isDark} run={analysis} />
+            {/* While a run may still be going, another press is a second charge. */}
+            {analysis.code !== RUN_STILL_RUNNING_CODE && (<>
             <FounderCreditChoice key={founderCreditChoiceKey(analysis.phase, analysis.creditUsed, analysis.runId)} kind="drafting_work" value={useCredit} onChange={setUseCredit} eligible={creditEligible} isDark={isDark} disabled={analysis.busy} />
             <button
               type="button"
@@ -161,6 +163,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
             >
               <Sparkle size={15} /> {analysis.busy ? "جارٍ التحليل..." : analysis.phase === "error" ? "أعد التحليل" : "تحليل الوقائع"}
             </button>
+            </>)}
           </div>
         )}
 

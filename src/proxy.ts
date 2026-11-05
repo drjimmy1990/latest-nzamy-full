@@ -117,8 +117,9 @@ const DOCUMENT_PREVIEW_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000,
 const DOCUMENT_PREVIEW_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 600 };
 // Starting an AI run (POST /api/v1/ai/runs) may unzip a caller's files before any
 // charge. Every run starts from one click or one chat message, and a chat waits for
-// its answer, so 20 a minute per visitor is above any real screen. Ten times that per
-// proxy-resolved IP, for an office or a shared edge behind one address.
+// its answer, so 20 a minute is above any real screen. The key is the network address
+// (CF-Connecting-IP), so an office behind one address shares the 20; the second number
+// only helps a shared edge. A refusal comes before any charge.
 const AI_RUN_START_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 20 };
 const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 200 };
 // The printed QR's public card: the tracking page's numbers, for the same reason.
@@ -392,6 +393,7 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
 const PROTECTED = [
   "/dashboard",
   "/ai/settings",
+  "/ai/quick-answer",
   "/ai/vault",
   "/ai/secretary",
   "/ai/legal-opinion",

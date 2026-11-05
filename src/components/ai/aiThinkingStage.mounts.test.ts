@@ -109,3 +109,10 @@ test("while a run is still going, the named screens offer no charged button: a r
   assert.match(draft, /\{writing\.code !== RUN_STILL_RUNNING_CODE && \(<>\n\s*<button[\s\S]{0,120}onClick=\{startDraft\}[\s\S]*?الصياغة مشمولة بنقاط التحليل\.<\/p>\n\s*<\/>\)\}/);
   assert.match(draft, /<RunStatus isDark=\{isDark\} run=\{writing\} \/>/, "the link itself stays");
 });
+
+test("the drafter's analysis offers no charged button while its run may still be going", () => {
+  const draft = src("components/draft/steps/StepAiDraft.tsx");
+  const gate = draft.indexOf("analysis.code !== RUN_STILL_RUNNING_CODE");
+  assert.ok(gate > 0);
+  assert.ok(gate < draft.indexOf("onClick={startAnalysis}"));
+});
