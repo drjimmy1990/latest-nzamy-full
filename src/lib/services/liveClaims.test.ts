@@ -381,3 +381,9 @@ test("/pro/marketplace: no hero stats", () => {
 test("consultations: no wait time is promised anywhere on the page", () => {
   assert.doesNotMatch(src("app/services/consultations/page.tsx"), /في دقائق|خلال دقائق|in minutes/i);
 });
+
+test("templates: the download is not a dead button", () => {
+  const page = src("app/ai/templates/page.tsx");
+  assert.doesNotMatch(page, /<button className[^>]*>\s*<Download size=\{16\} \/> تنزيل القالب/);
+  assert.match(page, /تنزيل القالب[\s\S]{0,120}COMING_SOON_BADGE_AR/);
+});
