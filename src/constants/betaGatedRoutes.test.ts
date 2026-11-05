@@ -195,7 +195,7 @@ test("dashboards: no gated tool is offered as working", () => {
   for (const m of micro.matchAll(/href: "(\/ai\/[^"]+)",[^\n]*descAr: "([^"]+)"/g)) {
     if (isTerminalToolHref(m[1])) { gated++; assert.equal(m[2], COMING_SOON_BADGE_AR, m[1]); }
   }
-  assert.equal(gated, 4, "ngo (2) + micro (2) gated cards found");
+  assert.equal(gated, 3, "ngo (2) + micro (1) gated cards found");
 });
 
 test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's tool grid mark gated tools «قريباً»", () => {

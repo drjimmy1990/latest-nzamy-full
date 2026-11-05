@@ -29,7 +29,6 @@ export const GATE_ONLY_TOOL_ROUTES = [
   "/ai/contract-negotiator",
   "/ai/report-generator",
   "/ai/smart-inspector",
-  "/ai/micro",
   // Clients get SmartAnalyzer (gated mock). Lawyer and firm get the real case
   // brief on the same URL: LIVE_FOR_LAWYER_AND_FIRM_ROUTES below.
   "/ai/analyze",

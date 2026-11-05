@@ -41,6 +41,7 @@ function code(rel: string): string {
 }
 
 const SOON_IMPORT = 'from "@/components/ui/DashboardComingSoon"';
+const SRC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /** Every .ts/.tsx file under src, as [path relative to src, comment-stripped code]. */
 function allSources(): [string, string][] {
@@ -176,6 +177,27 @@ test("/ai/analyze: lawyers, firms and admins get the case-brief studio; everyone
   for (const s of ["عصارة المرفقات", "Attachment digest", '"ai:analyze"']) {
     assert.ok(!pricing.includes(s), `pricing.lawyers.ts still sells the attachment tool: ${s}`);
   }
+});
+
+// ── /ai/micro: the contract cases open the real drafter, the rest are «قريباً» ──
+
+test("/ai/micro has no canned output", () => {
+  const page = readFileSync(path.join(SRC_DIR, "app/ai/micro/page.tsx"), "utf8");
+  const body = code("app/ai/micro/page.tsx");
+  assert.ok(!body.includes("setTimeout("), "the fake 2.5 s wait is back");
+  assert.ok(!body.includes("MOCK"));
+  assert.ok(!body.includes("buildOutput"), "the output builder is back");
+  assert.ok(!body.includes("BetaReviewGate"));
+  assert.ok(!body.includes("GatedToolScreen"));
+  assert.ok(!body.includes("saveWorkflowRequest"));
+  // One mapped list holds the three contract ids; the price is read, not typed.
+  assert.ok(body.includes('href="/ai/contract-drafter"'));
+  assert.match(page, /const CONTRACT_CASES[\s\S]*id: "labor_contract"[\s\S]*id: "rent_contract"[\s\S]*id: "service_contract"[\s\S]*const SOON_CASES/);
+  assert.match(page, /const SOON_CASES[\s\S]*id: "warning_letter"[\s\S]*id: "complaint_reply"[\s\S]*id: "consultation"/);
+  assert.ok(body.includes('aiToolPriceText("contract-drafter", "ar")'));
+  assert.ok(!/٥٠٠|500/.test(body), "the price is typed by hand");
+  assert.ok(body.includes("قريباً"));
+  assert.ok(AI_TOOLS["contract-drafter"].roles.includes("micro"), "the drafter runs for a micro account");
 });
 
 // ── منقح ناجز: keeps working, loses the fake "AI" delay ──────────────────────

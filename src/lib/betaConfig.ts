@@ -125,7 +125,6 @@ export const LEGAL_DATA_REVIEW_GATED_TOOLS: LegalDataReviewGatedTool[] = [
   { id: "corp.corpmind", route: "/ai/corp/corpmind", label: "CorpMind contract analysis", risk: "legal-data", teardown: "Remove the result wrapper after CorpMind contract-analysis QA is live." },
   { id: "ngo.donation-analyzer", route: "/ai/ngo/donation-analyzer", label: "NGO donation compliance analysis", risk: "statutory-source", teardown: "Remove the result wrapper after donation compliance data is backend-backed." },
   { id: "ngo.report-generator", route: "/ai/ngo/report-generator", label: "NGO statutory report generator", risk: "legal-data", teardown: "Remove the result wrapper after NGO reporting source validation is live." },
-  { id: "micro.result", route: "/ai/micro", label: "Micro-business legal document generator", risk: "legal-data", teardown: "Remove the result wrapper after micro legal templates are backend-backed." },
   { id: "analyze.smart.result", route: "/ai/analyze", label: "Smart legal position analysis", risk: "legal-data", teardown: "Remove the result wrapper after client analysis QA is live." },
   { id: "brief-check.result", route: "/ai/brief-check", label: "Brief source and precedent checker", risk: "rag", teardown: "Remove the result wrapper after precedent checking is production-verified." },
   { id: "quick-answer.result", route: "/ai/quick-answer", label: "Quick legal answer", risk: "rag", teardown: "Remove the result wrapper after sourced legal Q&A is production-verified." },
