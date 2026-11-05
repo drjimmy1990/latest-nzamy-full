@@ -364,3 +364,16 @@ test("2: /services/consultations invites nobody to the gated AI it marks «غي�
   assert.match(page, /q: "هل ذكاء نظامي متاح الآن؟", a: "ليس بعد؛ ذكاء نظامي غير متاح حالياً\./);
   assert.match(page, /q: "Is Nezamy AI available now\?", a: "Not yet; Nezamy AI is not available at the moment\./);
 });
+
+test("provider dashboard: no invented KPI figures or banner counts", () => {
+  const page = src("app/dashboard/provider/page.tsx");
+  assert.doesNotMatch(page, /٤,٧٥٠|\+١٢٪|أرباح الشهر|بعد عمولة المنصة/);
+  assert.doesNotMatch(page, /طلبات جديدة تنتظرك/);
+  assert.match(page, /إحصاءات أعمالك/);
+  assert.match(page, /قريباً/);
+});
+
+test("/pro/marketplace: no hero stats", () => {
+  const page = src("app/pro/marketplace/page.tsx");
+  assert.doesNotMatch(page, /value: "٥٠\+"|value: "١٠٠٪"|موثّقة ومعتمدة/);
+});
