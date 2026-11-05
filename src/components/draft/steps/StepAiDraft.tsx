@@ -15,6 +15,8 @@ import {
   analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingText, pleadingWordHtml,
   type DraftAnalysis, type WizardFacts,
 } from "@/components/draft/legalDraft";
+import { aiSkippedNote } from "@/components/ai/aiReadable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 
 /**
  * StepAiDraft — L14 الصائغ القانوني (plan §5 wave 5; owner LIVE-F02 and
@@ -132,12 +134,16 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
           <div className="space-y-3">
             {skippedFiles.length > 0 && (
               <p className={`text-[11px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                لا يقرأ الذكاء الاصطناعي ملفات Word؛ لن تُرسل: {skippedFiles.join("، ")}. أرفقها PDF إن كانت فيها الوقائع.
+                {AI_TEXT_FILES_ON
+                  ? aiSkippedNote(skippedFiles)
+                  : `لا يقرأ الذكاء الاصطناعي ملفات Word؛ لن تُرسل: ${skippedFiles.join("، ")}. أرفقها PDF إن كانت فيها الوقائع.`}
               </p>
             )}
             {!canAnalyse(facts) && (
               <p className={`text-[11px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                اكتب الوقائع (٣٠ حرفاً على الأقل) أو أرفق مستنداتها بصيغة PDF أو صورة في الخطوة السابقة.
+                {AI_TEXT_FILES_ON
+                  ? "اكتب الوقائع (٣٠ حرفاً على الأقل) أو أرفق مستنداتها في الخطوة السابقة."
+                  : "اكتب الوقائع (٣٠ حرفاً على الأقل) أو أرفق مستنداتها بصيغة PDF أو صورة في الخطوة السابقة."}
               </p>
             )}
             <RunStatus isDark={isDark} run={analysis} busyText="يحلّل الذكاء الاصطناعي الوقائع والمستندات — قد يستغرق ذلك دقيقة أو دقيقتين." />

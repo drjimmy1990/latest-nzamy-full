@@ -79,3 +79,21 @@ test("partitionUploadFiles: an empty selection accepts nothing and rejects nothi
   assert.equal(accepted.length, 0);
   assert.equal(rejectedMessage, null);
 });
+
+test("B6: .txt and .md are refused by default, so the other screens keep today's rule", () => {
+  for (const n of ["a.txt", "a.md"]) {
+    assert.ok(validateUploadFile({ name: n, size: 10 }), n);
+    assert.ok(validateUploadFile({ name: n, size: 10 }, false), n);
+  }
+  assert.equal(partitionUploadFiles([{ name: "a.md", size: 10 }]).accepted.length, 0);
+});
+
+test("B6: with the AI text flag on, .txt and .md pass, and the old rules still hold", () => {
+  assert.equal(validateUploadFile({ name: "a.txt", size: 10 }, true), null);
+  assert.equal(validateUploadFile({ name: "A.MD", size: 10 }, true), null);
+  assert.equal(validateUploadFile({ name: "a.pdf", size: 10 }, true), null);
+  assert.ok(validateUploadFile({ name: "clip.mp4", size: 10 }, true)?.includes("صيغة"));
+  assert.ok(validateUploadFile({ name: "a.md", size: 0 }, true)?.includes("فارغ"));
+  assert.ok(validateUploadFile({ name: "a.md", size: MAX_UPLOAD_BYTES + 1 }, true)?.includes("الحجم"));
+  assert.deepEqual(partitionUploadFiles([{ name: "a.md", size: 10 }], true), { accepted: [{ name: "a.md", size: 10 }], rejectedMessage: null });
+});

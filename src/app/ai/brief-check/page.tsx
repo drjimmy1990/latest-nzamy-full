@@ -41,7 +41,9 @@ import {
   FileMagnifyingGlass, CloudArrowUp, X, Warning, PaperPlaneTilt, SignIn, Paperclip, Sparkle,
 } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
-import { BRIEF_CHECK_PRICE } from "@/lib/ai/tools";
+import { BRIEF_CHECK_PASTE_MAX, BRIEF_CHECK_PASTE_MIN, BRIEF_CHECK_PRICE } from "@/lib/ai/tools";
+import { isAiReadable, pasteState } from "@/components/ai/aiReadable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import BriefCheckReportView, { asBriefCheckReport } from "./_BriefCheckReport";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -75,6 +77,11 @@ function AIBriefCheckPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [memo, setMemo] = useState<OrderAttachment | null>(null);
+  // Only with AI_TEXT_FILES_ON: the memo pasted instead of uploaded, for the AI
+  // report. The mode decides what a run sends, so a file and a paste never go
+  // together (the tool takes one), and switching back loses neither.
+  const [memoMode, setMemoMode] = useState<"file" | "paste">("file");
+  const [memoPaste, setMemoPaste] = useState("");
   const [fileError, setFileError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [clientRole, setClientRole] = useState<BriefClientRoleId | "">("");
@@ -149,20 +156,27 @@ function AIBriefCheckPage() {
     }
   }
 
-  // The AI report needs a PDF (Gemini does not open Word) and the client's capacity.
+  // The AI report needs a file it can read (with the flag off a PDF: Gemini does
+  // not open Word), or the pasted memo, and the client's capacity.
   const capacity = clientRole === "other" ? clientRoleOther.trim() : (BRIEF_CLIENT_ROLES.find(r => r.id === clientRole)?.label ?? "");
-  const memoIsPdf = !!memo && /\.pdf$/i.test(memo.name);
-  const canRunAi = reviewScope === "gaps_report" && memoIsPdf && !!capacity && !uploading && !ai.busy;
+  const pasting = AI_TEXT_FILES_ON && memoMode === "paste";
+  const paste = pasteState(memoPaste, { min: BRIEF_CHECK_PASTE_MIN, max: BRIEF_CHECK_PASTE_MAX });
+  const memoIsReadable = !!memo && isAiReadable(memo.name, AI_TEXT_FILES_ON);
+  const canRunAi = reviewScope === "gaps_report" && (pasting ? paste.ok : memoIsReadable) && !!capacity && !uploading && !ai.busy;
   // A greyed button with no reason read as broken (owner's live test 29 Oct): say what is missing.
-  const aiBlocked = !memo ? "ارفع المذكرة أولاً (PDF)." : !capacity ? "اختر صفة الموكل أولاً." : uploading ? "انتظر اكتمال رفع المذكرة." : null;
+  const memoMissing = pasting
+    ? paste.tooLong ? "النص الملصق أطول من ٦٠٬٠٠٠ حرف — ارفعه ملفاً." : !paste.ok ? "الصق المذكرة كاملة (٢٠٠ حرف على الأقل)." : null
+    : !memo ? (AI_TEXT_FILES_ON ? "ارفع المذكرة أولاً." : "ارفع المذكرة أولاً (PDF).") : null;
+  const aiBlocked = memoMissing ?? (!capacity ? "اختر صفة الموكل أولاً." : uploading ? "انتظر اكتمال رفع المذكرة." : null);
 
   function runAiReport() {
-    if (!canRunAi || !memo) return;
-    void ai.start(
-      "brief-check",
-      { client_capacity: capacity, court: courtType.trim() || null, case_type: caseType.trim() || null, notes: notes.trim() || null },
-      { fileIds: [memo.documentId] },
-    );
+    if (!canRunAi) return;
+    const fields = { client_capacity: capacity, court: courtType.trim() || null, case_type: caseType.trim() || null, notes: notes.trim() || null };
+    if (pasting) {
+      void ai.start("brief-check", { ...fields, memo_text: memoPaste.trim() }, { fileIds: [] });
+    } else if (memo) {
+      void ai.start("brief-check", fields, { fileIds: [memo.documentId] });
+    }
   }
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
@@ -213,7 +227,29 @@ function AIBriefCheckPage() {
           {/* ١ — the memo */}
           <div>
             <p className={label}>١. المذكرة المراد مراجعتها</p>
-            {!memo ? (
+            {AI_TEXT_FILES_ON && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => setMemoMode("file")} aria-pressed={!pasting} className={pill(!pasting)}>ارفع المذكرة</button>
+                <button type="button" onClick={() => setMemoMode("paste")} aria-pressed={pasting} className={pill(pasting)}>الصق نص المذكرة</button>
+              </div>
+            )}
+            {pasting ? (
+              <div className="space-y-1.5">
+                <textarea
+                  value={memoPaste}
+                  onChange={e => setMemoPaste(e.target.value)}
+                  rows={8}
+                  dir="auto"
+                  aria-label="نص المذكرة"
+                  placeholder="الصق نص المذكرة كاملاً هنا"
+                  className={`${input} leading-relaxed`}
+                />
+                <p className={`text-[11px] ${paste.tooLong ? "text-red-500" : isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                  {paste.chars.toLocaleString("ar-SA")} / {BRIEF_CHECK_PASTE_MAX.toLocaleString("ar-SA")}
+                </p>
+                <p className={hint}>النص الملصق للتقرير الفوري فقط. طلب المراجعة من الفريق يحتاج ملف المذكرة.</p>
+              </div>
+            ) : !memo ? (
               <div
                 role="button"
                 tabIndex={0}
@@ -334,7 +370,7 @@ function AIBriefCheckPage() {
 
           <button
             onClick={submit}
-            disabled={!confirmed || submitting || uploading}
+            disabled={!confirmed || submitting || uploading || pasting}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-6 py-3 text-[13px] font-bold text-white shadow-md disabled:opacity-40"
           >
             <PaperPlaneTilt size={15} />
@@ -345,10 +381,16 @@ function AIBriefCheckPage() {
             <div className={`rounded-2xl border p-4 space-y-2 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/[0.04]" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.03]"}`}>
               <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>أو: تقرير فوري بالذكاء الاصطناعي</p>
               <p className={hint}>
-                يقرأ المذكرة الآن ويعرض ثغراتها هنا، وتتحقق المنصة من كل مادة تستشهد بها في مكتبة الأنظمة · {BRIEF_CHECK_PRICE.toLocaleString("ar-SA")} نقطة · PDF فقط ·
+                يقرأ المذكرة الآن ويعرض ثغراتها هنا، وتتحقق المنصة من كل مادة تستشهد بها في مكتبة الأنظمة · {BRIEF_CHECK_PRICE.toLocaleString("ar-SA")} نقطة · {AI_TEXT_FILES_ON ? "PDF أو Word (.docx) أو نص ملصق" : "PDF فقط"} ·
                 تُرسل نسخة من المذكرة إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
               </p>
-              {memo && !memoIsPdf && <p className="text-[11px] text-amber-500">التقرير الفوري يقرأ PDF فقط — احفظ المذكرة PDF، أو أرسلها للفريق.</p>}
+              {!pasting && memo && !memoIsReadable && (
+                <p className="text-[11px] text-amber-500">
+                  {AI_TEXT_FILES_ON
+                    ? "التقرير الفوري لا يقرأ ملف Word القديم (.doc) — احفظ المذكرة .docx أو PDF، أو الصق نصها، أو أرسلها للفريق."
+                    : "التقرير الفوري يقرأ PDF فقط — احفظ المذكرة PDF، أو أرسلها للفريق."}
+                </p>
+              )}
               <button
                 onClick={runAiReport}
                 disabled={!canRunAi}

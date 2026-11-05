@@ -10,6 +10,10 @@ import { RequiredMark } from "@/components/ui/RequiredMark";
 import { JudgmentHeader } from "@/components/draft/JudgmentHeader";
 import { COMMITTEE_BRANCH_IDS, PartyData, SupportDoc, REQUIRES_JUDGMENT_HEADER } from "@/components/draft/draftConstants";
 import { draftPartiesShown, type OrderAttachment } from "@/lib/services/orderIntake";
+import { withTextAccept } from "@/components/ai/aiReadable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
+
+const DRAFT_FILE_ACCEPT = withTextAccept(".pdf,.doc,.docx,.jpg,.png", AI_TEXT_FILES_ON);
 
 interface StepCaseProps {
   isDark: boolean;
@@ -198,7 +202,7 @@ export function StepCase({
         </div>
         <div className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 transition-colors ${caseFile ? isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50" : `cursor-pointer ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}`}
           onClick={() => { if (!uploading && !caseFile) caseFileRef.current?.click(); }}>
-          <input ref={caseFileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
+          <input ref={caseFileRef} type="file" className="hidden" accept={DRAFT_FILE_ACCEPT}
             onChange={async e => {
               const f = e.target.files?.[0];
               if (!f) return;
@@ -224,7 +228,7 @@ export function StepCase({
             <>
               <CloudArrowUp size={22} className={`mx-auto mb-2 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
               <p className={`text-[12px] font-semibold mb-0.5 ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>ارفع ملف القضية</p>
-              <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>PDF · Word · صور — اسحب وأفلت أو اضغط</p>
+              <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{AI_TEXT_FILES_ON ? "PDF · Word · صور · نص" : "PDF · Word · صور"} — اسحب وأفلت أو اضغط</p>
             </>
           )}
         </div>
@@ -302,7 +306,7 @@ export function StepCase({
                     <PaperclipHorizontal size={13} /> 📎 ارفع الملف المرتبط
                   </button>
                 )}
-                <input ref={el => { attachRefs.current[idx] = el; }} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
+                <input ref={el => { attachRefs.current[idx] = el; }} type="file" className="hidden" accept={DRAFT_FILE_ACCEPT}
                   onChange={async e => {
                     const f = e.target.files?.[0];
                     if (!f) return;
@@ -335,13 +339,13 @@ export function StepCase({
           <div className="space-y-2">
             <div className={`rounded-xl border-2 border-dashed p-4 text-center transition-colors ${uploading ? isDark ? "border-white/[0.08]" : "border-zinc-200" : `cursor-pointer ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}`}
               onClick={() => { if (!uploading) bulkFileRef.current?.click(); }}>
-              <input ref={bulkFileRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx,.jpg,.png"
+              <input ref={bulkFileRef} type="file" multiple className="hidden" accept={DRAFT_FILE_ACCEPT}
                 onChange={handleBulkFiles} />
               <FileArrowUp size={18} className={`mx-auto mb-1 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                 {uploading ? "جارٍ رفع المرفقات..." : "اضغط لاختيار جميع المرفقات دفعة واحدة"}
               </p>
-              <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-600" : "text-amber-500"}`}>⚠ يقرأ الذكاء الاصطناعي ملفات PDF والصور فقط — أرفق ملفات Word بصيغة PDF</p>
+              <p className={`text-[10px] mt-0.5 ${isDark ? "text-amber-600" : "text-amber-500"}`}>{AI_TEXT_FILES_ON ? "⚠ لا يقرأ الذكاء الاصطناعي ملف Word القديم (.doc) — احفظه بصيغة .docx أو PDF" : "⚠ يقرأ الذكاء الاصطناعي ملفات PDF والصور فقط — أرفق ملفات Word بصيغة PDF"}</p>
             </div>
             {bulkFailed.length > 0 && (
               <p className="flex items-center gap-1.5 text-[11px] text-red-500">

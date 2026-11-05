@@ -29,7 +29,8 @@ import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import AiResultActions from "@/components/AiResultActions";
 import CitationCheckList, { asCitationVerdicts } from "@/components/ai/CitationCheckList";
-import { AI_READABLE_ACCEPT, isAiReadable, splitAiReadable } from "@/components/ai/aiReadable";
+import { aiReadableAccept, isAiReadable, splitAiReadable } from "@/components/ai/aiReadable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { CASE_SUMMARY_MAX, CASE_SUMMARY_MIN, WAVE4_FILES, WAVE4_PRICE } from "@/lib/ai/tools";
 import { asStrengthReport, strengthReportText, LEVEL_LABEL, RISK_LABEL, type StrengthReport } from "./_report";
 
@@ -69,7 +70,7 @@ export default function AIStrengthPage() {
 
   const signedIn = !user.loading && user.isLoggedIn;
   const report = ai.phase === "done" ? asStrengthReport(ai.output) : null;
-  const { ids: fileIds } = splitAiReadable(attachments);
+  const { ids: fileIds } = splitAiReadable(attachments, AI_TEXT_FILES_ON);
   const summaryOk = summary.trim().length >= CASE_SUMMARY_MIN;
   const canRun = signedIn && !!role && summaryOk && !uploading && !ai.busy;
 
@@ -78,7 +79,10 @@ export default function AIStrengthPage() {
     clearAttachError();
     let count = attachments.length;
     for (const f of files) {
-      if (!isAiReadable(f.name)) { setFileError("المحلل يقرأ PDF والصور فقط — احفظ ملف Word بصيغة PDF ثم أرفقه"); continue; }
+      if (!isAiReadable(f.name, AI_TEXT_FILES_ON)) {
+        setFileError(AI_TEXT_FILES_ON ? "المحلل يقرأ PDF والصور وWord (.docx) والنص (.txt / .md) — احفظ ملف .doc القديم بصيغة .docx أو PDF ثم أرفقه" : "المحلل يقرأ PDF والصور فقط — احفظ ملف Word بصيغة PDF ثم أرفقه");
+        continue;
+      }
       if (count >= WAVE4_FILES.max) { setFileError(`الحد ${WAVE4_FILES.max.toLocaleString("ar-SA")} ملفات`); break; }
       try { await attachFile(f); count++; } catch { /* attachFile set attachError */ }
     }
@@ -155,11 +159,11 @@ export default function AIStrengthPage() {
               onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !uploading) { e.preventDefault(); fileRef.current?.click(); } }}
               className={`rounded-2xl border-2 border-dashed p-5 text-center ${uploading ? "cursor-wait" : "cursor-pointer"} ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#0B3D2E]/30"}`}
             >
-              <input ref={fileRef} type="file" multiple className="hidden" accept={AI_READABLE_ACCEPT}
+              <input ref={fileRef} type="file" multiple className="hidden" accept={aiReadableAccept(AI_TEXT_FILES_ON)}
                 onChange={e => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void pickFiles(files); }} />
               <CloudArrowUp size={22} className={`mx-auto mb-2 ${uploading ? "text-[#C8A762]" : isDark ? "text-zinc-500" : "text-zinc-400"}`} />
               <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{uploading ? "جارٍ الرفع…" : "العقد، الصحيفة، مذكرة الخصم، المراسلات…"}</p>
-              <p className={hint}>PDF أو صور (والممسوحة تُقرأ) · حتى {WAVE4_FILES.max.toLocaleString("ar-SA")} ملفات و{WAVE4_FILES.maxPages.toLocaleString("ar-SA")} صفحة</p>
+              <p className={hint}>{AI_TEXT_FILES_ON ? "PDF أو صور (والممسوحة تُقرأ) أو Word (.docx) أو نص (.txt / .md)" : "PDF أو صور (والممسوحة تُقرأ)"} · حتى {WAVE4_FILES.max.toLocaleString("ar-SA")} ملفات و{WAVE4_FILES.maxPages.toLocaleString("ar-SA")} صفحة</p>
             </div>
             {attachments.length > 0 && (
               <div className="mt-2 space-y-1.5">

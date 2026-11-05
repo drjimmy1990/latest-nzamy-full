@@ -25,12 +25,15 @@ import {
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { useAiRun } from "@/hooks/useAiRun";
-import { splitAiReadable } from "@/components/ai/aiReadable";
-import { WAVE4_PRICE } from "@/lib/ai/tools";
+import { aiSkippedNote, pasteState, splitAiReadable, withTextAccept } from "@/components/ai/aiReadable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
+import { WARGAMING_PASTE_MAX, WARGAMING_PASTE_MIN, WAVE4_FILES, WAVE4_PRICE } from "@/lib/ai/tools";
 import { asSimResult } from "./_simResult";
 import SimResultView from "./_SimResultView";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT } from "@/lib/membership/founderPlan";
+
+const WARGAMING_FILE_ACCEPT = withTextAccept(".pdf,.doc,.docx,.jpg,.png", AI_TEXT_FILES_ON);
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type SimTarget  = "opponent" | "court" | "critique" | "plea";
@@ -449,7 +452,7 @@ function CaseSetup({
         ):(
           <div onClick={()=>{if(!uploading)fRef.current?.click();}}
             className={`rounded-xl border-2 border-dashed p-3 flex items-center gap-3 ${uploading?"opacity-60":"cursor-pointer"} ${D?"border-white/[0.08] hover:border-[#C8A762]/30":"border-zinc-200 hover:border-[#C8A762]/40"}`}>
-            <input ref={fRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" disabled={uploading}
+            <input ref={fRef} type="file" className="hidden" accept={WARGAMING_FILE_ACCEPT} disabled={uploading}
               onChange={async e=>{
                 const f=e.target.files?.[0];
                 if(!f)return;
@@ -495,7 +498,7 @@ function CaseSetup({
 // ─── Target Selection (Step 2) ─────────────────────────────────────────────────
 function TargetSelect({
   D, ctx, targets, setTargets, onRun, onBack,
-  attachments, memoText, setMemoText,
+  attachments, memoText, setMemoText, docsText, setDocsText,
   memoAttachmentIds, uploading, attachError, attachMemoFile, removeMemoAttachment,
 }: {
   D:boolean; ctx:CaseContext;
@@ -503,6 +506,7 @@ function TargetSelect({
   onRun:()=>void; onBack:()=>void;
   attachments: OrderAttachment[];
   memoText: string; setMemoText: (v:string)=>void;
+  docsText: string; setDocsText: (v:string)=>void;
   // memoAttachmentIds is the subset of documentIds (from the shared
   // attachments list) that the client tagged specifically as the memo via
   // this section's own dropzone — NOT every attachment on the order. A case
@@ -518,6 +522,8 @@ function TargetSelect({
   const memoFileRef = useRef<HTMLInputElement>(null);
   const memoFiles = attachments.filter(a => memoAttachmentIds.includes(a.documentId));
   const memoSatisfied = memoText.trim().length>0 || memoAttachmentIds.length>0;
+  const docsPaste = pasteState(docsText, { min: WARGAMING_PASTE_MIN, max: WARGAMING_PASTE_MAX });
+  const [docsOpen, setDocsOpen] = useState(docsText !== "");
 
   function toggle(t:SimTarget) {
     const n = new Set(targets);
@@ -610,7 +616,7 @@ function TargetSelect({
 
             <div onClick={()=>{if(!uploading)memoFileRef.current?.click();}}
               className={`rounded-xl border-2 border-dashed p-2.5 flex items-center gap-2.5 ${uploading?"opacity-60":"cursor-pointer"} ${D?"border-white/[0.08] hover:border-[#C8A762]/30":"border-zinc-200 hover:border-[#C8A762]/40"}`}>
-              <input ref={memoFileRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.png" disabled={uploading}
+              <input ref={memoFileRef} type="file" className="hidden" accept={WARGAMING_FILE_ACCEPT} disabled={uploading}
                 onChange={async e=>{
                   const f=e.target.files?.[0];
                   if(!f)return;
@@ -639,6 +645,32 @@ function TargetSelect({
             )}
           </div>
         </motion.div>
+      )}
+
+      {/* Only with AI_TEXT_FILES_ON. The team order carries files and the fields
+          above (validateWargamingIntake keeps no pasted documents), so the box
+          says who reads it. */}
+      {AI_TEXT_FILES_ON && (
+        <div className={`rounded-2xl border p-4 space-y-2 ${D?"border-white/[0.07] bg-zinc-900/60":"border-zinc-200 bg-white"}`}>
+          <button type="button" onClick={()=>setDocsOpen(!docsOpen)} aria-expanded={docsOpen}
+            className={`flex w-full items-center justify-between text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-700"}`}>
+            أو الصق نص المستندات
+            <CaretDown size={13} className={docsOpen?"rotate-180":""}/>
+          </button>
+          {docsOpen && (
+            <div className="space-y-1.5">
+              <p className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>للمحاكاة الفورية فقط — طلب الفريق يأخذ الملفات المرفوعة.</p>
+              <textarea value={docsText} onChange={e=>setDocsText(e.target.value)} rows={6} dir="auto"
+                aria-label="نص المستندات" placeholder="الصق نص المستندات هنا..."
+                className={`w-full resize-none rounded-xl border px-3 py-2.5 text-[12px] outline-none ${D?"border-white/[0.07] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600":"border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400"}`}/>
+              <p className={`text-[11px] ${docsPaste.tooLong?"text-red-500":D?"text-zinc-400":"text-zinc-500"}`}>
+                {docsPaste.chars.toLocaleString("ar-SA")} / {WARGAMING_PASTE_MAX.toLocaleString("ar-SA")}
+              </p>
+              {docsPaste.tooShort && <p className="text-[11px] text-amber-500">النص الملصق قصير — الصق المستندات كاملة (٥٠ حرفاً على الأقل)</p>}
+              {docsPaste.tooLong && <p className="text-[11px] text-red-500">النص الملصق أطول من ٣٠٬٠٠٠ حرف — ارفعه ملفاً</p>}
+            </div>
+          )}
+        </div>
       )}
 
       <motion.button whileHover={{scale:1.02}} whileTap={{scale:0.98}} onClick={onRun} disabled={targets.size===0}
@@ -908,6 +940,7 @@ function AIWargamingPage() {
   const [targets, setTargets] = useState<Set<SimTarget>>(new Set(["opponent","court"]));
   const [points,  setPoints]  = useState<SimPoint[]>([]);
   const [memoText, setMemoText] = useState("");
+  const [docsText, setDocsText] = useState("");
   // documentIds from the shared attachments list that were uploaded via the
   // memo-specific dropzone in TargetSelect — distinct from "any attachment
   // on the order" so an unrelated case file from step 1 can never silently
@@ -929,10 +962,15 @@ function AIWargamingPage() {
   // so the choice is never offered where the run would be refused.
   const [useCredit, setUseCredit] = useState(false);
   const simResult = ai.phase === "done" ? asSimResult(ai.output) : null;
-  const { ids: aiFileIds, skipped: aiSkipped } = splitAiReadable(attachments);
+  const { ids: aiFileIds, skipped: aiSkipped } = splitAiReadable(attachments, AI_TEXT_FILES_ON);
   const critique = targets.has(WARGAMING_CRITIQUE_TARGET);
   const memoForAi = critique && (memoText.trim() !== "" || memoAttachmentIds.some(id => aiFileIds.includes(id)));
-  const aiBlocked = uploading || ai.busy || targets.size === 0 || (critique && !memoForAi);
+  // Pasted documents travel as one more file, so they need room among the files
+  // and must be within limits. An empty box changes nothing.
+  const docsPaste = pasteState(AI_TEXT_FILES_ON ? docsText : "", { min: WARGAMING_PASTE_MIN, max: WARGAMING_PASTE_MAX });
+  const docsNoRoom = !docsPaste.empty && aiFileIds.length + 1 > WAVE4_FILES.max;
+  const docsBlocked = docsPaste.tooShort || docsPaste.tooLong || docsNoRoom;
+  const aiBlocked = uploading || ai.busy || targets.size === 0 || (critique && !memoForAi) || docsBlocked;
 
   function runAi() {
     if (aiBlocked) return;
@@ -945,6 +983,7 @@ function AIWargamingPage() {
         targets: Array.from(targets),
         memo_text: critique ? memoText.trim() || null : null,
         memo_in_files: critique && memoAttachmentIds.some(id => aiFileIds.includes(id)),
+        ...(docsPaste.ok ? { docs_text: docsText.trim() } : {}),
       },
       { fileIds: aiFileIds, ...(useCredit ? { useCredit: true } : {}) },
     );
@@ -987,6 +1026,7 @@ function AIWargamingPage() {
     setTargets(new Set(["opponent","court"]));
     setPoints([]);
     setMemoText("");
+    setDocsText("");
     setMemoAttachmentIds([]);
     setSubmitErrors([]);
     clearAttachError();
@@ -1127,6 +1167,7 @@ function AIWargamingPage() {
             <TargetSelect D={D} ctx={ctx} targets={targets} setTargets={setTargets}
               onRun={()=>setStep("submit")} onBack={()=>setStep("setup")}
               attachments={attachments} memoText={memoText} setMemoText={setMemoText}
+              docsText={docsText} setDocsText={setDocsText}
               memoAttachmentIds={memoAttachmentIds}
               uploading={uploading} attachError={attachError}
               attachMemoFile={attachMemoFile} removeMemoAttachment={removeMemoAttachment}/>
@@ -1154,12 +1195,21 @@ function AIWargamingPage() {
               </p>
               {aiSkipped.length > 0 && (
                 <p className="text-[11px] text-amber-500">
-                  المحاكاة الفورية تقرأ PDF والصور فقط — لن تُرسل إليها: {aiSkipped.join("، ")}
+                  {AI_TEXT_FILES_ON
+                    ? aiSkippedNote(aiSkipped)
+                    : `المحاكاة الفورية تقرأ PDF والصور فقط — لن تُرسل إليها: ${aiSkipped.join("، ")}`}
                 </p>
               )}
               {critique && !memoForAi && (
-                <p className="text-[11px] text-amber-500">«نقض المذكرة» في المحاكاة الفورية يحتاج نص المذكرة أو ملفها بصيغة PDF أو صورة.</p>
+                <p className="text-[11px] text-amber-500">
+                  {AI_TEXT_FILES_ON
+                    ? "«نقض المذكرة» في المحاكاة الفورية يحتاج نص المذكرة أو ملفها (PDF أو صورة أو Word .docx أو نص)."
+                    : "«نقض المذكرة» في المحاكاة الفورية يحتاج نص المذكرة أو ملفها بصيغة PDF أو صورة."}
+                </p>
               )}
+              {docsPaste.tooShort && <p className="text-[11px] text-amber-500">النص الملصق قصير — الصق المستندات كاملة (٥٠ حرفاً على الأقل)</p>}
+              {docsPaste.tooLong && <p className="text-[11px] text-red-500">النص الملصق أطول من ٣٠٬٠٠٠ حرف — ارفعه ملفاً</p>}
+              {docsNoRoom && <p className="text-[11px] text-amber-500">النص الملصق يُحسب ملفاً، والحد {WAVE4_FILES.max.toLocaleString("ar-SA")} ملفات — احذف ملفاً أو أفرغ النص.</p>}
               <FounderCreditChoice key={founderCreditChoiceKey(ai.phase, ai.creditUsed, ai.runId)} kind="independent_output"
                 value={useCredit} onChange={setUseCredit} isDark={D} disabled={ai.busy}/>
               <button type="button" onClick={runAi} disabled={aiBlocked}
