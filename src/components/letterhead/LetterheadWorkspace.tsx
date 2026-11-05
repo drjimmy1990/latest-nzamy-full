@@ -164,14 +164,26 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
   };
 
   const uploadLogo = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const picked = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
-    if (file.size > BRANDING_LOGO_MAX_BYTES) {
+    if (!picked) return;
+    // q346: an SVG becomes a PNG here, and the 1 MB rule then applies to that PNG.
+    const isSvg = picked.type === "image/svg+xml" || /\.svg$/i.test(picked.name);
+    if (!isSvg && picked.size > BRANDING_LOGO_MAX_BYTES) {
       setLogoState({ kind: "error", message: "حجم الشعار يتجاوز ١ ميجابايت" });
       return;
     }
     setLogoState({ kind: "busy" });
+    let file = picked;
+    if (isSvg) {
+      try {
+        const { rasterizeSvgLogo } = await import("./rasterizeSvgLogo");
+        file = new File([await rasterizeSvgLogo(picked)], "logo.png", { type: "image/png" });
+      } catch (err) {
+        setLogoState({ kind: "error", message: err instanceof Error ? err.message : "تعذّر تحويل الشعار؛ ارفعه بصيغة PNG" });
+        return;
+      }
+    }
     try {
       const form = new FormData();
       form.append("file", file);
@@ -335,7 +347,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
             <div>
               <p className={labelCls}>شعار {scope === "firm" ? "المكتب" : "المكتب الخاص"} (اختياري)</p>
               <div className="flex flex-wrap items-center gap-2">
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadLogo} />
+                <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/svg+xml" className="hidden" onChange={uploadLogo} />
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={locked || logoState.kind === "busy"}
@@ -354,7 +366,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
                   </button>
                 )}
               </div>
-              <p className={`mt-1 text-[11px] ${ts}`}>PNG أو JPEG أو WebP، حتى ١ ميجابايت. لا يُقبل SVG.</p>
+              <p className={`mt-1 text-[11px] ${ts}`}>PNG أو JPEG أو WebP، حتى ١ ميجابايت. يُقبل SVG ويُحفظ صورة PNG عالية الدقة.</p>
               {logoState.kind === "error" && <p className="mt-1 text-[11px] text-red-500">{logoState.message}</p>}
             </div>
 

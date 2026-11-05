@@ -83,3 +83,17 @@ test("the licence number leaves the server only when the profile is verified", (
   const get = handler(main, "GET");
   assert.equal((get.match(/number: verified \? /g) ?? []).length, 2, "lawyer and firm both gate on verified");
 });
+
+test("q346: an SVG never reaches Storage — the bytes decide, and the refusal says where SVG belongs", () => {
+  const body = handler(logo, "POST");
+  const refuse = body.indexOf("if (!kind)");
+  const service = body.indexOf("createServiceClient()");
+  assert.ok(refuse > 0 && refuse < service, "the refusal comes before the service role");
+  assert.match(body.slice(refuse, service), /looksLikeSvg\(bytes\)[\s\S]*status: 415/);
+  assert.ok(body.includes("ارفع ملف SVG من صفحة الهوية ليُحوَّل تلقائياً إلى PNG"));
+  assert.match(body, /brandingLogoPath\(owner\.scope, owner\.ownerId, randomBytes\(8\)\.toString\("hex"\), kind\.ext\)/, "the stored name's extension is the sniffed one");
+  const ws = readFileSync(new URL("../../../../components/letterhead/LetterheadWorkspace.tsx", import.meta.url), "utf8");
+  assert.ok(ws.includes('accept=".png,.jpg,.jpeg,.webp,.svg,image/svg+xml"'));
+  assert.ok(ws.includes("يُقبل SVG ويُحفظ صورة PNG عالية الدقة"));
+  assert.ok(!ws.includes("لا يُقبل SVG"), "the old claim is gone");
+});
