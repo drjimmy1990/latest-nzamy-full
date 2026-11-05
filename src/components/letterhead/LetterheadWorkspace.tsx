@@ -267,7 +267,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
 
   return (
     <div className={`${embedded ? "" : "mx-auto max-w-7xl p-5 md:p-7"} space-y-5`} dir="rtl">
-      <style href="nz-letterhead-print" precedence="default">{PRINT_CSS}</style>
+      <style>{PRINT_CSS}</style>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

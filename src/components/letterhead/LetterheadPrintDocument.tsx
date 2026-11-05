@@ -114,7 +114,7 @@ export default function LetterheadPrintDocument({
   if (!root) return null;
   return createPortal(
     <>
-      <style href="nz-letterhead-export-print" precedence="default">{PRINT_CSS}</style>
+      <style>{PRINT_CSS}</style>
       <LetterheadSheet identity={identity}>
         {blocks.map((block, i) => <Block key={i} block={block} />)}
       </LetterheadSheet>
