@@ -25,7 +25,6 @@ export const COMING_SOON_BADGE_AR = "قريباً";
 /** Pages that render BetaReviewGate around their only output (mock behind it). */
 export const GATE_ONLY_TOOL_ROUTES = [
   "/ai/consult",
-  "/ai/contract-reviewer",
   "/ai/contract-negotiator",
   "/ai/report-generator",
   "/ai/smart-inspector",

@@ -389,7 +389,7 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
     { key: "firm-assign", icon: <UsersThree {...iconProps} />, label: "توزيع قضية", sub: "اختيار الفريق وحِمل العمل", href: "/dashboard/firm/cases/assign" },
     { key: "firm-conflict", icon: <ShieldCheck {...iconProps} />, label: "فحص تعارض مصالح", sub: "Conflict • KYC • جدران صينية", href: "/dashboard/firm/compliance/conflict" },
     { key: "firm-workload", icon: <ChartBar {...iconProps} />, label: "عبء الفريق", sub: "الشركاء والمتدربون والسكرتارية", href: "/dashboard/firm/team/workload" },
-    { key: "firm-contract-review", icon: <FileText {...iconProps} />, label: "مراجع عقود المكتب", sub: "تقرير مخاطر لعقود العملاء", href: "/ai/contract-reviewer", badge: "قريباً" },
+    { key: "firm-contract-review", icon: <FileText {...iconProps} />, label: "مراجع عقود المكتب", sub: "تقرير مخاطر لعقود العملاء", href: "/ai/contracts", badge: "قريباً" },
     { key: "firm-market", icon: <Storefront {...iconProps} />, label: "طلبات السوق", sub: "فرص وإحالات للمكتب", href: "/dashboard/firm/marketplace" },
     quick,
   ], "دعم عمليات المكتب");

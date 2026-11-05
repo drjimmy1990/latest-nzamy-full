@@ -380,6 +380,8 @@ const REDIRECTS: Record<string, string> = {
   // S3-04: both were gated mocks. contracts-pro runs for corporate and ngo.
   "/ai/corp/contracts":  "/ai/contracts",
   "/ai/ngo/volunteer-contract": "/ai/contracts",
+  // S3-15: a mock page. The real review runs in /ai/contracts' review mode.
+  "/ai/contract-reviewer": "/ai/contracts",
   "/ai/corp/privacy":    "/ai/corp/compliance",
   "/dashboard/lawyer/ai/secretary": "/ai/secretary",
   "/law":                "/laws",

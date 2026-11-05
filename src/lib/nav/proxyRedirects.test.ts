@@ -36,6 +36,15 @@ const MOVED: Record<string, string> = {
   "/ai/research": "/ai/legal-opinion",
   "/ai/corp/contracts": "/ai/contracts",
   "/ai/ngo/volunteer-contract": "/ai/contracts",
+  "/ai/contract-reviewer": "/ai/contracts",
+};
+/**
+ * The legal sidebars' «مراجع العقود» row keeps this URL and its «قريباً» until the
+ * tool is live (the release notes' one-line follow-up, q296): a row on /ai/contracts
+ * would be a second one with the same React key. The 301 carries the click.
+ */
+const STILL_LINKED: Record<string, readonly string[]> = {
+  "/ai/contract-reviewer": ["navigation.sidebars.legal.ts"],
 };
 
 for (const [from, to] of Object.entries(MOVED)) {
@@ -74,10 +83,19 @@ test("no source outside proxy.ts names a retired URL or the retired permission",
     if (file.endsWith("proxy.ts")) continue;
     const body = readFileSync(file, "utf8");
     for (const n of needles) {
+      if (STILL_LINKED[n]?.some((allowed) => file.endsWith(allowed))) continue;
       if (body.includes(`"${n}"`) || body.includes(`"${n}?`) || body.includes(`'${n}'`) || body.includes(`url: "${n}`)) hits.push(`${file}: ${n}`);
     }
   }
   assert.deepEqual(hits, []);
+});
+
+test("the row that still links /ai/contract-reviewer says «قريباً» in both legal sidebars, until the tool is live", () => {
+  for (const [name, sidebar] of [["lawyer", LAWYER_SIDEBAR], ["firm", FIRM_SIDEBAR]] as const) {
+    for (const row of sidebar.flatMap((g) => g.items).filter((r) => r.href === "/ai/contract-reviewer")) {
+      assert.equal(row.badge, "قريباً", name);
+    }
+  }
 });
 
 test("the sitemap does not advertise the retired URLs", () => {

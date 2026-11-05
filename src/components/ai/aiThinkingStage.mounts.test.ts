@@ -23,6 +23,7 @@ const MOUNTS: Record<string, string> = {
   "app/ai/analyze-strength/page.tsx": "analyze-strength",
   "components/ai/caseBrief/CaseBriefStudio.tsx": "case-brief",
   "app/ai/quick-answer/page.tsx": "quick-answer",
+  "components/contracts/steps/review/StepRAiReview.tsx": "contract-review",
 };
 
 for (const [file, tool] of Object.entries(MOUNTS)) {
@@ -44,6 +45,7 @@ test("the consultation and the letter share one stage, in the panel both render 
 
 test("contracts pro: the page hands its run to the step that shows the stage", () => {
   assert.match(src("app/ai/contracts/page.tsx"), /<StepGenerate[\s\S]{0,200}run=\{run\}/);
+  assert.match(src("app/ai/contracts/page.tsx"), /<StepRAiReview[\s\S]{0,300}run=\{reviewRun\}/);
 });
 
 test("the stage replaced the fixed waiting lines and fake motion it stands for", () => {
@@ -70,6 +72,7 @@ test("R30: a legacy held run reads the one sentence, with no promise of a team r
     "components/ai/caseBrief/CaseBriefStudio.tsx",
     "app/ai/quick-answer/page.tsx",
     "app/ai/legal-opinion/_components/AiOpinionPanel.tsx",
+    "components/contracts/steps/review/StepRAiReview.tsx",
   ];
   for (const file of held) {
     const page = src(file);

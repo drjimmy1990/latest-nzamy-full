@@ -8,8 +8,11 @@ import { useTheme } from "@/components/ThemeProvider";
 
 import { useContractsState } from "@/hooks/useContractsState";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolUsable } from "@/hooks/useToolUsable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { CONTRACTS_PRO_PRICE } from "@/lib/ai/tools";
 import { asContractsProDraft, contractsProInput, contractsProText } from "@/components/contracts/contractsProRun";
+import { asContractReview, contractReviewInput, contractReviewSource } from "@/components/contracts/contractReviewRun";
 import { CONTRACT_TYPES } from "@/components/contracts/constants";
 import type { PartyData } from "@/components/contracts/types";
 import { getContract } from "@/lib/services/contractsService";
@@ -21,10 +24,11 @@ import { StepContext } from "@/components/contracts/steps/draft/StepContext";
 import { StepClauses } from "@/components/contracts/steps/draft/StepClauses";
 import { StepReview } from "@/components/contracts/steps/draft/StepReview";
 import { StepGenerate } from "@/components/contracts/steps/draft/StepGenerate";
-import { StepSubmit, type StepSubmitRow } from "@/components/contracts/steps/StepSubmit";
+import type { StepSubmitRow } from "@/components/contracts/steps/StepSubmit";
 
 import { StepRIdentity } from "@/components/contracts/steps/review/StepRIdentity";
 import { StepRUpload } from "@/components/contracts/steps/review/StepRUpload";
+import { StepRAiReview } from "@/components/contracts/steps/review/StepRAiReview";
 // StepRAnalysis / StepRDecisions / StepRReport were simulated theatre with no
 // real AI behind them (hardcoded mock clauses, a decision keyed only "c1"
 // that nothing downstream read, download buttons with no onClick) — hidden
@@ -95,6 +99,20 @@ function AIContractsPageInner() {
       selectedClauses: s.clauses.filter(c => c.checked).map(c => s.clauseEdits[c.id]?.trim() || c.title),
       additionalClauses: s.additionalClauses,
     }), useCredit ? { useCredit: true } : {});
+  }
+
+  // The AI review (250 points) runs only once tool-status says this caller may
+  // (q296): until then the page's copy and the last step stay the team order. The
+  // run lives here so that leaving the step cannot lose a charged run from the screen.
+  const reviewUsable = useToolUsable("contract-review");
+  const reviewRun = useAiRun();
+  const review = reviewRun.phase === "done" ? asContractReview(reviewRun.output) : null;
+  const reviewSource = contractReviewSource(s.attachments, s.rContractText, AI_TEXT_FILES_ON);
+  function runContractReview() {
+    if (reviewRun.busy || reviewSource.kind === "none") return;
+    const input = contractReviewInput({ rPartyFocus: s.rPartyFocus, rFears: s.rFears, rOtherParty: s.rOtherParty, contractType: s.contractType });
+    const fileIds = reviewSource.kind === "file" ? reviewSource.fileIds : [];
+    void reviewRun.start("contract-review", reviewSource.kind === "paste" ? { ...input, contract_text: reviewSource.text } : input, { fileIds });
   }
 
   // Draft-mode submit recap — rows for the "submit" step. Mirrors buildIntake()
@@ -178,7 +196,11 @@ function AIContractsPageInner() {
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
           {s.contractMode === "review"
-            ? "ارفع عقدك الحالي — يراجعه فريق نظامي ويرسل لك تقرير المخاطر والملاحظات (المراجعة الآلية بالذكاء الاصطناعي لم تُتح بعد)"
+            ? reviewUsable === false
+              ? "ارفع عقدك الحالي — يراجعه فريق نظامي ويرسل لك تقرير المخاطر والملاحظات (المراجعة الآلية بالذكاء الاصطناعي لم تُتح بعد)"
+              : reviewUsable
+                ? "ارفع عقدك الحالي — يراجعه الذكاء الاصطناعي بنداً بنداً لمصلحة الطرف الذي تمثّله، ويمكنك طلب مراجعة من فريق نظامي طلباً منفصلاً"
+                : "ارفع عقدك الحالي لمراجعته"
             : "صف فكرة عقدك وبنوده — يكتبه الذكاء الاصطناعي آلياً بنداً بنداً، وتتحقق المنصة من مواده في المكتبة"}
         </p>
       </div>
@@ -228,9 +250,11 @@ function AIContractsPageInner() {
                 <ShieldCheck size={26} weight="duotone" className="text-[#C8A762]" />
               </div>
               <p className={`text-[16px] font-bold mb-1 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>مراجعة عقد</p>
-              <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>تحليل عقد موجود وكشف المخاطر — يتولاه فريق نظامي</p>
+              <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                {reviewUsable ? "تحليل عقد موجود وكشف المخاطر — بالذكاء الاصطناعي أو عبر فريق نظامي" : reviewUsable === false ? "تحليل عقد موجود وكشف المخاطر — يتولاه فريق نظامي" : "تحليل عقد موجود وكشف المخاطر"}
+              </p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {["بياناتك عن العقد", "رفع ملف العقد", "إرسال للفريق"].map(f => (
+                {["بياناتك عن العقد", "رفع ملف العقد", reviewUsable ? "تقرير المخاطر" : "إرسال للفريق"].map(f => (
                   <span key={f} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>{f}</span>
                 ))}
               </div>
@@ -415,16 +439,22 @@ function AIContractsPageInner() {
             />
           )}
           {s.step === "submit" && s.contractMode === "review" && (
-            <StepSubmit
+            <StepRAiReview
               isDark={isDark}
-              heading="مراجعة الطلب وإرساله"
-              description="مراجعة العقد بالذكاء الاصطناعي (تقسيم البنود وتقدير مخاطر كل بند) لم تُتح بعد؛ هذا طلب بشري يراجع فيه فريق نظامي العقد المرفوع ويرسل لك تقرير المراجعة، وسيصلك إشعار عند جهوزيته."
+              usable={reviewUsable}
               rows={reviewSubmitRows}
               attachments={s.attachments}
-              consentText="أقر بأن البيانات المدخلة صحيحة، وأوافق على إرسال العقد المرفوع لفريق نظامي لمراجعته."
-              submitting={s.submitting}
-              submitErrors={s.submitErrors}
-              onSubmit={s.submitReviewOrder}
+              source={reviewSource}
+              phase={reviewRun.phase}
+              error={reviewRun.error}
+              run={reviewRun}
+              chargedPoints={reviewRun.chargedPoints}
+              review={review}
+              onRun={runContractReview}
+              onRestart={() => { reviewRun.reset(); s.setStep("r_identity"); }}
+              humanSubmitting={s.submitting}
+              humanErrors={s.submitErrors}
+              onHumanOrder={s.submitReviewOrder}
             />
           )}
 
@@ -448,7 +478,7 @@ function AIContractsPageInner() {
 
           {/* Navigation */}
           <div className="flex items-center justify-between pt-2">
-            <button onClick={s.prevStep} disabled={s.currentStepIndex === 0 || run.busy}
+            <button onClick={s.prevStep} disabled={s.currentStepIndex === 0 || run.busy || reviewRun.busy}
               className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-semibold border disabled:opacity-30 ${isDark ? "border-white/[0.07] bg-zinc-800 text-zinc-300" : "border-zinc-200 bg-white text-zinc-600"}`}>
               <ArrowRight size={13} /> السابق
             </button>
@@ -467,7 +497,7 @@ function AIContractsPageInner() {
           </div>
 
           <div className="flex justify-center mt-2">
-            <button onClick={() => { run.reset(); s.setContractMode(null); s.setContractComplexity(null); }} disabled={run.busy}
+            <button onClick={() => { run.reset(); reviewRun.reset(); s.setContractMode(null); s.setContractComplexity(null); }} disabled={run.busy || reviewRun.busy}
               className={`text-[11px] underline transition-colors disabled:opacity-40 ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"}`}>
               تغيير الوضع ({s.contractMode === "draft" ? "صياغة عقد" : "مراجعة عقد"})
             </button>
