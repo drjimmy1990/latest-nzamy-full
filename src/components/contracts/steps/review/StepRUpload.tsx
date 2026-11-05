@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { CloudArrowUp, UploadSimple, Spinner, X, Warning } from "@phosphor-icons/react";
 import { CONTRACT_TYPES } from "@/components/contracts/constants";
@@ -30,6 +30,7 @@ export function StepRUpload({
 }: StepRUploadProps) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const fileRef = useRef<HTMLInputElement>(null);
+  const contractLabelId = useId();
 
   // Files picked but not yet resolved — shown immediately so the client
   // sees the filenames without waiting on the network round trip, matching
@@ -45,6 +46,10 @@ export function StepRUpload({
   // Coming back to this step shows the tab that holds what was entered.
   const [tab, setTab] = useState<"file" | "paste">(contractText !== "" && attachments.length === 0 ? "paste" : "file");
   const pastedChars = contractText.trim().length;
+
+  function openFilePicker() {
+    if (!uploading) fileRef.current?.click();
+  }
 
   async function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -77,7 +82,7 @@ export function StepRUpload({
           ))}
         </div>
 
-        <p className={`text-[13px] font-bold mb-3 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>العقد المراد مراجعته<RequiredMark announce /></p>
+        <p id={contractLabelId} className={`text-[13px] font-bold mb-3 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>العقد المراد مراجعته<RequiredMark announce /></p>
         <div className="mb-3 flex gap-2" role="tablist" aria-label="طريقة إدخال العقد">
           {([["file", "رفع ملف"], ["paste", "لصق نص العقد"]] as const).map(([id, tabLabel]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
@@ -106,10 +111,15 @@ export function StepRUpload({
 
         {tab === "file" && (
         <div
-          onClick={() => { if (!uploading) fileRef.current?.click(); }}
+          role="button"
+          tabIndex={0}
+          aria-labelledby={contractLabelId}
+          aria-disabled={uploading}
+          onClick={openFilePicker}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFilePicker(); } }}
           onDragOver={e => e.preventDefault()}
           onDrop={e => { e.preventDefault(); if (!uploading) handleFiles(e.dataTransfer.files); }}
-          className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${uploading ? "opacity-70" : "cursor-pointer"} ${isDark ? "border-white/[0.07] hover:border-[#C8A762]/40 hover:bg-white/[0.02]" : "border-zinc-300 hover:border-[#0B3D2E]/40 hover:bg-zinc-50"
+          className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762] ${uploading ? "opacity-70" : "cursor-pointer"} ${isDark ? "border-white/[0.07] hover:border-[#C8A762]/40 hover:bg-white/[0.02]" : "border-zinc-300 hover:border-[#0B3D2E]/40 hover:bg-zinc-50"
           }`}>
           <input ref={fileRef} type="file" multiple className="hidden" accept=".pdf,.doc,.docx"
             onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />

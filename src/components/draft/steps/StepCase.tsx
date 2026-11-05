@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, RefObject, MutableRefObject, Dispatch, SetStateAction } from "react";
+import { useId, useState, useRef, RefObject, MutableRefObject, Dispatch, SetStateAction } from "react";
 import { motion } from "framer-motion";
 import { CloudArrowUp, PaperclipHorizontal, BookOpen, UploadSimple, FileArrowUp, X, Plus, MagnifyingGlass, FolderOpen, ArrowRight, Warning } from "@phosphor-icons/react";
 import { AnimatePresence } from "framer-motion";
@@ -98,6 +98,10 @@ export function StepCase({
   // attachments array the submit reads — this list is only the visible handle
   // the client needs to see the names and remove one.
   const bulkFileRef = useRef<HTMLInputElement>(null);
+  const caseFileLabelId = useId();
+  function openCaseFilePicker() {
+    if (!uploading) caseFileRef.current?.click();
+  }
   const [bulkAttached, setBulkAttached] = useState<OrderAttachment[]>([]);
   // Failed filenames from the fallback loop below only. attachFiles() keeps its
   // own accumulating list in attachError; attachFile() clears attachError at
@@ -192,7 +196,7 @@ export function StepCase({
       {/* رفع ملف القضية */}
       <div className={`${card} p-5 shadow-sm`}>
         <div className="flex items-center gap-2 mb-1">
-          <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
+          <p id={caseFileLabelId} className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
             {isDraftType ? "المستند الأساسي / المرفقات" : "ملفات القضية الكاملة"}<RequiredMark announce />
           </p>
           {!isDraftType && (
@@ -201,8 +205,6 @@ export function StepCase({
             </span>
           )}
         </div>
-        <div className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 transition-colors ${caseFile ? isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50" : `cursor-pointer ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}`}
-          onClick={() => { if (!uploading && !caseFile) caseFileRef.current?.click(); }}>
           <input ref={caseFileRef} type="file" className="hidden" accept={DRAFT_FILE_ACCEPT}
             onChange={async e => {
               const f = e.target.files?.[0];
@@ -216,6 +218,8 @@ export function StepCase({
               }
             }} />
           {caseFile ? (
+            // A chosen file holds its own buttons, so this box is not the dropzone button.
+            <div className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 transition-colors ${isDark ? "border-emerald-700/30 bg-emerald-900/8" : "border-emerald-200 bg-emerald-50"}`}>
             <div className="flex items-center justify-center gap-2">
               <UploadSimple size={14} className="text-emerald-500" />
               <span className={`text-[12px] font-medium truncate ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>{caseFile}</span>
@@ -226,14 +230,21 @@ export function StepCase({
                 if (caseFileDocId) { removeAttachment(caseFileDocId); setCaseFileDocId(null); }
               }}><X size={13} className="text-emerald-500" /></button>
             </div>
+            </div>
           ) : (
-            <>
+            <div
+              role="button"
+              tabIndex={0}
+              aria-labelledby={caseFileLabelId}
+              aria-disabled={uploading}
+              onClick={openCaseFilePicker}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openCaseFilePicker(); } }}
+              className={`rounded-xl border-2 border-dashed p-5 text-center mt-3 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762] ${isDark ? "border-white/[0.08] hover:border-[#C8A762]/30" : "border-zinc-200 hover:border-[#C8A762]/40"}`}>
               <CloudArrowUp size={22} className={`mx-auto mb-2 ${isDark ? "text-zinc-600" : "text-zinc-400"}`} />
               <p className={`text-[12px] font-semibold mb-0.5 ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>ارفع ملف القضية</p>
               <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{AI_TEXT_FILES_ON ? "PDF · Word · صور · نص" : "PDF · Word · صور"} — اسحب وأفلت أو اضغط</p>
-            </>
+            </div>
           )}
-        </div>
         <p className={`text-center text-[11px] my-3 ${isDark ? "text-zinc-700" : "text-zinc-300"}`}>أو</p>
         {/* Either one is required (validateDraftIntake): the facts typed, or a file. */}
         <p id="draft-case-facts-hint" className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>

@@ -1,10 +1,11 @@
 "use client";
 
-import { Dispatch, SetStateAction, useState, useEffect } from "react";
+import { Dispatch, KeyboardEvent, SetStateAction, useState, useEffect, useId } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Warning, CheckCircle, Circle } from "@phosphor-icons/react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import { RequiredMark } from "@/components/ui/RequiredMark";
+import { nextRadioIndex } from "@/components/ui/radioGroupKeys";
 import {
   MEMO_MAIN_TYPES, MEMO_SUB_TYPES_REGULAR, MEMO_SUB_TYPES_COMMITTEES,
   LEGAL_BRANCHES_REGULAR, LEGAL_BRANCHES_COMMITTEES, COMMITTEE_BRANCH_IDS,
@@ -36,6 +37,24 @@ interface StepIdentifyProps {
   setShowPreFiling: Dispatch<SetStateAction<boolean>>;
 }
 
+const RADIO_FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]";
+
+/**
+ * Arrow keys, Home and End move the choice through the group's radios in DOM
+ * order, by clicking the next one, so each radio's own handler runs. A key
+ * pressed in the «أخرى» text field inside the branch group is not a move.
+ */
+function moveRadioChoice(e: KeyboardEvent<HTMLElement>) {
+  const radios = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]'));
+  const index = radios.indexOf(e.target as HTMLElement);
+  if (index === -1) return;
+  const next = nextRadioIndex(e.key, index, radios.length);
+  if (next === null) return;
+  e.preventDefault();
+  radios[next].focus();
+  radios[next].click();
+}
+
 // Maps each memoSubType → which LEGAL_BRANCHES_REGULAR entries are relevant.
 // null means "show all". Keeps legalBranch picker focused, removes duplication.
 const SUBTYPE_BRANCH_FILTER: Record<string, string[] | null> = {
@@ -63,6 +82,10 @@ export function StepIdentify({
   notesText, setNotesText, showPreFiling, setShowPreFiling,
 }: StepIdentifyProps) {
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+  const roleLabelId    = useId();
+  const memoLabelId    = useId();
+  const subTypeLabelId = useId();
+  const branchLabelId  = useId();
   const isDraftType     = memoType === "case";
   const needsPriorDocs  = REQUIRES_PRIOR_DOCS_TYPES.has(memoType);
 
@@ -99,6 +122,12 @@ export function StepIdentify({
     ? (isCommitteeSubtype ? MEMO_SUB_TYPES_COMMITTEES : MEMO_SUB_TYPES_REGULAR)[memoType] ?? []
     : [];
 
+  // Roving tab stop: the chosen radio, or the first one while none of the shown radios is chosen.
+  const memoTabStop = MEMO_MAIN_TYPES.some(mt => mt.id === memoType) ? memoType : MEMO_MAIN_TYPES[0]?.id;
+  const subTypeTabStop = activeSubTypes.includes(memoSubType) ? memoSubType : activeSubTypes[0];
+  const shownBranches = filterRule === null ? [...filteredRegular, ...LEGAL_BRANCHES_COMMITTEES] : filteredRegular;
+  const branchTabStop = isOther ? "أخرى" : shownBranches.includes(legalBranch) ? legalBranch : shownBranches[0];
+
   function handleBranchChange(branch: string) {
     if (branch !== "أخرى") {
       setIsOther(false);
@@ -116,12 +145,14 @@ export function StepIdentify({
       {/* صفة الموكل — مخفي في الأوضاع المتخصصة */}
       {!["arbitration", "notary", "report", "minutes"].includes(memoType) && (
         <div className={`${card} p-5 shadow-sm`}>
-          <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>صفة الموكل<RequiredMark announce /></p>
-          <div className="grid grid-cols-2 gap-3">
+          <p id={roleLabelId} className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>صفة الموكل<RequiredMark announce /></p>
+          <div role="radiogroup" aria-required="true" aria-labelledby={roleLabelId} onKeyDown={moveRadioChoice} className="grid grid-cols-2 gap-3">
             {([["plaintiff", "مُدَّعِي", "أنت تقم برفع الدعوى"], ["defendant", "مُدَّعَى عليه", "ترد على دعوى مرفوعة ضدك"]] as const).map(([key, label, desc]) => (
               <motion.button key={key} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                type="button" role="radio" aria-checked={clientRole === key}
+                tabIndex={clientRole === key || (!clientRole && key === "plaintiff") ? 0 : -1}
                 onClick={() => setClientRole(key)}
-                className={`rounded-xl border p-4 text-start transition-all ${
+                className={`rounded-xl border p-4 text-start transition-all ${RADIO_FOCUS} ${
                   clientRole === key
                     ? isDark ? "border-[#0B3D2E]/50 bg-[#0B3D2E]/20" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5"
                     : isDark ? "border-white/[0.06] hover:border-white/[0.12]" : "border-zinc-200 hover:border-zinc-300"
@@ -136,12 +167,14 @@ export function StepIdentify({
 
       {/* نوع المذكرة */}
       <div className={`${card} p-5 shadow-sm`}>
-        <p className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>نوع المذكرة<RequiredMark announce /></p>
-        <div className="grid grid-cols-2 gap-3">
+        <p id={memoLabelId} className={`text-[11px] font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>نوع المذكرة<RequiredMark announce /></p>
+        <div role="radiogroup" aria-required="true" aria-labelledby={memoLabelId} onKeyDown={moveRadioChoice} className="grid grid-cols-2 gap-3">
           {MEMO_MAIN_TYPES.map(mt => (
             <motion.button key={mt.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              type="button" role="radio" aria-checked={memoType === mt.id}
+              tabIndex={mt.id === memoTabStop ? 0 : -1}
               onClick={() => { setMemoType(mt.id); setMemoSubType(""); }}
-              className={`rounded-xl border p-3.5 text-start transition-all ${
+              className={`rounded-xl border p-3.5 text-start transition-all ${RADIO_FOCUS} ${
                 memoType === mt.id
                   ? isDark ? "border-[#0B3D2E]/50 bg-[#0B3D2E]/20" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5"
                   : isDark ? "border-white/[0.06] hover:border-white/[0.12]" : "border-zinc-200 hover:border-zinc-300"
@@ -157,14 +190,16 @@ export function StepIdentify({
         <AnimatePresence>
           {memoType && activeSubTypes.length > 0 && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-4 overflow-hidden">
-              <p className={`text-[11px] font-semibold mb-2 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+              <p id={subTypeLabelId} className={`text-[11px] font-semibold mb-2 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
                 {SUBTYPE_LABEL[memoType] || "نوع الطعن"}<RequiredMark announce />
                 {isCommitteeSubtype && <span className="ms-2 text-[9px] text-amber-500 font-bold">(⚠️ لجان شبه قضائية — ❌ لا نقض)</span>}
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div role="radiogroup" aria-required="true" aria-labelledby={subTypeLabelId} onKeyDown={moveRadioChoice} className="flex flex-wrap gap-2">
                 {activeSubTypes.map((sub: string) => (
-                  <button key={sub} onClick={() => setMemoSubType(sub)}
-                    className={`rounded-lg px-4 py-2 text-[12px] font-medium border transition-all ${
+                  <button key={sub} type="button" role="radio" aria-checked={memoSubType === sub}
+                    tabIndex={sub === subTypeTabStop ? 0 : -1}
+                    onClick={() => setMemoSubType(sub)}
+                    className={`rounded-lg px-4 py-2 text-[12px] font-medium border transition-all ${RADIO_FOCUS} ${
                       memoSubType === sub
                         ? "bg-[#0B3D2E] border-[#0B3D2E] text-white"
                         : isDark ? "border-white/[0.08] text-zinc-400 hover:border-white/[0.15]" : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
@@ -215,17 +250,21 @@ export function StepIdentify({
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className={`${card} p-5 shadow-sm`}>
               <div className="flex items-center justify-between mb-3">
-                <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الفرع القانوني (اختياري — يستنتجه الذكاء من الوقائع)</p>
+                <p id={branchLabelId} className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الفرع القانوني (اختياري — يستنتجه الذكاء من الوقائع)</p>
                 {memoSubType && filteredRegular.length < LEGAL_BRANCHES_REGULAR.length && (
                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
                     isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"
                   }`}>مفلتر حسب نوع الدعوى</span>
                 )}
               </div>
+              {/* One group across the regular list, «أخرى» and the committees: one choice. */}
+              <div role="radiogroup" aria-labelledby={branchLabelId} onKeyDown={moveRadioChoice}>
               <div className="flex flex-wrap gap-2">
                 {filteredRegular.map((branch: string) => (
-                  <button key={branch} onClick={() => handleBranchChange(branch)}
-                    className={`rounded-lg px-3 py-1.5 text-[11px] font-medium border transition-all ${
+                  <button key={branch} type="button" role="radio" aria-checked={legalBranch === branch && !isOther}
+                    tabIndex={branch === branchTabStop ? 0 : -1}
+                    onClick={() => handleBranchChange(branch)}
+                    className={`rounded-lg px-3 py-1.5 text-[11px] font-medium border transition-all ${RADIO_FOCUS} ${
                       legalBranch === branch && !isOther ? "bg-[#C8A762] border-[#C8A762] text-white"
                       : isDark ? "border-white/[0.08] text-zinc-400 hover:border-[#C8A762]/30" : "border-zinc-200 text-zinc-500 hover:border-[#C8A762]/30"
                     }`}>
@@ -234,8 +273,10 @@ export function StepIdentify({
                 ))}
                 
                 {/* زر "أخرى" لإدخال تصنيف مخصص */}
-                <button onClick={() => { setIsOther(true); handleBranchChange("أخرى"); }}
-                  className={`rounded-lg px-3 py-1.5 text-[11px] font-medium border transition-all ${
+                <button type="button" role="radio" aria-checked={isOther}
+                  tabIndex={branchTabStop === "أخرى" ? 0 : -1}
+                  onClick={() => { setIsOther(true); handleBranchChange("أخرى"); }}
+                  className={`rounded-lg px-3 py-1.5 text-[11px] font-medium border transition-all ${RADIO_FOCUS} ${
                     isOther ? "bg-[#C8A762] border-[#C8A762] text-white"
                     : isDark ? "border-white/[0.08] text-zinc-400 hover:border-[#C8A762]/30" : "border-zinc-200 text-zinc-500 hover:border-[#C8A762]/30"
                   }`}>
@@ -276,8 +317,10 @@ export function StepIdentify({
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {LEGAL_BRANCHES_COMMITTEES.map((branch: string) => (
-                      <button key={branch} onClick={() => handleBranchChange(branch)}
-                        className={`rounded-lg px-3 py-1.5 text-[11px] font-medium border transition-all ${
+                      <button key={branch} type="button" role="radio" aria-checked={legalBranch === branch && !isOther}
+                        tabIndex={branch === branchTabStop ? 0 : -1}
+                        onClick={() => handleBranchChange(branch)}
+                        className={`rounded-lg px-3 py-1.5 text-[11px] font-medium border transition-all ${RADIO_FOCUS} ${
                           legalBranch === branch && !isOther ? "bg-amber-500 border-amber-500 text-white"
                           : isDark ? "border-amber-700/30 text-amber-500 hover:border-amber-500/50" : "border-amber-200 text-amber-700 hover:border-amber-400"
                         }`}>
@@ -287,6 +330,7 @@ export function StepIdentify({
                   </div>
                 </div>
               ) : null}
+              </div>{/* /radiogroup: legal branch */}
             </div>
           </motion.div>
         ) : autoSelectedBranch ? (
