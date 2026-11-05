@@ -111,10 +111,20 @@ test("a consultant may not run the wargaming simulation (Art. 18) but may analys
   assert.equal(b.status, 202);
 });
 
-test("wargaming input: role, area, a 20+ character summary, known targets; critique needs the memo", () => {
+test("wargaming input: role, a 20+ character summary, known targets; critique needs the memo; area optional", () => {
   const v = AI_TOOLS.wargaming.validateInput;
   assert.equal(v({ ...war, role: "judge" }).ok, false);
-  assert.equal(v({ ...war, area: "" }).ok, false);
+  for (const area of ["", "   ", null, undefined]) {
+    const open = v({ ...war, area });
+    assert.ok(open.ok, String(area));
+    assert.equal(open.ok && open.input.area, null, String(area));
+  }
+  const { area: _area, ...noArea } = war;
+  void _area;
+  const absent = v(noArea);
+  assert.equal(absent.ok && absent.input.area, null);
+  assert.deepEqual(v({ ...war, area: "ت".repeat(151) }), { ok: false, error: "تخصص القضية أطول من المسموح" });
+  assert.equal(v({ ...war, area: 7 }).ok, false);
   assert.equal(v({ ...war, case_summary: "قصير" }).ok, false);
   assert.equal(v({ ...war, targets: ["win"] }).ok, false);
   assert.equal(v({ ...war, targets: ["critique"] }).ok, false);

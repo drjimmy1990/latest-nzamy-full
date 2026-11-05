@@ -84,3 +84,13 @@ test("the pleading: plain text without markers, and a right-to-left Word file wi
   assert.doesNotMatch(doc, /\[S\d\]/);
   assert.equal(asPleading({ phase: "issues", title: "x", sections: [] }), null);
 });
+
+test("B9: no branch, or «أخرى» with nothing typed, goes to the run as no branch; the run accepts it", () => {
+  for (const legalBranch of ["", "  ", "أخرى"]) {
+    const input = analysisInput(wizard({ legalBranch }));
+    assert.equal(input.branch, null, legalBranch);
+    assert.ok(tool.validateInput(input).ok, legalBranch);
+  }
+  assert.equal(analysisInput(wizard({ legalBranch: " عمالي " })).branch, "عمالي");
+  assert.equal(analysisInput(wizard({ legalBranch: "بحري دولي" })).branch, "بحري دولي");
+});

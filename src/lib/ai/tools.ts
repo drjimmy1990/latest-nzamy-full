@@ -509,8 +509,9 @@ const SUMMARY_ERROR = `اكتب ملخص القضية (من ${CASE_SUMMARY_MIN.t
 function wargamingInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   if (!(WARGAMING_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
-  const area = boundedText(raw.area, 150);
-  if (!area) return { ok: false, error: "اختر تخصص القضية" };
+  // Optional: unnamed, the workflow asks the model to infer it from the facts.
+  const area = optionalField(raw.area, 150);
+  if (area === null) return { ok: false, error: "تخصص القضية أطول من المسموح" };
   const summary = caseSummary(raw.case_summary);
   if (!summary) return { ok: false, error: SUMMARY_ERROR };
   const targets = Array.isArray(raw.targets) ? WARGAMING_TARGETS.filter((t) => (raw.targets as unknown[]).includes(t)) : [];
@@ -531,7 +532,7 @@ function wargamingInput(raw: unknown): InputCheck {
     ok: true,
     input: {
       role: raw.role,
-      area,
+      area: area ?? null,
       case_summary: summary,
       targets,
       memo_text: targets.includes("critique") ? memoText : null,
@@ -1038,7 +1039,6 @@ const DRAFT_SEARCH_MAX = 3000;
 export const DRAFT_COPY = {
   kind: "اختر نوع المذكرة",
   role: "اختر صفة موكّلك في القضية",
-  branch: "اختر الفرع القانوني",
   facts: `اكتب الوقائع (${DRAFT_FACTS_MIN.toLocaleString("ar-SA")} حرفاً على الأقل) أو أرفق مستنداتها`,
   factsLong: `الوقائع أطول من ${DRAFT_FACTS_MAX.toLocaleString("ar-SA")} حرف — اختصرها أو أرفقها ملفاً`,
   issues: "أبقِ مسألة واحدة على الأقل",
@@ -1092,8 +1092,10 @@ function legalDrafterInput(raw: unknown): InputCheck {
   if (raw.phase !== "issues" && raw.phase !== "draft") return { ok: false, error: "المدخلات غير صالحة" };
   if (!isDraftKind(raw.kind)) return { ok: false, error: DRAFT_COPY.kind };
   if (!(DRAFT_ROLES as readonly unknown[]).includes(raw.client_role)) return { ok: false, error: DRAFT_COPY.role };
-  const branch = boundedText(raw.branch, 60);
-  if (!branch) return { ok: false, error: DRAFT_COPY.branch };
+  // Optional: unnamed, the workflow asks the model to infer it from the facts.
+  const branchField = optionalField(raw.branch, 60);
+  if (branchField === null) return { ok: false, error: "الفرع القانوني أطول من المسموح" };
+  const branch = branchField ?? null;
 
   const fields: Record<string, unknown> = {};
   for (const [key, label, max] of [
@@ -1134,7 +1136,7 @@ function legalDrafterInput(raw: unknown): InputCheck {
     // fails MIN_CASE_TEXT»); then runCore refuses the run without files.
     const factsInFiles = raw.facts_in_files === true;
     if (!factsInFiles && factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
-    const search = factsRaw || judgment?.reasons || judgment?.text || `${branch} ${DRAFT_KINDS[raw.kind].label}`;
+    const search = factsRaw || judgment?.reasons || judgment?.text || [branch, DRAFT_KINDS[raw.kind].label].filter(Boolean).join(" ");
     return { ok: true, input: { ...base, facts: factsRaw, facts_in_files: factsInFiles, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
   }
 

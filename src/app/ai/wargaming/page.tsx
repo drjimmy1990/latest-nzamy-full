@@ -94,7 +94,8 @@ const CASE_AREAS: { id: CaseArea; label: string }[] = [
 
 /** What the recap and the order title call the chosen specialty — the client's own words for «أخرى». */
 function caseAreaLabel(ctx: CaseContext): string {
-  if (ctx.area === WARGAMING_AREA_OTHER) return ctx.areaOther.trim() || "أخرى";
+  // «أخرى» with nothing typed names no specialty: the run and the order send none.
+  if (ctx.area === WARGAMING_AREA_OTHER) return ctx.areaOther.trim();
   return CASE_AREAS.find(a => a.id === ctx.area)?.label ?? "";
 }
 
@@ -366,8 +367,7 @@ function CaseSetup({
   const fRef = useRef<HTMLInputElement>(null);
   const UserIcon = user.userType==="firm"?Buildings:user.userType==="lawyer"?UserFocus:User;
   const isOtherArea = ctx.area===WARGAMING_AREA_OTHER;
-  const areaReady = ctx.area!=="" && (!isOtherArea || ctx.areaOther.trim().length>0);
-  const canNext = ctx.role!==""&&areaReady&&ctx.summary.trim().length>=20&&!uploading;
+  const canNext = ctx.role!==""&&ctx.summary.trim().length>=20&&!uploading;
   // 32 chips do not fit a phone screen as one wall, so the list scrolls and a
   // filter narrows it. «أخرى» stays visible whatever the filter says: it is
   // the way out when the client's specialty is not among the 31.
@@ -403,7 +403,7 @@ function CaseSetup({
 
       {/* Area */}
       <div className={`${card} p-5`}>
-        <p className={`text-[12px] font-bold mb-3 ${D?"text-zinc-400":"text-zinc-500"}`}>تخصص القضية</p>
+        <p className={`text-[12px] font-bold mb-3 ${D?"text-zinc-400":"text-zinc-500"}`}>تخصص القضية (اختياري)</p>
         <div className="relative mb-3">
           <MagnifyingGlass size={14} className={`absolute inset-y-0 end-3 my-auto pointer-events-none ${D?"text-zinc-500":"text-zinc-400"}`}/>
           <input value={areaQuery} onChange={e=>setAreaQuery(e.target.value)}
@@ -434,9 +434,6 @@ function CaseSetup({
               placeholder="اكتب تخصص القضية، مثل: منازعات الأوقاف"
               aria-label="تخصص القضية (أخرى)"
               className={inp}/>
-            {!ctx.areaOther.trim() && (
-              <p className="text-[11px] text-amber-500">اكتب التخصص لتتمكن من المتابعة</p>
-            )}
           </div>
         )}
       </div>
@@ -539,7 +536,7 @@ function TargetSelect({
       <div className={`rounded-xl border px-4 py-3 flex items-center gap-3 flex-wrap ${D?"border-[#C8A762]/15 bg-[#C8A762]/5":"border-amber-100 bg-amber-50/60"}`}>
         <Briefcase size={14} className="text-[#C8A762] flex-shrink-0"/>
         <p className={`text-[12px] flex-1 ${D?"text-zinc-300":"text-zinc-600"}`}>
-          <span className="font-bold text-[#C8A762]">{areaLabel}</span> · {roleLabel}
+          {areaLabel && <><span className="font-bold text-[#C8A762]">{areaLabel}</span> · </>}{roleLabel}
           {attachments.length>0 && <span className="ms-1 opacity-60">· {attachments[0].name}</span>}
         </p>
         <button onClick={onBack} className={`text-[10px] font-semibold ${D?"text-zinc-500 hover:text-zinc-300":"text-slate-400 hover:text-slate-600"}`}>← تعديل</button>
@@ -981,7 +978,7 @@ function AIWargamingPage() {
       "wargaming",
       {
         role: ctx.role,
-        area: caseAreaLabel(ctx),
+        area: caseAreaLabel(ctx) || null,
         case_summary: ctx.summary.trim(),
         targets: Array.from(targets),
         memo_text: critique ? memoText.trim() || null : null,
@@ -1047,8 +1044,10 @@ function AIWargamingPage() {
       schemaVersion: 1,
       service: "wargaming",
       role: ctx.role,
-      area: ctx.area,
-      ...(ctx.area === WARGAMING_AREA_OTHER ? { areaOther: ctx.areaOther.trim() } : {}),
+      // No specialty is left out, and so is «أخرى» with nothing typed.
+      ...(ctx.area === WARGAMING_AREA_OTHER
+        ? (ctx.areaOther.trim() ? { area: ctx.area, areaOther: ctx.areaOther.trim() } : {})
+        : (ctx.area ? { area: ctx.area } : {})),
       caseSummary: ctx.summary,
       targets: Array.from(targets),
       // Only send memoText/memoAttachmentIds when critique is actually

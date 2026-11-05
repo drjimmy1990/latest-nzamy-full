@@ -59,7 +59,8 @@ export function analysisInput(w: WizardFacts): Record<string, unknown> {
     phase: "issues",
     kind: w.kind,
     client_role: w.clientRole,
-    branch: w.legalBranch,
+    // «أخرى» with nothing typed names no branch: the model infers it.
+    branch: w.legalBranch.trim() && w.legalBranch.trim() !== "أخرى" ? w.legalBranch.trim() : null,
     facts: inFiles ? "" : facts,
     facts_in_files: inFiles,
     plaintiff_name: w.plaintiffName,

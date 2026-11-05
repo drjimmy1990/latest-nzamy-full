@@ -34,7 +34,8 @@ export interface WargamingIntakeV1 {
   schemaVersion: 1;
   service: "wargaming";
   role: "plaintiff" | "defendant" | "advisor";
-  area: string;
+  /** Optional since S2-B9; absent when the client named no specialty. */
+  area?: string;
   /** Present only when area === "other": the specialty as the client typed it. */
   areaOther?: string;
   caseSummary: string;
@@ -70,9 +71,7 @@ export function validateWargamingIntake(input: unknown): ValidationResult<Wargam
   // Read only for «أخرى»: a stale areaOther left behind after the client
   // switched to a listed section must not ride along in the order.
   const areaOther = area === WARGAMING_AREA_OTHER ? str(input.areaOther) : "";
-  if (!area) {
-    errors.push("تخصص القضية مطلوب");
-  } else if (area === WARGAMING_AREA_OTHER && !areaOther) {
+  if (area === WARGAMING_AREA_OTHER && !areaOther) {
     errors.push("اكتب تخصص القضية عند اختيار «أخرى»");
   } else if (areaOther.length > MAX_AREA_OTHER_LENGTH) {
     errors.push(`وصف التخصص طويل جداً — الحد الأقصى ${MAX_AREA_OTHER_LENGTH} حرفاً`);
@@ -120,7 +119,7 @@ export function validateWargamingIntake(input: unknown): ValidationResult<Wargam
       schemaVersion: 1,
       service: "wargaming",
       role: role as "plaintiff" | "defendant" | "advisor",
-      area,
+      ...(area ? { area } : {}),
       ...(areaOther ? { areaOther } : {}),
       caseSummary,
       targets,

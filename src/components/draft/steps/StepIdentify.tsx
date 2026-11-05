@@ -215,7 +215,7 @@ export function StepIdentify({
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className={`${card} p-5 shadow-sm`}>
               <div className="flex items-center justify-between mb-3">
-                <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>تصنيف القضية<RequiredMark announce /></p>
+                <p className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>الفرع القانوني (اختياري — يستنتجه الذكاء من الوقائع)</p>
                 {memoSubType && filteredRegular.length < LEGAL_BRANCHES_REGULAR.length && (
                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
                     isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"
