@@ -24,6 +24,7 @@ const MOUNTS: Record<string, string> = {
   "components/ai/caseBrief/CaseBriefStudio.tsx": "case-brief",
   "app/ai/quick-answer/page.tsx": "quick-answer",
   "components/contracts/steps/review/StepRAiReview.tsx": "contract-review",
+  "app/ai/contract-negotiator/page.tsx": "contract-negotiator",
 };
 
 for (const [file, tool] of Object.entries(MOUNTS)) {
@@ -73,6 +74,7 @@ test("R30: a legacy held run reads the one sentence, with no promise of a team r
     "app/ai/quick-answer/page.tsx",
     "app/ai/legal-opinion/_components/AiOpinionPanel.tsx",
     "components/contracts/steps/review/StepRAiReview.tsx",
+    "app/ai/contract-negotiator/page.tsx",
   ];
   for (const file of held) {
     const page = src(file);

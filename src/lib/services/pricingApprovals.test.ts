@@ -13,6 +13,7 @@ import {
   CASE_BRIEF_PRICES,
   CONTRACT_DRAFT_PRICE,
   CONTRACTS_PRO_PRICE,
+  CONTRACT_NEGOTIATOR_PRICE,
   CONTRACT_REVIEW_PRICE,
   LEGAL_OPINION_PRICE,
   WAVE4_PRICE,
@@ -335,6 +336,7 @@ test("task 4: the tool pages print the constant the registry charges", () => {
     ["app/ai/legal-opinion/_components/LetterWorkflow.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-letter"]],
     ["app/ai/contracts/page.tsx", "price={CONTRACTS_PRO_PRICE}", CONTRACTS_PRO_PRICE, ["contracts-pro"]],
     ["components/contracts/steps/review/StepRAiReview.tsx", 'CONTRACT_REVIEW_PRICE.toLocaleString("ar-SA")', CONTRACT_REVIEW_PRICE, ["contract-review"]],
+    ["app/ai/contract-negotiator/page.tsx", 'CONTRACT_NEGOTIATOR_PRICE.toLocaleString("ar-SA")', CONTRACT_NEGOTIATOR_PRICE, ["contract-negotiator"]],
   ];
   for (const [rel, expr, value, ids] of pages) {
     assert.ok(shown(rel).includes(expr), `${rel} no longer prints ${expr}`);

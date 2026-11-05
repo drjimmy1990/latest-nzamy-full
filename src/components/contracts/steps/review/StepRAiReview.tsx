@@ -79,6 +79,8 @@ function UsableReview({
   const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
   const muted = isDark ? "text-zinc-400" : "text-zinc-500";
   const busy = phase === "starting" || phase === "running";
+  // A run that ended without a report on this screen was still paid for: no second charge from here.
+  const settled = phase === "review" || phase === "done";
   const points = CONTRACT_REVIEW_PRICE.toLocaleString("ar-SA");
   const left = source.kind === "none" ? [] : source.left;
   const pasteIgnored = source.kind === "file" && source.pasteIgnored;
@@ -96,7 +98,14 @@ function UsableReview({
               {RUN_HELD_MESSAGE_AR}
             </p>
           )}
-          {source.kind === "none" ? (
+          {phase === "done" && (
+            <p role="alert" className={`rounded-2xl border px-4 py-3 text-[13px] leading-relaxed ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>
+              اكتملت المراجعة لكن تعذّر عرض التقرير هنا — تواصل مع الدعم.
+            </p>
+          )}
+          {settled ? (
+            <button type="button" onClick={onRestart} className={`text-[12px] font-semibold underline ${muted}`}>راجع عقداً آخر</button>
+          ) : source.kind === "none" ? (
             <div className={`${card} p-5 space-y-2`}>
               <p className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>مراجعة العقد بالذكاء الاصطناعي — {points} نقطة</p>
               <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-amber-500">
@@ -114,16 +123,11 @@ function UsableReview({
               submitLabel={`راجع العقد الآن — ${points} نقطة`}
               submittingLabel="جارٍ مراجعة العقد..."
               submitting={busy}
-              submitErrors={
-                phase === "error" && error ? [error]
-                  // The server accepted a report this page cannot read: say so, never show the form as if nothing happened.
-                  : phase === "done" ? ["اكتملت المراجعة لكن تعذّر عرض التقرير هنا — تواصل مع الدعم."]
-                  : []
-              }
+              submitErrors={phase === "error" && error ? [error] : []}
               onSubmit={onRun}
             />
           )}
-          {(left.length > 0 || pasteIgnored) && (
+          {!settled && (left.length > 0 || pasteIgnored) && (
             <p className={`flex items-start gap-1.5 text-[11px] leading-relaxed ${muted}`}>
               <Info size={13} className="mt-0.5 shrink-0" />
               {left.length > 0 && <>تقرأ المراجعة عقداً واحداً، فلا تُرسل هذه الملفات: {left.join("، ")}. </>}

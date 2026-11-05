@@ -374,6 +374,43 @@ test("a client sees the working analyzer card on the hub, not the lawyer tool's 
   assert.match(hub, /t\.id === "ai:analyze" \? CLIENT_ANALYZE_CARD : t/);
 });
 
+test("a settled run never offers a charged button again: the review step and the negotiator", () => {
+  const step = code("components/contracts/steps/review/StepRAiReview.tsx");
+  assert.ok(step.includes('const settled = phase === "review" || phase === "done";'));
+  const usable = step.slice(step.indexOf("function UsableReview"));
+  assert.ok(usable.indexOf("settled ?") < usable.indexOf("<StepSubmit"), "the settled branch comes before the charged form");
+  assert.ok(usable.indexOf("settled ?") > -1);
+
+  const page = code("app/ai/contract-negotiator/page.tsx");
+  assert.ok(page.includes('const settled = run.phase === "review" || run.phase === "done";'));
+  assert.ok(page.indexOf("{!settled && (") > -1);
+  assert.ok(page.indexOf("{!settled && (") < page.indexOf("حلّل وفاوض"), "the charged button is inside it");
+});
+
+test("contract-negotiator runs the real job", () => {
+  const page = code("app/ai/contract-negotiator/page.tsx");
+  assert.match(page, /useAiRun/);
+  assert.ok(page.includes('run.start("contract-negotiator"'));
+  // tool-status, through the one reader: any answer but a 200 saying usable is a no.
+  assert.ok(page.includes('useToolUsable("contract-negotiator")'));
+  assert.ok(code("hooks/useToolUsable.ts").includes("readToolUsable(tool)"));
+  assert.ok(code("lib/ai/toolStatusClient.ts").includes("/api/v1/ai/tool-status"));
+  assert.doesNotMatch(page, /MOCK_|BetaReviewGate|GatedToolScreen|setTimeout\(|Math\.random/);
+
+  // The price is inside the usable branch only: the default export, which decides, never names it.
+  const gate = page.slice(page.indexOf("export default function ContractNegotiatorPage"), page.indexOf("function riskTone"));
+  assert.ok(gate.includes("مفاوض العقود — قريباً"));
+  assert.ok(gate.includes("usable === null"));
+  assert.ok(gate.includes("<NegotiatorTool"));
+  assert.doesNotMatch(gate, /CONTRACT_NEGOTIATOR_PRICE|نقطة|١٥٠|150/);
+  assert.ok(page.includes('`حلّل وفاوض — ${points} نقطة`'));
+  assert.ok(page.includes('const points = CONTRACT_NEGOTIATOR_PRICE.toLocaleString("ar-SA")'));
+  assert.doesNotMatch(page, /[%٪]/);
+
+  // The result, per the section.
+  for (const part of ["NEGOTIATOR_STANCE_AR", "الموقف الاحتياطي", "<CitationCheckList", "<AiResultActions", "RUN_HELD_MESSAGE_AR"]) assert.ok(page.includes(part), part);
+});
+
 test("the hub's corporate compliance card says «قريباً», and no hub card for a gated page is «جديد»", () => {
   const hub = code("app/ai/page.tsx");
   const card = (id: string) => hub.split("\n").find((l) => l.includes(`id: "${id}"`)) ?? "";
