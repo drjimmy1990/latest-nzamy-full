@@ -360,7 +360,7 @@ export async function GET(request: Request) {
     let successorRows: unknown[] = [];
     if (lawsRows.some((row) => isRepealedLawStatus(row.status))) {
       try {
-        const { data, error } = await readSuccessorRows<Record<string, unknown>>(
+        const { data, error } = await readSuccessorRows(
           () =>
             supabase
               .schema("library")
