@@ -450,7 +450,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
     return addSupport([
       { key: "corp-legal-cases", icon: <Scales {...iconProps} />, label: "قضاياي", sub: "ملفات مصرح بها فقط", href: "/dashboard/business/cases" },
       { key: "corp-legal-reviews", icon: <ClipboardText {...iconProps} />, label: "مراجعات الأقسام", sub: "طلبات قادمة من الإدارات", href: "/dashboard/business/reviews" },
-      { key: "corp-legal-draft", icon: <PencilSimple {...iconProps} />, label: "صياغة عقد", sub: "صياغة ومراجعة مؤسسية", href: "/ai/corp/contracts", badge: "قريباً" },
+      { key: "corp-legal-draft", icon: <PencilSimple {...iconProps} />, label: "محترف العقود", sub: "صياغة عقد بالذكاء الاصطناعي", href: "/ai/contracts" },
       { key: "corp-legal-mail", icon: <FileText {...iconProps} />, label: "LegalMail", sub: "مخاطبات ومهام قانونية", href: "/ai/mail-advisor" },
       { key: "corp-legal-quick", icon: <Warning {...iconProps} />, label: "طلب داخلي سريع", sub: "يفتح طلباً باسمك وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
     ], role === "seconded" ? "دعم المستشار المنتدب" : "دعم الأخصائي القانوني");
@@ -476,7 +476,7 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       badge: serviceMode ? "Service" : undefined,
     },
     { key: "corp-new-case", icon: <Scales {...iconProps} />, label: "إضافة قضية", sub: "نزاع تجاري أو مطالبة", href: "/dashboard/business/cases/new" },
-    { key: "corp-contract-ai", icon: <FileText {...iconProps} />, label: "عقود الشركات", sub: "صياغة أو مراجعة مؤسسية", href: "/ai/corp/contracts", badge: "قريباً" },
+    { key: "corp-contract-ai", icon: <FileText {...iconProps} />, label: "محترف العقود", sub: "صياغة عقد بالذكاء الاصطناعي", href: "/ai/contracts" },
     { key: "corp-compliance", icon: <ShieldCheck {...iconProps} />, label: "امتثال وحوكمة", sub: "PDPL • زكاة • لوائح", href: "/dashboard/business/governance" },
     { key: "corp-ai-chat", icon: <Robot {...iconProps} />, label: "مساعد قانوني داخلي", sub: "سؤال سريع حسب سياق الشركة", next: "ai-chat", badge: "AI" },
     { key: "corp-owner-quick", icon: <ChatCircle {...iconProps} />, label: "طلب سريع للإدارة", sub: "يفتح طلباً لفريق نظامي وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
@@ -532,7 +532,7 @@ function getGovernmentServices(user: ServiceSession): ServiceItem[] {
 }
 
 const NGO_SERVICES: ServiceItem[] = addSupport([
-  { key: "ngo-volunteer-contract", icon: <HandHeart {...iconProps} />, label: "عقود التطوع", sub: "صياغة متوافقة مع النظام", href: "/ai/ngo/volunteer-contract", badge: "قريباً" },
+  { key: "ngo-volunteer-contract", icon: <HandHeart {...iconProps} />, label: "محترف العقود", sub: "صياغة عقد بالذكاء الاصطناعي", href: "/ai/contracts" },
   { key: "ngo-governance", icon: <ShieldCheck {...iconProps} />, label: "الحوكمة والامتثال", sub: "المركز الوطني واللوائح", href: "/dashboard/ngo/compliance" },
   { key: "ngo-donation", icon: <ChartBar {...iconProps} />, label: "تحليل التبرعات", sub: "مخاطر وامتثال مالي", href: "/ai/ngo/donation-analyzer", badge: "قريباً" },
   { key: "ngo-reports", icon: <FileText {...iconProps} />, label: "التقارير الدورية", sub: "تقرير ربعي أو سنوي", href: "/dashboard/ngo/reports" },

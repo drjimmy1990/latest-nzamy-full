@@ -195,7 +195,7 @@ test("dashboards: no gated tool is offered as working", () => {
   for (const m of micro.matchAll(/href: "(\/ai\/[^"]+)",[^\n]*descAr: "([^"]+)"/g)) {
     if (isTerminalToolHref(m[1])) { gated++; assert.equal(m[2], COMING_SOON_BADGE_AR, m[1]); }
   }
-  assert.equal(gated, 5, "ngo (3) + micro (2) gated cards found");
+  assert.equal(gated, 4, "ngo (2) + micro (2) gated cards found");
 });
 
 test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's tool grid mark gated tools «قريباً»", () => {
@@ -205,7 +205,7 @@ test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's too
   for (const m of micro.matchAll(/\{ id: "[^"]+",[^\n]*price: "([^"]*)", href: "([^"]+)" \}/g)) {
     if (isTerminalToolHref(m[2])) { gatedRows++; assert.equal(m[1], "", `${m[2]} carries a typed price`); }
   }
-  assert.equal(gatedRows, 3, "consult, contract, notice");
+  assert.equal(gatedRows, 2, "consult, notice");
   assert.match(micro, /\.map\(\(s\) => \(\{ \.\.\.s, price: isTerminalToolHref\(s\.href\) \? COMING_SOON_BADGE_AR : s\.price \}\)\)/);
 
   const arb = read("app/dashboard/provider/components/ArbitratorDashboard.tsx");

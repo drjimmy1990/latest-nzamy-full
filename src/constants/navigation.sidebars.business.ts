@@ -31,7 +31,7 @@ import type { SidebarGroup } from "./navigation.types";
 //   المستشار المنتدب        → business/seconded-counsel/page.tsx:16,41  COUNSEL / TASKS
 //   طلباتي في السوق        → components/marketplace/MyMarketplaceDashboardData  MY_REQUESTS
 //   تصفح السوق / انشر طلباً → the marketplace is not part of the manual-fulfilment model
-//   the 11 «أدوات AI للشركات»  → ai/corp/contracts:89, ai/corp/advisor:70, ai/corp/hr:67,
+//   the 11 «أدوات AI للشركات»  → ai/corp/advisor:70, ai/corp/hr:67,
 //                                 ai/corp/deal-intel:88, ai/corp/corpmind:246 — setTimeout, then a canned answer
 //
 // Kept because each one resolves to something that is really there today:
@@ -312,12 +312,11 @@ export const NGO_SIDEBAR: SidebarGroup[] = [
   {
     title: "أدوات الذكاء الاصطناعي", titleEn: "AI Tools",
     items: [
-      { label: "صائغ عقود التطوع",   labelEn: "Volunteer Contract",  href: "/ai/ngo/volunteer-contract",  icon: "HandHeart", gateKey: "ngo-ai", badge: "قريباً" },
+      { label: "محترف العقود",   labelEn: "Contract Pro",  href: "/ai/contracts",  icon: "HandHeart", gateKey: "ngo-ai" },
       { label: "مدقق الحوكمة",        labelEn: "Governance Checker",  href: "/ai/ngo/governance-checker",  icon: "ShieldCheck", gateKey: "ngo-ai" },
       { label: "محلل التبرعات",       labelEn: "Donation Analyzer",   href: "/ai/ngo/donation-analyzer",   icon: "ChartBar", gateKey: "ngo-ai", badge: "قريباً" },
       { label: "مُعد التقارير",       labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", gateKey: "ngo-ai", badge: "قريباً" },
       { label: "المستشار الذكي",      labelEn: "AI Consult",          href: "/ai/consult",                 icon: "Robot", gateKey: "ngo-ai", badge: "قريباً" },
-      { label: "مراجع العقود",         labelEn: "Contract Review",     href: "/ai/contracts",               icon: "Files", gateKey: "ngo-ai" },
     ],
   },
   {

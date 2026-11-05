@@ -377,6 +377,9 @@ const REDIRECTS: Record<string, string> = {
   "/ai/case-brief":      "/ai/analyze",
   // S3-03: was a page with a 2.2 s client timer.
   "/ai/research":        "/ai/legal-opinion",
+  // S3-04: both were gated mocks. contracts-pro runs for corporate and ngo.
+  "/ai/corp/contracts":  "/ai/contracts",
+  "/ai/ngo/volunteer-contract": "/ai/contracts",
   "/ai/corp/privacy":    "/ai/corp/compliance",
   "/dashboard/lawyer/ai/secretary": "/ai/secretary",
   "/law":                "/laws",

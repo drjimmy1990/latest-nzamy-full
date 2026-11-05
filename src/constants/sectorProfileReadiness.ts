@@ -367,7 +367,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     sector: "ngo",
     label: "AI للجمعيات والأوقاف",
     description: "عقود تطوع، مدقق حوكمة، محلل تبرعات، ومعد تقارير.",
-    routes: ["/ai/ngo/volunteer-contract", "/ai/ngo/governance-checker", "/ai/ngo/donation-analyzer"],
+    routes: ["/ai/contracts", "/ai/ngo/governance-checker", "/ai/ngo/donation-analyzer"],
     contract: "SectorEntitlement",
     readiness: "Backend-ready",
   },

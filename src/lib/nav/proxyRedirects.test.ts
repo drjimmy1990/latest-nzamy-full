@@ -14,7 +14,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { AI_TOOL_PAGES } from "../ai/toolLabels.ts";
+import { AI_TOOLS } from "../ai/tools.ts";
 import { LAWYER_SIDEBAR, FIRM_SIDEBAR } from "../../constants/navigation.sidebars.legal.ts";
+import { CORPORATE_SIDEBAR, MICRO_SIDEBAR, NGO_SIDEBAR } from "../../constants/navigation.sidebars.business.ts";
 
 const SRC = join(process.cwd(), "src");
 const read = (rel: string) => readFileSync(join(SRC, rel), "utf8").replace(/\r\n/g, "\n");
@@ -32,6 +34,8 @@ function redirects(): Record<string, string> {
 const MOVED: Record<string, string> = {
   "/ai/case-brief": "/ai/analyze",
   "/ai/research": "/ai/legal-opinion",
+  "/ai/corp/contracts": "/ai/contracts",
+  "/ai/ngo/volunteer-contract": "/ai/contracts",
 };
 
 for (const [from, to] of Object.entries(MOVED)) {
@@ -84,6 +88,22 @@ test("the sitemap does not advertise the retired URLs", () => {
 test("R3: a run's «افتح الأداة» link opens the page the case brief lives on, with no redirect hop", () => {
   assert.equal(AI_TOOL_PAGES["case-brief"], "/ai/analyze");
   assert.equal(redirects()[AI_TOOL_PAGES["case-brief"] as string], undefined);
+});
+
+test("corporate and NGO contract tools land on a page they may run: both roles are on contracts-pro", () => {
+  assert.ok(AI_TOOLS["contracts-pro"].roles.includes("corporate"));
+  assert.ok(AI_TOOLS["contracts-pro"].roles.includes("ngo"));
+  assert.ok(AI_TOOLS["contracts-pro"].roles.includes("micro"), "the micro dashboard links it too");
+  assert.match(read("proxy.ts"), /"\/ai\/contracts",/, "/ai/contracts stays behind sign-in (PROTECTED)");
+});
+
+test("no sidebar row points twice at /ai/contracts: the sidebar keys its rows by href", () => {
+  assert.match(read("components/dashboard/SidebarComponents.tsx"), /key=\{item\.href\}/);
+  for (const [name, groups] of [["corporate", CORPORATE_SIDEBAR], ["micro", MICRO_SIDEBAR], ["ngo", NGO_SIDEBAR]] as const) {
+    const rows = groups.flatMap((g) => g.items).filter((r) => r.href === "/ai/contracts");
+    assert.ok(rows.length <= 1, `${name}: ${rows.length} rows to /ai/contracts`);
+  }
+  assert.equal(NGO_SIDEBAR.flatMap((g) => g.items).filter((r) => r.href === "/ai/contracts" && r.label === "محترف العقود" && !r.badge).length, 1);
 });
 
 test("one «عصارة المرفقات» row in each sidebar, unbadged, on the plain URL", () => {

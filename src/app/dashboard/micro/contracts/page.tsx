@@ -183,12 +183,12 @@ export default function MicroContractsPage() {
             العقود التي يربطها محاميك بحسابك — نسخها، التزاماتها وجدول دفعاتها
           </p>
         </div>
-        <Link href="/ai/corp/contracts">
+        <Link href="/ai/contracts">
           <motion.div
             whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
             className="flex items-center gap-2 bg-[#0B3D2E] text-white font-bold px-4 py-2.5 rounded-xl text-sm shadow-md cursor-pointer"
           >
-            <Plus size={16} weight="bold" /> عقد جديد
+            <Plus size={16} weight="bold" /> محترف العقود
           </motion.div>
         </Link>
       </motion.div>
