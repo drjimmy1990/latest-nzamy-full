@@ -195,12 +195,50 @@ function decodeEntities(text: string): string {
  * Document order, in one regex: text runs, tabs, breaks and paragraph ends. A
  * `<w:tab w:val=…/>` inside `<w:tabs>` is a tab stop, not a tab, so only the
  * bare form counts. `<w:delText>` (a tracked deletion) is not matched.
+ *
+ * Attributes are read as `[^<>]*`, never `[^>]*`: XML has no `<` in an attribute,
+ * and a scan that stops at the next `<` keeps this linear. With `[^>]*`, 19 MB of
+ * `<w:t ` and no `>` scans to the end from every opening and holds the server for
+ * hours, before any charge (textExtract.test.ts "hostile markup").
  */
-const DOCX_TOKEN = /<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|(<w:tab\s*\/>)|(<w:br(?:\s[^>]*)?\/>|<w:cr(?:\s[^>]*)?\/>|<\/w:p>)/g;
+const DOCX_TOKEN = /<w:t(?:\s[^<>]*)?>([^<]*)<\/w:t>|(<w:tab\s*\/>)|(<w:br(?:\s[^<>]*)?\/>|<w:cr(?:\s[^<>]*)?\/>|<\/w:p>)/g;
+
+const FALLBACK_OPEN = "<mc:Fallback";
+const FALLBACK_CLOSE = "</mc:Fallback>";
+
+/**
+ * Word writes a text box twice: as DrawingML in `mc:Choice` and as VML in
+ * `mc:Fallback`. Read both and its text counts twice, which inflates textPages
+ * and so the price and the page cap. Only the fallback is dropped. indexOf, not a
+ * lazy regex, so an unclosed fallback stops the walk instead of rescanning.
+ */
+function withoutFallbacks(xml: string): string {
+  const kept: string[] = [];
+  let at = 0;
+  for (;;) {
+    const open = xml.indexOf(FALLBACK_OPEN, at);
+    if (open < 0) break;
+    const openEnd = xml.indexOf(">", open);
+    if (openEnd < 0) break;
+    kept.push(xml.slice(at, open));
+    if (xml[openEnd - 1] === "/") {
+      at = openEnd + 1;
+      continue;
+    }
+    const close = xml.indexOf(FALLBACK_CLOSE, openEnd);
+    if (close < 0) {
+      at = openEnd + 1;
+      break;
+    }
+    at = close + FALLBACK_CLOSE.length;
+  }
+  kept.push(xml.slice(at));
+  return kept.join("");
+}
 
 function documentText(xml: string): string {
   const out: string[] = [];
-  for (const m of xml.matchAll(DOCX_TOKEN)) {
+  for (const m of withoutFallbacks(xml).matchAll(DOCX_TOKEN)) {
     if (m[1] !== undefined) out.push(decodeEntities(m[1]));
     else out.push(m[2] ? "\t" : "\n");
   }

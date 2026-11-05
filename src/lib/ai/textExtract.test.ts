@@ -62,6 +62,36 @@ test("extractDocxText: tracked deletions are not read as text", () => {
   assert.deepEqual(r, { ok: true, text: "باقٍ" });
 });
 
+test("extractDocxText: a text box Word writes twice (DrawingML and its VML fallback) is read once", () => {
+  const box = "<w:txbxContent><w:p><w:r><w:t>مربع</w:t></w:r></w:p></w:txbxContent>";
+  const xml =
+    para("قبل") +
+    `<w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>${box}</w:drawing></mc:Choice><mc:Fallback><w:pict>${box}</w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p>` +
+    para("بعد");
+  const r = extractDocxText(docx(xml));
+  assert.ok(r.ok);
+  assert.equal(r.text.match(/مربع/g)?.length, 1);
+  assert.match(r.text, /قبل/);
+  assert.match(r.text, /بعد/);
+});
+
+test("extractDocxText: an empty or unclosed fallback drops no text after it", () => {
+  assert.deepEqual(extractDocxText(docx(`<mc:Fallback/>${para("أ")}<mc:Fallback>${para("ظل")}</mc:Fallback>${para("ب")}`)), { ok: true, text: "أ\nب" });
+  assert.deepEqual(extractDocxText(docx(`${para("أ")}<mc:Fallback>${para("ب")}`)), { ok: true, text: "أ\nب" });
+});
+
+test("extractDocxText: hostile markup is read in linear time, so it cannot hold the server before the charge", () => {
+  // Each of these is about 19 MB of openings with no closing `>`: a pattern that
+  // scans to the end of the document from every opening would take hours.
+  for (const unit of ["<w:t ", "<w:br ", "<w:cr ", "<w:tab ", "<mc:Fallback ", "<w:t>", "&#"]) {
+    const xml = unit.repeat(Math.floor((19 * 1024 * 1024) / unit.length));
+    const started = Date.now();
+    const r = extractDocxText(zipSync({ [DOC]: strToU8(xml) }, { level: 1 }));
+    assert.equal(r.ok, false, unit);
+    assert.ok(Date.now() - started < 15_000, `${unit} took ${Date.now() - started} ms`);
+  }
+});
+
 test("extractDocxText: not a zip, no document.xml, no text", () => {
   assert.deepEqual(extractDocxText(new Uint8Array([1, 2, 3])), { ok: false, code: "docx_unreadable" });
   assert.deepEqual(extractDocxText(new Uint8Array(0)), { ok: false, code: "docx_unreadable" });
