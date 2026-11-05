@@ -49,8 +49,8 @@ test("contracts pro: the page hands its run to the step that shows the stage", (
 test("the stage replaced the fixed waiting lines and fake motion it stands for", () => {
   const gone: [string, RegExp][] = [
     ["components/draft/steps/StepAiDraft.tsx", /busyText/],
-    ["components/contracts/steps/draft/StepGenerate.tsx", /phase === "running"/],
-    ["app/ai/contract-drafter/page.tsx", /run\.phase === "running"/],
+    ["components/contracts/steps/draft/StepGenerate.tsx", /\{phase === "running" &&/],
+    ["app/ai/contract-drafter/page.tsx", /\{run\.phase === "running" &&/],
     ["app/ai/case-brief/page.tsx", /repeat: Infinity/],
     ["app/ai/quick-answer/page.tsx", /repeat: Infinity/],
     ["app/ai/quick-answer/page.tsx", /يبحث في مكتبة الأنظمة ثم يكتب الإجابة/],

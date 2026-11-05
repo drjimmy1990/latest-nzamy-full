@@ -13,6 +13,9 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import Link from "next/link";
 import { useAiRun } from "@/hooks/useAiRun";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import { CASE_BRIEF_FILES, CASE_BRIEF_PRICES, CASE_BRIEF_SMALL_PAGES } from "@/lib/ai/tools";
 
@@ -211,9 +214,10 @@ export default function CaseBriefPage() {
                 {run.error}
               </p>
             )}
+            {run.phase === "error" && <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("case-brief")} />}
             {run.phase === "review" && (
               <p role="status" className={`rounded-2xl border px-4 py-3 text-[12px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                الإحاطة جاهزة وتنتظر مراجعة الفريق قبل عرضها.
+                {RUN_HELD_MESSAGE_AR}
               </p>
             )}
 
@@ -287,24 +291,8 @@ export default function CaseBriefPage() {
 
         {/* Step: Processing */}
         {step === "processing" && (
-          <motion.div key="processing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className={`${card} p-10 flex flex-col items-center gap-5 text-center`}>
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}>
-              <Robot size={40} weight="duotone" className="text-[#C8A762]" />
-            </motion.div>
-            <div>
-              <p className={`font-bold text-[16px] ${isDark ? "text-white" : "text-zinc-800"}`}>جارٍ قراءة الأوراق...</p>
-              <p className={`text-[12px] mt-1 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                قد يستغرق ذلك دقيقة أو أكثر حسب عدد الصفحات — يمكنك البقاء في الصفحة.
-              </p>
-            </div>
-            <div className={`h-1.5 w-64 rounded-full overflow-hidden ${isDark ? "bg-white/[0.06]" : "bg-zinc-100"}`}>
-              <motion.div
-                animate={{ x: ["-100%", "100%"] }}
-                transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-                className="h-full w-1/2 bg-gradient-to-r from-transparent via-[#C8A762]/60 to-transparent"
-              />
-            </div>
+          <motion.div key="processing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("case-brief")} />
           </motion.div>
         )}
 

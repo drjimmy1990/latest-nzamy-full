@@ -25,6 +25,9 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { useAiRun } from "@/hooks/useAiRun";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import AiResultActions from "@/components/AiResultActions";
@@ -202,7 +205,8 @@ export default function AIStrengthPage() {
               تُرسل نسخة من الملخص والمستندات إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها. تحليل مبدئي؛ القرار للمحامي.
             </p>
             {ai.phase === "error" && ai.error && <p role="alert" className="text-[12px] text-red-500">{ai.error}</p>}
-            {ai.phase === "review" && <p role="status" className={hint}>التحليل جاهز وينتظر مراجعة الفريق قبل عرضه.</p>}
+            {ai.phase === "review" && <p role="status" className={hint}>{RUN_HELD_MESSAGE_AR}</p>}
+            <AiThinkingStage run={ai} isDark={isDark} toolLabel={aiToolLabelAr("analyze-strength")} />
           </div>
         </div>
       )}

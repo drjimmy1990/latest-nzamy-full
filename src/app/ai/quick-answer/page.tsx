@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
-  ChatCircleDots, CaretLeft, Sparkle, MagnifyingGlass, Copy, CheckCircle,
+  ChatCircleDots, CaretLeft, Sparkle, Copy, CheckCircle,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
 import { useAiRun } from "@/hooks/useAiRun";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 
@@ -111,20 +113,7 @@ export default function QuickAnswerPage() {
       </div>
 
       {/* ── Working ── */}
-      {asking && (
-        <div className={`${card} flex flex-col items-center justify-center py-12 text-center`}>
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            className="mb-4 h-12 w-12 rounded-2xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50] flex items-center justify-center"
-          >
-            <MagnifyingGlass size={22} weight="duotone" className="text-[#C8A762]" />
-          </motion.div>
-          <p className={`text-[14px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-            يبحث في مكتبة الأنظمة ثم يكتب الإجابة...
-          </p>
-        </div>
-      )}
+      <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("quick-answer")} />
 
       {/* ── Answer ── */}
       {answer && (

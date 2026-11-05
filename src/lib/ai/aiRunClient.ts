@@ -168,12 +168,13 @@ export function createAiRunClient(deps: AiRunClientDeps) {
     }
   };
 
-  const take = (body: Record<string, unknown>, stale: boolean) => {
+  /** A good reply: its events and step, and the screen is no longer stale. */
+  const take = (body: Record<string, unknown>) => {
     const rows = (Array.isArray(body.events) ? body.events : []) as ProgressItem[];
     for (const row of rows) if (typeof row?.id === "number" && row.id > cursor) cursor = row.id;
     const step = typeof body.step === "string" ? body.step : state.step;
-    if (rows.length === 0 && step === state.step && stale === state.stale) return;
-    put({ events: rows.length > 0 ? mergeProgressEvents(state.events, rows) : state.events, step, stale });
+    if (rows.length === 0 && step === state.step && !state.stale) return;
+    put({ events: rows.length > 0 ? mergeProgressEvents(state.events, rows) : state.events, step, stale: false });
   };
 
   const end = (patch: Partial<AiRunState>) => {
@@ -205,7 +206,7 @@ export function createAiRunClient(deps: AiRunClientDeps) {
       const reading = await read(`/api/v1/ai/runs/${runId}/events?after=${cursor}`, JOB_POLL_MS);
       if (gen !== pollGen) return;
       if (reading.kind !== "ok") return unsettled(reading, events);
-      take(reading.body, false);
+      take(reading.body);
       if (reading.body.final === true) return result();
       again(events, JOB_POLL_MS);
     };
@@ -247,7 +248,7 @@ export function createAiRunClient(deps: AiRunClientDeps) {
       if (gen !== pollGen) return;
       if (reading.kind === "ok") {
         if (typeof reading.body.runId === "string") seenRunId = reading.body.runId;
-        take(reading.body, false);
+        take(reading.body);
         if (reading.body.final === true) return;
       }
       if (now() - since >= POLL_LIMIT_MS) return;
