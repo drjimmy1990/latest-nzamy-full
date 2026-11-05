@@ -74,7 +74,11 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     "profile_visibility", "soft_delete_case_records", "law_summary_brief", "law_sort_key", "search_scoped_page", "search_relevance",
     "founder_campaign", "founder_no_signup_grant", "founder_badges_unpaid_removed", "billing_cycles", "coupons_server_only",
     "tracking_links_v2", "branding_vault", "attachments_path_ownership", "document_shares_path_ownership",
-    "account_deletion", "storage_documents_read_guard", "file_folder_owner"]) {
+    "account_deletion", "storage_documents_read_guard", "file_folder_owner",
+    // The owner-priority wave: one block per 20261103_* migration.
+    "library_auto_lock_hours", "library_invitation_grant_days", "library_eligibility_verifications",
+    "library_fts_tashkeel_fold", "library_invitations_closed", "s6_contract_review_business",
+    "s6_newclient_flag", "s6_coupon_business_role", "progress_events", "letterhead_verify_card"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

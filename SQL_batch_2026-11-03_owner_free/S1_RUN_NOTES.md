@@ -205,7 +205,7 @@ If it stops with `library.invitations is missing`, nothing changed: this databas
 
 **Which half lasts:** re-running `20260922_01_library_grants.sql` (or `20260626`) gives anon and authenticated SELECT on the table again. With the policy gone, RLS still returns them no row, so the dropped policy is what keeps the codes closed. `_verify.sql` still stops on the grant alone (block `verify:library_invitations_closed`, «… holds SELECT on library.invitations … run 20261103_15 … (any time)»); run this file again and it is put right.
 
-**When you run it ahead of the rest of the batch, the SELECT row above is your check.** `_verify.sql` cannot confirm this file yet. Before the merge, the server's copy has no such block. After the merge, the `_10`, `_11` and `_12` blocks come first and stop on any of those files you have not run. Use `_verify` once the whole batch has run (see `README.md` in this folder).
+**When you run it ahead of the rest of the batch, the SELECT row above is your check.** `_verify.sql` cannot confirm this file yet. Before the merge, the server's copy has no such block. After the merge, the blocks of `_20`, `_21`, `_22`, `_10`, `_11` and `_12` come first and stop on any of those files you have not run. Use `_verify` once the whole batch has run (see `README.md` in this folder).
 
 **`_verify.sql` by hand, after the whole batch** (server; deploy.sh does not run it):
 
