@@ -18,6 +18,7 @@ import {
   GATE_ONLY_TOOL_ROUTES,
   LIVE_ROUTES_WITH_GATED_PARTS,
   TERMINAL_TOOL_ROUTES,
+  isLiveForLawyerAndFirm,
   isTerminalToolHref,
   routeOf,
 } from "./betaGatedRoutes.ts";
@@ -68,8 +69,11 @@ test("a gate-only page shows the gate first: its default export is GatedToolScre
   for (const route of GATE_ONLY_TOOL_ROUTES) {
     const page = readFileSync(path.join(appDir(route), "page.tsx"), "utf8");
     if (route === "/ai/analyze") {
-      // Lawyers get DashboardComingSoon (AttachmentSqueezer); clients the gated analyzer.
+      // Terminal for clients: they get the gated analyzer. Lawyers, firms and
+      // admins get the real case brief, whose AI path is only the studio.
       assert.match(page, /<GatedToolScreen toolId="analyze\.smart\.result"[^>]*>\s*<SmartAnalyzer /, route);
+      assert.match(page, /<AttachmentSqueezer \/>/, route);
+      assert.match(read("app/ai/analyze/_components/AttachmentSqueezer.tsx"), /<CaseBriefStudio \/>/, route);
       continue;
     }
     const m = /export default function \w+\(\) \{\s*return \(\s*<GatedToolScreen toolId="([^"]+)" toolName="[^"]+">\s*<(\w+) \/>\s*<\/GatedToolScreen>\s*\);\s*\}/.exec(page);
@@ -103,6 +107,14 @@ test("a live route really has a working path", () => {
     const files = live[route]?.map((rel) => path.join(SRC, rel)) ?? filesUnder(appDir(route));
     assert.ok(files.some((f) => /useAiRun/.test(readFileSync(f, "utf8"))), `${route} has no useAiRun path — it belongs in a terminal list`);
   }
+});
+
+test("/ai/analyze stays terminal for clients and is the one route live for lawyer and firm", () => {
+  assert.equal(isTerminalToolHref("/ai/analyze"), true);
+  assert.equal(isLiveForLawyerAndFirm("/ai/analyze"), true);
+  assert.equal(isLiveForLawyerAndFirm("/ai/analyze?source=labor"), true);
+  assert.equal(isLiveForLawyerAndFirm("/ai/consult"), false);
+  assert.notEqual(LAWYER_AI_TOOLS.find((t) => t.href === "/ai/analyze")?.comingSoon, true);
 });
 
 test("routeOf / isTerminalToolHref strip the query and hash", () => {
@@ -149,7 +161,7 @@ test("the client navbar's «ذكاء نظامي» opens the hub, not the gated c
 
 test("the /ai hub: every catalog tool on a gated route is «قريباً», and the client cards say so", () => {
   for (const tool of LAWYER_AI_TOOLS) {
-    if (!isTerminalToolHref(tool.href)) continue;
+    if (!isTerminalToolHref(tool.href) || isLiveForLawyerAndFirm(tool.href)) continue;
     assert.equal(tool.comingSoon, true, `${tool.permission} (${tool.href}) is not comingSoon`);
     assert.equal(getLawyerAiBadge(tool, "ar"), COMING_SOON_BADGE_AR, tool.permission);
   }

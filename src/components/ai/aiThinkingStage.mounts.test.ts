@@ -21,7 +21,7 @@ const MOUNTS: Record<string, string> = {
   "app/ai/brief-check/page.tsx": "brief-check",
   "app/ai/wargaming/page.tsx": "wargaming",
   "app/ai/analyze-strength/page.tsx": "analyze-strength",
-  "app/ai/case-brief/page.tsx": "case-brief",
+  "components/ai/caseBrief/CaseBriefStudio.tsx": "case-brief",
   "app/ai/quick-answer/page.tsx": "quick-answer",
 };
 
@@ -51,7 +51,7 @@ test("the stage replaced the fixed waiting lines and fake motion it stands for",
     ["components/draft/steps/StepAiDraft.tsx", /busyText/],
     ["components/contracts/steps/draft/StepGenerate.tsx", /\{phase === "running" &&/],
     ["app/ai/contract-drafter/page.tsx", /\{run\.phase === "running" &&/],
-    ["app/ai/case-brief/page.tsx", /repeat: Infinity/],
+    ["components/ai/caseBrief/CaseBriefStudio.tsx", /repeat: Infinity/],
     ["app/ai/quick-answer/page.tsx", /repeat: Infinity/],
     ["app/ai/quick-answer/page.tsx", /يبحث في مكتبة الأنظمة ثم يكتب الإجابة/],
     ["app/ai/legal-opinion/_components/AiOpinionPanel.tsx", /c\.running/],
@@ -67,7 +67,7 @@ test("R30: a legacy held run reads the one sentence, with no promise of a team r
     "app/ai/brief-check/page.tsx",
     "app/ai/wargaming/page.tsx",
     "app/ai/analyze-strength/page.tsx",
-    "app/ai/case-brief/page.tsx",
+    "components/ai/caseBrief/CaseBriefStudio.tsx",
     "app/ai/legal-opinion/_components/AiOpinionPanel.tsx",
   ];
   for (const file of held) {

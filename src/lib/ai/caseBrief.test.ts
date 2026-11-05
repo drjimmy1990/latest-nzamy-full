@@ -9,10 +9,12 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { FilesCheck } from "./aiFiles.ts";
-import { AI_TOOLS, CASE_BRIEF_FILES } from "./tools.ts";
+import { AI_TOOLS, CASE_BRIEF_FILES, CASE_BRIEF_PRICES, CASE_BRIEF_SMALL_PAGES } from "./tools.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const F1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -55,6 +57,36 @@ const body = (over: Record<string, unknown> = {}) => ({
   fileIds: [F1],
   idempotencyKey: "key-abcdef01",
   ...over,
+});
+
+test("moving the page to /ai/analyze moved no money and no rule: same prices, same validator, same request", () => {
+  const t = AI_TOOLS["case-brief"];
+  assert.deepEqual(CASE_BRIEF_PRICES, { small: 30, large: 150 });
+  assert.equal(CASE_BRIEF_SMALL_PAGES, 5);
+  assert.deepEqual(CASE_BRIEF_FILES, { max: 5, maxPages: 30, maxBytes: 22 * 1024 * 1024 });
+  for (const [pages, price] of [[0, 30], [1, 30], [5, 30], [6, 150], [30, 150]] as const) {
+    assert.equal(t.price({}, { pages } as never), price, `${pages} pages`);
+  }
+  assert.equal(t.n8nPath, "nzamy-ai/case-brief");
+  assert.equal(t.defaultMode, "off");
+
+  // The studio prints the registry's constants, asks for this one tool and sends these fields.
+  const studio = readFileSync(join(process.cwd(), "src/components/ai/caseBrief/CaseBriefStudio.tsx"), "utf8");
+  assert.ok(studio.includes('run.start("case-brief", { role_note: chatInput.trim(), want_requests: generateClientRequests }, { fileIds: readyIds })'));
+  assert.ok(studio.includes("readyIds.length <= CASE_BRIEF_FILES.max"));
+  assert.ok(studio.includes("chatInput.trim().length >= 3"));
+  assert.ok(studio.includes('CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")'));
+  assert.ok(studio.includes('CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")'));
+  assert.ok(studio.includes("<AiThinkingStage"), "R4: the stage moved with it");
+
+  // What that request becomes on the server.
+  assert.deepEqual(t.validateInput({ role_note: " وكيل المدعي ", want_requests: false }), {
+    ok: true,
+    input: { role_note: "وكيل المدعي", want_requests: false },
+  });
+  assert.equal(t.validateInput({ role_note: "ab", want_requests: true }).ok, false);
+  assert.equal(t.validateInput({ want_requests: true }).ok, false);
+  assert.equal(t.validateInput(null).ok, false);
 });
 
 test("the registry entry: a job for lawyers and firms, 30 up to 5 pages and 150 above, files required", () => {

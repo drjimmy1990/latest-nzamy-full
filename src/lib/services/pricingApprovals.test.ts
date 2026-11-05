@@ -221,6 +221,7 @@ test("٢١٦: the comparator and the translator are not priced (both still retur
 const HUB_TOOLS: Record<string, string[]> = {
   "ai:quick-answer": ["quick-answer"],
   "ai:case-brief": ["case-brief"],
+  "ai:analyze": ["case-brief"],
   "ai:draft": ["legal-drafter"],
   "ai:brief-check": ["brief-check"],
   "ai:contracts": ["contracts-pro"],
@@ -316,8 +317,8 @@ test("task 4: the tool pages print the constant the registry charges", () => {
     ["app/ai/wargaming/page.tsx", 'WAVE4_PRICE.toLocaleString("ar-SA")', WAVE4_PRICE, ["wargaming"]],
     ["app/ai/assistant/page.tsx", 'ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")', ASSISTANT_CONVERSATION_PRICE, ["assistant"]],
     ["app/ai/brief-check/page.tsx", 'BRIEF_CHECK_PRICE.toLocaleString("ar-SA")', BRIEF_CHECK_PRICE, ["brief-check"]],
-    ["app/ai/case-brief/page.tsx", 'CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.small, ["case-brief"]],
-    ["app/ai/case-brief/page.tsx", 'CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.large, ["case-brief"]],
+    ["components/ai/caseBrief/CaseBriefStudio.tsx", 'CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.small, ["case-brief"]],
+    ["components/ai/caseBrief/CaseBriefStudio.tsx", 'CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.large, ["case-brief"]],
     ["app/ai/legal-opinion/page.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-consult"]],
     ["app/ai/legal-opinion/_components/LetterWorkflow.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-letter"]],
     ["app/ai/contracts/page.tsx", "price={CONTRACTS_PRO_PRICE}", CONTRACTS_PRO_PRICE, ["contracts-pro"]],

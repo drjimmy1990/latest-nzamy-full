@@ -34,23 +34,28 @@ function AnalyzePageInner() {
     <div className={`min-h-[100dvh] ${isDark ? "bg-[#0d1117]" : "bg-slate-50"}`} dir={isRTL ? "rtl" : "ltr"}>
       {isGuest && <Navbar />}
       <div className={`max-w-5xl mx-auto px-5 sm:px-8 ${isGuest ? "pt-28 pb-24" : "pt-4 pb-16"}`}>
-        {/* Owner item ١٨ — one of the three tools he named. Above the analyzer,
-            not under its verdict: the reader has to know this is a guidance
-            template before they act on what it says. */}
-        <AdvisoryTemplateNotice handoffServiceId="contract-review" className="mb-5" />
         {user.loading ? (
           <div aria-busy="true" aria-label="جارٍ التحميل" className="space-y-4 animate-pulse">
             <div className={`h-10 w-1/3 rounded-xl ${isDark ? "bg-white/[0.06]" : "bg-slate-200"}`} />
             <div className={`h-64 rounded-2xl ${isDark ? "bg-white/[0.04]" : "bg-slate-200/70"}`} />
           </div>
-        ) : user.userType === "lawyer" || user.userType === "firm" ? (
+        ) : user.userType === "lawyer" || user.userType === "firm" || user.userType === "admin" ? (
+          // The case brief: its roles (tools.ts) are lawyer and firm. An admin
+          // passes the run path's role check and needs this screen to try the
+          // tool in "staff" mode before it opens.
           <AttachmentSqueezer />
         ) : (
-          // Wave 1 task 6: the client analyzer's every result is gated, so
-          // the gate comes first — no form or timer before it.
-          <GatedToolScreen toolId="analyze.smart.result" toolName="تحليل قوة الموقف القانوني">
-            <SmartAnalyzer isDark={isDark} isRTL={isRTL} />
-          </GatedToolScreen>
+          <>
+            {/* Owner item ١٨ — one of the three tools he named. Above the analyzer,
+                not under its verdict: the reader has to know this is a guidance
+                template before they act on what it says. */}
+            <AdvisoryTemplateNotice handoffServiceId="contract-review" className="mb-5" />
+            {/* Wave 1 task 6: the client analyzer's every result is gated, so
+                the gate comes first — no form or timer before it. */}
+            <GatedToolScreen toolId="analyze.smart.result" toolName="تحليل قوة الموقف القانوني">
+              <SmartAnalyzer isDark={isDark} isRTL={isRTL} />
+            </GatedToolScreen>
+          </>
         )}
       </div>
     </div>

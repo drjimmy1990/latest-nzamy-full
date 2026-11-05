@@ -599,12 +599,16 @@ const AI_TOOLS: AiToolCard[] = [
     icon: LAWYER_AI_ICON_MAP[tool.permission],
     // A «قريباً» tool (owner ١١٥) is not described as part of the credit
     // catalog: its page cannot answer yet.
-    descAr: tool.comingSoon
+    descAr: tool.permission === "ai:analyze"
+      ? "لخّص ملف القضية واستخرج الوقائع والتناقضات والنواقص من أوراقك"
+      : tool.comingSoon
       ? "غير متاحة حالياً — قيد الإعداد."
       : tool.betaStatus === "beta-free"
         ? "أداة قانونية رسمية للمحامي في البيتا، متاحة مجاناً حتى اعتماد سعرها من الأدمن."
         : "أداة قانونية رسمية ضمن كتالوج المحامي ونظام الرصيد.",
-    descEn: tool.comingSoon
+    descEn: tool.permission === "ai:analyze"
+      ? "Summarize a case file and extract its facts, contradictions and gaps from your papers"
+      : tool.comingSoon
       ? "Not available yet — in preparation."
       : tool.betaStatus === "beta-free"
         ? "Official lawyer beta tool, free until admin pricing is approved."
@@ -619,10 +623,10 @@ const AI_TOOLS: AiToolCard[] = [
 
 /**
  * The client-side card for /ai/analyze (owner ١١٥, fix round 2). The catalog
- * row "ai:analyze" is the LAWYER tool «عصارة المرفقات», which is «قريباً»;
- * /ai/analyze/page.tsx renders it only for lawyer and firm accounts and gives
- * everyone else SmartAnalyzer. The hub uses the same split, so a client is not
- * told a tool that opens for him is coming soon.
+ * row "ai:analyze" is the LAWYER tool «عصارة المرفقات» (the case-brief job);
+ * /ai/analyze/page.tsx renders it only for lawyer, firm and admin accounts and
+ * gives everyone else SmartAnalyzer, whose results are gated. The hub uses the
+ * same split, so a client is never offered the lawyer tool or its price.
  */
 const CLIENT_ANALYZE_CARD: AiToolCard = LEGACY_AI_TOOLS.find((t) => t.id === "ai:analyze")!;
 
@@ -632,7 +636,7 @@ function AiHubDashboard() {
   const isRTL = lang === "ar";
   const isDark = theme === "dark";
   // Same condition as src/app/ai/analyze/page.tsx (cannedOutputGate.test.ts).
-  const seesLawyerAnalyzer = user.userType === "lawyer" || user.userType === "firm";
+  const seesLawyerAnalyzer = user.userType === "lawyer" || user.userType === "firm" || user.userType === "admin";
   const hubTools = seesLawyerAnalyzer
     ? AI_TOOLS
     : AI_TOOLS.map((t) => (t.id === "ai:analyze" ? CLIENT_ANALYZE_CARD : t));

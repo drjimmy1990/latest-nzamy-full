@@ -26,15 +26,14 @@ import type { LawyerAiPermission, LawyerAiTool } from "./lawyerAiCatalog.ts";
  * `comingSoon` with no registry entry, so neither this map nor
  * lawyerServicesTable sells them. The owner's approved figures, for when each
  * page really answers (the badge will then read the registry's price):
- *   - "ai:analyze": ٨ — row «عصارة المرفقات وتلخيص ملف القضية واستخلاص
- *     النزاع»; the lawyer card also listed «عصارة المرفقات وتلخيص ملف
- *     القضية: ٨ نقاط» / "Attachment digest and case summary: 8 points".
  *   - "ai:transcriber" and "ai:secretary": ٥ — one shared row,
  *     «التفريغ الصوتي الذكي وأوامر السكرتير».
  */
 export const TOOL_POINT_SOURCES: Readonly<Partial<Record<LawyerAiPermission, PricedAiToolRef>>> = {
   "ai:quick-answer": "quick-answer",
   "ai:case-brief": "case-brief",
+  // عصارة المرفقات is the case-brief job since S3-01; the registry prices it.
+  "ai:analyze": "case-brief",
   "ai:draft": "legal-drafter",
   "ai:brief-check": "brief-check",
   "ai:contracts": "contracts-pro",

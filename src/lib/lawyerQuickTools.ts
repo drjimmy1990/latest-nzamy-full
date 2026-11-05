@@ -17,9 +17,8 @@
  *   • /ai/secretary         — built on literals (see the note on the removed
  *                             «AI Secretary Notice» in dashboard/lawyer/page.tsx);
  *   • /ai/research          — only a redirect to /ai/legal-opinion;
- *   • /ai/analyze           — «عصارة المرفقات»: the lawyer flow is «قريباً»
- *                             (owner ١١٥ — it printed a fixed report), even
- *                             though page.tsx stays live for clients.
+ *   • /ai/analyze           — «عصارة المرفقات»: opens from the sidebar and the
+ *                             hub; no tile was asked for when it went live (S3-01).
  *
  * `icon` is a string key, not a Phosphor component: this module is imported
  * by the preferences validator and by `node --test`, neither of which should

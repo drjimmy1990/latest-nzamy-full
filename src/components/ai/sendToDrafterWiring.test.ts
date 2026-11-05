@@ -14,7 +14,7 @@ const code = (rel: string) => stripComments(readFileSync(join(SRC, rel), "utf8")
 
 const BUTTON = "components/ai/SendToDrafterButton.tsx";
 const DRAFT = "app/ai/draft/page.tsx";
-const GATED = ["app/ai/transcriber/page.tsx", "app/ai/analyze/_components/AttachmentSqueezer.tsx"];
+const GATED = ["app/ai/transcriber/page.tsx"];
 
 test("the button writes the session handoff, then opens the drafter in the same tab", () => {
   const body = code(BUTTON);

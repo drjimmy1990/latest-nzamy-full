@@ -24,7 +24,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LAWYER_AI_TOOL_BY_PERMISSION } from "../../constants/lawyerAiCatalog.ts";
-import { TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiBadges.ts";
+import { TOOL_POINT_LABELS, TOOL_POINT_SOURCES, getLawyerAiBadge } from "../../constants/lawyerAiBadges.ts";
+import { AI_TOOLS } from "../ai/tools.ts";
 import { LAWYER_QUICK_TOOLS } from "../lawyerQuickTools.ts";
 
 function src(rel: string): string {
@@ -123,10 +124,16 @@ test("the layouts of the two gated tools no longer advertise a working tool", ()
 
 // ── عصارة المرفقات (lawyer/firm half of /ai/analyze) ────────────────────────
 
-test("AttachmentSqueezer is «قريباً» and can no longer export a canned report to the collector", () => {
+test("عصارة المرفقات renders the real case-brief job for lawyer and firm", () => {
   const body = code("app/ai/analyze/_components/AttachmentSqueezer.tsx");
-  assert.ok(body.includes(SOON_IMPORT));
-  assert.match(body, /<DashboardComingSoon\b/);
+  assert.ok(body.includes("CaseBriefStudio"));
+  assert.ok(!body.includes("DashboardComingSoon"));
+  const studio = code("components/ai/caseBrief/CaseBriefStudio.tsx");
+  assert.ok(studio.includes("useAiRun"));
+  assert.ok(studio.includes('"case-brief"'));
+  assert.ok(!studio.includes("MOCK_"));
+  assert.doesNotMatch(studio, /Math\.random\(\)[\s\S]{0,200}setResult/, "a random result");
+  assert.doesNotMatch(studio, /setTimeout\([\s\S]{0,200}setResult/);
   for (const s of [
     "@/lib/services/researchService", // the collector write: addToDesktop / addToSession
     "addToDesktop",
@@ -141,18 +148,29 @@ test("AttachmentSqueezer is «قريباً» and can no longer export a canned r
   }
 });
 
-test("/ai/analyze: page.tsx stays live for clients, while the lawyer tool is «قريباً» everywhere it is sold", () => {
-  // Fix round 1 (coordinator ruling b). The route also serves SmartAnalyzer
-  // to clients, so page.tsx itself does not import DashboardComingSoon. The
-  // lawyer tool «عصارة المرفقات» is gated in the component AND, so the gate
-  // cannot hide behind page.tsx, carries `comingSoon` in the catalog, has no
-  // price (row, plan-card line or hub label) and no quick-access tile.
+test("/ai/analyze: lawyers, firms and admins get the case-brief studio; everyone else the gated analyzer and its notice", () => {
+  // S3-01. The route serves two tools. The case brief runs for lawyer and firm
+  // (tools.ts roles), and for an admin, whom the run path lets through so a tool
+  // in "staff" mode can be tried before it opens. Every other account, and a
+  // guest, reads the gated client analyzer with its advisory notice above it.
   const page = code("app/ai/analyze/page.tsx");
   assert.ok(!page.includes(SOON_IMPORT));
   assert.match(page, /<SmartAnalyzer\b/);
+  const studioAt = page.indexOf("<AttachmentSqueezer />");
+  const noticeAt = page.indexOf("<AdvisoryTemplateNotice");
+  const analyzerAt = page.indexOf("<SmartAnalyzer");
+  assert.ok(studioAt > 0 && studioAt < noticeAt && noticeAt < analyzerAt, "the notice sits in the client branch only");
+  assert.match(page.slice(0, studioAt), /user\.userType === "lawyer" \|\| user\.userType === "firm" \|\| user\.userType === "admin"/);
+  assert.deepEqual(AI_TOOLS["case-brief"].roles, ["lawyer", "firm"], "the studio's split follows the tool's roles");
 
-  assert.equal(LAWYER_AI_TOOL_BY_PERMISSION["ai:analyze"].comingSoon, true);
-  assert.ok(!("ai:analyze" in TOOL_POINT_LABELS), "ai:analyze still has a hub point label");
+  // Live for them, at the registry's price, and no longer «قريباً».
+  const row = LAWYER_AI_TOOL_BY_PERMISSION["ai:analyze"];
+  assert.notEqual(row.comingSoon, true);
+  assert.equal(row.adminPricingKey, "lawyer.ai.analyze");
+  assert.equal(TOOL_POINT_SOURCES["ai:analyze"], "case-brief");
+  assert.equal(getLawyerAiBadge(row, "ar"), `${TOOL_POINT_LABELS["ai:analyze"]} نقطة`);
+
+  // Still no quick tile, no sale row: this batch changes where it opens, not how it is sold.
   assert.deepEqual(LAWYER_QUICK_TOOLS.filter((t) => t.href.startsWith("/ai/analyze")).map((t) => t.id), []);
   const pricing = code("constants/pricing/pricing.lawyers.ts");
   for (const s of ["عصارة المرفقات", "Attachment digest", '"ai:analyze"']) {
@@ -205,7 +223,7 @@ test("useDraftState no longer mints a share link it never stores", () => {
 // ── The catalog, the nav and the hub say «قريباً» too ────────────────────────
 
 test("the gated lawyer tools are «قريباً» on the hub and unpriced; the Najiz cleaner is not", () => {
-  for (const id of ["ai:compare", "ai:legal-translate", "ai:transcriber", "ai:analyze", "ai:secretary"] as const) {
+  for (const id of ["ai:compare", "ai:legal-translate", "ai:transcriber", "ai:secretary"] as const) {
     const tool = LAWYER_AI_TOOL_BY_PERMISSION[id];
     assert.equal(tool.comingSoon, true, `${id} is not marked comingSoon`);
     assert.equal(getLawyerAiBadge(tool, "ar"), "قريباً");
@@ -326,9 +344,9 @@ test("no pricing card, CTA, tile or canned answer sells the secretary or the att
 });
 
 test("a client sees the working analyzer card on the hub, not the lawyer tool's «قريباً»", () => {
-  // /ai/analyze renders AttachmentSqueezer only for lawyer and firm accounts;
-  // everyone else gets SmartAnalyzer. The hub uses the same split.
-  const lawyerSide = 'user.userType === "lawyer" || user.userType === "firm"';
+  // /ai/analyze renders AttachmentSqueezer only for lawyer, firm and admin
+  // accounts; everyone else gets SmartAnalyzer. The hub uses the same split.
+  const lawyerSide = 'user.userType === "lawyer" || user.userType === "firm" || user.userType === "admin"';
   assert.ok(code("app/ai/analyze/page.tsx").includes(lawyerSide), "analyze/page.tsx changed its split — update the hub to match");
   const hub = code("app/ai/page.tsx");
   assert.match(hub, /const CLIENT_ANALYZE_CARD\b/);
