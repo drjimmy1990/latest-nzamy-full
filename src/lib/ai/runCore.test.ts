@@ -19,6 +19,7 @@ import type { N8nOutcome } from "./n8nClient.ts";
 import { resolveToolRuntime, aiToolsSettingIssue, effectiveToolMode, REVIEW_MODE_REFUSED_AR } from "./aiToolsConfig.ts";
 import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
 import type { Retrieved } from "./retrieval.ts";
+import { STEP_LABEL_AR, type ProgressEvent } from "./progressEvents.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const LAWYER: RunActor = { userId: "u-1", userType: "lawyer", practiceKind: "advocate", displayName: null };
@@ -817,4 +818,168 @@ test("the runs route: the paste link is passed only under the same flag as the f
   const route = readFileSync(join(process.cwd(), "src", "app", "api", "v1", "ai", "runs", "route.ts"), "utf8");
   assert.match(route, /\.\.\.\(textFiles \? \{ pastedFileUrl: pastedFileUrlFrom\(textFiles\) \} : \{\}\)/);
   assert.equal(route.match(/pastedFileUrl:/g)?.length, 1, "no other way in");
+});
+
+// ── E3: real progress, never a text ──────────────────────────────────────────
+
+type Reported = { runId: string; userId: string; events: ProgressEvent[] };
+const QUICK_ON = { "quick-answer": { mode: "live" } };
+const QUICK_BODY = { tool: "quick-answer", input: { question: "ما أجر العامل عند الفصل؟" }, idempotencyKey: "key-abcdef01" };
+const SECRET_FOUND: Retrieved = {
+  sources: [{ sid: "S1", kind: "article", title: "نظام العمل — المادة ٧٧", text: "NEVER" }],
+  map: { S1: { kind: "article", id: "labor__art-77", title: "نظام العمل — المادة ٧٧", url: "/laws/labor#labor__art-77" } },
+};
+
+function libraryDeps(over: Partial<StartRunDeps> = {}, calls: Array<{ path: string }> = []): StartRunDeps {
+  return {
+    callbackUrl: "https://app.test/api/v1/ai/callback",
+    n8n: async (call) => {
+      calls.push(call);
+      if (call.path === LIB_QUERIES_PATH) {
+        return { kind: "result", result: { run_id: RUN, status: "succeeded", output: { queries: ["أجر العامل"] } } };
+      }
+      return call.mode === "async"
+        ? { kind: "accepted" }
+        : { kind: "result", result: { run_id: RUN, status: "succeeded", output: { answer: "الجواب" }, citations: ["S1"] } };
+    },
+    libraryAccess: async () => null,
+    retrieve: async () => SECRET_FOUND,
+    ...over,
+  };
+}
+const collector = (reported: Reported[]) => (runId: string, userId: string, events: ProgressEvent[]) => {
+  reported.push({ runId, userId, events });
+};
+const kindsOf = (reported: Reported[]) => reported.flatMap((r) => r.events.map((e) => e.kind));
+
+test("E3: progress gets files, then searches, then law titles, never texts", async () => {
+  const { client } = db({ setting: QUICK_ON });
+  const reported: Reported[] = [];
+  const r = await startRunWith(client as never, libraryDeps({ progress: collector(reported) }), LAWYER, QUICK_BODY);
+  assert.equal(r.status, 200);
+  assert.deepEqual(kindsOf(reported), ["query", "law", "step"]);
+  assert.ok(reported.every((x) => x.runId === RUN && x.userId === LAWYER.userId), "each report names the run and its owner");
+  assert.deepEqual(reported[1].events, [{ kind: "law", label: "نظام العمل — المادة ٧٧" }]);
+  assert.deepEqual(reported[2].events, [{ kind: "step", label: STEP_LABEL_AR.sent }]);
+  assert.ok(!JSON.stringify(reported).includes("NEVER"));
+});
+
+test("E3: the step is reported before the tool is called, so a slow tool shows it", async () => {
+  const { client } = db({ setting: QUICK_ON });
+  const order: string[] = [];
+  const deps = libraryDeps({
+    progress: (_r, _u, events) => order.push(...events.map((e) => e.kind)),
+  });
+  const n8n = deps.n8n;
+  deps.n8n = async (call) => {
+    order.push(call.path);
+    return n8n(call);
+  };
+  await startRunWith(client as never, deps, LAWYER, QUICK_BODY);
+  assert.deepEqual(order, [LIB_QUERIES_PATH, "query", "law", "step", "nzamy-ai/quick-answer"]);
+});
+
+test("E3: a pasted file reports its fixed name; neither the text, the link nor a real file's link is reported", async () => {
+  const { client } = db({ setting: PASTE_ON });
+  const reported: Reported[] = [];
+  const secretFile = { ...REAL_FILE, name: "ملف.pdf", url: "https://s/SECRET-SIGNED-LINK" };
+  const memo = `SECRET-PASTED-TEXT ${"م".repeat(300)}`;
+  const deps = pasteDeps({
+    progress: collector(reported),
+    resolveFiles: async () => ({ ok: true, files: [secretFile], pages: 2 }),
+    pastedFileUrl: () => "https://site.test/api/v1/ai/file-text/SECRET-TOKEN",
+  });
+  const r = await startRunWith(client as never, deps, LAWYER, briefBody({ client_capacity: "مدعٍ", memo_text: memo }, { fileIds: ["37"] }));
+  assert.equal(r.status, 422, "brief-check takes one file: the paste is refused first when a real file is there");
+  assert.equal(reported.length, 0, "a refusal reports nothing");
+
+  const { client: c2 } = db({ setting: PASTE_ON });
+  const r2 = await startRunWith(c2 as never, { ...deps, resolveFiles: undefined }, LAWYER, briefBody({ client_capacity: "مدعٍ", memo_text: memo }));
+  assert.equal(r2.status, 202);
+  assert.deepEqual(reported[0].events, [{ kind: "file", label: "نص المذكرة (ملصق).txt" }]);
+
+  const { client: c3 } = db({ setting: PASTE_ON });
+  reported.length = 0;
+  await startRunWith(c3 as never, deps, LAWYER, warBody({ ...WAR_INPUT, docs_text: memo }, { fileIds: ["37"] }));
+  assert.deepEqual(reported[0].events.map((e) => e.label), ["ملف.pdf", "نص المستندات (ملصق).txt"]);
+  const text = JSON.stringify(reported);
+  for (const secret of ["SECRET-PASTED-TEXT", "SECRET-SIGNED-LINK", "SECRET-TOKEN"]) assert.ok(!text.includes(secret), secret);
+});
+
+test("E3: a progress that throws never touches the money path", async () => {
+  const { client, log } = db({ setting: QUICK_ON });
+  const logged = console.error;
+  const lines: unknown[][] = [];
+  console.error = (...args: unknown[]) => void lines.push(args);
+  try {
+    const r = await startRunWith(client as never, libraryDeps({ progress: () => { throw new Error("SECRET"); } }), LAWYER, QUICK_BODY);
+    assert.equal(r.status, 200);
+  } finally {
+    console.error = logged;
+  }
+  assert.ok(!rpcs(log).includes("ai_fail_run"));
+  assert.ok(!JSON.stringify(lines).includes("SECRET"));
+});
+
+test("E3: a refusal and a duplicate report nothing", async () => {
+  const reported: Reported[] = [];
+  const { client } = db({ setting: QUICK_ON, start: { error: { code: "P0001", message: "insufficient_points" } } });
+  await startRunWith(client as never, libraryDeps({ progress: collector(reported) }), LAWYER, QUICK_BODY);
+  const { client: c2 } = db({ setting: QUICK_ON, start: { data: [{ run_id: RUN, created: false, status: "running", charged: true, charged_points: 20 }] } });
+  await startRunWith(c2 as never, libraryDeps({ progress: collector(reported) }), LAWYER, QUICK_BODY);
+  assert.deepEqual(reported, []);
+});
+
+test("E3: a job's callback reports the library's citation check by count, to the run's owner", async () => {
+  const running = { id: RUN, user_id: "owner-1", tool: "brief-check", status: "running", class: "job", source_ids: {}, input: { client_capacity: "مدعٍ" } };
+  const { client } = fakeDb((q: FakeQuery) => {
+    if (q.table === "ai_runs" && q.op === "select") return { data: running };
+    if (q.table === "ai_runs" && q.op === "update") return { data: [{ id: RUN }] };
+    return {};
+  });
+  const admin = Object.assign(client, {
+    schema: () => ({
+      from: (table: string) =>
+        table === "laws"
+          ? { select: () => ({ ilike: () => ({ limit: async () => ({ data: [{ slug: "labor", title: "نظام العمل", status: "active" }], error: null }) }) }) }
+          : { select: () => ({ in: () => ({ in: async () => ({ data: [{ id: "labor__art-80", number: 80, status: "active", law_slug: "labor" }], error: null }) }) }) },
+    }),
+  });
+  const reported: Reported[] = [];
+  const r = await callbackWith(
+    admin as never,
+    {
+      run_id: RUN,
+      status: "succeeded",
+      output: {
+        summary: "SECRET-SUMMARY",
+        findings: [{ severity: "high", location: "الدفع", issue: "لا سند", fix: "أضف المادة (80)" }],
+        cited: [{ law: "نظام العمل", article: 80, as_written: "SECRET-QUOTE" }],
+      },
+      citations: [],
+    },
+    { progress: collector(reported) },
+  );
+  assert.equal(r.body.final, "succeeded");
+  assert.deepEqual(reported, [{ runId: RUN, userId: "owner-1", events: [{ kind: "verify", label: "تحقق من ١ إحالة نظامية في المكتبة" }] }]);
+});
+
+test("E3: a failed or repeated callback reports nothing, and a callback without progress still settles", async () => {
+  const running = { id: RUN, user_id: "owner-1", tool: "echo-job", status: "running", class: "job", source_ids: {} };
+  const reported: Reported[] = [];
+  for (const run of [running, { ...running, status: "succeeded" }]) {
+    const { client } = db({ run });
+    await callbackWith(client as never, { run_id: RUN, status: "failed", error: { code: "model_error" } }, { progress: collector(reported) });
+  }
+  assert.deepEqual(reported, []);
+  const { client } = db({ run: running });
+  assert.equal((await callbackWith(client as never, { run_id: RUN, status: "succeeded", output: { echo: "x" } })).status, 200);
+});
+
+test("E3: both routes bind progress through progressSink and after", () => {
+  for (const segs of [["runs"], ["callback"]]) {
+    const route = readFileSync(join(process.cwd(), "src", "app", "api", "v1", "ai", ...segs, "route.ts"), "utf8");
+    assert.match(route, /import \{[^}]*\bafter\b[^}]*\} from "next\/server"/, segs[0]);
+    assert.match(route, /progress: progressSink\(admin, \(work\) => after\(work\)\)/, segs[0]);
+  }
 });

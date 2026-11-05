@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
 import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
@@ -7,6 +7,7 @@ import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
+import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
@@ -128,6 +129,7 @@ export async function POST(request: NextRequest) {
         retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
         ...(textFiles ? { pastedFileUrl: pastedFileUrlFrom(textFiles) } : {}),
+        progress: progressSink(admin, (work) => after(work)),
       },
       actor,
       body,

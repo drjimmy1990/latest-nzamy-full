@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { cronSecretMatches } from "@/lib/payments/fulfillDecision";
 import { callbackWith } from "@/lib/ai/runCore";
+import { progressSink } from "@/lib/ai/progressEvents";
 
 /**
  * POST /api/v1/ai/callback — n8n only (plan §2.1, §2.3): a job tool's result
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
   }
   try {
     const admin = await createServiceClient();
-    const reply = await callbackWith(admin, body);
+    const reply = await callbackWith(admin, body, { progress: progressSink(admin, (work) => after(work)) });
     return NextResponse.json(reply.body, { status: reply.status });
   } catch (err) {
     console.error("[ai/callback] threw:", err);

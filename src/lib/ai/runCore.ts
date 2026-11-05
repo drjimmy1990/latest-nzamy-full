@@ -39,6 +39,15 @@ import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun } from "../membership/founderPlan.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import { textPages } from "./textExtract.ts";
+import {
+  STEP_LABEL_AR,
+  fileEvents,
+  queryEvents,
+  sourceEvents,
+  toSourceRefs,
+  verifyEvent,
+  type ProgressEvent,
+} from "./progressEvents.ts";
 
 /**
  * Tools whose result the app completes from its own data before storing it.
@@ -104,7 +113,15 @@ export interface StartRunDeps {
   pastedFileUrl?: (runId: string, userId: string, field: string) => string;
   /** The clock for the fast tools' time budget, in ms (tests replace it). */
   clock?: () => number;
+  /**
+   * The run's waiting screen: file names, searches, law titles (R7, never a text,
+   * a token or a link). Fire-and-forget, never awaited on the money path, and a
+   * throw is swallowed by `report`.
+   */
+  progress?: ProgressReporter;
 }
+
+export type ProgressReporter = (runId: string, userId: string, events: ProgressEvent[]) => void;
 
 /** The source map stored on the run: short id in the prompt → the library item. */
 export type SourceMap = Record<string, { kind: string; id: string; title?: string; url?: string }>;
@@ -173,6 +190,16 @@ async function failRun(admin: SupabaseClient, runId: string, code: string, messa
   // The sweeper retries a run left `running` past its deadline, so a failed
   // refund here is logged, not lost.
   if (error) console.error("[ai] ai_fail_run failed for", runId, error.code, error.message);
+}
+
+function report(progress: ProgressReporter | undefined, runId: string, userId: string, events: ProgressEvent[]): void {
+  if (!progress || events.length === 0) return;
+  try {
+    progress(runId, userId, events);
+  } catch (err) {
+    // The waiting screen must never fail a run that is already charged.
+    console.error("[ai] reporting progress threw for", runId, (err as { name?: string } | null)?.name ?? "error");
+  }
 }
 
 // ── settle ───────────────────────────────────────────────────────────────────
@@ -522,6 +549,8 @@ export async function startRunWith(
     }
   }
 
+  report(deps.progress, run.run_id, actor.userId, fileEvents(files));
+
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
   let pkgSources: PackageSource[] = [];
@@ -554,6 +583,7 @@ export async function startRunWith(
       reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
         ? cleanQueries(reply.output.queries)
         : [];
+    report(deps.progress, run.run_id, actor.userId, queryEvents(queries));
     // An open article, or one the question names, is a source even when the
     // writer found nothing to search.
     const named = articleRefs(question).length > 0 || (!!pin.lawSlug && bareArticleNumbers(question).length > 0);
@@ -580,6 +610,7 @@ export async function startRunWith(
       await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
       return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
     }
+    report(deps.progress, run.run_id, actor.userId, sourceEvents(toSourceRefs(found.sources)));
   }
 
   const sync = spec.class === "fast";
@@ -607,6 +638,7 @@ export async function startRunWith(
     deadline_at: deadline.toISOString(),
   };
 
+  report(deps.progress, run.run_id, actor.userId, [{ kind: "step", label: STEP_LABEL_AR.sent }]);
   const outcome = await deps.n8n({
     path: spec.n8nPath,
     mode: sync ? "sync" : "async",
@@ -635,6 +667,8 @@ export async function startRunWith(
   // Nothing is held for review (a stored "review" runs as "staff"; Wave 3).
   const settled = await settleRunWith(admin, { spec, runId: run.run_id, sources, input: checked.input }, outcome.result);
   if (settled.kind === "succeeded") {
+    const verified = verifyEvent(settled.output);
+    if (verified) report(deps.progress, run.run_id, actor.userId, [verified]);
     return {
       status: 200,
       body: { runId: run.run_id, status: settled.status, output: settled.output, citations: settled.citations, ...charged },
@@ -651,14 +685,18 @@ export async function startRunWith(
 
 // ── the job callback ─────────────────────────────────────────────────────────
 
-export async function callbackWith(admin: SupabaseClient, body: unknown): Promise<RouteReply> {
+export async function callbackWith(
+  admin: SupabaseClient,
+  body: unknown,
+  deps: { progress?: ProgressReporter } = {},
+): Promise<RouteReply> {
   if (!isPlainObject(body) || typeof body.run_id !== "string" || !UUID.test(body.run_id)) {
     return { status: 400, body: { error: "invalid run_id" } };
   }
   const runId = body.run_id;
   const { data, error } = await admin
     .from("ai_runs")
-    .select("id, tool, status, class, source_ids, input")
+    .select("id, user_id, tool, status, class, source_ids, input")
     .eq("id", runId)
     .maybeSingle();
   if (error) {
@@ -666,7 +704,7 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
     return { status: 503, body: { error: "unavailable" } };
   }
   const run = data as
-    | { id: string; tool: string; status: string; class: string; source_ids: unknown; input: unknown }
+    | { id: string; user_id: string; tool: string; status: string; class: string; source_ids: unknown; input: unknown }
     | null;
   if (!run) return { status: 404, body: { error: "unknown run" } };
 
@@ -691,5 +729,9 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
   const sources = (isPlainObject(run.source_ids) ? run.source_ids : {}) as SourceMap;
   const input = (isPlainObject(run.input) ? run.input : {}) as Record<string, unknown>;
   const settled = await settleRunWith(admin, { spec, runId, sources, input }, body);
+  if (settled.kind === "succeeded") {
+    const verified = verifyEvent(settled.output);
+    if (verified) report(deps.progress, runId, run.user_id, [verified]);
+  }
   return { status: 200, body: { ok: true, final: settled.kind === "succeeded" ? settled.status : settled.kind } };
 }
