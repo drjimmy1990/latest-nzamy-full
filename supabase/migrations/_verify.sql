@@ -5690,3 +5690,64 @@ begin
   raise notice '_verify: 20261103_15 OK — library invite codes: no anon / authenticated privilege, no policy admits them (% polic(ies) left), service_role reads and writes', n;
 end $$;
 -- <<< verify:library_invitations_closed
+
+-- >>> verify:progress_events — supabase/tests/rls/progress_events.test.sql
+-- 2026-11-03 — 20261103_31_progress_events.sql (S2 E1, runs BEFORE the deploy).
+-- Read-only, safe to repeat. RAISES when the table is missing or a session could
+-- write it, read its owner column, or run the prune. No public.ai_runs
+-- (20261027_10 not applied): one NOTICE, passes.
+do $$
+declare r text; p text; c text;
+begin
+  if to_regclass('public.ai_runs') is null then
+    raise notice '_verify: 20261103_31 — public.ai_runs is missing (20261027_10 not applied): nothing to check'; return;
+  end if;
+  if to_regclass('public.progress_events') is null then
+    raise exception '_verify: 20261103_31 — public.progress_events is missing: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if not (select c2.relrowsecurity from pg_class c2 where c2.oid = 'public.progress_events'::regclass) then
+    raise exception '_verify: 20261103_31 — RLS is off on public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_policies pol
+                  where pol.schemaname = 'public' and pol.tablename = 'progress_events'
+                    and pol.policyname = 'own progress events' and pol.cmd = 'SELECT') then
+    raise exception '_verify: 20261103_31 — the policy «own progress events» is missing: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] loop
+      if has_table_privilege(r, 'public.progress_events', p) then
+        raise exception '_verify: 20261103_31 — % holds % on public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)', r, p;
+      end if;
+    end loop;
+    if has_column_privilege(r, 'public.progress_events', 'user_id', 'SELECT') then
+      raise exception '_verify: 20261103_31 — % reads progress_events.user_id: run 20261103_31_progress_events.sql (BEFORE the deploy)', r;
+    end if;
+  end loop;
+  if has_any_column_privilege('anon', 'public.progress_events', 'SELECT') then
+    raise exception '_verify: 20261103_31 — anon reads public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  foreach c in array array['id', 'run_id', 'kind', 'label', 'created_at'] loop
+    if not has_column_privilege('authenticated', 'public.progress_events', c, 'SELECT') then
+      raise exception '_verify: 20261103_31 — authenticated cannot read progress_events.%: the waiting screen stays empty. Run 20261103_31_progress_events.sql (BEFORE the deploy)', c;
+    end if;
+  end loop;
+  if not has_table_privilege('service_role', 'public.progress_events', 'INSERT') then
+    raise exception '_verify: 20261103_31 — service_role cannot write public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if to_regprocedure('public.progress_events_prune()') is null then
+    raise exception '_verify: 20261103_31 — progress_events_prune() is missing: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure('public.progress_events_prune()') and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261103_31 — progress_events_prune() is not SECURITY DEFINER with search_path '''': run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_function_privilege(r, 'public.progress_events_prune()', 'EXECUTE') then
+      raise exception '_verify: 20261103_31 — % can run progress_events_prune(): run 20261103_31_progress_events.sql (BEFORE the deploy)', r;
+    end if;
+  end loop;
+  if not has_function_privilege('service_role', 'public.progress_events_prune()', 'EXECUTE') then
+    raise exception '_verify: 20261103_31 — service_role cannot run progress_events_prune(): run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  raise notice '_verify: 20261103_31 OK — progress_events: own rows through granted columns, service role writes, prune service role only';
+end $$;
+-- <<< verify:progress_events
