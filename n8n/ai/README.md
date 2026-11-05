@@ -26,6 +26,7 @@ On n8n.asra3.com (all created **inactive**):
 | L11 محترف العقود المختصر (job) | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | `r2s0JBMr8Q5Ti80O` | `nzamy-ai/contract-drafter` |
 | L13 محترف العقود (job, clause by clause) | `NZAMY · AI · contracts-pro (L13 محترف العقود)` | `mMekAog89HsgLz3o` | `nzamy-ai/contracts-pro` |
 | مراجع العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-review (مراجع العقود)` | (none yet) | `nzamy-ai/contract-review` |
+| مفاوض العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-negotiator (مفاوض العقود)` | (none yet) | `nzamy-ai/contract-negotiator` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
@@ -111,6 +112,21 @@ Wave 1 has no SQL and no new server variables.
 7. Send us a screenshot of each result and of the «آخر التشغيلات» table.
 
 ---
+
+## مراجع العقود and مفاوض العقود: your steps
+
+**What they are.** Both ship OFF: nobody is charged, and the screens show «قريباً» or the team order, with no price, until an admin opens them.
+- `contract-review`, 250 points, in the review mode of `/ai/contracts`: one PDF or image up to 15 pages, or a pasted contract when the text flag is on. The six contracts-pro roles. NOT the human «مراجعة العقد» service of the same id in the catalogue.
+- `contract-negotiator`, 150 points, at `/ai/contract-negotiator`: 1 to 10 pasted clauses, three positions for each and a fallback. Lawyers and firms.
+
+**Steps, after the deploy (never before it):**
+1. In n8n, import `n8n/ai/contract-review.json` and `n8n/ai/contract-negotiator.json`.
+2. In each one, re-select the credentials on every node that asks, including each `Progress ·` node, then switch the workflow on.
+3. Sign in as an admin, open `https://nezamy.sa/dashboard/admin/ai-usage`, and set each tool to `staff`.
+4. Test each one as the admin. An admin runs exempt, so this proves the workflow and the screen, not the money.
+5. Set it to `live` only when you are satisfied, and read the first real user's ledger row: a debit of 250 or 150, and a refund if that run failed.
+
+**A percentage fails the run.** The owner's rule refuses any figure with `%` or `٪` in the result, and the run is refunded. A contract's own rate («غرامة ٥٪») is covered by the same check: the prompts ask for it in words. If real contracts refund too often, this is the first place to look.
 
 ## Wave 5, L11 محترف العقود المختصر: your steps
 
