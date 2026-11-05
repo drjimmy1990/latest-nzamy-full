@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   cleanDetailsSummary,
   isAmendmentDetails,
+  isOpenDetailsTag,
   splitDetailsMarkup,
 } from "./_details-block.ts";
 
@@ -12,7 +13,7 @@ function blocksOf(text: string): Array<{ summary: string; content: string }> {
   let cur: { summary: string; lines: string[] } | null = null;
   for (const line of splitDetailsMarkup(text)) {
     const t = line.trim();
-    if (t === "<details>") { cur = { summary: "", lines: [] }; continue; }
+    if (t === "<details>" || isOpenDetailsTag(t)) { cur = { summary: "", lines: [] }; continue; }
     if (!cur) continue;
     if (t === "</details>") { out.push({ summary: cur.summary, content: cur.lines.join("\n") }); cur = null; continue; }
     const m = /^<summary>(.*)<\/summary>$/.exec(t);
@@ -98,10 +99,22 @@ test("cleanDetailsSummary: plain text, no markup left", () => {
   assert.equal(cleanDetailsSummary(null), "");
 });
 
+test("S5-B11: open survives normalisation; other attributes do not", () => {
+  assert.deepEqual(splitDetailsMarkup('<details open><summary>📝 موجز المستند</summary>'), ["<details open>", "<summary>📝 موجز المستند</summary>"]);
+  assert.deepEqual(splitDetailsMarkup('<details class="x" open>'), ["<details open>"]);
+  assert.deepEqual(splitDetailsMarkup('<details open="">'), ["<details open>"]);
+  assert.deepEqual(splitDetailsMarkup('<details class="x">'), ["<details>"]);
+  // The word inside a value is not the attribute.
+  assert.deepEqual(splitDetailsMarkup('<details class="is open now">'), ["<details>"]);
+  assert.deepEqual(splitDetailsMarkup('<details data-open>'), ["<details>"]);
+  assert.equal(isOpenDetailsTag("<details open>"), true);
+  assert.equal(isOpenDetailsTag("<details>"), false);
+});
+
 test("splitDetailsMarkup: a one-line <details open><summary> keeps its summary", () => {
   assert.deepEqual(
     splitDetailsMarkup("<details open><summary>📝 موجز المستند (خلاصة سريعة)</summary>\nنص\n</details>"),
-    ["<details>", "<summary>📝 موجز المستند (خلاصة سريعة)</summary>", "نص", "</details>"],
+    ["<details open>", "<summary>📝 موجز المستند (خلاصة سريعة)</summary>", "نص", "</details>"],
   );
   // everything on one line, the close included
   assert.deepEqual(
