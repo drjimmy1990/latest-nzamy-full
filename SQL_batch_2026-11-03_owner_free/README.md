@@ -379,11 +379,21 @@ select t.tool, s.value -> t.tool ->> 'mode' as mode
 ```
 
 - An empty `mode` means the default, which is off.
-- **`case-brief`:** without `staff` or `live`, the card on `/ai/analyze` answers `tool_off`.
-- **`quick-answer`:** the same; the plan's "visible at the deploy" holds only if it is already `live`.
+- **`case-brief`:** without `staff` or `live`, the card on `/ai/analyze` shows a «قريباً» card, with no price and no form.
+- **`quick-answer`:** the same at `/ai/quick-answer`; the plan's "visible at the deploy" holds only if it is already `live`.
 - **To change a mode:** as an admin, open `https://nezamy.sa/dashboard/admin/ai-usage`, choose the mode for the row, and press **حفظ**. `staff` is «للمشرفين فقط», and `live` is «مفعّلة».
 
 Send us this table. `contract-review` and `contract-negotiator` should be empty until Step 9.
+
+### Step 7c: how long n8n keeps failed executions
+
+These workflows set `saveDataErrorExecution: "all"`, so a failed execution stays in n8n with its data, and that data can hold text the tool was served: a pasted contract or a file's text. The app's 90-day retention does not reach it. On the n8n server, read the two settings:
+
+```
+docker exec <n8n container> printenv EXECUTIONS_DATA_PRUNE EXECUTIONS_DATA_MAX_AGE
+```
+
+This prints their values on the screen; nothing is written. `EXECUTIONS_DATA_MAX_AGE` is in hours. Pruning should be on, with an age you accept for that text. If a line is empty, the variable is not set and n8n uses its own default: check that version's documentation, and send us the result.
 
 ---
 
@@ -521,7 +531,7 @@ Send us the rows with `already_known = f`: `summary`, `laws` and `example_slug`,
 - [ ] `/dashboard/client/services` and `/dashboard/client/requests/new?type=contract-review` show «يبدأ من ٦٠٠ ر.س».
 - [ ] The eye button in a service request's attachments previews a PDF, an image and a Word file. A PDF may be blocked in the frame at `auth.nezamy.sa`; the plain link beside it must work.
 - [ ] `/ai/analyze` shows the client analyzer, not the lawyer's studio.
-- [ ] The dashboard banner's «المجيب السريع» leads to a tool this role cannot run (owner question ٤٤٣).
+- [ ] The dashboard banner's «المجيب السريع» leads to the quick answer's «قريباً» card, with no price and no form, because this role cannot run it (owner question ٤٤٣).
 
 ### Company
 - [ ] The same two pages show «يبدأ من ٨٠٠ ر.س».

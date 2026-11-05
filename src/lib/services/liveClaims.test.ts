@@ -397,3 +397,23 @@ test("no alert and no instant answer are promised where nothing delivers them; �
   assert.ok(q443.includes("استخدم المجيب السريع"), "OnboardingBanner.tsx, the client's body");
   assert.doesNotMatch(questions, /^---\n\n---$/m, "one rule between sections");
 });
+
+test("the owner report and the run file say what this batch's screens and n8n really do", () => {
+  const report = readFileSync(new URL("../../../تقرير_للمالك_٢٠٢٦-١١-٠٣_الدفعة_الثانية.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const run = readFileSync(new URL("../../../SQL_batch_2026-11-03_owner_free/README.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  // Item ١٨: closed means an honest card, not a tool nobody sees.
+  assert.doesNotMatch(report, /ظهورها يتبع وضعها|ظهوره يتبع وضعه|فلن يراهما أحد/);
+  assert.ok(report.includes("بلا سعر ولا نموذج"));
+  // The 90 days cover this app's database, and n8n's failed executions are apart from them.
+  assert.ok(report.includes("لا تشمل سجل التشغيلات الفاشلة في n8n"));
+  assert.ok(run.includes("EXECUTIONS_DATA_PRUNE") && run.includes("EXECUTIONS_DATA_MAX_AGE"));
+  assert.ok(run.includes('saveDataErrorExecution: "all"'));
+  // The verify card's name, and the known limits, with no new question number.
+  assert.ok(report.includes("الاسم على بطاقة التحقق هو الاسم الذي حفظه المحامي في هويته"));
+  assert.ok(report.includes("إعادة تحميل الصفحة أثناء التشغيل"));
+  assert.ok(report.includes("معالج الاستشارة"));
+  assert.ok(!/٤٤٥/.test(report), "no new question number");
+  // The run file's checks follow the gate.
+  assert.ok(run.includes("«قريباً» card"));
+  assert.doesNotMatch(run, /the card on `\/ai\/analyze` answers `tool_off`/);
+});
