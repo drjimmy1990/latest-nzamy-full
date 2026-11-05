@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkle, X, ArrowLeft } from "@phosphor-icons/react";
 import Link from "next/link";
+import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -199,6 +200,9 @@ export function OnboardingBanner({ role, name, isDark }: OnboardingBannerProps) 
                     }`}
                   >
                     {a.label}
+                    {isTerminalToolHref(a.href) && (
+                      <span className="rounded-full border border-current px-1.5 py-0.5 text-[10px] font-bold opacity-80">{COMING_SOON_BADGE_AR}</span>
+                    )}
                     {a.primary && <ArrowLeft size={12} />}
                   </Link>
                 ))}

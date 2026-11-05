@@ -8,6 +8,7 @@ import {
   CheckCircle, Clock, Warning, Robot,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
+import { COMING_SOON_BADGE_AR } from '@/constants/betaGatedRoutes';
 import { useTheme } from '@/components/ThemeProvider';
 
 type ReportStatus = 'منشور' | 'مسودة' | 'قيد المراجعة';
@@ -63,6 +64,7 @@ export default function GovernmentReportsPage() {
           className="flex items-center gap-2 px-4 py-2 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold hover:bg-[#0a3328] transition-colors">
           <Robot size={14} weight="fill" />
           إنشاء بالذكاء الاصطناعي
+          <span className="rounded-full border border-current px-1.5 py-0.5 text-[10px] font-bold opacity-80">{COMING_SOON_BADGE_AR}</span>
         </Link>
       </motion.div>
 

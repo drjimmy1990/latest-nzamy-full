@@ -215,3 +215,52 @@ test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's too
   assert.match(arb, /\{isTerminalToolHref\(tool\.href\) && \(/);
   assert.match(arb, /\{COMING_SOON_BADGE_AR\}/);
 });
+
+// ── S5-B7 (ruling R10): the links are derived at HEAD, never pinned ──────────
+
+/** Each literal `href="/ai/…"` in a .tsx file, as the JSX element that holds it. */
+function jsxToolLinks(rel: string): Array<{ href: string; element: string }> {
+  const source = read(rel);
+  return [...source.matchAll(/href="(\/ai\/[^"]+)"/g)].map((m) => {
+    const closes = ["</Link>", "</a>"].map((tag) => source.indexOf(tag, m.index)).filter((i) => i !== -1);
+    const open = Math.max(source.lastIndexOf("<Link", m.index), source.lastIndexOf("<a ", m.index));
+    return { href: m[1], element: source.slice(open, Math.min(...closes)) };
+  });
+}
+
+test("S5-B7: every inline link to a terminal tool carries «قريباً», and a live link does not", () => {
+  const tsx = [...filesUnder(path.join(SRC, "app")), ...filesUnder(path.join(SRC, "components"))]
+    .filter((f) => f.endsWith(".tsx") && !f.includes(".test."))
+    .map((f) => path.relative(SRC, f));
+  const terminal: string[] = [];
+  for (const rel of tsx) {
+    for (const { href, element } of jsxToolLinks(rel)) {
+      if (!isTerminalToolHref(href)) continue;
+      terminal.push(`${rel} ${href}`);
+      assert.ok(element.includes("COMING_SOON_BADGE_AR") || element.includes(COMING_SOON_BADGE_AR), `${rel}: the link to ${href} does not say «قريباً»`);
+    }
+  }
+  assert.ok(terminal.length > 0, "no terminal link found: the walk broke");
+
+  // S3-04 repointed these to the live /ai/contracts: «قريباً» there would be false.
+  assert.equal(isTerminalToolHref("/ai/contracts"), false);
+  for (const rel of ["app/dashboard/ngo/volunteers/page.tsx", "app/dashboard/ngo/contracts/page.tsx", "app/dashboard/micro/contracts/page.tsx"]) {
+    const links = jsxToolLinks(rel).filter((l) => l.href === "/ai/contracts");
+    assert.ok(links.length > 0, `${rel}: the /ai/contracts link moved`);
+    for (const { element } of links) assert.ok(!element.includes(COMING_SOON_BADGE_AR), `${rel}: a live link says «قريباً»`);
+  }
+  assert.match(read("app/dashboard/ngo/volunteers/page.tsx"), /secondaryAction=\{\{ label: "محترف العقود", href: '\/ai\/contracts' \}\}/);
+});
+
+test("S5-B7: OnboardingBanner computes the badge from the route, so it leaves when the tool goes live", () => {
+  const banner = read("components/OnboardingBanner.tsx");
+  assert.match(banner, /isTerminalToolHref\(a\.href\)[\s\S]{0,200}COMING_SOON_BADGE_AR/);
+  const hrefs = [...banner.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(hrefs.some(isTerminalToolHref), "no banner action is terminal today: this test no longer checks anything");
+});
+
+test("S5-B7: the notifications demo seed does not announce the gated advisor as launched", () => {
+  const store = read("lib/notificationsStore.ts");
+  assert.doesNotMatch(store, /href: "\/ai\/consult"/);
+  assert.doesNotMatch(store, /تم إطلاق المستشار الذكي/);
+});
