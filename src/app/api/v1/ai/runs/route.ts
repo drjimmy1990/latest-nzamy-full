@@ -5,6 +5,7 @@ import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
+import { aiTextFilesConfig } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
@@ -110,6 +111,13 @@ export async function POST(request: NextRequest) {
     };
 
     const admin = await createServiceClient();
+    // Off unless NZAMY_AI_TEXT_FILES is on: .docx, .txt and .md are then refused
+    // before any charge (aiFiles.ts).
+    const textFiles = aiTextFilesConfig({
+      NZAMY_AI_TEXT_FILES: process.env.NZAMY_AI_TEXT_FILES,
+      NZAMY_AI_KEY: process.env.NZAMY_AI_KEY,
+      NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+    });
     const reply = await startRunWith(
       admin,
       {
@@ -118,7 +126,7 @@ export async function POST(request: NextRequest) {
         libraryAccess: libraryAccessFor(user.id),
         onRunCreated: libraryRunCreatedFor(user.id),
         retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
-        resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules),
+        resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
       },
       actor,
       body,

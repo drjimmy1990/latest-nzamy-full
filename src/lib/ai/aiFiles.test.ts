@@ -8,8 +8,14 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { strToU8, zipSync } from "fflate";
 import { PDFDocument } from "pdf-lib";
 import { countPages, FILE_COPY, parseFileIds, resolveAiFiles, SIGNED_URL_SECONDS } from "./aiFiles.ts";
+import { FILE_TEXT_TTL_MS, verifyFileTextToken } from "./fileTextToken.ts";
+import { aiTextFilesConfig } from "./textFilesConfig.ts";
+import { TEXT_CHARS_PER_PAGE, TEXT_FILE_MAX_CHARS } from "./textExtract.ts";
 
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -126,7 +132,7 @@ test("someone else's file, or one not found, is refused without saying whose it 
   assert.equal(missing.ok ? "" : missing.code, "file_not_found");
 });
 
-test("a Word file, too many bytes, too many pages and an encrypted-or-broken PDF are refused", async () => {
+test("flag off: a Word file, too many bytes, too many pages and an encrypted-or-broken PDF are refused", async () => {
   const word = await resolveAiFiles(fakeAdmin([row(A, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")], {}).admin as never, "u-1", [A], RULES);
   assert.equal(word.ok ? "" : word.code, "file_type");
 
@@ -146,4 +152,153 @@ test("a Word file, too many bytes, too many pages and an encrypted-or-broken PDF
 
   const none = await resolveAiFiles(fakeAdmin([], {}).admin as never, "u-1", undefined, RULES);
   assert.equal(none.ok ? "" : none.code, "no_files");
+});
+
+// ── B3: text kinds, behind NZAMY_AI_TEXT_FILES ──────────────────────────────
+
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const SECRET = "test-secret-not-a-real-key";
+const TEXT_ON = { textFiles: { secret: SECRET, baseUrl: "https://site.test" } };
+const NOW = new Date("2026-11-05T10:00:00Z");
+const docx = (text: string) => zipSync({ "word/document.xml": strToU8(`<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`) });
+const on = (admin: unknown, ids: unknown[], rules = RULES) => resolveAiFiles(admin as never, "u-1", ids, rules, NOW, TEXT_ON);
+
+test("B3: a docx becomes a text/plain file when text files are on", async () => {
+  const { admin, signed } = fakeAdmin([row(37, DOCX, 1000, "مذكرة.docx")], { "u-1/37.bin": docx("نص المذكرة") });
+  const got = await on(admin, [37]);
+  assert.ok(got.ok, JSON.stringify(got));
+  assert.equal(got.pages, 1);
+  const [f] = got.files;
+  assert.equal(f.mime, "text/plain");
+  assert.equal(f.pages, 1);
+  assert.equal(f.name, "مذكرة.docx");
+  assert.equal(f.bytes, new TextEncoder().encode("نص المذكرة").length);
+  assert.ok(f.url.startsWith("https://site.test/api/v1/ai/file-text/"));
+  assert.equal(f.url_expires_at, new Date(NOW.getTime() + FILE_TEXT_TTL_MS).toISOString());
+  assert.deepEqual(signed, [], "no storage link: n8n fetches the text, not the .docx");
+});
+
+test("B3: the link is bound to this file and owner, and expires with url_expires_at", async () => {
+  const { admin } = fakeAdmin([row(37, DOCX)], { "u-1/37.bin": docx("نص") });
+  const got = await on(admin, [37]);
+  assert.ok(got.ok);
+  const token = got.files[0].url.split("/").at(-1)!;
+  const expiry = NOW.getTime() + FILE_TEXT_TTL_MS;
+  assert.deepEqual(verifyFileTextToken(token, SECRET, NOW.getTime()), { a: "37", u: "u-1", e: expiry });
+  assert.equal(verifyFileTextToken(token, SECRET, expiry), null);
+  assert.equal(verifyFileTextToken(token, "another", NOW.getTime()), null);
+});
+
+test("B3: the same docx with the flag off is refused, before any download", async () => {
+  const objects = { "u-1/37.bin": docx("نص") };
+  for (const [mime, name] of [[DOCX, "a.docx"], ["text/plain", "a.txt"], ["", "a.md"], ["application/msword", "a.doc"]]) {
+    const got = await resolveAiFiles(fakeAdmin([row(37, mime, 1000, name)], objects).admin as never, "u-1", [37], RULES);
+    assert.deepEqual(got, { ok: false, error: FILE_COPY.type, code: "file_type" }, name);
+  }
+});
+
+test("B3: .doc is refused with its own copy", async () => {
+  const got = await on(fakeAdmin([row(37, "application/msword", 1000, "x.doc")], {}).admin, [37]);
+  assert.deepEqual(got, { ok: false, error: FILE_COPY.doc, code: "file_type_doc" });
+});
+
+test("B3: a .md stored as octet-stream is read by its extension", async () => {
+  const got = await on(fakeAdmin([row(37, "application/octet-stream", 10, "n.md")], { "u-1/37.bin": strToU8("# نص") }).admin, [37]);
+  assert.ok(got.ok, JSON.stringify(got));
+  assert.equal(got.files[0].mime, "text/plain");
+});
+
+test("B3: a row with no mime at all goes by its extension with the flag on, and is refused with it off", async () => {
+  const rows = [{ ...row(37, "", 10, "n.txt"), mime_type: null as unknown as string }];
+  const objects = { "u-1/37.bin": strToU8("نص") };
+  assert.equal((await on(fakeAdmin(rows, objects).admin, [37])).ok, true);
+  const off = await resolveAiFiles(fakeAdmin(rows, objects).admin as never, "u-1", [37], RULES);
+  assert.equal(off.ok ? "" : off.code, "file_type");
+});
+
+test("B3: an unsupported type names what is accepted when the flag is on", async () => {
+  const got = await on(fakeAdmin([row(37, "application/zip", 10, "a.zip")], {}).admin, [37]);
+  assert.deepEqual(got, { ok: false, error: FILE_COPY.typeWithText, code: "file_type" });
+  assert.match(FILE_COPY.typeWithText, /\.docx/);
+  assert.doesNotMatch(FILE_COPY.type, /Word/, "the flag-off copy offers no Word");
+});
+
+test("B3: a broken .docx, an empty text and a binary named .txt are refused before the charge", async () => {
+  for (const [mime, name, bytes] of [
+    [DOCX, "a.docx", new Uint8Array([1, 2, 3])],
+    ["text/plain", "a.txt", strToU8("   ")],
+    ["text/plain", "a.txt", new Uint8Array([0x4d, 0x00, 0x5a])],
+  ] as Array<[string, string, Uint8Array]>) {
+    const got = await on(fakeAdmin([row(37, mime, 10, name)], { "u-1/37.bin": bytes }).admin, [37]);
+    assert.deepEqual(got, { ok: false, error: FILE_COPY.unreadableText, code: "file_unreadable" }, name);
+  }
+});
+
+test("B3: a zip bomb is refused as too large", async () => {
+  const bomb = zipSync({ "word/document.xml": strToU8(" ".repeat(21 * 1024 * 1024)) });
+  const got = await on(fakeAdmin([row(37, DOCX)], { "u-1/37.bin": bomb }).admin, [37]);
+  assert.deepEqual(got, { ok: false, error: FILE_COPY.textTooLong, code: "files_too_large" });
+});
+
+test("B3: a text kind's row outside the owner's folder is not read", async () => {
+  const hijacked = { ...row(37, "text/plain", 10, "a.txt"), storage_path: "u-2/secret.txt" };
+  const got = await on(fakeAdmin([hijacked], { "u-2/secret.txt": strToU8("سر") }).admin, [37]);
+  assert.deepEqual(got, { ok: false, error: FILE_COPY.missing, code: "file_not_found" });
+});
+
+test("B3: pages come from the text, and the cap applies", async () => {
+  const text = "س".repeat(TEXT_CHARS_PER_PAGE * 2 + 1);
+  const got = await on(fakeAdmin([row(37, "text/plain", 10, "a.txt")], { "u-1/37.bin": strToU8(text) }).admin, [37]);
+  assert.ok(got.ok);
+  assert.equal(got.pages, 3);
+  const long = "س".repeat(TEXT_CHARS_PER_PAGE * 30 + 1);
+  const over = await on(fakeAdmin([row(37, "text/plain", 10, "a.txt")], { "u-1/37.bin": strToU8(long) }).admin, [37]);
+  assert.equal(over.ok ? "" : over.code, "too_many_pages");
+});
+
+test("B3: a text longer than the link can serve is refused, never cut, even under a larger page cap", async () => {
+  const long = "س".repeat(TEXT_FILE_MAX_CHARS + 1);
+  const got = await on(fakeAdmin([row(37, "text/plain", 10, "a.txt")], { "u-1/37.bin": strToU8(long) }).admin, [37], { ...RULES, maxPages: 500 });
+  assert.deepEqual(got, { ok: false, error: FILE_COPY.textTooLong, code: "files_too_large" });
+});
+
+test("B3: the recorded and the real byte caps cover text kinds too", async () => {
+  const big = await on(fakeAdmin([row(37, "text/plain", 23 * 1024 * 1024, "a.txt")], {}).admin, [37]);
+  assert.equal(big.ok ? "" : big.code, "files_too_large");
+  const lied = await on(fakeAdmin([row(37, "text/plain", 10, "a.txt")], { "u-1/37.bin": new Uint8Array(10) }).admin, [37], { ...RULES, maxBytes: 5 });
+  assert.equal(lied.ok ? "" : lied.code, "files_too_large");
+});
+
+test("B3: a PDF with the flag on is unchanged, and pages add up across kinds", async () => {
+  const { admin, signed } = fakeAdmin([row(A, "application/pdf"), row(37, DOCX)], { [`u-1/${A}.bin`]: await pdf(4), "u-1/37.bin": docx("نص") });
+  const got = await on(admin, [A, 37]);
+  assert.ok(got.ok, JSON.stringify(got));
+  assert.equal(got.pages, 5);
+  assert.deepEqual(got.files.map((f) => f.mime), ["application/pdf", "text/plain"]);
+  assert.equal(signed.length, 1, "the PDF alone has a storage link");
+});
+
+test("aiTextFilesConfig: on only with the flag, the key and an https site", () => {
+  const good = { NZAMY_AI_TEXT_FILES: "on", NZAMY_AI_KEY: SECRET, NEXT_PUBLIC_SITE_URL: " https://site.test/ " };
+  assert.deepEqual(aiTextFilesConfig(good), { secret: SECRET, baseUrl: "https://site.test" });
+  for (const bad of [
+    {},
+    { ...good, NZAMY_AI_TEXT_FILES: undefined },
+    { ...good, NZAMY_AI_TEXT_FILES: "off" },
+    { ...good, NZAMY_AI_TEXT_FILES: "true" },
+    { ...good, NZAMY_AI_TEXT_FILES: "ON" },
+    { ...good, NZAMY_AI_KEY: undefined },
+    { ...good, NZAMY_AI_KEY: "" },
+    { ...good, NEXT_PUBLIC_SITE_URL: undefined },
+    { ...good, NEXT_PUBLIC_SITE_URL: "http://site.test" },
+  ]) {
+    assert.equal(aiTextFilesConfig(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("the runs route: the text option comes only from aiTextFilesConfig", () => {
+  const route = readFileSync(join(process.cwd(), "src", "app", "api", "v1", "ai", "runs", "route.ts"), "utf8");
+  assert.match(route, /aiTextFilesConfig\(\{/);
+  assert.match(route, /process\.env\.NZAMY_AI_TEXT_FILES/);
+  assert.match(route, /resolveAiFiles\(admin, userId, fileIds, rules, new Date\(\), textFiles \? \{ textFiles \} : \{\}\)/);
 });
