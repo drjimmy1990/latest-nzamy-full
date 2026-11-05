@@ -114,19 +114,36 @@ function checkWizardIntake(
   return { service, result: VALIDATOR_BY_SERVICE[service](intake) };
 }
 
+/** Keys a wizard adds to its intake after validating; nothing else outside the validated value is stored. */
+const INTAKE_EXTRAS: Partial<Record<ServiceKey, readonly string[]>> = { contracts: ["contractId", "contractTitle"] };
+const INTAKE_EXTRA_MAX = 200;
+
+/** The allowed extras of one service: each kept only as a trimmed string of 1 to 200 characters. */
+function extrasOf(service: ServiceKey, intake: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of INTAKE_EXTRAS[service] ?? []) {
+    const value = intake[key];
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed.length >= 1 && trimmed.length <= INTAKE_EXTRA_MAX) out[key] = trimmed;
+  }
+  return out;
+}
+
 /**
  * The `metadata` POST /api/v1/service-requests stores, once checkOrderIntake
  * has passed it. Every key goes through as sent, except two:
- *   - in `intake` of the four wizard services, every key the validator
- *     returns holds the validator's own `value`, not the raw body (Wave 1
- *     task 8 re-review): a direct POST can no longer store what the validator
- *     cleans, such as a hidden party's leftover representative ID or «أخرى»
- *     text (`parties` is replaced whole). Keys the validator does not know
- *     are kept as sent: محترف العقود adds `contractId` / `contractTitle` after
- *     validating (useContractsState.ts), and the order view prints them. The
- *     other wizards send the validator's value itself, and every validator
- *     returns its own output unchanged (intakeGuard.test.ts), so a live
- *     submit stores the same object as before.
+ *   - `intake` of the four wizard services is the validator's own `value`, not
+ *     the raw body (Wave 1 task 8 re-review, S5-B1): a direct POST can no
+ *     longer store what the validator cleans (a hidden party's leftover
+ *     representative ID, «أخرى» text), an optional value it rejects, or a key
+ *     it does not know. The one addition is INTAKE_EXTRAS: محترف العقود adds
+ *     `contractId` / `contractTitle` after validating (useContractsState.ts),
+ *     and the order view prints them. Every wizard otherwise sends the
+ *     validator's value itself, and every validator returns its own output
+ *     unchanged (intakeGuard.test.ts), so a live submit stores the same object
+ *     as before. Pasted contract text is inside that value (ruling R12), and
+ *     the S6 estimate stamp is added to this function's output by the route.
  *   - `courtClass` is kept only when it is one of the 14 classifications
  *     (COURT_CHOICES) and dropped otherwise (Wave 1 task 10 re-review), as
  *     courtClassOf already ignores it on read.
@@ -140,7 +157,7 @@ export function persistedRequestMetadata(metadata: unknown): unknown {
     metadata.service === BRIEF_REVIEW_SERVICE || (isRecord(metadata.intake) && metadata.intake.service === BRIEF_REVIEW_SERVICE);
   const checked = briefReview ? null : checkWizardIntake(metadata);
   if (checked?.result.ok && isRecord(metadata.intake) && isRecord(checked.result.value)) {
-    out.intake = { ...metadata.intake, ...checked.result.value };
+    out.intake = { ...checked.result.value, ...extrasOf(checked.service, metadata.intake) };
   }
   if ("courtClass" in out && !(typeof out.courtClass === "string" && (COURT_CHOICES as readonly string[]).includes(out.courtClass))) {
     delete out.courtClass;
