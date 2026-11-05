@@ -65,9 +65,17 @@ test("lockDbError: database refusals become honest Arabic answers", () => {
 });
 
 test("lockConvertedFrom: names the automatic lock a staff lock replaced (20261103_10)", () => {
-  assert.equal(lockConvertedFrom(row({ reason: "admin", details: { converted_from: "quota_breach" } })), "quota_breach");
-  assert.equal(lockConvertedFrom(row({ reason: "admin", details: {} })), null);
-  assert.equal(lockConvertedFrom(row({ details: null })), null);
-  assert.equal(lockConvertedFrom(row({ details: [1] })), null);
-  assert.equal(lockConvertedFrom(row({ details: { converted_from: 7 } })), null);
+  assert.equal(lockConvertedFrom(row({ reason: "admin", details: { converted_from: "quota_breach" } }), "quota_breach"), "quota_breach");
+  assert.equal(lockConvertedFrom(row({ reason: "admin", details: {} }), null), null);
+  assert.equal(lockConvertedFrom(row({ details: null }), "quota_breach"), null);
+  assert.equal(lockConvertedFrom(row({ details: [1] }), "quota_breach"), null);
+  assert.equal(lockConvertedFrom(row({ details: { converted_from: 7 } }), "quota_breach"), null);
+});
+
+test("lockConvertedFrom: a second staff lock returned unchanged claims no conversion", () => {
+  const converted = row({ reason: "admin", details: { converted_from: "quota_breach" } });
+  // The open lock was already the staff's before this call, so this call changed nothing.
+  assert.equal(lockConvertedFrom(converted, "admin"), null);
+  // The read before the call found nothing or failed: no claim either.
+  assert.equal(lockConvertedFrom(converted, null), null);
 });

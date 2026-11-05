@@ -120,6 +120,17 @@ export async function POST(request: NextRequest) {
       userId = (found[0] as { id: string }).id;
     }
 
+    // For the audit line only: a failed read never stops the lock, it only means
+    // no conversion is claimed.
+    const { data: openBefore, error: openBeforeError } = await service
+      .from("library_security_locks")
+      .select("reason")
+      .eq("user_id", userId)
+      .is("lifted_at", null)
+      .maybeSingle();
+    if (openBeforeError) console.error("[admin/library-security-locks POST] open-lock read failed:", openBeforeError.code);
+    const reasonBefore = (openBefore as { reason: string } | null)?.reason ?? null;
+
     const { data, error } = await service.rpc("library_security_lock_create", {
       p_user: userId,
       p_admin: gate.userId,
@@ -141,7 +152,8 @@ export async function POST(request: NextRequest) {
       targetId: row.id,
       // 20261103_10: an open automatic lock is CONVERTED into this staff lock
       // (same row and reference); converted_from names what it was, null for
-      // a new lock or an existing admin lock returned as it is.
+      // a new lock or an existing admin lock returned as it is, even one that
+      // an earlier call converted.
       after: {
         user_id: row.user_id,
         reference: row.reference,
@@ -149,7 +161,7 @@ export async function POST(request: NextRequest) {
         reason: row.reason,
         note: row.note,
         locked_by: row.locked_by,
-        converted_from: lockConvertedFrom(row),
+        converted_from: lockConvertedFrom(row, reasonBefore),
       },
     });
 
