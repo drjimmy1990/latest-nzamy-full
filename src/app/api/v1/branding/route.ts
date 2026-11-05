@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
@@ -10,6 +11,7 @@ import {
   type BrandingFields,
 } from "@/lib/branding/brandingVault";
 import { readOwnVault, resolveBrandingCaller, type VaultRow } from "@/lib/branding/brandingServer";
+import { base32Token, resolveLawyerVerifyCard, type VerifyCardState } from "@/lib/branding/verifyCard";
 
 /**
  * /api/v1/branding?scope=lawyer|firm — the letterhead identity (D4, owner ٢٥٦).
@@ -29,9 +31,15 @@ import { readOwnVault, resolveBrandingCaller, type VaultRow } from "@/lib/brandi
  * licence column of lawyer_profiles is private to the session since
  * 20261016_10, and the signed URL is issued only for a logo_path read back
  * through RLS and shaped as this vault's own folder.
+ *
+ * The verification card (q343): after the RLS read, a verified unpublished
+ * lawyer with the switch on gets a token minted once. The two columns are read
+ * separately from VAULT_COLUMNS, so a server without 20261103_69 still serves
+ * the vault and answers verifyCard null.
  */
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -110,7 +118,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { available: false, message: BRANDING_NEEDS_MIGRATION_AR, scope: owner.scope, role: owner.firmRole ?? null,
         permissions: owner.permissions, firm,
-        saved: false, fields: defaults, defaults, logoUrl: null, licence, profile },
+        saved: false, fields: defaults, defaults, logoUrl: null, licence, profile, verifyCard: null },
       { headers: NO_STORE },
     );
   }
@@ -122,6 +130,28 @@ export async function GET(request: NextRequest) {
   if (row?.logo_path && isOwnLogoPath(row.logo_path, owner.scope, owner.ownerId)) {
     const signed = await service.storage.from(BRANDING_BUCKET).createSignedUrl(row.logo_path, 600);
     logoUrl = signed.data?.signedUrl ?? null;
+  }
+
+  let verifyCard: VerifyCardState | null = null;
+  if (owner.scope === "lawyer") {
+    verifyCard = await resolveLawyerVerifyCard(
+      { verified: licence.verified, marketplaceVisible: profile?.marketplaceVisible === true },
+      {
+        read: async () => {
+          const { data, error: readError } = await service
+            .from("branding_vaults")
+            .select("id, verify_token, qr_verify_card")
+            .eq("lawyer_user_id", user.id)
+            .maybeSingle();
+          return { data: data as { id: string; verify_token: string | null; qr_verify_card: boolean } | null, error: readError };
+        },
+        mint: async (vaultId, token) => {
+          const { data, error: mintError } = await service.rpc("mint_letterhead_verify_token", { p_vault: vaultId, p_token: token });
+          return { data: data as string | null, error: mintError };
+        },
+        newToken: () => base32Token(randomBytes(20)),
+      },
+    );
   }
 
   return NextResponse.json(
@@ -138,6 +168,7 @@ export async function GET(request: NextRequest) {
       logoUrl,
       licence,
       profile,
+      verifyCard,
     },
     { headers: NO_STORE },
   );

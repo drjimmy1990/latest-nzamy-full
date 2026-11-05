@@ -37,6 +37,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { Printer, FloppyDisk, CloudArrowUp, Trash, Warning, SpinnerGap, CheckCircle, Info, ArrowClockwise, LockSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { LetterheadSheet } from "./Letterhead";
@@ -243,7 +244,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
   }
 
   const data = state.data;
-  const note = identity ? qrNoteAr(identity.qr) : null;
+  const note = identity ? qrNoteAr(identity.qr, data.verifyCard) : null;
   const setField = (key: keyof BrandingFields, value: string) => {
     if (locked) return;
     setFields((f) => ({ ...f, [key]: value }));
@@ -417,7 +418,13 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
           </div>
           {note && (
             <p className={`flex items-start gap-1.5 text-[11px] ${ts}`}>
-              <Info size={13} className="mt-0.5 flex-shrink-0" /> {note}
+              <Info size={13} className="mt-0.5 flex-shrink-0" />
+              <span>
+                {note}
+                {scope === "lawyer" && data.verifyCard && (identity?.qr.kind === "card" || !data.verifyCard.enabled) && (
+                  <> <Link href="/settings?tab=profession" className="underline">فتح الإعدادات</Link></>
+                )}
+              </span>
             </p>
           )}
         </div>

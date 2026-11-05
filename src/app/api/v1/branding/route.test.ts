@@ -97,3 +97,72 @@ test("q346: an SVG never reaches Storage — the bytes decide, and the refusal s
   assert.ok(ws.includes("يُقبل SVG ويُحفظ صورة PNG عالية الدقة"));
   assert.ok(!ws.includes("لا يُقبل SVG"), "the old claim is gone");
 });
+
+// ── q343: the verification card ────────────────────────────────────────────
+const card = read("./verify-card/route.ts");
+const publicRoute = read("../letterhead/verify/[token]/route.ts");
+const page = read("../../../verify/[token]/page.tsx");
+const pageClient = read("../../../verify/[token]/VerifyCardView.tsx");
+
+test("the deploy-order cliff: the new columns are never in the RLS read, so a server without 20261103_69 still reads the vault", () => {
+  const server = read("../../../../lib/branding/brandingServer.ts");
+  const columns = server.slice(server.indexOf("export const VAULT_COLUMNS"), server.indexOf("export interface VaultRow"));
+  assert.ok(!/verify_token|qr_verify_card/.test(columns));
+});
+
+test("the branding GET reaches the card through the RLS read first, and only for a lawyer's own row", () => {
+  const get = handler(main, "GET");
+  const read1 = get.indexOf("readVaultForPrint(") >= 0 ? get.indexOf("readVaultForPrint(") : get.indexOf("readOwnVault(");
+  const mint = get.indexOf("resolveLawyerVerifyCard(");
+  assert.ok(read1 > 0 && mint > read1, "the mint comes after the RLS read");
+  assert.match(get.slice(mint - 200, mint), /owner\.scope === "lawyer"/);
+  assert.match(get, /\.eq\("lawyer_user_id", user\.id\)/, "the service read is keyed on the session's own id");
+  assert.match(get, /verifyCard/);
+});
+
+test("PUT verify-card: the lawyer's own vault through RLS first, then the service role, and a real boolean", () => {
+  const put = handler(card, "PUT");
+  const gate = put.indexOf('resolveBrandingCaller("lawyer")');
+  const parse = put.indexOf("parseVerifyCardBody(");
+  const ensure = put.indexOf("ensureOwnVault(supabase, owner)");
+  const service = put.indexOf("createServiceClient()");
+  assert.ok(gate > 0 && gate < parse && parse < ensure && ensure < service, "gate → body → RLS proof → service role");
+  assert.match(put, /service\.from\("branding_vaults"\)\.update\(\{ qr_verify_card: body\.enabled \}\)\.eq\("id", vault\.row\.id\)/);
+  assert.ok(!/console\./.test(card));
+});
+
+test("the public route: one answer helper, no session, no store, nothing logged", () => {
+  const get = handler(publicRoute, "GET");
+  assert.match(get, /readPublicCard\(/);
+  assert.match(publicRoute, /"Cache-Control": "no-store"/);
+  assert.match(get, /service\.rpc\("letterhead_verification_card", \{ p_token/);
+  assert.ok(!/assertRole|auth\.getUser|console\./.test(publicRoute));
+  assert.ok(!/export (async )?function (POST|PUT|PATCH|DELETE)/.test(publicRoute), "read-only");
+});
+
+test("the page: noindex, no data on the server, home on anything but a card, and no fallback to a user id", () => {
+  assert.match(page, /robots: \{ index: false, follow: false/);
+  assert.ok(!/createServiceClient|createClient|fetch\(/.test(page), "no SSR data");
+  assert.match(pageClient, /"use client"/);
+  assert.match(pageClient, /router\.replace\("\/"\)/);
+  assert.match(pageClient, /answer\.published && answer\.slug/);
+  assert.ok(!/userId|user_id|text-gray-(100|200)\b/.test(pageClient));
+  assert.match(pageClient, /موثّق على منصة نظامي/);
+});
+
+test("/verify and its API are public: no prefix in ROUTE_ACCESS or PROTECTED", () => {
+  const access = read("../../../../lib/auth/routeAccess.ts");
+  const proxy = read("../../../../proxy.ts");
+  assert.ok(!/prefix: "\/verify/.test(access));
+  const list = proxy.slice(proxy.indexOf("const PROTECTED = ["), proxy.indexOf("];", proxy.indexOf("const PROTECTED = [")));
+  assert.ok(!/"\/verify|letterhead/.test(list));
+});
+
+test("the switch sits with the other privacy switches, and the letterhead page links to it", () => {
+  const tab = read("../../../settings/components/tabs/ProfessionTab.tsx");
+  assert.match(tab, /\/api\/v1\/branding\/verify-card/);
+  assert.match(tab, /<ToggleRow[\s\S]{0,200}بطاقة التحقق/);
+  const ws = read("../../../../components/letterhead/LetterheadWorkspace.tsx");
+  assert.match(ws, /qrNoteAr\(identity\.qr, data\.verifyCard\)/);
+  assert.match(ws, /\/settings\?tab=profession/);
+});

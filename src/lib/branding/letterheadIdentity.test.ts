@@ -6,6 +6,7 @@ import {
   FIRM_PUBLIC_PAGES_LIVE,
   QR_CAPTION_FIRM,
   firmProfileUrl,
+  QR_CAPTION_CARD,
   QR_CAPTION_PLATFORM,
   QR_CAPTION_PROFILE,
   buildLetterheadIdentity,
@@ -95,4 +96,64 @@ test("٣١٤: a firm's QR is the home page while no firm page exists, then the f
   // buildLetterheadIdentity passes the firm through to the QR.
   const id = buildLetterheadIdentity({ ...lawyer(), scope: "firm", profile: null, firm: firmRes.firm }, ORIGIN);
   assert.equal(id.qr.url, ORIGIN);
+});
+
+// ── q343: the verification card and its privacy switch ─────────────────────
+const CARD_TOKEN = "abcdefghijklmnopqrstuvwxyz234567";
+const unpublished = { userId: "u1", slug: "s", hasRoleProfile: true, readFailed: false, verificationStatus: "verified", marketplaceVisible: false };
+
+test("verified unpublished lawyer with the card on gets the card", () => {
+  assert.deepEqual(
+    qrTargetFor({ scope: "lawyer", profile: unpublished, verifyCard: { token: CARD_TOKEN, enabled: true } }, ORIGIN),
+    { kind: "card", url: `${ORIGIN}/verify/${CARD_TOKEN}`, caption: QR_CAPTION_CARD },
+  );
+});
+
+test("card off: the platform, with the reason, and the token appears nowhere", () => {
+  const qr = qrTargetFor({ scope: "lawyer", profile: unpublished, verifyCard: { token: CARD_TOKEN, enabled: false } }, ORIGIN);
+  assert.equal(qr.kind, "platform");
+  assert.equal((qr as Extract<typeof qr, { kind: "platform" }>).reason, "unpublished");
+  assert.equal(qr.url, ORIGIN);
+  assert.ok(!JSON.stringify(qr).includes(CARD_TOKEN));
+  assert.equal(qrNoteAr(qr, { token: null, enabled: false }), "الرمز يحمل رابط المنصة لأنك أوقفت بطاقة التحقق من إعدادات الخصوصية");
+});
+
+test("the printed identity honours the switch: its QR is what the sheet and the Word footer draw", () => {
+  const res = (verifyCard: BrandingResponse["verifyCard"]): BrandingResponse => ({ ...lawyer({ marketplaceVisible: false }), verifyCard });
+  assert.equal(buildLetterheadIdentity(res({ token: CARD_TOKEN, enabled: true }), ORIGIN).qr.url, `${ORIGIN}/verify/${CARD_TOKEN}`);
+  assert.equal(buildLetterheadIdentity(res({ token: null, enabled: false }), ORIGIN).qr.url, ORIGIN);
+  assert.equal(buildLetterheadIdentity(res({ token: CARD_TOKEN, enabled: false }), ORIGIN).qr.url, ORIGIN);
+});
+
+test("card on but no token, or no answer at all (20261103_69 not run): the platform, as today", () => {
+  for (const verifyCard of [{ token: null, enabled: true }, null, undefined]) {
+    const qr = qrTargetFor({ scope: "lawyer", profile: unpublished, verifyCard }, ORIGIN);
+    assert.equal(qr.kind, "platform");
+    assert.equal(qr.url, ORIGIN);
+  }
+  const qr = qrTargetFor({ scope: "lawyer", profile: unpublished, verifyCard: { token: null, enabled: true } }, ORIGIN);
+  assert.match(qrNoteAr(qr, { token: null, enabled: true }) ?? "", /فعّل الظهور/, "the old note, not the switch's");
+});
+
+test("published wins: a card is never shown to someone whose profile is public", () => {
+  assert.equal(
+    qrTargetFor({ scope: "lawyer", profile: { ...unpublished, marketplaceVisible: true }, verifyCard: { token: CARD_TOKEN, enabled: true } }, ORIGIN).kind,
+    "profile",
+  );
+});
+
+test("an unverified lawyer never gets a card, whatever the row says", () => {
+  const qr = qrTargetFor({ scope: "lawyer", profile: { ...unpublished, verificationStatus: "pending" }, verifyCard: { token: CARD_TOKEN, enabled: true } }, ORIGIN);
+  assert.equal(qr.kind, "platform");
+  assert.equal((qr as Extract<typeof qr, { kind: "platform" }>).reason, "unverified");
+});
+
+test("firm never gets a card", () => {
+  const qr = qrTargetFor({ scope: "firm", profile: null, verifyCard: { token: CARD_TOKEN, enabled: true } }, ORIGIN);
+  assert.equal((qr as Extract<typeof qr, { kind: "platform" }>).reason, "firm");
+});
+
+test("the card's own note says what it shows and where it is switched off", () => {
+  const qr = qrTargetFor({ scope: "lawyer", profile: unpublished, verifyCard: { token: CARD_TOKEN, enabled: true } }, ORIGIN);
+  assert.match(qrNoteAr(qr, { token: CARD_TOKEN, enabled: true }) ?? "", /إعدادات الخصوصية/);
 });

@@ -9,8 +9,12 @@
  *   - a lawyer whose public profile is PUBLISHED (verified AND visible — the
  *     gate of /lawyers/[slug], profileShareState) → his profile URL, with the
  *     owner's caption «امسح الرمز … الملف الشخصي أو حجز استشارة»;
- *   - otherwise (an unpublished lawyer, and every firm: there is no public firm
- *     page) → the platform's home, captioned as the platform's stamp. The
+ *   - a verified but unpublished lawyer whose privacy switch is on (q343,
+ *     20261103_69) → the short verification card, /verify/<token>: his name,
+ *     licence and «موثّق», nothing else. The page itself goes home for a token
+ *     it cannot answer, so old paper stays safe;
+ *   - otherwise (the switch off, unverified, and every firm: there is no public
+ *     firm page) → the platform's home, captioned as the platform's stamp. The
  *     screen tells the lawyer why his own profile is not in the code yet.
  *
  * FIRMS — owner answer ٣١٤ (package 2026-10-30): «الصفحة الرئيسية حتى تُبنى
@@ -30,6 +34,7 @@ export const QR_CAPTION_PROFILE = "امسح الرمز بكاميرا الجوا
 export const QR_CAPTION_PLATFORM = "امسح الرمز بكاميرا الجوال لزيارة منصة نظامي";
 export const PLATFORM_STAMP_AR = "صادر عبر منصة نظامي";
 export const QR_CAPTION_FIRM = "امسح الرمز بكاميرا الجوال للانتقال إلى صفحة المكتب على منصة نظامي";
+export const QR_CAPTION_CARD = "امسح الرمز للتحقق من بيانات المحامي على منصة نظامي";
 
 /**
  * Owner ٣١٤: false until a public firm page exists. Set it to true in the same
@@ -59,10 +64,13 @@ export interface BrandingResponse {
     verificationStatus: string | null;
     marketplaceVisible: boolean;
   } | null;
+  /** Lawyer only (q343). Null = 20261103_69 has not run, or a firm. `token` is null while the switch is off. */
+  verifyCard?: { token: string | null; enabled: boolean } | null;
 }
 
 export type QrTarget =
   | { kind: "profile"; url: string; caption: string }
+  | { kind: "card"; url: string; caption: string }
   | { kind: "platform"; url: string; caption: string; reason: "unpublished" | "unverified" | "no_profile" | "firm" | "unknown" };
 
 export interface LetterheadIdentity {
@@ -91,7 +99,7 @@ export function letterheadOrigin(siteUrl: string | null | undefined, pageOrigin:
 }
 
 export function qrTargetFor(
-  res: Pick<BrandingResponse, "scope" | "profile"> & { firm?: BrandingResponse["firm"] },
+  res: Pick<BrandingResponse, "scope" | "profile"> & { firm?: BrandingResponse["firm"]; verifyCard?: BrandingResponse["verifyCard"] },
   origin: string,
   firmPagesLive: boolean = FIRM_PUBLIC_PAGES_LIVE,
 ): QrTarget {
@@ -114,12 +122,18 @@ export function qrTargetFor(
     marketplaceVisible: p.marketplaceVisible,
   });
   if (state.kind === "published") return { kind: "profile", url: state.url, caption: QR_CAPTION_PROFILE };
-  if (state.kind === "unpublished") return platform(state.verified ? "unpublished" : "unverified");
+  if (state.kind === "unpublished") {
+    const card = res.verifyCard;
+    if (state.verified && card?.enabled && card.token) {
+      return { kind: "card", url: `${origin.replace(/\/+$/, "")}/verify/${card.token}`, caption: QR_CAPTION_CARD };
+    }
+    return platform(state.verified ? "unpublished" : "unverified");
+  }
   return platform(state.kind === "no_profile" ? "no_profile" : "unknown");
 }
 
 /** Western digits → Arabic-Indic, for the licence line only (numbers in contacts stay as typed). */
-function arabicDigits(s: string): string {
+export function arabicDigits(s: string): string {
   return s.replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
 }
 
@@ -143,8 +157,12 @@ export function buildLetterheadIdentity(res: BrandingResponse, origin: string): 
 }
 
 /** Why the code shows the platform and not the lawyer's own profile — for the screen, never the paper. */
-export function qrNoteAr(qr: QrTarget): string | null {
+export function qrNoteAr(qr: QrTarget, verifyCard?: BrandingResponse["verifyCard"]): string | null {
   if (qr.kind === "profile") return null;
+  if (qr.kind === "card") return "يفتح الرمز بطاقة تحقق قصيرة تعرض اسمك ورقم ترخيصك فقط؛ يمكنك إيقافها من إعدادات الخصوصية.";
+  if (qr.reason === "unpublished" && verifyCard?.enabled === false) {
+    return "الرمز يحمل رابط المنصة لأنك أوقفت بطاقة التحقق من إعدادات الخصوصية";
+  }
   switch (qr.reason) {
     case "unverified":
       return "يحمل الرمز رابط منصة نظامي؛ يصبح رابط ملفك الشخصي بعد توثيق ملفك ونشره في الدليل.";
