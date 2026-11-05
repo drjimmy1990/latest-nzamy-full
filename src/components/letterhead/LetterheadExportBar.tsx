@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FileDoc, Printer, SpinnerGap, Warning, Info } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { stripCitationMarkers } from "@/lib/ai/citationMarkers";
 import type { BrandingScope } from "@/lib/branding/brandingVault";
 import { exportableBlocks, letterheadScopesFor } from "@/lib/docx/exportPolicy";
 import type { DocBlock } from "@/lib/docx/ooxml";
@@ -43,8 +44,8 @@ function ExportButtons({ scope, scopes, onScope, title, blocks, filename }: BarP
   const [printRun, setPrintRun] = useState(0);
   const safe = useMemo(() => exportableBlocks(blocks), [blocks]);
 
-  // No print permission, or no firm: nothing to offer.
-  if (state.status === "error" && (state.httpStatus === 403 || state.httpStatus === 404)) return null;
+  // Not signed in, no print permission, or no firm: nothing to offer.
+  if (state.status === "error" && [401, 403, 404].includes(state.httpStatus)) return null;
 
   const data = state.status === "ready" ? state.data : null;
   const disabled = !identity || safe.length === 0;
@@ -94,7 +95,7 @@ function ExportButtons({ scope, scopes, onScope, title, blocks, filename }: BarP
       )}
       {message && <p className={`flex items-center gap-1 text-[11px] ${muted}`} role="status"><Warning size={12} /> {message}</p>}
       {printRun > 0 && identity && (
-        <LetterheadPrintDocument key={printRun} identity={identity} blocks={safe} title={title} onDone={() => setPrintRun(0)} />
+        <LetterheadPrintDocument key={printRun} identity={identity} blocks={safe} title={stripCitationMarkers(title).trim()} onDone={() => setPrintRun(0)} />
       )}
     </div>
   );

@@ -298,3 +298,9 @@ test("neither export can hang: the file fetch has a deadline, and a print that n
   const doc = read("src/components/letterhead/LetterheadPrintDocument.tsx");
   assert.ok(doc.includes("waitUntil(") && doc.includes("READY_TIMEOUT_MS"));
 });
+
+test("the title too: browsers print the page title in their header, so no marker reaches it", () => {
+  const bar = read("src/components/letterhead/LetterheadExportBar.tsx");
+  assert.ok(bar.includes("title={stripCitationMarkers(title).trim()}"));
+  assert.ok(!bar.includes("title={title}"));
+});
