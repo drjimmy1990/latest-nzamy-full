@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
 import { PDFDocument } from "pdf-lib";
 import { countPages, FILE_COPY, parseFileIds, resolveAiFiles, SIGNED_URL_SECONDS } from "./aiFiles.ts";
+import { READ_LINK_SECONDS } from "../attachments/cappedRead.ts";
 import { FILE_TEXT_TTL_MS, verifyFileTextToken } from "./fileTextToken.ts";
 import { aiTextFilesConfig } from "./textFilesConfig.ts";
 import { TEXT_CHARS_PER_PAGE, TEXT_FILE_MAX_CHARS } from "./textExtract.ts";
@@ -29,8 +30,20 @@ async function pdf(pages: number): Promise<Uint8Array> {
 
 type Row = { id: string | number; file_name: string; storage_path: string; mime_type: string; size_bytes: number };
 
+// A read goes through a signed link and a streaming fetch (cappedRead.ts), so this
+// file's fetch serves the fake bucket. Each fake's link names its own objects.
+const BUCKETS = new Map<string, Record<string, Uint8Array>>();
+globalThis.fetch = (async (url: string) => {
+  const u = new URL(url);
+  const path = u.pathname.split("/documents/")[1];
+  const bytes = BUCKETS.get(u.searchParams.get("fake") ?? "")?.[path];
+  return bytes ? new Response(bytes as BodyInit) : new Response("not found", { status: 404 });
+}) as typeof fetch;
+
 /** The service client: `attachments` reads and the `documents` bucket. */
 function fakeAdmin(rows: Row[], objects: Record<string, Uint8Array>) {
+  const fake = String(BUCKETS.size);
+  BUCKETS.set(fake, objects);
   const reads: Array<Array<[string, string, unknown]>> = [];
   const signed: Array<[string, number]> = [];
   const admin = {
@@ -56,11 +69,9 @@ function fakeAdmin(rows: Row[], objects: Record<string, Uint8Array>) {
       from(bucket: string) {
         assert.equal(bucket, "documents");
         return {
-          download: async (path: string) =>
-            objects[path] ? { data: new Blob([objects[path] as BlobPart]), error: null } : { data: null, error: { message: "not found" } },
           createSignedUrl: async (path: string, seconds: number) => {
             signed.push([path, seconds]);
-            return { data: { signedUrl: `https://auth.example/storage/v1/object/sign/documents/${path}?token=t` }, error: null };
+            return { data: { signedUrl: `https://auth.example/storage/v1/object/sign/documents/${path}?token=t&fake=${fake}` }, error: null };
           },
         };
       },
@@ -175,7 +186,8 @@ test("B3: a docx becomes a text/plain file when text files are on", async () => 
   assert.equal(f.bytes, new TextEncoder().encode("نص المذكرة").length);
   assert.ok(f.url.startsWith("https://site.test/api/v1/ai/file-text/"));
   assert.equal(f.url_expires_at, new Date(NOW.getTime() + FILE_TEXT_TTL_MS).toISOString());
-  assert.deepEqual(signed, [], "no storage link: n8n fetches the text, not the .docx");
+  assert.deepEqual(signed.map((s) => s[1]), [READ_LINK_SECONDS], "only the short link this check read through");
+  assert.ok(!f.url.includes("/object/sign/"), "no storage link leaves: n8n fetches the text, not the .docx");
 });
 
 test("B3: the link is bound to this file and owner, and expires with url_expires_at", async () => {
@@ -275,7 +287,9 @@ test("B3: a PDF with the flag on is unchanged, and pages add up across kinds", a
   assert.ok(got.ok, JSON.stringify(got));
   assert.equal(got.pages, 5);
   assert.deepEqual(got.files.map((f) => f.mime), ["application/pdf", "text/plain"]);
-  assert.equal(signed.length, 1, "the PDF alone has a storage link");
+  assert.deepEqual(signed.map((s) => s[1]), [SIGNED_URL_SECONDS, READ_LINK_SECONDS], "each file is signed once");
+  assert.ok(got.files[0].url.includes("/object/sign/"), "the PDF alone hands on a storage link");
+  assert.ok(!got.files[1].url.includes("/object/sign/"));
 });
 
 test("aiTextFilesConfig: on only with the flag, the key and an https site", () => {
@@ -301,4 +315,40 @@ test("the runs route: the text option comes only from aiTextFilesConfig", () => 
   assert.match(route, /aiTextFilesConfig\(\{/);
   assert.match(route, /process\.env\.NZAMY_AI_TEXT_FILES/);
   assert.match(route, /resolveAiFiles\(admin, userId, fileIds, rules, new Date\(\), textFiles \? \{ textFiles \} : \{\}\)/);
+});
+
+test("a size lie: an object larger than its recorded size is refused by what arrives, not held in full", async () => {
+  const chunk = 1024;
+  let pulls = 0;
+  let cancelled = false;
+  const lying = new ReadableStream<Uint8Array>({
+    pull(c) {
+      pulls += 1;
+      c.enqueue(new Uint8Array(chunk));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  }, { highWaterMark: 0 });
+  const { admin } = fakeAdmin([row(A, "application/pdf", 10)], {});
+  const got = await resolveAiFiles(admin as never, "u-1", [A], { ...RULES, maxBytes: 10 * chunk }, NOW, {
+    fetch: (async () => new Response(lying)) as never,
+  });
+  assert.deepEqual(got, { ok: false, error: FILE_COPY.size(0), code: "files_too_large" });
+  assert.ok(pulls <= 12, `pulled ${pulls} chunks for a cap of 10`);
+  assert.equal(cancelled, true);
+});
+
+test("a size lie across files: the cap on each read is what is left of the run's budget", async () => {
+  const first = await pdf(1);
+  const second = new Uint8Array(first.length + 10);
+  const rules = { ...RULES, maxBytes: first.length + 5 };
+  const { admin } = fakeAdmin([row(A, "application/pdf", 1), row(B, "image/png", 1)], { [`u-1/${A}.bin`]: first, [`u-1/${B}.bin`]: second });
+  const got = await resolveAiFiles(admin as never, "u-1", [A, B], rules);
+  assert.equal(got.ok ? "" : got.code, "files_too_large");
+});
+
+test("an object gone from the bucket is the same «missing» answer a failed download was", async () => {
+  const { admin } = fakeAdmin([row(A, "application/pdf")], {});
+  assert.deepEqual(await resolveAiFiles(admin as never, "u-1", [A], RULES), { ok: false, error: FILE_COPY.missing, code: "file_not_found" });
 });

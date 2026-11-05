@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { previewKindOf } from "./previewKind.ts";
 import { previewAttachment, PREVIEW_TEXT_MAX_CHARS, type PreviewClients } from "./previewServe.ts";
+import { READ_LINK_SECONDS } from "./cappedRead.ts";
 
 const OWNER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -48,7 +49,7 @@ const PDF_ROW: Row = {
   folder_owner_id: OWNER,
 };
 
-function clients(row: Row | null, opts: { readError?: boolean; signError?: boolean; download?: Uint8Array | null } = {}) {
+function clients(row: Row | null, opts: { readError?: boolean; signError?: boolean; download?: Uint8Array | null; body?: ReadableStream<Uint8Array> } = {}) {
   const calls = { signed: [] as Array<{ bucket: string; path: string; seconds: number }>, downloaded: [] as string[], selected: [] as string[], eq: [] as unknown[][] };
   const session = {
     from(table: string) {
@@ -76,16 +77,17 @@ function clients(row: Row | null, opts: { readError?: boolean; signError?: boole
             calls.signed.push({ bucket, path, seconds });
             return opts.signError ? { data: null, error: { message: "x" } } : { data: { signedUrl: "https://s/signed" }, error: null };
           },
-          download: async (path: string) => {
-            calls.downloaded.push(path);
-            const bytes = opts.download;
-            return bytes ? { data: new Blob([bytes as BlobPart]), error: null } : { data: null, error: { message: "x" } };
-          },
         };
       },
     },
   };
-  return { deps: { session, admin } as unknown as PreviewClients, calls };
+  // The read goes through a signed link and a streaming fetch (cappedRead.ts).
+  const fetchObject = async (url: string) => {
+    calls.downloaded.push(url);
+    if (opts.body) return new Response(opts.body);
+    return opts.download ? new Response(opts.download as BodyInit) : new Response("x", { status: 404 });
+  };
+  return { deps: { session, admin, fetch: fetchObject } as unknown as PreviewClients, calls };
 }
 
 const encode = (s: string) => new TextEncoder().encode(s);
@@ -137,7 +139,7 @@ test("a text file comes back as text, cut at 20,000 characters and marked", asyn
   const row = { ...PDF_ROW, file_name: "m.txt", mime_type: "text/plain", storage_path: `${OWNER}/1-m.txt` };
   const short = clients(row, { download: encode("نص قصير") });
   assert.deepEqual(await previewAttachment(short.deps, "7"), { status: 200, body: { kind: "text", name: "m.txt", text: "نص قصير", truncated: false } });
-  assert.deepEqual(short.calls.signed, [], "a text file gets no link");
+  assert.deepEqual(short.calls.signed.map((s) => s.seconds), [READ_LINK_SECONDS], "only the short link the server read through; the reply above carries none");
 
   const long = clients(row, { download: encode("ن".repeat(PREVIEW_TEXT_MAX_CHARS + 1)) });
   const r = await previewAttachment(long.deps, "7");
@@ -153,6 +155,26 @@ test("a text file over the size cap is not downloaded", async () => {
   const { deps, calls } = clients(row, { download: encode("x") });
   assert.deepEqual(await previewAttachment(deps, "7"), { status: 200, body: { kind: "none", name: "m.txt", reason: "too_large" } });
   assert.deepEqual(calls.downloaded, []);
+});
+
+test("a size lie: an object past the cap answers too_large, as a file recorded too large does, and is not held in full", async () => {
+  const chunk = 1024 * 1024;
+  let pulls = 0;
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(c) {
+      pulls += 1;
+      c.enqueue(new Uint8Array(chunk));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  }, { highWaterMark: 0 });
+  const row = { ...PDF_ROW, file_name: "m.docx", mime_type: "", storage_path: `${OWNER}/1-m.docx`, size_bytes: 10 };
+  const { deps } = clients(row, { body });
+  assert.deepEqual(await previewAttachment(deps, "7"), { status: 200, body: { kind: "none", name: "m.docx", reason: "too_large" } });
+  assert.ok(pulls <= 24, `pulled ${pulls} MB for a cap of 22`);
+  assert.equal(cancelled, true);
 });
 
 test("a file that cannot be read says so, with no fake preview", async () => {

@@ -26,6 +26,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PDFDocument } from "pdf-lib";
+import { READ_LINK_SECONDS, readCapped } from "../attachments/cappedRead.ts";
 import { AI_FILES_BUCKET, FILE_TEXT_TTL_MS, signFileTextToken, storagePathInOwnFolder } from "./fileTextToken.ts";
 import { TEXT_FILE_MAX_CHARS, extractText, textKindOf, textPages, type TextKind } from "./textExtract.ts";
 import { fileTextUrl, type TextFilesOption } from "./textFilesConfig.ts";
@@ -141,7 +142,7 @@ export async function resolveAiFiles(
   raw: unknown,
   rules: FileRules,
   now: Date = new Date(),
-  opts: { textFiles?: TextFilesOption } = {},
+  opts: { textFiles?: TextFilesOption; fetch?: (url: string, init?: RequestInit) => Promise<Response> } = {},
 ): Promise<FilesCheck> {
   const ids = parseFileIds(raw, rules.max);
   if (ids === "too_many") return { ok: false, error: FILE_COPY.tooMany(rules.max), code: "too_many_files" };
@@ -193,14 +194,25 @@ export async function resolveAiFiles(
   let bytes = 0;
   for (const [index, r] of ordered.entries()) {
     const kind = kinds[index];
-    const got = await admin.storage.from(BUCKET).download(r.storage_path!);
-    if (got.error || !got.data) {
-      console.error("[ai/files] download failed:", r.id, got.error?.message);
+    // The recorded size above is the client's word, so the read itself is capped at
+    // what is left of the budget. A PDF's or image's link also goes on to n8n, and a
+    // text file's lives only for this read: n8n gets the text link below instead.
+    const handedOn = kind === "pdf" || kind === "image";
+    const signed = await admin.storage.from(BUCKET).createSignedUrl(r.storage_path!, handedOn ? SIGNED_URL_SECONDS : READ_LINK_SECONDS);
+    if (signed.error || !signed.data?.signedUrl) {
+      console.error("[ai/files] signing failed:", r.id, signed.error?.message);
+      return /not.?found/i.test(signed.error?.message ?? "")
+        ? { ok: false, error: FILE_COPY.missing, code: "file_not_found" }
+        : { ok: false, error: FILE_COPY.unavailable, code: "files_unavailable" };
+    }
+    const read = await readCapped(signed.data.signedUrl, rules.maxBytes - bytes, opts.fetch);
+    if (!read.ok) {
+      if (read.reason === "too_large") return { ok: false, error: FILE_COPY.size(mb), code: "files_too_large" };
+      console.error("[ai/files] read failed:", r.id);
       return { ok: false, error: FILE_COPY.missing, code: "file_not_found" };
     }
-    const body = new Uint8Array(await got.data.arrayBuffer());
+    const body = read.bytes;
     bytes += body.byteLength;
-    if (bytes > rules.maxBytes) return { ok: false, error: FILE_COPY.size(mb), code: "files_too_large" };
 
     if (kind !== "pdf" && kind !== "image") {
       const extracted = extractText(kind, body);
@@ -233,11 +245,6 @@ export async function resolveAiFiles(
     pages += n;
     if (pages > rules.maxPages) return { ok: false, error: FILE_COPY.pages(rules.maxPages), code: "too_many_pages" };
 
-    const signed = await admin.storage.from(BUCKET).createSignedUrl(r.storage_path!, SIGNED_URL_SECONDS);
-    if (signed.error || !signed.data?.signedUrl) {
-      console.error("[ai/files] signing failed:", r.id, signed.error?.message);
-      return { ok: false, error: FILE_COPY.unavailable, code: "files_unavailable" };
-    }
     files.push({
       id: String(r.id),
       name: (r.file_name ?? "ملف").slice(0, 200),

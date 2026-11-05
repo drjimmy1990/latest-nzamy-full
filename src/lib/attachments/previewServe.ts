@@ -20,6 +20,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractText, textKindOf, TEXT_SOURCE_MAX_BYTES } from "../ai/textExtract.ts";
 import { fileFolderOwner, isPathInOwnerFolder } from "../storagePathOwnership.ts";
+import { READ_LINK_SECONDS, readCapped } from "./cappedRead.ts";
 import { previewKindOf } from "./previewKind.ts";
 
 export const PREVIEW_TEXT_MAX_CHARS = 20_000;
@@ -38,6 +39,8 @@ export interface PreviewClients {
   session: SupabaseClient;
   /** Reached only after the session's read and the folder check. */
   admin: SupabaseClient;
+  /** Tests hand in the read of the signed link. */
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
 interface PreviewRow {
@@ -82,9 +85,12 @@ export async function previewAttachment(clients: PreviewClients, id: string): Pr
   if (textKind === null || textKind === "doc") return { status: 200, body: { kind: "none", name } };
   if ((row.size_bytes ?? 0) > TEXT_SOURCE_MAX_BYTES) return { status: 200, body: { kind: "none", name, reason: "too_large" } };
 
-  const got = await clients.admin.storage.from(BUCKET).download(path);
-  if (got.error || !got.data) return { status: 503 };
-  const extracted = extractText(textKind, new Uint8Array(await got.data.arrayBuffer()));
+  // size_bytes is the client's word, so the read itself stops at the same cap.
+  const link = await clients.admin.storage.from(BUCKET).createSignedUrl(path, READ_LINK_SECONDS);
+  if (link.error || !link.data?.signedUrl) return { status: 503 };
+  const read = await readCapped(link.data.signedUrl, TEXT_SOURCE_MAX_BYTES, clients.fetch);
+  if (!read.ok) return read.reason === "too_large" ? { status: 200, body: { kind: "none", name, reason: "too_large" } } : { status: 503 };
+  const extracted = extractText(textKind, read.bytes);
   if (!extracted.ok) {
     const tooLarge = extracted.code === "docx_too_large" || extracted.code === "text_too_large";
     return { status: 200, body: { kind: "none", name, reason: tooLarge ? "too_large" : "unreadable" } };
