@@ -490,6 +490,22 @@ test("contract-negotiator prompt: three stances, a reason and a fallback, in the
   assert.equal(prepared.ready, false, "the files path of the shared workflow never runs without files");
 });
 
+test("contract-negotiator prompt: the more clauses, the shorter each position, so ten clauses fit the output limit", () => {
+  const promptFor = (n: number) => {
+    const clauses = Array.from({ length: n }, () => ({ text: "البند: يدفع المستأجر غرامة عن كل يوم", their_demand: null, our_goal: null }));
+    return runCode(def("contract-negotiator").build, pkg("contract-negotiator", { our_party: "المستأجر", clauses }))[0].json.content as string;
+  };
+  for (const [n, cap] of [[1, "١٢٠٠"], [3, "١٢٠٠"], [4, "٦٠٠"], [6, "٦٠٠"], [7, "٣٥٠"], [10, "٣٥٠"]] as const) {
+    assert.ok(promptFor(n).includes(`وtext صياغة البند المقترحة (حتى ${cap} حرف)`), `${n} clauses: ${cap}`);
+  }
+  // At ten clauses, what the prompt allows in total stays well under the 10000-token limit's reach.
+  const perClause = 200 + 3 * (350 + 150) + 200;
+  assert.ok(perClause * 10 <= 20000);
+  assert.ok(promptFor(10).includes("وrationale سبب هذا الموقف ومتى يصلح (حتى ١٥٠ حرف)"));
+  assert.ok(promptFor(10).includes("issue المشكلة فيه لمصلحة هذا الطرف (حتى ٢٠٠ حرف)"));
+  assert.ok(promptFor(10).includes("fallback الموقف الاحتياطي إن رُفضت المواقف الثلاثة (حتى ٢٠٠ حرف)"));
+});
+
 test("contract-negotiator parse: the Agent's reply becomes a result the app accepts for that input", () => {
   const input = { our_party: "المستأجر", clauses: [{ text: "البند الأول: يدفع المستأجر غرامة", their_demand: null, our_goal: null }] };
   const result = {
