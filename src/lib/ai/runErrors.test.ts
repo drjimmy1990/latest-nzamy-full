@@ -8,7 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { RUN_ERROR_AR, runFailureMessage } from "./runErrors.ts";
+import { mergeProgressEvents, RUN_ERROR_AR, runFailureMessage } from "./runErrors.ts";
 import { AI_COPY } from "./runCore.ts";
 import { runPageView } from "./runPageView.ts";
 import { FOUNDER_CREDIT_REFUNDED_FAILURE } from "../membership/founderPlan.ts";
@@ -28,8 +28,22 @@ test("runFailureMessage: no copy promises a review decision that nothing deliver
   }
 });
 
+test("E7: mergeProgressEvents dedupes by id, sorts ascending, keeps the last 60", () => {
+  const e = (id: number) => ({ id, kind: "note", label: `e${id}` });
+  assert.deepEqual(mergeProgressEvents([e(2)], [e(1), e(2)]).map((x) => x.id), [1, 2]);
+  const many = Array.from({ length: 70 }, (_, i) => e(i + 1));
+  const kept = mergeProgressEvents([], many);
+  assert.equal(kept.length, 60);
+  assert.equal(kept[0].id, 11);
+  assert.deepEqual(mergeProgressEvents([], []), []);
+});
+
+test("E7: a job's failure keeps its specific message", () => {
+  assert.equal(runFailureMessage("no_sources", true, false), RUN_ERROR_AR.no_sources);
+});
+
 test("useAiRun: a failed poll reads the one message, and its review branch is unchanged (R30)", () => {
-  const hook = readFileSync(join(process.cwd(), "src", "hooks", "useAiRun.ts"), "utf8");
+  const hook = readFileSync(join(process.cwd(), "src", "lib", "ai", "aiRunClient.ts"), "utf8");
   assert.match(hook, /runFailureMessage\(/);
   assert.doesNotMatch(hook, /"تعذّر إكمال الطلب، وأُعيدت نقاطك"/, "no second copy of the sentence");
   assert.doesNotMatch(hook, /reviewPollDelay/);

@@ -36,6 +36,7 @@ import {
   isAttachmentsZipRoute,
   isDocumentPreviewRoute,
   isPointsStandingRoute,
+  isAiRunProgressRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -168,12 +169,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isAttachmentsZipMatch = isAttachmentsZipRoute(method, pathname);
     const isDocumentPreviewMatch = isDocumentPreviewRoute(method, pathname);
     const isPointsStandingMatch = isPointsStandingRoute(method, pathname);
+    const isAiRunProgressMatch = isAiRunProgressRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
-      !isPointsStandingMatch && libraryBuckets.length === 0
+      !isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
@@ -191,6 +193,12 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     // The banner's GET: the general policy, its own bucket (rateLimitRoutes.ts).
     if (isPointsStandingMatch) {
       const decision = rateLimiter.check("points-standing", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    // The waiting screen's key poll: the same policy, its own bucket (rateLimitRoutes.ts).
+    if (isAiRunProgressMatch) {
+      const decision = rateLimiter.check("ai-run-progress", ip, GENERAL_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

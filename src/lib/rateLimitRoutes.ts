@@ -184,6 +184,19 @@ export function isPointsStandingRoute(method: string, pathname: string): boolean
   return (method === "GET" || method === "HEAD") && POINTS_STANDING_RE.test(pathname);
 }
 
+// GET /api/v1/ai/runs/progress (useAiRun while a POST is in flight): a session
+// check plus up to two service reads, about 40 times a minute per open run. The
+// same arrangement as points-standing: the general policy under its own name, so
+// these reads never spend the write budget. A 429 here costs the waiting screen
+// one update: aiRunClient waits and polls again, and the POST still answers.
+// The exact path only: the job polls on /api/v1/ai/runs/<id> stay free.
+export const AI_RUN_PROGRESS_RE = /^\/api\/v1\/ai\/runs\/progress$/;
+
+/** True for a GET/HEAD of /api/v1/ai/runs/progress. */
+export function isAiRunProgressRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && AI_RUN_PROGRESS_RE.test(pathname);
+}
+
 /**
  * The key for the library-read bucket. nezamy.sa is served through Cloudflare
  * (Server: cloudflare, CF-RAY on every response, 2026-09-29), and nothing in
