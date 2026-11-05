@@ -309,6 +309,16 @@ function shown(rel: string): string {
     .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
 }
 
+test("R25: the quick-answer page prints only the registry's price, never a typed one", () => {
+  const page = shown("app/ai/quick-answer/page.tsx");
+  assert.ok(page.includes('aiToolPriceText("quick-answer", "ar")'));
+  assert.equal((page.match(/aiToolPriceText\("quick-answer"/g) ?? []).length, 1);
+  assert.ok(!page.includes("١٥"), "the open ٤١٢ price is not built");
+  assert.ok(!page.includes("15 نقطة"));
+  assert.ok(!page.includes("٢٠ نقطة"), "the price is read, not typed");
+  assert.ok(serverCharges("quick-answer").includes(20));
+});
+
 test("task 4: the tool pages print the constant the registry charges", () => {
   // [page, the expression that prints the price, its value, the registry tools that charge it]
   const pages: Array<[string, string, number, string[]]> = [

@@ -57,7 +57,7 @@ export function CitedText({ text, cites, isDark, className = "" }: { text: strin
   );
 }
 
-export function SourceList({ cites, isDark, compact = false }: { cites: Citation[]; isDark: boolean; compact?: boolean }) {
+export function SourceList({ cites, isDark, compact = false, startAt = 1 }: { cites: Citation[]; isDark: boolean; compact?: boolean; startAt?: number }) {
   if (cites.length === 0) return null;
   return (
     <ol className={compact ? "space-y-1" : "space-y-1.5"}>
@@ -71,7 +71,7 @@ export function SourceList({ cites, isDark, compact = false }: { cites: Citation
               isDark ? "border-white/[0.06] hover:bg-white/[0.03] text-zinc-300" : "border-zinc-100 hover:bg-zinc-50 text-zinc-700"
             }`}
           >
-            <span className={`mt-0.5 font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{i + 1}</span>
+            <span className={`mt-0.5 font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{i + startAt}</span>
             {c.kind === "principle" ? (
               <Scales size={14} className="mt-0.5 shrink-0 text-amber-500" />
             ) : (

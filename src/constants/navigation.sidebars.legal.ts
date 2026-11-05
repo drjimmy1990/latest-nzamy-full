@@ -30,7 +30,8 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       // ١: الخطوة صفر — فهم الملف أولاً
       { label: "عصارة المرفقات",           labelEn: "Attachment Analyzer", href: "/ai/analyze",     icon: "Scan" },
-      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/assistant",  icon: "ChatCircle",   badge: "جديد" },
+      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle" },
+      { label: "المساعد المتقدم", labelEn: "Advanced Assistant",         href: "/ai/assistant",  icon: "ChatCircle" },
       // ٢: الصياغة — العمل اليومي الأكثر تكراراً
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",            href: "/ai/draft",         icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",   labelEn: "Research Collector",       href: "/ai/collector",    icon: "Tray",         badge: "جديد" },
