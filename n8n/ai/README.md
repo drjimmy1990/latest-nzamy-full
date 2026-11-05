@@ -25,6 +25,7 @@ On n8n.asra3.com (all created **inactive**):
 | L10 محلل قوة الموقف (job) | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | `MwONm9eg0IOGRRzt` | `nzamy-ai/analyze-strength` |
 | L11 محترف العقود المختصر (job) | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | `r2s0JBMr8Q5Ti80O` | `nzamy-ai/contract-drafter` |
 | L13 محترف العقود (job, clause by clause) | `NZAMY · AI · contracts-pro (L13 محترف العقود)` | `mMekAog89HsgLz3o` | `nzamy-ai/contracts-pro` |
+| مراجع العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-review (مراجع العقود)` | (none yet) | `nzamy-ai/contract-review` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
