@@ -177,12 +177,22 @@ export function isDocumentPreviewRoute(method: string, pathname: string): boolea
 // never counted it (final review M2). The proxy gives it the general bucket's
 // policy under its own name, so banner reads never spend the write budget.
 // The exact path only: the job-poll GETs on /api/v1/ai/runs/<id> stay free.
-// GET /api/v1/ai/tool-status (S3-07) makes the same kind of reads and shares this bucket.
-export const POINTS_STANDING_RE = /^\/api\/v1\/ai\/(?:points-standing|tool-status)$/;
+export const POINTS_STANDING_RE = /^\/api\/v1\/ai\/points-standing$/;
 
-/** True for a GET/HEAD of /api/v1/ai/points-standing or /api/v1/ai/tool-status. */
+/** True for a GET/HEAD of /api/v1/ai/points-standing. */
 export function isPointsStandingRoute(method: string, pathname: string): boolean {
   return (method === "GET" || method === "HEAD") && POINTS_STANDING_RE.test(pathname);
+}
+
+// GET /api/v1/ai/tool-status (S3-07): the same kind of reads, the same policy, its
+// own name. A screen shows a tool's price only after this answers, so a banner that
+// spent a shared budget must not close a tool. A 429 here gets one retry in
+// toolStatusClient.ts. The exact path only.
+export const TOOL_STATUS_RE = /^\/api\/v1\/ai\/tool-status$/;
+
+/** True for a GET/HEAD of /api/v1/ai/tool-status. */
+export function isToolStatusRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && TOOL_STATUS_RE.test(pathname);
 }
 
 // GET /api/v1/ai/runs/progress (useAiRun while a POST is in flight): a session

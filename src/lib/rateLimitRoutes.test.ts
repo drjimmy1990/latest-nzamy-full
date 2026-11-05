@@ -16,6 +16,7 @@ import {
   isDocumentPreviewRoute,
   isPointsStandingRoute,
   isAiRunProgressRoute,
+  isToolStatusRoute,
   libraryBudgetBuckets,
   canonicalApiPath,
 } from "./rateLimitRoutes.ts";
@@ -208,12 +209,23 @@ test("isPointsStandingRoute: the banner's GET (final review M2), GET and HEAD, t
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/points-standing"), false, "reads are not in the general bucket");
 });
 
-test("GET /api/v1/ai/tool-status shares the points-standing per-IP bucket, GET and HEAD, the exact path only", () => {
-  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/tool-status"), true);
-  assert.equal(isPointsStandingRoute("HEAD", "/api/v1/ai/tool-status"), true);
-  assert.equal(isPointsStandingRoute("POST", "/api/v1/ai/tool-status"), false);
-  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/tool-status/x"), false);
+test("GET /api/v1/ai/tool-status has its own per-IP bucket, GET and HEAD, the exact path only, apart from the banner's", () => {
+  assert.equal(isToolStatusRoute("GET", "/api/v1/ai/tool-status"), true);
+  assert.equal(isToolStatusRoute("HEAD", "/api/v1/ai/tool-status"), true);
+  assert.equal(isToolStatusRoute("POST", "/api/v1/ai/tool-status"), false);
+  assert.equal(isToolStatusRoute("GET", "/api/v1/ai/tool-status/x"), false);
+  assert.equal(isToolStatusRoute("GET", "/api/v1/ai/points-standing"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/tool-status"), false, "a busy banner must not close a tool's screen");
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/tool-status"), false, "reads never spend the write budget");
+});
+
+test("proxy: tool-status is in the early-return guard and has its own bucket on the general policy", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const isToolStatusMatch = isToolStatusRoute\(method, pathname\);/);
+  assert.match(src, /!isToolStatusMatch &&/);
+  assert.match(src, /if \(isToolStatusMatch\) \{\n\s*const decision = rateLimiter\.check\("tool-status", ip, GENERAL_RATE_LIMIT\);/);
 });
 
 test("proxy: the points-standing match is in the early-return guard and has its own bucket on the general policy", () => {

@@ -13,6 +13,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import Link from "next/link";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolUsable } from "@/hooks/useToolUsable";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
@@ -98,7 +100,30 @@ const ASSESS_CFG = {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
+/**
+ * The tool's mode is "off" by default and a run would answer 423, so the studio reads
+ * tool-status first (src/hooks/useToolUsable.ts): no price and no form until the
+ * server says this caller may run it.
+ */
 export default function CaseBriefStudio() {
+  const { isDark } = useTheme();
+  const usable = useToolUsable("case-brief");
+  if (usable === null) {
+    return <p role="status" dir="rtl" className={`py-16 text-center text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>جارٍ التحقق…</p>;
+  }
+  if (!usable) {
+    return (
+      <DashboardComingSoon
+        title="عصارة المرفقات — قريباً"
+        description="تقرأ مرفقات قضيتك وتخرج منها موجزاً منظماً. لم تُتح بعد لحسابك."
+        backHref="/ai"
+      />
+    );
+  }
+  return <CaseBriefTool />;
+}
+
+function CaseBriefTool() {
   const { isDark } = useTheme();
   const [chatInput,  setChatInput]  = useState("");
   const [files,      setFiles]      = useState<BriefFile[]>([]);

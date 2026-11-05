@@ -34,7 +34,7 @@ test("every other answer is no: refused, frozen, signed out, limited, broken, or
     ["null body", reply(200, "null")],
     ["a network error", async () => { throw new TypeError("failed to fetch"); }],
   ];
-  for (const [name, f] of no) assert.equal(await readToolUsable("contract-review", f as never), false, name);
+  for (const [name, f] of no) assert.equal(await readToolUsable("contract-review", f as never, async () => {}), false, name);
 });
 
 test("it asks the real route, for that tool, and the browser may not cache the answer", async () => {
@@ -53,4 +53,36 @@ test("the hook starts unknown, and leaves a late answer out after unmount", () =
   assert.match(hook, /useState<boolean \| null>\(null\)/);
   assert.match(hook, /readToolUsable\(tool\)/);
   assert.match(hook, /live = false/);
+});
+
+test("a limit is not a no: one wait for Retry-After, one more ask, and the second answer decides", async () => {
+  const replies = [new Response("{}", { status: 429, headers: { "Retry-After": "7" } }), new Response(JSON.stringify({ usable: true }), { status: 200 })];
+  const waits: number[] = [];
+  let asked = 0;
+  const yes = await readToolUsable("quick-answer", (async () => { asked += 1; return replies.shift()!; }) as never, async (ms) => { waits.push(ms); });
+  assert.equal(yes, true);
+  assert.equal(asked, 2);
+  assert.deepEqual(waits, [7000]);
+});
+
+test("a second limit stays closed (no price on a doubt), and only one retry is ever made", async () => {
+  let asked = 0;
+  const waits: number[] = [];
+  const answer = await readToolUsable("quick-answer", (async () => { asked += 1; return new Response(JSON.stringify({ usable: true }), { status: 429 }); }) as never, async (ms) => { waits.push(ms); });
+  assert.equal(answer, false);
+  assert.equal(asked, 2);
+  assert.equal(waits.length, 1);
+});
+
+test("Retry-After is capped at the bucket's minute; nonsense waits a second; other refusals are not retried", async () => {
+  const waitFor = async (retryAfter: string) => {
+    const waits: number[] = [];
+    await readToolUsable("quick-answer", (async () => new Response("{}", { status: 429, headers: { "Retry-After": retryAfter } })) as never, async (ms) => { waits.push(ms); });
+    return waits[0];
+  };
+  assert.equal(await waitFor("86400"), 60_000);
+  assert.equal(await waitFor("soon"), 1000);
+  let asked = 0;
+  await readToolUsable("quick-answer", (async () => { asked += 1; return new Response("{}", { status: 503 }); }) as never, async () => { throw new Error("no wait"); });
+  assert.equal(asked, 1);
 });

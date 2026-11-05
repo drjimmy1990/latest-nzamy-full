@@ -37,6 +37,7 @@ import {
   isDocumentPreviewRoute,
   isPointsStandingRoute,
   isAiRunProgressRoute,
+  isToolStatusRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -170,11 +171,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isDocumentPreviewMatch = isDocumentPreviewRoute(method, pathname);
     const isPointsStandingMatch = isPointsStandingRoute(method, pathname);
     const isAiRunProgressMatch = isAiRunProgressRoute(method, pathname);
+    const isToolStatusMatch = isToolStatusRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
+      !isToolStatusMatch &&
       !isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
@@ -199,6 +202,12 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     // The waiting screen's key poll: the same policy, its own bucket (rateLimitRoutes.ts).
     if (isAiRunProgressMatch) {
       const decision = rateLimiter.check("ai-run-progress", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    // A screen's «may I show this tool?» read: the same policy, its own bucket (rateLimitRoutes.ts).
+    if (isToolStatusMatch) {
+      const decision = rateLimiter.check("tool-status", ip, GENERAL_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

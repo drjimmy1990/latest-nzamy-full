@@ -16,6 +16,8 @@ import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { useUser } from "@/hooks/useUser";
+import { useToolUsable } from "@/hooks/useToolUsable";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 import { QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, quickAnswerRefusalText } from "./_quickAnswer";
 
@@ -29,9 +31,31 @@ import { QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, quickAnswerRefusalText 
  *
  * S3-06: examples, collapsible sources, the shared result actions, a reset and
  * the next tools. The price (20) and the roles are unchanged (R25, question ٤١٢).
+ *
+ * The page reads tool-status first (src/hooks/useToolUsable.ts): the tool's mode is
+ * "off" by default, and a run would answer 423, so no price and no form until the
+ * server says this caller may run it.
  */
 
 export default function QuickAnswerPage() {
+  const { isDark } = useTheme();
+  const usable = useToolUsable("quick-answer");
+  if (usable === null) {
+    return <p role="status" dir="rtl" className={`py-16 text-center text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>جارٍ التحقق…</p>;
+  }
+  if (!usable) {
+    return (
+      <DashboardComingSoon
+        title="سؤال قانوني سريع — قريباً"
+        description="سؤال محدد وإجابة مختصرة من نصوص الأنظمة ومبادئ القضاء في مكتبة نظامي، مع رابط كل نص. لم يُتح بعد لحسابك."
+        backHref="/ai"
+      />
+    );
+  }
+  return <QuickAnswerTool />;
+}
+
+function QuickAnswerTool() {
   const { isDark } = useTheme();
   const [question, setQuestion] = useState("");
   const user = useUser();

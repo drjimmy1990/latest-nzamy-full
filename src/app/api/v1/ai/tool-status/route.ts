@@ -14,7 +14,7 @@ import { toolStatusWith } from "@/lib/ai/toolStatus";
  *
  * /api/v1/ai/* gets no 401 from the proxy, so the sign-in check is here, before the
  * id is looked at: a visitor learns nothing. The proxy rate-limits this GET per IP
- * (isPointsStandingRoute in src/lib/rateLimitRoutes.ts).
+ * (isToolStatusRoute in src/lib/rateLimitRoutes.ts).
  */
 
 export const dynamic = "force-dynamic";

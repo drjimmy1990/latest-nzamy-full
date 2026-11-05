@@ -411,6 +411,29 @@ test("contract-negotiator runs the real job", () => {
   for (const part of ["NEGOTIATOR_STANCE_AR", "الموقف الاحتياطي", "<CitationCheckList", "<AiResultActions", "RUN_HELD_MESSAGE_AR"]) assert.ok(page.includes(part), part);
 });
 
+test("quick answer and case brief read tool-status before any price or form: no price, then a 423", () => {
+  const gates: Array<[string, string, string, string, string]> = [
+    ["app/ai/quick-answer/page.tsx", "quick-answer", "export default function QuickAnswerPage", "function QuickAnswerTool", "<QuickAnswerTool"],
+    ["components/ai/caseBrief/CaseBriefStudio.tsx", "case-brief", "export default function CaseBriefStudio", "function CaseBriefTool", "<CaseBriefTool"],
+  ];
+  for (const [file, tool, gateStart, toolStart, mount] of gates) {
+    const page = code(file);
+    assert.ok(page.includes(`useToolUsable("${tool}")`), file);
+    const at = page.indexOf(gateStart);
+    const end = page.indexOf(toolStart);
+    assert.ok(at >= 0 && end >= 0, file);
+    const gate = at < end ? page.slice(at, end) : page.slice(at);
+    assert.ok(gate.includes("usable === null"), file);
+    assert.ok(gate.includes("جارٍ التحقق…"), file);
+    assert.match(gate, /<DashboardComingSoon[\s\S]*قريباً/, file);
+    assert.ok(gate.includes(mount), file);
+    assert.doesNotMatch(gate, /PRICE|aiToolPriceText|نقطة/, `${file}: the gate names no price`);
+    assert.doesNotMatch(gate, /useAiRun|<textarea|<input/, `${file}: the gate holds no form`);
+    // R4: the waiting stage stays mounted in the tool.
+    assert.ok(page.includes("<AiThinkingStage"), file);
+  }
+});
+
 test("the hub's corporate compliance card says «قريباً», and no hub card for a gated page is «جديد»", () => {
   const hub = code("app/ai/page.tsx");
   const card = (id: string) => hub.split("\n").find((l) => l.includes(`id: "${id}"`)) ?? "";
