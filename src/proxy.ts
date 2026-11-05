@@ -375,6 +375,8 @@ const REDIRECTS: Record<string, string> = {
   "/ai/share-history":   "/settings",
   // S3-02: the case brief lives on /ai/analyze now.
   "/ai/case-brief":      "/ai/analyze",
+  // S3-03: was a page with a 2.2 s client timer.
+  "/ai/research":        "/ai/legal-opinion",
   "/ai/corp/privacy":    "/ai/corp/compliance",
   "/dashboard/lawyer/ai/secretary": "/ai/secretary",
   "/law":                "/laws",

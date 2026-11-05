@@ -31,6 +31,7 @@ function redirects(): Record<string, string> {
 /** The old URLs this batch retires, and where each one goes. */
 const MOVED: Record<string, string> = {
   "/ai/case-brief": "/ai/analyze",
+  "/ai/research": "/ai/legal-opinion",
 };
 
 for (const [from, to] of Object.entries(MOVED)) {

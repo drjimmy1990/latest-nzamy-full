@@ -16,7 +16,7 @@
  *   • /ai/direction-support — renders DashboardComingSoon (UAT-LIVE-AI-001);
  *   • /ai/secretary         — built on literals (see the note on the removed
  *                             «AI Secretary Notice» in dashboard/lawyer/page.tsx);
- *   • /ai/research          — only a redirect to /ai/legal-opinion;
+ *   • /ai/research          — a 301 to /ai/legal-opinion (src/proxy.ts);
  *   • /ai/analyze           — «عصارة المرفقات»: opens from the sidebar and the
  *                             hub; no tile was asked for when it went live (S3-01).
  *
