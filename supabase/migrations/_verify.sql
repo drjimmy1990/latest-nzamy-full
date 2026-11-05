@@ -5751,3 +5751,50 @@ begin
   raise notice '_verify: 20261103_31 OK — progress_events: own rows through granted columns, service role writes, prune service role only';
 end $$;
 -- <<< verify:progress_events
+
+-- >>> verify:letterhead_verify_card — supabase/tests/rls/letterhead_verify_card.test.sql
+-- 2026-11-03 — 20261103_69_letterhead_verify_card.sql (S4 Task 22, q343, runs BEFORE
+-- the deploy). Read-only, safe to repeat. RAISES when the columns or functions are
+-- missing, when a session could write either column, or when anyone but the service
+-- role could run the functions. No public.branding_vaults (20261026_63 not applied):
+-- one NOTICE, passes.
+do $$
+declare r text; c text; f text;
+begin
+  if to_regclass('public.branding_vaults') is null then
+    raise notice '_verify: 20261103_69 — public.branding_vaults is missing (20261026_63 not applied): nothing to check'; return;
+  end if;
+  foreach c in array array['verify_token', 'qr_verify_card'] loop
+    if not exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'branding_vaults' and column_name = c) then
+      raise exception '_verify: 20261103_69 — branding_vaults.% is missing: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', c;
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.branding_vaults', c, 'UPDATE') or has_column_privilege(r, 'public.branding_vaults', c, 'INSERT') then
+        raise exception '_verify: 20261103_69 — % can write branding_vaults.%: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', r, c;
+      end if;
+    end loop;
+  end loop;
+  foreach f in array array['public.letterhead_verification_card(text)', 'public.mint_letterhead_verify_token(uuid, text)'] loop
+    if to_regprocedure(f) is null then
+      raise exception '_verify: 20261103_69 — % is missing: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', f;
+    end if;
+    if not exists (select 1 from pg_proc where oid = to_regprocedure(f) and prosecdef and proconfig @> array['search_path=""']) then
+      raise exception '_verify: 20261103_69 — % is not SECURITY DEFINER with search_path '''': run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', f;
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_function_privilege(r, f, 'EXECUTE') then
+        raise exception '_verify: 20261103_69 — % can run %: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', r, f;
+      end if;
+    end loop;
+    if not has_function_privilege('service_role', f, 'EXECUTE') then
+      raise exception '_verify: 20261103_69 — service_role cannot run %: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', f;
+    end if;
+  end loop;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname in ('letterhead_verification_card', 'mint_letterhead_verify_token')) <> 2 then
+    raise exception '_verify: 20261103_69 — a verification-card function has an overload (PGRST203): drop the extra one, then run 20261103_69_letterhead_verify_card.sql';
+  end if;
+  raise notice '_verify: 20261103_69 OK — verification card: token and switch server-only, two functions service role only';
+end $$;
+-- <<< verify:letterhead_verify_card
