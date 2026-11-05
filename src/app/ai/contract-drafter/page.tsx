@@ -215,9 +215,11 @@ export default function ContractDrafterPage() {
                     {isRTL ? RUN_HELD_MESSAGE_AR : "This result is held pending a decision by the Nezamy team."}
                   </p>
                 )}
-                <div className="max-w-3xl mx-auto">
-                  <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("contract-drafter")} />
-                </div>
+                {(run.busy || run.phase === "error") && (
+                  <div className="max-w-3xl mx-auto">
+                    <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("contract-drafter")} />
+                  </div>
+                )}
                 <StepPreviewSign
                   selectedType={selectedType}
                   formData={formData}
