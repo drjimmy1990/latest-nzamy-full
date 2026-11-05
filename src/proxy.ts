@@ -342,6 +342,7 @@ const PROTECTED = [
   "/ai/direction-support",
   "/ai/contracts",
   "/ai/wargaming",
+  "/ai/runs",
   "/settings",
   "/notifications",
   "/onboarding",

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FOUNDER_CREDIT_REFUNDED_FAILURE, founderCreditRefundText } from "@/lib/membership/founderPlan";
+import { founderCreditRefundText } from "@/lib/membership/founderPlan";
+import { runFailureMessage } from "@/lib/ai/runErrors";
 
 /**
  * useAiRun — the one client for the AI tools (plan §2.4). `start(tool, input)`
@@ -109,11 +110,7 @@ export function useAiRun() {
           ...s,
           phase: "error",
           code: typeof run.error_code === "string" ? run.error_code : "failed",
-          error: s.creditUsed
-            ? FOUNDER_CREDIT_REFUNDED_FAILURE
-            : run.refunded_at
-              ? "تعذّر إكمال الطلب، وأُعيدت نقاطك"
-              : "تعذّر إكمال الطلب",
+          error: runFailureMessage(typeof run.error_code === "string" ? run.error_code : null, Boolean(run.refunded_at), s.creditUsed),
         }));
       } catch (err) {
         if (alive.current) setState((s) => ({ ...s, phase: "error", error: (err as Error).message || FALLBACK_ERROR }));
