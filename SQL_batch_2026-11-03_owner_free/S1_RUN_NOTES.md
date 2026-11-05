@@ -194,9 +194,10 @@ The row also shows `codes_readable_by_session_roles`. It is **not** part of `ok`
 
 **What it does:** library invite codes (`library.invitations`) can no longer be read or changed with the site's public key. It takes every privilege on the table away from anon, authenticated and PUBLIC, drops the policy «Allow public read on library.invitations» and any other policy that lets them in (each one it drops is named in a NOTICE), keeps RLS on, and keeps full access for the service role. The site reads and writes this table only through the service role (the admin «أكواد الدعوة» page and the redeem route), so no page changes. It does not depend on the deploy or on any other file of this batch: before or after the deploy, at any time.
 
-The file is in two places:
-- On your PC, after `git pull` on main: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_15_library_invitations_close_public_read.sql`
-- On the server: `/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_15_library_invitations_close_public_read.sql`
+The file is in these places:
+- On your PC, until this branch is merged, only in the worktree: `D:\nzwt\ownerfree\supabase\migrations\20261103_15_library_invitations_close_public_read.sql`
+- On your PC, after the merge and `git pull` on main: `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_15_library_invitations_close_public_read.sql`
+- On the server, also only after the merge: `/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261103_15_library_invitations_close_public_read.sql`
 
 Run it in the SQL Editor as postgres (paste the whole file). **Expected result on the screen** (it is not a file): one row with `anon_select = f`, `authenticated_select = f`, `policies_left = 0`, `policies_admitting_session_roles = 0`, `service_role_select = t`, `ok = t`. A second run gives the same row. If `policies_left` is above 0, a policy that admits only the service role was kept on purpose; the NOTICEs in the server's psql name every policy that was dropped.
 
@@ -204,7 +205,9 @@ If it stops with `library.invitations is missing`, nothing changed: this databas
 
 **Which half lasts:** re-running `20260922_01_library_grants.sql` (or `20260626`) gives anon and authenticated SELECT on the table again. With the policy gone, RLS still returns them no row, so the dropped policy is what keeps the codes closed. `_verify.sql` still stops on the grant alone (block `verify:library_invitations_closed`, «… holds SELECT on library.invitations … run 20261103_15 … (any time)»); run this file again and it is put right.
 
-**`_verify.sql` by hand** (server; deploy.sh does not run it):
+**When you run it ahead of the rest of the batch, the SELECT row above is your check.** `_verify.sql` cannot confirm this file yet. Before the merge, the server's copy has no such block. After the merge, the `_10`, `_11` and `_12` blocks come first and stop on any of those files you have not run. Use `_verify` once the whole batch has run (see `README.md` in this folder).
+
+**`_verify.sql` by hand, after the whole batch** (server; deploy.sh does not run it):
 
 ```bash
 cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | grep -E "_verify: 20261103_15|ERROR"

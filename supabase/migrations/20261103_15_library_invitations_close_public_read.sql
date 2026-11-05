@@ -17,9 +17,11 @@
 -- WHO READS THE TABLE — only the service role (checked on main 1103812d and on
 --   the owner-free branch): GET/POST /api/v1/admin/library-invitations and
 --   POST /api/v1/library/invitations/redeem, both through createServiceClient()
---   with .schema("library"). No client component and no script reads it with
---   the anon key. (/api/v1/invite/[code] reads public.invitations, another
---   table.) So this file breaks no page.
+--   with .schema("library"). No client component reads it with the anon key.
+--   (/api/v1/invite/[code] reads public.invitations, another table.) So this
+--   file breaks no page. One script did: scripts/verify-library.ts counted the
+--   table with the anon key, as a health check. It now counts it with the
+--   service key, and without that key it skips the table with a warning.
 --
 -- WHAT THIS FILE DOES (idempotent; safe to run again; one transaction)
 --   1. Every table privilege on library.invitations is revoked from anon,
@@ -42,6 +44,12 @@
 --
 -- RUN ORDER — ANY time, before or after the deploy, independently of every
 --   other file: no code depends on it, and no code breaks with it.
+--
+-- EXPECTED RESULT — one row, on the first run and on any later run:
+--   anon_select = f, authenticated_select = f, policies_left = 0,
+--   policies_admitting_session_roles = 0, service_role_select = t, ok = t
+--   policies_left above 0 with ok = t means a policy that admits only the
+--   service role was kept on purpose.
 --
 -- ROLLBACK (re-opens the leak; not recommended):
 --   grant select on library.invitations to anon, authenticated;
@@ -68,7 +76,8 @@ revoke all privileges on library.invitations from public, anon, authenticated;
 do $$
 declare c record;
 begin
-  -- column-level grants survive a table-level REVOKE: remove them by name
+  -- REVOKE ALL on the table already empties the column ACLs (seen in Docker).
+  -- This second pass by column name is a harmless belt: it finds nothing today.
   for c in
     select a.attname
       from pg_attribute a
