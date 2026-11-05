@@ -519,11 +519,10 @@ export default function CaseGraphView({
                   {aiCard.busy ? "جارٍ البحث..." : "اقترح سنداً نظامياً"}
                 </button>
               )}
-              {aiCard.note && (
-                <span role="status" className={`max-w-[260px] truncate text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`} title={aiCard.note}>
-                  {aiCard.note}
-                </span>
-              )}
+              {/* Mounted from the first render, out of the layout while empty: the first note is read. */}
+              <span role="status" className={aiCard.note ? `max-w-[260px] truncate text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-500"}` : "sr-only"} title={aiCard.note ?? undefined}>
+                {aiCard.note}
+              </span>
               <div className={`w-px mx-1 my-1 self-stretch ${isDark ? "bg-white/10" : "bg-zinc-200"}`} />
               {/* Multi-select indicator + Group */}
               {selectedNodeIds.size > 0 && (() => {

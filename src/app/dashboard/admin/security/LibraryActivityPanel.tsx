@@ -265,18 +265,20 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
         </p>
       )}
 
-      {notice && (
-        <div
-          role="status"
-          className={`rounded-xl border px-4 py-2.5 text-[12px] ${
-            notice.ok
-              ? isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : isDark ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {notice.msg}
-        </div>
-      )}
+      {/* Mounted from the first render, out of the layout while empty: the first notice is read. */}
+      <div role="status" className={notice ? undefined : "sr-only"}>
+        {notice && (
+          <div
+            className={`rounded-xl border px-4 py-2.5 text-[12px] ${
+              notice.ok
+                ? isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : isDark ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {notice.msg}
+          </div>
+        )}
+      </div>
 
       {/* ── top readers ── */}
       <div className={`${card} p-5`}>
