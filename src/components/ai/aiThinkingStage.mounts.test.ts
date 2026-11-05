@@ -68,6 +68,7 @@ test("R30: a legacy held run reads the one sentence, with no promise of a team r
     "app/ai/wargaming/page.tsx",
     "app/ai/analyze-strength/page.tsx",
     "components/ai/caseBrief/CaseBriefStudio.tsx",
+    "app/ai/quick-answer/page.tsx",
     "app/ai/legal-opinion/_components/AiOpinionPanel.tsx",
   ];
   for (const file of held) {

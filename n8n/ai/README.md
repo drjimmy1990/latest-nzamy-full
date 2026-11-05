@@ -231,7 +231,7 @@ Wave 3 adds one npm package (`pdf-lib`, to count pages). No SQL.
    ```
 2. **n8n:** nothing to do. `case-brief` is on.
 3. **Open them for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `case-brief` and `brief-check` to **للمشرفين فقط**, then press **حفظ**.
-4. **Test** at `https://nezamy.sa/ai/case-brief` (admin):
+4. **Test** at `https://nezamy.sa/ai/analyze` (admin):
    - Write who you act for, e.g. «وكيل المدعي في دعوى عمالية».
    - Add one or two PDFs, or a phone photo of a page. Each shows «جاهز» once it is in your vault.
    - Press «ابدأ الإحاطة». Expect «الباراليجل يقرأ الأوراق...» for 10–60 seconds. Then the case card, the story, the highlights, the assessment (strong / medium / weak), the options, the questions, and the client requests.

@@ -12,6 +12,7 @@ import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/comp
 import { useAiRun } from "@/hooks/useAiRun";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { useUser } from "@/hooks/useUser";
@@ -140,6 +141,12 @@ export default function QuickAnswerPage() {
           يُرسَل سؤالك ونصوص المكتبة المتعلقة به إلى مزوّد ذكاء اصطناعي خارج المملكة لمعالجته؛ لا تُدخل بيانات شخصية لا يلزمها السؤال.
         </p>
       </div>
+
+      {run.phase === "review" && (
+        <p role="status" className={`rounded-2xl border px-4 py-3 text-[12px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+          {RUN_HELD_MESSAGE_AR}
+        </p>
+      )}
 
       {/* ── Working ── */}
       <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("quick-answer")} />
