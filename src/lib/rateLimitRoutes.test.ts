@@ -208,6 +208,14 @@ test("isPointsStandingRoute: the banner's GET (final review M2), GET and HEAD, t
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/points-standing"), false, "reads are not in the general bucket");
 });
 
+test("GET /api/v1/ai/tool-status shares the points-standing per-IP bucket, GET and HEAD, the exact path only", () => {
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/tool-status"), true);
+  assert.equal(isPointsStandingRoute("HEAD", "/api/v1/ai/tool-status"), true);
+  assert.equal(isPointsStandingRoute("POST", "/api/v1/ai/tool-status"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/tool-status/x"), false);
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/tool-status"), false, "reads never spend the write budget");
+});
+
 test("proxy: the points-standing match is in the early-return guard and has its own bucket on the general policy", () => {
   const src = fs
     .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")

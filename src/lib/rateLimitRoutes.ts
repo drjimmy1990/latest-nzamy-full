@@ -177,9 +177,10 @@ export function isDocumentPreviewRoute(method: string, pathname: string): boolea
 // never counted it (final review M2). The proxy gives it the general bucket's
 // policy under its own name, so banner reads never spend the write budget.
 // The exact path only: the job-poll GETs on /api/v1/ai/runs/<id> stay free.
-export const POINTS_STANDING_RE = /^\/api\/v1\/ai\/points-standing$/;
+// GET /api/v1/ai/tool-status (S3-07) makes the same kind of reads and shares this bucket.
+export const POINTS_STANDING_RE = /^\/api\/v1\/ai\/(?:points-standing|tool-status)$/;
 
-/** True for a GET/HEAD of /api/v1/ai/points-standing. */
+/** True for a GET/HEAD of /api/v1/ai/points-standing or /api/v1/ai/tool-status. */
 export function isPointsStandingRoute(method: string, pathname: string): boolean {
   return (method === "GET" || method === "HEAD") && POINTS_STANDING_RE.test(pathname);
 }

@@ -37,7 +37,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
-import { resolveToolRuntime } from "./aiToolsConfig.ts";
+import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
@@ -187,7 +187,7 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
 
 const isMissingFunction = (code: string | undefined) => code === "42883" || code === "PGRST202";
 
-async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
+export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
   const { data, error } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
   // A read error leaves every tool on its registry default, which is "off"
   // until a tool is tested — closed, never accidentally live.
@@ -363,10 +363,10 @@ export async function startRunWith(
   if (!spec) return { status: 404, body: { error: AI_COPY.unknownTool, code: "unknown_tool" } };
 
   const isAdmin = actor.userType === "admin";
-  if (!isAdmin && !spec.roles.includes(actor.userType)) {
-    return { status: 403, body: { error: AI_COPY.role, code: "role" } };
-  }
-  if (spec.consultantBlocked && actor.practiceKind === "consultant" && !isAdmin) {
+  // The same helpers answer GET /api/v1/ai/tool-status (R5).
+  const refused = toolRoleRefusal(spec, actor);
+  if (refused === "role") return { status: 403, body: { error: AI_COPY.role, code: "role" } };
+  if (refused === "consultant_blocked") {
     return { status: 403, body: { error: CONSULTANT_BLOCKED_MESSAGE, code: "consultant_blocked" } };
   }
 
@@ -374,7 +374,7 @@ export async function startRunWith(
   // "staff": only admins, so a tool can be tried on production before it opens.
   // A stored "review" arrives here as "staff" (aiToolsConfig.effectiveToolMode),
   // so it too is refused here, before ai_start_run charges anything.
-  if (runtime.mode === "off" || (runtime.mode === "staff" && !isAdmin)) {
+  if (toolAvailability(runtime.mode, isAdmin) === "tool_off") {
     return { status: 423, body: { error: AI_COPY.off, code: "tool_off" } };
   }
 
