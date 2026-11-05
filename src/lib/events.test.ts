@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeActivityEvent, describeRequestEvent, RequestEvent } from "./events.ts";
+import { describeActivityEvent, describeAiRun, describeRequestEvent, RequestEvent } from "./events.ts";
+import { RUN_HELD_MESSAGE_AR } from "./ai/runPageView.ts";
 import { orderReference } from "./services/orderReference.ts";
 
 test("names the Arabic service and the order reference on creation", () => {
@@ -172,4 +173,30 @@ test("a ledger entry reads as its direction, title and channel in the activity f
   assert.equal(out.title, "قيد وارد: صورة الهوية (واتساب)");
   assert.equal(out.badge, "notice");
   assert.equal(describeActivityEvent({ kind: "ledger.entry_added" }).title, "قيد في سجل الصادر والوارد");
+});
+
+test("D1: a run is described by its tool's Arabic label and what happened to its points", () => {
+  assert.deepEqual(describeAiRun({ tool: "brief-check", status: "succeeded", chargedPoints: 200, refunded: false }), {
+    badge: "ai",
+    title: "«مراجعة وتدقيق مذكرة»",
+    description: "اكتملت — خُصم ٢٠٠ نقطة",
+  });
+  const unknown = describeAiRun({ tool: "x", status: "failed", chargedPoints: 50, refunded: true });
+  assert.equal(unknown.title, "«أداة ذكاء اصطناعي»");
+  assert.equal(unknown.description, "تعذّرت وأُعيدت النقاط");
+});
+
+test("D1: every status has its own honest sentence, with the noun agreeing and no refund claimed unless it happened", () => {
+  const d = (status: string, chargedPoints: number, refunded: boolean) =>
+    describeAiRun({ tool: "brief-check", status, chargedPoints, refunded }).description;
+  assert.equal(d("succeeded", 5, false), "اكتملت — خُصم ٥ نقاط");
+  assert.equal(d("succeeded", 1500, false), "اكتملت — خُصم ١٬٥٠٠ نقطة");
+  assert.equal(d("succeeded", 0, false), "اكتملت دون خصم");
+  assert.equal(d("failed", 50, false), "تعذّرت");
+  assert.equal(d("failed", 0, false), "تعذّرت");
+  assert.equal(d("running", 50, false), "قيد التنفيذ");
+});
+
+test("D1 (R30): a legacy review row shows the one held sentence and promises no alert", () => {
+  assert.equal(describeAiRun({ tool: "brief-check", status: "review", chargedPoints: 50, refunded: false }).description, RUN_HELD_MESSAGE_AR);
 });

@@ -1,5 +1,7 @@
 import { orderReference } from "./services/orderReference.ts";
 import { ledgerActivityTitle } from "./ledger/ledgerInput.ts";
+import { aiToolLabelAr } from "./ai/toolLabels.ts";
+import { arabicPoints, pointsNounAr } from "./ai/toolPointsDisplay.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -208,12 +210,42 @@ export type ActivityBadge =
   | "hearing"
   | "stage"
   | "deadline"
-  | "client";
+  | "client"
+  | "ai";
 
 export interface DescribedEvent {
   title: string;
   description?: string;
   badge: ActivityBadge;
+}
+
+/**
+ * Render one AI run for the activity log (S2 D1). A refund is claimed only when
+ * it happened. A legacy `review` row shows the one held sentence
+ * (runPageView.RUN_HELD_MESSAGE_AR; events.test.ts pins the copy), which
+ * promises no alert (R30).
+ */
+export function describeAiRun(r: {
+  tool: string;
+  status: string;
+  chargedPoints: number;
+  refunded: boolean;
+}): DescribedEvent {
+  const title = `«${aiToolLabelAr(r.tool)}»`;
+  let description: string;
+  if (r.status === "succeeded") {
+    description =
+      r.chargedPoints > 0
+        ? `اكتملت — خُصم ${arabicPoints(r.chargedPoints)} ${pointsNounAr(r.chargedPoints)}`
+        : "اكتملت دون خصم";
+  } else if (r.status === "failed") {
+    description = r.refunded ? "تعذّرت وأُعيدت النقاط" : "تعذّرت";
+  } else if (r.status === "review") {
+    description = "هذه النتيجة محجوبة بانتظار قرار فريق نظامي";
+  } else {
+    description = "قيد التنفيذ";
+  }
+  return { title, description, badge: "ai" };
 }
 
 /**

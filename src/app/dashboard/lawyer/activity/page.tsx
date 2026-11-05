@@ -104,11 +104,7 @@ const STATS = [
 ];
 
 // Supabase-mode cards. Each one is an exact head-count the route already runs,
-// so every label says precisely what is being counted. The demo pair
-// «استخدامات AI» / «مواعيد اليوم» has no honest equivalent here — AI tool usage
-// isn't recorded anywhere this route can read, and this user's appointments
-// live in `consultations` keyed by lawyer, not by requester — so they are
-// replaced rather than faked.
+// so every label says precisely what is being counted.
 const LIVE_STATS = [
   {key:"ordersThisMonth" as const,label:"طلبات هذا الشهر",  icon:Clock,         color:"text-[#C8A762]",  bg:"bg-amber-500/10"},
   {key:"ordersActive"    as const,label:"طلبات قيد التنفيذ",icon:ClipboardText, color:"text-blue-400",   bg:"bg-blue-500/10"},
@@ -173,6 +169,8 @@ function monthStartMs(): number {
  * never belong to an order, so they match no card — including «إجمالي طلباتي».
  */
 function matchesCardFilter(act: Activity, key: StatKey, index: OrderIndex): boolean {
+  // The cards count orders, and an AI run is not an order.
+  if (act.type === "ai") return false;
   if (!act.caseId) return false;
   const order = index.get(act.caseId);
   if (!order) return false; // not visible to this caller — never guessed at
@@ -561,7 +559,8 @@ function PersonalActivityFeed() {
                 cancelled — SERVICE_REQUEST_CANCELLED
                 notice    — notification.* from the n8n callback, and the
                             admin_audit_events rows the route folds in
-              The line below names those five and nothing else.
+                ai        — the user's own ai_runs rows (S2 D1)
+              The line below names those six and nothing else.
               Not gated on isSupabaseMode even though MOCK_ACTIVITIES does carry
               hearing/contract/client rows: that constant is module-level, so the
               demo branch is eliminated from the bundle the six lawyer accounts
@@ -569,7 +568,7 @@ function PersonalActivityFeed() {
               تجريبية» banner above. Gating one subtitle on it would add a live
               branch to say something the banner has said already. */}
           <p className={`text-sm ${isDark?"text-zinc-500":"text-slate-400"}`}>
-            تتبّع حركة طلباتك — تحديثات الطلبات، المهام، التسليم، الإلغاء، والإشعارات
+            تتبّع حركة طلباتك — تحديثات الطلبات، المهام، التسليم، الإلغاء، الإشعارات، وأدوات الذكاء الاصطناعي
           </p>
         </div>
         {/* A «تصدير PDF» button stood here with no onClick and no handler
