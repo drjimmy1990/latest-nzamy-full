@@ -46,7 +46,7 @@ test("the lawyer sidebar has one quick-answer row and keeps its one assistant ro
   assert.equal(quick.length, 1);
   assert.deepEqual(
     { label: quick[0].label, labelEn: quick[0].labelEn, icon: quick[0].icon, badge: quick[0].badge },
-    { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A", icon: "ChatCircle", badge: undefined },
+    { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A", icon: "ChatCircle", badge: "قريباً" },
   );
   const assistant = lawyer.filter((r) => r.href === "/ai/assistant");
   assert.equal(assistant.length, 1);

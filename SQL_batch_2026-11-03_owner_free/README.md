@@ -472,7 +472,7 @@ Both are built and **off**. No real model has run them. While off, nobody is cha
 
    Expect a `usage` row of −250 or −150, and a matching `usage_refund` if that run failed.
 
-6. **After go-live for everyone, tell us, and we remove «قريباً» with a code change and a deploy.** It sits in `src/constants/navigation.sidebars.legal.ts`, rows 268 (negotiator) and 269 (reviewer). Until then, the lawyer's sidebar reads «قريباً» even with the tool live. Row 269 keeps its old address, `/ai/contract-reviewer`, which redirects to `/ai/contracts`: the sidebar keys its rows by address, and «محترف العقود» at row 267 already uses `/ai/contracts`.
+6. **After go-live for everyone, tell us, and we remove «قريباً» with a code change and a deploy.** It sits in `src/constants/navigation.sidebars.legal.ts`, rows 268 (negotiator) and 269 (reviewer). The same goes for the quick answer's two rows, 33 and 263, when it opens. Until then, the lawyer's sidebar reads «قريباً» even with the tool live. Row 269 keeps its old address, `/ai/contract-reviewer`, which redirects to `/ai/contracts`: the sidebar keys its rows by address, and «محترف العقود» at row 267 already uses `/ai/contracts`.
 
 **Three things to watch after go-live:**
 - **Percentages fail the run.** Any figure with `%` or `٪` in the result refunds the run, including a contract's own rate («غرامة ٥٪»); the prompts ask for rates in words. If refunds run high, look here first. This is owner question ٤٤٠.

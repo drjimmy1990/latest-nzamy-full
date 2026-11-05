@@ -30,7 +30,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       // ١: الخطوة صفر — فهم الملف أولاً
       { label: "عصارة المرفقات",           labelEn: "Attachment Analyzer", href: "/ai/analyze",     icon: "Scan" },
-      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle" },
+      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle", badge: "قريباً" },
       { label: "المساعد المتقدم", labelEn: "Advanced Assistant",         href: "/ai/assistant",  icon: "ChatCircle" },
       // ٢: الصياغة — العمل اليومي الأكثر تكراراً
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",            href: "/ai/draft",         icon: "PencilSimple", divider: true },
@@ -260,7 +260,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       // ① الخطوة صفر — فهم الملف أولاً (مضاف S59)
       { label: "عصارة المرفقات",              labelEn: "Attachment Analyzer", href: "/ai/analyze",        icon: "Scan" },
-      { label: "سؤال قانوني سريع",     labelEn: "Quick Legal Q&A",   href: "/ai/quick-answer",      icon: "ChatCircle",   badge: "جديد" },
+      { label: "سؤال قانوني سريع",     labelEn: "Quick Legal Q&A",   href: "/ai/quick-answer",      icon: "ChatCircle",   badge: "قريباً" },
       // ② الصياغة والتحرير
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",        labelEn: "Research Collector", href: "/ai/collector",      icon: "Tray",         badge: "جديد" },
