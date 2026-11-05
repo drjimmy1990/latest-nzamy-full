@@ -1023,6 +1023,129 @@ function contractsProOutput(raw: unknown, input: Record<string, unknown>): Recor
   };
 }
 
+// ── contract review and the negotiator (the owner's canonical pricing, items 9, 10) ─
+// Owner q296: the price is kept in the system and neither shown nor sold until the
+// tool's real analysis is connected. So both are off until an admin opens them, and
+// their screens print the price only once GET /api/v1/ai/tool-status says usable.
+
+/**
+ * Owner ١٩٣: no chance and no percentage in a result, in any digit system (JavaScript's
+ * \d is ASCII only). A contract's own rate is no exception: the prompts ask for it in
+ * words («خمسة في المئة»), which this does not match.
+ */
+export const PERCENT_PATTERN = /[0-9٠-٩۰-۹]+([.,٫][0-9٠-٩۰-۹]+)?\s*[%٪]/u;
+
+/** Does any string under `v` hold a percentage? Walks arrays and plain objects. */
+export function hasPercent(v: unknown): boolean {
+  if (typeof v === "string") return PERCENT_PATTERN.test(v);
+  if (Array.isArray(v)) return v.some(hasPercent);
+  return isPlainObject(v) && Object.values(v).some(hasPercent);
+}
+
+/**
+ * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
+ * If ٤١٧ narrows access, this one list changes.
+ */
+export const CONTRACTS_PRO_ROLES = ["lawyer", "firm", "individual", "corporate", "micro", "ngo"] as const;
+
+export const CONTRACT_REVIEW_PRICE = 250;
+// `optional`: the contract may be pasted instead. filesRequired below still refuses a
+// run with neither, because a doc job with no file never calls back.
+export const CONTRACT_REVIEW_FILES: FileRules = { max: 1, maxPages: 15, maxBytes: 22 * 1024 * 1024, optional: true };
+export const CONTRACT_REVIEW_PASTE_MIN = 100;
+/** 15 pages by textPages: a paste this long is priced and capped like the file it replaces. */
+export const CONTRACT_REVIEW_PASTE_MAX = 45_000;
+export const REVIEW_RISKS = ["high", "medium", "low"] as const;
+export const REVIEW_CATEGORIES = ["obligations", "payment", "liability", "termination", "dispute", "confidentiality", "ip", "compliance", "other"] as const;
+const CONTRACT_REVIEW_CLAUSES_MAX = 40;
+const CONTRACT_REVIEW_MISSING_MAX = 15;
+
+/** Who the user acts for, what worries him, and the contract when it is pasted. A field too long is refused, never cut. */
+function contractReviewInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const party = typeof raw.represented_party === "string" ? raw.represented_party.trim() : "";
+  if (!party) return { ok: false, error: "حدّد الطرف الذي تمثّله" };
+  if (party.length > 150) return { ok: false, error: "اسم الطرف الذي تمثّله أطول من ١٥٠ حرفاً" };
+  const concerns = optionalField(raw.concerns, 2000);
+  if (concerns === null) return { ok: false, error: "المخاوف ونقاط التركيز أطول من ٢٬٠٠٠ حرف" };
+  const otherParty = optionalField(raw.other_party, 150);
+  if (otherParty === null) return { ok: false, error: "اسم الطرف الآخر أطول من ١٥٠ حرفاً" };
+  const contractType = optionalField(raw.contract_type, 80);
+  if (contractType === null) return { ok: false, error: "نوع العقد أطول من ٨٠ حرفاً" };
+  const contract = pastedText(raw.contract_text, {
+    min: CONTRACT_REVIEW_PASTE_MIN,
+    max: CONTRACT_REVIEW_PASTE_MAX,
+    tooShort: "النص الملصق قصير — الصق العقد كاملاً (١٠٠ حرف على الأقل)",
+    tooLong: "النص الملصق أطول من ٤٥٬٠٠٠ حرف (١٥ صفحة) — ارفعه ملفاً",
+  });
+  if ("error" in contract) return { ok: false, error: contract.error };
+  return {
+    ok: true,
+    input: {
+      represented_party: party,
+      concerns: concerns ?? null,
+      other_party: otherParty ?? null,
+      contract_type: contractType ?? null,
+      ...(contract.text ? { contract_text: contract.text } : {}),
+    },
+  };
+}
+
+function reviewClause(c: unknown): Record<string, string> | null {
+  if (!isPlainObject(c) || !(REVIEW_RISKS as readonly unknown[]).includes(c.risk)) return null;
+  const issue = boundedText(c.issue, 1200);
+  const ref = optionalField(c.ref, 200);
+  const quote = optionalField(c.quote, 600);
+  const defensive = optionalField(c.defensive_edit, 3000);
+  const negotiating = optionalField(c.negotiating_edit, 3000);
+  if (!issue || ref === null || quote === null || defensive === null || negotiating === null) return null;
+  return {
+    ref: ref ?? "",
+    quote: quote ?? "",
+    category: oneOf(c.category, REVIEW_CATEGORIES, "other"),
+    risk: c.risk as string,
+    issue,
+    defensive_edit: defensive ?? "",
+    negotiating_edit: negotiating ?? "",
+  };
+}
+
+/**
+ * The report. All or nothing, as the contract drafter: a clause that does not fit
+ * refuses (and refunds) the run rather than handing over a report with a risk
+ * silently gone. `cited` becomes the library's verdict (runCore's enricher).
+ */
+function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.clauses)) return null;
+  const summary = boundedText(raw.summary, 3000);
+  if (!summary || !(REVIEW_RISKS as readonly unknown[]).includes(raw.overall_risk)) return null;
+  if (raw.clauses.length < 1 || raw.clauses.length > CONTRACT_REVIEW_CLAUSES_MAX) return null;
+  const clauses: Array<Record<string, string>> = [];
+  for (const c of raw.clauses) {
+    const clause = reviewClause(c);
+    if (!clause) return null;
+    clauses.push(clause);
+  }
+  const rawMissing = raw.missing ?? [];
+  if (!Array.isArray(rawMissing) || rawMissing.length > CONTRACT_REVIEW_MISSING_MAX) return null;
+  const missing: Array<{ title: string; why: string }> = [];
+  for (const m of rawMissing) {
+    if (!isPlainObject(m)) return null;
+    const title = boundedText(m.title, 200);
+    const why = optionalField(m.why, 800);
+    if (!title || why === null) return null;
+    missing.push({ title, why: why ?? "" });
+  }
+  const output = {
+    summary,
+    overall_risk: raw.overall_risk,
+    clauses,
+    missing,
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+  return hasPercent(output) ? null : output;
+}
+
 // ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
 // Turn 0 «issues»: the facts → the issues, the proposed defences and requests,
 // which the lawyer confirms or edits. Turn 1 «draft»: what he confirmed → the
@@ -1430,7 +1553,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     class: "job",
     tier: "deep",
     // The lawyer, firm and business sidebars and the public navbar all open /ai/contracts.
-    roles: ["lawyer", "firm", "individual", "corporate", "micro", "ngo"],
+    roles: CONTRACTS_PRO_ROLES,
     consultantBlocked: false,
     price: () => CONTRACTS_PRO_PRICE,
     dailyLimit: 5,
@@ -1439,6 +1562,26 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     jobDeadlineSeconds: 20 * 60,
     validateInput: contractsProInput,
     validateOutput: contractsProOutput,
+  },
+  "contract-review": {
+    id: "contract-review",
+    // NOT the human service of the same id in CLIENT_SERVICE_CATALOG (600/800 SAR):
+    // the two namespaces never meet (preflight R19, contractReview.test.ts).
+    n8nPath: "nzamy-ai/contract-review",
+    class: "job",
+    tier: "deep",
+    roles: CONTRACTS_PRO_ROLES,
+    consultantBlocked: false,
+    price: () => CONTRACT_REVIEW_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: CONTRACT_REVIEW_FILES,
+    filesRequired: (input) => !input.contract_text,
+    filesRequiredCopy: "أرفق ملف العقد أو الصق نصه",
+    pasteAsFile: { field: "contract_text", name: "نص العقد (ملصق).txt", maxChars: CONTRACT_REVIEW_PASTE_MAX },
+    validateInput: contractReviewInput,
+    validateOutput: contractReviewOutput,
   },
   "legal-drafter": {
     id: "legal-drafter",

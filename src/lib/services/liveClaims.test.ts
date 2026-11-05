@@ -56,7 +56,7 @@ test("/pricing disclaimer: no «unlisted tools have no price» and no deduction-
   assert.match(cards, /هذا الجدول قائمة أسعار أدوات المحامي بالنقاط: تكلفة كل تشغيل للأداة\./);
 });
 
-test("/pricing disclaimer: the six unlisted tools really are charged and really are not rows", async () => {
+test("/pricing disclaimer: the unlisted tools really are charged and really are not rows", async () => {
   const { PRICED_AI_TOOL_IDS } = await import("../ai/toolPointsDisplay.ts");
   // The table's source, not the module (it imports icons and "@/" paths).
   const table = src("constants/pricing/pricing.lawyers.ts").split("export const lawyerServicesTable")[1];
@@ -65,7 +65,7 @@ test("/pricing disclaimer: the six unlisted tools really are charged and really 
   );
   assert.ok(listed.size >= 8, `parsed only ${listed.size} priced rows`);
   const unlisted = PRICED_AI_TOOL_IDS.filter((id) => !listed.has(id));
-  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "quick-answer"]);
+  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "contract-review", "quick-answer"]);
 });
 
 // ── item B: no comparative-law tool exists ───────────────────────────────────

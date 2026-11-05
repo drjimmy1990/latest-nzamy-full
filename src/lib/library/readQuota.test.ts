@@ -97,6 +97,7 @@ test("isLibraryAiTool: no other AI tool is locked — contract tools, L9–L11 a
   for (const id of [
     "contract-drafter", // L11
     "contracts-pro", // L13
+    "contract-review",
     "wargaming", // L9
     "analyze-strength", // L10
     "legal-drafter",
