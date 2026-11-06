@@ -6,15 +6,22 @@ import {
 } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
 import AiResultActions from "@/components/AiResultActions";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import CitationCheckList from "@/components/ai/CitationCheckList";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
+import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { CitedText, SourceList, asCitations } from "@/components/ai/CitedAnswer";
 import { DRAFT_KINDS, type DraftKindId } from "@/lib/ai/draftKinds";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { creditKindForRun, founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
-  analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingText, pleadingWordHtml,
+  analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingBlocks, pleadingText, pleadingWordHtml,
   type DraftAnalysis, type WizardFacts,
 } from "@/components/draft/legalDraft";
+import { aiSkippedNote } from "@/components/ai/aiReadable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 
 /**
  * StepAiDraft — L14 الصائغ القانوني (plan §5 wave 5; owner LIVE-F02 and
@@ -132,15 +139,21 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
           <div className="space-y-3">
             {skippedFiles.length > 0 && (
               <p className={`text-[11px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                لا يقرأ الذكاء الاصطناعي ملفات Word؛ لن تُرسل: {skippedFiles.join("، ")}. أرفقها PDF إن كانت فيها الوقائع.
+                {AI_TEXT_FILES_ON
+                  ? aiSkippedNote(skippedFiles)
+                  : `لا يقرأ الذكاء الاصطناعي ملفات Word؛ لن تُرسل: ${skippedFiles.join("، ")}. أرفقها PDF إن كانت فيها الوقائع.`}
               </p>
             )}
             {!canAnalyse(facts) && (
               <p className={`text-[11px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                اكتب الوقائع (٣٠ حرفاً على الأقل) أو أرفق مستنداتها بصيغة PDF أو صورة في الخطوة السابقة.
+                {AI_TEXT_FILES_ON
+                  ? "اكتب الوقائع (٣٠ حرفاً على الأقل) أو أرفق مستنداتها في الخطوة السابقة."
+                  : "اكتب الوقائع (٣٠ حرفاً على الأقل) أو أرفق مستنداتها بصيغة PDF أو صورة في الخطوة السابقة."}
               </p>
             )}
-            <RunStatus isDark={isDark} run={analysis} busyText="يحلّل الذكاء الاصطناعي الوقائع والمستندات — قد يستغرق ذلك دقيقة أو دقيقتين." />
+            <RunStatus isDark={isDark} run={analysis} />
+            {/* While a run may still be going, another press is a second charge. */}
+            {analysis.code !== RUN_STILL_RUNNING_CODE && (<>
             <FounderCreditChoice key={founderCreditChoiceKey(analysis.phase, analysis.creditUsed, analysis.runId)} kind="drafting_work" value={useCredit} onChange={setUseCredit} eligible={creditEligible} isDark={isDark} disabled={analysis.busy} />
             <button
               type="button"
@@ -150,6 +163,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
             >
               <Sparkle size={15} /> {analysis.busy ? "جارٍ التحليل..." : analysis.phase === "error" ? "أعد التحليل" : "تحليل الوقائع"}
             </button>
+            </>)}
           </div>
         )}
 
@@ -249,8 +263,10 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
 
             {!pleading && (
               <div className="space-y-2">
-                <RunStatus isDark={isDark} run={writing} busyText="يكتب الذكاء الاصطناعي المذكرة الآن — قد يستغرق ذلك دقيقتين أو ثلاثاً." />
+                <RunStatus isDark={isDark} run={writing} />
                 {blocker && <p className={`text-[11px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>{blocker}</p>}
+                {/* While a run may still be going a retry answers 409 conversation_full and wipes the link. */}
+                {writing.code !== RUN_STILL_RUNNING_CODE && (<>
                 <button
                   type="button"
                   onClick={startDraft}
@@ -260,6 +276,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
                   <FileDoc size={15} /> {writing.busy ? "جارٍ الكتابة..." : writing.phase === "error" ? "أعد المحاولة — دون خصم" : "اكتب المذكرة"}
                 </button>
                 <p className={`text-center text-[10px] ${muted}`}>الصياغة مشمولة بنقاط التحليل.</p>
+                </>)}
               </div>
             )}
           </div>
@@ -294,6 +311,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
           <p className={`text-[11px] ${muted}`}>
             مسودة يكتبها الذكاء الاصطناعي من الوقائع والدفوع التي اعتمدتها — راجعها قبل تقديمها؛ المسؤولية المهنية عن المذكرة لك.
           </p>
+          <LetterheadExportBar title={pleading.title} blocks={pleadingBlocks(pleading)} filename={spec.label} />
           <div className="flex flex-wrap items-center gap-2">
             <AiResultActions text={written} filename={spec.label} collectorSource="other" />
             <button type="button" onClick={downloadWord}
@@ -314,27 +332,24 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
   );
 }
 
-function RunStatus({ isDark, run, busyText }: { isDark: boolean; run: ReturnType<typeof useAiRun>; busyText: string }) {
+function RunStatus({ isDark, run }: { isDark: boolean; run: ReturnType<typeof useAiRun> }) {
+  const stage = <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("legal-drafter")} />;
   if (run.phase === "error" && run.error) {
     return (
-      <p role="alert" className={`rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
-        {run.error}
-      </p>
+      <div className="space-y-2">
+        <p role="alert" className={`rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-600"}`}>
+          {run.error}
+        </p>
+        {stage}
+      </div>
     );
   }
   if (run.phase === "review") {
     return (
       <p role="status" className={`rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-        النتيجة جاهزة وتنتظر مراجعة الفريق قبل عرضها.
+        {RUN_HELD_MESSAGE_AR}
       </p>
     );
   }
-  if (run.busy) {
-    return (
-      <p role="status" className={`rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-white/10 bg-white/5 text-zinc-300" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>
-        {busyText}
-      </p>
-    );
-  }
-  return null;
+  return stage;
 }

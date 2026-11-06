@@ -41,10 +41,12 @@ test("rejects an intake with missing service key", () => {
   assert.equal(r.ok, false);
 });
 
-test("rejects a missing required field (area)", () => {
-  const r = validateWargamingIntake({ ...valid, area: undefined });
-  assert.equal(r.ok, false);
-  if (!r.ok) assert.ok(r.errors.some((e) => e.includes("تخصص")));
+test("B9: the specialty is optional on the team order too, and an empty one is not stored", () => {
+  for (const area of [undefined, "", "  "]) {
+    const r = validateWargamingIntake({ ...valid, area });
+    assert.equal(r.ok, true, String(area));
+    if (r.ok) assert.equal("area" in r.value, false, String(area));
+  }
 });
 
 test("rejects an unknown role", () => {
@@ -149,7 +151,7 @@ test("accepts a numeric documentId (PostgREST bigserial arrives as a JS number, 
 });
 
 test("collects every error, not just the first", () => {
-  const r = validateWargamingIntake({ ...valid, role: "judge", area: "", caseSummary: "x", targets: [] });
+  const r = validateWargamingIntake({ ...valid, role: "judge", area: WARGAMING_AREA_OTHER, caseSummary: "x", targets: [] });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.length >= 4);
 });

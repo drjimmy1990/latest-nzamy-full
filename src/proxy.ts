@@ -34,7 +34,12 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isDocumentPreviewRoute,
   isPointsStandingRoute,
+  isAiRunProgressRoute,
+  isToolStatusRoute,
+  isAiRunStartRoute,
+  isLetterheadVerifyRoute,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -106,6 +111,20 @@ const TRACKING_UNLOCK_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 // and a wider ceiling per proxy-resolved IP (an office behind one address).
 const ATTACHMENTS_ZIP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 20 };
 const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
+// «معاينة» (S2-B8, GET /api/v1/documents/<id>/preview) may unzip a Word file per
+// request: 60 looks per visitor per 10 minutes, wider per proxy-resolved IP.
+const DOCUMENT_PREVIEW_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 60 };
+const DOCUMENT_PREVIEW_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 600 };
+// Starting an AI run (POST /api/v1/ai/runs) may unzip a caller's files before any
+// charge. Every run starts from one click or one chat message, and a chat waits for
+// its answer, so 20 a minute is above any real screen. The key is the network address
+// (CF-Connecting-IP), so an office behind one address shares the 20; the second number
+// only helps a shared edge. A refusal comes before any charge.
+const AI_RUN_START_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 20 };
+const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 200 };
+// The printed QR's public card: the tracking page's numbers, for the same reason.
+const LETTERHEAD_VERIFY_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 30 };
+const LETTERHEAD_VERIFY_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
 // Owner note ١٣ C03 — every library and library-invitation route
 // (src/lib/rateLimitRoutes.ts libraryBudgetBuckets). Per visitor (Cloudflare's
 // CF-Connecting-IP, as library-read) and a ten-times-wider ceiling per
@@ -114,10 +133,12 @@ const ATTACHMENTS_ZIP_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 100
 //   library-any   300 / min    — any library call (status polls once a minute);
 //                                never tighter than library-read, which sits
 //                                on the same search / autocomplete requests
-//   library-doc   120 / min    — opening documents; a collection loads in up
-//                                to 24 windows, a book one section at a time
+//   library-doc   120 / min    — opening documents; a collection opens on one
+//                                50-principle window and loads the next only
+//                                as the reader scrolls (no whole-collection
+//                                walk), a book in batches of 50 blocks
 //   library-init   60 / 10 min — catalogue pages of up to 200 rows
-// (The library AI is POST /api/v1/ai/runs, in the general bucket.)
+// (The library AI is POST /api/v1/ai/runs, in the general and ai-run-start buckets.)
 // The durable per-USER daily quota is separate (applyLibraryReadQuota below).
 const LIBRARY_BUDGETS: Readonly<Record<LibraryBudgetBucket, { visitor: RateLimitPolicy; ip: RateLimitPolicy }>> = {
   "library-any": { visitor: { windowMs: 60 * 1000, max: 300 }, ip: { windowMs: 60 * 1000, max: 3000 } },
@@ -159,13 +180,19 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isCouponMatch = isCouponValidateRoute(method, pathname);
     const isTrackingUnlockMatch = isTrackingUnlockRoute(method, pathname);
     const isAttachmentsZipMatch = isAttachmentsZipRoute(method, pathname);
+    const isDocumentPreviewMatch = isDocumentPreviewRoute(method, pathname);
     const isPointsStandingMatch = isPointsStandingRoute(method, pathname);
+    const isAiRunProgressMatch = isAiRunProgressRoute(method, pathname);
+    const isToolStatusMatch = isToolStatusRoute(method, pathname);
+    const isAiRunStartMatch = isAiRunStartRoute(method, pathname);
+    const isLetterheadVerifyMatch = isLetterheadVerifyRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
-      !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isCouponMatch &&
-      !isPointsStandingMatch && libraryBuckets.length === 0
+      !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
+      !isToolStatusMatch && !isAiRunStartMatch && !isLetterheadVerifyMatch &&
+      !isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
     const ip = resolveClientIp((name) => req.headers.get(name));
@@ -186,8 +213,28 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
+    // The waiting screen's key poll: the same policy, its own bucket (rateLimitRoutes.ts).
+    if (isAiRunProgressMatch) {
+      const decision = rateLimiter.check("ai-run-progress", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    // A screen's «may I show this tool?» read: the same policy, its own bucket (rateLimitRoutes.ts).
+    if (isToolStatusMatch) {
+      const decision = rateLimiter.check("tool-status", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
     if (isCouponMatch) {
       const decision = rateLimiter.check("coupon-validate-ip", ip, COUPON_VALIDATE_IP_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isAiRunStartMatch) {
+      const perIp = rateLimiter.check("ai-run-start-ip", ip, AI_RUN_START_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("ai-run-start", key, AI_RUN_START_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
@@ -206,6 +253,14 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
+    if (isLetterheadVerifyMatch) {
+      const perIp = rateLimiter.check("letterhead-verify-ip", ip, LETTERHEAD_VERIFY_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("letterhead-verify", key, LETTERHEAD_VERIFY_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
     if (isTrackingUnlockMatch) {
       const perIp = rateLimiter.check("tracking-unlock-ip", ip, TRACKING_UNLOCK_IP_RATE_LIMIT);
       if (!perIp.allowed) return rateLimitResponse(perIp);
@@ -219,6 +274,14 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       if (!perIp.allowed) return rateLimitResponse(perIp);
       const key = libraryReadClientKey((name) => req.headers.get(name), ip);
       const decision = rateLimiter.check("attachments-zip", key, ATTACHMENTS_ZIP_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isDocumentPreviewMatch) {
+      const perIp = rateLimiter.check("document-preview-ip", ip, DOCUMENT_PREVIEW_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("document-preview", key, DOCUMENT_PREVIEW_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
@@ -330,6 +393,7 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
 const PROTECTED = [
   "/dashboard",
   "/ai/settings",
+  "/ai/quick-answer",
   "/ai/vault",
   "/ai/secretary",
   "/ai/legal-opinion",
@@ -340,6 +404,7 @@ const PROTECTED = [
   "/ai/direction-support",
   "/ai/contracts",
   "/ai/wargaming",
+  "/ai/runs",
   "/settings",
   "/notifications",
   "/onboarding",
@@ -348,6 +413,15 @@ const PROTECTED = [
 // ─── Deprecated route redirects ────────────────────────────────────────────────
 const REDIRECTS: Record<string, string> = {
   "/ai/share-history":   "/settings",
+  // S3-02: the case brief lives on /ai/analyze now.
+  "/ai/case-brief":      "/ai/analyze",
+  // S3-03: was a page with a 2.2 s client timer.
+  "/ai/research":        "/ai/legal-opinion",
+  // S3-04: both were gated mocks. contracts-pro runs for corporate and ngo.
+  "/ai/corp/contracts":  "/ai/contracts",
+  "/ai/ngo/volunteer-contract": "/ai/contracts",
+  // S3-15: a mock page. The real review runs in /ai/contracts' review mode.
+  "/ai/contract-reviewer": "/ai/contracts",
   "/ai/corp/privacy":    "/ai/corp/compliance",
   "/dashboard/lawyer/ai/secretary": "/ai/secretary",
   "/law":                "/laws",

@@ -28,6 +28,7 @@ import type { AudienceTab } from "../../constants/pricing/pricing.types.ts";
 import { PAYABLE_ITEMS } from "../payments/catalog.ts";
 import { VAT_NOTICE, vatNoticeFor } from "./vatNotice.ts";
 import { USER_TYPE_TO_AUDIENCE } from "./audienceForUserType.ts";
+import { isArticle18Restricted } from "./plans.ts";
 
 function src(path: string): string {
   return readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -452,15 +453,17 @@ test("P1 item 2: the CTA's refund line states the refund page's condition", () =
 });
 
 // ── Task 1.6 (owner ٢٠١–٢٠٣): an invite code opens the library, nothing else ──
-// Since 2026-10-18 a library invitation code grants the legal library for 30
-// days (a library grant, no plan tier, no AI search), so its copy may promise
-// neither Pro nor «البحث الذكي».
+// Since 2026-10-18 a library invitation code grants the legal library (a
+// library grant, no plan tier, no AI search), so its copy may promise neither
+// Pro nor «البحث الذكي». Since owner q378 (20261103_11) a code carries its own
+// days (30 when it has none), so the copy may not promise a flat 30 days.
 
-test("T1.6: the invite-code copy promises the library for 30 days, not Pro or smart search", () => {
+test("T1.6: the invite-code copy promises the library for the code's days (30 by default), not Pro or smart search", () => {
   const banner = code("components/InvitationBanner.tsx");
   assert.doesNotMatch(banner, /البحث الذكي/, "banner: smart search");
   assert.doesNotMatch(banner, /\bPro\b/, "banner: Pro");
-  assert.match(banner, /فعّله لتفتح نصوص المكتبة القانونية كاملة لمدة ٣٠ يوماً\./);
+  assert.match(banner, /فعّله لتفتح نصوص المكتبة القانونية كاملة للمدة التي يمنحها الكود \(٣٠ يوماً ما لم يُحدَّد غير ذلك\)\./);
+  assert.doesNotMatch(banner, /لمدة ٣٠ يوماً/, "banner: a flat 30 days (a code may carry its own length, q378)");
 
   const subscribe = code("app/laws/subscribe/page.tsx");
   const faqs = subscribe.match(/faqs: \[[\s\S]*?\n {4}\],/g) ?? [];
@@ -469,8 +472,9 @@ test("T1.6: the invite-code copy promises the library for 30 days, not Pro or sm
     assert.doesNotMatch(faq, /باقة Pro/, "FAQ: «باقة Pro»");
     assert.doesNotMatch(faq, /Pro tier/i, "FAQ: Pro tier");
   }
-  assert.match(subscribe, /إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار\./);
-  assert.match(subscribe, /If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting\./);
+  assert.match(subscribe, /إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود \(٣٠ يوماً ما لم يُحدَّد غير ذلك\) فور تفعيله، دون انتظار\./);
+  assert.match(subscribe, /If you have an invitation code, it opens the full legal library for the length the code grants \(30 days unless it says otherwise\) as soon as you redeem it — no waiting\./);
+  assert.doesNotMatch(subscribe, /كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً/, "FAQ: a flat 30 days (q378)");
 });
 
 test("P1 item 1: the admin AI-usage pages show real runs or say they are coming", () => {
@@ -725,4 +729,9 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   assert.deepEqual([3, 6, 12].map(validityAr), ["صالحة ٣ أشهر", "صالحة ٦ أشهر", "صالحة ١٢ شهراً"]);
   // …and the helper's own agreement, so a future 1- or 2-month pack is held to correct Arabic.
   assert.deepEqual([1, 2, 10, 11].map(validityAr), ["صالحة شهراً واحداً", "صالحة شهرين", "صالحة ١٠ أشهر", "صالحة ١١ شهراً"]);
+});
+
+test("Art. 18: the independent consultant plan is restricted, an individual plan is not", () => {
+  assert.equal(isArticle18Restricted("consultant-independent"), true);
+  assert.equal(isArticle18Restricted("ind-ai"), false);
 });

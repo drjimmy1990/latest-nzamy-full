@@ -5142,11 +5142,15 @@ begin
   if bad is not null then
     raise exception '_verify: 20261030_16 — the subscription_plans prices of % are not the price book''s (re-run 20261030_16)', bad;
   end if;
+  -- Since 20261103_21 (metadata.first_order_rule = '20261103_21') the flag is
+  -- the admin coupons page's: an un-ticked NEWCLIENT is a legitimate state
+  -- there, checked by verify:s6_newclient_flag instead.
   if exists (select 1 from public.coupons where upper(code) = 'NEWCLIENT'
-                and coalesce(metadata->>'first_paid_order_only', '') <> 'true') then
-    raise exception '_verify: 20261030_16 — NEWCLIENT is not stamped first_paid_order_only (re-run 20261030_16)';
+                and coalesce(metadata->>'first_paid_order_only', '') <> 'true'
+                and coalesce(metadata->>'first_order_rule', '') <> '20261103_21') then
+    raise exception '_verify: 20261030_16 — NEWCLIENT is not stamped first_paid_order_only (run 20261103_21_newclient_first_order_flag.sql, BEFORE the deploy)';
   end if;
-  raise notice '_verify: 20261030_16 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only';
+  raise notice '_verify: 20261030_16 OK — subscription_plans holds the price book''s prices; NEWCLIENT is first-paid-order only (or, after 20261103_21, as an admin set it)';
 end $$;
 -- <<< verify:pricing_owner_package
 -- >>> verify:library_activity_monitor
@@ -5270,10 +5274,11 @@ end $$;
 -- and "undone by a later re-run" (of the 20260518 seed, which puts 99 / 800
 -- and «مشمول» back, or of 20261102_10, which puts «أو ٥٠٠ نقطة للعقد» back)
 -- look the same: every wrong state RAISES and names the file(s) to re-run.
--- A missing row passes (the code catalogue then serves the same values), and
--- so does a contract-review row for another audience (GET /api/client-pricing
--- serves audience 'individual' only). The Arabic literals are the migrations'
--- own, byte for byte.
+-- A missing row passes (the code catalogue then serves the same values). Each
+-- select reads the audience 'individual' row only: a company's price lives in
+-- its own row (e.g. 'contract-review-business', audience 'corporate', checked
+-- by verify:s6_contract_review_business), never in these two. The Arabic
+-- literals are the migrations' own, byte for byte.
 -- Docker, from the repo root in Git Bash (R, M and "$F" as in the header of
 -- supabase/tests/rls/contract_draft_points_price.test.sql):
 --   B=$(mktemp -d)/verify_wave1_pricing_rows.sql
@@ -5299,7 +5304,7 @@ begin
       r.base_price, coalesce(r.metadata->>'priceNote', 'null');
   end if;
   select base_price, metadata into r from public.admin_pricing_catalog
-   where service_id = 'contract-draft';
+   where service_id = 'contract-draft' and audience = 'individual';
   if found and (r.base_price is distinct from 0
                 or coalesce(r.metadata ? 'tag', false)
                 or coalesce(r.metadata->>'priceNote', '') not in ('أو ٥٠٠ نقطة للعقد', '٥٠٠ نقطة للعقد')) then
@@ -5315,7 +5320,7 @@ begin
     raise notice '_verify: 20261102_11 — public.admin_pricing_catalog is missing (20260518 not applied): nothing to check'; return;
   end if;
   select price_mode, metadata into r from public.admin_pricing_catalog
-   where service_id = 'contract-draft';
+   where service_id = 'contract-draft' and audience = 'individual';
   if found and (r.price_mode is distinct from 'points'
                 or r.metadata->>'priceNote' is distinct from '٥٠٠ نقطة للعقد'
                 or coalesce(r.metadata ? 'includedByPlan', false)) then
@@ -5325,3 +5330,471 @@ begin
   raise notice '_verify: 20261102_11 OK — contract drafting is priced in points («٥٠٠ نقطة للعقد»), not «مشمول في الباقة» (a missing row reads as the code catalogue)';
 end $$;
 -- <<< verify:wave1_pricing_rows
+-- >>> verify:s6_contract_review_business
+-- 2026-11-03 — 20261103_20_contract_review_business_row.sql (owner-free wave,
+-- S6-T1; q327): contract review for business is 800, in its own row
+-- 'contract-review-business' (audience 'corporate', metadata.variantOf
+-- 'contract-review'), because service_id is the table's primary key. Read-only,
+-- safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the row is missing, has another
+-- audience, no variantOf, or no positive price. Passes (NOTICE) on any
+-- positive base_price: an admin may edit it. HIDING the business price takes
+-- effect ONLY through metadata.adminHidden = true (written together with
+-- enabled = false by adminHiddenPatch, src/lib/pricingRepository.ts): the
+-- server loader reads a disabled row only with that flag. A raw
+-- enabled = false WITHOUT the flag is ignored — the row is never fetched and
+-- the code catalogue keeps serving companies 800 — so the NOTICE says so
+-- instead of reporting it as a working hide. The file is ON CONFLICT DO
+-- NOTHING, so a wrong row is not fixed by a re-run — the message says to
+-- delete it first.
+-- Docker, from the repo root in Git Bash (R, M and "$F" as in the header of
+-- supabase/tests/rls/contract_review_business_row.test.sql):
+--   B=$(mktemp -d)/verify_s6_crb.sql
+--   sed -n '/^-- >>> verify:s6_contract_review_business/,/^-- <<< verify:s6_contract_review_business/p' $M/_verify.sql > "$B"
+--   PASS: bash $R/run.sh "$F" $M/20261102_10_retire_cancelled_prices.sql \
+--           $M/20261102_11_contract_draft_points_price.sql \
+--           $M/20261103_20_contract_review_business_row.sql "$B"
+--   FAIL (each must raise): "$F" _10 _11 "$B" (row missing); the PASS chain
+--         with a prelude that sets audience 'individual' on the row before "$B".
+--   No table at all: one NOTICE, passes.
+do $$
+declare r record;
+begin
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261103_20 — public.admin_pricing_catalog is missing (20260518 not applied): the code catalogue serves the business 800; nothing to check'; return;
+  end if;
+  select audience, base_price, enabled, metadata into r from public.admin_pricing_catalog
+   where service_id = 'contract-review-business';
+  if not found then
+    raise exception '_verify: 20261103_20 — there is no contract-review-business row (the business 800 for contract review, q327): run 20261103_20_contract_review_business_row.sql (AFTER the deploy)';
+  end if;
+  if r.audience is distinct from 'corporate' or r.metadata->>'variantOf' is distinct from 'contract-review' then
+    raise exception '_verify: 20261103_20 — contract-review-business has audience % and variantOf %, not corporate / contract-review: it would not reach companies. Run delete from public.admin_pricing_catalog where service_id = ''contract-review-business''; then run 20261103_20_contract_review_business_row.sql (AFTER the deploy)',
+      coalesce(r.audience, 'null'), coalesce(r.metadata->>'variantOf', 'null');
+  end if;
+  if r.base_price is null or r.base_price <= 0 then
+    raise exception '_verify: 20261103_20 — contract-review-business has price %, not a positive business price: set a positive base_price by hand (update … where service_id = ''contract-review-business''), or delete the row and run 20261103_20_contract_review_business_row.sql (AFTER the deploy)',
+      coalesce(r.base_price::text, 'null');
+  end if;
+  if r.enabled then
+    raise notice '_verify: 20261103_20 OK — companies see contract review from % SAR (any positive price an admin sets is accepted)', r.base_price;
+  elsif coalesce(r.metadata->>'adminHidden', '') = 'true' then
+    raise notice '_verify: 20261103_20 OK — the business price is HIDDEN by an admin (enabled = false + metadata.adminHidden): companies are quoted the individuals'' contract-review price';
+  else
+    raise notice '_verify: 20261103_20 OK, but note — contract-review-business has enabled = false WITHOUT metadata.adminHidden: the server ignores that row, so companies still see the code catalogue''s 800. To hide the business price, use the admin toggle (adminHiddenPatch), which also writes metadata.adminHidden = true';
+  end if;
+end $$;
+-- <<< verify:s6_contract_review_business
+-- >>> verify:s6_newclient_flag
+-- 2026-11-03 — 20261103_21_newclient_first_order_flag.sql (owner-free wave,
+-- S6-T9; owner ٣٠٥): NEWCLIENT's first-paid-order rule lives in its row
+-- (metadata.first_paid_order_only), stamped metadata.first_order_rule =
+-- '20261103_21'. From the deploy of S6-T10 on the code reads the row only,
+-- never the name. Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when a NEWCLIENT row has no marker. With
+-- the marker it passes whatever the flag says: the admin coupons page owns
+-- the flag from then on (an un-tick is a legitimate state, reported in the
+-- NOTICE). No NEWCLIENT row passes (nothing to check). No coupons table:
+-- one NOTICE, passes.
+-- Docker: supabase/tests/rls/newclient_first_order_flag.test.sql runs this
+-- block (its header has the chain, the negative control and the sed line).
+do $$
+declare r record;
+begin
+  if to_regclass('public.coupons') is null then
+    raise notice '_verify: 20261103_21 — public.coupons is missing (20260603_phase1_003 not applied): nothing to check'; return;
+  end if;
+  select code, metadata into r from public.coupons where upper(code) = 'NEWCLIENT' limit 1;
+  if not found then
+    raise notice '_verify: 20261103_21 OK — there is no NEWCLIENT coupon: nothing to stamp'; return;
+  end if;
+  if coalesce(r.metadata->>'first_order_rule', '') <> '20261103_21' then
+    raise exception '_verify: 20261103_21 — NEWCLIENT has no first_order_rule marker (its first-paid-order flag is %): from the deploy of S6-T10 the rule is read from the row only. Run 20261103_21_newclient_first_order_flag.sql (BEFORE the deploy)',
+      coalesce(r.metadata->>'first_paid_order_only', 'absent');
+  end if;
+  if coalesce(r.metadata->'first_paid_order_only' = 'true'::jsonb, false) then  -- the JSON boolean the code reads (=== true), not the string "true"
+    raise notice '_verify: 20261103_21 OK — NEWCLIENT is for the buyer''s first paid order only (from its row)';
+  else
+    raise notice '_verify: 20261103_21 OK, but note — an admin un-ticked NEWCLIENT''s «للطلب المدفوع الأول فقط» (flag %): it now applies to any order its other rules allow',
+      coalesce(r.metadata->>'first_paid_order_only', 'absent');
+  end if;
+end $$;
+-- <<< verify:s6_newclient_flag
+-- >>> verify:s6_coupon_business_role
+-- 2026-11-03 — 20261103_22_coupon_business_role.sql (owner-free wave,
+-- S6-T11): a coupon for «الشركات» targets profiles.user_type 'corporate'; the
+-- old page stored 'business', which no profile has. Read-only, safe to
+-- repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) while any coupon still holds 'business' in
+-- eligible_user_types — such a coupon matches no company. No coupons table
+-- (or no eligible_user_types column): one NOTICE, passes.
+-- Docker: supabase/tests/rls/coupon_business_role.test.sql runs this block
+-- (its header has the chain, the negative control and the sed line).
+do $$
+declare left_codes text;
+begin
+  if to_regclass('public.coupons') is null
+     or not exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'coupons' and column_name = 'eligible_user_types') then
+    raise notice '_verify: 20261103_22 — public.coupons.eligible_user_types is missing (20260603_phase1_003 not applied): nothing to check'; return;
+  end if;
+  select string_agg(code, ', ' order by code) into left_codes
+    from public.coupons where 'business' = any (eligible_user_types);
+  if left_codes is not null then
+    raise exception '_verify: 20261103_22 — coupon(s) % still target the user type ''business'', which no profile has: they reach no company. Run 20261103_22_coupon_business_role.sql (AFTER the deploy)', left_codes;
+  end if;
+  raise notice '_verify: 20261103_22 OK — no coupon targets ''business''; company coupons target ''corporate''';
+end $$;
+-- <<< verify:s6_coupon_business_role
+-- >>> verify:library_fts_tashkeel_fold
+-- 2026-11-03 — 20261103_14_library_fts_tashkeel_fold.sql (owner-free wave,
+-- S1-T13, BUG-LIB-03): the fts of library.articles, library.principles and
+-- library.feqh_blocks is built over library.fold_tashkeel(...). Read-only,
+-- safe to repeat: SELECTs and RAISE.
+-- THE ONE EXCEPTION to the RAISE-when-missing convention (preflight R14):
+-- _14 is a STOP-POINT the user runs AFTER the deploy at a quiet hour, and
+-- _verify may run days before that window. So:
+--   * no fold_tashkeel function and no folded column → NOTICE «not applied
+--     yet» and pass (search sends both forms meanwhile, S1-T9);
+--   * the function without all three folded columns, a wrong grant, a missing
+--     or API-readable matview, or a tashkeel probe that misses → RAISE;
+--   * all three folded, the grants right and the probe hits → OK.
+-- No library tables at all: one NOTICE, passes.
+-- Docker: supabase/tests/rls/library_fts_tashkeel_fold.test.sql runs this
+-- block before and after _14 (its header has the chain and the sed line).
+do $$
+declare
+  t        text;
+  def      text;
+  folded   text := '';
+  unfolded text := '';
+  has_fn   boolean := to_regprocedure('library.fold_tashkeel(text)') is not null;
+begin
+  if to_regclass('library.articles') is null or to_regclass('library.principles') is null
+     or to_regclass('library.feqh_blocks') is null then
+    raise notice '_verify: 20261103_14 — the library tables are missing (20260626 not applied): nothing to check'; return;
+  end if;
+  foreach t in array array['library.articles', 'library.principles', 'library.feqh_blocks'] loop
+    select pg_get_expr(d.adbin, d.adrelid) into def
+      from pg_attribute a
+      join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+     where a.attrelid = to_regclass(t) and a.attname = 'fts' and not a.attisdropped;
+    if def is not null and position('fold_tashkeel' in def) > 0 then
+      folded := folded || ' ' || t;
+    else
+      unfolded := unfolded || ' ' || t;
+    end if;
+  end loop;
+  if not has_fn and folded = '' then
+    raise notice '_verify: 20261103_14 not applied yet — fts keeps tashkeel; the query sends the typed and the stripped form meanwhile. Run 20261103_14_library_fts_tashkeel_fold.sql AFTER the deploy, at a quiet hour (STOP-POINT, S1_RUN_NOTES.md)';
+    return;
+  end if;
+  if not has_fn or unfolded <> '' then
+    raise exception '_verify: 20261103_14 — partly applied (fold_tashkeel function: %, folded:%, not folded:%): run 20261103_14_library_fts_tashkeel_fold.sql again (AFTER the deploy, at a quiet hour)',
+      has_fn, coalesce(nullif(folded, ''), ' none'), coalesce(nullif(unfolded, ''), ' none');
+  end if;
+  if not has_function_privilege('service_role', 'library.fold_tashkeel(text)', 'EXECUTE') then
+    raise exception '_verify: 20261103_14 — service_role cannot EXECUTE library.fold_tashkeel(text): every insert into articles / principles / fiqh blocks (the owner''s loader) fails with 42501. Run 20261103_14 again (AFTER the deploy)';
+  end if;
+  if not has_function_privilege((select pg_get_userbyid(relowner) from pg_class where oid = 'library.articles'::regclass),
+                                'library.fold_tashkeel(text)', 'EXECUTE') then
+    raise exception '_verify: 20261103_14 — the owner of the library tables cannot EXECUTE library.fold_tashkeel(text): its writes (the SQL editor, the owner''s fix SQL) fail with 42501. Run 20261103_14 again (AFTER the deploy)';
+  end if;
+  if has_function_privilege('anon', 'library.fold_tashkeel(text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'library.fold_tashkeel(text)', 'EXECUTE') then
+    raise exception '_verify: 20261103_14 — anon or authenticated can EXECUTE library.fold_tashkeel(text): run 20261103_14 again (AFTER the deploy)';
+  end if;
+  if to_regclass('library.cross_section_search') is null then
+    raise exception '_verify: 20261103_14 — library.cross_section_search is missing (dropped and not recreated): run 20261103_14 again (AFTER the deploy)';
+  end if;
+  if has_table_privilege('anon', 'library.cross_section_search', 'SELECT')
+     or has_table_privilege('authenticated', 'library.cross_section_search', 'SELECT') then
+    raise exception '_verify: 20261103_14 — library.cross_section_search is readable by anon or authenticated (it carries article snippets): run 20261103_14 again (AFTER the deploy)';
+  end if;
+  -- The probe: a voweled text must be found by the stripped word.
+  if not (pg_catalog.to_tsvector('library.arabic', library.fold_tashkeel('القَرَارُ نافِذٌ'))
+          @@ pg_catalog.to_tsquery('simple', '''القرار''')) then
+    raise exception '_verify: 20261103_14 — the tashkeel probe missed: «القَرَارُ» folded is not found by ''القرار'' (library.fold_tashkeel or library.arabic changed). Run 20261103_14 again (AFTER the deploy)';
+  end if;
+  raise notice '_verify: 20261103_14 OK — articles, principles and fiqh blocks index text without tashkeel; fold_tashkeel is service_role only; the cross-section matview stays off the API';
+end $$;
+-- <<< verify:library_fts_tashkeel_fold
+-- >>> verify:library_auto_lock_hours
+-- 2026-11-03 — 20261103_10_library_auto_lock_hours.sql (owner-free wave,
+-- S1-T14; owner q362): an automatic library lock ends after
+-- library_monitor_settings.auto_lock_hours (default 24; 0 = until an admin
+-- lifts it). Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the column or its check is missing,
+-- when either function no longer reads it (20261031_10 re-run after
+-- 20261103_10 puts the old bodies back), when library_security_lock_create
+-- no longer converts an open automatic lock into the staff lock (20261030_80
+-- re-run after it), or when a function has more than one overload. No
+-- library_monitor_settings (20261031_10 not applied): one NOTICE, passes.
+-- Docker: supabase/tests/rls/library_auto_lock_hours.test.sql runs this block
+-- (its header has the chain, the negative controls and the sed line).
+do $$
+declare v_hours text; fn text;
+begin
+  if to_regclass('public.library_monitor_settings') is null then
+    raise notice '_verify: 20261103_10 — public.library_monitor_settings is missing (20261031_10 not applied): nothing to check'; return;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'library_monitor_settings'
+                    and column_name = 'auto_lock_hours') then
+    raise exception '_verify: 20261103_10 — library_monitor_settings.auto_lock_hours is missing: automatic library locks never end. Run 20261103_10_library_auto_lock_hours.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'public.library_monitor_settings'::regclass
+                    and conname = 'library_monitor_settings_auto_lock_hours_check') then
+    raise exception '_verify: 20261103_10 — the check library_monitor_settings_auto_lock_hours_check is missing. Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)';
+  end if;
+  foreach fn in array array['public.library_read_quota_hit(uuid,text,int,int,int,int)',
+                            'public.library_monitor_evaluate(uuid)'] loop
+    if to_regprocedure(fn) is null then
+      raise exception '_verify: 20261103_10 — % is missing. Run 20261031_10, then 20261103_10_library_auto_lock_hours.sql (BEFORE the deploy)', fn;
+    end if;
+    if position('auto_lock_hours' in pg_get_functiondef(to_regprocedure(fn))) = 0 then
+      raise exception '_verify: 20261103_10 — % does not read auto_lock_hours (20261031_10 was re-run after it): its automatic locks never end. Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)', fn;
+    end if;
+  end loop;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname in ('library_read_quota_hit', 'library_monitor_evaluate')) <> 2 then
+    raise exception '_verify: 20261103_10 — library_read_quota_hit / library_monitor_evaluate has more than one overload (PostgREST would refuse the call with PGRST203)';
+  end if;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'library_security_lock_create') <> 1
+     or to_regprocedure('public.library_security_lock_create(uuid,uuid,text,timestamptz)') is null
+     or pg_get_function_identity_arguments('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)
+        <> 'p_user uuid, p_admin uuid, p_note text, p_until timestamp with time zone' then
+    raise exception '_verify: 20261103_10 — library_security_lock_create is missing, changed its arguments or has more than one overload (PGRST203). Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)';
+  end if;
+  if position('converted_from' in pg_get_functiondef('public.library_security_lock_create(uuid,uuid,text,timestamptz)'::regprocedure)) = 0 then
+    raise exception '_verify: 20261103_10 — library_security_lock_create returns an open automatic lock unchanged (20261030_80 was re-run after it): a staff lock on an auto-locked reader ends with the automatic one. Run 20261103_10_library_auto_lock_hours.sql again (BEFORE the deploy)';
+  end if;
+  select string_agg(auto_lock_hours::text, ',') into v_hours from public.library_monitor_settings;
+  raise notice '_verify: 20261103_10 OK — automatic library locks end after % hour(s) (0 = until an admin lifts it); a staff lock replaces an open automatic one', coalesce(v_hours, 'no settings row: 24');
+end $$;
+-- <<< verify:library_auto_lock_hours
+-- >>> verify:library_invitation_grant_days
+-- 2026-11-03 — 20261103_11_library_invitation_grant_days.sql (owner-free
+-- wave, S1-T16; owner q378): a library invite code may carry its own number
+-- of days (library.invitations.grant_days; null = the default 30). Read-only,
+-- safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the column or its check is missing.
+-- No library.invitations (20260626 not applied): one NOTICE, passes.
+-- Docker: supabase/tests/rls/library_invitation_grant_days.test.sql runs this
+-- block (its header has the chain, the negative control and the sed line).
+do $$
+declare n_own int; n_all int;
+begin
+  if to_regclass('library.invitations') is null then
+    raise notice '_verify: 20261103_11 — library.invitations is missing (20260626 not applied): nothing to check'; return;
+  end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'library' and table_name = 'invitations' and column_name = 'grant_days') then
+    raise exception '_verify: 20261103_11 — library.invitations.grant_days is missing: every invite code gives 30 days and the admin cannot set a code''s own length. Run 20261103_11_library_invitation_grant_days.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_constraint
+                  where conrelid = 'library.invitations'::regclass
+                    and conname = 'library_invitations_grant_days_check') then
+    raise exception '_verify: 20261103_11 — the check library_invitations_grant_days_check is missing. Run 20261103_11_library_invitation_grant_days.sql again (BEFORE the deploy)';
+  end if;
+  execute 'select count(*) filter (where grant_days is not null), count(*) from library.invitations' into n_own, n_all;
+  raise notice '_verify: 20261103_11 OK — % of % invite code(s) carry their own number of days; the rest give 30', n_own, n_all;
+end $$;
+-- <<< verify:library_invitation_grant_days
+-- >>> verify:library_eligibility_verifications
+-- 2026-11-03 — 20261103_12_library_eligibility_verifications.sql (owner-free
+-- wave, S1-T18; owner q375): the staff-verified library eligibility table.
+-- Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the table is missing, when RLS is off,
+-- when it has a policy, or when anon / authenticated hold any privilege on it
+-- (users must never read or write their own eligibility). Its base schema is
+-- auth.users, present on every Supabase database: no NOTICE-only case.
+-- Docker: supabase/tests/rls/library_eligibility_verifications.test.sql runs
+-- this block (its header has the chain, the negative controls and the sed line).
+do $$
+declare t constant text := 'public.library_eligibility_verifications'; n_active int; n_revoked int;
+begin
+  if to_regclass('auth.users') is null then
+    raise notice '_verify: 20261103_12 — auth.users is missing (not a Supabase database): nothing to check'; return;
+  end if;
+  if to_regclass(t) is null then
+    raise exception '_verify: 20261103_12 — % is missing: no account can be verified as eligible for the library. Run 20261103_12_library_eligibility_verifications.sql (BEFORE the deploy)', t;
+  end if;
+  if not (select c.relrowsecurity from pg_class c where c.oid = to_regclass(t)) then
+    raise exception '_verify: 20261103_12 — RLS is off on %. Run 20261103_12_library_eligibility_verifications.sql again (BEFORE the deploy)', t;
+  end if;
+  if exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = 'library_eligibility_verifications') then
+    raise exception '_verify: 20261103_12 — % has a policy; it must have none (service role only). Drop it, then run 20261103_12 again (BEFORE the deploy)', t;
+  end if;
+  if has_table_privilege('anon', t, 'SELECT') or has_table_privilege('authenticated', t, 'SELECT')
+     or has_table_privilege('anon', t, 'INSERT') or has_table_privilege('authenticated', t, 'INSERT')
+     or has_table_privilege('authenticated', t, 'UPDATE') or has_table_privilege('authenticated', t, 'DELETE') then
+    raise exception '_verify: 20261103_12 — a session role (anon or authenticated) holds a privilege on %: a user could read or set his own eligibility. Run 20261103_12_library_eligibility_verifications.sql again (BEFORE the deploy)', t;
+  end if;
+  execute format('select count(*) filter (where revoked_at is null), count(*) filter (where revoked_at is not null) from %s', t)
+    into n_active, n_revoked;
+  raise notice '_verify: 20261103_12 OK — library eligibility is staff-only (% verified, % revoked)', n_active, n_revoked;
+end $$;
+-- <<< verify:library_eligibility_verifications
+-- >>> verify:library_invitations_closed
+-- 2026-11-03 — 20261103_15_library_invitations_close_public_read.sql
+-- (owner-free wave, S1; approved by the user 2026-11-03): library invite codes
+-- are readable by the service role only. Read-only, safe to repeat: SELECTs
+-- and RAISE.
+-- RAISES «run 20261103_15_library_invitations_close_public_read.sql (any
+-- time)» when RLS is off, when a policy on library.invitations admits anon,
+-- authenticated or PUBLIC (20260626 re-run puts «Allow public read on
+-- library.invitations» back: the codes are listable with the public key), or
+-- when anon / authenticated holds ANY table or column privilege on it — also
+-- the grant alone, without a policy (20260922_01 re-run): RLS still returns no
+-- row then, but the table is one permissive policy from the leak, and the fix
+-- is one idempotent file that runs at any time.
+-- RAISES too when service_role lost a privilege the invite routes need.
+-- No library.invitations (20260626 not applied): one NOTICE, passes.
+-- Docker: supabase/tests/rls/library_invitations_close_public_read.test.sql
+-- runs this block (its header has the chain and the negative controls).
+do $$
+declare r text; p text; v_pol text; n int;
+begin
+  if to_regclass('library.invitations') is null then
+    raise notice '_verify: 20261103_15 — library.invitations is missing (20260626 not applied): nothing to check'; return;
+  end if;
+  if not (select c.relrowsecurity from pg_class c where c.oid = 'library.invitations'::regclass) then
+    raise exception '_verify: 20261103_15 — RLS is off on library.invitations: every invite code is readable with the public key. Run 20261103_15_library_invitations_close_public_read.sql (any time)';
+  end if;
+  select string_agg(quote_ident(pol.policyname), ', ' order by pol.policyname) into v_pol
+    from pg_policies pol
+   where pol.schemaname = 'library' and pol.tablename = 'invitations'
+     and pol.roles && array['public', 'anon', 'authenticated']::name[];
+  if v_pol is not null then
+    raise exception '_verify: 20261103_15 — the policy % on library.invitations admits anon / authenticated: every invite code is readable with the public key. Run 20261103_15_library_invitations_close_public_read.sql (any time)', v_pol;
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'] loop
+      if has_table_privilege(r, 'library.invitations', p) then
+        raise exception '_verify: 20261103_15 — % holds % on library.invitations (20260922_01 or 20260626 re-run after 20261103_15?). No policy admits it, so no row is readable yet, but run 20261103_15_library_invitations_close_public_read.sql (any time)', r, p;
+      end if;
+    end loop;
+    if has_any_column_privilege(r, 'library.invitations', 'SELECT, INSERT, UPDATE, REFERENCES') then
+      raise exception '_verify: 20261103_15 — % holds a column privilege on library.invitations. Run 20261103_15_library_invitations_close_public_read.sql (any time)', r;
+    end if;
+  end loop;
+  foreach p in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+    if not has_table_privilege('service_role', 'library.invitations', p) then
+      raise exception '_verify: 20261103_15 — service_role lacks % on library.invitations: the invite routes fail. Run 20261103_15_library_invitations_close_public_read.sql (any time)', p;
+    end if;
+  end loop;
+  select count(*) into n from pg_policies pol where pol.schemaname = 'library' and pol.tablename = 'invitations';
+  raise notice '_verify: 20261103_15 OK — library invite codes: no anon / authenticated privilege, no policy admits them (% polic(ies) left), service_role reads and writes', n;
+end $$;
+-- <<< verify:library_invitations_closed
+
+-- >>> verify:progress_events — supabase/tests/rls/progress_events.test.sql
+-- 2026-11-03 — 20261103_31_progress_events.sql (S2 E1, runs BEFORE the deploy).
+-- Read-only, safe to repeat. RAISES when the table is missing or a session could
+-- write it, read its owner column, or run the prune. No public.ai_runs
+-- (20261027_10 not applied): one NOTICE, passes.
+do $$
+declare r text; p text; c text;
+begin
+  if to_regclass('public.ai_runs') is null then
+    raise notice '_verify: 20261103_31 — public.ai_runs is missing (20261027_10 not applied): nothing to check'; return;
+  end if;
+  if to_regclass('public.progress_events') is null then
+    raise exception '_verify: 20261103_31 — public.progress_events is missing: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if not (select c2.relrowsecurity from pg_class c2 where c2.oid = 'public.progress_events'::regclass) then
+    raise exception '_verify: 20261103_31 — RLS is off on public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_policies pol
+                  where pol.schemaname = 'public' and pol.tablename = 'progress_events'
+                    and pol.policyname = 'own progress events' and pol.cmd = 'SELECT') then
+    raise exception '_verify: 20261103_31 — the policy «own progress events» is missing: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    foreach p in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] loop
+      if has_table_privilege(r, 'public.progress_events', p) then
+        raise exception '_verify: 20261103_31 — % holds % on public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)', r, p;
+      end if;
+    end loop;
+    if has_column_privilege(r, 'public.progress_events', 'user_id', 'SELECT') then
+      raise exception '_verify: 20261103_31 — % reads progress_events.user_id: run 20261103_31_progress_events.sql (BEFORE the deploy)', r;
+    end if;
+  end loop;
+  if has_any_column_privilege('anon', 'public.progress_events', 'SELECT') then
+    raise exception '_verify: 20261103_31 — anon reads public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  foreach c in array array['id', 'run_id', 'kind', 'label', 'created_at'] loop
+    if not has_column_privilege('authenticated', 'public.progress_events', c, 'SELECT') then
+      raise exception '_verify: 20261103_31 — authenticated cannot read progress_events.%: the waiting screen stays empty. Run 20261103_31_progress_events.sql (BEFORE the deploy)', c;
+    end if;
+  end loop;
+  if not has_table_privilege('service_role', 'public.progress_events', 'INSERT') then
+    raise exception '_verify: 20261103_31 — service_role cannot write public.progress_events: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if to_regprocedure('public.progress_events_prune()') is null then
+    raise exception '_verify: 20261103_31 — progress_events_prune() is missing: run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure('public.progress_events_prune()') and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261103_31 — progress_events_prune() is not SECURITY DEFINER with search_path '''': run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_function_privilege(r, 'public.progress_events_prune()', 'EXECUTE') then
+      raise exception '_verify: 20261103_31 — % can run progress_events_prune(): run 20261103_31_progress_events.sql (BEFORE the deploy)', r;
+    end if;
+  end loop;
+  if not has_function_privilege('service_role', 'public.progress_events_prune()', 'EXECUTE') then
+    raise exception '_verify: 20261103_31 — service_role cannot run progress_events_prune(): run 20261103_31_progress_events.sql (BEFORE the deploy)';
+  end if;
+  raise notice '_verify: 20261103_31 OK — progress_events: own rows through granted columns, service role writes, prune service role only';
+end $$;
+-- <<< verify:progress_events
+
+-- >>> verify:letterhead_verify_card — supabase/tests/rls/letterhead_verify_card.test.sql
+-- 2026-11-03 — 20261103_69_letterhead_verify_card.sql (S4 Task 22, q343, runs BEFORE
+-- the deploy). Read-only, safe to repeat. RAISES when the columns or functions are
+-- missing, when a session could write either column, or when anyone but the service
+-- role could run the functions. No public.branding_vaults (20261026_63 not applied):
+-- one NOTICE, passes.
+do $$
+declare r text; c text; f text;
+begin
+  if to_regclass('public.branding_vaults') is null then
+    raise notice '_verify: 20261103_69 — public.branding_vaults is missing (20261026_63 not applied): nothing to check'; return;
+  end if;
+  foreach c in array array['verify_token', 'qr_verify_card'] loop
+    if not exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'branding_vaults' and column_name = c) then
+      raise exception '_verify: 20261103_69 — branding_vaults.% is missing: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', c;
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_column_privilege(r, 'public.branding_vaults', c, 'UPDATE') or has_column_privilege(r, 'public.branding_vaults', c, 'INSERT') then
+        raise exception '_verify: 20261103_69 — % can write branding_vaults.%: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', r, c;
+      end if;
+    end loop;
+  end loop;
+  foreach f in array array['public.letterhead_verification_card(text)', 'public.mint_letterhead_verify_token(uuid, text)'] loop
+    if to_regprocedure(f) is null then
+      raise exception '_verify: 20261103_69 — % is missing: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', f;
+    end if;
+    if not exists (select 1 from pg_proc where oid = to_regprocedure(f) and prosecdef and proconfig @> array['search_path=""']) then
+      raise exception '_verify: 20261103_69 — % is not SECURITY DEFINER with search_path '''': run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', f;
+    end if;
+    foreach r in array array['anon', 'authenticated'] loop
+      if has_function_privilege(r, f, 'EXECUTE') then
+        raise exception '_verify: 20261103_69 — % can run %: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', r, f;
+      end if;
+    end loop;
+    if not has_function_privilege('service_role', f, 'EXECUTE') then
+      raise exception '_verify: 20261103_69 — service_role cannot run %: run 20261103_69_letterhead_verify_card.sql (BEFORE the deploy)', f;
+    end if;
+  end loop;
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname in ('letterhead_verification_card', 'mint_letterhead_verify_token')) <> 2 then
+    raise exception '_verify: 20261103_69 — a verification-card function has an overload (PGRST203): drop the extra one, then run 20261103_69_letterhead_verify_card.sql';
+  end if;
+  raise notice '_verify: 20261103_69 OK — verification card: token and switch server-only, two functions service role only';
+end $$;
+-- <<< verify:letterhead_verify_card

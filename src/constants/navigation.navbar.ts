@@ -239,7 +239,7 @@ export const NGO_NAV: NavItem[] = [
   {
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
-      { label: "صائغ عقود التطوع",  labelEn: "Volunteer Contract",  href: "/ai/ngo/volunteer-contract",  icon: "HandHeart", badge: "قريباً" },
+      { label: "محترف العقود",  labelEn: "Contract Pro",  href: "/ai/contracts",  icon: "HandHeart" },
       { label: "مدقق الحوكمة",       labelEn: "Governance Checker",  href: "/ai/ngo/governance-checker",  icon: "ShieldCheck" },
       { label: "محلل التبرعات",      labelEn: "Donation Analyzer",   href: "/ai/ngo/donation-analyzer",   icon: "ChartBar", badge: "قريباً" },
       { label: "مُعد التقارير",      labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", badge: "قريباً" },

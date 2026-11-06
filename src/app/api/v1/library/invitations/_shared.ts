@@ -5,18 +5,31 @@
  * src/app/api/v1/lawyer/consultations/_shared.ts.
  *
  * `library.invitations` (20260626_legal_library_schema.sql):
- *   id, code (unique), max_uses (default 1), current_uses (default 0),
- *   expires_at (nullable), created_by, created_at, updated_at.
+ *   id, code (unique), max_uses (default 1 — the code's seats), current_uses
+ *   (default 0), expires_at (nullable), created_by, created_at, updated_at;
+ *   grant_days (nullable, 20261103_11 — owner q378: the code's own days).
  *
  * The `library` schema is not exposed to PostgREST's default (public) schema
  * — every read/write here MUST go through `createServiceClient().schema("library")`,
  * never the RLS-scoped client from createClient().
  */
 
-import { libraryInvitationStatus, type LibraryInvitationStatus } from "@/lib/services/libraryInvitationRules";
+import {
+  DEFAULT_INVITE_GRANT_DAYS,
+  libraryInvitationStatus,
+  type LibraryInvitationStatus,
+} from "../../../../../lib/services/libraryInvitationRules.ts";
 
+/** The columns every database has (the read without grant_days, before 20261103_11). */
 export const LIBRARY_INVITATION_SELECT =
   "id, code, max_uses, current_uses, expires_at, created_by, created_at, updated_at";
+
+/**
+ * The read with grant_days (20261103_11). A route reads with this first and,
+ * when the database answers that grant_days does not exist yet
+ * (isMissingColumnError), once more with LIBRARY_INVITATION_SELECT.
+ */
+export const LIBRARY_INVITATION_SELECT_V2 = LIBRARY_INVITATION_SELECT + ", grant_days";
 
 export interface LibraryInvitationRow {
   id: string;
@@ -27,14 +40,19 @@ export interface LibraryInvitationRow {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** null or absent (read before 20261103_11) = DEFAULT_INVITE_GRANT_DAYS. */
+  grant_days?: number | null;
 }
 
 export interface LibraryInvitationDto {
   id: string;
   code: string;
+  /** The code's seats: how many accounts may use it. */
   maxUses: number;
   currentUses: number;
   expiresAt: string | null;
+  /** Days of library access the code gives (its own grant_days, else 30). */
+  grantDays: number;
   createdBy: string | null;
   status: LibraryInvitationStatus;
   createdAt: string;
@@ -48,6 +66,7 @@ export function toLibraryInvitationDto(row: LibraryInvitationRow): LibraryInvita
     maxUses: row.max_uses,
     currentUses: row.current_uses,
     expiresAt: row.expires_at,
+    grantDays: row.grant_days ?? DEFAULT_INVITE_GRANT_DAYS,
     createdBy: row.created_by,
     status: libraryInvitationStatus({
       currentUses: row.current_uses,

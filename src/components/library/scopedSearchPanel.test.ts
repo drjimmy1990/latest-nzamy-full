@@ -63,7 +63,8 @@ test("every cart caller shares one store (the FAB and the readers cannot diverge
 test("the panel is labelled apart from each reader's own box; «more» stops at the depth the route accepts", () => {
   assert.match(PANEL, /\{scopedPanelTitle\(scope, volumeCount\)\}/);
   assert.match(PANEL, /role="group" aria-label="معاملات البحث"/);
-  assert.match(COLLECTION, /تصفية المبادئ المعروضة في هذا المجلد/);
+  // q390: the collection reader has no box of its own any more — the panel is its only search.
+  assert.doesNotMatch(COLLECTION, /تصفية المبادئ المعروضة/);
   const ROUTE = read("../../app/api/library/scoped-search/route.ts");
   assert.match(ROUTE, /hasMore: from \+ rows\.length < count && \(req\.page \+ 1\) \* req\.limit <= SCOPED_MAX_DEPTH,/);
 });

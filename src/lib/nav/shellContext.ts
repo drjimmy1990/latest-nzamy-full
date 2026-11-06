@@ -16,7 +16,8 @@
  * The fix keeps two things apart:
  *   - the real role (useUser().userType) — every guard, the proxy and every
  *     API route keep reading it, unchanged; nothing here can widen access;
- *   - the admin's VIEW CONTEXT ("admin" | "lawyer") — UI only, kept in this
+ *   - the admin's VIEW CONTEXT (one of the nine AdminView dashboards since
+ *     S6-T14; "admin" | "lawyer" before) — UI only, kept in this
  *     tab's sessionStorage under ADMIN_VIEW_STORAGE_KEY, and consulted ONLY
  *     when the real role is "admin". A stale value in a non-admin tab is
  *     ignored by construction.
@@ -36,10 +37,21 @@ export const ADMIN_VIEW_STORAGE_KEY = "nzamy_admin_view_as";
 /** Same-tab change event (the `storage` event only fires in OTHER tabs). */
 export const ADMIN_VIEW_EVENT = "nzamy:admin-view";
 
-export type AdminView = "admin" | "lawyer";
+/**
+ * S6-T14 (slice A §6.1.2): the admin's «عرض كـ» covers every dashboard, not
+ * just admin / lawyer. Still UI only — the names are dashboards to DRAW, never
+ * a role the server is told about.
+ */
+export type AdminView =
+  | "admin" | "lawyer" | "firm" | "individual" | "corporate"
+  | "micro" | "provider" | "government" | "ngo";
+
+export const ADMIN_VIEWS: readonly AdminView[] = [
+  "admin", "lawyer", "firm", "individual", "corporate", "micro", "provider", "government", "ngo",
+];
 
 export function parseAdminView(raw: unknown): AdminView | null {
-  return raw === "admin" || raw === "lawyer" ? raw : null;
+  return typeof raw === "string" && (ADMIN_VIEWS as readonly string[]).includes(raw) ? (raw as AdminView) : null;
 }
 
 /** Minimal Storage shape, so tests can pass a Map-backed fake. */
@@ -92,33 +104,48 @@ export function isSharedToolPath(pathname: string): boolean {
   return pathname === "/ai" || pathname.startsWith("/ai/");
 }
 
+/** /dashboard/<segment> → the view it is. Whole segments only (no "lawyerish"). */
+const DASHBOARD_VIEWS: ReadonlyArray<readonly [prefix: string, view: AdminView]> = [
+  ["/dashboard/admin", "admin"],
+  ["/dashboard/lawyer", "lawyer"],
+  ["/dashboard/firm", "firm"],
+  ["/dashboard/client", "individual"],
+  ["/dashboard/business", "corporate"],
+  ["/dashboard/micro", "micro"],
+  ["/dashboard/provider", "provider"],
+  ["/dashboard/government", "government"],
+  ["/dashboard/ngo", "ngo"],
+];
+
 /**
  * The view an admin's visit to this path SETS (the only writes besides the
- * switch bar): entering the admin console means admin view, entering the
- * lawyer dashboard means lawyer view. /ai/* deliberately does NOT write — an
- * admin in admin view who follows a link into a tool must not be silently
- * flipped for the rest of the tab; the tool is still drawn as lawyer on read.
+ * switch bar): entering a dashboard means that dashboard's view (S6-T14: all
+ * nine, `client` → individual, `business` → corporate). /ai/* deliberately does
+ * NOT write — an admin who follows a link into a tool must not be silently
+ * flipped for the rest of the tab.
  */
 export function adminViewFromPath(pathname: string): AdminView | null {
-  if (pathname === "/dashboard/admin" || pathname.startsWith("/dashboard/admin/")) return "admin";
-  if (pathname === "/dashboard/lawyer" || pathname.startsWith("/dashboard/lawyer/")) return "lawyer";
+  for (const [prefix, view] of DASHBOARD_VIEWS) {
+    if (pathname === prefix || pathname.startsWith(prefix + "/")) return view;
+  }
   return null;
 }
 
 /**
  * THE decision for an admin session — the single place every shell asks.
- *   1. The admin console or the lawyer dashboard: the path says it.
- *   2. A shared AI tool: always the lawyer workspace (the admin console has no
- *      AI tools; REF0021 acceptance: an admin on /ai/* sees the lawyer menu,
- *      never the admin or business one).
+ *   1. A dashboard path: the path says it.
+ *   2. A shared AI tool: the stored view when it is a role dashboard (S6-T14:
+ *      an admin viewing as a firm keeps the firm workspace in /ai/draft);
+ *      otherwise the lawyer workspace — the admin console has no AI tools
+ *      (REF0021: never the admin menu on /ai/*).
  *   3. Anywhere else (/notifications, /settings, /laws…): the stored view.
  *   4. Nothing stored: admin.
  */
 export function resolveAdminView(pathname: string, storedView: AdminView | null): AdminView {
-  return adminViewFromPath(pathname)
-    ?? (isSharedToolPath(pathname) ? "lawyer" : null)
-    ?? storedView
-    ?? "admin";
+  const fromPath = adminViewFromPath(pathname);
+  if (fromPath) return fromPath;
+  if (isSharedToolPath(pathname)) return storedView && storedView !== "admin" ? storedView : "lawyer";
+  return storedView ?? "admin";
 }
 
 /**
@@ -186,6 +213,19 @@ const STAMP_SHELLS: Record<string, AiShell> = {
   ngo: "ngo",
 };
 
+/** The /ai shell for an admin's view. "admin" is unreachable on /ai (rule 2 of resolveAdminView). */
+const ADMIN_VIEW_SHELLS: Record<AdminView, AiShell> = {
+  admin: "lawyer",
+  lawyer: "lawyer",
+  firm: "firm",
+  individual: "client",
+  corporate: "business",
+  micro: "micro",
+  provider: "provider",
+  government: "government",
+  ngo: "ngo",
+};
+
 function underPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(prefix + "/");
 }
@@ -211,10 +251,11 @@ export function resolveAiShell(input: {
   if (pathname === "/ai" && !isLoggedIn) return "none";
 
   // 1. Session (highest priority — prevents sidebar bleeding).
-  if (userType === "admin" && resolveAdminView(pathname, storedView) === "lawyer") {
-    // LIVE-F01: the admin works the shared tools in the lawyer workspace.
-    // The lawyer layout's guard already admits "admin" — no access change.
-    return "lawyer";
+  if (userType === "admin") {
+    // LIVE-F01 / S6-T14: the admin works the shared tools in the workspace of
+    // the view it chose (lawyer by default). Every role layout's guard
+    // already admits "admin" — no access change.
+    return ADMIN_VIEW_SHELLS[resolveAdminView(pathname, storedView)];
   }
   const sessionShell = userType ? SESSION_SHELLS[userType] : undefined;
   if (sessionShell) return sessionShell;
@@ -268,13 +309,12 @@ export function resolveNotificationsShell(input: {
 // ─── Switch bar state ────────────────────────────────────────────────────────
 
 /**
- * Which «عرض كـ» button is pressed for the menu being drawn. Only the two
- * views map to a button; an admin on another dashboard (the console's own
- * back-link to /dashboard/business, say) sees neither pressed, so both
- * buttons navigate instead of one being a dead "already here".
+ * Which «عرض كـ» view is selected for the menu being drawn. S6-T14: every
+ * dashboard is a view now, so every shown type selects its own; null (no
+ * menu type) selects none.
  */
 export function switchCurrentView(shownType: UserType): AdminView | null {
-  return shownType === "admin" || shownType === "lawyer" ? shownType : null;
+  return parseAdminView(shownType);
 }
 
 // ─── Header label ────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import {
   brandingLogoPath,
   isMissingBrandingTable,
   isOwnLogoPath,
+  looksLikeSvg,
   sniffLogoImage,
 } from "@/lib/branding/brandingVault";
 import { readOwnVault, resolveBrandingCaller } from "@/lib/branding/brandingServer";
@@ -17,7 +18,8 @@ import { readOwnVault, resolveBrandingCaller } from "@/lib/branding/brandingServ
  *
  * POST (multipart, field `file`): PNG, JPEG or WebP up to 1 MB, recognised by
  *      its BYTES (sniffLogoImage) — the name and the browser's Content-Type
- *      are ignored, so an SVG renamed .png is refused. Stored under a fresh
+ *      are ignored, so an SVG renamed .png is refused (the identity page turns
+ *      an SVG into a PNG in the browser first, q346). Stored under a fresh
  *      name in the private `branding` bucket, the vault's logo_path pointed at
  *      it, the previous object removed.
  * DELETE removes the logo.
@@ -80,7 +82,10 @@ export async function POST(request: NextRequest) {
   }
   const kind = sniffLogoImage(bytes);
   if (!kind) {
-    return NextResponse.json({ error: "الشعار يجب أن يكون صورة PNG أو JPEG أو WebP (لا يُقبل SVG)" }, { status: 415 });
+    return NextResponse.json(
+      { error: looksLikeSvg(bytes) ? "ارفع ملف SVG من صفحة الهوية ليُحوَّل تلقائياً إلى PNG" : "الشعار يجب أن يكون صورة PNG أو JPEG أو WebP" },
+      { status: 415 },
+    );
   }
 
   const path = brandingLogoPath(owner.scope, owner.ownerId, randomBytes(8).toString("hex"), kind.ext);

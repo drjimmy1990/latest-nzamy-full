@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * useAdminView — the admin's view context ("admin" | "lawyer") for THIS tab.
+ * useAdminView — the admin's view context (an AdminView dashboard) for THIS tab.
  *
  * UI state only (see src/lib/nav/shellContext.ts): it picks which menu an
  * admin is drawn and nothing else. Guards, src/proxy.ts and every API route
@@ -47,9 +47,8 @@ export function setAdminView(view: AdminView): void {
 }
 
 /**
- * @param pathname the current path — entering /dashboard/admin or
- *   /dashboard/lawyer records that view (the old «وضع المحامي» link keeps
- *   working, now with a memory).
+ * @param pathname the current path — entering any /dashboard/<role> records
+ *   that view (S6-T14; the old «وضع المحامي» link keeps working).
  * @param isAdmin the REAL role is admin and the session has resolved. Only
  *   then is anything written.
  */

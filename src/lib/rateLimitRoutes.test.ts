@@ -13,7 +13,12 @@ import {
   isCouponValidateRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
+  isDocumentPreviewRoute,
   isPointsStandingRoute,
+  isAiRunProgressRoute,
+  isToolStatusRoute,
+  isAiRunStartRoute,
+  isLetterheadVerifyRoute,
   libraryBudgetBuckets,
   canonicalApiPath,
 } from "./rateLimitRoutes.ts";
@@ -179,6 +184,23 @@ test("isAttachmentsZipRoute: the ZIP download (D3), GET and HEAD, the exact path
   assert.equal(isAttachmentsZipRoute("GET", "/api/v1/attachments/zipper"), false);
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/attachments/zip"), false, "reads are not in the general bucket");
 });
+test("isDocumentPreviewRoute: «معاينة» (S2-B8), GET and HEAD, one id segment only, wired to its own buckets", () => {
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/42/preview"), true);
+  assert.equal(isDocumentPreviewRoute("HEAD", "/api/v1/documents/42/preview"), true);
+  assert.equal(isDocumentPreviewRoute("POST", "/api/v1/documents/42/preview"), false);
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/42"), false);
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/4/2/preview"), false);
+  assert.equal(isDocumentPreviewRoute("GET", "/api/v1/documents/42/preview/x"), false);
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/documents/42/preview"), false, "reads are not in the general bucket");
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const isDocumentPreviewMatch = isDocumentPreviewRoute\(method, pathname\);/);
+  assert.match(src, /!isDocumentPreviewMatch &&/);
+  assert.match(src, /rateLimiter\.check\("document-preview", key, DOCUMENT_PREVIEW_RATE_LIMIT\)/);
+  assert.match(src, /rateLimiter\.check\("document-preview-ip", ip, DOCUMENT_PREVIEW_IP_RATE_LIMIT\)/);
+});
+
 test("isPointsStandingRoute: the banner's GET (final review M2), GET and HEAD, the exact path only — never the run polls", () => {
   assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/points-standing"), true);
   assert.equal(isPointsStandingRoute("HEAD", "/api/v1/ai/points-standing"), true);
@@ -189,6 +211,25 @@ test("isPointsStandingRoute: the banner's GET (final review M2), GET and HEAD, t
   assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/points-standing"), false, "reads are not in the general bucket");
 });
 
+test("GET /api/v1/ai/tool-status has its own per-IP bucket, GET and HEAD, the exact path only, apart from the banner's", () => {
+  assert.equal(isToolStatusRoute("GET", "/api/v1/ai/tool-status"), true);
+  assert.equal(isToolStatusRoute("HEAD", "/api/v1/ai/tool-status"), true);
+  assert.equal(isToolStatusRoute("POST", "/api/v1/ai/tool-status"), false);
+  assert.equal(isToolStatusRoute("GET", "/api/v1/ai/tool-status/x"), false);
+  assert.equal(isToolStatusRoute("GET", "/api/v1/ai/points-standing"), false);
+  assert.equal(isPointsStandingRoute("GET", "/api/v1/ai/tool-status"), false, "a busy banner must not close a tool's screen");
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/tool-status"), false, "reads never spend the write budget");
+});
+
+test("proxy: tool-status is in the early-return guard and has its own bucket on the general policy", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const isToolStatusMatch = isToolStatusRoute\(method, pathname\);/);
+  assert.match(src, /!isToolStatusMatch &&/);
+  assert.match(src, /if \(isToolStatusMatch\) \{\n\s*const decision = rateLimiter\.check\("tool-status", ip, GENERAL_RATE_LIMIT\);/);
+});
+
 test("proxy: the points-standing match is in the early-return guard and has its own bucket on the general policy", () => {
   const src = fs
     .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
@@ -196,6 +237,78 @@ test("proxy: the points-standing match is in the early-return guard and has its 
   assert.match(src, /const isPointsStandingMatch = isPointsStandingRoute\(method, pathname\);/);
   assert.match(src, /!isPointsStandingMatch && libraryBuckets\.length === 0\n\s*\) return null;/);
   assert.match(src, /if \(isPointsStandingMatch\) \{\n\s*const decision = rateLimiter\.check\("points-standing", ip, GENERAL_RATE_LIMIT\);/);
+});
+
+test("isAiRunProgressRoute: the key poll (E7), GET and HEAD, the exact path only — never a run id's own polls", () => {
+  assert.equal(isAiRunProgressRoute("GET", "/api/v1/ai/runs/progress"), true);
+  assert.equal(isAiRunProgressRoute("HEAD", "/api/v1/ai/runs/progress"), true);
+  assert.equal(isAiRunProgressRoute("POST", "/api/v1/ai/runs/progress"), false);
+  assert.equal(isAiRunProgressRoute("GET", "/api/v1/ai/runs/progress/x"), false);
+  assert.equal(isAiRunProgressRoute("GET", "/api/v1/ai/runs"), false);
+  assert.equal(isAiRunProgressRoute("GET", "/api/v1/ai/runs/0b6d0c4e-1111-4222-8333-444455556666"), false);
+  assert.equal(isAiRunProgressRoute("GET", "/api/v1/ai/runs/0b6d0c4e-1111-4222-8333-444455556666/events"), false);
+  assert.equal(isGeneralRateLimitedApiPath("GET", "/api/v1/ai/runs/progress"), false, "reads are not in the general bucket");
+});
+
+test("proxy: the key poll is in the early-return guard and has its own bucket on the general policy", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const isAiRunProgressMatch = isAiRunProgressRoute\(method, pathname\);/);
+  assert.match(src, /!isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets\.length === 0\n\s*\) return null;/);
+  assert.match(src, /if \(isAiRunProgressMatch\) \{\n\s*const decision = rateLimiter\.check\("ai-run-progress", ip, GENERAL_RATE_LIMIT\);/);
+});
+
+test("isAiRunStartRoute: starting a run, POST and the exact path only — never a poll, never the key's progress", () => {
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs"), true);
+  assert.equal(isAiRunStartRoute("GET", "/api/v1/ai/runs"), false);
+  assert.equal(isAiRunStartRoute("HEAD", "/api/v1/ai/runs"), false);
+  assert.equal(isAiRunStartRoute("PUT", "/api/v1/ai/runs"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs/"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs/progress"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/runs/0b6d0c4e-1111-4222-8333-444455556666"), false);
+  assert.equal(isAiRunStartRoute("POST", "/api/v1/ai/callback"), false);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/runs"), true, "it still counts toward the write budget");
+});
+
+test("proxy: a run start is keyed like the per-visitor buckets, with a wider ceiling per IP", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const AI_RUN_START_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 20 \};/);
+  assert.match(src, /const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 200 \};/);
+  assert.match(src, /const isAiRunStartMatch = isAiRunStartRoute\(method, pathname\);/);
+  assert.match(src, /!isAiRunStartMatch &&/);
+  assert.match(
+    src,
+    /if \(isAiRunStartMatch\) \{\n\s*const perIp = rateLimiter\.check\("ai-run-start-ip", ip, AI_RUN_START_IP_RATE_LIMIT\);\n\s*if \(!perIp\.allowed\) return rateLimitResponse\(perIp\);\n\s*const key = libraryReadClientKey\(\(name\) => req\.headers\.get\(name\), ip\);\n\s*const decision = rateLimiter\.check\("ai-run-start", key, AI_RUN_START_RATE_LIMIT\);\n\s*if \(!decision\.allowed\) return rateLimitResponse\(decision\);/,
+  );
+});
+
+test("isLetterheadVerifyRoute: the printed QR's page and its read, GET and HEAD, one token segment only", () => {
+  for (const p of ["/verify/abc", "/api/v1/letterhead/verify/abc"]) {
+    assert.equal(isLetterheadVerifyRoute("GET", p), true, p);
+    assert.equal(isLetterheadVerifyRoute("HEAD", p), true, p);
+    assert.equal(isLetterheadVerifyRoute("POST", p), false, p);
+    assert.equal(isLetterheadVerifyRoute("GET", `${p}/x`), false, p);
+  }
+  assert.equal(isLetterheadVerifyRoute("GET", "/verify"), false);
+  assert.equal(isLetterheadVerifyRoute("GET", "/api/v1/branding/verify-card"), false);
+  assert.equal(isLetterheadVerifyRoute("GET", "/api/v1/share/abc/verify"), false);
+});
+
+test("proxy: the verify read is keyed like the tracking page, the visitor key plus a wider ceiling per IP", () => {
+  const src = fs
+    .readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "proxy.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+  assert.match(src, /const LETTERHEAD_VERIFY_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 30 \};/);
+  assert.match(src, /const LETTERHEAD_VERIFY_IP_RATE_LIMIT: RateLimitPolicy = \{ windowMs: 60 \* 1000, max: 300 \};/);
+  assert.match(src, /const isLetterheadVerifyMatch = isLetterheadVerifyRoute\(method, pathname\);/);
+  assert.match(src, /!isLetterheadVerifyMatch &&/);
+  assert.match(
+    src,
+    /if \(isLetterheadVerifyMatch\) \{\n\s*const perIp = rateLimiter\.check\("letterhead-verify-ip", ip, LETTERHEAD_VERIFY_IP_RATE_LIMIT\);\n\s*if \(!perIp\.allowed\) return rateLimitResponse\(perIp\);\n\s*const key = libraryReadClientKey\(\(name\) => req\.headers\.get\(name\), ip\);\n\s*const decision = rateLimiter\.check\("letterhead-verify", key, LETTERHEAD_VERIFY_RATE_LIMIT\);\n\s*if \(!decision\.allowed\) return rateLimitResponse\(decision\);/,
+  );
 });
 
 test("isGeneralRateLimitedApiPath: n8n's AI callback is exempt, the browser's AI runs route is not", () => {

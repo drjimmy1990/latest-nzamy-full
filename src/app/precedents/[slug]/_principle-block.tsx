@@ -3,20 +3,24 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
-import { cleanPrincipleText, principleParagraphs } from "./_principle-text";
-import { Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
+import { cleanPrincipleText, principleParagraphs, principleReferenceLine } from "./_principle-text";
+import { HighlightScope, Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
+import { useNearViewport } from "@/hooks/useNearViewport";
 
 /**
  * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
  * its own sentence and line breaks instead of one block (_principle-text.ts).
- * Memoised: a search loads every principle of a collection (up to 2,323, some
- * fields over 25k characters), and a block re-renders when the active
- * principle changes on scroll.
+ * Memoised: some fields run over 25k characters, and a block re-renders when
+ * the active principle changes on scroll.
  *
  * Owner note ٠٦: each paragraph goes through <Hl>, which colours the search
- * of the nearest HighlightProvider (the reader's ?q= or its own filter box)
- * and renders plain text when there is none. <Hl> reads context, so the memo
- * still re-renders when the search changes.
+ * of the nearest HighlightProvider (the reader's ?q=, or the in-document
+ * panel's «الانتقال للموضع») and renders plain text when there is none.
+ * <Hl> reads context, so the memo still re-renders when the search changes.
+ *
+ * BUG-LIB-01: the block colours its text only while it is near the viewport
+ * (HighlightScope + useNearViewport); the page's legend counts every loaded
+ * principle itself and steps block to block.
  */
 const Paragraphs = memo(function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
   const paragraphs = useMemo(() => principleParagraphs(text), [text]);
@@ -76,6 +80,8 @@ export default function PrincipleBlock({
   isLinkTarget = false,
 }: PrincipleBlockProps) {
   const isHighlighted = activePrincipleId === p.id;
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const nearViewport = useNearViewport(cardRef);
   const lock = p as MaybeLocked;
   const isLocked = lock.locked === true;
   // Cleaned once per principle, not on every render.
@@ -106,7 +112,9 @@ export default function PrincipleBlock({
   }, [detailsHaveMatch]);
 
   return (
+    <HighlightScope active={nearViewport}>
     <div
+      ref={cardRef}
       id={p.id}
       // Clears the fixed navbar when the page scrolls a linked principle into view.
       style={{ scrollMarginTop: "calc(8rem + env(safe-area-inset-top, 0px))" }}
@@ -206,7 +214,8 @@ export default function PrincipleBlock({
       {(() => {
         const rawRef = getReferenceForPrinciple(p);
         if (!rawRef) return null;
-        const cleanRef = cleanPrincipleText(rawRef.replace(/^\*\*?المرجع:\*\*?\s*/, "").replace(/^المرجع:\s*/, ""));
+        // The same line the legend counts (principleHighlightTexts, M-4).
+        const cleanRef = principleReferenceLine(rawRef);
         if (!cleanRef) return null;
         return (
           <div className="mt-4 pt-3 border-t border-dashed border-slate-100 dark:border-white/[0.05]">
@@ -296,5 +305,6 @@ export default function PrincipleBlock({
         </div>
       )}
     </div>
+    </HighlightScope>
   );
 }

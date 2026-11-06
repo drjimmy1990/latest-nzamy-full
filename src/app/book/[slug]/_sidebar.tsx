@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  ListNumbers, MagnifyingGlass, Compass
+  ListNumbers, Compass
 } from "@phosphor-icons/react";
 import { formatLocator } from "./_locator";
 import { tocWindow, type BlocksBySection, type CompleteSections, type ReaderChapter } from "./_reader-model";
@@ -13,13 +13,12 @@ const CHAPTERS_PER_STEP = 150;
 interface SidebarPanelProps {
   isDark: boolean;
   isRTL: boolean;
-  searchQuery: string;
-  setSearchQuery: (q: string) => void;
   quickJumpQuery: string;
   setQuickJumpQuery: (q: string) => void;
   handleQuickJump: (q: string) => void;
   jumpError: boolean;
-  filteredChapters: ReaderChapter[];
+  /** The book's chapters, all of them: the index filters nothing (BUG-LIB-04). */
+  chapters: ReaderChapter[];
   blocksBySection: BlocksBySection;
   completeSections: CompleteSections;
   loadingSectionId: string | null;
@@ -34,13 +33,11 @@ interface SidebarPanelProps {
 export default function SidebarPanel({
   isDark,
   isRTL,
-  searchQuery,
-  setSearchQuery,
   quickJumpQuery,
   setQuickJumpQuery,
   handleQuickJump,
   jumpError,
-  filteredChapters,
+  chapters,
   blocksBySection,
   completeSections,
   loadingSectionId,
@@ -53,20 +50,17 @@ export default function SidebarPanel({
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Render the TOC in steps: thousands of chapter rows at once froze the page.
-  // A new search starts again from the first step. When the chapter being
-  // read lies past the first step, the rendered slice is centred on it
-  // (tocWindow), so the entry in view has a row to highlight without
-  // mounting every chapter before it.
-  const [step, setStep] = useState({ query: searchQuery, count: CHAPTERS_PER_STEP, before: 0 });
-  const sameQuery = step.query === searchQuery;
-  const count = sameQuery ? step.count : CHAPTERS_PER_STEP;
-  const before = sameQuery ? step.before : 0;
+  // When the chapter being read lies past the first step, the rendered slice
+  // is centred on it (tocWindow), so the entry in view has a row to highlight
+  // without mounting every chapter before it.
+  const [step, setStep] = useState({ count: CHAPTERS_PER_STEP, before: 0 });
+  const { count, before } = step;
   const activeChapterIndex = activeSectionId
-    ? filteredChapters.findIndex((ch) => ch.sections.some((s) => s.id === activeSectionId))
+    ? chapters.findIndex((ch) => ch.sections.some((s) => s.id === activeSectionId))
     : -1;
-  const { start, end } = tocWindow(filteredChapters.length, activeChapterIndex, count, before, CHAPTERS_PER_STEP);
-  const shownChapters = filteredChapters.slice(start, end);
-  const remaining = filteredChapters.length - end;
+  const { start, end } = tocWindow(chapters.length, activeChapterIndex, count, before, CHAPTERS_PER_STEP);
+  const shownChapters = chapters.slice(start, end);
+  const remaining = chapters.length - end;
 
   // Owner note ٠٢: as the reader scrolls the stream, the index follows — its
   // OWN list scrolls to the entry in view (never the window: scrolling the
@@ -93,32 +87,8 @@ export default function SidebarPanel({
           {isRTL ? "فهرس أبواب ومسائل الكتاب" : "Chapters & Topics"}
         </h3>
 
-        {/* Text Search Box */}
-        <div className="mb-2 relative">
-          <div className={`absolute ${isRTL ? "right-3" : "left-3"} top-2.5 opacity-40`}>
-            <MagnifyingGlass size={14} />
-          </div>
-          <input
-            type="text"
-            placeholder={isRTL ? "بحث في الفهرس والنص المعروض (تُلوَّن الكلمات)..." : "Search the index and the text shown..."}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={`w-full ${isRTL ? "pr-8 pl-8" : "pl-8 pr-8"} py-2 text-xs rounded-xl border transition-all ${
-              isDark
-                ? "bg-zinc-800/80 border-white/10 text-white placeholder-zinc-500 focus:border-[#C8A762]"
-                : "bg-white border-slate-200 text-slate-900 placeholder-slate-400 focus:border-[#0B3D2E]"
-            }`}
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className={`absolute ${isRTL ? "left-2.5" : "right-2.5"} top-2 text-[10px] opacity-60 hover:opacity-100 font-bold`}
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
+        {/* BUG-LIB-04: no text filter here — searching the book is the
+            «بحث في كل المجلدات» panel above the text (ScopedSearchPanel). */}
         {/* Quick Jump Box */}
         <div className="mb-4 relative">
           <div className={`absolute ${isRTL ? "right-3" : "left-3"} top-2.5 opacity-40`}>
@@ -154,7 +124,7 @@ export default function SidebarPanel({
           {start > 0 && (
             <button
               type="button"
-              onClick={() => setStep({ query: searchQuery, count, before: before + CHAPTERS_PER_STEP })}
+              onClick={() => setStep({ count, before: before + CHAPTERS_PER_STEP })}
               className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
                 isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-300" : "border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}
@@ -221,7 +191,7 @@ export default function SidebarPanel({
           {remaining > 0 && (
             <button
               type="button"
-              onClick={() => setStep({ query: searchQuery, count: count + CHAPTERS_PER_STEP, before })}
+              onClick={() => setStep({ count: count + CHAPTERS_PER_STEP, before })}
               className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
                 isDark ? "border-white/[0.07] text-zinc-400 hover:text-zinc-300" : "border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}
@@ -229,9 +199,9 @@ export default function SidebarPanel({
               {`عرض المزيد من الأبواب (${remaining} متبقية)`}
             </button>
           )}
-          {filteredChapters.length === 0 && (
-            <p className="text-[10px] text-center text-slate-500 py-4">
-              {isRTL ? "لا توجد نتائج مطابقة" : "No matching results"}
+          {chapters.length === 0 && (
+            <p className="text-[10px] text-center text-slate-500 dark:text-zinc-400 py-4">
+              {isRTL ? "لا فهرس لهذا الكتاب بعد" : "No index for this book yet"}
             </p>
           )}
         </div>

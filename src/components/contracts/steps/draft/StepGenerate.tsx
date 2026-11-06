@@ -5,6 +5,9 @@ import { motion } from "framer-motion";
 import { ArrowCounterClockwise, Info, UsersThree, Warning } from "@phosphor-icons/react";
 import AiResultActions from "@/components/AiResultActions";
 import CitationCheckList from "@/components/ai/CitationCheckList";
+import { AiThinkingStage, type AiStageRun } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { StepSubmit, type StepSubmitRow } from "@/components/contracts/steps/StepSubmit";
 import type { ContractsProDraft } from "@/components/contracts/contractsProRun";
 import type { AiRunPhase } from "@/hooks/useAiRun";
@@ -25,6 +28,8 @@ interface Props {
   price: number;
   phase: AiRunPhase;
   error: string | null;
+  /** The run's live progress, for the waiting stage. */
+  run: AiStageRun;
   chargedPoints: number;
   /** The run was paid with the founder's independent output (P3). */
   creditUsed: boolean;
@@ -42,7 +47,7 @@ interface Props {
 }
 
 export function StepGenerate({
-  isDark, rows, price, phase, error, chargedPoints, creditUsed, useCredit, onUseCreditChange, draft, draftText,
+  isDark, rows, price, phase, error, run, chargedPoints, creditUsed, useCredit, onUseCreditChange, draft, draftText,
   onGenerate, onRestart, humanSubmitting, humanErrors, onHumanOrder,
 }: Props) {
   const [humanOpen, setHumanOpen] = useState(false);
@@ -103,14 +108,10 @@ export function StepGenerate({
         </div>
       ) : (
         <>
-          {phase === "running" && (
-            <p role="status" className={`rounded-2xl border px-4 py-3 text-[13px] ${isDark ? "border-white/10 bg-white/5 text-zinc-300" : "border-zinc-200 bg-white text-zinc-600"}`}>
-              يكتب الذكاء الاصطناعي العقد الآن: المخطط أولاً ثم كل بند على حدة، ثم تتحقق المنصة من المواد في المكتبة. قد يستغرق ذلك بضع دقائق — لا تغلق الصفحة.
-            </p>
-          )}
+          <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("contracts-pro")} />
           {phase === "review" && (
             <p role="status" className={`rounded-2xl border px-4 py-3 text-[13px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-              المسودة جاهزة وتنتظر مراجعة الفريق قبل عرضها.
+              {RUN_HELD_MESSAGE_AR}
             </p>
           )}
           <FounderCreditChoice key={founderCreditChoiceKey(phase, creditUsed, null)} kind="independent_output" value={useCredit} onChange={onUseCreditChange} isDark={isDark} disabled={busy} />

@@ -15,9 +15,10 @@
  *     paid order voided inside the 90-minute window gives it back (owner
  *     ٣٠٦; refundCore → couponServer.releaseCouponUsage), while a normal
  *     refund keeps it used;
- *   - a first-order coupon (NEWCLIENT, owner ٣٠٥ — `isFirstOrderCoupon`) only
- *     on the buyer's FIRST paid order on the platform: any earlier paid or
- *     refunded order of any kind, for any service, refuses it (the user
+ *   - a first-order coupon (its row's metadata.first_paid_order_only — NEWCLIENT
+ *     by owner ٣٠٥, stamped by 20261030_16 / 20261103_21; `isFirstOrderCoupon`)
+ *     only on the buyer's FIRST paid order on the platform: any earlier paid
+ *     or refunded order of any kind, for any service, refuses it (the user
  *     counts, not the service type);
  *   - never on an excluded kind (top-ups always — 20261026_20 enforces it in
  *     the table too; the founder membership always, P3 — its price is the
@@ -25,11 +26,17 @@
  *     campaign / founder price: ٢٧٩, the customer gets ONE discount, and the
  *     item's own discount is it). Government fees are never part of a
  *     platform order, so no coupon reaches them;
+ *   - never on an item the row names in metadata.excluded_items (S6-T10: a
+ *     price-book id such as "ind-ai", edited on the admin coupons page);
  *   - the order's net before VAT must reach min_order_amount;
  *   - the discount is the coupon's value (fixed SAR, or a percentage of the
  *     net) capped at max_discount_pct (25) of the net, floored to a halala so
  *     the cap is never exceeded;
  *   - VAT (15 %) is computed on the net AFTER the discount.
+ *
+ * Every rule is read from the coupon's ROW, never from its code: a name in
+ * code would be a rule the admin cannot see or change (S6-T10;
+ * couponCodeLiterals.test.ts keeps it so).
  *
  * Unknown, expired, inactive, used-up, already-used and wrong-audience codes
  * all answer the SAME sentence (COUPON_INVALID_AR): the answer must not tell
@@ -67,18 +74,34 @@ export interface CouponRow {
   max_discount_pct: number | string;
   /** 20261026_20 */
   excluded_kinds: readonly string[] | null;
-  /** `first_paid_order_only: true` marks a first-order coupon (20261030_16_pricing_owner_package; owner ٣٠٥). */
+  /**
+   * `first_paid_order_only: true` marks a first-order coupon (owner ٣٠٥;
+   * 20261030_16, 20261103_21); `excluded_items: string[]` names price-book
+   * items it never discounts (S6-T10). Both are edited on the admin page.
+   */
   metadata?: Record<string, unknown> | null;
 }
 
 /**
- * Owner ٣٠٥ (30 Oct 2026): NEWCLIENT is for the buyer's first paid order on
- * the platform. The code itself is enough, so the rule holds before
- * 20261030_16 stamps the row; any other code an admin marks
- * `metadata.first_paid_order_only` follows it too.
+ * Owner ٣٠٥ (30 Oct 2026): a first-order coupon (NEWCLIENT) is for the
+ * buyer's first paid order on the platform. S6-T10: only the row decides —
+ * metadata.first_paid_order_only must be the boolean true (the string "true"
+ * is not). 20261030_16 stamped NEWCLIENT and 20261103_21 (BEFORE this code's
+ * deploy) re-asserts it; from then on an admin may tick or un-tick it on any
+ * coupon. The code's name is never read.
  */
-export function isFirstOrderCoupon(row: Pick<CouponRow, "code" | "metadata">): boolean {
-  return row.code.toUpperCase() === "NEWCLIENT" || row.metadata?.first_paid_order_only === true;
+export function isFirstOrderCoupon(row: Pick<CouponRow, "metadata">): boolean {
+  return row.metadata?.first_paid_order_only === true;
+}
+
+/**
+ * The price-book ids the row never discounts (metadata.excluded_items).
+ * Only an array counts, and only its strings; anything else is no list.
+ */
+export function excludedItemsOf(row: Pick<CouponRow, "metadata">): string[] {
+  const raw = row.metadata?.excluded_items;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((id): id is string => typeof id === "string");
 }
 
 export interface CouponContext {
@@ -92,6 +115,8 @@ export interface CouponContext {
   itemDiscounted: boolean;
   /** True when the buyer already has a paid or refunded order of any kind (owner ٣٠٥). */
   hasEarlierPaidOrder: boolean;
+  /** The price-book id being bought (payment_orders.item_id), matched against metadata.excluded_items. */
+  itemId: string;
   now: Date;
 }
 
@@ -138,6 +163,11 @@ export function evaluateCoupon(row: CouponRow | null | undefined, ctx: CouponCon
   // lists plan / library / topup / service), so the rule lives here
   excluded.add("membership");
   if (excluded.has(ctx.kind) || ctx.itemDiscounted) return { ok: false, reason: "not_for_item" };
+  // S6-T10: an item the row excludes by its id. Both sides are trimmed and
+  // lower-cased (every price-book id is lower-case), so a hand-edited "IND-AI"
+  // or " ind-ai" still excludes ind-ai: the match fails closed, never open.
+  const itemKey = ctx.itemId.trim().toLowerCase();
+  if (excludedItemsOf(row).some((id) => id.trim().toLowerCase() === itemKey)) return { ok: false, reason: "not_for_item" };
 
   const net = ctx.netHalalas;
   const minHalalas = sarToHalalas(row.min_order_amount);

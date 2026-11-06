@@ -1,377 +1,405 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { ElementType } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Check,
+  ArrowClockwise,
   CurrencyCircleDollar,
+  Eye,
+  EyeSlash,
   FloppyDisk,
-  LockKey,
   PencilSimple,
-  Plus,
   Robot,
-  Scales,
+  Warning,
   WarningCircle,
+  X,
 } from "@phosphor-icons/react";
-import { motion } from "framer-motion";
-import { useTheme } from "@/components/ThemeProvider";
 import { LAWYER_AI_TOOLS } from "@/constants/lawyerAiCatalog";
-import { plansLawyers } from "@/constants/pricing/pricing.lawyers";
-import { plansFirms } from "@/constants/pricing/pricing.firms";
 import { bookSar, PRICE_BOOK } from "@/lib/pricing/priceBook";
-import type { AdminPricingItem, AdminPricingScope, AdminPricingStatus } from "@/types/adminBackendReady";
+import { formatClientServicePrice, type AdminPricingCatalogRow } from "@/lib/pricingRepository";
+import {
+  AMOUNTLESS_PRICE_MODES,
+  CATALOG_PRICE_MODES,
+  changedCatalogFields,
+  customerViewOf,
+  type CatalogCustomerView,
+} from "@/lib/pricing/catalogAdminRules";
+import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
+import type { ClientServicePriceMode } from "@/constants/clientServiceCatalog";
 
-const SCOPE_LABEL: Record<AdminPricingScope, string> = {
+/**
+ * /dashboard/admin/pricing (S6-T8) — the client services' prices, read from
+ * and written to public.admin_pricing_catalog through
+ * /api/v1/admin/pricing-catalog (requireStaff; every edit audited). What a row
+ * shows is what the customer sees (customerViewOf): a legacy row — disabled
+ * with no admin hide flag, which the client loader never reads — shows its
+ * code-catalogue entry, and its first edit realigns it to that entry on the
+ * server (catalogAdminRules.ts).
+ *
+ * The plans and top-ups are the price book's (priceBook.ts, what checkout
+ * charges), read-only: they change by deploying code. The market commission is
+ * «قريباً» with no number (owner question ٤٢١ is open).
+ *
+ * The admin console is dark-only (admin/layout.tsx), so zinc tokens only.
+ */
+
+const AUDIENCE_LABEL: Record<string, string> = {
   individual: "الأفراد",
-  business: "الشركات",
-  micro: "المنشآت الصغيرة",
-  lawyer: "المحامون",
-  firm: "مكاتب المحاماة",
-  provider: "مقدمو الخدمات",
-  government: "الجهات الحكومية",
-  ngo: "الجمعيات",
-  platform: "رسوم المنصة",
+  corporate: "الأعمال",
 };
 
-const STATUS_LABEL: Record<AdminPricingStatus, string> = {
-  live: "Live",
-  beta: "Beta",
-  draft: "مسودة",
-  disabled: "معطل",
+const MODE_LABEL: Record<ClientServicePriceMode, string> = {
+  free: "مجاني",
+  included: "مشمول في باقة",
+  fixed: "سعر ثابت",
+  starting_from: "يبدأ من",
+  custom: "حسب التقييم",
+  per_page: "بالصفحة",
+  points: "بالنقاط",
 };
 
-// Every price on this screen is READ from the price book
-// (src/lib/pricing/priceBook.ts) — the source checkout charges from — never a
-// second copy: the subscriptions (yearly — the professionals' monthly cycle is
-// retired, so its column shows «-») and the professionals' five top-ups (one
-// price, points with the bonus; owner ٣٠٢ — 100 and 250 are the individuals').
-const topupNumbers = (id: string) => ({ price: bookSar(id, "once"), credits: PRICE_BOOK[id].points ?? 0 });
-const LAWYER_PLAN_NUMBERS: Record<string, { price: number; yearly?: number; credits: number }> = {
-  "lawyer-pro": { price: 0, yearly: bookSar("lawyer-pro", "yearly"), credits: 0 }, // monthly retired; no points with a plan (owner ٢٩١)
-  "topup-500": topupNumbers("topup-500"),
-  "topup-1000": topupNumbers("topup-1000"),
-  "topup-2500": topupNumbers("topup-2500"),
-  "topup-5000": topupNumbers("topup-5000"),
-  "topup-10000": topupNumbers("topup-10000"),
-};
+const API = "/api/v1/admin/pricing-catalog";
 
-const FIRM_PLAN_NUMBERS: Record<string, { monthly: number; yearly: number; credits: number; baseSeats: number; extraSeatYearly: number | null; maxSeats: number | null }> = {
-  // Owner answer ١٧٥ (2026-10-16): 990/9,900 for 3 seats and 1,490/14,900 for
-  // 5 seats; no firm points. Extra seats go through sales (owner answer ٢١٧,
-  // 2026-10-18), so no seat price is set here. The two plans /pricing sells
-  // are the only rows: the retired middle tiers had no plan to look up.
-  "firm-basic": { monthly: 0, yearly: bookSar("firm-basic", "yearly"), credits: 0, baseSeats: 3, extraSeatYearly: null, maxSeats: null },
-  "firm-enterprise": { monthly: 0, yearly: bookSar("firm-enterprise", "yearly"), credits: 0, baseSeats: 5, extraSeatYearly: null, maxSeats: null },
-};
-
-const INITIAL_PRICING: AdminPricingItem[] = [
-  ...plansLawyers.ar.map((plan): AdminPricingItem => ({
-    id: `lawyer-${plan.id}`,
-    scope: "lawyer",
-    name: plan.name,
-    priceMonthly: LAWYER_PLAN_NUMBERS[plan.id]?.price ?? 0,
-    priceYearly: LAWYER_PLAN_NUMBERS[plan.id]?.yearly ?? LAWYER_PLAN_NUMBERS[plan.id]?.price ?? 0,
-    includedCredits: LAWYER_PLAN_NUMBERS[plan.id]?.credits ?? 0,
-    status: "beta",
-    betaLocked: true,
-    notes: plan.desc,
-  })),
-  ...plansFirms.ar.map((plan): AdminPricingItem => ({
-    id: `firm-${plan.id}`,
-    scope: "firm",
-    name: plan.name,
-    priceMonthly: FIRM_PLAN_NUMBERS[plan.id]?.monthly ?? 0,
-    priceYearly: FIRM_PLAN_NUMBERS[plan.id]?.yearly ?? 0,
-    includedCredits: FIRM_PLAN_NUMBERS[plan.id]?.credits ?? 0,
-    pricingModel: "annual_seats_points",
-    baseSeats: FIRM_PLAN_NUMBERS[plan.id]?.baseSeats ?? 0,
-    minMonthlyCommitment: FIRM_PLAN_NUMBERS[plan.id]?.monthly ?? 0,
-    extraSeatPrice: FIRM_PLAN_NUMBERS[plan.id]?.extraSeatYearly ?? undefined,
-    maxSeats: FIRM_PLAN_NUMBERS[plan.id]?.maxSeats ?? null,
-    billingMetric: "seat",
-    status: "beta",
-    betaLocked: true,
-    notes: `${plan.desc} النموذج: اشتراك سنوي + مقاعد. ${plan.pricingFormulaLabel ?? ""}`,
-  })),
-  {
-    id: "individual-quick-question",
-    scope: "individual",
-    name: "سؤال سريع",
-    priceMonthly: 10,
-    status: "live",
-    betaLocked: false,
-    notes: "سعر خدمة فردية وليس اشتراكاً شهرياً.",
-  },
-  {
-    id: "marketplace-platform-fee",
-    scope: "platform",
-    name: "عمولة السوق",
-    priceMonthly: 0,
-    platformFeePct: 15,
-    status: "beta",
-    betaLocked: true,
-    notes: "العمولة موثقة، والتحصيل الحقيقي ينتظر الدفع والضمان.",
-  },
-  {
-    id: "provider-verification-fee",
-    scope: "provider",
-    name: "رسوم اعتماد مقدم الخدمة",
-    priceMonthly: 0,
-    status: "draft",
-    betaLocked: true,
-    notes: "جاهزة للتسعير لاحقاً بعد KYC backend.",
-  },
+/**
+ * Read-only price-book rows: the professionals' subscription and top-ups, the
+ * two firm plans (yearly; monthly retired). Each price is a literal bookSar
+ * call, so bookCallSites.test.ts checks the book still sells it.
+ */
+const BOOK_ROWS: Array<{ id: string; yearly: boolean; price: number }> = [
+  { id: "lawyer-pro", yearly: true, price: bookSar("lawyer-pro", "yearly") },
+  { id: "topup-500", yearly: false, price: bookSar("topup-500", "once") },
+  { id: "topup-1000", yearly: false, price: bookSar("topup-1000", "once") },
+  { id: "topup-2500", yearly: false, price: bookSar("topup-2500", "once") },
+  { id: "topup-5000", yearly: false, price: bookSar("topup-5000", "once") },
+  { id: "topup-10000", yearly: false, price: bookSar("topup-10000", "once") },
+  { id: "firm-basic", yearly: true, price: bookSar("firm-basic", "yearly") },
+  { id: "firm-enterprise", yearly: true, price: bookSar("firm-enterprise", "yearly") },
 ];
 
-const EMPTY_PRICING: AdminPricingItem = {
-  id: "custom-pricing",
-  scope: "individual",
-  name: "",
-  priceMonthly: 0,
-  priceYearly: 0,
-  includedCredits: 0,
-  pricingModel: "one_time",
-  baseSeats: 0,
-  minMonthlyCommitment: 0,
-  extraSeatPrice: 0,
-  maxSeats: null,
-  billingMetric: "service",
-  platformFeePct: 0,
-  status: "draft",
-  betaLocked: true,
-  notes: "",
-};
+type Draft = { serviceId: string; basePrice: string; priceMode: string; priceNote: string };
+
+const card = "rounded-2xl border border-white/[0.06] bg-zinc-900/60";
+const muted = "text-zinc-400";
+const input = "rounded-xl border px-3 py-2 text-sm outline-none bg-zinc-950 border-white/10 text-white";
 
 export default function PricingPage() {
-  const { isDark } = useTheme();
-  const [items, setItems] = useState(INITIAL_PRICING);
-  const [draft, setDraft] = useState<AdminPricingItem | null>(null);
-  const [scope, setScope] = useState<AdminPricingScope | "all">("all");
-  const [toast, setToast] = useState("التسعير Backend-ready: أي تعديل هنا محلي فقط حتى ربط Pricing API.");
+  const [read, setRead] = useState<ListRead<AdminPricingCatalogRow> | null>(null);
+  // Starts true: nothing may be said about the price list before the first answer.
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+  // Only ever reports what a WRITE did.
+  const [toast, setToast] = useState("");
 
-  const filteredItems = items.filter((item) => scope === "all" || item.scope === scope);
-  const betaFreeTools = LAWYER_AI_TOOLS.filter((tool) => tool.betaStatus === "beta-free").length;
-  const liveCount = items.filter((item) => item.status === "live").length;
-  const betaCount = items.filter((item) => item.status === "beta").length;
-  const platformFee = items.find((item) => item.id === "marketplace-platform-fee")?.platformFeePct ?? 0;
-  const stats: Array<[string, string | number, ElementType]> = [
-    ["بنود التسعير", items.length, CurrencyCircleDollar],
-    ["Live / Beta", `${liveCount}/${betaCount}`, Check],
-    ["Beta free AI", betaFreeTools, Robot],
-    ["عمولة السوق", `${platformFee}%`, Scales],
-  ];
+  // The fetch alone (no synchronous setState), so the mount effect may call it.
+  const fetchRows = useCallback(async () => {
+    try {
+      const res = await fetch(API, { cache: "no-store" });
+      if (!res.ok) {
+        setRead(listFailed<AdminPricingCatalogRow>());
+        return;
+      }
+      setRead(listFromApi<AdminPricingCatalogRow>(await res.json()));
+    } catch (err) {
+      console.error("[admin/pricing] load failed:", err);
+      setRead(listFailed<AdminPricingCatalogRow>());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const totalCatalogValue = useMemo(
-    () => items.reduce((sum, item) => sum + item.priceMonthly, 0),
-    [items],
-  );
+  const loadRows = useCallback(() => {
+    setLoading(true);
+    void fetchRows();
+  }, [fetchRows]);
 
-  const card = isDark
-    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
-    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
-  const muted = isDark ? "text-zinc-500" : "text-slate-400";
+  useEffect(() => {
+    void fetchRows();
+  }, [fetchRows]);
 
-  function openNewItem() {
-    setDraft({ ...EMPTY_PRICING, id: `pricing-${items.length + 1}` });
+  const state = listViewState(loading, read);
+  const rows = itemsOf(read);
+  const betaFreeTools = LAWYER_AI_TOOLS.filter((tool) => tool.betaStatus === "beta-free" && !tool.comingSoon).length;
+  const hiddenCount = rows.filter((row) => !customerViewOf(row).visible).length;
+  const legacyCount = rows.filter((row) => customerViewOf(row).legacy).length;
+  const ready = state === "ready" || state === "empty";
+
+  async function patchRow(row: AdminPricingCatalogRow, body: Record<string, unknown>, label: string) {
+    if (Object.keys(body).length === 0) {
+      setToast("لا تغييرات للحفظ.");
+      return false;
+    }
+    setSaving(row.service_id);
+    try {
+      const res = await fetch(`${API}/${encodeURIComponent(row.service_id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.data) {
+        setToast(json.error ?? `تعذّر حفظ «${label}» على الخادم — لم يتغيّر شيء.`);
+        if (res.status === 409) loadRows();
+        return false;
+      }
+      const saved = json.data as AdminPricingCatalogRow;
+      setRead((current) =>
+        current && current.ok
+          ? listOk(current.items.map((r) => (r.service_id === saved.service_id ? saved : r)), current.total)
+          : current,
+      );
+      setToast(`حُفظ «${label}» — يقرؤه نموذج الطلب والتقدير المحفوظ الآن؛ الصفحات العامة لا تتغير إلا بتعديل الكود ونشره.`);
+      return true;
+    } catch (err) {
+      console.error("[admin/pricing] save failed:", err);
+      setToast(`تعذّر الاتصال بالخادم — لم يُحفظ «${label}».`);
+      return false;
+    } finally {
+      setSaving(null);
+    }
   }
 
-  function saveDraft() {
-    if (!draft?.name.trim()) {
-      setToast("بند التسعير يحتاج اسم واضح قبل تجهيزه للربط.");
+  async function saveDraft(row: AdminPricingCatalogRow, view: CatalogCustomerView) {
+    if (!draft) return;
+    const price = draft.basePrice.trim() === "" ? Number.NaN : Number(draft.basePrice);
+    if (!Number.isFinite(price)) {
+      setToast("السعر غير صالح");
       return;
     }
-    const normalized = {
-      ...draft,
-      id: draft.id.trim().toLowerCase().replace(/\s+/g, "-"),
-    };
-    setItems((current) => {
-      const exists = current.some((item) => item.id === normalized.id);
-      return exists ? current.map((item) => (item.id === normalized.id ? normalized : item)) : [normalized, ...current];
+    const body = changedCatalogFields(view, {
+      basePrice: price,
+      priceMode: draft.priceMode,
+      priceNote: draft.priceNote,
+      enabled: view.visible,
     });
-    setDraft(null);
-    setToast(`تم تجهيز "${normalized.name}" محلياً. النشر الفعلي ينتظر admin_pricing_catalog API.`);
+    if (await patchRow(row, body, view.label)) setDraft(null);
   }
 
-  function updateStatus(id: string, status: AdminPricingStatus) {
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
-    setToast(`تم تغيير حالة التسعير إلى ${STATUS_LABEL[status]} محلياً فقط.`);
+  function startEdit(row: AdminPricingCatalogRow, view: CatalogCustomerView) {
+    setDraft({
+      serviceId: row.service_id,
+      basePrice: String(view.basePrice),
+      priceMode: view.priceMode,
+      priceNote: view.priceNote,
+    });
   }
 
-  function toggleBetaLock(id: string) {
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, betaLocked: !item.betaLocked } : item)));
-    setToast("تم تغيير قفل البيتا محلياً. عند live يراجع BETA_TEARDOWN_REGISTRY قبل إزالة القفل.");
-  }
+  const stats: Array<[string, string, typeof CurrencyCircleDollar]> = [
+    ["بنود خدمات العملاء", ready ? rows.length.toLocaleString("ar-SA") : "—", CurrencyCircleDollar],
+    ["مخفية عن العملاء", ready ? hiddenCount.toLocaleString("ar-SA") : "—", EyeSlash],
+    ["قديمة (يُعرض سعر الكود)", ready ? legacyCount.toLocaleString("ar-SA") : "—", Warning],
+    ["أدوات AI مجانية في البيتا", betaFreeTools.toLocaleString("ar-SA"), Robot],
+  ];
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 p-4 md:p-8" dir="rtl">
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-        <div>
-          <h1 className={`text-2xl font-black mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>إدارة التسعير والباقات</h1>
-          <p className={`text-sm ${muted}`}>تحكم محلي في أسعار الأدوار، أرصدة AI، رسوم المنصة، وحالة البيتا. لا يوجد حفظ إنتاجي.</p>
-        </div>
-        <button onClick={openNewItem} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#0B3D2E] text-white font-bold text-sm hover:bg-[#0a3328]">
-          <Plus size={16} weight="bold" />
-          بند تسعير جديد
-        </button>
-      </motion.div>
-
-      <div className={`flex items-start gap-2 text-sm p-4 rounded-2xl border ${isDark ? "border-blue-500/20 bg-blue-500/10 text-blue-100" : "border-blue-100 bg-blue-50 text-blue-800"}`}>
-        <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
-        <span>{toast}</span>
+      <div>
+        <h1 className="text-2xl font-black mb-1 text-white">إدارة التسعير</h1>
+        <p className={`text-sm ${muted}`}>
+          أسعار خدمات العملاء تُحفظ في قاعدة البيانات، ويقرؤها نموذج الطلب والتقدير المحفوظ فور الحفظ. أما الصفحات العامة (مثل صفحة خدمات العقود) فتعرض السعر المكتوب في الكود، ولا تتغير إلا بتعديل الكود ونشره. كل تعديل يُسجَّل في سجل الإدارة.
+        </p>
       </div>
+
+      {toast && (
+        <div className="flex items-start gap-2 text-sm p-4 rounded-2xl border border-blue-500/20 bg-blue-500/10 text-blue-100">
+          <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{toast}</span>
+          <button type="button" onClick={() => setToast("")} aria-label="إغلاق" className="text-blue-200 hover:text-white">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {stats.map(([label, value, Icon]) => (
           <div key={label} className={`${card} p-5 flex items-center justify-between`}>
             <div>
               <p className={`text-xs mb-2 ${muted}`}>{label}</p>
-              <p className={`text-2xl font-black font-mono ${isDark ? "text-white" : "text-slate-800"}`}>{value as string | number}</p>
+              <p className="text-2xl font-black font-mono text-white">{value}</p>
             </div>
-            <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.04] text-[#C8A762]" : "bg-slate-50 text-[#0B3D2E]"}`}>
+            <div className="p-3 rounded-xl bg-white/[0.04] text-[#C8A762]">
               <Icon size={22} weight="duotone" />
             </div>
           </div>
         ))}
       </div>
 
-      {draft && (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 space-y-4`}>
-          <div className="flex items-center justify-between">
-            <p className={`font-black ${isDark ? "text-white" : "text-slate-800"}`}>تجهيز بند تسعير</p>
-            <span className="text-[11px] px-2 py-1 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold">Backend-ready</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <Field label="المعرف"><input value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} className={inputClass(isDark)} /></Field>
-            <Field label="الاسم"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className={inputClass(isDark)} /></Field>
-            <Field label="النطاق">
-              <select value={draft.scope} onChange={(event) => setDraft({ ...draft, scope: event.target.value as AdminPricingScope })} className={inputClass(isDark)}>
-                {(Object.keys(SCOPE_LABEL) as AdminPricingScope[]).map((key) => <option key={key} value={key}>{SCOPE_LABEL[key]}</option>)}
-              </select>
-            </Field>
-            <Field label="الحالة">
-              <select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as AdminPricingStatus })} className={inputClass(isDark)}>
-                {Object.entries(STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </Field>
-            <Field label="السعر الشهري/الخدمة"><input type="number" value={draft.priceMonthly} onChange={(event) => setDraft({ ...draft, priceMonthly: Number(event.target.value) })} className={inputClass(isDark)} /></Field>
-            <Field label="السعر السنوي"><input type="number" value={draft.priceYearly ?? 0} onChange={(event) => setDraft({ ...draft, priceYearly: Number(event.target.value) })} className={inputClass(isDark)} /></Field>
-            <Field label="رصيد AI"><input type="number" value={draft.includedCredits ?? 0} onChange={(event) => setDraft({ ...draft, includedCredits: Number(event.target.value) })} className={inputClass(isDark)} /></Field>
-            <Field label="المقاعد المضمّنة"><input type="number" value={draft.baseSeats ?? 0} onChange={(event) => setDraft({ ...draft, baseSeats: Number(event.target.value) })} className={inputClass(isDark)} /></Field>
-            <Field label="سعر المقعد الإضافي/سنة"><input type="number" value={draft.extraSeatPrice ?? 0} onChange={(event) => setDraft({ ...draft, extraSeatPrice: Number(event.target.value) })} className={inputClass(isDark)} /></Field>
-            <Field label="الحد الأقصى للمقاعد"><input type="number" value={draft.maxSeats ?? 0} onChange={(event) => setDraft({ ...draft, maxSeats: Number(event.target.value) || null })} className={inputClass(isDark)} /></Field>
-            <Field label="نموذج التسعير">
-              <select value={draft.pricingModel ?? "one_time"} onChange={(event) => setDraft({ ...draft, pricingModel: event.target.value as AdminPricingItem["pricingModel"] })} className={inputClass(isDark)}>
-                <option value="one_time">مرة واحدة/خدمة</option>
-                <option value="monthly">شهري</option>
-                <option value="annual_seats_points">سنوي + مقاعد + نقاط</option>
-                <option value="platform_fee">عمولة منصة</option>
-                <option value="custom_contract">عقد مخصص</option>
-              </select>
-            </Field>
-            <Field label="رسوم المنصة %"><input type="number" value={draft.platformFeePct ?? 0} onChange={(event) => setDraft({ ...draft, platformFeePct: Number(event.target.value) })} className={inputClass(isDark)} /></Field>
-          </div>
-          <Field label="ملاحظات الربط">
-            <textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} className={`${inputClass(isDark)} min-h-20`} />
-          </Field>
-          <label className={`inline-flex items-center gap-2 text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-            <input type="checkbox" checked={draft.betaLocked} onChange={(event) => setDraft({ ...draft, betaLocked: event.target.checked })} />
-            مقفل أثناء البيتا
-          </label>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setDraft(null)} className={`px-4 py-2 rounded-xl text-sm font-bold border ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>إلغاء</button>
-            <button onClick={saveDraft} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-[#0B3D2E] text-white">
-              <FloppyDisk size={16} />
-              حفظ محلي
+      {/* ── Section 1: the client services' prices (admin_pricing_catalog) ── */}
+      <div className={`${card} overflow-hidden`}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06]">
+          <p className="text-sm font-black text-white">أسعار خدمات العملاء</p>
+          <button type="button" onClick={loadRows} className={`inline-flex items-center gap-1.5 text-xs font-bold ${muted} hover:text-white`}>
+            <ArrowClockwise size={12} weight="bold" /> تحديث
+          </button>
+        </div>
+
+        {state === "loading" && <div className={`px-5 py-12 text-center text-sm ${muted}`}>جارٍ تحميل قائمة الأسعار…</div>}
+
+        {state === "unreadable" && (
+          <div className="px-5 py-12 text-center">
+            <Warning size={24} weight="fill" className="mx-auto mb-2 text-amber-500" />
+            <p className="text-sm font-bold text-white">تعذّرت قراءة قائمة الأسعار</p>
+            <p className={`text-xs mt-1 ${muted}`}>
+              هذه ليست قائمة فارغة — لم نتمكن من القراءة. الأسعار التي يراها العملاء لم تتغيّر.
+            </p>
+            <button type="button" onClick={loadRows}
+              className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white font-bold text-xs hover:bg-amber-600 transition">
+              <ArrowClockwise size={12} weight="bold" /> إعادة المحاولة
             </button>
           </div>
-        </motion.div>
-      )}
+        )}
 
-      <div className={`${card} p-2 flex gap-1 overflow-x-auto`}>
-        <button onClick={() => setScope("all")} className={filterClass(isDark, scope === "all")}>الكل</button>
-        {(Object.keys(SCOPE_LABEL) as AdminPricingScope[]).map((key) => (
-          <button key={key} onClick={() => setScope(key)} className={filterClass(isDark, scope === key)}>{SCOPE_LABEL[key]}</button>
-        ))}
+        {state === "empty" && (
+          <div className={`px-5 py-12 text-center text-sm ${muted}`}>
+            لا توجد بنود في جدول الأسعار — يرى العملاء أسعار الكود الافتراضية.
+          </div>
+        )}
+
+        {state === "ready" && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-right">
+              <thead>
+                <tr className="text-xs font-bold bg-zinc-950/40 text-zinc-400 border-b border-white/[0.06]">
+                  <th className="px-4 py-3">البند</th>
+                  <th className="px-4 py-3">الفئة</th>
+                  <th className="px-4 py-3">طريقة التسعير</th>
+                  <th className="px-4 py-3">السعر (ر.س)</th>
+                  <th className="px-4 py-3">ملاحظة السعر</th>
+                  <th className="px-4 py-3">الظهور</th>
+                  <th className="px-4 py-3">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const view = customerViewOf(row);
+                  const editing = draft?.serviceId === row.service_id ? draft : null;
+                  const busy = saving === row.service_id;
+                  const audience = row.audience ?? "individual";
+                  const variantOf = (row.metadata as Record<string, unknown> | undefined)?.variantOf;
+                  return (
+                    <tr key={row.service_id} className="border-b last:border-0 border-white/[0.04] hover:bg-white/[0.02] align-top">
+                      <td className="px-4 py-4">
+                        <p className="text-sm font-bold text-zinc-100">{view.label}</p>
+                        <p className={`text-[10px] font-mono ${muted}`}>{row.service_id}</p>
+                        {typeof variantOf === "string" && (
+                          <p className={`text-[10px] mt-1 ${muted}`}>سعر بديل لـ {variantOf}</p>
+                        )}
+                        {view.legacy && (
+                          <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                            قديم — يُعرض سعر الكود
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="text-[11px] px-2 py-1 rounded-full border border-white/10 bg-white/[0.04] text-zinc-300 font-bold">
+                          {AUDIENCE_LABEL[audience] ?? audience}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-xs text-zinc-300">
+                        {editing ? (
+                          <select value={editing.priceMode} onChange={(e) => setDraft({ ...editing, priceMode: e.target.value })} className={`${input} w-36 text-xs`}>
+                            {CATALOG_PRICE_MODES.map((mode) => (
+                              <option key={mode} value={mode}>{MODE_LABEL[mode]}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          MODE_LABEL[view.priceMode as ClientServicePriceMode] ?? view.priceMode
+                        )}
+                      </td>
+                      <td className="px-4 py-4 text-sm font-mono text-[#C8A762]">
+                        {editing ? (
+                          <input type="number" min={0} step="0.01" value={editing.basePrice} onChange={(e) => setDraft({ ...editing, basePrice: e.target.value })} className={`${input} w-28`} />
+                        ) : (
+                          <>
+                            {/* Review M7: no bare amount for a mode whose customer string prints none */}
+                            {!AMOUNTLESS_PRICE_MODES.includes(view.priceMode) && <span>{view.basePrice.toLocaleString("ar-SA")}</span>}
+                            <span className={`block text-[10px] font-sans ${muted}`}>
+                              {formatClientServicePrice({ basePrice: view.basePrice, priceMode: view.priceMode as ClientServicePriceMode })}
+                            </span>
+                          </>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 text-xs text-zinc-300 max-w-xs">
+                        {editing ? (
+                          <input value={editing.priceNote} maxLength={200} onChange={(e) => setDraft({ ...editing, priceNote: e.target.value })} className={`${input} w-full`} />
+                        ) : (
+                          view.priceNote || <span className={muted}>—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => { void patchRow(row, changedCatalogFields(view, { basePrice: view.basePrice, priceMode: view.priceMode, priceNote: view.priceNote, enabled: !view.visible }), view.label); }}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold disabled:opacity-50 ${view.visible ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/[0.04] text-zinc-400"}`}
+                          title={view.visible ? "إخفاء عن العملاء" : "إظهار للعملاء"}
+                        >
+                          {view.visible ? <Eye size={12} /> : <EyeSlash size={12} />}
+                          {view.visible ? "ظاهر" : "مخفي"}
+                        </button>
+                        {typeof variantOf === "string" && (
+                          <p className={`text-[10px] mt-1 ${muted}`}>الإخفاء يُعيد سعر الأفراد للشركات</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-4">
+                        {editing ? (
+                          <div className="flex gap-1">
+                            <button type="button" disabled={busy} onClick={() => { void saveDraft(row, view); }} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0B3D2E] text-white disabled:opacity-50">
+                              <FloppyDisk size={12} /> حفظ
+                            </button>
+                            <button type="button" disabled={busy} onClick={() => setDraft(null)} className="px-3 py-1.5 rounded-lg text-xs font-bold border border-white/10 text-zinc-300 hover:bg-white/5">
+                              إلغاء
+                            </button>
+                          </div>
+                        ) : (
+                          <button type="button" disabled={busy || draft !== null} onClick={() => startEdit(row, view)} className="p-2 rounded-lg border border-white/10 text-zinc-300 hover:bg-white/5 disabled:opacity-40" title="تعديل">
+                            <PencilSimple size={14} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      <div className={`${card} overflow-hidden`}>
+      {/* ── Section 2: plans and top-ups, read-only from the price book ── */}
+      <div className={`${card} p-5 space-y-3`}>
+        <div>
+          <p className="text-sm font-black text-white">الباقات والشحن — من دفتر الأسعار</p>
+          <p className={`text-xs mt-1 ${muted}`}>تتغيّر بنشر الكود، لا من هذه الشاشة. الأسعار قبل الضريبة، كما تحسبها صفحة الدفع.</p>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-right">
             <thead>
-              <tr className={`text-xs font-bold ${isDark ? "bg-zinc-950/40 text-zinc-500 border-b border-white/[0.06]" : "bg-slate-50 text-slate-400 border-b border-slate-100"}`}>
-                <th className="px-4 py-3">البند</th>
-                <th className="px-4 py-3">النطاق</th>
-                <th className="px-4 py-3">شهري/خدمة</th>
-                <th className="px-4 py-3">سنوي</th>
-                <th className="px-4 py-3">AI</th>
-                <th className="px-4 py-3">مقاعد</th>
-                <th className="px-4 py-3">رسوم منصة</th>
-                <th className="px-4 py-3">الحالة</th>
-                <th className="px-4 py-3">إجراءات</th>
+              <tr className="text-xs font-bold text-zinc-400 border-b border-white/[0.06]">
+                <th className="px-3 py-2">البند</th>
+                <th className="px-3 py-2">الدورة</th>
+                <th className="px-3 py-2">السعر (ر.س)</th>
+                <th className="px-3 py-2">النقاط</th>
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item) => (
-                <tr key={item.id} className={`border-b last:border-0 ${isDark ? "border-white/[0.04] hover:bg-white/[0.02]" : "border-slate-50 hover:bg-slate-50"}`}>
-                  <td className="px-4 py-4">
-                    <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-slate-800"}`}>{item.name}</p>
-                    <p className={`text-[10px] font-mono ${muted}`}>{item.id}</p>
-                    <p className={`text-[10px] mt-1 max-w-sm ${muted}`}>{item.notes}</p>
+              {BOOK_ROWS.map(({ id, yearly, price }) => (
+                <tr key={id} className="border-b last:border-0 border-white/[0.04]">
+                  <td className="px-3 py-2 text-sm text-zinc-100">
+                    {PRICE_BOOK[id].labelAr}
+                    <span className={`block text-[10px] font-mono ${muted}`}>{id}</span>
                   </td>
-                  <td className={`px-4 py-4 text-xs font-bold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{SCOPE_LABEL[item.scope]}</td>
-                  <td className={`px-4 py-4 text-sm font-mono ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{item.priceMonthly ? item.priceMonthly.toLocaleString("ar-SA") : "-"}</td>
-                  <td className={`px-4 py-4 text-sm font-mono ${muted}`}>{item.priceYearly ? item.priceYearly.toLocaleString("ar-SA") : "-"}</td>
-                  <td className={`px-4 py-4 text-sm font-mono ${muted}`}>{item.includedCredits ?? "-"}</td>
-                  <td className={`px-4 py-4 text-xs font-mono ${muted}`}>
-                    {item.baseSeats ? `${item.baseSeats} + ${item.extraSeatPrice ? item.extraSeatPrice.toLocaleString("ar-SA") : "مخصص"}` : "-"}
-                  </td>
-                  <td className={`px-4 py-4 text-sm font-mono ${muted}`}>{item.platformFeePct ? `${item.platformFeePct}%` : "-"}</td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2">
-                      <select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as AdminPricingStatus)} className={`${inputClass(isDark)} w-28 text-xs`}>
-                        {Object.entries(STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                      </select>
-                      {item.betaLocked && <span title="مقفل أثناء البيتا" className="text-amber-400"><LockKey size={14} weight="fill" /></span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex gap-1">
-                      <button onClick={() => setDraft(item)} className={actionClass(isDark)} title="تعديل"><PencilSimple size={14} /></button>
-                      <button onClick={() => toggleBetaLock(item.id)} className={actionClass(isDark)} title="Beta lock"><LockKey size={14} /></button>
-                    </div>
+                  <td className="px-3 py-2 text-xs text-zinc-300">{yearly ? "سنوي" : "مرة واحدة"}</td>
+                  <td className="px-3 py-2 text-sm font-mono text-[#C8A762]">{price.toLocaleString("ar-SA")}</td>
+                  <td className={`px-3 py-2 text-sm font-mono ${muted}`}>
+                    {PRICE_BOOK[id].points ? PRICE_BOOK[id].points!.toLocaleString("ar-SA") : "—"}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className={`${card} p-5`}>
-        <p className={`text-sm font-black mb-3 ${isDark ? "text-white" : "text-slate-800"}`}>ملخص الربط القادم</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-slate-50 text-slate-600"}`}>مصدر الإنتاج القادم: `admin_pricing_catalog` أو Pricing API.</div>
-          <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-slate-50 text-slate-600"}`}>Beta locks تزال عند live حسب `BETA_TEARDOWN_REGISTRY.md`.</div>
-          <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-zinc-300" : "bg-slate-50 text-slate-600"}`}>إجمالي قيم الكتالوج المحلي: {totalCatalogValue.toLocaleString("ar-SA")} ر.س</div>
-        </div>
+        <p className="text-xs text-zinc-300">عمولة السوق: قريباً</p>
       </div>
     </div>
   );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="space-y-1 block"><span className="text-xs font-bold text-gray-500">{label}</span>{children}</label>;
-}
-
-function inputClass(isDark: boolean) {
-  return `rounded-xl border px-3 py-2 text-sm outline-none ${isDark ? "bg-[#0d1117] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`;
-}
-
-function filterClass(isDark: boolean, active: boolean) {
-  if (active) return isDark ? "px-4 py-2 rounded-xl text-xs font-bold bg-white/10 text-white" : "px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-900";
-  return isDark ? "px-4 py-2 rounded-xl text-xs font-bold text-zinc-500 hover:bg-white/5" : "px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50";
-}
-
-function actionClass(isDark: boolean) {
-  return `p-2 rounded-lg border ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`;
 }

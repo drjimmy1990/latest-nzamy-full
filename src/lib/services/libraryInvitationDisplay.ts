@@ -12,6 +12,14 @@ import { formatArabicDate } from "./clientDashboardCards.ts";
 import { countPhraseAr } from "./arabicCount.ts";
 
 /**
+ * The length of a code without its own grant_days: every code made before
+ * 20261103_11, and any code the admin made without a length (owner ٢٠١–٢٠٣).
+ * Lives here (pure) so the server rules and the admin page share one value;
+ * libraryInvitationRules.ts re-exports it.
+ */
+export const DEFAULT_INVITE_GRANT_DAYS = 30;
+
+/**
  * The redeem route grants the legal library, not a plan (owner answers
  * ٢٠١–٢٠٣, 2026-10-18), and answers `tier: "library"` — that case has its own
  * sentence below. Any other tier (a response from before that change) keeps
@@ -45,4 +53,14 @@ export function redeemSuccessMessageAr(tier: string, until: string | null, days?
   }
   const label = tierDisplayAr(tier);
   return dateAr ? `فُعّلت باقة ${label} حتى ${dateAr}` : `فُعّلت باقة ${label}`;
+}
+
+/**
+ * A code's terms on the admin list (owner q378): its days and its seats
+ * (max_uses — how many accounts may use it), e.g. «٩٠ يوماً · ٥ مقاعد».
+ */
+export function invitationTermsAr(days: number, seats: number): string {
+  const daysAr = countPhraseAr(days, { zero: null, one: "يوم واحد", two: "يومان", few: "أيام", many: "يوماً" }) ?? "—";
+  const seatsAr = countPhraseAr(seats, { zero: null, one: "مقعد واحد", two: "مقعدان", few: "مقاعد", many: "مقعداً" }) ?? "—";
+  return `${daysAr} · ${seatsAr}`;
 }

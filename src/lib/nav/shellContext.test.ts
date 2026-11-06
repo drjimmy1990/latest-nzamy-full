@@ -44,6 +44,10 @@ const NON_ADMIN: UserType[] = [
   "lawyer", "firm", "individual", "corporate", "micro", "government", "ngo", "provider", null,
 ];
 const VIEWS: Array<AdminView | null> = [null, "admin", "lawyer"];
+/** S6-T14: every stored value a tab can now hold — a non-admin must ignore each one. */
+const ALL_VIEWS: Array<AdminView | null> = [
+  null, "admin", "lawyer", "firm", "individual", "corporate", "micro", "provider", "government", "ngo",
+];
 const STAMPS: Array<string | null> = [
   null, "business", "client", "lawyer", "provider", "firm", "micro", "government", "ngo", "admin", "junk",
 ];
@@ -205,7 +209,7 @@ test("sidebar + search: every non-admin session gets the pre-fix answer, whateve
   for (const sessionUserType of NON_ADMIN) {
     for (const pathname of PATHS) {
       for (const isBusinessIntake of [false, true]) {
-        for (const storedView of VIEWS) {
+        for (const storedView of ALL_VIEWS) {
           assert.equal(
             resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake }),
             legacyNavUserType(pathname, sessionUserType, isBusinessIntake),
@@ -241,7 +245,7 @@ test("/ai layout: every non-admin session (and the loading/guest states) picks t
       for (const isLoggedIn of [true, false]) {
         for (const pathname of PATHS.filter((p) => p.startsWith("/ai"))) {
           for (const lastDashboard of STAMPS) {
-            for (const storedView of VIEWS) {
+            for (const storedView of ALL_VIEWS) {
               assert.equal(
                 resolveAiShell({ loading, isLoggedIn, userType, pathname, storedView, lastDashboard }),
                 legacyAiShell({ loading, isLoggedIn, userType, pathname, lastDashboard }),
@@ -260,7 +264,7 @@ test("/ai layout: every non-admin session (and the loading/guest states) picks t
 test("/notifications layout: every non-admin session picks the pre-fix layout", () => {
   for (const userType of NON_ADMIN) {
     for (const lastDashboard of STAMPS) {
-      for (const storedView of VIEWS) {
+      for (const storedView of ALL_VIEWS) {
         assert.equal(
           resolveNotificationsShell({ userType, storedView, lastDashboard }),
           legacyNotificationsShell(userType, lastDashboard),
@@ -274,7 +278,7 @@ test("/notifications layout: every non-admin session picks the pre-fix layout", 
 test("Navbar: every non-admin session keeps its own nav on every path", () => {
   for (const sessionUserType of NON_ADMIN) {
     for (const pathname of PATHS) {
-      for (const storedView of VIEWS) {
+      for (const storedView of ALL_VIEWS) {
         assert.equal(resolveNavbarUserType({ pathname, sessionUserType, storedView }), sessionUserType);
       }
     }
@@ -283,13 +287,15 @@ test("Navbar: every non-admin session keeps its own nav on every path", () => {
 
 // ─── 3. The stored value is UI state only ────────────────────────────────────
 
-test("parseAdminView accepts only the two views; junk or a role name is ignored", () => {
-  assert.equal(parseAdminView("admin"), "admin");
-  assert.equal(parseAdminView("lawyer"), "lawyer");
-  for (const junk of ["firm", "business", "super_admin", "ADMIN", "", null, undefined, 1, {}]) {
+// S6-T14 changed this test on purpose: "firm" was junk while only two views
+// existed; it is one of the nine now. "business"/"client" stay junk — the
+// views are named after the account type, not the URL segment.
+test("parseAdminView accepts only the nine views; junk or a URL segment is ignored", () => {
+  for (const v of ALL_VIEWS.filter((x): x is AdminView => x !== null)) assert.equal(parseAdminView(v), v);
+  for (const junk of ["business", "client", "super_admin", "ADMIN", "", "constructor", null, undefined, 1, {}]) {
     assert.equal(parseAdminView(junk), null, String(junk));
   }
-  const storage = memoryStorage({ [ADMIN_VIEW_STORAGE_KEY]: "firm" });
+  const storage = memoryStorage({ [ADMIN_VIEW_STORAGE_KEY]: "business" });
   assert.equal(readStoredAdminView(storage), null);
 });
 
@@ -307,14 +313,17 @@ test("blocked storage never throws: nothing stored, nothing written", () => {
   assert.equal(writeStoredAdminView(s, "lawyer"), false, "unchanged value: no write, no event");
 });
 
-test("NOTE-22-C02: the switch presses a button only for the two views — elsewhere both navigate", () => {
+// S6-T14 changed this test on purpose (listed in the task report): with nine
+// views every shown dashboard selects its own entry in the «عرض كـ» list.
+test("NOTE-22-C02 / S6-T14: the switch selects the view being drawn — every dashboard is one", () => {
   assert.equal(switchCurrentView("lawyer"), "lawyer");
   assert.equal(switchCurrentView("admin"), "admin");
-  for (const other of ["corporate", "individual", "firm", "provider", "micro", "government", "ngo", null] as const) {
-    assert.equal(switchCurrentView(other), null, String(other));
+  for (const other of ["corporate", "individual", "firm", "provider", "micro", "government", "ngo"] as const) {
+    assert.equal(switchCurrentView(other), other, String(other));
   }
-  // An admin on the console's back-link to /dashboard/business sees no pressed button.
-  assert.equal(switchCurrentView(resolveNavUserType({ pathname: "/dashboard/business", sessionUserType: "admin", storedView: "lawyer" })), null);
+  assert.equal(switchCurrentView(null), null);
+  // An admin on the console's back-link to /dashboard/business sees the company view selected.
+  assert.equal(switchCurrentView(resolveNavUserType({ pathname: "/dashboard/business", sessionUserType: "admin", storedView: "lawyer" })), "corporate");
   assert.match(read("components/dashboard/SharedSidebar.tsx"), /<AdminViewSwitch current=\{switchCurrentView\(userType\)\}/);
 });
 
@@ -324,6 +333,42 @@ test("NOTE-22-C02: the header names a view, not a role", () => {
   assert.equal(adminViewSuffix("admin", "admin"), null);
   assert.equal(adminViewSuffix("lawyer", "lawyer"), null, "a real lawyer is just a lawyer");
   assert.equal(adminViewSuffix("firm", "lawyer"), null);
+});
+
+// ─── S6-T14: the admin view covers every dashboard (UI only) ─────────────────
+
+test("S6: admin views for every dashboard", () => {
+  assert.equal(parseAdminView("firm"), "firm");
+  assert.equal(parseAdminView("superuser"), null);
+  assert.equal(adminViewFromPath("/dashboard/business/contracts"), "corporate");
+  assert.equal(adminViewFromPath("/dashboard/client"), "individual");
+  assert.equal(adminViewFromPath("/dashboard/government/x"), "government");
+  assert.equal(adminViewFromPath("/dashboard/firmish"), null);
+  assert.equal(resolveAdminView("/ai/draft", "firm"), "firm");
+  assert.equal(resolveAdminView("/ai/draft", "admin"), "lawyer");
+  assert.equal(resolveAdminView("/ai/draft", null), "lawyer");
+  assert.equal(resolveAdminView("/dashboard/business", "firm"), "corporate", "the path still wins");
+  assert.equal(
+    resolveAiShell({ loading: false, isLoggedIn: true, userType: "admin", pathname: "/ai/draft", storedView: "corporate", lastDashboard: null }),
+    "business",
+  );
+  assert.equal(
+    resolveAiShell({ loading: false, isLoggedIn: true, userType: "admin", pathname: "/ai/draft", storedView: "individual", lastDashboard: null }),
+    "client",
+  );
+  for (const v of ["lawyer", "firm", "micro", "provider", "government", "ngo"] as const) {
+    assert.equal(
+      resolveAiShell({ loading: false, isLoggedIn: true, userType: "admin", pathname: "/ai/draft", storedView: v, lastDashboard: "business" }),
+      v,
+    );
+  }
+  assert.equal(resolveNavUserType({ pathname: "/notifications", sessionUserType: "admin", storedView: "government" }), "government");
+  // A non-admin with a stale "firm" keeps the old answer.
+  assert.equal(
+    resolveAiShell({ loading: false, isLoggedIn: true, userType: "lawyer", pathname: "/ai/draft", storedView: "firm", lastDashboard: null }),
+    "lawyer",
+  );
+  assert.equal(resolveNavUserType({ pathname: "/ai/draft", sessionUserType: "lawyer", storedView: "firm" }), "lawyer");
 });
 
 // ─── Wiring: every shell asks the resolver; access stays where it was ────────
@@ -359,7 +404,8 @@ test("the switch bar is gated on the REAL role and sits in both admin-reachable 
   const sw = read("components/dashboard/AdminViewSwitch.tsx");
   assert.match(sw, /const \{ userType, loading \} = useUser\(\);/);
   assert.match(sw, /if \(loading \|\| userType !== "admin"\) return null;/);
-  assert.match(sw, /لا يغيّر الصلاحيات/);
+  // S6-T16 changed this pin on purpose: the caption now says what the server does.
+  assert.match(sw, /الخادم يعاملك كأدمن/);
   assert.match(read("components/dashboard/SharedSidebar.tsx"), /\{isRealAdmin && \(\s*<AdminViewSwitch /);
   assert.match(read("components/admin/AdminSidebar.tsx"), /<AdminViewSwitch current="admin" tone="console" \/>/);
 });

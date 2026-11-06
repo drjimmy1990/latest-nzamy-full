@@ -47,3 +47,22 @@ export function successorsBySupersededSlug(rows: readonly unknown[] | null | und
   }
   return out;
 }
+
+/**
+ * The successor rows in one request when they fit: `first` is the query with
+ * { count: "exact" } and .range(0, 999), and it is enough once the count is
+ * covered by the rows it returned. selectAllPages stops on an EMPTY window on
+ * purpose, so without this the few rows always cost two requests. A larger or
+ * unknown count falls back to `rest`, the full walk. An error from `first` is
+ * returned as it is.
+ */
+export async function readSuccessorRows<T>(
+  first: () => PromiseLike<{ data: T[] | null; error: { message: string } | null; count: number | null }>,
+  rest: () => PromiseLike<{ data: T[]; error: { message: string } | null }>,
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const { data, error, count } = await first();
+  if (error) return { data: [], error };
+  const rows = data ?? [];
+  if (count !== null && count <= rows.length) return { data: rows, error: null };
+  return rest();
+}

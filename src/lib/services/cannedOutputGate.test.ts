@@ -24,7 +24,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LAWYER_AI_TOOL_BY_PERMISSION } from "../../constants/lawyerAiCatalog.ts";
-import { TOOL_POINT_LABELS, getLawyerAiBadge } from "../../constants/lawyerAiBadges.ts";
+import { TOOL_POINT_LABELS, TOOL_POINT_SOURCES, getLawyerAiBadge } from "../../constants/lawyerAiBadges.ts";
+import { AI_TOOLS } from "../ai/tools.ts";
 import { LAWYER_QUICK_TOOLS } from "../lawyerQuickTools.ts";
 
 function src(rel: string): string {
@@ -40,6 +41,7 @@ function code(rel: string): string {
 }
 
 const SOON_IMPORT = 'from "@/components/ui/DashboardComingSoon"';
+const SRC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /** Every .ts/.tsx file under src, as [path relative to src, comment-stripped code]. */
 function allSources(): [string, string][] {
@@ -123,10 +125,16 @@ test("the layouts of the two gated tools no longer advertise a working tool", ()
 
 // ── عصارة المرفقات (lawyer/firm half of /ai/analyze) ────────────────────────
 
-test("AttachmentSqueezer is «قريباً» and can no longer export a canned report to the collector", () => {
+test("عصارة المرفقات renders the real case-brief job for lawyer and firm", () => {
   const body = code("app/ai/analyze/_components/AttachmentSqueezer.tsx");
-  assert.ok(body.includes(SOON_IMPORT));
-  assert.match(body, /<DashboardComingSoon\b/);
+  assert.ok(body.includes("CaseBriefStudio"));
+  assert.ok(!body.includes("DashboardComingSoon"));
+  const studio = code("components/ai/caseBrief/CaseBriefStudio.tsx");
+  assert.ok(studio.includes("useAiRun"));
+  assert.ok(studio.includes('"case-brief"'));
+  assert.ok(!studio.includes("MOCK_"));
+  assert.doesNotMatch(studio, /Math\.random\(\)[\s\S]{0,200}setResult/, "a random result");
+  assert.doesNotMatch(studio, /setTimeout\([\s\S]{0,200}setResult/);
   for (const s of [
     "@/lib/services/researchService", // the collector write: addToDesktop / addToSession
     "addToDesktop",
@@ -141,23 +149,55 @@ test("AttachmentSqueezer is «قريباً» and can no longer export a canned r
   }
 });
 
-test("/ai/analyze: page.tsx stays live for clients, while the lawyer tool is «قريباً» everywhere it is sold", () => {
-  // Fix round 1 (coordinator ruling b). The route also serves SmartAnalyzer
-  // to clients, so page.tsx itself does not import DashboardComingSoon. The
-  // lawyer tool «عصارة المرفقات» is gated in the component AND, so the gate
-  // cannot hide behind page.tsx, carries `comingSoon` in the catalog, has no
-  // price (row, plan-card line or hub label) and no quick-access tile.
+test("/ai/analyze: lawyers, firms and admins get the case-brief studio; everyone else the gated analyzer and its notice", () => {
+  // S3-01. The route serves two tools. The case brief runs for lawyer and firm
+  // (tools.ts roles), and for an admin, whom the run path lets through so a tool
+  // in "staff" mode can be tried before it opens. Every other account, and a
+  // guest, reads the gated client analyzer with its advisory notice above it.
   const page = code("app/ai/analyze/page.tsx");
   assert.ok(!page.includes(SOON_IMPORT));
   assert.match(page, /<SmartAnalyzer\b/);
+  const studioAt = page.indexOf("<AttachmentSqueezer />");
+  const noticeAt = page.indexOf("<AdvisoryTemplateNotice");
+  const analyzerAt = page.indexOf("<SmartAnalyzer");
+  assert.ok(studioAt > 0 && studioAt < noticeAt && noticeAt < analyzerAt, "the notice sits in the client branch only");
+  assert.match(page.slice(0, studioAt), /user\.userType === "lawyer" \|\| user\.userType === "firm" \|\| user\.userType === "admin"/);
+  assert.deepEqual(AI_TOOLS["case-brief"].roles, ["lawyer", "firm"], "the studio's split follows the tool's roles");
 
-  assert.equal(LAWYER_AI_TOOL_BY_PERMISSION["ai:analyze"].comingSoon, true);
-  assert.ok(!("ai:analyze" in TOOL_POINT_LABELS), "ai:analyze still has a hub point label");
+  // Live for them, at the registry's price, and no longer «قريباً».
+  const row = LAWYER_AI_TOOL_BY_PERMISSION["ai:analyze"];
+  assert.notEqual(row.comingSoon, true);
+  assert.equal(row.adminPricingKey, "lawyer.ai.analyze");
+  assert.equal(TOOL_POINT_SOURCES["ai:analyze"], "case-brief");
+  assert.equal(getLawyerAiBadge(row, "ar"), `${TOOL_POINT_LABELS["ai:analyze"]} نقطة`);
+
+  // Still no quick tile, no sale row: this batch changes where it opens, not how it is sold.
   assert.deepEqual(LAWYER_QUICK_TOOLS.filter((t) => t.href.startsWith("/ai/analyze")).map((t) => t.id), []);
   const pricing = code("constants/pricing/pricing.lawyers.ts");
   for (const s of ["عصارة المرفقات", "Attachment digest", '"ai:analyze"']) {
     assert.ok(!pricing.includes(s), `pricing.lawyers.ts still sells the attachment tool: ${s}`);
   }
+});
+
+// ── /ai/micro: the contract cases open the real drafter, the rest are «قريباً» ──
+
+test("/ai/micro has no canned output", () => {
+  const page = readFileSync(path.join(SRC_DIR, "app/ai/micro/page.tsx"), "utf8");
+  const body = code("app/ai/micro/page.tsx");
+  assert.ok(!body.includes("setTimeout("), "the fake 2.5 s wait is back");
+  assert.ok(!body.includes("MOCK"));
+  assert.ok(!body.includes("buildOutput"), "the output builder is back");
+  assert.ok(!body.includes("BetaReviewGate"));
+  assert.ok(!body.includes("GatedToolScreen"));
+  assert.ok(!body.includes("saveWorkflowRequest"));
+  // One mapped list holds the three contract ids; the price is read, not typed.
+  assert.ok(body.includes('href="/ai/contract-drafter"'));
+  assert.match(page, /const CONTRACT_CASES[\s\S]*id: "labor_contract"[\s\S]*id: "rent_contract"[\s\S]*id: "service_contract"[\s\S]*const SOON_CASES/);
+  assert.match(page, /const SOON_CASES[\s\S]*id: "warning_letter"[\s\S]*id: "complaint_reply"[\s\S]*id: "consultation"/);
+  assert.ok(body.includes('aiToolPriceText("contract-drafter", "ar")'));
+  assert.ok(!/٥٠٠|500 نقطة/.test(body), "the price is typed by hand");
+  assert.ok(body.includes("قريباً"));
+  assert.ok(AI_TOOLS["contract-drafter"].roles.includes("micro"), "the drafter runs for a micro account");
 });
 
 // ── منقح ناجز: keeps working, loses the fake "AI" delay ──────────────────────
@@ -205,7 +245,7 @@ test("useDraftState no longer mints a share link it never stores", () => {
 // ── The catalog, the nav and the hub say «قريباً» too ────────────────────────
 
 test("the gated lawyer tools are «قريباً» on the hub and unpriced; the Najiz cleaner is not", () => {
-  for (const id of ["ai:compare", "ai:legal-translate", "ai:transcriber", "ai:analyze", "ai:secretary"] as const) {
+  for (const id of ["ai:compare", "ai:legal-translate", "ai:transcriber", "ai:secretary"] as const) {
     const tool = LAWYER_AI_TOOL_BY_PERMISSION[id];
     assert.equal(tool.comingSoon, true, `${id} is not marked comingSoon`);
     assert.equal(getLawyerAiBadge(tool, "ar"), "قريباً");
@@ -236,8 +276,6 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
     "/ai/legal-translate", "/ai/compare", "/ai/transcriber", "/ai/mail-advisor", "/ai/share-history",
     "/ai/corp/clm", "/ai/corp/corpmind", "/ai/corp/hr", "/ai/corp/compliance",
     "/dashboard/admin/system", "/dashboard/admin/system/backup", "/dashboard/admin/reports",
-    // عصارة المرفقات: lawyer and firm rows land on the gated AttachmentSqueezer.
-    "/ai/analyze?source=firm",
     // The secretary's page says it is postponed by the owner (fix round 1).
     "/ai/secretary",
   ]);
@@ -257,11 +295,11 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
   }
   assert.ok(seen >= 19, `found only ${seen} rows — the parser broke`);
   assert.deepEqual(wrong, []);
-  // The LAWYER row to /ai/analyze (the firm rows use ?source=firm). There were
-  // two until owner ٢٦٤ removed LAWYER_SIDEBAR_LITE, which carried the second.
-  const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => r.href === "/ai/analyze");
-  assert.equal(lawyerAnalyze.length, 1);
-  for (const r of lawyerAnalyze) assert.equal(r.badge, "قريباً");
+  // /ai/analyze is the live case brief for lawyer and firm (S3-01, S3-02): one
+  // unbadged row in each of the two sidebars this file holds.
+  const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => r.href.startsWith("/ai/analyze"));
+  assert.equal(lawyerAnalyze.length, 2);
+  for (const r of lawyerAnalyze) assert.equal(r.badge, null);
 });
 
 // ── Fix round 2: no other surface sells the secretary or the attachment tool ──
@@ -326,14 +364,74 @@ test("no pricing card, CTA, tile or canned answer sells the secretary or the att
 });
 
 test("a client sees the working analyzer card on the hub, not the lawyer tool's «قريباً»", () => {
-  // /ai/analyze renders AttachmentSqueezer only for lawyer and firm accounts;
-  // everyone else gets SmartAnalyzer. The hub uses the same split.
-  const lawyerSide = 'user.userType === "lawyer" || user.userType === "firm"';
+  // /ai/analyze renders AttachmentSqueezer only for lawyer, firm and admin
+  // accounts; everyone else gets SmartAnalyzer. The hub uses the same split.
+  const lawyerSide = 'user.userType === "lawyer" || user.userType === "firm" || user.userType === "admin"';
   assert.ok(code("app/ai/analyze/page.tsx").includes(lawyerSide), "analyze/page.tsx changed its split — update the hub to match");
   const hub = code("app/ai/page.tsx");
   assert.match(hub, /const CLIENT_ANALYZE_CARD\b/);
   assert.ok(hub.includes(lawyerSide), "the hub does not use the analyzer page's lawyer/firm split");
   assert.match(hub, /t\.id === "ai:analyze" \? CLIENT_ANALYZE_CARD : t/);
+});
+
+test("a settled run never offers a charged button again: the review step and the negotiator", () => {
+  const step = code("components/contracts/steps/review/StepRAiReview.tsx");
+  assert.ok(step.includes('const settled = phase === "review" || phase === "done" || stillRunning;'));
+  const usable = step.slice(step.indexOf("function UsableReview"));
+  assert.ok(usable.indexOf("settled ?") < usable.indexOf("<StepSubmit"), "the settled branch comes before the charged form");
+  assert.ok(usable.indexOf("settled ?") > -1);
+
+  const page = code("app/ai/contract-negotiator/page.tsx");
+  assert.ok(page.includes('const settled = run.phase === "review" || run.phase === "done" || run.code === RUN_STILL_RUNNING_CODE;'));
+  assert.ok(page.indexOf("{!settled && (") > -1);
+  assert.ok(page.indexOf("{!settled && (") < page.indexOf("حلّل وفاوض"), "the charged button is inside it");
+});
+
+test("contract-negotiator runs the real job", () => {
+  const page = code("app/ai/contract-negotiator/page.tsx");
+  assert.match(page, /useAiRun/);
+  assert.ok(page.includes('run.start("contract-negotiator"'));
+  // tool-status, through the one reader: any answer but a 200 saying usable is a no.
+  assert.ok(page.includes('useToolUsable("contract-negotiator")'));
+  assert.ok(code("hooks/useToolUsable.ts").includes("readToolUsable(tool)"));
+  assert.ok(code("lib/ai/toolStatusClient.ts").includes("/api/v1/ai/tool-status"));
+  assert.doesNotMatch(page, /MOCK_|BetaReviewGate|GatedToolScreen|setTimeout\(|Math\.random/);
+
+  // The price is inside the usable branch only: the default export, which decides, never names it.
+  const gate = page.slice(page.indexOf("export default function ContractNegotiatorPage"), page.indexOf("function riskTone"));
+  assert.ok(gate.includes("مفاوض العقود — قريباً"));
+  assert.ok(gate.includes("usable === null"));
+  assert.ok(gate.includes("<NegotiatorTool"));
+  assert.doesNotMatch(gate, /CONTRACT_NEGOTIATOR_PRICE|نقطة|١٥٠|150/);
+  assert.ok(page.includes('`حلّل وفاوض — ${points} نقطة`'));
+  assert.ok(page.includes('const points = CONTRACT_NEGOTIATOR_PRICE.toLocaleString("ar-SA")'));
+  assert.doesNotMatch(page, /[%٪]/);
+
+  // The result, per the section.
+  for (const part of ["NEGOTIATOR_STANCE_AR", "الموقف الاحتياطي", "<CitationCheckList", "<AiResultActions", "RUN_HELD_MESSAGE_AR"]) assert.ok(page.includes(part), part);
+});
+
+test("quick answer and case brief read tool-status before any price or form: no price, then a 423", () => {
+  const gates: Array<[string, string, string, string, string]> = [
+    ["app/ai/quick-answer/page.tsx", "quick-answer", "export default function QuickAnswerPage", "function QuickAnswerTool", "<QuickAnswerTool"],
+    ["components/ai/caseBrief/CaseBriefStudio.tsx", "case-brief", "export default function CaseBriefStudio", "function CaseBriefTool", "<CaseBriefTool"],
+  ];
+  for (const [file, tool, gateStart, toolStart, mount] of gates) {
+    const page = code(file);
+    assert.ok(page.includes(`useToolUsable("${tool}")`), file);
+    const at = page.indexOf(gateStart);
+    const end = page.indexOf(toolStart);
+    assert.ok(at >= 0 && end >= 0, file);
+    const gate = at < end ? page.slice(at, end) : page.slice(at);
+    assert.ok(gate.includes("usable === null"), file);
+    assert.ok(gate.includes("جارٍ التحقق…"), file);
+    assert.match(gate, /<DashboardComingSoon[\s\S]*قريباً/, file);
+    assert.ok(gate.includes(mount), file);
+    assert.doesNotMatch(gate, /PRICE|aiToolPriceText|نقطة/, `${file}: the gate names no price`);
+    assert.doesNotMatch(gate, /useAiRun|<textarea|<input/, `${file}: the gate holds no form`);
+    // R4: the waiting stage stays mounted in the tool.
+    assert.ok(page.includes("<AiThinkingStage"), file);
+  }
 });
 
 test("the hub's corporate compliance card says «قريباً», and no hub card for a gated page is «جديد»", () => {

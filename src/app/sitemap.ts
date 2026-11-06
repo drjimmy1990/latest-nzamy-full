@@ -78,7 +78,6 @@ const publicRoutes: SitemapRoute[] = [
   // src/constants/betaGatedRoutes.ts; sitemap-tools.test.ts holds it).
   { url: "/ai/analyze-strength", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/assistant", priority: 0.85, changeFrequency: "monthly" },
-  { url: "/ai/case-brief", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/communicate", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/contract-drafter", priority: 0.85, changeFrequency: "monthly" },
@@ -91,7 +90,6 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/najiz-optimizer", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/quick-answer", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/secretary", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/templates", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/wargaming", priority: 0.75, changeFrequency: "monthly" },

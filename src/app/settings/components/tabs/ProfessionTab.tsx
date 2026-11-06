@@ -104,6 +104,10 @@ export function ProfessionTab() {
   // N3.8 (20261025_50): null = the columns do not exist yet — no switches,
   // nothing sent.
   const [sections, setSections] = useState<{ services: boolean; education: boolean; courts: boolean } | null>(null);
+  // q343 (20261103_69): null = the column does not exist yet — no switch. Saved
+  // at once on its own route, because sessions cannot write this column.
+  const [verifyCard, setVerifyCard] = useState<{ enabled: boolean } | null>(null);
+  const [verifyCardBusy, setVerifyCardBusy] = useState(false);
   const [hourlyRate, setHourlyRate] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -137,6 +141,8 @@ export function ProfessionTab() {
       } else {
         setBlocked(res.roleProfileReadFailed === true ? "read-failed" : "no-row");
       }
+      const branding = await apiGet<{ verifyCard?: { enabled: boolean } | null }>("/api/v1/branding", { scope: "lawyer" }).catch(() => null);
+      setVerifyCard(branding?.verifyCard ? { enabled: branding.verifyCard.enabled } : null);
     } catch {
       setBlocked("read-failed");
     } finally {
@@ -174,6 +180,20 @@ export function ProfessionTab() {
       setError(arabicError(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleVerifyCard = async () => {
+    if (!verifyCard || verifyCardBusy) return;
+    setVerifyCardBusy(true);
+    setError(null);
+    try {
+      const res = await apiMutate<{ enabled: boolean }>("/api/v1/branding/verify-card", "PUT", { enabled: !verifyCard.enabled });
+      setVerifyCard({ enabled: res.enabled });
+    } catch (err) {
+      setError(arabicError(err));
+    } finally {
+      setVerifyCardBusy(false);
     }
   };
 
@@ -277,6 +297,14 @@ export function ProfessionTab() {
                 onChange={() => setSections((v) => (v ? { ...v, courts: !v.courts } : v))}
               />
             </>
+          )}
+          {verifyCard !== null && (
+            <ToggleRow
+              label="بطاقة التحقق في رمز QR على مطبوعاتي"
+              description="ما دام ملفك موثّقاً وغير منشور، يفتح الرمز بطاقة قصيرة باسمك ورقم ترخيصك فقط. عند إيقافها يحمل الرمز رابط منصة نظامي، وتتوقف البطاقة حتى على الورق المطبوع سابقاً. يُحفظ فوراً."
+              checked={verifyCard.enabled}
+              onChange={() => void toggleVerifyCard()}
+            />
           )}
         </div>
       </div>

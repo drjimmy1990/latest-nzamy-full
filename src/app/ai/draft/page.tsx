@@ -16,6 +16,7 @@ import { useUser } from "@/hooks/useUser";
 import { draftKindFromMemo } from "@/lib/ai/draftKinds";
 import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
 import { splitAiReadable } from "@/components/ai/aiReadable";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { TranscriptHandoffNotice } from "@/components/draft/TranscriptHandoffNotice";
 import {
   TRANSCRIPT_FROM_PARAM, consumeTranscriptHandoff, discardTranscriptHandoff, sessionStorageOrNull,
@@ -47,7 +48,7 @@ export default function AIDraftPage() {
   // Art. 18: a legal consultant does not plead — neither by the AI nor by
   // the team (the service-requests POST refuses it too).
   const consultantBlocked = kind !== null && user.practiceKind === "consultant";
-  const files = useMemo(() => splitAiReadable(s.uploadedAttachments), [s.uploadedAttachments]);
+  const files = useMemo(() => splitAiReadable(s.uploadedAttachments, AI_TEXT_FILES_ON), [s.uploadedAttachments]);
   const [aiDraftText, setAiDraftText] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   // The run answered `tool_off` (the tool ships off until an admin turns it

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ClipboardText, FileText, DownloadSimple } from "@phosphor-icons/react";
 import Link from "next/link";
+import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 import { useTheme } from "@/components/ThemeProvider";
 
 const REPORTS = [
@@ -52,6 +53,7 @@ export default function NGOReportsPage() {
           <Link href="/ai/ngo/report-generator"
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20 text-violet-400" : "bg-violet-50 border border-violet-200 hover:bg-violet-100 text-violet-700"}`}>
             <FileText size={14} /> إعداد تقرير بالذكاء الاصطناعي
+            <span className="rounded-full border border-current px-1.5 py-0.5 text-[10px] font-bold opacity-80">{COMING_SOON_BADGE_AR}</span>
           </Link>
         </div>
 

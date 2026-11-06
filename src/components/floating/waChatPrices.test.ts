@@ -111,3 +111,10 @@ test("finding 6: StepPayment shows the VAT sentence with any amount, not only wi
   const src = STEPS.find(([n]) => n === "StepPayment.tsx")![1];
   assert.match(src, /requiresPaymentChoice \|\| priced\.showsAmount \? \(/);
 });
+
+test("S6: a company's chat shows the business contract-review price; the default stays the individuals'", () => {
+  assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "contract-review").text, "يبدأ من ٦٠٠ ر.س");
+  assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "contract-review", { audience: "corporate" }).text, "يبدأ من ٨٠٠ ر.س");
+  assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "video-full", { audience: "corporate" }).text, waPrice(CLIENT_SERVICE_CATALOG, "video-full").text);
+  assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "contract-review-business").text, "يتم التحديد", "the variant id is not a service");
+});

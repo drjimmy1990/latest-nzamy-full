@@ -111,10 +111,20 @@ test("a consultant may not run the wargaming simulation (Art. 18) but may analys
   assert.equal(b.status, 202);
 });
 
-test("wargaming input: role, area, a 20+ character summary, known targets; critique needs the memo", () => {
+test("wargaming input: role, a 20+ character summary, known targets; critique needs the memo; area optional", () => {
   const v = AI_TOOLS.wargaming.validateInput;
   assert.equal(v({ ...war, role: "judge" }).ok, false);
-  assert.equal(v({ ...war, area: "" }).ok, false);
+  for (const area of ["", "   ", null, undefined]) {
+    const open = v({ ...war, area });
+    assert.ok(open.ok, String(area));
+    assert.equal(open.ok && open.input.area, null, String(area));
+  }
+  const { area: _area, ...noArea } = war;
+  void _area;
+  const absent = v(noArea);
+  assert.equal(absent.ok && absent.input.area, null);
+  assert.deepEqual(v({ ...war, area: "ت".repeat(151) }), { ok: false, error: "تخصص القضية أطول من المسموح" });
+  assert.equal(v({ ...war, area: 7 }).ok, false);
   assert.equal(v({ ...war, case_summary: "قصير" }).ok, false);
   assert.equal(v({ ...war, targets: ["win"] }).ok, false);
   assert.equal(v({ ...war, targets: ["critique"] }).ok, false);
@@ -127,6 +137,19 @@ test("wargaming input: role, area, a 20+ character summary, known targets; criti
   // A memo left behind after critique was deselected is not sent.
   const dropped = v({ ...war, memo_text: "نص قديم", memo_in_files: true });
   assert.deepEqual(dropped.ok && [dropped.input.memo_text, dropped.input.memo_in_files], [null, false]);
+});
+
+test("B4: pasted case documents are optional, 50..30,000 characters after trim, refused rather than cut", () => {
+  const v = AI_TOOLS.wargaming.validateInput;
+  assert.deepEqual(v({ ...war, docs_text: "x".repeat(49) }), { ok: false, error: "النص الملصق قصير — الصق المستندات كاملة (٥٠ حرفاً على الأقل)" });
+  assert.deepEqual(v({ ...war, docs_text: "x".repeat(30_001) }), { ok: false, error: "النص الملصق أطول من ٣٠٬٠٠٠ حرف — ارفعه ملفاً" });
+  const fits = v({ ...war, docs_text: ` ${"x".repeat(50)} ` });
+  assert.ok(fits.ok);
+  assert.equal((fits.input.docs_text as string).length, 50);
+  const none = v({ ...war, docs_text: "  " });
+  assert.ok(none.ok);
+  assert.equal("docs_text" in none.input, false, "no paste, no key");
+  assert.deepEqual(AI_TOOLS.wargaming.pasteAsFile, { field: "docs_text", name: "نص المستندات (ملصق).txt", maxChars: 30_000 });
 });
 
 test("wargaming output: points only for the targets asked, no probability field, the plea script only for «plea»", () => {

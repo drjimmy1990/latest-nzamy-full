@@ -202,10 +202,20 @@ export function parseQuotaRow(json: unknown): QuotaRow | null {
 /** Where a locked reader is sent: the public contact page. */
 export const LIBRARY_LOCK_SUPPORT_PATH = "/contact";
 
-export function libraryLockMessageAr(reference: string | null): string {
+/**
+ * The locked reader's message. With `lockedUntil` (an automatic lock ends
+ * after library_monitor_settings.auto_lock_hours since 20261103_10, owner
+ * q362; an admin may set an end too) it says the lock lifts by itself — and
+ * carries NO date: the date is formatted on the client
+ * (LibrarySecurityLockNotice), never in a server string an nginx cache could
+ * keep. Without it the text is exactly what it was before q362.
+ */
+export function libraryLockMessageAr(reference: string | null, lockedUntil: string | null = null): string {
   const ref = reference ? ` (رقم المرجع: ${reference})` : "";
+  const ends = lockedUntil ? "ويُرفع الإيقاف تلقائياً عند انتهاء مدته. " : "";
   return (
     `أُوقفت القراءة في المكتبة القانونية لحسابك مؤقتاً لحماية محتواها${ref}. ` +
+    ends +
     "حسابك وبقية خدمات المنصة تعمل كالمعتاد. " +
     "لاستعادة القراءة تواصل مع الدعم من صفحة «تواصل معنا» واذكر رقم المرجع."
   );
@@ -233,6 +243,8 @@ export interface QuotaRefusal {
     code: "library_security_lock" | "library_daily_limit" | "library_hourly_limit";
     reference?: string;
     support?: string;
+    /** A lock's end (ISO, from the database row); absent for a lock until an admin lifts it. */
+    lockedUntil?: string;
     limit?: number;
     resetsAt?: string;
   };
@@ -259,10 +271,11 @@ export function quotaRefusal(row: QuotaRow | null, now: number): QuotaRefusal | 
     return {
       status: 423,
       body: {
-        error: libraryLockMessageAr(row.lockReference),
+        error: libraryLockMessageAr(row.lockReference, row.lockedUntil),
         code: "library_security_lock",
         ...(row.lockReference ? { reference: row.lockReference } : {}),
         support: LIBRARY_LOCK_SUPPORT_PATH,
+        ...(row.lockedUntil ? { lockedUntil: row.lockedUntil } : {}),
       },
       retryAfterSeconds: null,
     };

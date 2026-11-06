@@ -6,6 +6,8 @@ import { FileText, Brain, Warning, Copy, Check, Sparkle } from "@phosphor-icons/
 import { useTheme } from "@/components/ThemeProvider";
 import { ContractType } from "./contractTypes";
 import AiResultActions from "@/components/AiResultActions";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
+import { contractBlocks, type ContractDraft } from "./contractDraft";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import CitationCheckList, { type CitationVerdict } from "@/components/ai/CitationCheckList";
 
@@ -26,7 +28,7 @@ interface Props {
    * verdict on each article it relies on: the run has its own review mode,
    * so the beta gate only wraps the other results.
    */
-  aiDraft?: { citations: CitationVerdict[]; chargedPoints: number };
+  aiDraft?: { citations: CitationVerdict[]; chargedPoints: number; draft: ContractDraft };
 }
 
 // ─── StepContractResult ───────────────────────────────────────────────────────
@@ -175,6 +177,11 @@ export default function StepContractResult({
 
       {/* Unified Result Actions */}
       <div className={`pt-6 mt-6 border-t ${isDark ? "border-white/10" : "border-zinc-200"}`}>
+        {aiDraft && (
+          <div className="mb-3">
+            <LetterheadExportBar title={aiDraft.draft.title} blocks={contractBlocks(aiDraft.draft)} filename={`contract-${contractType?.id ?? "draft"}`} />
+          </div>
+        )}
         <AiResultActions
           text={contractText}
           filename={`contract-${contractType?.id ?? "draft"}`}

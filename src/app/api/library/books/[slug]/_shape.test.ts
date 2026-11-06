@@ -18,6 +18,9 @@ test("blocks page/limit: defaults, clamps, no NaN offset", () => {
   assert.deepEqual(planBlocksPage(q("page=abc&limit=-3")), { page: 1, limit: BLOCKS_DEFAULT_LIMIT, offset: 0 });
   assert.deepEqual(planBlocksPage(q("page=3&limit=20")), { page: 3, limit: 20, offset: 40 });
   assert.equal(planBlocksPage(q("limit=99999")).limit, BLOCKS_MAX_LIMIT);
+  // q390: the book reader streams in batches of 50; no caller asks for more.
+  assert.equal(planBlocksPage(q("limit=80")).limit, 50);
+  assert.equal(BLOCKS_MAX_LIMIT, 50);
 });
 
 test("hashiyah is always a list of strings", () => {

@@ -1,5 +1,10 @@
-import { getClientServiceById, formatClientServicePrice } from "../../lib/pricingRepository.ts";
-import type { ClientServiceCatalogItem } from "../../constants/clientServiceCatalog.ts";
+import { formatClientServicePrice } from "../../lib/pricingRepository.ts";
+import { resolveClientService } from "../../lib/pricing/clientPricingAudience.ts";
+import {
+  CLIENT_SERVICE_CATALOG,
+  type ClientPricingAudience,
+  type ClientServiceCatalogItem,
+} from "../../constants/clientServiceCatalog.ts";
 
 /**
  * Owner item ١٨ / س٣ — «توصيفها كقوالب استرشادية + زر مراجعة واعتماد المحامي».
@@ -27,8 +32,18 @@ export interface AdvisoryHandoff {
   priceLabel: string;
 }
 
-export function resolveAdvisoryHandoff(serviceId: string, catalog?: ClientServiceCatalogItem[]): AdvisoryHandoff {
-  const service = getClientServiceById(serviceId, catalog);
+/**
+ * `audience` (S6, q327): a company sees the business price of the same
+ * service (contract review «يبدأ من ٨٠٠ ر.س»); callers pass the
+ * useClientPricingCatalog() value. Default "individual".
+ * `serviceId` is a HUMAN-service catalogue id, never an AI tool id (R19).
+ */
+export function resolveAdvisoryHandoff(
+  serviceId: string,
+  catalog: ClientServiceCatalogItem[] = CLIENT_SERVICE_CATALOG,
+  audience: ClientPricingAudience = "individual",
+): AdvisoryHandoff {
+  const service = resolveClientService(serviceId, audience, catalog);
   return {
     // Every human service in the catalog carries a route; `general` (the
     // catalog's own fallback, returned when the id is unknown) does too, so

@@ -30,6 +30,33 @@ test("the registry entry: one memo, 200 points, consultants blocked", () => {
   assert.deepEqual(t.validateInput({ client_capacity: "مدعى عليه", court: " المحكمة العمالية ", notes: "" }), { ok: true, input });
 });
 
+test("B4: a pasted memo is optional, 200..60,000 characters after trim, refused rather than cut", () => {
+  const v = AI_TOOLS["brief-check"].validateInput;
+  const base = { client_capacity: "مدعى عليه" };
+  const short = v({ ...base, memo_text: "x".repeat(199) });
+  assert.deepEqual(short, { ok: false, error: "النص الملصق قصير — الصق المذكرة كاملة (٢٠٠ حرف على الأقل)" });
+  const trimmedShort = v({ ...base, memo_text: `  ${"x".repeat(199)}  ` });
+  assert.equal(trimmedShort.ok, false);
+  const fits = v({ ...base, memo_text: "x".repeat(200) });
+  assert.ok(fits.ok);
+  assert.equal((fits.input.memo_text as string).length, 200);
+  assert.equal(v({ ...base, memo_text: "x".repeat(60_000) }).ok, true);
+  assert.deepEqual(v({ ...base, memo_text: "x".repeat(60_001) }), { ok: false, error: "النص الملصق أطول من ٦٠٬٠٠٠ حرف — ارفعه ملفاً" });
+  for (const absent of [undefined, null, "", "   ", 7, {}]) {
+    const r = v({ ...base, memo_text: absent });
+    assert.ok(r.ok);
+    assert.equal("memo_text" in r.input, false, "no paste, no key: the package and stored input stay as they were");
+  }
+});
+
+test("B4: the registry entry — the memo is a file or a paste, and either satisfies the rule", () => {
+  const t = AI_TOOLS["brief-check"];
+  assert.equal(t.files!.optional, true);
+  assert.equal(t.filesRequired!({ memo_text: "نص" }), false);
+  assert.equal(t.filesRequired!({}), true);
+  assert.deepEqual(t.pasteAsFile, { field: "memo_text", name: "نص المذكرة (ملصق).txt", maxChars: 60_000 });
+});
+
 test("a consultant is refused before the files are read", async () => {
   const { client, log } = fakeDb((q) => (q.table === "platform_settings" ? { data: { value: ON } } : {}));
   let read = false;

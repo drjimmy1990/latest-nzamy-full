@@ -29,10 +29,22 @@ export function isPricedAiToolId(v: unknown): v is PricedAiToolId {
  * credits "short". Restricting the list is simpler and safer than teaching it
  * credits; a credit tool that wants the banner must add the credit read first.
  */
-export type PointsStandingTool = Exclude<PricedAiToolId, typeof FOUNDER_DRAFTER_TOOL | FounderOutputTool>;
+export type PointsStandingTool = Exclude<PricedAiToolId, typeof FOUNDER_DRAFTER_TOOL | FounderOutputTool | PriceHiddenTool>;
+
+/**
+ * Owner q296: the price of these is not shown until they are live, and a "short"
+ * reply here carries the price to anyone who asks. Their screens never read it.
+ */
+const PRICE_HIDDEN_TOOLS = ["contract-review", "contract-negotiator"] as const;
+type PriceHiddenTool = (typeof PRICE_HIDDEN_TOOLS)[number];
 
 export function isPointsStandingTool(v: unknown): v is PointsStandingTool {
-  return isPricedAiToolId(v) && v !== FOUNDER_DRAFTER_TOOL && !(FOUNDER_OUTPUT_TOOLS as readonly string[]).includes(v);
+  return (
+    isPricedAiToolId(v) &&
+    v !== FOUNDER_DRAFTER_TOOL &&
+    !(FOUNDER_OUTPUT_TOOLS as readonly string[]).includes(v) &&
+    !(PRICE_HIDDEN_TOOLS as readonly string[]).includes(v)
+  );
 }
 
 export interface PointsFacts {

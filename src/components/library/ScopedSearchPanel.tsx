@@ -28,6 +28,7 @@ import { highlightSegments, hitCartEntry, hitCopy, scopedHitHref, scopedPanelTit
 import { paletteFor } from "@/lib/search/multiColorSearch";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 import { cleanPrincipleText } from "@/app/precedents/[slug]/_principle-text";
+import SearchSyntaxHelp from "@/components/library/SearchSyntaxHelp";
 
 const PAGE_SIZE = 20;
 
@@ -261,6 +262,7 @@ export default function ScopedSearchPanel({
 
       <div className="flex flex-wrap items-center gap-1.5 mt-2" role="group" aria-label="معاملات البحث">
         <span className={`text-[10px] font-bold ${muted}`}>المعاملات:</span>
+        <SearchSyntaxHelp onPick={setQuery} isDark={isDark} />
         {OPERATORS.map((op) => (
           <button
             key={op.token}

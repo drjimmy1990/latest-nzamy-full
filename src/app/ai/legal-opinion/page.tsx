@@ -210,7 +210,7 @@ export default function AILegalOpinionPage() {
     if (uploading) return false;
     if (currentStep === "type") return !!selectedType;
     if (currentStep === "context") {
-      if (selectedType === "consult") return !!topicArea && description.trim().length >= 20;
+      if (selectedType === "consult") return description.trim().length >= 20;
       if (selectedType === "study") return description.trim().length >= 20;
       if (selectedType === "legal-memo") return description.trim().length >= 20;
       if (selectedType === "research") return description.trim().length >= 20;

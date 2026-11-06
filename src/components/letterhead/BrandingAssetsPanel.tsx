@@ -6,10 +6,9 @@
  * and delete the office's Word letterhead template, full-page PDF letterhead,
  * stamp and signature. Backed by /api/v1/branding/assets (20261030_14).
  *
- * Honest about its reach: the files are STORED here and downloaded from here.
- * The platform does not yet merge a document into the Word template, print
- * over the PDF, or place the stamp and signature on any output — the note
- * under the list says so. Before 20261030_14 runs the server answers
+ * Honest about its reach: the Word template is used when the AI tools export a
+ * document (q345). The platform does not print over the PDF or place the stamp
+ * and signature on any output: the note under the list says so. Before 20261030_14 runs the server answers
  * `available: false` and the panel says «يتطلب تحديث قاعدة البيانات» with
  * every button disabled; nothing is pretended.
  */
@@ -212,8 +211,8 @@ export default function BrandingAssetsPanel({ scope }: { scope: BrandingScope })
       )}
 
       <p className={`text-[11px] leading-5 ${ts}`}>
-        تُحفظ الملفات في خزنتك الخاصة ولا يراها غيرك{scope === "firm" ? " ومن يدير هوية المكتب" : ""}. لا تدمج المنصة بعدُ نصوص الخطابات
-        في قالب Word المرفوع ولا تطبع فوق ملف PDF، ولا تضع الختم والتوقيع على المخرجات تلقائياً.
+        تُحفظ الملفات في خزنتك الخاصة ولا يراها غيرك{scope === "firm" ? " ومن يدير هوية المكتب" : ""}. يُستخدم قالب Word المرفوع عند تصدير
+        ما تكتبه أدوات الذكاء الاصطناعي إلى ملف Word. لا تطبع المنصة فوق ملف PDF، ولا تضع الختم والتوقيع على المخرجات تلقائياً.
       </p>
     </section>
   );

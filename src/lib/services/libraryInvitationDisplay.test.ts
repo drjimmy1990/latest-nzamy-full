@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { tierDisplayAr, redeemSuccessMessageAr } from "./libraryInvitationDisplay.ts";
+import { tierDisplayAr, redeemSuccessMessageAr, invitationTermsAr } from "./libraryInvitationDisplay.ts";
 
 // ── tierDisplayAr ────────────────────────────────────────────────────────
 
@@ -66,4 +66,13 @@ test("redeemSuccessMessageAr counts short library windows with the right Arabic 
   assert.equal(redeemSuccessMessageAr("library", null, 7), "فُعّل اشتراك المكتبة القانونية لمدة ٧ أيام");
   assert.equal(redeemSuccessMessageAr("library", null, 1), "فُعّل اشتراك المكتبة القانونية لمدة يوم واحد");
   assert.equal(redeemSuccessMessageAr("library", null, 0), "فُعّل اشتراك المكتبة القانونية");
+});
+
+// ── invitationTermsAr (owner q378: a code's own days and seats) ─────────────
+
+test("invitationTermsAr prints a code's days and seats with the right Arabic forms", () => {
+  assert.equal(invitationTermsAr(90, 5), "٩٠ يوماً · ٥ مقاعد");
+  assert.equal(invitationTermsAr(30, 1), "٣٠ يوماً · مقعد واحد");
+  assert.equal(invitationTermsAr(7, 2), "٧ أيام · مقعدان");
+  assert.equal(invitationTermsAr(1, 12), "يوم واحد · ١٢ مقعداً");
 });

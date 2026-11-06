@@ -67,7 +67,9 @@ function handlers(source: string): Array<{ method: string; body: string }> {
   }));
 }
 
-const GATES = [/\bassertRole\(/, /\bassertCaseWorker\(/, /\brequireStaff\(/, /\brequireAdmin\(/, /\blibraryAiAccess\(/];
+// resolveBrandingCaller is a gate of its own: it calls assertRole, pinned below,
+// and without this entry the branding writes would be skipped as session-free.
+const GATES = [/\bassertRole\(/, /\bassertCaseWorker\(/, /\brequireStaff\(/, /\brequireAdmin\(/, /\blibraryAiAccess\(/, /\bresolveBrandingCaller\(/];
 
 test("every API write a session makes refuses a frozen account", () => {
   const offenders: string[] = [];
@@ -152,4 +154,18 @@ test("the helper: only app_metadata decides, and anything but status 'frozen' pa
   assert.ok(body.includes("status: 403"));
   const req = src.slice(src.indexOf("export async function requireApiUser"), src.indexOf("export function frozenAccountResponse"));
   assert.ok(req.includes("if (!options.allowFrozen) {"), "requireApiUser refuses by default");
+});
+
+test("resolveBrandingCaller refuses a frozen account: assertRole comes first, before any query", () => {
+  const src = readFileSync(join(SRC, "lib", "branding", "brandingServer.ts"), "utf8").replace(/\r\n/g, "\n");
+  const body = src.slice(src.indexOf("export async function resolveBrandingCaller"), src.indexOf("/** The vault row as the session may see it"));
+  const gate = body.indexOf("await assertRole()");
+  assert.ok(gate > 0, "it calls assertRole");
+  assert.ok(gate < body.indexOf("resolveCallerFirm("), "before the firm read");
+  assert.match(body.slice(gate), /if \(!auth\.ok\) return auth;/, "and stops on its refusal");
+});
+
+test("the verification-card switch is walked as a session write", () => {
+  const put = handlers(readFileSync(join(API, "v1", "branding", "verify-card", "route.ts"), "utf8")).find((h) => h.method === "PUT");
+  assert.ok(put && GATES.some((g) => g.test(put.body)), "PUT verify-card passes a named gate");
 });

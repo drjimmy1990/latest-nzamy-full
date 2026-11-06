@@ -8,17 +8,19 @@ import {
 } from "@/lib/services/libraryInvitationsService";
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { formatArabicDate, toArabicDigits } from "@/lib/services/clientDashboardCards";
+import { DEFAULT_INVITE_GRANT_DAYS, invitationTermsAr } from "@/lib/services/libraryInvitationDisplay";
 
 /**
  * Admin → Library invitation codes (Phase 6).
  * GET  /api/v1/admin/library-invitations — list, newest first
- * POST /api/v1/admin/library-invitations — create { code?, maxUses, expiresAt? }
+ * POST /api/v1/admin/library-invitations — create { code?, maxUses, expiresAt?, grantDays? }
  *
- * Every code grants the SAME thing regardless of who creates it or how many
- * uses it has: the legal library for 30 days — a library grant, not a plan
- * (owner answers ٢٠١–٢٠٣; see the redeem route). There is no
- * per-code trial length to configure here — that belongs to the OTHER,
- * unrelated invitation system (public.invitations, colleague referrals).
+ * Every code grants the legal library — a library grant, not a plan (owner
+ * answers ٢٠١–٢٠٣; see the redeem route) — for its own number of days and
+ * to its own number of seats (owner q378): grantDays (1..3660, empty = 30)
+ * and maxUses (the seats: how many accounts may use it). The OTHER,
+ * unrelated invitation system (public.invitations, colleague referrals) has
+ * its own trial length.
  */
 
 const STATUS_LABEL_AR: Record<LibraryInvitationStatus, string> = {
@@ -34,6 +36,8 @@ const STATUS_BADGE: Record<LibraryInvitationStatus, string> = {
 };
 
 const DEFAULT_MAX_USES = 1;
+/** The days a code without its own length gives — the same constant the server uses. */
+const DEFAULT_GRANT_DAYS_LABEL = toArabicDigits(DEFAULT_INVITE_GRANT_DAYS);
 
 export default function AdminLibraryInvitationsPage() {
   const [read, setRead] = useState<ListRead<LibraryInvitation> | null>(null);
@@ -43,6 +47,7 @@ export default function AdminLibraryInvitationsPage() {
   const [codeInput, setCodeInput] = useState("");
   const [maxUsesInput, setMaxUsesInput] = useState(String(DEFAULT_MAX_USES));
   const [expiresAtInput, setExpiresAtInput] = useState("");
+  const [grantDaysInput, setGrantDaysInput] = useState("");
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -69,6 +74,7 @@ export default function AdminLibraryInvitationsPage() {
     setCodeInput("");
     setMaxUsesInput(String(DEFAULT_MAX_USES));
     setExpiresAtInput("");
+    setGrantDaysInput("");
   }
 
   async function handleCreate() {
@@ -80,7 +86,13 @@ export default function AdminLibraryInvitationsPage() {
     // comes back as the server's own Arabic 400, shown below as-is.
     const maxUses = Number(maxUsesInput);
     if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000) {
-      setToast({ ok: false, msg: "الحد الأقصى لعدد الاستخدامات يجب أن يكون عدداً صحيحاً بين ١ و١٠٠٠" });
+      setToast({ ok: false, msg: "عدد المقاعد يجب أن يكون عدداً صحيحاً بين ١ و١٠٠٠" });
+      return;
+    }
+    // Bounds mirror validateGrantDays (1..3660); empty = the default 30 days.
+    const grantDays = grantDaysInput.trim() === "" ? null : Number(grantDaysInput);
+    if (grantDays !== null && (!Number.isInteger(grantDays) || grantDays < 1 || grantDays > 3660)) {
+      setToast({ ok: false, msg: "مدة المنحة يجب أن تكون عدداً صحيحاً بين ١ و٣٦٦٠ يوماً" });
       return;
     }
     setCreating(true);
@@ -93,6 +105,7 @@ export default function AdminLibraryInvitationsPage() {
         // order rule: new columns go only when non-null).
         ...(codeInput.trim() ? { code: codeInput.trim() } : {}),
         ...(expiresAtInput ? { expiresAt: expiresAtInput } : {}),
+        ...(grantDays !== null ? { grantDays } : {}),
       });
       setToast({ ok: true, msg: `تم إنشاء الكود ${created.code}` });
       resetForm();
@@ -128,7 +141,7 @@ export default function AdminLibraryInvitationsPage() {
           <div>
             <h1 className="text-xl font-black text-white">أكواد دعوة المكتبة</h1>
             <p className="text-[12px] text-zinc-500">
-              كل كود يمنح اشتراك المكتبة القانونية لمدة ٣٠ يوماً — أي مستخدم مسجّل يفعّله من صفحة اشتراك المكتبة.
+              كل كود يمنح اشتراك المكتبة القانونية للمدة المحددة له ({DEFAULT_GRANT_DAYS_LABEL} يوماً إن لم تُحدَّد مدة)، لعدد مقاعده من الحسابات — أي مستخدم مسجّل يفعّله من صفحة اشتراك المكتبة.
             </p>
           </div>
         </div>
@@ -167,7 +180,7 @@ export default function AdminLibraryInvitationsPage() {
 
       {showForm && (
         <div className="mb-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5 space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="space-y-1 block">
               <span className="text-[11px] font-bold text-zinc-500">الكود (اختياري — يُولَّد تلقائياً إن تُرك فارغاً)</span>
               <input
@@ -179,13 +192,25 @@ export default function AdminLibraryInvitationsPage() {
               />
             </label>
             <label className="space-y-1 block">
-              <span className="text-[11px] font-bold text-zinc-500">الحد الأقصى للاستخدامات</span>
+              <span className="text-[11px] font-bold text-zinc-500">عدد المقاعد (عدد الحسابات التي تستعمل الكود)</span>
               <input
                 type="number"
                 min={1}
                 max={1000}
                 value={maxUsesInput}
                 onChange={(e) => setMaxUsesInput(e.target.value)}
+                className="w-full rounded-xl border border-white/[0.08] bg-[#0d1117] px-3 py-2 text-sm text-white outline-none"
+              />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11px] font-bold text-zinc-500">مدة المنحة بالأيام (اختياري — {DEFAULT_GRANT_DAYS_LABEL} يوماً إن تُركت فارغة)</span>
+              <input
+                type="number"
+                min={1}
+                max={3660}
+                value={grantDaysInput}
+                onChange={(e) => setGrantDaysInput(e.target.value)}
+                placeholder={DEFAULT_GRANT_DAYS_LABEL}
                 className="w-full rounded-xl border border-white/[0.08] bg-[#0d1117] px-3 py-2 text-sm text-white outline-none"
               />
             </label>
@@ -248,6 +273,7 @@ export default function AdminLibraryInvitationsPage() {
             <thead>
               <tr className="border-b border-white/[0.06] bg-white/[0.02] text-zinc-500">
                 <th className="px-4 py-3 text-start font-bold">الكود</th>
+                <th className="px-4 py-3 text-start font-bold">المدة والمقاعد</th>
                 <th className="px-4 py-3 text-start font-bold">الاستخدام</th>
                 <th className="px-4 py-3 text-start font-bold">الانتهاء</th>
                 <th className="px-4 py-3 text-start font-bold">الحالة</th>
@@ -259,6 +285,7 @@ export default function AdminLibraryInvitationsPage() {
               {rows.map((row) => (
                 <tr key={row.id}>
                   <td className="px-4 py-3 font-mono font-bold text-white" dir="ltr">{row.code}</td>
+                  <td className="px-4 py-3 text-zinc-300">{invitationTermsAr(row.grantDays, row.maxUses)}</td>
                   <td className="px-4 py-3 text-zinc-300">
                     {toArabicDigits(row.currentUses)}
                     <span className="text-zinc-600">/{toArabicDigits(row.maxUses)}</span>

@@ -8,7 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { AI_TOOLS } from "../../lib/ai/tools.ts";
 import {
-  analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingText, pleadingWordHtml,
+  analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingBlocks, pleadingText, pleadingWordHtml,
   type WizardFacts,
 } from "./legalDraft.ts";
 
@@ -83,4 +83,37 @@ test("the pleading: plain text without markers, and a right-to-left Word file wi
   assert.match(doc, /<p>عمل المدعي<\/p><p>ثم فُصل<\/p>/);
   assert.doesNotMatch(doc, /\[S\d\]/);
   assert.equal(asPleading({ phase: "issues", title: "x", sections: [] }), null);
+});
+
+test("B9: no branch, or «أخرى» with nothing typed, goes to the run as no branch; the run accepts it", () => {
+  for (const legalBranch of ["", "  ", "أخرى"]) {
+    const input = analysisInput(wizard({ legalBranch }));
+    assert.equal(input.branch, null, legalBranch);
+    assert.ok(tool.validateInput(input).ok, legalBranch);
+  }
+  assert.equal(analysisInput(wizard({ legalBranch: " عمالي " })).branch, "عمالي");
+  assert.equal(analysisInput(wizard({ legalBranch: "بحري دولي" })).branch, "بحري دولي");
+});
+
+test("pleading blocks: the section's fixture", () => {
+  assert.deepEqual(
+    pleadingBlocks({ title: "لائحة دعوى", sections: [{ heading: "الوقائع", body: "نص [S1]" }], requests: ["إلزام المدعى عليه"], citation_check: [] }),
+    [
+      { kind: "title", text: "لائحة دعوى" },
+      { kind: "heading", text: "الوقائع" },
+      { kind: "para", text: "نص" },
+      { kind: "heading", text: "الطلبات" },
+      { kind: "list", ordered: true, items: ["إلزام المدعى عليه"] },
+    ],
+  );
+});
+
+test("pleading blocks: no marker anywhere, lines become paragraphs, no requests no heading", () => {
+  const blocks = pleadingBlocks({ title: "لائحة [S1]", sections: [{ heading: "الدفوع[S2]", body: "أول [S3]\n\nثانٍ [S4]" }], requests: [], citation_check: [] });
+  assert.deepEqual(blocks, [
+    { kind: "title", text: "لائحة" },
+    { kind: "heading", text: "الدفوع" },
+    { kind: "para", text: "أول" },
+    { kind: "para", text: "ثانٍ" },
+  ]);
 });

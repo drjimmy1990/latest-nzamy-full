@@ -44,7 +44,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // the anon key holds no privilege on them. They are read with the service key
 // here, exactly as the Next routes read them. Without the key those checks are
 // skipped with a warning instead of reporting a false "empty table".
-const SERVER_ONLY_TABLES = new Set(['articles', 'article_regulations', 'article_amendments']);
+// The same holds for four more: the anon key has no privilege on principle_paragraphs
+// (20261016_01), smart_folders and smart_folder_items (20261026_50; a signed-in user
+// still reads his own folders through his session) or invitations (20261103_15).
+const SERVER_ONLY_TABLES = new Set([
+  'articles', 'article_regulations', 'article_amendments',
+  'principle_paragraphs', 'smart_folders', 'smart_folder_items', 'invitations',
+]);
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const serverOnly = SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

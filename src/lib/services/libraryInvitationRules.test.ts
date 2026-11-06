@@ -11,8 +11,11 @@ import {
   isValidInvitationCodeFormat,
   validateMaxUses,
   validateExpiresAt,
+  validateGrantDays,
+  DEFAULT_INVITE_GRANT_DAYS,
   libraryInvitationStatus,
 } from "./libraryInvitationRules.ts";
+import { DEFAULT_INVITE_GRANT_DAYS as DISPLAY_DEFAULT_DAYS } from "./libraryInvitationDisplay.ts";
 
 // ── generateInvitationCode ───────────────────────────────────────────────
 
@@ -153,4 +156,36 @@ test("a future expiry does not mark an otherwise-active code expired", () => {
     libraryInvitationStatus({ currentUses: 1, maxUses: 3, expiresAt: future }),
     "active",
   );
+});
+
+// ── validateGrantDays (owner q378, 20261103_11) ─────────────────────────────
+
+test("validateGrantDays: absent or null = no own length (the default 30 days)", () => {
+  assert.deepEqual(validateGrantDays(undefined), { ok: true, value: null });
+  assert.deepEqual(validateGrantDays(null), { ok: true, value: null });
+  assert.equal(DEFAULT_INVITE_GRANT_DAYS, 30);
+});
+
+test("the default 30 days is ONE constant: the admin page's (display module) is the server's", () => {
+  assert.equal(DISPLAY_DEFAULT_DAYS, DEFAULT_INVITE_GRANT_DAYS);
+});
+
+test("validateMaxUses: the refusal names the field the admin sees («عدد المقاعد»)", () => {
+  const a = validateMaxUses(0);
+  const b = validateMaxUses(2.5);
+  assert.ok(!a.ok && /^عدد المقاعد/.test(a.error));
+  assert.ok(!b.ok && /^عدد المقاعد/.test(b.error));
+});
+
+test("validateGrantDays: an integer from 1 to 3660 days (grantLibraryAccess's bound)", () => {
+  const ninety = validateGrantDays(90);
+  assert.ok(ninety.ok);
+  if (ninety.ok) assert.equal(ninety.value, 90);
+  assert.equal(validateGrantDays(1).ok, true);
+  assert.equal(validateGrantDays(3660).ok, true);
+  for (const bad of [0, 3661, 1.5, -5, "90", Number.NaN, Infinity, true, {}]) {
+    const r = validateGrantDays(bad);
+    assert.equal(r.ok, false, String(bad));
+    if (!r.ok) assert.equal(r.error, "مدة المنحة يجب أن تكون عدداً صحيحاً بين ١ و٣٦٦٠ يوماً");
+  }
 });

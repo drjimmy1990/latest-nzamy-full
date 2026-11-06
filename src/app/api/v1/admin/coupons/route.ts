@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
-import { adminDiscountFields } from "@/lib/payments/couponAdminRules";
+import {
+  BAD_BODY_AR,
+  adminCouponMetadataPatch,
+  adminDiscountFields,
+  couponAudience,
+  couponBodyObject,
+  couponDateIso,
+} from "@/lib/payments/couponAdminRules";
 import { couponsAvailable } from "@/lib/payments/couponServer";
 
 /**
@@ -17,11 +24,9 @@ import { couponsAvailable } from "@/lib/payments/couponServer";
  *   created_by, metadata, created_at, updated_at
  */
 
-// The page's eligibleRoles uses "client"; the DB eligible_user_types uses
-// "individual" (matches subscription_plans.audience). Bridge both directions.
-function roleToUserType(role: string): string {
-  return role === "client" ? "individual" : role;
-}
+// The page's eligibleRoles ("client", "business", …) become profiles.user_type
+// values ("individual", "corporate", …) through couponAdminRules.couponAudience
+// (S6-T11: «الشركات» is 'corporate', the type companies have — never 'business').
 
 /**
  * GET /api/v1/admin/coupons — List all coupons (admin, service-role read).
@@ -64,7 +69,12 @@ export async function GET() {
  * Accepts the page's AdminCoupon-ish payload and maps it to the real columns:
  *   code, couponType, discountType, value, pointsGranted, planGranted,
  *   usageLimit, startsAt, expiresAt, status, eligibleRoles[],
- *   minOrderAmount, maxDiscountPct?, excludedKinds?
+ *   minOrderAmount, maxDiscountPct?, excludedKinds?,
+ *   firstPaidOrderOnly? (boolean), excludedItems? (price-book ids)
+ *
+ * S6-T11: an unknown role, a non-boolean firstPaidOrderOnly or an unknown
+ * excluded item is a 400 (never silently dropped: a dropped rule widens the
+ * coupon).
  *
  * Needs a staff role with settings.write, and is audited (owner ٢١٠).
  *
@@ -74,6 +84,10 @@ export async function GET() {
  * excludes top-ups — couponAdminRules.adminDiscountFields. Before 20261026_20
  * runs (couponsAvailable false) the two new columns are not sent; the rules
  * still apply.
+ *
+ * Review M6/M7: a body that is not a JSON object, or a startsAt / expiresAt
+ * that is not a date, is a 400 (it was a 500). A date-only value is that day in
+ * Riyadh: startsAt from 00:00, expiresAt until 23:59:59 (couponDateIso).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -82,9 +96,11 @@ export async function POST(request: NextRequest) {
 
     let body: Record<string, unknown>;
     try {
-      body = await request.json();
+      const parsed = couponBodyObject(await request.json());
+      if (!parsed) return NextResponse.json({ error: BAD_BODY_AR }, { status: 400 });
+      body = parsed;
     } catch {
-      return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
+      return NextResponse.json({ error: BAD_BODY_AR }, { status: 400 });
     }
 
     const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
@@ -109,10 +125,26 @@ export async function POST(request: NextRequest) {
     const status = typeof body.status === "string" ? body.status : "active";
     const active = status !== "disabled" && status !== "expired";
 
-    const eligibleRoles = Array.isArray(body.eligibleRoles)
-      ? (body.eligibleRoles as unknown[]).filter((r): r is string => typeof r === "string")
-      : [];
-    const eligibleUserTypes = eligibleRoles.map(roleToUserType);
+    const audience = couponAudience(body.eligibleRoles ?? []);
+    if (!audience.ok) {
+      return NextResponse.json({ error: audience.error }, { status: 400 });
+    }
+    const eligibleUserTypes = audience.userTypes;
+
+    const startsAt = couponDateIso(body.startsAt, "start");
+    const expiresAt = couponDateIso(body.expiresAt, "end");
+    if (!startsAt.ok) return NextResponse.json({ error: startsAt.error }, { status: 400 });
+    if (!expiresAt.ok) return NextResponse.json({ error: expiresAt.error }, { status: 400 });
+
+    const baseMetadata: Record<string, unknown> = {
+      coupon_type: couponType,
+      created_by_admin: gate.userId,
+      status,
+    };
+    const flags = adminCouponMetadataPatch(baseMetadata, body);
+    if (!flags.ok) {
+      return NextResponse.json({ error: flags.error }, { status: 400 });
+    }
 
     const adminClient = await createServiceClient();
     const discount = adminDiscountFields(dbDiscountType, body, {
@@ -133,15 +165,11 @@ export async function POST(request: NextRequest) {
       plan_granted: typeof body.planGranted === "string" ? body.planGranted : null,
       eligible_user_types: eligibleUserTypes,
       max_uses: maxUses,
-      valid_from: body.startsAt ? new Date(String(body.startsAt)).toISOString() : new Date().toISOString(),
-      valid_until: body.expiresAt ? new Date(String(body.expiresAt)).toISOString() : null,
+      valid_from: startsAt.value ?? new Date().toISOString(),
+      valid_until: expiresAt.value,
       active,
       created_by: gate.userId,
-      metadata: {
-        coupon_type: couponType,
-        created_by_admin: gate.userId,
-        status,
-      },
+      metadata: flags.metadata ?? baseMetadata,
       ...discount.fields,
     };
 

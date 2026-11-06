@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateContractsIntake } from "./orderIntake.contracts.ts";
+import { CONTRACT_TEXT_PREVIEW_CHARS, pastedTextPreview, reviewUploadReady, validateContractsIntake } from "./orderIntake.contracts.ts";
+import { buildSummaryRows } from "./intakeValues.ts";
+import { buildOrderPrompt } from "./orderPrompt.ts";
 
 // Named per PartyData's "individual" shape (fullName) — one of the three
 // shapes validated below. companyName/entityName are exercised by their own
@@ -317,4 +319,73 @@ test("draft mode: the order keeps a normalised ID and no stale representative va
   assert.deepEqual(r.value.parties?.two, { type: "individual", fullName: "خالد" });
   assert.equal(validateContractsIntake(r.value).ok, true, "the cleaned output re-validates");
   assert.equal(validateContractsIntake({ ...validDraftBase, parties: { ...validDraftBase.parties, one: { type: "company", companyName: "ش", representativeId: "ID 1023456789" } } }).ok, false, "a prefix is refused, not stripped");
+});
+
+// ── S2-B7: a pasted contract instead of a file ─────────────────────────────
+const pastedReview = { schemaVersion: 1, service: "contracts", mode: "review", representing: "الطرف الأول", attachments: [] };
+
+test("B7: 100 pasted characters and no file is a valid review, and the value carries the text (R12)", () => {
+  const r = validateContractsIntake({ ...pastedReview, contractText: "ع".repeat(100) });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.value.contractText, "ع".repeat(100));
+});
+
+test("B7: 99 pasted characters and no file is refused", () => {
+  const r = validateContractsIntake({ ...pastedReview, contractText: "ع".repeat(99) });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.ok(r.errors.includes("النص الملصق قصير — الصق العقد كاملاً (١٠٠ حرف على الأقل)"));
+});
+
+test("B7: neither a file nor a text is refused, and spaces are not a text", () => {
+  for (const contractText of [undefined, "   "]) {
+    const r = validateContractsIntake({ ...pastedReview, contractText });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.ok(r.errors.includes("ارفع ملف العقد أو الصق نصه"));
+  }
+});
+
+test("B7: 50,001 characters is refused, with a file or without one", () => {
+  for (const attachments of [[], [{ documentId: "1", name: "c.pdf", size: 1 }]]) {
+    const r = validateContractsIntake({ ...pastedReview, attachments, contractText: "ع".repeat(50_001) });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.ok(r.errors.includes("نص العقد أطول من ٥٠٬٠٠٠ حرف — ارفعه ملفاً"));
+  }
+  assert.equal(validateContractsIntake({ ...pastedReview, contractText: "ع".repeat(50_000) }).ok, true);
+});
+
+test("B7: a file with a short note stays valid, as a file alone always was", () => {
+  const r = validateContractsIntake({ ...pastedReview, attachments: [{ documentId: "1", name: "c.pdf", size: 1 }], contractText: "قصير" });
+  assert.equal(r.ok, true);
+});
+
+test("B7: draft mode drops a stray contractText", () => {
+  const r = validateContractsIntake({ ...validDraftBase, contractText: "ع".repeat(200) });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal("contractText" in r.value, false);
+});
+
+test("B7: the wizard's upload step agrees with the validator", () => {
+  const file = [{ documentId: "1", name: "c.pdf", size: 1 }];
+  assert.equal(reviewUploadReady(file, "", false), true);
+  assert.equal(reviewUploadReady(file, "", true), false, "still uploading");
+  assert.equal(reviewUploadReady([], "ع".repeat(99), false), false);
+  assert.equal(reviewUploadReady([], "ع".repeat(100), false), true);
+  assert.equal(reviewUploadReady([], ` ${"ع".repeat(99)} `, false), false, "counted after trim");
+  assert.equal(reviewUploadReady([], "ع".repeat(50_001), false), false);
+  assert.equal(reviewUploadReady(file, "ع".repeat(50_001), false), false);
+});
+
+test("B7: the team's brief prints the pasted contract in full, under an Arabic label", () => {
+  const text = "ع".repeat(700);
+  const rows = buildSummaryRows({ ...pastedReview, contractText: text });
+  assert.equal(rows.find((r) => r.key === "contractText")?.label, "نص العقد الملصق");
+  const brief = buildOrderPrompt({ title: "مراجعة", description: "", metadata: { serviceTitleAr: "محترف العقود", intake: { ...pastedReview, contractText: text } } });
+  assert.ok(brief.includes(`نص العقد الملصق`));
+  assert.ok(brief.includes(text));
+});
+
+test("B7: the preview collapses after 600 characters", () => {
+  assert.equal(CONTRACT_TEXT_PREVIEW_CHARS, 600);
+  assert.deepEqual(pastedTextPreview("ع".repeat(600)), { shown: "ع".repeat(600), truncated: false });
+  assert.deepEqual(pastedTextPreview("ع".repeat(601)), { shown: `${"ع".repeat(600)}…`, truncated: true });
 });

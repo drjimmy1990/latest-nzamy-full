@@ -20,6 +20,11 @@
  * - Clicking a chip focuses that term: the others render uncoloured and ↑ ↓
  *   walk only its marks; clicking it again shows every colour.
  * - ✕ clears the highlight (onClear, e.g. dropping ?q= from the URL).
+ * - BUG-LIB-01: <HighlightScope active={false}> makes every <Hl> inside it
+ *   render plain text — a long reader colours only the blocks near the
+ *   viewport (useNearViewport). Such a reader passes the legend its own
+ *   `counts` (over everything loaded) and an `onStep` that walks blocks.
+ *   With no HighlightScope and no new props nothing changes.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -73,12 +78,22 @@ export function useTextHasHighlight(text: string | null | undefined): boolean {
   );
 }
 
+/** Active unless a HighlightScope says otherwise: every reader without one is unchanged. */
+const HighlightScopeContext = createContext<boolean>(true);
+
+/** BUG-LIB-01: inside `active={false}`, <Hl> renders plain text (no <mark>, no matching work). */
+export function HighlightScope({ active, children }: { active: boolean; children: ReactNode }) {
+  return <HighlightScopeContext.Provider value={active}>{children}</HighlightScopeContext.Provider>;
+}
+
 export function Hl({ text, terms: ownTerms }: { text: string | null | undefined; terms?: readonly HighlightTerm[] }) {
   const ctx = useContext(HighlightContext);
+  const inScope = useContext(HighlightScopeContext);
   const terms = ownTerms ?? ctx?.parsed.terms ?? [];
   const focus = ownTerms ? null : (ctx?.focus ?? null);
-  const segments = useMemo(() => highlightMultiColorSegments(text, terms), [text, terms]);
-  if (segments.length === 1 && segments[0].term === null) return <>{segments[0].text}</>;
+  const segments = useMemo(() => (inScope ? highlightMultiColorSegments(text, terms) : null), [inScope, text, terms]);
+  if (!inScope) return <>{text ?? ""}</>;
+  if (!segments || (segments.length === 1 && segments[0].term === null)) return <>{segments?.[0]?.text ?? text ?? ""}</>;
   return (
     <>
       {segments.map((s, i) =>
@@ -106,12 +121,24 @@ export interface SearchLegendBarProps {
   /** «في المعروض» after the counts when the reader shows only part of the document. */
   partial?: boolean;
   className?: string;
+  /**
+   * Per-term counts computed by the reader (over everything it holds); they
+   * replace the recount of rendered marks, which a viewport-scoped reader
+   * cannot use (most of its marks are not rendered).
+   */
+  counts?: readonly number[];
+  /**
+   * ↑/↓ for such a reader: called with the direction and the focused term;
+   * when it returns true it has moved, and the bar does not walk the marks.
+   */
+  onStep?: (dir: 1 | -1, term: number | null) => boolean;
 }
 
 /** Owner note ٠٦: [🟡 "عزل الوكيل" (4)] [🟢 المحكمة (3)] [🚫 تحكيم] — [↑] [↓] [✕]. */
-export function SearchLegendBar({ onClear, partial = false, className = "" }: SearchLegendBarProps) {
+export function SearchLegendBar({ onClear, partial = false, className = "", counts: countsProp, onStep }: SearchLegendBarProps) {
   const ctx = useContext(HighlightContext);
   const [counts, setCounts] = useState<number[]>([]);
+  const countsGiven = countsProp !== undefined;
   const [cursor, setCursor] = useState(-1);
   const terms = ctx?.parsed.terms ?? [];
   const excluded = ctx?.parsed.excluded ?? [];
@@ -121,7 +148,7 @@ export function SearchLegendBar({ onClear, partial = false, className = "" }: Se
   // Recount after every render of the highlighted content (batches load, filters change).
   useEffect(() => {
     const root = rootRef?.current;
-    if (!root || terms.length === 0) return;
+    if (countsGiven || !root || terms.length === 0) return;
     const recount = () => {
       const next = terms.map(() => 0);
       for (const m of marksIn(root, null)) {
@@ -134,12 +161,13 @@ export function SearchLegendBar({ onClear, partial = false, className = "" }: Se
     const obs = new MutationObserver(recount);
     obs.observe(root, { childList: true, subtree: true });
     return () => obs.disconnect();
-  }, [rootRef, terms]);
+  }, [rootRef, terms, countsGiven]);
 
   useEffect(() => setCursor(-1), [focus, terms]);
 
   const go = useCallback(
     (step: 1 | -1) => {
+      if (onStep?.(step, focus)) return;
       const marks = marksIn(rootRef?.current ?? null, focus);
       if (marks.length === 0) return;
       const next = (cursor + step + marks.length) % marks.length;
@@ -149,11 +177,12 @@ export function SearchLegendBar({ onClear, partial = false, className = "" }: Se
       el.classList.add("ring-2", "ring-offset-1", "ring-royal");
       window.setTimeout(() => el.classList.remove("ring-2", "ring-offset-1", "ring-royal"), 1200);
     },
-    [rootRef, focus, cursor],
+    [rootRef, focus, cursor, onStep],
   );
 
   if (!ctx || (terms.length === 0 && excluded.length === 0)) return null;
-  const total = focus === null ? counts.reduce((a, b) => a + b, 0) : (counts[focus] ?? 0);
+  const shown = countsProp ?? counts;
+  const total = focus === null ? shown.reduce((a, b) => a + b, 0) : (shown[focus] ?? 0);
 
   return (
     <div
@@ -178,7 +207,7 @@ export function SearchLegendBar({ onClear, partial = false, className = "" }: Se
           >
             <span className={`h-2.5 w-2.5 rounded-full ${paletteFor(t.color).dot}`} aria-hidden />
             <span>{t.kind === "phrase" ? `"${t.label}"` : t.kind === "prefix" ? `${t.label}*` : t.label}</span>
-            <span className="tabular-nums text-slate-600 dark:text-slate-600">({counts[i] ?? 0})</span>
+            <span className="tabular-nums text-slate-600 dark:text-slate-600">({shown[i] ?? 0})</span>
           </button>
         );
       })}

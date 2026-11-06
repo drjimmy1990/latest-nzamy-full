@@ -52,8 +52,9 @@ const NAV_LINKS = [
   { href: "/laws",             labelAr: "المكتبة القانونية", labelEn: "Legal Library", icon: BookOpen   },
 ];
 
-// Wave 1 task 6: /ai/analyze and /ai/micro end at the beta gate
-// (betaGatedRoutes.ts), so their cards say «قريباً».
+// Wave 1 task 6: /ai/analyze ends at the beta gate (betaGatedRoutes.ts). /ai/micro
+// opens the contract drafter for three cases and is «قريباً» for the rest (S3-05),
+// so both cards say «قريباً».
 const AI_TOOLS = [
   { href: "/ai/legal-opinion", labelAr: "اسأل سؤالاً قانونياً", labelEn: "Ask a Legal Question", descAr: "إجابة فورية",          descEn: "Instant answer",          icon: ChatCircle, primary: true },
   { href: "/ai/analyze",       labelAr: "افحص مستنداً",           labelEn: "Scan a Document",      descAr: "قريباً",               descEn: "Coming soon",      icon: Scan,       primary: false },

@@ -239,8 +239,8 @@ export function validateDraftIntake(input: unknown): ValidationResult<DraftIntak
   const clientRole = role === "plaintiff" || role === "defendant" ? role : null;
   if (!clientRole && !specialist) errors.push("صفة الموكل غير محددة");
 
+  // Optional for every memo type: the team, or the AI, infers it from the facts.
   const legalBranch = str(input.legalBranch);
-  if (!legalBranch && !specialist) errors.push("الفرع القانوني مطلوب");
 
   const partiesRaw = isRecord(input.parties) ? input.parties : null;
   if (!partiesRaw || !isRecord(partiesRaw.one) || !isRecord(partiesRaw.two)) {

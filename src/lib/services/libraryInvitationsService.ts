@@ -24,9 +24,12 @@ export type LibraryInvitationStatus = "active" | "exhausted" | "expired";
 export interface LibraryInvitation {
   id: string;
   code: string;
+  /** The code's seats: how many accounts may use it. */
   maxUses: number;
   currentUses: number;
   expiresAt: string | null;
+  /** Days of library access the code gives (its own length, else 30). Owner q378. */
+  grantDays: number;
   createdBy: string | null;
   status: LibraryInvitationStatus;
   createdAt: string;
@@ -48,6 +51,8 @@ export interface CreateLibraryInvitationInput {
   maxUses: number;
   /** ISO date/time string. Omit for no expiry. */
   expiresAt?: string;
+  /** 1..3660 days. Omit for the default 30 (owner q378). */
+  grantDays?: number;
 }
 
 const DEMO = "غير متاح في وضع العرض التجريبي";

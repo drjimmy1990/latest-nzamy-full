@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowClockwise,
   CalendarBlank,
@@ -15,34 +15,44 @@ import {
   X,
   FileText,
   User,
-  Desktop,
-  DownloadSimple
 } from "@phosphor-icons/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
 import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import type { AdminCoupon, AdminCouponStatus, AdminDiscountType, AdminEligibleRole, AdminCouponType } from "@/types/adminBackendReady";
+import { COUPON_USER_TYPE_TO_ROLE, couponDateInput } from "@/lib/payments/couponAdminRules";
+import { couponPatchRequest, otherFirstOrderCodes } from "@/lib/payments/couponAdminDiff";
+import { excludedItemsOf } from "@/lib/payments/couponRules";
+import { isOnSale, PRICE_BOOK } from "@/lib/pricing/priceBook";
+import { COUPON_USAGE_LIMIT, couponUsageDateAr, type CouponUsageView } from "@/lib/payments/couponUsageView";
+
+/** The usage log of the coupon whose panel is open: «empty» is said only after a read that worked. */
+type UsageRead = { state: "loading" | "error" } | { state: "ready"; rows: CouponUsageView[] };
 
 // ─── DB row → AdminCoupon mapping ──────────────────────────────────────────────
 // The coupons table (20260603_phase1_003_subscriptions_billing.sql) uses
 // discount_type ('percentage'|'fixed'|'points_grant'|'plan_upgrade') and
-// eligible_user_types (with "individual" where the page uses "client").
+// eligible_user_types (profiles.user_type values: "individual" where the page
+// says "client", "corporate" where it says "business"; S6-T11). An EMPTY list
+// means everyone and stays [] here («الجميع»).
 
-const USER_TYPE_TO_ROLE: Record<string, AdminEligibleRole> = {
-  individual: "client",
-  client: "client",
-  business: "business",
-  micro: "micro",
-  lawyer: "lawyer",
-  firm: "firm",
-  provider: "provider",
-  government: "government",
-  ngo: "ngo",
-};
+const USER_TYPE_TO_ROLE = COUPON_USER_TYPE_TO_ROLE as Readonly<Record<string, AdminEligibleRole>>;
 
+/** The kinds an admin may exclude (topup is always excluded, shown fixed). */
+const EXCLUDABLE_KINDS: Array<[string, string]> = [
+  ["plan", "الباقات"],
+  ["library", "المكتبة"],
+  ["service", "الخدمات"],
+];
+
+/** Price-book items on sale today — what «منتجات مستثناة» can name (metadata.excluded_items). */
+const ON_SALE_ITEMS = Object.values(PRICE_BOOK).filter(isOnSale);
+
+// Review M7: the Riyadh calendar date — the routes store a date-only startsAt
+// as 00:00 and expiresAt as 23:59:59 Riyadh time (21:00Z / 20:59:59Z), so a
+// UTC slice would show the day before. Runs on the client, after the fetch.
 function toDateInput(value: unknown): string {
-  if (typeof value !== "string" || !value) return "";
-  return value.slice(0, 10);
+  return couponDateInput(value);
 }
 
 function deriveStatus(row: Record<string, unknown>): AdminCouponStatus {
@@ -75,9 +85,15 @@ function mapRowToCoupon(row: Record<string, unknown>): AdminCoupon {
   }
 
   const userTypes = Array.isArray(row.eligible_user_types) ? (row.eligible_user_types as unknown[]) : [];
-  const eligibleRoles = userTypes
-    .map((t) => USER_TYPE_TO_ROLE[String(t)])
-    .filter((r): r is AdminEligibleRole => Boolean(r));
+  const eligibleRoles = [
+    ...new Set(
+      userTypes
+        .map((t) => (Object.hasOwn(USER_TYPE_TO_ROLE, String(t)) ? USER_TYPE_TO_ROLE[String(t)] : undefined))
+        .filter((r): r is AdminEligibleRole => Boolean(r)),
+    ),
+  ];
+  const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
+  const pct = Number(row.max_discount_pct);
 
   return {
     code: String(row.code ?? ""),
@@ -92,9 +108,16 @@ function mapRowToCoupon(row: Record<string, unknown>): AdminCoupon {
     startsAt: toDateInput(row.valid_from),
     expiresAt: toDateInput(row.valid_until),
     status: deriveStatus(row),
-    eligibleRoles: eligibleRoles.length ? eligibleRoles : ["client"],
+    // S6-T12: [] is «الجميع» — it used to become ["client"], and the whole-draft
+    // save then narrowed NZAMY50 to individuals
+    eligibleRoles,
+    // undefined before 20261026_20 (no column): the editor hides the field and the diff never sends it
+    maxDiscountPct: Number.isFinite(pct) && pct > 0 ? pct : undefined,
+    excludedKinds: Array.isArray(row.excluded_kinds) ? (row.excluded_kinds as unknown[]).map(String) : undefined,
+    firstPaidOrderOnly: metadata?.first_paid_order_only === true,
+    excludedItems: excludedItemsOf({ metadata }),
     createdAt: toDateInput(row.created_at),
-    usageLog: [],
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : undefined,
   };
 }
 
@@ -149,6 +172,10 @@ const EMPTY_COUPON: AdminCoupon = {
   expiresAt: "2026-06-20",
   status: "scheduled",
   eligibleRoles: ["client"],
+  maxDiscountPct: 25,
+  excludedKinds: ["topup"],
+  firstPaidOrderOnly: false,
+  excludedItems: [],
 };
 
 export default function AdminCouponsPage() {
@@ -160,7 +187,15 @@ export default function AdminCouponsPage() {
   // Maps the page's coupon `code` → the DB row `id` so mutations can target it.
   const [codeToId, setCodeToId] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<AdminCoupon | null>(null);
+  // S6-T12: the coupon as it was read and its row id, while an EXISTING one is
+  // edited (null for a new one). The save sends couponPatchDiff(original, draft)
+  // to that id — never a lookup by the draft's code, which used to POST a
+  // duplicate when the code was edited.
+  const [original, setOriginal] = useState<AdminCoupon | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedCoupon, setSelectedCoupon] = useState<AdminCoupon | null>(null);
+  const [usage, setUsage] = useState<UsageRead>({ state: "loading" });
+  const currentUsageCode = useRef<string | null>(null);
   // Now only ever reports what a WRITE did. The read has its own three states
   // below; a toast could not distinguish them and was the reason a failed load
   // could sit above three fake coupons saying «تُعرض بيانات تجريبية».
@@ -214,8 +249,59 @@ export default function AdminCouponsPage() {
   const card = `rounded-2xl border ${isDark ? "bg-[#161b22] border-white/10" : "bg-white border-gray-200 shadow-sm"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
 
+  // S6-T13: the panel reads coupon_usage when it opens (a stale answer for
+  // another coupon, opened meanwhile, is dropped).
+  async function loadUsage(coupon: AdminCoupon) {
+    const id = codeToId[coupon.code];
+    setUsage({ state: "loading" });
+    if (!id) {
+      setUsage({ state: "error" });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/admin/coupons/${id}/usage`);
+      const json = (await res.json().catch(() => null)) as { data?: unknown } | null;
+      if (!res.ok || !json || !Array.isArray(json.data)) throw new Error(`usage ${res.status}`);
+      const rows = json.data as CouponUsageView[];
+      setUsage((prev) => (currentUsageCode.current === coupon.code ? { state: "ready", rows } : prev));
+    } catch (err) {
+      console.error("[coupons] usage read failed:", err);
+      setUsage((prev) => (currentUsageCode.current === coupon.code ? { state: "error" } : prev));
+    }
+  }
+
+  function openCouponPanel(coupon: AdminCoupon) {
+    currentUsageCode.current = coupon.code;
+    setSelectedCoupon(coupon);
+    void loadUsage(coupon);
+  }
+
+  function closeCouponPanel() {
+    currentUsageCode.current = null;
+    setSelectedCoupon(null);
+  }
+
   function openNewCoupon() {
+    setOriginal(null);
+    setEditingId(null);
     setDraft({ ...EMPTY_COUPON, code: `NZ-${coupons.length + 1}00` });
+  }
+
+  function openEditCoupon(coupon: AdminCoupon) {
+    const id = codeToId[coupon.code];
+    if (!id) {
+      setToast(`تعذّر تحديد ${coupon.code} على الخادم — لا يمكن تعديله الآن.`);
+      return;
+    }
+    setOriginal(coupon);
+    setEditingId(id);
+    setDraft(coupon);
+  }
+
+  function closeDraft() {
+    setDraft(null);
+    setOriginal(null);
+    setEditingId(null);
   }
 
   async function saveDraft() {
@@ -227,16 +313,22 @@ export default function AdminCouponsPage() {
     }
 
     const normalized = { ...draft, code };
-    const existingId = codeToId[code];
 
     try {
       let res: Response;
-      if (existingId) {
-        // Update an existing coupon.
-        res = await fetch(`/api/v1/admin/coupons/${existingId}`, {
+      if (editingId && original) {
+        // An existing coupon: only what changed (S6-T12) — an untouched
+        // audience or date is never rewritten — plus the updated_at this page
+        // loaded, so a change since then is a 409 (review M1).
+        const patch = couponPatchRequest(original, normalized);
+        if (!patch) {
+          setToast("لا تغييرات للحفظ.");
+          return;
+        }
+        res = await fetch(`/api/v1/admin/coupons/${editingId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(normalized),
+          body: JSON.stringify(patch),
         });
       } else {
         // Create a new coupon.
@@ -250,10 +342,15 @@ export default function AdminCouponsPage() {
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         setToast(err.error ?? `تعذّر حفظ ${code} على الخادم.`);
+        if (res.status === 409) {
+          // changed meanwhile (another edit, or a use bumped it): reload, the draft closes
+          closeDraft();
+          await loadCoupons();
+        }
         return;
       }
 
-      setDraft(null);
+      closeDraft();
       setToast(`تم حفظ ${code} في قاعدة البيانات.`);
       await loadCoupons();
     } catch (err) {
@@ -285,11 +382,16 @@ export default function AdminCouponsPage() {
       const res = await fetch(`/api/v1/admin/coupons/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: nextStatus !== "disabled", status: nextStatus }),
+        body: JSON.stringify({
+          active: nextStatus !== "disabled",
+          status: nextStatus,
+          ...(current?.updatedAt ? { expectedUpdatedAt: current.updatedAt } : {}),
+        }),
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
         setToast(err.error ?? `تعذّر تغيير حالة ${code} على الخادم.`);
+        if (res.status === 409) await loadCoupons();
         return;
       }
       setToast(`تم ${nextStatus === "disabled" ? "تعطيل" : "تفعيل"} ${code}.`);
@@ -305,7 +407,16 @@ export default function AdminCouponsPage() {
     const nextRoles = draft.eligibleRoles.includes(role)
       ? draft.eligibleRoles.filter((item) => item !== role)
       : [...draft.eligibleRoles, role];
+    // Un-ticking the last role keeps it: an empty list means EVERYONE, which
+    // only the «الجميع» chip may choose (never a widening by accident).
     setDraft({ ...draft, eligibleRoles: nextRoles.length ? nextRoles : [role] });
+  }
+
+  function toggleListValue(key: "excludedKinds" | "excludedItems", value: string) {
+    if (!draft) return;
+    const current = draft[key] ?? [];
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    setDraft({ ...draft, [key]: next });
   }
 
   return (
@@ -365,12 +476,13 @@ export default function AdminCouponsPage() {
         {draft && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 space-y-4`}>
             <div className="flex items-center justify-between gap-3">
-              <h2 className={`font-black ${isDark ? "text-white" : "text-gray-900"}`}>تجهيز كوبون للربط</h2>
-              <span className="text-[11px] px-2 py-1 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold">Backend-ready</span>
+              {/* S6-T12: no readiness badge — this editor writes the live
+                  coupons table, and a save reaches checkout at once. */}
+              <h2 className={`font-black ${isDark ? "text-white" : "text-gray-900"}`}>{editingId ? `تعديل ${draft.code}` : "كوبون جديد"}</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <Field label="الكود">
-                <input value={draft.code} onChange={(event) => setDraft({ ...draft, code: event.target.value.toUpperCase() })} className={inputClass(isDark)} />
+              <Field label={editingId ? "الكود (لا يتغيّر بعد الإنشاء)" : "الكود"}>
+                <input value={draft.code} readOnly={editingId !== null} onChange={(event) => setDraft({ ...draft, code: event.target.value.toUpperCase() })} className={inputClass(isDark)} />
               </Field>
               <Field label="نوع الكوبون">
                 <select value={draft.couponType || "discount"} onChange={(event) => setDraft({ ...draft, couponType: event.target.value as AdminCouponType })} className={inputClass(isDark)}>
@@ -400,6 +512,11 @@ export default function AdminCouponsPage() {
                   <Field label="الحد الأدنى للطلب قبل الضريبة (ر.س) — مطلوب">
                     <input type="number" value={draft.minOrderAmount ?? 0} min={1} required onChange={(event) => setDraft({ ...draft, minOrderAmount: Number(event.target.value) })} className={inputClass(isDark)} />
                   </Field>
+                  {draft.maxDiscountPct !== undefined && (
+                    <Field label="سقف الخصم ٪ من صافي الطلب (حتى ٢٥)">
+                      <input type="number" value={draft.maxDiscountPct} min={1} max={25} onChange={(event) => setDraft({ ...draft, maxDiscountPct: Number(event.target.value) })} className={inputClass(isDark)} />
+                    </Field>
+                  )}
                 </>
               ) : (
                 <Field label="الباقة الممنوحة">
@@ -428,6 +545,10 @@ export default function AdminCouponsPage() {
             <div>
               <p className={`text-xs font-bold mb-2 ${muted}`}>الأدوار المستهدفة</p>
               <div className="flex flex-wrap gap-2">
+                {/* [] = every account type (eligible_user_types '{}') */}
+                <button type="button" onClick={() => setDraft({ ...draft, eligibleRoles: [] })} className={`text-xs px-3 py-2 rounded-xl border font-bold transition ${draft.eligibleRoles.length === 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : isDark ? "border-white/10 text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                  الجميع
+                </button>
                 {(Object.keys(ROLE_LABEL) as AdminEligibleRole[]).map((role) => (
                   <button key={role} onClick={() => toggleRole(role)} className={`text-xs px-3 py-2 rounded-xl border font-bold transition ${draft.eligibleRoles.includes(role) ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : isDark ? "border-white/10 text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
                     {ROLE_LABEL[role]}
@@ -435,8 +556,52 @@ export default function AdminCouponsPage() {
                 ))}
               </div>
             </div>
+            {draft.couponType === "discount" && (
+              <div className="space-y-3">
+                <label className={`flex items-center gap-2 text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
+                  <input type="checkbox" checked={draft.firstPaidOrderOnly === true} onChange={(event) => setDraft({ ...draft, firstPaidOrderOnly: event.target.checked })} />
+                  للطلب المدفوع الأول فقط
+                  <span className={`text-[11px] font-normal ${muted}`}>(يُرفض لمن سبق له طلب مدفوع على المنصة)</span>
+                </label>
+                {draft.firstPaidOrderOnly === true && otherFirstOrderCodes(coupons, draft.code).length > 0 && (
+                  <p className={`flex items-center gap-1.5 text-xs font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                    <Warning size={14} weight="fill" />
+                    تنبيه: {otherFirstOrderCodes(coupons, draft.code).join("، ")} يحمل هذا الشرط أيضاً — قيد «مرة واحدة» لكل كوبون على حدة، فقد يُستخدم كوبونان منها في طلبين يُفتحان معاً قبل اكتمال الدفع الأول.
+                  </p>
+                )}
+                {draft.excludedKinds !== undefined && (
+                  <div>
+                    <p className={`text-xs font-bold mb-2 ${muted}`}>أنواع الطلبات المستثناة</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {EXCLUDABLE_KINDS.map(([kind, label]) => (
+                        <button type="button" key={kind} onClick={() => toggleListValue("excludedKinds", kind)} className={`text-xs px-3 py-2 rounded-xl border font-bold transition ${draft.excludedKinds?.includes(kind) ? "border-rose-500/30 bg-rose-500/10 text-rose-400" : isDark ? "border-white/10 text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                          {label}
+                        </button>
+                      ))}
+                      <span className={`text-[11px] ${muted}`}>الشحن مستثنى دائماً</span>
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <p className={`text-xs font-bold mb-2 ${muted}`}>منتجات مستثناة (لا يُخصم عليها هذا الكوبون)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ON_SALE_ITEMS.map((item) => (
+                      <button type="button" key={item.id} title={item.id} onClick={() => toggleListValue("excludedItems", item.id)} className={`text-xs px-3 py-2 rounded-xl border font-bold transition ${draft.excludedItems?.includes(item.id) ? "border-rose-500/30 bg-rose-500/10 text-rose-400" : isDark ? "border-white/10 text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                        {item.labelAr}
+                      </button>
+                    ))}
+                    {/* an id stored earlier that is no longer on sale stays visible, so it can be removed */}
+                    {(draft.excludedItems ?? []).filter((id) => !ON_SALE_ITEMS.some((item) => item.id === id)).map((id) => (
+                      <button type="button" key={id} onClick={() => toggleListValue("excludedItems", id)} className="text-xs px-3 py-2 rounded-xl border font-bold border-rose-500/30 bg-rose-500/10 text-rose-400">
+                        {id}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
-              <button onClick={() => setDraft(null)} className={`px-4 py-2 rounded-xl text-sm font-bold border ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
+              <button onClick={closeDraft} className={`px-4 py-2 rounded-xl text-sm font-bold border ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
                 إلغاء
               </button>
               <button onClick={saveDraft} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-sm font-bold hover:bg-[#0a3328]">
@@ -483,7 +648,7 @@ export default function AdminCouponsPage() {
             )}
 
             {state === "ready" && coupons.map((coupon, index) => (
-              <motion.div key={coupon.code} onClick={() => setSelectedCoupon(coupon)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.04 }} className={`grid grid-cols-12 items-center gap-2 px-5 py-4 cursor-pointer transition ${isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"}`}>
+              <motion.div key={coupon.code} onClick={() => openCouponPanel(coupon)} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.04 }} className={`grid grid-cols-12 items-center gap-2 px-5 py-4 cursor-pointer transition ${isDark ? "hover:bg-white/[0.04]" : "hover:bg-gray-50"}`}>
                 <span className={`col-span-2 font-mono text-sm font-black ${isDark ? "text-[#C8A762]" : "text-amber-600"}`}>{coupon.code}</span>
                 
                 <span className={`col-span-2 text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -520,6 +685,9 @@ export default function AdminCouponsPage() {
                   {coupon.expiresAt}
                 </div>
                 <div className="col-span-2 flex flex-wrap gap-1">
+                  {coupon.eligibleRoles.length === 0 && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>الجميع</span>
+                  )}
                   {coupon.eligibleRoles.slice(0, 2).map((role) => (
                     <span key={role} className={`text-[10px] px-2 py-0.5 rounded-full ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}>{ROLE_LABEL[role]}</span>
                   ))}
@@ -532,7 +700,7 @@ export default function AdminCouponsPage() {
                   </span>
                 </div>
                 <div className="col-span-1 flex justify-end gap-1">
-                  <button title="تعديل" onClick={(e) => { e.stopPropagation(); setDraft(coupon); }} className={`p-2 rounded-lg ${isDark ? "bg-white/5 text-gray-300 hover:bg-white/10" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+                  <button title="تعديل" onClick={(e) => { e.stopPropagation(); openEditCoupon(coupon); }} className={`p-2 rounded-lg ${isDark ? "bg-white/5 text-gray-300 hover:bg-white/10" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                     <PencilSimple size={14} />
                   </button>
                   <button title="تعطيل/تفعيل" onClick={(e) => { e.stopPropagation(); toggleDisabled(coupon.code); }} className={`p-2 rounded-lg ${isDark ? "bg-white/5 text-gray-300 hover:bg-white/10" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
@@ -548,11 +716,11 @@ export default function AdminCouponsPage() {
       <AnimatePresence>
         {selectedCoupon && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedCoupon(null)} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeCouponPanel} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" />
             <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 200 }} className={`fixed top-0 right-0 bottom-0 w-full max-w-md shadow-2xl z-50 flex flex-col ${isDark ? "bg-[#0d1117] border-l border-white/10" : "bg-white border-l border-gray-200"}`}>
               <div className={`p-5 flex items-center justify-between border-b ${isDark ? "border-white/10" : "border-gray-100"}`}>
                 <h2 className={`text-lg font-black font-mono ${isDark ? "text-white" : "text-gray-900"}`}>{selectedCoupon.code}</h2>
-                <button onClick={() => setSelectedCoupon(null)} className={`p-2 rounded-full ${isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-600"}`}>
+                <button onClick={closeCouponPanel} className={`p-2 rounded-full ${isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-600"}`}>
                   <X size={20} />
                 </button>
               </div>
@@ -572,47 +740,57 @@ export default function AdminCouponsPage() {
                         {selectedCoupon.createdByAdmin || "—"}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className={muted}>الجهاز المستخدم</span>
-                      <span className={`flex items-center gap-1 font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                        <Desktop size={14} />
-                        {selectedCoupon.createdFromDevice || "—"}
-                      </span>
-                    </div>
+                    {/* S6-T13: the «الجهاز المستخدم» row is gone — no device is ever recorded for a coupon. */}
                   </div>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>سجل الاستخدام (Audit Log)</h3>
-                    <button className={`inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border font-bold ${isDark ? "border-white/10 hover:bg-white/5 text-gray-300" : "border-gray-200 hover:bg-gray-100 text-gray-700"}`}>
-                      <DownloadSimple size={14} />
-                      CSV
-                    </button>
+                    {/* S6-T13: read from coupon_usage (GET …/[id]/usage) when the panel opens.
+                        The dead CSV button is gone. */}
+                    <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>سجل الاستخدام</h3>
+                    <span className={`text-[11px] ${muted}`}>الطلبات المدفوعة فقط</span>
                   </div>
-                  
-                  {(!selectedCoupon.usageLog || selectedCoupon.usageLog.length === 0) ? (
+
+                  {usage.state === "loading" && (
+                    <div className={`p-8 text-center text-sm rounded-xl border border-dashed ${isDark ? "border-white/10 text-gray-500" : "border-gray-200 text-gray-400"}`}>
+                      جارٍ قراءة السجل…
+                    </div>
+                  )}
+                  {usage.state === "error" && (
+                    <div className={`p-6 text-center rounded-xl border border-dashed ${isDark ? "border-white/10" : "border-gray-200"}`}>
+                      <Warning size={24} weight="fill" className="mx-auto mb-2 text-amber-500" />
+                      <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>تعذّرت قراءة السجل</p>
+                      <p className={`text-xs mt-1 ${muted}`}>هذا ليس سجلاً فارغاً — لم نتمكن من القراءة.</p>
+                      <button type="button" onClick={() => { void loadUsage(selectedCoupon); }}
+                        className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-white font-bold text-xs hover:bg-amber-600 transition">
+                        <ArrowClockwise size={12} weight="bold" /> إعادة المحاولة
+                      </button>
+                    </div>
+                  )}
+                  {usage.state === "ready" && usage.rows.length === 0 && (
                     <div className={`p-8 text-center rounded-xl border border-dashed ${isDark ? "border-white/10 text-gray-500" : "border-gray-200 text-gray-400"}`}>
                       <FileText size={32} weight="duotone" className="mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">لم يتم استخدام الكوبون بعد</p>
+                      <p className="text-sm">لم يُسجَّل استخدام بعد</p>
                     </div>
-                  ) : (
+                  )}
+                  {usage.state === "ready" && usage.rows.length > 0 && (
                     <div className="space-y-3">
-                      {selectedCoupon.usageLog.map((log, idx) => (
-                        <div key={idx} className={`p-4 rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-100 bg-white"}`}>
+                      {usage.rows.length >= COUPON_USAGE_LIMIT && (
+                        <p className={`text-[11px] ${muted}`}>تُعرض أحدث {COUPON_USAGE_LIMIT} استخدام فقط.</p>
+                      )}
+                      {usage.rows.map((log, idx) => (
+                        <div key={`${log.orderId ?? "none"}-${idx}`} className={`p-4 rounded-xl border ${isDark ? "border-white/10 bg-white/[0.02]" : "border-gray-100 bg-white"}`}>
                           <div className="flex justify-between items-start mb-2">
                             <div>
                               <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{log.usedBy}</p>
-                              <p className={`text-[11px] ${muted}`}>{ROLE_LABEL[log.usedByRole]}</p>
+                              <p className={`text-[11px] ${muted}`}>{Object.hasOwn(ROLE_LABEL, log.usedByRole) ? ROLE_LABEL[log.usedByRole as AdminEligibleRole] : log.usedByRole}</p>
                             </div>
-                            <span className={`text-xs font-mono font-bold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>-{log.discountApplied}</span>
+                            <span className={`text-xs font-mono font-bold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>-{log.discountApplied.toLocaleString("ar-SA")} ر.س</span>
                           </div>
                           <div className={`flex items-center justify-between text-[11px] ${muted} mt-3 pt-3 border-t ${isDark ? "border-white/10" : "border-gray-50"}`}>
-                            <span>{log.appliedTo}</span>
-                            <span>{log.usedAt}</span>
-                          </div>
-                          <div className={`text-[10px] mt-1 ${isDark ? "text-gray-600" : "text-gray-400"}`}>
-                            الجهاز: {log.usedFromDevice}
+                            <span className="font-mono" dir="ltr">{log.orderId ?? "—"}</span>
+                            <span>{couponUsageDateAr(log.createdAt)}</span>
                           </div>
                         </div>
                       ))}

@@ -408,6 +408,7 @@ export const INTAKE_LABELS: Record<string, string> = {
   representing: "الطرف الذي تمثله",
   concerns: "نقاط القلق",
   otherParty: "الطرف الآخر",
+  contractText: "نص العقد الملصق",
   // Set only when the wizard was opened from an existing contract's «افحص
   // العقد بالذكاء الاصطناعي» link (src/app/ai/contracts/page.tsx,
   // ?contract=<id>) — merged into the intake by useContractsState.ts after

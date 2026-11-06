@@ -75,8 +75,8 @@ export default function AdvisoryTemplateNotice({
   const { isDark } = useTheme();
   const user = useUser();
   // The same catalogue the request forms read (admin_pricing_catalog over the code fallback).
-  const { catalog } = useClientPricingCatalog();
-  const handoff = resolveAdvisoryHandoff(handoffServiceId, catalog);
+  const { catalog, audience } = useClientPricingCatalog();
+  const handoff = resolveAdvisoryHandoff(handoffServiceId, catalog, audience);
 
   const isSpecialist = SPECIALIST_TYPES.includes(user.userType as string);
   /** Offer the paid human review — everyone except the specialists themselves. */

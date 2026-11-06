@@ -16,9 +16,8 @@
  * NO LETTER EDITOR (owner note 09 §٢-ثانياً, NOTE-09-C03/C04): the «الخطاب»
  * section (date / to / subject / body / signature, never saved) is gone. This
  * page sets up the identity and prints the letterhead BLANK; letters are
- * written in the platform's document tools. Those tools do not adopt the
- * sheet yet (Letterhead.tsx lists the candidates) — that wiring lives in
- * src/app/ai/* and is recorded as open in the 2026-10-30 ledger.
+ * written in the platform's document tools. The AI drafter, the legal opinion
+ * and contract pro export onto this identity (q345, LetterheadExportBar).
  *
  * PRINT: «طباعة الورق فارغاً / حفظ PDF» opens the browser's print dialog; what
  * prints is a second, blank copy of the sheet portalled straight under <body>,
@@ -37,6 +36,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { Printer, FloppyDisk, CloudArrowUp, Trash, Warning, SpinnerGap, CheckCircle, Info, ArrowClockwise, LockSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { LetterheadSheet } from "./Letterhead";
@@ -164,14 +164,26 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
   };
 
   const uploadLogo = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const picked = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
-    if (file.size > BRANDING_LOGO_MAX_BYTES) {
+    if (!picked) return;
+    // q346: an SVG becomes a PNG here, and the 1 MB rule then applies to that PNG.
+    const isSvg = picked.type === "image/svg+xml" || /\.svg$/i.test(picked.name);
+    if (!isSvg && picked.size > BRANDING_LOGO_MAX_BYTES) {
       setLogoState({ kind: "error", message: "حجم الشعار يتجاوز ١ ميجابايت" });
       return;
     }
     setLogoState({ kind: "busy" });
+    let file = picked;
+    if (isSvg) {
+      try {
+        const { rasterizeSvgLogo } = await import("./rasterizeSvgLogo");
+        file = new File([await rasterizeSvgLogo(picked)], "logo.png", { type: "image/png" });
+      } catch (err) {
+        setLogoState({ kind: "error", message: err instanceof Error ? err.message : "تعذّر تحويل الشعار؛ ارفعه بصيغة PNG" });
+        return;
+      }
+    }
     try {
       const form = new FormData();
       form.append("file", file);
@@ -231,7 +243,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
   }
 
   const data = state.data;
-  const note = identity ? qrNoteAr(identity.qr) : null;
+  const note = identity ? qrNoteAr(identity.qr, data.verifyCard) : null;
   const setField = (key: keyof BrandingFields, value: string) => {
     if (locked) return;
     setFields((f) => ({ ...f, [key]: value }));
@@ -255,7 +267,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
 
   return (
     <div className={`${embedded ? "" : "mx-auto max-w-7xl p-5 md:p-7"} space-y-5`} dir="rtl">
-      <style href="nz-letterhead-print" precedence="default">{PRINT_CSS}</style>
+      <style>{PRINT_CSS}</style>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -335,7 +347,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
             <div>
               <p className={labelCls}>شعار {scope === "firm" ? "المكتب" : "المكتب الخاص"} (اختياري)</p>
               <div className="flex flex-wrap items-center gap-2">
-                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={uploadLogo} />
+                <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.webp,.svg,image/svg+xml" className="hidden" onChange={uploadLogo} />
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={locked || logoState.kind === "busy"}
@@ -354,7 +366,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
                   </button>
                 )}
               </div>
-              <p className={`mt-1 text-[11px] ${ts}`}>PNG أو JPEG أو WebP، حتى ١ ميجابايت. لا يُقبل SVG.</p>
+              <p className={`mt-1 text-[11px] ${ts}`}>PNG أو JPEG أو WebP، حتى ١ ميجابايت. يُقبل SVG ويُحفظ صورة PNG عالية الدقة.</p>
               {logoState.kind === "error" && <p className="mt-1 text-[11px] text-red-500">{logoState.message}</p>}
             </div>
 
@@ -383,7 +395,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
             <h3 className={`text-[14px] font-bold ${tp}`}>أين أكتب الخطاب؟</h3>
             <p className={`text-[12px] leading-6 ${ts}`}>
               هذه الصفحة لإعداد الهوية وطباعة الورق المروّس فارغاً فقط. تُكتب الخطابات والمذكرات والآراء في أدوات المستندات بالمنصة؛
-              ولا تطبّق تلك الأدوات هذه الهوية تلقائياً بعد — اطبع الورق فارغاً هنا أو استعمل قالبك المرفوع إلى أن يُفعَّل الربط.
+              وتتيح الصياغة بالذكاء الاصطناعي والرأي القانوني وصياغة العقود تصدير الناتج على هذا الورق، ملف Word أو طباعة PDF. أما بقية الأدوات فاطبع لها الورق فارغاً هنا.
             </p>
           </section>
         </div>
@@ -405,7 +417,13 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
           </div>
           {note && (
             <p className={`flex items-start gap-1.5 text-[11px] ${ts}`}>
-              <Info size={13} className="mt-0.5 flex-shrink-0" /> {note}
+              <Info size={13} className="mt-0.5 flex-shrink-0" />
+              <span>
+                {note}
+                {scope === "lawyer" && data.verifyCard && (identity?.qr.kind === "card" || !data.verifyCard.enabled) && (
+                  <> <Link href="/settings?tab=profession" className="underline">فتح الإعدادات</Link></>
+                )}
+              </span>
             </p>
           )}
         </div>

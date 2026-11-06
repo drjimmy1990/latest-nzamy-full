@@ -1,11 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
 import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
+import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
+import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
@@ -22,7 +24,9 @@ import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
  *       (requireApiUser); startRunWith (src/lib/ai/runCore.ts) does the rest
  *       of the checks, the charge, the n8n call and the settlement.
  *       Fast tool: 200 { runId, status, output, citations, chargedPoints }.
- *       Job tool:  202 { runId, status: "running" } — poll GET …/runs/<id>.
+ *       Job tool:  202 { runId, status: "running" } as soon as it is charged,
+ *       before its searches and the n8n call — poll GET …/runs/<id>. A failure
+ *       after the 202 is the run's error_code, refunded.
  * GET   the user's last 50 runs (?tool= to filter), own rows through RLS.
  *
  * /api/v1/ai/* is not in PROTECTED_API_PREFIXES, so the proxy adds no 401 or
@@ -110,6 +114,13 @@ export async function POST(request: NextRequest) {
     };
 
     const admin = await createServiceClient();
+    // Off unless NZAMY_AI_TEXT_FILES is on: .docx, .txt, .md and pasted text are
+    // then refused before any charge (aiFiles.ts, runCore.ts).
+    const textFiles = aiTextFilesConfig({
+      NZAMY_AI_TEXT_FILES: process.env.NZAMY_AI_TEXT_FILES,
+      NZAMY_AI_KEY: process.env.NZAMY_AI_KEY,
+      NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+    });
     const reply = await startRunWith(
       admin,
       {
@@ -118,14 +129,18 @@ export async function POST(request: NextRequest) {
         libraryAccess: libraryAccessFor(user.id),
         onRunCreated: libraryRunCreatedFor(user.id),
         retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
-        resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules),
+        resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
+        ...(textFiles ? { pastedFileUrl: pastedFileUrlFrom(textFiles) } : {}),
+        progress: progressSink(admin, (work) => after(work)),
+        // A job run answers 202 before its searches; n8n is called after the reply.
+        defer: (task) => after(task),
       },
       actor,
       body,
     );
     return NextResponse.json(reply.body, { status: reply.status, headers: NO_STORE });
   } catch (err) {
-    console.error("[ai/runs] POST failed:", err);
+    console.error("[ai/runs] POST failed:", (err as { name?: string } | null)?.name ?? "error");
     return NextResponse.json({ error: "تعذّر بدء الأداة الآن — حاول بعد قليل" }, { status: 503, headers: NO_STORE });
   }
 }

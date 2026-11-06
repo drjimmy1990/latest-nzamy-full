@@ -18,6 +18,7 @@ import {
   GATE_ONLY_TOOL_ROUTES,
   LIVE_ROUTES_WITH_GATED_PARTS,
   TERMINAL_TOOL_ROUTES,
+  isLiveForLawyerAndFirm,
   isTerminalToolHref,
   routeOf,
 } from "./betaGatedRoutes.ts";
@@ -68,8 +69,11 @@ test("a gate-only page shows the gate first: its default export is GatedToolScre
   for (const route of GATE_ONLY_TOOL_ROUTES) {
     const page = readFileSync(path.join(appDir(route), "page.tsx"), "utf8");
     if (route === "/ai/analyze") {
-      // Lawyers get DashboardComingSoon (AttachmentSqueezer); clients the gated analyzer.
+      // Terminal for clients: they get the gated analyzer. Lawyers, firms and
+      // admins get the real case brief, whose AI path is only the studio.
       assert.match(page, /<GatedToolScreen toolId="analyze\.smart\.result"[^>]*>\s*<SmartAnalyzer /, route);
+      assert.match(page, /<AttachmentSqueezer \/>/, route);
+      assert.match(read("app/ai/analyze/_components/AttachmentSqueezer.tsx"), /<CaseBriefStudio \/>/, route);
       continue;
     }
     const m = /export default function \w+\(\) \{\s*return \(\s*<GatedToolScreen toolId="([^"]+)" toolName="[^"]+">\s*<(\w+) \/>\s*<\/GatedToolScreen>\s*\);\s*\}/.exec(page);
@@ -105,6 +109,14 @@ test("a live route really has a working path", () => {
   }
 });
 
+test("/ai/analyze stays terminal for clients and is the one route live for lawyer and firm", () => {
+  assert.equal(isTerminalToolHref("/ai/analyze"), true);
+  assert.equal(isLiveForLawyerAndFirm("/ai/analyze"), true);
+  assert.equal(isLiveForLawyerAndFirm("/ai/analyze?source=labor"), true);
+  assert.equal(isLiveForLawyerAndFirm("/ai/consult"), false);
+  assert.notEqual(LAWYER_AI_TOOLS.find((t) => t.href === "/ai/analyze")?.comingSoon, true);
+});
+
 test("routeOf / isTerminalToolHref strip the query and hash", () => {
   assert.equal(routeOf("/ai/consult?ctx=arbitration"), "/ai/consult");
   assert.equal(routeOf("/ai/analyze#x"), "/ai/analyze");
@@ -132,6 +144,8 @@ test("every nav / sidebar / floating-menu row that opens a gated tool says «ق�
     read(rel).split("\n").forEach((line, i) => {
       for (const m of line.matchAll(/href: "([^"]+)"/g)) {
         if (!isTerminalToolHref(m[1])) continue;
+        // The lawyer and firm sidebars open the live case brief on this route.
+        if (rel === "constants/navigation.sidebars.legal.ts" && isLiveForLawyerAndFirm(m[1])) continue;
         terminalRows++;
         assert.match(line, /label: "/, `${rel}:${i + 1}: a row split over lines — check its badge by hand`);
         const badge = /badge: "([^"]+)"/.exec(line)?.[1] ?? null;
@@ -149,7 +163,7 @@ test("the client navbar's «ذكاء نظامي» opens the hub, not the gated c
 
 test("the /ai hub: every catalog tool on a gated route is «قريباً», and the client cards say so", () => {
   for (const tool of LAWYER_AI_TOOLS) {
-    if (!isTerminalToolHref(tool.href)) continue;
+    if (!isTerminalToolHref(tool.href) || isLiveForLawyerAndFirm(tool.href)) continue;
     assert.equal(tool.comingSoon, true, `${tool.permission} (${tool.href}) is not comingSoon`);
     assert.equal(getLawyerAiBadge(tool, "ar"), COMING_SOON_BADGE_AR, tool.permission);
   }
@@ -181,7 +195,7 @@ test("dashboards: no gated tool is offered as working", () => {
   for (const m of micro.matchAll(/href: "(\/ai\/[^"]+)",[^\n]*descAr: "([^"]+)"/g)) {
     if (isTerminalToolHref(m[1])) { gated++; assert.equal(m[2], COMING_SOON_BADGE_AR, m[1]); }
   }
-  assert.equal(gated, 5, "ngo (3) + micro (2) gated cards found");
+  assert.equal(gated, 3, "ngo (2) + micro (1) gated cards found");
 });
 
 test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's tool grid mark gated tools «قريباً»", () => {
@@ -191,7 +205,7 @@ test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's too
   for (const m of micro.matchAll(/\{ id: "[^"]+",[^\n]*price: "([^"]*)", href: "([^"]+)" \}/g)) {
     if (isTerminalToolHref(m[2])) { gatedRows++; assert.equal(m[1], "", `${m[2]} carries a typed price`); }
   }
-  assert.equal(gatedRows, 3, "consult, contract, notice");
+  assert.equal(gatedRows, 2, "consult, notice");
   assert.match(micro, /\.map\(\(s\) => \(\{ \.\.\.s, price: isTerminalToolHref\(s\.href\) \? COMING_SOON_BADGE_AR : s\.price \}\)\)/);
 
   const arb = read("app/dashboard/provider/components/ArbitratorDashboard.tsx");
@@ -200,4 +214,53 @@ test("fix round 1 (I4, I5): the micro request catalogue and the arbitrator's too
   assert.equal(tiles.filter(isTerminalToolHref).length, 4, "analyze, judicial-search, jurisdiction-analyzer, consult");
   assert.match(arb, /\{isTerminalToolHref\(tool\.href\) && \(/);
   assert.match(arb, /\{COMING_SOON_BADGE_AR\}/);
+});
+
+// ── S5-B7 (ruling R10): the links are derived at HEAD, never pinned ──────────
+
+/** Each literal `href="/ai/…"` in a .tsx file, as the JSX element that holds it. */
+function jsxToolLinks(rel: string): Array<{ href: string; element: string }> {
+  const source = read(rel);
+  return [...source.matchAll(/href="(\/ai\/[^"]+)"/g)].map((m) => {
+    const closes = ["</Link>", "</a>"].map((tag) => source.indexOf(tag, m.index)).filter((i) => i !== -1);
+    const open = Math.max(source.lastIndexOf("<Link", m.index), source.lastIndexOf("<a ", m.index));
+    return { href: m[1], element: source.slice(open, Math.min(...closes)) };
+  });
+}
+
+test("S5-B7: every inline link to a terminal tool carries «قريباً», and a live link does not", () => {
+  const tsx = [...filesUnder(path.join(SRC, "app")), ...filesUnder(path.join(SRC, "components"))]
+    .filter((f) => f.endsWith(".tsx") && !f.includes(".test."))
+    .map((f) => path.relative(SRC, f));
+  const terminal: string[] = [];
+  for (const rel of tsx) {
+    for (const { href, element } of jsxToolLinks(rel)) {
+      if (!isTerminalToolHref(href)) continue;
+      terminal.push(`${rel} ${href}`);
+      assert.ok(element.includes("COMING_SOON_BADGE_AR") || element.includes(COMING_SOON_BADGE_AR), `${rel}: the link to ${href} does not say «قريباً»`);
+    }
+  }
+  assert.ok(terminal.length > 0, "no terminal link found: the walk broke");
+
+  // S3-04 repointed these to the live /ai/contracts: «قريباً» there would be false.
+  assert.equal(isTerminalToolHref("/ai/contracts"), false);
+  for (const rel of ["app/dashboard/ngo/volunteers/page.tsx", "app/dashboard/ngo/contracts/page.tsx", "app/dashboard/micro/contracts/page.tsx"]) {
+    const links = jsxToolLinks(rel).filter((l) => l.href === "/ai/contracts");
+    assert.ok(links.length > 0, `${rel}: the /ai/contracts link moved`);
+    for (const { element } of links) assert.ok(!element.includes(COMING_SOON_BADGE_AR), `${rel}: a live link says «قريباً»`);
+  }
+  assert.match(read("app/dashboard/ngo/volunteers/page.tsx"), /secondaryAction=\{\{ label: "محترف العقود", href: '\/ai\/contracts' \}\}/);
+});
+
+test("S5-B7: OnboardingBanner computes the badge from the route, so it leaves when the tool goes live", () => {
+  const banner = read("components/OnboardingBanner.tsx");
+  assert.match(banner, /isTerminalToolHref\(a\.href\)[\s\S]{0,200}COMING_SOON_BADGE_AR/);
+  const hrefs = [...banner.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(hrefs.some(isTerminalToolHref), "no banner action is terminal today: this test no longer checks anything");
+});
+
+test("S5-B7: the notifications demo seed does not announce the gated advisor as launched", () => {
+  const store = read("lib/notificationsStore.ts");
+  assert.doesNotMatch(store, /href: "\/ai\/consult"/);
+  assert.doesNotMatch(store, /تم إطلاق المستشار الذكي/);
 });

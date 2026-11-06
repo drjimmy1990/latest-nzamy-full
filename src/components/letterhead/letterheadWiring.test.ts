@@ -101,3 +101,13 @@ test("owner ٣١٥: printing follows the server's explicit permission, never a r
   assert.match(ws, /printRoot && identity && permissions\.print && createPortal/);
   assert.ok(!/managing_partner|office_admin/.test(ws), "no role names on the page");
 });
+
+test("the print CSS is not hoisted: a page's rule leaves with the page, so the next print is not blank", () => {
+  // React 19 moves <style href precedence> into <head> and never removes it. Each
+  // holds «body > *:not(#root) { display:none }», so a leftover blanks every later print.
+  for (const file of ["./LetterheadPrintDocument.tsx", "./LetterheadWorkspace.tsx"]) {
+    const src = code(readFileSync(new URL(file, import.meta.url), "utf8"));
+    assert.match(src, /<style>\{PRINT_CSS\}<\/style>/, file);
+    assert.doesNotMatch(src, /<style[^>]*(href|precedence)=/, file);
+  }
+});

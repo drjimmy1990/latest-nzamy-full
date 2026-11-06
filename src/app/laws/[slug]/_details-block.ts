@@ -124,12 +124,25 @@ export function cleanDetailsSummary(raw: string | null | undefined): string {
 /** A line that held nothing but markup (`<div …>`, `</div>`, `<br>`, a comment). */
 const TAG_ONLY_LINE_RE = /^\s*(?:<!--[\s\S]*?-->|<\/?[a-z][^>]*>|\s)+$/i;
 
+const OPEN_DETAILS_TAG = "<details open>";
+
+/** `open` as an attribute of the tag, not a word inside a quoted value or part of another name. */
+function tagHasOpenAttribute(tag: string): boolean {
+  return /\sopen(?=[\s=/>])/i.test(tag.replace(/"[^"]*"|'[^']*'/g, '""'));
+}
+
+/** True only for the normalised tag splitDetailsMarkup emits for a source `<details open>`. */
+export function isOpenDetailsTag(line: string): boolean {
+  return line.trim() === OPEN_DETAILS_TAG;
+}
+
 /**
  * The text as the reader's lines: HTML comments dropped, each summary joined
  * onto one line, and every `<details>` / `<summary>…</summary>` /
  * `</details>` on a line of its own (a line without them is kept as it is,
  * blank lines included). A line of bare markup becomes a blank line rather
- * than an empty paragraph.
+ * than an empty paragraph. A `<details>` keeps one attribute, `open`, so a
+ * source's own «open» reaches the renderer (S5-B11).
  */
 export function splitDetailsMarkup(text: string): string[] {
   const prepared = text
@@ -143,7 +156,7 @@ export function splitDetailsMarkup(text: string): string[] {
     }
     const marked = line
       .replace(/<summary>[^\n]*?<\/summary>/g, (m) => `\u0000${m}\u0000`)
-      .replace(/<details\b[^>]*>/gi, "\u0000<details>\u0000")
+      .replace(/<details\b[^>]*>/gi, (tag) => `\u0000${tagHasOpenAttribute(tag) ? OPEN_DETAILS_TAG : "<details>"}\u0000`)
       .replace(/<\/details\s*>/gi, "\u0000</details>\u0000");
     for (const seg of marked.split("\u0000")) {
       if (seg.trim()) out.push(seg);

@@ -3,6 +3,7 @@ import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedMo
 
 import { ShieldCheck, CheckCircle, Warning, FileText, Plus } from "@phosphor-icons/react";
 import Link from "next/link";
+import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 import { useTheme } from "@/components/ThemeProvider";
 
 type ComplianceItem = {
@@ -65,6 +66,7 @@ export default function GovernmentCompliancePage() {
         >
           <ShieldCheck size={14} />
           مدقق الامتثال بالذكاء الاصطناعي
+          <span className="rounded-full border border-current px-1.5 py-0.5 text-[10px] font-bold opacity-80">{COMING_SOON_BADGE_AR}</span>
         </Link>
       </div>
 

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { describeActivityEvent, describeRequestEvent, type ActivityBadge } from "@/lib/events";
+import { aiRunActivityItem, readAiRunActivity } from "@/lib/ai/aiRunActivity";
 
 const PAGE_SIZE = 30;
 
@@ -148,10 +149,12 @@ export async function GET(request: NextRequest) {
         .select("id", { count: "exact", head: true })
         .or(participant);
 
-    const [eventRes, auditRes, activityRes, monthRes, activeRes, completedRes, totalRes] = await Promise.all([
+    const [eventRes, auditRes, activityRes, aiRes, monthRes, activeRes, completedRes, totalRes] = await Promise.all([
       eventQuery,
       auditQuery,
       activityQuery,
+      // The caller's own AI runs, through this same RLS-bound client.
+      readAiRunActivity(supabase, uid, before, PAGE_SIZE),
       myRequests().gte("created_at", monthStart),
       myRequests().in("status", ["pending_assignment", "assigned", "in_review"]),
       myRequests().eq("status", "completed"),
@@ -202,7 +205,7 @@ export async function GET(request: NextRequest) {
     // content source now (every hearing and task event lives there since
     // Phase 1), so its failure degrades the feed exactly like request_events'
     // does.
-    const degraded = !!eventRes.error || !!activityRes.error;
+    const degraded = !!eventRes.error || !!activityRes.error || aiRes.degraded;
 
     const items: ActivityItem[] = [];
 
@@ -270,6 +273,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    for (const row of aiRes.rows) items.push(aiRunActivityItem(row));
+
     items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     const page = items.slice(0, PAGE_SIZE);
 
@@ -295,14 +300,16 @@ export async function GET(request: NextRequest) {
             ordersTotal: totalRes.count ?? 0,
           },
       // A stream that returned a full PAGE_SIZE batch might hold more beyond
-      // it — stop only once EVERY stream that can actually page (events and
-      // activity; the audit stream is empty under RLS) came back short. Was
+      // it — stop only once EVERY stream that can actually page (events,
+      // activity and AI runs; the audit stream is empty under RLS) came back short. Was
       // gated on the events stream alone, which was safe only because the
       // audit stream never had anything in it to miss; activity_events is a
       // real, populated stream now, so the same one-stream gate would have
       // silently stopped paging while it still had rows left.
       nextCursor:
-        ((eventRes.data?.length ?? 0) === PAGE_SIZE || (activityRes.data?.length ?? 0) === PAGE_SIZE)
+        ((eventRes.data?.length ?? 0) === PAGE_SIZE ||
+          (activityRes.data?.length ?? 0) === PAGE_SIZE ||
+          aiRes.rows.length === PAGE_SIZE)
         && page.length > 0
           ? page[page.length - 1].createdAt
           : null,

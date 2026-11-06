@@ -668,7 +668,14 @@ test("q329: ind-ai yearly still sells at 249 before VAT, and during the campaign
 
 // ── ٣٠٥: NEWCLIENT is for the buyer's first paid order on the platform ───────
 
-const FIRST_ORDER_ROW = { ...NEWCLIENT_ROW, min_order_amount: 0, excluded_kinds: ["topup"] };
+// S6-T10: the first-order rule is the ROW's flag (20261030_16 / 20261103_21), never the name.
+// Exported fixtures: Task 9 (S1-T19, ruling R16) reuses FIRST_ORDER_ROW and EXCLUDED_ITEM_ROW.
+export const FIRST_ORDER_ROW = {
+  ...NEWCLIENT_ROW,
+  min_order_amount: 0,
+  excluded_kinds: ["topup"],
+  metadata: { first_paid_order_only: true, first_order_rule: "20261103_21" },
+};
 const earlierPaidRead = (log: FakeQuery[]) =>
   log.find((q) => q.table === "payment_orders" && q.op === "select" && !has(q, "eq", "metadata->coupon->>id") && has(q, "eq", "user_id", USER)
     && (q.filters.find(([k, c]) => k === "in" && c === "status")?.[2] as string[] | undefined)?.join() === "paid,refunded");
@@ -730,6 +737,73 @@ test("٣٠٥: a failed read of the earlier orders is 503, never the discount", a
   assert.equal(r.status, 503);
   assert.deepEqual(r.body, { error: "أكواد الخصم غير متاحة حالياً" });
   assert.equal(inserts(log).length, 0);
+});
+
+test("S6: NEWCLIENT whose row is not flagged (an admin un-ticked it) is an ordinary coupon — an earlier paid order does not refuse it, and nothing reads it", async () => {
+  const unticked = { ...FIRST_ORDER_ROW, metadata: { first_paid_order_only: false, first_order_rule: "20261103_21" } };
+  const { client: admin, log } = couponDb("individual", { row: unticked, earlierPaid: "paid" });
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NEWCLIENT" }),
+  );
+  assert.equal(r.status, 200);
+  assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 149000 - 7500);
+  assert.equal(earlierPaidRead(log), undefined, "the first-order read never ran");
+});
+
+test("S6: a first-order coupon is first-order by its FLAG — another code marked first_paid_order_only is refused after an earlier paid order", async () => {
+  const marked = { ...FIRST_ORDER_ROW, code: "WELCOME1" };
+  const { client: admin, log } = couponDb("individual", { row: marked, earlierPaid: "paid" });
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "WELCOME1" }),
+  );
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { error: "كود الخصم غير صالح أو منتهي الصلاحية" });
+  assert.equal(inserts(log).length, 0);
+});
+
+// metadata.excluded_items names a price-book id the coupon never discounts (S6-T10)
+export const EXCLUDED_ITEM_ROW = { ...NZAMY50_ROW, metadata: { excluded_items: ["ind-preventive"] } };
+
+test("S6: excluded_items — the named item is refused (400 «لا ينطبق على هذا المنتج»), no order, no intent; another item still takes the coupon", async () => {
+  {
+    const { client: admin, log } = couponDb("individual", { row: EXCLUDED_ITEM_ROW });
+    const m = moyasar();
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" });
+    assert.equal(inserts(log).length, 0);
+    assert.equal(m.intents.length, 0);
+  }
+  {
+    const { client: admin, log } = couponDb("individual", { row: EXCLUDED_ITEM_ROW });
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
+      input({ itemId: "ind-litigation", billing: "yearly", couponCode: "NZAMY50" }),
+    );
+    assert.equal(r.status, 200);
+    assert.equal((inserts(log)[0].payload as { item_id: string; net_halalas: number }).item_id, "ind-litigation");
+    assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 399000 - 5000);
+  }
+});
+
+test("S6 race: two checkouts with NEWCLIENT at once — the database's once-per-(buyer, coupon) index refuses the second insert with the same 400", async () => {
+  const { client: admin } = couponDb("individual", {
+    row: FIRST_ORDER_ROW,
+    insertErr: { code: "23505", message: 'duplicate key value violates unique constraint "payment_orders_coupon_once_key"' },
+  });
+  const m = moyasar();
+  const r = await startCheckoutWith(
+    { admin, client: m.client, now: () => NOW, attempts: createCouponAttemptBudget() },
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NEWCLIENT" }),
+  );
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { error: COUPON_PENDING_AR });
+  assert.equal(m.intents.length, 0);
 });
 
 test("coupon: an unknown code is the generic 400; before 20261026_20 (no max_discount_pct) a code is 503, never the full price", async () => {

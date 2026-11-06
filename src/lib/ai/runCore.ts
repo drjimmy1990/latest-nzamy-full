@@ -6,15 +6,23 @@
  *   startRunWith     the browser's POST /api/v1/ai/runs, after the route has
  *                    signed the user in and refused a frozen account:
  *                      tool → role → Art. 18 → mode → input → key → files
+ *                      → pasted text (its limits, refused here when off)
  *                      → [library tool: the library gate + tier rule]
  *                      → ai_start_run (daily limit + balance + debit, one
  *                        transaction) — or, when the body asks `useCredit`
  *                        and the run qualifies, ai_start_run_with_credit
  *                        (a founder credit instead of points, P3)
- *                      → [library tool: searches → texts, refunded when none]
+ *                    A job tool answers 202 here, with the route's `defer`
+ *                    running the rest after the reply (nginx cuts at 60 s, and
+ *                    a consultation's searches alone can take most of that).
+ *   dispatchRunWith  [library tool: searches → texts, refunded when none]
  *                      → the package → n8n
  *                    fast tool: n8n's reply is settled here, in the request;
  *                    job tool:  n8n's 202 leaves the run `running`.
+ *                    Every way out of a charged run refunds it, a throw
+ *                    included (dispatchSafely), and a run left `running` past
+ *                    its deadline, by a restart for one, is ai_sweep_runs' to
+ *                    fail and refund.
  *   settleRunWith    a result (the fast reply or the job callback) → the
  *                    output checked against the tool's shape, citations kept
  *                    only when they name a source the app sent, the run
@@ -29,13 +37,25 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
-import { resolveToolRuntime } from "./aiToolsConfig.ts";
+import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun } from "../membership/founderPlan.ts";
+import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
+import { textPages } from "./textExtract.ts";
+import {
+  STEP_LABEL_AR,
+  cleanLabel,
+  fileEvents,
+  queryEvents,
+  sourceEvents,
+  toSourceRefs,
+  verifyEvent,
+  type ProgressEvent,
+} from "./progressEvents.ts";
 
 /**
  * Tools whose result the app completes from its own data before storing it.
@@ -49,6 +69,8 @@ const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: 
   // L12: the letter. The consultation needs none: it stands on the library texts it was sent.
   "legal-opinion-letter": (admin, output) => enrichBriefCheck(admin as never, output),
   "contracts-pro": (admin, output) => enrichBriefCheck(admin as never, output),
+  "contract-review": (admin, output) => enrichBriefCheck(admin as never, output),
+  "contract-negotiator": (admin, output) => enrichBriefCheck(admin as never, output),
   "legal-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
 };
 import {
@@ -94,9 +116,27 @@ export interface StartRunDeps {
   retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
   /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
   resolveFiles?: (userId: string, fileIds: unknown, rules: FileRules) => Promise<FilesCheck>;
+  /**
+   * Pasted text (AiToolSpec.pasteAsFile): the signed link n8n fetches it from.
+   * Absent while NZAMY_AI_TEXT_FILES is off: a paste is then refused, uncharged.
+   */
+  pastedFileUrl?: (runId: string, userId: string, field: string) => string;
   /** The clock for the fast tools' time budget, in ms (tests replace it). */
   clock?: () => number;
+  /**
+   * Runs a job tool's dispatch after the reply (`after` from next/server). With
+   * no `defer`, or when it throws, the dispatch stays in the request.
+   */
+  defer?: (task: () => Promise<void>) => void;
+  /**
+   * The run's waiting screen: file names, searches, law titles (R7, never a text,
+   * a token or a link). Fire-and-forget, never awaited on the money path, and a
+   * throw is swallowed by `report`.
+   */
+  progress?: ProgressReporter;
 }
+
+export type ProgressReporter = (runId: string, userId: string, events: ProgressEvent[]) => void;
 
 /** The source map stored on the run: short id in the prompt → the library item. */
 export type SourceMap = Record<string, { kind: string; id: string; title?: string; url?: string }>;
@@ -121,6 +161,9 @@ export const AI_COPY = {
   filesRequired: "أرفق مستندات الوقائع أو اكتبها",
   noCredit: "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة",
   creditNotEligible: "هذه الأداة لا تُدفع من رصيد باقة المؤسس",
+  pasteUnavailable: "لصق النص غير متاح بعد — ارفع ملفاً",
+  pasteOrFile: "اختر طريقة واحدة: ملف أو نص ملصق",
+  pastedPages: (n: number) => `عدد الصفحات أكثر من ${n.toLocaleString("ar-SA")} صفحة — قسّم الملفات على طلبين`,
 } as const;
 
 /** The search writer's wait: short, so the answer keeps most of the fast budget. */
@@ -146,7 +189,7 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
 
 const isMissingFunction = (code: string | undefined) => code === "42883" || code === "PGRST202";
 
-async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
+export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
   const { data, error } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
   // A read error leaves every tool on its registry default, which is "off"
   // until a tool is tested — closed, never accidentally live.
@@ -157,11 +200,28 @@ async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
   return (data as { value?: unknown } | null)?.value ?? null;
 }
 
+/** Never the thrown value's message or body: it can carry a text, a token or a link. */
+const errorName = (err: unknown) => (err as { name?: unknown } | null)?.name?.toString() ?? "error";
+
 async function failRun(admin: SupabaseClient, runId: string, code: string, message: string): Promise<void> {
-  const { error } = await admin.rpc("ai_fail_run", { p_run: runId, p_code: code, p_message: message.slice(0, 500) });
   // The sweeper retries a run left `running` past its deadline, so a failed
   // refund here is logged, not lost.
-  if (error) console.error("[ai] ai_fail_run failed for", runId, error.code, error.message);
+  try {
+    const { error } = await admin.rpc("ai_fail_run", { p_run: runId, p_code: code, p_message: message.slice(0, 500) });
+    if (error) console.error("[ai] ai_fail_run failed for", runId, error.code, error.message);
+  } catch (err) {
+    console.error("[ai] ai_fail_run threw for", runId, errorName(err));
+  }
+}
+
+function report(progress: ProgressReporter | undefined, runId: string, userId: string, events: ProgressEvent[]): void {
+  if (!progress || events.length === 0) return;
+  try {
+    progress(runId, userId, events);
+  } catch (err) {
+    // The waiting screen must never fail a run that is already charged.
+    console.error("[ai] reporting progress threw for", runId, errorName(err));
+  }
 }
 
 // ── settle ───────────────────────────────────────────────────────────────────
@@ -227,7 +287,7 @@ export async function settleRunWith(
     try {
       output = await enrich(admin, checked);
     } catch (err) {
-      console.error("[ai] enriching the result failed for", ctx.runId, err);
+      console.error("[ai] enriching the result failed for", ctx.runId, errorName(err));
       return fail("store_failed", "the result could not be completed");
     }
   }
@@ -273,6 +333,27 @@ interface StartedRun {
   credit_used?: boolean;
 }
 
+/** What a charged run needs from startRunWith to go on, in the request or after it. */
+export interface DispatchContext {
+  spec: AiToolSpec;
+  run: StartedRun;
+  checked: { input: Record<string, unknown> };
+  files: AiFile[];
+  pages: number | null;
+  history: Array<{ role: "user" | "assistant"; text: string }>;
+  conversationId: string | null;
+  isAdmin: boolean;
+  deadline: Date;
+  startedAt: number;
+  actor: RunActor;
+}
+
+const chargedBody = (run: StartedRun, conversationId: string | null) => ({
+  chargedPoints: run.charged_points,
+  creditUsed: run.credit_used === true,
+  ...(conversationId ? { conversationId } : {}),
+});
+
 export async function startRunWith(
   admin: SupabaseClient,
   deps: StartRunDeps,
@@ -284,10 +365,10 @@ export async function startRunWith(
   if (!spec) return { status: 404, body: { error: AI_COPY.unknownTool, code: "unknown_tool" } };
 
   const isAdmin = actor.userType === "admin";
-  if (!isAdmin && !spec.roles.includes(actor.userType)) {
-    return { status: 403, body: { error: AI_COPY.role, code: "role" } };
-  }
-  if (spec.consultantBlocked && actor.practiceKind === "consultant" && !isAdmin) {
+  // The same helpers answer GET /api/v1/ai/tool-status (R5).
+  const refused = toolRoleRefusal(spec, actor);
+  if (refused === "role") return { status: 403, body: { error: AI_COPY.role, code: "role" } };
+  if (refused === "consultant_blocked") {
     return { status: 403, body: { error: CONSULTANT_BLOCKED_MESSAGE, code: "consultant_blocked" } };
   }
 
@@ -295,7 +376,7 @@ export async function startRunWith(
   // "staff": only admins, so a tool can be tried on production before it opens.
   // A stored "review" arrives here as "staff" (aiToolsConfig.effectiveToolMode),
   // so it too is refused here, before ai_start_run charges anything.
-  if (runtime.mode === "off" || (runtime.mode === "staff" && !isAdmin)) {
+  if (toolAvailability(runtime.mode, isAdmin) === "tool_off") {
     return { status: 423, body: { error: AI_COPY.off, code: "tool_off" } };
   }
 
@@ -395,17 +476,28 @@ export async function startRunWith(
     files = got.files;
     pages = got.pages;
   }
+  // A pasted text becomes one more file after the run exists (it needs the run
+  // id), so its refusals and its pages are settled here, before the charge.
+  const paste = spec.pasteAsFile && spec.files ? spec.pasteAsFile : null;
+  const pasted = paste && typeof checked.input[paste.field] === "string" ? (checked.input[paste.field] as string) : "";
+  if (paste && pasted) {
+    if (!deps.pastedFileUrl) return { status: 422, body: { error: AI_COPY.pasteUnavailable, code: "paste_unavailable" } };
+    if (files.length + 1 > spec.files!.max) return { status: 422, body: { error: AI_COPY.pasteOrFile, code: "too_many_files" } };
+    const total = (pages ?? 0) + textPages(pasted);
+    if (total > spec.files!.maxPages) {
+      return { status: 422, body: { error: AI_COPY.pastedPages(spec.files!.maxPages), code: "too_many_pages" } };
+    }
+    pages = total;
+  }
   if (spec.filesRequired?.(checked.input) && files.length === 0) {
-    return { status: 422, body: { error: AI_COPY.filesRequired, code: "files_required" } };
+    return { status: 422, body: { error: spec.filesRequiredCopy ?? AI_COPY.filesRequired, code: "files_required" } };
   }
   const price = spec.price(checked.input, { pages, turn });
   const now = deps.now?.() ?? new Date();
   const deadline = new Date(
     now.getTime() + 1000 * (spec.class === "fast" ? FAST_DEADLINE_SECONDS : spec.jobDeadlineSeconds ?? DEFAULT_JOB_DEADLINE_SECONDS),
   );
-  const clock = deps.clock ?? (() => Date.now());
-  const startedAt = clock();
-  let sources: SourceMap = {};
+  const startedAt = (deps.clock ?? (() => Date.now()))();
 
   // A founder credit pays instead of points when the client asks and the run
   // qualifies (founderPlan.creditKindForRun). The turn is the one read above
@@ -429,7 +521,7 @@ export async function startRunWith(
     p_file_ids: files.map((f) => f.id),
     p_pages: pages,
     p_conversation: conversationId,
-    p_source_ids: sources,
+    p_source_ids: {},
     ...(creditKind ? { p_credit_kind: creditKind } : {}),
   });
   if (error) {
@@ -468,11 +560,70 @@ export async function startRunWith(
     console.error("[ai] onRunCreated threw:", spec.id, err);
   }
 
-  const charged = {
-    chargedPoints: run.charged_points,
-    creditUsed: run.credit_used === true,
-    ...(conversationId ? { conversationId } : {}),
-  };
+  // The pasted text's file. p_file_ids above stays attachment ids only.
+  if (paste && pasted) {
+    try {
+      const expiresAt = (deps.now?.() ?? new Date()).getTime() + FILE_TEXT_TTL_MS;
+      files = [
+        ...files,
+        {
+          id: `paste:${paste.field}`,
+          name: paste.name,
+          mime: "text/plain",
+          bytes: new TextEncoder().encode(pasted).length,
+          pages: textPages(pasted),
+          url: deps.pastedFileUrl!(run.run_id, actor.userId, paste.field),
+          url_expires_at: new Date(expiresAt).toISOString(),
+        },
+      ];
+    } catch (err) {
+      // Already charged: an exception would leave the refund to the sweeper.
+      console.error("[ai] signing the pasted text's link failed for", run.run_id, (err as Error)?.name);
+      await failRun(admin, run.run_id, "paste_link_failed", "the pasted text's link could not be signed");
+      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+    }
+  }
+
+  report(deps.progress, run.run_id, actor.userId, fileEvents(files));
+
+  const ctx: DispatchContext = { spec, run, checked, files, pages, history, conversationId, isAdmin, deadline, startedAt, actor };
+  if (spec.class === "job" && deps.defer) {
+    try {
+      deps.defer(async () => {
+        await dispatchSafely(admin, deps, ctx);
+      });
+      return { status: 202, body: { runId: run.run_id, status: "running", ...chargedBody(run, conversationId) } };
+    } catch (err) {
+      // `after` refused to schedule it, so nothing will run later: the dispatch
+      // goes on in the request below, as it did before there was a defer.
+      console.error("[ai] deferring the dispatch failed for", run.run_id, errorName(err));
+    }
+  }
+  return dispatchSafely(admin, deps, ctx);
+}
+
+/** dispatchRunWith, where a throw refunds the run like any other failure. */
+async function dispatchSafely(admin: SupabaseClient, deps: StartRunDeps, ctx: DispatchContext): Promise<RouteReply> {
+  try {
+    return await dispatchRunWith(admin, deps, ctx);
+  } catch (err) {
+    const name = errorName(err);
+    console.error("[ai] the dispatch threw for", ctx.run.run_id, name);
+    await failRun(admin, ctx.run.run_id, "internal", `the dispatch threw: ${name}`);
+    return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: ctx.run.run_id } };
+  }
+}
+
+/**
+ * A charged run, from its searches to n8n's answer. A job's caller may already
+ * have had its 202, so a failure here reaches the user by polling, as the run's
+ * error_code.
+ */
+export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps, ctx: DispatchContext): Promise<RouteReply> {
+  const { spec, run, checked, files, history, conversationId, deadline, startedAt, actor } = ctx;
+  const clock = deps.clock ?? (() => Date.now());
+  const charged = chargedBody(run, conversationId);
+  let sources: SourceMap = {};
 
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
@@ -506,6 +657,7 @@ export async function startRunWith(
       reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
         ? cleanQueries(reply.output.queries)
         : [];
+    report(deps.progress, run.run_id, actor.userId, queryEvents(queries));
     // An open article, or one the question names, is a source even when the
     // writer found nothing to search.
     const named = articleRefs(question).length > 0 || (!!pin.lawSlug && bareArticleNumbers(question).length > 0);
@@ -517,7 +669,7 @@ export async function startRunWith(
     try {
       found = await deps.retrieve(queries, { laws, principles }, pin);
     } catch (err) {
-      console.error("[ai] retrieval threw for", run.run_id, err);
+      console.error("[ai] retrieval threw for", run.run_id, errorName(err));
       found = { sources: [], map: {} };
     }
     if (found.sources.length === 0) {
@@ -532,9 +684,13 @@ export async function startRunWith(
       await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
       return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
     }
+    report(deps.progress, run.run_id, actor.userId, sourceEvents(toSourceRefs(found.sources)));
   }
 
   const sync = spec.class === "fast";
+  // A pasted text travels once, as the file; ai_runs.input keeps it for the link.
+  const paste = spec.pasteAsFile && spec.files ? spec.pasteAsFile : null;
+  const pkgInput = paste ? Object.fromEntries(Object.entries(checked.input).filter(([k]) => k !== paste.field)) : checked.input;
   const pkg = {
     v: 1,
     run_id: run.run_id,
@@ -548,7 +704,7 @@ export async function startRunWith(
       practice_kind: actor.practiceKind,
       display_name: spec.sendsDisplayName ? actor.displayName : null,
     },
-    input: checked.input,
+    input: pkgInput,
     sources: pkgSources,
     case: null,
     history,
@@ -557,6 +713,7 @@ export async function startRunWith(
     deadline_at: deadline.toISOString(),
   };
 
+  report(deps.progress, run.run_id, actor.userId, [{ kind: "step", label: STEP_LABEL_AR.sent }]);
   const outcome = await deps.n8n({
     path: spec.n8nPath,
     mode: sync ? "sync" : "async",
@@ -585,6 +742,8 @@ export async function startRunWith(
   // Nothing is held for review (a stored "review" runs as "staff"; Wave 3).
   const settled = await settleRunWith(admin, { spec, runId: run.run_id, sources, input: checked.input }, outcome.result);
   if (settled.kind === "succeeded") {
+    const verified = verifyEvent(settled.output);
+    if (verified) report(deps.progress, run.run_id, actor.userId, [verified]);
     return {
       status: 200,
       body: { runId: run.run_id, status: settled.status, output: settled.output, citations: settled.citations, ...charged },
@@ -601,14 +760,18 @@ export async function startRunWith(
 
 // ── the job callback ─────────────────────────────────────────────────────────
 
-export async function callbackWith(admin: SupabaseClient, body: unknown): Promise<RouteReply> {
+export async function callbackWith(
+  admin: SupabaseClient,
+  body: unknown,
+  deps: { progress?: ProgressReporter } = {},
+): Promise<RouteReply> {
   if (!isPlainObject(body) || typeof body.run_id !== "string" || !UUID.test(body.run_id)) {
     return { status: 400, body: { error: "invalid run_id" } };
   }
   const runId = body.run_id;
   const { data, error } = await admin
     .from("ai_runs")
-    .select("id, tool, status, class, source_ids, input")
+    .select("id, user_id, tool, status, class, source_ids, input")
     .eq("id", runId)
     .maybeSingle();
   if (error) {
@@ -616,7 +779,7 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
     return { status: 503, body: { error: "unavailable" } };
   }
   const run = data as
-    | { id: string; tool: string; status: string; class: string; source_ids: unknown; input: unknown }
+    | { id: string; user_id: string; tool: string; status: string; class: string; source_ids: unknown; input: unknown }
     | null;
   if (!run) return { status: 404, body: { error: "unknown run" } };
 
@@ -625,6 +788,13 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
       return { status: 400, body: { error: "invalid step" } };
     }
     await admin.from("ai_runs").update({ progress_step: body.step }).eq("id", runId).eq("status", "running");
+    // n8n may add a line of its own (E6); a post that arrives after the run ended
+    // adds nothing to a finished run's screen. Either side may be the older one: an
+    // old n8n sends neither field, and an old app ignores both.
+    if (run.status === "running") {
+      const label = cleanLabel(body.detail) ?? STEP_LABEL_AR[body.step as keyof typeof STEP_LABEL_AR];
+      report(deps.progress, runId, run.user_id, [{ kind: body.kind === "note" ? "note" : "step", label }]);
+    }
     return { status: 200, body: { ok: true } };
   }
 
@@ -641,5 +811,9 @@ export async function callbackWith(admin: SupabaseClient, body: unknown): Promis
   const sources = (isPlainObject(run.source_ids) ? run.source_ids : {}) as SourceMap;
   const input = (isPlainObject(run.input) ? run.input : {}) as Record<string, unknown>;
   const settled = await settleRunWith(admin, { spec, runId, sources, input }, body);
+  if (settled.kind === "succeeded") {
+    const verified = verifyEvent(settled.output);
+    if (verified) report(deps.progress, runId, run.user_id, [verified]);
+  }
   return { status: 200, body: { ok: true, final: settled.kind === "succeeded" ? settled.status : settled.kind } };
 }

@@ -232,6 +232,26 @@ test("a law the library does not have pins nothing, and the plain search still a
   assert.deepEqual(Object.values(out.map).map((s) => s.id), ["labor-law__art-50"]);
 });
 
+test("the tsquery every retrieval search sends stays non-empty and bounded under the S1 search grammar", async () => {
+  for (const q of ["قرار", "لا يكون", "عدم نفاذ + قرار"]) {
+    for (const queries of [[q], cleanQueries([q])]) {
+      const { admin, calls } = fakeAdmin({
+        search_law_articles_relevance: { ranked: true, rows: [] },
+        search_principles_relevance: { ranked: true, rows: [] },
+      });
+      await retrieveLibrary(admin as never, queries, { laws: 6, principles: 3 });
+      assert.equal(calls.length, 2, `${q}: one search × two sections`);
+      for (const c of calls) {
+        const tsquery = c.args.p_tsquery as string;
+        assert.ok(typeof tsquery === "string" && tsquery.length > 0, `${q}: empty tsquery`);
+        assert.ok(tsquery.length <= 4000, `${q}: ${tsquery.length} characters`);
+      }
+      if (q === "لا يكون") assert.ok((calls[0].args.p_tsquery as string).includes("'لايكون'"));
+      if (q === "قرار") assert.ok((calls[0].args.p_tsquery as string).includes("'القرار'"));
+    }
+  }
+});
+
 test("cleanQueries drops the framing the answering text never says («تعريف عقد البيع» → «عقد البيع»)", () => {
   assert.deepEqual(cleanQueries(["تعريف عقد البيع", "ما هو التعريف", "المادة الأولى نظام العمل"]), ["عقد البيع", "نظام العمل"]);
 });

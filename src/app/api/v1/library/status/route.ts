@@ -42,7 +42,7 @@ async function callerReadState() {
         securityLock: {
           reference: row.lockReference,
           lockedUntil: row.lockedUntil,
-          message: libraryLockMessageAr(row.lockReference),
+          message: libraryLockMessageAr(row.lockReference, row.lockedUntil),
           support: LIBRARY_LOCK_SUPPORT_PATH,
         },
         readQuota: null,

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Archive, ArrowClockwise, CalendarCheck, CheckSquare, Clock, FileText, Gavel, Scales, Spinner, Timer, Warning } from "@phosphor-icons/react";
+import { Archive, ArrowClockwise, CalendarCheck, CheckSquare, Clock, FileText, Gavel, Robot, Scales, Spinner, Timer, Warning } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { apiGet } from "@/lib/services/api";
 import type { ActivityBadge } from "@/lib/events";
@@ -42,6 +42,7 @@ const BADGE_ICON: Record<ActivityBadge, React.ElementType> = {
   stage: Scales,
   deadline: Timer,
   client: FileText,
+  ai: Robot,
 };
 
 function relativeTimeAr(iso: string): string {

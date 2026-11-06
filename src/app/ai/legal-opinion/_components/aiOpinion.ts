@@ -5,6 +5,9 @@
  * these only shape them. Pure, so node --test reads them.
  */
 import type { CitationVerdict } from "@/components/ai/CitationCheckList";
+import { stripCitationMarkers } from "../../../../lib/ai/citationMarkers.ts";
+import { documentParagraphs } from "../../../../lib/docx/exportPolicy.ts";
+import type { DocBlock } from "../../../../lib/docx/ooxml.ts";
 
 export type AiOpinionKind = "consult" | "letter";
 
@@ -80,6 +83,20 @@ export function asLetterDraft(output: Record<string, unknown> | null): LetterDra
 /** The consultation as one text, markers kept (the page strips them for copying). */
 export function consultAnswerText(a: ConsultAnswer): string {
   return [a.summary, ...a.sections.map((s) => `${s.heading}\n${s.body}`)].join("\n\n");
+}
+
+/** The consultation for the letterhead export (q345): no source markers. */
+export function consultAnswerBlocks(a: ConsultAnswer): DocBlock[] {
+  const blocks: DocBlock[] = [{ kind: "title", text: "استشارة قانونية" }, ...documentParagraphs(a.summary)];
+  for (const s of a.sections) {
+    blocks.push({ kind: "heading", text: stripCitationMarkers(s.heading).trim() }, ...documentParagraphs(s.body));
+  }
+  return blocks;
+}
+
+/** The letter for the letterhead export (q345). Its blanks [....] stay: they are not markers. */
+export function letterDraftBlocks(l: LetterDraft): DocBlock[] {
+  return [{ kind: "title", text: stripCitationMarkers(l.title).trim() }, ...documentParagraphs(l.body)];
 }
 
 /**

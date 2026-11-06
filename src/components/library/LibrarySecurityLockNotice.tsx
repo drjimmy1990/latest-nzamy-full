@@ -15,7 +15,10 @@ import type { LibrarySecurityLock, LibraryReadQuota } from "@/hooks/useLibrarySt
  * Honest by design: it says reading is stopped, that the account and the rest
  * of the platform are untouched (this is not the account freeze of
  * /account-frozen), gives the SEC- reference and the way to support. It never
- * accuses the reader of anything and never promises when it will be lifted.
+ * accuses the reader of anything. It names an end only when the lock has one
+ * (lockedUntil, set by the server — automatic locks end after
+ * auto_lock_hours since 20261103_10, admin locks when the admin chose one),
+ * formatted on the client in Riyadh time; with no end it promises nothing.
  */
 export default function LibrarySecurityLockNotice({ lock }: { lock: LibrarySecurityLock }) {
   const { isDark } = useTheme();

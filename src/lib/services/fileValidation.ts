@@ -15,11 +15,19 @@ export const ALLOWED_UPLOAD_EXTENSIONS = [
   "pdf", "doc", "docx", "png", "jpg", "jpeg",
 ] as const;
 
-export function validateUploadFile(file: { name: string; size: number }): string | null {
+/** Allowed as well when the AI tools read text (useOrderAttachments passes AI_TEXT_FILES_ON). */
+const AI_TEXT_UPLOAD_EXTENSIONS = ["txt", "md"] as const;
+
+export function validateUploadFile(file: { name: string; size: number }, textFiles = false): string | null {
   const dot = file.name.lastIndexOf(".");
   const ext = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : "";
-  if (!ext || !(ALLOWED_UPLOAD_EXTENSIONS as readonly string[]).includes(ext)) {
-    return "صيغة الملف غير مدعومة — المسموح: PDF أو Word أو صورة.";
+  const allowed: readonly string[] = textFiles
+    ? [...ALLOWED_UPLOAD_EXTENSIONS, ...AI_TEXT_UPLOAD_EXTENSIONS]
+    : ALLOWED_UPLOAD_EXTENSIONS;
+  if (!ext || !allowed.includes(ext)) {
+    return textFiles
+      ? "صيغة الملف غير مدعومة — المسموح: PDF أو Word أو صورة أو نص (.txt / .md)."
+      : "صيغة الملف غير مدعومة — المسموح: PDF أو Word أو صورة.";
   }
   if (file.size <= 0) {
     return "الملف فارغ — اختر ملفاً يحتوي على محتوى.";
@@ -41,11 +49,12 @@ export function validateUploadFile(file: { name: string; size: number }): string
  */
 export function partitionUploadFiles<T extends { name: string; size: number }>(
   files: readonly T[],
+  textFiles = false,
 ): { accepted: T[]; rejectedMessage: string | null } {
   const accepted: T[] = [];
   const problems: string[] = [];
   for (const file of files) {
-    const reason = validateUploadFile(file);
+    const reason = validateUploadFile(file, textFiles);
     if (reason) {
       problems.push(`${file.name}: ${reason}`);
     } else {

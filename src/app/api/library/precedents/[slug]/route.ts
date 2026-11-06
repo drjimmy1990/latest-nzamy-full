@@ -4,23 +4,70 @@ import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-contro
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
-import { isPrincipleLocked, planPrincipleWindow } from './_window';
+import { isPrincipleLocked, parsePrincipleTarget, planPrincipleWindow, targetWindowOffset } from './_window';
 import { buildCollectionSeries, type CollectionSeriesInfo } from '@/lib/library/precedentVolumes';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 
 /** A runaway guard for one series' volumes (the largest today: 30). */
 const SERIES_MAX_VOLUMES = 200;
 
+type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
+
 /**
- * GET /api/library/precedents/[slug]?offset=0&limit=100
+ * q390-ب: the 0-based position of principle `target` in collection `slug`, in
+ * the window order (order_index, then id). Two head counts on the service role
+ * (the principles are server-only since 20261016_01); the target only ever
+ * reaches `.eq()`, never a filter string. null when the principle is not in
+ * this collection or a lookup fails — the caller then keeps the plain window.
+ */
+async function principlePosition(serverOnly: ServiceClient, slug: string, target: string): Promise<number | null> {
+  const row = await serverOnly
+    .schema('library')
+    .from('principles')
+    .select('order_index, id')
+    .eq('collection_id', slug)
+    .eq('id', target)
+    .maybeSingle();
+  if (row.error) {
+    console.warn('[Precedents API] target lookup failed:', row.error);
+    return null;
+  }
+  const orderIndex = row.data?.order_index;
+  const id = row.data?.id;
+  if (typeof orderIndex !== 'number' || typeof id !== 'string') return null;
+
+  const before = await serverOnly
+    .schema('library')
+    .from('principles')
+    .select('id', { count: 'exact', head: true })
+    .eq('collection_id', slug)
+    .lt('order_index', orderIndex);
+  const tied = await serverOnly
+    .schema('library')
+    .from('principles')
+    .select('id', { count: 'exact', head: true })
+    .eq('collection_id', slug)
+    .eq('order_index', orderIndex)
+    .lt('id', id);
+  if (before.error || tied.error || typeof before.count !== 'number' || typeof tied.count !== 'number') {
+    console.warn('[Precedents API] target position count failed:', before.error ?? tied.error);
+    return null;
+  }
+  return before.count + tied.count;
+}
+
+/**
+ * GET /api/library/precedents/[slug]?offset=0&limit=50[&target=<principle id>]
  * A judicial principles collection plus ONE window of its principles.
  *
  * The principles used to come back from one unranged select, which PostgREST
  * silently caps at max-rows (1000): «mabadi-qararat-qanuniya» holds 2,323
  * principles and its page showed 1,000, with no error anywhere. A full
  * collection with text is also ~1.5 MB, so the list is windowed instead:
- *   - `offset` + `limit` pick the window (limit 1..500, default 100);
+ *   - `offset` + `limit` pick the window (at most 50 principles, q390-ب);
  *     `page` is still accepted and means offset = (page - 1) * limit.
+ *   - `target` (a principle id) moves the window to the one that holds it;
+ *     `targetFound` says whether it did. Not found = the plain window.
  *   - `total` / `pagination.total` is the exact count, so the page knows when
  *     it has everything (it loads more on scroll, and all of it on search).
  * The paywall is enforced per principle by its GLOBAL index (offset + i), so a
@@ -42,7 +89,8 @@ export async function GET(
   try {
     const { slug } = await params;
     const { searchParams } = new URL(request.url);
-    const { offset, limit } = planPrincipleWindow(searchParams);
+    const plan = planPrincipleWindow(searchParams);
+    const { limit } = plan;
     const supabase = await createClient();
 
     // Fetch collection metadata — the columns the response below reads. Never
@@ -99,6 +147,20 @@ export async function GET(
     const probe = await checkLibraryAccess(userId, slug, 0, "principles", { includeExplicitFreeItem: false });
     const { hasFullAccess, freeItemsByType, whitelistedSlugs } = await getLibraryAccessForUser(userId);
     const isWhitelisted = false;
+
+    // ?target=<principle id> (q390-ب): open the window that holds it. It only
+    // moves the window; the paywall below still uses the global index. Not in
+    // this collection (or a failed lookup) = the plain offset/page window.
+    let offset = plan.offset;
+    let targetFound = false;
+    const target = parsePrincipleTarget(searchParams.get('target'));
+    if (target) {
+      const position = await principlePosition(await createServiceClient(), slug, target);
+      if (position !== null) {
+        offset = targetWindowOffset(position, limit);
+        targetFound = true;
+      }
+    }
 
     // Fetch one window of principles with paragraphs. Explicit columns: `*`
     // dragged the fts tsvector along for every row. Service role: the text
@@ -166,6 +228,7 @@ export async function GET(
         totalItems: totalCount,
       },
       total: totalCount,
+      targetFound,
       pagination: {
         offset,
         limit,

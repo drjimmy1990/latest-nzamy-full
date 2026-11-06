@@ -47,8 +47,8 @@ test("a specialist mode needs neither a client role nor a branch", () => {
     if (r.ok) assert.equal("clientRole" in r.value, false, "no role is stored for it");
   }
   const pleading = validateDraftIntake({ ...valid, clientRole: "", legalBranch: "" });
-  assert.equal(pleading.ok, false, "a pleading still needs both");
-  if (!pleading.ok) assert.equal(pleading.errors.length, 2);
+  assert.equal(pleading.ok, false, "a pleading still needs the role");
+  if (!pleading.ok) assert.equal(pleading.errors.length, 1);
 });
 
 test("a pleading draft order is told apart from a specialist one (Art. 18 gate)", () => {
@@ -65,7 +65,7 @@ test("rejects an unknown clientRole", () => {
 });
 
 test("collects every error, not just the first", () => {
-  const r = validateDraftIntake({ ...valid, caseText: "x", legalBranch: "" });
+  const r = validateDraftIntake({ ...valid, caseText: "x", clientRole: "" });
   assert.equal(r.ok, false);
   if (!r.ok) assert.ok(r.errors.length >= 2);
 });
@@ -196,4 +196,9 @@ test("the cleaned draft intake re-validates (the server guard checks the wizard'
   const first = validateDraftIntake({ ...valid, legalBranch: "ضريبية", parties: { one: { ...BAD_COMPANY, representativeId: "٢٠٢٣٤٥٦٧٨٩" }, two: BAD_COMPANY } });
   assert.equal(first.ok, true);
   if (first.ok) assert.equal(validateDraftIntake(first.value).ok, true);
+});
+
+test("B9: a pleading no longer needs a legal branch, and both party forms stay shown without one", () => {
+  assert.equal(validateDraftIntake({ ...valid, legalBranch: "" }).ok, true);
+  assert.deepEqual(draftPartiesShown("case", ""), { one: true, two: true });
 });

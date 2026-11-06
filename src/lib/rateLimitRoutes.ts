@@ -163,6 +163,15 @@ export function isAttachmentsZipRoute(method: string, pathname: string): boolean
   return (method === "GET" || method === "HEAD") && ATTACHMENTS_ZIP_RE.test(pathname);
 }
 
+// «معاينة» (S2-B8): a GET that may unzip a Word file of up to 22 MB, so it gets
+// its own bucket, as the ZIP download does: the general bucket counts only writes.
+export const DOCUMENT_PREVIEW_RE = /^\/api\/v1\/documents\/[^/]+\/preview$/;
+
+/** True for a GET/HEAD of /api/v1/documents/<one segment>/preview. */
+export function isDocumentPreviewRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && DOCUMENT_PREVIEW_RE.test(pathname);
+}
+
 // GET /api/v1/ai/points-standing (the «رصيدك من النقاط لا يكفي» banner): three
 // database reads per call, and a GET, so the general bucket (writes only)
 // never counted it (final review M2). The proxy gives it the general bucket's
@@ -173,6 +182,54 @@ export const POINTS_STANDING_RE = /^\/api\/v1\/ai\/points-standing$/;
 /** True for a GET/HEAD of /api/v1/ai/points-standing. */
 export function isPointsStandingRoute(method: string, pathname: string): boolean {
   return (method === "GET" || method === "HEAD") && POINTS_STANDING_RE.test(pathname);
+}
+
+// GET /api/v1/ai/tool-status (S3-07): the same kind of reads, the same policy, its
+// own name. A screen shows a tool's price only after this answers, so a banner that
+// spent a shared budget must not close a tool. A 429 here gets one retry in
+// toolStatusClient.ts. The exact path only.
+export const TOOL_STATUS_RE = /^\/api\/v1\/ai\/tool-status$/;
+
+/** True for a GET/HEAD of /api/v1/ai/tool-status. */
+export function isToolStatusRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && TOOL_STATUS_RE.test(pathname);
+}
+
+// POST /api/v1/ai/runs may read and unzip up to 22 MB of a caller's files before it
+// charges anything, so a script could spend server CPU for free. Keyed like the
+// tracking buckets (visitor key plus a wider per-IP ceiling), on top of the general
+// write bucket. A 429 here comes before any charge, and every caller shows its error
+// text as any refusal. The exact path only: the polls under it stay free.
+export const AI_RUN_START_RE = /^\/api\/v1\/ai\/runs$/;
+
+/** True for a POST of /api/v1/ai/runs. */
+export function isAiRunStartRoute(method: string, pathname: string): boolean {
+  return method === "POST" && AI_RUN_START_RE.test(pathname);
+}
+
+// The card a printed QR opens (q343): /verify/<token> and the service-role read it
+// makes. Public and keyed only by an unguessable token, as the tracking page, so
+// the same arrangement: the visitor key plus a wider ceiling per proxy-resolved IP.
+// One scan costs two requests here. A refused read sends the visitor home, as any
+// other answer that is not a card does.
+export const LETTERHEAD_VERIFY_RE = /^(?:\/verify|\/api\/v1\/letterhead\/verify)\/[^/]+$/;
+
+/** True for a GET/HEAD of /verify/<one segment> or /api/v1/letterhead/verify/<one segment>. */
+export function isLetterheadVerifyRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && LETTERHEAD_VERIFY_RE.test(pathname);
+}
+
+// GET /api/v1/ai/runs/progress (useAiRun while a POST is in flight): a session
+// check plus up to two service reads, about 40 times a minute per open run. The
+// same arrangement as points-standing: the general policy under its own name, so
+// these reads never spend the write budget. A 429 here costs the waiting screen
+// one update: aiRunClient waits and polls again, and the POST still answers.
+// The exact path only: the job polls on /api/v1/ai/runs/<id> stay free.
+export const AI_RUN_PROGRESS_RE = /^\/api\/v1\/ai\/runs\/progress$/;
+
+/** True for a GET/HEAD of /api/v1/ai/runs/progress. */
+export function isAiRunProgressRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && AI_RUN_PROGRESS_RE.test(pathname);
 }
 
 /**
