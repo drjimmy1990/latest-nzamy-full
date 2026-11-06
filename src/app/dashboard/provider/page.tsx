@@ -7,7 +7,7 @@
  * هذه الصفحة مخصصة لـ: الموثّق / المُعقِّب / المترجم / المحكّم / المستشار المتخصص
  *
  * تعرض:
- *  - KPIs: عروض مقبولة، أرباح الشهر، تقييم متوسط، طلبات جديدة
+ *  - إحصاءات الأعمال: «قريباً» حتى يُفعَّل سوق الخدمات
  *  - آخر 5 طلبات في السوق تناسب خدماته
  *  - عروضه الجارية (مقبولة / في انتظار الموافقة)
  *  - تقويم الخدمات القادمة
@@ -17,7 +17,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  Briefcase, CurrencyDollar, Star, Bell, SealCheck,
+  Briefcase, SealCheck,
   ArrowRight, ArrowLeft, CalendarBlank, MapPin, ArrowSquareOut,
   Fire, TrendUp, Storefront, UserCircle, ChatDots, ShieldCheck,
   Sparkle, Package, CaretRight, CaretLeft, Robot, Lock, Crown,
@@ -82,8 +82,7 @@ export default function ProviderDashboardPage() {
                 مرحباً، {user.name}
               </h1>
               <p className="text-emerald-200/80 text-sm">
-                لديك <span className="text-[#C8A762] font-bold">{activeOffers.length}</span> عروض نشطة و
-                <span className="text-[#C8A762] font-bold"> {MARKET_REQUESTS.length}</span> طلبات جديدة تنتظرك
+                سوق الخدمات قيد الإعداد — ستظهر طلباتك وعروضك هنا عند تفعيله.
               </p>
             </div>
             <div className="flex gap-3">
@@ -102,62 +101,14 @@ export default function ProviderDashboardPage() {
           </div>
         </motion.div>
 
-        {/* ── KPIs ────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            {
-              label: "عروض مقبولة",
-              value: `${activeOffers.filter(o => o.status === "accepted" || o.status === "in-progress").length}`,
-              sub: "هذا الشهر",
-              icon: Package,
-              gradient: "from-[#0B3D2E] to-[#1a6b4e]",
-              change: "+٢",
-            },
-            {
-              label: "أرباح الشهر",
-              value: "٤,٧٥٠ ر.س",
-              sub: "بعد عمولة المنصة",
-              icon: CurrencyDollar,
-              gradient: "from-[#C8A762] to-[#b8974f]",
-              change: "+١٢٪",
-            },
-            {
-              label: "تقييم متوسط",
-              value: `${avgRating} ★`,
-              sub: `بناءً على ${REVIEWS.length} تقييمات`,
-              icon: Star,
-              gradient: "from-purple-600 to-purple-500",
-              change: "▲",
-            },
-            {
-              label: "طلبات جديدة",
-              value: `${MARKET_REQUESTS.length}`,
-              sub: "مناسبة لخدماتك",
-              icon: Bell,
-              gradient: "from-blue-600 to-blue-500",
-              change: "اليوم",
-            },
-          ].map((kpi, i) => {
-            const Icon = kpi.icon;
-            return (
-              <motion.div key={i} variants={fadeUp} initial="hidden" animate="show" custom={i + 1}
-                whileHover={{ y: -3, transition: { duration: 0.2 } }}
-                className={`${card} p-5 shadow-sm`}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${kpi.gradient} flex items-center justify-center shadow`}>
-                    <Icon size={20} weight="fill" className="text-white" />
-                  </div>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-emerald-500/15 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>
-                    {kpi.change}
-                  </span>
-                </div>
-                <p className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-gray-900"}`}>{kpi.value}</p>
-                <p className={`text-xs font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{kpi.label}</p>
-                <p className={`text-xs mt-0.5 ${muted}`}>{kpi.sub}</p>
-              </motion.div>
-            );
-          })}
-        </div>
+        {/* The marketplace is parked (BETA_MONOPOLY_MODE): no data path feeds these figures yet. */}
+        <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1} className={`${card} p-5 shadow-sm`}>
+          <div className="flex items-center gap-2 mb-1">
+            <p className={`text-sm font-bold ${isDark ? "text-white" : "text-gray-900"}`}>إحصاءات أعمالك</p>
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-emerald-500/15 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>قريباً</span>
+          </div>
+          <p className={`text-xs ${muted}`}>تظهر هنا عروضك المقبولة وأرباحك وتقييماتك عند تفعيل سوق الخدمات.</p>
+        </motion.div>
 
         {/* ── Main Grid ────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

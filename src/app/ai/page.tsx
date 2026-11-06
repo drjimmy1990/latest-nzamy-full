@@ -527,7 +527,6 @@ type AiToolCard = {
 const LAWYER_AI_ICON_MAP: Record<LawyerAiTool["permission"], any> = {
   "ai:consult": ChatCircleDots,
   "ai:quick-answer": ChatCircleDots,
-  "ai:case-brief": Robot,
   "ai:draft": PencilSimple,
   "ai:brief-check": FileMagnifyingGlass,
   "ai:collector": Notebook,
@@ -553,7 +552,6 @@ const LAWYER_AI_ICON_MAP: Record<LawyerAiTool["permission"], any> = {
 const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:draft", href: "/ai/draft", titleAr: "الصائغ القانوني", titleEn: "Legal Drafter", icon: PencilSimple, descAr: "صياغة عقود ومذكرات قانونية احترافية", descEn: "Draft professional legal contracts and memos" },
   { id: "ai:contracts", href: "/ai/contract-drafter", titleAr: "محترف العقود المختصر", titleEn: "Contract Drafter Lite", icon: FileText, descAr: "أنشئ مسودة عقد بسيطة في دقائق ثم احصل على مراجعة محامٍ", descEn: "Create a simple contract draft in minutes, then get lawyer review", badge: "مجاني" },
-  { id: "ai:case-brief", href: "/ai/case-brief", titleAr: "الموجز القضائي", titleEn: "ParaLegal Briefing", icon: Robot, descAr: "المساعد الذكي لقراءة أوراق القضية واستخراج الإحاطة القانونية (الخطوة صفر)", descEn: "Upload case files — get full briefing, risk flags & next steps", badge: "جديد" },
   { id: "ai:quick-answer", href: "/ai/quick-answer", titleAr: "المجيب القانوني السريع", titleEn: "Quick Legal Responder", icon: ChatCircleDots, descAr: "سؤال محدد ← إجابة فورية مستندة للنظام السعودي", descEn: "One question → instant answer grounded in Saudi law", badge: "جديد" },
   { id: "ai:memo-studio", href: "/ai/wargaming", titleAr: "المحاكي الشامل للقضايا", titleEn: "Litigation Studio", icon: Scales, descAr: "دمج الذكاء الاصطناعي (قوة الموقف، الخصوم، الجلسات، والمذكرات)", descEn: "Integrated AI for position strength, opponents, hearings & memos", badge: "مُدمَج" },
   { id: "ai:consult", href: "/ai/consult", titleAr: "المستشار الذكي", titleEn: "AI Advisor", icon: ChatCircleDots, descAr: "غير متاحة حالياً — قيد الإعداد.", descEn: "Not available yet — in preparation.", badgeAr: "قريباً", badgeEn: "Soon" },
@@ -599,12 +597,16 @@ const AI_TOOLS: AiToolCard[] = [
     icon: LAWYER_AI_ICON_MAP[tool.permission],
     // A «قريباً» tool (owner ١١٥) is not described as part of the credit
     // catalog: its page cannot answer yet.
-    descAr: tool.comingSoon
+    descAr: tool.permission === "ai:analyze"
+      ? "لخّص ملف القضية واستخرج الوقائع والتناقضات والنواقص من أوراقك"
+      : tool.comingSoon
       ? "غير متاحة حالياً — قيد الإعداد."
       : tool.betaStatus === "beta-free"
         ? "أداة قانونية رسمية للمحامي في البيتا، متاحة مجاناً حتى اعتماد سعرها من الأدمن."
         : "أداة قانونية رسمية ضمن كتالوج المحامي ونظام الرصيد.",
-    descEn: tool.comingSoon
+    descEn: tool.permission === "ai:analyze"
+      ? "Summarize a case file and extract its facts, contradictions and gaps from your papers"
+      : tool.comingSoon
       ? "Not available yet — in preparation."
       : tool.betaStatus === "beta-free"
         ? "Official lawyer beta tool, free until admin pricing is approved."
@@ -619,10 +621,10 @@ const AI_TOOLS: AiToolCard[] = [
 
 /**
  * The client-side card for /ai/analyze (owner ١١٥, fix round 2). The catalog
- * row "ai:analyze" is the LAWYER tool «عصارة المرفقات», which is «قريباً»;
- * /ai/analyze/page.tsx renders it only for lawyer and firm accounts and gives
- * everyone else SmartAnalyzer. The hub uses the same split, so a client is not
- * told a tool that opens for him is coming soon.
+ * row "ai:analyze" is the LAWYER tool «عصارة المرفقات» (the case-brief job);
+ * /ai/analyze/page.tsx renders it only for lawyer, firm and admin accounts and
+ * gives everyone else SmartAnalyzer, whose results are gated. The hub uses the
+ * same split, so a client is never offered the lawyer tool or its price.
  */
 const CLIENT_ANALYZE_CARD: AiToolCard = LEGACY_AI_TOOLS.find((t) => t.id === "ai:analyze")!;
 
@@ -632,7 +634,7 @@ function AiHubDashboard() {
   const isRTL = lang === "ar";
   const isDark = theme === "dark";
   // Same condition as src/app/ai/analyze/page.tsx (cannedOutputGate.test.ts).
-  const seesLawyerAnalyzer = user.userType === "lawyer" || user.userType === "firm";
+  const seesLawyerAnalyzer = user.userType === "lawyer" || user.userType === "firm" || user.userType === "admin";
   const hubTools = seesLawyerAnalyzer
     ? AI_TOOLS
     : AI_TOOLS.map((t) => (t.id === "ai:analyze" ? CLIENT_ANALYZE_CARD : t));

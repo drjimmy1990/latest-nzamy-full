@@ -109,14 +109,29 @@ export interface SniffedImage {
   ext: "png" | "jpg" | "webp";
 }
 
+const lower = (c: number) => (c >= 0x41 && c <= 0x5a ? c + 0x20 : c);
+const isDelimiter = (c: number | undefined) => c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d || c === 0x2f || c === 0x3e;
+
+/** `<svg` or `<script`, in any case, followed by a delimiter — anywhere in the bytes. */
+function carriesActiveMarkup(b: Uint8Array): boolean {
+  const svg = [0x73, 0x76, 0x67];
+  const script = [0x73, 0x63, 0x72, 0x69, 0x70, 0x74];
+  const at = (word: number[], from: number) => word.every((c, k) => lower(b[from + k]) === c) && isDelimiter(b[from + word.length]);
+  for (let i = 0; i < b.length; i++) {
+    if (b[i] === 0x3c && (at(svg, i + 1) || at(script, i + 1))) return true;
+  }
+  return false;
+}
+
 /**
  * The logo's type from its first bytes — never from its name or the
  * Content-Type the browser sends (the bucket's MIME list trusts that header,
  * so an SVG renamed to .png would pass it). Anything else, SVG included, is
- * refused.
+ * refused; so is a polyglot, image bytes first and markup after them (q346).
  */
 export function sniffLogoImage(bytes: Uint8Array): SniffedImage | null {
   const b = bytes;
+  if (carriesActiveMarkup(b)) return null;
   if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
       && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) {
     return { mime: "image/png", ext: "png" };
@@ -129,6 +144,17 @@ export function sniffLogoImage(bytes: Uint8Array): SniffedImage | null {
     return { mime: "image/webp", ext: "webp" };
   }
   return null;
+}
+
+/**
+ * After an optional BOM and whitespace, the bytes start with `<svg` or `<?xml`
+ * (q346): only for the refusal's wording. SVG is never stored, whatever this says.
+ */
+export function looksLikeSvg(bytes: Uint8Array): boolean {
+  let i = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+  while (bytes[i] === 0x20 || bytes[i] === 0x09 || bytes[i] === 0x0a || bytes[i] === 0x0d) i++;
+  const head = Array.from(bytes.subarray(i, i + 5), lower);
+  return [[0x3c, 0x73, 0x76, 0x67], [0x3c, 0x3f, 0x78, 0x6d, 0x6c]].some((sig) => sig.every((c, k) => head[k] === c));
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

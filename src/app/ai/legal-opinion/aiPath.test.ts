@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { consultAnswerBlocks, letterDraftBlocks } from "./_components/aiOpinion.ts";
 
 const strip = (src: string) =>
   src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "").replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
@@ -50,4 +51,28 @@ test("the panel never creates an order and never claims a human saw its result",
   assert.doesNotMatch(panel, /createServiceOrder|serviceOrders/);
   assert.match(panel, /لم يراجعها محامٍ/);
   assert.match(panel, /AI_OPINION_TOOL\[kind\]/);
+});
+
+test("the consultation as blocks: a title, the summary, each section; no markers", () => {
+  assert.deepEqual(
+    consultAnswerBlocks({ summary: "خلاصة [S1]", sections: [{ heading: "الأساس [S2]", body: "مادة [S3]\nتفصيل" }] }),
+    [
+      { kind: "title", text: "استشارة قانونية" },
+      { kind: "para", text: "خلاصة" },
+      { kind: "heading", text: "الأساس" },
+      { kind: "para", text: "مادة" },
+      { kind: "para", text: "تفصيل" },
+    ],
+  );
+});
+
+test("the letter as blocks: its title and its body; blanks [....] are not markers", () => {
+  assert.deepEqual(
+    letterDraftBlocks({ title: "خطاب إنذار [S1]", body: "السادة [....]\nنص [S2]", citation_check: [] }),
+    [
+      { kind: "title", text: "خطاب إنذار" },
+      { kind: "para", text: "السادة [....]" },
+      { kind: "para", text: "نص" },
+    ],
+  );
 });

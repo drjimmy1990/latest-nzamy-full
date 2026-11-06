@@ -54,24 +54,25 @@ function escapeHtml(s: string): string {
 }
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
-import type { FeqhBookSystem } from "@/app/laws/data";
 import { apiSlug } from '@/utils/apiSlug';
 import { volumeSubtitle, volumesCountLabel } from "@/lib/library/bookVolumes";
 import {
-  emptyLinks, emptyStream, extendStream, filterToc, firstStreamBlockOfSection, fromApiBook,
-  fromNestedBook, linkRun, mergeSectionBlocks, normalizeBlock, parseJumpQuery, planBlockJump,
+  emptyLinks, emptyStream, extendStream, firstStreamBlockOfSection, fromApiBook,
+  linkRun, mergeSectionBlocks, normalizeBlock, parseJumpQuery, planBlockJump,
   runFromCursorResponse, streamCursor, streamFromFirstPage, streamFromRun, topmostVisible,
   type BlocksBySection, type BookLinks, type CompleteSections, type OrderedRun, type ReaderBlock,
   type ReaderBook, type ReaderState, type ReaderStream,
   READER_LAYERS, type ReaderLayer,
 } from "./_reader-model";
-import { isDemoMode } from "@/lib/runtimeMode";
+import { legacyTarget } from "@/lib/library/legacyLibrarySlugs";
+import { bookNotice, type ReaderNotice } from "@/lib/library/readerNotice";
 
 /**
  * Owner note ٠٢ — the continuous stream. Blocks per request: the opening
- * request and every batch appended as the reader nears the end.
+ * request and every batch appended as the reader nears the end. q390: 50,
+ * the books API's cap (BLOCKS_MAX_LIMIT).
  */
-const STREAM_BATCH = 80;
+const STREAM_BATCH = 50;
 /**
  * Rendered-DOM cap. A 1,000-page book is not mounted whole: past this many
  * blocks the stream stops appending and offers «متابعة القراءة من هنا», which
@@ -80,54 +81,6 @@ const STREAM_BATCH = 80;
 const STREAM_MAX_BLOCKS = 800;
 /** How long the view must rest on a block before the notes panel follows it. */
 const WORKSPACE_SETTLE_MS = 1500;
-
-// Demo Data: الروض المربع
-const DEMO_RAWD: FeqhBookSystem = {
-  id: "rawd-al-murbi",
-  title: "الروض المربع بشرح زاد المستقنع",
-  author: "الشيخ منصور بن يونس البهوتي (ت 1051هـ)",
-  school: "المذهب الحنبلي",
-  investigator: "الشيخ عبد الرحمن بن محمد بن قاسم (حاشية ابن قاسم)",
-  publisher: "طبعة دار ابن الجوزي / مطبعة الحكومة بالرياض",
-  totalVolumes: 1,
-  chapters: [
-    {
-      title: "كتاب الصلاة - شروط الصلاة",
-      sections: [
-        {
-          title: "باب شروط الصلاة",
-          blocks: [
-            {
-              id: "fb-rawd-1",
-              topic: "تعريف شرط الصلاة وعدد الشروط",
-              vol: 1,
-              page: 204,
-              matn: "وَشُرُوطُهَا تِسْعَةٌ: الإِسْلاَمُ، وَالعَقْلُ، وَالتَّمْيِيزُ، وَرَفْعُ الحَدَثِ، وَإِزَالَةُ النَّجَاسَةِ، وَسَتْرُ العَوْرَةِ، وَدُخُولُ الوَقْتِ، وَاسْتِقْبَالُ القِبْلَةِ، وَالنِّيَّةُ.",
-              sharh: "وهي -أي شروط الصلاة- جمع شرط، وهو لغة العلامة، واصطلاحاً: ما يلزم من عدمه العدم ولا يلزم من وجوده وجود ولا عدم لذاته. وهي (تسعة) شروط لا تصح الصلاة بدونها، وتقديمها عليها متعيّن مع الاستمرار فيها بقدر الإمكان:\nأحدها: (الإسلام) فلا تصح من كافر إجماعاً.\nوالثاني: (العقل) فلا تصح من مجنون ومعتوه.\nوالثالث: (التمييز) وهو بلوغ سبع سنين، فلا تصح من طفل دونها لعدم النية.",
-              hashiyah: [
-                "الشرط بالفتح العلامة، ومنه أشراط الساعة. واصطلاحاً: ما وجد قبله واستمر معه، بخلاف الركن الذي هو جزء من الماهية.",
-                "الإسلام شرط لصحة كل عبادة، والنية لا تصح من كافر لعدم الأهلية، والخطاب فروعاً لا يصح منه فعلاً بل عقاباً.",
-                "التمييز عند الحنابلة يُحدد بالبلوغ سبع سنين، ويؤمر بها لسبع ويُضرب عليها لعشر لحديث سبرة بن معبد."
-              ]
-            },
-            {
-              id: "fb-rawd-2",
-              topic: "الشرط الرابع: رفع الحدث والوضوء",
-              vol: 1,
-              page: 205,
-              matn: "وَالرَّابِعُ: رَفْعُ الحَدَثِ، وَهُВО الوُضُوءُ إِذَا كَانَ أَصْغَرَ، وَالغُسْلُ إِذَا كَانَ أَكْبَرَ، أَوِ التَّيَمُّمُ عِنْدَ العَجْزِ عَنْهُمَا.",
-              sharh: "(والرابع: رفع الحدث) بالماء المطلق, وهو زوال الوصف القائم بالبدن المانع من الصلاة ونحوها، وهو (الوضوء) بضم الواو (إذا كان أصغر) لحدث أصغر، (والغسل إذا كان أكبر) لحدث جنابة أو حيض، (أو التيمم عند العجز عنهما) بالتراب الطهور لمرض أو فقد ماء.",
-              hashiyah: [
-                "رفع الحدث لا يكون إلا بالماء الطهور وهو الباقي على خلقته، وعند تعذره يُعدل للتيمم بالتراب.",
-                "الحدث وصف حكمي يحل بالأعضاء يمنع من الصلاة، والخبث نجاسة عينية تطرأ على البدن أو الثوب أو البقعة."
-              ]
-            }
-          ]
-        }
-      ]
-    }
-  ]
-};
 
 /** Scroll to the first coloured term once, on arrival from a search (?q=). Lives inside the provider. */
 function ScrollToFirstMark({ enabled, loaded }: { enabled: boolean; loaded: number }) {
@@ -146,8 +99,12 @@ export default function FeqhBookPage() {
 
   const [book, setBook] = useState<ReaderBook | null>(null);
   const [loading, setLoading] = useState(true);
-  /** Arabic message when the API failed (5xx) — distinct from "not found". */
-  const [loadError, setLoadError] = useState<string | null>(null);
+  /**
+   * q390: what the reader says when the server has no text for it — a load
+   * error, not found, «قريباً» (a legacy catalogue slug) or text pending.
+   * There is no bundled or demo fallback any more.
+   */
+  const [notice, setNotice] = useState<ReaderNotice | null>(null);
 
   // Everything loaded so far, keyed by section (the index lists it), and the
   // sections known to be complete (see linkRun). Refs mirror the state so
@@ -199,18 +156,17 @@ export default function FeqhBookPage() {
 
   // Folder & Search states
   const [showFolderModal, setShowFolderModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [quickJumpQuery, setQuickJumpQuery] = useState("");
   const [jumpError, setJumpError] = useState(false);
 
   // Owner note ٠٦: arriving from a search (/book/…?q=) colours its terms
-  // through the whole stream — nothing is hidden. The index's own box, when
-  // typed in, takes over; ✕ «مسح الألوان» clears both and drops ?q=.
+  // through the whole stream — nothing is hidden; ✕ «مسح الألوان» drops ?q=.
+  // BUG-LIB-04 (S1 Task 11): ?q= is the only highlight. The index has no text
+  // filter of its own; the reader's one search bar is ScopedSearchPanel.
   // Read from the address bar when the book loads (loadBookData below).
   const [urlQuery, setUrlQuery] = useState("");
-  const highlightQuery = searchQuery.trim() ? searchQuery : urlQuery;
+  const highlightQuery = urlQuery;
   const clearHighlight = useCallback(() => {
-    setSearchQuery("");
     setUrlQuery("");
     try {
       const url = new URL(window.location.href);
@@ -238,10 +194,7 @@ export default function FeqhBookPage() {
     return () => window.removeEventListener("nzamy-open-folder-modal", handleOpenFolder);
   }, []);
 
-  const filteredChapters = useMemo(() => {
-    if (!book) return [];
-    return filterToc(book.chapters, blocksBySection, searchQuery);
-  }, [book, blocksBySection, searchQuery]);
+  const tocChapters = useMemo(() => book?.chapters ?? [], [book]);
 
   const commitReaderState = useCallback((map: BlocksBySection, complete: CompleteSections) => {
     blocksRef.current = map;
@@ -580,6 +533,13 @@ export default function FeqhBookPage() {
       setSettledBlockId(state.firstBlockId);
     };
     async function loadBookData() {
+      // A legacy catalogue slug whose book is loaded under its own id: go
+      // there before any fetch, so the reading quota is never spent twice.
+      const legacy = legacyTarget("book", slug);
+      if (legacy?.dbId) {
+        router.replace(`/book/${apiSlug(legacy.dbId)}${window.location.search}${window.location.hash}`);
+        return;
+      }
       // Owner note ٠٦: ?q= from a search result colours the whole book.
       let q = "";
       try {
@@ -589,7 +549,7 @@ export default function FeqhBookPage() {
       }
       setUrlQuery(q);
       setLoading(true);
-      setLoadError(null);
+      setNotice(null);
       setNavError(null);
       setMoreError(null);
       setBeforeError(null);
@@ -602,48 +562,44 @@ export default function FeqhBookPage() {
       linksRef.current = emptyLinks();
       commitReaderState({}, {});
       commitStream(emptyStream());
+      // The complete TOC plus the first batch of the stream. apiSlug()
+      // decodes then encodes once, so a pre-encoded slug is not
+      // double-encoded into %25… (a 404).
+      let status: number | null = null;
+      let body: Record<string, unknown> | null = null;
+      let failure: string | null = null;
       try {
-        // The complete TOC plus the first batch of the stream. apiSlug()
-        // decodes then encodes once, so a pre-encoded slug is not
-        // double-encoded into %25… (a 404).
         const res = await fetch(`/api/library/books/${apiSlug(slug)}?limit=${STREAM_BATCH}`);
-        if (cancelled) return;
-        if (res.ok) {
-          const apiData = await res.json();
-          apply(fromApiBook(apiData));
-          if (!cancelled) setLoading(false);
-          return;
-        }
-        // A server failure is not "not found": say so instead of falling through.
-        if (res.status >= 500) {
-          const body = await res.json().catch(() => null);
-          if (cancelled) return;
-          setLoadError(typeof body?.error === "string" ? body.error : "تعذّر تحميل الكتاب، حاول مجدداً");
-          setLoading(false);
-          return;
-        }
-      } catch (e) {
-        console.warn('[Books] API fetch failed, using JSON fallback:', e);
+        status = res.status;
+        body = await res.json().catch(() => null);
+      } catch {
+        failure = "تعذّر تحميل الكتاب، تحقّق من الاتصال";
       }
       if (cancelled) return;
-
-      // Fallback. DEMO_RAWD is demo content (owner decision ١١٥): it may stand
-      // in for a missing book only in demo mode, never on production.
-      if (slug === "rawd-al-murbi" && isDemoMode) {
-        apply(fromNestedBook(DEMO_RAWD as unknown as Record<string, unknown>));
-      } else if (slug === "sources-of-right-1") {
-        try {
-          const data = await import("@/constants/sources-of-right-1.json");
-          apply(fromNestedBook(data.default as unknown as Record<string, unknown>));
-        } catch (e) {
-          console.error("Failed to load book sources-of-right-1", e);
-        }
+      if (status !== null && status >= 200 && status < 300 && body) {
+        apply(fromApiBook(body));
+        const pagination = (body.pagination ?? {}) as Record<string, unknown>;
+        const blocks = typeof pagination.total === "number" ? pagination.total : null;
+        // A book with no text yet («قيد الإضافة»), shown inside the page.
+        setNotice(bookNotice({ status: 200, slug, blocks, error: null }));
+        setLoading(false);
+        return;
       }
-      if (!cancelled) setLoading(false);
+      // q390: no bundled or demo fallback. 404 → «قريباً» (legacy slug) or not
+      // found; 5xx → load error; any other refusal still says something.
+      const error = typeof body?.error === "string" ? body.error : failure;
+      setNotice(
+        bookNotice({ status, slug, blocks: null, error }) ?? {
+          kind: "load_error",
+          titleAr: "تعذّر تحميل الكتاب",
+          bodyAr: error ?? "تعذّر تحميل الكتاب، حاول مجدداً",
+        },
+      );
+      setLoading(false);
     }
     loadBookData();
     return () => { cancelled = true; };
-  }, [slug, commitReaderState, commitStream]);
+  }, [slug, router, commitReaderState, commitStream]);
 
   // Multi-volume series (T28-24): the header names the series and the volume
   // being read, and a switcher moves between volumes. The volume's own title
@@ -755,13 +711,19 @@ export default function FeqhBookPage() {
   }
 
   if (!book) {
+    // q390: an honest notice with the way back — never a blank page, never bundled text.
+    const shownNotice: ReaderNotice = notice ?? {
+      kind: "load_error",
+      titleAr: "تعذّر تحميل الكتاب",
+      bodyAr: "تعذّر تحميل الكتاب، حاول مجدداً",
+    };
     return (
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir={isRTL ? "rtl" : "ltr"}>
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center p-8">
-          <BookOpen size={48} className="text-red-500 mb-4" />
-          <h1 className="text-xl font-black mb-2">{loadError ? "تعذّر تحميل الكتاب" : isRTL ? "عفواً، الكتاب غير موجود" : "Book Not Found"}</h1>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 mb-4">{loadError ?? (isRTL ? "لم نتمكن من العثور على هذا الكتاب الفقهي في المكتبة." : "We couldn't find this Feqh book in the library.")}</p>
+          <BookOpen size={48} className={shownNotice.kind === "load_error" || shownNotice.kind === "not_found" ? "text-red-500 mb-4" : "text-[#C8A762] mb-4"} />
+          <h1 className="text-xl font-black mb-2">{shownNotice.titleAr}</h1>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mb-4" role={shownNotice.kind === "load_error" ? "alert" : undefined}>{shownNotice.bodyAr}</p>
           <Link href="/laws" className="px-4 py-2 bg-[#0B3D2E] text-white text-xs font-bold rounded-xl">{isRTL ? "العودة للمكتبة" : "Back to Library"}</Link>
         </div>
         <Footer />
@@ -1009,13 +971,11 @@ export default function FeqhBookPage() {
               <SidebarPanel
                 isDark={isDark}
                 isRTL={isRTL}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
                 quickJumpQuery={quickJumpQuery}
                 setQuickJumpQuery={setQuickJumpQuery}
                 handleQuickJump={(q) => { void handleQuickJump(q); }}
                 jumpError={jumpError}
-                filteredChapters={filteredChapters}
+                chapters={tocChapters}
                 blocksBySection={blocksBySection}
                 completeSections={completeSections}
                 loadingSectionId={loadingSectionId}
@@ -1040,7 +1000,7 @@ export default function FeqhBookPage() {
                 <SearchLegendBar partial={!(stream.startsBook && stream.endsBook)} onClear={clearHighlight} />
               </div>
             )}
-            <ScrollToFirstMark enabled={arrival && urlQuery !== "" && !searchQuery.trim()} loaded={stream.blocks.length} />
+            <ScrollToFirstMark enabled={arrival && urlQuery !== ""} loaded={stream.blocks.length} />
 
             {jumping && (
               <div role="status" className="flex items-center justify-center gap-2 text-xs font-bold text-slate-500 dark:text-zinc-400 print:hidden">
@@ -1090,7 +1050,7 @@ export default function FeqhBookPage() {
 
             {stream.blocks.length === 0 && (
               <div className={`${card} p-8 text-center`}>
-                <p className="text-xs text-slate-500">{isRTL ? "لا يوجد نص لهذا الكتاب بعد." : "This book has no text yet."}</p>
+                <p className="text-xs text-slate-500">{notice?.kind === "text_pending" ? notice.bodyAr : "لا يوجد نص لهذا الكتاب بعد."}</p>
               </div>
             )}
 

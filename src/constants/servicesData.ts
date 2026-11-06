@@ -2,16 +2,19 @@ import {
   ChatCircleDots, Scales, FileText, Stamp, Shield, Brain
 } from "@phosphor-icons/react";
 import { CLIENT_SERVICE_CATALOG } from "./clientServiceCatalog";
-import { catalogPriceLabel } from "@/lib/pricing/catalogPriceLabel";
+import { dualAudiencePriceLabel } from "@/lib/pricing/catalogPriceLabel";
 
 // Wave 1 task 6 (E): every number on these cards is the client service
 // catalogue's (CLIENT_SERVICE_CATALOG; migration 20261102_10 writes the same
-// rows), read through catalogPriceLabel — no price is typed here. The old
+// rows), read through dualAudiencePriceLabel — no price is typed here. The old
 // «٢٤٩» / «١٩٩» / «١٤٩» / «يبدأ من ٤٩٩» were charged by nothing. Notary and
 // government follow-up have no catalogue row, so they name no number.
+// S6 (q327): a service with a business variant states both prices
+// (contract review «يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال»);
+// every other service reads exactly as before.
 const AFTER_ASSESSMENT: { ar: string; en: string } = { ar: "يُحدد بعد التقييم", en: "Determined after assessment" };
 const catalogPrice = (serviceId: string, lang: "ar" | "en"): string =>
-  catalogPriceLabel(serviceId, CLIENT_SERVICE_CATALOG, lang) ?? AFTER_ASSESSMENT[lang];
+  dualAudiencePriceLabel(serviceId, CLIENT_SERVICE_CATALOG, lang) ?? AFTER_ASSESSMENT[lang];
 
 export const services = {
   ar: [

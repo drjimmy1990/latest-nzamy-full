@@ -25,19 +25,15 @@ export const COMING_SOON_BADGE_AR = "قريباً";
 /** Pages that render BetaReviewGate around their only output (mock behind it). */
 export const GATE_ONLY_TOOL_ROUTES = [
   "/ai/consult",
-  "/ai/contract-reviewer",
-  "/ai/contract-negotiator",
   "/ai/report-generator",
   "/ai/smart-inspector",
-  "/ai/micro",
-  // Clients get SmartAnalyzer (gated mock); lawyers get DashboardComingSoon.
+  // Clients get SmartAnalyzer (gated mock). Lawyer and firm get the real case
+  // brief on the same URL: LIVE_FOR_LAWYER_AND_FIRM_ROUTES below.
   "/ai/analyze",
   "/ai/corp/compliance-monitor",
   "/ai/corp/advisor",
-  "/ai/corp/contracts",
   "/ai/corp/risk-assessment",
   "/ai/corp/deal-intel",
-  "/ai/ngo/volunteer-contract",
   "/ai/ngo/donation-analyzer",
   "/ai/ngo/report-generator",
   "/ai/gov/judgment-drafter",
@@ -95,4 +91,16 @@ export function routeOf(href: string): string {
 /** True when the link opens a tool that cannot answer yet. */
 export function isTerminalToolHref(href: string): boolean {
   return TERMINAL_TOOL_ROUTES.includes(routeOf(href));
+}
+
+/**
+ * A terminal route that is live for lawyer and firm accounts. /ai/analyze ends at
+ * the gate for every client surface, so it stays in the list above, and the lawyer
+ * and firm surfaces (their sidebars, the lawyer catalog) open the real case brief
+ * there. Only those two surfaces may read this; a client surface uses isTerminalToolHref.
+ */
+export const LIVE_FOR_LAWYER_AND_FIRM_ROUTES: readonly string[] = ["/ai/analyze"];
+
+export function isLiveForLawyerAndFirm(href: string): boolean {
+  return LIVE_FOR_LAWYER_AND_FIRM_ROUTES.includes(routeOf(href));
 }

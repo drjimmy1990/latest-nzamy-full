@@ -29,8 +29,6 @@
  * Pure, and imports only pure modules by relative path, so node:test can load it.
  */
 
-import { matchesQuery, parseHighlightQuery } from "../../../lib/search/multiColorSearch.ts";
-
 export interface ReaderBlock {
   id: string;
   topic: string;
@@ -597,36 +595,6 @@ export function parseJumpQuery(query: string): {
     ? null
     : { page: serverPage, vol: serverVol };
   return { vol, page, server };
-}
-
-/**
- * Filter the TOC by a query: a chapter whose title matches keeps all its
- * sections; otherwise a section stays when its title or one of its LOADED
- * blocks matches. Blocks not loaded yet cannot be searched on the client.
- * Folding (ا/أ/إ/آ, ة/ه, ي/ى, the three digit scripts, harakat) is the
- * shared engine's (src/lib/search/multiColorSearch.ts).
- */
-export function filterToc(chapters: ReaderChapter[], map: BlocksBySection, query: string): ReaderChapter[] {
-  // Owner note ٠٦: the box speaks the library's grammar (space/+ AND, "…",
-  // /, word*, -word) — the same parser that colours the matches in the text,
-  // so the index and the highlight never disagree.
-  const parsed = parseHighlightQuery(query);
-  // Nothing to match on (an empty box, or only punctuation) filters nothing.
-  if (parsed.groups.length === 0 && parsed.excluded.length === 0) return chapters;
-  const hit = (...fields: string[]) => matchesQuery(fields, parsed);
-  const blockHit = (b: ReaderBlock) => hit(b.topic, b.matn, b.sharh, ...b.hashiyah);
-  const out: ReaderChapter[] = [];
-  for (const ch of chapters) {
-    if (hit(ch.title)) {
-      out.push(ch);
-      continue;
-    }
-    const sections = ch.sections.filter(
-      (s) => hit(s.title) || (map[s.id] ?? []).some(blockHit),
-    );
-    if (sections.length > 0) out.push({ ...ch, sections });
-  }
-  return out;
 }
 
 /** The chapter that holds a section (for the header of the active block). */

@@ -106,6 +106,21 @@ export const LOCK_REASON_AR: Readonly<Record<string, string>> = {
   activity_flag: "نشاط قراءة غير معتاد — مراجعة تلقائية",
 };
 
+/**
+ * What THIS call converted (20261103_10 writes details.converted_from when a staff
+ * lock replaces an open automatic lock). The mark stays on the row, so a second
+ * staff lock gets the same row back unchanged: `reasonBefore`, the open lock's reason
+ * read before the call, tells the two apart. Null for a new lock, for a lock that was
+ * already the staff's, and when that read found nothing or failed.
+ */
+export function lockConvertedFrom(row: Pick<LockRow, "details">, reasonBefore: string | null): string | null {
+  if (reasonBefore === null || reasonBefore === "admin") return null;
+  const d = row.details;
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  const v = (d as Record<string, unknown>).converted_from;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
 export function toLockDto(row: LockRow, people: ReadonlyMap<string, PersonRef>, now: number): LockDto {
   const person = (id: string | null) => (id ? people.get(id) ?? { name: null, email: null } : null);
   const ended = row.locked_until !== null && Date.parse(row.locked_until) <= now;

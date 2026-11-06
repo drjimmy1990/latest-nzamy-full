@@ -122,8 +122,8 @@ const txt = {
     faqs: [
       {
         q: "كيف يتم تفعيل الاشتراك؟",
-        a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار.",
-        aPaid: "بعد الدفع الإلكتروني يُفعَّل الاشتراك تلقائياً؛ وما زال بإمكانك تقديم طلب يراجعه الفريق. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً فور تفعيله، دون انتظار.",
+        a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود (٣٠ يوماً ما لم يُحدَّد غير ذلك) فور تفعيله، دون انتظار.",
+        aPaid: "بعد الدفع الإلكتروني يُفعَّل الاشتراك تلقائياً؛ وما زال بإمكانك تقديم طلب يراجعه الفريق. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود (٣٠ يوماً ما لم يُحدَّد غير ذلك) فور تفعيله، دون انتظار.",
       },
       { q: "ما الفرق بين البحث المحدود والبحث الكامل؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الكامل يتيح بحثاً غير محدود في النصوص الكاملة." },
       { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً." },
@@ -217,8 +217,8 @@ const txt = {
     faqs: [
       {
         q: "How does activation work?",
-        a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting.",
-        aPaid: "After online payment the subscription is activated automatically; you can still send a request for the team to review. If you have an invitation code, it opens the full legal library for 30 days as soon as you redeem it — no waiting.",
+        a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for the length the code grants (30 days unless it says otherwise) as soon as you redeem it — no waiting.",
+        aPaid: "After online payment the subscription is activated automatically; you can still send a request for the team to review. If you have an invitation code, it opens the full legal library for the length the code grants (30 days unless it says otherwise) as soon as you redeem it — no waiting.",
       },
       { q: "What's the difference between limited and full search?", a: "Limited search allows 5 daily queries on titles only. Full search is unlimited across the full texts." },
       { q: "Can I upgrade or downgrade anytime?", a: "You can request an upgrade or a change at any time; the team reviews the request and activates it manually." },
@@ -521,8 +521,8 @@ export default function LawsSubscribePage() {
 
         {/* ── Redeem an invitation code ──────────────────────────────────
             Only for a signed-in user without the full library (canRedeemCode
-            above) — the code grants the legal library for 30 days (a library
-            grant, not a plan; owner ٢٠١–٢٠٣) via
+            above) — the code grants the legal library for its own days, 30 when
+            it has none (a library grant, not a plan; owner ٢٠١–٢٠٣, q378) via
             POST /api/v1/library/invitations/redeem (admin-issued,
             src/lib/services/libraryInvitationsService.ts). Nothing here is
             offered to a guest or to a user who already has the library. */}

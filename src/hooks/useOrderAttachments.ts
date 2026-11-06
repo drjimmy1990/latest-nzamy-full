@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { uploadDocumentFile, isUploadTimeoutError } from "@/lib/services/documentService";
 import { validateUploadFile, partitionUploadFiles } from "@/lib/services/fileValidation";
+import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 
 /**
  * Map a thrown attachFile error to Arabic user-facing copy. The underlying
@@ -67,7 +68,7 @@ export function useOrderAttachments() {
     setAttachError("");
     // Refuse locally before spending a round trip, and before any caller's
     // optimistic filename has to be reverted.
-    const rejection = validateUploadFile(file);
+    const rejection = validateUploadFile(file, AI_TEXT_FILES_ON);
     if (rejection) {
       setAttachError(rejection);
       throw new Error("file_rejected");
@@ -118,7 +119,7 @@ export function useOrderAttachments() {
   async function attachFiles(fileList: FileList | File[]): Promise<OrderAttachment[]> {
     const files = Array.from(fileList);
     setAttachError("");
-    const { accepted, rejectedMessage } = partitionUploadFiles(files);
+    const { accepted, rejectedMessage } = partitionUploadFiles(files, AI_TEXT_FILES_ON);
     const attached: OrderAttachment[] = [];
     const problems: string[] = rejectedMessage ? [rejectedMessage] : [];
 

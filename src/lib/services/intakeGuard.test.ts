@@ -6,6 +6,8 @@ import { validateDraftIntake } from "./orderIntake.ts";
 import { validateContractsIntake } from "./orderIntake.contracts.ts";
 import { validateWargamingIntake, WARGAMING_CRITIQUE_TARGET } from "./orderIntake.wargaming.ts";
 import { validateLegalOpinionIntake } from "./orderIntake.legalOpinion.ts";
+import { stampServiceEstimate } from "../pricing/serviceEstimate.ts";
+import { CLIENT_SERVICE_CATALOG } from "../../constants/clientServiceCatalog.ts";
 
 /**
  * The round trip every live submit path takes: the wizard validates, then
@@ -191,10 +193,10 @@ test("rejects a contracts draft whose parties are unnamed", () => {
   }
 });
 
-test("rejects a contract review with no contract file attached", () => {
+test("rejects a contract review with neither a file nor a pasted text", () => {
   const r = checkOrderIntake({ service: "contracts", intake: { ...contractsReviewRaw, attachments: [] } });
   assert.equal(r.kind, "invalid");
-  if (r.kind === "invalid") assert.ok(r.errors.some((e) => e.includes("إرفاق العقد")));
+  if (r.kind === "invalid") assert.ok(r.errors.includes("ارفع ملف العقد أو الصق نصه"));
 });
 
 test("rejects a critique order carrying neither memo text nor memo file", () => {
@@ -314,7 +316,8 @@ test("POST /api/v1/service-requests inserts persistedRequestMetadata, after the 
   const src = readFileSync(new URL("../../app/api/v1/service-requests/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const check = src.indexOf("const intakeCheck = checkOrderIntake(requestData.metadata);");
   const insert = src.search(/\.from\("service_requests"\)\s*\.insert\(/);
-  const stored = src.indexOf("metadata: persistedRequestMetadata(requestData.metadata),");
+  // S6-T5 (P13): the server's estimate stamp wraps the guard's output.
+  const stored = src.indexOf("metadata: stampServiceEstimate(persistedRequestMetadata(requestData.metadata), estimateAudience, estimateCatalog),");
   assert.ok(check > 0 && insert > check && stored > insert, "check → insert(persistedRequestMetadata)");
   assert.doesNotMatch(src, /metadata: requestData\.metadata \?\? \{\}/);
 });
@@ -336,4 +339,68 @@ test("the 400 message names every missing piece, in Arabic", () => {
   assert.ok(msg.includes("نوع المذكرة مطلوب"));
   assert.ok(msg.includes("الفرع القانوني مطلوب"));
   assert.ok(!/[a-zA-Z]/.test(msg));
+});
+
+test("R12: a pasted contract survives the guard and what is stored", () => {
+  const raw = { schemaVersion: 1, service: "contracts", mode: "review", representing: "الطرف الأول", attachments: [], contractText: "ع".repeat(100) };
+  const check = validateContractsIntake(raw);
+  assert.equal(check.ok, true);
+  const metadata = { service: "contracts", serviceTitleAr: "خدمة", intake: check.value, attachments: [] };
+  assert.equal(checkOrderIntake(metadata).kind, "ok");
+  const stored = persistedRequestMetadata(metadata) as { intake: { contractText?: string } };
+  assert.equal(stored.intake.contractText, "ع".repeat(100));
+});
+
+test("S5-B1: an optional key the validator drops is not stored (customLanguageLayout \"triple\")", () => {
+  const metadata = { service: "contracts", intake: { ...contractsDraftRaw, customLanguageLayout: "triple" }, attachments: [] };
+  assert.equal(checkOrderIntake(metadata).kind, "ok");
+  const stored = persistedRequestMetadata(metadata) as { intake: Record<string, unknown> };
+  assert.equal("customLanguageLayout" in stored.intake, false);
+});
+
+test("S5-B1: an unknown intake key is not stored", () => {
+  const metadata = { service: "contracts", intake: { ...contractsDraftRaw, injected: { a: 1 } }, attachments: [] };
+  assert.equal(checkOrderIntake(metadata).kind, "ok");
+  const stored = persistedRequestMetadata(metadata) as { intake: Record<string, unknown> };
+  assert.equal("injected" in stored.intake, false);
+});
+
+test("S5-B1: contract extras are bounded and contracts-only", () => {
+  const storedIntake = (extra: Record<string, unknown>) =>
+    (persistedRequestMetadata({ service: "contracts", intake: { ...contractsDraftRaw, ...extra } }) as { intake: Record<string, unknown> }).intake;
+  assert.equal("contractId" in storedIntake({ contractId: { a: 1 } }), false, "not a string");
+  assert.equal("contractId" in storedIntake({ contractId: "   " }), false, "nothing after the trim");
+  assert.equal("contractTitle" in storedIntake({ contractTitle: "x".repeat(201) }), false, "past the bound");
+  assert.equal(storedIntake({ contractTitle: "x".repeat(200) }).contractTitle, "x".repeat(200), "at the bound");
+  assert.equal(storedIntake({ contractId: "c-77" }).contractId, "c-77");
+  assert.equal(storedIntake({ contractId: "  c-77 " }).contractId, "c-77", "stored trimmed");
+  // Another wizard's intake never keeps them.
+  const draft = persistedRequestMetadata({ service: "draft", intake: { ...draftRaw, contractId: "c-1" } }) as { intake: Record<string, unknown> };
+  assert.equal("contractId" in draft.intake, false);
+});
+
+test("S5-B1 (R12): pasted contract text and the S6 estimate stamp both survive, composed as the route composes them", () => {
+  const check = validateContractsIntake({ ...contractsReviewRaw, attachments: [], contractText: "ع".repeat(100) });
+  assert.ok(check.ok);
+  if (!check.ok) return;
+  // A catalogue service: the stamp prices it, and the team still reads the text.
+  const catalogued = { service: "contract-review", originalPrice: 1, intake: check.value };
+  assert.equal(checkOrderIntake(catalogued).kind, "ok");
+  const stamped = stampServiceEstimate(persistedRequestMetadata(catalogued), "corporate", CLIENT_SERVICE_CATALOG) as {
+    intake: { contractText?: string };
+    originalPrice: number;
+    quoteSource: string;
+  };
+  assert.equal(stamped.intake.contractText, "ع".repeat(100));
+  assert.equal(stamped.quoteSource, "server");
+  assert.equal(stamped.originalPrice, 800);
+
+  // The wizard's own service: the stamp prices nothing, and the text is still there.
+  const wizard = { service: "contracts", intake: check.value, attachments: [] };
+  const plain = stampServiceEstimate(persistedRequestMetadata(wizard), "corporate", CLIENT_SERVICE_CATALOG) as {
+    intake: { contractText?: string };
+    quoteSource?: string;
+  };
+  assert.equal(plain.intake.contractText, "ع".repeat(100));
+  assert.equal(plain.quoteSource, undefined);
 });

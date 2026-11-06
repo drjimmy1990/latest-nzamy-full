@@ -27,7 +27,9 @@ import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
 import { QuickAddSidebarItem } from "@/components/dashboard/quickAdd/QuickAdd";
 import { AdminViewSwitch } from "@/components/dashboard/AdminViewSwitch";
 import { useAdminView } from "@/hooks/useAdminView";
+import { useAdminSimulation } from "@/hooks/useAdminSimulation";
 import { resolveNavUserType, adminViewSuffix, switchCurrentView } from "@/lib/nav/shellContext";
+import { simulatedNavIdentity } from "@/lib/nav/adminSimulation";
 
 import {
   SidebarSection,
@@ -83,16 +85,29 @@ export default function SharedSidebar() {
     isSharedClientIntakePath(pathname) &&
     (sessionUserType === "corporate" || !!businessMembership);
   const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake });
-  const viewSuffix = adminViewSuffix(sessionUserType, userType, isAr);
+  // S6-T14: an admin can be drawn any dashboard now; the header still names
+  // a view, never a bare role («مدير النظام · شركة», not «شركة»).
+  const viewSuffix = adminViewSuffix(sessionUserType, userType, isAr)
+    ?? (sessionUserType === "admin" && userType && userType !== "admin" ? getRoleLabel(userType, isAr) : null);
   const roleLabel = viewSuffix
     ? `${getRoleLabel("admin", isAr)} · ${viewSuffix}`
     : userType ? getRoleLabel(userType, isAr) : "";
+
+  // S6-T17: an admin's «عرض كـ» sub-role (a judge, a consultant, a firm
+  // member) picks the MENU's sub-role values — null unless the real role is
+  // admin and the simulation is for the dashboard being drawn, so every other
+  // session builds its menu from its own values exactly as before. UI only:
+  // nothing here reaches a guard, the proxy or a request (R27).
+  const adminSim = useAdminSimulation(isRealAdmin);
+  const simId = simulatedNavIdentity(sessionUserType, adminSim, userType);
 
   // practiceKind (Art. 18): a consultant's sidebar has no pleading or hearings tools.
   // staffRole (owner ٢١٠): an admin sees only the tools of their staff role.
   const groups = getSidebarByUserType(
     userType, "full", subRole, active_roles ?? [],
-    governmentRole, businessRole, affiliation?.role, isDemoBypass, country, practiceKind, staffRole
+    simId ? simId.governmentRole : governmentRole, businessRole,
+    simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
+    simId ? simId.practiceKind : practiceKind, staffRole
   );
   
   const showCredits = false; // user requested to remove any mention of credits

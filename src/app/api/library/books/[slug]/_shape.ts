@@ -4,7 +4,8 @@
  */
 
 export const BLOCKS_DEFAULT_LIMIT = 50;
-export const BLOCKS_MAX_LIMIT = 500;
+/** q390: the reader streams in batches of 50; nothing larger is served (feqh-preview uses the default). */
+export const BLOCKS_MAX_LIMIT = 50;
 
 function toInt(value: string | null): number | null {
   if (value === null || value.trim() === '') return null;

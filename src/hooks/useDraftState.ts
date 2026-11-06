@@ -199,7 +199,7 @@ export function useDraftState(initialMode = "") {
       if (specialistModes.includes(memoType)) {
         return !!(memoType && memoSubType);  // only subType needed
       }
-      return !!(clientRole && memoType && legalBranch && memoSubType);
+      return !!(clientRole && memoType && memoSubType);
     }
     // The facts typed (as validateDraftIntake asks) or in an attached file.
     // A typed representative ID must be one (§3.5-3b), as validateDraftIntake

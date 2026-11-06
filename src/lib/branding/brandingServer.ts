@@ -30,6 +30,7 @@ import {
   type LetterheadPermission,
   type LetterheadPermissions,
 } from "./firmLetterheadPermissions";
+import { readVaultForPrintWith, type VaultForPrint } from "./vaultForPrint";
 
 export interface BrandingOwner {
   scope: BrandingScope;
@@ -119,6 +120,22 @@ export async function readOwnVault(
     .eq(column, owner.ownerId)
     .maybeSingle();
   return { row: (data as VaultRow | null) ?? null, error };
+}
+
+/**
+ * The print path's read (q344, R32): the vault and its letterhead files through
+ * the session, so RLS has the last word, and nothing at all without
+ * `permissions.print`. Paths it returns have passed the shape checks; only then
+ * may a route sign or download them with the service role.
+ */
+export async function readVaultForPrint(supabase: SupabaseClient, owner: BrandingOwner): Promise<VaultForPrint> {
+  return readVaultForPrintWith(owner, {
+    readVault: () => readOwnVault(supabase, owner),
+    readAssets: async (vaultId) => {
+      const { data, error } = await supabase.from("branding_assets").select("kind, path").eq("vault_id", vaultId);
+      return { data: data as { kind: string; path: string }[] | null, error };
+    },
+  });
 }
 
 /**

@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import Link from 'next/link';
+import { COMING_SOON_BADGE_AR } from '@/constants/betaGatedRoutes';
 import {
   Buildings,
   FileText,
@@ -165,6 +166,7 @@ export default function CorporateServicePage() {
               className="mt-6 flex items-center justify-center gap-2 w-full py-3 bg-royal/8 text-royal text-sm font-semibold rounded-xl hover:bg-royal/15 transition-colors"
             >
               اعمل تقييماً كاملاً
+              <span className="rounded-full border border-current px-1.5 py-0.5 text-[10px] font-bold opacity-80">{COMING_SOON_BADGE_AR}</span>
             </Link>
           </div>
         </FadeUp>

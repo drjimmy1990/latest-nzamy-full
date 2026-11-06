@@ -92,8 +92,19 @@ export interface ArabicCountForms {
   two: string;
   /** «مواعيد» — the PLURAL noun, for 3–10. A digit is prefixed. */
   few: string;
-  /** «موعد» — the SINGULAR noun, for 11 and up (the tamyiz). A digit is prefixed. */
+  /** «موعداً» — the SINGULAR accusative (the tamyiz), for 11–99 and when the last two digits are 11–99. A digit is prefixed. */
   many: string;
+  /**
+   * «موعد» — the SINGULAR GENITIVE, for 100, 200, 1000… and when the last two
+   * digits are 00, 01 or 02 (١٠١ موعد). Optional: by default it is `many`
+   * without its tanween (موعداً → موعد; a form with no tanween stays as it is).
+   */
+  hundreds?: string;
+}
+
+/** `many` without the tanween of each word: «موعداً» → «موعد», «طلباً جديداً» → «طلب جديد». */
+function singularGenitive(forms: ArabicCountForms): string {
+  return forms.hundreds ?? forms.many.replace(/(?:اً|ًا|ً)(?=\s|$)/gu, "");
 }
 
 /**
@@ -111,6 +122,12 @@ export function countPhraseAr(count: number, forms: ArabicCountForms): string | 
   if (n === 1) return forms.one;
   if (n === 2) return forms.two;
   if (n <= 10) return `${toArabicDigits(n)} ${forms.few}`;
+  // Above 10 the last two digits decide: 00/01/02 → the singular genitive
+  // («١٠٠ موعد», «١٠٢ موعد»), 03–10 → the plural («١٠٣ مواعيد»), 11–99 →
+  // the singular accusative («١١١ موعداً»).
+  const lastTwo = n % 100;
+  if (lastTwo <= 2) return `${toArabicDigits(n)} ${singularGenitive(forms)}`;
+  if (lastTwo <= 10) return `${toArabicDigits(n)} ${forms.few}`;
   return `${toArabicDigits(n)} ${forms.many}`;
 }
 

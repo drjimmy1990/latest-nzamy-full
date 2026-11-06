@@ -8,9 +8,9 @@ import { Plan, ComparisonCategory } from "./pricing.types";
 // نحن لا نبيع له باقة — نبيع له "ضامن قانوني طول السنة".
 // سعر واحد. قيمة واضحة. بلا تعقيد.
 //
-// Wave 1 task 6: the micro AI tools (/ai/consult, /ai/analyze, /ai/micro)
-// end at the beta gate's "not available" card (src/constants/
-// betaGatedRoutes.ts), so no plan sells them or a quota of them.
+// Wave 1 task 6: the micro AI tools (/ai/consult, /ai/analyze) end at the beta
+// gate's "not available" card (src/constants/betaGatedRoutes.ts), and /ai/micro
+// has no engine of its own (S3-05), so no plan sells them or a quota of them.
 export const plansMicro: { ar: Plan[]; en: Plan[] } = {
   ar: [
     {

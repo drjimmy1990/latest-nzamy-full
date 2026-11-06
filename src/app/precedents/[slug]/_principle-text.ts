@@ -25,6 +25,7 @@
  * the same order (only line-only bullets drop): _principle-text.test.ts.
  */
 import { stripMarkdownMarks } from "../../../lib/text/stripMarkdownMarks.ts";
+import type { JudicialPrincipleItem } from "../../laws/data.ts";
 
 /** A paragraph longer than this is cut at sentence ends. */
 export const LONG_PARAGRAPH = 600;
@@ -138,4 +139,47 @@ export function principleParagraphs(text: string | null | undefined): string[] {
     flush();
   }
   return paragraphs;
+}
+
+/** A source line that is the principle's reference («**الجهة:**», «المرجع:»), not its text. */
+export const isReferenceText = (txt: string) => txt.includes("الجهة:") || txt.includes("المرجع:") || txt.startsWith("**الجهة:**");
+
+/** The principle text without its reference lines. */
+export const cleanTextOfRef = (text: string) => text ? text.split("\n").filter(line => !isReferenceText(line)).join("\n").trim() : "";
+
+/**
+ * The reference as the block colours it: the «المرجع:» label goes (the block
+ * prints its own label outside the highlight), Markdown marks go.
+ */
+export function principleReferenceLine(rawRef: string): string {
+  return cleanPrincipleText(rawRef.replace(/^\*\*?المرجع:\*\*?\s*/, "").replace(/^المرجع:\s*/, ""));
+}
+
+/**
+ * BUG-LIB-01 / M-4: the strings a PrincipleBlock passes to <Hl> — header
+ * labels, body paragraphs, the reference footer, the details — so the legend
+ * counts exactly the marks the block draws without rendering them.
+ * `referenceOf` is the page's getReferenceForPrinciple, the same function the
+ * block's footer calls (it builds a reference when the source has none).
+ */
+export function principleHighlightTexts(
+  p: JudicialPrincipleItem,
+  isRTL: boolean,
+  referenceOf: (p: JudicialPrincipleItem) => string,
+): string[] {
+  const texts: string[] = [isRTL ? `مبدأ رقم (${p.number})` : `Principle #${p.number}`];
+  if (p.decision_number) texts.push(isRTL ? `قرار رقم (${p.decision_number})` : `Decision #${p.decision_number}`);
+  texts.push(p.issuing_body);
+  if (p.session_date) texts.push(p.session_date);
+  const paras = (p.paragraphs ?? []).filter((para) => cleanPrincipleText(para.text) !== "" && !isReferenceText(para.text));
+  if (paras.length > 0) for (const para of paras) texts.push(...principleParagraphs(para.text));
+  else texts.push(...principleParagraphs(cleanTextOfRef(p.text)));
+  const ref = principleReferenceLine(referenceOf(p) || "");
+  if (ref) texts.push(ref);
+  const details = (p.details ?? {}) as Record<string, unknown>;
+  for (const key of ["ruling_basis", "الحيثيات_والقرار", "facts", "reasons", "ruling"]) {
+    const value = details[key];
+    if (typeof value === "string") texts.push(...principleParagraphs(value));
+  }
+  return texts;
 }

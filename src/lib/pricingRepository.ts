@@ -17,6 +17,8 @@ export type PricingCatalogSource = "admin-seed" | "backend";
 
 export type AdminPricingCatalogRow = {
   service_id: string;
+  /** 'individual' | 'corporate' (S6); any other value keeps the code item's. */
+  audience?: string;
   category_id: ClientServiceCategoryId;
   label_ar: string;
   base_price: number | string;
@@ -35,8 +37,33 @@ export type AdminPricingCatalogRow = {
     tag?: string;
     aiPowered?: boolean;
     humanService?: boolean;
+    /** S6: this row is an audience variant of that service id (never a card). */
+    variantOf?: string;
+    /**
+     * S6: true only when an admin hid the row on purpose (adminHiddenPatch).
+     * The server loader fetches a disabled row only with this flag.
+     */
+    adminHidden?: boolean;
   };
 };
+
+/**
+ * S6 contract for the admin enable/disable toggle (S6-T7 must use it): the
+ * columns a PATCH writes. Disabling writes enabled = false AND
+ * metadata.adminHidden = true — without the flag the server loader
+ * (src/lib/pricing/clientPricingServer.ts) never fetches the row, so the
+ * toggle would hide nothing. Enabling writes enabled = true and REMOVES the
+ * flag. Every other metadata key is kept. Pure; the caller writes the result.
+ */
+export function adminHiddenPatch(
+  enabled: boolean,
+  metadata: Record<string, unknown> | null | undefined,
+): { enabled: boolean; metadata: Record<string, unknown> } {
+  const next: Record<string, unknown> = { ...(metadata ?? {}) };
+  if (enabled) delete next.adminHidden;
+  else next.adminHidden = true;
+  return { enabled, metadata: next };
+}
 
 // Coupons are NOT here. A client-side map (VALID_COUPONS) and the
 // quoteClientService() that read it used to accept NZAMY50 / NEWCLIENT with no
@@ -44,15 +71,24 @@ export type AdminPricingCatalogRow = {
 // pricing doc §13أ) a coupon is checked and applied on the server only:
 // src/lib/payments/couponRules.ts + couponServer.ts, inside the checkout order.
 
+// S6: an audience variant (`variantOf` set, e.g. contract-review-business) is
+// never a card and never a lookup result — it only lends its price to its
+// base item through resolveClientService (src/lib/pricing/clientPricingAudience.ts).
+// Each helper below skips it, so a variant id resolves like an unknown id.
+// Fix round 1 (M3): a "corporate" item is never a card either — with or
+// without a variantOf — since the loader now fetches corporate rows and a
+// company-only row must not be listed (or priced) for everyone.
+const isCard = (service: ClientServiceCatalogItem) => !service.variantOf && service.audience !== "corporate";
+
 export function getClientServiceById(
   serviceId: string | null | undefined,
   catalog: ClientServiceCatalogItem[] = CLIENT_SERVICE_CATALOG,
 ): ClientServiceCatalogItem {
   return (
-    catalog.find((service) => service.serviceId === serviceId) ??
-    catalog.find((service) => service.serviceId === "general") ??
-    CLIENT_SERVICE_CATALOG.find((service) => service.serviceId === serviceId) ??
-    CLIENT_SERVICE_CATALOG.find((service) => service.serviceId === "general")!
+    catalog.find((service) => isCard(service) && service.serviceId === serviceId) ??
+    catalog.find((service) => isCard(service) && service.serviceId === "general") ??
+    CLIENT_SERVICE_CATALOG.find((service) => isCard(service) && service.serviceId === serviceId) ??
+    CLIENT_SERVICE_CATALOG.find((service) => isCard(service) && service.serviceId === "general")!
   );
 }
 
@@ -60,7 +96,7 @@ export function getClientServicesByCategory(
   categoryId: ClientServiceCategoryId,
   catalog: ClientServiceCatalogItem[] = CLIENT_SERVICE_CATALOG,
 ): ClientServiceCatalogItem[] {
-  return catalog.filter((service) => service.categoryId === categoryId && service.enabled !== false);
+  return catalog.filter((service) => isCard(service) && service.categoryId === categoryId && service.enabled !== false);
 }
 
 export function getClientServiceCategories(options?: { includeBeta?: boolean }): ClientServiceCategory[] {
@@ -71,8 +107,10 @@ export function getClientServiceCategories(options?: { includeBeta?: boolean }):
 
 export function getVisibleClientServiceCatalog(options?: { includeBeta?: boolean }): ClientServiceCatalogItem[] {
   const includeBeta = options?.includeBeta ?? false;
-  if (includeBeta) return CLIENT_SERVICE_CATALOG.filter((service) => service.enabled !== false);
-  return CLIENT_SERVICE_CATALOG.filter((service) => service.betaVisibility === "public" && service.enabled !== false);
+  if (includeBeta) return CLIENT_SERVICE_CATALOG.filter((service) => isCard(service) && service.enabled !== false);
+  return CLIENT_SERVICE_CATALOG.filter(
+    (service) => isCard(service) && service.betaVisibility === "public" && service.enabled !== false,
+  );
 }
 
 export function formatClientServicePrice(service: Pick<ClientServiceCatalogItem, "basePrice" | "priceMode">): string {
@@ -101,6 +139,17 @@ export function mergeAdminPricingCatalogRows(rows: AdminPricingCatalogRow[]): Cl
   for (const row of rows) {
     const existing = byId.get(row.service_id);
     const metadata = row.metadata ?? {};
+    // Fix round 1 (M3): a corporate row with no variant link never replaces
+    // an individuals' code entry of the same id (that would hide the
+    // individuals' card); the code entry stays.
+    if (
+      row.audience === "corporate" &&
+      !(metadata.variantOf ?? existing?.variantOf) &&
+      existing &&
+      existing.audience !== "corporate"
+    ) {
+      continue;
+    }
     const next: ClientServiceCatalogItem = {
       serviceId: row.service_id,
       categoryId: row.category_id,
@@ -120,6 +169,11 @@ export function mergeAdminPricingCatalogRows(rows: AdminPricingCatalogRow[]): Cl
       tag: metadata.tag ?? existing?.tag,
       aiPowered: metadata.aiPowered ?? existing?.aiPowered,
       humanService: metadata.humanService ?? existing?.humanService,
+      // S6: a row's audience and variantOf travel with it. A row that drops
+      // either keeps the code item's, so a variant never turns into a card.
+      audience:
+        row.audience === "corporate" || row.audience === "individual" ? row.audience : existing?.audience,
+      variantOf: metadata.variantOf ?? existing?.variantOf,
     };
     byId.set(row.service_id, next);
   }

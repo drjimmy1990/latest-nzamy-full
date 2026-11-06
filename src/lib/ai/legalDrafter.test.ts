@@ -139,11 +139,15 @@ test("the registry entry: a job for lawyers and firms, off by default, consultan
   assert.equal(tool.price({ kind: "cassation" }, { pages: null, turn: 1 }), 0, "the draft is paid by its analysis");
 });
 
-test("analysis input: kind, role and branch required; facts 30+ unless they are in the files; too long refused, never cut", () => {
+test("analysis input: kind and role required, branch optional; facts 30+ unless they are in the files; too long refused, never cut", () => {
   const v = tool.validateInput;
   assert.equal(v(issuesInput({ kind: "notary" })).ok, false);
   assert.deepEqual(v(issuesInput({ client_role: "" })), { ok: false, error: DRAFT_COPY.role });
-  assert.deepEqual(v(issuesInput({ branch: " " })), { ok: false, error: DRAFT_COPY.branch });
+  const noBranch = v(issuesInput({ branch: " " }));
+  assert.ok(noBranch.ok);
+  assert.equal(noBranch.ok && noBranch.input.branch, null);
+  assert.deepEqual(v(issuesInput({ branch: "ف".repeat(61) })), { ok: false, error: "الفرع القانوني أطول من المسموح" });
+  assert.equal(v(issuesInput({ branch: 7 })).ok, false);
   assert.deepEqual(v(issuesInput({ facts: "قصير" })), { ok: false, error: DRAFT_COPY.facts });
   assert.deepEqual(v(issuesInput({ facts: "x".repeat(DRAFT_FACTS_MAX + 1) })), { ok: false, error: DRAFT_COPY.factsLong });
   const inFiles = v(issuesInput({ facts: "", facts_in_files: true, judgment: { reasons: "لعدم ثبوت العلاقة" } }));
@@ -292,4 +296,17 @@ test("the callback: the [S…] markers kept as citations, the articles replaced 
   assert.equal(out.cited, undefined);
   assert.deepEqual((out.citation_check as Array<{ article: number; status: string }>).map((c) => [c.article, c.status]), [[77, "ok"]]);
   assert.deepEqual((done.citations as Array<{ id: string }>).map((c) => c.id), ["labor__art-77"], "an unknown marker is dropped");
+});
+
+test("B9: no branch and the facts in the files: the search falls back to the kind's name, with no stray space", () => {
+  const r = tool.validateInput({ phase: "issues", kind: "claim", client_role: "plaintiff", facts: "", facts_in_files: true });
+  assert.ok(r.ok);
+  assert.equal(r.ok && r.input.search_text, DRAFT_KINDS.claim.label);
+  assert.equal(r.ok && r.input.branch, null);
+  const withBranch = tool.validateInput({ phase: "issues", kind: "claim", client_role: "plaintiff", branch: "عمالي", facts: "", facts_in_files: true });
+  assert.equal(withBranch.ok && withBranch.input.search_text, `عمالي ${DRAFT_KINDS.claim.label}`);
+});
+
+test("B9: the price does not depend on the branch", () => {
+  assert.equal(tool.price({ kind: "claim", branch: null }, { pages: null, turn: 0 }), tool.price({ kind: "claim", branch: "عمالي" }, { pages: null, turn: 0 }));
 });

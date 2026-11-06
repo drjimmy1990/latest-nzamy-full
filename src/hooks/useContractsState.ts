@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { STEPS_DRAFT, STEPS_DRAFT_SIMPLE, STEPS_REVIEW, StepKey, PartyData, EMPTY_PARTY } from "@/components/contracts/types";
 import { INITIAL_CLAUSES, CONTRACT_TYPES } from "@/components/contracts/constants";
-import { validateContractsIntake, partyIsNamed } from "@/lib/services/orderIntake.contracts";
+import { validateContractsIntake, partyIsNamed, reviewUploadReady } from "@/lib/services/orderIntake.contracts";
 import { representativeIdOk } from "@/lib/services/orderIntake";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
@@ -86,6 +86,7 @@ export function useContractsState(linkedContract?: { id: string; title: string }
   const [rPartyFocus, setRPartyFocus] = useState("");
   const [rFears, setRFears] = useState("");
   const [rOtherParty, setROtherParty] = useState("");
+  const [rContractText, setRContractText] = useState("");
   const [rClauseDecisions, setRClauseDecisions] = useState<Record<string, "accept" | "edit" | "reject"> | null>(null);
 
   // Review mode's file upload (Task C3) — real attachment state from
@@ -170,7 +171,7 @@ export function useContractsState(linkedContract?: { id: string; title: string }
       // file mid-upload could be abandoned by clicking "التالي" the instant
       // the first attachment lands, unmounting StepRUpload and losing that
       // in-flight upload from the payload submitReviewOrder() later reads.
-      if (step === "r_upload") return attachments.length > 0 && !uploading;
+      if (step === "r_upload") return reviewUploadReady(attachments, rContractText, uploading);
       return true;
     }
     // Task 12: matches validateContractsIntake's draft-mode parties gate
@@ -283,6 +284,7 @@ export function useContractsState(linkedContract?: { id: string; title: string }
       representing: rPartyFocus,
       ...(rFears.trim() ? { concerns: rFears } : {}),
       ...(rOtherParty.trim() ? { otherParty: rOtherParty } : {}),
+      ...(rContractText.trim() ? { contractText: rContractText } : {}),
       attachments,
     };
   }
@@ -352,7 +354,7 @@ export function useContractsState(linkedContract?: { id: string; title: string }
     clauses, setClauses, clauseEdits, setClauseEdits, newClause, setNewClause, additionalClauses, setAdditionalClauses,
     bpSearching, setBpSearching, bpDone, setBpDone, appliedBP, setAppliedBP, skipBP, setSkipBP, deepSearch, setDeepSearch, startBPSearch,
     shareLink, setShareLink, sharePasscode, setSharePasscode, linkCopied, setLinkCopied, clientEmail, setClientEmail, clientPhone, setClientPhone, generateShareLink, shareGenerating, shareError,
-    rPartyFocus, setRPartyFocus, rFears, setRFears, rOtherParty, setROtherParty, rClauseDecisions, setRClauseDecisions,
+    rPartyFocus, setRPartyFocus, rFears, setRFears, rOtherParty, setROtherParty, rContractText, setRContractText, rClauseDecisions, setRClauseDecisions,
     paraEdits, setParaEdits, generalEdits, setGeneralEdits,
     submitting, submitErrors, submitOrder,
     attachments, uploading, attachError, attachFile, attachFiles, removeAttachment, clearAttachError, submitReviewOrder,

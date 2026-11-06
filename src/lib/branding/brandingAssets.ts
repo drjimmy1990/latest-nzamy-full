@@ -8,11 +8,10 @@
  * and bucket); brandingAssets.test.ts pins both sides.
  *
  * WHAT IT IS: a private store. The office uploads, replaces, downloads and
- * deletes its files here; nothing more is promised. The platform does NOT yet
- * merge a document into the uploaded .docx or print over the PDF background,
- * and the stamp / signature are not yet placed on any output — the screen says
- * so (BrandingAssetsPanel), and the 2026-10-30 ledger lists that wiring as
- * open.
+ * deletes its files here. The AI tools' Word export merges into the uploaded
+ * .docx (q345, src/lib/docx/letterheadDocx.ts). The platform does NOT print over
+ * the PDF background, and the stamp / signature are not placed on any output:
+ * the screen says so (BrandingAssetsPanel).
  *
  * WHERE: the private `branding-files` bucket, a SEPARATE bucket from the
  * logo's `branding` (whose 1 MB image-only shape _verify.sql pins), under the

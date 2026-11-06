@@ -52,6 +52,39 @@ export function effectiveToolMode(mode: AiToolMode): RunnableAiToolMode {
   return mode === "review" ? "staff" : mode;
 }
 
+/**
+ * R5: the one rule for "does this mode let this caller run?". The run path's
+ * refusal and the screen's answer both call it, so they cannot disagree, whatever
+ * effectiveToolMode comes to mean. "staff" lets admins through; "off" stops everyone.
+ */
+export function toolAvailability(mode: AiToolMode, isAdmin: boolean): "ok" | "tool_off" {
+  const effective = effectiveToolMode(mode);
+  return effective === "off" || (effective === "staff" && !isAdmin) ? "tool_off" : "ok";
+}
+
+type ToolAudience = Pick<AiToolSpec, "roles" | "consultantBlocked">;
+interface ToolCaller {
+  userType: string;
+  practiceKind: string | null;
+}
+
+/** May this kind of account use the tool at all? An admin always may. Needs no setting. */
+export function toolRoleRefusal(spec: ToolAudience, actor: ToolCaller): "role" | "consultant_blocked" | null {
+  if (actor.userType === "admin") return null;
+  if (!spec.roles.includes(actor.userType)) return "role";
+  if (spec.consultantBlocked && actor.practiceKind === "consultant") return "consultant_blocked";
+  return null;
+}
+
+/** The whole answer, in the run path's order: who the caller is first, then the mode. */
+export function toolAccessFor(
+  spec: ToolAudience,
+  actor: ToolCaller,
+  runtime: Pick<AiToolRuntime, "mode">,
+): "ok" | "role" | "consultant_blocked" | "tool_off" {
+  return toolRoleRefusal(spec, actor) ?? toolAvailability(runtime.mode, actor.userType === "admin");
+}
+
 export function resolveToolRuntime(spec: AiToolSpec, setting: unknown): AiToolRuntime {
   const entry =
     typeof setting === "object" && setting !== null && !Array.isArray(setting)

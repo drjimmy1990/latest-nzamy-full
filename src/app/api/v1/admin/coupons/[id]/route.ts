@@ -2,12 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
-import { adminDiscountPatch } from "@/lib/payments/couponAdminRules";
+import {
+  BAD_BODY_AR,
+  adminCouponMetadataPatch,
+  adminDiscountPatch,
+  buildCouponPatchMetadata,
+  couponAudience,
+  couponBodyObject,
+  couponDateIso,
+  couponExpectedUpdatedAt,
+  isCouponId,
+} from "@/lib/payments/couponAdminRules";
 
 /**
  * PATCH /api/v1/admin/coupons/[id] — Update a coupon (e.g. enable/disable).
  *
- * Body (all optional):
+ * Body (all optional; the page sends only what changed — couponAdminDiff):
  *   active?: boolean          — toggle enable/disable directly
  *   status?: string           — "disabled"/"expired" => active=false, else true
  *   value?: number            — discount_value
@@ -15,21 +25,34 @@ import { adminDiscountPatch } from "@/lib/payments/couponAdminRules";
  *   usageLimit?: number       — max_uses
  *   startsAt?: string         — valid_from
  *   expiresAt?: string        — valid_until
- *   eligibleRoles?: string[]  — eligible_user_types (client => individual)
+ *   expectedUpdatedAt?: string — the updated_at the page loaded (review M1)
+ *   eligibleRoles?: string[]  — eligible_user_types (client => individual,
+ *                               business => corporate; [] = everyone)
  *   minOrderAmount?: number   — min_order_amount (> 0 on a discount coupon)
+ *   maxDiscountPct?: number   — max_discount_pct (0 < pct <= 25)          (S6-T11)
+ *   excludedKinds?: string[]  — excluded_kinds (topup always in)           (S6-T11)
+ *   firstPaidOrderOnly?: bool — metadata.first_paid_order_only (٣٠٥)      (S6-T11)
+ *   excludedItems?: string[]  — metadata.excluded_items (price-book ids)   (S6-T11)
  *
  * P7 review (finding 2): a discount coupon never gets a minimum of 0 nor a
  * percentage above 25, and is never switched ON while its minimum is 0 (the
  * old seed's LAUNCH2026, or a code made before the rule) —
  * couponAdminRules.adminDiscountPatch, 400 with the reason.
  *
+ * S6-T11: metadata is built ONCE (buildCouponPatchMetadata): the stored keys
+ * (owner_rules, rules, first_order_rule …), then the flags, then the status —
+ * so a body with a status and a flag keeps both. Review M1: the update is
+ * conditional on the updated_at the PAGE loaded (body.expectedUpdatedAt): an
+ * edit by another admin or a coupon use since the page opened (the trigger
+ * that bumps used_count bumps updated_at too) is a 409, not a lost update.
+ * A caller that sends no expectedUpdatedAt is guarded against this route's
+ * own read only (a change while saving). A bad id is a 404 before any read;
+ * a non-object body or a bad date is a 400 (startsAt / expiresAt as in POST:
+ * a date-only value is that day in Riyadh, couponDateIso).
+ *
  * Owner ٢١٠: PATCH needs a staff role with settings.write, DELETE one with
  * coupons.delete; each successful change is audited.
  */
-function roleToUserType(role: string): string {
-  return role === "client" ? "individual" : role;
-}
-
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -40,29 +63,41 @@ export async function PATCH(
     const gate = await requireStaff("settings.write");
     if (!gate.ok) return gate.response;
 
+    if (!isCouponId(id)) {
+      return NextResponse.json({ error: "الكوبون غير موجود" }, { status: 404 });
+    }
+
     let body: Record<string, unknown>;
     try {
-      body = await request.json();
+      const parsed = couponBodyObject(await request.json());
+      if (!parsed) return NextResponse.json({ error: BAD_BODY_AR }, { status: 400 });
+      body = parsed;
     } catch {
-      return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
+      return NextResponse.json({ error: BAD_BODY_AR }, { status: 400 });
+    }
+    const expected = couponExpectedUpdatedAt(body);
+    if (!expected.ok) {
+      return NextResponse.json({ error: expected.error }, { status: 400 });
     }
 
     const adminClient = await createServiceClient();
 
-    // Fetch existing so metadata.status stays in sync.
     const { data: existing, error: fetchError } = await adminClient
       .from("coupons")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (fetchError || !existing) {
+    if (fetchError) {
+      console.error("[admin/coupons PATCH] read failed:", fetchError.code, fetchError.message);
+      return NextResponse.json({ error: "تعذّر قراءة الكوبون — لم يتغيّر شيء." }, { status: 500 });
+    }
+    if (!existing) {
       return NextResponse.json({ error: "الكوبون غير موجود" }, { status: 404 });
     }
+    const prior = existing as Record<string, unknown>;
 
-    const updateData: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
+    const updateData: Record<string, unknown> = {};
 
     // Resolve the new active state (explicit `active`, else derive from `status`).
     let nextActive: boolean | undefined;
@@ -79,6 +114,16 @@ export async function PATCH(
     if (!discount.ok) {
       return NextResponse.json({ error: discount.error }, { status: 400 });
     }
+    // The cap / kinds columns exist only once 20261026_20 ran (select * carries them).
+    if (
+      ("max_discount_pct" in discount.fields || "excluded_kinds" in discount.fields) &&
+      !("max_discount_pct" in prior && "excluded_kinds" in prior)
+    ) {
+      return NextResponse.json(
+        { error: "سقف الخصم والأنواع المستثناة غير متاحة قبل ترحيل 20261026_20 — لم يتغيّر شيء." },
+        { status: 503 },
+      );
+    }
     Object.assign(updateData, discount.fields);
 
     if (body.value !== undefined) {
@@ -92,44 +137,66 @@ export async function PATCH(
       updateData.max_uses = Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
     }
     if (body.startsAt !== undefined) {
-      updateData.valid_from = body.startsAt ? new Date(String(body.startsAt)).toISOString() : null;
+      const startsAt = couponDateIso(body.startsAt, "start");
+      if (!startsAt.ok) return NextResponse.json({ error: startsAt.error }, { status: 400 });
+      updateData.valid_from = startsAt.value;
     }
     if (body.expiresAt !== undefined) {
-      updateData.valid_until = body.expiresAt ? new Date(String(body.expiresAt)).toISOString() : null;
+      const expiresAt = couponDateIso(body.expiresAt, "end");
+      if (!expiresAt.ok) return NextResponse.json({ error: expiresAt.error }, { status: 400 });
+      updateData.valid_until = expiresAt.value;
     }
-    if (Array.isArray(body.eligibleRoles)) {
-      updateData.eligible_user_types = (body.eligibleRoles as unknown[])
-        .filter((r): r is string => typeof r === "string")
-        .map(roleToUserType);
-    }
-
-    // Keep metadata.status coherent with the page's status field.
-    if (typeof body.status === "string" || nextActive !== undefined) {
-      const prevMeta = (existing.metadata as Record<string, unknown> | null) ?? {};
-      const nextStatus =
-        typeof body.status === "string"
-          ? body.status
-          : nextActive
-            ? "active"
-            : "disabled";
-      updateData.metadata = { ...prevMeta, status: nextStatus };
+    if (body.eligibleRoles !== undefined) {
+      const audience = couponAudience(body.eligibleRoles);
+      if (!audience.ok) {
+        return NextResponse.json({ error: audience.error }, { status: 400 });
+      }
+      updateData.eligible_user_types = audience.userTypes;
     }
 
-    const { data, error } = await adminClient
+    // One metadata build: the stored keys, the rule flags, then the status.
+    const prevMeta = (prior.metadata as Record<string, unknown> | null) ?? {};
+    const flags = adminCouponMetadataPatch(prevMeta, body);
+    if (!flags.ok) {
+      return NextResponse.json({ error: flags.error }, { status: 400 });
+    }
+    const nextStatus =
+      typeof body.status === "string" ? body.status : nextActive === undefined ? null : nextActive ? "active" : "disabled";
+    const metadata = buildCouponPatchMetadata(prevMeta, flags.metadata, nextStatus);
+    if (metadata) {
+      updateData.metadata = metadata;
+    }
+
+    const changed = Object.keys(updateData);
+    if (changed.length === 0) {
+      return NextResponse.json({ error: "لا توجد حقول للتحديث" }, { status: 400 });
+    }
+
+    // updated_at is NOT NULL; a row read without it would lose the race check.
+    if (typeof prior.updated_at !== "string" || prior.updated_at === "") {
+      console.error("[admin/coupons PATCH] row has no updated_at; refusing an unconditional write:", id);
+      return NextResponse.json({ error: "تعذّر حفظ الكوبون — لم يتغيّر شيء." }, { status: 500 });
+    }
+
+    const { data: updated, error } = await adminClient
       .from("coupons")
-      .update(updateData)
+      .update({ ...updateData, updated_at: new Date().toISOString() })
       .eq("id", id)
-      .select("*")
-      .single();
+      .eq("updated_at", expected.value ?? prior.updated_at)
+      .select("*");
 
     if (error) {
       console.error("[admin/coupons PATCH] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: "تعذّر حفظ الكوبون — لم يتغيّر شيء." }, { status: 500 });
+    }
+    if (!Array.isArray(updated) || updated.length === 0) {
+      return NextResponse.json(
+        { error: "تغيّر هذا الكوبون منذ فتح الصفحة (تعديل آخر أو استخدام جديد) — أعد التحميل ثم عدّل." },
+        { status: 409 },
+      );
     }
 
-    const changed = Object.keys(updateData).filter((k) => k !== "updated_at");
-    const prior = existing as Record<string, unknown>;
-    const current = (data ?? {}) as Record<string, unknown>;
+    const current = updated[0] as Record<string, unknown>;
     await logAdminAction({
       actorId: gate.userId,
       action: "coupon_updated",
@@ -140,7 +207,7 @@ export async function PATCH(
       metadata: { code: prior.code ?? null },
     });
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data: current });
   } catch (err) {
     console.error("[admin/coupons PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "حدث خطأ أثناء تحديث الكوبون" }, { status: 500 });

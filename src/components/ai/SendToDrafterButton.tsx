@@ -8,9 +8,9 @@
  * /ai/draft?from=transcript, where the drafter prefills its facts field and
  * asks the user to review it. Nothing is submitted for him.
  *
- * Not mounted anywhere yet: the tools that would produce a transcript
- * (/ai/transcriber, «عصارة المرفقات») are «قريباً» (owner answer ١١٥). Mount it
- * beside the real transcript only, never beside sample or canned text.
+ * Not mounted anywhere yet: /ai/transcriber is «قريباً» (owner answer ١١٥), and
+ * «عصارة المرفقات» returns a brief, not a transcript. Mount it beside a real
+ * transcript only, never beside sample or canned text.
  */
 
 import { useState } from "react";

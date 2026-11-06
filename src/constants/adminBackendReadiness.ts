@@ -16,7 +16,7 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     route: "/dashboard/admin/subscriptions/coupons",
     status: "Backend-ready",
     contract: "AdminCoupon",
-    note: "إضافة وتعديل وتعطيل تعمل محلياً، والحفظ الحقيقي ينتظر API الكوبونات.",
+    note: "إضافة وتعديل وتعطيل عبر /api/v1/admin/coupons، مع سجلّ استخدام لكل كوبون.",
   },
   {
     id: "team",
@@ -76,8 +76,10 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     title: "التسعير ورسوم المنصة",
     route: "/dashboard/admin/pricing",
     status: "Backend-ready",
-    contract: "AdminPricingItem",
-    note: "تعديل أسعار الخدمات والباقات والعمولات وحالة البيتا يعمل محلياً، والحفظ الحقيقي ينتظر pricing API.",
+    contract: "AdminPricingCatalogRow",
+    // S6-T7/T8: the client services' prices are read and written through
+    // /api/v1/admin/pricing-catalog (requireStaff settings.write, audited).
+    note: "أسعار خدمات العملاء تُحفظ على الخادم عبر /api/v1/admin/pricing-catalog بصلاحية settings.write، وكل تعديل يُسجَّل في سجل الإدارة. الباقات والشحن من دفتر الأسعار وتتغيّر بنشر الكود، وعمولة السوق قريباً.",
   },
   {
     id: "feature-flags",
@@ -100,8 +102,8 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     title: "التسعير والباقات ورسوم المنصة",
     route: "/dashboard/admin/pricing",
     status: "Backend-ready",
-    contract: "AdminPricingItem",
-    note: "تعديل الأسعار والباقات وBeta locks ورسوم المنصة يعمل محلياً، ومصدر الإنتاج ينتظر Pricing API.",
+    contract: "AdminPricingCatalogRow",
+    note: "أسعار خدمات العملاء تُحفظ على الخادم عبر /api/v1/admin/pricing-catalog وتظهر للعملاء فور الحفظ؛ الباقات والشحن للقراءة فقط من دفتر الأسعار، ورسوم المنصة قريباً.",
   },
   {
     id: "audit-log",

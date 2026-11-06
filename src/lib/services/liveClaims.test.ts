@@ -56,7 +56,7 @@ test("/pricing disclaimer: no «unlisted tools have no price» and no deduction-
   assert.match(cards, /هذا الجدول قائمة أسعار أدوات المحامي بالنقاط: تكلفة كل تشغيل للأداة\./);
 });
 
-test("/pricing disclaimer: the six unlisted tools really are charged and really are not rows", async () => {
+test("/pricing disclaimer: the unlisted tools really are charged and really are not rows", async () => {
   const { PRICED_AI_TOOL_IDS } = await import("../ai/toolPointsDisplay.ts");
   // The table's source, not the module (it imports icons and "@/" paths).
   const table = src("constants/pricing/pricing.lawyers.ts").split("export const lawyerServicesTable")[1];
@@ -65,7 +65,7 @@ test("/pricing disclaimer: the six unlisted tools really are charged and really 
   );
   assert.ok(listed.size >= 8, `parsed only ${listed.size} priced rows`);
   const unlisted = PRICED_AI_TOOL_IDS.filter((id) => !listed.has(id));
-  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "quick-answer"]);
+  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "contract-negotiator", "contract-review", "quick-answer"]);
 });
 
 // ── item B: no comparative-law tool exists ───────────────────────────────────
@@ -94,7 +94,7 @@ test("ai:consult is «قريباً» on the hub, not «بيتا مجاني»", a
 
 test("services cards: no typed price; contracts and case study read the catalogue, the rest name no number", async () => {
   const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
-  const { catalogPriceLabel } = await import("../pricing/catalogPriceLabel.ts");
+  const { catalogPriceLabel, dualAudiencePriceLabel } = await import("../pricing/catalogPriceLabel.ts");
   const code = src("constants/servicesData.ts").replace(/^\s*\/\/.*$/gm, "");
   // Charged by nothing: the retired card prices.
   assert.doesNotMatch(code, /٢٤٩|١٩٩|١٤٩|٤٩٩|\b249\b|\b199\b|\b149\b|\b499\b/);
@@ -102,9 +102,12 @@ test("services cards: no typed price; contracts and case study read the catalogu
   assert.equal((code.match(/price: catalogPrice\("contract-review", "(ar|en)"\)/g) ?? []).length, 2);
   assert.equal((code.match(/price: catalogPrice\("case-study", "(ar|en)"\)/g) ?? []).length, 2);
   assert.equal((code.match(/price: AFTER_ASSESSMENT\.(ar|en)/g) ?? []).length, 4, "notary + tracking, both languages");
-  // What those calls render is the catalogue row the request form charges from.
-  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س");
-  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "en"), "From 600 SAR");
+  // What those calls render is the catalogue row the request form charges from
+  // — for contract review both audiences' (S6, q327: 600 individuals / 800 business).
+  assert.match(src("constants/servicesData.ts"), /dualAudiencePriceLabel\(serviceId, CLIENT_SERVICE_CATALOG, lang\)/);
+  assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال");
+  assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "en"), "From 600 SAR (individuals) · From 800 SAR (business)");
+  assert.equal(dualAudiencePriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٦٠٠ ر.س");
   assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ١٬٦٠٠ ر.س");
   assert.equal(catalogPriceLabel("case-study", CLIENT_SERVICE_CATALOG, "en"), "From 1,600 SAR");
   // No catalogue row → null (the card's own "after assessment"), never «طلب عام»'s price.
@@ -176,15 +179,15 @@ test("shield lock copy: SubscriptionGuard and the sidebar badge name no unsold p
 
 test("I1: /services/contracts and /services/tracking name no price nothing charges, and agree with their cards", async () => {
   const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
-  const { catalogPriceLabel } = await import("../pricing/catalogPriceLabel.ts");
+  const { dualAudiencePriceLabel } = await import("../pricing/catalogPriceLabel.ts");
   const contracts = src("app/services/contracts/page.tsx").replace(/^\s*\/\/.*$/gm, "");
   const tiers = contracts.split("const pricingTiers")[1].split("const faqs")[0];
   assert.doesNotMatch(tiers, /٢٤٩|٤٩٩|"249"|"499"/);
   assert.doesNotMatch(tiers, /بالذكاء الاصطناعي|AI-powered/);
   assert.equal((tiers.match(/price: reviewPrice\("(ar|en)"\)/g) ?? []).length, 2);
-  assert.match(contracts, /catalogPriceLabel\("contract-review", CLIENT_SERVICE_CATALOG, lang\)/);
-  // The card on /services/individuals reads the same row.
-  assert.equal(catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س");
+  assert.match(contracts, /dualAudiencePriceLabel\("contract-review", CLIENT_SERVICE_CATALOG, lang\)/);
+  // The card on /services/individuals reads the same rows (S6: both audiences).
+  assert.equal(dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "ar"), "يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال");
 
   const tracking = src("components/tracking/constants.ts").replace(/^\s*\/\/.*$/gm, "");
   const trackTiers = tracking.split("export const pricingTiers")[1];
@@ -360,4 +363,57 @@ test("2: /services/consultations invites nobody to the gated AI it marks «غي�
   assert.doesNotMatch(page, /أداة مساعدة ممتازة|excellent aid/);
   assert.match(page, /q: "هل ذكاء نظامي متاح الآن؟", a: "ليس بعد؛ ذكاء نظامي غير متاح حالياً\./);
   assert.match(page, /q: "Is Nezamy AI available now\?", a: "Not yet; Nezamy AI is not available at the moment\./);
+});
+
+test("provider dashboard: no invented KPI figures or banner counts", () => {
+  const page = src("app/dashboard/provider/page.tsx");
+  assert.doesNotMatch(page, /٤,٧٥٠|\+١٢٪|أرباح الشهر|بعد عمولة المنصة/);
+  assert.doesNotMatch(page, /طلبات جديدة تنتظرك/);
+  assert.match(page, /إحصاءات أعمالك/);
+  assert.match(page, /قريباً/);
+});
+
+test("/pro/marketplace: no hero stats", () => {
+  const page = src("app/pro/marketplace/page.tsx");
+  assert.doesNotMatch(page, /value: "٥٠\+"|value: "١٠٠٪"|موثّقة ومعتمدة/);
+});
+
+test("consultations: no wait time is promised anywhere on the page", () => {
+  assert.doesNotMatch(src("app/services/consultations/page.tsx"), /في دقائق|خلال دقائق|in minutes/i);
+});
+
+test("templates: the download is not a dead button", () => {
+  const page = src("app/ai/templates/page.tsx");
+  assert.doesNotMatch(page, /<button className[^>]*>\s*<Download size=\{16\} \/> تنزيل القالب/);
+  assert.match(page, /تنزيل القالب[\s\S]{0,120}COMING_SOON_BADGE_AR/);
+});
+
+test("no alert and no instant answer are promised where nothing delivers them; ٤٤٣ names both lines", () => {
+  assert.doesNotMatch(src("lib/notificationsStore.ts"), /نُعلمك عند إطلاقه/);
+  assert.doesNotMatch(src("app/services/labor/page.tsx"), /بما تستحقه فوراً/);
+  const questions = readFileSync(new URL("../../../docs/audits/2026-11-02-owner-package/owner-questions.ar.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const q443 = questions.slice(questions.indexOf("**٤٤٣"), questions.indexOf("**٤٤٤"));
+  assert.ok(q443.includes("أجب على ٤ أسئلة فقط"), "services/labor/page.tsx");
+  assert.ok(q443.includes("استخدم المجيب السريع"), "OnboardingBanner.tsx, the client's body");
+  assert.doesNotMatch(questions, /^---\n\n---$/m, "one rule between sections");
+});
+
+test("the owner report and the run file say what this batch's screens and n8n really do", () => {
+  const report = readFileSync(new URL("../../../تقرير_للمالك_٢٠٢٦-١١-٠٣_الدفعة_الثانية.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const run = readFileSync(new URL("../../../SQL_batch_2026-11-03_owner_free/README.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  // Item ١٨: closed means an honest card, not a tool nobody sees.
+  assert.doesNotMatch(report, /ظهورها يتبع وضعها|ظهوره يتبع وضعه|فلن يراهما أحد/);
+  assert.ok(report.includes("بلا سعر ولا نموذج"));
+  // The 90 days cover this app's database, and n8n's failed executions are apart from them.
+  assert.ok(report.includes("لا تشمل سجل التشغيلات الفاشلة في n8n"));
+  assert.ok(run.includes("EXECUTIONS_DATA_PRUNE") && run.includes("EXECUTIONS_DATA_MAX_AGE"));
+  assert.ok(run.includes('saveDataErrorExecution: "all"'));
+  // The verify card's name, and the known limits, with no new question number.
+  assert.ok(report.includes("الاسم على بطاقة التحقق هو الاسم الذي حفظه المحامي في هويته"));
+  assert.ok(report.includes("إعادة تحميل الصفحة أثناء التشغيل"));
+  assert.ok(report.includes("معالج الاستشارة"));
+  assert.ok(!/٤٤٥/.test(report), "no new question number");
+  // The run file's checks follow the gate.
+  assert.ok(run.includes("«قريباً» card"));
+  assert.doesNotMatch(run, /the card on `\/ai\/analyze` answers `tool_off`/);
 });

@@ -29,6 +29,10 @@ export const PRICED_AI_TOOL_IDS = [
   "legal-opinion-letter",
   "contracts-pro",
   "legal-drafter",
+  // Listed for the checks and the admin table only. No screen prices them before
+  // they are usable (q296), and they stay out of /pricing and the hub badges.
+  "contract-review",
+  "contract-negotiator",
 ] as const;
 export type PricedAiToolId = (typeof PRICED_AI_TOOL_IDS)[number];
 

@@ -46,7 +46,15 @@ export async function GET(request: NextRequest) {
         ? service.from("library_review_flags").select("user_id, reference").in("user_id", ids).is("cleared_at", null)
         : Promise.resolve({ data: [], error: null }),
       ids.length
-        ? service.from("library_security_locks").select("user_id, reference").in("user_id", ids).is("lifted_at", null)
+        ? service
+            .from("library_security_locks")
+            .select("user_id, reference")
+            .in("user_id", ids)
+            .is("lifted_at", null)
+            // An automatic lock now ends by itself (20261103_10) and stays
+            // unlifted until the reader's next request closes it: live only
+            // while its end has not passed — the same rule as toLockDto's `ended`.
+            .or(`locked_until.is.null,locked_until.gt.${new Date().toISOString()}`)
         : Promise.resolve({ data: [], error: null }),
       ids.length
         ? service.from("library_user_limits").select("user_id, daily_docs, hourly_docs, until, source").in("user_id", ids)

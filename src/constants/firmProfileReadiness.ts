@@ -334,7 +334,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     description: "تحليل مستندات ضخمة، OCR، ترجمة، مراجعة عقود، وتلخيص ملفات حسب رصيد النقاط.",
     availableForSizes: ["small_firm", "mid_firm", "large_firm", "enterprise_firm"],
     needsAdminFlag: true,
-    routes: ["/ai/analyze?source=firm", "/ai/legal-translate", "/ai/contract-reviewer"],
+    routes: ["/ai/analyze?source=firm", "/ai/legal-translate", "/ai/contracts"],
     contract: "FirmAiUsageEntitlement",
     readiness: "Backend-ready",
   },

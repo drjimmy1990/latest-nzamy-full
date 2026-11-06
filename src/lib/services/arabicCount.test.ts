@@ -112,3 +112,24 @@ test("countTileAr is the one place a zero digit is right", () => {
   assert.equal(countTileAr(-4), "٠");
   assert.equal(countTileAr(Number.NaN), "—");
 });
+
+test("above 100 the last two digits decide: 00–02 singular genitive, 03–10 plural, 11–99 accusative", () => {
+  assert.equal(countPhraseAr(100, APPOINTMENTS), "١٠٠ موعد");
+  assert.equal(countPhraseAr(101, APPOINTMENTS), "١٠١ موعد");
+  assert.equal(countPhraseAr(102, APPOINTMENTS), "١٠٢ موعد");
+  assert.equal(countPhraseAr(103, APPOINTMENTS), "١٠٣ مواعيد");
+  assert.equal(countPhraseAr(110, APPOINTMENTS), "١١٠ مواعيد");
+  assert.equal(countPhraseAr(111, APPOINTMENTS), "١١١ موعداً");
+  assert.equal(countPhraseAr(200, APPOINTMENTS), "٢٠٠ موعد");
+  assert.equal(countPhraseAr(1000, APPOINTMENTS), "١٠٠٠ موعد");
+  assert.equal(countPhraseAr(2000, APPOINTMENTS), "٢٠٠٠ موعد");
+  assert.equal(countPhraseAr(3660, APPOINTMENTS), "٣٦٦٠ موعداً");
+});
+
+test("the singular genitive: tanween dropped from every word, a form without it kept, an explicit one wins", () => {
+  const twoWords: ArabicCountForms = { zero: null, one: "طلب جديد واحد", two: "طلبان جديدان", few: "طلبات جديدة", many: "طلباً جديداً" };
+  assert.equal(countPhraseAr(100, twoWords), "١٠٠ طلب جديد");
+  const noTanween: ArabicCountForms = { zero: null, one: "وثيقة واحدة", two: "وثيقتان", few: "وثائق", many: "وثيقة" };
+  assert.equal(countPhraseAr(200, noTanween), "٢٠٠ وثيقة");
+  assert.equal(countPhraseAr(100, { ...APPOINTMENTS, hundreds: "موعدٍ" }), "١٠٠ موعدٍ");
+});

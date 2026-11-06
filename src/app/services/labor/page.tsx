@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import Link from 'next/link';
+import { COMING_SOON_BADGE_AR } from '@/constants/betaGatedRoutes';
 import {
   Briefcase,
   Money,
@@ -84,6 +85,7 @@ export default function LaborServicePage() {
                 className="inline-flex items-center gap-2 px-6 py-3 border border-slate-200 text-ink rounded-xl text-sm font-semibold transition-all duration-300 hover:border-royal/30 hover:bg-royal/5 active:scale-[0.98]"
               >
                 استشر AI قانوني
+                <span className="rounded-full border border-current px-1.5 py-0.5 text-[10px] font-bold opacity-80">{COMING_SOON_BADGE_AR}</span>
               </Link>
             </div>
           </FadeUp>
@@ -159,7 +161,7 @@ export default function LaborServicePage() {
                   اعرف حقوقك الآن
                 </h2>
                 <p className="text-white/70 text-sm max-w-[40ch]">
-                  أجب على ٤ أسئلة فقط — وسيُخبرك AI قانوني بما تستحقه فوراً.
+                  أجب على ٤ أسئلة فقط — وسيُخبرك AI قانوني بما تستحقه.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">

@@ -41,9 +41,9 @@ export default function NGOVolunteersPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <a href="/ai/ngo/volunteer-contract"
+            <a href="/ai/contracts"
               className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400" : "bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700"}`}>
-              <HandHeart size={14} /> صائغ عقد تطوع
+              <HandHeart size={14} /> محترف العقود
             </a>
             <a href="/dashboard/ngo/volunteers/new" className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-200" : "bg-gray-100 border border-gray-200 hover:bg-gray-200 text-gray-700"}`}>
               <Plus size={14} /> متطوع جديد
@@ -63,7 +63,7 @@ export default function NGOVolunteersPage() {
                 title="لا يوجد متطوعون محفوظون"
                 description="حفظ المتطوعين غير متاح بعد. يمكنك تجربة نموذج التسجيل للتحقق من صيغة البيانات، أو صياغة عقد تطوع."
                 action={{ label: "إضافة متطوع", href: '/dashboard/ngo/volunteers/new' }}
-                secondaryAction={{ label: "صائغ عقد", href: '/ai/ngo/volunteer-contract' }}
+                secondaryAction={{ label: "محترف العقود", href: '/ai/contracts' }}
                 size="sm"
               />
             ) : (

@@ -4,11 +4,8 @@ import { motion } from "framer-motion";
 import { CheckCircle, ShieldCheck, Seal, Star, Clock, Sparkle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { resolveAdvisoryHandoff } from "@/components/ai/advisoryHandoff";
+import { PRICE_PENDING_AR, useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
 import { Mode } from "./contractTypes";
-
-// The human review this step sells, in the catalog's own route and price
-// (the old «٩٩ ر.س» and `consultations/new` link matched neither).
-const REVIEW = resolveAdvisoryHandoff("contract-review");
 
 interface Props {
   mode: Mode;
@@ -19,6 +16,13 @@ interface Props {
 
 export default function StepLawyerCTA({ mode, onRestart }: Props) {
   const { theme, lang } = useTheme();
+  // The human review this step sells, in the catalog's own route and price
+  // (the old «٩٩ ر.س» and `consultations/new` link matched neither) — the
+  // fetched catalogue (admin edits apply) and the viewer's audience (S6: a
+  // company sees «يبدأ من ٨٠٠ ر.س»). "contract-review" here is the HUMAN
+  // catalogue service, not the AI tool of the same name (R19).
+  const { catalog, audience, audienceLoading } = useClientPricingCatalog();
+  const REVIEW = resolveAdvisoryHandoff("contract-review", catalog, audience);
   const isDark = theme === "dark";
   const isRTL = lang === "ar";
 
@@ -82,7 +86,7 @@ export default function StepLawyerCTA({ mode, onRestart }: Props) {
               {isRTL ? "مراجعة قانونية من محامٍ معتمد" : "Legal Review by Certified Lawyer"}
             </p>
             <div className="flex items-end gap-1 mb-2">
-              <span className={`text-2xl font-black ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>{REVIEW.priceLabel}</span>
+              <span className={`text-2xl font-black ${isDark ? "text-emerald-400" : "text-[#0B3D2E]"}`}>{audienceLoading ? PRICE_PENDING_AR : REVIEW.priceLabel}</span>
             </div>
             <p className={`text-[13px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
               {isRTL ? "• تقرير مكتوب مفصّل • خلال ٢٤ ساعة" : "• Detailed written report • Within 24 hours"}

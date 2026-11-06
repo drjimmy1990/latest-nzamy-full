@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
+import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 
 // ─── Types & Imports ─────────────────────────────────────────────────────────
 import { TemplateCategory, Complexity, LegalArea, Template, TEMPLATES, CAT_CONFIG, COMPLEXITY_CONFIG, AREA_LABELS, GroupKey, GROUPS } from './_data';
@@ -340,9 +341,9 @@ export default function TemplatesPage() {
                     <ArrowLeft size={14} />
                   </Link>
                 ) : (
-                  <button className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-[#0B3D2E] text-[#C8A762] font-bold text-[14px] hover:bg-[#0a3328] transition-colors">
-                    <Download size={16} /> تنزيل القالب
-                  </button>
+                  <span aria-disabled="true" className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-[#0B3D2E] text-[#C8A762] font-bold text-[14px] opacity-60 cursor-not-allowed">
+                    <Download size={16} /> تنزيل القالب · {COMING_SOON_BADGE_AR}
+                  </span>
                 )}
                 <button onClick={() => setSelected(null)}
                   className={`w-full py-2.5 rounded-2xl text-[13px] font-medium border transition-colors ${isDark ? "border-white/[0.07] text-zinc-400 hover:bg-white/[0.04]" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>

@@ -18,6 +18,9 @@ import { resolveServiceRequestEntityScope } from "@/lib/auth/serviceRequestEntit
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { createStatusFor } from "@/lib/services/ownCaseStatus";
+import { requestPricingAudience } from "@/lib/pricing/clientPricingAudience";
+import { loadClientPricingCatalog } from "@/lib/pricing/clientPricingServer";
+import { carriesServiceEstimate, stampServiceEstimate } from "@/lib/pricing/serviceEstimate";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -470,6 +473,25 @@ export async function POST(request: NextRequest) {
     }
     const { firmId, businessId } = entityScope;
 
+    // S6-T5 (q327): the stored estimate is the server's, priced for the
+    // requester's REAL audience — a company account, or a request filed in a
+    // company's name (businessId, resolved above from active membership) gets
+    // the business price. The catalogue is fetched only when the metadata
+    // carries an estimate (today: /dashboard/client/requests/new), so no
+    // other intake path makes an extra request; without one the stamp only
+    // strips body-sent server marks (priceAudience, quoteSource "server").
+    // A failed profile read with no business scope leaves the audience
+    // unknown (null): no stamp, no «أفراد» label (fix round 1, M1).
+    // payment / status are untouched: the request is still free.
+    const estimateAudience = requestPricingAudience({
+      userType: actorProfile && typeof actorProfile.user_type === "string" ? actorProfile.user_type : null,
+      profileReadFailed: Boolean(actorProfileResult.error),
+      hasBusinessScope: businessId != null,
+    });
+    const estimateCatalog = estimateAudience !== null && carriesServiceEstimate(requestData.metadata)
+      ? (await loadClientPricingCatalog()).catalog
+      : [];
+
     const status = createStatusFor({
       requested: requestData.status,
       isPaid: isPaidRequest,
@@ -537,8 +559,9 @@ export async function POST(request: NextRequest) {
         requester: shape.value.requester,
         payment: persistedPayment,
         // The validated intake and an allow-listed courtClass, not the raw
-        // body (intakeGuard.persistedRequestMetadata).
-        metadata: persistedRequestMetadata(requestData.metadata),
+        // body (intakeGuard.persistedRequestMetadata). The S6 estimate stamp
+        // WRAPS the guard's output, so tightening the guard cannot strip it.
+        metadata: stampServiceEstimate(persistedRequestMetadata(requestData.metadata), estimateAudience, estimateCatalog),
         // Phase 2 columns, sent ONLY when they carry a value. Both exist on
         // production only after migration 20260903_phase2 has been run; a solo
         // lawyer or a request with no picked client inserts exactly the column

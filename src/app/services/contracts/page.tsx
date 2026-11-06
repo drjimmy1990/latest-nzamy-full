@@ -20,7 +20,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { CLIENT_SERVICE_CATALOG } from "@/constants/clientServiceCatalog";
-import { catalogPriceLabel } from "@/lib/pricing/catalogPriceLabel";
+import { dualAudiencePriceLabel } from "@/lib/pricing/catalogPriceLabel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,9 +90,11 @@ const contractTypes = {
 // either, and the AI contract reviewer is beta-gated. The review tier shows
 // the client catalogue's contract-review row (the card on /services/individuals
 // reads the same row); lawyer drafting has no catalogue row, so no number.
+// S6 (q327): a public page has no audience, so it states both prices —
+// «يبدأ من ٦٠٠ ر.س للأفراد · يبدأ من ٨٠٠ ر.س للأعمال».
 const AFTER_ASSESSMENT: { ar: string; en: string } = { ar: "يُحدَّد بعد التقييم", en: "Determined after assessment" };
 const reviewPrice = (lang: "ar" | "en"): string =>
-  catalogPriceLabel("contract-review", CLIENT_SERVICE_CATALOG, lang) ?? AFTER_ASSESSMENT[lang];
+  dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, lang) ?? AFTER_ASSESSMENT[lang];
 
 const pricingTiers = {
   ar: [

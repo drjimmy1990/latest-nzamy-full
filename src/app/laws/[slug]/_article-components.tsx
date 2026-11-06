@@ -18,6 +18,7 @@ import {
   GENERAL_DETAILS_FALLBACK_SUMMARY,
   cleanDetailsSummary,
   isAmendmentDetails,
+  isOpenDetailsTag,
   splitDetailsMarkup,
 } from "./_details-block";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
@@ -159,6 +160,7 @@ interface ParseBlock {
   content?: string;
   level?: number; // للعناوين: 2=##, 3=###, 4=####
   number?: string; // num-list-item: the printed item number (موجز-29-أ)
+  open?: boolean; // details: the source tag carried `open`
 }
 
 function parseMarkdownContent(text: string): ParseBlock[] {
@@ -169,6 +171,7 @@ function parseMarkdownContent(text: string): ParseBlock[] {
   
   let inDetails = false;
   let currentSummary = "";
+  let currentOpen = false;
   let currentContentLines: string[] = [];
   
   for (let i = 0; i < lines.length; i++) {
@@ -181,9 +184,11 @@ function parseMarkdownContent(text: string): ParseBlock[] {
           type: "details",
           summary: currentSummary,
           content: currentContentLines.join("\n"),
+          open: currentOpen,
         });
       }
       inDetails = true;
+      currentOpen = isOpenDetailsTag(trimmed);
       currentSummary = "";
       currentContentLines = [];
       continue;
@@ -195,7 +200,8 @@ function parseMarkdownContent(text: string): ParseBlock[] {
         blocks.push({
           type: "details",
           summary: currentSummary,
-          content: currentContentLines.join("\n")
+          content: currentContentLines.join("\n"),
+          open: currentOpen,
         });
         continue;
       }
@@ -281,6 +287,7 @@ function parseMarkdownContent(text: string): ParseBlock[] {
       type: "details",
       summary: currentSummary,
       content: currentContentLines.join("\n"),
+      open: currentOpen,
     });
   }
   
@@ -347,7 +354,8 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
           // as text.
           const summaryText = cleanDetailsSummary(block.summary);
           const body = <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} />;
-          // A match inside the folded text opens it.
+          // A match inside the folded text opens it. So does the source's own
+          // `open`, but only on current text: superseded text stays folded.
           const open = textHasHighlight(block.content, hlTerms);
           if (isAmendmentDetails(summaryText, block.content)) {
             return (
@@ -357,7 +365,7 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
             );
           }
           return (
-            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open}>
+            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open || block.open === true}>
               {body}
             </GeneralToggleDetails>
           );

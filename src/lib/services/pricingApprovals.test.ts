@@ -13,6 +13,8 @@ import {
   CASE_BRIEF_PRICES,
   CONTRACT_DRAFT_PRICE,
   CONTRACTS_PRO_PRICE,
+  CONTRACT_NEGOTIATOR_PRICE,
+  CONTRACT_REVIEW_PRICE,
   LEGAL_OPINION_PRICE,
   WAVE4_PRICE,
 } from "../ai/tools.ts";
@@ -108,6 +110,8 @@ const TODAY: Record<string, [number, number]> = {
   "canvas-card": [10, 10],
   "case-brief": [30, 150],
   "brief-check": [200, 200],
+  "contract-review": [250, 250],
+  "contract-negotiator": [150, 150],
 };
 
 test("task 4: the registry charges today's prices, and the display helper reads exactly that", () => {
@@ -220,7 +224,7 @@ test("٢١٦: the comparator and the translator are not priced (both still retur
 /** Catalog id → the registry tool(s) its hub card sells, written here independently of the catalog. */
 const HUB_TOOLS: Record<string, string[]> = {
   "ai:quick-answer": ["quick-answer"],
-  "ai:case-brief": ["case-brief"],
+  "ai:analyze": ["case-brief"],
   "ai:draft": ["legal-drafter"],
   "ai:brief-check": ["brief-check"],
   "ai:contracts": ["contracts-pro"],
@@ -309,6 +313,16 @@ function shown(rel: string): string {
     .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
 }
 
+test("R25: the quick-answer page prints only the registry's price, never a typed one", () => {
+  const page = shown("app/ai/quick-answer/page.tsx");
+  assert.ok(page.includes('aiToolPriceText("quick-answer", "ar")'));
+  assert.equal((page.match(/aiToolPriceText\("quick-answer"/g) ?? []).length, 1);
+  assert.ok(!page.includes("١٥"), "the open ٤١٢ price is not built");
+  assert.ok(!page.includes("15 نقطة"));
+  assert.ok(!page.includes("٢٠ نقطة"), "the price is read, not typed");
+  assert.ok(serverCharges("quick-answer").includes(20));
+});
+
 test("task 4: the tool pages print the constant the registry charges", () => {
   // [page, the expression that prints the price, its value, the registry tools that charge it]
   const pages: Array<[string, string, number, string[]]> = [
@@ -316,11 +330,13 @@ test("task 4: the tool pages print the constant the registry charges", () => {
     ["app/ai/wargaming/page.tsx", 'WAVE4_PRICE.toLocaleString("ar-SA")', WAVE4_PRICE, ["wargaming"]],
     ["app/ai/assistant/page.tsx", 'ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")', ASSISTANT_CONVERSATION_PRICE, ["assistant"]],
     ["app/ai/brief-check/page.tsx", 'BRIEF_CHECK_PRICE.toLocaleString("ar-SA")', BRIEF_CHECK_PRICE, ["brief-check"]],
-    ["app/ai/case-brief/page.tsx", 'CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.small, ["case-brief"]],
-    ["app/ai/case-brief/page.tsx", 'CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.large, ["case-brief"]],
+    ["components/ai/caseBrief/CaseBriefStudio.tsx", 'CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.small, ["case-brief"]],
+    ["components/ai/caseBrief/CaseBriefStudio.tsx", 'CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.large, ["case-brief"]],
     ["app/ai/legal-opinion/page.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-consult"]],
     ["app/ai/legal-opinion/_components/LetterWorkflow.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-letter"]],
     ["app/ai/contracts/page.tsx", "price={CONTRACTS_PRO_PRICE}", CONTRACTS_PRO_PRICE, ["contracts-pro"]],
+    ["components/contracts/steps/review/StepRAiReview.tsx", 'CONTRACT_REVIEW_PRICE.toLocaleString("ar-SA")', CONTRACT_REVIEW_PRICE, ["contract-review"]],
+    ["app/ai/contract-negotiator/page.tsx", 'CONTRACT_NEGOTIATOR_PRICE.toLocaleString("ar-SA")', CONTRACT_NEGOTIATOR_PRICE, ["contract-negotiator"]],
   ];
   for (const [rel, expr, value, ids] of pages) {
     assert.ok(shown(rel).includes(expr), `${rel} no longer prints ${expr}`);
@@ -537,7 +553,12 @@ test("q327: contract review is 600 for individuals; contract drafting says the t
     return r;
   };
   const review = row("contract-review");
-  assert.equal(review.basePrice, 600, "individuals' price (the 800 business price has no row: the catalogue is audience = 'individual')");
+  assert.equal(review.basePrice, 600, "individuals' price (the business 800 is the contract-review-business variant, S6)");
+  const business = row("contract-review-business");
+  assert.equal(business.basePrice, 800, "q327: «من ٨٠٠» for business");
+  assert.equal(business.priceMode, "starting_from");
+  assert.equal(business.audience, "corporate");
+  assert.equal(business.variantOf, "contract-review");
   assert.equal(review.priceMode, "starting_from");
   assert.doesNotMatch(review.priceNote ?? "", /2x/);
   const draft = row("contract-draft");
@@ -587,6 +608,26 @@ test("q327: migration 20261102_10 writes the same two rows the code catalogue ca
   assert.doesNotMatch(code, /\b(?:drop|delete|truncate)\b|create (?:or replace )?function/i);
 });
 
+test("S6 (q327): migration 20261103_20 inserts the same business variant the code catalogue carries", async () => {
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const v = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-review-business")!;
+  const base = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-review")!;
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261103_20_contract_review_business_row.sql", import.meta.url), "utf8");
+  const code = sql.replace(/--.*$/gm, "");
+  const tuple = `('${v.serviceId}', '${v.audience}', '${v.categoryId}', '${v.label}', ${v.basePrice}, '${v.priceMode}', '${v.receiverType}', '${v.betaVisibility}', ${v.requiresPayment}, true,`;
+  assert.ok(code.includes(tuple), "the same id, audience, category, label, price, mode, receiver, visibility, payment flag");
+  const meta = JSON.parse(/'(\{"route"[\s\S]*?\})'::jsonb/.exec(code)![1]);
+  assert.equal(meta.variantOf, v.variantOf);
+  assert.equal(meta.priceNote, v.priceNote);
+  assert.equal(meta.route, base.route, "the variant opens the base service's form");
+  assert.equal(meta.icon, v.icon);
+  assert.equal(meta.requestType, v.requestType);
+  assert.equal(meta.humanService, true);
+  // A re-run never overwrites an admin's edit; nothing else is written.
+  assert.match(code, /on conflict \(service_id\) do nothing;/);
+  assert.doesNotMatch(code, /\b(?:update|drop|delete|truncate)\b|create (?:or replace )?function|\bpolicy\b/i);
+});
+
 test("task 6 (G): migration 20261102_11 writes contract-draft's mode and note exactly as the code row carries them", async () => {
   const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
   const { formatClientServicePrice } = await import("../pricingRepository.ts");
@@ -602,4 +643,27 @@ test("task 6 (G): migration 20261102_11 writes contract-draft's mode and note ex
   assert.doesNotMatch(code, /\b(?:drop|delete|truncate)\b|create (?:or replace )?function/i);
   // The card reads «بالنقاط» + «٥٠٠ نقطة للعقد», never «مشمول في الباقة».
   assert.equal(formatClientServicePrice(row), "بالنقاط");
+});
+
+// ── S5-B6 (absorbed into Task 4 by preflight R9) ──
+
+test("admin pricing: «Beta free AI» never counts a «قريباً» tool", () => {
+  const admin = readFileSync(new URL("../../app/dashboard/admin/pricing/page.tsx", import.meta.url), "utf8");
+  assert.match(admin, /tool\.betaStatus === "beta-free" && !tool\.comingSoon/);
+  // no bare beta-free filter left beside it
+  assert.equal(admin.split('betaStatus === "beta-free"').length - 1, 1, "one beta-free filter, the guarded one");
+  // pinned to the catalogue at HEAD: the only beta-free tool (consult) is «قريباً»
+  assert.equal(catalog.LAWYER_AI_TOOLS.filter((t) => t.betaStatus === "beta-free" && !t.comingSoon).length, 0);
+  assert.ok(catalog.LAWYER_AI_TOOLS.some((t) => t.betaStatus === "beta-free" && t.comingSoon), "fixture: a «قريباً» beta-free tool exists");
+});
+
+test("the admin pricing page says what a save reaches: the request form and the estimate, not the public pages", () => {
+  const admin = readFileSync(new URL("../../app/dashboard/admin/pricing/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(admin, /يراه العملاء/, "a public page reads the compiled catalogue, so no «يراه العملاء»");
+  assert.ok(admin.includes("نموذج الطلب"));
+  assert.ok(admin.includes("الصفحات العامة"));
+  assert.ok(admin.includes("تعديل الكود ونشره"));
+  // What that sentence rests on: the public page still reads the compiled catalogue.
+  const services = readFileSync(new URL("../../app/services/contracts/page.tsx", import.meta.url), "utf8");
+  assert.match(services, /dualAudiencePriceLabel\("contract-review", CLIENT_SERVICE_CATALOG, lang\)/);
 });

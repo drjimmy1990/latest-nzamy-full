@@ -4,6 +4,11 @@ import Link from "next/link";
 import { LockSimple, ArrowRight } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { usePathname } from "next/navigation";
+import { useAdminSimulation } from "@/hooks/useAdminSimulation";
+import { useAdminView } from "@/hooks/useAdminView";
+import { adminSimulatesConsultant } from "@/lib/nav/adminSimulation";
+import { resolveAdminView } from "@/lib/nav/shellContext";
 import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
 
 /**
@@ -16,11 +21,20 @@ import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
  *
  * It renders nothing while the session is still loading, so a consultant never
  * sees the tool for a moment before the lock replaces it.
+ *
+ * S6-T18: an admin simulating «مستشار (م ١٨)» in «محاكاة القيود» mode sees the
+ * lock too — UI only (R27); the court write routes still treat him as admin.
  */
 export default function ConsultantGate({ children }: { children: React.ReactNode }) {
-  const { practiceKind, loading } = useUser();
+  const { practiceKind, loading, userType } = useUser();
+  const pathname = usePathname() ?? "/";
+  const isRealAdmin = !loading && userType === "admin";
+  const adminSim = useAdminSimulation(isRealAdmin);
+  const { storedView } = useAdminView(pathname, isRealAdmin);
+  // The workspace being drawn — the lock applies only inside the lawyer one.
+  const drawnView = isRealAdmin ? resolveAdminView(pathname, storedView) : null;
   if (loading) return null;
-  if (practiceKind === "consultant") return <ConsultantBlockedPanel />;
+  if (practiceKind === "consultant" || adminSimulatesConsultant(userType, adminSim, drawnView)) return <ConsultantBlockedPanel />;
   return <>{children}</>;
 }
 

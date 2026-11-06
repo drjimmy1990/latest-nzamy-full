@@ -25,6 +25,8 @@ On n8n.asra3.com (all created **inactive**):
 | L10 محلل قوة الموقف (job) | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | `MwONm9eg0IOGRRzt` | `nzamy-ai/analyze-strength` |
 | L11 محترف العقود المختصر (job) | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | `r2s0JBMr8Q5Ti80O` | `nzamy-ai/contract-drafter` |
 | L13 محترف العقود (job, clause by clause) | `NZAMY · AI · contracts-pro (L13 محترف العقود)` | `mMekAog89HsgLz3o` | `nzamy-ai/contracts-pro` |
+| مراجع العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-review (مراجع العقود)` | (none yet) | `nzamy-ai/contract-review` |
+| مفاوض العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-negotiator (مفاوض العقود)` | (none yet) | `nzamy-ai/contract-negotiator` |
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
@@ -110,6 +112,21 @@ Wave 1 has no SQL and no new server variables.
 7. Send us a screenshot of each result and of the «آخر التشغيلات» table.
 
 ---
+
+## مراجع العقود and مفاوض العقود: your steps
+
+**What they are.** Both ship OFF: nobody is charged, and the screens show «قريباً» or the team order, with no price, until an admin opens them.
+- `contract-review`, 250 points, in the review mode of `/ai/contracts`: one PDF or image up to 15 pages, or a pasted contract when the text flag is on. The six contracts-pro roles. NOT the human «مراجعة العقد» service of the same id in the catalogue.
+- `contract-negotiator`, 150 points, at `/ai/contract-negotiator`: 1 to 10 pasted clauses, three positions for each and a fallback. Lawyers and firms.
+
+**Steps, after the deploy (never before it):**
+1. In n8n, import `n8n/ai/contract-review.json` and `n8n/ai/contract-negotiator.json`.
+2. In each one, re-select the credentials on every node that asks, including each `Progress ·` node, then switch the workflow on.
+3. Sign in as an admin, open `https://nezamy.sa/dashboard/admin/ai-usage`, and set each tool to `staff`.
+4. Test each one as the admin. An admin runs exempt, so this proves the workflow and the screen, not the money.
+5. Set it to `live` only when you are satisfied, and read the first real user's ledger row: a debit of 250 or 150, and a refund if that run failed.
+
+**A percentage fails the run.** The owner's rule refuses any figure with `%` or `٪` in the result, and the run is refunded. A contract's own rate («غرامة ٥٪») is covered by the same check: the prompts ask for it in words. If real contracts refund too often, this is the first place to look.
 
 ## Wave 5, L11 محترف العقود المختصر: your steps
 
@@ -231,7 +248,7 @@ Wave 3 adds one npm package (`pdf-lib`, to count pages). No SQL.
    ```
 2. **n8n:** nothing to do. `case-brief` is on.
 3. **Open them for admins only** at `https://nezamy.sa/dashboard/admin/ai-usage`: set `case-brief` and `brief-check` to **للمشرفين فقط**, then press **حفظ**.
-4. **Test** at `https://nezamy.sa/ai/case-brief` (admin):
+4. **Test** at `https://nezamy.sa/ai/analyze` (admin):
    - Write who you act for, e.g. «وكيل المدعي في دعوى عمالية».
    - Add one or two PDFs, or a phone photo of a page. Each shows «جاهز» once it is in your vault.
    - Press «ابدأ الإحاطة». Expect «الباراليجل يقرأ الأوراق...» for 10–60 seconds. Then the case card, the story, the highlights, the assessment (strong / medium / weak), the options, the questions, and the client requests.
@@ -280,3 +297,14 @@ None of the four tools needs SQL or new server variables. They reuse the inbound
 8. **Who can use them:**
    - **L5:** every account type, on Pro or higher, plus admins.
    - **L3, L4 and L6:** lawyers and firms on Pro or higher, plus admins. This is the library assistant's rule, because the answer quotes paywalled library texts. Whether lawyers below Pro may use it is an owner question.
+
+## Live progress on the job workflows (S2 E6)
+
+Every job workflow posts its stage to the callback URL on a dead-end branch. A failed post never touches the run: `continueRegularOutput`, no retry, 5 s at most. Either the app or the workflow may be updated first: an old app ignores the new fields, and an old workflow sends none.
+
+| Node | Attached to | Posts |
+|---|---|---|
+| `Progress · reading` | `Accepted 202` in a doc job, `Has files?` true in a case job, none in contracts-pro (it has no files) | `step: "reading"`, `kind: "note"`, the file count |
+| `Progress · drafting` | `Ready?` true, plus `Build prompt` in a case job, `Outline ok?` true in contracts-pro | `step: "drafting"`, `kind: "step"` |
+
+Each sits above its sibling on the canvas. Execution order v1 runs sibling branches top to bottom, so a node moved below its sibling would post only after the run's own callback.

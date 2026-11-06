@@ -1,406 +1,265 @@
 "use client";
-import GatedToolScreen from "@/components/GatedToolScreen";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Handshake, FileText, ArrowRight, ArrowLeft, Sparkle,
-  CheckCircle, Warning, Copy, Export, ChatsCircle,
-  Lightning, Target, ShieldCheck, Scales, X,
-} from "@phosphor-icons/react";
+import { useRef, useState } from "react";
+import { motion } from "framer-motion";
+import { ArrowCounterClockwise, CheckCircle, Copy, Handshake, Plus, Spinner, Trash, Warning } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import BetaReviewGate from "@/components/BetaReviewGate";
+import AiResultActions from "@/components/AiResultActions";
+import CitationCheckList from "@/components/ai/CitationCheckList";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import {
+  asNegotiation,
+  contractNegotiatorInput,
+  NEGOTIATOR_STANCE_AR,
+  negotiationText,
+  negotiatorFormProblem,
+  type NegotiationAlternative,
+  type NegotiatorClauseDraft,
+} from "@/components/contracts/contractNegotiatorRun";
+import { REVIEW_RISK_AR, type ReviewRisk } from "@/components/contracts/contractReviewRun";
+import { useAiRun } from "@/hooks/useAiRun";
+import { useToolUsable } from "@/hooks/useToolUsable";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
+import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
+import { CONTRACT_NEGOTIATOR_PRICE, NEGOTIATOR_CLAUSES_MAX } from "@/lib/ai/tools";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Step = "identify" | "upload" | "strategy" | "result";
-type ContractType = "توظيف" | "توريد" | "خدمات" | "إيجار" | "شراكة" | "نقل ملكية" | "امتياز" | "سرية";
-type NegotiationGoal = "تحسين شروط مالية" | "تقليل المسؤوليات" | "تمديد المواعيد" | "تعديل بنود الفسخ" | "تقوية ضمانات الطرف الآخر" | "تخفيف بنود العقوبات";
-type PartyStrength = "قوي" | "متعادل" | "ضعيف";
-
-interface NegotiationResult {
-  overallStrategy: string;
-  redLines: string[];
-  tradablePoints: string[];
-  openingPosition: string[];
-  concessions: string[];
-  alternatives: string[];
-  riskWarnings: string[];
-}
-
-const CONTRACT_TYPES: ContractType[] = ["توظيف", "توريد", "خدمات", "إيجار", "شراكة", "نقل ملكية", "امتياز", "سرية"];
-const GOALS: NegotiationGoal[] = [
-  "تحسين شروط مالية", "تقليل المسؤوليات", "تمديد المواعيد",
-  "تعديل بنود الفسخ", "تقوية ضمانات الطرف الآخر", "تخفيف بنود العقوبات",
-];
-
-const MOCK_RESULT: NegotiationResult = {
-  overallStrategy: "استراتيجية الضغط التدريجي — ابدأ بموقف مرتفع وتراجع بشكل مدروس. الطرف الآخر في موقف مفاوضة متعادل مما يتيح مجالاً للمناورة.",
-  redLines: [
-    "بند التحكيم — يجب أن يبقى في المملكة العربية السعودية",
-    "التزامات السرية — لا تفاوض على مدتها (٥ سنوات كحد أدنى)",
-    "ضمان الأداء — لا يقل عن ١٠% من قيمة العقد",
-    "اختصاص قضائي — المحاكم السعودية حصراً",
-  ],
-  tradablePoints: [
-    "مدة التسليم — قابلة للتفاوض بين ٣٠-٦٠ يوماً",
-    "شروط الدفع — يمكن تعديل الجدول الزمني",
-    "الغرامات التأخيرية — قابلة للتعديل النسبي",
-    "شروط التجديد التلقائي — قابلة للحذف أو التعديل",
-  ],
-  openingPosition: [
-    "افتح بطلب خفض الغرامة التأخيرية إلى ٠.٢٥%/يوم (نصف ما هو مقترح)",
-    "اطلب دفعة مقدمة ٤٠% بدلاً من ٣٠%",
-    "اشترط مراجعة قانونية مستقلة على نفقة الطرف الآخر",
-    "أضف شرط القوة القاهرة الشامل بصياغتك",
-  ],
-  concessions: [
-    "يمكن قبول مدة ٣٦ شهراً بدلاً من ٢٤ شهراً إذا أُحسّنت شروط الدفع",
-    "يمكن التنازل عن بند إعادة التفاوض السنوي مقابل ضمان أسعار ثابتة",
-    "قبول تحكيم دولي فقط إذا كان مقر التحكيم الرياض",
-  ],
-  alternatives: [
-    "BATNA: العقود الأخرى المعروضة من منافسين — استخدمها ورقة ضغط",
-    "إذا رفض تحسين الضمانات: اطلب بوليصة تأمين بدلاً من ذلك",
-    "إذا رفض تمديد المدة: اقترح مرحلتين بعقدين منفصلين",
-  ],
-  riskWarnings: [
-    "المادة ١٢ (التعويض التلقائي) — صياغتها مبهمة وقد تُفسَّر ضدك",
-    "بند الإنهاء المبكر — الإشعار ٩٠ يوماً مرهق جداً — اطلب تخفيضه إلى ٣٠ يوماً",
-    "عدم وجود آلية تسوية ودية قبل اللجوء للقضاء — أضفها",
-  ],
-};
-
-// ─── Step Indicator ───────────────────────────────────────────────────────────
-
-const STEPS: { key: Step; label: string }[] = [
-  { key: "identify", label: "تحديد المعطيات" },
-  { key: "upload", label: "ملابسات التفاوض" },
-  { key: "strategy", label: "تحديد الأهداف" },
-  { key: "result", label: "استراتيجية التفاوض" },
-];
-
-function StepBar({ current, isDark }: { current: Step; isDark: boolean }) {
-  const idx = STEPS.findIndex(s => s.key === current);
-  return (
-    <div className="flex items-center gap-1 overflow-x-auto">
-      {STEPS.map((s, i) => (
-        <div key={s.key} className="flex items-center gap-1 shrink-0">
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
-            i === idx ? "bg-[#0B3D2E] text-[#C8A762]" :
-            i < idx ? isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600" :
-            isDark ? "bg-zinc-800 text-zinc-500" : "bg-zinc-100 text-zinc-400"
-          }`}>
-            {i < idx ? <CheckCircle size={11} weight="fill" /> : <span className="text-[9px]">{i + 1}</span>}
-            {s.label}
-          </div>
-          {i < STEPS.length - 1 && <ArrowLeft size={10} className={isDark ? "text-zinc-700" : "text-slate-300"} />}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-function ContractNegotiatorInner() {
-  const { isDark } = useTheme();
-  const [step, setStep] = useState<Step>("identify");
-  const [contractType, setContractType] = useState<ContractType | "">("");
-  const [partyStrength, setPartyStrength] = useState<PartyStrength | "">("");
-  const [goals, setGoals] = useState<NegotiationGoal[]>([]);
-  const [contractText, setContractText] = useState("");
-  const [context, setContext] = useState("");
-  const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<NegotiationResult | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const card = isDark
-    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
-    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
-
-  const toggleGoal = (g: NegotiationGoal) =>
-    setGoals(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g]);
-
-  async function handleAnalyze() {
-    setProcessing(true);
-    await new Promise(r => setTimeout(r, 3000));
-    setResult(MOCK_RESULT);
-    setStep("result");
-    setProcessing(false);
-  }
-
-  function copyResult() {
-    if (!result) return;
-    const text = [
-      "=== استراتيجية التفاوض ===",
-      result.overallStrategy, "",
-      "الخطوط الحمراء:", ...result.redLines.map(r => `• ${r}`), "",
-      "الموقف الافتتاحي:", ...result.openingPosition.map(o => `• ${o}`), "",
-      "نقاط التنازل:", ...result.concessions.map(c => `• ${c}`), "",
-      "تحذيرات المخاطر:", ...result.riskWarnings.map(w => `! ${w}`),
-    ].join("\n");
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <div className="max-w-[900px] mx-auto space-y-5" dir="rtl">
-
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className={`text-xl font-bold mb-0.5 flex items-center gap-2 ${isDark ? "text-white" : "text-slate-800"}`}
-          style={{ fontFamily: "var(--font-brand)" }}>
-          <Handshake className="text-royal" weight="duotone" />
-          مفاوض العقود الذكي
-        </h1>
-        <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-          أدخل معطيات العقد والتفاوض — احصل على استراتيجية مخصصة وموقف تفاوضي محدد
-        </p>
-      </motion.div>
-
-      {/* Step Bar */}
-      <StepBar current={step} isDark={isDark} />
-
-      <AnimatePresence mode="wait">
-
-        {/* Step 1: Identify */}
-        {step === "identify" && (
-          <motion.div key="identify" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-            className={`${card} p-6 space-y-5`}>
-            <div>
-              <p className={`text-[12px] font-bold mb-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>نوع العقد</p>
-              <div className="flex flex-wrap gap-2">
-                {CONTRACT_TYPES.map(t => (
-                  <button key={t} onClick={() => setContractType(t)}
-                    className={`px-3.5 py-1.5 rounded-xl text-[12px] font-bold transition-all ${
-                      contractType === t ? "bg-[#0B3D2E] text-[#C8A762]" : isDark ? "bg-zinc-800 text-zinc-400 hover:text-zinc-200" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"
-                    }`}>{t}</button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className={`text-[12px] font-bold mb-3 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>قوة موقفك التفاوضي</p>
-              <div className="flex gap-2">
-                {(["قوي", "متعادل", "ضعيف"] as PartyStrength[]).map(s => (
-                  <button key={s} onClick={() => setPartyStrength(s)}
-                    className={`flex-1 py-3 rounded-xl text-[12px] font-bold transition-all border ${
-                      partyStrength === s
-                        ? s === "قوي" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500"
-                          : s === "متعادل" ? "bg-amber-500/10 border-amber-500/30 text-amber-500"
-                          : "bg-red-500/10 border-red-500/30 text-red-500"
-                        : isDark ? "bg-zinc-800 border-white/[0.05] text-zinc-400" : "bg-zinc-50 border-zinc-200 text-zinc-500"
-                    }`}>
-                    {s === "قوي" ? <span className="flex items-center justify-center gap-1.5"><Handshake size={14} /> قوي</span> : s === "متعادل" ? <span className="flex items-center justify-center gap-1.5"><Scales size={14} /> متعادل</span> : <span className="flex items-center justify-center gap-1.5"><Warning size={14} /> ضعيف</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button onClick={() => setStep("upload")} disabled={!contractType || !partyStrength}
-              className="w-full py-3 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#0a3328] transition-colors flex items-center justify-center gap-2">
-              التالي <ArrowLeft size={14} />
-            </button>
-          </motion.div>
-        )}
-
-        {/* Step 2: Upload */}
-        {step === "upload" && (
-          <motion.div key="upload" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-            className={`${card} p-6 space-y-5`}>
-            <div>
-              <p className={`text-[12px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>نص العقد أو بنوده الرئيسية</p>
-              <textarea value={contractText} onChange={e => setContractText(e.target.value)} rows={6} dir="rtl"
-                placeholder="الصق نص العقد أو أهم بنوده هنا..."
-                className={`w-full rounded-xl border text-[12px] p-3 outline-none resize-none transition-colors ${
-                  isDark ? "bg-white/[0.03] border-white/[0.06] text-zinc-300 placeholder:text-zinc-600 focus:border-royal/40" : "bg-zinc-50 border-zinc-200 text-slate-700 placeholder:text-slate-400 focus:border-emerald-300"
-                }`} />
-            </div>
-            <div>
-              <p className={`text-[12px] font-bold mb-2 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>سياق التفاوض والمعلومات الإضافية</p>
-              <textarea value={context} onChange={e => setContext(e.target.value)} rows={3} dir="rtl"
-                placeholder="مثال: الطرف الآخر شركة كبرى، لديهم عدة عروض من منافسين، التسليم حرج جداً لهم..."
-                className={`w-full rounded-xl border text-[12px] p-3 outline-none resize-none transition-colors ${
-                  isDark ? "bg-white/[0.03] border-white/[0.06] text-zinc-300 placeholder:text-zinc-600 focus:border-royal/40" : "bg-zinc-50 border-zinc-200 text-slate-700 placeholder:text-slate-400 focus:border-emerald-300"
-                }`} />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setStep("identify")}
-                className={`px-5 py-2.5 rounded-xl text-[12px] font-bold border transition-colors ${isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
-                رجوع
-              </button>
-              <button onClick={() => setStep("strategy")} disabled={contractText.trim().length < 20}
-                className="flex-1 py-2.5 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#0a3328] transition-colors flex items-center justify-center gap-2">
-                التالي <ArrowLeft size={14} />
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Step 3: Strategy Goals */}
-        {step === "strategy" && (
-          <motion.div key="strategy" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-            className={`${card} p-6 space-y-5`}>
-            <div>
-              <p className={`text-[12px] font-bold mb-1 ${isDark ? "text-zinc-300" : "text-slate-700"}`}>أهداف التفاوض (اختر ما ينطبق)</p>
-              <p className={`text-[11px] mb-3 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>حدد ما تريد تحقيقه — كلما كانت الأهداف أوضح كانت الاستراتيجية أدق</p>
-              <div className="flex flex-wrap gap-2">
-                {GOALS.map(g => (
-                  <button key={g} onClick={() => toggleGoal(g)}
-                    className={`px-3.5 py-2 rounded-xl text-[11px] font-bold transition-all border ${
-                      goals.includes(g) ? "bg-[#0B3D2E] border-[#0B3D2E] text-[#C8A762]" : isDark ? "bg-zinc-800 border-white/[0.05] text-zinc-400 hover:text-zinc-200" : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:bg-zinc-100"
-                    }`}>
-                    {goals.includes(g) ? <CheckCircle size={12} weight="fill" className="inline ml-1" /> : ""}{g}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setStep("upload")}
-                className={`px-5 py-2.5 rounded-xl text-[12px] font-bold border transition-colors ${isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
-                رجوع
-              </button>
-              <button onClick={handleAnalyze} disabled={goals.length === 0 || processing}
-                className="flex-1 py-2.5 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-[13px] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#0a3328] transition-colors flex items-center justify-center gap-2">
-                {processing ? (
-                  <><motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Sparkle size={14} /></motion.span> يحلل...</>
-                ) : (
-                  <><Lightning size={14} /> ابنِ استراتيجية التفاوض</>
-                )}
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Step 4: Result */}
-        {step === "result" && result && (
-          <motion.div key="result" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-            className="space-y-4">
-            {/* Actions */}
-            <div className="flex items-center justify-between">
-              <button onClick={() => { setStep("identify"); setResult(null); setGoals([]); }}
-                className={`text-[11px] flex items-center gap-1 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
-                <ArrowRight size={12} /> تفاوض جديد
-              </button>
-            </div>
-
-            <BetaReviewGate toolId="contract-negotiator.result" toolName="استراتيجية تفاوض العقد" reviewScope="legal-data">
-            <div className="flex justify-end">
-              <button onClick={copyResult}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${isDark ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}>
-                {copied ? <CheckCircle size={12} weight="fill" className="text-emerald-500" /> : <Copy size={12} />}
-                {copied ? "تم النسخ!" : "نسخ"}
-              </button>
-            </div>
-
-            {/* Overall Strategy */}
-            <div className={`${card} p-5`}>
-              <div className="flex items-center gap-2 mb-3">
-                <Target size={16} className="text-royal" weight="duotone" />
-                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>الاستراتيجية العامة</p>
-              </div>
-              <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{result.overallStrategy}</p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Red Lines */}
-              <div className={`${card} p-5`}>
-                <div className="flex items-center gap-2 mb-3">
-                  <ShieldCheck size={15} className="text-red-500" weight="duotone" />
-                  <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>الخطوط الحمراء (لا تتنازل)</p>
-                </div>
-                <div className="space-y-2">
-                  {result.redLines.map((r, i) => (
-                    <div key={i} className={`flex items-start gap-2 p-2 rounded-lg ${isDark ? "bg-red-500/5" : "bg-red-50"}`}>
-                      <span className="text-red-500 shrink-0"><X size={12} weight="bold" /></span>
-                      <span className={`text-[11px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{r}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Opening Position */}
-              <div className={`${card} p-5`}>
-                <div className="flex items-center gap-2 mb-3">
-                  <ChatsCircle size={15} className="text-blue-500" weight="duotone" />
-                  <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>الموقف الافتتاحي</p>
-                </div>
-                <div className="space-y-2">
-                  {result.openingPosition.map((o, i) => (
-                    <div key={i} className={`flex items-start gap-2 p-2 rounded-lg ${isDark ? "bg-blue-500/5" : "bg-blue-50"}`}>
-                      <span className="text-blue-500 text-[10px] font-bold mt-0.5 shrink-0">→</span>
-                      <span className={`text-[11px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{o}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tradable Points */}
-              <div className={`${card} p-5`}>
-                <div className="flex items-center gap-2 mb-3">
-                  <Scales size={15} className="text-amber-500" weight="duotone" />
-                  <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>النقاط القابلة للتفاوض</p>
-                </div>
-                <div className="space-y-2">
-                  {result.tradablePoints.map((t, i) => (
-                    <div key={i} className={`flex items-start gap-2 p-2 rounded-lg ${isDark ? "bg-amber-500/5" : "bg-amber-50"}`}>
-                      <span className="text-amber-500 text-[10px] font-bold mt-0.5 shrink-0">⟷</span>
-                      <span className={`text-[11px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{t}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Risk Warnings */}
-              <div className={`${card} p-5`}>
-                <div className="flex items-center gap-2 mb-3">
-                  <Warning size={15} className="text-orange-500" weight="duotone" />
-                  <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>مخاطر يجب معالجتها</p>
-                </div>
-                <div className="space-y-2">
-                  {result.riskWarnings.map((w, i) => (
-                    <div key={i} className={`flex items-start gap-2 p-2 rounded-lg ${isDark ? "bg-orange-500/5" : "bg-orange-50"}`}>
-                      <span className="text-orange-500 shrink-0"><Warning size={12} weight="bold" /></span>
-                      <span className={`text-[11px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{w}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Alternatives */}
-            <div className={`${card} p-5`}>
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkle size={15} className="text-purple-500" weight="duotone" />
-                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>البدائل والخيارات الاحتياطية (BATNA)</p>
-              </div>
-              <div className="space-y-2">
-                {result.alternatives.map((a, i) => (
-                  <div key={i} className={`flex items-start gap-2 p-2 rounded-lg ${isDark ? "bg-purple-500/5" : "bg-purple-50"}`}>
-                    <span className="text-purple-500 text-[10px] font-bold mt-0.5 shrink-0">⤷</span>
-                    <span className={`text-[11px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>{a}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Disclaimer */}
-            <p className={`text-[10px] text-center ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-              * الاستراتيجية استرشادية — استشر محامياً متخصصاً قبل أي قرار تفاوضي نهائي
-            </p>
-            </BetaReviewGate>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// Wave 1 task 6: the beta gate first — no form or timer before it.
+/**
+ * مفاوض العقود. The page reads tool-status first (src/hooks/useToolUsable.ts): until
+ * the server says this caller may run it, there is no form and no price (owner q296).
+ * The nav row keeps its «قريباً» until the tool goes live for everyone.
+ */
 export default function ContractNegotiatorPage() {
+  const { isDark } = useTheme();
+  const usable = useToolUsable("contract-negotiator");
+  if (usable === null) {
+    return <p role="status" dir="rtl" className={`py-16 text-center text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>جارٍ التحقق…</p>;
+  }
+  if (!usable) {
+    return (
+      <DashboardComingSoon
+        title="مفاوض العقود — قريباً"
+        description="يقترح مفاوض العقود ثلاثة مواقف لكل بند تلصقه: حازماً ومتوازناً ومرناً، مع سبب كل موقف وموقف احتياطي. لم يُتح بعد وسيُفعَّل قريباً."
+        backHref="/ai"
+      />
+    );
+  }
+  return <NegotiatorTool isDark={isDark} />;
+}
+
+function riskTone(risk: ReviewRisk, isDark: boolean): string {
+  if (risk === "high") return isDark ? "border-red-500/30 bg-red-500/10 text-red-400" : "border-red-200 bg-red-50 text-red-700";
+  if (risk === "medium") return isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700";
+  return isDark ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
+function AlternativeCard({ alternative, isDark }: { alternative: NegotiationAlternative; isDark: boolean }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(alternative.text);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
   return (
-    <GatedToolScreen toolId="contract-negotiator.result" toolName="استراتيجية تفاوض العقد">
-      <ContractNegotiatorInner />
-    </GatedToolScreen>
+    <div className={`flex flex-col gap-2 rounded-xl border p-3 ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-zinc-200 bg-zinc-50"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={`text-[12px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{NEGOTIATOR_STANCE_AR[alternative.stance]}</p>
+        <button type="button" onClick={() => void copy()} className={`flex items-center gap-1 text-[11px] font-semibold ${isDark ? "text-zinc-400 hover:text-zinc-200" : "text-zinc-500 hover:text-zinc-800"}`}>
+          {copied ? <CheckCircle size={13} weight="fill" className="text-emerald-500" /> : <Copy size={13} />}
+          {copied ? "نُسخ" : "نسخ"}
+        </button>
+      </div>
+      <p dir="auto" className={`whitespace-pre-wrap text-[12px] leading-relaxed ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{alternative.text}</p>
+      {alternative.rationale && <p dir="auto" className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{alternative.rationale}</p>}
+    </div>
+  );
+}
+
+const EMPTY_CLAUSE: NegotiatorClauseDraft = { text: "", theirDemand: "", ourGoal: "" };
+
+function NegotiatorTool({ isDark }: { isDark: boolean }) {
+  const run = useAiRun();
+  const [ourParty, setOurParty] = useState("");
+  const [contractType, setContractType] = useState("");
+  const [clauses, setClauses] = useState<Array<NegotiatorClauseDraft & { key: number }>>([{ ...EMPTY_CLAUSE, key: 0 }]);
+  const nextKey = useRef(1);
+
+  const points = CONTRACT_NEGOTIATOR_PRICE.toLocaleString("ar-SA");
+  const form = { ourParty, contractType, clauses };
+  const problem = negotiatorFormProblem(form);
+  const negotiation = run.phase === "done" ? asNegotiation(run.output) : null;
+  // A run that ended without a result on this screen was still paid for, and one the
+  // page stopped watching may still be going: no second charge from here.
+  const settled = run.phase === "review" || run.phase === "done" || run.code === RUN_STILL_RUNNING_CODE;
+
+  const card = isDark ? "bg-zinc-900 border border-white/[0.07] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+  const label = `mb-1.5 block text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`;
+  const field = `w-full rounded-xl border px-3 py-2 text-[13px] outline-none ${isDark ? "border-white/[0.07] bg-zinc-950 text-zinc-200 placeholder:text-zinc-500" : "border-zinc-200 bg-white text-zinc-800 placeholder:text-zinc-400"}`;
+  const muted = isDark ? "text-zinc-400" : "text-zinc-500";
+
+  function updateClause(key: number, change: Partial<NegotiatorClauseDraft>) {
+    setClauses((list) => list.map((c) => (c.key === key ? { ...c, ...change } : c)));
+  }
+  function addClause() {
+    setClauses((list) => (list.length >= NEGOTIATOR_CLAUSES_MAX ? list : [...list, { ...EMPTY_CLAUSE, key: nextKey.current++ }]));
+  }
+  function start() {
+    if (run.busy || problem) return;
+    void run.start("contract-negotiator", contractNegotiatorInput(form));
+  }
+
+  return (
+    <div dir="rtl" className="mx-auto max-w-4xl space-y-4 px-4 py-8 sm:px-6">
+      <motion.header initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex items-start gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#C8A762]/10">
+          <Handshake size={24} weight="duotone" className="text-[#C8A762]" />
+        </span>
+        <div>
+          <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>مفاوض العقود</h1>
+          <p className={`mt-1 text-[13px] leading-relaxed ${muted}`}>ألصق البنود محل التفاوض، ويقترح لكل بند ثلاثة مواقف مع سبب كل منها وموقفاً احتياطياً.</p>
+        </div>
+      </motion.header>
+
+      {negotiation ? (
+        <div className="space-y-4">
+          <div className={`${card} space-y-3 p-5`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>خلاصة التفاوض</h2>
+              <button type="button" onClick={() => run.reset()} className={`flex items-center gap-1.5 text-[11px] underline ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"}`}>
+                <ArrowCounterClockwise size={12} /> تعديل البنود
+              </button>
+            </div>
+            <p dir="auto" className={`whitespace-pre-wrap text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{negotiation.summary}</p>
+          </div>
+
+          {negotiation.clauses.map((clause, position) => (
+            <section key={position} className={`${card} space-y-3 p-5`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>البند {(position + 1).toLocaleString("ar-SA")}</h3>
+                <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${riskTone(clause.risk, isDark)}`}>{REVIEW_RISK_AR[clause.risk]}</span>
+              </div>
+              {clauses[position]?.text && (
+                <blockquote dir="auto" className={`max-h-28 overflow-y-auto border-s-2 ps-3 text-[12px] leading-relaxed ${isDark ? "border-[#C8A762]/40 text-zinc-400" : "border-[#0B3D2E]/30 text-zinc-500"}`}>
+                  {clauses[position].text}
+                </blockquote>
+              )}
+              {clause.issue && <p dir="auto" className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{clause.issue}</p>}
+              <div className="grid gap-3 md:grid-cols-3">
+                {clause.alternatives.map((alternative, n) => <AlternativeCard key={n} alternative={alternative} isDark={isDark} />)}
+              </div>
+              {clause.fallback && (
+                <p dir="auto" className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  <span className="font-bold">الموقف الاحتياطي: </span>{clause.fallback}
+                </p>
+              )}
+            </section>
+          ))}
+
+          <div>
+            <CitationCheckList
+              items={negotiation.citation_check}
+              isDark={isDark}
+              title="المواد المذكورة — تحقّقت منها المنصة في مكتبة الأنظمة"
+              empty="لم تُذكر مواد نظامية مرقّمة."
+            />
+            <p className={`mt-2 text-[11px] leading-relaxed ${muted}`}>
+              حالة كل مادة من مكتبة نظامي لا من الذكاء الاصطناعي.
+              {run.chargedPoints > 0 && <> · خُصمت {run.chargedPoints.toLocaleString("ar-SA")} نقطة</>}
+            </p>
+          </div>
+
+          <div className={`flex gap-3 rounded-2xl border p-4 ${isDark ? "border-amber-500/20 bg-amber-500/5" : "border-amber-200 bg-amber-50"}`}>
+            <Warning size={16} weight="duotone" className="mt-0.5 shrink-0 text-amber-500" />
+            <p className={`text-[12px] leading-relaxed ${isDark ? "text-amber-500/80" : "text-amber-800/80"}`}>مقترحات آلية للمساعدة، وليست رأياً قانونياً. راجع الصياغات قبل عرضها على الطرف الآخر.</p>
+          </div>
+
+          <AiResultActions text={negotiationText(negotiation)} filename="nzamy-contract-negotiation" collectorSource="other" className="justify-start" />
+        </div>
+      ) : (
+        <>
+          <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("contract-negotiator")} />
+          {run.phase === "review" && (
+            <p role="status" className={`rounded-2xl border px-4 py-3 text-[13px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+              {RUN_HELD_MESSAGE_AR}
+            </p>
+          )}
+          {run.phase === "error" && run.error && (
+            <p role="alert" className={`rounded-2xl border px-4 py-3 text-[13px] leading-relaxed ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>{run.error}</p>
+          )}
+          {run.phase === "done" && (
+            <p role="alert" className={`rounded-2xl border px-4 py-3 text-[13px] leading-relaxed ${isDark ? "border-red-900/40 bg-red-900/10 text-red-400" : "border-red-200 bg-red-50 text-red-700"}`}>اكتمل الطلب لكن تعذّر عرض النتيجة هنا — تواصل مع الدعم.</p>
+          )}
+
+          {settled && (
+            <button type="button" onClick={() => run.reset()} className={`text-[12px] font-semibold underline ${muted}`}>طلب جديد</button>
+          )}
+          {!settled && (<>
+          {/* Locked during a run: the result is read against these clauses, in this order. */}
+          <fieldset disabled={run.busy} className="min-w-0 space-y-4">
+          <div className={`${card} grid gap-4 p-5 sm:grid-cols-2`}>
+            <div>
+              <label htmlFor="negotiator-party" className={label}>الطرف الذي تمثّله</label>
+              <input id="negotiator-party" value={ourParty} onChange={(e) => setOurParty(e.target.value)} maxLength={150} placeholder="مثال: المستأجر" className={field} />
+            </div>
+            <div>
+              <label htmlFor="negotiator-type" className={label}>نوع العقد (اختياري)</label>
+              <input id="negotiator-type" value={contractType} onChange={(e) => setContractType(e.target.value)} maxLength={150} placeholder="مثال: عقد إيجار" className={field} />
+            </div>
+          </div>
+
+          {clauses.map((clause, n) => (
+            <section key={clause.key} className={`${card} space-y-3 p-5`}>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>البند {(n + 1).toLocaleString("ar-SA")}</h2>
+                {clauses.length > 1 && (
+                  <button type="button" onClick={() => setClauses((list) => list.filter((c) => c.key !== clause.key))} className={`flex items-center gap-1 text-[11px] font-semibold ${muted}`}>
+                    <Trash size={13} /> حذف البند
+                  </button>
+                )}
+              </div>
+              <div>
+                <label htmlFor={`negotiator-text-${clause.key}`} className={label}>نص البند</label>
+                <textarea id={`negotiator-text-${clause.key}`} value={clause.text} onChange={(e) => updateClause(clause.key, { text: e.target.value })} rows={4} dir="auto" placeholder="ألصق نص البند كما ورد في العقد" className={`${field} resize-y`} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor={`negotiator-demand-${clause.key}`} className={label}>طلب الطرف الآخر (اختياري)</label>
+                  <textarea id={`negotiator-demand-${clause.key}`} value={clause.theirDemand} onChange={(e) => updateClause(clause.key, { theirDemand: e.target.value })} rows={2} dir="auto" className={`${field} resize-y`} />
+                </div>
+                <div>
+                  <label htmlFor={`negotiator-goal-${clause.key}`} className={label}>هدفك من هذا البند (اختياري)</label>
+                  <textarea id={`negotiator-goal-${clause.key}`} value={clause.ourGoal} onChange={(e) => updateClause(clause.key, { ourGoal: e.target.value })} rows={2} dir="auto" className={`${field} resize-y`} />
+                </div>
+              </div>
+            </section>
+          ))}
+
+          {clauses.length < NEGOTIATOR_CLAUSES_MAX && (
+            <button type="button" onClick={addClause} className={`flex items-center gap-1.5 text-[12px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+              <Plus size={14} weight="bold" /> أضف بنداً (حتى ١٠ بنود)
+            </button>
+          )}
+          </fieldset>
+
+          <div className={`${card} space-y-3 p-5`}>
+            <p className={`text-[12px] leading-relaxed ${muted}`}>التكلفة {points} نقطة تُخصم مرة واحدة أياً كان عدد البنود، وتُعاد إن تعذّر التحليل.</p>
+            {problem && <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-amber-500"><Warning size={14} className="mt-0.5 shrink-0" />{problem}</p>}
+            <button
+              type="button"
+              onClick={start}
+              disabled={run.busy || problem !== null}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-3 text-[14px] font-bold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {run.busy ? <><Spinner size={16} className="animate-spin" /> جارٍ التحليل...</> : `حلّل وفاوض — ${points} نقطة`}
+            </button>
+          </div>
+          </>)}
+        </>
+      )}
+    </div>
   );
 }

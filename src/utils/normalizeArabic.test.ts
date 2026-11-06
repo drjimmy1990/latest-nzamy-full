@@ -8,9 +8,14 @@ import {
   AUTOCOMPLETE_MIN_PREFIX,
   MAX_QUERY_SPELLING_VARIANTS,
   MAX_SPELLING_VARIANTS,
+  MAX_WORD_LEXEMES,
+  NEGATION_PARTICLES,
   parseAutocompleteQuery,
   parseSearchQuery,
+  prefixForms,
   SearchQuerySyntaxError,
+  splitFusedParticle,
+  stripTashkeel,
   toArabicIndicDigits,
   toWesternDigits,
 } from './normalizeArabic.ts';
@@ -19,36 +24,45 @@ import {
 // «الغاء»), so it gains one-letter spellings that simply match nothing when
 // the ال is the article.
 const AMAL = "('العمل' | 'ألعمل' | 'إلعمل' | 'آلعمل')";
+// The full search also sends its article forms (BUG-LIB-03, S1 Task 9): an
+// «ال» word never gains its bare base, a bare word gains all four forms.
+const AMAL_SEARCH = "('العمل' | 'والعمل' | 'بالعمل' | 'للعمل' | 'ألعمل' | 'إلعمل' | 'آلعمل')";
+const NIZAM = "('نظام' | 'النظام' | 'والنظام' | 'بالنظام' | 'للنظام')";
 
 test('parseSearchQuery joins adjacent terms with implicit AND', () => {
   assert.deepEqual(parseSearchQuery('نظام العمل'), {
     raw: 'نظام العمل',
-    tsquery: `('نظام' & ${AMAL})`,
+    tsquery: `(${NIZAM} & ${AMAL_SEARCH})`,
     plainTerms: ['نظام', 'العمل'],
   });
 });
 
 test('parseSearchQuery accepts explicit AND with or without surrounding spaces', () => {
-  assert.equal(parseSearchQuery('نظام + العمل').tsquery, `('نظام' & ${AMAL})`);
-  assert.equal(parseSearchQuery('نظام+العمل').tsquery, `('نظام' & ${AMAL})`);
+  assert.equal(parseSearchQuery('نظام + العمل').tsquery, `(${NIZAM} & ${AMAL_SEARCH})`);
+  assert.equal(parseSearchQuery('نظام+العمل').tsquery, `(${NIZAM} & ${AMAL_SEARCH})`);
 });
 
 test('parseSearchQuery treats slash as OR and preserves AND precedence', () => {
   assert.equal(
     parseSearchQuery('نظام/لائحة تنفيذية').tsquery,
-    "('نظام' | (('لائحة' | 'لائحه') & ('تنفيذية' | 'تنفيذيه')))",
+    // «لائحة» opens like «لا» + 3 letters: the false split is one more OR
+    // alternative (cut first), never a lost hit.
+    `(${NIZAM} | (('لائحة' | 'اللائحة' | 'واللائحة' | 'باللائحة' | 'للائحة' | 'لائحه' | ('لا' <-> 'ئحة'))`
+      + " & ('تنفيذية' | 'التنفيذية' | 'والتنفيذية' | 'بالتنفيذية' | 'للتنفيذية' | 'تنفيذيه')))",
   );
 });
+
+const MARSOOM = "('مرسوم' | 'المرسوم' | 'والمرسوم' | 'بالمرسوم' | 'للمرسوم')";
 
 test('parseSearchQuery does not split compact decree references or dates on slash and expands numerals both ways', () => {
   assert.deepEqual(parseSearchQuery('مرسوم م/١٤ ١٤٤٤/٠٢/٠٣'), {
     raw: 'مرسوم م/١٤ ١٤٤٤/٠٢/٠٣',
-    tsquery: "(('مرسوم' & ('م/١٤' | 'م/14')) & ('١٤٤٤/٠٢/٠٣' | '1444/02/03'))",
+    tsquery: `((${MARSOOM} & ('م/١٤' | 'م/14')) & ('١٤٤٤/٠٢/٠٣' | '1444/02/03'))`,
     plainTerms: ['مرسوم', 'م/١٤', '١٤٤٤/٠٢/٠٣'],
   });
   assert.deepEqual(parseSearchQuery('مرسوم م/14 1444/02/03'), {
     raw: 'مرسوم م/14 1444/02/03',
-    tsquery: "(('مرسوم' & ('م/14' | 'م/١٤')) & ('1444/02/03' | '١٤٤٤/٠٢/٠٣'))",
+    tsquery: `((${MARSOOM} & ('م/14' | 'م/١٤')) & ('1444/02/03' | '١٤٤٤/٠٢/٠٣'))`,
     plainTerms: ['مرسوم', 'م/14', '1444/02/03'],
   });
 });
@@ -57,23 +71,30 @@ test('parseSearchQuery applies prefix negation to terms and quoted phrases', () 
   // The negation covers the whole spelling group: neither «ملغى» nor «ملغي».
   assert.equal(
     parseSearchQuery('نظام -ملغى -"نفاذ مؤجل"').tsquery,
-    "(('نظام' & !(('ملغى' | 'ملغي'))) & !('نفاذ' <-> 'مؤجل'))",
+    `((${NIZAM} & !(('ملغى' | 'الملغى' | 'والملغى' | 'بالملغى' | 'للملغى' | 'ملغي')))`
+      + " & !(('نفاذ' | 'النفاذ' | 'والنفاذ' | 'بالنفاذ' | 'للنفاذ') <-> ('مؤجل' | 'المؤجل' | 'والمؤجل' | 'بالمؤجل' | 'للمؤجل')))",
   );
 });
 
 test('parseSearchQuery decodes escaped quote and backslash inside an exact phrase', () => {
   const parsed = parseSearchQuery('"حق \\"خاص\\" \\\\ مقيد"');
-  assert.equal(parsed.tsquery, "'حق' <-> '\"خاص\"' <-> '\\\\' <-> 'مقيد'");
+  // «"خاص"» and «\» are not Arabic words: they get no article forms.
+  assert.equal(parsed.tsquery, "'حق' <-> '\"خاص\"' <-> '\\\\' <-> ('مقيد' | 'المقيد' | 'والمقيد' | 'بالمقيد' | 'للمقيد')");
   assert.deepEqual(parsed.plainTerms, ['حق "خاص" \\ مقيد']);
 });
 
 test('parseSearchQuery allows one terminal wildcard only', () => {
-  assert.equal(parseSearchQuery('محكم*').tsquery, "'محكم':*");
+  assert.equal(parseSearchQuery('محكم*').tsquery, "('محكم':* | 'المحكم':* | 'والمحكم':* | 'بالمحكم':* | 'للمحكم':*)");
   assert.deepEqual(parseSearchQuery('محكم*').plainTerms, ['محكم']);
 });
 
 test('parseSearchQuery quotes and escapes tsquery metacharacters inside a term', () => {
-  assert.equal(parseSearchQuery("قرار'|!():*").tsquery, "'قرار\\'|!():':*");
+  // Parentheses are grouping marks now (read as spaces, S1 Task 9), so the
+  // metacharacter probe carries the others: ' | ! : stay inside one lexeme.
+  assert.equal(parseSearchQuery("قرار'|!:*").tsquery, "'قرار\\'|!:':*");
+  assert.equal(parseSearchQuery("قرار'|!():*").tsquery, "('قرار\\'|!' & ':':*)");
+  // Inside quotes they are literal and stay inside the lexeme.
+  assert.equal(parseSearchQuery('"قرار()"').tsquery, "'قرار()'");
 });
 
 test('parseSearchQuery keeps the word as typed first and expands Arabic-Indic ↔ Western digits', () => {
@@ -81,7 +102,8 @@ test('parseSearchQuery keeps the word as typed first and expands Arabic-Indic �
   // in its group, first; the other spellings (and alternate numeral script) are added, never substituted.
   assert.equal(
     parseSearchQuery('إجراءات اللائحة ١٤٤٤').tsquery,
-    "((('إجراءات' | 'اجراءات' | 'أجراءات' | 'آجراءات') & ('اللائحة' | 'اللائحه' | 'أللائحة' | 'إللائحة' | 'آللائحة')) & ('١٤٤٤' | '1444'))",
+    "((('إجراءات' | 'الإجراءات' | 'والإجراءات' | 'بالإجراءات' | 'للإجراءات' | 'اجراءات' | 'أجراءات' | 'آجراءات')"
+      + " & ('اللائحة' | 'واللائحة' | 'باللائحة' | 'للائحة' | 'اللائحه' | 'أللائحة' | 'إللائحة' | 'آللائحة')) & ('١٤٤٤' | '1444'))",
   );
   assert.equal(parseSearchQuery('1445').tsquery, "('1445' | '١٤٤٥')");
   assert.equal(parseSearchQuery('١٤٤٥').tsquery, "('١٤٤٥' | '1445')");
@@ -190,7 +212,7 @@ test('parseAutocompleteQuery turns tsquery syntax into separators and bounds the
 test('T28-11: «نظام الاثبات» finds the stored «الإثبات» (alef after ال)', () => {
   assert.equal(
     parseSearchQuery('نظام الاثبات').tsquery,
-    "('نظام' & ('الاثبات' | 'الأثبات' | 'الإثبات' | 'الآثبات'))",
+    `(${NIZAM} & ('الاثبات' | 'والاثبات' | 'بالاثبات' | 'للاثبات' | 'الأثبات' | 'الإثبات' | 'الآثبات'))`,
   );
   assert.match(parseSearchQuery('نظام الاثبات').tsquery, /'الإثبات'/);
   // plainTerms stay as typed: snippet highlighting and title scoring fold on their own.
@@ -215,7 +237,7 @@ test('spelling variants: opening alef, final ة/ه and ى/ي, both at once', () 
   assert.deepEqual(arabicSpellingVariants('اللائحة'), ['اللائحة', 'اللائحه', 'أللائحة', 'إللائحة', 'آللائحة']);
   // No variant letters → the word alone, and the old output is unchanged.
   assert.deepEqual(arabicSpellingVariants('نظام'), ['نظام']);
-  assert.equal(parseSearchQuery('نظام').tsquery, "'نظام'");
+  assert.equal(parseSearchQuery('نظام').tsquery, NIZAM);
   // Short words: no final swap under three letters.
   assert.deepEqual(arabicSpellingVariants('له'), ['له']);
   for (const w of ['الاجازه', 'الغاء', 'مسؤولية', 'اثبات', 'الآن', 'اللائحة']) {
@@ -229,11 +251,14 @@ test('«مسؤولية»: hamza on waw is never changed — only the final ة/ه
 });
 
 test('prefix search keeps :* on every spelling; phrases expand word by word', () => {
-  assert.equal(parseSearchQuery('اثبات*').tsquery, "('اثبات':* | 'أثبات':* | 'إثبات':* | 'آثبات':*)");
+  assert.equal(
+    parseSearchQuery('اثبات*').tsquery,
+    "('اثبات':* | 'الاثبات':* | 'والاثبات':* | 'بالاثبات':* | 'للاثبات':* | 'أثبات':* | 'إثبات':* | 'آثبات':*)",
+  );
   assert.deepEqual(parseSearchQuery('اثبات*').plainTerms, ['اثبات']);
   assert.equal(
     parseSearchQuery('"نظام الاثبات"').tsquery,
-    "'نظام' <-> ('الاثبات' | 'الأثبات' | 'الإثبات' | 'الآثبات')",
+    `${NIZAM} <-> ('الاثبات' | 'والاثبات' | 'بالاثبات' | 'للاثبات' | 'الأثبات' | 'الإثبات' | 'الآثبات')`,
   );
 });
 
@@ -277,4 +302,147 @@ test('parseSearchQuery rejects malformed syntax instead of dropping it', () => {
       query,
     );
   }
+});
+
+// ── S1 Task 9 (BUG-LIB-02/03): particles, article prefixes, parentheses, tashkeel ──
+const LEXEME = /'(?:[^'\\]|\\.)*'/g;
+
+test('a fused particle «لايكون» also searches «لا» <-> «يكون»', () => {
+  const { tsquery } = parseSearchQuery('لايكون');
+  assert.ok(tsquery.includes("'لايكون'"), tsquery);
+  assert.ok(tsquery.includes("'لا' <-> 'يكون'"), tsquery);
+});
+
+test('«لا يكون» typed apart is one operand that also matches «لايكون», never لا & يكون', () => {
+  const parsed = parseSearchQuery('لا يكون');
+  assert.ok(parsed.tsquery.includes("'لايكون'"), parsed.tsquery);
+  assert.ok(parsed.tsquery.includes("'لا' <-> 'يكون'"), parsed.tsquery);
+  assert.doesNotMatch(parsed.tsquery, /& 'لا'\)/);
+  assert.equal(parsed.tsquery, "(('لا' <-> 'يكون') | 'لايكون')");
+  assert.deepEqual(parsed.plainTerms, ['لا يكون']);
+  const fima = parseSearchQuery('فيما يخص').tsquery;
+  assert.ok(fima.includes("'فيما' <-> 'يخص'"), fima);
+  assert.ok(fima.includes("'فيمايخص'"), fima);
+  // A quoted phrase gains the fused form too.
+  assert.ok(parseSearchQuery('"لا يكون"').tsquery.includes("| 'لايكون'"));
+  // An operator, a negation or a wildcard between them keeps today's meaning.
+  assert.doesNotMatch(parseSearchQuery('لا + يكون').tsquery, /<->/);
+  assert.doesNotMatch(parseSearchQuery('-لا يكون').tsquery, /<->/);
+  assert.doesNotMatch(parseSearchQuery('لا* يكون').tsquery, /<->/);
+  // A wildcard on the word after it reaches both forms.
+  assert.equal(parseSearchQuery('لا يكون*').tsquery, "(('لا' <-> 'يكون':*) | 'لايكون':*)");
+  // Tashkeel on a particle does not hide it.
+  const voweled = parseSearchQuery('لَا يَكون').tsquery;
+  assert.ok(voweled.includes("'لايكون'") && voweled.includes("'لا'") && voweled.includes("'يكون'"), voweled);
+});
+
+test('a bare word searches its article forms; an «ال» word never its bare base', () => {
+  const bare = parseSearchQuery('قرار').tsquery;
+  for (const form of ["'قرار'", "'القرار'", "'والقرار'", "'بالقرار'", "'للقرار'"]) {
+    assert.ok(bare.includes(form), `${form} in ${bare}`);
+  }
+  const withArticle = parseSearchQuery('القرار').tsquery;
+  for (const form of ["'القرار'", "'بالقرار'", "'للقرار'"]) {
+    assert.ok(withArticle.includes(form), `${form} in ${withArticle}`);
+  }
+  assert.ok(!withArticle.includes("'قرار'"), withArticle);
+  assert.deepEqual(prefixForms('اللائحة'), ['اللائحة', 'واللائحة', 'باللائحة', 'للائحة']);
+  assert.deepEqual(prefixForms('والقرار'), ['والقرار', 'القرار', 'بالقرار', 'للقرار']);
+  // No forms for short words, digits, particles, non-Arabic text, or a base under 2 letters.
+  for (const word of ['له', 'م/14', '12', 'لا', 'ما', 'abc', 'الا', 'والي', 'بالغ']) {
+    assert.deepEqual(prefixForms(word), [word], word);
+  }
+});
+
+test('parentheses outside quotes read as spaces; inside quotes they stay', () => {
+  for (const query of ['عدم نفاذ (+) قرار', '(عدم نفاذ) + قرار']) {
+    const { tsquery } = parseSearchQuery(query);
+    assert.ok(tsquery.includes("'القرار'"), tsquery);
+    assert.ok(tsquery.includes(' & '), tsquery);
+  }
+  assert.equal(parseSearchQuery('"(تحكيم)"').plainTerms[0], '(تحكيم)');
+  assert.equal(parseSearchQuery('("عزل الوكيل")').plainTerms[0], 'عزل الوكيل');
+  // The returned raw is the query as typed.
+  assert.equal(parseSearchQuery(' (عدم) ').raw, '(عدم)');
+});
+
+test('tashkeel: the stripped form is sent with the typed one (the index may hold either)', () => {
+  assert.equal(stripTashkeel('القَرَارُ ـ'), 'القرار ');
+  assert.equal(stripTashkeel('الرَّحْمٰن'), 'الرحمن');
+  const { tsquery } = parseSearchQuery('القَرَار');
+  assert.ok(tsquery.includes("'القرار'"), tsquery);
+  assert.ok(tsquery.startsWith("('القَرَار' | 'القرار'"), tsquery);
+  // Pinned: supabase/tests/rls/library_fts_tashkeel_fold.test.sql sends this
+  // exact string against the index both before and after 20261103_14.
+  assert.equal(
+    tsquery,
+    "('القَرَار' | 'القرار' | 'والقرار' | 'بالقرار' | 'للقرار' | 'ألقرار' | 'إلقرار' | 'آلقرار')",
+  );
+});
+
+test('the variant budget: at most 48 extras per query, 12 lexemes per word, fused splits cut first', () => {
+  const words = 'الاثبات الالكتروني القرار الاداري النظام العقوبة';
+  const { tsquery } = parseSearchQuery(words);
+  const lexemes = tsquery.match(LEXEME) ?? [];
+  assert.ok(lexemes.length <= 6 + MAX_QUERY_SPELLING_VARIANTS, String(lexemes.length));
+  assert.ok(tsquery.length <= 4000, String(tsquery.length));
+  assert.ok(tsquery.includes("'بالاثبات'"), tsquery);
+  assert.ok(tsquery.includes("'للاداري'"), tsquery);
+  // A word's own cap.
+  assert.equal(MAX_WORD_LEXEMES, 12);
+  const voweled = parseSearchQuery('الإِلْكْتْرُونِيّة').tsquery;
+  assert.ok((voweled.match(LEXEME) ?? []).length <= MAX_WORD_LEXEMES, voweled);
+  // Once the budget is spent, the fused split (last in a word's order) is the
+  // first form dropped, never the typed word: 7 full words, then «لائحة».
+  const spent = parseSearchQuery(`${words} الالتزام لائحة`).tsquery;
+  assert.ok((spent.match(LEXEME) ?? []).length <= 8 + MAX_QUERY_SPELLING_VARIANTS);
+  assert.ok(spent.includes("'لائحة'"), spent);
+  assert.doesNotMatch(spent, /'ئحة'/);
+});
+
+test('ال + alef words and «مادة» are never split as particles', () => {
+  for (const word of ['الاداري', 'الاثبات', 'الالكتروني', 'مادة', 'لازم', 'الا']) {
+    assert.doesNotMatch(parseSearchQuery(word).tsquery, /<->/, word);
+  }
+  assert.equal(splitFusedParticle('الاداري'), null);
+  assert.equal(splitFusedParticle('مادة'), null);
+  assert.equal(splitFusedParticle('لازم'), null);
+  assert.deepEqual(splitFusedParticle('لايكون'), { particle: 'لا', rest: 'يكون' });
+  assert.deepEqual(splitFusedParticle('ألايكون'), { particle: 'ألا', rest: 'يكون' });
+  assert.deepEqual(splitFusedParticle('مماثلة'), { particle: 'مما', rest: 'ثلة' });
+  assert.deepEqual([...NEGATION_PARTICLES], ['فيما', 'مما', 'ألا', 'لا', 'ما']);
+});
+
+test('numbers still expand both ways next to an «ال» word', () => {
+  const { tsquery } = parseSearchQuery('المادة 12');
+  assert.ok(tsquery.includes("'12'"), tsquery);
+  assert.ok(tsquery.includes("'١٢'"), tsquery);
+});
+
+test('review I-1: the word after a particle keeps its spellings, unquoted and in a phrase', () => {
+  for (const q of ['لا اثر', '"لا اثر"']) {
+    const { tsquery } = parseSearchQuery(q);
+    assert.ok(tsquery.includes("'أثر'"), `${q}: ${tsquery}`);
+    assert.ok(tsquery.includes("'لااثر'"), `${q}: ${tsquery}`);
+    assert.match(tsquery, /'لا' <-> \('اثر' \| 'أثر'/, `${q}: adjacent pair`);
+  }
+  for (const q of ['ما اذا', '"ما اذا"']) {
+    assert.ok(parseSearchQuery(q).tsquery.includes("'إذا'"), q);
+  }
+  // A typed «ال…» word keeps its alef spellings too (no bare or re-prefixed form).
+  const ithbat = parseSearchQuery('ما الاثبات').tsquery;
+  assert.ok(ithbat.includes("'الإثبات'"), ithbat);
+  assert.doesNotMatch(ithbat, /'اثبات'|'بالاثبات'/);
+  // Words with no spellings stay byte-exact.
+  assert.equal(parseSearchQuery('لا يكون').tsquery, "(('لا' <-> 'يكون') | 'لايكون')");
+  // The budget still bounds the pair: one MAX_WORD_LEXEMES group at most.
+  const lexemes = (parseSearchQuery('لا اثر').tsquery.match(/'[^']+'/g) ?? []).length;
+  assert.ok(lexemes <= MAX_WORD_LEXEMES + 1, String(lexemes));
+});
+
+test('review M-2: autocomplete counts a voweled word through its stripped form too', () => {
+  const { tsquery } = parseAutocompleteQuery('القَرَارُ');
+  assert.ok(tsquery.includes("'القَرَارُ'"), tsquery);
+  assert.ok(tsquery.includes("'القرار'"), tsquery);
+  assert.equal(parseAutocompleteQuery('قرار').tsquery, "'قرار'");
 });

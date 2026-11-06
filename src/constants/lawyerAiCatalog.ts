@@ -1,7 +1,6 @@
 export type LawyerAiPermission =
   | "ai:consult"
   | "ai:quick-answer"
-  | "ai:case-brief"
   | "ai:draft"
   | "ai:brief-check"
   | "ai:collector"
@@ -72,15 +71,6 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "core",
     adminPricingKey: "lawyer.ai.quick_answer",
-  },
-  {
-    permission: "ai:case-brief",
-    href: "/ai/case-brief",
-    titleAr: "الموجز القضائي",
-    titleEn: "ParaLegal Briefing",
-    betaStatus: "priced",
-    sidebarPlacement: "core",
-    adminPricingKey: "lawyer.ai.case_brief",
   },
   {
     permission: "ai:draft",
@@ -163,11 +153,6 @@ export const LAWYER_AI_TOOLS: readonly LawyerAiTool[] = [
     betaStatus: "priced",
     sidebarPlacement: "core",
     adminPricingKey: "lawyer.ai.analyze",
-    // Owner answer ١١٥, fix round 1 — the lawyer flow (AttachmentSqueezer)
-    // printed one fixed report for any files and renders DashboardComingSoon
-    // now. The route stays live for clients (SmartAnalyzer), but this row is
-    // the LAWYER tool, so it is «قريباً», unpriced and off the quick tiles.
-    comingSoon: true,
   },
   {
     permission: "ai:legal-opinion",

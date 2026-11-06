@@ -266,24 +266,6 @@ export default function ProMarketplacePage() {
             </p>
           </motion.div>
 
-          {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="mt-10 flex flex-wrap gap-4"
-          >
-            {[
-              { value: "٥٠+", label: isAr ? "أداة وخدمة" : "Tools & Services" },
-              { value: "١٠٠٪", label: isAr ? "موثّقة ومعتمدة" : "Verified & Certified" },
-              { value: "تكامل", label: isAr ? "فوري مع Pro" : "Instant with Pro" },
-            ].map((s, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 backdrop-blur">
-                <span className="text-xl font-black text-gold">{s.value}</span>
-                <span className="text-sm text-white/60">{s.label}</span>
-              </div>
-            ))}
-          </motion.div>
         </div>
       </section>
 

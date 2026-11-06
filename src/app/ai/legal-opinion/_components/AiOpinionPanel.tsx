@@ -15,11 +15,15 @@ import { Sparkle, CheckCircle, Copy, ArrowCounterClockwise, Warning } from "@pho
 import type { useAiRun } from "@/hooks/useAiRun";
 import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
 import CitationCheckList from "@/components/ai/CitationCheckList";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import AiResultActions from "@/components/AiResultActions";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
-  AI_OPINION_TOOL, aiOpinionErrorText, asConsultAnswer, asLetterDraft, consultAnswerText, type AiOpinionKind,
+  AI_OPINION_TOOL, aiOpinionErrorText, asConsultAnswer, asLetterDraft, letterDraftBlocks, consultAnswerBlocks, consultAnswerText, type AiOpinionKind,
 } from "./aiOpinion";
 
 interface Props {
@@ -33,19 +37,17 @@ interface Props {
   card: string;
 }
 
-const COPY: Record<AiOpinionKind, { title: string; lead: string; button: string; running: string; note: string }> = {
+const COPY: Record<AiOpinionKind, { title: string; lead: string; button: string; note: string }> = {
   consult: {
     title: "استشارة آلية من مكتبة الأنظمة",
     lead: "يبحث النظام في مكتبة الأنظمة عن النصوص المتصلة بسؤالك، ثم يكتب الذكاء الاصطناعي الاستشارة منها وحدها، مع رابط كل مصدر. إن لم تجب النصوص عن سؤالك أُعيدت نقاطك.",
     button: "اكتب الاستشارة الآن",
-    running: "يكتب الذكاء الاصطناعي الاستشارة الآن — قد يستغرق ذلك دقيقة أو دقيقتين.",
     note: "استشارة آلية من نصوص المكتبة وحدها، لم يراجعها محامٍ؛ راجع النص الرسمي لكل مصدر قبل الاعتماد عليه.",
   },
   letter: {
     title: "خطاب يكتبه الذكاء الاصطناعي",
     lead: "يكتب الذكاء الاصطناعي الخطاب كاملاً من بياناتك، وما لم تذكره يتركه فراغاً [....]. كل مادة يستند إليها تتحقق منها المنصة في مكتبة الأنظمة. إن تعذّر الخطاب أُعيدت نقاطك.",
     button: "اكتب الخطاب الآن",
-    running: "يكتب الذكاء الاصطناعي الخطاب الآن — قد يستغرق ذلك دقيقة أو دقيقتين.",
     note: "مسودة آلية من بياناتك، لم يراجعها محامٍ؛ الفراغات [....] بيانات لم تذكرها، وحالة كل مادة من مكتبة نظامي لا من الذكاء الاصطناعي.",
   },
 };
@@ -95,9 +97,9 @@ export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card 
             {run.busy ? "جارٍ التوليد..." : useCredit ? `${c.button} (${FOUNDER_CREDIT_PRICE_TEXT})` : `${c.button} — ${price.toLocaleString("ar-SA")} نقطة`}
           </button>
           {!run.busy && blocked && <p className="text-[11px] text-amber-500">{blocked}</p>}
-          {run.phase === "running" && <p role="status" className={`text-[12px] ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{c.running}</p>}
+          <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr(AI_OPINION_TOOL[kind])} />
           {run.phase === "review" && (
-            <p role="status" className="text-[12px] text-amber-500">النتيجة جاهزة وتنتظر مراجعة الفريق قبل عرضها.</p>
+            <p role="status" className="text-[12px] text-amber-500">{RUN_HELD_MESSAGE_AR}</p>
           )}
           {run.phase === "error" && (
             <p role="alert" className="flex items-start gap-1.5 text-[12px] leading-relaxed text-red-500">
@@ -156,6 +158,11 @@ export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card 
               <ArrowCounterClockwise size={11} />توليد جديد ({price.toLocaleString("ar-SA")} نقطة)
             </button>
           </div>
+          <LetterheadExportBar
+            title={letter ? letter.title : "استشارة قانونية"}
+            blocks={answer ? consultAnswerBlocks(answer) : letter ? letterDraftBlocks(letter) : []}
+            filename={kind === "consult" ? "legal-consultation" : "legal-letter"}
+          />
           <AiResultActions
             text={resultText}
             filename={kind === "consult" ? "legal-consultation" : "legal-letter"}

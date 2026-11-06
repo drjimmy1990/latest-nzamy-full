@@ -19,6 +19,9 @@ import StepLawyerCTA from "./_components/StepLawyerCTA";
 import { CreditsBanner } from "@/components/PaywallGate";
 import { usePointsShortfall } from "@/hooks/usePointsShortfall";
 import AdvisoryTemplateNotice from "@/components/ai/AdvisoryTemplateNotice";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 
 // ─── Step indicator labels ────────────────────────────────────────────────────
 
@@ -209,13 +212,13 @@ export default function ContractDrafterPage() {
                 )}
                 {run.phase === "review" && (
                   <p role="status" className={`max-w-3xl mx-auto rounded-2xl border px-4 py-3 text-[13px] ${isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
-                    {isRTL ? "المسودة جاهزة وتنتظر مراجعة الفريق قبل عرضها." : "The draft is ready and awaits the team's review."}
+                    {isRTL ? RUN_HELD_MESSAGE_AR : "This result is held pending a decision by the Nezamy team."}
                   </p>
                 )}
-                {run.phase === "running" && (
-                  <p role="status" className={`max-w-3xl mx-auto rounded-2xl border px-4 py-3 text-[13px] ${isDark ? "border-white/10 bg-white/5 text-zinc-300" : "border-zinc-200 bg-white text-zinc-600"}`}>
-                    {isRTL ? "يكتب الذكاء الاصطناعي المسودة الآن — قد يستغرق ذلك دقيقة أو دقيقتين." : "The AI is writing the draft — this can take a minute or two."}
-                  </p>
+                {(run.busy || run.phase === "error") && (
+                  <div className="max-w-3xl mx-auto">
+                    <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("contract-drafter")} />
+                  </div>
                 )}
                 <StepPreviewSign
                   selectedType={selectedType}
@@ -242,7 +245,7 @@ export default function ContractDrafterPage() {
                 onRequestLawyer={() => setStep(5)}
                 ArrowBack={ArrowBack}
                 Arrow={Arrow}
-                aiDraft={{ citations: draft.citation_check, chargedPoints: run.chargedPoints }}
+                aiDraft={{ citations: draft.citation_check, chargedPoints: run.chargedPoints, draft }}
               />
             )}
 

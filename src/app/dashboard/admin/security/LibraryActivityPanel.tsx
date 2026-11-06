@@ -83,6 +83,8 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
   const canWrite = staffMaySee(staffRole, "settings.write");
   const [notice, setNotice] = useState<{ ok: boolean; msg: string } | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
+  // 20261103_10 not applied yet: the settings route answers autoLockMigrationMissing and refuses the field.
+  const [autoLockMissing, setAutoLockMissing] = useState(false);
 
   const [range, setRange] = useState<"today" | "week">("today");
   const [rows, setRows] = useState<ActivityRow[]>([]);
@@ -140,6 +142,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
       setDraft(body.settings as MonitorSettings);
       setUpdatedAt(typeof body.updatedAt === "string" ? body.updatedAt : null);
     }
+    if (ok) setAutoLockMissing(body?.autoLockMigrationMissing === true);
     if (body?.migrationMissing) setMissing(String(body.message ?? ""));
   }, []);
 
@@ -162,6 +165,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
       setSaved(body!.settings as MonitorSettings);
       setDraft(body!.settings as MonitorSettings);
       setUpdatedAt(typeof body!.updatedAt === "string" ? body!.updatedAt : null);
+      setAutoLockMissing(body!.autoLockMigrationMissing === true);
       setNotice({ ok: true, msg: "حُفظت الإعدادات. تسري على القرّاء خلال دقيقة." });
     }
     setBusy(null);
@@ -261,18 +265,20 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
         </p>
       )}
 
-      {notice && (
-        <div
-          role="status"
-          className={`rounded-xl border px-4 py-2.5 text-[12px] ${
-            notice.ok
-              ? isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : isDark ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"
-          }`}
-        >
-          {notice.msg}
-        </div>
-      )}
+      {/* Mounted from the first render, out of the layout while empty: the first notice is read. */}
+      <div role="status" className={notice ? undefined : "sr-only"}>
+        {notice && (
+          <div
+            className={`rounded-xl border px-4 py-2.5 text-[12px] ${
+              notice.ok
+                ? isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : isDark ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {notice.msg}
+          </div>
+        )}
+      </div>
 
       {/* ── top readers ── */}
       <div className={`${card} p-5`}>
@@ -525,7 +531,8 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
             <p className={`mb-3 text-[12px] font-bold ${tp}`}>{GROUP_TITLE[g]}</p>
             <div className="grid gap-3 md:grid-cols-2">
               {MONITOR_SETTINGS_FIELDS.filter((f) => f.group === g).map((f) => {
-                const disabled = f.type === "int" && !!f.toggle && draft[f.toggle] === false;
+                const lockFieldMissing = f.key === "autoLockHours" && autoLockMissing;
+                const disabled = (f.type === "int" && !!f.toggle && draft[f.toggle] === false) || lockFieldMissing;
                 if (f.type === "bool") {
                   return (
                     <label key={f.key} className={`flex items-center gap-2 text-[12px] md:col-span-2 ${tp}`}>
@@ -574,6 +581,13 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
                       className={input}
                     />
                     <p className={`mt-0.5 text-[9px] ${ts}`}>من {f.min} إلى {f.max}</p>
+                    {lockFieldMissing ? (
+                      <p className={`mt-0.5 text-[10px] font-bold ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+                        غير متاح بعد: تحديث قاعدة البيانات الخاص بمدة الإيقاف لم يُطبَّق. حتى يُطبَّق يبقى الإيقاف التلقائي حتى يرفعه المسؤول.
+                      </p>
+                    ) : f.hintAr ? (
+                      <p className={`mt-0.5 text-[10px] ${ts}`}>{f.hintAr}</p>
+                    ) : null}
                   </div>
                 );
               })}

@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser, type GovernmentRole } from "@/hooks/useUser";
 import { resolveGovernmentRole } from "@/hooks/governmentRole";
+import { useAdminSimulation } from "@/hooks/useAdminSimulation";
+import { simulatedNavIdentity } from "@/lib/nav/adminSimulation";
 import Link from "next/link";
 import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedRoutes";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
@@ -145,7 +147,12 @@ export default function GovernmentDashboard() {
   // Validated again here, not only in useUser: demo sessions come from
   // localStorage and never pass through that check, and every map below is
   // keyed on exactly four roles — an unknown one used to crash the page.
-  const role   = resolveGovernmentRole(user.governmentRole);
+  //
+  // S6-T17: an admin viewing as «قاضٍ» etc. sees that role's home — UI only
+  // (R27); null for every non-admin session, which keeps its own role.
+  const adminSim = useAdminSimulation(!user.loading && user.userType === "admin");
+  const simId = simulatedNavIdentity(user.userType, adminSim, "government");
+  const role   = resolveGovernmentRole(simId?.governmentRole ?? user.governmentRole);
   const meta   = ROLE_META[role];
   // ─── RBAC: double-filter — role array AND user permissions ───────────────────
   const allowedPerms = ROLE_PERMISSIONS[role];

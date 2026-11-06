@@ -12,6 +12,8 @@ import { normalizeArabic, normalizeSearch } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
 import { withoutLeadingHeadings } from "./components/summaryClamp";
 import { groupLawSearchCards } from "./lawSearchGroups";
+import { catalogueMatches } from "./catalogueMatch";
+import SearchSyntaxHelp from "@/components/library/SearchSyntaxHelp";
 import { courtBadge } from "./principleCardFields";
 import { collectionCardExcerpt } from "@/lib/library/precedentVolumes";
 import { realPrincipleNumber } from "./principleLink";
@@ -849,7 +851,7 @@ export default function LegalLibraryPage() {
     PhosphorIcons; // reference to prevent unused warning if any
 
     DEMO_PRINCIPLES.forEach(p => {
-      if ((normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq)) && (activeType === "all" || activeType === "precedents")) {
+      if (catalogueMatches(q, [p.text, p.source]) && (activeType === "all" || activeType === "precedents")) {
         const label = stripMarkdownMarks(p.text).substring(0, 60) + "...";
         results.push({ label, core: label, badge: "مبدأ", type: "precedents", href: "", snippet: "", locked: false, id: String(p.id) });
       }
@@ -1172,7 +1174,7 @@ export default function LegalLibraryPage() {
         const inCat  = activeCat === "all" || s.cat === activeCat;
         const inDoc  = docSubType === "all" || s.doc_type === docSubType ||
                        (s.sub_types && s.sub_types.includes(docSubType));
-        const inQ   = !nq || normalizeSearch(s.title).includes(nq) || normalizeSearch(s.desc).includes(nq);
+        const inQ   = !nq || catalogueMatches(q, [s.title, s.desc]);
         return inCat && inDoc && inQ;
       });
 
@@ -1210,7 +1212,7 @@ export default function LegalLibraryPage() {
         const inCat    = activeCat === "all" || p.cat === activeCat;
         const inTrack  = matchesPrecTrack(p.sourceId, precTrack);
         const inSrc    = precSource  === "all" || p.sourceId === precSource;
-        const inQ      = !nq || normalizeSearch(p.text).includes(nq) || normalizeSearch(p.source).includes(nq) || normalizeSearch(p.ref).includes(nq);
+        const inQ      = !nq || catalogueMatches(q, [p.text, p.source, p.ref]);
         return inCat && inTrack && inSrc && inQ;
       });
 
@@ -1221,7 +1223,7 @@ export default function LegalLibraryPage() {
     : precedentsList.filter(pr => {
         const inCat  = activeCat === "all" || pr.cat === activeCat;
         const inTrack = matchesPrecedentTrack(pr.court, precTrack);
-        const inQ    = !nq || normalizeSearch(pr.summary).includes(nq) || normalizeSearch(pr.court).includes(nq) || normalizeSearch(pr.relevance).includes(nq);
+        const inQ    = !nq || catalogueMatches(q, [pr.summary, pr.court, pr.relevance]);
         const inHashtag = !selectedHashtag || pr.hashtags?.includes(selectedHashtag);
         return inCat && inTrack && inQ && inHashtag;
       });
@@ -1268,7 +1270,7 @@ export default function LegalLibraryPage() {
         }))
     : collectionsList.filter((col: any) => {
         const inTrack = precTrack === "all" || col.track === precTrack;
-        const inQ = !nq || normalizeSearch(col.title).includes(nq) || normalizeSearch(col.court).includes(nq) || normalizeSearch(col.desc || "").includes(nq);
+        const inQ = !nq || catalogueMatches(q, [col.title, col.court, col.desc]);
         return inTrack && inQ;
       });
 
@@ -1289,7 +1291,7 @@ export default function LegalLibraryPage() {
       }))
     : ordersList.filter(o => {
         const inCat = activeCat === "all" || o.cat === activeCat;
-        const inQ   = !nq || normalizeSearch(o.title).includes(nq) || (o.summary && normalizeSearch(o.summary).includes(nq)) || normalizeSearch(o.ref).includes(nq);
+        const inQ   = !nq || catalogueMatches(q, [o.title, o.summary, o.ref]);
         const inIssuer = orderIssuer === "all" || o.issuer === orderIssuer || o.issuer === ISSUER_MAP[orderIssuer]?.ar;
         const inHashtag = !selectedHashtag || o.hashtags?.includes(selectedHashtag);
         return inCat && inQ && inIssuer && inHashtag;
@@ -1344,16 +1346,10 @@ export default function LegalLibraryPage() {
           if (feqhSubCat !== "all") {
             matchesSub = book.category === feqhSubCat;
           }
-          const matchesQuery = !nq || 
-            normalizeSearch(book.title).includes(nq) || 
-            normalizeSearch(book.author).includes(nq) || 
-            (book.desc && normalizeSearch(book.desc).includes(nq));
+          const matchesQuery = !nq || catalogueMatches(q, [book.title, book.author, book.desc]);
           return matchesType && matchesSub && matchesQuery && matchesCatTab;
         } else {
-          const matchesQuery = !nq || 
-            normalizeSearch(book.title).includes(nq) || 
-            normalizeSearch(book.author).includes(nq) || 
-            (book.desc && normalizeSearch(book.desc).includes(nq));
+          const matchesQuery = !nq || catalogueMatches(q, [book.title, book.author, book.desc]);
           return matchesQuery && matchesCatTab;
         }
       });
@@ -1684,6 +1680,9 @@ export default function LegalLibraryPage() {
                 <Faders size={20} weight="fill" />
                 <span className="hidden sm:inline">{isRTL ? "بحث متقدم" : "Advanced"}</span>
               </button>
+
+              {/* BUG-LIB-04: what the operators do, one example each. */}
+              <SearchSyntaxHelp onPick={setSearch} isDark={isDark} panelPosition="start-0 md:start-auto md:end-0" />
 
               <div className={`flex items-center p-1.5 rounded-2xl border ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-sm`}>
                 <button

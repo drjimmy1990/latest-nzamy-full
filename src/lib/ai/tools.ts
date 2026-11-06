@@ -58,6 +58,16 @@ export interface AiToolSpec {
   checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
   /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
   filesRequired?: (input: Record<string, unknown>) => boolean;
+  /** What `filesRequired` says when the general «مستندات الوقائع» copy would name the wrong thing. */
+  filesRequiredCopy?: string;
+  /**
+   * The input field the user may paste text into instead of uploading: the text
+   * reaches n8n as one virtual text/plain file (runCore, the link in
+   * fileTextServe.ts), so the tool's workflow does not change. The field stays
+   * in ai_runs.input, because the link reads it there, and is left out of the
+   * package's input, so the text travels once.
+   */
+  pasteAsFile?: { field: string; name: string; maxChars: number };
   /**
    * Wave 3: the tool reads the user's vault files (aiFiles.ts). The files are
    * checked, counted and signed before the charge, and `price` gets the total
@@ -395,8 +405,24 @@ function caseBriefOutput(raw: unknown): Record<string, unknown> | null {
 
 /** L8: one memo, the gaps report (the full revision stays a team order). */
 export const BRIEF_CHECK_PRICE = 200;
-export const BRIEF_CHECK_FILES: FileRules = { max: 1, maxPages: 30, maxBytes: 22 * 1024 * 1024 };
+// `optional`: the memo may be pasted instead. filesRequired below still refuses a
+// run with neither, because a doc job with no file never calls back.
+export const BRIEF_CHECK_FILES: FileRules = { max: 1, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
+export const BRIEF_CHECK_PASTE_MIN = 200;
+export const BRIEF_CHECK_PASTE_MAX = 60_000;
 const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
+
+/**
+ * A pasted text (AiToolSpec.pasteAsFile): absent, or within its limits after
+ * trim. Over the limit is refused, never cut: the user sees what was not sent.
+ */
+function pastedText(v: unknown, limits: { min: number; max: number; tooShort: string; tooLong: string }): { text: string | null } | { error: string } {
+  const text = typeof v === "string" ? v.trim() : "";
+  if (!text) return { text: null };
+  if (text.length < limits.min) return { error: limits.tooShort };
+  if (text.length > limits.max) return { error: limits.tooLong };
+  return { text };
+}
 
 /** L8 مراجعة وتدقيق مذكرة: the client's capacity and the case's frame for the memo's gaps report. */
 function briefCheckInput(raw: unknown): InputCheck {
@@ -404,9 +430,22 @@ function briefCheckInput(raw: unknown): InputCheck {
   const capacity = boundedText(raw.client_capacity, 100);
   if (!capacity) return { ok: false, error: "اختر صفة موكّلك" };
   const optional = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+  const memo = pastedText(raw.memo_text, {
+    min: BRIEF_CHECK_PASTE_MIN,
+    max: BRIEF_CHECK_PASTE_MAX,
+    tooShort: "النص الملصق قصير — الصق المذكرة كاملة (٢٠٠ حرف على الأقل)",
+    tooLong: "النص الملصق أطول من ٦٠٬٠٠٠ حرف — ارفعه ملفاً",
+  });
+  if ("error" in memo) return { ok: false, error: memo.error };
   return {
     ok: true,
-    input: { client_capacity: capacity, court: optional(raw.court, 150), case_type: optional(raw.case_type, 150), notes: optional(raw.notes, 2000) },
+    input: {
+      client_capacity: capacity,
+      court: optional(raw.court, 150),
+      case_type: optional(raw.case_type, 150),
+      notes: optional(raw.notes, 2000),
+      ...(memo.text ? { memo_text: memo.text } : {}),
+    },
   };
 }
 
@@ -444,6 +483,8 @@ function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
 
 export const WAVE4_PRICE = 250;
 export const WAVE4_FILES: FileRules = { max: 6, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
+export const WARGAMING_PASTE_MIN = 50;
+export const WARGAMING_PASTE_MAX = 30_000;
 export const CASE_SUMMARY_MIN = 20;
 export const CASE_SUMMARY_MAX = 6000;
 
@@ -468,8 +509,9 @@ const SUMMARY_ERROR = `اكتب ملخص القضية (من ${CASE_SUMMARY_MIN.t
 function wargamingInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   if (!(WARGAMING_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
-  const area = boundedText(raw.area, 150);
-  if (!area) return { ok: false, error: "اختر تخصص القضية" };
+  // Optional: unnamed, the workflow asks the model to infer it from the facts.
+  const area = optionalField(raw.area, 150);
+  if (area === null) return { ok: false, error: "تخصص القضية أطول من المسموح" };
   const summary = caseSummary(raw.case_summary);
   if (!summary) return { ok: false, error: SUMMARY_ERROR };
   const targets = Array.isArray(raw.targets) ? WARGAMING_TARGETS.filter((t) => (raw.targets as unknown[]).includes(t)) : [];
@@ -479,15 +521,23 @@ function wargamingInput(raw: unknown): InputCheck {
   if (targets.includes("critique") && !memoText && !memoInFiles) {
     return { ok: false, error: "«نقض المذكرة» يحتاج نص المذكرة أو ملفها" };
   }
+  const docs = pastedText(raw.docs_text, {
+    min: WARGAMING_PASTE_MIN,
+    max: WARGAMING_PASTE_MAX,
+    tooShort: "النص الملصق قصير — الصق المستندات كاملة (٥٠ حرفاً على الأقل)",
+    tooLong: "النص الملصق أطول من ٣٠٬٠٠٠ حرف — ارفعه ملفاً",
+  });
+  if ("error" in docs) return { ok: false, error: docs.error };
   return {
     ok: true,
     input: {
       role: raw.role,
-      area,
+      area: area ?? null,
       case_summary: summary,
       targets,
       memo_text: targets.includes("critique") ? memoText : null,
       memo_in_files: targets.includes("critique") && memoInFiles,
+      ...(docs.text ? { docs_text: docs.text } : {}),
     },
   };
 }
@@ -973,6 +1023,217 @@ function contractsProOutput(raw: unknown, input: Record<string, unknown>): Recor
   };
 }
 
+// ── contract review and the negotiator (the owner's canonical pricing, items 9, 10) ─
+// Owner q296: the price is kept in the system and neither shown nor sold until the
+// tool's real analysis is connected. So both are off until an admin opens them, and
+// their screens print the price only once GET /api/v1/ai/tool-status says usable.
+
+/**
+ * Owner ١٩٣: no chance and no percentage in a result, in any digit system (JavaScript's
+ * \d is ASCII only). A contract's own rate is no exception: the prompts ask for it in
+ * words («خمسة في المئة»), which this does not match.
+ */
+export const PERCENT_PATTERN = /[0-9٠-٩۰-۹]+([.,٫][0-9٠-٩۰-۹]+)?\s*[%٪]/u;
+
+/** Does any string under `v` hold a percentage? Walks arrays and plain objects. */
+export function hasPercent(v: unknown): boolean {
+  if (typeof v === "string") return PERCENT_PATTERN.test(v);
+  if (Array.isArray(v)) return v.some(hasPercent);
+  return isPlainObject(v) && Object.values(v).some(hasPercent);
+}
+
+/**
+ * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
+ * If ٤١٧ narrows access, this one list changes.
+ */
+export const CONTRACTS_PRO_ROLES = ["lawyer", "firm", "individual", "corporate", "micro", "ngo"] as const;
+
+export const CONTRACT_REVIEW_PRICE = 250;
+// `optional`: the contract may be pasted instead. filesRequired below still refuses a
+// run with neither, because a doc job with no file never calls back.
+export const CONTRACT_REVIEW_FILES: FileRules = { max: 1, maxPages: 15, maxBytes: 22 * 1024 * 1024, optional: true };
+export const CONTRACT_REVIEW_PASTE_MIN = 100;
+/** 15 pages by textPages: a paste this long is priced and capped like the file it replaces. */
+export const CONTRACT_REVIEW_PASTE_MAX = 45_000;
+export const REVIEW_RISKS = ["high", "medium", "low"] as const;
+const REVIEW_RISK_AR: Readonly<Record<string, (typeof REVIEW_RISKS)[number]>> = { "مرتفع": "high", "متوسط": "medium", "منخفض": "low" };
+
+/** The word the model meant: spaces and case aside, and the three Arabic words. Anything else is null, and refuses the run. */
+function reviewRisk(v: unknown): (typeof REVIEW_RISKS)[number] | null {
+  if (typeof v !== "string") return null;
+  const word = v.trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(REVIEW_RISK_AR, word)) return REVIEW_RISK_AR[word];
+  return (REVIEW_RISKS as readonly string[]).includes(word) ? (word as (typeof REVIEW_RISKS)[number]) : null;
+}
+export const REVIEW_CATEGORIES = ["obligations", "payment", "liability", "termination", "dispute", "confidentiality", "ip", "compliance", "other"] as const;
+const CONTRACT_REVIEW_CLAUSES_MAX = 40;
+const CONTRACT_REVIEW_MISSING_MAX = 15;
+
+/** Who the user acts for, what worries him, and the contract when it is pasted. A field too long is refused, never cut. */
+function contractReviewInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const party = typeof raw.represented_party === "string" ? raw.represented_party.trim() : "";
+  if (!party) return { ok: false, error: "حدّد الطرف الذي تمثّله" };
+  if (party.length > 150) return { ok: false, error: "اسم الطرف الذي تمثّله أطول من ١٥٠ حرفاً" };
+  const concerns = optionalField(raw.concerns, 2000);
+  if (concerns === null) return { ok: false, error: "المخاوف ونقاط التركيز أطول من ٢٬٠٠٠ حرف" };
+  const otherParty = optionalField(raw.other_party, 150);
+  if (otherParty === null) return { ok: false, error: "اسم الطرف الآخر أطول من ١٥٠ حرفاً" };
+  const contractType = optionalField(raw.contract_type, 80);
+  if (contractType === null) return { ok: false, error: "نوع العقد أطول من ٨٠ حرفاً" };
+  const contract = pastedText(raw.contract_text, {
+    min: CONTRACT_REVIEW_PASTE_MIN,
+    max: CONTRACT_REVIEW_PASTE_MAX,
+    tooShort: "النص الملصق قصير — الصق العقد كاملاً (١٠٠ حرف على الأقل)",
+    tooLong: "النص الملصق أطول من ٤٥٬٠٠٠ حرف (١٥ صفحة) — ارفعه ملفاً",
+  });
+  if ("error" in contract) return { ok: false, error: contract.error };
+  return {
+    ok: true,
+    input: {
+      represented_party: party,
+      concerns: concerns ?? null,
+      other_party: otherParty ?? null,
+      contract_type: contractType ?? null,
+      ...(contract.text ? { contract_text: contract.text } : {}),
+    },
+  };
+}
+
+function reviewClause(c: unknown): Record<string, string> | null {
+  if (!isPlainObject(c)) return null;
+  const risk = reviewRisk(c.risk);
+  if (!risk) return null;
+  const issue = boundedText(c.issue, 1200);
+  const ref = optionalField(c.ref, 200);
+  const quote = optionalField(c.quote, 600);
+  const defensive = optionalField(c.defensive_edit, 3000);
+  const negotiating = optionalField(c.negotiating_edit, 3000);
+  if (!issue || ref === null || quote === null || defensive === null || negotiating === null) return null;
+  return {
+    ref: ref ?? "",
+    quote: quote ?? "",
+    category: oneOf(c.category, REVIEW_CATEGORIES, "other"),
+    risk,
+    issue,
+    defensive_edit: defensive ?? "",
+    negotiating_edit: negotiating ?? "",
+  };
+}
+
+/**
+ * The report. All or nothing, as the contract drafter: a clause that does not fit
+ * refuses (and refunds) the run rather than handing over a report with a risk
+ * silently gone. `cited` becomes the library's verdict (runCore's enricher).
+ */
+function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.clauses)) return null;
+  const summary = boundedText(raw.summary, 3000);
+  const overallRisk = reviewRisk(raw.overall_risk);
+  if (!summary || !overallRisk) return null;
+  if (raw.clauses.length < 1 || raw.clauses.length > CONTRACT_REVIEW_CLAUSES_MAX) return null;
+  const clauses: Array<Record<string, string>> = [];
+  for (const c of raw.clauses) {
+    const clause = reviewClause(c);
+    if (!clause) return null;
+    clauses.push(clause);
+  }
+  const rawMissing = raw.missing ?? [];
+  if (!Array.isArray(rawMissing) || rawMissing.length > CONTRACT_REVIEW_MISSING_MAX) return null;
+  const missing: Array<{ title: string; why: string }> = [];
+  for (const m of rawMissing) {
+    if (!isPlainObject(m)) return null;
+    const title = boundedText(m.title, 200);
+    const why = optionalField(m.why, 800);
+    if (!title || why === null) return null;
+    missing.push({ title, why: why ?? "" });
+  }
+  const output = {
+    summary,
+    overall_risk: overallRisk,
+    clauses,
+    missing,
+    cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
+  };
+  return hasPercent(output) ? null : output;
+}
+
+// ── مفاوض العقود: three positions for each clause the user pastes ─────────────
+export const CONTRACT_NEGOTIATOR_PRICE = 150;
+export const NEGOTIATOR_CLAUSES_MAX = 10;
+export const NEGOTIATOR_STANCES = ["firm", "balanced", "flexible"] as const;
+const NEGOTIATOR_ALTERNATIVES_MAX = 3;
+
+function contractNegotiatorInput(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const party = typeof raw.our_party === "string" ? raw.our_party.trim() : "";
+  if (!party) return { ok: false, error: "حدّد الطرف الذي تمثّله" };
+  if (party.length > 150) return { ok: false, error: "اسم الطرف الذي تمثّله أطول من ١٥٠ حرفاً" };
+  const contractType = optionalField(raw.contract_type, 150);
+  if (contractType === null) return { ok: false, error: "نوع العقد أطول من ١٥٠ حرفاً" };
+  if (!Array.isArray(raw.clauses) || raw.clauses.length < 1 || raw.clauses.length > NEGOTIATOR_CLAUSES_MAX) {
+    return { ok: false, error: "ألصق بنداً واحداً على الأقل (حتى ١٠ بنود)" };
+  }
+  const clauses: Array<Record<string, string | null>> = [];
+  for (const c of raw.clauses) {
+    if (!isPlainObject(c)) return { ok: false, error: "المدخلات غير صالحة" };
+    const text = typeof c.text === "string" ? c.text.trim() : "";
+    if (text.length < 20) return { ok: false, error: "نص البند قصير — ألصق البند كاملاً (٢٠ حرفاً على الأقل)" };
+    if (text.length > 4000) return { ok: false, error: "نص البند أطول من ٤٬٠٠٠ حرف" };
+    const demand = optionalField(c.their_demand, 1500);
+    if (demand === null) return { ok: false, error: "طلب الطرف الآخر أطول من ١٬٥٠٠ حرف" };
+    const goal = optionalField(c.our_goal, 1500);
+    if (goal === null) return { ok: false, error: "هدفك من البند أطول من ١٬٥٠٠ حرف" };
+    clauses.push({ text, their_demand: demand ?? null, our_goal: goal ?? null });
+  }
+  return { ok: true, input: { our_party: party, contract_type: contractType ?? null, clauses } };
+}
+
+function negotiatorAlternative(a: unknown): Record<string, string> | null {
+  if (!isPlainObject(a) || !(NEGOTIATOR_STANCES as readonly unknown[]).includes(a.stance)) return null;
+  const text = boundedText(a.text, 4000);
+  const rationale = optionalField(a.rationale, 1500);
+  if (!text || rationale === null) return null;
+  return { stance: a.stance as string, text, rationale: rationale ?? "" };
+}
+
+function negotiatorClause(c: unknown, position: number): Record<string, unknown> | null {
+  // The answer to clause N says it is clause N: anything else answers a clause that was not asked.
+  if (!isPlainObject(c) || c.index !== position) return null;
+  const risk = reviewRisk(c.risk);
+  if (!risk) return null;
+  const issue = optionalField(c.issue, 1500);
+  const fallback = optionalField(c.fallback, 1500);
+  if (issue === null || fallback === null) return null;
+  if (!Array.isArray(c.alternatives) || c.alternatives.length < 1 || c.alternatives.length > NEGOTIATOR_ALTERNATIVES_MAX) return null;
+  const alternatives: Array<Record<string, string>> = [];
+  for (const a of c.alternatives) {
+    const alternative = negotiatorAlternative(a);
+    if (!alternative) return null;
+    alternatives.push(alternative);
+  }
+  return { index: position, issue: issue ?? "", risk, alternatives, fallback: fallback ?? "" };
+}
+
+/**
+ * The negotiation. All or nothing: one answer for each clause the user gave, in his
+ * order, or the run fails and is refunded. A clause the model invented or skipped
+ * cannot reach the screen. `cited` becomes the library's verdict (runCore's enricher).
+ */
+function contractNegotiatorOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
+  if (!isPlainObject(raw) || !Array.isArray(raw.clauses) || !Array.isArray(input.clauses)) return null;
+  const summary = boundedText(raw.summary, 3000);
+  if (!summary || raw.clauses.length !== input.clauses.length) return null;
+  const clauses: Array<Record<string, unknown>> = [];
+  for (let position = 0; position < raw.clauses.length; position += 1) {
+    const clause = negotiatorClause(raw.clauses[position], position);
+    if (!clause) return null;
+    clauses.push(clause);
+  }
+  const output = { summary, clauses, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [] };
+  return hasPercent(output) ? null : output;
+}
+
 // ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
 // Turn 0 «issues»: the facts → the issues, the proposed defences and requests,
 // which the lawyer confirms or edits. Turn 1 «draft»: what he confirmed → the
@@ -989,7 +1250,6 @@ const DRAFT_SEARCH_MAX = 3000;
 export const DRAFT_COPY = {
   kind: "اختر نوع المذكرة",
   role: "اختر صفة موكّلك في القضية",
-  branch: "اختر الفرع القانوني",
   facts: `اكتب الوقائع (${DRAFT_FACTS_MIN.toLocaleString("ar-SA")} حرفاً على الأقل) أو أرفق مستنداتها`,
   factsLong: `الوقائع أطول من ${DRAFT_FACTS_MAX.toLocaleString("ar-SA")} حرف — اختصرها أو أرفقها ملفاً`,
   issues: "أبقِ مسألة واحدة على الأقل",
@@ -1043,8 +1303,10 @@ function legalDrafterInput(raw: unknown): InputCheck {
   if (raw.phase !== "issues" && raw.phase !== "draft") return { ok: false, error: "المدخلات غير صالحة" };
   if (!isDraftKind(raw.kind)) return { ok: false, error: DRAFT_COPY.kind };
   if (!(DRAFT_ROLES as readonly unknown[]).includes(raw.client_role)) return { ok: false, error: DRAFT_COPY.role };
-  const branch = boundedText(raw.branch, 60);
-  if (!branch) return { ok: false, error: DRAFT_COPY.branch };
+  // Optional: unnamed, the workflow asks the model to infer it from the facts.
+  const branchField = optionalField(raw.branch, 60);
+  if (branchField === null) return { ok: false, error: "الفرع القانوني أطول من المسموح" };
+  const branch = branchField ?? null;
 
   const fields: Record<string, unknown> = {};
   for (const [key, label, max] of [
@@ -1085,7 +1347,7 @@ function legalDrafterInput(raw: unknown): InputCheck {
     // fails MIN_CASE_TEXT»); then runCore refuses the run without files.
     const factsInFiles = raw.facts_in_files === true;
     if (!factsInFiles && factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
-    const search = factsRaw || judgment?.reasons || judgment?.text || `${branch} ${DRAFT_KINDS[raw.kind].label}`;
+    const search = factsRaw || judgment?.reasons || judgment?.text || [branch, DRAFT_KINDS[raw.kind].label].filter(Boolean).join(" ");
     return { ok: true, input: { ...base, facts: factsRaw, facts_in_files: factsInFiles, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
   }
 
@@ -1290,6 +1552,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
     files: BRIEF_CHECK_FILES,
+    filesRequired: (input) => !input.memo_text,
+    filesRequiredCopy: "أرفق ملفاً واحداً على الأقل",
+    pasteAsFile: { field: "memo_text", name: "نص المذكرة (ملصق).txt", maxChars: BRIEF_CHECK_PASTE_MAX },
     validateInput: briefCheckInput,
     validateOutput: briefCheckOutput,
   },
@@ -1306,6 +1571,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
     files: WAVE4_FILES,
+    pasteAsFile: { field: "docs_text", name: "نص المستندات (ملصق).txt", maxChars: WARGAMING_PASTE_MAX },
     validateInput: wargamingInput,
     validateOutput: wargamingOutput,
   },
@@ -1375,7 +1641,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     class: "job",
     tier: "deep",
     // The lawyer, firm and business sidebars and the public navbar all open /ai/contracts.
-    roles: ["lawyer", "firm", "individual", "corporate", "micro", "ngo"],
+    roles: CONTRACTS_PRO_ROLES,
     consultantBlocked: false,
     price: () => CONTRACTS_PRO_PRICE,
     dailyLimit: 5,
@@ -1384,6 +1650,41 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     jobDeadlineSeconds: 20 * 60,
     validateInput: contractsProInput,
     validateOutput: contractsProOutput,
+  },
+  "contract-review": {
+    id: "contract-review",
+    // NOT the human service of the same id in CLIENT_SERVICE_CATALOG (600/800 SAR):
+    // the two namespaces never meet (preflight R19, contractReview.test.ts).
+    n8nPath: "nzamy-ai/contract-review",
+    class: "job",
+    tier: "deep",
+    roles: CONTRACTS_PRO_ROLES,
+    consultantBlocked: false,
+    price: () => CONTRACT_REVIEW_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    files: CONTRACT_REVIEW_FILES,
+    filesRequired: (input) => !input.contract_text,
+    filesRequiredCopy: "أرفق ملف العقد أو الصق نصه",
+    pasteAsFile: { field: "contract_text", name: "نص العقد (ملصق).txt", maxChars: CONTRACT_REVIEW_PASTE_MAX },
+    validateInput: contractReviewInput,
+    validateOutput: contractReviewOutput,
+  },
+  "contract-negotiator": {
+    id: "contract-negotiator",
+    n8nPath: "nzamy-ai/contract-negotiator",
+    class: "job",
+    tier: "deep",
+    // The only nav rows are the firm and lawyer sidebars.
+    roles: ["lawyer", "firm"],
+    consultantBlocked: false,
+    price: () => CONTRACT_NEGOTIATOR_PRICE,
+    dailyLimit: 5,
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: contractNegotiatorInput,
+    validateOutput: contractNegotiatorOutput,
   },
   "legal-drafter": {
     id: "legal-drafter",

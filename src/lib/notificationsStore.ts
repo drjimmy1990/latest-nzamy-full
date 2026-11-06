@@ -115,9 +115,9 @@ const SEED: Notification[] = [
   {
     id: "n8",
     type: "system",
-    title: "تحديث المنصة",
-    body: "تم إطلاق المستشار الذكي الجديد — جرّب ذكاء نظامي الآن",
-    href: "/ai/consult",
+    title: "المستشار الذكي — قريباً",
+    body: "قيد الإعداد.",
+    href: "/ai",
     time: "منذ أسبوع",
     read: true,
     severity: "info",

@@ -25,12 +25,13 @@ import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
  *
  * PRIORITY ORDER (unchanged for every non-admin session):
  *   0. Session gate — hold on AILoading while the session resolves (FIX ٨٣)
- *   1. Session-based (user.userType — prevents sidebar bleeding). NEW: an
- *      admin gets the LAWYER shell on every /ai/* tool. This branch was
- *      missing, so an admin fell through to the last-dashboard stamp or the
- *      Business default, and SharedSidebar then drew the ADMIN menu inside it.
- *      LawyerDashboardLayout's UserTypeGuard already admits "admin" — no
- *      access changes.
+ *   1. Session-based (user.userType — prevents sidebar bleeding). An admin
+ *      gets the shell of the «عرض كـ» view stored for this tab (S6-T14: any
+ *      role dashboard; the LAWYER shell when none is stored or the view is the
+ *      console). Before LIVE-F01 this branch was missing, so an admin fell
+ *      through to the last-dashboard stamp or the Business default. Every
+ *      role layout's UserTypeGuard already admits "admin" — no access
+ *      changes.
  *   2. Path-based inference (/ai/corp → Business, /ai/gov → Government …)
  *   2b. Logged-out escape → render the page unwrapped; src/proxy.ts redirects
  *   3. Last-dashboard stamp (nzamy_last_dashboard from localStorage) [U6]

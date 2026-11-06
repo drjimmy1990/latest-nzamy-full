@@ -11,6 +11,8 @@ import { join } from "node:path";
 import {
   MONITOR_SETTINGS_DEFAULTS,
   MONITOR_SETTINGS_FIELDS,
+  MONITOR_SETTINGS_SELECT,
+  MONITOR_SETTINGS_SELECT_V1,
   parseSettingsPatch,
   settingsFromRow,
 } from "./monitorSettings.ts";
@@ -20,10 +22,15 @@ const SQL = readFileSync(
   join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261031_10_library_activity_monitor.sql"),
   "utf8",
 );
+const SQL_AUTO_LOCK = readFileSync(
+  join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261103_10_library_auto_lock_hours.sql"),
+  "utf8",
+);
 
 test("every field is a column of the settings table, with the same bounds and default", () => {
   const table = SQL.slice(SQL.indexOf("create table if not exists public.library_monitor_settings"), SQL.indexOf("insert into public.library_monitor_settings"));
   for (const f of MONITOR_SETTINGS_FIELDS) {
+    if (f.column === "auto_lock_hours") continue; // added by 20261103_10 — its own test below
     const line = table.split("\n").find((l) => l.trim().startsWith(`${f.column} `));
     assert.ok(line, `${f.column} is not a column`);
     const def = MONITOR_SETTINGS_DEFAULTS[f.key];
@@ -36,6 +43,51 @@ test("every field is a column of the settings table, with the same bounds and de
       assert.match(line, new RegExp(`default '${def}'`), `${f.column} default`);
     }
   }
+});
+
+test("auto_lock_hours (owner q362, 20261103_10): a «الحدود» field with the migration's bounds and default 24", () => {
+  const f = MONITOR_SETTINGS_FIELDS.find((x) => x.key === "autoLockHours");
+  assert.ok(f && f.type === "int", "autoLockHours is an int field");
+  assert.equal(f.column, "auto_lock_hours");
+  assert.equal(f.group, "caps");
+  assert.equal(f.min, 0);
+  assert.equal(f.max, 720);
+  assert.match(f.labelAr, /٠ = حتى يرفعه المسؤول/);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.autoLockHours, 24);
+  assert.match(SQL_AUTO_LOCK, /add column if not exists auto_lock_hours int not null default 24;/);
+  assert.match(SQL_AUTO_LOCK, /check \(auto_lock_hours between 0 and 720\)/);
+});
+
+test("auto_lock_hours: the patch bounds, and a row without the column reads 24", () => {
+  assert.equal(parseSettingsPatch({ autoLockHours: 721 }).ok, false);
+  assert.equal(parseSettingsPatch({ autoLockHours: -1 }).ok, false);
+  const zero = parseSettingsPatch({ autoLockHours: 0 });
+  assert.equal(zero.ok, true);
+  if (zero.ok) assert.equal(zero.columns.auto_lock_hours, 0);
+  assert.equal(settingsFromRow({}).autoLockHours, 24);
+  assert.equal(settingsFromRow({ auto_lock_hours: 48 }).autoLockHours, 48);
+});
+
+test("MONITOR_SETTINGS_SELECT_V1 is the select before 20261103_10 (no auto_lock_hours); the full select names it", () => {
+  assert.ok(!MONITOR_SETTINGS_SELECT_V1.split(", ").includes("auto_lock_hours"));
+  assert.ok(MONITOR_SETTINGS_SELECT.split(", ").includes("auto_lock_hours"));
+  assert.deepEqual(
+    MONITOR_SETTINGS_SELECT.split(", ").filter((c) => c !== "auto_lock_hours"),
+    MONITOR_SETTINGS_SELECT_V1.split(", "),
+  );
+});
+
+test("the settings route reads before 20261103_10 too: GET and PUT fall back to the V1 select on the missing column", () => {
+  const src = readFileSync(
+    join(import.meta.dirname, "..", "..", "app", "api", "v1", "admin", "library-monitor", "settings", "route.ts"),
+    "utf8",
+  );
+  const get = src.slice(src.indexOf("export async function GET"), src.indexOf("export async function PUT"));
+  assert.ok(get.includes("readSettingsRow(") || get.includes("isMissingColumnError"), "GET reads through the tolerant helper");
+  assert.ok(src.includes('isMissingColumnError(') && src.includes('"auto_lock_hours"'));
+  assert.ok(src.includes("MONITOR_SETTINGS_SELECT_V1"));
+  assert.ok(src.includes("autoLockMigrationMissing"));
+  assert.ok(src.includes("شغّل ملف الترحيل 20261103_10_library_auto_lock_hours.sql أولاً"));
 });
 
 test("the seeded caps are the old constants, so the deploy changes nothing a reader sees", () => {

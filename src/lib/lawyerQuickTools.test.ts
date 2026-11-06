@@ -53,6 +53,7 @@ test("every AI quick tool is a catalogued lawyer AI tool that is not coming soon
 
 test("the excluded pages stay excluded", () => {
   const hrefs = new Set(LAWYER_QUICK_TOOLS.map((t) => t.href));
+  // /ai/research is a 301, not a page.
   for (const href of ["/ai/direction-support", "/ai/secretary", "/ai/research"]) {
     assert.equal(hrefs.has(href), false, `${href} must not be offered`);
   }

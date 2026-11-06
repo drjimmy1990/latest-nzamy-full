@@ -5,6 +5,9 @@
  */
 import type { ContractField } from "./contractTypes";
 import type { CitationVerdict } from "@/components/ai/CitationCheckList";
+import { stripCitationMarkers } from "../../../../lib/ai/citationMarkers.ts";
+import { documentParagraphs } from "../../../../lib/docx/exportPolicy.ts";
+import type { DocBlock } from "../../../../lib/docx/ooxml.ts";
 
 export interface ContractDraft {
   title: string;
@@ -33,6 +36,15 @@ export function asContractDraft(output: Record<string, unknown> | null): Contrac
     sections,
     citation_check: Array.isArray(output.citation_check) ? (output.citation_check as CitationVerdict[]) : [],
   };
+}
+
+/** The draft for the letterhead export (q345): no source markers. */
+export function contractBlocks(draft: ContractDraft): DocBlock[] {
+  const blocks: DocBlock[] = [{ kind: "title", text: stripCitationMarkers(draft.title).trim() }, ...documentParagraphs(draft.preamble)];
+  for (const s of draft.sections) {
+    blocks.push({ kind: "heading", text: stripCitationMarkers(s.heading).trim() }, ...documentParagraphs(s.body));
+  }
+  return blocks;
 }
 
 /** The draft as one text: what the page shows, copies and exports. */
