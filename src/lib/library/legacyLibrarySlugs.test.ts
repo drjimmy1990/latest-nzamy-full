@@ -45,6 +45,19 @@ test("legacyTarget finds a collection and the book by their legacy slug", () => 
   assert.deepEqual(Object.keys(LEGACY_BOOK_SLUGS), ["sources-of-right-1"]);
 });
 
+test("the production precheck of 2026-11-06: every legacy slug redirects", () => {
+  assert.equal(legacyTarget("collection", "tamyeez")?.dbId, "LAW-98-1250");
+  assert.equal(legacyTarget("collection", "insurance-1438")?.dbId, "LAW-08-0661");
+  assert.equal(legacyTarget("collection", "banking-1408-1427")?.dbId, "LAW-98-1263", "confirmed by eye: same name, 805 rows");
+  assert.equal(legacyTarget("collection", "commercial-papers")?.dbId, "LAW-98-1264", "confirmed by eye: same name, 140 rows");
+  assert.equal(legacyTarget("collection", "labor-principles-1431-vol2")?.dbId, "LAW-98-1256", "the second volume, not LAW-98-1255 (the third)");
+  assert.equal(legacyTarget("book", "sources-of-right-1")?.dbId, "مصادر الحق في الفقه الإسلامي - الجزء الأول");
+  const ids = Object.values(LEGACY_COLLECTION_SLUGS).map((e) => e.dbId).filter((id) => id !== null);
+  const real = new Set(ids);
+  assert.equal(real.size, 33, "33 distinct collections");
+  assert.equal(ids.length, 34, "insurance-1438 shares its record with insurance-principles");
+});
+
 test("legacyTarget: unknown, encoded, empty and prototype slugs are null, never a throw", () => {
   assert.equal(legacyTarget("collection", "%D8%A3"), null);
   assert.equal(legacyTarget("collection", "%E0%A4%A"), null);

@@ -59,16 +59,14 @@ anon_select | authenticated_select | policies_left | policies_admitting_session_
 f           | f                    | 0             | 0                                | t                   | t
 ```
 
-### 0b. Library precheck (read-only). Send us the three tables before the deploy.
+### 0b. Library precheck (read-only). Done on 2026-11-06; nothing to do.
 
 ```
 D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026-11-03_owner_free\S1_precheck_principles_and_book.READ_ONLY.sql
 /www/wwwroot/nzamy/latest-nzamy-full/SQL_batch_2026-11-03_owner_free/S1_precheck_principles_and_book.READ_ONLY.sql
 ```
 
-The file holds three SELECTs. Run each on its own in the SQL Editor, and paste the three tables back.
-
-**Why it matters:** every `dbId` in `src/lib/library/legacyLibrarySlugs.ts` is still empty at this commit. Until we fill them from your tables, every old link to one of the 33 bundled collections, and to the book «مصادر الحق», opens «قريباً», even when the database already holds that collection.
+Its tables filled every `dbId` in `src/lib/library/legacyLibrarySlugs.ts`: 33 collections and the book. If you run it again, run each SELECT on its own and page the second one with `limit 100 offset 100`, because the SQL Editor shows only the last result and stops at 100 rows.
 
 ### 0c. Pricing rows (read-only)
 
