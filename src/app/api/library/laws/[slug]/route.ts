@@ -569,8 +569,7 @@ function formatArticleWithPaywall(
   // `original_text` is the article's superseded wording. For a REPEALED article
   // it is not supplementary — `text` is legitimately empty and this is the
   // article. It therefore goes through exactly the same paywall as `text`.
-  // Same superseded wording as an amendment's full_text: its audit notes go too.
-  const originalText = stripAuditNotes(article.original_text as string | null, 'fullText');
+  const originalText = (article.original_text as string) || '';
 
   // Owner 2026-11-07 (screenshot ٣): the line that introduces the regulation
   // («من اللائحة التنفيذية لنظام المرور (…):») closes the stored text of an
