@@ -348,8 +348,9 @@ test("stripAuditNotes: undated markers drop their clause or aside only", () => {
   assert.equal(stripAuditNotes("عُدّلت الفقرة (2) (نفس نمط الخلل) بالمرسوم", "summary"), "عُدّلت الفقرة (2) بالمرسوم");
   assert.equal(stripAuditNotes("عُدّلت الفقرة. نفس نمط الخلل المكتشف. ثم أُلغيت", "summary"), "عُدّلت الفقرة. ثم أُلغيت");
   assert.equal(stripAuditNotes("عُدّلت الفقرة. نفس نمط الخلل.", "summary"), "عُدّلت الفقرة.");
-  // Diacritics and tatweel do not hide a marker.
-  assert.equal(stripAuditNotes("عُدّلت المادة — جَولة تَدقـيق ثانية", "summary"), "عُدّلت المادة");
+  // Diacritics and tatweel do not hide a marker (M2 counts inside an aside).
+  assert.equal(stripAuditNotes("عُدّلت المادة (جَولة تَدقـيق ثانية)", "summary"), "عُدّلت المادة");
+  assert.equal(stripAuditNotes("عُدّلت المادة — سِجـلّ المشاكل ف3", "summary"), "عُدّلت المادة");
   // fullText: an aside goes, the sentence around it stays; a note line goes whole.
   assert.equal(
     stripAuditNotes("يعاقب المخالف بغرامة [تدقيق منهجي: مطابق] لا تزيد على ألف ريال.", "fullText"),
@@ -375,6 +376,44 @@ test("stripAuditNotes: legal vocabulary and bare ف-numbers are never markers", 
   }
   assert.equal(stripAuditNotes(null, "summary"), "");
   assert.equal(stripAuditNotes(undefined, "fullText"), "");
+});
+
+// ── Review 2026-11-07, fix round 1 ──
+
+test("stripAuditNotes: a correction dated in Arabic-Indic digits is still cut (digits are not folded away)", () => {
+  const field = "عُدّلت المادة بالمرسوم (م/115). تصحيح ٢٠٢٦-٠٨-١٤: كان النص المخزن… والمطبق هو النص بعد م/115";
+  assert.equal(stripAuditNotes(field, "summary"), "عُدّلت المادة بالمرسوم (م/115).");
+  assert.equal(stripAuditNotes(field, "fullText"), "عُدّلت المادة بالمرسوم (م/115).");
+  assert.equal(stripAuditNotes("تصحيح ۲۰۲۶/۸/۱۴: ملاحظة داخلية", "summary"), "");
+});
+
+test("stripAuditNotes: a Hijri-dated «تصحيح» is law, not an audit note", () => {
+  const hijri = "تصحيح 1441/3/10هـ: صُحّح الخطأ المطبعي في الفقرة (ب) بموجب قرار مجلس الوزراء";
+  assert.equal(stripAuditNotes(hijri, "summary"), hijri);
+  assert.equal(stripAuditNotes(hijri, "fullText"), hijri);
+});
+
+test("stripAuditNotes: «تدقيق منهجي» / «جولة تدقيق» alone are law vocabulary", () => {
+  const statute = "يتولى الديوان إجراء تدقيق منهجي على حسابات الجهات المشمولة برقابته.";
+  assert.equal(stripAuditNotes(statute, "fullText"), statute);
+  assert.equal(stripAuditNotes(statute, "summary"), statute);
+  const summary = "عُدّلت المادة وأُضيفت فقرة تلزم الجهة بإجراء جولة تدقيق سنوية";
+  assert.equal(stripAuditNotes(summary, "summary"), summary);
+  assert.equal(stripAuditNotes(summary, "fullText"), summary);
+});
+
+test("stripAuditNotes: fullText cuts a dated correction to the end of its line, not the whole line", () => {
+  assert.equal(
+    stripAuditNotes("يعاقب المخالف بغرامة لا تزيد على ألف ريال. تصحيح 2026-08-14: النص السابق مكرر\nالفقرة الثانية.", "fullText"),
+    "يعاقب المخالف بغرامة لا تزيد على ألف ريال.\nالفقرة الثانية.",
+  );
+});
+
+test("stripAuditNotes: a list label left alone by a cut goes with the note", () => {
+  assert.equal(stripAuditNotes("أ- عُدّلت الفقرة.\nب- تصحيح 2026-08-14: ملاحظة", "summary"), "أ- عُدّلت الفقرة.");
+  assert.equal(stripAuditNotes("أ- عُدّلت الفقرة.\nب) تصحيح 2026-08-14: ملاحظة", "fullText"), "أ- عُدّلت الفقرة.");
+  // One nested level inside an aside.
+  assert.equal(stripAuditNotes("عُدّلت الفقرة (نفس نمط الخلل (انظر ف3)) بالمرسوم", "summary"), "عُدّلت الفقرة بالمرسوم");
 });
 
 test("extractLawCard lifts only the card; the موجز and the rest stay", () => {

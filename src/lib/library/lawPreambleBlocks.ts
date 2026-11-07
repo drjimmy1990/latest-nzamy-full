@@ -443,33 +443,58 @@ export function stripPipelineNotes(input: string | null | undefined): string {
 
 // ── The corpus's own audit notes (owner, 2026-11-07, screenshot ٢) ─────────
 
-/** One tashkeel / superscript alef / tatweel mark (NOTE_MARKS without /g). */
-const NOTE_MARK = /[ً-ٰٟـ]/;
+/**
+ * One tashkeel / superscript alef / tatweel mark — NOTE_MARKS without /g.
+ * Escaped on purpose: a literal «ً-ٰ» range (U+064B–U+0670) also spans the
+ * Arabic-Indic digits ٠-٩ (U+0660–U+0669) and folded dates away (review
+ * 2026-11-07).
+ */
+const NOTE_MARK = /[\u064B-\u065F\u0670\u0640]/;
 /** Western, Arabic-Indic and Extended Arabic-Indic digits. */
 const AUDIT_DIGIT = "[0-9٠-٩۰-۹]";
 /**
- * M1 — a dated correction «تصحيح 2026-08-14». A bare «تصحيح» is legal
- * vocabulary («تصحيح الخطأ المادي») and is never a marker on its own.
+ * M1 — a dated correction «تصحيح 2026-08-14». Gregorian 20xx only: the audit
+ * rounds are dated that way, while «تصحيح 1441/3/10هـ» is a real Hijri-dated
+ * correction of the law. A bare «تصحيح» is legal vocabulary («تصحيح الخطأ
+ * المادي») and is never a marker on its own.
  */
-const AUDIT_DATED_CORRECTION = new RegExp(`تصحيح\\s*${AUDIT_DIGIT}{4}[-/]${AUDIT_DIGIT}{1,2}[-/]${AUDIT_DIGIT}{1,2}`);
-/**
- * M1–M4: any one marks text as the corpus's internal audit trail — M2 «جولة
- * تدقيق» / «تدقيق منهجي», M3 «سجل المشاكل», M4 «نفس نمط الخلل». A bare «ف12»
- * is never a marker. Tested on text with NOTE_MARKS folded away. No /g: the
- * pattern is reused with .test().
- */
-const AUDIT_NOTE_MARKERS = new RegExp(
-  `${AUDIT_DATED_CORRECTION.source}|جولة\\s+تدقيق|تدقيق\\s+منهجي|سجل\\s+المشاكل|نفس\\s+نمط\\s+الخلل`,
+const AUDIT_DATED_CORRECTION = new RegExp(
+  `تصحيح\\s*(?:20|٢٠|۲۰)${AUDIT_DIGIT}{2}[-/]${AUDIT_DIGIT}{1,2}[-/]${AUDIT_DIGIT}{1,2}`,
 );
-/** A «(…)», «[…]» (never a markdown link) or «**…**» aside on one line. */
-const AUDIT_ASIDE = /\s*(?:\(([^()\n]*)\)|\[([^[\]\n]*)\](?!\()|\*\*([^*\n]+)\*\*)/g;
+/**
+ * M1, M3 «سجل المشاكل», M4 «نفس نمط الخلل»: any one marks text as the
+ * corpus's internal audit trail. A bare «ف12» is never a marker. Tested on
+ * text with NOTE_MARKS folded away. No /g: reused with .test().
+ */
+const AUDIT_NOTE_MARKERS = new RegExp(`${AUDIT_DATED_CORRECTION.source}|سجل\\s+المشاكل|نفس\\s+نمط\\s+الخلل`);
+/**
+ * M2 «جولة تدقيق» / «تدقيق منهجي» is also law vocabulary («يتولى الديوان
+ * إجراء تدقيق منهجي…»). On its own it marks only an aside; beside M1/M3/M4
+ * the piece is already a note.
+ */
+const AUDIT_ROUND_MARKER = /جولة\s+تدقيق|تدقيق\s+منهجي/;
+/** A «(…)» (one nested level), «[…]» (never a markdown link) or «**…**» aside on one line. */
+const AUDIT_ASIDE = /\s*(?:\(((?:[^()\n]|\([^()\n]*\))*)\)|\[([^[\]\n]*)\](?!\()|\*\*([^*\n]+)\*\*)/g;
 /** Clause boundaries of a summary: « — », « - », «؛», ". ". Captured, so re-joining keeps them. */
 const AUDIT_CLAUSE_SPLIT = /(\s+[—–-]\s+|\s*؛\s*|\.\s+)/;
 /** What a cut can leave dangling at the end of a line. */
 const AUDIT_DANGLING_TAIL = /[\s(\[—–\-،,:؛;"«]+$/;
+/** A line that a cut left as nothing but a list label: «ب», «2-», «أ)». */
+const AUDIT_LIST_LABEL_ONLY = /^[\p{L}\d]{1,3}\s*[-–)]?$/u;
 
+function foldMarks(text: string): string {
+  return text.replace(NOTE_MARKS, "");
+}
+
+/** M1, M3 or M4 anywhere in `text`. */
 function hasAuditMarker(text: string): boolean {
-  return AUDIT_NOTE_MARKERS.test(text.replace(NOTE_MARKS, ""));
+  return AUDIT_NOTE_MARKERS.test(foldMarks(text));
+}
+
+/** Any marker, M2 included — the test for an aside, and "is there anything to do". */
+function mayHoldAuditNote(text: string): boolean {
+  const folded = foldMarks(text);
+  return AUDIT_NOTE_MARKERS.test(folded) || AUDIT_ROUND_MARKER.test(folded);
 }
 
 /** Index in `line` where a dated correction (M1) starts, or -1. */
@@ -485,9 +510,15 @@ function datedCorrectionAt(line: string): number {
   return m ? kept[m.index] : -1;
 }
 
+/** `line` cut where a dated correction starts; a bare list label left behind goes too. */
+function cutAtDatedCorrection(line: string, at: number): string {
+  const kept = line.slice(0, at).replace(AUDIT_DANGLING_TAIL, "");
+  return AUDIT_LIST_LABEL_ONLY.test(kept.trim()) ? "" : kept;
+}
+
 function dropAuditAsides(line: string): string {
   return line.replace(AUDIT_ASIDE, (all, paren?: string, bracket?: string, bold?: string) =>
-    hasAuditMarker(paren ?? bracket ?? bold ?? "") ? "" : all);
+    mayHoldAuditNote(paren ?? bracket ?? bold ?? "") ? "" : all);
 }
 
 /** A summary line without the clauses that hold a marker; delimiters kept. */
@@ -506,41 +537,67 @@ function dropAuditClauses(line: string): string {
   return out;
 }
 
+function tidy(line: string): string {
+  return line.replace(/[ \t]{2,}/g, " ").trimEnd();
+}
+
 function stripSummaryNotes(text: string): string {
   const out: string[] = [];
+  let changed = false;
   // A dated correction (M1) runs to the end of its paragraph.
   let inNote = false;
   for (const raw of text.split(/\r?\n/)) {
     if (raw.trim() === "") {
       inNote = false;
-      out.push("");
+      out.push(raw);
       continue;
     }
-    if (inNote) continue;
+    if (inNote) {
+      changed = true;
+      continue;
+    }
     let line = raw;
     const at = datedCorrectionAt(line);
     if (at >= 0) {
-      line = line.slice(0, at).replace(AUDIT_DANGLING_TAIL, "");
+      line = cutAtDatedCorrection(line, at);
       inNote = true;
     }
-    line = dropAuditClauses(dropAuditAsides(line)).replace(/[ \t]{2,}/g, " ").trimEnd();
+    line = dropAuditClauses(dropAuditAsides(line));
+    if (line === raw) {
+      out.push(raw);
+      continue;
+    }
+    changed = true;
+    line = tidy(line);
     if (line.trim()) out.push(line);
   }
+  if (!changed) return text;
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function stripFullTextNotes(text: string): string {
   const out: string[] = [];
+  let changed = false;
   for (const raw of text.split(/\r?\n/)) {
-    if (!hasAuditMarker(raw)) {
+    if (!mayHoldAuditNote(raw)) {
       out.push(raw);
       continue;
     }
-    const line = dropAuditAsides(raw);
-    // The marker sits in the line itself, not an aside: the whole line is a note.
-    if (hasAuditMarker(line)) continue;
-    if (line.trim()) out.push(line.replace(/[ \t]{2,}/g, " ").trimEnd());
+    let line = dropAuditAsides(raw);
+    // A dated correction runs from where it starts to the end of its line.
+    const at = datedCorrectionAt(line);
+    if (at >= 0) line = cutAtDatedCorrection(line, at);
+    // M3/M4 in the line itself, not an aside: the whole line is a note.
+    if (hasAuditMarker(line)) line = "";
+    if (line === raw) {
+      out.push(raw);
+      continue;
+    }
+    changed = true;
+    line = tidy(line);
+    if (line.trim()) out.push(line);
   }
+  if (!changed) return text;
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -549,20 +606,24 @@ function stripFullTextNotes(text: string): string {
  * «تصحيح 2026-08-14 (جولة تدقيق منهجي): … راجع سجل المشاكل ف1072.» — in
  * amendment rows, and «الإصدارات السابقة» showed it to the public.
  *
+ * Markers: M1 a dated «تصحيح 20xx-MM-DD», M3 «سجل المشاكل», M4 «نفس نمط
+ * الخلل»; M2 «جولة تدقيق» / «تدقيق منهجي» only inside an aside.
+ *
  * `summary` mode (an amendment's summary): a dated correction is cut from
  * where it starts to the end of its paragraph; otherwise the clauses (split on
- * line breaks, « — », «؛», ". ") and the «(…)» / «[…]» asides that hold a
- * marker are dropped. May return "".
+ * line breaks, « — », «؛», ". ") and the «(…)» / «[…]» / «**…**» asides that
+ * hold a marker are dropped. May return "".
  *
- * `fullText` mode (statutory wording): only whole lines, or «(…)» / «[…]» /
- * «**…**» asides, that hold a marker are dropped — never part of a sentence.
+ * `fullText` mode (statutory wording): a dated correction is cut to the end
+ * of its line; a line holding M3/M4 is dropped whole; asides holding a marker
+ * are dropped. Nothing else is touched.
  *
- * stripPipelineNotes runs first in both modes. Text with no marker comes back
- * exactly as stripPipelineNotes returns it.
+ * stripPipelineNotes runs first in both modes. Text with nothing removed comes
+ * back exactly as stripPipelineNotes returns it.
  */
 export function stripAuditNotes(input: string | null | undefined, mode: "summary" | "fullText"): string {
   const text = stripPipelineNotes(input);
-  if (!text || !hasAuditMarker(text)) return text;
+  if (!text || !mayHoldAuditNote(text)) return text;
   return mode === "summary" ? stripSummaryNotes(text) : stripFullTextNotes(text);
 }
 

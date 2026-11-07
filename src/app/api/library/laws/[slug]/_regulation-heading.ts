@@ -13,7 +13,7 @@
  */
 
 /** Tashkeel, superscript alef, tatweel — folded away before a test. */
-const MARKS = /[ً-ٰٟـ]/g;
+const MARKS = /[\u064B-\u065F\u0670\u0640]/g;
 
 /** The introducing line, as the owner's brief gives it. */
 export const REGULATION_HEADING_LINE = /^[>*\s]*من\s+(?:اللائحة|لائحة|القواعد|الضوابط)[^\n]{0,250}:\s*\**\s*$/;
@@ -42,7 +42,7 @@ export function regulationHeadingForViewer(line: string, hideOfficialMeta: boole
     .replace(/\*\*/g, "")
     .replace(/^[>*\s]+/, "")
     .replace(/[\s*:]+$/, "")
-    .replace(/^م[ً-ٰ]*ن[ً-ٰ]*\s+/, "")
+    .replace(/^م[\u064B-\u065F\u0670]*ن[\u064B-\u065F\u0670]*\s+/, "")
     .trim();
   if (hideOfficialMeta) {
     heading = heading.replace(INSTRUMENT_PARENTHETICAL, "").replace(/[ \t]{2,}/g, " ").trim();
