@@ -36,6 +36,9 @@ export interface LegalDeadlinePreset {
 export const LEGAL_DEADLINE_PRESETS: readonly LegalDeadlinePreset[] = [
   { id: "appeal",      label: "استئناف الحكم",            ruleCode: "appeal_general", days: 30, note: "من اليوم التالي لتسلّم صورة الحكم أو التبليغ به" },
   { id: "cassation",   label: "الطعن بالنقض",             ruleCode: "cassation",      days: 30, note: "من اليوم التالي لتسلّم صورة حكم الاستئناف" },
+  // Owner 2026-11-07, نظام المرافعات الشرعية المادة (١٩٤): urgent matters 15 days
+  // (rule 20261107_30). Chosen by the user; no case carries an «urgent» flag.
+  { id: "cassation_urgent", label: "الطعن بالنقض — المسائل المستعجلة", ruleCode: "cassation_urgent", days: 15, note: "من اليوم التالي لتسلّم صورة حكم الاستئناف في المسائل المستعجلة" },
   { id: "objection",   label: "الاعتراض على أمر الأداء",  days: 10,  note: "من تاريخ إعلان الأمر" },
   { id: "execution",   label: "الاعتراض على التنفيذ",     days: 7,   note: "من تاريخ المباشرة بالتنفيذ" },
   { id: "correction",  label: "تصحيح الحكم",              days: 30,  note: "من تاريخ صدور الحكم" },

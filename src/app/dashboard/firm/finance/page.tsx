@@ -139,7 +139,7 @@ function FirmFinancePageDemo() {
           </button>
           <button className="flex items-center gap-2 px-6 py-3.5 rounded-full text-sm font-semibold bg-royal text-white hover:bg-royal/90 shadow-lg shadow-royal/20 transition-all active:scale-[0.98]">
             <Plus size={18} weight="bold" />
-            <span>فاتورة جديدة</span>
+            <span>بيان أتعاب جديد</span>
           </button>
         </div>
       </motion.div>
@@ -257,12 +257,12 @@ function FirmFinancePageDemo() {
                 <Receipt size={24} className="text-royal" weight="duotone" />
               </div>
               <div>
-                <h2 className={`text-2xl font-bold tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>الفواتير والمطالبات</h2>
-                <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-500"}`}>سجل المعاملات المالية الحديثة</p>
+                <h2 className={`text-2xl font-bold tracking-tight mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>بيانات الأتعاب والمطالبات</h2>
+                <p className={`text-sm ${isDark ? "text-zinc-500" : "text-slate-500"}`}>بيان أتعاب — ليست فاتورة ضريبية إلكترونية</p>
               </div>
             </div>
             <button className="text-sm font-semibold text-royal hover:text-royal/80 hover:underline transition-colors">
-              عرض كل الفواتير
+              عرض كل بيانات الأتعاب
             </button>
           </div>
           
@@ -270,7 +270,7 @@ function FirmFinancePageDemo() {
             <table className="w-full text-base">
               <thead>
                 <tr className={`text-sm font-semibold uppercase tracking-wider text-right ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                  <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5">رقم الفاتورة</th>
+                  <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5">رقم البيان</th>
                   <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5">الموكل</th>
                   <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5 hidden sm:table-cell">الخدمة</th>
                   <th className="px-6 py-5 border-b border-slate-200/20 dark:border-white/5 hidden md:table-cell">التاريخ</th>

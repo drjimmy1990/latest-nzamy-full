@@ -160,7 +160,7 @@ test("owner ٢٦٠ opens nothing else in the law route: ديباجة, official m
 test("the catalogue sends the موجز to everyone through the same flag, from the service-role read", () => {
   const init = read("src/app/api/library/init/route.ts");
   // Owner ٣١٧ / note ١٢ item ٨ (20261030_60): the repealed-last order rides on the same read.
-  assert.match(init, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]/);
+  assert.match(init, /wanted: \[\.\.\.\(lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]\), "mergedNames"\]/);
   // Read on the service-role client (summary_brief is column-locked for anon).
   assert.match(init, /fetchSection\("laws",[\s\S]*?\}, serverOnly, \{/);
   // Locked law rows still lose the body fields; the official fields stay masked.

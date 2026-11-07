@@ -18,6 +18,8 @@ export interface RequestablePlan {
   id: string;
   name: string;
   ctaHref: string;
+  /** A card shown before it is sold (pricing.types.ts Plan.comingSoon): never requestable. */
+  comingSoon?: boolean;
 }
 
 export interface PlanEntitlementRequest {
@@ -102,6 +104,7 @@ export function resolveRequestedPlan(
   const wanted = MERGED_PLAN_IDS[raw] ?? raw;
   const plan = plans.find((p) => p.id === wanted);
   if (!plan) return null;
+  if (plan.comingSoon) return null; // owner ٤٢٠: shown, not sold yet
   if (!plan.ctaHref.startsWith("/register/client")) return null;
   if (planParamOf(plan.ctaHref) !== plan.id) return null;
   return { id: plan.id, name: plan.name };

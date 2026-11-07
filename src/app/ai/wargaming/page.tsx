@@ -16,6 +16,7 @@ import { VoiceInput } from "@/components/ui/VoiceInput";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
+import { useToolUsable } from "@/hooks/useToolUsable";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
@@ -32,7 +33,7 @@ import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { aiSkippedNote, pasteState, splitAiReadable, withTextAccept } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { AttachmentPreviewButton } from "@/components/attachments/AttachmentPreviewModal";
-import { WARGAMING_PASTE_MAX, WARGAMING_PASTE_MIN, WAVE4_FILES, WAVE4_PRICE } from "@/lib/ai/tools";
+import { WARGAMING_PASTE_MAX, WARGAMING_PASTE_MIN, WARGAMING_PRICE, WARGAMING_SINGLE_TARGET_PRICE, WAVE4_FILES, wargamingPrice } from "@/lib/ai/tools";
 import { asSimResult } from "./_simResult";
 import SimResultView from "./_SimResultView";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
@@ -502,9 +503,11 @@ function CaseSetup({
 function TargetSelect({
   D, ctx, targets, setTargets, onRun, onBack,
   attachments, memoText, setMemoText, docsText, setDocsText,
-  memoAttachmentIds, uploading, attachError, attachMemoFile, removeMemoAttachment,
+  memoAttachmentIds, uploading, attachError, attachMemoFile, removeMemoAttachment, aiUsable,
 }: {
   D:boolean; ctx:CaseContext;
+  /** tool-status: the AI simulation's price shows only once the server says this caller may run it. */
+  aiUsable: boolean;
   targets:Set<SimTarget>; setTargets:(t:Set<SimTarget>)=>void;
   onRun:()=>void; onBack:()=>void;
   attachments: OrderAttachment[];
@@ -582,6 +585,12 @@ function TargetSelect({
         <button onClick={()=>setTargets(new Set())} className="hover:text-red-400">إلغاء الكل</button>
         <span className="ms-auto">{targets.size} من {SIM_TARGETS.length} محددة</span>
       </div>
+      {/* R1: the AI simulation is 75 points for one target, 150 for two or more (tools.ts wargamingPrice). */}
+      {aiUsable && (
+      <p className={`text-[11px] ${D?"text-zinc-400":"text-slate-500"}`}>
+        المحاكاة الفورية: هدف واحد {WARGAMING_SINGLE_TARGET_PRICE.toLocaleString("ar-SA")} نقطة · هدفان فأكثر {WARGAMING_PRICE.toLocaleString("ar-SA")} نقطة
+      </p>
+      )}
 
       {/* Memo — required only when نقض المذكرة is selected; the target
           implies the client supplies the memo being critiqued. Either pasted
@@ -958,9 +967,13 @@ function AIWargamingPage() {
   } = useOrderAttachments();
 
   // L9 (plan §5, wave 4): beside the team order, the same case can be
-  // simulated at once by the `wargaming` job (250 points). Only PDF and image
+  // simulated at once by the `wargaming` job (owner ٤٠٩ / R1: 75 points for one
+  // target, 150 for two or more — wargamingPrice, the same count the server charges). Only PDF and image
   // files go to it; a memo counts for «نقض المذكرة» only if it is one of them.
   const ai = useAiRun();
+  // tool-status before the AI simulation's box and price (owner ٤١٧: every
+  // account; the mode still decides). The team order does not depend on it.
+  const aiUsable = useToolUsable("wargaming");
   // P3: a founder lawyer may spend his one independent output on the
   // simulation instead of points. A consultant never gets here (ConsultantGate),
   // so the choice is never offered where the run would be refused.
@@ -975,6 +988,7 @@ function AIWargamingPage() {
   const docsNoRoom = !docsPaste.empty && aiFileIds.length + 1 > WAVE4_FILES.max;
   const docsBlocked = docsPaste.tooShort || docsPaste.tooLong || docsNoRoom;
   const aiBlocked = uploading || ai.busy || targets.size === 0 || (critique && !memoForAi) || docsBlocked;
+  const aiPrice = wargamingPrice(Array.from(targets));
 
   function runAi() {
     if (aiBlocked) return;
@@ -1171,7 +1185,7 @@ function AIWargamingPage() {
         {step==="targets" && (
           <motion.div key="targets" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
             <TargetSelect D={D} ctx={ctx} targets={targets} setTargets={setTargets}
-              onRun={()=>setStep("submit")} onBack={()=>setStep("setup")}
+              onRun={()=>setStep("submit")} onBack={()=>setStep("setup")} aiUsable={aiUsable === true}
               attachments={attachments} memoText={memoText} setMemoText={setMemoText}
               docsText={docsText} setDocsText={setDocsText}
               memoAttachmentIds={memoAttachmentIds}
@@ -1193,11 +1207,15 @@ function AIWargamingPage() {
               submitting={submitting} submitErrors={submitErrors}
               onBack={()=>{setSubmitErrors([]);setStep("targets");}} onSubmit={submitOrder}/>
 
+            {aiUsable === false && (
+              <p role="status" className={`mt-4 text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>المحاكاة الفورية بالذكاء الاصطناعي غير متاحة لحسابك بعد — أرسل الطلب للفريق أعلاه.</p>
+            )}
+            {aiUsable === true && (
             <div className={`mt-4 rounded-2xl border p-4 space-y-2 ${D?"border-[#C8A762]/20 bg-[#C8A762]/[0.04]":"border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.03]"}`}>
               <p className={`text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-800"}`}>أو: محاكاة فورية بالذكاء الاصطناعي</p>
               <p className={`text-[11px] leading-relaxed ${D?"text-zinc-400":"text-zinc-500"}`}>
                 تُجري المحاكاة على الأهداف المختارة الآن وتعرض النتيجة هنا، وتتحقق المنصة من كل مادة تستند إليها في مكتبة الأنظمة ·
-                {" "}{useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة`} · تُرسل نسخة من الملخص والمرفقات إلى مزوّد ذكاء اصطناعي خارج المملكة.
+                {" "}{useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${aiPrice.toLocaleString("ar-SA")} نقطة`} · تُرسل نسخة من الملخص والمرفقات إلى مزوّد ذكاء اصطناعي خارج المملكة.
               </p>
               {aiSkipped.length > 0 && (
                 <p className="text-[11px] text-amber-500">
@@ -1222,13 +1240,14 @@ function AIWargamingPage() {
               <button type="button" onClick={runAi} disabled={aiBlocked}
                 className={`flex w-full items-center justify-center gap-2 rounded-xl border px-6 py-2.5 text-[13px] font-bold disabled:opacity-40 ${D?"border-[#C8A762]/40 text-[#C8A762]":"border-[#0B3D2E]/30 text-[#0B3D2E]"}`}>
                 <Sparkle size={14} weight="fill"/>
-                {ai.busy ? "جارٍ المحاكاة… (دقيقة أو أكثر)" : `شغّل المحاكاة الآن (${useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة`})`}
+                {ai.busy ? "جارٍ المحاكاة… (دقيقة أو أكثر)" : `شغّل المحاكاة الآن (${useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${aiPrice.toLocaleString("ar-SA")} نقطة`})`}
               </button>
               </>)}
               {ai.phase === "error" && ai.error && <p role="alert" className="text-[11px] text-red-500">{ai.error}</p>}
               {ai.phase === "review" && <p role="status" className={`text-[11px] ${D?"text-zinc-400":"text-zinc-500"}`}>{RUN_HELD_MESSAGE_AR}</p>}
               <AiThinkingStage run={ai} isDark={D} toolLabel={aiToolLabelAr("wargaming")} />
             </div>
+            )}
 
             {simResult && (
               <div className="mt-4">

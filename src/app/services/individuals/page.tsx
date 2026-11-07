@@ -201,7 +201,7 @@ export default function IndividualsPage() {
                     (as on /lawyers/browse). No «استجابة فورية — خلال ١٥ دقيقة
                     أو أقل» tile: no response time is measured or promised. */}
                 {[
-                  { icon: Brain, label: isAr ? "ذكاء اصطناعي قانوني" : "Legal AI", desc: isAr ? "مدرّب على الأنظمة السعودية" : "Trained on Saudi law", color: "text-royal bg-royal/5 dark:bg-royal/20" },
+                  { icon: Brain, label: isAr ? "ذكاء اصطناعي قانوني" : "Legal AI", desc: isAr ? "يعتمد الأنظمة السعودية مصدراً" : "Takes Saudi law as its source", color: "text-royal bg-royal/5 dark:bg-royal/20" },
                   { icon: Star, label: isAr ? "محامون موثّقون" : "Verified Lawyers", desc: isAr ? "موثّقون على المنصة" : "Verified on the platform", color: "text-gold-dark bg-gold/10" },
                 ].map((item, i) => {
                   const Icon = item.icon;

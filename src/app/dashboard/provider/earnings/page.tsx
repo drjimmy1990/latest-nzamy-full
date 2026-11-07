@@ -3,12 +3,15 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { useTheme } from "@/components/ThemeProvider";
+import { COMMISSION_PCT, commissionPctText } from "@/lib/pricing/commission";
 import {
   CurrencyDollar, ArrowDown, ArrowUp, Clock, Bank,
   Receipt, ChartBar, CheckCircle, Warning, ArrowRight,
 } from "@phosphor-icons/react";
 
 // ── Mock data ──────────────────────────────────────────────────────────────────
+// A free account's rows: commission = COMMISSION_PCT.free (15%, owner ٤٢١).
+const FREE_RATE = commissionPctText(COMMISSION_PCT.free, "ar");
 
 const MOCK_TRANSACTIONS = [
   { id: 1, client: "محمد الحارثي", type: "video", gross: 299, commission: 44.85, net: 254.15, date: "٦ أبريل ٢٠٢٦", status: "paid" },
@@ -78,7 +81,7 @@ export default function ProviderEarningsPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className={`font-brand text-2xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>الأرباح والمالية</h1>
-              <p className={`mt-0.5 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>عمولة المنصة ١٥٪ — التحويل كل ١٤ يوم</p>
+              <p className={`mt-0.5 text-sm ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>عمولة المنصة {FREE_RATE} للحساب المجاني ({commissionPctText(COMMISSION_PCT.subscriber, "ar")} للمشتركين) — التحويل كل ١٤ يوم</p>
             </div>
             <div className={`flex rounded-xl border p-1 ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
               {(["week", "month", "all"] as const).map(p => (
@@ -98,7 +101,7 @@ export default function ProviderEarningsPage() {
             {[
               { label: "الإجمالي قبل العمولة", value: `${totalGross.toLocaleString()} ر.س`, icon: ChartBar, color: "text-zinc-700 dark:text-zinc-300" },
               { label: "صافي المكتسب", value: `${totalNet.toFixed(0)} ر.س`, icon: CurrencyDollar, color: "text-emerald-600 dark:text-emerald-400" },
-              { label: "عمولة المنصة ١٥٪", value: `${totalCommission.toFixed(0)} ر.س`, icon: Receipt, color: "text-amber-500" },
+              { label: `عمولة المنصة ${FREE_RATE}`, value: `${totalCommission.toFixed(0)} ر.س`, icon: Receipt, color: "text-amber-500" },
               { label: "بانتظار التحويل", value: `${pendingAmount.toFixed(0)} ر.س`, icon: Clock, color: "text-blue-500" },
             ].map(({ label, value, icon: Icon, color }) => (
               <div key={label} className={`rounded-2xl border p-4 ${surface}`}>

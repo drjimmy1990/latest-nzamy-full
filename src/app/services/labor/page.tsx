@@ -155,13 +155,13 @@ export default function LaborServicePage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <CheckCircle size={20} className="text-gold" />
-                  <span className="text-gold text-sm font-semibold">استشارة مجانية — بدون التزام</span>
+                  <span className="text-gold text-sm font-semibold">تحليل أولي بالذكاء الاصطناعي — بالنقاط</span>
                 </div>
                 <h2 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-brand)' }}>
                   اعرف حقوقك الآن
                 </h2>
                 <p className="text-white/70 text-sm max-w-[40ch]">
-                  أجب على ٤ أسئلة فقط — وسيُخبرك AI قانوني بما تستحقه.
+                  اكتب ملخص قضيتك وأرفق مستنداتها — ويقدّر لك المحلل موقفك ومخاطره الإجرائية، بلا نسب ولا توقّع للحكم.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">

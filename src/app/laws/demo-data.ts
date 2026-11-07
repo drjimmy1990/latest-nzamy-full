@@ -89,6 +89,12 @@ export interface DemoOrder {
   unlockedCount?: number;
   hashtags?: string[];
   official_url?: string;
+  /**
+   * From /api/library/decrees/[id] (owner ٤٢٤ / ٣٨٠): the viewer is not a
+   * subscriber, so `ref`, `date` and `official_url` are '' — the reader shows
+   * the «للمشتركين» row instead.
+   */
+  officialMetaLocked?: boolean;
 }
 
 export interface FeqhBookDemo {

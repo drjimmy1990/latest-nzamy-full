@@ -52,6 +52,7 @@ import BriefCheckReportView, { asBriefCheckReport } from "./_BriefCheckReport";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
+import { useToolUsable } from "@/hooks/useToolUsable";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { apiMutate } from "@/lib/services/api";
@@ -99,6 +100,9 @@ function AIBriefCheckPage() {
   const [errors, setErrors] = useState<string[]>([]);
   const ai = useAiRun();
   const report = ai.phase === "done" ? asBriefCheckReport(ai.output) : null;
+  // tool-status before the AI report's box and price (owner ٤١٧: every account;
+  // the mode still decides). The team order above it does not depend on it.
+  const aiUsable = useToolUsable("brief-check");
 
   // Uploading and ordering both need a session. `loading` is its own state:
   // treating "not yet known" as signed out would flash the sign-in prompt at
@@ -382,7 +386,10 @@ function AIBriefCheckPage() {
             {submitting ? "جارٍ الإرسال…" : uploading ? "انتظر اكتمال رفع المذكرة…" : "إرسال الطلب"}
           </button>
 
-          {reviewScope === "gaps_report" && (
+          {reviewScope === "gaps_report" && aiUsable === false && (
+            <p role="status" className={hint}>التقرير الفوري بالذكاء الاصطناعي غير متاح لحسابك بعد — أرسل المذكرة للفريق أعلاه.</p>
+          )}
+          {reviewScope === "gaps_report" && aiUsable === true && (
             <div className={`rounded-2xl border p-4 space-y-2 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/[0.04]" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.03]"}`}>
               <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>أو: تقرير فوري بالذكاء الاصطناعي</p>
               <p className={hint}>

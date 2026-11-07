@@ -160,7 +160,7 @@ test("shield is unsold: no on-sale price-book plan grants it, and a lock names n
   assert.equal(fa.FEATURE_GATES.marketplace, "shield");
   assert.equal(fa.FEATURE_GATES.reports, "shield");
   assert.equal(fa.FEATURE_GATES["ai-contracts"], "shield");
-  assert.equal(fa.TIER_LABELS_AR.shield, "التأمين القانوني");
+  assert.equal(fa.TIER_LABELS_AR.shield, "عضوية الحماية القانونية"); // owner ٤٣٤
 });
 
 test("shield lock copy: SubscriptionGuard and the sidebar badge name no unsold plan", () => {
@@ -201,7 +201,11 @@ test("I2: /services/consultations shows the booking page's prices and «قريب
   assert.doesNotMatch(page, /price: "|currency: "/, "a typed price or currency is back");
   assert.doesNotMatch(page, /٩٩ ر|٢٩٩|"99"|"299"/);
   assert.match(page, /const \{ catalog \} = useClientPricingCatalog\(\);/);
-  assert.match(page, /kind === "ai" \? COMING_SOON\[L\] : consultationTypePrice\(kind, catalog, L\)/);
+  assert.match(page, /if \(kind === "ai"\) return COMING_SOON\[L\];/);
+  // owner ٤٣٣: the call card shows voice-call and video-short side by side
+  assert.match(page, /const voice = consultationTypePrice\("voice", catalog, L\);/);
+  assert.match(page, /const video = consultationTypePrice\("video", catalog, L\);/);
+  assert.match(page, /return consultationTypePrice\(kind, catalog, L\);/);
   assert.equal((page.match(/\{priceOf\(item\.kind\)\}/g) ?? []).length, 2, "both card grids");
   assert.doesNotMatch(page, /إجابة فورية من الذكاء الاصطناعي|Instant AI-powered/);
 });
@@ -221,7 +225,9 @@ test("I3: no «مشمول في الباقة» / 49 / 79 for ai-letter, the wizar
   assert.match(wizard, /\{aiConsultSoon \? COMING_SOON_BADGE_AR : `استشارة فورية · \$\{servicePriceLabel\(aiConsultService\)\}`\}/);
   assert.match(wizard, /\{!aiConsultSoon && aiConsultService\.priceNote && \(/);
   assert.match(wizard, /\{aiPathSoon \? COMING_SOON_BADGE_AR : servicePriceLabel\(service\)\}/);
-  assert.match(wizard, /\{!aiPathSoon && service\.priceNote && priceNoteDescribesSelection && \(/);
+  // owner ٤٣٣: every mode has its own entry, so its own note is printed (no borrowed «60 دقيقة»)
+  assert.match(wizard, /\{!aiPathSoon && service\.priceNote && \(/);
+  assert.doesNotMatch(wizard, /MODES_BORROWING_ANOTHER_SERVICE_ENTRY/);
 
   assert.match(src("components/floating/waChatPrices.ts"), /if \(isTerminalToolHref\(service\.route\)\) \{/);
   const contract = src("components/floating/wa-steps/StepContract.tsx");
@@ -303,8 +309,12 @@ test("I6: the companies and government comparison tables match the trimmed cards
   for (const id of ids) {
     const block = arCards.split(`{ id: "${id}"`)[1].split("{ id: ")[0];
     const card = block.match(/"مراجعة عقود محامٍ: ([^"]+)"/)?.[1]
-      ?? (block.includes("مراجعة عقود + صياغة: حسب العقد") ? "حسب العقد" : "❌");
-    assert.match(reviewRow, new RegExp(`"${id}": "${card}"`), `${id}: the table disagrees with the card («${card}»)`);
+      ?? block.match(/"مراجعة عقود \+ صياغة: ([^"]+)"/)?.[1] ?? "❌";
+    // Owner ٤٣٧ (Task F fix round 1): no quota is tracked, so a card's count
+    // carries «— قريباً» and the table cell reads «قريباً»; ❌ stays ❌.
+    const cell = card === "❌" ? "❌" : "قريباً";
+    if (card !== "❌") assert.match(card, /قريباً$/, `${id}: the card's count is not marked «قريباً»`);
+    assert.match(reviewRow, new RegExp(`"${id}": "${cell}"`), `${id}: the table disagrees with the card («${card}»)`);
   }
 });
 

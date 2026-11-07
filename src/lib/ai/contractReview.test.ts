@@ -72,8 +72,8 @@ test("the registry entry: 250 points at any page count, one file up to 15 pages,
   assert.deepEqual(TOOL.files, CONTRACT_REVIEW_FILES);
 });
 
-test("R21: the six contracts-pro roles, as one constant", () => {
-  assert.deepEqual([...CONTRACTS_PRO_ROLES], ["lawyer", "firm", "individual", "corporate", "micro", "ngo"]);
+test("R21 + owner ٤١٧: the contracts-pro roles are every registered role, as one constant", () => {
+  assert.deepEqual([...CONTRACTS_PRO_ROLES], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   assert.equal(TOOL.roles, CONTRACTS_PRO_ROLES, "one constant, not a second list");
   assert.equal(AI_TOOLS["contracts-pro"].roles, CONTRACTS_PRO_ROLES);
 });
@@ -248,7 +248,7 @@ test("q296: the points-standing route does not answer for it — its short reply
 
 const F1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SIX = CONTRACTS_PRO_ROLES as readonly string[];
-const OUTSIDERS = ["government", "provider", "arbitrator", "translator", "", "client"];
+const OUTSIDERS = ["arbitrator", "translator", "", "client"];
 const actor = (userType: string): RunActor => ({ userId: "u-1", userType, practiceKind: "advocate", displayName: null });
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
@@ -294,7 +294,7 @@ test("off: nobody is charged, for every role, whether the setting is empty, unre
   }
 });
 
-test("staff: every one of the six is refused before the charge; an admin runs it exempt", async () => {
+test("staff: every registered role is refused before the charge; an admin runs it exempt", async () => {
   const setting = { "contract-review": { mode: "staff" } };
   for (const role of SIX) {
     const { client, log } = db(setting);
@@ -311,7 +311,7 @@ test("staff: every one of the six is refused before the charge; an admin runs it
   assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_exempt, true);
 });
 
-test("a role outside the six is refused before any charge, in every mode, and the setting is not read", async () => {
+test("a role outside the registered ones is refused before any charge, in every mode, and the setting is not read", async () => {
   for (const mode of ["off", "staff", "live"]) {
     for (const role of OUTSIDERS) {
       const { client, log } = db({ "contract-review": { mode } });
@@ -326,7 +326,7 @@ test("a role outside the six is refused before any charge, in every mode, and th
   }
 });
 
-test("live: each of the six is charged exactly the price shown, at one page and at fifteen", async () => {
+test("live: each registered role is charged exactly the price shown, at one page and at fifteen", async () => {
   for (const role of SIX) {
     for (const pages of [1, 15]) {
       const { client, log } = db({ "contract-review": { mode: "live" } });

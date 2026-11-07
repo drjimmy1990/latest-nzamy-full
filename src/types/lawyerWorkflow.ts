@@ -1,6 +1,9 @@
+import type { COMMISSION_PCT } from "@/lib/pricing/commission";
 export type LawyerTeamRole = "trainee" | "admin_assistant" | "part_time_lawyer";
 export type WorkflowStatus = "draft" | "pending" | "active" | "completed" | "cancelled" | "disputed";
 export type MoneyCurrency = "SAR";
+/** A platform commission rate (R4): 5, 7 or 15 — read from COMMISSION_PCT, never typed here. */
+export type CommissionPercent = (typeof COMMISSION_PCT)[keyof typeof COMMISSION_PCT];
 
 export interface LawyerServicePricing {
   adminPricingKey: string;
@@ -78,7 +81,8 @@ export interface MarketplaceWorkspace {
   id: string;
   requestId: string;
   acceptedOfferId: string;
-  commissionPercent: 15;
+  /** The rate for this provider's plan (commissionPctFor), not a fixed 15 (Task F fix round 1). */
+  commissionPercent: CommissionPercent;
   escrowStatus: "pending" | "funded" | "released" | "refunded" | "disputed";
   status: WorkflowStatus;
 }

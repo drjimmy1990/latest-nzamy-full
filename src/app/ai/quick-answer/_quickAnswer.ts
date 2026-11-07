@@ -18,14 +18,31 @@ export const QUICK_ANSWER_FOLLOW_UPS: ReadonlyArray<{ href: "/ai/legal-opinion" 
 ];
 
 /**
+ * Owner ٤١٣ option A: an answer that cites none of the library texts is shown
+ * (and charged) under this label; the server flags it `ungrounded: true`
+ * (runCore settleRunWith).
+ */
+export const QUICK_ANSWER_UNGROUNDED_LABEL = "إجابة عامة بلا سند مرجعي — تحقق منها";
+
+/** True when the run's output is a general answer with no library text behind it. */
+export function isUngroundedAnswer(output: Record<string, unknown> | null | undefined): boolean {
+  return output?.ungrounded === true;
+}
+
+/** The text the result actions copy / export: the label goes with an ungrounded answer. */
+export function quickAnswerExportText(answer: string, ungrounded: boolean): string {
+  return ungrounded ? `${QUICK_ANSWER_UNGROUNDED_LABEL}\n\n${answer}` : answer;
+}
+
+/**
  * The two refusals that follow a charge and refund it (runCore: no_sources,
- * ungrounded), in this page's words. Any other code keeps the server's own message:
+ * ungrounded: the model's «النصوص لا تجيب» sentence), in this page's words. Any other code keeps the server's own message:
  * most come before a charge, so a refund sentence would be untrue there.
  */
 export function quickAnswerRefusalText(code: string | null): string | null {
   if (code === "no_sources") {
     return "لم نجد في مكتبة الأنظمة نصاً يجيب عن هذا السؤال — أُعيدت نقاطك. أعد صياغته بكلمات نظامية أو اطلب رأياً من الرأي الفصل.";
   }
-  if (code === "ungrounded") return "لم تستند الإجابة إلى نص من المكتبة فحُجبت وأُعيدت نقاطك.";
+  if (code === "ungrounded") return "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال — أُعيدت نقاطك.";
   return null;
 }

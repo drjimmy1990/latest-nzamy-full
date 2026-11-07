@@ -11,8 +11,9 @@
  * reads — CLIENT_SERVICE_CATALOG merged with admin_pricing_catalog by GET
  * /api/client-pricing (useClientPricingCatalog) — through the same mapping
  * the consultation wizard and the WhatsApp chat use
- * (getConsultationModeServiceId: voice and video → video-full, in-person →
- * in-person). No number is typed here.
+ * (getConsultationModeServiceId: voice → voice-call, video → video-short,
+ * in-person → in-person — owner ٤٣٣, 3 Nov 2026: 129 / 199 / 349 by default).
+ * No number is typed here.
  *
  * The AI type has no price (q327, owner package of 1 Nov 2026): «يُحدَّد بعد
  * المراجعة».
@@ -32,7 +33,7 @@ export function consultationServiceId(type: ConsultationType): string | null {
   return getConsultationModeServiceId(type);
 }
 
-/** «٥٠٠ ر.س» / "500 SAR" from the catalogue, or «يُحدَّد بعد المراجعة». */
+/** «١٩٩ ر.س» / "199 SAR" from the catalogue, or «يُحدَّد بعد المراجعة». */
 export function consultationTypePrice(
   type: ConsultationType,
   catalog: ClientServiceCatalogItem[],
@@ -41,6 +42,50 @@ export function consultationTypePrice(
   const id = consultationServiceId(type);
   if (!id) return PRICE_AFTER_REVIEW[lang];
   return catalogPriceLabel(id, catalog, lang) ?? PRICE_AFTER_REVIEW[lang];
+}
+
+/** One row of the lawyer's «أسعار الاستشارات» panel (owner ٤٣٣). */
+export interface LawyerPriceRangeRow {
+  serviceId: string;
+  /** «صوتية (٢٠ دقيقة)» — the mode and the catalogue's duration. */
+  label: string;
+  /** The default price clients are shown today, e.g. «١٢٩ ر.س». */
+  defaultPrice: string;
+  /** «يحدد المحامي سعره بين ٨٩ و٢٤٩ ر.س», or null when the entry has no band. */
+  range: string | null;
+}
+
+const RANGE_MODES: ReadonlyArray<{ type: Exclude<ConsultationType, "ai"> | "text"; ar: string; en: string }> = [
+  { type: "text", ar: "كتابية", en: "Written" },
+  { type: "voice", ar: "صوتية (٢٠ دقيقة)", en: "Voice (20 min)" },
+  { type: "video", ar: "مرئية (٣٠ دقيقة)", en: "Video (30 min)" },
+  { type: "in-person", ar: "حضورية (٤٥ دقيقة)", en: "In person (45 min)" },
+];
+
+/**
+ * Owner ٤٣٣ (3 Nov 2026): each consultation's default price and the band a
+ * lawyer will price it in (catalogue `lawyerPriceRange`). DISPLAY ONLY — no
+ * lawyer can set a price yet, so the one screen that shows it (the lawyer's
+ * own profile edit) marks it «قريباً». Never shown to clients: it would
+ * promise a per-lawyer price nothing charges.
+ */
+export function lawyerPriceRangeRows(catalog: ClientServiceCatalogItem[], lang: "ar" | "en"): LawyerPriceRangeRow[] {
+  return RANGE_MODES.map(({ type, ar, en }) => {
+    const serviceId = getConsultationModeServiceId(type);
+    const entry = catalog.find((s) => s.serviceId === serviceId);
+    const band = entry?.lawyerPriceRange;
+    const n = (v: number) => v.toLocaleString(lang === "ar" ? "ar-SA" : "en-US");
+    return {
+      serviceId,
+      label: lang === "ar" ? ar : en,
+      defaultPrice: catalogPriceLabel(serviceId, catalog, lang) ?? PRICE_AFTER_REVIEW[lang],
+      range: band
+        ? lang === "ar"
+          ? `يحدد المحامي سعره بين ${n(band.min)} و${n(band.max)} ر.س`
+          : `The lawyer sets the price between ${n(band.min)} and ${n(band.max)} SAR`
+        : null,
+    };
+  });
 }
 
 /** The type cards with the catalogue's price in place of whatever they carried. */

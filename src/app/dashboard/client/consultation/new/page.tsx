@@ -44,7 +44,6 @@ import {
   type ConsultPath,
   type LawyerMode,
   MODE_COPY,
-  MODES_BORROWING_ANOTHER_SERVICE_ENTRY,
   IS_BETA,
 } from "@/constants/clientConsultationData";
 import { StepBar } from "@/components/consultation/ClientConsultationComponents";
@@ -304,7 +303,8 @@ export default function NewConsultationPage() {
     if (urlType) {
       // Coming from Services page (already chose human service)
       setPath("lawyer");
-      if (urlType.includes("video")) setMode("video");
+      if (urlType.includes("voice")) setMode("voice");
+      else if (urlType.includes("video")) setMode("video");
       else if (urlType.includes("in-person")) setMode("in-person");
       else if (urlType.includes("written") || urlType.includes("text")) setMode("text");
       setStep(2);
@@ -329,23 +329,10 @@ export default function NewConsultationPage() {
   // screen; the figure itself is rendered by formatClientServicePrice(), which
   // is the one function that knows «مجانا» from «٥٠٠ ر.س».
   const estimate = service.requiresPayment ? service.basePrice : 0;
-  // Does the catalogue entry's own `priceNote` describe the session the client
-  // actually picked?
-  //
-  // The note belongs to the ENTRY, and for every mode but one the entry IS the
-  // session. «صوتية (أونلاين)» is the exception: it has no catalogue row, so
-  // `serviceId` above resolves to "video-full" and its note reads «مرئية
-  // أونلاين - 60 دقيقة» — printed directly under a «النوع» row saying «مع محامٍ
-  // — صوتية (أونلاين)». See MODES_BORROWING_ANOTHER_SERVICE_ENTRY for why the
-  // test is that set and not a count of modes sharing a serviceId.
-  //
-  // Nothing takes the note's place when it is suppressed. This wizard has no
-  // recorded duration for a voice session and no note of its own to print, and
-  // the last pass removed the hardcoded «60 دق» from the detail page for
-  // exactly that reason — putting a duration back here through a borrowed note
-  // would be the same invention by another route.
-  const priceNoteDescribesSelection =
-    path === "ai" || !MODES_BORROWING_ANOTHER_SERVICE_ENTRY.has(mode);
+  // The catalogue entry's own `priceNote` describes the session the client
+  // picked: since owner ٤٣٣ every mode has an entry of its own (voice →
+  // voice-call, 20 min; video → video-short, 30 min), so no mode borrows
+  // another's note any more.
   // Step 1 has no type selected, so it can only name a floor: the cheapest
   // amount a session on this page is quoted at. That is the cheapest session
   // mode — the AI path is free by catalog rule, so folding its ٤٩ in here would
@@ -792,7 +779,7 @@ export default function NewConsultationPage() {
                     <div className="flex flex-col gap-1 mt-2.5">
                       {[
                         "محامٍ سعودي معتمد ومرخّص",
-                        "اختر: مرئية · حضورية · نصية",
+                        "اختر: مرئية · صوتية · حضورية · نصية",
                         "ملخص مكتوب بعد الجلسة",
                       ].map(f => (
                         <span key={f} className={`flex items-center gap-1 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
@@ -1117,7 +1104,7 @@ export default function NewConsultationPage() {
                     </span>
                     <span className="text-[18px] font-black text-[#C8A762]">{aiPathSoon ? COMING_SOON_BADGE_AR : servicePriceLabel(service)}</span>
                   </div>
-                  {!aiPathSoon && service.priceNote && priceNoteDescribesSelection && (
+                  {!aiPathSoon && service.priceNote && (
                     <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
                       {service.priceNote}
                     </p>

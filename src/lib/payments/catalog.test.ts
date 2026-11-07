@@ -284,11 +284,12 @@ test("every top-up carries its points and their validity", () => {
   const want: Record<string, [number, number]> = {
     "topup-100": [100, 3],
     "topup-250": [250, 3],
-    "topup-500": [500, 3],
-    "topup-1000": [1250, 6],
-    "topup-2500": [3500, 12],
-    "topup-5000": [8500, 12],
-    "topup-10000": [25000, 12],
+    // owner ٤٢٢: the professionals' packs grant the bonus balances
+    "topup-500": [700, 3],
+    "topup-1000": [1500, 6],
+    "topup-2500": [5000, 12],
+    "topup-5000": [12500, 12],
+    "topup-10000": [30000, 12],
   };
   for (const [id, [points, months]] of Object.entries(want)) {
     const item = PAYABLE_ITEMS[id];

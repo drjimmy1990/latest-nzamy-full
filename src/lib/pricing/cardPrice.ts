@@ -87,6 +87,20 @@ export function cardPrice(card: CardPriceFields, cycle: Cycle, lang: "ar" | "en"
   return { price, period: yearly ? card.periodYearly : card.periodMonthly };
 }
 
+/**
+ * The cards a section draws for a cycle: a card the book does not sell in this
+ * cycle is dropped (cardPrice null), EXCEPT a «قريباً» card (`comingSoon`,
+ * owner ٤٢٠) — it has no price by design and shows in every cycle with its
+ * disabled «قريباً» button.
+ */
+export function shownCards<T extends CardPriceFields & { comingSoon?: boolean }>(
+  cards: readonly T[],
+  cycle: Cycle,
+  lang: "ar" | "en",
+): T[] {
+  return cards.filter((card) => card.comingSoon === true || cardPrice(card, cycle, lang) !== null);
+}
+
 /** The cycles an audience may be offered (§2 rule 1). */
 export function audienceCycles(audience: AudienceTab): readonly Cycle[] {
   return audience === "individuals" ? INDIVIDUAL_CYCLES : PROFESSIONAL_CYCLES;

@@ -14,6 +14,10 @@ import { StepSubmit }    from "@/components/draft/steps/StepSubmit";
 import { StepAiDraft }   from "@/components/draft/steps/StepAiDraft";
 import { useUser } from "@/hooks/useUser";
 import { draftKindFromMemo } from "@/lib/ai/draftKinds";
+import { AI_TOOLS } from "@/lib/ai/tools";
+import { toolRoleRefusal } from "@/lib/ai/aiToolsConfig";
+import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
+import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
 import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
 import { splitAiReadable } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
@@ -42,9 +46,11 @@ export default function AIDraftPage() {
   // L14 (owner LIVE-F02, NOTE-22): a pleading is written by the AI by
   // default; the team's review is a separate, optional order. The specialist
   // modes (arbitration, notary, report, minutes) have no kind and stay a team
-  // order, as does any account the tool is not open to (lawyers and firms).
+  // order, as does any account the tool is not open to. Owner ٤١٧: the tool's
+  // roles (tools.ts) are every registered account; the role rule is the run
+  // path's own (toolRoleRefusal), the consultant lock is the line below.
   const kind = draftKindFromMemo(s.memoType, s.memoSubType);
-  const aiOpen = kind !== null && ["lawyer", "firm", "admin"].includes(user.userType as string);
+  const aiOpen = kind !== null && toolRoleRefusal(AI_TOOLS["legal-drafter"], { userType: user.userType ?? "", practiceKind: null }) === null;
   // Art. 18: a legal consultant does not plead — neither by the AI nor by
   // the team (the service-requests POST refuses it too).
   const consultantBlocked = kind !== null && user.practiceKind === "consultant";
@@ -54,7 +60,11 @@ export default function AIDraftPage() {
   // The run answered `tool_off` (the tool ships off until an admin turns it
   // on): the team order becomes the path.
   const [aiOff, setAiOff] = useState(false);
-  const markAiOff = useCallback(() => setAiOff(true), []);
+  // `library_tier` (owner ٤١٧): the drafter is open to every account, but the
+  // library's AI tier refused this one; the team order follows, with a note.
+  const [aiOffReason, setAiOffReason] = useState<"tool_off" | "library_tier" | null>(null);
+  const markAiOff = useCallback((code: "tool_off" | "library_tier") => { setAiOff(true); setAiOffReason(code); }, []);
+  const libraryNote = aiOffReason === "library_tier" ? libraryToolRefusal("library_tier", "الصائغ القانوني", user.userType) : null;
   const aiPath = aiOpen && !aiOff && !consultantBlocked && kind !== null;
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
@@ -220,6 +230,12 @@ export default function AIDraftPage() {
               طلب مراجعة من فريق نظامي (اختياري) — طلب منفصل عن الصياغة
             </button>
           )}
+        </div>
+      )}
+      {s.step === "submit" && !consultantBlocked && !aiPath && libraryNote && (
+        <div className="space-y-2">
+          <LibraryToolRefusalNote refusal={libraryNote} isDark={isDark} />
+          <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>يمكنك إرسال الطلب لفريق نظامي ليصوغه لك أدناه.</p>
         </div>
       )}
       {s.step === "submit" && !consultantBlocked && !aiPath && (

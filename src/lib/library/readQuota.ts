@@ -30,11 +30,11 @@ export const LIBRARY_READ_QUOTA = Object.freeze({
   /** Note ١٣: «عضو مكتب/شركة … 400». A firm / corporate account or an active member. */
   memberDailyDocs: 400,
   /**
-   * NOT in the note — chosen here, an owner question: distinct documents per
-   * rolling hour. 120 is one new document every 30 seconds for a full hour;
-   * a person reading cannot keep that up, a script walking the catalogue does.
+   * Owner answer ٤٢٦ (2026-11-07): 50 distinct documents per rolling hour (was
+   * 120, chosen here before he answered). The settings row is set to the same
+   * by 20261107_20_library_caps_owner_426.sql.
    */
-  hourlyDocs: 120,
+  hourlyDocs: 50,
   /**
    * NOT in the note — chosen here, an owner question: after the cap, the
    * Nth DISTINCT document a reader still tries to open the same day opens a

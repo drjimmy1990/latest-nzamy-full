@@ -27,6 +27,8 @@ test("«باقتك الحالية» names the plan the account's family sells (c
   assert.equal(currentPlanLabelAr("firm", "advocate", "corp"), "مكتب المحاماة");
   assert.equal(currentPlanLabelAr("firm", "advocate", "enterprise"), "شركة المحاماة");
   assert.equal(currentPlanLabelAr("lawyer", "consultant", "pro"), "المستشار القانوني المستقل");
+  // owner ٤٢٠ / ٤٣٤: a current label says «عضوية الحماية القانونية», never the old name (R3)
+  assert.equal(currentPlanLabelAr("individual", "advocate", "max"), "عضوية الحماية القانونية");
 });
 
 test("anything else falls back to the generic tier name", () => {

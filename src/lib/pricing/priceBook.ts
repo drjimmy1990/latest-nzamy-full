@@ -130,6 +130,13 @@ export interface BookEntry {
   readonly kind: BookItemKind;
   readonly labelAr: string;
   /**
+   * The name receipts and order lists print for an order of this item, when
+   * it differs from today's `labelAr`: the name the item was SOLD under
+   * (ruling R3, owner ٤٢٠). Set only on a retired entry, whose every order is
+   * historic (ind-litigation: «التأمين القانوني», the 399 plan).
+   */
+  readonly receiptLabelAr?: string;
+  /**
    * The `profiles.user_type` values that may buy this item online, or "any".
    * Access is gated by tier rank and same-rank purchases stack, so a plan
    * sold to the wrong audience would buy another audience's access cheaper
@@ -187,6 +194,11 @@ function plan(
     buyers: [...buyers],
     ...(launchPrices.length > 0 ? { launchPrices: launchPrices.map((lp) => ({ ...lp, prices: { ...lp.prices } })) } : {}),
   });
+}
+
+/** A retired entry whose orders keep the name it was sold under (R3). */
+function soldAs(entry: BookEntry, receiptLabelAr: string): BookEntry {
+  return freezeEntry({ ...entry, receiptLabelAr });
 }
 
 /**
@@ -273,9 +285,9 @@ function membership(id: string, labelAr: string, sar: number, buyers: readonly s
  *     prices for the first year (8,415 / 12,665);
  *   - top-ups (§4هـ, conflict ١١, answer ٣٠٢): 100 and 250 for individuals
  *     only, 1 point a riyal, 3 months; 500 / 1,000 / 2,500 / 5,000 / 10,000
- *     for professionals only, the doc's everyday balance (its larger «فترة
- *     العروض» balance is not dated by the owner, so it is not granted), valid
- *     3 / 6 / 12 / 12 / 12 months.
+ *     for professionals only, valid 3 / 6 / 12 / 12 / 12 months. Owner ٤٢٢
+ *     (3 Nov 2026): those five now grant the bonus balances 700 / 1,500 /
+ *     5,000 / 12,500 / 30,000.
  * P3 (founder kit r7, 1 Nov 2026): the LAWYER founder membership
  * `lawyer-founder-2026` is in the book — 2,996 before VAT, one payment,
  * lawyers only. Its window (2026-11-01 → 2027-01-25) and its 1,096 seats are
@@ -326,17 +338,26 @@ export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
   // settles ٤٢٠. Every cycle retired: still resolvable for orders, receipts
   // and the renewal lookup.
   "ind-preventive": plan("ind-preventive", "الباقة الوقائية", { monthly: 149, yearly: 1490 }, "pro", ["individual"], ["monthly", "yearly"]),
-  "ind-litigation": plan("ind-litigation", "التأمين القانوني", { monthly: 399, yearly: 3990 }, "max", ["individual"], ["monthly", "yearly"]),
+  // Owner ٤٢٠ / ٤٣٤: every current label says «عضوية الحماية القانونية»; the
+  // 399 plan's receipts keep the name it was sold under (R3).
+  "ind-litigation": soldAs(
+    plan("ind-litigation", "عضوية الحماية القانونية", { monthly: 399, yearly: 3990 }, "max", ["individual"], ["monthly", "yearly"]),
+    "التأمين القانوني",
+  ),
   "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1050, 90),
   "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 1920, 180),
   "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 3490, 365),
   "topup-100": topup("topup-100", "شحن ١٠٠ (١٠٠ نقطة)", 100, 100, 3, INDIVIDUAL_BUYERS),
   "topup-250": topup("topup-250", "شحن ٢٥٠ (٢٥٠ نقطة)", 250, 250, 3, INDIVIDUAL_BUYERS),
-  "topup-500": topup("topup-500", "شحن ٥٠٠ (٥٠٠ نقطة)", 500, 500, 3, PROFESSIONAL_BUYERS),
-  "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ (١٬٢٥٠ نقطة)", 1000, 1250, 6, PROFESSIONAL_BUYERS),
-  "topup-2500": topup("topup-2500", "شحن ٢٬٥٠٠ (٣٬٥٠٠ نقطة)", 2500, 3500, 12, PROFESSIONAL_BUYERS),
-  "topup-5000": topup("topup-5000", "شحن ٥٬٠٠٠ (٨٬٥٠٠ نقطة)", 5000, 8500, 12, PROFESSIONAL_BUYERS),
-  "topup-10000": topup("topup-10000", "شحن ١٠٬٠٠٠ (٢٥٬٠٠٠ نقطة)", 10000, 25000, 12, PROFESSIONAL_BUYERS),
+  // Owner ٤٢٢ (3 Nov 2026), applied now: the professionals' packs grant the
+  // bonus balances 700 / 1,500 / 5,000 / 12,500 / 30,000 (validity unchanged).
+  // The bonus is points − price (1 point = 1 SAR, ٤١٢): topupBonusPoints. Each
+  // label is topupLabelAr(price, points) — priceBook.test.ts holds them equal.
+  "topup-500": topup("topup-500", "شحن ٥٠٠ — ٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)", 500, 700, 3, PROFESSIONAL_BUYERS),
+  "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ — ١٬٥٠٠ نقطة (منها ٥٠٠ نقطة مكافأة)", 1000, 1500, 6, PROFESSIONAL_BUYERS),
+  "topup-2500": topup("topup-2500", "شحن ٢٬٥٠٠ — ٥٬٠٠٠ نقطة (منها ٢٬٥٠٠ نقطة مكافأة)", 2500, 5000, 12, PROFESSIONAL_BUYERS),
+  "topup-5000": topup("topup-5000", "شحن ٥٬٠٠٠ — ١٢٬٥٠٠ نقطة (منها ٧٬٥٠٠ نقطة مكافأة)", 5000, 12500, 12, PROFESSIONAL_BUYERS),
+  "topup-10000": topup("topup-10000", "شحن ١٠٬٠٠٠ — ٣٠٬٠٠٠ نقطة (منها ٢٠٬٠٠٠ نقطة مكافأة)", 10000, 30000, 12, PROFESSIONAL_BUYERS),
   "lawyer-founder-2026": membership("lawyer-founder-2026", "باقة المحامي المؤسس", 2996, ["lawyer"]),
 });
 
@@ -473,6 +494,56 @@ export function formatSarAmount(sar: number, lang: "ar" | "en"): string {
   const latin = String(sar).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   if (lang === "en") return latin;
   return latin.replace(/,/g, "٬").replace(/[0-9]/g, (d) => ARABIC_DIGITS[Number(d)]);
+}
+
+// ── top-up bonus (owner ٤٢٢, ruling R2) ────────────────────────────────────
+
+/**
+ * The bonus points of a top-up: points − price, since 1 point = 1 SAR (owner
+ * ٤١٢). 0 for a pack without a bonus (topup-100 / topup-250) or a non-top-up.
+ */
+export function topupBonusPoints(entry: BookEntry): number {
+  if (entry.kind !== "topup" || entry.points === undefined) return 0;
+  const sar = Object.hasOwn(entry.prices, "once") ? entry.prices.once?.sar : undefined;
+  return sar === undefined ? 0 : Math.max(0, entry.points - sar);
+}
+
+/**
+ * What a top-up grants, as the cards and the label say it (ruling R2: no
+ * per-point price): «٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)» / "700 points (200
+ * bonus)", or «١٠٠ نقطة» / "100 points" without a bonus.
+ */
+export function topupPointsText(entry: BookEntry, lang: "ar" | "en"): string {
+  const points = entry.points ?? 0;
+  const bonus = topupBonusPoints(entry);
+  if (lang === "en") {
+    const all = `${formatSarAmount(points, "en")} points`;
+    return bonus > 0 ? `${all} (${formatSarAmount(bonus, "en")} bonus)` : all;
+  }
+  const all = `${formatSarAmount(points, "ar")} نقطة`;
+  return bonus > 0 ? `${all} (منها ${formatSarAmount(bonus, "ar")} نقطة مكافأة)` : all;
+}
+
+/** A top-up's checkout / receipt label: «شحن ١٠٠ (١٠٠ نقطة)», or «شحن ٥٠٠ — ٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)». */
+export function topupLabelAr(entry: BookEntry): string {
+  const sar = Object.hasOwn(entry.prices, "once") ? entry.prices.once?.sar ?? 0 : 0;
+  const head = `شحن ${formatSarAmount(sar, "ar")}`;
+  return topupBonusPoints(entry) > 0 ? `${head} — ${topupPointsText(entry, "ar")}` : `${head} (${topupPointsText(entry, "ar")})`;
+}
+
+/** The bonus pill of a top-up card, e.g. «+٢٠٠ نقطة مكافأة»; null without a bonus. */
+export function topupBonusLabel(id: string, lang: "ar" | "en"): string | null {
+  const entry = bookEntry(id);
+  const bonus = entry ? topupBonusPoints(entry) : 0;
+  if (bonus <= 0) return null;
+  return lang === "ar" ? `+${formatSarAmount(bonus, "ar")} نقطة مكافأة` : `+${formatSarAmount(bonus, "en")} bonus points`;
+}
+
+/** topupPointsText by id; throws for an id that is not a top-up (cards run at module scope). */
+export function topupPointsTextById(id: string, lang: "ar" | "en"): string {
+  const entry = bookEntry(id);
+  if (!entry || entry.kind !== "topup") throw new Error(`price book: ${id} is not a top-up`);
+  return topupPointsText(entry, lang);
 }
 
 /**

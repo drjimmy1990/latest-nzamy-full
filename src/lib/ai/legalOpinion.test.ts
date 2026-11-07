@@ -1,10 +1,10 @@
 /**
  * legalOpinion.test.ts — wave 5 L12 الرأي الفصل, the two types built first:
  *
- *   legal-opinion-consult  a 400-point job that answers from library texts
+ *   legal-opinion-consult  a 100-point job (owner ٤١٠) that answers from library texts
  *                          (the library gate before the charge, the searches
  *                          after it, refunded when the answer cites none);
- *   legal-opinion-letter   a 400-point job with no retrieval, signed by the
+ *   legal-opinion-letter   a 50-point job (owner ٤١٠) with no retrieval, signed by the
  *                          sender the user typed, its articles replaced by the
  *                          library's verdict on the callback.
  *
@@ -18,7 +18,7 @@ import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { callbackWith, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
 import type { Retrieved } from "./retrieval.ts";
-import { AI_TOOLS, LEGAL_OPINION_PRICE, LEGAL_OPINION_QUESTION_MAX, LETTER_SUBJECT_MAX, LIB_QUERIES_PATH } from "./tools.ts";
+import { AI_TOOLS, LEGAL_CONSULT_PRICE, LEGAL_LETTER_PRICE, LEGAL_OPINION_QUESTION_MAX, LETTER_SUBJECT_MAX, LIB_QUERIES_PATH } from "./tools.ts";
 import {
   AI_OPINION_TOOL, aiOpinionErrorText, asConsultAnswer, asLetterDraft, consultAnswerText, consultRunInput, letterRunInput,
 } from "../../app/ai/legal-opinion/_components/aiOpinion.ts";
@@ -78,18 +78,20 @@ function deps(calls: Call[], o: { access?: StartRunDeps["libraryAccess"]; found?
 
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
-test("the registry: two 400-point jobs, off by default, no files, the same audience as L11, consultants allowed", () => {
-  assert.equal(LEGAL_OPINION_PRICE, 400, "D4: consultation and letter are the 400 tier");
+test("the registry: two jobs (100 / 50), off by default, no files, every registered role (owner ٤١٧ adds government), consultants allowed", () => {
+  assert.equal(LEGAL_CONSULT_PRICE, 100, "owner ٤١٠: the consultation is 100");
+  assert.equal(LEGAL_LETTER_PRICE, 50, "owner ٤١٠: the letter is 50");
+  assert.equal(AI_TOOLS["legal-opinion-consult"].price({}, { pages: null }), 100);
+  assert.equal(AI_TOOLS["legal-opinion-letter"].price({}, { pages: null }), 50);
   for (const id of ["legal-opinion-consult", "legal-opinion-letter"]) {
     const t = AI_TOOLS[id];
     assert.equal(t.class, "job", id);
     assert.equal(t.n8nPath, `nzamy-ai/${id}`);
-    assert.equal(t.price({}, { pages: null }), 400);
     assert.equal(t.defaultMode, "off");
     assert.equal(t.files, undefined);
     assert.equal(t.consultantBlocked, false, "/ai/legal-opinion is open to consultants (Art. 18)");
     assert.ok(!t.sendsDisplayName, "the letter is signed by the sender typed, never the account");
-    assert.deepEqual([...t.roles], ["lawyer", "firm", "individual", "corporate", "micro"]);
+    assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   }
   assert.deepEqual(AI_TOOLS["legal-opinion-consult"].retrieval, { from: "question", laws: 8, principles: 4 });
   assert.equal(AI_TOOLS["legal-opinion-letter"].retrieval, undefined, "a letter is not refunded for citing no library text");
@@ -117,7 +119,7 @@ test("consult output: a conclusion and 1–8 headed sections, all or nothing", (
   assert.equal(v({ ...ANSWER, sections: [{ heading: "x", body: "ب".repeat(6001) }] }, {}), null);
 });
 
-test("consult start: the library gate before any charge, then 400 points, the searches, and the texts in the package", async () => {
+test("consult start: the library gate before any charge, then 100 points, the searches, and the texts in the package", async () => {
   const refused = db();
   const none: Call[] = [];
   const r0 = await startRunWith(refused.client as never, deps(none, { access: async () => ({ status: 403, body: { error: "Pro", code: "library_tier" } }) }), INDIVIDUAL, {
@@ -132,7 +134,7 @@ test("consult start: the library gate before any charge, then 400 points, the se
   const calls: Call[] = [];
   const r = await startRunWith(client as never, deps(calls), CONSULTANT, { tool: "legal-opinion-consult", input: { question: QUESTION }, idempotencyKey: "key-abcdef02" });
   assert.equal(r.status, 202, "a consultant may run it");
-  assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_price, 400);
+  assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_price, 100);
   assert.deepEqual(calls.map((c) => c.path), [LIB_QUERIES_PATH, "nzamy-ai/legal-opinion-consult"]);
   assert.equal(calls[1].mode, "async");
   assert.deepEqual(calls[1].body.sources, FOUND.sources);
@@ -227,12 +229,12 @@ test("letter output: a title and the full text; cited kept for the citation chec
   assert.deepEqual((v({ title: "t", body: "b" }, {}) as Record<string, any>).cited, []);
 });
 
-test("letter start: 400 points, no searches, and the package carries no account name", async () => {
+test("letter start: 50 points, no searches, and the package carries no account name", async () => {
   const { client, log } = db();
   const calls: Call[] = [];
   const r = await startRunWith(client as never, deps(calls), INDIVIDUAL, { tool: "legal-opinion-letter", input: LETTER, idempotencyKey: "key-abcdef04" });
   assert.equal(r.status, 202);
-  assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_price, 400);
+  assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_price, 50);
   assert.deepEqual(calls.map((c) => c.path), ["nzamy-ai/legal-opinion-letter"]);
   assert.equal((calls[0].body.actor as Record<string, unknown>).display_name, null);
   assert.deepEqual(calls[0].body.sources, []);

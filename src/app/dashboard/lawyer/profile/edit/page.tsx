@@ -22,6 +22,8 @@ import {
 } from "@/lib/services/lawyerProfileFields";
 import { offPlatformContactIssue } from "@/lib/services/contactSanitizer";
 import { LICENCE_ACCEPT, validateLicenceUpload } from "@/lib/services/licenceUpload";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { lawyerPriceRangeRows } from "@/components/consultation/consultationPrices";
 
 type Form = {
   bio_ar: string;
@@ -209,6 +211,10 @@ const BLOCKED_COPY: Record<
 
 export default function LawyerProfileEditPage() {
   const { isDark } = useTheme();
+  // Owner ٤٣٣: the consultation default prices and the band a lawyer will
+  // price in — display only («قريباً»), read from the client catalogue.
+  const { catalog: pricingCatalog } = useClientPricingCatalog();
+  const consultationPriceRows = lawyerPriceRangeRows(pricingCatalog, "ar");
   const router = useRouter();
   const [form, setForm] = useState<Form>(EMPTY);
   // Always true at first render. NOT `useState(isSupabaseMode)`: that constant
@@ -750,6 +756,26 @@ export default function LawyerProfileEditPage() {
             <input value={form.license_number} onChange={(e) => set("license_number", e.target.value)} className={input} placeholder="رقم ترخيص المحاماة" /></div>
           <div><label className={label}>جهة الترخيص</label>
             <input value={form.bar_association} onChange={(e) => set("bar_association", e.target.value)} className={input} placeholder="الهيئة السعودية للمحامين" /></div>
+        </div>
+
+        {/* Owner ٤٣٣ (3 Nov 2026): read-only. No lawyer sets a consultation
+            price yet — clients see the platform's default prices. */}
+        <div className={`rounded-xl border p-3.5 ${isDark ? "border-white/[0.06] bg-zinc-800/40" : "border-slate-200 bg-slate-50"}`}>
+          <div className="flex items-center justify-between mb-1">
+            <p className={`text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>أسعار الاستشارات</p>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-amber-900/30 text-amber-400" : "bg-amber-100 text-amber-700"}`}>قريباً</span>
+          </div>
+          <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+            ستحدد سعرك لكل نوع ضمن النطاق أدناه قريباً؛ يرى العملاء الآن الأسعار الافتراضية للمنصة.
+          </p>
+          <ul className="space-y-1">
+            {consultationPriceRows.map((row) => (
+              <li key={row.serviceId} className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+                <span className="font-bold">{row.label}:</span> الافتراضي {row.defaultPrice}
+                {row.range && <> · {row.range}</>}
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* Second half of the same Phase-7 gate — the notice for a database

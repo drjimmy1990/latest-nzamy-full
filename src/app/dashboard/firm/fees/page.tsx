@@ -168,7 +168,7 @@ export default function FirmFeesPage() {
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-bold tracking-tight mb-0.5">الأتعاب والفوترة</h1>
-          <p className={`text-[13px] ${ts}`}>إدارة إيرادات المكتب، الفواتير المستحقة، وتتبع المدفوعات</p>
+          <p className={`text-[13px] ${ts}`}>إدارة إيرادات المكتب، بيانات الأتعاب المستحقة، وتتبع المدفوعات — بيان أتعاب، ليست فاتورة ضريبية إلكترونية</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <MagneticButton
@@ -184,7 +184,7 @@ export default function FirmFeesPage() {
             className="px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold flex items-center gap-1.5 shadow-[0_4px_16px_-4px_rgba(11,61,46,0.35)] hover:bg-[#0f5a42] transition-colors"
           >
             <Plus size={14} />
-            إنشاء فاتورة
+            إنشاء بيان أتعاب
           </MagneticButton>
         </div>
       </div>
@@ -211,7 +211,7 @@ export default function FirmFeesPage() {
         ].join(" ")}>
           <div className={`px-5 py-4 flex items-center justify-between border-b ${divider}`}>
             <h2 className={`text-[13px] font-bold flex items-center gap-2 ${tp}`}>
-              <Receipt size={15} className={ts} /> أحدث الفواتير
+              <Receipt size={15} className={ts} /> أحدث بيانات الأتعاب
             </h2>
             <button className={`p-1.5 rounded-lg border transition-colors ${isDark ? "border-white/[0.08] text-zinc-500 hover:text-zinc-300" : "border-zinc-200 text-zinc-400 hover:text-zinc-700"}`}>
               <Funnel size={13} />

@@ -4225,12 +4225,14 @@ begin
                            min_order_amount, max_discount_pct, excluded_kinds), '; ' order by code) into p
     from public.coupons
    where (code = 'NZAMY50' and not (discount_type = 'fixed' and discount_value = 50 and min_order_amount = 200
-                                    and max_uses_per_user = 1 and max_discount_pct = 25 and excluded_kinds = '{topup}'))
+                                    and max_uses_per_user = 1 and max_discount_pct = 25
+                                    -- owner ٤٣٦ (20261107_50): single services only
+                                    and excluded_kinds @> '{plan,library,topup}' and '{plan,library,topup}' @> excluded_kinds))
       or (code = 'NEWCLIENT' and not (discount_type = 'fixed' and discount_value = 75 and min_order_amount = 300
                                       and max_uses_per_user = 1 and max_discount_pct = 25
                                       and excluded_kinds @> '{plan,library,topup}' and '{plan,library,topup}' @> excluded_kinds));
   if p is not null then
-    raise notice '_verify: 20261026_20 — owner code(s) changed on the admin coupons page since his rules were written (NZAMY50: fixed 50, min 200; NEWCLIENT: fixed 75, min 300, single services): % — confirm with the owner', p;
+    raise notice '_verify: 20261026_20 — owner code(s) changed on the admin coupons page since his rules were written (NZAMY50: fixed 50, min 200, single services since 20261107_50; NEWCLIENT: fixed 75, min 300, single services): % — confirm with the owner', p;
   end if;
   -- Live codes other than the owner's two (switched back on by an admin, or
   -- created on the coupons page): named for a look, never an error.
@@ -5798,3 +5800,221 @@ begin
   raise notice '_verify: 20261103_69 OK — verification card: token and switch server-only, two functions service role only';
 end $$;
 -- <<< verify:letterhead_verify_card
+-- >>> verify:owner_answers_prices
+-- 2026-11-07 — 20261107_50_owner_answers_prices.sql (Task F, owner ٤٢٠ / ٤٣٣ /
+-- ٤٣٦; runs AFTER the deploy). Read-only, safe to repeat. RAISES when the file
+-- has not run (or a re-run of 20261022_10 / the 20260518 seed undid it): the
+-- old plan name, a video-full row still offered, no voice-call row, NZAMY50
+-- still open to plans. A price an admin changed since is a NOTICE, never an
+-- error; so is a video-full row an admin offered again after the file ran
+-- (stamped owner_433). A missing table: one NOTICE, passes.
+do $$
+declare r record; p text;
+begin
+  if to_regclass('public.subscription_plans') is not null then
+    select name_ar, name_en into r from public.subscription_plans where id = 'ind-litigation';
+    if found and (r.name_ar is distinct from 'عضوية الحماية القانونية' or r.name_en is distinct from 'Legal Protection Membership') then
+      raise exception '_verify: 20261107_50 — ind-litigation is named «%» / %, not «عضوية الحماية القانونية» (owner ٤٢٠): run 20261107_50 (AFTER the deploy; again after any re-run of 20261022_10)', r.name_ar, r.name_en;
+    end if;
+  end if;
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261107_50 — public.admin_pricing_catalog is missing (20260518 not applied): the code catalogue serves the consultation prices';
+  else
+    if not exists (select 1 from public.admin_pricing_catalog where service_id = 'voice-call') then
+      raise exception '_verify: 20261107_50 — no voice-call row (owner ٤٣٣): run 20261107_50 (AFTER the deploy)';
+    end if;
+    select enabled, metadata into r from public.admin_pricing_catalog where service_id = 'video-full';
+    if found and not (r.enabled = false and coalesce(r.metadata->>'adminHidden', '') = 'true')
+       and coalesce(r.metadata->>'owner_433', '') <> '' then
+      raise notice '_verify: 20261107_50 — video-full was offered again on the admin pricing page after owner ٤٣٣ retired it (enabled %, adminHidden %): confirm with the owner',
+        r.enabled, coalesce(r.metadata->>'adminHidden', 'none');
+    elsif found and not (r.enabled = false and coalesce(r.metadata->>'adminHidden', '') = 'true') then
+      raise exception '_verify: 20261107_50 — video-full is still offered (enabled %, adminHidden %): the 60-minute session is retired (owner ٤٣٣). Run 20261107_50 (AFTER the deploy; again after any re-run of the 20260518 seed, which rewrites the row''s enabled and metadata, stamp included)',
+        r.enabled, coalesce(r.metadata->>'adminHidden', 'none');
+    end if;
+    select string_agg(format('%s %s', c.service_id, c.base_price), ', ' order by c.service_id) into p
+      from public.admin_pricing_catalog c
+      join (values ('written-opinion', 79), ('voice-call', 129), ('video-short', 199), ('in-person', 349)) as e(service_id, price)
+        on e.service_id = c.service_id
+     where c.base_price <> e.price;
+    if p is not null then
+      raise notice '_verify: 20261107_50 — consultation prices differ from the owner''s defaults 79 / 129 / 199 / 349 (an admin edit, or the 20260518 seed re-run): % — confirm with the owner', p;
+    end if;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'coupons' and column_name = 'excluded_kinds') then
+    select excluded_kinds, metadata into r from public.coupons where code = 'NZAMY50';
+    if found and not (r.excluded_kinds @> '{plan,library,topup}'::text[]) then
+      if coalesce(r.metadata->>'owner_436', '') = '' then
+        raise exception '_verify: 20261107_50 — NZAMY50 excludes only %, so it still applies to plans or the library (owner ٤٣٦: single services only): run 20261107_50 (AFTER the deploy)', r.excluded_kinds;
+      end if;
+      raise notice '_verify: 20261107_50 — NZAMY50 was edited on the admin coupons page since owner ٤٣٦ (excluded %): confirm with the owner', r.excluded_kinds;
+    end if;
+  end if;
+  raise notice '_verify: 20261107_50 OK — «عضوية الحماية القانونية»; voice-call row present and video-full hidden; NZAMY50 single services only';
+end $$;
+-- <<< verify:owner_answers_prices
+-- >>> verify:library_merged_regulation_names
+-- 2026-11-07 — 20261107_10_library_merged_regulation_names.sql (owner q424 /
+-- q380; any time): library.laws.merged_regulation_names text[] — the /laws
+-- card's «يشتمل على: A • B» line. Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES (naming the file to run) when the column or its fill function is
+-- missing, the column is not text[], anon / authenticated can read it or run
+-- the fill, service_role cannot read it, or trg_laws_updated_at was left
+-- disabled. The owner's loader does not write the column, so a law with
+-- regulation rows but no names (or names but no rows) after a library load is
+-- a NOTICE — re-run 20261107_10 — never an error. No library.laws /
+-- library.article_regulations (20260626 / 20260730 not applied): one NOTICE,
+-- passes.
+do $$
+declare r text; typ text; n_missing int; n_stale int; n_named int;
+begin
+  if to_regclass('library.laws') is null or to_regclass('library.article_regulations') is null then
+    raise notice '_verify: 20261107_10 — library.laws or library.article_regulations is missing (20260626 / 20260730 not applied): nothing to check'; return;
+  end if;
+  select pg_catalog.format_type(a.atttypid, a.atttypmod) into typ
+    from pg_catalog.pg_attribute a
+   where a.attrelid = 'library.laws'::regclass and a.attname = 'merged_regulation_names' and not a.attisdropped;
+  if typ is null then
+    raise exception '_verify: 20261107_10 — library.laws.merged_regulation_names is missing: no /laws card shows «يشتمل على». Run 20261107_10_library_merged_regulation_names.sql (any time)';
+  end if;
+  if typ <> 'text[]' then
+    raise exception '_verify: 20261107_10 — library.laws.merged_regulation_names is %, not text[]: drop that column, then run 20261107_10_library_merged_regulation_names.sql (any time)', typ;
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_catalog.pg_roles where rolname = r)
+       and has_column_privilege(r, 'library.laws', 'merged_regulation_names', 'SELECT') then
+      raise exception '_verify: 20261107_10 — % can read library.laws.merged_regulation_names (the names leave the server uncleaned): run 20261004_01_library_column_lock.sql, then 20261107_10_library_merged_regulation_names.sql', r;
+    end if;
+  end loop;
+  if exists (select 1 from pg_catalog.pg_roles where rolname = 'service_role')
+     and not has_column_privilege('service_role', 'library.laws', 'merged_regulation_names', 'SELECT') then
+    raise exception '_verify: 20261107_10 — service_role cannot read library.laws.merged_regulation_names: /api/library/init cannot show the names. Run 20261004_01_library_column_lock.sql, then 20261107_10_library_merged_regulation_names.sql';
+  end if;
+  if to_regprocedure('library.refresh_merged_regulation_names()') is null then
+    raise exception '_verify: 20261107_10 — library.refresh_merged_regulation_names() is missing: run 20261107_10_library_merged_regulation_names.sql (any time)';
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if exists (select 1 from pg_catalog.pg_roles where rolname = r)
+       and has_function_privilege(r, 'library.refresh_merged_regulation_names()', 'EXECUTE') then
+      raise exception '_verify: 20261107_10 — % can run library.refresh_merged_regulation_names(): run 20261107_10_library_merged_regulation_names.sql again (any time)', r;
+    end if;
+  end loop;
+  if exists (select 1 from pg_catalog.pg_trigger
+              where tgrelid = 'library.laws'::regclass
+                and tgname = 'trg_laws_updated_at' and tgenabled = 'D') then
+    raise exception '_verify: 20261107_10 — trg_laws_updated_at is disabled on library.laws: a law edit no longer stamps updated_at. Run: alter table library.laws enable trigger trg_laws_updated_at;';
+  end if;
+  select count(*) into n_missing
+    from library.laws l
+   where coalesce(cardinality(l.merged_regulation_names), 0) = 0
+     and exists (select 1 from library.article_regulations x
+                  where x.law_slug = l.slug and btrim(regexp_replace(coalesce(x.ref, ''), '\s+', ' ', 'g')) <> '');
+  select count(*) into n_stale
+    from library.laws l
+   where cardinality(l.merged_regulation_names) > 0
+     and not exists (select 1 from library.article_regulations x
+                      where x.law_slug = l.slug and btrim(regexp_replace(coalesce(x.ref, ''), '\s+', ' ', 'g')) <> '');
+  if n_missing > 0 or n_stale > 0 then
+    raise notice '_verify: 20261107_10 — % law(s) have regulation rows but no names, % law(s) have names but no regulation rows (a library load since the file ran — the loader does not write the column): re-run 20261107_10_library_merged_regulation_names.sql (any time)', n_missing, n_stale;
+  end if;
+  select count(*) into n_named from library.laws where cardinality(merged_regulation_names) > 0;
+  raise notice '_verify: 20261107_10 OK — merged_regulation_names is text[], server-only; % law(s) carry names', n_named;
+end $$;
+-- <<< verify:library_merged_regulation_names
+-- >>> verify:library_caps_owner_426
+-- 2026-11-07 — 20261107_20_library_caps_owner_426.sql (owner ٤٢٦; either order
+-- relative to the deploy): «نشاط المكتبة» hourly numbers 50 documents / 240
+-- requests / 60 searches. Read-only, safe to repeat: SELECTs and RAISE.
+-- RAISES only when the column defaults are not 50 / 240 / 60 (the file has not
+-- run). An admin may change the row on the page «نشاط المكتبة» on purpose, so a
+-- row value other than the owner's is a NOTICE naming it; so is a missing row
+-- (the code's fallbacks, also 50 / 240 / 60, apply). No
+-- library_monitor_settings (20261031_10 not applied): one NOTICE, passes.
+do $$
+declare d text; r record;
+begin
+  if to_regclass('public.library_monitor_settings') is null then
+    raise notice '_verify: 20261107_20 — public.library_monitor_settings is missing (20261031_10 not applied): nothing to check'; return;
+  end if;
+  select string_agg(format('%s default %s', c.column_name, coalesce(c.column_default, 'none')), ', ' order by c.column_name) into d
+    from information_schema.columns c
+    join (values ('hourly_docs', '50'), ('rule_hour_requests', '240'), ('rule_hour_searches', '60')) as e(column_name, val)
+      on e.column_name = c.column_name
+   where c.table_schema = 'public' and c.table_name = 'library_monitor_settings'
+     and c.column_default is distinct from e.val;
+  if d is not null then
+    raise exception '_verify: 20261107_20 — library_monitor_settings: % (owner ٤٢٦: 50 / 240 / 60). Run 20261107_20_library_caps_owner_426.sql (either order) — it also sets the row to 50 / 240 / 60, replacing any number an admin set on «نشاط المكتبة»', d;
+  end if;
+  select hourly_docs, rule_hour_requests, rule_hour_searches into r from public.library_monitor_settings where id;
+  if not found then
+    raise notice '_verify: 20261107_20 — the library_monitor_settings row is missing: the code''s fallbacks (50 / 240 / 60) apply. Run 20261107_20_library_caps_owner_426.sql to re-create it';
+  elsif (r.hourly_docs, r.rule_hour_requests, r.rule_hour_searches) is distinct from (50, 240, 60) then
+    raise notice '_verify: 20261107_20 — the library caps are hourly_docs %, rule_hour_requests %, rule_hour_searches %, not the owner''s 50 / 240 / 60 (owner ٤٢٦): an admin edit on «نشاط المكتبة»? confirm with the owner',
+      r.hourly_docs, r.rule_hour_requests, r.rule_hour_searches;
+  end if;
+  raise notice '_verify: 20261107_20 OK — library caps default to 50 documents / 240 requests / 60 searches an hour';
+end $$;
+-- <<< verify:library_caps_owner_426
+-- >>> verify:deadline_cassation_urgent_194
+-- 2026-11-07 — 20261107_30_deadline_cassation_urgent_194.sql (owner, plan ruling
+-- R6; independent of the deploy): نظام المرافعات الشرعية المادة (١٩٤) —
+-- cassation 30 days, urgent matters 15. Read-only, safe to repeat: SELECTs and
+-- RAISE. RAISES (naming the file to run) when cassation does not cite (١٩٤) or
+-- is not 30 days, or cassation_urgent is missing, not 15 days, inactive,
+-- unverified, not citing (١٩٤) or not on cassation's trigger / calendar /
+-- counting / holiday roll / degrees. No public.deadline_rules (20260904_phase5
+-- not applied): one NOTICE, passes.
+do $$
+declare c record; u record;
+begin
+  if to_regclass('public.deadline_rules') is null then
+    raise notice '_verify: 20261107_30 — public.deadline_rules is missing (20260904_phase5 not applied): nothing to check'; return;
+  end if;
+  select * into c from public.deadline_rules where code = 'cassation' and owner_user_id is null;
+  if not found then
+    raise exception '_verify: 20261107_30 — the platform rule cassation is missing: run 20260904_phase5_deadline_radar.sql (its seed), then 20261107_30_deadline_cassation_urgent_194.sql';
+  end if;
+  if c.period_days <> 30 or c.source_ar is distinct from 'نظام المرافعات الشرعية — المادة (١٩٤)' then
+    raise exception '_verify: 20261107_30 — cassation is % days citing «%», not 30 days citing المادة (١٩٤): run 20261107_30_deadline_cassation_urgent_194.sql (any time)', c.period_days, c.source_ar;
+  end if;
+  select * into u from public.deadline_rules where code = 'cassation_urgent' and owner_user_id is null;
+  if not found then
+    raise exception '_verify: 20261107_30 — the platform rule cassation_urgent (15 days, المادة ١٩٤) is missing: run 20261107_30_deadline_cassation_urgent_194.sql (any time)';
+  end if;
+  if u.period_days <> 15 or not u.active or not u.verified_by_owner
+     or u.source_ar is distinct from 'نظام المرافعات الشرعية — المادة (١٩٤)' then
+    raise exception '_verify: 20261107_30 — cassation_urgent is % days, active %, verified %, citing «%» — not 15 / active / verified / المادة (١٩٤): run 20261107_30_deadline_cassation_urgent_194.sql again (any time)',
+      u.period_days, u.active, u.verified_by_owner, u.source_ar;
+  end if;
+  if u.trigger_kind is distinct from c.trigger_kind or u.calendar is distinct from c.calendar
+     or u.count_from_next_day is distinct from c.count_from_next_day
+     or u.roll_forward_if_holiday is distinct from c.roll_forward_if_holiday
+     or u.applies_to_degrees is distinct from c.applies_to_degrees then
+    raise exception '_verify: 20261107_30 — cassation_urgent no longer counts like cassation (trigger, calendar, next day, holiday roll or degrees differ): run 20261107_30_deadline_cassation_urgent_194.sql again (any time)';
+  end if;
+  raise notice '_verify: 20261107_30 OK — cassation 30 days and cassation_urgent 15 days, both citing المادة (١٩٤)';
+end $$;
+-- <<< verify:deadline_cassation_urgent_194
+
+-- >>> verify:founder_rejoinder_410
+-- 2026-11-07 — 20261107_60_founder_rejoinder_410.sql (owner ٤١٠; BEFORE the
+-- deploy): a founder drafting work also pays for the rejoinder (التعقيب).
+-- Read-only, safe to repeat. RAISES when ai_start_run_with_credit exists but
+-- does not list 'rejoinder'. No function (20261101_10 not applied): one NOTICE.
+do $$
+declare d text;
+begin
+  select pg_get_functiondef(p.oid) into d
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'ai_start_run_with_credit'
+   limit 1;
+  if d is null then
+    raise notice '_verify: 20261107_60 — public.ai_start_run_with_credit is missing (20261101_10 not applied): nothing to check'; return;
+  end if;
+  if d not like '%''rejoinder''%' then
+    raise exception '_verify: 20261107_60 — a founder drafting work does not pay for the rejoinder (owner ٤١٠): run 20261107_60_founder_rejoinder_410.sql (BEFORE the deploy; again after any re-run of 20261101_10)';
+  end if;
+  raise notice '_verify: 20261107_60 OK — a founder drafting work pays for the rejoinder';
+end $$;
+-- <<< verify:founder_rejoinder_410

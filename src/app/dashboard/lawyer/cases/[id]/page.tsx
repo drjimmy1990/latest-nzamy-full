@@ -1415,10 +1415,13 @@ export default function CaseDetailPage() {
                   <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
                     تحليل AI لقوة موقف الموكل سيكون متاحاً قريباً عند تفعيل أداة تحليل الملف.
                   </p>
+                  {/* R1: the strength analysis is consultant-blocked (Art. 18), so no link to its lock panel. */}
+                  {!courtWritesRefused && (
                   <Link href="/ai/analyze-strength"
                     className="inline-flex items-center gap-1 mt-1.5 text-[11px] text-[#C8A762] hover:underline">
                     <ArrowUpRight size={10} />تحليل تفصيلي
                   </Link>
+                  )}
                 </div>
                 {/* Task quick summary.
                     «٠ لم تبدأ» over a failed read is a statement that this case

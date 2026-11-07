@@ -27,11 +27,13 @@ test("parseCheckoutBody accepts {itemId, billing} and nothing priced", () => {
 });
 
 test("parseCheckoutBody: an optional couponCode is normalised; empty / null means none; a malformed one refuses the body (P7)", () => {
-  assert.deepEqual(parseCheckoutBody({ itemId: "ind-ai", billing: "yearly", couponCode: " nzamy50 " }), {
+  // Format only — whether a code applies to a plan is the coupon row's call
+  // (NZAMY50 no longer does since owner ٤٣٦; couponRules.test.ts).
+  assert.deepEqual(parseCheckoutBody({ itemId: "ind-ai", billing: "yearly", couponCode: " plan50 " }), {
     ok: true,
     itemId: "ind-ai",
     billing: "yearly",
-    couponCode: "NZAMY50",
+    couponCode: "PLAN50",
   });
   for (const none of [null, ""]) {
     assert.deepEqual(parseCheckoutBody({ itemId: "ind-ai", billing: "yearly", couponCode: none }), { ok: true, itemId: "ind-ai", billing: "yearly" });

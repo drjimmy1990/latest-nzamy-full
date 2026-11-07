@@ -40,12 +40,13 @@ export const FOUNDER_CREDITS: Readonly<Record<FounderCreditKind, number>> = Obje
 export const FOUNDER_DRAFTER_TOOL = "legal-drafter";
 
 /**
- * The drafter kinds a work may be spent on (manifest). `rejoinder` is left
- * out until the owner answers ٣٩٩ (controller ruling R3).
+ * The drafter kinds a work may be spent on (manifest): every kind. The
+ * rejoinder joined with owner ٤١٠ (2026-11-07; SQL 20261107_60).
  */
 export const FOUNDER_DRAFT_KINDS: readonly DraftKindId[] = Object.freeze([
   "claim",
   "reply",
+  "rejoinder",
   "supplementary",
   "closing",
   "appeal",

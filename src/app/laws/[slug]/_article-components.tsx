@@ -861,6 +861,29 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
           ? isDark ? "border-[#C8A762]/25" : "border-amber-200"
           : isDark ? "border-white/[0.07]" : "border-slate-200";
 
+  /*
+    Owner 2026-11-07 (screenshot ٣): the regulation is its own clearly
+    labelled section, after the article's previous versions, so those can no
+    longer be read as the regulation's. Its subtitle is the line that used to
+    close the article text (`regulationHeading`, lifted by the law API), else
+    the instrument's name. Historic executive-regulation text found in the
+    article's history block is a previous version of the REGULATION, not of the
+    article (16 articles carry it; the API sends it only to unlocked readers) —
+    so it lives inside this section as «الإصدارات السابقة للائحة».
+  */
+  const regulationSubtitle = (article.regulationHeading || mergedReg?.ref || "").trim();
+  const historicRegulationDetails = article.historicRegulationText ? (
+    <details open={historicRegHasHit} className={`mt-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-300" : "border-slate-200 bg-white/70 text-slate-700"}`}>
+      <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
+        <ClockCounterClockwise size={12} className={isDark ? "text-zinc-400" : "text-slate-500"} />
+        <span>{isRTL ? "الإصدارات السابقة للائحة" : "Previous versions of the regulation"}</span>
+      </summary>
+      <div className="px-4 pb-3 pt-2 border-t border-dashed border-slate-300/20">
+        <MD text={article.historicRegulationText} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+      </div>
+    </details>
+  ) : null;
+
   return (
     <motion.div
       layout id={article.id}
@@ -962,9 +985,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               </div>
             </div>
           ) : (
-            <div id={`exec-reg-${article.id}`} className="nzamy-reader-block">
-              <MD text={mergedReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
-            </div>
+            <>
+              <div id={`exec-reg-${article.id}`} className="nzamy-reader-block">
+                <MD text={mergedReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+              </div>
+              {historicRegulationDetails}
+            </>
           )
         ) : (
           /*
@@ -1090,15 +1116,30 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               </details>
             )}
             
-            {/* Executive Reg — Statically displayed as a shaded box (NOT COLLAPSIBLE) */}
-            {viewMode !== "law" && mergedReg && (
-              <div className={`rounded-xl border ${isRTL ? "border-r-4" : "border-l-4"} border-[#C8A762]/60 ${isDark ? "bg-[#C8A762]/5 border-r-[#C8A762]/70" : "bg-slate-50 border-r-[#0B3D2E]/40 border-l-slate-200 border-y-slate-200"} p-4 mt-3 space-y-2`}>
-                <div className="flex items-center gap-1.5 pb-2 border-b border-dashed border-zinc-200/20">
-                  <FileText size={14} className={isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} weight="duotone" />
-                  <span className={`text-[12px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-                    <Hl text={mergedReg.ref} />
-                  </span>
-                  {!isReadingMode && (
+            {/*
+              «اللائحة التنفيذية» — its own labelled section after the article's
+              previous versions (owner 2026-11-07): heading + subtitle, the
+              regulation text (a shaded box, NOT collapsible), then its own
+              previous versions. Hidden in the «law» view.
+            */}
+            {viewMode !== "law" && (mergedReg || historicRegulationDetails) && (
+              <section
+                aria-label={isRTL ? "اللائحة التنفيذية" : "Executive regulation"}
+                className={`rounded-xl border ${isRTL ? "border-r-4" : "border-l-4"} border-[#C8A762]/60 ${isDark ? "bg-[#C8A762]/5 border-r-[#C8A762]/70" : "bg-slate-50 border-r-[#0B3D2E]/40 border-l-slate-200 border-y-slate-200"} p-4 mt-3 space-y-2`}
+              >
+                <div className="flex items-start gap-1.5 pb-2 border-b border-dashed border-zinc-200/20">
+                  <FileText size={14} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`} weight="duotone" />
+                  <div className="min-w-0">
+                    <p className={`text-[12px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+                      {isRTL ? "اللائحة التنفيذية" : "Executive regulation"}
+                    </p>
+                    {regulationSubtitle && regulationSubtitle !== "اللائحة التنفيذية" && (
+                      <p className={`text-[11px] font-semibold mt-0.5 leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                        <Hl text={regulationSubtitle} />
+                      </p>
+                    )}
+                  </div>
+                  {!isReadingMode && mergedReg && (
                     <div className="flex gap-1.5 ms-auto print:hidden">
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCopyReg(); }}
@@ -1121,29 +1162,13 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                     </div>
                   )}
                 </div>
-                <div id={`exec-reg-${article.id}`} className="nzamy-reader-block pt-1">
-                  <MD text={mergedReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
-                </div>
-              </div>
-            )}
-
-            {/*
-              Historic executive-regulation text found inside the article's
-              history block. Real content, but a previous version of the
-              REGULATION rather than of the article — so it is kept out of both
-              the live text and the amendments list. 16 articles carry it; the
-              API only emits it to readers who are not paywalled.
-            */}
-            {viewMode !== "regulation" && article.historicRegulationText && (
-              <details open={historicRegHasHit} className={`my-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-300" : "border-slate-200 bg-slate-50/70 text-slate-700"}`}>
-                <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
-                  <ClockCounterClockwise size={12} className={isDark ? "text-zinc-400" : "text-slate-500"} />
-                  <span>{isRTL ? "نص لائحي تاريخي" : "Historic regulation text"}</span>
-                </summary>
-                <div className="px-4 pb-3 pt-2 border-t border-dashed border-slate-300/20">
-                  <MD text={article.historicRegulationText} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
-                </div>
-              </details>
+                {mergedReg && (
+                  <div id={`exec-reg-${article.id}`} className="nzamy-reader-block pt-1">
+                    <MD text={mergedReg.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                  </div>
+                )}
+                {historicRegulationDetails}
+              </section>
             )}
 
             {/* Cart additions for this article */}

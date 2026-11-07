@@ -94,6 +94,9 @@ test("النيابة العامة (17570) and ديوان المظالم (17486) 
   const bog = agencies.find((a) => a.id === "17486");
   assert.ok(bog);
   assert.equal(bog.shortName, "BOG");
+  // owner ٤٢٩: the Board of Grievances number is 920000553 (nine digits; his
+  // crawled site text carries an eight-digit «92000553» typo).
+  assert.deepEqual(bog.phones, ["920000553"]);
 });
 
 test("q386: no prosecution channel publishes an e-mail address", () => {

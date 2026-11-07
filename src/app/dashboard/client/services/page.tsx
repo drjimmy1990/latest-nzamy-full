@@ -8,7 +8,7 @@ import {
   VideoCamera, Users, ArrowLeft, ChatsCircle, Scan,
   PencilSimple, Scales, Stamp, Translate, Receipt,
   CheckCircle, Clock, Warning,
-  Sparkle, Buildings, MagnifyingGlass, Envelope,
+  Sparkle, Buildings, MagnifyingGlass, Envelope, Phone,
 } from "@phosphor-icons/react";
 import {
   formatClientServicePrice,
@@ -74,6 +74,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Buildings,
   MagnifyingGlass,
   Envelope,
+  // voice-call (owner ٤٣٣)
+  Phone,
 };
 
 function buildCategories(

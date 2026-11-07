@@ -17,7 +17,7 @@ import { validateLegalOpinionIntake } from "@/lib/services/orderIntake.legalOpin
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useAiRun } from "@/hooks/useAiRun";
-import { LEGAL_OPINION_PRICE, LETTER_SUBJECT_MAX } from "@/lib/ai/tools";
+import { LEGAL_LETTER_PRICE, LETTER_SUBJECT_MAX } from "@/lib/ai/tools";
 import { AiOpinionPanel, TeamOrderDivider } from "./AiOpinionPanel";
 import { letterRunInput } from "./aiOpinion";
 
@@ -770,7 +770,7 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               annexes: letterAttachments,
             })}
             blocked={letterBlocked}
-            price={LEGAL_OPINION_PRICE}
+            price={LEGAL_LETTER_PRICE}
             isDark={isDark} card={card}
           />
           <TeamOrderDivider isDark={isDark} />

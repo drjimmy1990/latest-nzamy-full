@@ -12,7 +12,7 @@ import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { AI_COPY, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
 import type { Retrieved } from "./retrieval.ts";
-import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
+import { AI_TOOLS, LIB_QUERIES_PATH, LIBRARY_NO_ANSWER, isLibraryNoAnswer } from "./tools.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const LAWYER: RunActor = { userId: "u-1", userType: "lawyer", practiceKind: "advocate", displayName: null };
@@ -46,9 +46,9 @@ const queriesReply = (queries: unknown = ["مكافأة نهاية الخدمة"
   kind: "result",
   result: { run_id: RUN, status: "succeeded", output: { queries } },
 });
-const answerReply = (citations: unknown[] = ["S1", "S9"]): N8nOutcome => ({
+const answerReply = (citations: unknown[] = ["S1", "S9"], answer = "يستحق ثلث المكافأة [S1]"): N8nOutcome => ({
   kind: "result",
-  result: { run_id: RUN, status: "succeeded", output: { answer: "يستحق ثلث المكافأة [S1]" }, citations, usage: { model: "gemini" } },
+  result: { run_id: RUN, status: "succeeded", output: { answer }, citations, usage: { model: "gemini" } },
 });
 
 type Call = { path: string; timeoutMs: number; body: Record<string, unknown> };
@@ -80,12 +80,12 @@ function deps(o: {
 const body = (over: Record<string, unknown> = {}) => ({ tool: "quick-answer", input: { question: QUESTION }, idempotencyKey: "key-abcdef01", ...over });
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
-test("the registry entry: lawyers and firms, 20 points, off until an admin opens it, library-backed", () => {
+test("the registry entry: every registered role (owner ٤١٧), 10 points (owner ٤١٢), off until an admin opens it, library-backed", () => {
   const t = AI_TOOLS["quick-answer"];
-  assert.deepEqual(t.roles, ["lawyer", "firm"]);
-  assert.equal(t.price({}, { pages: null }), 20);
+  assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+  assert.equal(t.price({}, { pages: null }), 10);
   assert.equal(t.defaultMode, "off");
-  assert.deepEqual(t.retrieval, { from: "question", laws: 8, principles: 4 });
+  assert.deepEqual(t.retrieval, { from: "question", laws: 8, principles: 4, allowUngrounded: { field: "answer" } });
   assert.equal(t.validateInput({ question: "قصير" }).ok, false);
   assert.equal(t.validateInput({ question: "س".repeat(1001) }).ok, false);
   assert.deepEqual(t.validateInput({ question: `  ${QUESTION}  ` }), { ok: true, input: { question: QUESTION } });
@@ -159,14 +159,58 @@ test("nothing in the library matched: refunded, and the user is told so instead 
   assert.equal(calls.length, 1);
 });
 
-test("an answer that cites none of the texts is refunded as ungrounded", async () => {
+// Owner ٤١٣ option A: quick-answer keeps an answer that cites none of the
+// texts, flagged `ungrounded` and charged; the page labels it.
+test("٤١٣: an answer that cites none of the texts is kept, flagged ungrounded and charged", async () => {
+  const general = "يستحق العامل المستقيل جزءاً من المكافأة بحسب مدة خدمته.";
   for (const citations of [[], ["S7"]]) {
     const { client, log } = db();
-    const r = await startRunWith(client as never, deps({ answer: answerReply(citations) }), LAWYER, body());
-    assert.equal(r.status, 422);
+    const r = await startRunWith(client as never, deps({ answer: answerReply(citations, general) }), LAWYER, body());
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.output, { answer: general, ungrounded: true });
+    assert.deepEqual(r.body.citations, []);
+    assert.equal(r.body.chargedPoints, 20, "charged like any answer");
+    assert.ok(!rpcs(log).includes("ai_fail_run"), "no refund");
+    const stored = log.filter((q) => q.table === "ai_runs" && q.op === "update").map((q) => q.payload as Record<string, unknown>);
+    assert.ok(stored.some((p) => p.status === "succeeded" && (p.output as Record<string, unknown>).ungrounded === true), "stored with the flag");
+  }
+});
+
+test("٤١٣: the model's «النصوص لا تجيب» sentence is still refunded as ungrounded", async () => {
+  for (const answer of ["لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال.", "  لا تجيب النصوص المتاحة في المكتبة\nعن هذا السؤال  "]) {
+    const { client, log } = db();
+    const r = await startRunWith(client as never, deps({ answer: answerReply([], answer) }), LAWYER, body());
+    assert.equal(r.status, 422, answer);
     assert.equal(r.body.code, "ungrounded");
     assert.equal((log.find((q) => q.table === "ai_fail_run")!.payload as Record<string, unknown>).p_code, "ungrounded");
   }
+});
+
+test("٤١٣: reworded no-answer sentences are refusals too; a real answer that mentions the library is not", () => {
+  for (const t of [
+    "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال.",
+    "لم تُجب النصوص المتاحة في المكتبة عن هذا السؤال.",
+    "لا تجيب النصوص المتاحة عن السؤال.",
+    "النصوص المتاحة في المكتبة لا تجيب عن هذا السؤال.",
+    "عذراً، لا تُجيب النصوص المتاحة في المكتبة عن هذا السؤال",
+  ]) assert.equal(isLibraryNoAnswer(t), true, t);
+  for (const t of [
+    "يستحق العامل المستقيل جزءاً من المكافأة بحسب مدة خدمته.",
+    `${LIBRARY_NO_ANSWER}، لكن ${"القاعدة العامة أن العامل يستحق مكافأة بحسب مدة خدمته. ".repeat(3)}`,
+    null,
+  ]) assert.equal(isLibraryNoAnswer(t), false, String(t));
+});
+
+test("٤١٣: a cited answer carries no ungrounded flag", async () => {
+  const { client } = db();
+  const r = await startRunWith(client as never, deps(), LAWYER, body());
+  assert.equal(r.status, 200);
+  assert.equal((r.body.output as Record<string, unknown>).ungrounded, undefined);
+});
+
+test("٤١٣: only quick-answer opts out of the refund; every other library tool keeps it", () => {
+  const loose = Object.values(AI_TOOLS).filter((t) => t.retrieval?.allowUngrounded).map((t) => t.id);
+  assert.deepEqual(loose, ["quick-answer"]);
 });
 
 test("the answer's wait is what the searches left of the fast budget, never under 15 s", async () => {

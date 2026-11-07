@@ -9,7 +9,7 @@
  *
  * Pure: imports only src/lib/ai, so `node --test` runs it.
  */
-import { AI_TOOLS, ASSISTANT_MESSAGES_PER_CONVERSATION } from "./tools.ts";
+import { AI_TOOLS, ASSISTANT_MESSAGES_PER_CONVERSATION, WARGAMING_TARGETS } from "./tools.ts";
 import { DRAFT_KIND_IDS } from "./draftKinds.ts";
 
 /** The registry tools a screen may price (the echo tests are never shown). */
@@ -41,12 +41,18 @@ export type PricedAiToolRef = PricedAiToolId | readonly PricedAiToolId[];
 
 /**
  * Every price one run of the tool can be charged: the drafter once per kind,
- * a metered tool at one page and at its page limit, a conversation on its
- * first (paid) message.
+ * the simulator with one target and with them all (R1: 75 / 150), a metered
+ * tool at one page and at its page limit, a conversation on its first (paid)
+ * message.
  */
 function chargedPrices(id: PricedAiToolId): number[] {
   const tool = AI_TOOLS[id];
-  const inputs: Record<string, unknown>[] = id === "legal-drafter" ? DRAFT_KIND_IDS.map((kind) => ({ kind })) : [{}];
+  const inputs: Record<string, unknown>[] =
+    id === "legal-drafter"
+      ? DRAFT_KIND_IDS.map((kind) => ({ kind }))
+      : id === "wargaming"
+        ? [{ targets: WARGAMING_TARGETS.slice(0, 1) }, { targets: [...WARGAMING_TARGETS] }]
+        : [{}];
   const pages: Array<number | null> = tool.files ? [1, tool.files.maxPages] : [null];
   return inputs.flatMap((input) => pages.map((p) => tool.price(input, { pages: p, turn: 0 })));
 }
@@ -75,7 +81,7 @@ export function pointsNounAr(n: number): string {
   return n >= 3 && n <= 10 ? "نقاط" : "نقطة";
 }
 
-/** The number alone, for a price column: «٢٥٠», «٥٠٠–١٬٥٠٠» / "250", "500–1,500". */
+/** The number alone, for a price column: «٧٥», «٢٠٠–١٬٥٠٠» / "75", "200–1,500". */
 export function aiToolPointsLabel(ref: PricedAiToolRef, lang: "ar" | "en"): string {
   const fmt = lang === "ar" ? arabicPoints : latinPoints;
   const [min, max] = aiToolPointRange(ref);
@@ -92,18 +98,24 @@ export function registryPointsLabel(id: string, lang: "ar" | "en"): string | nul
   return aiToolPointsLabel(id as PricedAiToolId, lang);
 }
 
+/** «رسائل» after 3–10 («٥ رسائل»), «رسالة» otherwise («١٥ رسالة»). */
+export function messagesNounAr(n: number): string {
+  return n >= 3 && n <= 10 ? "رسائل" : "رسالة";
+}
+
 /** What one price buys when it is not one run (the assistant: a conversation), or null. */
 export function aiToolPriceUnit(ref: PricedAiToolRef, lang: "ar" | "en"): string | null {
   if (ref !== "assistant") return null;
+  const n = ASSISTANT_MESSAGES_PER_CONVERSATION;
   return lang === "ar"
-    ? `لكل محادثة من ${arabicPoints(ASSISTANT_MESSAGES_PER_CONVERSATION)} رسائل`
-    : `per conversation of ${ASSISTANT_MESSAGES_PER_CONVERSATION} messages`;
+    ? `لكل محادثة من ${arabicPoints(n)} ${messagesNounAr(n)}`
+    : `per conversation of ${n} messages`;
 }
 
 /**
- * The price as a phrase, for a plan card's bullet: «٢٥٠ نقطة», «من ٥٠٠ إلى
- * ١٬٥٠٠ نقطة», «١٠٠ نقطة لكل محادثة من ٥ رسائل» / "250 points",
- * "500 to 1,500 points".
+ * The price as a phrase, for a plan card's bullet: «٧٥ نقطة», «من ٢٠٠ إلى
+ * ١٬٥٠٠ نقطة», «٣٠ نقطة لكل محادثة من ١٥ رسالة» / "75 points",
+ * "200 to 1,500 points".
  */
 export function aiToolPriceText(ref: PricedAiToolRef, lang: "ar" | "en"): string {
   const [min, max] = aiToolPointRange(ref);

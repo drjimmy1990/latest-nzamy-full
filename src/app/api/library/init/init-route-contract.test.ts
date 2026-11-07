@@ -54,8 +54,9 @@ test("N2.5 + ٣١٧: the laws catalogue is ordered in SQL — in force before re
   assert.match(n, /const DESC_NULLS_LAST = \{ ascending: false, nullsFirst: false \} as const;/);
   // Before 20261025_40 the old order still pages deterministically.
   assert.match(lawsCall, /return out\.order\("section_code"\)\.order\("title"\)\.order\("slug"\);/);
-  // Every viewer gets the order; the موجز only through the ٢٦٠ flag.
-  assert.match(lawsCall, /wanted: lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]/);
+  // Every viewer gets the order and the «يشتمل على» names (owner 2026-11-07);
+  // the موجز only through the ٢٦٠ flag.
+  assert.match(lawsCall, /wanted: \[\.\.\.\(lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]\), "mergedNames"\]/);
   // No in-page JS sort of the laws rows.
   assert.doesNotMatch(n.slice(n.indexOf("const lawsRows")), /lawsRows[^;]*\.sort\(/);
 });

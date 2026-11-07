@@ -52,7 +52,7 @@ test("S6: a free / unpaid service stores 0; corporate without a variant gets the
   const draft = stampServiceEstimate({ service: "contract-draft", originalPrice: 99 }, "individual", CLIENT_SERVICE_CATALOG) as Record<string, unknown>;
   assert.equal(draft.originalPrice, 0, "requiresPayment false → 0");
   const video = stampServiceEstimate({ service: "video-short", originalPrice: 1 }, "corporate", CLIENT_SERVICE_CATALOG) as Record<string, unknown>;
-  assert.equal(video.originalPrice, 500);
+  assert.equal(video.originalPrice, 199, "owner ٤٣٣ default");
   assert.equal(video.priceAudience, "individual", "the price's audience, not the requester's");
 });
 

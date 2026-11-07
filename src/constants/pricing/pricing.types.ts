@@ -25,6 +25,19 @@ export interface Plan {
   bonusLabel?: string; // e.g. "+١٠٠٪ نقاط مجانية" — shown as prominent pill
   priceOriginal?: string;
   isBetaHidden?: boolean;
+  /**
+   * Shown but not sold yet (owner ٤٢٠: «عضوية الحماية القانونية»): the card
+   * carries a «قريباً» badge, no price and a disabled «قريباً» button instead
+   * of subscribe. Its id is NOT a price-book entry (the book's own
+   * `comingSoon` hides a card entirely) and its ctaHref is no signup link, so
+   * no `?plan=` resolves to it (planRequest.ts).
+   */
+  comingSoon?: boolean;
+  /**
+   * Sold today, but some of the listed features are not built yet (owner
+   * ٤٣٧): a small «بعض المزايا قريباً» badge; those feature lines say «قريباً».
+   */
+  someFeaturesSoon?: boolean;
   includedSeats?: number;
   extraSeatPrice?: string;
   minimumSeats?: number;
