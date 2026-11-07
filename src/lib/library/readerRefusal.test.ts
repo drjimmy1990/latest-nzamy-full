@@ -83,6 +83,11 @@ test("423 with an unreadable body still shows the lock (no end, /contact)", () =
   // an off-site support link is never followed
   const off = readerRefusalFrom(423, { support: "https://evil.example" }, NOW);
   assert.equal(off?.kind === "lock" && off.lock.support, "/contact");
+  // nor a protocol-relative one
+  const protoRel = readerRefusalFrom(423, { support: "//evil.example/x" }, NOW);
+  assert.equal(protoRel?.kind === "lock" && protoRel.lock.support, "/contact");
+  const local = readerRefusalFrom(423, { support: "/support/tickets" }, NOW);
+  assert.equal(local?.kind === "lock" && local.lock.support, "/support/tickets");
 });
 
 test("429 is classified by its code, not its status", () => {

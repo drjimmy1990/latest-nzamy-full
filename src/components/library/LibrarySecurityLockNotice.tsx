@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { motion } from "framer-motion";
-import { ShieldWarning, ArrowRight, WhatsappLogo, Info } from "@phosphor-icons/react";
+import { ShieldWarning, ArrowRight, ArrowClockwise, WhatsappLogo, Info } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
@@ -100,6 +100,17 @@ export default function LibrarySecurityLockNotice({ lock }: { lock: ReaderLock }
             <ArrowRight size={16} weight="bold" />
             العودة للرئيسية
           </Link>
+          {/* After the lock ends (or support lifts it) a reload brings the page back. */}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all ${
+              isDark ? "bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+            }`}
+          >
+            <ArrowClockwise size={16} weight="bold" />
+            إعادة المحاولة
+          </button>
         </div>
         <p className={`mt-4 text-xs ${ts}`}>
           أو راسلنا من صفحة{" "}

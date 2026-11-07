@@ -807,9 +807,20 @@ function LawSystemPageContent() {
                 <p className={`text-sm leading-relaxed font-bold ${isDark ? "text-amber-200" : "text-amber-900"}`}>
                   {readerRefusal.messageAr}
                 </p>
-                <Link href="/laws" className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
-                  العودة إلى المكتبة القانونية
-                </Link>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                      isDark ? "bg-white/[0.06] text-zinc-300 hover:bg-white/[0.1]" : "bg-white text-zinc-700 border border-amber-200 hover:bg-amber-100"
+                    }`}
+                  >
+                    إعادة المحاولة
+                  </button>
+                  <Link href="/laws" className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
+                    العودة إلى المكتبة القانونية
+                  </Link>
+                </div>
               </div>
             </div>
           )}

@@ -81,6 +81,7 @@ on conflict (code) where owner_user_id is null do update
        count_from_next_day     = excluded.count_from_next_day,
        roll_forward_if_holiday = excluded.roll_forward_if_holiday,
        applies_to_degrees      = excluded.applies_to_degrees,
+       active                  = true,
        verified_by_owner       = true,
        verified_at             = coalesce(public.deadline_rules.verified_at, now()),
        updated_at              = now();

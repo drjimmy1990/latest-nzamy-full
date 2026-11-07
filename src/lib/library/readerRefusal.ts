@@ -62,7 +62,7 @@ export function lockHoursLeftAr(lockedUntil: string | null | undefined, now: num
   return countedAr(hours, "ساعة واحدة", "ساعتين", "ساعات", "ساعة");
 }
 
-export const LOCK_DIALOG_TITLE_AR = "تم تعليق التصفح مؤقتاً";
+export const LOCK_DIALOG_TITLE_AR = "إيقاف مؤقت لتصفح المكتبة";
 
 /**
  * The owner's sentence. Without an end (an admin lock until an admin lifts
@@ -119,7 +119,7 @@ export function readerRefusalFrom(status: number, body: unknown, now: number): R
         reference: text(b.reference),
         lockedUntil: text(b.lockedUntil),
         message: text(b.error) ?? LOCK_FALLBACK_AR,
-        support: support && support.startsWith("/") ? support : "/contact",
+        support: support && /^\/(?!\/)/.test(support) ? support : "/contact",
       },
     };
   }

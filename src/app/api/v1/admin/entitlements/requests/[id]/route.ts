@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireStaff, type ServerTier } from "@/lib/access-control";
+import { requireStaff, TIER_RANK, type ServerTier } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 import { libraryEndsAtAr, resolveLibraryRequestGrant } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
-import { libraryRequestApprovalDecision } from "@/lib/library/libraryRequestApproval";
+import { libraryRequestApprovalDecision, requestGrantApprovalDecision } from "@/lib/library/libraryRequestApproval";
 import type { StaffRole } from "@/lib/auth/staffRoles";
 import { recordNotification } from "@/lib/notify";
 
@@ -131,6 +131,21 @@ export async function PATCH(
         durationDays: body.durationDays,
         nowIso,
       });
+    }
+
+    // Owner ٤٢٧: a Pro+ plan is the full library, so without entitlements.grant
+    // the grant action must be the kind's own and a plan must rank below pro
+    // (no request is tied to a paid order today — libraryRequestApproval.ts).
+    const grantApproval = requestGrantApprovalDecision({
+      role: gate.role,
+      kind,
+      grantAction: body.grantAction,
+      tier: body.tier,
+      paidOrder: false,
+      ranks: TIER_RANK,
+    });
+    if (!grantApproval.allowed) {
+      return NextResponse.json({ error: grantApproval.error, code: grantApproval.code }, { status: grantApproval.status });
     }
 
     // Map the request kind → a concrete grant action. media → plan.
