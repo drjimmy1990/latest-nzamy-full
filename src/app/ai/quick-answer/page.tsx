@@ -19,6 +19,8 @@ import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
+import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
+import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
 import {
   QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, QUICK_ANSWER_UNGROUNDED_LABEL,
   isUngroundedAnswer, quickAnswerExportText, quickAnswerRefusalText,
@@ -69,6 +71,8 @@ function QuickAnswerTool() {
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
   const cites = asCitations(run.citations);
   const ungrounded = isUngroundedAnswer(run.output);
+  // Owner ٤١٧: open to every account, but the library's AI tier still gates it.
+  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع") : null;
   // Art. 18: /ai/wargaming refuses a consultant, so it is not offered to him.
   const followUps = QUICK_ANSWER_FOLLOW_UPS.filter((f) => !(user.practiceKind === "consultant" && isConsultantBlockedPath(f.href)));
 
@@ -162,7 +166,8 @@ function QuickAnswerTool() {
             {asking ? "جارٍ البحث..." : "اسأل"}
           </motion.button>
         </div>
-        {run.phase === "error" && run.error && (
+        {run.phase === "error" && libraryRefusal && <LibraryToolRefusalNote refusal={libraryRefusal} isDark={isDark} />}
+        {run.phase === "error" && run.error && !libraryRefusal && (
           <p role="alert" className={`text-[12px] leading-relaxed ${isDark ? "text-red-400" : "text-red-600"}`}>
             {quickAnswerRefusalText(run.code) ?? run.error}
           </p>

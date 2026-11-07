@@ -14,6 +14,8 @@ import { StepSubmit }    from "@/components/draft/steps/StepSubmit";
 import { StepAiDraft }   from "@/components/draft/steps/StepAiDraft";
 import { useUser } from "@/hooks/useUser";
 import { draftKindFromMemo } from "@/lib/ai/draftKinds";
+import { AI_TOOLS } from "@/lib/ai/tools";
+import { toolRoleRefusal } from "@/lib/ai/aiToolsConfig";
 import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
 import { splitAiReadable } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
@@ -42,9 +44,11 @@ export default function AIDraftPage() {
   // L14 (owner LIVE-F02, NOTE-22): a pleading is written by the AI by
   // default; the team's review is a separate, optional order. The specialist
   // modes (arbitration, notary, report, minutes) have no kind and stay a team
-  // order, as does any account the tool is not open to (lawyers and firms).
+  // order, as does any account the tool is not open to. Owner ٤١٧: the tool's
+  // roles (tools.ts) are every registered account; the role rule is the run
+  // path's own (toolRoleRefusal), the consultant lock is the line below.
   const kind = draftKindFromMemo(s.memoType, s.memoSubType);
-  const aiOpen = kind !== null && ["lawyer", "firm", "admin"].includes(user.userType as string);
+  const aiOpen = kind !== null && toolRoleRefusal(AI_TOOLS["legal-drafter"], { userType: user.userType ?? "", practiceKind: null }) === null;
   // Art. 18: a legal consultant does not plead — neither by the AI nor by
   // the team (the service-requests POST refuses it too).
   const consultantBlocked = kind !== null && user.practiceKind === "consultant";

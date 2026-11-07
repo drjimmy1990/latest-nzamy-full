@@ -63,10 +63,10 @@ test("the lawyer sidebar has one quick-answer row and keeps its one assistant ro
   assert.equal(rows(FIRM_SIDEBAR).filter((r) => r.href === "/ai/quick-answer").length, 1);
 });
 
-test("٤١٢: 10 points and today's roles, with no free daily question", () => {
+test("٤١٢: 10 points, every registered role (٤١٧), with no free daily question", () => {
   const tool = AI_TOOLS["quick-answer"];
   assert.equal(tool.price({}, {} as never), 10);
-  assert.deepEqual(tool.roles, ["lawyer", "firm"]);
+  assert.deepEqual([...tool.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   assert.ok(tool.retrieval, "the ungrounded rule stands on retrieval");
   assert.doesNotMatch(page(), /مجاني|سؤال يومي|free daily/i);
 });

@@ -78,7 +78,7 @@ function deps(calls: Call[], o: { access?: StartRunDeps["libraryAccess"]; found?
 
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
-test("the registry: two jobs (100 / 50), off by default, no files, the same audience as L11, consultants allowed", () => {
+test("the registry: two jobs (100 / 50), off by default, no files, every registered role (owner ٤١٧ adds government), consultants allowed", () => {
   assert.equal(LEGAL_CONSULT_PRICE, 100, "owner ٤١٠: the consultation is 100");
   assert.equal(LEGAL_LETTER_PRICE, 50, "owner ٤١٠: the letter is 50");
   assert.equal(AI_TOOLS["legal-opinion-consult"].price({}, { pages: null }), 100);
@@ -91,7 +91,7 @@ test("the registry: two jobs (100 / 50), off by default, no files, the same audi
     assert.equal(t.files, undefined);
     assert.equal(t.consultantBlocked, false, "/ai/legal-opinion is open to consultants (Art. 18)");
     assert.ok(!t.sendsDisplayName, "the letter is signed by the sender typed, never the account");
-    assert.deepEqual([...t.roles], ["lawyer", "firm", "individual", "corporate", "micro"]);
+    assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   }
   assert.deepEqual(AI_TOOLS["legal-opinion-consult"].retrieval, { from: "question", laws: 8, principles: 4 });
   assert.equal(AI_TOOLS["legal-opinion-letter"].retrieval, undefined, "a letter is not refunded for citing no library text");

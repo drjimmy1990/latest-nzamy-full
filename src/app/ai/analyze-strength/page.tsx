@@ -41,6 +41,8 @@ import { aiReadableAccept, isAiReadable, splitAiReadable } from "@/components/ai
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { ANALYZE_STRENGTH_PRICE, CASE_SUMMARY_MAX, CASE_SUMMARY_MIN, WAVE4_FILES } from "@/lib/ai/tools";
 import { asStrengthReport, strengthReportText, LEVEL_LABEL, RISK_LABEL, STRENGTH_DISCLAIMER, type StrengthReport } from "./_report";
+import { useToolUsable } from "@/hooks/useToolUsable";
+import Navbar from "@/components/Navbar";
 
 type TabKey = "strength" | "opponent" | "risks" | "devil";
 const TABS: { key: TabKey; label: string; icon: typeof Gauge }[] = [
@@ -116,9 +118,14 @@ export default function AIStrengthPage() {
     ? isDark ? "border-[#C8A762]/50 bg-[#C8A762]/10 text-[#C8A762]" : "border-[#0B3D2E]/40 bg-[#0B3D2E]/5 text-[#0B3D2E]"
     : isDark ? "border-white/[0.07] text-zinc-400 hover:border-white/20" : "border-zinc-200 text-zinc-600 hover:border-zinc-300"}`;
 
+  // A visitor (e.g. from «حلل قضيتي» on /services/labor) gets the page
+  // unwrapped by the /ai layout, so the marketing Navbar is drawn here.
+  const isGuest = !user.loading && !user.isLoggedIn;
+
   return (
     <ConsultantGate>
-    <div className={`p-5 md:p-7 max-w-5xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
+    {isGuest && <Navbar />}
+    <div className={`p-5 md:p-7 max-w-5xl mx-auto space-y-5 ${isGuest ? "pt-28" : ""} ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
       <div>
         <h1 className={`text-xl font-bold mb-1 ${isDark ? "text-white" : "text-zinc-900"}`}>محلل الموقف والخصم</h1>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
@@ -130,16 +137,22 @@ export default function AIStrengthPage() {
       {!user.loading && !user.isLoggedIn && (
         <div className={`${card} p-6 space-y-3`}>
           <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>سجّل الدخول لتحليل قضيتك</p>
-          <Link href="/login?from=%2Fai%2Fanalyze-strength" className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[12px] font-bold text-white">
-            <SignIn size={14} /> تسجيل الدخول
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/login?from=%2Fai%2Fanalyze-strength" className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-5 py-2.5 text-[12px] font-bold text-white">
+              <SignIn size={14} /> تسجيل الدخول
+            </Link>
+            <Link href="/register" className={`inline-flex items-center gap-2 rounded-xl border px-5 py-2.5 text-[12px] font-bold ${isDark ? "border-white/[0.1] text-zinc-300" : "border-zinc-200 text-zinc-700"}`}>
+              إنشاء حساب
+            </Link>
+          </div>
         </div>
       )}
 
       {signedIn && !report && (
+        <StrengthUsableGate isDark={isDark}>
         <div className={`${card} p-5 md:p-6 space-y-6`}>
           <div>
-            <p className={label}>١. صفة موكّلك</p>
+            <p className={label}>١. صفتك في القضية أو صفة موكّلك</p>
             <div className="flex flex-wrap gap-2">
               {ROLES.map(r => <button key={r.id} type="button" onClick={() => setRole(r.id)} className={pill(role === r.id)}>{r.label}</button>)}
             </div>
@@ -215,6 +228,7 @@ export default function AIStrengthPage() {
             <AiThinkingStage run={ai} isDark={isDark} toolLabel={aiToolLabelAr("analyze-strength")} />
           </div>
         </div>
+        </StrengthUsableGate>
       )}
 
       {report && (
@@ -224,6 +238,32 @@ export default function AIStrengthPage() {
     </div>
     </ConsultantGate>
   );
+}
+
+/**
+ * tool-status before the form (as /ai/quick-answer): the tool ships "off" or
+ * "staff", and a run would only then answer 423. No price and no form until the
+ * server says this caller may run it. Inside ConsultantGate, so a consultant
+ * still reads the Art. 18 lock rather than «قريباً».
+ */
+function StrengthUsableGate({ isDark, children }: { isDark: boolean; children: React.ReactNode }) {
+  const usable = useToolUsable("analyze-strength");
+  const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
+  if (usable === null) {
+    return <p role="status" className={`py-10 text-center text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>جارٍ التحقق…</p>;
+  }
+  if (!usable) {
+    return (
+      <div className={`${card} p-6 space-y-2`}>
+        <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>محلل الموقف والخصم — قريباً</p>
+        <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+          تقدير الموقف وتحركات الخصم والمخاطر الإجرائية من ملخص قضيتك ومستنداتها. لم يُتح بعد لحسابك.
+        </p>
+        <Link href="/ai" className={`inline-flex text-[12px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>العودة إلى أدوات الذكاء</Link>
+      </div>
+    );
+  }
+  return <>{children}</>;
 }
 
 function StrengthReportView({ report, isDark, activeTab, setActiveTab, chargedPoints, onReset }: {

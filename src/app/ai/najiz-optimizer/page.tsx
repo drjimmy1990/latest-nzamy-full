@@ -210,7 +210,7 @@ function NajizOptimizerPage() {
             <div className="flex items-center gap-2">
               <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>منقح ناجز</h1>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${isDark ? "border-emerald-700/30 bg-emerald-900/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
-                للمحامين
+                لمذكرات ناجز
               </span>
             </div>
             <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>

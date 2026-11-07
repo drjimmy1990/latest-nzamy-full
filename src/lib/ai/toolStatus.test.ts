@@ -12,8 +12,8 @@ import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { toolStatusWith } from "./toolStatus.ts";
 import { AI_TOOLS, type AiToolMode } from "./tools.ts";
 
-const BLOCKED = AI_TOOLS["brief-check"]; // lawyer, firm; consultantBlocked
-const OPEN = AI_TOOLS["case-brief"]; // lawyer, firm
+const BLOCKED = AI_TOOLS["brief-check"]; // every registered role (owner ٤١٧); consultantBlocked
+const OPEN = AI_TOOLS["case-brief"]; // every registered role (owner ٤١٧)
 
 function clients(opts: {
   userType?: unknown;
@@ -63,7 +63,8 @@ test("a legacy stored review answers as the run path treats it: staff", async ()
 
 test("a role that cannot use the tool learns nothing: the same answer in every mode, and the setting is never read", async () => {
   for (const mode of ["off", "staff", "live"] as const) {
-    const { answer, settingReads } = await ask(OPEN, { userType: "individual", mode });
+    // No registered type is outside a tool now (owner ٤١٧): an unknown user_type stands in.
+    const { answer, settingReads } = await ask(OPEN, { userType: "client", mode });
     assert.deepEqual(answer, { usable: false }, mode);
     assert.equal(settingReads, 0, mode);
   }

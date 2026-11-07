@@ -9,6 +9,8 @@ import AiResultActions from "@/components/AiResultActions";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import CitationCheckList from "@/components/ai/CitationCheckList";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
+import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
@@ -334,6 +336,9 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
 
 function RunStatus({ isDark, run }: { isDark: boolean; run: ReturnType<typeof useAiRun> }) {
   const stage = <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("legal-drafter")} />;
+  // Owner ٤١٧: open to every account; the library's AI tier still gates the drafter.
+  const library = run.phase === "error" ? libraryToolRefusal(run.code, "الصائغ القانوني") : null;
+  if (library) return <LibraryToolRefusalNote refusal={library} isDark={isDark} />;
   if (run.phase === "error" && run.error) {
     return (
       <div className="space-y-2">

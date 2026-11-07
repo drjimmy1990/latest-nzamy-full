@@ -256,7 +256,7 @@ test("canvas-card: the selected cards and the sources in their tags; «S3 | why�
 test("canvas-card input: 1–8 titled cards, an unknown type kept as custom, the search text built from them", () => {
   const t = AI_TOOLS["canvas-card"];
   assert.equal(t.price({}, { pages: null }), 10);
-  assert.deepEqual(t.roles, ["lawyer", "firm"]);
+  assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   assert.equal(t.validateInput({ cards: [] }).ok, false);
   assert.equal(t.validateInput({ cards: [{ type: "event", title: "  " }] }).ok, false);
   const ok = t.validateInput({ cards: [{ type: "event", title: "فصل العامل", desc: "بعد غياب" }, { type: "??", title: "إنذار" }, ...Array(10).fill({ title: "x" })] });

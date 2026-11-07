@@ -10,6 +10,7 @@
  * every AI law card resolves to a real library article.
  */
 import type { GraphNode } from "./_graph-model";
+import { libraryToolRefusal } from "../../../../lib/ai/libraryToolRefusal.ts";
 
 // Same values as NODE_W / NODE_H in ./_graph-model (not imported: that module
 // loads the icon library, which `node --test` cannot run), as in _graph-import.ts.
@@ -80,6 +81,9 @@ export async function askCanvasCard(
   if (res.ok && suggestions.length > 0) {
     return { ok: true, suggestions, chargedPoints: typeof json.chargedPoints === "number" ? json.chargedPoints : 0 };
   }
+  // The library gate's refusal in this button's name, not «المساعد الذكي للمكتبة».
+  const library = libraryToolRefusal(typeof json.code === "string" ? json.code : null, "اقترح سنداً نظامياً");
+  if (library) return { ok: false, suggestions: [], error: library.text };
   return { ok: false, suggestions: [], error: typeof json.error === "string" && json.error ? json.error : FALLBACK };
 }
 

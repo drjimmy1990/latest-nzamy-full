@@ -80,9 +80,9 @@ function deps(o: {
 const body = (over: Record<string, unknown> = {}) => ({ tool: "quick-answer", input: { question: QUESTION }, idempotencyKey: "key-abcdef01", ...over });
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
-test("the registry entry: lawyers and firms, 10 points (owner ٤١٢), off until an admin opens it, library-backed", () => {
+test("the registry entry: every registered role (owner ٤١٧), 10 points (owner ٤١٢), off until an admin opens it, library-backed", () => {
   const t = AI_TOOLS["quick-answer"];
-  assert.deepEqual(t.roles, ["lawyer", "firm"]);
+  assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   assert.equal(t.price({}, { pages: null }), 10);
   assert.equal(t.defaultMode, "off");
   assert.deepEqual(t.retrieval, { from: "question", laws: 8, principles: 4, allowUngrounded: { field: "answer" } });

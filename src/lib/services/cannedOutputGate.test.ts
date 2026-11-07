@@ -150,10 +150,12 @@ test("عصارة المرفقات renders the real case-brief job for lawyer and
 });
 
 test("/ai/analyze: lawyers, firms and admins get the case-brief studio; everyone else the gated analyzer and its notice", () => {
-  // S3-01. The route serves two tools. The case brief runs for lawyer and firm
-  // (tools.ts roles), and for an admin, whom the run path lets through so a tool
+  // S3-01. The route serves two tools. The case brief's studio is drawn for
+  // lawyer and firm, and for an admin, whom the run path lets through so a tool
   // in "staff" mode can be tried before it opens. Every other account, and a
-  // guest, reads the gated client analyzer with its advisory notice above it.
+  // guest, reads the gated client analyzer with its advisory notice above it
+  // (owner item ١٨). Owner ٤١٧ opened the tool itself to every registered role;
+  // which screen a client is drawn here stays the page's choice.
   const page = code("app/ai/analyze/page.tsx");
   assert.ok(!page.includes(SOON_IMPORT));
   assert.match(page, /<SmartAnalyzer\b/);
@@ -162,7 +164,7 @@ test("/ai/analyze: lawyers, firms and admins get the case-brief studio; everyone
   const analyzerAt = page.indexOf("<SmartAnalyzer");
   assert.ok(studioAt > 0 && studioAt < noticeAt && noticeAt < analyzerAt, "the notice sits in the client branch only");
   assert.match(page.slice(0, studioAt), /user\.userType === "lawyer" \|\| user\.userType === "firm" \|\| user\.userType === "admin"/);
-  assert.deepEqual(AI_TOOLS["case-brief"].roles, ["lawyer", "firm"], "the studio's split follows the tool's roles");
+  for (const role of ["lawyer", "firm"]) assert.ok(AI_TOOLS["case-brief"].roles.includes(role), `the studio's roles run the tool: ${role}`);
 
   // Live for them, at the registry's price, and no longer «قريباً».
   const row = LAWYER_AI_TOOL_BY_PERMISSION["ai:analyze"];
