@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 // A namespace import, so a missing export fails its own test, not the file.
 import * as catalog from "../../constants/lawyerAiCatalog.ts";
 import * as badges from "../../constants/lawyerAiBadges.ts";
-import { bookSar } from "../pricing/priceBook.ts";
+import { bookSar, topupPointsTextById } from "../pricing/priceBook.ts";
 import {
   AI_TOOLS,
   ANALYZE_STRENGTH_PRICE,
@@ -46,17 +46,22 @@ test("the lawyer tab is the subscription (no points) plus the five professional 
   assert.match(lawyers, /id: "lawyer-pro"/);
   // Owner ٢٩١ (26 Oct 2026): the subscription comes with no points.
   assert.doesNotMatch(lawyers, /LAWYER_PRO_MONTHLY_POINTS|١٬٥٠٠ نقطة كل شهر|1,500 points every month/);
+  // Owner ٤٢٢ (3 Nov 2026): the bonus balances; ruling R2: «X نقطة (منها Y نقطة مكافأة)», no per-point price.
   const topups: Array<[string, number, string]> = [
-    ["topup-500", 500, "٥٠٠ نقطة"],
-    ["topup-1000", 1000, "١٬٢٥٠ نقطة"],
-    ["topup-2500", 2500, "٣٬٥٠٠ نقطة"],
-    ["topup-5000", 5000, "٨٬٥٠٠ نقطة"],
-    ["topup-10000", 10000, "٢٥٬٠٠٠ نقطة"],
+    ["topup-500", 500, "٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)"],
+    ["topup-1000", 1000, "١٬٥٠٠ نقطة (منها ٥٠٠ نقطة مكافأة)"],
+    ["topup-2500", 2500, "٥٬٠٠٠ نقطة (منها ٢٬٥٠٠ نقطة مكافأة)"],
+    ["topup-5000", 5000, "١٢٬٥٠٠ نقطة (منها ٧٬٥٠٠ نقطة مكافأة)"],
+    ["topup-10000", 10000, "٣٠٬٠٠٠ نقطة (منها ٢٠٬٠٠٠ نقطة مكافأة)"],
   ];
+  const esc = (t: string) => t.replace(/[()]/g, "\\$&");
   for (const [id, price, points] of topups) {
     assert.equal(bookSar(id, "once"), price, id);
-    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points}( · [^"]*)?"`), id);
+    // the card's literal desc says what the book grants
+    assert.equal(topupPointsTextById(id, "ar"), points, id);
+    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${esc(points)}( · [^"]*)?"`), id);
   }
+  assert.doesNotMatch(lawyers, /ر\.س للنقطة|per point|سعر النقطة|نقاط مجانية|Free points/, "R2: no per-point price, no «free» wording");
   assert.doesNotMatch(lawyers, /id: "topup-(100|250)"/, "٣٠٢: the 100 / 250 packs are not on the lawyers' tab");
   for (const [id, points] of [["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"]]) {
     assert.match(individuals, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points} · صالحة ٣ أشهر"`), id);

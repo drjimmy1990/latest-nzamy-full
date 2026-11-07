@@ -107,7 +107,7 @@ export const services = {
       icon: ChatCircleDots,
       label: "Legal Consultation",
       tagline: "Consult a lawyer or Nezamy AI",
-      desc: "Direct consultation with a certified lawyer — voice, video, in-person, or via Nezamy AI trained on Saudi law.",
+      desc: "Direct consultation with a certified lawyer — voice, video, in-person, or via Nezamy AI, which takes Saudi law as its source.",
       href: "/services/consultations",
       price: "Depends on the consultation type",
       duration: "30 minutes",

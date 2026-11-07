@@ -24,6 +24,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { commissionRatesLine } from "@/lib/pricing/commission";
 
 // ─── Mock Single Request ──────────────────────────────────────────────────────
 
@@ -411,7 +412,7 @@ export default function MarketplaceDetailPage() {
                   )}
                   <div className={`flex items-start gap-2 text-xs p-3 rounded-xl ${isDark ? "bg-blue-500/5 border border-blue-500/20 text-blue-300" : "bg-blue-50 border border-blue-100 text-blue-700"}`}>
                     <Info size={13} className="mt-0.5 flex-shrink-0" weight="fill" />
-                    عمولة المنصة 15% من العرض المقبول.
+                    عمولة المنصة من العرض المقبول حسب باقتك: {commissionRatesLine("ar")}.
                   </div>
                   <motion.button
                     whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}

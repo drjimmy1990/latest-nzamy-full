@@ -20,7 +20,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "٩,٩٨٨", priceYearly: "٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "مكتبة قانونية + طلبات قانونية + تنبيهات العقود — بدون ترافع أو استشارات", target: "شركات صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
-      companySize: "small", forLegalDept: false,
+      companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -31,8 +31,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "٣ مستخدمين",
           "طلبات قانونية: ٥/شهر",
-          "سوق المهنيين (طلب محامٍ خارجي) ✅",
-          "عقود الموظفين (HR): أساسي",
+          "سوق المهنيين (طلب محامٍ خارجي): قريباً",
+          "عقود الموظفين (HR): قريباً",
         ],
         support: [
           "استشارة محامٍ متخصص: ❌",
@@ -44,7 +44,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "٢٤,٩٨٨", priceYearly: "٢٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "استشارات شهرية + ترافع بسقف + مراجعة عقود + Kanban", target: "شركات صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
-      companySize: "small", forLegalDept: false,
+      companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -55,8 +55,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "٥ مستخدمين",
           "استشارات محامٍ متخصص: ٢ ساعة/شهر",
-          "Kanban: ١٥ مهمة · طلبات: ١٠/شهر",
-          "سوق المهنيين + عقود الموظفين ✅",
+          "طلبات: ١٠/شهر · Kanban: قريباً",
+          "سوق المهنيين + عقود الموظفين: قريباً",
         ],
         support: [
           "ترافع: ١ قضية/سنة (سقف مطالبة ٥٠ ألف ر.س)",
@@ -68,7 +68,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "٤٤,٩٨٨", priceYearly: "٤٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "فريق قانوني كامل عن بُعد — استشارات + ترافع + مراجعة عقود + حوكمة", target: "شركات صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
-      companySize: "small", forLegalDept: false,
+      companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -79,8 +79,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "١٠ مستخدمين",
           "استشارات محامٍ متخصص: ٥ ساعات/شهر",
-          "Kanban: ٣٠ مهمة · طلبات: ٢٠/شهر",
-          "سوق المهنيين + عقود الموظفين + تقارير ✅",
+          "طلبات: ٢٠/شهر · Kanban: قريباً",
+          "سوق المهنيين + عقود الموظفين + تقارير: قريباً",
         ],
         support: [
           "ترافع: ٢ قضية/سنة (سقف مطالبة ١٠٠ ألف ر.س)",
@@ -93,7 +93,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "٢٩,٩٨٨", priceYearly: "٢٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "استشارات أساسية + مكتبة قانونية + HR — بدون ترافع مشمول", target: "شركات متوسطة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
-      companySize: "medium", forLegalDept: false,
+      companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -104,8 +104,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "٥ مستخدمين",
           "استشارات محامٍ متخصص: ٢ ساعة/شهر",
-          "Kanban: ٢٠ مهمة · طلبات: ١٠/شهر",
-          "سوق المهنيين + عقود الموظفين ✅",
+          "طلبات: ١٠/شهر · Kanban: قريباً",
+          "سوق المهنيين + عقود الموظفين: قريباً",
         ],
         support: [
           "ترافع: خصم ١٥٪ على الأتعاب (بدون قضايا مشمولة)",
@@ -117,7 +117,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "٥٩,٩٨٨", priceYearly: "٥٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "ترافع بسقف + استشارات مكثفة + حوكمة + مراجعة عقود", target: "شركات متوسطة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
-      companySize: "medium", forLegalDept: false,
+      companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -128,8 +128,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "١٥ مستخدماً",
           "استشارات محامٍ متخصص: ٥ ساعات/شهر",
-          "Kanban: ٤٠ مهمة · طلبات: ٢٠/شهر",
-          "حوكمة + تقارير مالية + سوق المهنيين ✅",
+          "طلبات: ٢٠/شهر · Kanban: قريباً",
+          "حوكمة + تقارير مالية + سوق المهنيين: قريباً",
         ],
         support: [
           "ترافع: ٢ قضية/سنة (سقف مطالبة ١٥٠ ألف ر.س)",
@@ -141,7 +141,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "٩٩,٩٨٨", priceYearly: "٩٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "إدارة قانونية خارجية شاملة — مكتب محاماة كامل مدمج في شركتك", target: "شركات متوسطة", cta: "تواصل معنا",
       ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
-      companySize: "medium", forLegalDept: false,
+      companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -152,8 +152,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "٢٥ مستخدماً",
           "استشارات محامٍ متخصص: ١٠ ساعات/شهر",
-          "Kanban: ٨٠ مهمة · طلبات: ٤٠/شهر",
-          "حوكمة كاملة + تقارير + انتداب مستشار ✅",
+          "طلبات: ٤٠/شهر · Kanban: قريباً",
+          "حوكمة كاملة + تقارير + انتداب مستشار: قريباً",
         ],
         support: [
           "ترافع: ٣ قضايا/سنة (سقف مطالبة ٣٠٠ ألف ر.س)",
@@ -166,7 +166,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "٥٩,٩٨٨", priceYearly: "٥٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "دعم مؤسسي أساسي + ترافع بسقف + استشارات + حوكمة", target: "مؤسسات كبيرة", cta: "تواصل معنا",
       ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
-      companySize: "large", forLegalDept: false,
+      companySize: "large", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -177,8 +177,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "١٠ مستخدمين",
           "استشارات محامٍ متخصص: ٣ ساعات/شهر",
-          "Kanban: ٣٠ مهمة · طلبات: ١٥/شهر",
-          "حوكمة أساسية + عقود الموظفين ✅",
+          "طلبات: ١٥/شهر · Kanban: قريباً",
+          "حوكمة أساسية + عقود الموظفين: قريباً",
         ],
         support: [
           "ترافع: ١ قضية/سنة (سقف مطالبة ١٥٠ ألف ر.س)",
@@ -190,7 +190,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "١١٩,٩٨٨", priceYearly: "١١٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
       desc: "ترافع + حوكمة كاملة + انتداب + مراجعة عقود — للمؤسسات الكبرى", target: "مؤسسات كبيرة", cta: "تواصل معنا",
       ctaHref: "/contact", highlighted: true, color: "border-royal/20",
-      companySize: "large", forLegalDept: false,
+      companySize: "large", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -201,8 +201,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "٣٠ مستخدماً",
           "استشارات محامٍ متخصص: ١٠ ساعات/شهر",
-          "Kanban: ١٠٠ مهمة · طلبات: ٥٠/شهر",
-          "حوكمة كاملة + انتداب مستشار + تقارير مالية ✅",
+          "طلبات: ٥٠/شهر · Kanban: قريباً",
+          "حوكمة كاملة + انتداب مستشار + تقارير مالية: قريباً",
         ],
         support: [
           "ترافع: ٣ قضايا/سنة (سقف مطالبة ٣٠٠ ألف ر.س)",
@@ -214,7 +214,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "تواصل معنا", priceYearly: "تواصل معنا", periodMonthly: "عقد سنوي", periodYearly: "عقد سنوي",
       desc: "عقد مخصص — مكتب محاماة كامل مدمج في مؤسستك بشروط متفق عليها", target: "مؤسسات كبيرة", cta: "تواصل مع المبيعات",
       ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
-      companySize: "large", forLegalDept: false,
+      companySize: "large", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
@@ -225,8 +225,8 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
         platform: [
           "عدد مستخدمين حسب العقد",
           "استشارات + ساعات: حسب العقد",
-          "Kanban + SSO + API",
-          "حوكمة + انتداب + إشراف مجتمع ✅",
+          "Kanban + SSO + API: قريباً",
+          "حوكمة + انتداب + إشراف مجتمع: قريباً",
         ],
         support: [
           "ترافع: حسب العقد (سقف مطالبة متفق عليه)",
@@ -241,10 +241,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "9,988", priceYearly: "9,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Legal library + legal requests + contract alerts — no litigation or consultations", target: "Small Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
-      companySize: "small", forLegalDept: false,
+      companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Full Legal Library ✅", "Contract expiry alerts ✅", null],
-        platform: ["3 users", "Legal requests: 5/mo", "Professional Marketplace ✅", "Employee contracts (HR): basic"],
+        platform: ["3 users", "Legal requests: 5/mo", "Professional Marketplace: coming soon", "Employee contracts (HR): coming soon"],
         support: ["Lawyer consultation: ❌", "Litigation: 10% fee discount when needed"],
       },
     },
@@ -252,10 +252,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "24,988", priceYearly: "24,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Monthly consultations + capped litigation + contract review + Kanban", target: "Small Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
-      companySize: "small", forLegalDept: false,
+      companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 2/mo", null, null],
-        platform: ["5 users", "Lawyer consultations: 2 hrs/mo", "Kanban: 15 tasks · Requests: 10/mo", "Marketplace + Employee contracts ✅"],
+        platform: ["5 users", "Lawyer consultations: 2 hrs/mo", "Requests: 10/mo · Kanban: coming soon", "Marketplace + Employee contracts: coming soon"],
         support: ["Litigation: 1 case/yr (claim cap 50K SAR)", "15% off additional litigation"],
       },
     },
@@ -263,10 +263,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "44,988", priceYearly: "44,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Complete remote legal team — consultations + capped litigation + contract review", target: "Small Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
-      companySize: "small", forLegalDept: false,
+      companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 5/mo", null, null],
-        platform: ["10 users", "Lawyer consultations: 5 hrs/mo", "Kanban: 30 tasks · Requests: 20/mo", "Marketplace + HR + Reports ✅"],
+        platform: ["10 users", "Lawyer consultations: 5 hrs/mo", "Requests: 20/mo · Kanban: coming soon", "Marketplace + HR + Reports: coming soon"],
         support: ["Litigation: 2 cases/yr (claim cap 100K SAR)", "20% off additional · WhatsApp support"],
       },
     },
@@ -275,10 +275,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "29,988", priceYearly: "29,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Core consultations + legal library + HR — no included litigation", target: "Medium Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
-      companySize: "medium", forLegalDept: false,
+      companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Full Legal Library ✅", null, null],
-        platform: ["5 users", "Lawyer consultations: 2 hrs/mo", "Kanban: 20 tasks · Requests: 10/mo", "Marketplace + Employee contracts ✅"],
+        platform: ["5 users", "Lawyer consultations: 2 hrs/mo", "Requests: 10/mo · Kanban: coming soon", "Marketplace + Employee contracts: coming soon"],
         support: ["Litigation: 15% fee discount (no cases included)", "Email support"],
       },
     },
@@ -286,10 +286,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "59,988", priceYearly: "59,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Capped litigation + governance + intensive consultations + contract review", target: "Medium Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: true, color: "border-royal/20",
-      companySize: "medium", forLegalDept: false,
+      companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 5/mo", null, null],
-        platform: ["15 users", "Lawyer consultations: 5 hrs/mo", "Kanban: 40 tasks · Requests: 20/mo", "Governance + Finance reports + Marketplace ✅"],
+        platform: ["15 users", "Lawyer consultations: 5 hrs/mo", "Requests: 20/mo · Kanban: coming soon", "Governance + Finance reports + Marketplace: coming soon"],
         support: ["Litigation: 2 cases/yr (claim cap 150K SAR)", "20% off additional · WhatsApp support"],
       },
     },
@@ -297,10 +297,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "99,988", priceYearly: "99,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Outsourced legal department — a full law firm embedded in your company", target: "Medium Companies", cta: "Contact Us",
       ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
-      companySize: "medium", forLegalDept: false,
+      companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 10/mo", null, null],
-        platform: ["25 users", "Lawyer consultations: 10 hrs/mo", "Kanban: 80 tasks · Requests: 40/mo", "Full governance + secondment + reports ✅"],
+        platform: ["25 users", "Lawyer consultations: 10 hrs/mo", "Requests: 40/mo · Kanban: coming soon", "Full governance + secondment + reports: coming soon"],
         support: ["Litigation: 3 cases/yr (claim cap 300K SAR)", "25% off additional · Account manager"],
       },
     },
@@ -309,10 +309,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "59,988", priceYearly: "59,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Enterprise base + capped litigation + consultations + governance", target: "Large Enterprises", cta: "Contact Us",
       ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
-      companySize: "large", forLegalDept: false,
+      companySize: "large", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Full Legal Library ✅", null, null],
-        platform: ["10 users", "Lawyer consultations: 3 hrs/mo", "Kanban: 30 tasks · Requests: 15/mo", "Basic governance + Employee contracts ✅"],
+        platform: ["10 users", "Lawyer consultations: 3 hrs/mo", "Requests: 15/mo · Kanban: coming soon", "Basic governance + Employee contracts: coming soon"],
         support: ["Litigation: 1 case/yr (claim cap 150K SAR)", "15% off additional · WhatsApp"],
       },
     },
@@ -320,10 +320,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "119,988", priceYearly: "119,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
       desc: "Full enterprise support — litigation + governance + secondment + contract review", target: "Large Enterprises", cta: "Contact Us",
       ctaHref: "/contact", highlighted: true, color: "border-royal/20",
-      companySize: "large", forLegalDept: false,
+      companySize: "large", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Lawyer contract review: 10/mo", null, null],
-        platform: ["30 users", "Lawyer consultations: 10 hrs/mo", "Kanban: 100 tasks · Requests: 50/mo", "Full governance + secondment + reports ✅"],
+        platform: ["30 users", "Lawyer consultations: 10 hrs/mo", "Requests: 50/mo · Kanban: coming soon", "Full governance + secondment + reports: coming soon"],
         support: ["Litigation: 3 cases/yr (claim cap 300K SAR)", "25% off additional · Account manager"],
       },
     },
@@ -331,10 +331,10 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       priceMonthly: "Contact Us", priceYearly: "Contact Us", periodMonthly: "Annual Contract", periodYearly: "Annual Contract",
       desc: "Custom contract — a full law firm embedded in your corporation", target: "Large Enterprises", cta: "Contact Sales",
       ctaHref: "/contact", highlighted: false, color: "border-emerald-200/50 dark:border-emerald-500/20",
-      companySize: "large", forLegalDept: false,
+      companySize: "large", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Contract review + drafting: per contract", null, null],
-        platform: ["Users: per contract", "Consultations: per contract", "Kanban + SSO + API", "Full governance + secondment + community ✅"],
+        platform: ["Users: per contract", "Consultations: per contract", "Kanban + SSO + API: coming soon", "Full governance + secondment + community: coming soon"],
         support: ["Litigation: per contract (agreed claim cap)", "Dedicated account manager + SLA"],
       },
     },

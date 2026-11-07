@@ -71,7 +71,7 @@ const chatDemo = [
 ];
 
 const techPillars = [
-  { icon: Brain, titleAr: "النماذج اللغوية المتقدمة", titleEn: "Advanced Language Models", descAr: "نماذج AI مدرّبة خصيصاً على النصوص القانونية السعودية والعربية لتحقيق أعلى دقة ممكنة.", descEn: "AI models specifically trained on Saudi and Arabic legal texts for maximum accuracy." },
+  { icon: Brain, titleAr: "النماذج اللغوية المتقدمة", titleEn: "Advanced Language Models", descAr: "نماذج لغوية متقدمة تعتمد نصوص الأنظمة السعودية مصدراً وتستشهد بها.", descEn: "Advanced language models that take Saudi statutory texts as their source and cite them." },
   // «أكثر من ٥٠٠٠ نظام … محدّث بشكل دوري وآني» كان خطأً في شقّيه وقتها (كانت
   // المكتبة ٣٨٦ وثيقة)، ولا شيء يراقب صدور التشريعات — المكتبة تُحمَّل ببرنامج
   // تعبئة. لا رقم مكتوباً هنا (٢٠٢٦-٠٩-٢٥): الشيفرة نفسها تعمل على قاعدة السحابة
@@ -195,8 +195,8 @@ function AiLandingPage() {
             className="mx-auto mb-12 max-w-[55ch] text-lg text-white/70"
           >
             {isRTL
-              ? "مساعدك القانوني الذكي، مدرّب على الأنظمة والتشريعات السعودية. يجيب، يحلّل، ويصوغ — في ثوانٍ."
-              : "Trained on Saudi laws and regulations. It answers, analyzes, drafts — in seconds."}
+              ? "مساعدك القانوني الذكي، يعتمد الأنظمة والتشريعات السعودية مصدراً. يجيب، يحلّل، ويصوغ — في ثوانٍ."
+              : "Takes Saudi laws and regulations as its source. It answers, analyzes, drafts — in seconds."}
           </motion.p>
 
           {/* Typing demo box */}

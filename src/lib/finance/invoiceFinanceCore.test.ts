@@ -321,7 +321,7 @@ test("UX04 + UX01: «تسجيل تحصيل» with an explicit amount and method;
   assert.match(page, /disabled=\{!canSubmit\}/);
   assert.match(page, /aria-pressed=\{isActive\}/);
   assert.match(page, /aria-label=\{tab\.label\}/);
-  assert.match(page, /aria-label="إغلاق نافذة إصدار الفاتورة"/);
+  assert.match(page, /aria-label="إغلاق نافذة إصدار بيان الأتعاب"/); // owner ٤٣٠: «بيان أتعاب»
   assert.match(page, /aria-label="إغلاق نافذة تسجيل التحصيل"/);
 });
 

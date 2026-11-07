@@ -67,7 +67,7 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
     {
       // Fix round 1 (M10): not «استجابة فورية» — the AI consult is beta-gated.
       id: "ai", icon: Brain, label: "ذكاء نظامي", sublabel: "قريباً", price: arPrice("ai"),
-      desc: "مساعد قانوني ذكي مدرّب على الأنظمة السعودية", color: "border-royal/20 hover:border-royal/40", badge: null,
+      desc: "مساعد قانوني ذكي يعتمد الأنظمة السعودية مصدراً", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {
       id: "voice", icon: Microphone, label: "استشارة صوتية", sublabel: "مع محامٍ معتمد", price: arPrice("voice"),
@@ -88,7 +88,7 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
   en: [
     {
       id: "ai", icon: Brain, label: "Nezamy AI", sublabel: "Coming soon", price: enPrice("ai"),
-      desc: "Smart legal assistant trained on Saudi laws and regulations", color: "border-royal/20 hover:border-royal/40", badge: null,
+      desc: "Smart legal assistant that takes Saudi laws and regulations as its source", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {
       id: "voice", icon: Microphone, label: "Voice Consultation", sublabel: "With a certified lawyer", price: enPrice("voice"),

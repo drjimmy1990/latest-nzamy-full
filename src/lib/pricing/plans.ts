@@ -174,8 +174,8 @@ export const INDIVIDUALS_PYRAMID_PLANS: Record<string, PricingPlan> = {
     periodYearlyAr: "ر.س / سنة",
     periodMonthlyEn: "SAR / month",
     periodYearlyEn: "SAR / year",
-    badgeAr: "نحو ٠٫٦٨ ر.س يومياً بالاشتراك السنوي",
-    badgeEn: "About SAR 0.68 a day on the yearly plan",
+    badgeAr: "ما يعادل ٢٠٫٧٥ ر.س شهرياً تُدفع سنوياً",
+    badgeEn: "≈ SAR 20.75/month, billed yearly",
     descAr: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
     descEn: "Your AI legal assistant — statutory answers and draft notices",
     featuresAr: [

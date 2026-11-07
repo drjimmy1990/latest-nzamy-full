@@ -23,6 +23,8 @@ test("S6: no invented rows, no local draft editor, no number for the market comm
     assert.equal(source.includes(banned), false, `the page still carries ${banned}`);
   }
   assert.match(source, /عمولة السوق: قريباً/);
+  // owner ٤٢١ answered: the rates come from commission.ts, never a typed number
+  assert.match(source, /\{commissionRatesLine\("ar"\)\}/);
   assert.doesNotMatch(source, /عمولة السوق[^"\n]*\d+\s*%/);
 });
 

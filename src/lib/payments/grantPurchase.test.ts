@@ -190,7 +190,7 @@ test("a top-up credits a purchase lot for the order, expiring after its validity
   const lot = lots(log)[0].payload as Record<string, unknown>;
   assert.deepEqual(
     [lot.p_user, lot.p_points, lot.p_source, lot.p_order, lot.p_expires_at],
-    [USER, 1250, "purchase", ORDER, addMonthsUtc(NOW, 6).toISOString()],
+    [USER, 1500, "purchase", ORDER, addMonthsUtc(NOW, 6).toISOString()], // owner ٤٢٢: 1,000 SAR → 1,500 points
   );
 });
 

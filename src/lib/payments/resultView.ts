@@ -18,7 +18,7 @@
  * Pure: relative imports only, so `node --test` loads it.
  */
 
-import { resolveItem, sellableItem } from "./catalog.ts";
+import { orderLabelAr, sellableItem } from "./catalog.ts";
 import { fulfilmentNoticeAr } from "./fulfillDecision.ts";
 
 export interface ResultOrder {
@@ -62,8 +62,8 @@ const CONTACT_SENTENCE = "إن خُصم مبلغ من بطاقتك فتواصل 
 const NO_GATEWAY_MESSAGE = "payment_failed";
 
 function labelOf(itemId: string): string {
-  // resolve, not sell: an order for a retired item keeps its name
-  return resolveItem(itemId)?.labelAr ?? "طلبك";
+  // resolve, not sell: an order for a retired item keeps the name it was sold under (R3)
+  return orderLabelAr(itemId) ?? "طلبك";
 }
 
 function noticeKind(kind: string): "plan" | "library" | "topup" | "membership" {

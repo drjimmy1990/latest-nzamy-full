@@ -114,7 +114,7 @@ export const PLATFORM_OWNER_SURFACES: PlatformOwnerSurface[] = [
     sourceOfTruth: "src/app/marketplace/* + src/types/lawyerWorkflow.ts",
     status: "backend-ready",
     ownerControl: "admin-mock",
-    betaNotes: "التعاون والعمولة 15% موثقان، والتنفيذ المالي/الضمان Mock.",
+    betaNotes: "التعاون موثق، ونسب العمولة من src/lib/pricing/commission.ts (٥٪ / ٧٪ / ١٥٪ — المالك ٤٢١)، والتنفيذ المالي/الضمان Mock.",
     backendBoundary: "orders/offers/escrow/commission/disputes تحتاج باك اند ومعالج دفع.",
   },
   {

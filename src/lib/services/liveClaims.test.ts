@@ -160,7 +160,7 @@ test("shield is unsold: no on-sale price-book plan grants it, and a lock names n
   assert.equal(fa.FEATURE_GATES.marketplace, "shield");
   assert.equal(fa.FEATURE_GATES.reports, "shield");
   assert.equal(fa.FEATURE_GATES["ai-contracts"], "shield");
-  assert.equal(fa.TIER_LABELS_AR.shield, "التأمين القانوني");
+  assert.equal(fa.TIER_LABELS_AR.shield, "عضوية الحماية القانونية"); // owner ٤٣٤
 });
 
 test("shield lock copy: SubscriptionGuard and the sidebar badge name no unsold plan", () => {

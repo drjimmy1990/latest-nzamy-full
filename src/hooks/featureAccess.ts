@@ -44,7 +44,7 @@ export const TIER_RANK: Record<UserTier, number> = {
 // holding a tier labelled «الاحترافية».
 export const TIER_LABELS_AR: Record<UserTier, string> = {
   free:       "المجانية",
-  shield:     "التأمين القانوني",
+  shield:     "عضوية الحماية القانونية", // owner ٤٢٠ / ٤٣٤ (was «التأمين القانوني»)
   ai:         "ذكاء نظامي",
   pro:        "الاحترافية",
   max:        "الاحترافية",
@@ -53,7 +53,7 @@ export const TIER_LABELS_AR: Record<UserTier, string> = {
 };
 
 // ─── Tiers no plan on sale grants ─────────────────────────────────────────────
-// Wave 1 task 6 (H): `shield` («التأمين القانوني») is a tier KEY — rank 1, and
+// Wave 1 task 6 (H): `shield` («عضوية الحماية القانونية», owner ٤٣٤) is a tier KEY — rank 1, and
 // FEATURE_GATES still sets it as the minimum for marketplace, reports and
 // ai-contracts — but no plan on sale grants it (the price book's tiers are
 // ai / pro / max / corp / enterprise; ind-litigation, the plan that carried

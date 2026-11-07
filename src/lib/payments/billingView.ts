@@ -1,4 +1,4 @@
-import { formatHalalas, PAYABLE_ITEMS, resolveItem, type PayableItem } from "./catalog.ts";
+import { formatHalalas, orderLabelAr, PAYABLE_ITEMS, type PayableItem } from "./catalog.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { isBillingCompanyComplete } from "./moyasarConfig.ts";
 
@@ -53,8 +53,8 @@ export function cardLabel(lastFour: unknown): string {
     ? `بطاقة تنتهي بـ ${arabicDigits(lastFour)}` : "بطاقة محفوظة";
 }
 export function billingItemAr(itemId: string, catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS): string {
-  // resolve, not sell: a receipt for a retired plan keeps the plan's name
-  return resolveItem(itemId, catalog)?.labelAr ?? "عملية شراء";
+  // resolve, not sell: a receipt for a retired plan keeps the name it was sold under (R3)
+  return orderLabelAr(itemId, catalog) ?? "عملية شراء";
 }
 /** «شهري» / «ربع سنوي» / «نصف سنوي» / «سنوي» / «دفعة واحدة» for an order's billing; null when unknown. */
 export function orderBillingAr(billing: string | null | undefined): string | null {

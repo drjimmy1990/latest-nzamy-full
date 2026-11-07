@@ -81,8 +81,8 @@ const timeline = [
     yearEn: "2022",
     titleAr: "البنية التحتية والذكاء الاصطناعي",
     titleEn: "Infrastructure & AI",
-    descAr: "تطوير الأساس التقني وتدريب النماذج الذكية حصرياً على الأنظمة السعودية.",
-    descEn: "Developing the technical core and training AI models exclusively on Saudi laws.",
+    descAr: "بناء أدوات ذكية تعتمد الأنظمة السعودية مصدراً.",
+    descEn: "Building smart tools that take Saudi law as their source.",
     icon: Rocket,
   },
   {

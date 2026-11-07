@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { receiptView, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr, billingItemAr, orderBillingAr } from "./billingView.ts";
-import { buildCatalog } from "./catalog.ts";
+import { buildCatalog, PAYABLE_ITEMS } from "./catalog.ts";
 import { PRICE_BOOK } from "../pricing/priceBook.ts";
 
 const order = { id: "order-1", item_id: "lawyer-pro", net_halalas: 39900, vat_halalas: 5985, total_halalas: 45885, currency: "SAR", receipt_number: "NZ-2026-000001", paid_at: "2026-10-22T10:00:00Z", status: "paid", refunded_halalas: 0, last_four: "1111" };
@@ -123,4 +123,12 @@ test("retire, never delete: a receipt and the admin list keep a retired plan's n
   const retired = buildCatalog({ ...PRICE_BOOK, "lawyer-pro": { ...PRICE_BOOK["lawyer-pro"], retired: true } });
   assert.equal(billingItemAr("lawyer-pro", retired), "المحامي المحترف");
   assert.equal(billingItemAr("never-sold", retired), "عملية شراء");
+});
+
+test("R3 (owner ٤٢٠): a receipt of the retired 399 plan keeps «التأمين القانوني»; today's label is the new name", () => {
+  assert.equal(PAYABLE_ITEMS["ind-litigation"].labelAr, "عضوية الحماية القانونية");
+  assert.equal(billingItemAr("ind-litigation"), "التأمين القانوني");
+  assert.equal(receiptView({ ...order, item_id: "ind-litigation" }, null)?.item, "التأمين القانوني");
+  // an item without a receipt name prints its label as before
+  assert.equal(billingItemAr("ind-ai"), PAYABLE_ITEMS["ind-ai"].labelAr);
 });

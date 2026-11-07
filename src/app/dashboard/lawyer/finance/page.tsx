@@ -15,6 +15,9 @@ import { apiGet, apiMutate, ApiTimeoutError, isSupabaseMode } from "@/lib/servic
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
 
+/** Owner ٤٣٠: the label every fee statement carries (not a ZATCA e-invoice). DB/API names stay «invoice». */
+const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";
+
 // ── تحصيل الفاتورة ──
 // تحصيل المكتب من موكليه لا يمرّ عبر بوابة دفع: قيد يدوي لمبلغ استُلم نقداً أو بتحويل بنكي.
 type CollectMethod = "cash" | "bank_transfer";
@@ -695,13 +698,14 @@ export default function FinancePage() {
               <Coins size={22} weight="duotone" />
             </span>
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-800 dark:text-zinc-100">
-              الفواتير والتحصيل
+              بيانات الأتعاب والتحصيل
             </h1>
           </div>
           {/* الوصف السابق كان يعد بـ«تحليلات ضريبية متوافقة مع هيئة الزكاة
               والضريبة والجمارك» — لا تحتسب المنصة ضريبة ولا تسجّل مصروفات. */}
           <p className="text-[13px] text-slate-500 dark:text-zinc-500 leading-relaxed">
-            الفواتير التي أصدرتها لموكليك وما سجّلته من تحصيلها. التحصيل هنا قيود يدوية لا تمرّ عبر بوابة الدفع.
+            {/* Owner ٤٣٠: what is issued here is a fee statement, not a ZATCA e-invoice. */}
+            بيانات الأتعاب التي أصدرتها لموكليك وما سجّلته من تحصيلها — {FEE_STATEMENT_LABEL}. التحصيل هنا قيود يدوية لا تمرّ عبر بوابة الدفع.
           </p>
         </div>
 
@@ -711,7 +715,7 @@ export default function FinancePage() {
           onClick={openInvoiceModal}
           className="flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#082d22] shadow-lg shadow-[#0B3D2E]/15 transition-all self-start md:self-auto cursor-pointer"
         >
-          <Plus size={14} weight="bold" /> إصدار فاتورة جديدة
+          <Plus size={14} weight="bold" /> إصدار بيان أتعاب جديد
         </motion.button>
       </motion.div>
 
@@ -790,7 +794,7 @@ export default function FinancePage() {
           <div className={`p-1.5 rounded-3xl flex gap-1 ${isDark ? "bg-zinc-800/50" : "bg-slate-100/80"}`}>
             {([
               { key: "overview"  as FinanceTab, label: "نظرة عامة",              short: "نظرة",     icon: ChartBar },
-              { key: "invoices"  as FinanceTab, label: "إدارة الفواتير",          short: "الفواتير",  icon: Receipt },
+              { key: "invoices"  as FinanceTab, label: "إدارة بيانات الأتعاب",    short: "البيانات",  icon: Receipt },
               { key: "expenses"  as FinanceTab, label: "حركات محفظة المنصة",   short: "المحفظة",  icon: Wallet },
               { key: "pl"        as FinanceTab, label: "ملخص الأتعاب والتحصيل", short: "الملخص",   icon: Scales },
             ] as const).map(tab => {
@@ -1073,7 +1077,8 @@ export default function FinancePage() {
                   </div>
                 </div>
 
-                {/* قائمة الفواتير التفاعلية */}
+                {/* قائمة الفواتير التفاعلية — owner ٤٣٠: the full label above the list */}
+                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">{FEE_STATEMENT_LABEL}</p>
                 <div className="space-y-3">
                   <AnimatePresence mode="popLayout">
                     {filteredInvoices.length === 0 ? (
@@ -1355,7 +1360,7 @@ export default function FinancePage() {
               {/* إغلاق */}
               <button
                 onClick={() => setIsInvoiceModalOpen(false)}
-                aria-label="إغلاق نافذة إصدار الفاتورة"
+                aria-label="إغلاق نافذة إصدار بيان الأتعاب"
                 className="absolute top-6 left-6 p-2 rounded-2xl bg-black/[0.04] dark:bg-white/[0.04] hover:bg-black/[0.08] transition-colors cursor-pointer"
               >
                 <X size={14} className={isDark ? "text-zinc-400" : "text-slate-500"} />
@@ -1365,7 +1370,11 @@ export default function FinancePage() {
                 <span className="p-2.5 rounded-2xl bg-[#0B3D2E]/10 dark:bg-[#0B3D2E]/25 text-[#C8A762]">
                   <Receipt size={18} weight="duotone" />
                 </span>
-                <h2 className="text-xl font-extrabold tracking-tight">إصدار فاتورة جديدة</h2>
+                <div>
+                  <h2 className="text-xl font-extrabold tracking-tight">إصدار بيان أتعاب جديد</h2>
+                  {/* Owner ٤٣٠: the full label on the issue modal. */}
+                  <p className="mt-0.5 text-[11px] font-bold text-amber-700 dark:text-amber-300">{FEE_STATEMENT_LABEL}</p>
+                </div>
               </div>
 
               <AnimatePresence mode="wait">
@@ -1389,10 +1398,10 @@ export default function FinancePage() {
                     </div>
                     <div className="space-y-2">
                       <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">
-                        جارٍ حفظ الفاتورة...
+                        جارٍ حفظ بيان الأتعاب...
                       </p>
                       <p className="text-[11px] text-slate-400 dark:text-zinc-500 max-w-xs mx-auto leading-relaxed">
-                        يتم تسجيل الفاتورة في سجلّك المالي على المنصة.
+                        يتم تسجيل بيان الأتعاب في سجلّك المالي على المنصة.
                       </p>
                     </div>
                   </motion.div>
@@ -1573,7 +1582,7 @@ export default function FinancePage() {
                         type="submit"
                         className="flex-1 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#07241b] shadow-lg shadow-[#0B3D2E]/10 cursor-pointer"
                       >
-                        حفظ الفاتورة وإصدارها
+                        حفظ بيان الأتعاب وإصداره
                       </motion.button>
                       <motion.button
                         whileHover={{ scale: 1.02 }}

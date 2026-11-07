@@ -65,7 +65,7 @@ const cannotDo = {
 
 const sections = {
   ar: [
-    { icon: Info,        title: "طبيعة ذكاء نظامي",           color: "bg-royal/5 text-royal",          body: "«ذكاء نظامي — Nezamy AI» مساعد قانوني ذكي مدرَّب على الأنظمة والتشريعات السعودية. هو أداة إرشادية تعليمية مصممة لمساعدتك على فهم حقوقك والخيارات المتاحة أمامك — وليس مصدراً لقرارات قانونية ملزمة." },
+    { icon: Info,        title: "طبيعة ذكاء نظامي",           color: "bg-royal/5 text-royal",          body: "«ذكاء نظامي — Nezamy AI» مساعد قانوني ذكي يعتمد الأنظمة والتشريعات السعودية مصدراً. هو أداة إرشادية تعليمية مصممة لمساعدتك على فهم حقوقك والخيارات المتاحة أمامك — وليس مصدراً لقرارات قانونية ملزمة." },
     { icon: Lock,        title: "خصوصية محادثاتك",          color: "bg-emerald-50 text-emerald-700",  body: "الاتصال بالمنصة مؤمَّن عبر TLS، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف. ومعالجة طلباتك في ذكاء نظامي تمر عبر خدمات معالجة خارجية، لذلك لا نستطيع أن نعدك بأن محتوى محادثتك لا يغادر المنصة. أما التحكم في حفظ سجل المحادثات فهو غير متاح حالياً." },
     { icon: Warning,     title: "حدود الموثوقية",            color: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",      body: "رغم أن ذكاء نظامي يسعى لتقديم معلومات دقيقة، فإن التشريعات تتغير باستمرار. تحقق دائماً من المصادر الرسمية أو استشر محامياً مرخصاً قبل اتخاذ أي قرار قانوني مهم." },
     { icon: Scales,      title: "مسؤولية الاستخدام",        color: "bg-slate-50 text-slate-700",      body: "لا تتحمل منصة نظامي أي مسؤولية قانونية أو مدنية تجاه أي ضرر ينشأ عن الاعتماد على مخرجات ذكاء نظامي باعتبارها استشارة قانونية قاطعة." },
@@ -73,7 +73,7 @@ const sections = {
     { icon: FileText,    title: "الاستخدامات المقبولة",      color: "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400",   body: "يُحظر استخدام ذكاء نظامي لأغراض احتيالية أو لانتهاك حقوق الآخرين أو لأي غرض مخالف للأنظمة السعودية." },
   ],
   en: [
-    { icon: Info,       title: "Nature of Nezamy AI",             color: "bg-royal/5 text-royal",          body: "Nezamy AI is an intelligent legal assistant trained on Saudi laws and regulations. It is an educational and guidance tool — not a source of binding legal decisions." },
+    { icon: Info,       title: "Nature of Nezamy AI",             color: "bg-royal/5 text-royal",          body: "Nezamy AI is an intelligent legal assistant that takes Saudi laws and regulations as its source. It is an educational and guidance tool — not a source of binding legal decisions." },
     { icon: Lock,       title: "Privacy of Your Conversations",   color: "bg-emerald-50 text-emerald-700",  body: "Traffic is secured with TLS, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end encryption. Nezamy AI requests are handled through external processing services, so we cannot promise your conversation content never leaves the platform. Control over chat-history retention is not available yet." },
     { icon: Warning,    title: "Reliability Limits",               color: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",      body: "While Nezamy AI strives for accuracy, legislation changes constantly. Always verify through official sources or consult a licensed lawyer." },
     { icon: Scales,     title: "Usage Responsibility",             color: "bg-slate-50 text-slate-700",      body: "Nezamy platform bears no legal or civil liability for any harm arising from relying on Nezamy AI outputs as definitive legal advice." },

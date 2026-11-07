@@ -45,6 +45,8 @@ export type PayableItem = Readonly<{
   id: string;
   kind: ItemKind;
   labelAr: string;
+  /** The name an order of this item was sold under, when it differs from `labelAr` (R3; orderLabelAr). */
+  receiptLabelAr?: string;
   /** Halalas before VAT, for the billings SOLD today (retired cycles left out). */
   prices: Readonly<Partial<Record<Billing, number>>>;
   /** Halalas before VAT for every billing the book lists, retired ones included (renewal lookup, admin). */
@@ -88,6 +90,7 @@ function toPayable(entry: BookEntry): PayableItem {
     id: entry.id,
     kind: entry.kind,
     labelAr: entry.labelAr,
+    ...(entry.receiptLabelAr ? { receiptLabelAr: entry.receiptLabelAr } : {}),
     prices: Object.freeze(prices),
     listedPrices: Object.freeze(listedPrices),
     onSale: isOnSale(entry),
@@ -119,6 +122,19 @@ export function resolveItem(
   catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
 ): PayableItem | undefined {
   return Object.hasOwn(catalog, id) ? catalog[id] : undefined;
+}
+
+/**
+ * The name an existing ORDER of `itemId` shows (receipts, order lists, the
+ * payment result): the name it was sold under when the book keeps one
+ * (ruling R3), else today's label; undefined for an id the book never had.
+ */
+export function orderLabelAr(
+  itemId: string,
+  catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+): string | undefined {
+  const item = resolveItem(itemId, catalog);
+  return item ? (item.receiptLabelAr ?? item.labelAr) : undefined;
 }
 
 /** SELL: the item for an id only while it is on sale, or undefined. */

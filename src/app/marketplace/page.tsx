@@ -43,6 +43,7 @@ import {
 import { RequestCard } from "./_components/RequestCard";
 import { MyRequestsTab } from "./_components/MyRequestsTab";
 import { PostRequestTab } from "./_components/PostRequestTab";
+import { commissionRatesLine } from "@/lib/pricing/commission";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 function MarketplaceInner() {
@@ -310,7 +311,7 @@ function MarketplaceInner() {
                   <li className="flex items-start gap-1">• نوع الخدمة ومدة التنفيذ</li>
                   <li className="flex items-start gap-1">• المدينة ومتوسط السوق</li>
                   <li className="flex items-start gap-1">• تقييم المزود السابق</li>
-                  <li className={`pt-1 font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>عمولة المنصة: 15%</li>
+                  <li className={`pt-1 font-semibold ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>عمولة المنصة: {commissionRatesLine("ar")}</li>
                 </ul>
               </div>
             </aside>

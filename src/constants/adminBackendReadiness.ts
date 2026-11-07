@@ -79,7 +79,7 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     contract: "AdminPricingCatalogRow",
     // S6-T7/T8: the client services' prices are read and written through
     // /api/v1/admin/pricing-catalog (requireStaff settings.write, audited).
-    note: "أسعار خدمات العملاء تُحفظ على الخادم عبر /api/v1/admin/pricing-catalog بصلاحية settings.write، وكل تعديل يُسجَّل في سجل الإدارة. الباقات والشحن من دفتر الأسعار وتتغيّر بنشر الكود، وعمولة السوق قريباً.",
+    note: "أسعار خدمات العملاء تُحفظ على الخادم عبر /api/v1/admin/pricing-catalog بصلاحية settings.write، وكل تعديل يُسجَّل في سجل الإدارة. الباقات والشحن من دفتر الأسعار وتتغيّر بنشر الكود، والسوق قريباً؛ نسب عمولته من src/lib/pricing/commission.ts (٥٪ المؤسسون وشركات المحاماة المتكاملة، ٧٪ المشتركون، ١٥٪ الحسابات المجانية — المالك ٤٢١).",
   },
   {
     id: "feature-flags",
