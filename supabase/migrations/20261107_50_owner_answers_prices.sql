@@ -41,9 +41,9 @@
 --   3. coupons 'NZAMY50' (owner ٤٣٦): excluded_kinds {topup} →
 --      {topup, plan, library} — single services only (allowed by
 --      coupons_excluded_kinds_check, 20261026_20). min_order_amount stays 200
---      (owner question ٤٥٢ on ≥ / > is open). metadata.rules (the line the
---      admin coupons page shows, written by 20261026_20) is rewritten to the
---      new rule. Stamp: metadata.owner_436.
+--      (owner question ٤٥٢ on ≥ / > is open). metadata.rules (the rule's
+--      record, written by 20261026_20; no screen shows it) is rewritten to
+--      the new rule. Stamp: metadata.owner_436.
 --      NOTE: no service is sold online yet, so NZAMY50 has no online use until
 --      single services are; the code already refused it on a top-up and the
 --      founder membership.
