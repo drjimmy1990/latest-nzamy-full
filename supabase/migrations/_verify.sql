@@ -5824,7 +5824,7 @@ begin
     end if;
     select enabled, metadata into r from public.admin_pricing_catalog where service_id = 'video-full';
     if found and not (r.enabled = false and coalesce(r.metadata->>'adminHidden', '') = 'true') then
-      raise exception '_verify: 20261107_50 — video-full is still offered (enabled %, adminHidden %): the 60-minute session is retired (owner ٤٣٣). Run 20261107_50 (AFTER the deploy; a re-run of the 20260518 seed undoes it — then clear metadata.owner_433 on video-full first)',
+      raise exception '_verify: 20261107_50 — video-full is still offered (enabled %, adminHidden %): the 60-minute session is retired (owner ٤٣٣). Run 20261107_50 (AFTER the deploy; again after any re-run of the 20260518 seed, which rewrites the row''s enabled and metadata, stamp included)',
         r.enabled, coalesce(r.metadata->>'adminHidden', 'none');
     end if;
     select string_agg(format('%s %s', c.service_id, c.base_price), ', ' order by c.service_id) into p
