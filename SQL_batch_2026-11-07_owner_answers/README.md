@@ -14,7 +14,7 @@
 |---|---|---|
 | 0 | Read-only checks (4 SELECTs) | before anything |
 | 1 | SQL `20261107_10`, `20261107_20`, `20261107_30`, `20261107_60` | before the deploy (`_60` **must** be before) |
-| 2 | n8n: two prompt changes (quick-answer, najiz-optimizer) | any time — we apply them through the n8n API on your go |
+| 2 | n8n: two prompt changes (quick-answer, najiz-optimizer) | **done 2026-11-07** — applied and published through the n8n API |
 | 3 | Deploy | |
 | 4 | SQL `20261107_50` | **right after the deploy** |
 | 5 | `_verify.sql` by hand | after Steps 1 and 4 |
@@ -143,7 +143,7 @@ Re-creates `ai_start_run_with_credit` with the same signature; the only change i
 
 ---
 
-## Step 2: n8n (we do it)
+## Step 2: n8n — DONE (applied and published 2026-11-07)
 
 Two workflows on n8n.asra3.com get a new **Build prompt** `jsCode`, copied from the repo files:
 
