@@ -1,6 +1,6 @@
 # Owner-free wave, second batch (2026-11-03): your steps, in order
 
-**Where the files are today.** Until the branch `batch/2026-11-03-owner-free` is merged into main, every file named here exists only in the worktree `D:\nzwt\ownerfree\`. The `D:\DEV\...` paths below work after the merge and `git pull` on your PC. The `/www/wwwroot/...` paths work after `git pull` on the server (Step 3).
+**Where the files are today.** The branch was merged on 2026-11-07 (main `0b50743e`, owner-edits `c22989ef`) and deployed, so the `D:\DEV\...` paths below work. The `/www/wwwroot/...` paths work after `git pull` on the server (Step 3).
 
 **Screen or file.** Every SQL result and every command's output in this file appears on the screen. None of them is saved to a file, except the deploy log, which is named in Step 3. Paste the results back to us.
 
@@ -12,10 +12,10 @@
 |---|---|---|
 | 0 | Read-only checks, and `_15` if it has not run | before the deploy |
 | 1 | SQL `_10`, `_11`, `_12`, `_21`, `_31`, `_69` | before the deploy |
-| 2 | n8n: wargaming, analyze-strength, legal-drafter | before the deploy |
+| 2 | n8n: wargaming, analyze-strength, legal-drafter | **done 2026-11-07 through the n8n API** |
 | 3 | Deploy | |
-| 4 | SQL `_20`, `_22`; later, at a quiet hour, `_14` | after the deploy |
-| 5 | n8n: the six «any time» workflows, then contract-review and contract-negotiator | any time; the last two only after the deploy |
+| 4 | SQL `_20`, `_22`, `_14` | **done 2026-11-07** |
+| 5 | n8n: the six «any time» workflows, then contract-review and contract-negotiator | **done 2026-11-07 through the n8n API** |
 | 6 | `_verify.sql` by hand | after Steps 1 and 4 (`_14` may still be waiting) |
 | 7 | Cron check and tool modes | after the deploy |
 | 8 | Word and pasted text: live test, then the flags | after the deploy |
@@ -170,6 +170,8 @@ Expect one row, `ok = t`. It depends on `20261026_63` and `20261026_70`, which a
 
 ## Step 2: n8n before the deploy (n8n.asra3.com)
 
+**Done on 2026-11-07 through the n8n API, so there is nothing to import.** Each changed workflow is published and on, with its credentials set. No run has gone through the new nodes yet; Steps 8, 9 and 11 are the first. The import steps below stay only for restoring a workflow by hand.
+
 These three carry the prompt that infers a missing specialty, plus the progress nodes. `analyze-strength` carries only the progress nodes.
 
 **How to import, for this step and Step 5 (the two new workflows are different; see there):**
@@ -181,7 +183,7 @@ These three carry the prompt that infers a missing specialty, plus the progress 
 |---|---|---|---|
 | `NZAMY · AI · wargaming (L9 المحاكي الشامل)` | `5CFEwAsuT0lRZRlK` | 6 | 2 |
 | `NZAMY · AI · analyze-strength (L10 محلل قوة الموقف)` | `MwONm9eg0IOGRRzt` | 6 | 2 |
-| `NZAMY · AI · legal-drafter (L14 الصائغ القانوني)` | not in the repo: find it by name | 6 | 2 |
+| `NZAMY · AI · legal-drafter (L14 الصائغ القانوني)` | `hhmOLkcaPj3bojmh` | 6 | 2 |
 
 ```
 D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\wargaming.json
@@ -210,10 +212,10 @@ tail -f /root/deploy-20261103-owner-free.log
 
 The log is that one file on the server. `deploy.sh` does not run `_verify` (Step 6).
 
-After the deploy, the file you found in Step 0d must be gone. Put its name in this command; expect `404`. If it does not answer 404, purge the nginx cache and try again:
+After the deploy, the file you found in Step 0d must be gone. **Do not look for a `404` on a build older than `1c5b9106`:** until that commit this site answered `200` with an HTML page for a missing file. After it, a missing file answers `404`. On an older build, read the content type instead. `text/html` means the file is gone; `javascript` means a cache still holds it, and the cache in front of the site is Cloudflare, so use **Purge Everything** there and try again:
 
 ```bash
-curl -sI https://nezamy.sa/_next/static/chunks/<that file> | head -1
+curl -sI https://nezamy.sa/_next/static/chunks/<that file> | grep -i content-type
 ```
 
 ---
@@ -248,7 +250,7 @@ left_business | ok
 0             | t
 ```
 
-### `20261103_14`: search ignores tashkeel. After the deploy, at a quiet hour; it may wait for days.
+### `20261103_14`: search ignores tashkeel. Done on 2026-11-07; `_verify` OK, row counts unchanged.
 
 ```
 D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261103_14_library_fts_tashkeel_fold.sql
@@ -264,6 +266,10 @@ D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migra
 
 ## Step 5: the other n8n imports
 
+**Done on 2026-11-07 through the n8n API, so there is nothing to import.** Each changed workflow is published and on, with its credentials set. No run has gone through the new nodes yet; Steps 8, 9 and 11 are the first. The import steps below stay only for restoring a workflow by hand.
+
+The two new workflows are `dGl5rF6FgLHhMSRN` (contract-review) and `I2bW9Pg8vF45E72j` (contract-negotiator). Both webhooks answer `403` without the header, so they are registered. **Do not import these two again:** a second copy would sit on the same webhook path.
+
 ### Any time, before or after the deploy
 
 Import over the existing workflow, as in Step 2.
@@ -274,8 +280,8 @@ Import over the existing workflow, as in Step 2.
 | `NZAMY · AI · brief-check (L8 مراجعة وتدقيق مذكرة)` | `bu9guzNEhaLbyAPd` | 5 | 2 |
 | `NZAMY · AI · contract-drafter (L11 محترف العقود المختصر)` | `r2s0JBMr8Q5Ti80O` | 6 | 2 |
 | `NZAMY · AI · contracts-pro (L13 محترف العقود)` | `mMekAog89HsgLz3o` | 5 | 1 |
-| `NZAMY · AI · legal-opinion-consult (L12 الرأي الفصل — استشارة)` | not in the repo: find it by name | 6 | 2 |
-| `NZAMY · AI · legal-opinion-letter (L12 الرأي الفصل — خطاب)` | not in the repo: find it by name | 6 | 2 |
+| `NZAMY · AI · legal-opinion-consult (L12 الرأي الفصل — استشارة)` | `jnejnjYKUcYwhNkR` | 6 | 2 |
+| `NZAMY · AI · legal-opinion-letter (L12 الرأي الفصل — خطاب)` | `wIdLCC7dIj64b6Rz` | 6 | 2 |
 
 ```
 D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\n8n\ai\case-brief.json
