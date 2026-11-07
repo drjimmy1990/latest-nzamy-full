@@ -13,7 +13,8 @@ import { splitStoredPreamble } from '@/lib/library/splitPreamble';
 import { latestUpdateDetail, lawReaderExtras, regulationReaderExtras } from '@/lib/library/lawSummaryVisibility';
 import { latestLegislativeEvent } from '@/lib/library/legislativeEvent';
 import { lawArticleCounts } from '@/lib/library/lawCardFields';
-import { stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
+import { stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
+import { liftRegulationHeading } from './_regulation-heading';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -568,14 +569,25 @@ function formatArticleWithPaywall(
   // `original_text` is the article's superseded wording. For a REPEALED article
   // it is not supplementary — `text` is legitimately empty and this is the
   // article. It therefore goes through exactly the same paywall as `text`.
-  const originalText = (article.original_text as string) || '';
+  // Same superseded wording as an amendment's full_text: its audit notes go too.
+  const originalText = stripAuditNotes(article.original_text as string | null, 'fullText');
+
+  // Owner 2026-11-07 (screenshot ٣): the line that introduces the regulation
+  // («من اللائحة التنفيذية لنظام المرور (…):») closes the stored text of an
+  // article with regulation rows. It leaves `text` — before the locked preview,
+  // so its numbers never reach a locked reader — and, for an unlocked article,
+  // becomes `regulationHeading` (instrument number/date withheld per T28-22).
+  const regulationRows = (article.article_regulations as Record<string, unknown>[]) || [];
+  const lifted = regulationRows.length > 0
+    ? liftRegulationHeading(article.text, !showOfficialMeta)
+    : { text: (article.text as string) || '', heading: null };
 
   if (isLocked) {
-    result.text = preview(article.text);
+    result.text = preview(lifted.text);
     if (originalText) result.originalText = preview(originalText);
     result.lockedMessage = 'يتطلب اشتراك Pro أو أعلى لعرض النص الكامل';
   } else {
-    result.text = article.text || '';
+    result.text = lifted.text;
     if (originalText) result.originalText = originalText;
   }
 
@@ -617,6 +629,7 @@ function formatArticleWithPaywall(
         ref: distinctRefs.join(', '),
         text: sorted.map((r) => String(r.text || '')).join('\n\n'),
       };
+      if (lifted.heading) result.regulationHeading = lifted.heading;
     } else if (article.executive_reg_text) {
       result.executiveReg = {
         ref: article.executive_reg_ref || '',
@@ -634,8 +647,11 @@ function formatArticleWithPaywall(
         source: showOfficialMeta ? a.source : null,
         ...(showOfficialMeta ? {} : { sourceLocked: true }),
         type: a.type,
-        summary: a.summary,
-        fullText: a.full_text,
+        // Owner 2026-11-07 (screenshot ٢): the corpus's own audit notes
+        // («تصحيح 2026-08-14 (جولة تدقيق منهجي) … سجل المشاكل ف1072») never
+        // reach the browser — nor the reader's in-page search.
+        summary: stripAuditNotes(a.summary as string | null, 'summary'),
+        fullText: stripAuditNotes(a.full_text as string | null, 'fullText'),
       }));
     }
   }

@@ -316,6 +316,8 @@ function LawSystemPageContent() {
               // have an empty `text` and their whole substance in originalText).
               originalText: a.originalText,
               historicRegulationText: a.historicRegulationText,
+              // Owner 2026-11-07: the regulation section's subtitle (law API).
+              regulationHeading: a.regulationHeading,
               executiveReg: a.executiveReg,
               regulations: a.regulations,
               amendments: a.amendments,

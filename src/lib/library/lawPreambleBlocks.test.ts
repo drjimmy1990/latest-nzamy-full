@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { LAW_SUMMARY_BRIEF_MAX_CHARS, extractLawCard, extractLawPreambleBlocks, isHollowPreamble, lawSummaryBrief, stripPipelineNotes } from "./lawPreambleBlocks.ts";
+import { LAW_SUMMARY_BRIEF_MAX_CHARS, extractLawCard, extractLawPreambleBlocks, isHollowPreamble, lawSummaryBrief, stripAuditNotes, stripPipelineNotes } from "./lawPreambleBlocks.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_SQL = readFileSync(
@@ -318,6 +318,63 @@ test("stripPipelineNotes removes the pipeline's bracket notes and HTML comments,
     assert.equal(stripPipelineNotes(keep), keep);
   }
   assert.equal(stripPipelineNotes(null), "");
+});
+
+// ── Owner 2026-11-07 (screenshot ٢): stripAuditNotes ──
+
+/** The owner's literal example from law-traffic article 1. */
+const OWNER_AUDIT_NOTE =
+  "تصحيح 2026-08-14 (جولة تدقيق منهجي): النص المخزن سابقاً هنا (...) كان نصاً سابقاً على تعديل م/115 لم يُحدث فعلياً رغم وسم المادة \"[معدلة]\" - نفس نمط الخلل المكتشف بـ 1056... راجع سجل المشاكل ف1072.";
+const REAL_AMENDMENT_SUMMARY = "عُدّلت هذه المادة بموجب المرسوم الملكي رقم (م/115) وتاريخ 1439/12/5هـ";
+
+test("stripAuditNotes: the owner's audit note vanishes entirely, in both modes", () => {
+  assert.equal(stripAuditNotes(OWNER_AUDIT_NOTE, "summary"), "");
+  assert.equal(stripAuditNotes(OWNER_AUDIT_NOTE, "fullText"), "");
+  // With a pipeline note too: stripPipelineNotes runs first.
+  assert.equal(stripAuditNotes(`${OWNER_AUDIT_NOTE} [بوابة 6/تحقق حي]`, "summary"), "");
+});
+
+test("stripAuditNotes: a real amendment summary stays when the note follows it in the same field", () => {
+  assert.equal(stripAuditNotes(`${REAL_AMENDMENT_SUMMARY}. ${OWNER_AUDIT_NOTE}`, "summary"), `${REAL_AMENDMENT_SUMMARY}.`);
+  assert.equal(stripAuditNotes(`${REAL_AMENDMENT_SUMMARY} ${OWNER_AUDIT_NOTE}`, "summary"), REAL_AMENDMENT_SUMMARY);
+  assert.equal(stripAuditNotes(`${REAL_AMENDMENT_SUMMARY}\n${OWNER_AUDIT_NOTE}`, "summary"), REAL_AMENDMENT_SUMMARY);
+  assert.equal(stripAuditNotes(`${REAL_AMENDMENT_SUMMARY} — ${OWNER_AUDIT_NOTE}`, "summary"), REAL_AMENDMENT_SUMMARY);
+  // fullText: the note line goes, the statutory line stays.
+  assert.equal(stripAuditNotes(`${REAL_AMENDMENT_SUMMARY}\n${OWNER_AUDIT_NOTE}`, "fullText"), REAL_AMENDMENT_SUMMARY);
+});
+
+test("stripAuditNotes: undated markers drop their clause or aside only", () => {
+  assert.equal(stripAuditNotes("عُدّلت الفقرة (2)؛ راجع سجل المشاكل ف12", "summary"), "عُدّلت الفقرة (2)");
+  assert.equal(stripAuditNotes("عُدّلت الفقرة (2) (نفس نمط الخلل) بالمرسوم", "summary"), "عُدّلت الفقرة (2) بالمرسوم");
+  assert.equal(stripAuditNotes("عُدّلت الفقرة. نفس نمط الخلل المكتشف. ثم أُلغيت", "summary"), "عُدّلت الفقرة. ثم أُلغيت");
+  assert.equal(stripAuditNotes("عُدّلت الفقرة. نفس نمط الخلل.", "summary"), "عُدّلت الفقرة.");
+  // Diacritics and tatweel do not hide a marker.
+  assert.equal(stripAuditNotes("عُدّلت المادة — جَولة تَدقـيق ثانية", "summary"), "عُدّلت المادة");
+  // fullText: an aside goes, the sentence around it stays; a note line goes whole.
+  assert.equal(
+    stripAuditNotes("يعاقب المخالف بغرامة [تدقيق منهجي: مطابق] لا تزيد على ألف ريال.", "fullText"),
+    "يعاقب المخالف بغرامة لا تزيد على ألف ريال.",
+  );
+  assert.equal(
+    stripAuditNotes("يعاقب المخالف بغرامة **(سجل المشاكل ف3)** لا تزيد على ألف ريال.", "fullText"),
+    "يعاقب المخالف بغرامة لا تزيد على ألف ريال.",
+  );
+  assert.equal(stripAuditNotes("الفقرة الأولى.\nراجع سجل المشاكل ف1072\nالفقرة الثانية.", "fullText"), "الفقرة الأولى.\nالفقرة الثانية.");
+});
+
+test("stripAuditNotes: legal vocabulary and bare ف-numbers are never markers", () => {
+  for (const keep of [
+    "تصحيح الخطأ المادي في المادة",
+    "يجوز تصحيح القرار خلال 2024 يوماً",
+    "كما ورد في ف3 من هذه المادة",
+    REAL_AMENDMENT_SUMMARY,
+    "سجل المخالفات المرورية",
+  ]) {
+    assert.equal(stripAuditNotes(keep, "summary"), keep);
+    assert.equal(stripAuditNotes(keep, "fullText"), keep);
+  }
+  assert.equal(stripAuditNotes(null, "summary"), "");
+  assert.equal(stripAuditNotes(undefined, "fullText"), "");
 });
 
 test("extractLawCard lifts only the card; the موجز and the rest stay", () => {

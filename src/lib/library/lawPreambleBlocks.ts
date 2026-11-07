@@ -441,6 +441,131 @@ export function stripPipelineNotes(input: string | null | undefined): string {
     .trim();
 }
 
+// ── The corpus's own audit notes (owner, 2026-11-07, screenshot ٢) ─────────
+
+/** One tashkeel / superscript alef / tatweel mark (NOTE_MARKS without /g). */
+const NOTE_MARK = /[ً-ٰٟـ]/;
+/** Western, Arabic-Indic and Extended Arabic-Indic digits. */
+const AUDIT_DIGIT = "[0-9٠-٩۰-۹]";
+/**
+ * M1 — a dated correction «تصحيح 2026-08-14». A bare «تصحيح» is legal
+ * vocabulary («تصحيح الخطأ المادي») and is never a marker on its own.
+ */
+const AUDIT_DATED_CORRECTION = new RegExp(`تصحيح\\s*${AUDIT_DIGIT}{4}[-/]${AUDIT_DIGIT}{1,2}[-/]${AUDIT_DIGIT}{1,2}`);
+/**
+ * M1–M4: any one marks text as the corpus's internal audit trail — M2 «جولة
+ * تدقيق» / «تدقيق منهجي», M3 «سجل المشاكل», M4 «نفس نمط الخلل». A bare «ف12»
+ * is never a marker. Tested on text with NOTE_MARKS folded away. No /g: the
+ * pattern is reused with .test().
+ */
+const AUDIT_NOTE_MARKERS = new RegExp(
+  `${AUDIT_DATED_CORRECTION.source}|جولة\\s+تدقيق|تدقيق\\s+منهجي|سجل\\s+المشاكل|نفس\\s+نمط\\s+الخلل`,
+);
+/** A «(…)», «[…]» (never a markdown link) or «**…**» aside on one line. */
+const AUDIT_ASIDE = /\s*(?:\(([^()\n]*)\)|\[([^[\]\n]*)\](?!\()|\*\*([^*\n]+)\*\*)/g;
+/** Clause boundaries of a summary: « — », « - », «؛», ". ". Captured, so re-joining keeps them. */
+const AUDIT_CLAUSE_SPLIT = /(\s+[—–-]\s+|\s*؛\s*|\.\s+)/;
+/** What a cut can leave dangling at the end of a line. */
+const AUDIT_DANGLING_TAIL = /[\s(\[—–\-،,:؛;"«]+$/;
+
+function hasAuditMarker(text: string): boolean {
+  return AUDIT_NOTE_MARKERS.test(text.replace(NOTE_MARKS, ""));
+}
+
+/** Index in `line` where a dated correction (M1) starts, or -1. */
+function datedCorrectionAt(line: string): number {
+  const kept: number[] = [];
+  let folded = "";
+  for (let i = 0; i < line.length; i++) {
+    if (NOTE_MARK.test(line[i])) continue;
+    kept.push(i);
+    folded += line[i];
+  }
+  const m = AUDIT_DATED_CORRECTION.exec(folded);
+  return m ? kept[m.index] : -1;
+}
+
+function dropAuditAsides(line: string): string {
+  return line.replace(AUDIT_ASIDE, (all, paren?: string, bracket?: string, bold?: string) =>
+    hasAuditMarker(paren ?? bracket ?? bold ?? "") ? "" : all);
+}
+
+/** A summary line without the clauses that hold a marker; delimiters kept. */
+function dropAuditClauses(line: string): string {
+  if (!hasAuditMarker(line)) return line;
+  const parts = line.split(AUDIT_CLAUSE_SPLIT);
+  let out = "";
+  for (let i = 0; i < parts.length; i += 2) {
+    const piece = parts[i];
+    if (hasAuditMarker(piece)) continue;
+    out += out ? (parts[i - 1] ?? "") + piece : piece;
+  }
+  out = out.replace(AUDIT_DANGLING_TAIL, "");
+  // «A. note.» → «A.»: the full stop the dropped clause carried goes back.
+  if (out && /\.\s*$/.test(line) && !/[.!؟?]$/.test(out)) out += ".";
+  return out;
+}
+
+function stripSummaryNotes(text: string): string {
+  const out: string[] = [];
+  // A dated correction (M1) runs to the end of its paragraph.
+  let inNote = false;
+  for (const raw of text.split(/\r?\n/)) {
+    if (raw.trim() === "") {
+      inNote = false;
+      out.push("");
+      continue;
+    }
+    if (inNote) continue;
+    let line = raw;
+    const at = datedCorrectionAt(line);
+    if (at >= 0) {
+      line = line.slice(0, at).replace(AUDIT_DANGLING_TAIL, "");
+      inNote = true;
+    }
+    line = dropAuditClauses(dropAuditAsides(line)).replace(/[ \t]{2,}/g, " ").trimEnd();
+    if (line.trim()) out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function stripFullTextNotes(text: string): string {
+  const out: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (!hasAuditMarker(raw)) {
+      out.push(raw);
+      continue;
+    }
+    const line = dropAuditAsides(raw);
+    // The marker sits in the line itself, not an aside: the whole line is a note.
+    if (hasAuditMarker(line)) continue;
+    if (line.trim()) out.push(line.replace(/[ \t]{2,}/g, " ").trimEnd());
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Owner 2026-11-07 (screenshot ٢): the corpus carries its own audit trail —
+ * «تصحيح 2026-08-14 (جولة تدقيق منهجي): … راجع سجل المشاكل ف1072.» — in
+ * amendment rows, and «الإصدارات السابقة» showed it to the public.
+ *
+ * `summary` mode (an amendment's summary): a dated correction is cut from
+ * where it starts to the end of its paragraph; otherwise the clauses (split on
+ * line breaks, « — », «؛», ". ") and the «(…)» / «[…]» asides that hold a
+ * marker are dropped. May return "".
+ *
+ * `fullText` mode (statutory wording): only whole lines, or «(…)» / «[…]» /
+ * «**…**» asides, that hold a marker are dropped — never part of a sentence.
+ *
+ * stripPipelineNotes runs first in both modes. Text with no marker comes back
+ * exactly as stripPipelineNotes returns it.
+ */
+export function stripAuditNotes(input: string | null | undefined, mode: "summary" | "fullText"): string {
+  const text = stripPipelineNotes(input);
+  if (!text || !hasAuditMarker(text)) return text;
+  return mode === "summary" ? stripSummaryNotes(text) : stripFullTextNotes(text);
+}
+
 /**
  * The موجز and the identity card of a law's preamble (the law part from
  * splitStoredPreamble — never the regulation preamble), and the preamble

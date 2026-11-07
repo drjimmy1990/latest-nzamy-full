@@ -102,6 +102,13 @@ export interface LawArticle {
   originalText?: string;
   /** Historic executive-regulation text found in the article's history block. */
   historicRegulationText?: string;
+  /**
+   * Owner 2026-11-07: the line that introduced the regulation at the end of
+   * `text` («اللائحة التنفيذية لنظام المرور (…)»), lifted out by the law API
+   * for an unlocked article with regulation rows — the subtitle of the
+   * reader's «اللائحة التنفيذية» section.
+   */
+  regulationHeading?: string;
   principles?: JudicialPrinciple[];
   precedents?: JudicialPrecedent[];
 }
