@@ -5956,7 +5956,7 @@ begin
   raise notice '_verify: 20261107_20 OK — library caps default to 50 documents / 240 requests / 60 searches an hour';
 end $$;
 -- <<< verify:library_caps_owner_426
--- >>> verify:deadline_cassation_urgent_194 — supabase/tests/rls/deadline_cassation_urgent_194.test.sql
+-- >>> verify:deadline_cassation_urgent_194
 -- 2026-11-07 — 20261107_30_deadline_cassation_urgent_194.sql (owner, plan ruling
 -- R6; independent of the deploy): نظام المرافعات الشرعية المادة (١٩٤) —
 -- cassation 30 days, urgent matters 15. Read-only, safe to repeat: SELECTs and
