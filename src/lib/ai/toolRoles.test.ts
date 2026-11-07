@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AI_TOOLS, REGISTERED_ROLES } from "./tools.ts";
 import { toolRoleRefusal } from "./aiToolsConfig.ts";
-import { libraryToolRefusal, LIBRARY_TOOL_PLANS_HREF } from "./libraryToolRefusal.ts";
+import { libraryToolRefusal, LIBRARY_AI_TIERS, LIBRARY_TOOL_PLANS_HREF, proPlanOnSaleFor } from "./libraryToolRefusal.ts";
 
 const src = (rel: string) => readFileSync(join(process.cwd(), "src", rel), "utf8").replace(/\r\n/g, "\n");
 
@@ -88,23 +88,63 @@ test("the matrix: each tool × each account type × the consultant flag", () => 
 
 // ── the library paywall stays, and says so in each tool's name ───────────────
 
-test("libraryToolRefusal: Pro or higher with the plans link, the closed library, nothing else", () => {
-  const tier = libraryToolRefusal("library_tier", "سؤال قانوني سريع");
-  assert.ok(tier);
-  assert.match(tier.text, /«سؤال قانوني سريع»/);
-  assert.match(tier.text, /Pro أو أعلى/);
-  assert.match(tier.text, /اشتراك المكتبة وحده/, "a library-only subscription does not open the AI");
-  assert.match(tier.text, /لم تُخصم نقاطك/);
-  assert.deepEqual(tier.action, { label: "عرض الباقات", href: LIBRARY_TOOL_PLANS_HREF });
+test("proPlanOnSaleFor: only the account types the price book sells a Pro-or-higher plan to", () => {
+  // TIER_RANK in access-control.ts: the library AI's rule is rank >= pro.
+  const ac = src("lib/access-control.ts");
+  const block = /export const TIER_RANK[^{]*\{([^}]*)\}/.exec(ac);
+  assert.ok(block, "access-control.ts has TIER_RANK");
+  const ranks: Record<string, number> = Object.fromEntries([...block[1].matchAll(/(\w+):\s*(\d+)/g)].map((m) => [m[1], Number(m[2])]));
+  const atLeastPro = Object.keys(ranks).filter((t) => ranks[t] >= ranks.pro).sort();
+  assert.deepEqual([...LIBRARY_AI_TIERS].sort(), atLeastPro);
+
+  // Today's book: lawyer-pro / consultant-independent (lawyer, provider), firm-basic / firm-enterprise (firm).
+  for (const t of ["lawyer", "firm", "provider"]) assert.equal(proPlanOnSaleFor(t), true, t);
+  // ind-ai is tier `ai` (below pro); ind-preventive and ind-litigation are retired; no corporate/micro/government/ngo plan.
+  for (const t of ["individual", "corporate", "micro", "government", "ngo", "", null, undefined]) assert.equal(proPlanOnSaleFor(t), false, String(t));
+
+  // It reads the book, not a list: a retired plan does not count, an on-sale one does.
+  const book = {
+    "x-pro": { id: "x-pro", kind: "plan", labelAr: "x", tier: "pro", buyers: ["micro"], prices: { yearly: { sar: 1 } } },
+    "x-old": { id: "x-old", kind: "plan", labelAr: "x", tier: "max", buyers: ["ngo"], prices: { yearly: { sar: 1, retired: true } } },
+    "x-ai": { id: "x-ai", kind: "plan", labelAr: "x", tier: "ai", buyers: ["government"], prices: { yearly: { sar: 1 } } },
+  } as never;
+  assert.equal(proPlanOnSaleFor("micro", book), true);
+  assert.equal(proPlanOnSaleFor("ngo", book), false);
+  assert.equal(proPlanOnSaleFor("government", book), false);
+});
+
+test("libraryToolRefusal: the plans link only where a Pro plan is on sale; the closed library; nothing else", () => {
+  for (const userType of ["lawyer", "firm", "provider"]) {
+    const tier = libraryToolRefusal("library_tier", "سؤال قانوني سريع", userType);
+    assert.ok(tier, userType);
+    assert.match(tier.text, /«سؤال قانوني سريع»/);
+    assert.match(tier.text, /Pro أو أعلى/);
+    assert.match(tier.text, /اشتراك المكتبة القانونية وحده لا يفتح أدوات الذكاء/);
+    assert.match(tier.text, /لم تُخصم نقاطك/);
+    assert.deepEqual(tier.action, { label: "عرض الباقات", href: LIBRARY_TOOL_PLANS_HREF });
+  }
   assert.equal(LIBRARY_TOOL_PLANS_HREF, "/pricing");
 
-  const closed = libraryToolRefusal("library_closed", "المستشار الذكي");
+  // No buyable plan opens it (an AI-plan individual included): no link, no «Pro», no «subscription only» line.
+  for (const userType of ["individual", "corporate", "micro", "government", "ngo", null]) {
+    const none = libraryToolRefusal("library_tier", "المستشار الذكي", userType);
+    assert.ok(none, String(userType));
+    assert.equal(
+      none.text,
+      "«المستشار الذكي»: هذه الأداة تتطلب اشتراك المكتبة القانونية الكامل، وهو غير متاح لنوع حسابك حالياً — لم تُخصم نقاطك.",
+    );
+    assert.equal(none.action, null, String(userType));
+    assert.doesNotMatch(none.text, /Pro|عرض الباقات|وحده/);
+  }
+  assert.equal(libraryToolRefusal("library_tier", "x", "admin"), null, "an admin is never told to subscribe");
+
+  const closed = libraryToolRefusal("library_closed", "المستشار الذكي", "individual");
   assert.ok(closed);
   assert.match(closed.text, /مغلقة الآن/);
   assert.equal(closed.action, null);
 
   for (const code of [null, undefined, "", "role", "tool_off", "points", "library_security_lock"]) {
-    assert.equal(libraryToolRefusal(code, "x"), null, String(code));
+    assert.equal(libraryToolRefusal(code, "x", "lawyer"), null, String(code));
   }
 });
 
@@ -119,10 +159,11 @@ test("the library gate itself is untouched: the run route still checks every lib
 test("each library tool's screen maps the gate's refusal to its own words", () => {
   const library = Object.values(AI_TOOLS).filter((t) => t.retrieval).map((t) => t.id).sort();
   assert.deepEqual(library, ["assistant", "canvas-card", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
-  assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع"\)/);
-  assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المستشار الذكي"\)/);
-  assert.match(src("components/draft/steps/StepAiDraft.tsx"), /libraryToolRefusal\(run\.code, "الصائغ القانوني"\)/);
-  assert.match(src("app/dashboard/business/kanban/_graph-ai-card.ts"), /libraryToolRefusal\(/);
+  assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType\)/);
+  assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المستشار الذكي", input\.userType \?\? null\)/);
+  assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType \}\)/);
+  assert.match(src("app/dashboard/business/kanban/_graph-ai-card.ts"), /libraryToolRefusal\([^)]*"اقترح سنداً نظامياً", userType\)/);
+  assert.match(src("app/dashboard/business/kanban/CaseGraphView.tsx"), /askCanvasCard\(chosen\.slice\(0, 8\), fetch, userType\)/);
   // /ai/legal-opinion already had its own (aiOpinion.ts), and the law reader its own (_ai-reply.ts).
   assert.match(src("app/ai/legal-opinion/_components/aiOpinion.ts"), /code === "library_tier"/);
 });
@@ -161,4 +202,79 @@ test("Q443: the links lead to tools the role may run", () => {
 
 test("no AI tool page still says it is for lawyers only", () => {
   assert.doesNotMatch(src("app/ai/najiz-optimizer/page.tsx"), />\s*للمحامين\s*</);
+});
+
+// ── fix round 1 ──────────────────────────────────────────────────────────────
+
+test("a short table of named cases (tool × account type × practice kind)", () => {
+  const table: Array<[string, string, string | null, "role" | "consultant_blocked" | null]> = [
+    ["wargaming", "provider", "advocate", null],
+    ["legal-drafter", "ngo", "consultant", "consultant_blocked"],
+    ["quick-answer", "", null, "role"],
+    ["wargaming", "admin", "consultant", null],
+    ["legal-opinion-consult", "government", null, null],
+    // library-assistant is open to every type (LIBRARY_ROLES; its gate is the tier rule): an unknown type is refused.
+    ["library-assistant", "individual", null, null],
+    ["library-assistant", "client", null, "role"],
+    ["echo-fast", "individual", null, "role"],
+    ["najiz-optimizer", "lawyer", "consultant", "consultant_blocked"],
+    ["contracts-pro", "lawyer", "consultant", null],
+    ["analyze-strength", "micro", "advocate", null],
+    ["brief-check", "firm", "consultant", "consultant_blocked"],
+  ];
+  for (const [tool, userType, practiceKind, want] of table) {
+    assert.equal(toolRoleRefusal(AI_TOOLS[tool], { userType, practiceKind }), want, `${tool} × ${userType || "(empty)"} × ${practiceKind}`);
+  }
+});
+
+test("/ai/draft: a library_tier refusal hands over to the team order, with the note", () => {
+  const step = src("components/draft/steps/StepAiDraft.tsx");
+  assert.ok(step.includes('const toolOff = analysis.code === "tool_off" || analysis.code === "library_tier" ? analysis.code : null;'));
+  assert.ok(step.includes("useEffect(() => { if (toolOff) onToolOff(toolOff); }, [toolOff, onToolOff]);"));
+  assert.ok(step.includes('onToolOff: (code: "tool_off" | "library_tier") => void;'));
+  const page = src("app/ai/draft/page.tsx");
+  assert.ok(page.includes('const libraryNote = aiOffReason === "library_tier" ? libraryToolRefusal("library_tier", "الصائغ القانوني", user.userType) : null;'));
+  assert.match(page, /!aiPath && libraryNote && \(\n\s*<div className="space-y-2">\n\s*<LibraryToolRefusalNote refusal=\{libraryNote\}/);
+  assert.ok(page.includes("onToolOff={markAiOff}"));
+});
+
+test("tool-status before the form and price: communicate and assistant whole-page, wargaming and brief-check on the AI box", () => {
+  for (const [file, tool] of [["app/ai/communicate/page.tsx", "communicate"], ["app/ai/assistant/page.tsx", "assistant"]]) {
+    const page = src(file);
+    assert.match(page, new RegExp(`<ToolUsableGate\\n\\s*tool="${tool}"`), file);
+    assert.match(page, /^export default function \w+Route\(\)/m, file);
+  }
+  const gate = src("components/ai/ToolUsableGate.tsx");
+  assert.ok(gate.includes("if (!user.isLoggedIn) return <>{children}</>;"), "a visitor keeps the page's own sign-in handling");
+  assert.ok(gate.includes("useToolUsable(tool)"));
+
+  const brief = src("app/ai/brief-check/page.tsx");
+  assert.ok(brief.includes('const aiUsable = useToolUsable("brief-check");'));
+  assert.ok(brief.includes('{reviewScope === "gaps_report" && aiUsable === true && ('));
+  assert.ok(brief.indexOf("<ConsultantGate>") < brief.indexOf("function AIBriefCheckPage"), "inside the consultant lock");
+
+  const war = src("app/ai/wargaming/page.tsx");
+  assert.ok(war.includes('const aiUsable = useToolUsable("wargaming");'));
+  assert.ok(war.includes("{aiUsable === true && ("));
+  assert.ok(war.includes("aiUsable={aiUsable === true}"));
+  assert.match(war, /\{aiUsable && \(\n\s*<p[^>]*>\n\s*المحاكاة الفورية: هدف واحد/, "the price line waits for tool-status");
+
+  // contract-negotiator and quick-answer already had it.
+  assert.ok(src("app/ai/contract-negotiator/page.tsx").includes('useToolUsable("contract-negotiator")'));
+  assert.ok(src("app/ai/quick-answer/page.tsx").includes('useToolUsable("quick-answer")'));
+});
+
+test("the validators ask «صفتك أو صفة موكّلك» on the tools every account now runs", () => {
+  for (const id of ["wargaming", "analyze-strength"]) {
+    const r = AI_TOOLS[id].validateInput({ role: "nope", case_summary: "س".repeat(400), targets: ["opponent"] });
+    assert.deepEqual(r, { ok: false, error: "اختر صفتك أو صفة موكّلك" }, id);
+  }
+});
+
+test("/ai hub: no free queries, no «مجاني» badge on a paid tool, no «للمحامي … مجاناً»", () => {
+  const hub = src("app/ai/page.tsx");
+  assert.doesNotMatch(hub, /٥ استفسارات مجانية|5 free queries/);
+  assert.doesNotMatch(hub, /badge: "مجاني"/);
+  assert.doesNotMatch(hub, /للمحامي في البيتا، متاحة مجاناً/);
+  assert.doesNotMatch(hub, /جرّب ذكاء نظامي مجاناً/);
 });

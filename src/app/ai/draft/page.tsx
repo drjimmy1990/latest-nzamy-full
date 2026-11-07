@@ -16,6 +16,8 @@ import { useUser } from "@/hooks/useUser";
 import { draftKindFromMemo } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import { toolRoleRefusal } from "@/lib/ai/aiToolsConfig";
+import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
+import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
 import { CONSULTANT_BLOCKED_MESSAGE } from "@/lib/auth/practiceKind";
 import { splitAiReadable } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
@@ -58,7 +60,11 @@ export default function AIDraftPage() {
   // The run answered `tool_off` (the tool ships off until an admin turns it
   // on): the team order becomes the path.
   const [aiOff, setAiOff] = useState(false);
-  const markAiOff = useCallback(() => setAiOff(true), []);
+  // `library_tier` (owner ٤١٧): the drafter is open to every account, but the
+  // library's AI tier refused this one; the team order follows, with a note.
+  const [aiOffReason, setAiOffReason] = useState<"tool_off" | "library_tier" | null>(null);
+  const markAiOff = useCallback((code: "tool_off" | "library_tier") => { setAiOff(true); setAiOffReason(code); }, []);
+  const libraryNote = aiOffReason === "library_tier" ? libraryToolRefusal("library_tier", "الصائغ القانوني", user.userType) : null;
   const aiPath = aiOpen && !aiOff && !consultantBlocked && kind !== null;
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
@@ -224,6 +230,12 @@ export default function AIDraftPage() {
               طلب مراجعة من فريق نظامي (اختياري) — طلب منفصل عن الصياغة
             </button>
           )}
+        </div>
+      )}
+      {s.step === "submit" && !consultantBlocked && !aiPath && libraryNote && (
+        <div className="space-y-2">
+          <LibraryToolRefusalNote refusal={libraryNote} isDark={isDark} />
+          <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>يمكنك إرسال الطلب لفريق نظامي ليصوغه لك أدناه.</p>
         </div>
       )}
       {s.step === "submit" && !consultantBlocked && !aiPath && (

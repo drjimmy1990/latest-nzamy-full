@@ -581,7 +581,7 @@ const SUMMARY_ERROR = `اكتب ملخص القضية (من ${CASE_SUMMARY_MIN.t
  */
 function wargamingInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
-  if (!(WARGAMING_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
+  if (!(WARGAMING_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفتك أو صفة موكّلك" };
   // Optional: unnamed, the workflow asks the model to infer it from the facts.
   const area = optionalField(raw.area, 150);
   if (area === null) return { ok: false, error: "تخصص القضية أطول من المسموح" };
@@ -649,7 +649,7 @@ const DEVIL_SEVERITIES = ["critical", "high", "medium"] as const;
 /** L10 محلل قوة الموقف: the case, the evidence notes and what the opponent has said, if any. */
 function analyzeStrengthInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
-  if (!(STRENGTH_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
+  if (!(STRENGTH_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفتك أو صفة موكّلك" };
   const summary = caseSummary(raw.case_summary);
   if (!summary) return { ok: false, error: SUMMARY_ERROR };
   return {

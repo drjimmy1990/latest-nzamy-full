@@ -29,7 +29,7 @@ function newKey(): string {
 }
 
 export async function askAssistant(
-  input: { message: string; context: string; conversationId: string | null },
+  input: { message: string; context: string; conversationId: string | null; userType?: string | null },
   fetchImpl: typeof fetch = fetch,
 ): Promise<AssistantAnswer> {
   let res: Response;
@@ -63,7 +63,7 @@ export async function askAssistant(
   }
   if (res.status === 401) return { ok: false, text: "سجّل الدخول لاستخدام المستشار الذكي", citations: [], code };
   // Owner ٤١٧: open to every account; the library's AI tier still gates it, in this tool's name.
-  const library = libraryToolRefusal(code, "المستشار الذكي");
+  const library = libraryToolRefusal(code, "المستشار الذكي", input.userType ?? null);
   if (library) return { ok: false, text: library.text, citations: [], conversationId, code };
   return { ok: false, text: typeof json.error === "string" && json.error ? json.error : FALLBACK, citations: [], conversationId, code };
 }

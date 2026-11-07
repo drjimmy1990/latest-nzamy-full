@@ -72,7 +72,7 @@ function QuickAnswerTool() {
   const cites = asCitations(run.citations);
   const ungrounded = isUngroundedAnswer(run.output);
   // Owner ٤١٧: open to every account, but the library's AI tier still gates it.
-  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع") : null;
+  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType) : null;
   // Art. 18: /ai/wargaming refuses a consultant, so it is not offered to him.
   const followUps = QUICK_ANSWER_FOLLOW_UPS.filter((f) => !(user.practiceKind === "consultant" && isConsultantBlockedPath(f.href)));
 

@@ -61,6 +61,8 @@ export function joinSuggestions(output: unknown, citations: unknown): CardSugges
 export async function askCanvasCard(
   cards: Array<Pick<GraphNode, "type" | "title" | "desc">>,
   fetchImpl: typeof fetch = fetch,
+  /** profiles.user_type: whether the Pro wording may point to plans (libraryToolRefusal). */
+  userType: string | null = null,
 ): Promise<CanvasCardAnswer> {
   let res: Response;
   try {
@@ -82,7 +84,7 @@ export async function askCanvasCard(
     return { ok: true, suggestions, chargedPoints: typeof json.chargedPoints === "number" ? json.chargedPoints : 0 };
   }
   // The library gate's refusal in this button's name, not «المساعد الذكي للمكتبة».
-  const library = libraryToolRefusal(typeof json.code === "string" ? json.code : null, "اقترح سنداً نظامياً");
+  const library = libraryToolRefusal(typeof json.code === "string" ? json.code : null, "اقترح سنداً نظامياً", userType);
   if (library) return { ok: false, suggestions: [], error: library.text };
   return { ok: false, suggestions: [], error: typeof json.error === "string" && json.error ? json.error : FALLBACK };
 }

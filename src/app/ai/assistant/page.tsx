@@ -14,6 +14,8 @@ import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation
 import { ASSISTANT_CONVERSATION_PRICE, ASSISTANT_MESSAGES_PER_CONVERSATION, type AssistantContext } from "@/lib/ai/tools";
 import { messagesNounAr } from "@/lib/ai/toolPointsDisplay";
 import { askAssistant } from "./_assistant-client";
+import ToolUsableGate from "@/components/ai/ToolUsableGate";
+import { useUser } from "@/hooks/useUser";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type Role = "user" | "assistant";
@@ -203,8 +205,22 @@ function useVoice(onResult: (t: string) => void) {
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
-export default function AssistantPage() {
+/** tool-status before the chat and the price (owner ٤١٧: every account; the mode still decides). */
+export default function AssistantRoute() {
+  return (
+    <ToolUsableGate
+      tool="assistant"
+      title="المستشار الذكي — قريباً"
+      description="محادثة قانونية تجيب من نصوص الأنظمة ومبادئ القضاء في مكتبة نظامي، مع رابط كل نص. لم يُتح بعد لحسابك."
+    >
+      <AssistantPage />
+    </ToolUsableGate>
+  );
+}
+
+function AssistantPage() {
   const { isDark } = useTheme();
+  const { userType } = useUser();
   const [messages,    setMessages]    = useState<Message[]>([]);
   const [input,       setInput]       = useState("");
   const [loading,     setLoading]     = useState(false);
@@ -256,7 +272,7 @@ export default function AssistantPage() {
 
     // The real assistant (plan §5 L4): the server searches the library for this
     // message, answers from what it found, and keeps the conversation.
-    const answer = await askAssistant({ message: content, context, conversationId });
+    const answer = await askAssistant({ message: content, context, conversationId, userType });
     if (answer.conversationId) setConversationId(answer.conversationId);
     if (answer.ok) {
       setAnswered(n => n + 1);
