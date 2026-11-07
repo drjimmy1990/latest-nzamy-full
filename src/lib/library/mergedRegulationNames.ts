@@ -10,19 +10,22 @@
  */
 
 import { summaryForViewer } from "./legislativeEvent.ts";
+import { regulationNameOf } from "./regulationName.ts";
 
 /**
  * The names one viewer receives: non-strings, blank and repeated names dropped,
  * whitespace collapsed, and for a non-subscriber each name without decree
  * numbers or dates (owner ٣١٩'s stripper, the one the موجز goes through;
  * ٤٢٤ / ٣٨٠). [] when the value is not an array (no column yet, or NULL).
+ * The stored refs are per regulation ARTICLE: each is reduced to its
+ * regulation's name (regulationNameOf), and a bare article label is dropped.
  */
 export function mergedNamesForViewer(value: unknown, isSubscriber: boolean): string[] {
   if (!Array.isArray(value)) return [];
   const out: string[] = [];
   for (const raw of value) {
     if (typeof raw !== "string") continue;
-    const name = summaryForViewer(raw, isSubscriber).replace(/\s+/g, " ").trim();
+    const name = regulationNameOf(summaryForViewer(raw, isSubscriber));
     if (name && !out.includes(name)) out.push(name);
   }
   return out;

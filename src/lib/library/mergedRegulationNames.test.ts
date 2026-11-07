@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { mergedNamesForViewer } from "./mergedRegulationNames.ts";
+import { regulationNameFromRefs } from "./regulationName.ts";
 import { readWithOptionalFeatures, type OptionalFeature } from "./optionalColumn.ts";
 
 const INIT = readFileSync(new URL("../../app/api/library/init/route.ts", import.meta.url), "utf8");
@@ -13,6 +14,38 @@ test("owner 2026-11-07: names are trimmed, blank / repeated / non-string ones dr
     mergedNamesForViewer(["  اللائحة التنفيذية لنظام العمل ", "", 7, "قواعد  الإحالة", "اللائحة التنفيذية لنظام العمل"], true),
     ["اللائحة التنفيذية لنظام العمل", "قواعد الإحالة"],
   );
+});
+
+test("prod refs are per regulation article: reduced to the regulation's name; bare ordinals dropped", () => {
+  // The shapes 20261107_10 found on prod (2026-11-08).
+  assert.deepEqual(
+    mergedNamesForViewer([
+      "المادة الأولى من اللائحة التنفيذية لنظام المدفوعات وخدماتها",
+      "المادة السادسة عشرة بعد المئة من اللائحة التنفيذية لنظام المدفوعات وخدماتها",
+    ], true),
+    ["اللائحة التنفيذية لنظام المدفوعات وخدماتها"],
+  );
+  assert.deepEqual(
+    mergedNamesForViewer([
+      "المادة (1) من اللائحة التنفيذية",
+      "اللائحة التنظيمية لحماية الأغذية من المخاطر المتعمدة",
+      "المادة (2) من اللائحة التنفيذية",
+    ], true),
+    ["اللائحة التنفيذية", "اللائحة التنظيمية لحماية الأغذية من المخاطر المتعمدة"],
+  );
+  assert.deepEqual(
+    mergedNamesForViewer([
+      "المادة الثانية والأربعون من القواعد الإجرائية",
+      "المادة السابعة عشرة من قواعد غرفة التحكيم المختصة بمنازعات تراخيص الأندية",
+    ], true),
+    ["القواعد الإجرائية", "قواعد غرفة التحكيم المختصة بمنازعات تراخيص الأندية"],
+  );
+  // The reader's subtitle: the first regulation name in its merged ref.
+  assert.equal(regulationNameFromRefs("الأولى, المادة الثانية من اللائحة التنفيذية لنظام العمل"), "اللائحة التنفيذية لنظام العمل");
+  assert.equal(regulationNameFromRefs("الأولى"), "");
+  assert.equal(regulationNameFromRefs(undefined), "");
+  // law-agriculture: article labels only — no regulation name to show.
+  assert.deepEqual(mergedNamesForViewer(["الأولى", "الثامنة والعشرون بعد المائة", "ستة بعد المائتين", "مائتين"], true), []);
 });
 
 test("owner ٤٢٤ / ٣٨٠: a visitor's name loses its decree number and date; a subscriber's is whole", () => {
