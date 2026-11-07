@@ -12,8 +12,8 @@
 
 | Step | What | When |
 |---|---|---|
-| 0 | Read-only checks (3 SELECTs) | before anything |
-| 1 | SQL `20261107_10`, `20261107_20`, `20261107_30` | before the deploy (also safe after) |
+| 0 | Read-only checks (4 SELECTs) | before anything |
+| 1 | SQL `20261107_10`, `20261107_20`, `20261107_30`, `20261107_60` | before the deploy (`_60` **must** be before) |
 | 2 | n8n: two prompt changes (quick-answer, najiz-optimizer) | any time — we apply them through the n8n API on your go |
 | 3 | Deploy | |
 | 4 | SQL `20261107_50` | **right after the deploy** |
@@ -58,6 +58,26 @@ D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\SQL_batch_2026
 
 Read-only. Paste the whole file; it shows two result sets but the editor shows the last one — run the two SELECTs one at a time and paste both rows. We send the numbers to the owner.
 
+### 0d. No AI tool is live yet
+
+The AI tools are now open to every account type (owner ٤١٧). The report tells the owner nothing changes for customers on deploy day; that is true only if no tool is `live` today.
+
+```sql
+select value from public.platform_settings where key = 'ai_tools';
+```
+
+Expect every tool `staff` or `off` (or no row). If any says `live`, stop and send us the row before the deploy.
+
+### 0e. Regulation names with decision numbers
+
+The reader now cleans regulation names for visitors; this shows how many carry a number or date.
+
+```sql
+select count(*) as names_with_numbers from library.article_regulations where ref ~ '[0-9٠-٩۰-۹]|رقم|وتاريخ';
+```
+
+Paste the number. Any value is fine: it is for our records.
+
 ---
 
 ## Step 1: SQL before the deploy
@@ -86,7 +106,7 @@ D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migra
 /www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261107_20_library_caps_owner_426.sql
 ```
 
-It overwrites the three hourly numbers even if an admin changed them. Expect one row:
+It overwrites the three hourly numbers even if an admin changed them. The 50-documents cap applies from the moment this file runs; the new «بلغت حد القراءة… بعد Y دقيقة» message shows from the deploy (until then readers see the old generic error). Expect one row:
 
 ```
 hourly_docs | rule_hour_requests | rule_hour_searches | daily_docs | member_daily_docs
@@ -111,6 +131,15 @@ cassation_urgent | 15 | نظام المرافعات الشرعية — الما�
 ```
 
 No existing deadline is recomputed.
+
+### 1d. `20261107_60` — the founder lawyer's rejoinder (owner ٤١٠) — BEFORE the deploy
+
+```
+D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\supabase\migrations\20261107_60_founder_rejoinder_410.sql
+/www/wwwroot/nzamy/latest-nzamy-full/supabase/migrations/20261107_60_founder_rejoinder_410.sql
+```
+
+Re-creates `ai_start_run_with_credit` with the same signature; the only change is that a founder drafting work also pays for التعقيب. **It must run before the deploy:** the new code offers the credit on a rejoinder, and without this file that run fails. Expect one row: `rejoinder_covered = t`, `overloads = 1`, `ok = t`.
 
 ---
 
@@ -177,7 +206,7 @@ As before (`deploy.sh` doesn't run it):
 cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | tail -40
 ```
 
-New blocks this batch: merged regulation names, library caps, urgent cassation, owner answers prices. Paste the tail.
+New blocks this batch: merged regulation names, library caps, urgent cassation, founder rejoinder, owner answers prices. Paste the tail.
 
 ---
 
