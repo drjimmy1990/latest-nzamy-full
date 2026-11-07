@@ -43,6 +43,6 @@ export function quickAnswerRefusalText(code: string | null): string | null {
   if (code === "no_sources") {
     return "لم نجد في مكتبة الأنظمة نصاً يجيب عن هذا السؤال — أُعيدت نقاطك. أعد صياغته بكلمات نظامية أو اطلب رأياً من الرأي الفصل.";
   }
-  if (code === "ungrounded") return "لم تستند الإجابة إلى نص من المكتبة فحُجبت وأُعيدت نقاطك.";
+  if (code === "ungrounded") return "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال — أُعيدت نقاطك.";
   return null;
 }

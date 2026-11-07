@@ -17,7 +17,7 @@ import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import { pastedFileUrlFrom } from "./textFilesConfig.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
 import { resolveToolRuntime, aiToolsSettingIssue, effectiveToolMode, REVIEW_MODE_REFUSED_AR } from "./aiToolsConfig.ts";
-import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
+import { AI_TOOLS, LIB_QUERIES_PATH, NAJIZ_NEEDS_CHECK, countNeedsCheck } from "./tools.ts";
 import type { Retrieved } from "./retrieval.ts";
 import { STEP_LABEL_AR, type ProgressEvent } from "./progressEvents.ts";
 
@@ -360,6 +360,27 @@ test("the callback checks a job's output against the input stored on the run", (
   assert.equal(spec.validateOutput({ text: "المادة 77 والحكم رقم 4430123" }, input.input) !== null, true);
   assert.equal(spec.validateOutput({ text: "المادة 77 والحكم رقم 4430123" }, {}), null, "no stored input: nothing is proven");
   assert.equal(spec.validateOutput({ text: "الحكم رقم 4430123" }, input.input), null);
+});
+
+test("٤١٦: the condense must keep every «[يحتاج تحقق]» of the cleaned memo, or the run fails and refunds", async () => {
+  const spec = AI_TOOLS["najiz-optimizer"];
+  const marked = `رقم الهوية: ${NAJIZ_NEEDS_CHECK}\nالتاريخ: ${NAJIZ_NEEDS_CHECK}\n${MEMO}`;
+  const input = spec.validateInput({ text: marked });
+  assert.ok(input.ok);
+  if (!input.ok) return;
+  const refs = "المادة 77 والحكم رقم 4430123";
+  assert.equal(countNeedsCheck(marked), 2);
+  assert.notEqual(spec.validateOutput({ text: `${NAJIZ_NEEDS_CHECK} ${NAJIZ_NEEDS_CHECK} ${refs}` }, input.input), null, "both kept");
+  assert.equal(spec.validateOutput({ text: `${NAJIZ_NEEDS_CHECK} ${refs}` }, input.input), null, "one dropped");
+  assert.equal(spec.validateOutput({ text: `يحتاج تحقق يحتاج تحقق ${refs}` }, input.input), null, "brackets stripped");
+  // A memo with no marker is unaffected.
+  const plain = spec.validateInput({ text: MEMO });
+  assert.ok(plain.ok && spec.validateOutput({ text: refs }, plain.input) !== null);
+  // Through the pipeline: refunded as schema_invalid.
+  const { client, log } = db({ setting: W1_ON });
+  const r = await startRunWith(client as never, deps(okReply({ text: `${NAJIZ_NEEDS_CHECK} ${refs}` })), LAWYER, body({ tool: "najiz-optimizer", input: { text: marked } }));
+  assert.equal(r.status, 502);
+  assert.equal((log.find((q) => q.table === "ai_fail_run")!.payload as Record<string, unknown>).p_code, "schema_invalid");
 });
 
 test("staff mode runs the tool for an admin and refuses everyone else before any charge", async () => {

@@ -12,7 +12,7 @@ import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { AI_COPY, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { N8nOutcome } from "./n8nClient.ts";
 import type { Retrieved } from "./retrieval.ts";
-import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
+import { AI_TOOLS, LIB_QUERIES_PATH, LIBRARY_NO_ANSWER, isLibraryNoAnswer } from "./tools.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const LAWYER: RunActor = { userId: "u-1", userType: "lawyer", practiceKind: "advocate", displayName: null };
@@ -184,6 +184,21 @@ test("٤١٣: the model's «النصوص لا تجيب» sentence is still refun
     assert.equal(r.body.code, "ungrounded");
     assert.equal((log.find((q) => q.table === "ai_fail_run")!.payload as Record<string, unknown>).p_code, "ungrounded");
   }
+});
+
+test("٤١٣: reworded no-answer sentences are refusals too; a real answer that mentions the library is not", () => {
+  for (const t of [
+    "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال.",
+    "لم تُجب النصوص المتاحة في المكتبة عن هذا السؤال.",
+    "لا تجيب النصوص المتاحة عن السؤال.",
+    "النصوص المتاحة في المكتبة لا تجيب عن هذا السؤال.",
+    "عذراً، لا تُجيب النصوص المتاحة في المكتبة عن هذا السؤال",
+  ]) assert.equal(isLibraryNoAnswer(t), true, t);
+  for (const t of [
+    "يستحق العامل المستقيل جزءاً من المكافأة بحسب مدة خدمته.",
+    `${LIBRARY_NO_ANSWER}، لكن ${"القاعدة العامة أن العامل يستحق مكافأة بحسب مدة خدمته. ".repeat(3)}`,
+    null,
+  ]) assert.equal(isLibraryNoAnswer(t), false, String(t));
 });
 
 test("٤١٣: a cited answer carries no ungrounded flag", async () => {

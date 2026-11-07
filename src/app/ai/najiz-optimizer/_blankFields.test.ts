@@ -21,6 +21,15 @@ test("a placeholder inside a sentence is marked in place, the words around it ke
   assert.equal(r.marked, 2);
 });
 
+test("tatweel runs, «……» and a bulleted blank are fields too", () => {
+  const r = markBlankFields("اسم الوكيل: ــــــــ\nالعنوان: ……\n* .......");
+  assert.equal(r.text, `اسم الوكيل: ${NAJIZ_NEEDS_CHECK}\nالعنوان: ${NAJIZ_NEEDS_CHECK}\n* ${NAJIZ_NEEDS_CHECK}`);
+  assert.equal(r.marked, 3);
+  // One «…» is an ellipsis; a tatweel ruler alone is a separator.
+  assert.deepEqual(markBlankFields("وحيث إن…"), { text: "وحيث إن…", marked: 0 });
+  assert.deepEqual(markBlankFields("أ\nــــــــــ\nب"), { text: "أ\nب", marked: 0 });
+});
+
 test("a label followed only by spaces is a blank field too", () => {
   const r = markBlankFields("رقم القضية:          ");
   assert.equal(r.text, `رقم القضية: ${NAJIZ_NEEDS_CHECK}`);

@@ -19,7 +19,9 @@ The app charges these; `src/lib/ai/tools.ts` and `src/lib/ai/draftKinds.ts` are 
 | `communicate` (L1) | 5 points (unchanged) |
 | `contract-drafter` (L11) | 500 points (unchanged; owner question ٤٤٥) |
 
-**Quick answer with no library text (owner ٤١٣ option A).** The quick-answer prompt now lets the model write a short general answer, with no `[S…]` marker, when the texts don't answer. The app keeps it, charges it and shows it under «إجابة عامة بلا سند مرجعي — تحقق منها». The bare sentence «لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال» is still refunded. Every other library tool still refunds an answer with no citation. To apply on n8n: in `NZAMY · AI · quick-answer (L3 سؤال قانوني سريع)`, node **Build prompt** (Code), replace `jsCode` with the one in `n8n/ai/quick-answer.json` (two lines of the `system` array changed and one added). Until then the old prompt keeps refusing, and those runs stay refunded.
+**Quick answer with no library text (owner ٤١٣ option A).** The quick-answer prompt now lets the model write a short general answer, with no `[S…]` marker, when the texts don't answer. The app keeps it, charges it and shows it under «إجابة عامة بلا سند مرجعي — تحقق منها». The bare sentence «لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال» is still refunded. Every other library tool still refunds an answer with no citation. To apply on n8n: in `NZAMY · AI · quick-answer (L3 سؤال قانوني سريع)`, node **Build prompt** (Code), replace `jsCode` with the one in `n8n/ai/quick-answer.json`. The answer is either from the texts only, with their markers, or wholly general with none: the prompt forbids mixing, because one resolving citation would hide the label. Until then the old prompt keeps refusing, and those runs stay refunded.
+
+**منقح ناجز keeps «[يحتاج تحقق]» (owner ٤١٦).** The free cleanup now marks an unfilled field «[يحتاج تحقق]» instead of deleting it. The AI condense must keep every marker; the app refunds an output with fewer markers than the memo sent. To apply on n8n: in `NZAMY · AI · najiz-optimizer (L2 منقح ناجز R5)`, node **Build prompt** (Code), replace `jsCode` with the one in `n8n/ai/najiz-optimizer.json` (one line added after the symbol rule, exempting the marker). Until then a memo with markers may come back without them and be refunded.
 
 | File | What it is |
 |---|---|
@@ -209,7 +211,7 @@ No SQL. No new npm package.
 
 ## Wave 4, L9 المحاكي الشامل and L10 محلل قوة الموقف: your steps
 
-**What they are.** Two 250-point jobs that read the lawyer's case summary, plus the case files when there are any (files are **optional**; PDF and images only, up to 6 files and 30 pages).
+**What they are.** Two jobs (since 7 Nov 2026: L9 150 points, 75 with one target; L10 75 points; 250 each before) that read the lawyer's case summary, plus the case files when there are any (files are **optional**; PDF and images only, up to 6 files and 30 pages).
 - No number anywhere: no score, no percentage, no chance of winning (owner ١٩٣). Levels are words.
 - The court target describes what the court will examine and ask, never how it will rule.
 - The prompt forbids naming judgments or precedents. Every law article the answer relies on is checked against the library by the app, as in L8.

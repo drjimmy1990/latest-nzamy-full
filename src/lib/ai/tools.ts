@@ -200,6 +200,18 @@ function najizInput(raw: unknown): InputCheck {
   return { ok: true, input: { text, must_keep: extractLegalRefs(text) } };
 }
 
+/**
+ * Owner ٤١٦ (rule v5.2): the free cleanup marks an unfilled field with this
+ * (src/app/ai/najiz-optimizer/_blankFields.ts); the paid condense must keep
+ * every one, or the lawyer loses the reminder he paid to keep.
+ */
+export const NAJIZ_NEEDS_CHECK = "[يحتاج تحقق]";
+
+/** How many «[يحتاج تحقق]» markers `text` holds. */
+export function countNeedsCheck(text: string): number {
+  return text.split(NAJIZ_NEEDS_CHECK).length - 1;
+}
+
 function najizOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
   if (!isPlainObject(raw)) return null;
   const text = boundedText(raw.text, NAJIZ_TARGET_CHARS);
@@ -210,6 +222,8 @@ function najizOutput(raw: unknown, input: Record<string, unknown>): Record<strin
   if (typeof input.text !== "string") return null;
   const required = extractLegalRefs(input.text);
   if (missingLegalRefs(required, text).length > 0) return null;
+  // A dropped «[يحتاج تحقق]» fails the run, which refunds it (owner ٤١٦).
+  if (countNeedsCheck(text) < countNeedsCheck(input.text)) return null;
   return { text, kept_refs: required };
 }
 
@@ -293,11 +307,18 @@ export const ASSISTANT_CONVERSATION_PRICE = 30;
  */
 export const LIBRARY_NO_ANSWER = "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال";
 
+/** The sentence and the rewordings a model writes for it: «لم تُجب…», «… لا تجيب عن…», without «في المكتبة» or «هذا». */
+const NO_ANSWER_FORMS = [
+  /(?:لا|لم) (?:تجيب|تجب) النصوص المتاحة(?: في المكتبة)? عن (?:هذا )?السؤال/,
+  /النصوص المتاحة(?: في المكتبة)? (?:لا تجيب|لم تجب) عن (?:هذا )?السؤال/,
+];
+
 /** True when `text` is the no-answer sentence alone (with punctuation or a few words around it). */
 export function isLibraryNoAnswer(text: unknown): boolean {
   if (typeof text !== "string") return false;
-  const t = text.replace(/\s+/g, " ").trim();
-  return t.includes(LIBRARY_NO_ANSWER) && t.length <= LIBRARY_NO_ANSWER.length + 80;
+  // Diacritics («تُجب») and spacing do not make it a different sentence.
+  const t = text.replace(/[\u064B-\u0652\u0640]/g, "").replace(/\s+/g, " ").trim();
+  return t.length <= LIBRARY_NO_ANSWER.length + 80 && NO_ANSWER_FORMS.some((re) => re.test(t));
 }
 
 /** L4 المستشار الذكي: a lawyer's chat, each message answered from the library. */
@@ -1549,7 +1570,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     consultantBlocked: false,
     // D3: the conversation's first message pays for the whole conversation.
     price: (_input, ctx) => ((ctx.turn ?? 0) === 0 ? ASSISTANT_CONVERSATION_PRICE : 0),
-    dailyLimit: 60,
+    // Every turn counts: 90 is six full 15-message conversations a day (owner ٤١١).
+    dailyLimit: 90,
     defaultMode: "off",
     retrieval: { from: "message", laws: 8, principles: 4 },
     conversation: { maxMessages: ASSISTANT_MESSAGES_PER_CONVERSATION, historyPairs: 3, field: "message", replyField: "reply" },
