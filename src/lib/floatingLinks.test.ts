@@ -83,12 +83,10 @@ async function hasPageOrRoute(dir: string): Promise<boolean> {
  *   any value there (`/dashboard/lawyer/clients/[id]` satisfies
  *   `/dashboard/lawyer/clients/anything`).
  * - A catch-all folder (`[...x]` or `[[...x]]`) is deliberately NOT treated
- *   as a match. The app has exactly one, `src/app/[...slug]/page.tsx`, and
- *   it renders a generic "coming soon" placeholder
- *   (`src/components/ComingSoon.tsx`) for whatever path reaches it — it is
- *   not a real destination for any of these menu items. Counting it as a hit
- *   would make every href in the file "resolve", which defeats the point of
- *   a dead-link test.
+ *   as a match. The app has none (`src/app/notFoundStatus.test.ts` keeps it
+ *   that way); if one came back it would be no real destination for any of
+ *   these menu items, and counting it as a hit would make every href in the
+ *   file "resolve", which defeats the point of a dead-link test.
  */
 async function routeExists(segments: string[], dir: string = APP_DIR, index = 0): Promise<boolean> {
   if (index === segments.length) return hasPageOrRoute(dir);
