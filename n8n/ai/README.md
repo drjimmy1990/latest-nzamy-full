@@ -120,7 +120,7 @@ Wave 1 has no SQL and no new server variables.
 - `contract-negotiator`, 150 points, at `/ai/contract-negotiator`: 1 to 10 pasted clauses, three positions for each and a fallback. Lawyers and firms.
 
 **Steps, after the deploy (never before it):**
-1. In n8n, import `n8n/ai/contract-review.json` and `n8n/ai/contract-negotiator.json`.
+1. **Done 2026-11-07 through the n8n API (`dGl5rF6FgLHhMSRN`, `I2bW9Pg8vF45E72j`), with credentials set and both on. Skip steps 1 and 2.** Restoring by hand: in n8n, import `n8n/ai/contract-review.json` and `n8n/ai/contract-negotiator.json`.
 2. In each one, re-select the credentials on every node that asks, including each `Progress ·` node, then switch the workflow on.
 3. Sign in as an admin, open `https://nezamy.sa/dashboard/admin/ai-usage`, and set each tool to `staff`.
 4. Test each one as the admin. An admin runs exempt, so this proves the workflow and the screen, not the money.

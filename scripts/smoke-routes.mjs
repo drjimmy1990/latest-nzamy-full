@@ -55,7 +55,6 @@ const ROUTES = [
   "/marketplace",
   "/marketplace/collaborate",
   "/marketplace/post",
-  "/promo/test-promo-slug",
   "/ai",
   "/ai/analyze",
   "/ai/analyze-strength",
@@ -147,6 +146,22 @@ const ROUTES = [
   "/review/abc123",
   "/robots.txt",
   "/sitemap.xml",
+];
+
+// Addresses no route serves. Each must answer exactly 404: a root catch-all
+// page once answered 200 for all of them, and Cloudflare stored that HTML under
+// any address ending in .js or .png (src/app/notFoundStatus.test.ts). Unlike
+// ROUTES, nothing here may pass by redirecting.
+const MISSING = [
+  "/zzz-not-a-real-page-123",
+  "/zzz/deeper/still",
+  "/api/zzz-not-a-real-api",
+  "/api/v1/zzz-not-a-real-api",
+  "/_next/static/chunks/zzz-not-a-real-file-123.js",
+  "/_next/static/css/zzz-not-a-real-file-123.css",
+  "/zzz-not-a-real-image.png",
+  "/zzz-not-a-real-script.js",
+  "/blog/category/zzz-not-a-real-category",
 ];
 
 const headers = {
@@ -267,6 +282,20 @@ async function run() {
       console.log(`${ok ? "OK" : "FAIL"} ${response.status} ${route}`);
 
       if (!ok) failures.push(`${route} returned ${response.status}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`FAIL ${route} ${message}`);
+      failures.push(`${route} failed: ${message}`);
+    }
+  }
+
+  for (const route of MISSING) {
+    try {
+      const response = await fetchWithTimeout(`${baseUrl}${route}`);
+      const ok = response.status === 404;
+      console.log(`${ok ? "OK" : "FAIL"} ${response.status} ${route} (must be 404)`);
+
+      if (!ok) failures.push(`${route} returned ${response.status}, must be 404`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.log(`FAIL ${route} ${message}`);
