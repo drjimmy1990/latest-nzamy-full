@@ -15,6 +15,7 @@ import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useAiRun } from "@/hooks/useAiRun";
 import { aiToolPriceText, arabicPoints } from "@/lib/ai/toolPointsDisplay";
 import { NAJIZ_TARGET_CHARS } from "@/lib/ai/tools";
+import { markBlankFields } from "./_blankFields";
 
 // ─── Najiz Optimizer Core Logic ───────────────────────────────────────────────
 // Implements: Najiz_Legal_Memo_Optimizer_v5
@@ -30,7 +31,8 @@ interface OptimizationReport {
   originalLength: number;
   finalLength:    number;
   removedEmojis:  number;
-  removedBlanks:  number;
+  /** R3: unfilled fields marked «[يحتاج تحقق]» (owner ٤١٦), never deleted. */
+  markedBlanks:   number;
   isUnderLimit:   boolean;
   wasSummarized:  boolean;
 }
@@ -38,7 +40,6 @@ interface OptimizationReport {
 function runNajizOptimizer(text: string): { result: string; report: OptimizationReport } {
   let result = text;
   let removedEmojis = 0;
-  let removedBlanks = 0;
 
   // ── R1 & R2: Remove disallowed symbols and emojis ─────────────────────────
   // Allowed: ( , ~ ^ / @ ? # ) - * ! . :
@@ -50,22 +51,12 @@ function runNajizOptimizer(text: string): { result: string; report: Optimization
   // Remove bullet symbols not in allowed list (•, ▪, ●, ◦, ➤ etc.) → replace with *
   result = result.replace(/[•▪●◦▶➤►→]/gu, "*");
 
-  // ── R3: Remove blank placeholder fields ──────────────────────────────────
-  // Pattern: label followed by 5+ dots/underscores/dashes
-  // But preserve legal ellipsis (max 3 dots with spaces around them mid-sentence)
-  
-  // Remove entire lines with 5+ consecutive dots/underscores/dashes
-  const blankLineRegex = /^[^\n]*(?:\.{5,}|_{5,}|-{5,}|\s{5,})[^\n]*$/gm;
-  result = result.replace(blankLineRegex, (m) => {
-    // Check if it's a pure blank line (not a legal citation)
-    if (/[^\s.•*:\-_]{15,}/.test(m)) {
-      // Has substantial text — might be partial (e.g. "رقم الهوية: 1234 ويمثله نظاماً...........")
-      // Remove only the blank part and its label
-      return m.replace(/[\u0600-\u06FF\s]+:?\s*\.{5,}/g, "").replace(/_{5,}/g, "").replace(/-{5,}/g, "").trim();
-    }
-    removedBlanks++;
-    return "";
-  });
+  // ── R3: Mark blank placeholder fields (owner ٤١٦, rule v5.2) ─────────────
+  // An unfilled field («الاسم: ..........») becomes «الاسم: [يحتاج تحقق]» so the
+  // lawyer sees what is missing; it used to be deleted silently. A separator
+  // line with no words is dropped; an ellipsis («...») is kept. _blankFields.ts.
+  const blanks = markBlankFields(result);
+  result = blanks.text;
 
   // Clean up multiple empty lines
   result = result.replace(/\n{3,}/g, "\n\n");
@@ -99,7 +90,7 @@ function runNajizOptimizer(text: string): { result: string; report: Optimization
       originalLength: text.length,
       finalLength:    result.trim().length,
       removedEmojis,
-      removedBlanks,
+      markedBlanks:   blanks.marked,
       isUnderLimit:   result.trim().length <= MAX_CHARS,
       wasSummarized,
     },
@@ -223,7 +214,7 @@ function NajizOptimizerPage() {
               </span>
             </div>
             <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-              منقّح نصوص بقواعد ثابتة لمذكرات ناجز، مجاناً ودون ذكاء اصطناعي — إزالة الرموز · حذف الحقول الفارغة · ضبط الحروف. وإن بقي النص فوق الحد فلك أن تطلب اختصاره بالذكاء الاصطناعي
+              منقّح نصوص بقواعد ثابتة لمذكرات ناجز، مجاناً ودون ذكاء اصطناعي — إزالة الرموز · وسم الحقول الفارغة بـ«[يحتاج تحقق]» · ضبط الحروف. وإن بقي النص فوق الحد فلك أن تطلب اختصاره بالذكاء الاصطناعي
             </p>
           </div>
         </div>
@@ -240,7 +231,7 @@ function NajizOptimizerPage() {
         <div className={`text-[12px] space-y-0.5 ${isDark ? "text-blue-300" : "text-blue-700"}`}>
           <p className="font-bold">القواعد المُطبَّقة (Najiz_Legal_Memo_Optimizer_v5)</p>
           <p className={isDark ? "text-blue-400/70" : "text-blue-600/80"}>
-            R1 إزالة الرموز غير المسموح بها · R2 حذف الإيموجي · R3 حذف الحقول الفارغة · R4 تنسيق القوائم · R5 اختصار اختياري بالذكاء الاصطناعي إذا بقي النص فوق {MAX_CHARS_AR} حرف
+            R1 إزالة الرموز غير المسموح بها · R2 حذف الإيموجي · R3 وسم الحقول الفارغة بـ«[يحتاج تحقق]» · R4 تنسيق القوائم · R5 اختصار اختياري بالذكاء الاصطناعي إذا بقي النص فوق {MAX_CHARS_AR} حرف
           </p>
         </div>
       </motion.div>
@@ -261,7 +252,7 @@ function NajizOptimizerPage() {
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               rows={16}
-              placeholder={`الصق نص المذكرة هنا...\n\nسيقوم النظام بـ:\n• إزالة الرموز غير المسموح بها\n• حذف الحقول الفارغة (......)\n• تنسيق القوائم\n• تقليص النص إذا تجاوز ${MAX_CHARS_AR} حرف`}
+              placeholder={`الصق نص المذكرة هنا...\n\nسيقوم النظام بـ:\n• إزالة الرموز غير المسموح بها\n• وسم الحقول الفارغة (......) بـ[يحتاج تحقق]\n• تنسيق القوائم\n• تقليص النص إذا تجاوز ${MAX_CHARS_AR} حرف`}
               className={`w-full px-4 py-3 text-[13px] leading-relaxed resize-none outline-none ${isDark ? "bg-transparent text-zinc-200 placeholder:text-zinc-700" : "bg-transparent text-zinc-800 placeholder:text-slate-400"}`}
             />
             <div className={`px-4 pb-4`}>
@@ -322,9 +313,9 @@ function NajizOptimizerPage() {
                         icon: Eraser,
                       },
                       {
-                        label: "حقول فارغة",
-                        value: String(report.removedBlanks),
-                        color: report.removedBlanks > 0 ? "text-purple-500" : isDark ? "text-zinc-500" : "text-slate-400",
+                        label: "حقول تحتاج تحقق",
+                        value: String(report.markedBlanks),
+                        color: report.markedBlanks > 0 ? "text-purple-500" : isDark ? "text-zinc-500" : "text-slate-400",
                         icon: ListNumbers,
                       },
                     ].map((item, i) => {

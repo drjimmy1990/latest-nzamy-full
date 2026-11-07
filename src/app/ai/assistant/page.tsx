@@ -12,6 +12,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
 import { ASSISTANT_CONVERSATION_PRICE, ASSISTANT_MESSAGES_PER_CONVERSATION, type AssistantContext } from "@/lib/ai/tools";
+import { messagesNounAr } from "@/lib/ai/toolPointsDisplay";
 import { askAssistant } from "./_assistant-client";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -446,7 +447,7 @@ export default function AssistantPage() {
 
         {/* Footer hint */}
         <p className={`text-center text-[10px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-          {ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")} نقطة لكل محادثة من {ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")} رسائل
+          {ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")} نقطة لكل محادثة من {ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")} {messagesNounAr(ASSISTANT_MESSAGES_PER_CONVERSATION)}
           {hasChat && <> · الرسالة {Math.min(answered + 1, ASSISTANT_MESSAGES_PER_CONVERSATION).toLocaleString("ar-SA")} من {ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")}</>}
           {charged > 0 && <> · خُصمت {charged.toLocaleString("ar-SA")} نقطة</>}
           {answered >= ASSISTANT_MESSAGES_PER_CONVERSATION && (

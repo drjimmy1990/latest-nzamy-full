@@ -8,6 +8,8 @@
 - owner prices: 25-Oct pricing doc §5 plus answers ٢٨٣, ٢٨٤, ٢٩١ and ٢٩٦;
 - the model rule (٢٧٥): **Haiku for quick tasks, Sonnet for deep ones, no Opus**.
 
+> **Prices changed on 7 Nov 2026 (owner ٤٠٩–٤١٦).** The prices in the tables below are the plan's history. Today's charges, in `src/lib/ai/tools.ts` and `draftKinds.ts`: L9 المحاكي 150 (75 with exactly one target, ruling R1); L10 محلل قوة الموقف 75, and blocked for consultants like L9; L14 claim 200 (the other kinds unchanged: memos 500, appeal 1,000, cassation and petition 1,500); L12 consultation 100, letter 50; L4 المستشار 30 per conversation of 15 messages; L3 سؤال سريع 10, and an answer with no library citation is kept, labelled «إجابة عامة بلا سند مرجعي — تحقق منها» and charged (owner ٤١٣ option A; the bare no-answer sentence is still refunded); L2 منقح ناجز 15 for the AI condense (the rule-based cleanup stays free, and it now marks empty fields «[يحتاج تحقق]» instead of deleting them); L1 stays 5; L11 stays 500 (owner question ٤٤٥). 1 point = 1.00 SAR. The live list is at the top of `n8n/ai/README.md`.
+
 ---
 
 ## 0. Where we start

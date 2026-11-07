@@ -258,8 +258,8 @@ test("the gated lawyer tools are «قريباً» on the hub and unpriced; the N
     assert.ok(!pricing.includes(s), `pricing.lawyers.ts still sells ${s}`);
   }
   assert.notEqual(LAWYER_AI_TOOL_BY_PERMISSION["ai:najiz-optimizer"].comingSoon, true);
-  // The registry's price (tools.ts), not the owner's old «٥–٨» range (Wave 1 task 4).
-  assert.equal(TOOL_POINT_LABELS["ai:najiz-optimizer"], "٥");
+  // The registry's price (tools.ts): owner ٤١٦ (7 Nov 2026) set the AI condense at 15.
+  assert.equal(TOOL_POINT_LABELS["ai:najiz-optimizer"], "١٥");
 });
 
 /** `{ href, badge }` for every nav row on one line, in the given constants file. */

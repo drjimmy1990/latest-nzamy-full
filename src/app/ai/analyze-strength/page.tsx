@@ -7,13 +7,17 @@
  * case (an overall score of 68, dimension scores, risks with likelihood
  * percentages) whatever the lawyer typed, behind BetaReviewGate. Nothing read
  * the file. Now the summary, the evidence notes, what the opponent said and
- * the uploaded case files go to the job (250 points), and its answer renders
+ * the uploaded case files go to the job (owner ٤٠٩: 75 points), and its answer renders
  * in four tabs with LEVELS IN WORDS: owner ١٩٣ bans any chance of winning, so
  * there is no score, no percentage and no likelihood. Every article the
  * answer relies on is checked against the library by the platform.
  *
  * The «ذاكرة المكتب» switch had nothing behind it and is gone; the opponent's
  * memo is a real file or pasted text.
+ *
+ * Owner ٤١٤: the level reads «موقف قوي / موقف متوسط / يحتاج تدعيماً», with his
+ * disclaimer under it and in the exported text. Ruling R1: the tool is part of
+ * the simulator, so a consultant gets the Art. 18 lock (ConsultantGate).
  */
 
 import { useRef, useState } from "react";
@@ -31,15 +35,16 @@ import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import AiResultActions from "@/components/AiResultActions";
+import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import CitationCheckList, { asCitationVerdicts } from "@/components/ai/CitationCheckList";
 import { aiReadableAccept, isAiReadable, splitAiReadable } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
-import { CASE_SUMMARY_MAX, CASE_SUMMARY_MIN, WAVE4_FILES, WAVE4_PRICE } from "@/lib/ai/tools";
-import { asStrengthReport, strengthReportText, LEVEL_LABEL, RISK_LABEL, type StrengthReport } from "./_report";
+import { ANALYZE_STRENGTH_PRICE, CASE_SUMMARY_MAX, CASE_SUMMARY_MIN, WAVE4_FILES } from "@/lib/ai/tools";
+import { asStrengthReport, strengthReportText, LEVEL_LABEL, RISK_LABEL, STRENGTH_DISCLAIMER, type StrengthReport } from "./_report";
 
 type TabKey = "strength" | "opponent" | "risks" | "devil";
 const TABS: { key: TabKey; label: string; icon: typeof Gauge }[] = [
-  { key: "strength", label: "قوة الأسانيد", icon: Gauge },
+  { key: "strength", label: "تقدير الموقف", icon: Gauge },
   { key: "opponent", label: "توقعات الخصم", icon: Crosshair },
   { key: "risks", label: "المخاطر الإجرائية", icon: TrendUp },
   { key: "devil", label: "محامي الشيطان", icon: Sword },
@@ -112,11 +117,12 @@ export default function AIStrengthPage() {
     : isDark ? "border-white/[0.07] text-zinc-400 hover:border-white/20" : "border-zinc-200 text-zinc-600 hover:border-zinc-300"}`;
 
   return (
+    <ConsultantGate>
     <div className={`p-5 md:p-7 max-w-5xl mx-auto space-y-5 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
       <div>
         <h1 className={`text-xl font-bold mb-1 ${isDark ? "text-white" : "text-zinc-900"}`}>محلل الموقف والخصم</h1>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-          قوة الأسانيد · تحركات الخصم المتوقعة · المخاطر الإجرائية · محامي الشيطان — تحليل قبل الترافع، بلا نسب ولا توقّع للحكم
+          تقدير الموقف · تحركات الخصم المتوقعة · المخاطر الإجرائية · محامي الشيطان — تحليل قبل الترافع، بلا نسب ولا توقّع للحكم
         </p>
       </div>
 
@@ -199,7 +205,7 @@ export default function AIStrengthPage() {
             <button type="button" onClick={run} disabled={!canRun}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3 text-[13px] font-bold text-white shadow-md disabled:opacity-40">
               <Sparkle size={15} weight="fill" />
-              {ai.busy ? "جارٍ التحليل… (دقيقة أو أكثر)" : `حلّل الموقف الآن (${WAVE4_PRICE.toLocaleString("ar-SA")} نقطة)`}
+              {ai.busy ? "جارٍ التحليل… (دقيقة أو أكثر)" : `حلّل الموقف الآن (${ANALYZE_STRENGTH_PRICE.toLocaleString("ar-SA")} نقطة)`}
             </button>
             <p className={hint}>
               تُرسل نسخة من الملخص والمستندات إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها. تحليل مبدئي؛ القرار للمحامي.
@@ -216,6 +222,7 @@ export default function AIStrengthPage() {
           chargedPoints={ai.chargedPoints} onReset={ai.reset} />
       )}
     </div>
+    </ConsultantGate>
   );
 }
 
@@ -260,8 +267,9 @@ function StrengthReportView({ report, isDark, activeTab, setActiveTab, chargedPo
       {activeTab === "strength" && (
         <div className="space-y-4">
           <div className={`${card} p-5`}>
-            <p className={head}>قوة الأسانيد</p>
+            <p className={head}>تقدير الموقف</p>
             <p className={`mt-1 text-[18px] font-bold ${LEVEL_TONE[g.level]}`}>{LEVEL_LABEL[g.level]}</p>
+            <p className={`mt-1 text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{STRENGTH_DISCLAIMER}</p>
             <p className={`mt-2 text-[13px] leading-relaxed ${body}`}>{g.summary}</p>
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

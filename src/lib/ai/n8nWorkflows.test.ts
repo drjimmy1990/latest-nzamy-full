@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { AI_WORKFLOWS, CODE, MODEL, toWorkflow } from "../../../n8n/ai/workflows.mjs";
-import { AI_TOOLS, LIB_QUERIES_PATH } from "./tools.ts";
+import { AI_TOOLS, LIB_QUERIES_PATH, LIBRARY_NO_ANSWER } from "./tools.ts";
 
 type Item = { json: Record<string, any> };
 type Node = Record<string, any>;
@@ -158,6 +158,21 @@ test("quick-answer: the [S…] markers become the citations, each once, in order
 
   const none = runCode(def("quick-answer").parse, body, { output: "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال." })[0].json;
   assert.deepEqual(none.citations, [], "no marker: the app refunds it as ungrounded");
+});
+
+test("٤١٣: quick-answer may write a general answer with no marker; the no-answer sentence is the app's own", () => {
+  const out = runCode(def("quick-answer").build, pkg("quick-answer", { question: "س" }))[0].json;
+  assert.ok(!/[{}]/.test(out.system));
+  assert.match(out.system, /إجابة عامة مختصرة/);
+  assert.match(out.system, /بلا أي معرّف/);
+  assert.match(out.system, /لا تذكر فيها رقم مادة/);
+  // The sentence the prompt asks for is the one the app refunds (tools.ts isLibraryNoAnswer).
+  assert.ok(out.system.includes(LIBRARY_NO_ANSWER));
+  // The other library tools still answer from the texts only.
+  for (const tool of ["library-assistant", "assistant"]) {
+    const o = runCode(def(tool).build, pkg(tool, { message: "س", context: "general" }))[0].json;
+    assert.doesNotMatch(o.system, /إجابة عامة/, tool);
+  }
 });
 
 test("library-assistant: the open article is marked open, the message is the question, the reply cites", () => {

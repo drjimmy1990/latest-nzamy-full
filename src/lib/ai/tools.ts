@@ -89,6 +89,14 @@ export interface AiToolSpec {
     pinFrom?: string;
     /** The input field naming the law page the user is on: searched before the whole library (L5). */
     scopeFrom?: string;
+    /**
+     * Owner ٤١٣ option A (quick-answer only): an answer that cites none of the
+     * texts is stored with `ungrounded: true` and charged, instead of failing
+     * and refunding. `field` is the output's answer text: when it is only the
+     * model's «لا تجيب النصوص المتاحة…» sentence (isLibraryNoAnswer), the run
+     * still fails as ungrounded and is refunded — nobody pays for a refusal.
+     */
+    allowUngrounded?: { field: string };
   };
   validateInput: (raw: unknown) => InputCheck;
   /**
@@ -271,9 +279,26 @@ export const ASSISTANT_CONTEXTS = ["general", "case", "contract", "research"] as
 export type AssistantContext = (typeof ASSISTANT_CONTEXTS)[number];
 export const ASSISTANT_MESSAGE_MAX = 4000;
 export const ASSISTANT_REPLY_MAX = 8000;
-/** D3: one price buys a conversation of this many messages; the next starts a new one. */
-export const ASSISTANT_MESSAGES_PER_CONVERSATION = 5;
-export const ASSISTANT_CONVERSATION_PRICE = 100;
+/**
+ * D3: one price buys a conversation of this many messages; the next starts a
+ * new one. Owner ٤١١ (7 Nov 2026): 30 points for 15 messages (was 100 for 5).
+ */
+export const ASSISTANT_MESSAGES_PER_CONVERSATION = 15;
+export const ASSISTANT_CONVERSATION_PRICE = 30;
+
+/**
+ * The sentence the library tools' prompts tell the model to write when the
+ * texts do not answer (n8n/ai/workflows.mjs). A reply that is only this
+ * sentence is a refusal, never an answer, so it is never charged (owner ٤١٣).
+ */
+export const LIBRARY_NO_ANSWER = "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال";
+
+/** True when `text` is the no-answer sentence alone (with punctuation or a few words around it). */
+export function isLibraryNoAnswer(text: unknown): boolean {
+  if (typeof text !== "string") return false;
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.includes(LIBRARY_NO_ANSWER) && t.length <= LIBRARY_NO_ANSWER.length + 80;
+}
 
 /** L4 المستشار الذكي: a lawyer's chat, each message answered from the library. */
 function assistantInput(raw: unknown): InputCheck {
@@ -481,7 +506,14 @@ function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
 // are words and the court target describes what the court will examine, never
 // how it will rule. Cited articles go through the library check (runCore).
 
-export const WAVE4_PRICE = 250;
+/**
+ * Owner ٤٠٩ / ruling R1 (7 Nov 2026): the simulation is 150, and 75 when the
+ * lawyer picks exactly one target («جولة واحدة»); the strength analysis alone
+ * is 75. Each tool has its own constant (the old shared 250 is gone).
+ */
+export const WARGAMING_PRICE = 150;
+export const WARGAMING_SINGLE_TARGET_PRICE = 75;
+export const ANALYZE_STRENGTH_PRICE = 75;
 export const WAVE4_FILES: FileRules = { max: 6, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
 export const WARGAMING_PASTE_MIN = 50;
 export const WARGAMING_PASTE_MAX = 30_000;
@@ -491,6 +523,16 @@ export const CASE_SUMMARY_MAX = 6000;
 export const WARGAMING_ROLES = ["plaintiff", "defendant", "advisor"] as const;
 export const WARGAMING_TARGETS = ["opponent", "court", "critique", "plea"] as const;
 export type WargamingTarget = (typeof WARGAMING_TARGETS)[number];
+
+/**
+ * What a simulation of `targets` costs: 75 for exactly one known target, 150
+ * otherwise (none, unknown, or two and more). Counted the way the validator
+ * keeps them (known ids, once each), so the page and the charge agree.
+ */
+export function wargamingPrice(targets: unknown): number {
+  const known = Array.isArray(targets) ? WARGAMING_TARGETS.filter((t) => (targets as unknown[]).includes(t)) : [];
+  return known.length === 1 ? WARGAMING_SINGLE_TARGET_PRICE : WARGAMING_PRICE;
+}
 const SEVERITIES = ["high", "medium", "low"] as const;
 const optionalText = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
 
@@ -684,13 +726,15 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
 }
 /**
  * L12 الرأي الفصل: consultation and letter, the two output types built first.
- * D4: both are the 400-point tier (800 is study / memo / research at «deep» or
- * «comprehensive», still the team's order). Two tools, not one with a type
+ * Owner ٤١٠ (7 Nov 2026): the consultation is 100 points and the letter 50
+ * (both were the D4 400 tier; study / memo / research stay the team's order).
+ * Two tools, not one with a type
  * field: the consultation answers from library texts (retrieval, refunded when
  * it cites none of them); the letter is a document checked by the L8 citation
  * check, and the retrieval rule would refund almost every letter.
  */
-export const LEGAL_OPINION_PRICE = 400;
+export const LEGAL_CONSULT_PRICE = 100;
+export const LEGAL_LETTER_PRICE = 50;
 export const LEGAL_OPINION_QUESTION_MIN = 20;
 export const LEGAL_OPINION_QUESTION_MAX = 6000;
 export const LETTER_SUBJECT_MIN = 10;
@@ -1455,9 +1499,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: ["lawyer", "firm"],
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
-    // Owner ٢١٦ gave «٥–٨»; 5 is charged, and every label reads it from here
-    // (toolPointsDisplay.ts). The plan's 15 is older.
-    price: () => 5,
+    // Owner ٤١٦ (7 Nov 2026): the AI condense is 15 points; the rule-based
+    // cleanup on the page stays free. Every label reads it from here
+    // (toolPointsDisplay.ts).
+    price: () => 15,
     dailyLimit: 20,
     defaultMode: "off",
     validateInput: najizInput,
@@ -1470,10 +1515,13 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "fast",
     roles: ["lawyer", "firm"],
     consultantBlocked: false,
-    price: () => 20,
+    // Owner ٤١٢ (7 Nov 2026): 10 points.
+    price: () => 10,
     dailyLimit: 30,
     defaultMode: "off",
-    retrieval: { from: "question", laws: 8, principles: 4 },
+    // Owner ٤١٣ option A: an answer that cites none of the texts is kept,
+    // labelled and charged (runCore settleRunWith); the refusal sentence is not.
+    retrieval: { from: "question", laws: 8, principles: 4, allowUngrounded: { field: "answer" } },
     validateInput: quickAnswerInput,
     validateOutput: quickAnswerOutput,
   },
@@ -1499,7 +1547,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     roles: ["lawyer", "firm"],
     consultantBlocked: false,
-    // D3: the conversation's first message pays for up to five.
+    // D3: the conversation's first message pays for the whole conversation.
     price: (_input, ctx) => ((ctx.turn ?? 0) === 0 ? ASSISTANT_CONVERSATION_PRICE : 0),
     dailyLimit: 60,
     defaultMode: "off",
@@ -1566,7 +1614,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: ["lawyer", "firm"],
     // CONSULTANT_BLOCKED_PREFIXES has /ai/wargaming (Art. 18).
     consultantBlocked: true,
-    price: () => WAVE4_PRICE,
+    price: (input) => wargamingPrice(input.targets),
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
@@ -1581,8 +1629,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     class: "job",
     tier: "deep",
     roles: ["lawyer", "firm"],
-    consultantBlocked: false,
-    price: () => WAVE4_PRICE,
+    // Part of the simulator (ruling R1): CONSULTANT_BLOCKED_PREFIXES has /ai/analyze-strength (Art. 18).
+    consultantBlocked: true,
+    price: () => ANALYZE_STRENGTH_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
@@ -1613,7 +1662,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: LEGAL_OPINION_ROLES,
     // A consultation is advice, not pleading: /ai/legal-opinion is open to consultants (Art. 18).
     consultantBlocked: false,
-    price: () => LEGAL_OPINION_PRICE,
+    price: () => LEGAL_CONSULT_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
@@ -1628,7 +1677,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
     consultantBlocked: false,
-    price: () => LEGAL_OPINION_PRICE,
+    price: () => LEGAL_LETTER_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,

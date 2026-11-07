@@ -35,7 +35,7 @@ import { LetterWorkflow } from "./_components/LetterWorkflow";
 import { SettingsStep } from "./_components/SettingsStep";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { useAiRun } from "@/hooks/useAiRun";
-import { LEGAL_OPINION_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
+import { LEGAL_CONSULT_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
 import { AiOpinionPanel, TeamOrderDivider } from "./_components/AiOpinionPanel";
 import { consultRunInput } from "./_components/aiOpinion";
 
@@ -759,7 +759,7 @@ export default function AILegalOpinionPage() {
                   run={consultRun}
                   input={consultRunInput(LEGAL_AREA_LABELS[topicArea], description)}
                   blocked={consultBlocked}
-                  price={LEGAL_OPINION_PRICE}
+                  price={LEGAL_CONSULT_PRICE}
                   isDark={isDark} card={card}
                 />
                 <TeamOrderDivider isDark={isDark} />

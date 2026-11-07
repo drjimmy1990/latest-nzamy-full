@@ -1,8 +1,8 @@
 /**
  * assistant.test.ts — L4 المستشار الذكي through the run pipeline: a
- * conversation's first message pays 100 for up to five (D3), the earlier
- * turns are read back from ai_runs for this user only and sent as `history`,
- * a sixth message is refused, and a follow-up is searched with the question
+ * conversation's first message pays 30 for up to fifteen (owner ٤١١; was 100
+ * for five), the earlier turns are read back from ai_runs for this user only
+ * and sent as `history`, a sixteenth message is refused, and a follow-up is searched with the question
  * before it.
  *
  * RUN: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/ai/assistant.test.ts
@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { AI_COPY, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { Retrieved } from "./retrieval.ts";
-import { AI_TOOLS, ASSISTANT_CONVERSATION_PRICE, LIB_QUERIES_PATH } from "./tools.ts";
+import { AI_TOOLS, ASSISTANT_CONVERSATION_PRICE, ASSISTANT_MESSAGES_PER_CONVERSATION, LIB_QUERIES_PATH } from "./tools.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const CONV = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -63,24 +63,27 @@ const body = (over: Record<string, unknown> = {}) => ({
 });
 const startPayload = (log: FakeQuery[]) => log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>;
 
-test("the registry entry: lawyers and firms, a conversation of five, 100 on the first message only", () => {
+test("the registry entry: lawyers and firms, a conversation of fifteen, 30 on the first message only", () => {
   const t = AI_TOOLS.assistant;
   assert.deepEqual(t.roles, ["lawyer", "firm"]);
-  assert.equal(t.conversation?.maxMessages, 5);
-  assert.equal(t.price({}, { pages: null, turn: 0 }), ASSISTANT_CONVERSATION_PRICE);
+  assert.equal(t.conversation?.maxMessages, 15);
+  assert.equal(ASSISTANT_MESSAGES_PER_CONVERSATION, 15);
+  assert.equal(ASSISTANT_CONVERSATION_PRICE, 30);
+  assert.equal(t.price({}, { pages: null, turn: 0 }), 30);
   assert.equal(t.price({}, { pages: null, turn: 3 }), 0);
+  assert.equal(t.price({}, { pages: null, turn: 14 }), 0);
   assert.deepEqual(t.validateInput({ message: "سؤال" }), { ok: true, input: { context: "general", message: "سؤال" } });
   assert.equal(t.validateInput({ context: "other", message: "سؤال" }).ok, false);
 });
 
-test("a new conversation: an id is made, 100 is charged, no history is sent, the id comes back", async () => {
+test("a new conversation: an id is made, 30 is charged, no history is sent, the id comes back", async () => {
   const { client, log } = db();
   const calls: Call[] = [];
   const r = await startRunWith(client as never, deps(calls), LAWYER, body());
   assert.equal(r.status, 200);
   const cid = r.body.conversationId as string;
   assert.match(cid, /^[0-9a-f-]{36}$/);
-  assert.equal(startPayload(log).p_price, 100);
+  assert.equal(startPayload(log).p_price, 30);
   assert.equal(startPayload(log).p_conversation, cid);
   assert.ok(!log.some((q) => q.table === "ai_runs" && q.op === "select"), "nothing to read for a new conversation");
   assert.deepEqual(calls[1].body.history, []);
@@ -105,8 +108,8 @@ test("a follow-up: free, the earlier turns read for this user only and sent in o
   assert.deepEqual((calls[0].body.input as Record<string, unknown>).text, "س٣\nوما مدته؟");
 });
 
-test("the sixth message is refused before anything is charged", async () => {
-  const { client, log } = db(Array.from({ length: 5 }, (_, i) => turn(`س${i}`, `ج${i}`)));
+test("the sixteenth message is refused before anything is charged", async () => {
+  const { client, log } = db(Array.from({ length: 15 }, (_, i) => turn(`س${i}`, `ج${i}`)));
   const calls: Call[] = [];
   const r = await startRunWith(client as never, deps(calls), LAWYER, body({ conversationId: CONV }));
   assert.equal(r.status, 409);

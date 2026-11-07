@@ -79,6 +79,7 @@ import {
   FAST_TIMEOUT_MS,
   LIB_QUERIES_PATH,
   getAiTool,
+  isLibraryNoAnswer,
   type AiToolSpec,
 } from "./tools.ts";
 
@@ -295,7 +296,15 @@ export async function settleRunWith(
   const citations = mapCitations(raw.citations, ctx.sources);
   // A library tool's answer stands on the texts it was given or not at all:
   // with no citation that resolves, it is the model's memory, not the library.
-  if (ctx.spec.retrieval && citations.length === 0) return fail("ungrounded", "the answer cites none of the sources sent");
+  // Owner ٤١٣ option A: quick-answer keeps such an answer, flagged and charged
+  // (the page labels it); the bare «النصوص لا تجيب» sentence is still refunded.
+  if (ctx.spec.retrieval && citations.length === 0) {
+    const loose = ctx.spec.retrieval.allowUngrounded;
+    if (!loose || isLibraryNoAnswer(output[loose.field])) {
+      return fail("ungrounded", "the answer cites none of the sources sent");
+    }
+    output = { ...output, ungrounded: true };
+  }
   const usage = sanitizeUsage(raw.usage);
   const status = "succeeded";
   const { data, error } = await admin

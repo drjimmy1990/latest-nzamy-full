@@ -98,9 +98,10 @@ const startPayload = (log: FakeQuery[]) => log.find((q) => q.table === "ai_start
 
 // ── kinds ────────────────────────────────────────────────────────────────────
 
-test("kinds: 500 for a claim and the first-instance memos, 1,000 an appeal, 1,500 cassation and a petition", () => {
+test("kinds: 200 for a claim (owner ٤٠٩), 500 the first-instance memos, 1,000 an appeal, 1,500 cassation and a petition", () => {
   assert.deepEqual(DRAFT_KIND_IDS, ["claim", "reply", "rejoinder", "supplementary", "closing", "appeal", "cassation", "petition"]);
-  for (const k of ["claim", "reply", "rejoinder", "supplementary", "closing"]) assert.equal(draftKindPrice(k), 500, k);
+  assert.equal(draftKindPrice("claim"), 200);
+  for (const k of ["reply", "rejoinder", "supplementary", "closing"]) assert.equal(draftKindPrice(k), 500, k);
   assert.equal(draftKindPrice("appeal"), 1000);
   assert.equal(draftKindPrice("cassation"), 1500);
   assert.equal(draftKindPrice("petition"), 1500);
