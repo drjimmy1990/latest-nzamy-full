@@ -65,3 +65,18 @@ test("the law route lifts the heading before the locked preview and filters ever
   assert.match(route, /summary: stripAuditNotes\(a\.summary as string \| null, 'summary'\)/);
   assert.match(route, /fullText: stripAuditNotes\(a\.full_text as string \| null, 'fullText'\)/);
 });
+
+test("regulation names: subscribers see them as stored; others lose the instrument's number and date", async () => {
+  const { regulationRefForViewer } = await import("./_regulation-heading.ts");
+  const withInstrument = "اللائحة التنفيذية لنظام المرور (القرار الوزاري رقم ۲۲٤۹ وتاريخ ١٤٤١/٣/١٠هـ)";
+  assert.equal(regulationRefForViewer(withInstrument, false), withInstrument);
+  assert.equal(regulationRefForViewer(withInstrument, true), "اللائحة التنفيذية لنظام المرور");
+  // A plain name passes through.
+  assert.equal(regulationRefForViewer("اللائحة التنفيذية لنظام المحاماة", true), "اللائحة التنفيذية لنظام المحاماة");
+  // Article numbers are not official metadata.
+  assert.equal(regulationRefForViewer("اللائحة التنفيذية — المادتان (١) و(٢)", true), "اللائحة التنفيذية — المادتان (١) و(٢)");
+  // A number or date outside any parenthetical: blanked rather than leaked.
+  assert.equal(regulationRefForViewer("اللائحة الصادرة بالقرار الوزاري رقم 178", true), "");
+  assert.equal(regulationRefForViewer("اللائحة الصادرة في 1440/08/12هـ", true), "");
+  assert.equal(regulationRefForViewer(null, true), "");
+});

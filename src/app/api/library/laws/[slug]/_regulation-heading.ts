@@ -68,3 +68,22 @@ export function liftRegulationHeading(text: unknown, hideOfficialMeta: boolean):
   if (!body.trim()) return { text: src, heading: null };
   return { text: body, heading: regulationHeadingForViewer(line, hideOfficialMeta) };
 }
+
+/** A Hijri/Gregorian date written with slashes: «1440/08/12», «١٤٤١/٣/١٠». */
+const SLASH_DATE = /[0-9٠-٩۰-۹]{1,4}\s*\/\s*[0-9٠-٩۰-۹]{1,2}\s*\/\s*[0-9٠-٩۰-۹]{1,4}/;
+const INSTRUMENT_WORD = /رقم|وتاريخ|بتاريخ/;
+
+/**
+ * A regulation's stored name (`article_regulations.ref`) as a viewer may see
+ * it. Subscribers get it unchanged. For the viewers whose official metadata
+ * is withheld the «(… رقم … وتاريخ …)» part goes; if an instrument number or
+ * a date is still left, the name is blanked (""). Article numbers such as
+ * «المادتان (١) و(٢)» are not official metadata and stay.
+ */
+export function regulationRefForViewer(ref: unknown, hideOfficialMeta: boolean): string {
+  const src = typeof ref === "string" ? ref : "";
+  if (!hideOfficialMeta) return src;
+  const cleaned = src.replace(INSTRUMENT_PARENTHETICAL, "").replace(/[ \t]{2,}/g, " ").trim();
+  if (INSTRUMENT_WORD.test(cleaned) || SLASH_DATE.test(cleaned)) return "";
+  return cleaned;
+}

@@ -14,7 +14,7 @@ import { latestUpdateDetail, lawReaderExtras, regulationReaderExtras } from '@/l
 import { latestLegislativeEvent } from '@/lib/library/legislativeEvent';
 import { lawArticleCounts } from '@/lib/library/lawCardFields';
 import { stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
-import { liftRegulationHeading } from './_regulation-heading';
+import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -616,14 +616,17 @@ function formatArticleWithPaywall(
       const sorted = [...regRows].sort((a, b) =>
         String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999'))
       );
+      // Regulation names can carry the instrument's number and date: cleaned
+      // for the viewers whose official metadata is withheld (owner ٤٢٤).
+      const refFor = (ref: unknown) => regulationRefForViewer(ref, !showOfficialMeta);
       result.regulations = sorted.map((r) => ({
-        ref: r.ref || '',
+        ref: refFor(r.ref),
         regNum: r.reg_num ?? null,
         text: r.text || '',
         status: articleStatusForDetail(r.status),
         isSecondaryDisplay: r.is_secondary_display === true,
       }));
-      const distinctRefs = Array.from(new Set(sorted.map((r) => String(r.ref || '')).filter(Boolean)));
+      const distinctRefs = Array.from(new Set(sorted.map((r) => refFor(r.ref)).filter(Boolean)));
       result.executiveReg = {
         ref: distinctRefs.join(', '),
         text: sorted.map((r) => String(r.text || '')).join('\n\n'),
@@ -631,7 +634,7 @@ function formatArticleWithPaywall(
       if (lifted.heading) result.regulationHeading = lifted.heading;
     } else if (article.executive_reg_text) {
       result.executiveReg = {
-        ref: article.executive_reg_ref || '',
+        ref: regulationRefForViewer(article.executive_reg_ref, !showOfficialMeta),
         text: article.executive_reg_text,
       };
     }
