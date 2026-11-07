@@ -5996,3 +5996,25 @@ begin
   raise notice '_verify: 20261107_30 OK — cassation 30 days and cassation_urgent 15 days, both citing المادة (١٩٤)';
 end $$;
 -- <<< verify:deadline_cassation_urgent_194
+
+-- >>> verify:founder_rejoinder_410
+-- 2026-11-07 — 20261107_60_founder_rejoinder_410.sql (owner ٤١٠; BEFORE the
+-- deploy): a founder drafting work also pays for the rejoinder (التعقيب).
+-- Read-only, safe to repeat. RAISES when ai_start_run_with_credit exists but
+-- does not list 'rejoinder'. No function (20261101_10 not applied): one NOTICE.
+do $$
+declare d text;
+begin
+  select pg_get_functiondef(p.oid) into d
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'ai_start_run_with_credit'
+   limit 1;
+  if d is null then
+    raise notice '_verify: 20261107_60 — public.ai_start_run_with_credit is missing (20261101_10 not applied): nothing to check'; return;
+  end if;
+  if d not like '%''rejoinder''%' then
+    raise exception '_verify: 20261107_60 — a founder drafting work does not pay for the rejoinder (owner ٤١٠): run 20261107_60_founder_rejoinder_410.sql (BEFORE the deploy; again after any re-run of 20261101_10)';
+  end if;
+  raise notice '_verify: 20261107_60 OK — a founder drafting work pays for the rejoinder';
+end $$;
+-- <<< verify:founder_rejoinder_410

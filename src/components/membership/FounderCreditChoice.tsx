@@ -7,8 +7,8 @@ import { founderCreditChoiceView, type FounderCreditKind } from "@/lib/membershi
  * FounderCreditChoice — «استخدم رصيد باقة المؤسس» on the four AI tools (P3,
  * Task 7). It reads GET /api/v1/membership/founder once and renders nothing
  * while loading, on any error, for a non-member, when nothing of this credit
- * remains, or when the run would not spend it (`eligible` false: the
- * drafter's rejoinder). Otherwise a checkbox: a drafting work is checked by
+ * remains, or when the run would not spend it (`eligible` false: a
+ * drafter turn after the first). Otherwise a checkbox: a drafting work is checked by
  * default, the one shared independent output is not.
  *
  * The page owns `value` (initially false) and sends `useCredit: value`. The

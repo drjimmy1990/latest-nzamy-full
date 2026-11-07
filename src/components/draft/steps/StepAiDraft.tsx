@@ -84,7 +84,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
   // The analysis is fixed while the draft is written and once it exists: the
   // work is one analysis and one draft (a third run is refused).
   const locked = writing.busy || !!pleading;
-  // The analysis is the work's first turn; a rejoinder spends no work (R3).
+  // The analysis is the work's first turn; every kind spends a work (owner ٤١٠).
   const creditEligible = creditKindForRun("legal-drafter", analysisInput(facts), 0) === "drafting_work";
   // Before the analysis settles, the choice; after it, what the server charged.
   const paidByCredit = analysis.phase === "done" || analysis.phase === "review" ? analysis.creditUsed : useCredit && creditEligible;

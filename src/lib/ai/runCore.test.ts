@@ -566,7 +566,7 @@ test("founder: the drafter's second turn never spends a second work — plain ai
   assert.equal(r.body.creditUsed, false);
 });
 
-test("founder: useCredit with an ineligible tool or drafter kind falls back to the points path", async () => {
+test("founder: useCredit with an ineligible tool falls back to the points path; the rejoinder spends a work", async () => {
   {
     const { client, log } = creditDb();
     const r = await startRunWith(client as never, deps(okReply()), LAWYER, body({ useCredit: true }));
@@ -576,12 +576,12 @@ test("founder: useCredit with an ineligible tool or drafter kind falls back to t
     assert.equal(r.body.creditUsed, false);
   }
   {
-    // rejoinder is not covered until the owner answers ٣٩٩.
+    // Owner ٤١٠ (20261107_60): the rejoinder is covered — a work, not 500 points.
     const { client, log } = creditDb();
     const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "rejoinder" })));
     assert.equal(r.status, 202);
-    assert.deepEqual(rpcs(log), ["ai_start_run"]);
-    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 500);
+    assert.deepEqual(rpcs(log), ["ai_start_run_with_credit"]);
+    assert.equal(payloadOf(log, "ai_start_run_with_credit")!.p_credit_kind, "drafting_work");
   }
   {
     // Without useCredit an eligible run is charged points as before.
