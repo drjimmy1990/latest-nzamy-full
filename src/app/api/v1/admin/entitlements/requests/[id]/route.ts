@@ -6,6 +6,8 @@ import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 import { libraryEndsAtAr, resolveLibraryRequestGrant } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
+import { libraryRequestApprovalDecision } from "@/lib/library/libraryRequestApproval";
+import type { StaffRole } from "@/lib/auth/staffRoles";
 import { recordNotification } from "@/lib/notify";
 
 /**
@@ -125,6 +127,7 @@ export async function PATCH(
         requestedRef: reqRow.requested_ref,
         requesterId,
         adminId: gate.userId,
+        role: gate.role,
         durationDays: body.durationDays,
         nowIso,
       });
@@ -212,10 +215,22 @@ async function approveLibraryRequest(input: {
   requestedRef: unknown;
   requesterId: string;
   adminId: string;
+  role: StaffRole;
   durationDays: unknown;
   nowIso: string;
 }) {
-  const { admin, id, requestedRef, requesterId, adminId, durationDays, nowIso } = input;
+  const { admin, id, requestedRef, requesterId, adminId, role, durationDays, nowIso } = input;
+
+  // Owner ٤٢٧: a free library grant is the admin's alone. Operations may
+  // decide requests (entitlements.decide), but approving a library request
+  // grants the library, so it needs a paid order or entitlements.grant. No
+  // request is tied to an order today (libraryRequestApproval.ts), so it is
+  // unpaid and only an admin may approve it; refused before anything is read
+  // or written.
+  const approval = libraryRequestApprovalDecision({ role, paidOrder: false });
+  if (!approval.allowed) {
+    return NextResponse.json({ error: approval.error, code: approval.code }, { status: approval.status });
+  }
 
   const plan = resolveLibraryRequestGrant(requestedRef, durationDays);
   if (!plan.ok) {

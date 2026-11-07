@@ -29,8 +29,8 @@ const API = path.resolve(HERE, "..", "..", "app", "api");
 test("the owner's numbers (note ١٣): 220 for a person, 400 for an office / company member", () => {
   assert.equal(LIBRARY_READ_QUOTA.dailyDocs, 220);
   assert.equal(LIBRARY_READ_QUOTA.memberDailyDocs, 400);
-  // The two numbers the note does not give stay generous: never below the daily cap's pace.
-  assert.ok(LIBRARY_READ_QUOTA.hourlyDocs >= 60);
+  // Owner answer ٤٢٦ (2026-11-07): 50 distinct documents per hour.
+  assert.equal(LIBRARY_READ_QUOTA.hourlyDocs, 50);
   assert.ok(LIBRARY_READ_QUOTA.lockAfterRefused >= 20);
 });
 

@@ -95,11 +95,16 @@ export const MONITOR_SETTINGS_FIELDS: readonly SettingsField[] = [
 
 export type MonitorSettings = Record<string, number | boolean | string>;
 
-/** The seeded values (20261031_10; autoLockHours 20261103_10) — what the page shows before the migration runs. */
+/**
+ * The seeded values (20261031_10; autoLockHours 20261103_10) — what the page
+ * shows before the migration runs. hourlyDocs 50, ruleHourRequests 240 and
+ * ruleHourSearches 60 are the owner's answer ٤٢٦ (20261107_20); the two hour
+ * rules stay admin alerts, not refusals, this batch.
+ */
 export const MONITOR_SETTINGS_DEFAULTS: Readonly<MonitorSettings> = Object.freeze({
-  dailyDocs: 220, memberDailyDocs: 400, hourlyDocs: 120, lockAfterRefused: 60, autoLockHours: 24,
-  ruleHourRequestsOn: true, ruleHourRequests: 600,
-  ruleHourSearchesOn: true, ruleHourSearches: 200,
+  dailyDocs: 220, memberDailyDocs: 400, hourlyDocs: 50, lockAfterRefused: 60, autoLockHours: 24,
+  ruleHourRequestsOn: true, ruleHourRequests: 240,
+  ruleHourSearchesOn: true, ruleHourSearches: 60,
   ruleWeekDocsOn: true, ruleWeekDocs: 600,
   ruleSustainedOn: true, ruleSustainedHours: 6, ruleSustainedMinDocs: 30,
   ruleNightOn: false, ruleNightDocs: 60,

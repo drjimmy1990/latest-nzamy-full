@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock, Prohibit, Info
+  ListBullets, X, Lock, Prohibit, Info, Clock
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -44,6 +44,8 @@ import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } fr
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
+import LibrarySecurityLockNotice from "@/components/library/LibrarySecurityLockNotice";
+import { readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 
@@ -156,7 +158,10 @@ function LawSystemPageContent() {
   // "not-found" = the API answered 404; "failed" = any other failure (a 500
   // from a failed query, a network error). They get different copy: telling a
   // reader a law does not exist when we merely failed to load it is wrong.
-  const [loadError, setLoadError] = useState<false | "not-found" | "failed">(false);
+  // "refused" = the library quota said no (owner 2026-11-07): 423 → the lock
+  // dialog, 429 → the calm hourly / daily / rate message (readerRefusal.ts).
+  const [loadError, setLoadError] = useState<false | "not-found" | "failed" | "refused">(false);
+  const [readerRefusal, setReaderRefusal] = useState<ReaderRefusal | null>(null);
   const [loading, setLoading] = useState(true);
   const [jumpQuery,  setJumpQuery]  = useState("");  // بحث سريع للمواد
   const [fontSize,        setFontSize]        = useState<"normal"|"large"|"xlarge">("normal"); // حجم الخط
@@ -241,6 +246,7 @@ function LawSystemPageContent() {
       // Both are gone: every law now takes the same API path.
       try {
         setLoadError(false);
+        setReaderRefusal(null);
         setLoading(true);
         // Reset to the static entry for THIS slug first, so a law that fails
         // to load never shows the previous law's metadata.
@@ -253,6 +259,17 @@ function LawSystemPageContent() {
         if (cancelled) return;
         if (!res.ok) {
           console.warn(`[LawReader] Law "${slug}" failed to load from the API (${res.status})`);
+          if (res.status === 423 || res.status === 429) {
+            const refusalBody: unknown = await res.json().catch(() => null);
+            if (cancelled) return;
+            const refusal = readerRefusalFrom(res.status, refusalBody, Date.now());
+            if (refusal) {
+              setReaderRefusal(refusal);
+              setLoadError("refused");
+              setLoading(false);
+              return;
+            }
+          }
           setLoadError(res.status === 404 ? "not-found" : "failed");
           setLoading(false);
           return;
@@ -768,6 +785,39 @@ function LawSystemPageContent() {
   // window, so this is a belt-and-braces guard — but it is also what narrows the
   // type for the ~24 `law.x` reads below now that the state starts empty.
   if (!law && !loadError) return null;
+
+  // Owner 2026-11-07: a lock that started while reading → the same dialog the
+  // library guard shows; a reading cap → a calm notice, not «تعذّر التحميل».
+  if (loadError === "refused" && readerRefusal) {
+    return (
+      <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir="rtl">
+        <Navbar />
+        <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 pt-28 pb-24">
+          {readerRefusal.kind === "lock" ? (
+            <LibrarySecurityLockNotice lock={readerRefusal.lock} />
+          ) : (
+            <div className="flex min-h-[50vh] items-center justify-center">
+              <div
+                role="status"
+                className={`flex flex-col items-center gap-4 text-center max-w-md p-6 rounded-3xl border ${
+                  isDark ? "border-amber-500/20 bg-amber-500/10" : "border-amber-200 bg-amber-50"
+                }`}
+              >
+                <Clock size={40} className={isDark ? "text-amber-300" : "text-amber-700"} />
+                <p className={`text-sm leading-relaxed font-bold ${isDark ? "text-amber-200" : "text-amber-900"}`}>
+                  {readerRefusal.messageAr}
+                </p>
+                <Link href="/laws" className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
+                  العودة إلى المكتبة القانونية
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   if (loadError || !law) {
     return (
