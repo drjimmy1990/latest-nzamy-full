@@ -6,6 +6,7 @@ import {
   bookEntry,
   bookPriceText,
   offeredBillings,
+  topupPointsTextById,
 } from "../../lib/pricing/priceBook";
 
 /**
@@ -116,14 +117,14 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "١٠٠ نقطة · صالحة ٣ أشهر", target: "شحن نقاط للأفراد",
       cta: "اشحن الآن", ctaHref: "/register/client?type=individual&plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
-      features: { ai: ["١٠٠ نقطة", "١ ر.س للنقطة", "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-100", "ar"), "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "شحن ٢٥٠", badge: null,
       periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "٢٥٠ نقطة · صالحة ٣ أشهر", target: "شحن نقاط للأفراد",
       cta: "اشحن الآن", ctaHref: "/register/client?type=individual&plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
-      features: { ai: ["٢٥٠ نقطة", "١ ر.س للنقطة", "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-250", "ar"), "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
     },
     {
       id: "ind-protection", name: "عضوية الحماية القانونية", badge: null, comingSoon: true,
@@ -198,14 +199,14 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "100 points · valid for 3 months", target: "Points for individuals",
       cta: "Top up", ctaHref: "/register/client?type=individual&plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
-      features: { ai: ["100 points", "SAR 1 per point", "For the individuals' AI tools priced in points"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-100", "en"), "For the individuals' AI tools priced in points"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "Top-up 250", badge: null,
       periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "250 points · valid for 3 months", target: "Points for individuals",
       cta: "Top up", ctaHref: "/register/client?type=individual&plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
-      features: { ai: ["250 points", "SAR 1 per point", "For the individuals' AI tools priced in points"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-250", "en"), "For the individuals' AI tools priced in points"], platform: [], support: [] },
     },
     {
       id: "ind-protection", name: "Legal Protection Membership", badge: null, comingSoon: true,

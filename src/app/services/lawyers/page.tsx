@@ -584,7 +584,7 @@ export default function LawyersPage() {
                   </h2>
                   <p className="mt-4 text-sm leading-relaxed text-white/70">
                     نظامي ليس مجرد أداة AI عامة — بل نظام متخصص يعتمد التشريعات
-                    واللوائح السعودية الحديثة مصدراً، ومكتبته محدّثة باستمرار.
+                    واللوائح السعودية الحديثة مصدراً.
                   </p>
                   <div className="mt-8 grid grid-cols-2 gap-4">
                     {[

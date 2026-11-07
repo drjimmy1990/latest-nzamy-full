@@ -13,6 +13,7 @@ import {
   displayCycle,
   isBookCard,
   offeredCycles,
+  shownCards,
   type CardPriceFields,
   type LaunchPriceMap,
 } from "./cardPrice.ts";
@@ -218,4 +219,24 @@ test("UX14: every book card's total equals catalog.quote's total, with and witho
       }
     }
   }
+});
+
+test("owner ٤٢٠: the «قريباً» protection card survives every cycle; an unpriced ordinary card does not", () => {
+  // The card as pricing.individuals.ts declares it (that file imports React
+  // icons, which node:test cannot load; ownerAnswers20261107.plans.test.ts
+  // holds the source to these fields).
+  const protection = { id: "ind-protection", comingSoon: true, periodMonthly: "", periodYearly: "" };
+  const unpriced = { id: "not-in-book", periodMonthly: "", periodYearly: "" };
+  const smart = { id: "ind-ai", periodMonthly: "ر.س / شهر", periodYearly: "ر.س / سنة" };
+  for (const cycle of ["yearly", "monthly"] as const) {
+    const ids = shownCards([smart, protection, unpriced], cycle, "ar").map((c) => c.id);
+    const smartSold = cardPrice(smart, cycle, "ar") !== null;
+    assert.deepEqual(ids, smartSold ? ["ind-ai", "ind-protection"] : ["ind-protection"], cycle);
+    if (cycle === "yearly") assert.ok(smartSold, "the smart plan sells yearly");
+  }
+  assert.equal(cardPrice(protection, "yearly", "ar"), null, "it still shows no price");
+  const src = readFileSync(new URL("../../components/pricing/PricingCards.tsx", import.meta.url), "utf8");
+  assert.match(src, /const shownPlans = shownCards\(planList, billing, isAr \? "ar" : "en"\);/);
+  const ind = readFileSync(new URL("../../constants/pricing/pricing.individuals.ts", import.meta.url), "utf8");
+  assert.equal((ind.match(/id: "ind-protection", name: "[^"]+", badge: null, comingSoon: true,\s*periodMonthly: "", periodYearly: "",/g) ?? []).length, 2);
 });

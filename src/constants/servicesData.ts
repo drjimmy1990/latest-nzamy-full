@@ -28,7 +28,8 @@ export const services = {
       // q327: no «٩٩ ر.س» — nothing charged it; each consultation's price is
       // in the services list.
       price: "حسب نوع الاستشارة",
-      duration: "٣٠ دقيقة",
+      // owner ٤٣٣: voice 20, video 30, in person 45 minutes
+      duration: "٢٠–٤٥ دقيقة",
       color: "bg-royal/5 text-royal",
       borderHover: "hover:border-royal/20",
       features: ["محامون موثّقون على المنصة", "تقرير مكتوب بعد الاستشارة"],

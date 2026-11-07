@@ -43,7 +43,8 @@ test("«المدفوعات» shows the member's real cards, latest orders and po
   assert.match(payments, /\{cardTitleAr\(card\)\}/);
   assert.match(payments, /<DeleteCardButton id=\{card\.id\} onDeleted=\{reload\} \/>/);
   assert.match(payments, /orderStatusAr\(order\.status\)/);
-  assert.match(payments, /billingItemAr\(order\.item_id\)/);
+  // Task F fix round 1: a top-up names the points its lot credited
+  assert.match(payments, /billingOrderItemAr\(order\)/);
   assert.match(payments, /formatHalalas\(order\.total_halalas\)/);
   assert.match(payments, /hasReceipt\(order\) \? \(\s*<Link\s+href=\{`\/dashboard\/billing\/receipt\/\$\{encodeURIComponent\(order\.id\)\}`\}/);
   // the error state comes before any row is rendered: nothing is invented on failure

@@ -309,8 +309,12 @@ test("I6: the companies and government comparison tables match the trimmed cards
   for (const id of ids) {
     const block = arCards.split(`{ id: "${id}"`)[1].split("{ id: ")[0];
     const card = block.match(/"مراجعة عقود محامٍ: ([^"]+)"/)?.[1]
-      ?? (block.includes("مراجعة عقود + صياغة: حسب العقد") ? "حسب العقد" : "❌");
-    assert.match(reviewRow, new RegExp(`"${id}": "${card}"`), `${id}: the table disagrees with the card («${card}»)`);
+      ?? block.match(/"مراجعة عقود \+ صياغة: ([^"]+)"/)?.[1] ?? "❌";
+    // Owner ٤٣٧ (Task F fix round 1): no quota is tracked, so a card's count
+    // carries «— قريباً» and the table cell reads «قريباً»; ❌ stays ❌.
+    const cell = card === "❌" ? "❌" : "قريباً";
+    if (card !== "❌") assert.match(card, /قريباً$/, `${id}: the card's count is not marked «قريباً»`);
+    assert.match(reviewRow, new RegExp(`"${id}": "${cell}"`), `${id}: the table disagrees with the card («${card}»)`);
   }
 });
 

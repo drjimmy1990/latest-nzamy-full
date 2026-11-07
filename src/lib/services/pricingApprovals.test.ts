@@ -65,7 +65,10 @@ test("the lawyer tab is the subscription (no points) plus the five professional 
   assert.doesNotMatch(lawyers, /id: "topup-(100|250)"/, "٣٠٢: the 100 / 250 packs are not on the lawyers' tab");
   for (const [id, points] of [["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"]]) {
     assert.match(individuals, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points} · صالحة ٣ أشهر"`), id);
+    // Task F fix round 1: the card's points line is read from the book (R2), in both languages
+    for (const lang of ["ar", "en"]) assert.match(individuals, new RegExp(`ai: \\[topupPointsTextById\\("${id}", "${lang}"\\)`), `${id} ${lang}`);
   }
+  assert.doesNotMatch(individuals, /ر\.س للنقطة|per point/, "R2: no per-point price line on the individuals' top-ups either");
   assert.doesNotMatch(lawyers, /lawyer-(basic|advanced|elite|royal)|مشمولة مجاناً|مذكرة مجانية|مذكرة ثانية|أول ٥٠٠/);
   assert.doesNotMatch(lawyers, /محفظة|رصيد نقدي/);
 });

@@ -41,7 +41,9 @@
 --   3. coupons 'NZAMY50' (owner ٤٣٦): excluded_kinds {topup} →
 --      {topup, plan, library} — single services only (allowed by
 --      coupons_excluded_kinds_check, 20261026_20). min_order_amount stays 200
---      (owner question ٤٥٢ on ≥ / > is open). Stamp: metadata.owner_436.
+--      (owner question ٤٥٢ on ≥ / > is open). metadata.rules (the line the
+--      admin coupons page shows, written by 20261026_20) is rewritten to the
+--      new rule. Stamp: metadata.owner_436.
 --      NOTE: no service is sold online yet, so NZAMY50 has no online use until
 --      single services are; the code already refused it on a top-up and the
 --      founder membership.
@@ -57,7 +59,7 @@
 -- ROLLBACK (by hand, only if the owner reverses ٤٢٠ / ٤٣٣ / ٤٣٦):
 --   update public.subscription_plans set name_ar = 'التأمين القانوني', name_en = 'Legal Insurance' where id = 'ind-litigation';
 --   update public.admin_pricing_catalog set enabled = true, metadata = metadata - 'adminHidden' - 'owner_433' where service_id = 'video-full';
---   update public.admin_pricing_catalog set enabled = false where service_id = 'voice-call';
+--   update public.admin_pricing_catalog set enabled = false, metadata = metadata || '{"adminHidden":true}' where service_id = 'voice-call';
 --   (prices: 20260518's values — written-opinion 250, video-short 500, in-person 700)
 --   update public.coupons set excluded_kinds = '{topup}', metadata = metadata - 'owner_436' where code = 'NZAMY50';
 -- =============================================================================
@@ -120,7 +122,9 @@ update public.admin_pricing_catalog
 update public.coupons
    set excluded_kinds = '{topup,plan,library}'::text[],
        metadata       = coalesce(metadata, '{}'::jsonb)
-                        || jsonb_build_object('owner_436', '20261107_50 — single services only (plan, library and top-up excluded)'),
+                        || jsonb_build_object(
+                             'rules', '20261107_50 — owner ٤٣٦: 50 SAR off a single-service order of 200 SAR net or more; never a plan, the library, a top-up or the founder membership',
+                             'owner_436', '20261107_50 — single services only (plan, library and top-up excluded)'),
        updated_at     = now()
  where code = 'NZAMY50'
    and coalesce(metadata->>'owner_436', '') = '';

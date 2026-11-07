@@ -59,6 +59,43 @@ test("٤٣٧: every corporate card carries «بعض المزايا قريباً�
   assert.match(src("components/pricing/PricingCards.tsx"), /plan\.someFeaturesSoon &&/);
 });
 
+test("٤٣٧ fix round 1: no card desc, quota line or comparison cell sells an unbuilt or untracked corporate feature", () => {
+  // Quotas nothing tracks (consultation hours, contract reviews, litigation
+  // cases, fee discounts, request counts, a department's annual points,
+  // contract-expiry alerts) and the unbuilt modules.
+  const untracked = /^(استشار|مراجعة عقود|ترافع|خصم|طلبات|تنبيهات انتهاء العقود)|نقطة سنوية|^(Lawyer consultation|Consultations|Lawyer contract review|Contract review|Litigation|Requests|Legal requests|Contract expiry alerts)|% off additional|annual points/;
+  const module = /Kanban|حوكمة|انتداب|HR|API|SSO|سوق|حدود صرف|تقارير|تنبيهات العقود|[Gg]overnance|[Ss]econdment|[Mm]arketplace|[Ss]pending limits|reports|contract alerts|[Pp]oints|نقاط|محفظة|[Ww]allet/;
+  for (const rel of ["constants/pricing/pricing.companies.ts", "constants/pricing/pricing.companies.legaldept.ts"]) {
+    const text = src(rel);
+    const segments = [...text.matchAll(/(?:ai|platform|support): \[([\s\S]*?)\]/g)]
+      .flatMap((m) => [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]))
+      .flatMap((f) => f.split(" · "));
+    for (const seg of segments) {
+      if (untracked.test(seg) && !seg.includes("❌")) assert.match(seg, /قريباً|coming soon/, `${rel}: «${seg}»`);
+    }
+    const descs = [...text.matchAll(/desc: "([^"]*)"/g)].map((m) => m[1]);
+    assert.equal(descs.length, 18, rel);
+    for (const d of descs) {
+      if (!module.test(d)) continue;
+      // every unbuilt module named in a desc sits after «قريباً:» / "coming soon:"
+      const soonAt = d.search(/قريباً:|[Cc]oming soon:/);
+      assert.ok(soonAt >= 0, `${rel}: desc «${d}»`);
+      const before = d.slice(0, soonAt);
+      assert.doesNotMatch(before, module, `${rel}: desc «${d}» names an unbuilt module before «قريباً»`);
+    }
+  }
+  const table = src("constants/pricing/pricing.companies.comparison.ts");
+  for (const feature of ["مراجعة عقود محامٍ", "استشارات محامٍ متخصص", "الترافع (قضايا وجلسات)", "لوحة Kanban للمهام",
+    "Lawyer Contract Review", "Specialist Lawyer Consultations", "Litigation (Cases & Hearings)", "Kanban Task Board"]) {
+    const at = table.indexOf(`feature: "${feature}",`);
+    assert.ok(at > 0, feature);
+    const row = table.slice(at, table.indexOf("},", at));
+    for (const [, cell] of row.matchAll(/"(?:biz|dept)-[a-z]+-[a-z]+": "([^"]*)"/g)) {
+      assert.ok(["قريباً", "Soon", "❌", "فريق داخلي", "Internal Team"].includes(cell), `${feature}: «${cell}»`);
+    }
+  }
+});
+
 test("٤٣٠: the fee statement says «بيان أتعاب — ليست فاتورة ضريبية إلكترونية» on the issue modal and above the list", () => {
   const page = src("app/dashboard/lawyer/finance/page.tsx");
   assert.match(page, /const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";/);
@@ -109,4 +146,21 @@ test("20261107_50: one idempotent file — the plan name, the consultation rows,
   const tail = body.slice(body.lastIndexOf("commit;"));
   assert.equal((tail.match(/;/g) ?? []).length, 2, "commit; then exactly one SELECT");
   assert.match(tail, /select x\.check_name, x\.key, x\.in_table, x\.value, x\.ok/);
+});
+
+test("Task F fix round 1: 20261107_50 rewrites NZAMY50's rules line; _verify NOTICEs an admin re-offer of video-full; the voice-call rollback hides it", () => {
+  const sql = src("../supabase/migrations/20261107_50_owner_answers_prices.sql").replace(/\r\n/g, "\n");
+  const coupon = sql.slice(sql.indexOf("update public.coupons"), sql.indexOf("commit;"));
+  assert.match(coupon, /'rules', '20261107_50 — owner ٤٣٦: 50 SAR off a single-service order of 200 SAR net or more; never a plan, the library, a top-up or the founder membership'/);
+  assert.match(coupon, /'owner_436', /);
+  assert.ok(sql.includes(`--   update public.admin_pricing_catalog set enabled = false, metadata = metadata || '{"adminHidden":true}' where service_id = 'voice-call';`));
+  const verify = src("../supabase/migrations/_verify.sql").replace(/\r\n/g, "\n");
+  const block = verify.slice(verify.indexOf("-- >>> verify:owner_answers_prices"), verify.indexOf("-- <<< verify:owner_answers_prices"));
+  const video = block.slice(block.indexOf("where service_id = 'video-full'"), block.indexOf("select string_agg"));
+  // the stamped (owner_433) branch comes first and only NOTICEs; the unstamped one RAISEs
+  const stamped = video.indexOf("and coalesce(r.metadata->>'owner_433', '') <> '' then");
+  assert.ok(stamped > 0, "a stamped branch exists");
+  assert.match(video.slice(stamped, video.indexOf("elsif")), /raise notice '_verify: 20261107_50 — video-full was offered again on the admin pricing page/);
+  assert.doesNotMatch(video.slice(stamped, video.indexOf("elsif")), /raise exception/);
+  assert.match(video.slice(video.indexOf("elsif")), /raise exception '_verify: 20261107_50 — video-full is still offered/);
 });

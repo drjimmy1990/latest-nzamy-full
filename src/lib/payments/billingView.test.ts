@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { receiptView, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr, billingItemAr, orderBillingAr } from "./billingView.ts";
-import { buildCatalog, PAYABLE_ITEMS } from "./catalog.ts";
+import { receiptView, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr, billingItemAr, billingOrderItemAr, orderBillingAr } from "./billingView.ts";
+import { buildCatalog, orderLabelWithPointsAr, PAYABLE_ITEMS } from "./catalog.ts";
 import { PRICE_BOOK } from "../pricing/priceBook.ts";
 
 const order = { id: "order-1", item_id: "lawyer-pro", net_halalas: 39900, vat_halalas: 5985, total_halalas: 45885, currency: "SAR", receipt_number: "NZ-2026-000001", paid_at: "2026-10-22T10:00:00Z", status: "paid", refunded_halalas: 0, last_four: "1111" };
@@ -131,4 +131,23 @@ test("R3 (owner ٤٢٠): a receipt of the retired 399 plan keeps «التأمي�
   assert.equal(receiptView({ ...order, item_id: "ind-litigation" }, null)?.item, "التأمين القانوني");
   // an item without a receipt name prints its label as before
   assert.equal(billingItemAr("ind-ai"), PAYABLE_ITEMS["ind-ai"].labelAr);
+});
+
+test("Task F fix round 1: a top-up bought before owner ٤٢٢ prints the points its lot credited, not today's grant", () => {
+  // topup-1000 granted 1,250 before ٤٢٢ and 1,500 now (priceBook.ts).
+  assert.equal(PRICE_BOOK["topup-1000"].points, 1500);
+  const old = { ...order, item_id: "topup-1000", net_halalas: 100000, vat_halalas: 15000, total_halalas: 115000, credited_points: 1250 };
+  assert.equal(orderLabelWithPointsAr("topup-1000", 1250), "شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة (منها ٢٥٠ نقطة مكافأة)");
+  assert.equal(receiptView(old, company)?.item, "شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة (منها ٢٥٠ نقطة مكافأة)");
+  assert.equal(billingOrderItemAr(old), "شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة (منها ٢٥٠ نقطة مكافأة)");
+  // no bonus credited: the bracket form, as the book prints a bonus-less top-up
+  assert.equal(orderLabelWithPointsAr("topup-1000", 1000), "شحن ١٬٠٠٠ (١٬٠٠٠ نقطة)");
+  // no lot read, or a value that is not a positive whole number: the book's label
+  for (const bad of [undefined, null, 0, -5, 12.5, "1250", Number.NaN]) {
+    assert.equal(orderLabelWithPointsAr("topup-1000", bad), PRICE_BOOK["topup-1000"].labelAr, String(bad));
+  }
+  assert.equal(billingOrderItemAr({ item_id: "topup-1000" }), PRICE_BOOK["topup-1000"].labelAr);
+  // anything but a top-up ignores a points count
+  assert.equal(orderLabelWithPointsAr("lawyer-pro", 1250), billingItemAr("lawyer-pro"));
+  assert.equal(billingOrderItemAr({ item_id: "no-such-item", credited_points: 5 }), "عملية شراء");
 });

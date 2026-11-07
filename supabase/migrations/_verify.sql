@@ -5806,7 +5806,8 @@ end $$;
 -- has not run (or a re-run of 20261022_10 / the 20260518 seed undid it): the
 -- old plan name, a video-full row still offered, no voice-call row, NZAMY50
 -- still open to plans. A price an admin changed since is a NOTICE, never an
--- error. A missing table: one NOTICE, passes.
+-- error; so is a video-full row an admin offered again after the file ran
+-- (stamped owner_433). A missing table: one NOTICE, passes.
 do $$
 declare r record; p text;
 begin
@@ -5823,7 +5824,11 @@ begin
       raise exception '_verify: 20261107_50 — no voice-call row (owner ٤٣٣): run 20261107_50 (AFTER the deploy)';
     end if;
     select enabled, metadata into r from public.admin_pricing_catalog where service_id = 'video-full';
-    if found and not (r.enabled = false and coalesce(r.metadata->>'adminHidden', '') = 'true') then
+    if found and not (r.enabled = false and coalesce(r.metadata->>'adminHidden', '') = 'true')
+       and coalesce(r.metadata->>'owner_433', '') <> '' then
+      raise notice '_verify: 20261107_50 — video-full was offered again on the admin pricing page after owner ٤٣٣ retired it (enabled %, adminHidden %): confirm with the owner',
+        r.enabled, coalesce(r.metadata->>'adminHidden', 'none');
+    elsif found and not (r.enabled = false and coalesce(r.metadata->>'adminHidden', '') = 'true') then
       raise exception '_verify: 20261107_50 — video-full is still offered (enabled %, adminHidden %): the 60-minute session is retired (owner ٤٣٣). Run 20261107_50 (AFTER the deploy; again after any re-run of the 20260518 seed, which rewrites the row''s enabled and metadata, stamp included)',
         r.enabled, coalesce(r.metadata->>'adminHidden', 'none');
     end if;

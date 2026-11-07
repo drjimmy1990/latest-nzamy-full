@@ -375,7 +375,7 @@ export async function createConsultation(data: {
  */
 export async function updateConsultation(
   id: string,
-  patch: { status?: ConsultationStatus; scheduled_at?: string },
+  patch: { status?: ConsultationStatus },
 ): Promise<Consultation> {
   if (!isSupabaseMode) {
     throw new Error("تعديل الاستشارات غير متاح في وضع العرض التجريبي");

@@ -18,7 +18,7 @@ import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 import { vatNoticeFor } from "@/lib/pricing/vatNotice";
-import { cardLaunch, cardPrice, cardTotalWithVat, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
+import { cardLaunch, cardPrice, cardTotalWithVat, shownCards, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
 import { signedInCta } from "@/lib/pricing/cardCta";
 import { useLaunchPrices } from "@/hooks/useLaunchPrices";
 
@@ -555,8 +555,9 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const showSMESection    = false; // Removed as there is a dedicated Micro tab now
   // One VAT sentence per section, under its prices (owner ٢٥٨).
   const vatNotice = vatNoticeFor(audience, libraryMode);
-  // A card the book does not sell in this cycle is not shown (cardPrice null).
-  const shownPlans = planList.filter((plan) => cardPrice(plan, billing, isAr ? "ar" : "en") !== null);
+  // A card the book does not sell in this cycle is not shown (cardPrice null);
+  // a «قريباً» card (owner ٤٢٠) always is (shownCards).
+  const shownPlans = shownCards(planList, billing, isAr ? "ar" : "en");
 
   const { isLoggedIn, loading: sessionLoading } = useUser();
   const payments = usePaymentsStatus();

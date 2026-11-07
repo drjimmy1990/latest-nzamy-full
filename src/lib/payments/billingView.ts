@@ -1,4 +1,4 @@
-import { formatHalalas, orderLabelAr, PAYABLE_ITEMS, type PayableItem } from "./catalog.ts";
+import { formatHalalas, orderLabelAr, orderLabelWithPointsAr, PAYABLE_ITEMS, type PayableItem } from "./catalog.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { isBillingCompanyComplete } from "./moyasarConfig.ts";
 
@@ -18,6 +18,12 @@ export interface BillingOrder {
   created_at?: string;
   last_four?: string | null;
   live?: boolean | null;
+  /**
+   * Task F fix round 1: the points this order's purchase lot credited
+   * (points_lots.points_total), read beside the order. Absent or null when
+   * there is no lot or the read failed — the label then comes from the book.
+   */
+  credited_points?: number | null;
 }
 export interface BillingCard {
   id: string;
@@ -56,6 +62,10 @@ export function billingItemAr(itemId: string, catalog: Readonly<Record<string, P
   // resolve, not sell: a receipt for a retired plan keeps the name it was sold under (R3)
   return orderLabelAr(itemId, catalog) ?? "عملية شراء";
 }
+/** An order's line: a top-up names the points its lot actually credited (Task F fix round 1), else billingItemAr. */
+export function billingOrderItemAr(order: Pick<BillingOrder, "item_id" | "credited_points">, catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS): string {
+  return orderLabelWithPointsAr(order.item_id, order.credited_points, catalog) ?? "عملية شراء";
+}
 /** «شهري» / «ربع سنوي» / «نصف سنوي» / «سنوي» / «دفعة واحدة» for an order's billing; null when unknown. */
 export function orderBillingAr(billing: string | null | undefined): string | null {
   return isBilling(billing) ? BILLING_LABEL_AR[billing] : null;
@@ -83,7 +93,7 @@ export function receiptView(order: BillingOrder, company: unknown) {
     testNotice: order.live === false ? "إيصال تجريبي — لم تُخصم أموال حقيقية" : null,
     number: order.receipt_number,
     date: billingDateAr(order.paid_at),
-    item: billingItemAr(order.item_id),
+    item: billingOrderItemAr(order),
     billing: orderBillingAr(order.billing),
     net: formatHalalas(order.net_halalas),
     vatLabel: "ضريبة القيمة المضافة ١٥٪",

@@ -47,14 +47,6 @@ const NEWCLIENT: CouponRow = { ...PLAN50, id: "c-nc", code: "NEWCLIENT", discoun
 // sets its excluded_kinds to {topup, plan, library}; min 200 stays.
 const NZAMY50: CouponRow = { ...PLAN50, id: "c-nz", code: "NZAMY50", excluded_kinds: ["topup", "plan", "library"] };
 
-test("٤٣٦: NZAMY50 never on a plan, the library or a top-up; a single service of 200 or more takes 50 off", () => {
-  for (const kind of ["plan", "library", "topup"] as const) {
-    assert.deepEqual(evaluateCoupon(NZAMY50, ctx({ kind, netHalalas: 149000 })), { ok: false, reason: "not_for_item" }, kind);
-  }
-  assert.deepEqual(evaluateCoupon(NZAMY50, ctx({ kind: "service", netHalalas: 20000 })), { ok: true, discountHalalas: 5000 });
-  assert.equal(evaluateCoupon(NZAMY50, ctx({ kind: "service", netHalalas: 19999 })).ok, false, "min 200 stays (question ٤٥٢)");
-});
-
 const ctx = (over: Partial<CouponContext> = {}): CouponContext => ({
   netHalalas: 39000,
   kind: "plan",
@@ -65,6 +57,14 @@ const ctx = (over: Partial<CouponContext> = {}): CouponContext => ({
   itemId: "lawyer-pro",
   now: NOW,
   ...over,
+});
+
+test("٤٣٦: NZAMY50 never on a plan, the library or a top-up; a single service of 200 or more takes 50 off", () => {
+  for (const kind of ["plan", "library", "topup"] as const) {
+    assert.deepEqual(evaluateCoupon(NZAMY50, ctx({ kind, netHalalas: 149000 })), { ok: false, reason: "not_for_item" }, kind);
+  }
+  assert.deepEqual(evaluateCoupon(NZAMY50, ctx({ kind: "service", netHalalas: 20000 })), { ok: true, discountHalalas: 5000 });
+  assert.equal(evaluateCoupon(NZAMY50, ctx({ kind: "service", netHalalas: 19999 })).ok, false, "min 200 stays (question ٤٥٢)");
 });
 
 test("PLAN50 takes 50 SAR off a 390 SAR plan; VAT is 15 % of the discounted net", () => {

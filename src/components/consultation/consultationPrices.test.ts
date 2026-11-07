@@ -14,7 +14,7 @@ import { CLIENT_SERVICE_CATALOG } from "../../constants/clientServiceCatalog.ts"
 import { formatClientServicePrice, getClientServiceById } from "../../lib/pricingRepository.ts";
 import { PRICE_AFTER_REVIEW, consultationServiceId, consultationTypePrice, lawyerPriceRangeRows, withCatalogPrices } from "./consultationPrices.ts";
 import { MODE_COPY } from "../../constants/clientConsultationData.ts";
-import { getConsultationModeServiceId, mergeAdminPricingCatalogRows } from "../../lib/pricingRepository.ts";
+import { getConsultationModeServiceId, getLawyerModeFromServiceId, mergeAdminPricingCatalogRows } from "../../lib/pricingRepository.ts";
 import type { TypeDef } from "./constants.ts";
 
 const src = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
@@ -28,6 +28,12 @@ test("each paid type reads its own catalogue service (owner ٤٣٣: voice → vo
   for (const [mode, cfg] of Object.entries(MODE_COPY)) {
     assert.equal(cfg.serviceId, getConsultationModeServiceId(mode), mode);
   }
+  // and back: each service names the mode it came from; the retired
+  // video-full (an old request) reads as video
+  for (const mode of ["video", "in-person", "text", "voice"] as const) {
+    assert.equal(getLawyerModeFromServiceId(getConsultationModeServiceId(mode)), mode, mode);
+  }
+  assert.equal(getLawyerModeFromServiceId("video-full"), "video");
 });
 
 test("owner ٤٣٣: the default prices — written 79, voice 20 min 129, video 30 min 199, in person 45 min 349", () => {
