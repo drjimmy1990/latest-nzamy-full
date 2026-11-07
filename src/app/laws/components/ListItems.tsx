@@ -16,6 +16,7 @@ import { resultHref } from "../searchHitGroups";
 import { ClampedSummary } from "./ClampedSummary";
 import { SaveToFolderButton } from "./SaveToFolderButton";
 import { orderSaveDoc, type SaveToFolderDoc } from "../saveToFolder";
+import { orderMetaShown } from "../orderMetaLabels";
 
 /**
  * A catalogue principle row. `collectionId` is set by /laws for database rows
@@ -527,8 +528,9 @@ export function OrderRow({ o, isDark, idx, isRTL = true, onClick, onHashtagClick
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${style.class}`}>{typeLabel}</span>
-            <span className={`text-[11px] font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{o.ref}</span>
-            <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>
+            {/* Owner ٤٢٤ / ٣٨٠: a visitor's number and date arrive blank — no empty chip. */}
+            {orderMetaShown(o.ref) && <span className={`text-[11px] font-bold ${isDark ? "text-zinc-200" : "text-gray-800"}`}>{o.ref}</span>}
+            {orderMetaShown(o.date) && <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>}
             <SaveToFolderButton doc={orderSaveDoc(o)} onSave={onSaveToFolder} isDark={isDark} className="ms-auto" />
           </div>
           <p className={`text-[13px] font-bold mb-1.5 ${isDark ? "text-white" : "text-gray-900"}`}>{o.title}</p>
@@ -719,7 +721,7 @@ export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClic
         <div className="flex items-center justify-between gap-2 mb-3">
           <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ${style.class}`}>{typeLabel}</span>
           <span className="flex items-center gap-1.5">
-            <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>
+            {orderMetaShown(o.date) && <span className={`text-[10px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{o.date}</span>}
             <SaveToFolderButton doc={orderSaveDoc(o)} onSave={onSaveToFolder} isDark={isDark} />
           </span>
         </div>
@@ -729,7 +731,8 @@ export function OrderCard({ o, isDark, idx, isRTL = true, onClick, onHashtagClic
       </div>
 
       <div className="pt-3 border-t border-slate-100 dark:border-white/[0.04]">
-        <div className={`text-[10px] mb-2 font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{o.ref}</div>
+        {/* Owner ٤٢٤ / ٣٨٠: blank for a visitor — the line is left out. */}
+        {orderMetaShown(o.ref) && <div className={`text-[10px] mb-2 font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{o.ref}</div>}
         <p className={`text-[9px] ${isDark ? "text-gray-600" : "text-slate-400"}`}>{issuerLabel}</p>
       </div>
     </motion.div>

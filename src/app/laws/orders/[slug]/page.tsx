@@ -28,6 +28,8 @@ import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 import { HighlightProvider, Hl, SearchLegendBar, useScrollToFirstMark } from "@/components/search/MultiColorHighlight";
 import { readerArrival, withoutSearchQuery } from "@/lib/search/readerArrival";
+import { OfficialMetaLockedRow } from "../../components/OfficialMetaLockedRow";
+import { orderCopyPrefix, orderHeaderLine, orderMetaShown } from "../../orderMetaLabels";
 
 function getSelectedTextWithin(containerId: string): string {
   if (typeof window === "undefined") return "";
@@ -330,13 +332,11 @@ export default function OrderReaderPage() {
       ? orderTypeStyle(order.type).label
       : orderTypeLabelEn(order.type);
                          
-    const prefixPlain = isRTL
-      ? `الصفحة ${idx + 1} من ${docTypeLabel} رقم (${order.ref}) ونصه:`
-      : `Page ${idx + 1} of ${docTypeLabel} Ref (${order.ref}), text:`;
+    // Owner ٤٢٤ / ٣٨٠: a visitor's number is blank — the prefix then has no
+    // «رقم (…)» (never «رقم ()»).
+    const prefixPlain = orderCopyPrefix(idx + 1, docTypeLabel, order.ref, isRTL);
       
-    const prefixHtml = isRTL
-      ? `<b>الصفحة ${idx + 1} من ${docTypeLabel} رقم (${order.ref}) ونصه:</b>`
-      : `<b>Page ${idx + 1} of ${docTypeLabel} Ref (${order.ref}), text:</b>`;
+    const prefixHtml = `<b>${prefixPlain}</b>`;
       
     const plain = `${prefixPlain}\n“${stripMd(textBlock)}”`;
     const html  = `${prefixHtml}<br>“${md2html(textBlock)}”`;
@@ -361,7 +361,8 @@ export default function OrderReaderPage() {
           articleNum: `${isRTL ? "الصفحة" : "Page"} ${index + 1}`,
           articleTitle: order.title,
           articleText: text,
-          lawName: order.ref,
+          // A visitor's number is blank (owner ٤٢٤): the title names the item then.
+          lawName: orderMetaShown(order.ref) ? order.ref : order.title,
           lawSlug: `orders/${order.id}`,
           isArticleAdded: true,
           isExecRegAdded: false,
@@ -436,9 +437,15 @@ export default function OrderReaderPage() {
           <div className="flex flex-wrap items-start gap-3 justify-between">
             <div>
               <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}><Hl text={order.title} /></h1>
-              <p className={`text-[12px] ${muted}`}>
-                {order.ref} • {order.date}
-              </p>
+              {/* Owner ٤٢٤ / ٣٨٠: the number and date are a subscriber's; a
+                  visitor sees the «للمشتركين» row, never a lone «•». */}
+              {orderHeaderLine(order.ref, order.date) ? (
+                <p className={`text-[12px] ${muted}`}>
+                  {orderHeaderLine(order.ref, order.date)}
+                </p>
+              ) : order.officialMetaLocked ? (
+                <OfficialMetaLockedRow isDark={isDark} onUnlock={() => router.push("/laws/subscribe")} textSize="text-[11px]" />
+              ) : null}
             </div>
             <div className="flex gap-2 print:hidden">
               <button

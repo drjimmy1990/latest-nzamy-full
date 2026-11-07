@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getLibraryAccessForUser } from '@/lib/access-control';
 import { articleDisplayLabel } from '../laws/[slug]/_article-label';
-import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
+import { maskDecreeOfficialFields, TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
 import {
   parseSearchQuery,
   SearchQuerySyntaxError,
@@ -800,6 +800,9 @@ export async function POST(request: Request) {
         const results: SearchResultItem[] = orderResults.map((r: Record<string, unknown>) => {
           const isFree = isFreeLibraryItem({ contentType: 'decrees', itemId: r.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
           const brief = r.summary_brief as string || '';
+          // Owner ٤٢٤ / ٣٨٠: a decree's number and date are a subscriber's
+          // (hasFullAccess) — '' for everyone else, as on /api/library/init.
+          const official = maskDecreeOfficialFields({ ref: r.ref ?? '', date: r.date ?? '' }, hasFullAccess);
           return {
             id: r.id,
             section: 'orders',
@@ -809,8 +812,8 @@ export async function POST(request: Request) {
             meta: {
               type: r.type,
               issuer: r.issuer,
-              ref: r.ref,
-              date: r.date,
+              ref: official.ref,
+              date: official.date,
               hashtags: r.hashtags,
             },
           };

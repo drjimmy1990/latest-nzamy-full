@@ -5,9 +5,10 @@ import { libraryGate } from "@/lib/library-gate";
 import { isFreeLibraryItem } from "@/lib/library-item-access";
 import { selectAllPages } from "@/lib/supabase/selectAllPages";
 import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets";
-import { maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
+import { maskDecreeOfficialFields, maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
+import { mergedNamesForViewer } from "@/lib/library/mergedRegulationNames";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
 import { SUCCESSOR_READ_MAX_ROWS, readSuccessorRows, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
@@ -73,10 +74,20 @@ const LAW_SORT_KEY = "catalogue_recency_key";
  * and keeps the 20261025_40 order.
  */
 const LAW_REPEALED_KEY = "catalogue_is_repealed";
+/**
+ * Owner 2026-11-07 (screenshot 1): the grey «يشتمل على: A • B» line under a
+ * merged law's title. library.laws.merged_regulation_names (text[], migration
+ * 20261107_10) holds the distinct article_regulations.ref names of the law in
+ * order of first appearance. Read for every viewer; a non-subscriber's names
+ * lose any decree number or date (mergedNamesForViewer). Before the migration
+ * the read drops the column (readWithOptionalFeatures) and no card has a line.
+ */
+const LAW_MERGED_NAMES_COLUMN = "merged_regulation_names";
 const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
   { key: "summary", columns: [LAW_SUMMARY_COLUMN] },
   { key: "sort", columns: [LAW_SORT_KEY] },
   { key: "repealedLast", columns: [LAW_REPEALED_KEY] },
+  { key: "mergedNames", columns: [LAW_MERGED_NAMES_COLUMN] },
 ];
 const ASC_NULLS_LAST = { ascending: true, nullsFirst: false } as const;
 const DESC_NULLS_LAST = { ascending: false, nullsFirst: false } as const;
@@ -280,7 +291,7 @@ export async function GET(request: Request) {
 
     const [laws, decrees, principles, books, collections] = await Promise.all([
       shouldFetch("laws")
-        ? fetchSection("laws", (on) => `${on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS}, ${LAW_EVENT_DATE_SELECT}`, "laws", (q, on) => {
+        ? fetchSection("laws", (on) => `${on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS}, ${LAW_EVENT_DATE_SELECT}` + (on.has("mergedNames") ? `, ${LAW_MERGED_NAMES_COLUMN}` : ""), "laws", (q, on) => {
             let out = q;
             if (lawSectionCode) out = out.eq("section_code", lawSectionCode);
             if (lawType) {
@@ -307,7 +318,8 @@ export async function GET(request: Request) {
             features: LAW_OPTIONAL_FEATURES,
             // The موجز for the viewers the ٢٦٠ flag admits (answered: everyone,
             // the guest too); the order for all.
-            wanted: lawSummaryVisible(hasFullAccess) ? ["summary", "sort", "repealedLast"] : ["sort", "repealedLast"],
+            // The «يشتمل على» names for every viewer (cleaned per tier below).
+            wanted: [...(lawSummaryVisible(hasFullAccess) ? ["summary", "sort", "repealedLast"] : ["sort", "repealedLast"]), "mergedNames"],
           })
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
@@ -408,6 +420,10 @@ export async function GET(request: Request) {
       if (typeof shaped.summary_brief === "string") {
         shaped.summary_brief = summaryForViewer(shaped.summary_brief, hasFullAccess) || null;
       }
+      // Owner 2026-11-07: the «يشتمل على» names, cleaned for a non-subscriber.
+      if (LAW_MERGED_NAMES_COLUMN in shaped) {
+        shaped[LAW_MERGED_NAMES_COLUMN] = mergedNamesForViewer(shaped[LAW_MERGED_NAMES_COLUMN], hasFullAccess);
+      }
       return {
         ...maskListOfficialFields(shaped, hasFullAccess),
         ...(event ? { latest_legislative_update: event.dateHijri } : {}),
@@ -424,7 +440,10 @@ export async function GET(request: Request) {
       // Owner ٢٦٣ (and ٢٦٠'s rule for the laws): the موجز is for everyone —
       // a locked card keeps summary_brief / summary (the decree route sends
       // both to every viewer too); only the text stays out.
-      return { ...(isFree ? row : stripFields({ ...row }, ["content", "text"])), free: isFree, locked: !isFree };
+      // Owner ٤٢٤ / ٣٨٠: the number and date are a subscriber's (hasFullAccess,
+      // never the free-item list) — '' for everyone else, like the decree route.
+      const shaped = isFree ? row : stripFields({ ...row }, ["content", "text"]);
+      return { ...maskDecreeOfficialFields(shaped, hasFullAccess), free: isFree, locked: !isFree };
     }) as any;
 
     const principlesRows = principles.data as unknown as Record<string, unknown>[];
@@ -448,7 +467,7 @@ export async function GET(request: Request) {
         collections,
         // T28-22: true when laws[].issuing_instrument / issue_date_hijri were
         // withheld from this viewer (non-subscriber), so the page can say
-        // «للمشتركين» instead of «—».
+        // «للمشتركين» instead of «—». Owner ٤٢٤: decrees[].ref / date too.
         officialMetaLocked: !hasFullAccess,
         // The viewer's own full-library flag (a Pro+ tier, an active library
         // grant, or an admin; owner ٢٠٥/٢٠٩). /laws hands it to its tabs, so a

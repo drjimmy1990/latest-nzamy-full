@@ -4,7 +4,7 @@ import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
-import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
+import { maskDecreeOfficialFields, TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 
 /**
  * The decree's catalogue columns, read through the request client. Every one
@@ -34,6 +34,12 @@ const DECREE_COLUMNS = 'id, title, type, issuer, ref, date, summary, summary_bri
  * included, so a subscriber's preamble goes out with the card rows the law
  * card shows (withCleanCardRows): no «المصدر الرسمي => غير متوفر …», no
  * placeholder or file row. The lock is decided on the stored preamble.
+ *
+ * Owner ٤٢٤ (2026-11-07, confirming ٣٨٠): the decree's number (`ref`), its
+ * date and its official link are a subscriber's, like a law's (T28-22 /
+ * ٣١٨) — the same isSubscriber test as the preamble. Everyone else gets ''
+ * for the three and `officialMetaLocked: true` (maskDecreeOfficialFields).
+ * The two free scanned pages stay as they are (owner ٤٤٩ pending).
  */
 export async function GET(
   _request: Request,
@@ -106,14 +112,19 @@ export async function GET(
     const free = freeDecreePages(probe, pages.length);
     const unlockedCount = free === -1 ? pages.length : Math.min(free, pages.length);
 
-    // Format response matching frontend DemoOrder interface
+    // Format response matching frontend DemoOrder interface. Owner ٤٢٤: the
+    // number, date and official link are masked for a non-subscriber.
+    const official = maskDecreeOfficialFields(
+      { ref: decree.ref || '', date: decree.date || '', official_url: decree.official_url || '' },
+      isSubscriber,
+    );
     const response = {
       id: decree.id,
       title: decree.title,
       type: decree.type,
       issuer: decree.issuer,
-      ref: decree.ref,
-      date: decree.date,
+      ref: official.ref,
+      date: official.date,
       summary: decree.summary,
       summary_brief: decree.summary_brief,
       cat: decree.category,
@@ -135,7 +146,9 @@ export async function GET(
         idx < unlockedCount && typeof p.content === 'string' ? withCleanCardRows(p.content) : ''),
       unlockedCount,
       hashtags: decree.hashtags || [],
-      official_url: decree.official_url || '',
+      official_url: official.official_url,
+      // The page shows a «للمشتركين» row in place of the number and date.
+      officialMetaLocked: !isSubscriber,
       hasAccess: hasFullAccess, // legacy field kept for existing client checks
     };
 

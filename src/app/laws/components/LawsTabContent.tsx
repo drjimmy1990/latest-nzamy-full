@@ -25,7 +25,7 @@ import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
-import { lawCardDates, mergedFileBadge } from "../catalogueCardLabels";
+import { lawCardDates, mergedFileBadge, mergedIncludesLine } from "../catalogueCardLabels";
 import { withSearchQuery } from "@/lib/search/multiColorSearch";
 import { apiSlug } from "@/utils/apiSlug";
 import { Hl } from "@/components/search/MultiColorHighlight";
@@ -407,6 +407,17 @@ export function LawsTabContent({
                     {mergedLabel}
                   </span>
                 ) : null;
+                // Owner 2026-11-07 (screenshot 1): the grey «يشتمل على: A • B»
+                // line under the title — at most two names, none → no line.
+                const mergedIncludes = mergedLabel ? mergedIncludesLine(sys.title, sys.mergedNames ?? []) : "";
+                const mergedIncludesRow = mergedIncludes ? (
+                  <p
+                    className={`text-[11px] font-semibold leading-snug line-clamp-2 mb-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+                    data-testid="law-card-merged-includes"
+                  >
+                    {mergedIncludes}
+                  </p>
+                ) : null;
                 // Owner note ١٢-٦ / answers ٣١٧–٣١٨: the one public date
                 // («آخر تحديث تشريعي», the date alone, everyone); «صدر» only
                 // for a viewer the official data is open to.
@@ -501,7 +512,9 @@ export function LawsTabContent({
                             {successorLink}
                           </div>
                         ) : <span />}
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {/* Owner 2026-11-07: «مدمج» in the top row beside «متاح», not alone under the title. */}
+                        {mergedBadge}
                         {isUnlocked ? (
                           <span className="px-2 py-0.5 text-[9px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                             <Sparkle size={9} weight="fill" />
@@ -515,8 +528,8 @@ export function LawsTabContent({
                       <h3 className={`text-base font-black mb-2 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
                         {isRTL ? sys.title : sys.titleEn}
                       </h3>
+                      {mergedIncludesRow}
                       {isRepealedLaw && repealedNote}
-                      {mergedBadge && <div className="mb-2.5">{mergedBadge}</div>}
 
                       {/* Rich Metadata Section */}
                       <div className="flex flex-wrap justify-center gap-1 mb-2.5">
@@ -630,6 +643,7 @@ export function LawsTabContent({
                         <h3 className={`text-sm font-black mb-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${titleClass}`}>
                           {isRTL ? sys.title : sys.titleEn}
                         </h3>
+                        {mergedIncludesRow}
                         {isRepealedLaw && repealedNote}
 
                         {/* Badges */}
