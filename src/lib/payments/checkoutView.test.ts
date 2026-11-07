@@ -168,8 +168,8 @@ test("checkoutItemNotes: each top-up states the validity the catalog grants; the
   }
   // every top-up label names its points, so the screen shows them once
   for (const [id, points] of [
-    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٥٠٠ نقطة"], ["topup-1000", "١٬٢٥٠ نقطة"],
-    ["topup-2500", "٣٬٥٠٠ نقطة"], ["topup-5000", "٨٬٥٠٠ نقطة"], ["topup-10000", "٢٥٬٠٠٠ نقطة"],
+    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٧٠٠ نقطة"], ["topup-1000", "١٬٥٠٠ نقطة"],
+    ["topup-2500", "٥٬٠٠٠ نقطة"], ["topup-5000", "١٢٬٥٠٠ نقطة"], ["topup-10000", "٣٠٬٠٠٠ نقطة"],
   ]) {
     assert.ok(PAYABLE_ITEMS[id].labelAr.includes(points), id);
   }

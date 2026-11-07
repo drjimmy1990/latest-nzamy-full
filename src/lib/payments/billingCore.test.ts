@@ -159,3 +159,44 @@ test("receipt: an absent order stops at the RLS read; a failed card-details read
   assert.equal((await readReceiptWith(broken.client, unused.client, USER, CARD)).unavailable, true);
   assert.match(logged(log), /TEST_ORDER_1/);
 });
+
+test("Task F fix round 1: billing attaches each top-up's credited points from its purchase lot, best-effort", async (t) => {
+  const TOP = "00000000-0000-0000-0000-0000000000aa";
+  const PLAN = "00000000-0000-0000-0000-0000000000bb";
+  const rows = [{ id: TOP, item_id: "topup-1000", status: "paid" }, { id: PLAN, item_id: "lawyer-pro", status: "paid" }];
+  const db = fakeDb(q => {
+    if (q.table === "points_balance") return { data: 0 };
+    if (q.table === "payment_orders") return { data: rows };
+    if (q.table === "points_lots" && q.columns === "order_id,points_total") return { data: [{ order_id: TOP, points_total: 1250 }] };
+    return { data: [] };
+  });
+  const r = await getBillingWith(db.client, USER);
+  assert.equal(r.status, 200);
+  const orders = (r.body as { orders: Array<{ id: string; credited_points?: number }> }).orders;
+  assert.equal(orders.find(o => o.id === TOP)?.credited_points, 1250);
+  assert.ok(!("credited_points" in (orders.find(o => o.id === PLAN) ?? {})));
+  const lotQ = db.log.find(q => q.table === "points_lots" && q.columns === "order_id,points_total");
+  assert.ok(lotQ && has(lotQ, "eq", "user_id", USER) && has(lotQ, "eq", "source", "purchase"));
+  assert.ok(lotQ.filters.some(f => f[0] === "in" && f[1] === "order_id" && JSON.stringify(f[2]) === JSON.stringify([TOP])), "only top-up orders are looked up");
+
+  // the lot read failing never fails the page: the order keeps the book label
+  errors(t);
+  const broken = fakeDb(q => {
+    if (q.table === "points_balance") return { data: 0 };
+    if (q.table === "payment_orders") return { data: rows };
+    if (q.table === "points_lots" && q.columns === "order_id,points_total") return { error: { code: "42703" } };
+    return { data: [] };
+  });
+  const r2 = await getBillingWith(broken.client, USER);
+  assert.equal(r2.status, 200);
+  assert.ok((r2.body as { orders: object[] }).orders.every(o => !("credited_points" in o)));
+});
+test("Task F fix round 1: a top-up receipt reads the points its lot credited; other receipts never query lots", async () => {
+  const rls = fakeDb(q => ({ data: q.table === "points_lots" ? [{ order_id: CARD, points_total: 1250 }] : { id: CARD, item_id: "topup-1000", status: "paid" } }));
+  const admin = fakeDb(q => ({ data: q.table === "payment_orders" ? { payment_method: { last_four: "1111" } } : { value: {} } }));
+  const result = await readReceiptWith(rls.client, admin.client, USER, CARD);
+  assert.equal(result.order?.credited_points, 1250);
+  const lotQ = rls.log.find(q => q.table === "points_lots");
+  assert.ok(lotQ && has(lotQ, "eq", "user_id", USER) && has(lotQ, "eq", "source", "purchase"));
+  assert.ok(!admin.log.some(q => q.table === "points_lots"), "the lot is read through RLS, not the service client");
+});

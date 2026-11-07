@@ -10,6 +10,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import { useAiRun } from "@/hooks/useAiRun";
 import { COMMUNICATE_TONES, type CommunicateType } from "@/lib/ai/tools";
+import ToolUsableGate from "@/components/ai/ToolUsableGate";
 
 // ─── Communication types ──────────────────────────────────────────────────────
 
@@ -27,7 +28,20 @@ const TONES = COMMUNICATE_TONES;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function AICommunicatePage() {
+/** tool-status before the form and the price (owner ٤١٧: every account; the mode still decides). */
+export default function AICommunicateRoute() {
+  return (
+    <ToolUsableGate
+      tool="communicate"
+      title="المتحدث الذكي — قريباً"
+      description="خطاب أو بريد أو رسالة واتساب أو إشعار قانوني بالنبرة التي تختارها. لم يُتح بعد لحسابك."
+    >
+      <AICommunicatePage />
+    </ToolUsableGate>
+  );
+}
+
+function AICommunicatePage() {
   const { isDark } = useTheme();
   const [commType, setCommType] = useState<CommunicateType>("letter");
   const [tone, setTone] = useState<string>(COMMUNICATE_TONES[1]);

@@ -39,6 +39,8 @@ export type AdminPricingCatalogRow = {
     humanService?: boolean;
     /** S6: this row is an audience variant of that service id (never a card). */
     variantOf?: string;
+    /** Owner ٤٣٣: the lawyer's price band for a consultation (display only). */
+    lawyerPriceRange?: ClientServiceCatalogItem["lawyerPriceRange"];
     /**
      * S6: true only when an admin hid the row on purpose (adminHiddenPatch).
      * The server loader fetches a disabled row only with this flag.
@@ -169,6 +171,7 @@ export function mergeAdminPricingCatalogRows(rows: AdminPricingCatalogRow[]): Cl
       tag: metadata.tag ?? existing?.tag,
       aiPowered: metadata.aiPowered ?? existing?.aiPowered,
       humanService: metadata.humanService ?? existing?.humanService,
+      lawyerPriceRange: validPriceRange(metadata.lawyerPriceRange) ?? existing?.lawyerPriceRange,
       // S6: a row's audience and variantOf travel with it. A row that drops
       // either keeps the code item's, so a variant never turns into a card.
       audience:
@@ -190,14 +193,31 @@ export async function fetchClientPricingCatalog(): Promise<{
   return response.json() as Promise<{ catalog: ClientServiceCatalogItem[]; source: PricingCatalogSource }>;
 }
 
+/**
+ * The catalogue entry a consultation mode is priced by. Owner ٤٣٣ (3 Nov
+ * 2026): voice has its own `voice-call` (20 min) and video is `video-short`
+ * (30 min); the 60-minute `video-full` is retired and never chosen here.
+ */
 export function getConsultationModeServiceId(mode: string): string {
   if (mode === "in-person") return "in-person";
   if (mode === "text") return "written-opinion";
-  return "video-full";
+  if (mode === "voice") return "voice-call";
+  return "video-short";
 }
 
 export function getLawyerModeFromServiceId(serviceId: string): "video" | "in-person" | "text" | "voice" {
   if (serviceId === "in-person") return "in-person";
   if (serviceId === "written-opinion") return "text";
+  if (serviceId === "voice-call") return "voice";
   return "video";
+}
+
+/** A row's metadata.lawyerPriceRange, or null when it is not two numbers with 0 ≤ min ≤ max. */
+function validPriceRange(value: unknown): { min: number; max: number } | null {
+  if (!value || typeof value !== "object") return null;
+  const { min, max } = value as { min?: unknown; max?: unknown };
+  const lo = Number(min);
+  const hi = Number(max);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || lo > hi) return null;
+  return { min: lo, max: hi };
 }

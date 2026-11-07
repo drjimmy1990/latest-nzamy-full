@@ -370,11 +370,12 @@ export async function createConsultation(data: {
  * resolving with `null`, which reads as a completed no-op.
  *
  * (No call site today outside the barrel export; written this way so the first
- * one inherits the honest behaviour.)
+ * one inherits the honest behaviour.) Owner ٤٣٨: the route now refuses a
+ * `scheduled_at` with 400 — only `status` goes through it.
  */
 export async function updateConsultation(
   id: string,
-  patch: { status?: ConsultationStatus; scheduled_at?: string },
+  patch: { status?: ConsultationStatus },
 ): Promise<Consultation> {
   if (!isSupabaseMode) {
     throw new Error("تعديل الاستشارات غير متاح في وضع العرض التجريبي");

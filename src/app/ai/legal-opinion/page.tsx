@@ -35,7 +35,7 @@ import { LetterWorkflow } from "./_components/LetterWorkflow";
 import { SettingsStep } from "./_components/SettingsStep";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { useAiRun } from "@/hooks/useAiRun";
-import { LEGAL_OPINION_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
+import { LEGAL_CONSULT_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
 import { AiOpinionPanel, TeamOrderDivider } from "./_components/AiOpinionPanel";
 import { consultRunInput } from "./_components/aiOpinion";
 
@@ -597,7 +597,6 @@ export default function AILegalOpinionPage() {
                     <p className={`text-[11px] leading-relaxed mb-2 ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{ot.desc}</p>
                     <div className="flex items-center justify-between">
                       <span className={`text-[9px] rounded-full px-2 py-0.5 ${isDark ? "bg-zinc-800 text-zinc-500" : "bg-slate-100 text-slate-400"}`}>{ot.audience}</span>
-                      <span className={`text-[9px] font-mono ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{ot.credits} ك</span>
                     </div>
                     {/* L12: which path each card is, in plain words. */}
                     <p className={`mt-2 text-[10px] font-bold ${
@@ -759,7 +758,7 @@ export default function AILegalOpinionPage() {
                   run={consultRun}
                   input={consultRunInput(LEGAL_AREA_LABELS[topicArea], description)}
                   blocked={consultBlocked}
-                  price={LEGAL_OPINION_PRICE}
+                  price={LEGAL_CONSULT_PRICE}
                   isDark={isDark} card={card}
                 />
                 <TeamOrderDivider isDark={isDark} />

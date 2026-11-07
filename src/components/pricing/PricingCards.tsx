@@ -18,7 +18,7 @@ import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
 import { planEntitlementRequest } from "@/lib/pricing/planRequest";
 import { vatNoticeFor } from "@/lib/pricing/vatNotice";
-import { cardLaunch, cardPrice, cardTotalWithVat, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
+import { cardLaunch, cardPrice, cardTotalWithVat, shownCards, type LaunchPriceMap } from "@/lib/pricing/cardPrice";
 import { signedInCta } from "@/lib/pricing/cardCta";
 import { useLaunchPrices } from "@/hooks/useLaunchPrices";
 
@@ -90,7 +90,11 @@ function SpotlightCard({
   // UX14: what the buyer pays with VAT, and for which cycle, beside the button.
   const vatTotal = cardTotalWithVat(plan, billing, launch, isAr ? "ar" : "en");
   const cta = signedInCta(plan, signedIn, isAr);
-  const { bonusLabel } = plan;
+  const { bonusLabel, comingSoon } = plan;
+  // Owner ٤٢٠: a card shown before it is sold says «قريباً» where the badge,
+  // the price and the button would be.
+  const soonText = isAr ? "قريباً" : "Coming soon";
+  const badgeText = comingSoon ? soonText : plan.badge;
   const allFeatures = [
     ...plan.features.ai,
     ...plan.features.platform,
@@ -145,19 +149,19 @@ function SpotlightCard({
 
       <div className={`relative z-10 flex h-full flex-col ${compact ? "p-5" : "p-7 md:p-8"}`}>
         {/* Badge */}
-        {plan.badge && (
+        {badgeText && (
           <div className="absolute -top-px start-6">
             <div className={`inline-flex items-center gap-1.5 rounded-b-xl px-3.5 py-1.5 text-[11px] font-bold tracking-wide ${
               isHighlighted ? "bg-gold text-[#0B3D2E]" : "bg-gold text-white"
             }`}>
-              <Crown size={10} weight="fill" />
-              {plan.badge}
+              {!comingSoon && <Crown size={10} weight="fill" />}
+              {badgeText}
             </div>
           </div>
         )}
 
         {/* Target label */}
-        <div className={`mb-3 flex items-center gap-2 ${plan.badge ? "mt-5" : "mt-0"}`}>
+        <div className={`mb-3 flex flex-wrap items-center gap-2 ${badgeText ? "mt-5" : "mt-0"}`}>
           {tierIcon && (
             <span className={`flex h-5 w-5 items-center justify-center rounded-full ${
               isHighlighted ? "bg-white/10 text-gold" : "bg-royal/8 text-royal"
@@ -170,6 +174,14 @@ function SpotlightCard({
           }`}>
             {plan.target}
           </span>
+          {/* Owner ٤٣٧: sold today, some listed features not built yet. */}
+          {plan.someFeaturesSoon && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              isHighlighted ? "bg-white/10 text-gold" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+            }`}>
+              {isAr ? "بعض المزايا قريباً" : "Some features coming soon"}
+            </span>
+          )}
         </div>
 
         {/* Name */}
@@ -235,7 +247,7 @@ function SpotlightCard({
                   isHighlighted ? "text-gold" : "text-royal dark:text-gold"
                 }`}
               >
-                {price}
+                {comingSoon ? soonText : price}
               </motion.span>
             </AnimatePresence>
             {period && (
@@ -315,7 +327,18 @@ function SpotlightCard({
           </p>
         )}
 
-        {/* CTA — a signed-in member never sees a sign-up button (UX14). */}
+        {/* CTA — a signed-in member never sees a sign-up button (UX14). A
+            card not sold yet gets a disabled button, never a link (owner ٤٢٠). */}
+        {comingSoon ? (
+          <button
+            type="button"
+            disabled
+            aria-disabled="true"
+            className="mt-7 flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-100 px-6 py-3.5 text-sm font-bold tracking-wide text-slate-500 dark:bg-white/5 dark:text-gray-400"
+          >
+            {soonText}
+          </button>
+        ) : (
         <motion.a
           href={cta.ctaHref}
           onClick={(e) => {
@@ -334,6 +357,7 @@ function SpotlightCard({
           {cta.cta}
           <ArrowLeft size={15} weight="bold" />
         </motion.a>
+        )}
 
         {/* Owner answer ٢١٣: «* تطبق الشروط والأحكام», small and grey. */}
         {plan.footnote && (
@@ -531,8 +555,9 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
   const showSMESection    = false; // Removed as there is a dedicated Micro tab now
   // One VAT sentence per section, under its prices (owner ٢٥٨).
   const vatNotice = vatNoticeFor(audience, libraryMode);
-  // A card the book does not sell in this cycle is not shown (cardPrice null).
-  const shownPlans = planList.filter((plan) => cardPrice(plan, billing, isAr ? "ar" : "en") !== null);
+  // A card the book does not sell in this cycle is not shown (cardPrice null);
+  // a «قريباً» card (owner ٤٢٠) always is (shownCards).
+  const shownPlans = shownCards(planList, billing, isAr ? "ar" : "en");
 
   const { isLoggedIn, loading: sessionLoading } = useUser();
   const payments = usePaymentsStatus();

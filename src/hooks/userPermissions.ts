@@ -64,7 +64,7 @@ const PERMISSIONS: Record<string, Record<UserTier, UserPermission[]>> = {
   },
   individual: {
     free:       ["ai:consult"],
-    // shield = التأمين القانوني الشامل (360 ر.س/سنة)
+    // shield = «عضوية الحماية القانونية» (owner ٤٢٠ / ٤٣٤; not sold yet, price pending ٤٥٣)
     shield:     ["ai:consult", "ai:analyze"],
     ai:         ["ai:consult", "ai:analyze"],
     pro:        ["ai:consult", "ai:analyze", "ai:contracts"],

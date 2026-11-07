@@ -3,6 +3,10 @@
 -- points (ai_start_run_with_credit), and a failed run gives it back exactly
 -- once (ai_fail_run).
 --
+-- It proves 20261101_10 ALONE: after 20261107_60 (owner ٤١٠) the rejoinder is
+-- eligible, so T2 and T6 fail on purpose there — founder_rejoinder_410.test.sql
+-- proves that chain.
+--
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself) — the chain of
 -- founder_membership.test.sql (it already holds 20261027_10_ai_runs), the
 -- migration TWICE with the between-runs prelude. From the repo root, in Git

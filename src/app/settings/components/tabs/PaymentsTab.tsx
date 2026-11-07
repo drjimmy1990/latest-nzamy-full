@@ -6,7 +6,7 @@ import { EmptyPanel, SectionTitle } from "./_shared";
 import { DeleteCardButton } from "@/components/payments/BillingControls";
 import { PointsBalanceCard } from "@/components/payments/PointsBalanceCard";
 import { useBillingData } from "@/components/payments/useBillingData";
-import { billingDateAr, billingItemAr, cardTitleAr, hasReceipt, orderStatusAr } from "@/lib/payments/billingView";
+import { billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr } from "@/lib/payments/billingView";
 import { formatHalalas } from "@/lib/payments/catalog";
 
 // ── Tab 5: Payments ─────────────────────────────────────────────────
@@ -107,7 +107,7 @@ export function PaymentsTab() {
             {recent.map((order) => (
               <li key={order.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                 <div>
-                  <p className="font-bold text-zinc-800 dark:text-zinc-100">{billingItemAr(order.item_id)}</p>
+                  <p className="font-bold text-zinc-800 dark:text-zinc-100">{billingOrderItemAr(order)}</p>
                   <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                     {billingDateAr(order.paid_at ?? order.created_at)} · {orderStatusAr(order.status)}
                   </p>

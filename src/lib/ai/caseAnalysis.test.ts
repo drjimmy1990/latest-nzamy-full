@@ -1,6 +1,7 @@
 /**
  * caseAnalysis.test.ts — wave 4 through the run pipeline: L9 المحاكي الشامل and
- * L10 محلل قوة الموقف. Both are 250-point jobs whose files are optional: no
+ * L10 محلل قوة الموقف. Owner ٤٠٩ / R1: the simulation is 150 (75 for one
+ * target), the strength analysis 75. Both are jobs whose files are optional: no
  * fileIds skips the file step, any list is checked in full before the charge.
  * Their outputs carry words, never a number (owner ١٩٣), and the cited
  * articles are replaced by the library's verdict on the callback.
@@ -12,7 +13,15 @@ import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { callbackWith, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { FilesCheck } from "./aiFiles.ts";
-import { AI_TOOLS, WAVE4_FILES, WAVE4_PRICE } from "./tools.ts";
+import {
+  AI_TOOLS,
+  ANALYZE_STRENGTH_PRICE,
+  WARGAMING_PRICE,
+  WARGAMING_SINGLE_TARGET_PRICE,
+  WARGAMING_TARGETS,
+  WAVE4_FILES,
+  wargamingPrice,
+} from "./tools.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const F1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -48,23 +57,41 @@ function deps(files: FilesCheck, calls: Array<Record<string, unknown>>, seen: un
   };
 }
 
-test("the registry entries: 250-point jobs, files optional, only wargaming blocked for a consultant", () => {
+test("the registry entries: jobs with optional files, both blocked for a consultant (R1)", () => {
   for (const id of ["wargaming", "analyze-strength"]) {
     const t = AI_TOOLS[id];
     assert.equal(t.class, "job");
     assert.equal(t.n8nPath, `nzamy-ai/${id}`);
     assert.deepEqual(t.files, WAVE4_FILES);
     assert.equal(t.files!.optional, true);
-    assert.equal(t.price({}, { pages: 30 }), WAVE4_PRICE);
-    assert.equal(WAVE4_PRICE, 250);
     assert.equal(t.defaultMode, "off");
+    assert.equal(t.consultantBlocked, true, id);
   }
-  assert.equal(AI_TOOLS.wargaming.consultantBlocked, true);
-  assert.equal(AI_TOOLS["analyze-strength"].consultantBlocked, false);
+  assert.equal(ANALYZE_STRENGTH_PRICE, 75);
+  assert.equal(AI_TOOLS["analyze-strength"].price({}, { pages: 30 }), 75, "the page count does not move it");
 });
 
-test("no files, or an empty list: the file step is skipped, the run is charged 250 and sent with no files", async () => {
-  for (const [tool, input] of [["wargaming", war], ["analyze-strength", strength]] as const) {
+test("٤٠٩ / R1: the simulation is 75 for exactly one target, 150 for two or more", () => {
+  assert.equal(WARGAMING_SINGLE_TARGET_PRICE, 75);
+  assert.equal(WARGAMING_PRICE, 150);
+  const price = (targets: unknown) => AI_TOOLS.wargaming.price({ targets }, { pages: 30 });
+  for (const t of WARGAMING_TARGETS) assert.equal(price([t]), 75, t);
+  assert.equal(price(["opponent", "court"]), 150);
+  assert.equal(price([...WARGAMING_TARGETS]), 150);
+  // Counted the way the validator keeps them: known ids, once each.
+  assert.equal(price(["court", "court"]), 75);
+  assert.equal(price(["court", "bogus"]), 75);
+  assert.equal(price(undefined), 150);
+  assert.equal(price([]), 150);
+  assert.equal(wargamingPrice(["plea"]), 75);
+  // The validated input of a one-target run is charged 75.
+  const one = AI_TOOLS.wargaming.validateInput({ ...war, targets: ["court", "court"] });
+  assert.ok(one.ok);
+  assert.equal(AI_TOOLS.wargaming.price(one.input, { pages: null }), 75);
+});
+
+test("no files, or an empty list: the file step is skipped, the run is charged its price and sent with no files", async () => {
+  for (const [tool, input, price] of [["wargaming", war, 150], ["wargaming", { ...war, targets: ["court"] }, 75], ["analyze-strength", strength, 75]] as const) {
     for (const fileIds of [undefined, []]) {
       const { client, log } = db(tool);
       const calls: Array<Record<string, unknown>> = [];
@@ -75,7 +102,7 @@ test("no files, or an empty list: the file step is skipped, the run is charged 2
       assert.equal(r.status, 202, `${tool} ${JSON.stringify(fileIds)}`);
       assert.equal(seen.length, 0, "resolveFiles is not called");
       const p = log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>;
-      assert.equal(p.p_price, 250);
+      assert.equal(p.p_price, price);
       assert.deepEqual(p.p_file_ids, []);
       assert.deepEqual((calls[0].body as Record<string, unknown>).files, []);
     }
@@ -99,7 +126,7 @@ test("a list of files is checked in full before the charge: a bad file refuses t
   assert.equal(calls.length, 0);
 });
 
-test("a consultant may not run the wargaming simulation (Art. 18) but may analyse a position", async () => {
+test("a consultant may run neither the simulation nor the strength analysis (Art. 18, ruling R1)", async () => {
   const consultant = { ...LAWYER, practiceKind: "consultant" as const };
   const a = await startRunWith(db("wargaming").client as never, deps({ ok: true, files: [], pages: 0 }, [], []), consultant, {
     tool: "wargaming", input: war, idempotencyKey: "key-abcdef01",
@@ -108,7 +135,8 @@ test("a consultant may not run the wargaming simulation (Art. 18) but may analys
   const b = await startRunWith(db("analyze-strength").client as never, deps({ ok: true, files: [], pages: 0 }, [], []), consultant, {
     tool: "analyze-strength", input: strength, idempotencyKey: "key-abcdef01",
   });
-  assert.equal(b.status, 202);
+  assert.equal(b.status, 403);
+  assert.equal(b.body.code, a.body.code);
 });
 
 test("wargaming input: role, a 20+ character summary, known targets; critique needs the memo; area optional", () => {

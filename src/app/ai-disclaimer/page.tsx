@@ -69,7 +69,7 @@ const sections = {
       icon: Info,
       title: "طبيعة ذكاء نظامي",
       color: "bg-royal/5 text-royal",
-      body: "«ذكاء نظامي — Nezamy AI» مساعد قانوني ذكي مدرَّب على الأنظمة والتشريعات السعودية. هو أداة إرشادية تعليمية مصممة لمساعدتك على فهم حقوقك والخيارات المتاحة أمامك — وليس مصدراً لقرارات قانونية ملزمة.",
+      body: "«ذكاء نظامي — Nezamy AI» مساعد قانوني ذكي يعتمد الأنظمة والتشريعات السعودية مصدراً. هو أداة إرشادية تعليمية مصممة لمساعدتك على فهم حقوقك والخيارات المتاحة أمامك — وليس مصدراً لقرارات قانونية ملزمة.",
     },
     {
       icon: Lock,
@@ -107,7 +107,7 @@ const sections = {
       icon: Info,
       title: "Nature of Nezamy AI",
       color: "bg-royal/5 text-royal",
-      body: "Nezamy AI is an intelligent legal assistant trained on Saudi laws and regulations. It is an educational and guidance tool designed to help you understand your rights and available options — not a source of binding legal decisions.",
+      body: "Nezamy AI is an intelligent legal assistant that takes Saudi laws and regulations as its source. It is an educational and guidance tool designed to help you understand your rights and available options — not a source of binding legal decisions.",
     },
     {
       icon: Lock,

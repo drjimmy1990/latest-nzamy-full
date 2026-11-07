@@ -441,7 +441,7 @@ const WelcomeScreen = memo(function WelcomeScreen({
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.18 }}
               className={`text-[12.5px] mt-0.5 leading-snug max-w-[36ch] ${isDark ? "text-white/40" : "text-slate-400"}`}
             >
-              مدرَّب على كامل المكتبة القانونية السعودية — الأنظمة، المبادئ، والسوابق القضائية
+              يعتمد المكتبة القانونية السعودية مصدراً — الأنظمة، المبادئ، والسوابق القضائية
             </motion.p>
           </div>
         </div>

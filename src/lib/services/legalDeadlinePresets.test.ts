@@ -62,3 +62,32 @@ test("the calculator tab no longer has its own date maths", () => {
   assert.match(tab, /getDeadlineRules\(\)/);
   assert.match(tab, /useRiyadhToday\(\)/);
 });
+
+test("owner 2026-11-07 (المادة ١٩٤): urgent cassation is 15 days — the platform rule when present, else the guide 15", () => {
+  const p = preset("cassation_urgent");
+  assert.equal(p.ruleCode, "cassation_urgent");
+  assert.equal(p.days, 15);
+  const rule: PresetRule = {
+    code: "cassation_urgent", ownerUserId: null, active: true, titleAr: "الاعتراض بطلب النقض — المسائل المستعجلة",
+    periodDays: 15, countFromNextDay: true, rollForwardIfHoliday: true,
+    sourceAr: "نظام المرافعات الشرعية — المادة (١٩٤)", verifiedByOwner: true,
+  };
+  const withRule = presetInputs(p, "2026-11-01", [rule])!;
+  assert.equal(withRule.basis, "platform_rule");
+  assert.equal(withRule.periodDays, 15);
+  assert.match(withRule.sourceAr ?? "", /١٩٤/);
+  const guide = presetInputs(p, "2026-11-01", [])!;
+  assert.equal(guide.basis, "guide");
+  assert.equal(guide.periodDays, 15);
+  // the ordinary cassation preset keeps 30 days
+  assert.equal(preset("cassation").days, 30);
+});
+
+test("the cassation SQL: 15 days copied from cassation's settings; cassation cites المادة (١٩٤)", () => {
+  const sql = read("../supabase/migrations/20261107_30_deadline_cassation_urgent_194.sql");
+  assert.match(sql, /'cassation_urgent'/);
+  assert.match(sql, /c\.trigger_kind, 15, c\.calendar/);
+  assert.match(sql, /on conflict \(code\) where owner_user_id is null do update/);
+  assert.match(sql, /set source_ar\s+= 'نظام المرافعات الشرعية — المادة \(١٩٤\)'/);
+  assert.match(sql, /select code, period_days, source_ar/);
+});

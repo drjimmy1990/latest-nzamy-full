@@ -78,7 +78,13 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     // The owner-priority wave: one block per 20261103_* migration.
     "library_auto_lock_hours", "library_invitation_grant_days", "library_eligibility_verifications",
     "library_fts_tashkeel_fold", "library_invitations_closed", "s6_contract_review_business",
-    "s6_newclient_flag", "s6_coupon_business_role", "progress_events", "letterhead_verify_card"]) {
+    "s6_newclient_flag", "s6_coupon_business_role", "progress_events", "letterhead_verify_card",
+    // Task F (owner answers 2026-11-07): 20261107_50.
+    "owner_answers_prices",
+    // Owner answers 2026-11-07: 20261107_10 / _20 / _30.
+    "library_merged_regulation_names", "library_caps_owner_426", "deadline_cassation_urgent_194",
+    // 20261107_60 (owner ٤١٠).
+    "founder_rejoinder_410"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

@@ -15,7 +15,8 @@ const initSource = readFileSync(new URL("../../init/route.ts", import.meta.url),
 const enactmentsSource = readFileSync(new URL("../../enactments/route.ts", import.meta.url), "utf8");
 
 test("init: law rows are masked for non-subscribers and the envelope says so", () => {
-  assert.match(initSource, /import \{ maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL \} from "@\/app\/api\/library\/laws\/\[slug\]\/_official-meta";/);
+  // Owner ٤٢٤: the same module masks the decrees (maskDecreeOfficialFields).
+  assert.match(initSource, /import \{ maskDecreeOfficialFields, maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL \} from "@\/app\/api\/library\/laws\/\[slug\]\/_official-meta";/);
   // ٣١٨: besides the mask, a row carries only the one public date (date alone)
   // and, for a repealed law, its successor's {slug, title} (§2.4-1, public
   // columns: successorsBySupersededSlug builds nothing else).

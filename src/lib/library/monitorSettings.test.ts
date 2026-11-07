@@ -22,6 +22,10 @@ const SQL = readFileSync(
   join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261031_10_library_activity_monitor.sql"),
   "utf8",
 );
+const SQL_CAPS_426 = readFileSync(
+  join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261107_20_library_caps_owner_426.sql"),
+  "utf8",
+).replace(/--.*$/gm, "");
 const SQL_AUTO_LOCK = readFileSync(
   join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261103_10_library_auto_lock_hours.sql"),
   "utf8",
@@ -36,7 +40,10 @@ test("every field is a column of the settings table, with the same bounds and de
     const def = MONITOR_SETTINGS_DEFAULTS[f.key];
     if (f.type === "int") {
       assert.match(line, new RegExp(`check \\(${f.column} between ${f.min} and ${f.max}\\)`), f.column);
-      assert.match(line, new RegExp(`default ${def}\\b`), `${f.column} default`);
+      // Owner answer ٤٢٦: these three defaults were moved by 20261107_20.
+      const moved = SQL_CAPS_426.match(new RegExp(`alter column ${f.column}\\s+set default (\\d+)`));
+      if (moved) assert.equal(Number(moved[1]), def, `${f.column} default (20261107_20)`);
+      else assert.match(line, new RegExp(`default ${def}\\b`), `${f.column} default`);
     } else if (f.type === "bool") {
       assert.match(line, new RegExp(`default ${def}\\b`), `${f.column} default`);
     } else {
@@ -98,12 +105,25 @@ test("the seeded caps are the old constants, so the deploy changes nothing a rea
   assert.equal(MONITOR_SETTINGS_DEFAULTS.flagAction, "notify");
 });
 
+test("owner answer ٤٢٦: 50 documents, 240 requests, 60 searches an hour; the daily caps unchanged (q٤٤٧ pending)", () => {
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.hourlyDocs, 50);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.ruleHourRequests, 240);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.ruleHourSearches, 60);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.dailyDocs, 220);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.memberDailyDocs, 400);
+  assert.match(SQL_CAPS_426, /hourly_docs\s*=\s*50\b/);
+  assert.match(SQL_CAPS_426, /rule_hour_requests\s*=\s*240\b/);
+  assert.match(SQL_CAPS_426, /rule_hour_searches\s*=\s*60\b/);
+  assert.ok(!/\bset\b[^;]*\bdaily_docs\s*=/.test(SQL_CAPS_426), "the daily caps are not touched");
+  assert.ok(!/\bdaily_docs\s+set default/.test(SQL_CAPS_426), "nor their defaults");
+});
+
 test("a row maps to settings; an odd or missing column keeps its default", () => {
   const s = settingsFromRow({ daily_docs: 300, rule_night_on: true, flag_action: "slow", hourly_docs: "x", rule_near_cap_pct: 1.5 });
   assert.equal(s.dailyDocs, 300);
   assert.equal(s.ruleNightOn, true);
   assert.equal(s.flagAction, "slow");
-  assert.equal(s.hourlyDocs, 120);
+  assert.equal(s.hourlyDocs, 50);
   assert.equal(s.ruleNearCapPct, 80);
   assert.deepEqual(settingsFromRow(null), { ...MONITOR_SETTINGS_DEFAULTS });
 });

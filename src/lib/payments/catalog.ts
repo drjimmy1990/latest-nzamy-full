@@ -28,6 +28,7 @@ import {
   isOnSale,
   launchPriceOn,
   offeredBillings,
+  topupLabelAr,
   type Billing,
   type BookEntry,
   type BookItemKind,
@@ -45,6 +46,8 @@ export type PayableItem = Readonly<{
   id: string;
   kind: ItemKind;
   labelAr: string;
+  /** The name an order of this item was sold under, when it differs from `labelAr` (R3; orderLabelAr). */
+  receiptLabelAr?: string;
   /** Halalas before VAT, for the billings SOLD today (retired cycles left out). */
   prices: Readonly<Partial<Record<Billing, number>>>;
   /** Halalas before VAT for every billing the book lists, retired ones included (renewal lookup, admin). */
@@ -88,6 +91,7 @@ function toPayable(entry: BookEntry): PayableItem {
     id: entry.id,
     kind: entry.kind,
     labelAr: entry.labelAr,
+    ...(entry.receiptLabelAr ? { receiptLabelAr: entry.receiptLabelAr } : {}),
     prices: Object.freeze(prices),
     listedPrices: Object.freeze(listedPrices),
     onSale: isOnSale(entry),
@@ -119,6 +123,43 @@ export function resolveItem(
   catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
 ): PayableItem | undefined {
   return Object.hasOwn(catalog, id) ? catalog[id] : undefined;
+}
+
+/**
+ * The name an existing ORDER of `itemId` shows (receipts, order lists, the
+ * payment result): the name it was sold under when the book keeps one
+ * (ruling R3), else today's label; undefined for an id the book never had.
+ */
+export function orderLabelAr(
+  itemId: string,
+  catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+): string | undefined {
+  const item = resolveItem(itemId, catalog);
+  return item ? (item.receiptLabelAr ?? item.labelAr) : undefined;
+}
+
+/**
+ * Task F fix round 1: a top-up order's label from the points its lot ACTUALLY
+ * credited (points_lots.points_total for the order), so a top-up bought before
+ * owner ٤٢٢ keeps «شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة (منها ٢٥٠ نقطة مكافأة)» rather than
+ * today's grant. Any other item, or no credited count (lot not read, not yet
+ * granted, a bad value): orderLabelAr.
+ */
+export function orderLabelWithPointsAr(
+  itemId: string,
+  creditedPoints: unknown,
+  catalog: Readonly<Record<string, PayableItem>> = PAYABLE_ITEMS,
+): string | undefined {
+  const entry = Object.hasOwn(PRICE_BOOK, itemId) ? PRICE_BOOK[itemId] : undefined;
+  if (
+    entry?.kind === "topup" &&
+    typeof creditedPoints === "number" &&
+    Number.isSafeInteger(creditedPoints) &&
+    creditedPoints > 0
+  ) {
+    return topupLabelAr({ ...entry, points: creditedPoints });
+  }
+  return orderLabelAr(itemId, catalog);
 }
 
 /** SELL: the item for an id only while it is on sale, or undefined. */

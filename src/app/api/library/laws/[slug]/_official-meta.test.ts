@@ -9,6 +9,7 @@ import {
   lawOfficialLink,
   lawOfficialLinks,
   lawOfficialMeta,
+  maskDecreeOfficialFields,
   maskListOfficialFields,
 } from "./_official-meta.ts";
 
@@ -83,6 +84,27 @@ test("catalogue rows: decree and date nulled for a non-subscriber, status and th
   assert.equal(maskListOfficialFields(row, true), row);
   // A row without the columns does not grow them.
   assert.deepEqual(maskListOfficialFields({ slug: "y" }, false), { slug: "y" });
+});
+
+test("owner ٤٢٤ / ٣٨٠: a decree's number, date and official link are blanked for a non-subscriber, the rest kept", () => {
+  const row = {
+    id: "0b7c",
+    title: "تعميم بشأن …",
+    type: "circular",
+    issuer: "وزارة العدل",
+    ref: "13/ت/1234",
+    date: "1445/03/12هـ",
+    official_url: "https://www.moj.gov.sa/x",
+    summary_brief: "موجز",
+    pages: ["الصفحة الأولى", "الصفحة الثانية"],
+  };
+  const masked = maskDecreeOfficialFields(row, false);
+  assert.deepEqual(masked, { ...row, ref: "", date: "", official_url: "" });
+  assert.equal(row.ref, "13/ت/1234", "the input row is not mutated");
+  assert.equal(maskDecreeOfficialFields(row, true), row, "a subscriber's row is returned as it is");
+  // A list row has no official_url: it does not grow one.
+  assert.deepEqual(maskDecreeOfficialFields({ id: "a", ref: "1", date: "2" }, false), { id: "a", ref: "", date: "" });
+  assert.deepEqual(maskDecreeOfficialFields({ id: "b" }, false), { id: "b" });
 });
 
 test("tier-shaped responses are never stored by a shared cache", () => {

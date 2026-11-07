@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { requireStaff, type ServerTier } from "@/lib/access-control";
+import { requireStaff, TIER_RANK, type ServerTier } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { grantEntitlement, type GrantAction } from "@/lib/entitlements";
 import { libraryEndsAtAr, resolveLibraryRequestGrant } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
+import { libraryRequestApprovalDecision, requestGrantApprovalDecision } from "@/lib/library/libraryRequestApproval";
+import type { StaffRole } from "@/lib/auth/staffRoles";
 import { recordNotification } from "@/lib/notify";
 
 /**
@@ -125,9 +127,25 @@ export async function PATCH(
         requestedRef: reqRow.requested_ref,
         requesterId,
         adminId: gate.userId,
+        role: gate.role,
         durationDays: body.durationDays,
         nowIso,
       });
+    }
+
+    // Owner ٤٢٧: a Pro+ plan is the full library, so without entitlements.grant
+    // the grant action must be the kind's own and a plan must rank below pro
+    // (no request is tied to a paid order today — libraryRequestApproval.ts).
+    const grantApproval = requestGrantApprovalDecision({
+      role: gate.role,
+      kind,
+      grantAction: body.grantAction,
+      tier: body.tier,
+      paidOrder: false,
+      ranks: TIER_RANK,
+    });
+    if (!grantApproval.allowed) {
+      return NextResponse.json({ error: grantApproval.error, code: grantApproval.code }, { status: grantApproval.status });
     }
 
     // Map the request kind → a concrete grant action. media → plan.
@@ -212,10 +230,22 @@ async function approveLibraryRequest(input: {
   requestedRef: unknown;
   requesterId: string;
   adminId: string;
+  role: StaffRole;
   durationDays: unknown;
   nowIso: string;
 }) {
-  const { admin, id, requestedRef, requesterId, adminId, durationDays, nowIso } = input;
+  const { admin, id, requestedRef, requesterId, adminId, role, durationDays, nowIso } = input;
+
+  // Owner ٤٢٧: a free library grant is the admin's alone. Operations may
+  // decide requests (entitlements.decide), but approving a library request
+  // grants the library, so it needs a paid order or entitlements.grant. No
+  // request is tied to an order today (libraryRequestApproval.ts), so it is
+  // unpaid and only an admin may approve it; refused before anything is read
+  // or written.
+  const approval = libraryRequestApprovalDecision({ role, paidOrder: false });
+  if (!approval.allowed) {
+    return NextResponse.json({ error: approval.error, code: approval.code }, { status: approval.status });
+  }
 
   const plan = resolveLibraryRequestGrant(requestedRef, durationDays);
   if (!plan.ok) {

@@ -48,6 +48,8 @@ import {
   resolveSlugSurvivor,
 } from "./lib/entity-prescan";
 import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnnexes } from "./lib/article-history";
+// Owner 2026-11-07: the corpus's own audit notes never reach an amendment summary.
+import { stripAuditNotes } from "../../src/lib/library/lawPreambleBlocks";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
@@ -1291,7 +1293,7 @@ function parseArticlesInBlock(
         amendments.push({
           date: String(amendMeta.date || ""),
           decree: String(amendMeta.decree || ""),
-          summary: String(amendMeta.summary || ""),
+          summary: stripAuditNotes(String(amendMeta.summary || ""), "summary"),
           original_text: (amendMeta.original_text as string) || undefined,
           type: (amendMeta.type as string) || undefined,
         });
@@ -1327,7 +1329,7 @@ function parseArticlesInBlock(
       amendments.push({
         date: "",
         decree: "",
-        summary: h.source_summary,
+        summary: stripAuditNotes(h.source_summary, "summary"),
         original_text: h.original_text,
         // Same Arabic vocabulary as real AMENDMENT anchors (تعديل/إلغاء) —
         // "unknown" stays undefined rather than guessing a specific kind;

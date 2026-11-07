@@ -17,7 +17,12 @@ export interface StrengthReport {
   citation_check: unknown[];
 }
 
-export const LEVEL_LABEL: Record<Level, string> = { strong: "أسانيد قوية", medium: "أسانيد متوسطة", weak: "أسانيد ضعيفة" };
+/** Owner ٤١٤ (7 Nov 2026): the position, never a verdict on the grounds' worth. */
+export const LEVEL_LABEL: Record<Level, string> = { strong: "موقف قوي", medium: "موقف متوسط", weak: "يحتاج تدعيماً" };
+
+/** Owner ٤١٤: his wording, under the level on the screen and at the end of the exported text. */
+export const STRENGTH_DISCLAIMER =
+  "تقدير آلي استرشادي مبني على المعطيات المدخلة للمساعدة والتحليل فقط، ولا يُعد ضماناً لنتيجة قضائية أو رأياً نهائياً؛ إذ يخضع الفصل النهائي لسلطة المحكمة التقديرية.";
 export const RISK_LABEL: Record<Severity, string> = { high: "مرتفع", medium: "متوسط", low: "منخفض" };
 
 const list = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -40,11 +45,11 @@ export function asStrengthReport(output: Record<string, unknown> | null): Streng
   };
 }
 
-/** The report as plain text, for copying into a memo or a note. */
+/** The report as plain text, for copying into a memo or a note (and the PDF / Word export), the disclaimer last. */
 export function strengthReportText(r: StrengthReport): string {
   const lines = (title: string, items: string[]) => (items.length ? [title, ...items.map((s) => `• ${s}`), ""] : []);
   return [
-    `قوة الأسانيد: ${LEVEL_LABEL[r.grounds.level]}`,
+    `تقدير الموقف: ${LEVEL_LABEL[r.grounds.level]}`,
     r.grounds.summary,
     "",
     ...lines("نقاط القوة:", r.grounds.strengths),
@@ -53,5 +58,5 @@ export function strengthReportText(r: StrengthReport): string {
     ...lines("تحركات الخصم المتوقعة:", r.opponent.map((m) => `${m.move} — الرد: ${m.counter}`)),
     ...lines("المخاطر الإجرائية:", r.risks.map((x) => `${x.risk} (${RISK_LABEL[x.level] ?? "متوسط"}) — ${x.mitigation}`)),
     ...lines("محامي الشيطان:", r.devil.map((d) => `${d.label}: ${d.text}`)),
-  ].join("\n").trim();
+  ].join("\n").trim() + `\n\n${STRENGTH_DISCLAIMER}`;
 }

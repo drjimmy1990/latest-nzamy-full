@@ -165,3 +165,24 @@ export function maskListOfficialFields<T extends Record<string, unknown>>(row: T
   if ("issue_date_hijri" in out) out.issue_date_hijri = null;
   return out as T;
 }
+
+/** The decrees_circulars fields a non-subscriber never receives (owner ٤٢٤ / ٣٨٠). */
+export const DECREE_OFFICIAL_FIELDS = ["ref", "date", "official_url"] as const;
+
+/**
+ * A decree or circular (library.decrees_circulars: /api/library/decrees/[id],
+ * the /api/library/init orders list, /api/library/search's orders) for a
+ * non-subscriber: its number (`ref`), its date and its official link are
+ * blanked to '' — owner ٤٢٤ (2026-11-07) confirming ٣٨٠, the laws' rule
+ * (T28-22 / ٣١٨) applied to decrees. Only the keys the row has are touched;
+ * everything else stays. Keyed on full library access (hasFullLibraryAccess /
+ * getLibraryAccessForUser().hasFullAccess), never the free-item whitelist —
+ * like the laws. The two free scanned pages are not touched here (owner ٤٤٩
+ * pending). Returns a copy; the input row is not modified.
+ */
+export function maskDecreeOfficialFields<T extends Record<string, unknown>>(row: T, isSubscriber: boolean): T {
+  if (isSubscriber) return row;
+  const out: Record<string, unknown> = { ...row };
+  for (const key of DECREE_OFFICIAL_FIELDS) if (key in out) out[key] = "";
+  return out as T;
+}

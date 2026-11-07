@@ -35,7 +35,9 @@ type Lang = "ar" | "en";
 // «٢٩٩ ر.س» for a call, against the catalogue's 500. A call and an in-person
 // visit now read the same client catalogue as /book/consultation
 // (consultationTypePrice, live via useClientPricingCatalog); the AI tier is
-// «قريباً».
+// «قريباً». Owner ٤٣٣ (3 Nov 2026): the call card shows both of its prices —
+// voice 20 min (voice-call) and video 30 min (video-short) — and the copy
+// names the catalogue's durations (20 / 30 / 45); no session is an hour long.
 type Kind = "ai" | "video" | "in-person";
 const COMING_SOON: Record<Lang, string> = { ar: "قريباً", en: "Coming soon" };
 
@@ -66,8 +68,8 @@ const consultationTypes = {
       title: "استشارة صوتية / مرئية",
       kind: "video" as Kind,
       subtitle: "جلسة مباشرة مع محامٍ",
-      desc: "جلسة استشارية مباشرة مع محامٍ معتمد عبر الصوت أو الفيديو — ٤٥ دقيقة كاملة وتقرير مكتوب بعد الجلسة",
-      features: ["٤٥ دقيقة مع محامٍ معتمد", "صوت أو فيديو حسب اختيارك", "تقرير مكتوب بعد الجلسة", "متابعة مجانية ٢٤ ساعة"],
+      desc: "جلسة استشارية مباشرة مع محامٍ معتمد — صوتية ٢٠ دقيقة أو مرئية ٣٠ دقيقة، وتقرير مكتوب بعد الجلسة",
+      features: ["صوتية ٢٠ دقيقة أو مرئية ٣٠ دقيقة", "مع محامٍ معتمد", "تقرير مكتوب بعد الجلسة", "متابعة مجانية ٢٤ ساعة"],
       // No «الأكثر طلبًا» badge (owner, Q164): no booking data supports it.
       badge: null,
       color: "from-royal/10 to-royal/5",
@@ -79,8 +81,8 @@ const consultationTypes = {
       title: "استشارة حضورية",
       kind: "in-person" as Kind,
       subtitle: "لقاء شخصي في المكتب",
-      desc: "استشارة حضورية في مكتب المحامي لمن يفضل التواصل المباشر — ٦٠ دقيقة مع محامٍ متخصص وملف قضية كامل",
-      features: ["٦٠ دقيقة في مكتب المحامي", "توقيع وثائق رسمية", "ملف قضية مكتوب كامل", "متابعة مجانية أسبوع"],
+      desc: "استشارة حضورية في مكتب المحامي لمن يفضل التواصل المباشر — ٤٥ دقيقة مع محامٍ متخصص وملف قضية كامل",
+      features: ["٤٥ دقيقة في مكتب المحامي", "توقيع وثائق رسمية", "ملف قضية مكتوب كامل", "متابعة مجانية أسبوع"],
       badge: null,
       color: "from-gold/10 to-gold/5",
       border: "border-gold/20",
@@ -105,8 +107,8 @@ const consultationTypes = {
       title: "Voice / Video Consultation",
       kind: "video" as Kind,
       subtitle: "Live session with a lawyer",
-      desc: "Live consultation session with a certified lawyer via voice or video — 45 full minutes with a written report after the session",
-      features: ["45 min with certified lawyer", "Voice or video, your choice", "Written report after session", "Free 24-hour follow-up"],
+      desc: "Live consultation session with a certified lawyer — 20 minutes by voice or 30 minutes by video, with a written report after the session",
+      features: ["Voice 20 min or video 30 min", "With a certified lawyer", "Written report after session", "Free 24-hour follow-up"],
       badge: null,
       color: "from-royal/10 to-royal/5",
       border: "border-royal/20",
@@ -117,8 +119,8 @@ const consultationTypes = {
       title: "In-Person Consultation",
       kind: "in-person" as Kind,
       subtitle: "Face-to-face at the office",
-      desc: "In-person consultation at the lawyer's office for those who prefer direct contact — 60 minutes with a specialist lawyer and a full case file",
-      features: ["60 min at lawyer's office", "Sign official documents", "Full written case file", "Free one-week follow-up"],
+      desc: "In-person consultation at the lawyer's office for those who prefer direct contact — 45 minutes with a specialist lawyer and a full case file",
+      features: ["45 min at lawyer's office", "Sign official documents", "Full written case file", "Free one-week follow-up"],
       badge: null,
       color: "from-gold/10 to-gold/5",
       border: "border-gold/20",
@@ -160,7 +162,7 @@ const faqs = {
     { q: "هل الاستشارة سرية؟", a: "نعم، تلتزم المنصة بسرية المعلومات القانونية بموجب النظام السعودي. وتقنياً: الاتصال مؤمَّن عبر TLS، وعزل صفوف (RLS) يمنع حساباً آخر من قراءة محادثاتك. ولا توجد طبقة تشفير طرف-لطرف (E2E)." },
     // The scheduled half said «تتيح لك اختيار محامٍ بعينه»: the office assigns
     // the lawyer (N16), the same as step ١ above.
-    { q: "ما الفرق بين الاستشارة الفورية والمجدولة؟", a: "الفورية تربطك بأول محامٍ متاح لمدة ٣٠ دقيقة، ولا يمكننا حالياً تحديد وقت انتظار متوقع. المجدولة تحدّد فيها وقتاً يناسبك لمدة ٦٠ دقيقة، ويُراجع فريق نظامي طلبك ويُسنده إلى محامٍ مختص." },
+    { q: "ما الفرق بين الاستشارة الفورية والمجدولة؟", a: "الفورية تربطك بأول محامٍ متاح، ولا يمكننا حالياً تحديد وقت انتظار متوقع. المجدولة تحدّد فيها وقتاً يناسبك، ويُراجع فريق نظامي طلبك ويُسنده إلى محامٍ مختص. ومدة الجلسة في الحالتين حسب نوعها: صوتية ٢٠ دقيقة، مرئية ٣٠ دقيقة، حضورية ٤٥ دقيقة." },
     // Was «نعم، نضمن الرضا الكامل … استرداد كامل خلال ٢٤ ساعة من انتهاء الجلسة»,
     // which /refund-policy (owner answer ١٨٠, sections ٢ and ٤) does not offer.
     // This answer restates that policy and links to it; it adds no term.
@@ -172,7 +174,7 @@ const faqs = {
   en: [
     { q: "How does an instant consultation work?", a: "After payment you are immediately connected to a voice/video/chat room with the first available lawyer in the requested specialty. Because the lawyer roster is still being onboarded, we cannot quote an expected wait time yet." },
     { q: "Is the consultation confidential?", a: "Yes — the platform complies with Saudi legal confidentiality requirements. Technically: traffic is secured with TLS, and row-level security (RLS) prevents another account from reading your conversations. There is no end-to-end (E2E) encryption." },
-    { q: "What is the difference between instant and scheduled?", a: "Instant connects you with the first available lawyer for 30 minutes; we cannot quote a wait time yet. Scheduled lets you pick a time that suits you for 60 minutes; Nezamy's team reviews your request and assigns a specialist lawyer." },
+    { q: "What is the difference between instant and scheduled?", a: "Instant connects you with the first available lawyer; we cannot quote a wait time yet. Scheduled lets you pick a time that suits you; Nezamy's team reviews your request and assigns a specialist lawyer. Either way the session length follows its type: voice 20 minutes, video 30 minutes, in person 45 minutes." },
     { q: "Can I get a refund if I am not satisfied?", a: "Consultation fees are paid directly to the licensed law office; the platform does not hold them. Cancelling up to 24 hours before the session is a full cancellation. Anything else follows your agreement with the law office, and you may file a quality complaint for the Nezamy team to review.", link: { href: "/refund-policy", label: "Refund Policy" } },
     { q: "Is Nezamy AI available now?", a: "Not yet; Nezamy AI is not available at the moment. Once it is, it will be an aid for general queries and no substitute for a licensed lawyer in complex cases or court representation." },
   ],
@@ -186,7 +188,17 @@ export default function ConsultationsPage() {
   const isDark = theme === "dark";
   const L = lang as Lang;
   const { catalog } = useClientPricingCatalog();
-  const priceOf = (kind: Kind): string => (kind === "ai" ? COMING_SOON[L] : consultationTypePrice(kind, catalog, L));
+  const priceOf = (kind: Kind): string => {
+    if (kind === "ai") return COMING_SOON[L];
+    if (kind === "video") {
+      // One card, two catalogue entries (owner ٤٣٣): voice-call and video-short.
+      const voice = consultationTypePrice("voice", catalog, L);
+      const video = consultationTypePrice("video", catalog, L);
+      return L === "ar" ? `صوتية ${voice} · مرئية ${video}` : `Voice ${voice} · Video ${video}`;
+    }
+    return consultationTypePrice(kind, catalog, L);
+  };
+  const priceSize = (kind: Kind) => (kind === "video" ? "text-lg" : "text-2xl");
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scheduling, setScheduling] = useState<SchedulingChoice>(null);
 
@@ -253,7 +265,7 @@ export default function ConsultationsPage() {
                 </ul>
                 <div className="flex items-end justify-between">
                   <div>
-                    <span className={`text-2xl font-black ${item.accent}`}>{priceOf(item.kind)}</span>
+                    <span className={`${priceSize(item.kind)} font-black ${item.accent}`}>{priceOf(item.kind)}</span>
                   </div>
                   <motion.a
                     href="/register/client"
@@ -417,7 +429,7 @@ export default function ConsultationsPage() {
                 <item.icon size={28} className={`${item.accent} mb-4`} weight="duotone" />
                 <h3 className={`text-lg font-bold mb-1 ${isDark ? "text-white" : "text-gray-900"}`}>{item.title}</h3>
                 <div className="flex items-end gap-1 my-4">
-                  <span className={`text-2xl font-black ${item.accent}`}>{priceOf(item.kind)}</span>
+                  <span className={`${priceSize(item.kind)} font-black ${item.accent}`}>{priceOf(item.kind)}</span>
                 </div>
                 <ul className="space-y-2.5 mb-7">
                   {item.features.map((f) => (

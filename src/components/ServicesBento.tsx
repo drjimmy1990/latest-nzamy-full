@@ -256,7 +256,7 @@ export default function ServicesBento() {
                   {isAr ? "ذكاء نظامي" : "Nezamy AI"}
                 </h3>
                 <p className={`mt-3 text-sm leading-relaxed ${isDark ? "text-gray-400" : "text-ink-muted"}`}>
-                  {isAr ? "مساعدك القانوني الذكي — يجيب على أسئلتك، يفحص عقودك، ويصيغ مذكراتك بسرعة البرق عبر خوارزميات مدرّبة على الأنظمة السعودية." : "Your smart legal assistant — answers questions, reviews contracts, and drafts memos lightning fast using algorithms trained on Saudi laws."}
+                  {isAr ? "مساعدك القانوني الذكي — يجيب على أسئلتك، يفحص عقودك، ويصيغ مذكراتك بسرعة البرق، معتمداً الأنظمة السعودية مصدراً." : "Your smart legal assistant — answers questions, reviews contracts, and drafts memos lightning fast, taking Saudi law as its source."}
                 </p>
 
                 <div className="mt-8 space-y-4">

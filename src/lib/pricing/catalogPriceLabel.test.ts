@@ -13,8 +13,8 @@ test("S6: public pages state both contract-review prices", () => {
     dualAudiencePriceLabel("contract-review", CLIENT_SERVICE_CATALOG, "en"),
     "From 600 SAR (individuals) · From 800 SAR (business)",
   );
-  assert.equal(dualAudiencePriceLabel("video-short", CLIENT_SERVICE_CATALOG, "ar"), "٥٠٠ ر.س");
-  assert.equal(dualAudiencePriceLabel("video-short", CLIENT_SERVICE_CATALOG, "en"), "500 SAR");
+  assert.equal(dualAudiencePriceLabel("video-short", CLIENT_SERVICE_CATALOG, "ar"), "١٩٩ ر.س");
+  assert.equal(dualAudiencePriceLabel("video-short", CLIENT_SERVICE_CATALOG, "en"), "199 SAR");
 });
 
 test("S6: one price when the business variant equals the individual price, is disabled, or the id is unknown", () => {

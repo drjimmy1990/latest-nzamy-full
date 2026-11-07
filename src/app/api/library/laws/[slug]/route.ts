@@ -13,7 +13,8 @@ import { splitStoredPreamble } from '@/lib/library/splitPreamble';
 import { latestUpdateDetail, lawReaderExtras, regulationReaderExtras } from '@/lib/library/lawSummaryVisibility';
 import { latestLegislativeEvent } from '@/lib/library/legislativeEvent';
 import { lawArticleCounts } from '@/lib/library/lawCardFields';
-import { stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
+import { stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
+import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -570,12 +571,22 @@ function formatArticleWithPaywall(
   // article. It therefore goes through exactly the same paywall as `text`.
   const originalText = (article.original_text as string) || '';
 
+  // Owner 2026-11-07 (screenshot ٣): the line that introduces the regulation
+  // («من اللائحة التنفيذية لنظام المرور (…):») closes the stored text of an
+  // article with regulation rows. It leaves `text` — before the locked preview,
+  // so its numbers never reach a locked reader — and, for an unlocked article,
+  // becomes `regulationHeading` (instrument number/date withheld per T28-22).
+  const regulationRows = (article.article_regulations as Record<string, unknown>[]) || [];
+  const lifted = regulationRows.length > 0
+    ? liftRegulationHeading(article.text, !showOfficialMeta)
+    : { text: (article.text as string) || '', heading: null };
+
   if (isLocked) {
-    result.text = preview(article.text);
+    result.text = preview(lifted.text);
     if (originalText) result.originalText = preview(originalText);
     result.lockedMessage = 'يتطلب اشتراك Pro أو أعلى لعرض النص الكامل';
   } else {
-    result.text = article.text || '';
+    result.text = lifted.text;
     if (originalText) result.originalText = originalText;
   }
 
@@ -605,21 +616,25 @@ function formatArticleWithPaywall(
       const sorted = [...regRows].sort((a, b) =>
         String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999'))
       );
+      // Regulation names can carry the instrument's number and date: cleaned
+      // for the viewers whose official metadata is withheld (owner ٤٢٤).
+      const refFor = (ref: unknown) => regulationRefForViewer(ref, !showOfficialMeta);
       result.regulations = sorted.map((r) => ({
-        ref: r.ref || '',
+        ref: refFor(r.ref),
         regNum: r.reg_num ?? null,
         text: r.text || '',
         status: articleStatusForDetail(r.status),
         isSecondaryDisplay: r.is_secondary_display === true,
       }));
-      const distinctRefs = Array.from(new Set(sorted.map((r) => String(r.ref || '')).filter(Boolean)));
+      const distinctRefs = Array.from(new Set(sorted.map((r) => refFor(r.ref)).filter(Boolean)));
       result.executiveReg = {
         ref: distinctRefs.join(', '),
         text: sorted.map((r) => String(r.text || '')).join('\n\n'),
       };
+      if (lifted.heading) result.regulationHeading = lifted.heading;
     } else if (article.executive_reg_text) {
       result.executiveReg = {
-        ref: article.executive_reg_ref || '',
+        ref: regulationRefForViewer(article.executive_reg_ref, !showOfficialMeta),
         text: article.executive_reg_text,
       };
     }
@@ -634,8 +649,11 @@ function formatArticleWithPaywall(
         source: showOfficialMeta ? a.source : null,
         ...(showOfficialMeta ? {} : { sourceLocked: true }),
         type: a.type,
-        summary: a.summary,
-        fullText: a.full_text,
+        // Owner 2026-11-07 (screenshot ٢): the corpus's own audit notes
+        // («تصحيح 2026-08-14 (جولة تدقيق منهجي) … سجل المشاكل ف1072») never
+        // reach the browser — nor the reader's in-page search.
+        summary: stripAuditNotes(a.summary as string | null, 'summary'),
+        fullText: stripAuditNotes(a.full_text as string | null, 'fullText'),
       }));
     }
   }

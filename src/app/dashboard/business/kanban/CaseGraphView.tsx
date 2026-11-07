@@ -131,7 +131,7 @@ export default function CaseGraphView({
       return;
     }
     setAiCard({ busy: true, note: null });
-    const answer = await askCanvasCard(chosen.slice(0, 8));
+    const answer = await askCanvasCard(chosen.slice(0, 8), fetch, userType);
     if (!answer.ok) {
       setAiCard({ busy: false, note: answer.error ?? null });
       return;
@@ -170,7 +170,7 @@ export default function CaseGraphView({
   // unconfirmed until the server confirms THAT revision; it is no longer
   // forgotten the moment the debounce fires.
   const autosave = useRef<GraphAutosave<GraphPayload> | null>(null);
-  const { userId } = useUser();
+  const { userId, userType } = useUser();
   const draftKey = caseId && userId ? `nzamy:case-graph-draft:${userId}:${caseId}` : null;
   const draftKeyRef = useRef<string | null>(draftKey);
   useEffect(() => { draftKeyRef.current = draftKey; }, [draftKey]);

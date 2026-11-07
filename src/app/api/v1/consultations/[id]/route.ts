@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isConsultationStatus, CONSULTATION_STATUSES } from "@/lib/services/consultationVocabulary";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
-import { checkInstantSlot } from "@/lib/services/consultationSchedule";
 
 /**
  * GET /api/v1/consultations/[id] — Get consultation detail
@@ -43,7 +42,7 @@ export async function GET(
 
 /**
  * PATCH /api/v1/consultations/[id] — Update consultation
- * Body: { status?, scheduled_at? }
+ * Body: { status? } — a `scheduled_at` is refused with 400 (owner ٤٣٨).
  *
  * `notes` was removed from the allow-list (2026-09-05, phase 3): the column
  * never existed on `consultations` — 20260905_phase3_consultations_and_
@@ -82,7 +81,17 @@ export async function PATCH(
   const { id } = await context.params;
 
   const body = await request.json();
-  const allowedFields = ["status", "scheduled_at"];
+  // Owner ٤٣٨ (fail closed): this legacy route has no caller in the app and no
+  // overlap check, so it never moves a slot. Rescheduling goes through
+  // /api/v1/lawyer/consultations/[id], which runs the zone, future and
+  // overlap guards (_scheduleGuard.ts).
+  if (body && typeof body === "object" && "scheduled_at" in body) {
+    return NextResponse.json(
+      { error: "لا يُعدَّل موعد الاستشارة من هنا — استخدم شاشة استشارات المحامي (/api/v1/lawyer/consultations/[id])." },
+      { status: 400 },
+    );
+  }
+  const allowedFields = ["status"];
   const updates: Record<string, unknown> = {};
   for (const key of allowedFields) {
     if (key in body) {
@@ -102,21 +111,6 @@ export async function PATCH(
       { error: `status يجب أن يكون أحد: ${CONSULTATION_STATUSES.join(", ")}` },
       { status: 400 },
     );
-  }
-  if ("scheduled_at" in updates) {
-    const v = updates.scheduled_at;
-    if (v !== null && (typeof v !== "string" || Number.isNaN(Date.parse(v)))) {
-      return NextResponse.json({ error: "موعد الاستشارة غير صالح." }, { status: 400 });
-    }
-    // Same slot rule as /api/v1/lawyer/consultations/[id] (LIVE-F34/F37): a
-    // new slot carries its zone and is ahead of now. This legacy route has no
-    // caller in the app; the lawyer screens use the lawyer route, which also
-    // runs the overlap check.
-    if (v !== null) {
-      const slot = checkInstantSlot(v, Date.now(), true);
-      if (slot.kind === "invalid") return NextResponse.json({ error: slot.error }, { status: 400 });
-      if (slot.kind === "slot") updates.scheduled_at = slot.startIso;
-    }
   }
 
   const { data, error } = await supabase

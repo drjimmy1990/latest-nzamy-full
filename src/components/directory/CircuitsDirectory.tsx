@@ -53,12 +53,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   "استئناف": "bg-orange-500/10 text-orange-500 border-orange-500/20",
   "إدارة وفروع الوزارة": "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
   "محاكم ودوائر قضائية": "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  "محكمة أحوال شخصية": "bg-rose-500/10 text-rose-500 border-rose-500/20",
   "محكمة تجارية": "bg-[#C8A762]/10 text-[#C8A762] border-[#C8A762]/30",
 };
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   "محكمة عامة": Scales,
   "محكمة جزائية": Scales,
+  "محكمة أحوال شخصية": Scales,
   "محكمة تنفيذ": FileText,
   "كتابة عدل": Buildings,
   "استئناف": Bank,

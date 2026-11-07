@@ -15,6 +15,9 @@ import { apiGet, apiMutate, ApiTimeoutError, isSupabaseMode } from "@/lib/servic
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
 
+/** Owner ٤٣٠: the label every fee statement carries (not a ZATCA e-invoice). DB/API names stay «invoice». */
+const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";
+
 // ── تحصيل الفاتورة ──
 // تحصيل المكتب من موكليه لا يمرّ عبر بوابة دفع: قيد يدوي لمبلغ استُلم نقداً أو بتحويل بنكي.
 type CollectMethod = "cash" | "bank_transfer";
@@ -35,10 +38,10 @@ const isCollectable = (inv: any) =>
 
 /** رسائل الخادم إنجليزية — نعرضها للمحامي بالعربية. */
 const COLLECT_ERROR_AR: Record<string, string> = {
-  "Invoice not found": "لم يُعثر على هذه الفاتورة — قد تكون حُذفت.",
-  "Forbidden": "لا تملك صلاحية تحصيل هذه الفاتورة.",
-  "Invoice is not collectable": "هذه الفاتورة لم تعد قابلة للتحصيل — قد تكون حُصّلت بالفعل. حدّث الصفحة.",
-  "paymentId required": "تعذّر تحديد الفاتورة المطلوبة.",
+  "Invoice not found": "لم يُعثر على بيان الأتعاب هذا — قد يكون حُذف.",
+  "Forbidden": "لا تملك صلاحية تحصيل بيان الأتعاب هذا.",
+  "Invoice is not collectable": "بيان الأتعاب هذا لم يعد قابلاً للتحصيل — قد يكون حُصّل بالفعل. حدّث الصفحة.",
+  "paymentId required": "تعذّر تحديد بيان الأتعاب المطلوب.",
   "method must be cash or bank_transfer": "طريقة التحصيل غير صالحة.",
   "amountHalalas must be a whole number of halalas greater than 0":
     "أدخل مبلغاً صحيحاً أكبر من صفر، بخانتين عشريتين على الأكثر.",
@@ -54,10 +57,10 @@ const READ_TIMEOUT_MS = 15_000;
 const COLLECT_UNCERTAIN_AR =
   "لم يصل رد الخادم، فلا نعرف إن كانت الدفعة قد سُجّلت. أعدنا قراءة الأرقام من الخادم — إن لم تظهر الدفعة فاضغط «تسجيل» مرة أخرى: النموذج نفسه لا يُسجَّل مرتين.";
 const CREATE_UNCERTAIN_AR =
-  "لم يصل رد الخادم، فلا نعرف إن كانت الفاتورة قد صدرت. أعدنا قراءة القائمة من الخادم — إن لم تظهر فاضغط «حفظ» مرة أخرى: النموذج نفسه لا يُصدر فاتورتين.";
+  "لم يصل رد الخادم، فلا نعرف إن كان بيان الأتعاب قد صدر. أعدنا قراءة القائمة من الخادم — إن لم تظهر فاضغط «حفظ» مرة أخرى: النموذج نفسه لا يُصدر بيانَين.";
 /** الرسالة الإنجليزية الوحيدة الباقية من إصدار الفاتورة؛ البقية يكتبها الخادم بالعربية. */
 const CREATE_ERROR_AR: Record<string, string> = {
-  Forbidden: "هذا الموكّل أو هذه القضية ليست في ملفاتك، فلم تُصدر الفاتورة.",
+  Forbidden: "هذا الموكّل أو هذه القضية ليست في ملفاتك، فلم يصدر بيان الأتعاب.",
 };
 const hasArabic = (text: string) => /[\u0600-\u06FF]/.test(text);
 
@@ -457,7 +460,7 @@ export default function FinancePage() {
             setCreateKey(newCollectKey());
             refreshSilently();
           }
-          setInvoiceError(CREATE_ERROR_AR[raw] || (hasArabic(raw) ? raw : "تعذّر إصدار الفاتورة. حاول مرة أخرى."));
+          setInvoiceError(CREATE_ERROR_AR[raw] || (hasArabic(raw) ? raw : "تعذّر إصدار بيان الأتعاب. حاول مرة أخرى."));
         }
         setIsSubmitting(false);
       }
@@ -525,7 +528,7 @@ export default function FinancePage() {
     const remaining = totalFee - alreadyCollected;
 
     if (remaining <= 0) {
-      setCollectError("لا يوجد مبلغ متبقٍ على هذه الفاتورة.");
+      setCollectError("لا يوجد مبلغ متبقٍ على بيان الأتعاب هذا.");
       return;
     }
 
@@ -544,7 +547,7 @@ export default function FinancePage() {
       return;
     }
     if (collectedNow > remaining) {
-      setCollectError(`المبلغ يتجاوز المتبقي على الفاتورة (${remaining.toLocaleString()} ر.س).`);
+      setCollectError(`المبلغ يتجاوز المتبقي على بيان الأتعاب (${remaining.toLocaleString()} ر.س).`);
       return;
     }
 
@@ -695,13 +698,14 @@ export default function FinancePage() {
               <Coins size={22} weight="duotone" />
             </span>
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-800 dark:text-zinc-100">
-              الفواتير والتحصيل
+              بيانات الأتعاب والتحصيل
             </h1>
           </div>
           {/* الوصف السابق كان يعد بـ«تحليلات ضريبية متوافقة مع هيئة الزكاة
               والضريبة والجمارك» — لا تحتسب المنصة ضريبة ولا تسجّل مصروفات. */}
           <p className="text-[13px] text-slate-500 dark:text-zinc-500 leading-relaxed">
-            الفواتير التي أصدرتها لموكليك وما سجّلته من تحصيلها. التحصيل هنا قيود يدوية لا تمرّ عبر بوابة الدفع.
+            {/* Owner ٤٣٠: what is issued here is a fee statement, not a ZATCA e-invoice. */}
+            بيانات الأتعاب التي أصدرتها لموكليك وما سجّلته من تحصيلها — {FEE_STATEMENT_LABEL}. التحصيل هنا قيود يدوية لا تمرّ عبر بوابة الدفع.
           </p>
         </div>
 
@@ -711,7 +715,7 @@ export default function FinancePage() {
           onClick={openInvoiceModal}
           className="flex items-center gap-2 px-5 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#082d22] shadow-lg shadow-[#0B3D2E]/15 transition-all self-start md:self-auto cursor-pointer"
         >
-          <Plus size={14} weight="bold" /> إصدار فاتورة جديدة
+          <Plus size={14} weight="bold" /> إصدار بيان أتعاب جديد
         </motion.button>
       </motion.div>
 
@@ -776,11 +780,11 @@ export default function FinancePage() {
               </span>
               <div className="space-y-1">
                 <p className={`text-[13px] font-bold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
-                  هذه الشاشة تقرأ أحدث {invoices.length.toLocaleString()} فاتورة من {invoicesTotal.toLocaleString()}
+                  هذه الشاشة تقرأ أحدث {invoices.length.toLocaleString()} بيان أتعاب من {invoicesTotal.toLocaleString()}
                 </p>
                 <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-amber-700/70"}`}>
-                  كل المبالغ والنِّسَب والرسوم في هذه الصفحة محسوبة على هذه الفواتير وحدها، فهي ليست إجمالي
-                  ما أصدره مكتبك. والبحث وشرائح التصفية تعمل على المعروض فقط، فلا تصل إلى الفواتير الأقدم.
+                  كل المبالغ والنِّسَب والرسوم في هذه الصفحة محسوبة على بيانات الأتعاب هذه وحدها، فهي ليست إجمالي
+                  ما أصدره مكتبك. والبحث وشرائح التصفية تعمل على المعروض فقط، فلا تصل إلى بيانات الأتعاب الأقدم.
                 </p>
               </div>
             </div>
@@ -790,7 +794,7 @@ export default function FinancePage() {
           <div className={`p-1.5 rounded-3xl flex gap-1 ${isDark ? "bg-zinc-800/50" : "bg-slate-100/80"}`}>
             {([
               { key: "overview"  as FinanceTab, label: "نظرة عامة",              short: "نظرة",     icon: ChartBar },
-              { key: "invoices"  as FinanceTab, label: "إدارة الفواتير",          short: "الفواتير",  icon: Receipt },
+              { key: "invoices"  as FinanceTab, label: "إدارة بيانات الأتعاب",    short: "البيانات",  icon: Receipt },
               { key: "expenses"  as FinanceTab, label: "حركات محفظة المنصة",   short: "المحفظة",  icon: Wallet },
               { key: "pl"        as FinanceTab, label: "ملخص الأتعاب والتحصيل", short: "الملخص",   icon: Scales },
             ] as const).map(tab => {
@@ -835,7 +839,7 @@ export default function FinancePage() {
                 className="space-y-6"
               >
                 {!hasInvoices ? (
-                  <EmptyCard cardCls={cardCls} text="لم تُسجَّل أي فاتورة على حسابك بعد. أصدر أول فاتورة من الزر أعلى الصفحة." />
+                  <EmptyCard cardCls={cardCls} text="لم يُسجَّل أي بيان أتعاب على حسابك بعد. أصدر أول بيان أتعاب من الزر أعلى الصفحة." />
                 ) : (
                   <>
                     {/* أزرار اختيار النطاق الزمني */}
@@ -891,7 +895,7 @@ export default function FinancePage() {
                       {/* الرسم الدائري لتوزيع الحالات (2/5) */}
                       <div className={`${cardCls} lg:col-span-2 p-6 flex flex-col justify-between`}>
                         <div className="space-y-1 mb-6">
-                          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>موقف الفواتير العام</p>
+                          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>موقف بيانات الأتعاب العام</p>
                           <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>توزيع إجمالي الأتعاب المفوترة بين ما حُصّل وما تبقّى</p>
                         </div>
                         <div className="flex-1 flex items-center justify-center">
@@ -899,7 +903,7 @@ export default function FinancePage() {
                             <DonutChart segments={feeSegments} centerPct={collectedPct} centerLabel="محصّل" />
                           ) : (
                             <p className="text-[11px] text-center text-slate-400 dark:text-zinc-500 leading-relaxed">
-                              لا توجد مبالغ لعرضها — كل الفواتير المسجلة قيمتها ٠ ر.س.
+                              لا توجد مبالغ لعرضها — كل بيانات الأتعاب المسجلة قيمتها ٠ ر.س.
                             </p>
                           )}
                         </div>
@@ -1014,7 +1018,7 @@ export default function FinancePage() {
                           onClick={() => { setFilter("overdue"); setActiveTab("invoices"); }}
                           className="px-4 py-2.5 rounded-xl bg-red-500/10 text-red-500 text-[11px] font-black border border-red-500/20 hover:bg-red-500/20 transition-all cursor-pointer flex-shrink-0"
                         >
-                          عرض الفواتير المتأخرة
+                          عرض بيانات الأتعاب المتأخرة
                         </motion.button>
                       </motion.div>
                     )}
@@ -1041,7 +1045,7 @@ export default function FinancePage() {
                     <input
                       value={search}
                       onChange={e => setSearch(e.target.value)}
-                      placeholder="بحث في الفواتير (اسم العميل، رقم الفاتورة، التفاصيل)..."
+                      placeholder="بحث في بيانات الأتعاب (اسم العميل، رقم البيان، التفاصيل)..."
                       className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-700" : "text-slate-700 placeholder:text-slate-400"}`}
                     />
                   </div>
@@ -1065,7 +1069,7 @@ export default function FinancePage() {
                             />
                           )}
                           <span className="relative z-10">
-                            {s === "all" ? "كافة الفواتير" : STATUS_CFG[s].label}
+                            {s === "all" ? "كافة بيانات الأتعاب" : STATUS_CFG[s].label}
                           </span>
                         </button>
                       );
@@ -1073,7 +1077,8 @@ export default function FinancePage() {
                   </div>
                 </div>
 
-                {/* قائمة الفواتير التفاعلية */}
+                {/* قائمة الفواتير التفاعلية — owner ٤٣٠: the full label above the list */}
+                <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300">{FEE_STATEMENT_LABEL}</p>
                 <div className="space-y-3">
                   <AnimatePresence mode="popLayout">
                     {filteredInvoices.length === 0 ? (
@@ -1086,7 +1091,7 @@ export default function FinancePage() {
                         {/* التمييز مهم: «لا توجد نتائج للفلتر» غير «لم تُصدر فاتورة قط». */}
                         {hasInvoices
                           ? "لا توجد فواتير مطابقة لمعايير البحث والتصفية المحددة."
-                          : "لم تُصدر أي فاتورة بعد."}
+                          : "لم يصدر أي بيان أتعاب بعد."}
                       </motion.div>
                     ) : (
                       filteredInvoices.map((inv) => {
@@ -1158,7 +1163,7 @@ export default function FinancePage() {
                                       whileHover={{ scale: 1.04 }}
                                       whileTap={{ scale: 0.96 }}
                                       onClick={() => openCollectModal(inv)}
-                                      aria-label={`تسجيل تحصيل على فاتورة ${inv.client}`}
+                                      aria-label={`تسجيل تحصيل على بيان أتعاب ${inv.client}`}
                                       className={`mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black border transition-all cursor-pointer ${
                                         isDark
                                           ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"
@@ -1287,14 +1292,14 @@ export default function FinancePage() {
                       <span className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 flex items-center gap-1">
                         <CalendarBlank size={12} />
                         {invoicesTruncated && invoicesTotal !== null
-                          ? `أحدث ${invoices.length.toLocaleString()} فاتورة من ${invoicesTotal.toLocaleString()} — بدون تحديد فترة`
-                          : "جميع الفواتير المسجلة على حسابك — بدون تحديد فترة"}
+                          ? `أحدث ${invoices.length.toLocaleString()} بيان أتعاب من ${invoicesTotal.toLocaleString()} — بدون تحديد فترة`
+                          : "جميع بيانات الأتعاب المسجلة على حسابك — بدون تحديد فترة"}
                       </span>
                     </div>
 
                     <div className="space-y-2">
                       {[
-                        { label: "إجمالي الأتعاب المقيدة بالفواتير", value: totalAll, indent: false, muted: false },
+                        { label: "إجمالي الأتعاب المقيدة في بيانات الأتعاب", value: totalAll, indent: false, muted: false },
                         { label: "الأتعاب المحصلة فعلياً (نقداً أو تحويلاً بنكياً)", value: totalCollected, indent: true, muted: false, highlight: true },
                         { label: "المتبقي على فواتير معلقة وجزئية", value: pendingRemainder + partialRemainder, indent: true, muted: true },
                         { label: "المتبقي على فواتير متأخرة", value: overdueRemainder, indent: true, muted: true },
@@ -1355,7 +1360,7 @@ export default function FinancePage() {
               {/* إغلاق */}
               <button
                 onClick={() => setIsInvoiceModalOpen(false)}
-                aria-label="إغلاق نافذة إصدار الفاتورة"
+                aria-label="إغلاق نافذة إصدار بيان الأتعاب"
                 className="absolute top-6 left-6 p-2 rounded-2xl bg-black/[0.04] dark:bg-white/[0.04] hover:bg-black/[0.08] transition-colors cursor-pointer"
               >
                 <X size={14} className={isDark ? "text-zinc-400" : "text-slate-500"} />
@@ -1365,7 +1370,11 @@ export default function FinancePage() {
                 <span className="p-2.5 rounded-2xl bg-[#0B3D2E]/10 dark:bg-[#0B3D2E]/25 text-[#C8A762]">
                   <Receipt size={18} weight="duotone" />
                 </span>
-                <h2 className="text-xl font-extrabold tracking-tight">إصدار فاتورة جديدة</h2>
+                <div>
+                  <h2 className="text-xl font-extrabold tracking-tight">إصدار بيان أتعاب جديد</h2>
+                  {/* Owner ٤٣٠: the full label on the issue modal. */}
+                  <p className="mt-0.5 text-[11px] font-bold text-amber-700 dark:text-amber-300">{FEE_STATEMENT_LABEL}</p>
+                </div>
               </div>
 
               <AnimatePresence mode="wait">
@@ -1389,10 +1398,10 @@ export default function FinancePage() {
                     </div>
                     <div className="space-y-2">
                       <p className="text-sm font-bold text-slate-700 dark:text-zinc-300">
-                        جارٍ حفظ الفاتورة...
+                        جارٍ حفظ بيان الأتعاب...
                       </p>
                       <p className="text-[11px] text-slate-400 dark:text-zinc-500 max-w-xs mx-auto leading-relaxed">
-                        يتم تسجيل الفاتورة في سجلّك المالي على المنصة.
+                        يتم تسجيل بيان الأتعاب في سجلّك المالي على المنصة.
                       </p>
                     </div>
                   </motion.div>
@@ -1551,7 +1560,7 @@ export default function FinancePage() {
                       <textarea
                         value={newInvDesc}
                         onChange={(e) => setNewInvDesc(e.target.value)}
-                        placeholder="اكتب بنود الفاتورة باختصار... مثل: أتعاب المرافعة في الدعوى التجارية عن الجلسة الأولى..."
+                        placeholder="اكتب بنود بيان الأتعاب باختصار... مثل: أتعاب المرافعة في الدعوى التجارية عن الجلسة الأولى..."
                         rows={3}
                         className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right resize-none leading-relaxed ${
                           isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
@@ -1573,7 +1582,7 @@ export default function FinancePage() {
                         type="submit"
                         className="flex-1 py-3 rounded-2xl text-xs font-black bg-[#0B3D2E] text-[#C8A762] hover:bg-[#07241b] shadow-lg shadow-[#0B3D2E]/10 cursor-pointer"
                       >
-                        حفظ الفاتورة وإصدارها
+                        حفظ بيان الأتعاب وإصداره
                       </motion.button>
                       <motion.button
                         whileHover={{ scale: 1.02 }}
@@ -1644,7 +1653,7 @@ export default function FinancePage() {
                   <span className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-500">
                     <CheckCircle size={18} weight="duotone" />
                   </span>
-                  <h2 className="text-lg font-extrabold tracking-tight">تسجيل تحصيل الفاتورة</h2>
+                  <h2 className="text-lg font-extrabold tracking-tight">تسجيل تحصيل بيان الأتعاب</h2>
                 </div>
 
                 <form onSubmit={handleCollect} className="space-y-4">
@@ -1656,7 +1665,7 @@ export default function FinancePage() {
                       <span className={`text-[9px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{liveCollectTarget.id}</span>
                     </div>
                     <div className={`flex items-center justify-between text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-                      <span>إجمالي الفاتورة</span>
+                      <span>إجمالي بيان الأتعاب</span>
                       <span className="font-mono font-bold text-slate-700 dark:text-zinc-300">{totalFee.toLocaleString()} ر.س</span>
                     </div>
                     {alreadyCollected > 0 && (

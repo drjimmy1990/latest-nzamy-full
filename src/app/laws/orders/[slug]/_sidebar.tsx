@@ -1,6 +1,9 @@
 "use client";
 
 import { FolderSimple, TextT, NotePencil } from "@phosphor-icons/react";
+import { useRouter } from "next/navigation";
+import { OfficialMetaLockedRow } from "../../components/OfficialMetaLockedRow";
+import { orderMetaShown } from "../../orderMetaLabels";
 import { type DemoOrder } from "../../demo-data-access";
 import { orderTypeStyle, orderTypeLabelEn } from "../../components/ListItems";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
@@ -34,6 +37,7 @@ export default function SidebarPanel({
   handleClearNote,
   setShowFolderModal
 }: SidebarPanelProps) {
+  const router = useRouter();
   return (
     <div className="relative z-50 space-y-3">
       {/* Metadata Card */}
@@ -53,14 +57,26 @@ export default function SidebarPanel({
             <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "الجهة المصدرة:" : "Issuer:"}</span>
             <span className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{issuerLabel}</span>
           </div>
-          <div className="flex justify-between">
-            <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "رقم المرجع:" : "Ref No:"}</span>
-            <span className="font-mono font-bold text-amber-500">{order.ref}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "تاريخ الإصدار:" : "Date:"}</span>
-            <span className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{order.date}</span>
-          </div>
+          {/* Owner ٤٢٤ / ٣٨٠: the number, date and official link are a
+              subscriber's — a visitor gets one «للمشتركين» row instead. */}
+          {order.officialMetaLocked ? (
+            <OfficialMetaLockedRow isDark={isDark} onUnlock={() => router.push("/laws/subscribe")} textSize="text-[11px]" />
+          ) : (
+            <>
+              {orderMetaShown(order.ref) && (
+                <div className="flex justify-between">
+                  <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "رقم المرجع:" : "Ref No:"}</span>
+                  <span className="font-mono font-bold text-amber-500">{order.ref}</span>
+                </div>
+              )}
+              {orderMetaShown(order.date) && (
+                <div className="flex justify-between">
+                  <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "تاريخ الإصدار:" : "Date:"}</span>
+                  <span className={`font-bold ${isDark ? "text-white" : "text-gray-900"}`}>{order.date}</span>
+                </div>
+              )}
+            </>
+          )}
           <div className="flex justify-between">
             <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "تصنيف الملف:" : "Category ID:"}</span>
             <span className={`font-mono font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{order.cat}</span>

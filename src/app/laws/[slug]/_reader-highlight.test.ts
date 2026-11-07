@@ -93,7 +93,10 @@ test("locked previews are never coloured (the paywall text stays as it was)", ()
 test("article number, title, regulation ref and the amendment history are coloured", () => {
   assert.match(reader, /<Hl text=\{mainBadgeText\} \/>/);
   assert.match(reader, /<Hl text=\{article\.title\} \/>/);
-  assert.match(reader, /<Hl text=\{mergedReg\.ref\} \/>/);
+  // Owner 2026-11-07: the regulation's name is the «اللائحة التنفيذية» section's
+  // subtitle — the lifted heading, else the instrument's ref.
+  assert.match(reader, /<Hl text=\{regulationSubtitle\} \/>/);
+  assert.match(reader, /const regulationSubtitle = \(article\.regulationHeading \|\| mergedReg\?\.ref \|\| ""\)\.trim\(\);/);
   assert.match(reader, /<Hl text=\{amend\.summary\} \/>/);
   assert.match(reader, /<Hl text=\{amend\.source\} \/>/);
   // A match inside a folded part opens it.

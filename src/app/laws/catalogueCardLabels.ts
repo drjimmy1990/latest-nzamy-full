@@ -17,9 +17,9 @@ function text(v: unknown): string {
 
 /**
  * ١٢-٤ / BUG-LIB-07 (owner q382) — the merged-file badge: the one word
- * «مدمج», or "" for a law with nothing merged. The subsidiary names that
- * would follow it (mergedFileName below) are not in the database yet —
- * library.laws carries only the `has_merged_regulation` flag (BUG-LIB-06).
+ * «مدمج», or "" for a law with nothing merged. Owner 2026-11-07: in the grid
+ * card it sits in the top row beside «متاح», not alone under the title; the
+ * subsidiary names are the grey line below the title (mergedIncludesLine).
  */
 export function mergedFileBadge(hasMerged: unknown): string {
   return hasMerged === true ? "مدمج" : "";
@@ -33,16 +33,27 @@ export function mergedFileBadge(hasMerged: unknown): string {
  * names are skipped. With no subsidiary names the base title is returned as
  * it is.
  *
- * DATA-DEPENDENT: the names (merged_regulation_details) are not in the
- * database yet, and the wording of the first regulation is an open owner
- * question (note ١٢ §٥: full name or «لوائحه التنفيذية»). The card does not
- * call this until the data and the answer arrive.
+ * Not on the card: owner 2026-11-07 chose the «يشتمل على: A • B» line
+ * (mergedIncludesLine) over this «+» name.
  */
 export function mergedFileName(baseTitle: unknown, subsidiaryNames: readonly unknown[] = [], maxShown = 2): string {
   const base = text(baseTitle);
+  const subs = subsidiaryNamesUnderBase(base, subsidiaryNames);
+  if (subs.length === 0) return base;
+  const shown = subs.slice(0, Math.max(0, maxShown));
+  const rest = subs.length - shown.length;
+  return [base, ...shown].filter(Boolean).join(" + ") + (rest > 0 ? ` + ${rest} أخرى` : "");
+}
+
+/**
+ * The subsidiary names, trimmed, blank and duplicate ones skipped, each without
+ * a trailing repeat of the base title («… لنظام المرافعات الشرعية» under that
+ * law → «…»). Shared by mergedFileName and mergedIncludesLine.
+ */
+function subsidiaryNamesUnderBase(base: string, subsidiaryNames: readonly unknown[]): string[] {
   const seen = new Set<string>();
   const subs: string[] = [];
-  for (const raw of subsidiaryNames) {
+  for (const raw of Array.isArray(subsidiaryNames) ? subsidiaryNames : []) {
     let name = text(raw);
     if (!name) continue;
     if (base && name.endsWith(` ل${base}`)) name = name.slice(0, -(base.length + 2)).trim();
@@ -51,10 +62,25 @@ export function mergedFileName(baseTitle: unknown, subsidiaryNames: readonly unk
     seen.add(name);
     subs.push(name);
   }
-  if (subs.length === 0) return base;
-  const shown = subs.slice(0, Math.max(0, maxShown));
-  const rest = subs.length - shown.length;
-  return [base, ...shown].filter(Boolean).join(" + ") + (rest > 0 ? ` + ${rest} أخرى` : "");
+  return subs;
+}
+
+/** The owner's cap on the names in the «يشتمل على» line (2026-11-07, q424). */
+export const MERGED_INCLUDES_MAX = 2;
+
+/**
+ * Owner 2026-11-07 (screenshot 1): the grey line under a merged law's title —
+ * «يشتمل على: [اسم اللائحة الأولى] • [اسم اللائحة الثانية]». At most two
+ * names, joined by « • », no «+ N أخرى» (his wording names two and nothing
+ * more). The base title is not repeated (it is the card's title, just above),
+ * and a name that ends with it drops the repetition, as in mergedFileName.
+ * "" when there is no name — the card then shows no line. The names come from
+ * library.laws.merged_regulation_names (migration 20261107_10), already
+ * cleaned of decree numbers and dates for a non-subscriber by the API.
+ */
+export function mergedIncludesLine(baseTitle: unknown, subsidiaryNames: readonly unknown[] = []): string {
+  const subs = subsidiaryNamesUnderBase(text(baseTitle), subsidiaryNames).slice(0, MERGED_INCLUDES_MAX);
+  return subs.length > 0 ? `يشتمل على: ${subs.join(" • ")}` : "";
 }
 
 /** «1448/01/08هـ» → 14480108 (digits only), for comparing two Hijri dates. */

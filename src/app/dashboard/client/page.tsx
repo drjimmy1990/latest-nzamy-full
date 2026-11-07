@@ -502,8 +502,8 @@ export default function ClientDashboard() {
   // NO `planBadge` ON ANY CARD. Those badges were the plan fiction above,
   // rendered four times: «مشمولة ٠/٠», «١/يوم فقط», and two invented prices.
   // Nothing here can price a consultation honestly in any case — the
-  // consultation category alone runs from 250 to 700 ر.س across four
-  // sub-services in CLIENT_SERVICE_CATALOG, so no single badge is true for
+  // consultation category alone runs from 79 to 349 ر.س across four offered
+  // sub-services in CLIENT_SERVICE_CATALOG (owner ٤٣٣), so no single badge is true for
   // the card. /dashboard/client/services prices each one where it is ordered.
   //
   // Constant, so no useMemo: it closes over nothing.

@@ -71,7 +71,7 @@ const chatDemo = [
 ];
 
 const techPillars = [
-  { icon: Brain, titleAr: "النماذج اللغوية المتقدمة", titleEn: "Advanced Language Models", descAr: "نماذج AI مدرّبة خصيصاً على النصوص القانونية السعودية والعربية لتحقيق أعلى دقة ممكنة.", descEn: "AI models specifically trained on Saudi and Arabic legal texts for maximum accuracy." },
+  { icon: Brain, titleAr: "النماذج اللغوية المتقدمة", titleEn: "Advanced Language Models", descAr: "نماذج لغوية متقدمة تعتمد نصوص الأنظمة السعودية مصدراً وتستشهد بها.", descEn: "Advanced language models that take Saudi statutory texts as their source and cite them." },
   // «أكثر من ٥٠٠٠ نظام … محدّث بشكل دوري وآني» كان خطأً في شقّيه وقتها (كانت
   // المكتبة ٣٨٦ وثيقة)، ولا شيء يراقب صدور التشريعات — المكتبة تُحمَّل ببرنامج
   // تعبئة. لا رقم مكتوباً هنا (٢٠٢٦-٠٩-٢٥): الشيفرة نفسها تعمل على قاعدة السحابة
@@ -195,8 +195,8 @@ function AiLandingPage() {
             className="mx-auto mb-12 max-w-[55ch] text-lg text-white/70"
           >
             {isRTL
-              ? "مساعدك القانوني الذكي، مدرّب على الأنظمة والتشريعات السعودية. يجيب، يحلّل، ويصوغ — في ثوانٍ."
-              : "Trained on Saudi laws and regulations. It answers, analyzes, drafts — in seconds."}
+              ? "مساعدك القانوني الذكي، يعتمد الأنظمة والتشريعات السعودية مصدراً. يجيب، يحلّل، ويصوغ — في ثوانٍ."
+              : "Takes Saudi laws and regulations as its source. It answers, analyzes, drafts — in seconds."}
           </motion.p>
 
           {/* Typing demo box */}
@@ -237,7 +237,7 @@ function AiLandingPage() {
             whileTap={{ scale: 0.97 }}
             className="mt-8 inline-flex items-center gap-2 rounded-2xl bg-[#C8A762] px-8 py-4 text-sm font-bold text-white shadow-[0_8px_24px_-4px_rgba(200,167,98,0.5)] transition-shadow hover:shadow-[0_12px_32px_-4px_rgba(200,167,98,0.65)]"
           >
-            {isRTL ? "جرّب ذكاء نظامي مجاناً" : "Try Nezamy AI Free"}
+            {isRTL ? "أنشئ حسابك مجاناً" : "Create your free account"}
             <ArrowLeft size={16} weight="bold" className={isRTL ? "" : "rotate-180"} />
           </motion.a>
         </div>
@@ -484,12 +484,12 @@ function AiLandingPage() {
               </div>
             </div>
             <h2 className={`font-brand mb-4 text-3xl font-bold md:text-4xl ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-              {isRTL ? "جرّب ذكاء نظامي مجاناً اليوم" : "Try Nezamy AI Free Today"}
+              {isRTL ? "ابدأ مع ذكاء نظامي اليوم" : "Start with Nezamy AI today"}
             </h2>
             <p className={`mb-8 text-base ${isDark ? "text-gray-400" : "text-slate-500"}`}>
               {isRTL
-                ? "لا تحتاج بطاقة ائتمانية. ابدأ فوراً واحصل على ٥ استفسارات مجانية."
-                : "No credit card required. Start immediately and get 5 free queries."}
+                ? "التسجيل مجاني ولا يحتاج بطاقة ائتمانية، وتُدفع كل أداة بالنقاط بسعرها المعلن قبل التشغيل."
+                : "Signing up is free and needs no credit card; each tool is paid in points at the price shown before it runs."}
             </p>
             <motion.a
               href="/register"
@@ -497,7 +497,7 @@ function AiLandingPage() {
               whileTap={{ scale: 0.97 }}
               className="inline-flex items-center gap-2 rounded-2xl bg-[#0B3D2E] px-10 py-4 text-base font-bold text-white shadow-[0_8px_32px_-8px_rgba(11,61,46,0.5)] transition-shadow hover:shadow-[0_12px_40px_-8px_rgba(11,61,46,0.65)]"
             >
-              {isRTL ? "جرّب ذكاء نظامي مجاناً" : "Try Nezamy AI Free"}
+              {isRTL ? "أنشئ حسابك مجاناً" : "Create your free account"}
               <ArrowLeft size={18} weight="bold" className={isRTL ? "" : "rotate-180"} />
             </motion.a>
           </motion.div>
@@ -551,7 +551,7 @@ const LAWYER_AI_ICON_MAP: Record<LawyerAiTool["permission"], any> = {
 
 const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:draft", href: "/ai/draft", titleAr: "الصائغ القانوني", titleEn: "Legal Drafter", icon: PencilSimple, descAr: "صياغة عقود ومذكرات قانونية احترافية", descEn: "Draft professional legal contracts and memos" },
-  { id: "ai:contracts", href: "/ai/contract-drafter", titleAr: "محترف العقود المختصر", titleEn: "Contract Drafter Lite", icon: FileText, descAr: "أنشئ مسودة عقد بسيطة في دقائق ثم احصل على مراجعة محامٍ", descEn: "Create a simple contract draft in minutes, then get lawyer review", badge: "مجاني" },
+  { id: "ai:contracts", href: "/ai/contract-drafter", titleAr: "محترف العقود المختصر", titleEn: "Contract Drafter Lite", icon: FileText, descAr: "أنشئ مسودة عقد بسيطة في دقائق ثم احصل على مراجعة محامٍ", descEn: "Create a simple contract draft in minutes, then get lawyer review", badgeAr: "بالنقاط", badgeEn: "Points" },
   { id: "ai:quick-answer", href: "/ai/quick-answer", titleAr: "المجيب القانوني السريع", titleEn: "Quick Legal Responder", icon: ChatCircleDots, descAr: "سؤال محدد ← إجابة فورية مستندة للنظام السعودي", descEn: "One question → instant answer grounded in Saudi law", badge: "جديد" },
   { id: "ai:memo-studio", href: "/ai/wargaming", titleAr: "المحاكي الشامل للقضايا", titleEn: "Litigation Studio", icon: Scales, descAr: "دمج الذكاء الاصطناعي (قوة الموقف، الخصوم، الجلسات، والمذكرات)", descEn: "Integrated AI for position strength, opponents, hearings & memos", badge: "مُدمَج" },
   { id: "ai:consult", href: "/ai/consult", titleAr: "المستشار الذكي", titleEn: "AI Advisor", icon: ChatCircleDots, descAr: "غير متاحة حالياً — قيد الإعداد.", descEn: "Not available yet — in preparation.", badgeAr: "قريباً", badgeEn: "Soon" },
@@ -602,15 +602,15 @@ const AI_TOOLS: AiToolCard[] = [
       : tool.comingSoon
       ? "غير متاحة حالياً — قيد الإعداد."
       : tool.betaStatus === "beta-free"
-        ? "أداة قانونية رسمية للمحامي في البيتا، متاحة مجاناً حتى اعتماد سعرها من الأدمن."
-        : "أداة قانونية رسمية ضمن كتالوج المحامي ونظام الرصيد.",
+        ? "أداة قانونية رسمية في البيتا؛ تُفتح بعد أن تعتمد الإدارة سعرها بالنقاط."
+        : "أداة قانونية رسمية تُدفع بالنقاط بسعرها المعلن.",
     descEn: tool.permission === "ai:analyze"
       ? "Summarize a case file and extract its facts, contradictions and gaps from your papers"
       : tool.comingSoon
       ? "Not available yet — in preparation."
       : tool.betaStatus === "beta-free"
-        ? "Official lawyer beta tool, free until admin pricing is approved."
-        : "Official lawyer tool connected to the credit catalog.",
+        ? "Official beta tool; it opens once the admin approves its price in points."
+        : "Official tool, paid in points at its listed price.",
     // The registry's charge (lawyerAiBadges.ts); no badge for a tool the
     // registry does not price.
     badgeAr: getLawyerAiBadge(tool, "ar") ?? undefined,

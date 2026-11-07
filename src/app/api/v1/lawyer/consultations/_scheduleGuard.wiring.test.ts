@@ -42,9 +42,15 @@ test("PATCH /api/v1/lawyer/consultations/[id] requires a zoned instant, refuses 
   assert.doesNotMatch(src, /patch\.scheduled_at = body\.scheduledAt;/);
 });
 
-test("the legacy PATCH /api/v1/consultations/[id] applies the same zone + future rule", () => {
+test("owner ٤٣٨: the legacy PATCH /api/v1/consultations/[id] refuses any scheduled_at change (no overlap check there)", () => {
   const src = read("../../consultations/[id]/route.ts");
-  assert.match(src, /checkInstantSlot\(v, Date\.now\(\), true\)/);
+  const refuse = src.indexOf('"scheduled_at" in body');
+  const update = src.indexOf(".update(updates)");
+  assert.ok(refuse > 0, "the refusal is missing");
+  assert.ok(update > refuse, "the refusal runs before the update");
+  assert.match(src, /\{ status: 400 \}/);
+  assert.match(src, /\/api\/v1\/lawyer\/consultations\/\[id\]/, "it points at the lawyer route");
+  assert.match(src, /const allowedFields = \["status"\];/);
 });
 
 test("the schedule modal converts Riyadh wall clock, not the browser's zone", () => {

@@ -25,6 +25,7 @@ import {
 } from "@/lib/pricing/catalogAdminRules";
 import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import type { ClientServicePriceMode } from "@/constants/clientServiceCatalog";
+import { commissionRatesLine } from "@/lib/pricing/commission";
 
 /**
  * /dashboard/admin/pricing (S6-T8) — the client services' prices, read from
@@ -36,8 +37,9 @@ import type { ClientServicePriceMode } from "@/constants/clientServiceCatalog";
  * server (catalogAdminRules.ts).
  *
  * The plans and top-ups are the price book's (priceBook.ts, what checkout
- * charges), read-only: they change by deploying code. The market commission is
- * «قريباً» with no number (owner question ٤٢١ is open).
+ * charges), read-only: they change by deploying code. The market itself is
+ * «قريباً» (BETA_MONOPOLY_MODE); its commission rates are the owner's ٤٢١
+ * answer, read from src/lib/pricing/commission.ts, never typed here.
  *
  * The admin console is dark-only (admin/layout.tsx), so zinc tokens only.
  */
@@ -398,7 +400,7 @@ export default function PricingPage() {
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-zinc-300">عمولة السوق: قريباً</p>
+        <p className="text-xs text-zinc-300">عمولة السوق: قريباً — النسب المعتمدة عند الإطلاق: {commissionRatesLine("ar")}</p>
       </div>
     </div>
   );

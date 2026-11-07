@@ -9,6 +9,8 @@ import AiResultActions from "@/components/AiResultActions";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import CitationCheckList from "@/components/ai/CitationCheckList";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
+import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
@@ -50,8 +52,12 @@ interface Props {
   skippedFiles: string[];
   /** The pleading as text once written ("" before): the optional team review carries it. */
   onPleading: (text: string) => void;
-  /** The tool is switched off (the run answered `tool_off`): the page offers the team order instead. */
-  onToolOff: () => void;
+  /**
+   * The analysis cannot run for this account: the tool is switched off (`tool_off`), or the
+   * library's AI tier refused it (`library_tier`, owner ٤١٧ — open to every account, but the
+   * library's Pro rule stands). The page offers the team order instead, with a note for the latter.
+   */
+  onToolOff: (code: "tool_off" | "library_tier") => void;
 }
 
 export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPleading, onToolOff }: Props) {
@@ -73,12 +79,12 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
   const blocker = edited ? draftBlocker(edited) : null;
   const written = pleading ? pleadingText(pleading) : "";
   useEffect(() => { onPleading(written); }, [written, onPleading]);
-  const toolOff = analysis.code === "tool_off";
-  useEffect(() => { if (toolOff) onToolOff(); }, [toolOff, onToolOff]);
+  const toolOff = analysis.code === "tool_off" || analysis.code === "library_tier" ? analysis.code : null;
+  useEffect(() => { if (toolOff) onToolOff(toolOff); }, [toolOff, onToolOff]);
   // The analysis is fixed while the draft is written and once it exists: the
   // work is one analysis and one draft (a third run is refused).
   const locked = writing.busy || !!pleading;
-  // The analysis is the work's first turn; a rejoinder spends no work (R3).
+  // The analysis is the work's first turn; every kind spends a work (owner ٤١٠).
   const creditEligible = creditKindForRun("legal-drafter", analysisInput(facts), 0) === "drafting_work";
   // Before the analysis settles, the choice; after it, what the server charged.
   const paidByCredit = analysis.phase === "done" || analysis.phase === "review" ? analysis.creditUsed : useCredit && creditEligible;
@@ -334,6 +340,10 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
 
 function RunStatus({ isDark, run }: { isDark: boolean; run: ReturnType<typeof useAiRun> }) {
   const stage = <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("legal-drafter")} />;
+  // Owner ٤١٧: open to every account; the library's AI tier still gates the drafter.
+  // `library_tier` hands over to the team order (onToolOff); `library_closed` is said here.
+  const library = run.phase === "error" && run.code === "library_closed" ? libraryToolRefusal(run.code, "الصائغ القانوني", null) : null;
+  if (library) return <LibraryToolRefusalNote refusal={library} isDark={isDark} />;
   if (run.phase === "error" && run.error) {
     return (
       <div className="space-y-2">

@@ -196,6 +196,24 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
   if (!data) notFound();
 
   const order = data as ResultOrder & { moyasar_payment_id: string | null };
+  // Task F fix round 1: a top-up names the points its lot actually credited
+  // (an order bought before owner ٤٢٢ keeps its own count). Best-effort: no
+  // lot yet (a fresh order) or a failed read falls back to the book's label.
+  if (order.item_id.startsWith("topup-")) {
+    try {
+      const lot = await admin
+        .from("points_lots")
+        .select("points_total")
+        .eq("order_id", order.id)
+        .eq("user_id", user.id)
+        .eq("source", "purchase")
+        .maybeSingle();
+      const points = (lot.data as { points_total?: unknown } | null)?.points_total;
+      if (!lot.error && typeof points === "number" && Number.isSafeInteger(points)) order.credited_points = points;
+    } catch {
+      // the book's label stands
+    }
+  }
   // The stored payment id wins: it was verified against this order when it was
   // stamped. The callback's ?id= is used only while the order has none.
   const paymentId = order.moyasar_payment_id ?? urlPaymentId;

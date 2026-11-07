@@ -42,9 +42,9 @@ test("what activation grants mirrors 20261101_10: 12 months, 6 works + 1 output,
   assert.ok(Object.isFrozen(FOUNDER_CREDITS));
 });
 
-test("the 7 eligible drafter kinds: every draft kind except rejoinder (R3, owner ٣٩٩)", () => {
-  assert.deepEqual([...FOUNDER_DRAFT_KINDS], ["claim", "reply", "supplementary", "closing", "appeal", "cassation", "petition"]);
-  assert.ok(!FOUNDER_DRAFT_KINDS.includes("rejoinder"));
+test("the 8 eligible drafter kinds: every draft kind, the rejoinder included (owner ٤١٠)", () => {
+  assert.deepEqual([...FOUNDER_DRAFT_KINDS], ["claim", "reply", "rejoinder", "supplementary", "closing", "appeal", "cassation", "petition"]);
+  assert.deepEqual([...FOUNDER_DRAFT_KINDS].sort(), [...DRAFT_KIND_IDS].sort());
   for (const k of FOUNDER_DRAFT_KINDS) assert.ok(DRAFT_KIND_IDS.includes(k), k);
   assert.ok(Object.isFrozen(FOUNDER_DRAFT_KINDS));
 });
@@ -64,8 +64,7 @@ test("creditKindForRun: the drafter's second turn never spends a second work", (
   assert.equal(creditKindForRun("legal-drafter", { kind: "appeal" }, 2), null);
 });
 
-test("creditKindForRun: rejoinder, a missing, unknown, non-string or inherited kind spends nothing", () => {
-  assert.equal(creditKindForRun("legal-drafter", { kind: "rejoinder" }, 0), null);
+test("creditKindForRun: a missing, unknown, non-string or inherited kind spends nothing", () => {
   assert.equal(creditKindForRun("legal-drafter", {}, 0), null);
   assert.equal(creditKindForRun("legal-drafter", { kind: "memo" }, 0), null);
   assert.equal(creditKindForRun("legal-drafter", { kind: 1 }, 0), null);
@@ -162,7 +161,7 @@ test("founderCreditChoiceView: hidden for a non-member, a failed or odd reply, a
   }
 });
 
-test("founderCreditChoiceView: hidden when the run would not spend this credit (rejoinder, a later turn)", () => {
+test("founderCreditChoiceView: hidden when the run would not spend this credit (a later turn)", () => {
   assert.deepEqual(founderCreditChoiceView("drafting_work", MEMBER, false), { show: false });
   assert.deepEqual(founderCreditChoiceView("independent_output", MEMBER, false), { show: false });
 });

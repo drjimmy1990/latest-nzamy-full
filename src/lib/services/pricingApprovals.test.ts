@@ -4,9 +4,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 // A namespace import, so a missing export fails its own test, not the file.
 import * as catalog from "../../constants/lawyerAiCatalog.ts";
 import * as badges from "../../constants/lawyerAiBadges.ts";
-import { bookSar } from "../pricing/priceBook.ts";
+import { bookSar, topupPointsTextById } from "../pricing/priceBook.ts";
 import {
   AI_TOOLS,
+  ANALYZE_STRENGTH_PRICE,
   ASSISTANT_CONVERSATION_PRICE,
   ASSISTANT_MESSAGES_PER_CONVERSATION,
   BRIEF_CHECK_PRICE,
@@ -15,8 +16,10 @@ import {
   CONTRACTS_PRO_PRICE,
   CONTRACT_NEGOTIATOR_PRICE,
   CONTRACT_REVIEW_PRICE,
-  LEGAL_OPINION_PRICE,
-  WAVE4_PRICE,
+  LEGAL_CONSULT_PRICE,
+  LEGAL_LETTER_PRICE,
+  WARGAMING_PRICE,
+  WARGAMING_SINGLE_TARGET_PRICE,
 } from "../ai/tools.ts";
 import { DRAFT_KINDS } from "../ai/draftKinds.ts";
 import * as display from "../ai/toolPointsDisplay.ts";
@@ -43,21 +46,29 @@ test("the lawyer tab is the subscription (no points) plus the five professional 
   assert.match(lawyers, /id: "lawyer-pro"/);
   // Owner ٢٩١ (26 Oct 2026): the subscription comes with no points.
   assert.doesNotMatch(lawyers, /LAWYER_PRO_MONTHLY_POINTS|١٬٥٠٠ نقطة كل شهر|1,500 points every month/);
+  // Owner ٤٢٢ (3 Nov 2026): the bonus balances; ruling R2: «X نقطة (منها Y نقطة مكافأة)», no per-point price.
   const topups: Array<[string, number, string]> = [
-    ["topup-500", 500, "٥٠٠ نقطة"],
-    ["topup-1000", 1000, "١٬٢٥٠ نقطة"],
-    ["topup-2500", 2500, "٣٬٥٠٠ نقطة"],
-    ["topup-5000", 5000, "٨٬٥٠٠ نقطة"],
-    ["topup-10000", 10000, "٢٥٬٠٠٠ نقطة"],
+    ["topup-500", 500, "٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)"],
+    ["topup-1000", 1000, "١٬٥٠٠ نقطة (منها ٥٠٠ نقطة مكافأة)"],
+    ["topup-2500", 2500, "٥٬٠٠٠ نقطة (منها ٢٬٥٠٠ نقطة مكافأة)"],
+    ["topup-5000", 5000, "١٢٬٥٠٠ نقطة (منها ٧٬٥٠٠ نقطة مكافأة)"],
+    ["topup-10000", 10000, "٣٠٬٠٠٠ نقطة (منها ٢٠٬٠٠٠ نقطة مكافأة)"],
   ];
+  const esc = (t: string) => t.replace(/[()]/g, "\\$&");
   for (const [id, price, points] of topups) {
     assert.equal(bookSar(id, "once"), price, id);
-    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points}( · [^"]*)?"`), id);
+    // the card's literal desc says what the book grants
+    assert.equal(topupPointsTextById(id, "ar"), points, id);
+    assert.match(lawyers, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${esc(points)}( · [^"]*)?"`), id);
   }
+  assert.doesNotMatch(lawyers, /ر\.س للنقطة|per point|سعر النقطة|نقاط مجانية|Free points/, "R2: no per-point price, no «free» wording");
   assert.doesNotMatch(lawyers, /id: "topup-(100|250)"/, "٣٠٢: the 100 / 250 packs are not on the lawyers' tab");
   for (const [id, points] of [["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"]]) {
     assert.match(individuals, new RegExp(`id: "${id}"[\\s\\S]*?desc: "${points} · صالحة ٣ أشهر"`), id);
+    // Task F fix round 1: the card's points line is read from the book (R2), in both languages
+    for (const lang of ["ar", "en"]) assert.match(individuals, new RegExp(`ai: \\[topupPointsTextById\\("${id}", "${lang}"\\)`), `${id} ${lang}`);
   }
+  assert.doesNotMatch(individuals, /ر\.س للنقطة|per point/, "R2: no per-point price line on the individuals' top-ups either");
   assert.doesNotMatch(lawyers, /lawyer-(basic|advanced|elite|royal)|مشمولة مجاناً|مذكرة مجانية|مذكرة ثانية|أول ٥٠٠/);
   assert.doesNotMatch(lawyers, /محفظة|رصيد نقدي/);
 });
@@ -75,6 +86,8 @@ function serverCharges(id: string): number[] {
   const tool = AI_TOOLS[id];
   assert.ok(tool, `${id} is not in the AI registry`);
   if (id === "legal-drafter") return Object.keys(DRAFT_KINDS).map((kind) => tool.price({ kind }, { pages: null, turn: 0 }));
+  // R1: one target, two, and all four.
+  if (id === "wargaming") return [["court"], ["opponent", "court"], ["opponent", "court", "critique", "plea"]].map((targets) => tool.price({ targets }, { pages: 1, turn: 0 }));
   if (id === "case-brief") return [1, 5, 6, 30].map((pages) => tool.price({}, { pages, turn: 0 }));
   return [tool.price({}, { pages: 1, turn: 0 })];
 }
@@ -93,18 +106,23 @@ function expectedLabel(ids: readonly string[], lang: "ar" | "en"): string {
 
 const nounAr = (n: number): string => (n >= 3 && n <= 10 ? "نقاط" : "نقطة");
 
-/** Today's server prices, [lowest, highest] per run. A repricing (Wave 2) edits this on purpose. */
+/**
+ * Today's server prices, [lowest, highest] per run. A repricing edits this on
+ * purpose. Owner ٤٠٩–٤١٢ / ٤١٦ (7 Nov 2026): claim 200, simulator 75/150
+ * (R1), strength 75, consultation 100, letter 50, assistant 30 per 15
+ * messages, quick answer 10, Najiz condense 15.
+ */
 const TODAY: Record<string, [number, number]> = {
-  "legal-drafter": [500, 1500],
+  "legal-drafter": [200, 1500],
   "contracts-pro": [1000, 1000],
   "contract-drafter": [500, 500],
-  wargaming: [250, 250],
-  "analyze-strength": [250, 250],
-  "legal-opinion-consult": [400, 400],
-  "legal-opinion-letter": [400, 400],
-  assistant: [100, 100],
-  "quick-answer": [20, 20],
-  "najiz-optimizer": [5, 5],
+  wargaming: [75, 150],
+  "analyze-strength": [75, 75],
+  "legal-opinion-consult": [100, 100],
+  "legal-opinion-letter": [50, 50],
+  assistant: [30, 30],
+  "quick-answer": [10, 10],
+  "najiz-optimizer": [15, 15],
   communicate: [5, 5],
   "library-assistant": [5, 5],
   "canvas-card": [10, 10],
@@ -132,10 +150,19 @@ test("task 4: the registry charges today's prices, and the display helper reads 
   }
   // The assistant: one price buys a conversation, and the unit says how long.
   assert.equal(AI_TOOLS.assistant.price({}, { pages: null, turn: 1 }), 0);
-  assert.equal(display.aiToolPriceUnit("assistant", "ar"), `لكل محادثة من ${ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")} رسائل`);
-  assert.equal(display.aiToolPriceText("legal-drafter", "ar"), `من ${(500).toLocaleString("ar-SA")} إلى ${(1500).toLocaleString("ar-SA")} نقطة`);
-  assert.equal(display.aiToolPriceText("legal-drafter", "en"), "500 to 1,500 points");
-  assert.equal(display.aiToolPriceText("najiz-optimizer", "ar"), "٥ نقاط");
+  // ٤١١: fifteen messages; Arabic counts 11+ with the singular «رسالة».
+  assert.equal(ASSISTANT_MESSAGES_PER_CONVERSATION, 15);
+  assert.equal(display.aiToolPriceUnit("assistant", "ar"), "لكل محادثة من ١٥ رسالة");
+  assert.equal(display.aiToolPriceText("assistant", "ar"), "٣٠ نقطة لكل محادثة من ١٥ رسالة");
+  assert.equal(display.messagesNounAr(5), "رسائل");
+  assert.equal(display.messagesNounAr(15), "رسالة");
+  assert.equal(display.aiToolPriceText("legal-drafter", "ar"), `من ${(200).toLocaleString("ar-SA")} إلى ${(1500).toLocaleString("ar-SA")} نقطة`);
+  assert.equal(display.aiToolPriceText("legal-drafter", "en"), "200 to 1,500 points");
+  assert.equal(display.aiToolPriceText("najiz-optimizer", "ar"), "١٥ نقطة");
+  assert.equal(display.aiToolPriceText("wargaming", "ar"), "من ٧٥ إلى ١٥٠ نقطة");
+  assert.equal(display.aiToolPriceText("analyze-strength", "ar"), "٧٥ نقطة");
+  assert.equal(display.aiToolPriceText("quick-answer", "ar"), "١٠ نقاط");
+  assert.equal(display.aiToolPointsLabel(["legal-opinion-consult", "legal-opinion-letter"], "ar"), "٥٠–١٠٠");
 });
 
 interface PriceRow { name: string; price: string; aiTool: string[]; tools: string[]; note?: string }
@@ -313,27 +340,26 @@ function shown(rel: string): string {
     .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
 }
 
-test("R25: the quick-answer page prints only the registry's price, never a typed one", () => {
+test("٤١٢: the quick-answer page prints only the registry's price (10), never a typed one", () => {
   const page = shown("app/ai/quick-answer/page.tsx");
   assert.ok(page.includes('aiToolPriceText("quick-answer", "ar")'));
   assert.equal((page.match(/aiToolPriceText\("quick-answer"/g) ?? []).length, 1);
-  assert.ok(!page.includes("١٥"), "the open ٤١٢ price is not built");
-  assert.ok(!page.includes("15 نقطة"));
-  assert.ok(!page.includes("٢٠ نقطة"), "the price is read, not typed");
-  assert.ok(serverCharges("quick-answer").includes(20));
+  assert.ok(!/[٠-٩0-9]+\s?(نقطة|نقاط)/.test(page), "the price is read, not typed");
+  assert.deepEqual(serverCharges("quick-answer"), [10]);
 });
 
 test("task 4: the tool pages print the constant the registry charges", () => {
   // [page, the expression that prints the price, its value, the registry tools that charge it]
   const pages: Array<[string, string, number, string[]]> = [
-    ["app/ai/analyze-strength/page.tsx", 'WAVE4_PRICE.toLocaleString("ar-SA")', WAVE4_PRICE, ["analyze-strength"]],
-    ["app/ai/wargaming/page.tsx", 'WAVE4_PRICE.toLocaleString("ar-SA")', WAVE4_PRICE, ["wargaming"]],
+    ["app/ai/analyze-strength/page.tsx", 'ANALYZE_STRENGTH_PRICE.toLocaleString("ar-SA")', ANALYZE_STRENGTH_PRICE, ["analyze-strength"]],
+    ["app/ai/wargaming/page.tsx", 'WARGAMING_SINGLE_TARGET_PRICE.toLocaleString("ar-SA")', WARGAMING_SINGLE_TARGET_PRICE, ["wargaming"]],
+    ["app/ai/wargaming/page.tsx", 'WARGAMING_PRICE.toLocaleString("ar-SA")', WARGAMING_PRICE, ["wargaming"]],
     ["app/ai/assistant/page.tsx", 'ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")', ASSISTANT_CONVERSATION_PRICE, ["assistant"]],
     ["app/ai/brief-check/page.tsx", 'BRIEF_CHECK_PRICE.toLocaleString("ar-SA")', BRIEF_CHECK_PRICE, ["brief-check"]],
     ["components/ai/caseBrief/CaseBriefStudio.tsx", 'CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.small, ["case-brief"]],
     ["components/ai/caseBrief/CaseBriefStudio.tsx", 'CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")', CASE_BRIEF_PRICES.large, ["case-brief"]],
-    ["app/ai/legal-opinion/page.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-consult"]],
-    ["app/ai/legal-opinion/_components/LetterWorkflow.tsx", "price={LEGAL_OPINION_PRICE}", LEGAL_OPINION_PRICE, ["legal-opinion-letter"]],
+    ["app/ai/legal-opinion/page.tsx", "price={LEGAL_CONSULT_PRICE}", LEGAL_CONSULT_PRICE, ["legal-opinion-consult"]],
+    ["app/ai/legal-opinion/_components/LetterWorkflow.tsx", "price={LEGAL_LETTER_PRICE}", LEGAL_LETTER_PRICE, ["legal-opinion-letter"]],
     ["app/ai/contracts/page.tsx", "price={CONTRACTS_PRO_PRICE}", CONTRACTS_PRO_PRICE, ["contracts-pro"]],
     ["components/contracts/steps/review/StepRAiReview.tsx", 'CONTRACT_REVIEW_PRICE.toLocaleString("ar-SA")', CONTRACT_REVIEW_PRICE, ["contract-review"]],
     ["app/ai/contract-negotiator/page.tsx", 'CONTRACT_NEGOTIATOR_PRICE.toLocaleString("ar-SA")', CONTRACT_NEGOTIATOR_PRICE, ["contract-negotiator"]],
@@ -342,6 +368,11 @@ test("task 4: the tool pages print the constant the registry charges", () => {
     assert.ok(shown(rel).includes(expr), `${rel} no longer prints ${expr}`);
     for (const id of ids) assert.ok(serverCharges(id).includes(value), `${rel}: ${expr} = ${value}, but ${id} charges ${serverCharges(id).join("/")}`);
   }
+  // R1: the simulation's run line prints the price of the targets picked, the server's own count.
+  const war = shown("app/ai/wargaming/page.tsx");
+  assert.match(war, /const aiPrice = wargamingPrice\(Array\.from\(targets\)\)/);
+  assert.equal((war.match(/\$\{aiPrice\.toLocaleString\("ar-SA"\)\} نقطة/g) ?? []).length, 2, "both run lines read aiPrice");
+  assert.doesNotMatch(war, /WAVE4_PRICE/);
   // The drafter's step prints the chosen kind's price, which is what the analysis run charges.
   const step = shown("components/draft/steps/StepAiDraft.tsx");
   assert.match(step, /const spec = DRAFT_KINDS\[kind\]/);

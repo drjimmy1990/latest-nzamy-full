@@ -13,7 +13,8 @@ test("a blocked route and its sub-routes are blocked", () => {
 });
 
 test("every listed prefix is blocked, exactly and below", () => {
-  assert.equal(CONSULTANT_BLOCKED_PREFIXES.length, 5);
+  assert.equal(CONSULTANT_BLOCKED_PREFIXES.length, 6);
+  assert.ok((CONSULTANT_BLOCKED_PREFIXES as readonly string[]).includes("/ai/analyze-strength"), "R1: part of the simulator");
   for (const prefix of CONSULTANT_BLOCKED_PREFIXES) {
     assert.equal(isConsultantBlockedPath(prefix), true, prefix);
     assert.equal(isConsultantBlockedPath(`${prefix}/x`), true, `${prefix}/x`);

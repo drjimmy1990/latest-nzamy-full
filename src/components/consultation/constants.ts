@@ -58,8 +58,10 @@ export const specialties: Record<"ar" | "en", SpecialtyDef[]> = {
 // non-binding estimate), so it says the price comes after that review.
 // Wave 1 task 6: no typed price on the other three either — they read the
 // client service catalogue (consultationPrices.ts). The «٢٩٩» / «٥٩٩» they
-// carried contradicted it (500 / 700). The page re-reads them from the live
-// catalogue (GET /api/client-pricing); these are its code defaults.
+// carried contradicted it. The page re-reads them from the live catalogue
+// (GET /api/client-pricing); these are its code defaults. Owner ٤٣٣ (3 Nov
+// 2026): voice 20 min (voice-call), video 30 min (video-short), in person
+// 45 min — the sublabels name the same durations as the catalogue entries.
 const arPrice = (t: ConsultationType) => consultationTypePrice(t, CLIENT_SERVICE_CATALOG, "ar");
 const enPrice = (t: ConsultationType) => consultationTypePrice(t, CLIENT_SERVICE_CATALOG, "en");
 export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
@@ -67,39 +69,39 @@ export const consultationTypes: Record<"ar" | "en", TypeDef[]> = {
     {
       // Fix round 1 (M10): not «استجابة فورية» — the AI consult is beta-gated.
       id: "ai", icon: Brain, label: "ذكاء نظامي", sublabel: "قريباً", price: arPrice("ai"),
-      desc: "مساعد قانوني ذكي مدرّب على الأنظمة السعودية", color: "border-royal/20 hover:border-royal/40", badge: null,
+      desc: "مساعد قانوني ذكي يعتمد الأنظمة السعودية مصدراً", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {
-      id: "voice", icon: Microphone, label: "استشارة صوتية", sublabel: "مع محامٍ معتمد", price: arPrice("voice"),
+      id: "voice", icon: Microphone, label: "استشارة صوتية", sublabel: "مع محامٍ معتمد · ٢٠ دقيقة", price: arPrice("voice"),
       desc: "مكالمة صوتية مع محامٍ مرخص متخصص في مجال قضيتك", color: "border-emerald-200 hover:border-emerald-400", badge: null,
     },
     {
-      id: "video", icon: VideoCamera, label: "استشارة مرئية", sublabel: "مع محامٍ معتمد", price: arPrice("video"),
+      id: "video", icon: VideoCamera, label: "استشارة مرئية", sublabel: "مع محامٍ معتمد · ٣٠ دقيقة", price: arPrice("video"),
       // No «الأكثر طلباً» badge (owner, Q164, 2026-10-03): no booking data
       // supports a popularity claim. («الأكثر تفاعلاً» stays: it describes
       // the medium, video vs voice, not demand.)
       desc: "مكالمة فيديو مع محامٍ مرخص — الأكثر تفاعلاً", color: "border-blue-200 hover:border-blue-400", badge: null,
     },
     {
-      id: "in-person", icon: User, label: "استشارة حضورية", sublabel: "في مكتب المحامي", price: arPrice("in-person"),
+      id: "in-person", icon: User, label: "استشارة حضورية", sublabel: "في مكتب المحامي · ٤٥ دقيقة", price: arPrice("in-person"),
       desc: "لقاء مباشر في مكتب المحامي لمناقشة قضيتك بعمق", color: "border-gold/20 hover:border-gold/40", badge: null,
     },
   ],
   en: [
     {
       id: "ai", icon: Brain, label: "Nezamy AI", sublabel: "Coming soon", price: enPrice("ai"),
-      desc: "Smart legal assistant trained on Saudi laws and regulations", color: "border-royal/20 hover:border-royal/40", badge: null,
+      desc: "Smart legal assistant that takes Saudi laws and regulations as its source", color: "border-royal/20 hover:border-royal/40", badge: null,
     },
     {
-      id: "voice", icon: Microphone, label: "Voice Consultation", sublabel: "With a certified lawyer", price: enPrice("voice"),
+      id: "voice", icon: Microphone, label: "Voice Consultation", sublabel: "With a certified lawyer · 20 min", price: enPrice("voice"),
       desc: "Voice call with a licensed lawyer specializing in your area", color: "border-emerald-200 hover:border-emerald-400", badge: null,
     },
     {
-      id: "video", icon: VideoCamera, label: "Video Consultation", sublabel: "With a certified lawyer", price: enPrice("video"),
+      id: "video", icon: VideoCamera, label: "Video Consultation", sublabel: "With a certified lawyer · 30 min", price: enPrice("video"),
       desc: "Video call with a licensed lawyer — most interactive option", color: "border-blue-200 hover:border-blue-400", badge: null,
     },
     {
-      id: "in-person", icon: User, label: "In-Person Consultation", sublabel: "At the lawyer's office", price: enPrice("in-person"),
+      id: "in-person", icon: User, label: "In-Person Consultation", sublabel: "At the lawyer's office · 45 min", price: enPrice("in-person"),
       desc: "Face-to-face meeting at the lawyer's office for in-depth discussion", color: "border-gold/20 hover:border-gold/40", badge: null,
     },
   ],

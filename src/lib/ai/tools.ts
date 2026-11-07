@@ -89,6 +89,14 @@ export interface AiToolSpec {
     pinFrom?: string;
     /** The input field naming the law page the user is on: searched before the whole library (L5). */
     scopeFrom?: string;
+    /**
+     * Owner ٤١٣ option A (quick-answer only): an answer that cites none of the
+     * texts is stored with `ungrounded: true` and charged, instead of failing
+     * and refunding. `field` is the output's answer text: when it is only the
+     * model's «لا تجيب النصوص المتاحة…» sentence (isLibraryNoAnswer), the run
+     * still fails as ungrounded and is refunded — nobody pays for a refusal.
+     */
+    allowUngrounded?: { field: string };
   };
   validateInput: (raw: unknown) => InputCheck;
   /**
@@ -132,6 +140,16 @@ function echoOutput(raw: unknown): Record<string, unknown> | null {
 }
 
 const ECHO_ROLES = ["lawyer", "firm"] as const;
+
+/**
+ * Every registered customer account type: profiles.user_type minus `admin`.
+ * Owner ٤١٧ (7 Nov 2026): the AI tools are open, for points, to every
+ * registered user, and every one of these types can buy points (priceBook
+ * top-ups). An admin passes every tool anyway (toolRoleRefusal). Art. 18's
+ * consultant lock is the separate `consultantBlocked` flag, and a tool that
+ * searches the library still needs the library AI's own tier (runs/route.ts).
+ */
+export const REGISTERED_ROLES = ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"] as const;
 
 // ── wave 1: text only, fast, no retrieval (plan §5, «Wave 1») ───────────────
 // Both start off: D10 (personal data sent to a provider outside the Kingdom)
@@ -192,6 +210,18 @@ function najizInput(raw: unknown): InputCheck {
   return { ok: true, input: { text, must_keep: extractLegalRefs(text) } };
 }
 
+/**
+ * Owner ٤١٦ (rule v5.2): the free cleanup marks an unfilled field with this
+ * (src/app/ai/najiz-optimizer/_blankFields.ts); the paid condense must keep
+ * every one, or the lawyer loses the reminder he paid to keep.
+ */
+export const NAJIZ_NEEDS_CHECK = "[يحتاج تحقق]";
+
+/** How many «[يحتاج تحقق]» markers `text` holds. */
+export function countNeedsCheck(text: string): number {
+  return text.split(NAJIZ_NEEDS_CHECK).length - 1;
+}
+
 function najizOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
   if (!isPlainObject(raw)) return null;
   const text = boundedText(raw.text, NAJIZ_TARGET_CHARS);
@@ -202,6 +232,8 @@ function najizOutput(raw: unknown, input: Record<string, unknown>): Record<strin
   if (typeof input.text !== "string") return null;
   const required = extractLegalRefs(input.text);
   if (missingLegalRefs(required, text).length > 0) return null;
+  // A dropped «[يحتاج تحقق]» fails the run, which refunds it (owner ٤١٦).
+  if (countNeedsCheck(text) < countNeedsCheck(input.text)) return null;
   return { text, kept_refs: required };
 }
 
@@ -271,9 +303,33 @@ export const ASSISTANT_CONTEXTS = ["general", "case", "contract", "research"] as
 export type AssistantContext = (typeof ASSISTANT_CONTEXTS)[number];
 export const ASSISTANT_MESSAGE_MAX = 4000;
 export const ASSISTANT_REPLY_MAX = 8000;
-/** D3: one price buys a conversation of this many messages; the next starts a new one. */
-export const ASSISTANT_MESSAGES_PER_CONVERSATION = 5;
-export const ASSISTANT_CONVERSATION_PRICE = 100;
+/**
+ * D3: one price buys a conversation of this many messages; the next starts a
+ * new one. Owner ٤١١ (7 Nov 2026): 30 points for 15 messages (was 100 for 5).
+ */
+export const ASSISTANT_MESSAGES_PER_CONVERSATION = 15;
+export const ASSISTANT_CONVERSATION_PRICE = 30;
+
+/**
+ * The sentence the library tools' prompts tell the model to write when the
+ * texts do not answer (n8n/ai/workflows.mjs). A reply that is only this
+ * sentence is a refusal, never an answer, so it is never charged (owner ٤١٣).
+ */
+export const LIBRARY_NO_ANSWER = "لا تجيب النصوص المتاحة في المكتبة عن هذا السؤال";
+
+/** The sentence and the rewordings a model writes for it: «لم تُجب…», «… لا تجيب عن…», without «في المكتبة» or «هذا». */
+const NO_ANSWER_FORMS = [
+  /(?:لا|لم) (?:تجيب|تجب) النصوص المتاحة(?: في المكتبة)? عن (?:هذا )?السؤال/,
+  /النصوص المتاحة(?: في المكتبة)? (?:لا تجيب|لم تجب) عن (?:هذا )?السؤال/,
+];
+
+/** True when `text` is the no-answer sentence alone (with punctuation or a few words around it). */
+export function isLibraryNoAnswer(text: unknown): boolean {
+  if (typeof text !== "string") return false;
+  // Diacritics («تُجب») and spacing do not make it a different sentence.
+  const t = text.replace(/[\u064B-\u0652\u0640]/g, "").replace(/\s+/g, " ").trim();
+  return t.length <= LIBRARY_NO_ANSWER.length + 80 && NO_ANSWER_FORMS.some((re) => re.test(t));
+}
 
 /** L4 المستشار الذكي: a lawyer's chat, each message answered from the library. */
 function assistantInput(raw: unknown): InputCheck {
@@ -481,7 +537,14 @@ function briefCheckOutput(raw: unknown): Record<string, unknown> | null {
 // are words and the court target describes what the court will examine, never
 // how it will rule. Cited articles go through the library check (runCore).
 
-export const WAVE4_PRICE = 250;
+/**
+ * Owner ٤٠٩ / ruling R1 (7 Nov 2026): the simulation is 150, and 75 when the
+ * lawyer picks exactly one target («جولة واحدة»); the strength analysis alone
+ * is 75. Each tool has its own constant (the old shared 250 is gone).
+ */
+export const WARGAMING_PRICE = 150;
+export const WARGAMING_SINGLE_TARGET_PRICE = 75;
+export const ANALYZE_STRENGTH_PRICE = 75;
 export const WAVE4_FILES: FileRules = { max: 6, maxPages: 30, maxBytes: 22 * 1024 * 1024, optional: true };
 export const WARGAMING_PASTE_MIN = 50;
 export const WARGAMING_PASTE_MAX = 30_000;
@@ -491,6 +554,16 @@ export const CASE_SUMMARY_MAX = 6000;
 export const WARGAMING_ROLES = ["plaintiff", "defendant", "advisor"] as const;
 export const WARGAMING_TARGETS = ["opponent", "court", "critique", "plea"] as const;
 export type WargamingTarget = (typeof WARGAMING_TARGETS)[number];
+
+/**
+ * What a simulation of `targets` costs: 75 for exactly one known target, 150
+ * otherwise (none, unknown, or two and more). Counted the way the validator
+ * keeps them (known ids, once each), so the page and the charge agree.
+ */
+export function wargamingPrice(targets: unknown): number {
+  const known = Array.isArray(targets) ? WARGAMING_TARGETS.filter((t) => (targets as unknown[]).includes(t)) : [];
+  return known.length === 1 ? WARGAMING_SINGLE_TARGET_PRICE : WARGAMING_PRICE;
+}
 const SEVERITIES = ["high", "medium", "low"] as const;
 const optionalText = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
 
@@ -508,7 +581,7 @@ const SUMMARY_ERROR = `اكتب ملخص القضية (من ${CASE_SUMMARY_MIN.t
  */
 function wargamingInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
-  if (!(WARGAMING_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
+  if (!(WARGAMING_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفتك أو صفة موكّلك" };
   // Optional: unnamed, the workflow asks the model to infer it from the facts.
   const area = optionalField(raw.area, 150);
   if (area === null) return { ok: false, error: "تخصص القضية أطول من المسموح" };
@@ -576,7 +649,7 @@ const DEVIL_SEVERITIES = ["critical", "high", "medium"] as const;
 /** L10 محلل قوة الموقف: the case, the evidence notes and what the opponent has said, if any. */
 function analyzeStrengthInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
-  if (!(STRENGTH_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفة موكّلك" };
+  if (!(STRENGTH_ROLES as readonly unknown[]).includes(raw.role)) return { ok: false, error: "اختر صفتك أو صفة موكّلك" };
   const summary = caseSummary(raw.case_summary);
   if (!summary) return { ok: false, error: SUMMARY_ERROR };
   return {
@@ -684,13 +757,15 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
 }
 /**
  * L12 الرأي الفصل: consultation and letter, the two output types built first.
- * D4: both are the 400-point tier (800 is study / memo / research at «deep» or
- * «comprehensive», still the team's order). Two tools, not one with a type
+ * Owner ٤١٠ (7 Nov 2026): the consultation is 100 points and the letter 50
+ * (both were the D4 400 tier; study / memo / research stay the team's order).
+ * Two tools, not one with a type
  * field: the consultation answers from library texts (retrieval, refunded when
  * it cites none of them); the letter is a document checked by the L8 citation
  * check, and the retrieval rule would refund almost every letter.
  */
-export const LEGAL_OPINION_PRICE = 400;
+export const LEGAL_CONSULT_PRICE = 100;
+export const LEGAL_LETTER_PRICE = 50;
 export const LEGAL_OPINION_QUESTION_MIN = 20;
 export const LEGAL_OPINION_QUESTION_MAX = 6000;
 export const LETTER_SUBJECT_MIN = 10;
@@ -974,8 +1049,8 @@ function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
   return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
 }
 
-/** The roles of /ai/legal-opinion's two built types: the same audience as L11. */
-const LEGAL_OPINION_ROLES = ["lawyer", "firm", "individual", "corporate", "micro"] as const;
+/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧ adds government). */
+const LEGAL_OPINION_ROLES = REGISTERED_ROLES;
 
 /**
  * The assembled contract (n8n drafts the outline, then each clause on its own
@@ -1044,9 +1119,9 @@ export function hasPercent(v: unknown): boolean {
 
 /**
  * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
- * If ٤١٧ narrows access, this one list changes.
+ * Owner ٤١٧: every registered account.
  */
-export const CONTRACTS_PRO_ROLES = ["lawyer", "firm", "individual", "corporate", "micro", "ngo"] as const;
+export const CONTRACTS_PRO_ROLES = REGISTERED_ROLES;
 
 export const CONTRACT_REVIEW_PRICE = 250;
 // `optional`: the contract may be pasted instead. filesRequired below still refuses a
@@ -1438,7 +1513,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/communicate",
     class: "fast",
     tier: "fast",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     consultantBlocked: false,
     price: () => 5,
     dailyLimit: 40,
@@ -1452,12 +1527,13 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/najiz-optimizer",
     class: "fast",
     tier: "fast",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
-    // Owner ٢١٦ gave «٥–٨»; 5 is charged, and every label reads it from here
-    // (toolPointsDisplay.ts). The plan's 15 is older.
-    price: () => 5,
+    // Owner ٤١٦ (7 Nov 2026): the AI condense is 15 points; the rule-based
+    // cleanup on the page stays free. Every label reads it from here
+    // (toolPointsDisplay.ts).
+    price: () => 15,
     dailyLimit: 20,
     defaultMode: "off",
     validateInput: najizInput,
@@ -1468,12 +1544,15 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/quick-answer",
     class: "fast",
     tier: "fast",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     consultantBlocked: false,
-    price: () => 20,
+    // Owner ٤١٢ (7 Nov 2026): 10 points.
+    price: () => 10,
     dailyLimit: 30,
     defaultMode: "off",
-    retrieval: { from: "question", laws: 8, principles: 4 },
+    // Owner ٤١٣ option A: an answer that cites none of the texts is kept,
+    // labelled and charged (runCore settleRunWith); the refusal sentence is not.
+    retrieval: { from: "question", laws: 8, principles: 4, allowUngrounded: { field: "answer" } },
     validateInput: quickAnswerInput,
     validateOutput: quickAnswerOutput,
   },
@@ -1497,11 +1576,12 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/assistant",
     class: "fast",
     tier: "deep",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     consultantBlocked: false,
-    // D3: the conversation's first message pays for up to five.
+    // D3: the conversation's first message pays for the whole conversation.
     price: (_input, ctx) => ((ctx.turn ?? 0) === 0 ? ASSISTANT_CONVERSATION_PRICE : 0),
-    dailyLimit: 60,
+    // Every turn counts: 90 is six full 15-message conversations a day (owner ٤١١).
+    dailyLimit: 90,
     defaultMode: "off",
     retrieval: { from: "message", laws: 8, principles: 4 },
     conversation: { maxMessages: ASSISTANT_MESSAGES_PER_CONVERSATION, historyPairs: 3, field: "message", replyField: "reply" },
@@ -1513,8 +1593,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/canvas-card",
     class: "fast",
     tier: "fast",
-    // The case board's «استيراد من القضية» is the lawyer and firm case files'.
-    roles: ["lawyer", "firm"],
+    // Owner ٤١٧: every registered account; the button itself sits on the lawyer and firm case boards.
+    roles: REGISTERED_ROLES,
     consultantBlocked: false,
     price: () => 10,
     dailyLimit: 40,
@@ -1528,7 +1608,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/case-brief",
     class: "job",
     tier: "deep",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     consultantBlocked: false,
     // Owner ٢٨٣: 30 points for 1–5 pages, 150 for 6–30 (scanned pages included).
     price: (_input, ctx) => ((ctx.pages ?? 0) <= CASE_BRIEF_SMALL_PAGES ? CASE_BRIEF_PRICES.small : CASE_BRIEF_PRICES.large),
@@ -1544,7 +1624,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/brief-check",
     class: "job",
     tier: "deep",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/brief-check (Art. 18).
     consultantBlocked: true,
     price: () => BRIEF_CHECK_PRICE,
@@ -1563,10 +1643,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/wargaming",
     class: "job",
     tier: "deep",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/wargaming (Art. 18).
     consultantBlocked: true,
-    price: () => WAVE4_PRICE,
+    price: (input) => wargamingPrice(input.targets),
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
@@ -1580,9 +1660,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/analyze-strength",
     class: "job",
     tier: "deep",
-    roles: ["lawyer", "firm"],
-    consultantBlocked: false,
-    price: () => WAVE4_PRICE,
+    roles: REGISTERED_ROLES,
+    // Part of the simulator (ruling R1): CONSULTANT_BLOCKED_PREFIXES has /ai/analyze-strength (Art. 18).
+    consultantBlocked: true,
+    price: () => ANALYZE_STRENGTH_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
@@ -1595,8 +1676,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-drafter",
     class: "job",
     tier: "deep",
-    // The page serves lawyers and individuals alike (plan: individual F «عقد مبسّط ذكي» is the same engine).
-    roles: ["lawyer", "firm", "individual", "corporate", "micro"],
+    // Owner ٤١٧: every registered account (plan: individual F «عقد مبسّط ذكي» is the same engine).
+    roles: REGISTERED_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_DRAFT_PRICE,
     dailyLimit: 5,
@@ -1613,7 +1694,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: LEGAL_OPINION_ROLES,
     // A consultation is advice, not pleading: /ai/legal-opinion is open to consultants (Art. 18).
     consultantBlocked: false,
-    price: () => LEGAL_OPINION_PRICE,
+    price: () => LEGAL_CONSULT_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
@@ -1628,7 +1709,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
     consultantBlocked: false,
-    price: () => LEGAL_OPINION_PRICE,
+    price: () => LEGAL_LETTER_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
@@ -1676,8 +1757,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-negotiator",
     class: "job",
     tier: "deep",
-    // The only nav rows are the firm and lawyer sidebars.
-    roles: ["lawyer", "firm"],
+    // Owner ٤١٧: every registered account (the nav rows are still the firm and lawyer sidebars').
+    roles: REGISTERED_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_NEGOTIATOR_PRICE,
     dailyLimit: 5,
@@ -1691,7 +1772,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/legal-drafter",
     class: "job",
     tier: "deep",
-    roles: ["lawyer", "firm"],
+    roles: REGISTERED_ROLES,
     // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
     consultantBlocked: true,
     // Charged once, on the analysis; the draft that follows it is free.

@@ -956,6 +956,12 @@ export default function LegalLibraryPage() {
         type: "laws",
         subType: "basic",
         hasMerged: law.has_merged_regulation === true,
+        // Owner 2026-11-07: «يشتمل على: A • B» under the title — the names
+        // /api/library/init sends (merged_regulation_names, cleaned per tier;
+        // absent before migration 20261107_10 → no line).
+        mergedNames: Array.isArray(law.merged_regulation_names)
+          ? law.merged_regulation_names.filter((n: unknown): n is string => typeof n === "string" && n.trim() !== "")
+          : [],
         sub_types: law.has_merged_regulation ? ["لائحة تنفيذية"] : [],
         // The row's own type: only 593 of 5,901 are «نظام» (LIB-03).
         doc_type: law.type || "",
@@ -986,8 +992,10 @@ export default function LegalLibraryPage() {
         // through ORDER_TYPE_FALLBACK as «غير محدد».
         type: d.type || "unknown",
         issuer: d.issuer || "—",
-        ref: d.ref || "—",
-        date: d.date || "—",
+        // Owner ٤٢٤ / ٣٨٠: '' for a non-subscriber (the API masks them); the
+        // cards hide a blank number or date instead of printing «—».
+        ref: d.ref || "",
+        date: d.date || "",
         // Owner ٢٦٣: the short موجز, else the source's `summary`.
         summary: stripMarkdownMarks(d.summary_brief || d.summary || d.title || ""),
         summary_brief: stripMarkdownMarks(d.summary_brief || d.summary),
@@ -1281,8 +1289,8 @@ export default function LegalLibraryPage() {
         title: r.title,
         type: r.meta?.type || 'circular',
         issuer: r.meta?.issuer || '—',
-        ref: r.meta?.ref || '—',
-        date: r.meta?.date || '—',
+        ref: r.meta?.ref || '',
+        date: r.meta?.date || '',
         summary: stripMarkdownMarks(r.snippet || r.title),
         summary_brief: stripMarkdownMarks(r.snippet),
         cat: toTaxonomyId(r.meta?.category) ?? '',

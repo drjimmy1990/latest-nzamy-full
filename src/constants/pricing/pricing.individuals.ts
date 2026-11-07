@@ -6,6 +6,7 @@ import {
   bookEntry,
   bookPriceText,
   offeredBillings,
+  topupPointsTextById,
 } from "../../lib/pricing/priceBook";
 
 /**
@@ -26,11 +27,13 @@ const soldCycles = (id: string, lang: "ar" | "en"): string => {
 //    the 199 launch price are retired in the price book).
 // 3. topup-100 / topup-250: point top-ups for individuals only, valid 3
 //    months (owner ٣٠٢, conflict ١١); the professionals' packs start at 500.
-// Retired (q329, Wave 1 task 5): «الباقة الوقائية» (ind-preventive) and
-// «التأمين القانوني» (ind-litigation) are not sold in any cycle, so they have
-// no card and no comparison column. Their ids stay in the price book for the
-// orders and subscriptions that point at them; the 365 legal-protection plan
-// that replaces ind-litigation waits on the owner (٤٢٠) and will be a new id.
+// Retired (q329, Wave 1 task 5): «الباقة الوقائية» (ind-preventive) and the
+// 399 plan ind-litigation are not sold in any cycle, so they have no card and
+// no comparison column. Their ids stay in the price book for the orders and
+// subscriptions that point at them.
+// 4. ind-protection: «عضوية الحماية القانونية» (owner ٤٢٠ / ٤٣٤) — shown as a
+//    non-buyable «قريباً» card with no price (its price is owner question
+//    ٤٥٣). Not a price-book id; when it is sold it gets a book entry.
 
 export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
   ar: [
@@ -76,10 +79,10 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       id: "ind-ai",
       isBetaHidden: false,
       name: "الباقة الذكية (AI الذاتي)",
-      // The revised pricing doc (§7أ.2): «نحو ٠٫٦٨ ر.س / يوم» on the yearly
-      // 249. No «بدلاً من» twelve-months figure: the monthly cycle is retired
-      // (q329), so there is no monthly price to multiply.
-      badge: "نحو ٠٫٦٨ ر.س يومياً بالاشتراك السنوي",
+      // Owner ٤١٩ (3 Nov 2026): the yearly 249 shown as its monthly
+      // equivalent, 249 / 12 = 20.75 (pricingApprovals.test.ts checks it
+      // against the book). No «بدلاً من» figure: the monthly cycle is retired.
+      badge: "ما يعادل ٢٠٫٧٥ ر.س شهرياً تُدفع سنوياً",
       periodMonthly: "ر.س / شهر",
       periodYearly: "ر.س / سنة",
       desc: "مستشارك القانوني الذكي — إجابات نظامية وصياغة خطابات وإنذارات",
@@ -114,14 +117,22 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "١٠٠ نقطة · صالحة ٣ أشهر", target: "شحن نقاط للأفراد",
       cta: "اشحن الآن", ctaHref: "/register/client?type=individual&plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
-      features: { ai: ["١٠٠ نقطة", "١ ر.س للنقطة", "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-100", "ar"), "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "شحن ٢٥٠", badge: null,
       periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "٢٥٠ نقطة · صالحة ٣ أشهر", target: "شحن نقاط للأفراد",
       cta: "اشحن الآن", ctaHref: "/register/client?type=individual&plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
-      features: { ai: ["٢٥٠ نقطة", "١ ر.س للنقطة", "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-250", "ar"), "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
+    },
+    {
+      id: "ind-protection", name: "عضوية الحماية القانونية", badge: null, comingSoon: true,
+      periodMonthly: "", periodYearly: "",
+      desc: "حماية قانونية سنوية للأفراد — تُفتح قريباً", target: "الأفراد",
+      // No signup link: nothing is sold yet (planRequest.ts never resolves it).
+      cta: "قريباً", ctaHref: "/pricing", highlighted: false, color: "border-slate-200/60 dark:border-white/10",
+      features: { ai: [], platform: [], support: [] },
     },
   ],
   en: [
@@ -159,7 +170,7 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       id: "ind-ai",
       isBetaHidden: false,
       name: "Smart AI Self-Service",
-      badge: "About SAR 0.68 a day on the yearly plan",
+      badge: "≈ SAR 20.75/month, billed yearly",
       periodMonthly: "SAR / month",
       periodYearly: "SAR / year",
       desc: "Your AI legal assistant — statutory answers and draft notices",
@@ -188,14 +199,21 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "100 points · valid for 3 months", target: "Points for individuals",
       cta: "Top up", ctaHref: "/register/client?type=individual&plan=topup-100", highlighted: false, color: "border-blue-200/60 dark:border-blue-500/20",
-      features: { ai: ["100 points", "SAR 1 per point", "For the individuals' AI tools priced in points"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-100", "en"), "For the individuals' AI tools priced in points"], platform: [], support: [] },
     },
     {
       id: "topup-250", name: "Top-up 250", badge: null,
       periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
       desc: "250 points · valid for 3 months", target: "Points for individuals",
       cta: "Top up", ctaHref: "/register/client?type=individual&plan=topup-250", highlighted: false, color: "border-emerald-200/60 dark:border-emerald-500/20",
-      features: { ai: ["250 points", "SAR 1 per point", "For the individuals' AI tools priced in points"], platform: [], support: [] },
+      features: { ai: [topupPointsTextById("topup-250", "en"), "For the individuals' AI tools priced in points"], platform: [], support: [] },
+    },
+    {
+      id: "ind-protection", name: "Legal Protection Membership", badge: null, comingSoon: true,
+      periodMonthly: "", periodYearly: "",
+      desc: "Yearly legal protection for individuals — opening soon", target: "Individuals",
+      cta: "Coming soon", ctaHref: "/pricing", highlighted: false, color: "border-slate-200/60 dark:border-white/10",
+      features: { ai: [], platform: [], support: [] },
     },
   ],
 };

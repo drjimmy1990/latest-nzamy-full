@@ -218,3 +218,11 @@ test("P3: a paid membership that got no seat shows the refund review with member
   const plan = fulfilmentNoticeAr({ kind: "plan", labelAr: "x", receiptNumber: null, alreadyEntitled: true });
   assert.match(plan.body, /لم نغيّر اشتراكك الحالي/, "the plan copy is unchanged");
 });
+
+test("Task F fix round 1: the result page names the points a top-up's lot credited, else the book label", () => {
+  const top = { ...order, kind: "topup", item_id: "topup-1000", billing: "once" };
+  const credited = paymentResultView({ outcome: "granted" }, { ...top, credited_points: 1250 });
+  assert.match(credited.body, /«شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة \(منها ٢٥٠ نقطة مكافأة\)»/);
+  const unread = paymentResultView({ outcome: "granted" }, top);
+  assert.match(unread.body, /«شحن ١٬٠٠٠ — ١٬٥٠٠ نقطة \(منها ٥٠٠ نقطة مكافأة\)»/);
+});

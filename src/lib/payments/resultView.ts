@@ -18,7 +18,7 @@
  * Pure: relative imports only, so `node --test` loads it.
  */
 
-import { resolveItem, sellableItem } from "./catalog.ts";
+import { orderLabelWithPointsAr, sellableItem } from "./catalog.ts";
 import { fulfilmentNoticeAr } from "./fulfillDecision.ts";
 
 export interface ResultOrder {
@@ -28,6 +28,8 @@ export interface ResultOrder {
   billing: string;
   status: string;
   receipt_number: string | null;
+  /** Task F fix round 1: the points the order's purchase lot credited, when read. */
+  credited_points?: number | null;
 }
 
 export interface ResultInput {
@@ -61,9 +63,10 @@ const CONTACT_SENTENCE = "إن خُصم مبلغ من بطاقتك فتواصل 
 /** Moyasar's failure reason when it gave no message (fulfillCore's fallback). */
 const NO_GATEWAY_MESSAGE = "payment_failed";
 
-function labelOf(itemId: string): string {
-  // resolve, not sell: an order for a retired item keeps its name
-  return resolveItem(itemId)?.labelAr ?? "طلبك";
+function labelOf(order: Pick<ResultOrder, "item_id" | "credited_points">): string {
+  // resolve, not sell: an order for a retired item keeps the name it was sold
+  // under (R3); a top-up names the points its lot actually credited.
+  return orderLabelWithPointsAr(order.item_id, order.credited_points) ?? "طلبك";
 }
 
 function noticeKind(kind: string): "plan" | "library" | "topup" | "membership" {
@@ -104,7 +107,7 @@ function closedView(order: ResultOrder): ResultView {
 export function paymentResultView(result: ResultInput, order: ResultOrder): ResultView {
   const receiptNumber = result.receiptNumber ?? order.receipt_number ?? null;
   const notice = (alreadyEntitled: boolean) =>
-    fulfilmentNoticeAr({ kind: noticeKind(order.kind), labelAr: labelOf(order.item_id), receiptNumber, alreadyEntitled });
+    fulfilmentNoticeAr({ kind: noticeKind(order.kind), labelAr: labelOf(order), receiptNumber, alreadyEntitled });
 
   switch (result.outcome) {
     case "granted": {

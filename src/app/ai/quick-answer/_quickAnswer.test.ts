@@ -1,8 +1,8 @@
 /**
  * _quickAnswer.test.ts — the quick answer's pure copy and its sidebar rows (S3-06).
  *
- * R25: the price (20) and the roles stay as they are. Question ٤١٢ is open with
- * the owner, so nothing here depends on it.
+ * Owner ٤١٢ (7 Nov 2026): 10 points; the roles stay as they are. Owner ٤١٣
+ * option A: an answer with no library text is shown under a label, charged.
  *
  * RUN: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/app/ai/quick-answer/_quickAnswer.test.ts
  */
@@ -10,7 +10,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, quickAnswerRefusalText } from "./_quickAnswer.ts";
+import {
+  QUICK_ANSWER_EXAMPLES,
+  QUICK_ANSWER_FOLLOW_UPS,
+  QUICK_ANSWER_UNGROUNDED_LABEL,
+  isUngroundedAnswer,
+  quickAnswerExportText,
+  quickAnswerRefusalText,
+} from "./_quickAnswer.ts";
 import { LAWYER_SIDEBAR, FIRM_SIDEBAR } from "../../../constants/navigation.sidebars.legal.ts";
 import { AI_TOOLS } from "../../../lib/ai/tools.ts";
 
@@ -56,10 +63,10 @@ test("the lawyer sidebar has one quick-answer row and keeps its one assistant ro
   assert.equal(rows(FIRM_SIDEBAR).filter((r) => r.href === "/ai/quick-answer").length, 1);
 });
 
-test("R25: 20 points and today's roles, with no free daily question", () => {
+test("٤١٢: 10 points, every registered role (٤١٧), with no free daily question", () => {
   const tool = AI_TOOLS["quick-answer"];
-  assert.equal(tool.price({}, {} as never), 20);
-  assert.deepEqual(tool.roles, ["lawyer", "firm"]);
+  assert.equal(tool.price({}, {} as never), 10);
+  assert.deepEqual([...tool.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   assert.ok(tool.retrieval, "the ungrounded rule stands on retrieval");
   assert.doesNotMatch(page(), /مجاني|سؤال يومي|free daily/i);
 });
@@ -70,11 +77,24 @@ test("the page: examples, collapsible sources, the shared actions, a reset, and 
   assert.ok(src.includes("<details"), "the sources collapse");
   assert.ok(src.includes("open={i === 0}"), "the first source starts open");
   assert.ok(src.includes("<SourceList"));
-  assert.match(src, /<AiResultActions[\s\S]{0,200}text=\{stripCitationMarkers\(answer\)\}[\s\S]{0,200}collectorSource="other"/);
+  assert.match(src, /<AiResultActions[\s\S]{0,200}text=\{quickAnswerExportText\(stripCitationMarkers\(answer\), ungrounded\)\}[\s\S]{0,200}collectorSource="other"/);
   assert.ok(src.includes("اسأل سؤالاً آخر"));
   assert.ok(src.includes("QUICK_ANSWER_FOLLOW_UPS"));
   assert.ok(src.includes("quickAnswerRefusalText(run.code)"));
   assert.ok(src.includes("<AiThinkingStage"));
   assert.ok(src.includes('aiToolPriceText("quick-answer", "ar")'));
   assert.ok(src.includes("isConsultantBlockedPath"), "a consultant is not sent to /ai/wargaming, which refuses him");
+});
+
+test("٤١٣: an ungrounded answer is labelled on the page and in the exported text; a cited one is not", () => {
+  assert.equal(QUICK_ANSWER_UNGROUNDED_LABEL, "إجابة عامة بلا سند مرجعي — تحقق منها");
+  assert.equal(isUngroundedAnswer({ answer: "x", ungrounded: true }), true);
+  for (const o of [{ answer: "x" }, { answer: "x", ungrounded: "true" }, null, undefined]) assert.equal(isUngroundedAnswer(o), false);
+  assert.equal(quickAnswerExportText("جواب", true), `${QUICK_ANSWER_UNGROUNDED_LABEL}\n\nجواب`);
+  assert.equal(quickAnswerExportText("جواب", false), "جواب");
+  const src = page();
+  assert.ok(src.includes("{ungrounded && ("), "the label shows only on an ungrounded answer");
+  assert.ok(src.includes("{QUICK_ANSWER_UNGROUNDED_LABEL}"));
+  assert.ok(src.indexOf("{QUICK_ANSWER_UNGROUNDED_LABEL}") < src.indexOf("<CitedText"), "the label sits above the answer");
+  assert.ok(src.includes("{cites.length > 0 && ("), "no empty «المصادر» heading");
 });

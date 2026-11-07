@@ -132,8 +132,8 @@ export default function AIShowcase() {
 
             <p className={`mt-6 text-base leading-relaxed ${isDark ? "text-gray-400" : "text-ink-muted"}`}>
               {isAr 
-                ? "ليس مجرد دردشة عامة — ذراعك الأيمن المدرب حصرياً على الأنظمة السعودية، واللوائح التنفيذية، والسوابق القضائية. ينجز ساعات من العمل في ثوانٍ بدقة متناهية." 
-                : "Not just general chat — your right arm exclusively trained on Saudi laws, regulations, and precedents. Does hours of work in seconds with extreme precision."}
+                ? "ليس مجرد دردشة عامة — ذراعك الأيمن الذي يعتمد الأنظمة السعودية واللوائح التنفيذية والسوابق القضائية مصدراً. ينجز ساعات من العمل في ثوانٍ بدقة متناهية." 
+                : "Not just general chat — your right arm that takes Saudi laws, regulations, and precedents as its source. Does hours of work in seconds with extreme precision."}
             </p>
 
             <Link href="/ai" className="mt-8 block w-full sm:inline-block sm:w-auto">

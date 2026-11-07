@@ -62,7 +62,7 @@ export const LAWYER_QUICK_TOOLS: readonly QuickTool[] = [
   { id: "hearings",      label: "المواعيد والجلسات",  desc: "جدول الجلسات",             href: "/dashboard/lawyer/hearings",      group: "operational", icon: "CalendarCheck" },
   { id: "deadlines",     label: "رادار المهل",        desc: "المهل النظامية",           href: "/dashboard/lawyer/deadlines",     group: "operational", icon: "Timer" },
   { id: "documents",     label: "المستندات",          desc: "مستندات المكتب",           href: "/dashboard/lawyer/documents",     group: "operational", icon: "Folder" },
-  { id: "finance",       label: "الإيرادات والفواتير", desc: "الفواتير والمدفوعات",      href: "/dashboard/lawyer/finance",       group: "operational", icon: "Money" },
+  { id: "finance",       label: "الإيرادات وبيانات الأتعاب", desc: "بيانات الأتعاب والمدفوعات",      href: "/dashboard/lawyer/finance",       group: "operational", icon: "Money" },
   { id: "consultations", label: "الاستشارات",         desc: "طلبات الاستشارة",          href: "/dashboard/lawyer/consultations", group: "operational", icon: "ChatDots" },
   { id: "clients",       label: "دليل العملاء",       desc: "ملفات الموكلين",           href: "/dashboard/lawyer/clients",       group: "operational", icon: "AddressBook" },
   { id: "tasks",         label: "مهامي",              desc: "المهام والمتابعة",         href: "/dashboard/lawyer/tasks",         group: "operational", icon: "CheckSquare" },

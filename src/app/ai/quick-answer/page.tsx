@@ -19,18 +19,25 @@ import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
-import { QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, quickAnswerRefusalText } from "./_quickAnswer";
+import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
+import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
+import {
+  QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, QUICK_ANSWER_UNGROUNDED_LABEL,
+  isUngroundedAnswer, quickAnswerExportText, quickAnswerRefusalText,
+} from "./_quickAnswer";
 
 /**
  * سؤال قانوني سريع (plan §5 L3): one question → a short answer written only
  * from library texts. The server searches the library, sends the texts to the
- * model, keeps only the citations that name a text it sent, and refunds an
- * answer that cites none (or a question nothing in the library matches). The
- * page shows the answer and links each [S…] marker to its text; it never
- * shows an answer of its own.
+ * model, keeps only the citations that name a text it sent, and refunds a
+ * question nothing in the library matches. Owner ٤١٣ option A: an answer that
+ * cites none of the texts is kept, charged and shown under the label «إجابة
+ * عامة بلا سند مرجعي — تحقق منها» (the server flags it `ungrounded`); only the
+ * model's «النصوص لا تجيب» sentence is refunded. The page links each [S…]
+ * marker to its text; it never shows an answer of its own.
  *
  * S3-06: examples, collapsible sources, the shared result actions, a reset and
- * the next tools. The price (20) and the roles are unchanged (R25, question ٤١٢).
+ * the next tools. The price is the registry's (owner ٤١٢: 10 points).
  *
  * The page reads tool-status first (src/hooks/useToolUsable.ts): the tool's mode is
  * "off" by default, and a run would answer 423, so no price and no form until the
@@ -63,6 +70,9 @@ function QuickAnswerTool() {
   const asking = run.busy;
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
   const cites = asCitations(run.citations);
+  const ungrounded = isUngroundedAnswer(run.output);
+  // Owner ٤١٧: open to every account, but the library's AI tier still gates it.
+  const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType) : null;
   // Art. 18: /ai/wargaming refuses a consultant, so it is not offered to him.
   const followUps = QUICK_ANSWER_FOLLOW_UPS.filter((f) => !(user.practiceKind === "consultant" && isConsultantBlockedPath(f.href)));
 
@@ -156,7 +166,8 @@ function QuickAnswerTool() {
             {asking ? "جارٍ البحث..." : "اسأل"}
           </motion.button>
         </div>
-        {run.phase === "error" && run.error && (
+        {run.phase === "error" && libraryRefusal && <LibraryToolRefusalNote refusal={libraryRefusal} isDark={isDark} />}
+        {run.phase === "error" && run.error && !libraryRefusal && (
           <p role="alert" className={`text-[12px] leading-relaxed ${isDark ? "text-red-400" : "text-red-600"}`}>
             {quickAnswerRefusalText(run.code) ?? run.error}
           </p>
@@ -192,6 +203,13 @@ function QuickAnswerTool() {
             </button>
           </div>
           <div className="p-5 space-y-5">
+            {ungrounded && (
+              <p role="note" className={`rounded-xl border px-3 py-2 text-[12px] font-bold ${
+                isDark ? "border-amber-900/40 bg-amber-900/10 text-amber-400" : "border-amber-200 bg-amber-50 text-amber-700"
+              }`}>
+                {QUICK_ANSWER_UNGROUNDED_LABEL}
+              </p>
+            )}
             <CitedText
               text={answer}
               cites={cites}
@@ -199,6 +217,7 @@ function QuickAnswerTool() {
               className={`text-[14px] leading-loose ${isDark ? "text-zinc-200" : "text-zinc-800"}`}
             />
 
+            {cites.length > 0 && (
             <div>
               <h2 className={`mb-2 text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>المصادر</h2>
               <div className="space-y-1.5">
@@ -214,9 +233,10 @@ function QuickAnswerTool() {
                 ))}
               </div>
             </div>
+            )}
 
             <AiResultActions
-              text={stripCitationMarkers(answer)}
+              text={quickAnswerExportText(stripCitationMarkers(answer), ungrounded)}
               filename="quick-answer"
               collectorSource="other"
               className="justify-start"

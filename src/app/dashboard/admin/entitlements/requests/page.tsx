@@ -5,6 +5,8 @@ import {
   Tray, CheckCircle, XCircle, Clock, CreditCard, Coins, Wallet, BookOpen, Play,
 } from "@phosphor-icons/react";
 import { libraryPlanDays } from "@/lib/libraryAccess";
+import { useUser } from "@/hooks/useUser";
+import { staffMaySee } from "@/lib/auth/adminNavAccess";
 
 /**
  * Admin → Entitlement requests queue.
@@ -43,6 +45,17 @@ const KIND_META: Record<string, { label: string; icon: typeof CreditCard }> = {
 
 const TIERS = ["shield", "ai", "pro", "max", "corp", "enterprise"] as const;
 
+/**
+ * Owner ٤٢٧: pro and above include the full library, so granting them free is
+ * the super admin's alone. TIERS is in rank order; the server decides anyway
+ * (requestGrantApprovalDecision, PATCH …/requests/[id]) — this only hides the
+ * button it would refuse.
+ */
+function tierUnlocksLibrary(tier: string): boolean {
+  const i = (TIERS as readonly string[]).indexOf(tier);
+  return i >= TIERS.indexOf("pro");
+}
+
 /** A library request's default length: its plan's days (90/180/365), else 90. */
 function defaultLibraryDays(row: RequestRow): number {
   return libraryPlanDays(row.requested_ref) ?? 90;
@@ -56,6 +69,8 @@ export default function AdminEntitlementRequestsPage() {
   const [tierFor, setTierFor] = useState<Record<string, string>>({});
   const [daysFor, setDaysFor] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
+  const { staffRole } = useUser();
+  const canGrantFree = staffMaySee(staffRole, "entitlements.grant");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,6 +175,9 @@ export default function AdminEntitlementRequestsPage() {
           const Icon = meta.icon;
           const needsTier = ["plan", "media"].includes(row.kind);
           const isLibrary = row.kind === "library";
+          // A library request, or a plan/media one at a tier that includes the
+          // library: approving it is a free library grant (owner ٤٢٧).
+          const adminOnly = !canGrantFree && (isLibrary || (needsTier && tierUnlocksLibrary(tierFor[row.id] ?? "pro")));
           return (
             <div key={row.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4">
               <div className="flex items-start gap-3">
@@ -204,10 +222,19 @@ export default function AdminEntitlementRequestsPage() {
                         {TIERS.map((t) => <option key={t} value={t} className="bg-[#0d0d15]">{t}</option>)}
                       </select>
                     )}
-                    <button onClick={() => decide(row, "approve")} disabled={busyId === row.id}
-                      className="flex items-center gap-1 rounded-lg bg-emerald-600/20 border border-emerald-500/30 px-3 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-50">
-                      <CheckCircle size={13} weight="fill" /> موافقة
-                    </button>
+                    {adminOnly ? (
+                      <span
+                        title="منح المكتبة القانونية (أو باقة Pro وما فوقها) دون طلب مدفوع صلاحية للمشرف الأعلى وحده"
+                        className="rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-1.5 text-[11px] font-bold text-zinc-400"
+                      >
+                        للمدير العام فقط
+                      </span>
+                    ) : (
+                      <button onClick={() => decide(row, "approve")} disabled={busyId === row.id}
+                        className="flex items-center gap-1 rounded-lg bg-emerald-600/20 border border-emerald-500/30 px-3 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-50">
+                        <CheckCircle size={13} weight="fill" /> موافقة
+                      </button>
+                    )}
                     <button onClick={() => decide(row, "reject")} disabled={busyId === row.id}
                       className="flex items-center gap-1 rounded-lg bg-red-600/15 border border-red-500/25 px-3 py-1.5 text-[11px] font-bold text-red-300 hover:bg-red-600/25 disabled:opacity-50">
                       <XCircle size={13} weight="fill" /> رفض

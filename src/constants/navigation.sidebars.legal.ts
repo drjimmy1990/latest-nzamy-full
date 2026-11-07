@@ -82,7 +82,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "الإيرادات والفواتير", labelEn: "Finance & Invoices", href: "/dashboard/lawyer/finance", icon: "Money" },
+      { label: "الإيرادات وبيانات الأتعاب", labelEn: "Revenue & Fee Statements", href: "/dashboard/lawyer/finance", icon: "Money" },
     ],
   },
 

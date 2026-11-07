@@ -5,6 +5,27 @@ import type { BillingData, BillingOrder } from "./billingView.ts";
 export const BILLING_ORDER_COLUMNS = "id,item_id,billing,net_halalas,vat_halalas,total_halalas,currency,status,receipt_number,paid_at,refunded_halalas,created_at,live";
 export const BILLING_CARD_COLUMNS = "id,merchant,brand,last_four,exp_month,exp_year,status,created_at";
 const LOT_COLUMNS = "id,source,points_total,points_left,expires_at,created_at";
+
+/**
+ * Task F fix round 1: the points each purchase lot credited, by order id —
+ * a receipt names what the buyer actually got, not today's top-up grant.
+ * Best-effort: any error (or a throw) is an empty map, and the label falls
+ * back to the book's. order_id and points_total are granted to authenticated
+ * (20261022_20).
+ */
+async function creditedByOrder(rls: SupabaseClient, userId: string, orderIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (orderIds.length === 0) return out;
+  try {
+    const { data, error } = await rls.from("points_lots").select("order_id,points_total")
+      .eq("user_id", userId).eq("source", "purchase").in("order_id", orderIds);
+    if (error) { logBillingError(`credited_points:${error.code}`); return out; }
+    for (const row of (data ?? []) as Array<{ order_id?: unknown; points_total?: unknown }>) {
+      if (typeof row.order_id === "string" && Number.isSafeInteger(row.points_total)) out.set(row.order_id, row.points_total as number);
+    }
+  } catch (err) { logBillingError(`credited_points_exception:${errorName(err)}`); }
+  return out;
+}
 export const BILLING_UNAVAILABLE_AR = "بيانات الفوترة غير متاحة مؤقتاً، حاول مرة أخرى بعد قليل";
 export const CARD_MODE_MISMATCH_AR = "لا يمكن حذف هذه البطاقة من هنا لأنها حُفظت في وضع مختلف؛ تواصل مع الدعم";
 type Reply = { status: number; body: BillingData | { error: string } | { deleted: true } };
@@ -36,7 +57,10 @@ export async function getBillingWith(rls: SupabaseClient, userId: string): Promi
     const failed = [orders, cards, lots, balance].find(r => r.error);
     if (failed) { logBillingError(failed.error?.code); return unavailable(); }
     if (!Number.isSafeInteger(balance.data) || balance.data < 0) { logBillingError("balance_not_integer"); return unavailable(); }
-    return { status: 200, body: { orders: orders.data ?? [], cards: cards.data ?? [], lots: lots.data ?? [], pointsBalance: balance.data } };
+    const orderRows = (orders.data ?? []) as unknown as BillingOrder[];
+    const credited = await creditedByOrder(rls, userId, orderRows.filter(o => o.item_id?.startsWith("topup-")).map(o => o.id));
+    const withPoints = orderRows.map(o => (credited.has(o.id) ? { ...o, credited_points: credited.get(o.id) } : o));
+    return { status: 200, body: { orders: withPoints, cards: cards.data ?? [], lots: lots.data ?? [], pointsBalance: balance.data } };
   } catch (err) { logBillingError(`billing_exception:${errorName(err)}`); return unavailable(); }
 }
 
@@ -112,6 +136,11 @@ export async function readReceiptWith(rls: SupabaseClient, admin: SupabaseClient
     const company = await admin.from("platform_settings").select("value").eq("key", "billing_company").maybeSingle();
     // A failed company read produces the explicit incomplete-company notice.
     if (company.error) logBillingError(`receipt_company:${company.error.code}`);
-    return { order: { ...(result.data as unknown as BillingOrder), last_four: lastFour }, company: company.error ? null : company.data?.value ?? null };
+    const row = result.data as unknown as BillingOrder;
+    const credited = row.item_id?.startsWith("topup-") ? await creditedByOrder(rls, userId, [row.id]) : new Map<string, number>();
+    return {
+      order: { ...row, last_four: lastFour, ...(credited.has(row.id) ? { credited_points: credited.get(row.id) } : {}) },
+      company: company.error ? null : company.data?.value ?? null,
+    };
   } catch (err) { logBillingError(`receipt_exception:${errorName(err)}`); return { order: null, company: null, unavailable: true }; }
 }

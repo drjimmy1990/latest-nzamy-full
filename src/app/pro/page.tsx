@@ -40,7 +40,7 @@ const features = {
     { icon: CurrencyDollar, title: "نظام الأتعاب والفواتير", desc: "إصدار فواتير احترافية وتتبع المدفوعات — تُسدَّد الأتعاب لك مباشرةً من العميل خارج المنصة.", color: "from-teal-500 to-green-600" },
   ],
   en: [
-    { icon: Brain, title: "Specialized AI Assistant", desc: "AI trained on Saudi laws and regulations to help you draft, research, and analyze.", color: "from-violet-500 to-purple-600" },
+    { icon: Brain, title: "Specialized AI Assistant", desc: "AI that takes Saudi laws and regulations as its source to help you draft, research, and analyze.", color: "from-violet-500 to-purple-600" },
     { icon: ChartBar, title: "Integrated Dashboard", desc: "Track your cases, appointments, fees, and documents in one place with real-time stats.", color: "from-royal to-emerald-600" },
     { icon: Users, title: "Client Management", desc: "Smart database for all your clients with full communication history, docs, and agreements.", color: "from-blue-500 to-cyan-600" },
     { icon: FileText, title: "Smart Template Library", desc: "Hundreds of ready-made legal templates customizable with AI in seconds.", color: "from-amber-500 to-orange-600" },
