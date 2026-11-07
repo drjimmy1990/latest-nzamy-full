@@ -153,3 +153,71 @@ test("Circuits Directory email addresses are sendable", async (t) => {
     assert.strictEqual(data.metadata.verifiedCount, data.circuits.length - flagged);
   });
 });
+
+// ─── Owner ٤٢٩: regions and the personal-status category ───────────────────
+//
+// His corrected file (circuits_directory_cleaned.json, package 2026-11-03) moved
+// 862 rows off the parser's «منطقة الرياض» fallback and split 177
+// personal-status circuits into their own category. One move was held back:
+// moj-cir-0565 («الدائر المرورية … بالمحكمة العامة بالرياض», GEN-RYD-TC3) — his
+// pass read the typo «الدائر» as the Jazan town. scripts/parsers/
+// parse-circuits-directory.mjs does NOT know these fixes yet (its corrections
+// cover addresses only), so a re-run would put the rows back on Riyadh; these
+// pins make that fail CI instead of shipping silently.
+test("Owner ٤٢٩: regions and the personal-status category stay applied", async (t) => {
+  const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+  const byId = new Map(data.circuits.map((c) => [c.id, c]));
+  const count = (key) => {
+    const out = {};
+    for (const c of data.circuits) out[c[key]] = (out[c[key]] ?? 0) + 1;
+    return out;
+  };
+
+  await t.test("category counts, with «محكمة أحوال شخصية» as the ninth", () => {
+    assert.deepStrictEqual(count("category"), {
+      "محكمة عامة": 1019, "محكمة جزائية": 318, "محكمة تنفيذ": 256, "كتابة عدل": 195,
+      "محكمة أحوال شخصية": 177, "محاكم ودوائر قضائية": 114, "استئناف": 76,
+      "إدارة وفروع الوزارة": 36, "محكمة تجارية": 1,
+    });
+    assert.strictEqual(data.metadata.categoriesCount, 9);
+  });
+
+  await t.test("region counts: Riyadh holds 608, not 1,469", () => {
+    const regions = count("region");
+    assert.strictEqual(regions["منطقة الرياض"], 608);
+    assert.strictEqual(regions["منطقة مكة المكرمة"], 356);
+    assert.strictEqual(regions["المنطقة الشرقية"], 251);
+    assert.strictEqual(regions["منطقة عسير"], 205);
+    assert.strictEqual(regions["منطقة جازان"], 149);
+    assert.strictEqual(data.metadata.regionsCount, Object.keys(regions).length);
+  });
+
+  await t.test("one moved row per region, and the held-back Riyadh row", () => {
+    for (const [id, region, city] of [
+      ["moj-cir-0562", "منطقة جازان", "جازان"],
+      ["moj-cir-0571", "منطقة مكة المكرمة", "مكة"],
+      ["moj-cir-0573", "منطقة عسير", "أبها"],
+      ["moj-cir-0575", "المنطقة الشرقية", "الاحساء"],
+      ["moj-cir-0576", "منطقة الباحة", "الباحة"],
+      ["moj-cir-0582", "منطقة القصيم", "بريدة"],
+      ["moj-cir-0584", "منطقة تبوك", "تبوك"],
+      ["moj-cir-0585", "منطقة حائل", "حائل"],
+      ["moj-cir-0588", "منطقة الجوف", "سكاكا"],
+      ["moj-cir-0592", "منطقة الحدود الشمالية", "عرعر"],
+      ["moj-cir-0596", "منطقة نجران", "نجران"],
+      ["moj-cir-0597", "منطقة المدينة المنورة", "ينبع"],
+      ["moj-cir-0565", "منطقة الرياض", "الرياض"],
+    ]) {
+      assert.strictEqual(byId.get(id).region, region, `${id} region`);
+      assert.strictEqual(byId.get(id).city, city, `${id} city`);
+    }
+  });
+
+  await t.test("every personal-status row names personal status; an ex-general-court circuit is one of them", () => {
+    const fold = (s) => s.replace(/[أإآ]/g, "ا");
+    for (const c of data.circuits.filter((row) => row.category === "محكمة أحوال شخصية")) {
+      assert.match(fold(c.name), /احوال الشخصية|احوال شخصية/, c.id);
+    }
+    assert.strictEqual(byId.get("moj-cir-0570").category, "محكمة أحوال شخصية");
+  });
+});

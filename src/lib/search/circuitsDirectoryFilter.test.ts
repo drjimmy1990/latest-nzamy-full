@@ -51,7 +51,9 @@ test("real data (2,192 rows): cross-field queries that returned 0 before now fin
   const data = JSON.parse(readFileSync(new URL("../../data/circuits-directory.json", import.meta.url), "utf8")) as { circuits: CircuitRow[] };
   assert.equal(data.circuits.length, 2192);
   const execRiyadh = filterCircuits(data.circuits, { query: "تنفيذ + الرياض" });
-  assert.ok(execRiyadh.length > 100, `تنفيذ + الرياض → ${execRiyadh.length}`);
+  // 213 before owner ٤٢٩ — most of them non-Riyadh circuits the parser had
+  // left on its «منطقة الرياض» fallback; 99 once his regions were applied.
+  assert.ok(execRiyadh.length > 50, `تنفيذ + الرياض → ${execRiyadh.length}`);
   // The old single-field test: no field contains the whole string «تنفيذ الرياض».
   assert.equal(data.circuits.filter((c) => [c.name, c.category, c.city, c.region, c.email].some((f) => f.includes("تنفيذ الرياض"))).length, 0);
   const western = filterCircuits(data.circuits, { query: "الدائرة 1" }).map((r) => r.id);
