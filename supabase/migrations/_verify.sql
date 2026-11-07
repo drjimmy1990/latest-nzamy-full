@@ -4225,12 +4225,14 @@ begin
                            min_order_amount, max_discount_pct, excluded_kinds), '; ' order by code) into p
     from public.coupons
    where (code = 'NZAMY50' and not (discount_type = 'fixed' and discount_value = 50 and min_order_amount = 200
-                                    and max_uses_per_user = 1 and max_discount_pct = 25 and excluded_kinds = '{topup}'))
+                                    and max_uses_per_user = 1 and max_discount_pct = 25
+                                    -- owner ٤٣٦ (20261107_50): single services only
+                                    and excluded_kinds @> '{plan,library,topup}' and '{plan,library,topup}' @> excluded_kinds))
       or (code = 'NEWCLIENT' and not (discount_type = 'fixed' and discount_value = 75 and min_order_amount = 300
                                       and max_uses_per_user = 1 and max_discount_pct = 25
                                       and excluded_kinds @> '{plan,library,topup}' and '{plan,library,topup}' @> excluded_kinds));
   if p is not null then
-    raise notice '_verify: 20261026_20 — owner code(s) changed on the admin coupons page since his rules were written (NZAMY50: fixed 50, min 200; NEWCLIENT: fixed 75, min 300, single services): % — confirm with the owner', p;
+    raise notice '_verify: 20261026_20 — owner code(s) changed on the admin coupons page since his rules were written (NZAMY50: fixed 50, min 200, single services since 20261107_50; NEWCLIENT: fixed 75, min 300, single services): % — confirm with the owner', p;
   end if;
   -- Live codes other than the owner's two (switched back on by an admin, or
   -- created on the coupons page): named for a look, never an error.
@@ -5798,3 +5800,52 @@ begin
   raise notice '_verify: 20261103_69 OK — verification card: token and switch server-only, two functions service role only';
 end $$;
 -- <<< verify:letterhead_verify_card
+-- >>> verify:owner_answers_prices
+-- 2026-11-07 — 20261107_50_owner_answers_prices.sql (Task F, owner ٤٢٠ / ٤٣٣ /
+-- ٤٣٦; runs AFTER the deploy). Read-only, safe to repeat. RAISES when the file
+-- has not run (or a re-run of 20261022_10 / the 20260518 seed undid it): the
+-- old plan name, a video-full row still offered, no voice-call row, NZAMY50
+-- still open to plans. A price an admin changed since is a NOTICE, never an
+-- error. A missing table: one NOTICE, passes.
+do $$
+declare r record; p text;
+begin
+  if to_regclass('public.subscription_plans') is not null then
+    select name_ar, name_en into r from public.subscription_plans where id = 'ind-litigation';
+    if found and (r.name_ar is distinct from 'عضوية الحماية القانونية' or r.name_en is distinct from 'Legal Protection Membership') then
+      raise exception '_verify: 20261107_50 — ind-litigation is named «%» / %, not «عضوية الحماية القانونية» (owner ٤٢٠): run 20261107_50 (AFTER the deploy; again after any re-run of 20261022_10)', r.name_ar, r.name_en;
+    end if;
+  end if;
+  if to_regclass('public.admin_pricing_catalog') is null then
+    raise notice '_verify: 20261107_50 — public.admin_pricing_catalog is missing (20260518 not applied): the code catalogue serves the consultation prices';
+  else
+    if not exists (select 1 from public.admin_pricing_catalog where service_id = 'voice-call') then
+      raise exception '_verify: 20261107_50 — no voice-call row (owner ٤٣٣): run 20261107_50 (AFTER the deploy)';
+    end if;
+    select enabled, metadata into r from public.admin_pricing_catalog where service_id = 'video-full';
+    if found and not (r.enabled = false and coalesce(r.metadata->>'adminHidden', '') = 'true') then
+      raise exception '_verify: 20261107_50 — video-full is still offered (enabled %, adminHidden %): the 60-minute session is retired (owner ٤٣٣). Run 20261107_50 (AFTER the deploy; a re-run of the 20260518 seed undoes it — then clear metadata.owner_433 on video-full first)',
+        r.enabled, coalesce(r.metadata->>'adminHidden', 'none');
+    end if;
+    select string_agg(format('%s %s', c.service_id, c.base_price), ', ' order by c.service_id) into p
+      from public.admin_pricing_catalog c
+      join (values ('written-opinion', 79), ('voice-call', 129), ('video-short', 199), ('in-person', 349)) as e(service_id, price)
+        on e.service_id = c.service_id
+     where c.base_price <> e.price;
+    if p is not null then
+      raise notice '_verify: 20261107_50 — consultation prices differ from the owner''s defaults 79 / 129 / 199 / 349 (an admin edit, or the 20260518 seed re-run): % — confirm with the owner', p;
+    end if;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'coupons' and column_name = 'excluded_kinds') then
+    select excluded_kinds, metadata into r from public.coupons where code = 'NZAMY50';
+    if found and not (r.excluded_kinds @> '{plan,library,topup}'::text[]) then
+      if coalesce(r.metadata->>'owner_436', '') = '' then
+        raise exception '_verify: 20261107_50 — NZAMY50 excludes only %, so it still applies to plans or the library (owner ٤٣٦: single services only): run 20261107_50 (AFTER the deploy)', r.excluded_kinds;
+      end if;
+      raise notice '_verify: 20261107_50 — NZAMY50 was edited on the admin coupons page since owner ٤٣٦ (excluded %): confirm with the owner', r.excluded_kinds;
+    end if;
+  end if;
+  raise notice '_verify: 20261107_50 OK — «عضوية الحماية القانونية»; voice-call row present and video-full hidden; NZAMY50 single services only';
+end $$;
+-- <<< verify:owner_answers_prices

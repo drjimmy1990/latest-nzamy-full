@@ -10,6 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { useClientPricingCatalog } from "@/hooks/useClientPricingCatalog";
+import { consultationTypePrice } from "@/components/consultation/consultationPrices";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface EscalationProps {
@@ -66,8 +68,9 @@ const txt = {
     depositAmount: "٥٠ ر.س",
     depositNote: "تُخصم من أتعاب المحامي عند التعاقد",
     optConsult: "استشارة فورية",
-    optConsultDesc: "جلسة ٣٠ دقيقة فيديو أو هاتف",
-    optConsultPrice: "٩٩ - ٢٤٩ ر.س",
+    // Owner ٤٣٣: the durations of voice-call / video-short; the price is read
+    // from the client catalogue in the component (no typed range).
+    optConsultDesc: "صوتية ٢٠ دقيقة أو مرئية ٣٠ دقيقة",
     optCase: "توكيل في قضية",
     optCaseDesc: "ادفع رسوم الجدية ونوصلك بمحامي",
     optCasePrice: "٥٠ ر.س رسوم جدية",
@@ -97,8 +100,7 @@ const txt = {
     depositAmount: "SAR 50",
     depositNote: "Deducted from lawyer fees upon engagement",
     optConsult: "Instant Consultation",
-    optConsultDesc: "30-min video or phone session",
-    optConsultPrice: "SAR 99 - 249",
+    optConsultDesc: "Voice 20 min or video 30 min",
     optCase: "Case Engagement",
     optCaseDesc: "Pay seriousness deposit & get matched",
     optCasePrice: "SAR 50 deposit",
@@ -126,6 +128,13 @@ export default function EscalationFlow({
   const { userType } = useUser();
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
+  // Owner ٤٣٣: the voice and video prices from the client catalogue (the DB
+  // row wins over the code default), never a typed price range.
+  const { catalog } = useClientPricingCatalog();
+  const priceLang = isAr ? "ar" : "en";
+  const optConsultPrice = isAr
+    ? `صوتية ${consultationTypePrice("voice", catalog, priceLang)} · مرئية ${consultationTypePrice("video", catalog, priceLang)}`
+    : `Voice ${consultationTypePrice("voice", catalog, priceLang)} · Video ${consultationTypePrice("video", catalog, priceLang)}`;
   const specs = isAr ? SPECIALTIES.ar : SPECIALTIES.en;
   const dir = isAr ? "rtl" : "ltr";
 
@@ -283,7 +292,7 @@ export default function EscalationFlow({
               </p>
               <div className="space-y-2.5">
                 {[
-                  { href: "/book/consultation", label: t.optConsult, desc: t.optConsultDesc, price: t.optConsultPrice, icon: ChatCircle, highlight: true },
+                  { href: "/book/consultation", label: t.optConsult, desc: t.optConsultDesc, price: optConsultPrice, icon: ChatCircle, highlight: true },
                   { href: "/lawyers",           label: t.optCase,    desc: t.optCaseDesc,    price: t.optCasePrice,    icon: Scales,     highlight: false },
                   { href: "/marketplace",        label: t.optMarket,  desc: t.optMarketDesc,  price: t.optMarketPrice,  icon: User,       highlight: false },
                 ].map((opt) => {

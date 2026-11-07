@@ -5,38 +5,16 @@ export type LawyerMode = "video" | "in-person" | "text" | "voice";
 
 export const MODE_COPY = {
   "in-person": { label: "حضورية",         Icon: Buildings,    serviceId: "in-person", desc: "في مكتب المحامي" },
-  video:        { label: "مرئية (أونلاين)", Icon: VideoCamera,  serviceId: "video-full", desc: "فيديو عبر الإنترنت" },
-  voice:        { label: "صوتية (أونلاين)", Icon: Phone,        serviceId: "video-full", desc: "مكالمة عبر الإنترنت" },
+  video:        { label: "مرئية (أونلاين)", Icon: VideoCamera,  serviceId: "video-short", desc: "فيديو عبر الإنترنت" },
+  voice:        { label: "صوتية (أونلاين)", Icon: Phone,        serviceId: "voice-call", desc: "مكالمة عبر الإنترنت" },
   text:         { label: "كتابية",          Icon: ChatsCircle,  serviceId: "written-opinion", desc: "رد خلال 48 ساعة" },
 } as const;
 
-/**
- * Modes that have NO catalogue entry of their own and borrow another mode's.
- *
- * «صوتية (أونلاين)» is the only one. There is no voice row in
- * CLIENT_SERVICE_CATALOG at all, so MODE_COPY.voice.serviceId points at
- * "video-full" — the 60-minute VIDEO session — and getConsultationModeServiceId()
- * (src/lib/pricingRepository.ts:190) falls through to the same id. A voice
- * booking is therefore priced, quoted and recorded as video-full.
- *
- * What this set exists to stop is that entry's own `priceNote`
- * («مرئية أونلاين - 60 دقيقة») being printed on the review screen one row under
- * «النوع: مع محامٍ — صوتية (أونلاين)»: a voice call described back to the client
- * as a 60-minute video call, and a duration on screen that no row records.
- *
- * NOT derived by counting the modes that share a serviceId — video and voice
- * share "video-full", but video is that entry's OWNER and the note is true of
- * it. A count cannot tell an owner from a borrower, and that asymmetry is the
- * whole fact being recorded here.
- *
- * The other honest fix is giving voice its own row in
- * src/constants/clientServiceCatalog.ts (not this pass's file). When that
- * lands, delete this set and the branch that reads it — and note it fixes the
- * price too, which suppressing a note does not: a voice booking is still
- * charged and recorded at video-full's ٥٠٠ ر.س.
- */
-export const MODES_BORROWING_ANOTHER_SERVICE_ENTRY: ReadonlySet<LawyerMode> =
-  new Set<LawyerMode>(["voice"]);
+// Owner ٤٣٣ (3 Nov 2026): every lawyer mode now has a catalogue entry of its
+// own — voice is `voice-call` (20 min), video is `video-short` (30 min). The
+// MODES_BORROWING_ANOTHER_SERVICE_ENTRY set that hid video-full's «60 دقيقة»
+// note under a voice booking is gone with the borrowing. Each serviceId here
+// must equal getConsultationModeServiceId(mode) (consultationPrices.test.ts).
 
 /**
  * How a consultation is delivered: the four lawyer modes the booking wizard

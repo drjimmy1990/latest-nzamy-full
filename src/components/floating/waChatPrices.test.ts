@@ -43,20 +43,22 @@ test("both steps read the catalogue (useClientPricingCatalog) and show the platf
 test("each chat choice maps to the catalogue service the pages price", () => {
   assert.equal(consultServiceId("ai", "text"), "ai-consult");
   assert.equal(consultServiceId("lawyer", "text"), "written-opinion");
-  assert.equal(consultServiceId("lawyer", "video"), "video-full");
-  assert.equal(consultServiceId("lawyer", "voice"), "video-full");
+  // owner ٤٣٣: voice has its own 20-minute entry; video is the 30-minute one
+  assert.equal(consultServiceId("lawyer", "video"), "video-short");
+  assert.equal(consultServiceId("lawyer", "voice"), "voice-call");
   assert.equal(consultServiceId("lawyer", "person"), "in-person");
   assert.equal(consultServiceId(undefined, "text"), null);
   assert.equal(contractServiceId("ai-review"), "contract-analyze");
   assert.equal(contractServiceId("lawyer-review"), "contract-review");
   assert.equal(contractServiceId(undefined), null);
-  assert.equal(waServiceId({ provider: "lawyer", modality: "video" }), "video-full");
+  assert.equal(waServiceId({ provider: "lawyer", modality: "video" }), "video-short");
+  assert.equal(waServiceId({ provider: "lawyer" }), "video-short", "no modality yet reads as video");
   assert.equal(waServiceId({ contractService: "lawyer-review" }), "contract-review");
   assert.equal(waServiceId({}), null);
 });
 
 test("the price line is formatClientServicePrice of the (admin-merged) catalogue entry; payment follows requiresPayment", () => {
-  for (const id of ["ai-consult", "written-opinion", "video-full", "in-person", "contract-analyze", "contract-review"]) {
+  for (const id of ["ai-consult", "written-opinion", "voice-call", "video-short", "in-person", "contract-analyze", "contract-review"]) {
     const entry = getClientServiceById(id, CLIENT_SERVICE_CATALOG);
     if (entry.priceMode === "included") continue; // the next test
     if (isTerminalToolHref(entry.route)) continue; // the gated-tool test
@@ -67,8 +69,8 @@ test("the price line is formatClientServicePrice of the (admin-merged) catalogue
   // the free daily AI question asks for no payment method
   assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "ai-consult").requiresPayment, false);
   // an admin price change reaches the chat
-  const merged = CLIENT_SERVICE_CATALOG.map((s) => (s.serviceId === "video-full" ? { ...s, basePrice: 650 } : s));
-  assert.equal(waPrice(merged, "video-full").text, "٦٥٠ ر.س");
+  const merged = CLIENT_SERVICE_CATALOG.map((s) => (s.serviceId === "video-short" ? { ...s, basePrice: 650 } : s));
+  assert.equal(waPrice(merged, "video-short").text, "٦٥٠ ر.س");
   // nothing chosen → «يتم التحديد», no payment step
   assert.deepEqual(waPrice(CLIENT_SERVICE_CATALOG, null), { text: "يتم التحديد", note: null, requiresPayment: false, showsAmount: false });
 });
@@ -101,8 +103,8 @@ test("finding 6: an «included» service never reads «مشمول في البا�
   assert.equal(waPrice(unpriced, "contract-analyze").text, WA_PRICE_AFTER_REVIEW_AR);
   assert.equal(WA_PRICE_AFTER_REVIEW_AR, "يُحدَّد بعد المراجعة");
   // any service an admin switches to «included» follows the same rule
-  const switched = CLIENT_SERVICE_CATALOG.map((s) => (s.serviceId === "video-full" ? { ...s, priceMode: "included" as const } : s));
-  assert.equal(waPrice(switched, "video-full").text, formatClientServicePrice({ basePrice: 500, priceMode: "fixed" }));
+  const switched = CLIENT_SERVICE_CATALOG.map((s) => (s.serviceId === "video-short" ? { ...s, priceMode: "included" as const } : s));
+  assert.equal(waPrice(switched, "video-short").text, formatClientServicePrice({ basePrice: 199, priceMode: "fixed" }));
   // only a caller that knows the viewer's plan includes it says so
   assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "contract-analyze", { viewerIncluded: true }).text, "مشمول في الباقة");
 });
@@ -115,6 +117,6 @@ test("finding 6: StepPayment shows the VAT sentence with any amount, not only wi
 test("S6: a company's chat shows the business contract-review price; the default stays the individuals'", () => {
   assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "contract-review").text, "يبدأ من ٦٠٠ ر.س");
   assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "contract-review", { audience: "corporate" }).text, "يبدأ من ٨٠٠ ر.س");
-  assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "video-full", { audience: "corporate" }).text, waPrice(CLIENT_SERVICE_CATALOG, "video-full").text);
+  assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "video-short", { audience: "corporate" }).text, waPrice(CLIENT_SERVICE_CATALOG, "video-short").text);
   assert.equal(waPrice(CLIENT_SERVICE_CATALOG, "contract-review-business").text, "يتم التحديد", "the variant id is not a service");
 });

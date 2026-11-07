@@ -370,9 +370,11 @@ test("a cycle the item is not sold in (quarterly before P2) is refused with 400"
 // ── coupons (P7, owner answers of 25 Oct; pricing doc §13أ) ─────────────────
 
 const COUPON_ID = "00000000-0000-0000-0000-0000000c0050";
-const NZAMY50_ROW = {
+// A fixed-50 coupon OPEN to plans (min 200, top-ups excluded) — NZAMY50's
+// shape until owner ٤٣٦. The plan checkout mechanics are tested on it.
+const PLAN50_ROW = {
   id: COUPON_ID,
-  code: "NZAMY50",
+  code: "PLAN50",
   discount_type: "fixed",
   discount_value: "50.00",
   min_order_amount: "200.00",
@@ -385,7 +387,9 @@ const NZAMY50_ROW = {
   max_discount_pct: "25.00",
   excluded_kinds: ["topup"],
 };
-const NEWCLIENT_ROW = { ...NZAMY50_ROW, code: "NEWCLIENT", discount_value: 75, min_order_amount: 300, excluded_kinds: ["plan", "library", "topup"] };
+const NEWCLIENT_ROW = { ...PLAN50_ROW, code: "NEWCLIENT", discount_value: 75, min_order_amount: 300, excluded_kinds: ["plan", "library", "topup"] };
+/** Owner ٤٣٦: NZAMY50 after 20261107_50 — single services only. */
+const NZAMY50_ROW = { ...PLAN50_ROW, code: "NZAMY50", excluded_kinds: ["topup", "plan", "library"] };
 
 /** db() plus the coupon tables: `paidWithCoupon` = a paid order of this buyer already carried it. */
 function couponDb(
@@ -407,7 +411,7 @@ function couponDb(
   return db(userType, (q) => {
     if (q.table === "coupons") {
       if (opts.couponErr) return { error: opts.couponErr };
-      return { data: opts.row === undefined ? NZAMY50_ROW : opts.row };
+      return { data: opts.row === undefined ? PLAN50_ROW : opts.row };
     }
     if (q.table === "coupon_usage") return { data: opts.usage ? [{ id: 1 }] : [] };
     if (
@@ -445,12 +449,12 @@ const openRow = (over: Record<string, unknown> = {}) => ({
 const closes = (log: FakeQuery[], id: string) =>
   updates(log).filter((q) => has(q, "eq", "id", id) && (q.payload as { status?: string }).status === "cancelled");
 
-test("coupon: NZAMY50 on the 1,490 SAR plan — the stored order and the intent carry the DISCOUNTED net, VAT on it, and the coupon", async () => {
+test("coupon: PLAN50 on the 1,490 SAR plan — the stored order and the intent carry the DISCOUNTED net, VAT on it, and the coupon", async () => {
   const { client: admin, log } = couponDb("individual");
   const m = moyasar();
   const r = await startCheckoutWith(
     { admin, client: m.client, now: () => NOW },
-    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
   );
   assert.equal(r.status, 200);
   // 1,490 − 50 = 1,440 net; VAT 216; total 1,656
@@ -461,7 +465,7 @@ test("coupon: NZAMY50 on the 1,490 SAR plan — the stored order and the intent 
   assert.equal(p.total_halalas, 165600);
   assert.deepEqual(p.metadata, {
     user_email: "buyer@example.test",
-    coupon: { id: COUPON_ID, code: "NZAMY50", discount_halalas: 5000, list_net_halalas: 149000 },
+    coupon: { id: COUPON_ID, code: "PLAN50", discount_halalas: 5000, list_net_halalas: 149000 },
   });
   // the amount charged is the stored total — fulfilment compares the paid amount to it
   assert.equal(m.intents[0].amountHalalas, 165600);
@@ -474,18 +478,18 @@ test("coupon: NZAMY50 on the 1,490 SAR plan — the stored order and the intent 
     vatMode: "exclusive",
     listNet: 149000,
     discount: 5000,
-    couponCode: "NZAMY50",
+    couponCode: "PLAN50",
   });
   // the coupon is NOT consumed at checkout: nothing is written to coupon_usage
   assert.equal(log.filter((q) => q.table === "coupon_usage" && q.op === "insert").length, 0);
 });
 
-test("coupon: below the minimum (a 149 SAR monthly plan, NZAMY50 needs 200) is refused — no order, no intent", async () => {
+test("coupon: below the minimum (a 149 SAR monthly plan, PLAN50 needs 200) is refused — no order, no intent", async () => {
   const { client: admin, log } = couponDb("individual");
   const m = moyasar();
   const r = await startCheckoutWith(
     { admin, client: m.client, now: () => NOW },
-    input({ itemId: "ind-preventive", billing: "monthly", couponCode: "NZAMY50" }),
+    input({ itemId: "ind-preventive", billing: "monthly", couponCode: "PLAN50" }),
   );
   assert.equal(r.status, 400);
   assert.deepEqual(r.body, { error: "يتطلب هذا الكود طلباً بقيمة ٢٠٠ ر.س على الأقل قبل الضريبة" });
@@ -494,10 +498,10 @@ test("coupon: below the minimum (a 149 SAR monthly plan, NZAMY50 needs 200) is r
 });
 
 test("coupon: the cap — a 500 SAR coupon on the 249 SAR plan takes 25 % (62.25), never more", async () => {
-  const { client: admin, log } = couponDb("individual", { row: { ...NZAMY50_ROW, discount_value: 500, min_order_amount: 0 } });
+  const { client: admin, log } = couponDb("individual", { row: { ...PLAN50_ROW, discount_value: 500, min_order_amount: 0 } });
   const r = await startCheckoutWith(
     { admin, client: moyasar().client, now: () => NOW },
-    input({ itemId: "ind-ai", billing: "yearly", couponCode: "NZAMY50" }),
+    input({ itemId: "ind-ai", billing: "yearly", couponCode: "PLAN50" }),
   );
   assert.equal(r.status, 200);
   const p = inserts(log)[0].payload as Record<string, number>;
@@ -511,7 +515,7 @@ test("coupon: once per user — a PAID earlier order with it refuses the second 
     const { client: admin, log } = couponDb("individual", { paidWithCoupon: true });
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => NOW },
-      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 400);
     assert.deepEqual(r.body, { error: "كود الخصم غير صالح أو منتهي الصلاحية" });
@@ -526,7 +530,7 @@ test("coupon: once per user — a PAID earlier order with it refuses the second 
     const { client: admin } = couponDb("individual", { usage: true });
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => NOW },
-      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 400);
   }
@@ -535,23 +539,32 @@ test("coupon: once per user — a PAID earlier order with it refuses the second 
     const { client: admin } = couponDb("individual", { paidWithCoupon: false });
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => NOW },
-      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 200);
   }
 });
 
-test("coupon: never on a point top-up, and NEWCLIENT (single services) not on a plan or the library — 400, no order", async () => {
+test("coupon: never on a point top-up, and NEWCLIENT / NZAMY50 (single services, owner ٤٣٦) not on a plan or the library — 400, no order", async () => {
   // The library is sold to professionals only (LIVE-F05), so its case is a lawyer's.
   const cases: Array<[Record<string, unknown> & { code: string }, string, "once" | "yearly", string]> = [
-    [NZAMY50_ROW, "topup-250", "once", "individual"],
+    [PLAN50_ROW, "topup-250", "once", "individual"],
     [NEWCLIENT_ROW, "ind-litigation", "yearly", "individual"],
     [NEWCLIENT_ROW, "lib-q1", "once", "lawyer"],
+    [NZAMY50_ROW, "ind-preventive", "yearly", "individual"],
+    [NZAMY50_ROW, "lawyer-pro", "yearly", "lawyer"],
+    [NZAMY50_ROW, "lib-q1", "once", "lawyer"],
+    [NZAMY50_ROW, "topup-1000", "once", "lawyer"],
   ];
   for (const [row, itemId, billing, type] of cases) {
     const { client: admin, log } = couponDb(type, { row });
     const m = moyasar();
-    const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW }, input({ itemId, billing, couponCode: row.code }));
+    // A budget of its own: seven refusals here must not spend the shared
+    // per-buyer coupon budget the later tests rely on.
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, attempts: createCouponAttemptBudget() },
+      input({ itemId, billing, couponCode: row.code }),
+    );
     assert.equal(r.status, 400, itemId);
     assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" }, itemId);
     assert.equal(inserts(log).length, 0, itemId);
@@ -568,7 +581,7 @@ test("coupon: ٢٧٩ no stacking — an item at a RUNNING launch price takes no 
     const { client: admin, log } = couponDb("individual");
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => IN_LAUNCH, book, attempts: createCouponAttemptBudget() },
-      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 400);
     assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" });
@@ -579,7 +592,7 @@ test("coupon: ٢٧٩ no stacking — an item at a RUNNING launch price takes no 
     const { client: admin, log } = couponDb("individual");
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => now, book, attempts: createCouponAttemptBudget() },
-      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 200, now.toISOString());
     assert.equal((inserts(log)[0].payload as { net_halalas: number }).net_halalas, 149000 - 5000, now.toISOString());
@@ -589,9 +602,9 @@ test("coupon: ٢٧٩ no stacking — an item at a RUNNING launch price takes no 
     const { client: admin } = couponDb("individual");
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => IN_LAUNCH, book, attempts: createCouponAttemptBudget() },
-      input({ itemId: "ind-preventive", billing: "monthly", couponCode: "NZAMY50", }),
+      input({ itemId: "ind-preventive", billing: "monthly", couponCode: "PLAN50", }),
     );
-    assert.equal(r.status, 400, "monthly 149 is under NZAMY50's 200 minimum — refused for the minimum, not the launch");
+    assert.equal(r.status, 400, "monthly 149 is under PLAN50's 200 minimum — refused for the minimum, not the launch");
     assert.deepEqual(r.body, { error: "يتطلب هذا الكود طلباً بقيمة ٢٠٠ ر.س على الأقل قبل الضريبة" });
   }
 });
@@ -722,7 +735,7 @@ test("٣٠٥: a code that is not first-order-only never reads the buyer's other 
   const { client: admin, log } = couponDb("individual");
   const r = await startCheckoutWith(
     { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
-    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+    input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
   );
   assert.equal(r.status, 200);
   assert.equal(earlierPaidRead(log), undefined);
@@ -764,7 +777,7 @@ test("S6: a first-order coupon is first-order by its FLAG — another code marke
 });
 
 // metadata.excluded_items names a price-book id the coupon never discounts (S6-T10)
-export const EXCLUDED_ITEM_ROW = { ...NZAMY50_ROW, metadata: { excluded_items: ["ind-preventive"] } };
+export const EXCLUDED_ITEM_ROW = { ...PLAN50_ROW, metadata: { excluded_items: ["ind-preventive"] } };
 
 test("S6: excluded_items — the named item is refused (400 «لا ينطبق على هذا المنتج»), no order, no intent; another item still takes the coupon", async () => {
   {
@@ -772,7 +785,7 @@ test("S6: excluded_items — the named item is refused (400 «لا ينطبق ع
     const m = moyasar();
     const r = await startCheckoutWith(
       { admin, client: m.client, now: () => NOW, attempts: createCouponAttemptBudget() },
-      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 400);
     assert.deepEqual(r.body, { error: "كود الخصم لا ينطبق على هذا المنتج" });
@@ -783,7 +796,7 @@ test("S6: excluded_items — the named item is refused (400 «لا ينطبق ع
     const { client: admin, log } = couponDb("individual", { row: EXCLUDED_ITEM_ROW });
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => NOW, attempts: createCouponAttemptBudget() },
-      input({ itemId: "ind-litigation", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-litigation", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 200);
     assert.equal((inserts(log)[0].payload as { item_id: string; net_halalas: number }).item_id, "ind-litigation");
@@ -824,7 +837,7 @@ test("coupon: an unknown code is the generic 400; before 20261026_20 (no max_dis
     const m = moyasar();
     const r = await startCheckoutWith(
       { admin, client: m.client, now: () => NOW },
-      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "NZAMY50" }),
+      input({ itemId: "ind-preventive", billing: "yearly", couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 503);
     assert.deepEqual(r.body, { error: "أكواد الخصم غير متاحة حالياً" });
@@ -843,7 +856,7 @@ test("coupon: no couponCode — nothing reads the coupon tables and the order is
 
 // ── P7 review, finding 1: one code, one open order ──────────────────────────
 
-const NZ_INPUT = { itemId: "ind-preventive", billing: "yearly" as const, couponCode: "NZAMY50" };
+const NZ_INPUT = { itemId: "ind-preventive", billing: "yearly" as const, couponCode: "PLAN50" };
 
 test("coupon twice in two tabs: a payable open order of ANOTHER item carrying the code refuses it — 400, no order, no intent, nothing closed", async () => {
   const { client: admin, log } = couponDb("individual", { openRows: [openRow()] });
@@ -1135,7 +1148,7 @@ test("founder: while the sale switch is off the reply is 410 «باب الاشت
   const seat = seatSpy("reserved", log);
   const r = await startCheckoutWith(
     { admin, client: m.client, now: () => NOW, onSale: false, reserveFounderSeat: seat.reserveFounderSeat },
-    input({ ...FOUNDER, couponCode: "NZAMY50" }),
+    input({ ...FOUNDER, couponCode: "PLAN50" }),
   );
   assert.equal(r.status, 410);
   assert.deepEqual(r.body, { error: "باب الاشتراك مغلق حاليًا" });
@@ -1166,7 +1179,7 @@ test("founder: a coupon on the membership is 400 «لا تُطبَّق القس�
   for (let i = 0; i < 3; i++) {
     const r = await startCheckoutWith(
       { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat, attempts: budget },
-      input({ ...FOUNDER, couponCode: "NZAMY50" }),
+      input({ ...FOUNDER, couponCode: "PLAN50" }),
     );
     assert.equal(r.status, 400, `try ${i}`);
     assert.deepEqual(r.body, { error: "لا تُطبَّق القسائم على باقة المؤسس" });

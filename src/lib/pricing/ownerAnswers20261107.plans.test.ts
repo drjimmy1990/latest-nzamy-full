@@ -82,3 +82,31 @@ test("٤٣١: the about page's line, and no page claims a model trained on Saudi
     assert.doesNotMatch(src(rel), /مدر[ً-ْ]*ب|تدريب النماذج|[Tt]rained (on|exclusively)|exclusively trained|specifically trained/, rel);
   }
 });
+
+test("20261107_50: one idempotent file — the plan name, the consultation rows, NZAMY50 — ending with the check SELECT", () => {
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261107_50_owner_answers_prices.sql", import.meta.url), "utf8");
+  const body = sql.replace(/^\s*--.*$/gm, "");
+  assert.ok(body.indexOf("begin;") < body.indexOf("commit;"), "wrapped in begin … commit");
+  const writes = body.slice(0, body.indexOf("commit;"));
+  assert.doesNotMatch(writes, /\b(drop|delete|truncate)\b/i);
+  // ٤٢٠
+  assert.match(body, /set name_ar\s+= 'عضوية الحماية القانونية',\s+name_en\s+= 'Legal Protection Membership'/);
+  // ٤٣٣ — the four offered rows, their bands, and video-full hidden on purpose
+  for (const [id, price, min, max] of [["written-opinion", 79, 49, 199], ["voice-call", 129, 89, 249], ["video-short", 199, 149, 399], ["in-person", 349, 249, 750]] as const) {
+    const at = writes.indexOf(`('${id}', 'individual', 'consultation', `);
+    assert.ok(at > 0, id);
+    const row = writes.slice(at, writes.indexOf("::jsonb)", at));
+    assert.ok(row.includes(`, ${price}, 'fixed', `), `${id}: ${price}`);
+    assert.ok(row.includes(`"lawyerPriceRange":{"min":${min},"max":${max}}`), `${id}: band`);
+  }
+  assert.match(body, /set enabled\s+= false,\s+metadata\s+= metadata \|\| jsonb_build_object\('adminHidden', true/);
+  // re-runs skip a stamped row (an admin's later edit is kept)
+  assert.match(body, /where coalesce\(admin_pricing_catalog\.metadata->>'owner_433', ''\) = ''/);
+  // ٤٣٦ — min 200 untouched
+  assert.match(body, /set excluded_kinds = '\{topup,plan,library\}'::text\[\]/);
+  assert.doesNotMatch(writes, /min_order_amount\s*=\s*\d/);
+  // the last statement is the SELECT (the SQL editor shows only the last result)
+  const tail = body.slice(body.lastIndexOf("commit;"));
+  assert.equal((tail.match(/;/g) ?? []).length, 2, "commit; then exactly one SELECT");
+  assert.match(tail, /select x\.check_name, x\.key, x\.in_table, x\.value, x\.ok/);
+});

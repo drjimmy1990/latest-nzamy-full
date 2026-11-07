@@ -83,7 +83,7 @@ test("S6: a variant is never a card", () => {
 
 test("S6: corporate falls back to the base price when no variant exists", () => {
   const r = resolveClientService("video-short", "corporate", CLIENT_SERVICE_CATALOG);
-  assert.equal(r.basePrice, 500);
+  assert.equal(r.basePrice, 199, "owner ٤٣٣ default");
   assert.equal(r.priceAudience, "individual");
 });
 

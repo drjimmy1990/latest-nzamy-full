@@ -70,6 +70,14 @@ export type ClientServiceCatalogItem = {
   tag?: string;
   aiPowered?: boolean;
   humanService?: boolean;
+  /**
+   * Owner ٤٣٣ (3 Nov 2026): the band a lawyer will set their own price in for
+   * this consultation, in riyals. DISPLAY ONLY for now — no lawyer can set a
+   * price yet, so only the lawyer's own pricing screen shows it, as «قريباً»
+   * (lawyer/profile/edit). Clients see the default `basePrice` only. A DB row
+   * carries it as metadata.lawyerPriceRange (20261107_50).
+   */
+  lawyerPriceRange?: { min: number; max: number };
   /** Absent = "individual". */
   audience?: ClientPricingAudience;
   /**
@@ -191,9 +199,13 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
   {
     serviceId: "video-short",
     categoryId: "consultation",
-    label: "استشارة مرئية مختصرة (30 دقيقة)",
+    // Owner ٤٣٣ (3 Nov 2026): the default prices replace the flat 500 / 700 /
+    // 250 — written 79, voice 20 min 129, video 30 min 199, in person 45 min
+    // 349. The DB rows (20260518 seed) win over these, so 20261107_50 writes
+    // the same values there.
+    label: "استشارة مرئية (30 دقيقة)",
     description: "سؤال واحد مركز مع محام متخصص عبر الفيديو",
-    basePrice: 500,
+    basePrice: 199,
     priceMode: "fixed",
     priceNote: "مرئية أونلاين - 30 دقيقة",
     route: "/dashboard/client/consultation/new?type=video-short",
@@ -203,8 +215,34 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     betaVisibility: "public",
     requiresPayment: true,
     humanService: true,
+    lawyerPriceRange: { min: 149, max: 399 },
   },
   {
+    // Owner ٤٣٣: voice has its own entry (it used to borrow video-full's 500
+    // and its «60 دقيقة» note). No DB row until 20261107_50 runs — the code
+    // entry serves it meanwhile (mergeAdminPricingCatalogRows keeps a code
+    // entry that has no row).
+    serviceId: "voice-call",
+    categoryId: "consultation",
+    label: "استشارة صوتية (20 دقيقة)",
+    description: "مكالمة صوتية مع محام متخصص عبر الإنترنت",
+    basePrice: 129,
+    priceMode: "fixed",
+    priceNote: "صوتية أونلاين - 20 دقيقة",
+    route: "/dashboard/client/consultation/new?type=voice-call",
+    icon: "Phone",
+    receiverType: "lawyer",
+    requestType: "consultation",
+    betaVisibility: "public",
+    requiresPayment: true,
+    humanService: true,
+    lawyerPriceRange: { min: 89, max: 249 },
+  },
+  {
+    // RETIRED (owner ٤٣٣): the 60-minute session is no longer offered. The id
+    // stays so an old request recorded as video-full still resolves
+    // (getClientServiceById ignores `enabled`); card lists drop it. The DB row
+    // is hidden by 20261107_50 (enabled = false + metadata.adminHidden).
     serviceId: "video-full",
     categoryId: "consultation",
     label: "استشارة مرئية كاملة (60 دقيقة)",
@@ -218,17 +256,17 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     requestType: "consultation",
     betaVisibility: "public",
     requiresPayment: true,
-    tag: "الأشمل",
+    enabled: false,
     humanService: true,
   },
   {
     serviceId: "in-person",
     categoryId: "consultation",
-    label: "استشارة حضورية (60 دقيقة)",
+    label: "استشارة حضورية (45 دقيقة)",
     description: "في مكتب المحامي مع ملخص PDF رسمي بعد الجلسة",
-    basePrice: 700,
+    basePrice: 349,
     priceMode: "fixed",
-    priceNote: "حضوري في مكتب المحامي",
+    priceNote: "حضوري في مكتب المحامي - 45 دقيقة",
     route: "/dashboard/client/consultation/new?type=in-person",
     icon: "Users",
     receiverType: "lawyer",
@@ -236,13 +274,14 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     betaVisibility: "public",
     requiresPayment: true,
     humanService: true,
+    lawyerPriceRange: { min: 249, max: 750 },
   },
   {
     serviceId: "written-opinion",
     categoryId: "consultation",
     label: "رأي قانوني مكتوب",
     description: "تقرير قانوني مكتوب موقع من محام معتمد وصالح للاستشهاد به",
-    basePrice: 250,
+    basePrice: 79,
     priceMode: "fixed",
     priceNote: "يسلم خلال 2-3 أيام عمل",
     route: "/dashboard/client/consultation/new?type=written-opinion",
@@ -252,6 +291,7 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     betaVisibility: "public",
     requiresPayment: true,
     humanService: true,
+    lawyerPriceRange: { min: 49, max: 199 },
   },
   {
     serviceId: "contract-draft",

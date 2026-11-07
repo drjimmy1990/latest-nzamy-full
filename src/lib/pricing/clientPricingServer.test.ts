@@ -60,8 +60,12 @@ const cardIds = (catalog: ReturnType<typeof mergeAdminPricingCatalogRows>) =>
     getClientServicesByCategory(c.categoryId, catalog).map((s) => s.serviceId),
   );
 
-const ALL_27 = [
-  "ai-consult", "video-short", "video-full", "in-person", "written-opinion",
+// Owner ٤٣٣: voice-call joins as a code entry (no seed row). video-full stays
+// a card in THIS fixture only because the 20260518 seed row says enabled =
+// true and the row wins; 20261107_50 hides that row (enabled = false +
+// metadata.adminHidden), after which the card is gone — see the test below.
+const SEED_CARDS_28 = [
+  "ai-consult", "video-short", "voice-call", "video-full", "in-person", "written-opinion",
   "contract-draft", "ai-letter", "contract-analyze", "contract-review",
   "ai-case-eval", "case-study", "second-opinion", "legal-research",
   "file-lawsuit", "appeal", "cassation", "defense", "admin-objection",
@@ -176,11 +180,11 @@ test("S6: visible cards before and after the query change are EQUAL for the 2026
   assert.equal(rows.filter((r) => r.enabled === false).length, 15, "the 15 legacy disabled rows");
   const before = cardIds(mergeAdminPricingCatalogRows(rows.filter(OLD_QUERY)));
   const after = cardIds(mergeAdminPricingCatalogRows(rows.filter(NEW_QUERY)));
-  assert.deepEqual(before, ALL_27);
-  assert.deepEqual(after, ALL_27);
-  // With the business row (20261103_20) too: still the same 27 cards.
+  assert.deepEqual(before, SEED_CARDS_28);
+  assert.deepEqual(after, SEED_CARDS_28);
+  // With the business row (20261103_20) too: still the same 28 cards.
   const withBusiness = [...rows, BUSINESS_ROW];
-  assert.deepEqual(cardIds(mergeAdminPricingCatalogRows(withBusiness.filter(NEW_QUERY))), ALL_27);
+  assert.deepEqual(cardIds(mergeAdminPricingCatalogRows(withBusiness.filter(NEW_QUERY))), SEED_CARDS_28);
   // And the legacy disabled rows' stale values (49 / «شائع») stay out of
   // every by-id lookup: the code entries still win.
   const merged = mergeAdminPricingCatalogRows(rows.filter(NEW_QUERY));
@@ -195,6 +199,19 @@ test("S6: an enabled=false row with metadata.adminHidden=true hides its card", (
   const ids = cardIds(mergeAdminPricingCatalogRows([hidden]));
   assert.ok(!ids.includes("appeal"));
   assert.equal(ids.length, 26);
+});
+
+test("owner ٤٣٣: after 20261107_50 the video-full row is hidden on purpose — no card, still resolvable for an old row", () => {
+  const rows = seedRows().map((r) =>
+    r.service_id === "video-full" ? { ...r, enabled: false, metadata: { ...(r.metadata ?? {}), adminHidden: true } } : r,
+  );
+  const merged = mergeAdminPricingCatalogRows(rows.filter(NEW_QUERY));
+  const ids = cardIds(merged);
+  assert.ok(!ids.includes("video-full"));
+  assert.ok(ids.includes("voice-call"));
+  assert.equal(getClientServiceById("video-full", merged).serviceId, "video-full");
+  // and with no row at all, the code entry (enabled: false) is no card either
+  assert.ok(!cardIds(mergeAdminPricingCatalogRows([])).includes("video-full"));
 });
 
 test("S6: an enabled=false row without adminHidden does not hide its card", () => {
