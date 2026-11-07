@@ -61,6 +61,8 @@ test("source: no fixed «مُحدّث» badge; the card reads latest_legislative
   assert.doesNotMatch(cards, /\{mergedBadge && <div className="mb-2\.5">\{mergedBadge\}<\/div>\}/);
   assert.match(cards, /\{mergedBadge\}\s*\{isUnlocked \? \(/);
   assert.match(cards, /mergedIncludesLine\(sys\.title, sys\.mergedNames \?\? \[\]\)/);
+  // Arabic only (fix round 1): an English card (titleEn) shows no Arabic names.
+  assert.match(cards, /const mergedIncludes = mergedLabel && isRTL \? mergedIncludesLine\(/);
   assert.equal((cards.match(/<\/h3>\s*\{mergedIncludesRow\}/g) || []).length, 2);
   assert.doesNotMatch(cards.slice(cards.indexOf("const mergedIncludesRow"), cards.indexOf("const mergedIncludesRow") + 400), /text-gray-(?:100|200)\b/);
   // a repealed law keeps its red frame: the red classes still come first

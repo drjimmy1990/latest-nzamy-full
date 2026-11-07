@@ -10,7 +10,8 @@
 --   instrument (20260730_article_regulations.sql §1-1 of the contract).
 --
 --   This file adds library.laws.merged_regulation_names text[] and fills it:
---   per law, the distinct non-empty ref names (whitespace collapsed, trimmed),
+--   per law, the distinct non-empty ref names (whitespace collapsed, trimmed;
+--   a ref of only whitespace — tabs, newlines included — counts as empty),
 --   in order of first appearance — the smallest articles.order_index of the
 --   نظام article a name is attached under, then its smallest sort_key, then
 --   the name. A law with no regulation rows gets NULL.
@@ -114,7 +115,7 @@ begin
            min(r.sort_key) as first_key
       from library.article_regulations r
       left join library.articles a on a.id = r.article_id
-     where btrim(coalesce(r.ref, '')) <> ''
+     where btrim(regexp_replace(coalesce(r.ref, ''), '\s+', ' ', 'g')) <> ''
      group by r.law_slug, btrim(regexp_replace(r.ref, '\s+', ' ', 'g'))
   ), agg as (
     select law_slug, array_agg(name order by first_article, first_key, name) as names
@@ -134,7 +135,7 @@ begin
      set merged_regulation_names = null
    where l.merged_regulation_names is not null
      and not exists (select 1 from library.article_regulations r
-                      where r.law_slug = l.slug and btrim(coalesce(r.ref, '')) <> '');
+                      where r.law_slug = l.slug and btrim(regexp_replace(coalesce(r.ref, ''), '\s+', ' ', 'g')) <> '');
   get diagnostics n = row_count;
   return changed + n;
 end;
@@ -190,7 +191,7 @@ begin
     from library.laws l
    where coalesce(cardinality(l.merged_regulation_names), 0) = 0
      and exists (select 1 from library.article_regulations x
-                  where x.law_slug = l.slug and btrim(coalesce(x.ref, '')) <> '');
+                  where x.law_slug = l.slug and btrim(regexp_replace(coalesce(x.ref, ''), '\s+', ' ', 'g')) <> '');
   if missing > 0 then
     raise exception '20261107_10 verify: % law(s) have regulation rows but no names after the fill', missing;
   end if;

@@ -409,7 +409,8 @@ export function LawsTabContent({
                 ) : null;
                 // Owner 2026-11-07 (screenshot 1): the grey «يشتمل على: A • B»
                 // line under the title — at most two names, none → no line.
-                const mergedIncludes = mergedLabel ? mergedIncludesLine(sys.title, sys.mergedNames ?? []) : "";
+                // Arabic only: the names are Arabic (an English card shows no line).
+                const mergedIncludes = mergedLabel && isRTL ? mergedIncludesLine(sys.title, sys.mergedNames ?? []) : "";
                 const mergedIncludesRow = mergedIncludes ? (
                   <p
                     className={`text-[11px] font-semibold leading-snug line-clamp-2 mb-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}

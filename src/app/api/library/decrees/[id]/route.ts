@@ -4,6 +4,7 @@ import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
 import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
+import { summaryForViewer } from '@/lib/library/legislativeEvent';
 import { maskDecreeOfficialFields, TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 
 /**
@@ -125,8 +126,10 @@ export async function GET(
       issuer: decree.issuer,
       ref: official.ref,
       date: official.date,
-      summary: decree.summary,
-      summary_brief: decree.summary_brief,
+      // Owner ٤٢٤ / ٣٨٠ (the laws' ٣١٩ rule): a non-subscriber's موجز and
+      // summary lose their decree numbers and dates. The title is unchanged.
+      summary: typeof decree.summary === 'string' ? summaryForViewer(decree.summary, isSubscriber) : decree.summary,
+      summary_brief: typeof decree.summary_brief === 'string' ? summaryForViewer(decree.summary_brief, isSubscriber) : decree.summary_brief,
       cat: decree.category,
       // Owner answer ٢٢١: the text for subscribers; for everyone else nothing,
       // and a lock card when there is a preamble to lock.
@@ -147,8 +150,9 @@ export async function GET(
       unlockedCount,
       hashtags: decree.hashtags || [],
       official_url: official.official_url,
-      // The page shows a «للمشتركين» row in place of the number and date.
-      officialMetaLocked: !isSubscriber,
+      // The page shows a «للمشتركين» row in place of the number and date —
+      // only when the decree has one of them to lock (like preambleLocked).
+      officialMetaLocked: !isSubscriber && Boolean(decree.ref || decree.date || decree.official_url),
       hasAccess: hasFullAccess, // legacy field kept for existing client checks
     };
 

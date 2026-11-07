@@ -442,7 +442,11 @@ export async function GET(request: Request) {
       // both to every viewer too); only the text stays out.
       // Owner ٤٢٤ / ٣٨٠: the number and date are a subscriber's (hasFullAccess,
       // never the free-item list) — '' for everyone else, like the decree route.
-      const shaped = isFree ? row : stripFields({ ...row }, ["content", "text"]);
+      const shaped = isFree ? { ...row } : stripFields({ ...row }, ["content", "text"]);
+      // ...and the موجز / summary lose their numbers and dates (the laws' ٣١٩ rule).
+      for (const key of ["summary_brief", "summary"]) {
+        if (typeof shaped[key] === "string") shaped[key] = summaryForViewer(shaped[key] as string, hasFullAccess);
+      }
       return { ...maskDecreeOfficialFields(shaped, hasFullAccess), free: isFree, locked: !isFree };
     }) as any;
 

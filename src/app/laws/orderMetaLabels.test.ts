@@ -32,7 +32,8 @@ test("a copied page never says «رقم ()»", () => {
 
 test("source: the decree route, init/search and the screens use the mask and the blank-safe helpers", () => {
   assert.match(decreeRoute, /maskDecreeOfficialFields\(\s*\{ ref: decree\.ref \|\| '', date: decree\.date \|\| '', official_url: decree\.official_url \|\| '' \},\s*isSubscriber,\s*\)/);
-  assert.match(decreeRoute, /officialMetaLocked: !isSubscriber,/);
+  // Only when there is something to lock (fix round 1), like preambleLocked.
+  assert.match(decreeRoute, /officialMetaLocked: !isSubscriber && Boolean\(decree\.ref \|\| decree\.date \|\| decree\.official_url\),/);
   assert.match(searchRoute, /maskDecreeOfficialFields\(\{ ref: r\.ref \?\? '', date: r\.date \?\? '' \}, hasFullAccess\)/);
   assert.doesNotMatch(reader, /\{order\.ref\} • \{order\.date\}/);
   assert.doesNotMatch(reader, /رقم \(\$\{order\.ref\}\)/);
