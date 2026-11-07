@@ -28,6 +28,7 @@ import { Hl, useHighlight, useTextHasHighlight } from "@/components/search/Multi
 import type { HighlightTerm } from "@/lib/search/multiColorSearch";
 import { highlightSafeHtml, textHasHighlight } from "./_highlight-html";
 import { PreviousVersionText } from "./_word-diff";
+import { regulationNameFromRefs } from "@/lib/library/regulationName";
 
 const NO_TERMS: readonly HighlightTerm[] = [];
 
@@ -871,7 +872,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
     article (16 articles carry it; the API sends it only to unlocked readers) —
     so it lives inside this section as «الإصدارات السابقة للائحة».
   */
-  const regulationSubtitle = (article.regulationHeading || mergedReg?.ref || "").trim();
+  const regulationSubtitle = (article.regulationHeading || regulationNameFromRefs(mergedReg?.ref) || "").trim();
   const historicRegulationDetails = article.historicRegulationText ? (
     <details open={historicRegHasHit} className={`mt-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-300" : "border-slate-200 bg-white/70 text-slate-700"}`}>
       <summary className="px-4 py-2.5 font-black cursor-pointer hover:underline text-[12px] flex items-center gap-1.5 select-none">
