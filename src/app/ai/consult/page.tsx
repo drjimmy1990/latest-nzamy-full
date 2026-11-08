@@ -197,12 +197,16 @@ function AIConsultInner() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
-  // Lawyers get a dedicated advanced assistant — keep them off the client-facing consult chat.
+  // Lawyers and law firms get the dedicated advanced assistant (its tool is
+  // theirs alone since owner ٤١٧) — keep them off the client-facing consult
+  // chat. A consultant is a lawyer account, so it goes too. The admin stays:
+  // this is the page he checks the clients' chat on.
+  const usesAssistant = userType === "lawyer" || userType === "firm";
   useEffect(() => {
-    if (userType === "lawyer") {
+    if (usesAssistant) {
       router.replace("/ai/assistant");
     }
-  }, [userType, router]);
+  }, [usesAssistant, router]);
 
   function now() {
     const d = new Date();
@@ -238,7 +242,7 @@ function AIConsultInner() {
   const hasMessages = messages.some(m => m.role !== "system");
 
   // Redirect is in-flight — render nothing to avoid a flash of the client chat UI.
-  if (userType === "lawyer") return null;
+  if (usesAssistant) return null;
 
   return (
     /* AILayout wraps this page in a dashboard layout whose <main> carries

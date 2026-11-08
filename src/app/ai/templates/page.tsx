@@ -12,6 +12,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import LawyerToolLink from "@/components/ai/LawyerToolLink";
+import { useUser } from "@/hooks/useUser";
+import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 
 // ─── Types & Imports ─────────────────────────────────────────────────────────
@@ -20,6 +22,7 @@ import { TemplateCategory, Complexity, LegalArea, Template, TEMPLATES, CAT_CONFI
 
 export default function TemplatesPage() {
   const { isDark } = useTheme();
+  const user = useUser();
 
   const [search,      setSearch]      = useState("");
   const [groupFilter, setGroupFilter] = useState<GroupKey>("all");
@@ -334,7 +337,20 @@ export default function TemplatesPage() {
 
               {/* Drawer footer CTA */}
               <div className={`p-5 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"} space-y-2`}>
-                {selected.redirectTo ? (
+                {selected.redirectTo && isLawyerOnlyAiHref(selected.redirectTo) && !canSeeLawyerTools(user.userType) ? (
+                  // Owner ٤١٧: the contract tools are for lawyers and law firms
+                  // (/ai/contracts sends every other account away at the edge).
+                  // Any other account is offered a lawyer's consultation instead;
+                  // nothing is drawn while the session loads (as LawyerToolLink).
+                  user.loading ? null : (
+                    <Link href="/dashboard/client/consultation/new"
+                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-[#0B3D2E] text-[#C8A762] font-bold text-[14px] hover:bg-[#0a3328] transition-colors">
+                      <ChatCircleText size={16} weight="fill" />
+                      اطلب استشارة
+                      <ArrowLeft size={14} />
+                    </Link>
+                  )
+                ) : selected.redirectTo ? (
                   <Link href={selected.redirectTo}
                     className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-[#0B3D2E] text-[#C8A762] font-bold text-[14px] hover:bg-[#0a3328] transition-colors">
                     <Sparkle size={16} weight="fill" />
