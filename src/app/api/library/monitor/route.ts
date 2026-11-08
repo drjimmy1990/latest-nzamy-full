@@ -30,7 +30,8 @@ import {
  * issue_date_hijri / publication_date_hijri are column-locked for the anon key
  * (migration 20261004_01) — selecting OR filtering on them needs the column —
  * so the two laws reads run as the service role; maskOfficialDates is the
- * mask. The orders read stays on the request client.
+ * mask. The orders read too: decrees_circulars.date is server-only since
+ * migration 20261108_10 (owner ٤٢٤ / ٣٨٠).
  *
  * PostgREST caps a response at 1,000 rows; every prefilter below returns a
  * few hundred at most (probed 2026-09-28: 71 effective dates ≥ 1447, 288 laws
@@ -95,11 +96,11 @@ export async function GET() {
         .select(LAW_COLUMNS)
         .or(likeYearClauses(["issue_date_hijri", "publication_date_hijri"], latestTokens))
         .limit(1000),
-      supabase
+      serverOnly
         .schema("library")
         .from("decrees_circulars")
         .select(ORDER_COLUMNS)
-        // column-lock-reviewed: likeYearClauses(["date"], …) builds date.like clauses only; date is on the 20261019_40 allow-list
+        // column-lock-reviewed: likeYearClauses(["date"], …) builds date.like clauses only; read with the service role (date is server-only since 20261108_10)
         .or(likeYearClauses(["date"], latestTokens))
         .limit(1000),
     ]);
