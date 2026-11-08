@@ -17,7 +17,7 @@
 | 2 | Deploy | |
 | 3 | SQL `20261108_10` (decree lock) | **only AFTER the deploy** |
 | 4 | `_verify.sql` by hand | after Steps 1 and 3 |
-| 5 | n8n: the legal-drafter «section» step | we apply it through the n8n API; before anyone switches section edits on |
+| 5 | n8n: the legal-drafter «section» step | **done 2026-11-08**: applied and published through the n8n API (both prompt nodes) |
 | 6 | Device limit: test, then switch on | after the deploy, with a test subscriber |
 | 7 | Browser checks | after the deploy |
 
@@ -87,7 +87,7 @@ The new blocks are `library_tier_columns_1108`, `library_device_limit_1108`, `fi
 
 ## Step 5: n8n (ours)
 
-The live «NZAMY · AI · legal-drafter (L14 الصائغ القانوني)» workflow gets the new «section» step. Until it does, a section edit fails and its points are refunded. Nothing is lost, but the feature doesn't work.
+**Done 2026-11-08.** The live «NZAMY · AI · legal-drafter (L14 الصائغ القانوني)» workflow (`hhmOLkcaPj3bojmh`) now has the «section» step in both prompt nodes («Prepare» and «Build prompt»), published. It matches `n8n/ai/legal-drafter.json`. The old analysis and draft steps are unchanged.
 
 ## Step 6: device limit (٤٢٧), test then switch on
 
