@@ -63,12 +63,20 @@ test("the lawyer sidebar has one quick-answer row and keeps its one assistant ro
   assert.equal(rows(FIRM_SIDEBAR).filter((r) => r.href === "/ai/quick-answer").length, 1);
 });
 
-test("٤١٢: 10 points, every registered role (٤١٧), with no free daily question", () => {
+test("٤١٢: 10 points, every registered role (٤١٧); the free daily question is never promised, only shown when the server opens it", () => {
   const tool = AI_TOOLS["quick-answer"];
   assert.equal(tool.price({}, {} as never), 10);
   assert.deepEqual([...tool.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   assert.ok(tool.retrieval, "the ungrounded rule stands on retrieval");
-  assert.doesNotMatch(page(), /مجاني|سؤال يومي|free daily/i);
+  // B4 (2026-11-08): the wording lives in FREE_QUESTION_COPY and is printed only
+  // under `freeOpen` (GET /api/v1/ai/free-question said available) — the page
+  // itself types no free-question promise (comments aside).
+  const shown = page().replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
+  assert.doesNotMatch(shown, /مجاني|سؤال يومي|free daily/i);
+  const uses = shown.match(/FREE_QUESTION_COPY\.\w+/g) ?? [];
+  assert.deepEqual(uses, ["FREE_QUESTION_COPY.badge", "FREE_QUESTION_COPY.price"]);
+  assert.match(shown, /\{freeOpen && \(\s*<span[^]*?\{FREE_QUESTION_COPY\.badge\}/);
+  assert.match(shown, /\{freeOpen \? FREE_QUESTION_COPY\.price : /);
 });
 
 test("the page: examples, collapsible sources, the shared actions, a reset, and the stage kept (R4)", () => {

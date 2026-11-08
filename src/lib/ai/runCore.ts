@@ -13,7 +13,9 @@
  *                        and the run qualifies, ai_start_run_with_credit
  *                        (a founder credit instead of points, P3) — or, for a
  *                        drafter section edit (owner ٤١٠), ai_start_section_edit
- *                        (the memo's free edits counted again under the lock)
+ *                        (the memo's free edits counted again under the lock) —
+ *                        or, for the day's free quick question (owner ٤١٢),
+ *                        ai_start_free_question (the phone's day claimed)
  *                    A job tool answers 202 here, with the route's `defer`
  *                    running the rest after the reply (nginx cuts at 60 s, and
  *                    a consultation's searches alone can take most of that).
@@ -56,6 +58,7 @@ import {
   countSectionEdits,
   type SectionEditCounts,
 } from "./sectionEdits.ts";
+import { FREE_QUESTION_COPY } from "./freeQuestion.ts";
 import { textPages } from "./textExtract.ts";
 import {
   STEP_LABEL_AR,
@@ -201,6 +204,7 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 const isMissingFunction = (code: string | undefined) => code === "42883" || code === "PGRST202";
+const isMissingRelation = (code: string | undefined) => code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205";
 
 export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
   const { data, error } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
@@ -518,7 +522,10 @@ export async function startRunWith(
   // above from this user's own runs of this conversation (never the browser's).
   const sectionEdit = !!spec.sectionEdit && !!conversationId && checked.input.phase === spec.sectionEdit.phase;
   const priorSectionEdits: SectionEditCounts | undefined = sectionEdit ? countSectionEdits(prior) : undefined;
-  const price = spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
+  // Owner ٤١٢: the day's free question, asked for by the page when the status
+  // said it is open; ai_start_free_question decides, under the start lock.
+  const freeQuestion = !!spec.freeDailyQuestion && req.useFreeQuestion === true;
+  const price = freeQuestion ? 0 : spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
   // The screen showed a price before the user confirmed: a different one now is
   // refused, uncharged, with the counts to show again.
   if (req.expectedPrice !== undefined && req.expectedPrice !== price) {
@@ -545,11 +552,13 @@ export async function startRunWith(
   // 1 there and so goes to plain ai_start_run at price 0. An exempt caller (admin)
   // never spends a credit. Anything else that asks falls back to points.
   // A section edit (owner ٤١٠) never spends a credit: it is not a drafting work.
-  const creditKind = !isAdmin && !sectionEdit && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  const creditKind = !isAdmin && !sectionEdit && !freeQuestion && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
   // A section edit starts through ai_start_section_edit (20261108_40): it takes
   // ai_start_run's lock, counts the memo's edits again and refuses a price that
   // is no longer right, so two edits at once cannot both take the last free one.
-  const startFn = sectionEdit ? "ai_start_section_edit" : creditKind ? "ai_start_run_with_credit" : "ai_start_run";
+  const startFn = freeQuestion
+    ? "ai_start_free_question"
+    : sectionEdit ? "ai_start_section_edit" : creditKind ? "ai_start_run_with_credit" : "ai_start_run";
 
   const { data, error } = await admin.rpc(startFn, {
     p_user: actor.userId,
@@ -591,6 +600,18 @@ export async function startRunWith(
     }
     if (error.message === "daily_limit") {
       return { status: 429, body: { error: AI_COPY.daily, code: "daily_limit" } };
+    }
+    // A free question refused is never charged instead: the page asks again.
+    if (freeQuestion) {
+      if (error.message === "free_question_used") {
+        return { status: 409, body: { error: FREE_QUESTION_COPY.used, code: "free_question_used" } };
+      }
+      if (error.message === "free_question_not_eligible") {
+        return { status: 403, body: { error: FREE_QUESTION_COPY.notEligible, code: "free_question_not_eligible" } };
+      }
+      if (isMissingFunction(error.code) || isMissingRelation(error.code)) {
+        return { status: 503, body: { error: FREE_QUESTION_COPY.unavailable, code: "free_question_unavailable" } };
+      }
     }
     if (sectionEdit) {
       const again = conversationId ? { conversationId } : {};

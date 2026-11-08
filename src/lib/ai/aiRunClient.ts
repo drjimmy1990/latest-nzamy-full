@@ -105,6 +105,8 @@ export interface AiRunStartOptions {
    * run, uncharged (409 price_changed), when its own price differs (owner ٤١٠).
    */
   expectedPrice?: number;
+  /** Owner ٤١٢: spend today's free quick question (the page asks only when the status says it is open). */
+  useFreeQuestion?: boolean;
 }
 
 export interface AiRunClientDeps {

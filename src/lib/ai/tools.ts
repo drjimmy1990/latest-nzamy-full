@@ -67,6 +67,13 @@ export interface AiToolSpec {
    * nothing (the parties' data, a reworded preamble).
    */
   citationsOptional?: (input: Record<string, unknown>) => boolean;
+  /**
+   * Owner ٤١٢ (quick-answer): one free question a day per verified phone of an
+   * individual account (freeQuestion.ts). A request with `useFreeQuestion`
+   * starts at price 0 through public.ai_start_free_question, which claims the
+   * day atomically or refuses; it never falls back to a charge or to free.
+   */
+  freeDailyQuestion?: boolean;
   /** Runs per user per Riyadh day while nothing else limits them (plan §1.2). */
   dailyLimit: number;
   /** The mode until an admin sets one in platform_settings.ai_tools. */
@@ -1711,8 +1718,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "fast",
     roles: REGISTERED_ROLES,
     consultantBlocked: false,
-    // Owner ٤١٢ (7 Nov 2026): 10 points.
+    // Owner ٤١٢ (7 Nov 2026): 10 points; one free question a day for an
+    // individual account with a verified phone (inert until OTP exists).
     price: () => 10,
+    freeDailyQuestion: true,
     dailyLimit: 30,
     defaultMode: "off",
     // Owner ٤١٣ option A: an answer that cites none of the texts is kept,

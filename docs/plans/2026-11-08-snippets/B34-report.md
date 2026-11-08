@@ -190,4 +190,116 @@ const task = i.phase === 'section' ? [
 2. الحدّ التقني ٣٠ تعديلاً للمذكرة الواحدة: هل يناسبكم، أم تفضّلون رقماً آخر؟
 3. تعديلات الأقسام لا تخضع للحدّ اليومي للصائغ (١٠ تشغيلات)، لكنها تُحسب ضمنه عند بدء تحليل مذكرة جديدة في اليوم نفسه. هل نرفع الحدّ اليومي للصائغ؟
 
-<!-- B4 section follows in the next commit -->
+---
+
+## B4 — owner ٤١٢: the free daily quick question (inert until phone verification)
+
+### What was built
+- **`public.verified_phones`** (migration `20261108_50`): one row per account whose mobile the
+  **server** verified, as `+9665XXXXXXXX` (the `profiles.phone` shape).
+  - Only the service role writes it. A session may SELECT its own row only.
+  - There is no INSERT/UPDATE/DELETE grant and no write policy, so RLS refuses a write even if a
+    self-host restore re-grants ALL. Docker T8 proves both cases.
+  - I chose a separate table over new profiles columns. Profiles carries a history of column grants
+    that a restore has re-opened before (20261016_02/08), and other policies read profiles inline. A
+    table with no write path at all is simpler to keep closed.
+  - `profiles.phone` (typed by the user) is never read for eligibility.
+  - The table starts empty: nobody is verified, so **nothing changes on prod**.
+- **`public.ai_free_question_claims`**: PRIMARY KEY `(phone_e164, riyadh_day)`. The key is the
+  **verified phone, not the user id**, so two accounts on one phone share one free question a day.
+  It is server only (RLS on, no policy, no session grant).
+- **`public.ai_start_free_question(<ai_start_run's 14 args>)`**, under ai_start_run's own lock, in
+  one transaction:
+  - a duplicate key gets ai_start_run's duplicate answer;
+  - a tool other than quick-answer raises 22023;
+  - an account that is not `user_type = 'individual'`, or has no verified phone, raises
+    `free_question_not_eligible`;
+  - a claim for today (Asia/Riyadh) whose run did not fail raises `free_question_used`;
+  - otherwise it claims the day and runs `ai_start_run` at price 0. A refused start (for example the
+    daily limit) rolls the claim back.
+  - A failed run (technical failure, refunded) gives the free question back. The release is lazy: the
+    next claim attempt deletes a claim whose run is `failed`.
+  - There is deliberately **no trigger on `ai_runs`**: an error inside one would roll back every
+    tool's refund in `ai_fail_run`.
+- **App side:**
+  - `src/lib/ai/freeQuestion.ts` holds `riyadhDay` (UTC+3 all year; the day turns at 21:00 UTC),
+    `freeQuestionEligible`, and `freeQuestionStatusWith`. The status read fails closed: any read
+    error, missing tables included, answers «not available».
+  - **GET `/api/v1/ai/free-question`** returns `{ available }`.
+  - `quick-answer` has `freeDailyQuestion: true`, and its price stays **10**.
+  - `runCore` handles `useFreeQuestion` (quick-answer only):
+    - it uses `ai_start_free_question` at price 0 and never a founder credit;
+    - used → 409 `free_question_used`; not eligible → 403; missing function or table
+      (42883/PGRST202/42P01/42703/PGRST204/PGRST205) → 503 `free_question_unavailable`;
+    - every one of these is **uncharged and never retried** as a 10-point run or as an unlocked free
+      run. The user presses «اسأل» again and pays 10.
+- **UI (`/ai/quick-answer`):**
+  - The page reads the status on load and after each answer.
+  - **Only when `available: true`** does it show the badge «سؤالك المجاني اليوم» and the price
+    «مجاناً — سؤالك المجاني اليوم», and send `useFreeQuestion`.
+  - Otherwise it shows nothing new: no promise to unverified users.
+  - When a free run fails, the message says «ولم يُحتسب سؤالك المجاني» instead of «وأُعيدت نقاطك».
+- **Admin hand-verification:** not built, as ruled. It is left for the OTP work.
+- **Not done:** no proxy rate limit on the new GET (it is a read of three small rows). Add it in
+  `rateLimitRoutes.ts` like points-standing if wanted.
+
+### SQL run order
+- `supabase/migrations/20261108_50_free_daily_question.sql` — **any time**, before or after the deploy.
+  - Old code never calls it. New code without it shows no offer, and an explicit request is refused
+    uncharged.
+  - Verify block: `docs/plans/2026-11-08-snippets/B4-verify.sql` (5 checks plus 1 info row; ran
+    clean in Docker).
+  - Rollback is in the header.
+- No n8n change: the quick-answer workflow does not know about the price.
+
+### Tests (B4)
+- `src/lib/ai/freeQuestion.test.ts` (new, 13 tests) covers:
+  - Riyadh day around midnight (20:59:59Z vs 21:00Z), year end, leap day, summer;
+  - eligibility: a typed local number and non-individual types refused;
+  - status: open, closed, re-opened after a failed run, keyed on phone and Riyadh day, failing closed
+    on 42P01/PGRST205/errors/throws;
+  - start: 10 via `ai_start_run` without the flag; `ai_start_free_question` at 0 with it; the flag
+    ignored on other tools; every refusal mapped with exactly one start (no fallback);
+  - refund wording;
+  - source contracts for the page and the route.
+- `src/app/ai/quick-answer/_quickAnswer.test.ts`: the «no free daily question» contract is now
+  «never typed or promised». The page types no free wording; `FREE_QUESTION_COPY` is used only under
+  `freeOpen`. Coverage was kept, not removed.
+- Docker `supabase/tests/rls/free_daily_question_1108.test.sql`: T1–T8 pass. They cover:
+  - E.164 shape;
+  - unverified and lawyer refused, with nothing left behind;
+  - free run at 0, uncharged with enforcement on, claimed on the Riyadh day;
+  - a second question on the same phone refused, also for another account;
+  - duplicate key;
+  - a failed run releases the claim;
+  - a daily-limit refusal leaves no claim, and yesterday's claim does not count;
+  - quick-answer only;
+  - RLS with and without a stray grant.
+  The negative control fails at T0.
+- Full suite after B4: **6400 tests, 7 failures (the same 7 baseline)**; `npx tsc --noEmit -p .` clean.
+
+### Owner-facing summary (Arabic, for the controller)
+- جهّزنا السؤال المجاني اليومي في «السؤال السريع»: سؤال واحد بلا نقاط كل يوم (بتوقيت الرياض) لكل رقم جوال **موثَّق**، في الحساب الفردي.
+- يُحتسب السؤال على رقم الجوال نفسه لا على الحساب، فلا يتكرر المجاني بفتح حساب آخر على الرقم ذاته.
+- إن تعذّرت الإجابة لخلل فني لا يُحتسب السؤال المجاني، ويبقى متاحاً.
+- لا يوجد اليوم توثيق للجوال برمز تحقق (السؤال ٤٤٨)، ولا نعتمد الرقم الذي يكتبه المستخدم بنفسه. لذلك تبقى الميزة مطفأة عملياً، ويبقى سعر السؤال ١٠ نقاط للجميع، ولا تظهر للمستخدم أي عبارة عنها.
+- تعمل الميزة تلقائياً متى أُضيف توثيق الجوال، دون تعديل آخر.
+
+### New owner questions (B4)
+1. «لكل حساب فردي»: هل المقصود **نوع الحساب الفردي** (الأفراد) وحده، أم **كل حساب** موثّق الجوال أياً كان نوعه (محامٍ، شركة…)؟ (المطبَّق الآن: الحساب الفردي فقط.)
+2. عند إضافة التوثيق برمز التحقق: هل يُسمح بتوثيق رقم جوال واحد على أكثر من حساب؟ (السؤال المجاني محسوب على الرقم في الحالتين، فلا يتكرر.)
+
+---
+
+## Commits
+- B3: `54d5b74d` feat(ai): owner ٤١٠ «عدّل هذا القسم»…
+- B4: see the next commit on t/aiprice (feat(ai): owner ٤١٢ free daily quick question…).
+
+## Concerns for the controller
+- **Live n8n must be updated** (B3, above) before section edits are switched on. Until then a section
+  run fails `schema_invalid` and is refunded.
+- B3 daily limit: section edits bypass the drafter's daily limit, but they still count against a new
+  analysis that same day (owner question B3-3). Check prod's `ai_tools` override with the SELECT in B3.
+- `aiRunClient` gained `details` (on errors) and two start options (`expectedPrice`,
+  `useFreeQuestion`). These are additive; the other pages do not send them.
+- UI not checked in a browser: both screens need a signed-in account with the tool switched on.
