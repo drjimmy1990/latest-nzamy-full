@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
@@ -268,6 +269,11 @@ export async function GET(
     // devices (src/lib/library/deviceLimitServer.ts; fails open).
     const deviceRefusal = await enforceLibraryDevice(userId, isSubscriber);
     if (deviceRefusal) return deviceRefusal;
+    // Final review 2026-11-08 (3): the document is spent HERE, after the device
+    // check — never in the proxy — so a read refused for its device spends
+    // none of the account's quota and cannot open its lock.
+    const quotaRefusal = await spendLibraryDocument(_request, userId);
+    if (quotaRefusal) return quotaRefusal;
 
     // T28-22 (owner decision): the decree, its date, the official links and the
     // gazette reference are for SUBSCRIBERS — full library access as above,

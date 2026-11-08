@@ -240,12 +240,21 @@ export async function POST(request: Request) {
     } catch {
       userId = null;
     }
+    if (userId) recordLibraryActivity(userId, 'search');
+
+    const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
+    // Owner ٤٢٧: the in-document search returns a subscriber's article text,
+    // so it is device-checked like opening the document (fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
+    if (deviceRefusal) return deviceRefusal;
+
     // Owner note ١٣ C07 / C09: an in-document search returns article text,
     // so a signed-in reader spends the scope's document exactly as opening
     // it would (free when already opened today), and a library lock stops it.
+    // AFTER the device check (final review 2026-11-08, item 3): a search
+    // refused for its device spends none of the account's quota.
     // Fails open: no answer (migration not applied, timeout) → go on.
     if (userId) {
-      recordLibraryActivity(userId, 'search');
       const docKey = scopedSearchDocKey(scope.kind, scope.id);
       const refusal = docKey ? quotaRefusal(await libraryReadQuotaHit(userId, docKey), Date.now()) : null;
       if (refusal) {
@@ -254,12 +263,6 @@ export async function POST(request: Request) {
         return NextResponse.json(refusal.body, { status: refusal.status, headers });
       }
     }
-
-    const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
-    // Owner ٤٢٧: the in-document search returns a subscriber's article text,
-    // so it is device-checked like opening the document (fails open).
-    const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
-    if (deviceRefusal) return deviceRefusal;
     const access: ViewerAccess = {
       hasFullAccess,
       whitelistedSlugs,

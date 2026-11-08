@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
@@ -89,6 +90,11 @@ export async function GET(
     // devices (src/lib/library/deviceLimitServer.ts; fails open).
     const deviceRefusal = await enforceLibraryDevice(userId, isSubscriber);
     if (deviceRefusal) return deviceRefusal;
+    // Final review 2026-11-08 (3): the document is spent HERE, after the device
+    // check — never in the proxy — so a read refused for its device spends
+    // none of the account's quota and cannot open its lock.
+    const quotaRefusal = await spendLibraryDocument(_request, userId);
+    if (quotaRefusal) return quotaRefusal;
 
     // Fetch pages and the preamble — service role: both are server-only
     // (20261018_02, 20261019_40). An error is a 500, never a decree that

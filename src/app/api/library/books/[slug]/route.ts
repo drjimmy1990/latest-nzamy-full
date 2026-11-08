@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
@@ -160,6 +161,11 @@ export async function GET(
     // (whitelisted) book is everyone's, so it is not device-checked.
     const deviceRefusal = await enforceLibraryDevice(userId, freeLimit === -1 && !isWhitelisted);
     if (deviceRefusal) return deviceRefusal;
+    // Final review 2026-11-08 (3): the document is spent HERE, after the device
+    // check — never in the proxy — so a read refused for its device spends
+    // none of the account's quota and cannot open its lock.
+    const quotaRefusal = await spendLibraryDocument(request, userId);
+    if (quotaRefusal) return quotaRefusal;
 
     // The order_index from which blocks are locked. Owner answer ١٨٣: the
     // book's first two printed pages (its leading blocks' page_number, public

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
@@ -151,6 +152,11 @@ export async function GET(
     // devices (src/lib/library/deviceLimitServer.ts; fails open).
     const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
     if (deviceRefusal) return deviceRefusal;
+    // Final review 2026-11-08 (3): the document is spent HERE, after the device
+    // check — never in the proxy — so a read refused for its device spends
+    // none of the account's quota and cannot open its lock.
+    const quotaRefusal = await spendLibraryDocument(request, userId);
+    if (quotaRefusal) return quotaRefusal;
     const isWhitelisted = false;
 
     // ?target=<principle id> (q390-ب): open the window that holds it. It only

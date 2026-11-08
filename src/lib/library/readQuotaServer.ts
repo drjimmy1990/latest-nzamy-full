@@ -2,8 +2,10 @@
  * readQuotaServer.ts — the I/O half of owner note ١٣ C07 / C09: one call to
  * public.library_read_quota_hit (20261030_80) as the service role, with the
  * in-process memo in front of it. Callers of libraryReadQuotaHit:
- *   - src/proxy.ts (Node runtime in Next 16): the heavy library reads, and
- *     the lock-only check on POST /api/library/search;
+ *   - the four document routes (laws / books / precedents / decrees), through
+ *     spendLibraryDocument (libraryDocQuota.ts), AFTER their device check;
+ *   - src/proxy.ts (Node runtime in Next 16): the lock-only check on
+ *     POST /api/library/search;
  *   - POST /api/library/scoped-search: the document an in-document search
  *     spends;
  *   - POST /api/v1/ai/runs: the lock check for the library's own AI
