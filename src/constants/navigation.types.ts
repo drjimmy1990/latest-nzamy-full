@@ -56,6 +56,13 @@ export interface SidebarItem {
   /** Optional gate key — if set, checked against useSubscription().can(key).
    *  Locked items show an upgrade badge and redirect to /pricing. */
   gateKey?: string;
+  /**
+   * BUG-12: the AI registry tool behind a row badged «قريباً». The badge stays
+   * until GET /api/v1/ai/tool-status says THIS user may run the tool now; then
+   * the sidebar drops it (and the row stays in its own group). Static default:
+   * «قريباً» — a doubt never opens a tool (withLiveToolBadges).
+   */
+  liveToolId?: string;
 }
 
 // ─── Dashboard href helper ────────────────────────────────────────────────────

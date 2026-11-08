@@ -25,9 +25,9 @@
 
 import { safeLocalPath } from "./safeLocalPath.ts";
 import { isCaptchaAuthError } from "./captcha.ts";
+import { translateAuthError } from "./translateAuthError.ts";
 import {
   MIN_PASSWORD_LENGTH,
-  arabicAuthError,
   validateNewPassword,
 } from "../../app/settings/components/tabs/_securityFields.ts";
 
@@ -201,11 +201,8 @@ export function resetPasswordErrorMessage(error: unknown, isAr: boolean): string
       ? "انتهت صلاحية رابط الاستعادة — اطلب رابطاً جديداً من صفحة «نسيت كلمة المرور»."
       : "The reset link has expired — request a new one from the “Forgot password” page.";
   }
-  if (isAr) return arabicAuthError(error instanceof Error ? error : new Error(raw));
-  if (/should be at least/i.test(raw)) return `The password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
-  if (/different from the old password/i.test(raw)) return "The new password must differ from the current one.";
-  if (/rate limit|too many requests|after \d+ seconds/i.test(raw)) return "Too many attempts. Wait a moment, then try again.";
-  return "The password could not be updated. Please try again.";
+  // The shared translator (BUG-09): the same table as Settings, both languages.
+  return translateAuthError(error, { context: "password", isAr });
 }
 
 /**

@@ -1,20 +1,22 @@
 /**
  * exportKit.ts — q345: builds and downloads the .docx, in the browser. Loaded on
- * the click (it carries fflate and qrcode). The logo and the template come
+ * the click (it carries fflate). The logo and the template come
  * through GET /api/v1/branding/export-file, which applies the print gate.
+ *
+ * No QR and no platform stamp (owner ٤٤٢(أ)): the file carries the office's
+ * letterhead and logo only, so no QR image is built for it.
  *
  * The document text stays in this tab: it goes into the file, and nowhere else.
  */
 import type { BrandingScope } from "@/lib/branding/brandingVault";
 import type { LetterheadIdentity } from "@/lib/branding/letterheadIdentity";
-import { buildLetterheadDocx, letterheadQrPayload } from "@/lib/docx/letterheadDocx";
+import { buildLetterheadDocx } from "@/lib/docx/letterheadDocx";
 import { DOCX_MIME, type DocBlock } from "@/lib/docx/ooxml";
 import type { ExportFileKind } from "@/lib/docx/exportFile";
 
 export const DOCX_EXPORT_FAILED_AR = "تعذّر إنشاء ملف Word — انسخ النص";
 
 const LOGO_MAX_SIDE = 1600;
-const QR_PIXELS = 400;
 /** A stalled download ends in the failure message, never in a spinner that stays. */
 const FILE_TIMEOUT_MS = 20_000;
 
@@ -49,15 +51,6 @@ async function logoToPng(logo: Blob): Promise<Uint8Array> {
   }
 }
 
-async function qrToPng(address: string): Promise<Uint8Array> {
-  const mod = await import("qrcode");
-  // CommonJS: the functions arrive as named exports or under `default`.
-  const toDataURL = typeof mod.toDataURL === "function" ? mod.toDataURL : mod.default.toDataURL;
-  const dataUrl = await toDataURL(address, { errorCorrectionLevel: "H", width: QR_PIXELS, margin: 2 });
-  const binary = atob(dataUrl.slice(dataUrl.indexOf(",") + 1));
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-}
-
 export interface DownloadDocxInput {
   scope: BrandingScope;
   blocks: DocBlock[];
@@ -71,12 +64,11 @@ export interface DownloadDocxInput {
 export async function downloadDocx(input: DownloadDocxInput): Promise<{ note: string | null }> {
   const { scope, blocks, identity, docxUrl, filename } = input;
   try {
-    const [template, logoPng, qrPng] = await Promise.all([
+    const [template, logoPng] = await Promise.all([
       docxUrl ? fileBytes(scope, "letterhead_docx").then(async (b) => new Uint8Array(await b.arrayBuffer())) : null,
       identity.logoUrl ? fileBytes(scope, "logo").then(logoToPng) : null,
-      qrToPng(letterheadQrPayload(identity)),
     ]);
-    const built = buildLetterheadDocx({ blocks, identity, template, logoPng, qrPng });
+    const built = buildLetterheadDocx({ blocks, identity, template, logoPng });
 
     const url = URL.createObjectURL(new Blob([built.bytes as BlobPart], { type: DOCX_MIME }));
     const link = document.createElement("a");

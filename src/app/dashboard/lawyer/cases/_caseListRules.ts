@@ -104,3 +104,52 @@ export function isDeadlineSoon(summary: CaseDeadlineSummary, today: string, soon
 export function deadlineSortKey(summary: CaseDeadlineSummary): string {
   return summary.state === "open" ? `0${summary.nearestDue}` : "1";
 }
+
+// ── Case status moves (BUG-05) ────────────────────────────────────────────
+//
+// The ONE set of status changes a lawyer may make to a case: the list's board
+// (drag between the status columns) and the case page's «تغيير الحالة» both
+// read it, so the two can never offer different transitions. Keys are the
+// board's status columns; values are the service_requests status written by
+// updateWorkflowRequestById. «معلقة» is deliberately absent (see the note in
+// page.tsx: no backend status round-trips as "suspended"), and a cancelled
+// case is not moved from either place.
+
+export type CaseStatusMove = "active" | "pending" | "closed";
+
+export const CASE_STATUS_MOVES: Readonly<Record<CaseStatusMove, WorkflowRequest["status"]>> = Object.freeze({
+  active: "assigned",
+  pending: "pending_assignment",
+  closed: "completed",
+});
+
+/** The board's column labels, reused on the case page. */
+export const CASE_STATUS_MOVE_LABEL_AR: Readonly<Record<CaseStatusMove, string>> = Object.freeze({
+  active: "نشطة",
+  pending: "انتظار",
+  closed: "مغلقة",
+});
+
+export const CASE_STATUS_MOVE_ORDER: readonly CaseStatusMove[] = Object.freeze(["active", "pending", "closed"]);
+
+export function isCaseStatusMove(value: string): value is CaseStatusMove {
+  return value === "active" || value === "pending" || value === "closed";
+}
+
+/**
+ * Which column a raw service_requests status sits in, or null for a status
+ * no move applies to (cancelled). Same buckets as the case page's mapStatus.
+ */
+export function caseStatusMoveOf(rawStatus: string | null | undefined): CaseStatusMove | null {
+  switch (rawStatus) {
+    case "assigned":
+    case "in_review":
+      return "active";
+    case "completed":
+      return "closed";
+    case "cancelled":
+      return null;
+    default:
+      return "pending";
+  }
+}

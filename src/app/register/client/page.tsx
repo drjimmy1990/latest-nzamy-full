@@ -38,11 +38,10 @@ import {
 import { BACKEND_MODE } from "@/lib/runtimeMode";
 import {
   canSubmitWithCaptcha,
-  captchaMessage,
   captchaSubmitError,
-  isCaptchaAuthError,
   withSignupCaptcha,
 } from "@/lib/auth/captcha";
+import { translateAuthError } from "@/lib/auth/translateAuthError";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { getPlanList, type AudienceTab } from "@/constants/pricingData";
@@ -424,13 +423,9 @@ export default function RegisterClientPage() {
                             captcha.spend();
 
                             if (error) {
-                              setAuthError(
-                                isCaptchaAuthError(error)
-                                  ? captchaMessage("captchaRejected", isAr)
-                                  : error.message === "User already registered"
-                                  ? (isAr ? "البريد الإلكتروني مسجل بالفعل" : "This email is already registered")
-                                  : error.message
-                              );
+                              // BUG-09: every GoTrue failure in the screen's
+                              // language (captcha included), never the raw text.
+                              setAuthError(translateAuthError(error, { context: "signup", isAr }));
                               setAuthLoading(false);
                               return;
                             }

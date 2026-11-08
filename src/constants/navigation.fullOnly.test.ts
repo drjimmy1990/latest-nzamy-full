@@ -59,7 +59,8 @@ test("the lite sidebars and the toggle are gone from the code", () => {
   }
   // The sidebar and the search both ask for the full list, whatever the
   // session's dashboardMode says.
-  assert.match(shared, /getSidebarByUserType\(\s*userType, "full", /);
+  // (SharedSidebar builds the arguments once, BUG-12, and calls with them twice.)
+  assert.match(shared, /(getSidebarByUserType\(|const menuArgs = \[)\s*userType, "full", /);
   assert.match(search, /getSidebarByUserType\(userType, "full", /);
   // The old localStorage key is only ever removed, never read.
   assert.doesNotMatch(shared, /getItem\("nzamy_dashboard_mode"\)/);

@@ -19,6 +19,9 @@ import { useUser, logout } from "@/hooks/useUser";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { getSidebarByUserType, getRoleLabel } from "@/constants/navigation";
+import { comingSoonToolIds } from "@/constants/navigation.comingSoon";
+import { useLiveTools } from "@/hooks/useLiveTools";
+import { isSupabaseMode } from "@/lib/services/api";
 import { SidebarFeatureRequest } from "@/components/FeatureRequestBanner";
 import HijriDateWidget from "@/components/HijriDateWidget";
 import UpgradeModal from "@/components/UpgradeModal";
@@ -103,12 +106,18 @@ export default function SharedSidebar() {
 
   // practiceKind (Art. 18): a consultant's sidebar has no pleading or hearings tools.
   // staffRole (owner ٢١٠): an admin sees only the tools of their staff role.
-  const groups = getSidebarByUserType(
+  const menuArgs = [
     userType, "full", subRole, active_roles ?? [],
     simId ? simId.governmentRole : governmentRole, businessRole,
     simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
-    simId ? simId.practiceKind : practiceKind, staffRole
-  );
+    simId ? simId.practiceKind : practiceKind, staffRole,
+  ] as const;
+  const writtenGroups = getSidebarByUserType(...menuArgs);
+  // BUG-12: a «قريباً» row whose AI tool the admin has opened for this user
+  // loses the badge (and stays in its own group). Only rows with a
+  // `liveToolId` are asked about; the badge stays on any doubt.
+  const liveTools = useLiveTools(comingSoonToolIds(writtenGroups), isSupabaseMode && !loading && isLoggedIn);
+  const groups = liveTools.size > 0 ? getSidebarByUserType(...menuArgs, liveTools) : writtenGroups;
   
   const showCredits = false; // user requested to remove any mention of credits
 

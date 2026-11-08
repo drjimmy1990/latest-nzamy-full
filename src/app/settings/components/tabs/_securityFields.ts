@@ -10,6 +10,7 @@
 // (_securityFields.test.ts), which has no path-alias resolver; a bare "@/lib"
 // specifier is only safe inside a `import type` (erased by type-stripping).
 import { toArabicDigits } from "../../../../lib/services/arabicCount.ts";
+import { MIN_PASSWORD_LENGTH, translateAuthError } from "../../../../lib/auth/translateAuthError.ts";
 
 // ── Password change ──────────────────────────────────────────────────
 //
@@ -19,7 +20,8 @@ import { toArabicDigits } from "../../../../lib/services/arabicCount.ts";
 // fixed for. If a re-auth step is ever added, it has to go through
 // supabase.auth.signInWithPassword first and this comment should move there.
 
-export const MIN_PASSWORD_LENGTH = 8;
+// One constant for the whole app; it lives with the shared auth-error translator.
+export { MIN_PASSWORD_LENGTH };
 
 /**
  * Client-side validation before calling Supabase. Returns the Arabic error to
@@ -35,32 +37,17 @@ export function validateNewPassword(password: string, confirm: string): string |
   return null;
 }
 
-/** Known Supabase GoTrue messages this screen is likely to see, in Arabic. */
-const KNOWN_AUTH_ERRORS: Array<[RegExp, string]> = [
-  [/should be at least/i, `كلمة المرور يجب ألا تقل عن ${toArabicDigits(MIN_PASSWORD_LENGTH)} أحرف.`],
-  [/different from the old password/i, "كلمة المرور الجديدة يجب أن تختلف عن الحالية."],
-  [/session.*missing|not authenticated|not.*logged in/i, "انتهت الجلسة — سجّل الدخول من جديد ثم أعد المحاولة."],
-  [/rate limit|too many requests|after \d+ seconds/i, "عدد المحاولات كبير. الرجاء الانتظار قليلاً ثم إعادة المحاولة."],
-  [/network/i, "تعذّر الاتصال بالخادم. تحقق من اتصالك وحاول مرة أخرى."],
-];
-
-const GENERIC_PASSWORD_ERROR = "تعذّر تحديث كلمة المرور. حاول مرة أخرى.";
-
 /**
  * The Arabic message for a failed `supabase.auth.updateUser` call.
  *
- * Deliberate duplicate of the arabicSettingsError shape in NotificationsTab.tsx
- * (same reasoning documented there): a raw GoTrue message must never reach an
- * Arabic screen, so a known message is translated, an already-Arabic message is
- * passed through, and everything else falls back to one honest sentence.
+ * A raw GoTrue message must never reach an Arabic screen, so a known message
+ * is translated, an already-Arabic message is passed through, and everything
+ * else falls back to one honest sentence. The table now lives in the shared
+ * translator (src/lib/auth/translateAuthError.ts, BUG-09), which the
+ * registration, sign-in and reset screens use too.
  */
 export function arabicAuthError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : "";
-  if (!raw) return GENERIC_PASSWORD_ERROR;
-  for (const [pattern, message] of KNOWN_AUTH_ERRORS) {
-    if (pattern.test(raw)) return message;
-  }
-  return /[؀-ۿ]/.test(raw) ? raw : GENERIC_PASSWORD_ERROR;
+  return translateAuthError(err, { context: "password", isAr: true });
 }
 
 // ── Session timeout ──────────────────────────────────────────────────

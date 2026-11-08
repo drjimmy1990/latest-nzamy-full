@@ -33,6 +33,7 @@ const FILES = [
   "app/settings/components/tabs/SubscriptionTab.tsx",
   "app/settings/components/tabs/PaymentsTab.tsx",
   "components/payments/PointsBalanceCard.tsx",
+  "components/payments/CurrentPlanCard.tsx",
   "components/pricing/PricingCards.tsx",
 ];
 // The admin console pages (settings, subscriptions/orders, subscriptions/payments,

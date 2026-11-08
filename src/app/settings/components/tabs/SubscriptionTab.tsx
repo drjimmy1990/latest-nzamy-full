@@ -4,14 +4,14 @@ import { useState } from "react";
 import { BookOpen, CrownSimple, Receipt } from "@phosphor-icons/react";
 import Link from "next/link";
 import { SectionTitle } from "./_shared";
-import { useUser, type UserTier } from "@/hooks/useUser";
+import { useUser } from "@/hooks/useUser";
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { getPlanList } from "@/constants/pricingData";
 import type { AudienceTab, Billing } from "@/constants/pricingData";
 import { audienceForUserType, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 import { BILLING_LABEL_AR, isCycle } from "@/lib/pricing/priceBook";
-import { currentPlanLabelAr } from "@/lib/pricing/currentPlanLabel";
+import { CurrentPlanCard } from "@/components/payments/CurrentPlanCard";
 import { PointsBalanceCard } from "@/components/payments/PointsBalanceCard";
 import { useBillingData } from "@/components/payments/useBillingData";
 import { LibraryGrantStatusCard } from "@/components/library/LibraryGrantStatusCard";
@@ -41,6 +41,13 @@ import { LibraryGrantStatusCard } from "@/components/library/LibraryGrantStatusC
 // «الباقة الوقائية», «المستشار القانوني المستقل»…), and after the generic
 // tier name only when no sold plan matches.
 //
+// BUG-08 (owner package 2026-11-06): founder_activate never writes `tier`, so
+// a lawyer founder read «لا باقة فعّالة» here while his dashboard said «عضو
+// مؤسس». The panel is now the shared CurrentPlanCard
+// (src/components/payments/CurrentPlanCard.tsx, also on /dashboard/billing):
+// the same tier, plus GET /api/v1/membership/founder, so an active founder
+// membership shows as «باقة المحامي المؤسس» with its end date and works left.
+//
 // What is still NOT shown, for anyone: a renewal date, a price paid, or an
 // invoice — `subscriptions.current_period_end` exists server-side but has no
 // client-readable route, and inventing one is out of scope here. Receipts live
@@ -62,7 +69,7 @@ import { LibraryGrantStatusCard } from "@/components/library/LibraryGrantStatusC
 const PLANS_ANCHOR = "account-plans";
 
 export function SubscriptionTab() {
-  const { userType, practiceKind, loading, tier } = useUser();
+  const { userType, practiceKind, loading } = useUser();
   const audience = loading ? null : audienceForUserType(userType);
   const { state: billingRead } = useBillingData();
 
@@ -70,12 +77,7 @@ export function SubscriptionTab() {
     <div className="space-y-8">
       <div>
         <SectionTitle>باقتك الحالية</SectionTitle>
-        <CurrentPlanPanel
-          loading={loading}
-          tier={tier ?? "free"}
-          planLabel={currentPlanLabelAr(userType, practiceKind, tier ?? "free")}
-          plansHref={audience ? `#${PLANS_ANCHOR}` : "/pricing"}
-        />
+        <CurrentPlanCard plansHref={audience ? `#${PLANS_ANCHOR}` : "/pricing"} />
         {/* The library-only subscription is its own grant, not a tier (owner
             note ١٨ C05): its end date, or nothing when there is no grant. */}
         <LibraryGrantStatusCard className="mt-4" />
@@ -214,61 +216,6 @@ function PillGroup({
           {o.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-// ── Every account type: the real tier (useSubscription's field), named
-//    after the plan its family sells (currentPlanLabelAr) ──
-function CurrentPlanPanel({
-  loading, tier, planLabel, plansHref,
-}: { loading: boolean; tier: UserTier; planLabel: string; plansHref: string }) {
-  // Still resolving the session — say nothing about the plan yet. Same rule
-  // SidebarComponents.tsx's `gateReady` exists to enforce: `meta.tier` reads
-  // as the guest/free tier before the session loads, so painting "no plan"
-  // here first would flash a wrong answer for every paying member before
-  // flipping to the truth a moment later.
-  if (loading) return <PanelSkeleton />;
-
-  if (tier === "free") {
-    return (
-      <div className="bg-white/80 dark:bg-[#161b22]/80 backdrop-blur-xl rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] px-6 py-10 text-center shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)]">
-        <div className="mb-3 flex justify-center text-zinc-400 dark:text-zinc-500">
-          <CrownSimple size={28} />
-        </div>
-        <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">لا باقة فعّالة</p>
-        <p className="mt-1.5 text-xs leading-6 text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
-          لا يوجد اشتراك مدفوع مفعّل على حسابك حالياً.
-        </p>
-        <Link
-          href={plansHref}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#0f5a42] dark:bg-[#C8A762] dark:text-[#0B3D2E] dark:hover:opacity-90"
-        >
-          الباقات المتاحة
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white/80 dark:bg-[#161b22]/80 backdrop-blur-xl rounded-[2rem] border border-slate-200/50 dark:border-white/[0.06] px-6 py-6 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)]">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-11 h-11 rounded-2xl bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
-            <CrownSimple size={22} weight="fill" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100">{planLabel}</p>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">باقتك الحالية</p>
-          </div>
-        </div>
-        <Link
-          href={plansHref}
-          className="text-xs font-bold text-[#0B3D2E] dark:text-[#C8A762] hover:underline"
-        >
-          الباقات المتاحة
-        </Link>
-      </div>
     </div>
   );
 }

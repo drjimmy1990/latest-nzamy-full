@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   isLawyerCaseRow, matchesClientFilter, summarizeOpenDeadlines, isDeadlineSoon, deadlineSortKey,
+  CASE_STATUS_MOVES, CASE_STATUS_MOVE_LABEL_AR, CASE_STATUS_MOVE_ORDER, caseStatusMoveOf, isCaseStatusMove,
 } from "./_caseListRules.ts";
 
 const req = (metadata: Record<string, unknown> = {}, type = "service") => ({ type, metadata }) as never;
@@ -81,4 +82,36 @@ test("the «مهلة» priority comes from public.deadlines, not metadata.deadli
   assert.match(page, /summarizeOpenDeadlines\(/);
   assert.match(page, /تعذّر التحقق من المهل/);
   assert.doesNotMatch(page, /c\.hasDeadline/);
+});
+
+// ── BUG-05: one set of status moves for the board and the case page ──────────
+
+test("the status moves are the board's three columns, written as service_requests statuses", () => {
+  assert.deepEqual({ ...CASE_STATUS_MOVES }, { active: "assigned", pending: "pending_assignment", closed: "completed" });
+  assert.deepEqual([...CASE_STATUS_MOVE_ORDER], ["active", "pending", "closed"]);
+  assert.deepEqual({ ...CASE_STATUS_MOVE_LABEL_AR }, { active: "نشطة", pending: "انتظار", closed: "مغلقة" });
+  assert.equal(isCaseStatusMove("suspended"), false, "«معلقة» has no backend status that round-trips");
+  assert.equal(isCaseStatusMove("primary"), false, "a degree column is not a status move");
+});
+
+test("caseStatusMoveOf buckets a raw status like the case page; a cancelled case has no move", () => {
+  assert.equal(caseStatusMoveOf("assigned"), "active");
+  assert.equal(caseStatusMoveOf("in_review"), "active");
+  assert.equal(caseStatusMoveOf("pending_assignment"), "pending");
+  assert.equal(caseStatusMoveOf("pending_payment"), "pending");
+  assert.equal(caseStatusMoveOf("draft"), "pending");
+  assert.equal(caseStatusMoveOf("completed"), "closed");
+  assert.equal(caseStatusMoveOf("cancelled"), null);
+  for (const move of CASE_STATUS_MOVE_ORDER) assert.equal(caseStatusMoveOf(CASE_STATUS_MOVES[move]), move, "a move lands in its own column");
+});
+
+test("the board and the case page share the moves and the write", () => {
+  const list = readFileSync(join(process.cwd(), "src/app/dashboard/lawyer/cases/page.tsx"), "utf8");
+  const detail = readFileSync(join(process.cwd(), "src/app/dashboard/lawyer/cases/[id]/page.tsx"), "utf8");
+  assert.match(list, /CASE_STATUS_MOVES\[col\]/);
+  assert.doesNotMatch(list, /statusForCol/, "no second copy of the map");
+  assert.match(detail, /CASE_STATUS_MOVES\[move\]/);
+  assert.match(detail, /updateWorkflowRequestById\(caseData\.id, \{ status: nextStatus \}\)/);
+  assert.match(detail, /nzamy-workflow-updated/);
+  assert.match(detail, /aria-label="تغيير حالة القضية"/);
 });
