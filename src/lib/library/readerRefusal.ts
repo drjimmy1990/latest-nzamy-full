@@ -31,9 +31,17 @@ export interface ReaderLock {
 
 export type ReaderLimitScope = "hourly" | "daily" | "rate";
 
+/** One authorised device in a device-limit refusal (owner ٤٢٧). */
+export interface ReaderDevice {
+  id: string;
+  label: string;
+  lastSeen: string | null;
+}
+
 export type ReaderRefusal =
   | { kind: "lock"; lock: ReaderLock }
-  | { kind: "limit"; scope: ReaderLimitScope; messageAr: string };
+  | { kind: "limit"; scope: ReaderLimitScope; messageAr: string }
+  | { kind: "device"; messageAr: string; limit: number; devices: ReaderDevice[] };
 
 const HOUR_MS = 3_600_000;
 const MINUTE_MS = 60_000;
@@ -111,6 +119,7 @@ function text(value: unknown): string | null {
  */
 export function readerRefusalFrom(status: number, body: unknown, now: number): ReaderRefusal | null {
   const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  if (status === 403) return deviceRefusalFrom(b);
   if (status === 423) {
     const support = text(b.support);
     return {
@@ -131,4 +140,56 @@ export function readerRefusalFrom(status: number, body: unknown, now: number): R
     return { kind: "limit", scope: "daily", messageAr: text(b.error) ?? DAILY_FALLBACK_AR };
   }
   return { kind: "limit", scope: "rate", messageAr: text(b.error) ?? RATE_FALLBACK_AR };
+}
+
+const DEVICE_FALLBACK_AR =
+  "هذا الحساب مفعّل على جهازين بالفعل. سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز.";
+
+/**
+ * Owner ٤٢٧: a 403 `device_limit` (src/lib/library/deviceLimit.ts) — the
+ * account already reads the library on its authorised devices. Any other 403
+ * is not a refusal this file renders (null).
+ */
+function deviceRefusalFrom(b: Record<string, unknown>): ReaderRefusal | null {
+  if (b.code !== "device_limit") return null;
+  const devices: ReaderDevice[] = [];
+  if (Array.isArray(b.devices)) {
+    for (const d of b.devices) {
+      if (!d || typeof d !== "object") continue;
+      const r = d as Record<string, unknown>;
+      const id = text(r.id);
+      if (!id) continue;
+      devices.push({ id, label: text(r.label) ?? "جهاز", lastSeen: text(r.lastSeen) });
+    }
+  }
+  const limit = typeof b.limit === "number" && Number.isFinite(b.limit) ? Math.trunc(b.limit) : 2;
+  return { kind: "device", messageAr: text(b.error) ?? DEVICE_FALLBACK_AR, limit, devices };
+}
+
+/**
+ * «آخر استخدام» for a device row, computed on the client at render time (never
+ * in a server string): «الآن», «منذ 5 دقائق», «منذ ساعتين», else the Riyadh
+ * date. null for a missing or invalid time.
+ */
+export function deviceLastSeenAr(iso: string | null | undefined, now: number): string | null {
+  if (!iso) return null;
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return null;
+  const ms = Math.max(0, now - at);
+  if (ms < MINUTE_MS) return "الآن";
+  if (ms < HOUR_MS) {
+    const m = Math.floor(ms / MINUTE_MS);
+    return `منذ ${countedAr(m, "دقيقة", "دقيقتين", "دقائق", "دقيقة")}`;
+  }
+  if (ms < 24 * HOUR_MS) {
+    const h = Math.floor(ms / HOUR_MS);
+    return `منذ ${countedAr(h, "ساعة", "ساعتين", "ساعات", "ساعة")}`;
+  }
+  try {
+    return new Intl.DateTimeFormat("ar-SA-u-ca-gregory-nu-latn", {
+      timeZone: "Asia/Riyadh", year: "numeric", month: "long", day: "numeric",
+    }).format(new Date(at));
+  } catch {
+    return new Date(at).toISOString().slice(0, 10);
+  }
 }

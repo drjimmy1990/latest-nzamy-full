@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
@@ -84,6 +85,10 @@ export async function GET(
     ]);
     const isWhitelisted = probe.isWhitelisted;
     const hasFullAccess = probe.freeLimit === -1 || isWhitelisted;
+    // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
+    // devices (src/lib/library/deviceLimitServer.ts; fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, isSubscriber);
+    if (deviceRefusal) return deviceRefusal;
 
     // Fetch pages and the preamble — service role: both are server-only
     // (20261018_02, 20261019_40). An error is a 500, never a decree that

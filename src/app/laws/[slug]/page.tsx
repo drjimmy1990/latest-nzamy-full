@@ -45,6 +45,7 @@ import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
 import LibrarySecurityLockNotice from "@/components/library/LibrarySecurityLockNotice";
+import { LibraryDeviceLimitNotice } from "@/components/library/LibraryDeviceLimitNotice";
 import { readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
@@ -259,7 +260,8 @@ function LawSystemPageContent() {
         if (cancelled) return;
         if (!res.ok) {
           console.warn(`[LawReader] Law "${slug}" failed to load from the API (${res.status})`);
-          if (res.status === 423 || res.status === 429) {
+          // 403 device_limit: owner ٤٢٧, the third device (readerRefusal.ts).
+          if (res.status === 423 || res.status === 429 || res.status === 403) {
             const refusalBody: unknown = await res.json().catch(() => null);
             if (cancelled) return;
             const refusal = readerRefusalFrom(res.status, refusalBody, Date.now());
@@ -793,7 +795,9 @@ function LawSystemPageContent() {
       <div className={`min-h-screen flex flex-col ${isDark ? "bg-[#0c0f12] text-white" : "bg-gray-50 text-gray-900"}`} dir="rtl">
         <Navbar />
         <div className="print-main flex-1 max-w-[1280px] mx-auto w-full px-3 pt-28 pb-24">
-          {readerRefusal.kind === "lock" ? (
+          {readerRefusal.kind === "device" ? (
+            <LibraryDeviceLimitNotice refusal={readerRefusal} />
+          ) : readerRefusal.kind === "lock" ? (
             <LibrarySecurityLockNotice lock={readerRefusal.lock} />
           ) : (
             <div className="flex min-h-[50vh] items-center justify-center">

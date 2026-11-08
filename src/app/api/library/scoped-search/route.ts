@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getLibraryAccessForUser } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { quotaRefusal, scopedSearchDocKey } from '@/lib/library/readQuota';
@@ -255,6 +256,10 @@ export async function POST(request: Request) {
     }
 
     const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
+    // Owner ٤٢٧: the in-document search returns a subscriber's article text,
+    // so it is device-checked like opening the document (fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
+    if (deviceRefusal) return deviceRefusal;
     const access: ViewerAccess = {
       hasFullAccess,
       whitelistedSlugs,

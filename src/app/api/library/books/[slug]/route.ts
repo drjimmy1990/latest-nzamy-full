@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
@@ -154,6 +155,11 @@ export async function GET(
     const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
     const hasFullAccess = freeLimit === -1 || isWhitelisted;
     const byOverride = probe.freeLimitSource === 'override';
+    // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
+    // devices (src/lib/library/deviceLimitServer.ts; fails open). A free
+    // (whitelisted) book is everyone's, so it is not device-checked.
+    const deviceRefusal = await enforceLibraryDevice(userId, freeLimit === -1 && !isWhitelisted);
+    if (deviceRefusal) return deviceRefusal;
 
     // The order_index from which blocks are locked. Owner answer ١٨٣: the
     // book's first two printed pages (its leading blocks' page_number, public

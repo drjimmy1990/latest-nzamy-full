@@ -2,10 +2,11 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { ShieldCheck, Warning, LockSimple, Users, Bug, BookOpenText, Hourglass } from "@phosphor-icons/react";
+import { ShieldCheck, Warning, LockSimple, Users, Bug, BookOpenText, Hourglass, Devices } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryLocksPanel from "./LibraryLocksPanel";
 import LibraryActivityPanel from "./LibraryActivityPanel";
+import LibraryDevicesPanel from "./LibraryDevicesPanel";
 
 // "library_activity" (20261031_10) and "library_locks" (owner note ١٣ C09,
 // public.library_security_locks) are real and read the database. The other
@@ -13,8 +14,9 @@ import LibraryActivityPanel from "./LibraryActivityPanel";
 // collects duplicate-account, bot or threat data yet. S6-T19 (slice A §1.6)
 // removed the invented accounts, IPs, percentages and the KPI row that used
 // to fill them, as promised in the Wave 1 owner report.
-type SecTab = "library_activity"|"library_locks"|"overview"|"duplicates"|"scraping"|"threats";
-const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","overview","duplicates","scraping","threats"];
+// "library_devices" — owner ٤٢٧, the device limit (20261108_20).
+type SecTab = "library_activity"|"library_locks"|"library_devices"|"overview"|"duplicates"|"scraping"|"threats";
+const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","library_devices","overview","duplicates","scraping","threats"];
 
 export default function SecurityPage() {
   const { isDark } = useTheme();
@@ -33,6 +35,7 @@ export default function SecurityPage() {
   const TABS:{id:SecTab;label:string;icon:React.ElementType;soon?:true}[] = [
     { id:"library_activity", label:"نشاط المكتبة", icon:BookOpenText },
     { id:"library_locks", label:"قفل المكتبة", icon:LockSimple },
+    { id:"library_devices", label:"أجهزة المكتبة", icon:Devices },
     { id:"overview", label:"نظرة عامة", icon:ShieldCheck, soon:true },
     { id:"duplicates", label:"حسابات مكررة", icon:Users, soon:true },
     { id:"scraping", label:"حماية البوتات", icon:Bug, soon:true },
@@ -67,6 +70,7 @@ export default function SecurityPage() {
 
       {tab==="library_activity" && <LibraryActivityPanel isDark={isDark} card={card} />}
       {tab==="library_locks" && <LibraryLocksPanel isDark={isDark} card={card} />}
+      {tab==="library_devices" && <LibraryDevicesPanel isDark={isDark} card={card} />}
 
       {current?.soon && (
         <motion.div key={tab} initial={{opacity:0}} animate={{opacity:1}}

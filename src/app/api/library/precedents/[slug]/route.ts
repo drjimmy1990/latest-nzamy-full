@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
@@ -146,6 +147,10 @@ export async function GET(
     // while evaluating explicit free access for every principle below.
     const probe = await checkLibraryAccess(userId, slug, 0, "principles", { includeExplicitFreeItem: false });
     const { hasFullAccess, freeItemsByType, whitelistedSlugs } = await getLibraryAccessForUser(userId);
+    // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
+    // devices (src/lib/library/deviceLimitServer.ts; fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
+    if (deviceRefusal) return deviceRefusal;
     const isWhitelisted = false;
 
     // ?target=<principle id> (q390-ب): open the window that holds it. It only
