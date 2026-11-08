@@ -1,0 +1,2198 @@
+{
+  "sector_no": 22,
+  "sector_code": "S22",
+  "title": "القطاع 22: الداخلية والمرور والجوازات والأحوال المدنية وإمارات المناطق (MOI)",
+  "generated_at": "2026-10-28",
+  "specialized_problem_cards_count": 2,
+  "agency_specific_cards_count": 21,
+  "total_cards_count": 23,
+  "cards": [
+    {
+      "card_id": "S22-MOI-001",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 22,
+      "agency": {
+        "name": "الإدارة العامة للمرور",
+        "website": "https://my.gov.sa/ar/agencies/17312"
+      },
+      "problem_type": "الاعتراض على المخالفات المرورية وقرارات تقدير المسؤولية في الحوادث المرورية",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "قائد المركبة أو مالكها المسجلة عليه المخالفة المرورية أو طرف الحادث المروري",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم اعتراض إلكتروني على المخالفة المرورية عبر منصة (أبشر) أو التقدم للمحكمة المختصة (الدوائر المرورية بالمحاكم العامة عبر ناجز) خلال ثلاثين يوماً من تاريخ الإبلاغ بالمخالفة",
+          "channel": "portal",
+          "where": "https://www.absher.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@moi.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "9661111111111"
+          }
+        ],
+        "portals": []
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-MOI-002",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 22,
+      "agency": {
+        "name": "المديرية العامة للجوازات",
+        "website": "https://www.gdp.gov.sa/Ar/Pages/default.aspx"
+      },
+      "problem_type": "التظلم من قرارات اللجان الإدارية بالمديرية العامة للجوازات والأحوال المدنية وإمارات المناطق",
+      "stage": "تظلم ثم دعوى",
+      "who_can_file": "الأفراد وأصحاب العمل الصادرة بحقهم قرارات إدارية أو غرامات من اللجان الإدارية بالجوازات أو الأحوال المدنية",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم تظلم إداري عبر منصة أبشر (خدمة تواصل الجوازات / الأحوال المدنية) أو إلى وزارة الداخلية لتصحيح القرار أو إلغاء الغرامة",
+          "channel": "portal",
+          "where": "https://www.absher.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ العلم بالقرار الإداري",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (8) من نظام المرافعات أمام ديوان المظالم"
+        },
+        {
+          "n": 2,
+          "action": "قيد دعوى إلغاء قرار إداري أمام المحكمة الإدارية بديوان المظالم عبر منصة معين (مع مراعاة عدم اختصاص المحاكم بأعمال السيادة ومسائل منح الجنسية)",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ العلم برفض التظلم أو مضي 60 يوماً دون بت",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (8) من نظام المرافعات أمام ديوان المظالم والمادة (13/ب) من نظام ديوان المظالم"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "محكمة الاستئناف الإدارية بديوان المظالم",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة الحكم الابتدائي",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "المحكمة الإدارية بديوان المظالم",
+      "documents_required": [
+        "صورة القرار الإداري أو الغرامة الصادرة من الجوازات أو الأحوال المدنية",
+        "ما يثبت تقديم التظلم الإداري ونتيجته"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرافعات أمام ديوان المظالم",
+          "article": "الثامنة"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام ديوان المظالم",
+          "article": "الثالثة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "992@gdp.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "992"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — المديرية العامة للجوازات",
+            "url": "https://www.gdp.gov.sa/Ar/Pages/default.aspx"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.gdp.gov.sa/Ar/Communication/Pages/ContactUs.aspx"
+          },
+          {
+            "name": "استعراض شكوى / بلاغ سابق",
+            "url": "https://www.gdp.gov.sa/Ar/Pages/complaininquiry.aspx"
+          },
+          {
+            "name": "Track a previous complaint / report",
+            "url": "https://www.gdp.gov.sa/En/Pages/complaininquiry.aspx"
+          },
+          {
+            "name": "تقديم شكوى / بلاغ جديد",
+            "url": "https://www.gdp.gov.sa/Ar/Pages/Complain.aspx"
+          },
+          {
+            "name": "Submit a new complaint / report",
+            "url": "https://www.gdp.gov.sa/En/Pages/Complain.aspx"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "ملاحظة: دعاوى إثبات النسب والوفاة والورثة ترفع أمام محاكم الأحوال الشخصية عبر ناجز، بينما القرارات الإدارية الصادرة عن الأحوال المدنية والجوازات يطعن فيها أمام ديوان المظالم"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17624",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "وزارة الداخلية",
+        "website": null
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «وزارة الداخلية»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «وزارة الداخلية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «وزارة الداخلية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@moi.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "966114011111"
+          }
+        ],
+        "portals": [
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17624"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17219",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة المنطقة الشرقية",
+        "website": "https://www.sharqiah.gov.sa/"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة المنطقة الشرقية»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة المنطقة الشرقية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة المنطقة الشرقية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.sharqiah.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "public.services@sharqiah.gov.sa"
+          },
+          {
+            "value": "u003epublic.services@sharqiah.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "0138330000"
+          },
+          {
+            "value": "966138330000+"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة المنطقة الشرقية",
+            "url": "https://www.sharqiah.gov.sa/"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.sharqiah.gov.sa/contact-us"
+          },
+          {
+            "name": "الإبلاغ عن فساد",
+            "url": "https://www.sharqiah.gov.sa/contact-us/reporting-corruption"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17219"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17222",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة الباحة",
+        "website": "https://www.albaha.gov.sa"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة الباحة»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة الباحة»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة الباحة» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.albaha.gov.sa",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@albaha.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "966920034446"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة الباحة",
+            "url": "https://www.albaha.gov.sa"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17222"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17225",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة الجوف",
+        "website": "https://www.moi.gov.sa/wps/portal/Home/emirates/jowf"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة الجوف»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة الجوف»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة الجوف» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.moi.gov.sa/wps/portal/Home/emirates/jowf",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "sc@aljouf.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "920011123"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة الجوف",
+            "url": "https://www.moi.gov.sa/wps/portal/Home/emirates/jowf"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17225"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17228",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة الحدود الشمالية",
+        "website": "https://enb.gov.sa"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة الحدود الشمالية»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة الحدود الشمالية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة الحدود الشمالية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://enb.gov.sa",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "comm-dept@enb.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "0146617000"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة الحدود الشمالية",
+            "url": "https://enb.gov.sa"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17228"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17231",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة الرياض",
+        "website": "https://www.riyadh.gov.sa/#/"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة الرياض»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة الرياض»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة الرياض» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.riyadh.gov.sa/#/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@riyadh.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "00966114114444"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة الرياض",
+            "url": "https://www.riyadh.gov.sa/#/"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17231"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17234",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة القصيم",
+        "website": null
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة القصيم»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة القصيم»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة القصيم» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@alqassim.gov.sa"
+          },
+          {
+            "value": "example@mail.com"
+          }
+        ],
+        "phones": [
+          {
+            "value": "0163231818"
+          }
+        ],
+        "portals": [
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.alqassim.gov.sa/EParticipation/ContactUs"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17234"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17237",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة المدينة المنورة",
+        "website": "https://services.almadinah.gov.sa/"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة المدينة المنورة»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة المدينة المنورة»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة المدينة المنورة» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://services.almadinah.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "imara@almadinah.gov.sa"
+          },
+          {
+            "value": "info@almadinah.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "0148155555"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة المدينة المنورة",
+            "url": "https://services.almadinah.gov.sa/"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://almadinah.gov.sa/contactus"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://almadinah.gov.sa/tqdym-shkwy"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17237"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17240",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة تبوك",
+        "website": "https://www.tabuk.gov.sa/ar/Pages/default.aspx"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة تبوك»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة تبوك»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة تبوك» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.tabuk.gov.sa/ar/Pages/default.aspx",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@tabuk.gov.sa"
+          },
+          {
+            "value": "boxicons@2.1.4"
+          }
+        ],
+        "phones": [
+          {
+            "value": "966143828891"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة تبوك",
+            "url": "https://www.tabuk.gov.sa/ar/Pages/default.aspx"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.tabuk.gov.sa/ar/Pages/ContactUs.aspx"
+          },
+          {
+            "name": "تفاصيل الخدمة",
+            "url": "https://www.tabuk.gov.sa/ar/Services/Support/Pages/Complaint.aspx"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17240"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17243",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة جازان",
+        "website": "https://jazan.moi.gov.sa"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة جازان»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة جازان»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة جازان» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://jazan.moi.gov.sa",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@jazan.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "9660173221000"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة جازان",
+            "url": "https://jazan.moi.gov.sa"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17243"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17246",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة حائل",
+        "website": "https://www.hail.gov.sa/ar"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة حائل»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة حائل»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة حائل» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.hail.gov.sa/ar",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@hail.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "966165333335"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة حائل",
+            "url": "https://www.hail.gov.sa/ar"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://hail.gov.sa/ar/%D8%A7%D9%84%D8%AF%D8%B9%D9%85-%D9%88%D8%A7%D9%84%D9%85%D8%B3%D8%A7%D8%B9%D8%AF%D8%A9/%D8%A7%D8%AA%D8%B5%D9%84-%D8%A8%D9%86%D8%A7"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17246"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17249",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة عسير",
+        "website": "https://aseer.moi.gov.sa"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة عسير»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة عسير»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة عسير» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://aseer.moi.gov.sa",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@aseer.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "920028858"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة عسير",
+            "url": "https://aseer.moi.gov.sa"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17249"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17252",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة مكة المكرمة",
+        "website": "https://www.makkah.gov.sa/en"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة مكة المكرمة»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة مكة المكرمة»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة مكة المكرمة» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.makkah.gov.sa/en",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@makkah.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "00966125722727"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة مكة المكرمة",
+            "url": "https://www.makkah.gov.sa/en"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17252"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17255",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "إمارة منطقة نجران",
+        "website": "https://najran.moi.gov.sa"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «إمارة منطقة نجران»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «إمارة منطقة نجران»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «إمارة منطقة نجران» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://najran.moi.gov.sa",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@e-najran.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "966175220000"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ إمارة منطقة نجران",
+            "url": "https://najran.moi.gov.sa"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17255"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17369",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "المديرية العامة للجوازات",
+        "website": "https://www.gdp.gov.sa/Ar/Pages/default.aspx"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «المديرية العامة للجوازات»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «المديرية العامة للجوازات»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «المديرية العامة للجوازات» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.gdp.gov.sa/Ar/Pages/default.aspx",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "992@gdp.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "992"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ المديرية العامة للجوازات",
+            "url": "https://www.gdp.gov.sa/Ar/Pages/default.aspx"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.gdp.gov.sa/Ar/Communication/Pages/ContactUs.aspx"
+          },
+          {
+            "name": "استعراض شكوى / بلاغ سابق",
+            "url": "https://www.gdp.gov.sa/Ar/Pages/complaininquiry.aspx"
+          },
+          {
+            "name": "Track a previous complaint / report",
+            "url": "https://www.gdp.gov.sa/En/Pages/complaininquiry.aspx"
+          },
+          {
+            "name": "تقديم شكوى / بلاغ جديد",
+            "url": "https://www.gdp.gov.sa/Ar/Pages/Complain.aspx"
+          },
+          {
+            "name": "Submit a new complaint / report",
+            "url": "https://www.gdp.gov.sa/En/Pages/Complain.aspx"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17369"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17315",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "مديرية الأمن العام",
+        "website": "https://www.moi.gov.sa/wps/portal/Home/sectors/publicsecurity"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «مديرية الأمن العام»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «مديرية الأمن العام»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «مديرية الأمن العام» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.moi.gov.sa/wps/portal/Home/sectors/publicsecurity",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@moi.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "0114415050"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ مديرية الأمن العام",
+            "url": "https://www.moi.gov.sa/wps/portal/Home/sectors/publicsecurity"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17315"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17312",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "الإدارة العامة للمرور",
+        "website": "https://my.gov.sa/ar/agencies/17312"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «الإدارة العامة للمرور»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «الإدارة العامة للمرور»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «الإدارة العامة للمرور» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://my.gov.sa/ar/agencies/17312",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@moi.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "9661111111111"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ الإدارة العامة للمرور",
+            "url": "https://my.gov.sa/ar/agencies/17312"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17312"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17945",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "اللجنة الوطنية لمكافحة المخدرات",
+        "website": "https://my.gov.sa/ar/agencies/17945"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «اللجنة الوطنية لمكافحة المخدرات»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «اللجنة الوطنية لمكافحة المخدرات»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «اللجنة الوطنية لمكافحة المخدرات» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://my.gov.sa/ar/agencies/17945",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@ncnc.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "9661111111111"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ اللجنة الوطنية لمكافحة المخدرات",
+            "url": "https://my.gov.sa/ar/agencies/17945"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17945"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17378",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "المديرية العامة لمكافحة المخدرات",
+        "website": "https://www.moi.gov.sa/wps/portal/Home/sectors/narcoticscontrol/%21ut/p/z1/jY9BDoIwEEXPwglm2gKF5Ui0bSDBagrYjemKkCgaYzy_ys4FyOx-8t7PH_DQgR_Da-jDc7iN4fLJJ5-e0cSxZjEvVeI2SNaWTc63DI2EdgJyqwqtvwCjFMlIXqNJmDIc_Bq_UKRjWSFmlUrQkHaH3AqBJNb5OHOEK_15wC_Xt-AnZOmDfx3-dy"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «المديرية العامة لمكافحة المخدرات»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «المديرية العامة لمكافحة المخدرات»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «المديرية العامة لمكافحة المخدرات» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.moi.gov.sa/wps/portal/Home/sectors/narcoticscontrol/%21ut/p/z1/jY9BDoIwEEXPwglm2gKF5Ui0bSDBagrYjemKkCgaYzy_ys4FyOx-8t7PH_DQgR_Da-jDc7iN4fLJJ5-e0cSxZjEvVeI2SNaWTc63DI2EdgJyqwqtvwCjFMlIXqNJmDIc_Bq_UKRjWSFmlUrQkHaH3AqBJNb5OHOEK_15wC_Xt-AnZOmDfx3-dy",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "995@gdnc.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "00966114629393"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ المديرية العامة لمكافحة المخدرات",
+            "url": "https://www.moi.gov.sa/wps/portal/Home/sectors/narcoticscontrol/%21ut/p/z1/jY9BDoIwEEXPwglm2gKF5Ui0bSDBagrYjemKkCgaYzy_ys4FyOx-8t7PH_DQgR_Da-jDc7iN4fLJJ5-e0cSxZjEvVeI2SNaWTc63DI2EdgJyqwqtvwCjFMlIXqNJmDIc_Bq_UKRjWSFmlUrQkHaH3AqBJNb5OHOEK_15wC_Xt-AnZOmDfx3-dy"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17378"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17678",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "قوات أمن المنشآت",
+        "website": "https://www.fsf.gov.sa/"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «قوات أمن المنشآت»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «قوات أمن المنشآت»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «قوات أمن المنشآت» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.fsf.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@fsf.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "00966115155155"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ قوات أمن المنشآت",
+            "url": "https://www.fsf.gov.sa/"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17678"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S22-AG-17654",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 22,
+      "agency": {
+        "name": "وكالة وزارة الداخلية للأحوال المدنية",
+        "website": "https://ahwal.gov.sa"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «وكالة وزارة الداخلية للأحوال المدنية»",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «وكالة وزارة الداخلية للأحوال المدنية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «وكالة وزارة الداخلية للأحوال المدنية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://ahwal.gov.sa",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ إبلاغ المخالف بالمخالفة المرورية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75/1) من نظام المرور"
+        },
+        {
+          "n": 2,
+          "action": "في منازعات الحوادث المرورية والمطالبة بأرش التلفيات أو الديات: تقيد صحيفة دعوى مرورية أمام الدوائر المرورية بالمحاكم العامة عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "خلال مدد سماع الدعوى المرورية",
+            "from_event": "تاريخ صدور تقرير الحادث وتقدير الأضرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (75) من نظام المرور ونظام المرافعات الشرعية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم العامة عبر ناجز (في الأحكام القابلة للاستئناف)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "الهيئات المرورية (عبر أبشر) والدوائر المرورية بالمحاكم العامة (عبر ناجز)",
+      "documents_required": [
+        "تفاصيل المخالفة المرورية ورقمها في منصة أبشر",
+        "تقرير الحادث المروري (نجم أو المرور) وتقرير مركز (تقدير) المعتمد"
+      ],
+      "fees": "مجاني للاعتراض عبر أبشر",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرور",
+          "article": "75"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "ahwalcare@ahwal.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "1916"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ وكالة وزارة الداخلية للأحوال المدنية",
+            "url": "https://ahwal.gov.sa"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17654"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العامة — الدعاوى المرورية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    }
+  ]
+}
