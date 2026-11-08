@@ -13,7 +13,7 @@
 | Step | What | When |
 |---|---|---|
 | 0 | Read-only checks (3 queries) | before anything |
-| 1 | SQL `20261108_20`, `20261108_30`, `20261108_40`, `20261108_50` | before the deploy (any time; the new code works without them) |
+| 1 | SQL `20261108_20`, `20261108_30`, `20261108_40`, `20261108_41`, `20261108_50` | before the deploy (any time; the new code works without them) |
 | 2 | Deploy | |
 | 3 | SQL `20261108_10` (decree lock) | **only AFTER the deploy** |
 | 4 | `_verify.sql` by hand | after Steps 1 and 3 |
@@ -62,9 +62,10 @@ Run each file in the SQL Editor, one at a time. Each one ends with a SELECT, and
 1. `supabase/migrations/20261108_20_library_device_limit.sql`: the device table and the two device settings. It ships **OFF**.
 2. `supabase/migrations/20261108_30_firm_member_points_usage.sql`: the per-member points counter for the firm finance page.
 3. `supabase/migrations/20261108_40_drafter_section_edits.sql`: the «عدّل هذا القسم» counting and charging.
-4. `supabase/migrations/20261108_50_free_daily_question.sql`: the free daily question. It stays inactive until phone verification exists.
+4. `supabase/migrations/20261108_41_drafter_daily_limit_excludes_sections.sql`: section edits no longer use up the drafter's daily limit, and the draft that follows a paid analysis is never refused for that limit. Run it after `_40`.
+5. `supabase/migrations/20261108_50_free_daily_question.sql`: the free daily question. It stays inactive until phone verification exists.
 
-All four can be re-run safely. If one is missing, the new code hides or refuses only that feature, uncharged.
+All five can be re-run safely. If one is missing, the new code hides or refuses only that feature, uncharged.
 
 ## Step 2: deploy
 
@@ -82,7 +83,7 @@ It **must** run after the deploy. The old code reads the decree number and date 
 cd /www/wwwroot/nzamy/latest-nzamy-full && docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | tail -40
 ```
 
-The new blocks are `library_tier_columns_1108`, `library_device_limit_1108`, `firm_member_points_1108`, `drafter_section_edits_1108` and `free_daily_question_1108`. Paste the tail.
+The new blocks are `library_tier_columns_1108`, `library_device_limit_1108`, `firm_member_points_1108`, `drafter_section_edits_1108`, `drafter_daily_limit_1108` and `free_daily_question_1108`. Paste the tail.
 
 ## Step 5: n8n (ours)
 
