@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { INTERNAL_NOTE_PHRASES, extractUserGuide, isInternalNote, parseGuideBlocks, parseInline, plainText, stripInternalNotes } from "./guideBlocks.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const md = fs.readFileSync(path.resolve(here, "../../data/murshid/najiz-guide-2026-10-28.md"), "utf8");
+const md = fs.readFileSync(path.resolve(here, "../../data/murshid/najiz-guide-2026-10-28.md"), "utf8").replace(/\r\n/g, "\n"); // a Windows checkout (core.autocrlf) gives CRLF
 
 test("the committed guide is the reader slice only (written by scripts/murshid-import.mjs)", () => {
   assert.match(md, /^## الباب الثاني/);
