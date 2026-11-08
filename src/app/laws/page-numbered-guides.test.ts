@@ -69,7 +69,7 @@ test("the parser's manifest accepts the label (owner ٢١١) and its version mov
   assert.ok(manifest.enums.type.includes(LABEL));
   // One value, verbatim — not split into «دليل إرشادي» and «تنظيم إداري».
   assert.ok(!manifest.enums.type.includes("تنظيم إداري"));
-  assert.equal(manifest.manifest_version, "1.19");
+  assert.equal(manifest.manifest_version, "1.27");
 });
 
 test("the /laws type lists know the label", () => {
