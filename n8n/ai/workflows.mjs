@@ -329,8 +329,9 @@ const prompt = [
 
 // ── contract review (owner's canonical pricing, item 9) ─────────────────────
 // One contract, for the party the user names. The risk is a word and the app
-// refuses any percentage in the reply (tools.ts hasPercent), a rate the contract
-// itself states included: hence the rule that writes such a rate in words. The
+// refuses any percentage in the reply that the pasted contract does not state
+// verbatim (tools.ts percentsOutsideInput, owner ٤٤٠); an uploaded contract is not
+// read by the app, so the rule that writes a contract's rate in words stays. The
 // clause budget keeps the JSON whole inside maxOutputTokens.
 const CONTRACT_REVIEW_PROMPT = String.raw`const line = (label, v) => (v ? label + ': «' + esc(v) + '»' : '');
 const prompt = [

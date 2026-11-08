@@ -22,7 +22,9 @@ import {
   CONTRACT_REVIEW_PRICE,
   CONTRACTS_PRO_ROLES,
   PERCENT_PATTERN,
+  canonicalPercent,
   hasPercent,
+  percentsOutsideInput,
 } from "./tools.ts";
 import { aiToolLabelAr, AI_TOOL_PAGES } from "./toolLabels.ts";
 import { aiToolPointRange, registryPointsLabel, type PricedAiToolId } from "./toolPointsDisplay.ts";
@@ -171,6 +173,44 @@ test("owner ١٩٣: no percentage in any string field, in any digit system", () 
     ["cited", output({ cited: [{ law: "نظام", article: 1, as_written: "٥٪" }] })],
   ];
   for (const [name, raw] of leaks) assert.equal(TOOL.validateOutput(raw, input), null, name);
+});
+
+// ── owner ٤٤٠ (8 Nov 2026): a rate the input contract states verbatim ─────────
+
+test("٤٤٠: one rate whatever its digits, separator, sign or space", () => {
+  for (const s of ["12.5%", "١٢٫٥٪", "۱۲٫۵٪", "12,5 %", "12.50%", "012.5٪", "١٢٫٥٠ ٪"]) assert.equal(canonicalPercent(s), "12.5", s);
+  for (const s of ["5%", "٥٪", "۵ ٪", "5.0%", "05%"]) assert.equal(canonicalPercent(s), "5", s);
+  assert.equal(canonicalPercent("0%"), "0");
+  assert.equal(canonicalPercent("100٪"), "100");
+  assert.equal(canonicalPercent("10%"), "10", "a trailing zero of the whole number stays");
+});
+
+test("٤٤٠: percentsOutsideInput — verbatim passes, a different rate fails, no input fails", () => {
+  const contract = "يلتزم المستأجر بغرامة تأخير قدرها ٥٪ من الأجرة الشهرية، وزيادة سنوية 2.5 %.";
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة 5%", b: ["زيادة ٢٫٥٪"] }, [contract]), []);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٧٪" }, [contract]), ["7"]);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٥٪", b: "فرصتك 80%" }, [contract]), ["80"]);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٥٪" }, []), ["5"]);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٥٪" }, ["العقد بلا نسب"]), ["5"]);
+  // «15%» in the contract is not «5%»: the whole number is read, not a tail of it.
+  assert.deepEqual(percentsOutsideInput("٥٪", ["عمولة 15%"]), ["5"]);
+  assert.deepEqual(percentsOutsideInput("15%", ["عمولة ١٥٪"]), []);
+  // A rate in words is no percentage at all.
+  assert.deepEqual(percentsOutsideInput("خمسة في المئة", []), []);
+});
+
+test("٤٤٠: the review output — a rate the pasted contract states passes; another, or no pasted contract, fails", () => {
+  const pasted = { ...input, contract_text: `عقد إيجار. ${"ن".repeat(120)} البند الخامس: غرامة تأخير ٥٪ من الأجرة.` };
+  const quoting = output({ clauses: [clause({ quote: "غرامة تأخير ٥٪ من الأجرة", issue: "غرامة 5 % بلا سقف" })] });
+  assert.notEqual(TOOL.validateOutput(quoting, pasted), null, "verbatim passes");
+  const different = output({ clauses: [clause({ quote: "غرامة تأخير ٥٪ من الأجرة", defensive_edit: "تخفض إلى ٢٪" })] });
+  assert.equal(TOOL.validateOutput(different, pasted), null, "a rate the contract does not state fails");
+  assert.equal(TOOL.validateOutput(output({ summary: "فرصتك ٥٪" }), input), null, "an uploaded contract (no pasted text) passes no rate");
+  assert.equal(TOOL.validateOutput(quoting, {}), null, "no input at all fails");
+  // Through the input check, as the run stores it: contract_text is what the callback reads back.
+  const checked = TOOL.validateInput(pasted);
+  assert.ok(checked.ok);
+  assert.notEqual(TOOL.validateOutput(quoting, checked.input), null);
 });
 
 // ── the labels, and nothing leaning on the human catalogue (R19) ──────────────

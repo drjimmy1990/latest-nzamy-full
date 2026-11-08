@@ -167,6 +167,16 @@ test("owner ١٩٣: no percentage anywhere in the output", () => {
   for (const [name, raw] of leaks) assert.equal(TOOL.validateOutput(raw, input), null, name);
 });
 
+test("owner ٤٤٠ (8 Nov 2026): a rate one of the pasted clauses states passes; another rate, or one only in the demand, fails", () => {
+  const withRate = { ...input, clauses: [clauseIn({ text: "يلتزم المستأجر بغرامة ١٠٪ من الأجرة عن كل شهر تأخير" }), clauseIn(), clauseIn({ their_demand: "رفع الغرامة إلى 20%" })] };
+  const third = (over: Record<string, unknown>) => output({ clauses: [clauseOut(0), clauseOut(1), clauseOut(2, over)] });
+  assert.notEqual(TOOL.validateOutput(third({ fallback: "إبقاء الغرامة 10% مع سقف" }), withRate), null, "verbatim passes, in any digits");
+  assert.notEqual(TOOL.validateOutput(output({ summary: "غرامة ١٠٫٠ ٪ بلا سقف" }), withRate), null);
+  assert.equal(TOOL.validateOutput(third({ fallback: "خفض الغرامة إلى ٥٪" }), withRate), null, "a different rate fails");
+  assert.equal(TOOL.validateOutput(third({ issue: "يطلب 20% " }), withRate), null, "the other side's demand is not the contract");
+  assert.equal(TOOL.validateOutput(third({ fallback: "إبقاء الغرامة 10%" }), input), null, "no rate in the clauses: every rate fails");
+});
+
 // ── the money ────────────────────────────────────────────────────────────────
 
 const ROLES = ["lawyer", "firm"];

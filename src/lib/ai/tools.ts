@@ -1123,16 +1123,52 @@ function contractsProOutput(raw: unknown, input: Record<string, unknown>): Recor
 
 /**
  * Owner ١٩٣: no chance and no percentage in a result, in any digit system (JavaScript's
- * \d is ASCII only). A contract's own rate is no exception: the prompts ask for it in
- * words («خمسة في المئة»), which this does not match.
+ * \d is ASCII only). Owner ٤٤٠ (8 Nov 2026): the one exception is a rate the input
+ * contract itself states — see percentsOutsideInput. A rate in words («خمسة في
+ * المئة») is not matched at all.
  */
 export const PERCENT_PATTERN = /[0-9٠-٩۰-۹]+([.,٫][0-9٠-٩۰-۹]+)?\s*[%٪]/u;
+const PERCENT_PATTERN_ALL = new RegExp(PERCENT_PATTERN.source, "gu");
 
 /** Does any string under `v` hold a percentage? Walks arrays and plain objects. */
 export function hasPercent(v: unknown): boolean {
   if (typeof v === "string") return PERCENT_PATTERN.test(v);
   if (Array.isArray(v)) return v.some(hasPercent);
   return isPlainObject(v) && Object.values(v).some(hasPercent);
+}
+
+/**
+ * One percentage as a value: Arabic-Indic and Persian digits as Latin, any decimal
+ * separator («٫», «,», «.») as «.», no leading zeros, no trailing zeros after the
+ * separator. The sign (% or ٪) and the space before it are dropped. So «١٢٫٥٠ ٪»,
+ * «12.5%» and «12,5%» are one rate.
+ */
+export function canonicalPercent(match: string): string {
+  const latin = match.replace(/[٠-٩]/gu, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/gu, (d) => String(d.charCodeAt(0) - 0x06f0));
+  const number = latin.replace(/\s*[%٪]$/u, "");
+  const [whole, fraction = ""] = number.split(/[.,٫]/u);
+  const w = whole.replace(/^0+(?=\d)/, "");
+  const f = fraction.replace(/0+$/, "");
+  return f ? `${w}.${f}` : w;
+}
+
+function percentsIn(v: unknown, into: string[]): string[] {
+  if (typeof v === "string") for (const m of v.matchAll(PERCENT_PATTERN_ALL)) into.push(canonicalPercent(m[0]));
+  else if (Array.isArray(v)) for (const x of v) percentsIn(x, into);
+  else if (isPlainObject(v)) for (const x of Object.values(v)) percentsIn(x, into);
+  return into;
+}
+
+/**
+ * Owner ٤٤٠ (8 Nov 2026): the percentages in a contract tool's output that the
+ * input contract does not state. A rate passes only when the same rate appears in
+ * the contract text the user gave (digits and separator normalised, as
+ * canonicalPercent); with no contract text — an uploaded file the server never
+ * reads — every percentage fails, as before. Empty means the output may pass.
+ */
+export function percentsOutsideInput(output: unknown, inputTexts: readonly string[]): string[] {
+  const stated = new Set(percentsIn(inputTexts, []));
+  return percentsIn(output, []).filter((p) => !stated.has(p));
 }
 
 /**
@@ -1219,7 +1255,7 @@ function reviewClause(c: unknown): Record<string, string> | null {
  * refuses (and refunds) the run rather than handing over a report with a risk
  * silently gone. `cited` becomes the library's verdict (runCore's enricher).
  */
-function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
+function contractReviewOutput(raw: unknown, input: Record<string, unknown> = {}): Record<string, unknown> | null {
   if (!isPlainObject(raw) || !Array.isArray(raw.clauses)) return null;
   const summary = boundedText(raw.summary, 3000);
   const overallRisk = reviewRisk(raw.overall_risk);
@@ -1248,7 +1284,9 @@ function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
     missing,
     cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
   };
-  return hasPercent(output) ? null : output;
+  // Owner ٤٤٠: only a rate the pasted contract states verbatim; an uploaded file is not read here.
+  const contract = typeof input.contract_text === "string" ? [input.contract_text] : [];
+  return percentsOutsideInput(output, contract).length > 0 ? null : output;
 }
 
 // ── مفاوض العقود: three positions for each clause the user pastes ─────────────
@@ -1324,7 +1362,9 @@ function contractNegotiatorOutput(raw: unknown, input: Record<string, unknown>):
     clauses.push(clause);
   }
   const output = { summary, clauses, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [] };
-  return hasPercent(output) ? null : output;
+  // Owner ٤٤٠: only a rate one of the pasted clauses states verbatim (not the demand or the goal).
+  const contract = input.clauses.flatMap((c) => (isPlainObject(c) && typeof c.text === "string" ? [c.text] : []));
+  return percentsOutsideInput(output, contract).length > 0 ? null : output;
 }
 
 // ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
