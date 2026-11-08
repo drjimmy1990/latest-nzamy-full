@@ -65,7 +65,29 @@ export interface PrincipleDetail {
 }
 
 export interface ParsedPrinciple {
-  number: number;
+  /**
+   * The principle's printed number — only when the anchor states a plain
+   * integer. null when it states none, or a non-numeric locator such as a
+   * Board-of-Grievances page id «ص<n>» (owner package 2026-11-06 item 22 and
+   * library decision 7: an unnumbered ruling stays unnumbered; never a
+   * sequence, never NaN).
+   */
+  number: number | null;
+  /**
+   * Storage identity token only (principles.id = <collection>__pr-<token>).
+   * Exactly what `number` used to be before item 22, so no existing row id
+   * changes; null when that old value was not a finite number (it then
+   * serialised to null and the seeder used the row index, as it still does).
+   * Never displayed, never a principle number. Absent only in files parsed
+   * before item 22.
+   */
+  identity_number?: number | null;
+  /**
+   * The printed page of the ruling / principle in its printed volume, for a
+   * citation «المجلد … ص …» (owner 2026-11-06, file 10 §ب1): the anchor's
+   * `printed_page` kept as written ("45", "45-47"); null when absent.
+   */
+  printed_page: string | null;
   issuing_body: string;
   issuing_body_abbr: string;
   session_date: string;
@@ -96,7 +118,8 @@ export interface ParsedPrincipleCollection {
   court_type: string;
   /** Derived judicial branch — see lib/court.ts. Never defaulted to a real branch. */
   track: JudicialTrack;
-  year_hijri: number;
+  /** A single year; null for a range or list (manifest 1.27); 0 when absent. */
+  year_hijri: number | null;
   part: number;
   source_id: string;
   total_principles: number;
@@ -144,6 +167,8 @@ export interface ParsedCourtPrecedent {
   preamble: string;
   hashtags: string[];
   is_redacted: boolean;
+  /** Owner 2026-11-06 (file 10 §ب1): frontmatter `printed_page`, verbatim; null when absent. */
+  printed_page: string | null;
   metadata: Record<string, unknown>;
   /** ب-139: see parse-laws.ts's ParsedLaw.needsHumanReview for the full
    *  rationale — same council review found this domain equally unwired. */
@@ -298,6 +323,92 @@ function extractUnnamedDetails(text: string): string | undefined {
  * seed time. Every id/slug fallback chain in this file must end here, never
  * at bare `fileId`.
  */
+/**
+ * A printed principle number: a finite integer, or a string of digits only
+ * (Latin, Arabic-Indic or Persian). Anything else — absent, blank, «ص12»,
+ * «4152/ل.س/2026» — is not a number and gives null (owner item 22).
+ */
+export function principleOrdinal(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isInteger(raw) ? raw : null;
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  if (!/^[0-9٠-٩۰-۹]+$/.test(s)) return null;
+  const latin = s
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+  return Number.parseInt(latin, 10);
+}
+
+/**
+ * The old identity token (pre item 22): the old number when it was finite,
+ * else null — a NaN used to reach the seeder as JSON null, which then used the
+ * row index. Always present, so the seeder can tell it from a pre-22 file.
+ */
+function legacyIdentityNumber(legacy: number): { identity_number: number | null } {
+  return { identity_number: Number.isFinite(legacy) ? legacy : null };
+}
+
+/**
+ * `printed_page` (owner 2026-11-06, file 10 §ب1): a nonblank string kept as
+ * written (trimmed), a finite number as its decimal text, anything else null.
+ * Never derived from anything but the field itself.
+ */
+export function printedPageOf(raw: unknown): string | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? String(raw) : null;
+  if (typeof raw !== "string") return null;
+  const s = raw.trim();
+  return s === "" ? null : s;
+}
+
+/**
+ * Manifest 1.27 (year_hijri int|string|null): one year stated alone (digits,
+ * any script) is that year; a range or list «1425-1430» is not a single year
+ * and gives null — never NaN, never the first year of the range. A falsy value
+ * keeps the old 0 sentinel.
+ */
+export function singleHijriYear(raw: unknown): number | null {
+  if (!raw) return 0;
+  if (typeof raw === "number") return Number.isInteger(raw) ? raw : null;
+  return principleOrdinal(String(raw));
+}
+
+/**
+ * The first nonblank string among the given anchor keys (manifest 1.20/1.21:
+ * a canonical key first, then its documented alias). A number is taken as its
+ * decimal text, as the old String(...) did; other types are skipped.
+ */
+function firstAnchorText(meta: Record<string, unknown>, keys: readonly string[]): string {
+  for (const key of keys) {
+    const v = meta[key];
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    if (typeof v === "string" && v.trim() !== "") return v;
+  }
+  return "";
+}
+
+/**
+ * Manifest 1.21: the principle reference is the first nonblank of reference →
+ * ref → source_ref, kept verbatim, then the case number, appeal number and
+ * session date appended with their labels so none of them is lost. A labelled
+ * part already present verbatim in the reference is not repeated.
+ */
+export function principleReference(meta: Record<string, unknown>): string {
+  const explicit = firstAnchorText(meta, ["reference", "ref", "source_ref"]);
+  const parts: string[] = explicit ? [explicit] : [];
+  const labelled: Array<[string, string]> = [
+    ["case_number", "رقم القضية"],
+    ["appeal_number", "رقم الاستئناف"],
+    ["session_date", "تاريخ الجلسة"],
+  ];
+  for (const [key, label] of labelled) {
+    const v = meta[key];
+    if (v == null || String(v).trim() === "") continue;
+    const part = `${label} ${String(v).trim()}`;
+    if (!explicit.includes(part)) parts.push(part);
+  }
+  return parts.join(" - ");
+}
+
 function safeFallbackId(filePath: string, fileId: string): string {
   const parentFolder = nameForId(path.basename(path.dirname(filePath)));
   return `${parentFolder}__${fileId}`;
@@ -327,6 +438,9 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
   }
 
   const principles: ParsedPrinciple[] = [];
+  // Manifest 1.20/1.21: the `court` / `ruling_id` aliases are for the precedent
+  // codex («مدونة سوابق», raw «سوابق قضائية») only.
+  const isPrecedentCodex = /سوابق/.test(String(meta.type ?? "")) || /سوابق/.test(String(meta.type_raw ?? ""));
   // Source files (2026-07 card-v2 campaign, section 97) have PRINCIPLE_START with
   // zero, one, or two spaces before the JSON depending on extraction vintage — `\s*`
   // (not `\s+`) so all variants match instead of silently dropping ~125 principles.
@@ -368,24 +482,25 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     }
 
     // `reference`/`ref` are rarely present in PRINCIPLE_START JSON (2026-07 card-v2
-    // campaign, section 97 — ديوان المظالم); synthesize a citation string from
-    // case_number/appeal_number/session_date instead of dropping them silently.
-    let reference = String(pMeta.reference || pMeta.ref || "");
-    if (!reference) {
-      const parts: string[] = [];
-      if (pMeta.case_number) parts.push(`رقم القضية ${pMeta.case_number}`);
-      if (pMeta.appeal_number) parts.push(`رقم الاستئناف ${pMeta.appeal_number}`);
-      if (pMeta.session_date) parts.push(`تاريخ الجلسة ${pMeta.session_date}`);
-      reference = parts.join(" - ");
-    }
+    // campaign, section 97 — ديوان المظالم); manifest 1.21 keeps the explicit one
+    // and appends case_number/appeal_number/session_date instead of dropping them.
+    const reference = principleReference(pMeta);
 
     principles.push({
-      number: Number(pMeta.number || principles.length + 1),
-      issuing_body: String(pMeta.issuing_body || ""),
+      // Owner item 22: no sequential fallback and no NaN — an unnumbered
+      // principle has no number. identity_number keeps the storage id as it was.
+      number: principleOrdinal(pMeta.number),
+      ...legacyIdentityNumber(Number(pMeta.number || principles.length + 1)),
+      printed_page: printedPageOf(pMeta.printed_page),
+      // Manifest 1.20: `court` is the precedent codex's alias of issuing_body
+      // (canonical first, verbatim, never inherited from the container).
+      issuing_body: firstAnchorText(pMeta, isPrecedentCodex ? ["issuing_body", "court"] : ["issuing_body"]),
       issuing_body_abbr: String(pMeta.issuing_body_abbr || ""),
       session_date: String(pMeta.session_date || pMeta.date || ""),
       case_number: String(pMeta.case_number || ""),
-      decision_number: String(pMeta.decision_number || pMeta.number || ""),
+      // Manifest 1.21: decision_number, then (codex only) ruling_id; absent is
+      // "" — never the ordinal `number`, never inferred from the reference.
+      decision_number: firstAnchorText(pMeta, isPrecedentCodex ? ["decision_number", "ruling_id"] : ["decision_number"]),
       source_type: String(pMeta.source_type || ""),
       reference,
       text: cleanText,
@@ -411,7 +526,8 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
     court: courtInfo.court || "",
     court_type: courtInfo.court || "",
     track: courtInfo.track,
-    year_hijri: Number(meta.year_hijri || meta.hijri_year || 0),
+    // Manifest 1.27: a single year, else null — never NaN.
+    year_hijri: singleHijriYear(meta.year_hijri || meta.hijri_year || 0),
     // Owner ٢٦٢: volume_number / part_number when the file states one, then
     // part / volume as before; 1 when none is readable (seriesFields.ts).
     part: readVolumeNumber(meta, COLLECTION_VOLUME_KEYS) ?? 1,
@@ -543,6 +659,7 @@ function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
     preamble,
     hashtags,
     is_redacted: Boolean(meta.is_redacted || meta.isRedacted),
+    printed_page: printedPageOf(meta.printed_page),
     metadata: meta,
     needs_human_review: meta.needs_human_review === true || String(meta.needs_human_review ?? "").trim() === "true",
     review_reason: String(meta.review_reason ?? "").trim(),
@@ -633,7 +750,11 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
     const aMeta = safeJsonParse(match[1], `container article in ${fileId}`);
     if (!aMeta) { idx++; continue; }
     const artBody = match[2].replace(/^>\s*/gm, "").trim();
-    const number = Number(aMeta.number || ++idx);
+    // Owner item 22: the old `Number(aMeta.number || ++idx)` gave a sequence
+    // (or NaN for «4152/ل.س/2026», «ص12»). It survives only as the storage
+    // identity token; the displayed number is a plain integer or nothing.
+    const legacyNumber = Number(aMeta.number || ++idx);
+    const number = principleOrdinal(aMeta.number);
     // Graft (2026-07): these 97/1- ministry container files embed each ruling's
     // الوقائع / الأسباب / المنطوق as inline H2–H4 sections inside the ARTICLE body
     // (not <details> blocks). Extract them so the precedent detail page shows the
@@ -645,6 +766,8 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
       extractRulingSection(artBody, ["المنطوق", "منطوق", "الحكم"]) || String(aMeta.summary || "");
     principles.push({
       number,
+      ...legacyIdentityNumber(legacyNumber),
+      printed_page: printedPageOf(aMeta.printed_page),
       issuing_body: String(aMeta.court_type || inherited.issuing_body || ""),
       issuing_body_abbr: "",
       session_date: String(aMeta.date || aMeta.appeal_ruling_date_hijri || ""),
@@ -669,7 +792,7 @@ function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | 
     court: courtInfo.court || inherited.issuing_body,
     court_type: courtInfo.court || inherited.issuing_body,
     track: courtInfo.track,
-    year_hijri: Number(meta.year_hijri || 0),
+    year_hijri: singleHijriYear(meta.year_hijri || 0),
     // Owner ٢٦٢: the volume number the file states (volume_number /
     // part_number — the 97 volume files carry part_number and part_label,
     // no `part`), else 1 as before; precedentVolumes.ts shows a number only

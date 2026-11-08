@@ -317,6 +317,79 @@ function detectHeadingLevel(line: string): { level: HeadingLevel; title: string 
 // Main book parser
 // ══════════════════════════════════════════════════════════════════════════════
 
+export type FeqhBookType = "sharia" | "wadi" | "comparative";
+
+/** A frontmatter value that means "nothing": absent, blank, or the text null / None. */
+function isAbsentText(value: unknown): boolean {
+  if (value == null) return true;
+  const s = String(value).trim();
+  return s === "" || s === "null" || s === "None" || s === "غير محدد";
+}
+
+/**
+ * Books whose classification no field of their file states and the school /
+ * title rules below would get wrong (DATA-01, final handoff 2026-11-06). Keyed
+ * by exact title plus an author fragment, so a renamed file keeps its type.
+ * Remove an entry once the owner's file carries its type (book_kind or a
+ * «- شرعي / - قانوني» folder).
+ */
+const FEQH_BOOK_TYPE_OVERRIDES: ReadonlyArray<{ title: string; author: string; type: FeqhBookType }> = [
+  // «الأموال» لأبي عبيد القاسم بن سلّام: a classical work of Islamic public
+  // finance; its file has no school, so the old guess made it وضعي.
+  { title: "الأموال", author: "عبيد", type: "sharia" },
+];
+
+const TYPE_WORDS: Record<string, FeqhBookType> = {
+  sharia: "sharia", wadi: "wadi", comparative: "comparative",
+  "شرعي": "sharia", "وضعي": "wadi", "قانوني": "wadi", "مقارن": "comparative",
+};
+
+/**
+ * A fiqh-library book's sharia / wadi / comparative type (DATA-01). The owner's
+ * own statements win over any guess, in this order:
+ *   1. an explicit `book_kind` (sharia|wadi|comparative, or شرعي|وضعي|قانوني|مقارن);
+ *   2. `type` when it is one of those words, or the document type «كتاب قانوني»;
+ *   3. the nearest folder named «… - شرعي» / «… - قانوني» (the library's own
+ *      section labels, e.g. «2- مؤلفات سليمان الطماوي - قانوني»);
+ *   4. the school: a madhab or «فقه…» → sharia; «قانون…» → wadi;
+ *   5. the override list above;
+ *   6. the old guess: no school and no «فقه» in the title → wadi, else sharia.
+ */
+export function classifyFeqhBookType(input: {
+  meta: Record<string, unknown>;
+  filePath: string;
+  title: string;
+  author: string;
+  school: string;
+}): FeqhBookType {
+  const { meta, filePath, title, author } = input;
+  const word = (v: unknown): FeqhBookType | undefined =>
+    typeof v === "string" ? TYPE_WORDS[v.trim()] : undefined;
+
+  const kind = word(meta.book_kind);
+  if (kind) return kind;
+  const declared = word(meta.type);
+  if (declared) return declared;
+  if (typeof meta.type === "string" && meta.type.trim() === "كتاب قانوني") return "wadi";
+
+  const dirs = path.dirname(filePath).split(/[\\/]+/).reverse();
+  for (const dir of dirs) {
+    const m = /[-–]\s*(شرعي|قانوني)\s*$/.exec(dir.trim());
+    if (m) return m[1] === "شرعي" ? "sharia" : "wadi";
+  }
+
+  const school = input.school.trim();
+  if (/^قانون/.test(school)) return "wadi";
+  if (/حنبل|شافع|مالك|حنف|ظاهر|فقه|^(hanbali|shafi|maliki|hanafi)$/.test(school)) return "sharia";
+
+  const override = FEQH_BOOK_TYPE_OVERRIDES.find(
+    (o) => title.trim() === o.title && author.includes(o.author),
+  );
+  if (override) return override.type;
+
+  return (school === "" || school === "unknown") && !title.includes("فقه") ? "wadi" : "sharia";
+}
+
 function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   const raw = fs.readFileSync(filePath, "utf-8");
   const fileId = nameForId(path.basename(filePath, ".md"));
@@ -552,7 +625,9 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
   }
 
   // ── Detect school (madhab) from title/author ──
-  let school = (meta.school as string) || "";
+  // This file's line parser keeps `school: null` as the TEXT "null" — that is
+  // an absent school, not a school named "null" (DATA-01, «الأموال»).
+  let school = isAbsentText(meta.school) ? "" : String(meta.school).trim();
   if (!school) {
     const combined = `${bookTitle} ${bookAuthor}`.toLowerCase();
     if (combined.includes("حنبل") || combined.includes("بهوتي") || combined.includes("المقنع") || combined.includes("المغني")) {
@@ -568,13 +643,8 @@ function parseSingleBook(filePath: string): ParsedFeqhBook | null {
     }
   }
 
-  // ── Detect type ──
-  let bookType: "sharia" | "wadi" | "comparative" = "sharia";
-  if (meta.type === "wadi" || meta.type === "comparative") {
-    bookType = meta.type as "wadi" | "comparative";
-  } else if (school === "unknown" && !bookTitle.includes("فقه")) {
-    bookType = "wadi";
-  }
+  // ── Detect type ── (DATA-01: read the owner's own classification first)
+  const bookType = classifyFeqhBookType({ meta, filePath, title: bookTitle, author: bookAuthor, school });
 
   console.log(`    ✓ ${chapters.length} chapters, ${totalPages} pages, school: ${school}`);
 

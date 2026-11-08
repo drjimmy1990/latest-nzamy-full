@@ -729,6 +729,13 @@ export async function seedLaws(
       // N2.5: so is catalogue_recency_key (20261025_40), from latest_update
       // and issue_date_hijri below — never send it either.
       has_merged_regulation: law.has_executive_reg || false,
+      // Owner 2026-11-06 item 4: the card fields of merged_regulation_details
+      // (jsonb, server-only). REQUIRES migration 20261109_20 — the owner
+      // loader's preflight stops before the first write without it. Written on
+      // every load, so the «يشتمل على» names never go stale after a load.
+      merged_regulations: Array.isArray(law.merged_regulations) && law.merged_regulations.length
+        ? law.merged_regulations
+        : null,
       status: cap("laws", "status", lawId, law.law_status || "status_undeclared", 30),
       boe_source_url: cap("laws", "boe_source_url", lawId, String(law.boe_source_url || law.boe_url || ""), 500),
       official_source_url: cap("laws", "official_source_url", lawId, String(law.official_source_url || ""), 500),
@@ -854,7 +861,10 @@ export async function seedLaws(
             reg_num: r.regNum != null ? cap("article_regulations", "reg_num", `${artId}#reg-${ri}`, String(r.regNum), 50) : null,
             sort_key: cap("article_regulations", "sort_key", `${artId}#reg-${ri}`, String(r.sortKey || "99999"), 50),
             text: r.text || "",
-            status: cap("article_regulations", "status", `${artId}#reg-${ri}`, r.status || "active", 30),
+            // Owner 2026-11-06 items 5/16: the anchor's own status, as the
+            // parser read it. An anchor that states none is unknown, never
+            // "active" (the detail API maps it to no badge).
+            status: cap("article_regulations", "status", `${artId}#reg-${ri}`, r.status || "status_undeclared", 30),
             is_secondary_display: r.isSecondaryDisplay === true,
           });
         }
@@ -1078,8 +1088,15 @@ export async function seedPrecedents(
   const privateDetailRows: Record<string, unknown>[] = [];
   const collectionId = (coll: Record<string, unknown>): string =>
     cap("judicial_collections", "id", String(coll.id || coll.slug), String(coll.id || coll.slug), 100);
+  // Owner item 22: `number` may now be null (an unnumbered ruling), so the id
+  // token is the parser's identity_number — exactly the old `number`, null
+  // where the old one was NaN (then, as before, the row index). A file parsed
+  // before item 22 has no identity_number and keeps `number ?? index`.
+  // No existing principle id changes.
+  const principleIdToken = (pr: Record<string, unknown>, pri: number): unknown =>
+    "identity_number" in pr ? (pr.identity_number ?? pri) : (pr.number ?? pri);
   const legacyCollectionPrincipleId = (collId: string, pr: Record<string, unknown>, pri: number): string =>
-    cap("principles", "id", `${collId}__pr-${pr.number ?? pri}`, `${collId}__pr-${pr.number ?? pri}`, 150);
+    cap("principles", "id", `${collId}__pr-${principleIdToken(pr, pri)}`, `${collId}__pr-${principleIdToken(pr, pri)}`, 150);
   const legacyStandalonePrincipleId = (prec: Record<string, unknown>): string =>
     cap("principles", "id", String(prec.slug || prec.id), String(prec.slug || prec.id), 150);
 
@@ -1195,7 +1212,12 @@ export async function seedPrecedents(
       principleRows.push({
         id: prId,
         collection_id: collId,
+        // null (unnumbered, owner item 22) and 0 both store "" — no number shown.
         principle_number: cap("principles", "principle_number", prId, String(pr.number || ""), 50),
+        // Owner 2026-11-06 (file 10 §ب1). REQUIRES migration 20261109_21
+        // (principles.printed_page): without the column every principles
+        // batch fails — the owner loader's preflight stops before writing.
+        printed_page: pr.printed_page ?? null,
         issuing_body: pr.issuing_body || "",
         session_date: pr.session_date || "",
         decision_number: pr.decision_number || "",
@@ -1255,6 +1277,8 @@ export async function seedPrecedents(
       // Its own court's collection, not the single fabricated commercial one.
       collection_id: groupCollectionId(precedentGroupKey(prec as Record<string, unknown>)),
       principle_number: cap("principles", "principle_number", precId, String(prec.ruling_number || ""), 50),
+      // Owner 2026-11-06 (file 10 §ب1); REQUIRES migration 20261109_21.
+      printed_page: prec.printed_page ?? null,
       issuing_body: prec.court || prec.court_type || "",
       session_date: prec.date || "",
       decision_number: prec.case_number || "",
@@ -1693,9 +1717,12 @@ export async function seedLibrary(options: {
         const collReason = reasonOf(coll);
         for (const pr of (coll.principles || []) as Record<string, unknown>[]) {
           if (collFlagged) {
+            // Owner item 22: the id token is identity_number when the parser
+            // wrote one (number may be null for an unnumbered ruling).
+            const idToken = "identity_number" in pr ? pr.identity_number : pr.number;
             reviewFlagged.push({
               table: "principles",
-              id: `${String(coll.id || coll.slug || "")}__pr-${String(pr.number ?? "")}`,
+              id: `${String(coll.id || coll.slug || "")}__pr-${String(idToken ?? "")}`,
               reason: collReason,
             });
           }

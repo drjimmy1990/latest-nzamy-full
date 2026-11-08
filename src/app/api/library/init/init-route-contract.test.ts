@@ -56,7 +56,7 @@ test("N2.5 + ٣١٧: the laws catalogue is ordered in SQL — in force before re
   assert.match(lawsCall, /return out\.order\("section_code"\)\.order\("title"\)\.order\("slug"\);/);
   // Every viewer gets the order and the «يشتمل على» names (owner 2026-11-07);
   // the موجز only through the ٢٦٠ flag.
-  assert.match(lawsCall, /wanted: \[\.\.\.\(lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]\), "mergedNames"\]/);
+  assert.match(lawsCall, /wanted: \[\.\.\.\(lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]\), "mergedNames", "mergedDetails"\]/);
   // No in-page JS sort of the laws rows.
   assert.doesNotMatch(n.slice(n.indexOf("const lawsRows")), /lawsRows[^;]*\.sort\(/);
 });

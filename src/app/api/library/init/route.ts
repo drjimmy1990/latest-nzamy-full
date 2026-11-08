@@ -8,7 +8,7 @@ import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets"
 import { maskDecreeOfficialFields, maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
-import { mergedNamesForViewer } from "@/lib/library/mergedRegulationNames";
+import { mergedNamesForViewer, mergedNamesFromDetails } from "@/lib/library/mergedRegulationNames";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
 import { SUCCESSOR_READ_MAX_ROWS, readSuccessorRows, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
@@ -83,11 +83,21 @@ const LAW_REPEALED_KEY = "catalogue_is_repealed";
  * the read drops the column (readWithOptionalFeatures) and no card has a line.
  */
 const LAW_MERGED_NAMES_COLUMN = "merged_regulation_names";
+/**
+ * Owner 2026-11-06 item 4: library.laws.merged_regulations (jsonb, migration
+ * 20261109_20) — the owner's own merged_regulation_details, written by the
+ * seeder on every load, so the line never goes stale after a load. Its names
+ * win; merged_regulation_names (20261107_10, from the regulation refs) is the
+ * fallback for a law whose file lists none. Server-only: the column itself is
+ * never sent (it carries issuing instruments); only the cleaned names are.
+ */
+const LAW_MERGED_DETAILS_COLUMN = "merged_regulations";
 const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
   { key: "summary", columns: [LAW_SUMMARY_COLUMN] },
   { key: "sort", columns: [LAW_SORT_KEY] },
   { key: "repealedLast", columns: [LAW_REPEALED_KEY] },
   { key: "mergedNames", columns: [LAW_MERGED_NAMES_COLUMN] },
+  { key: "mergedDetails", columns: [LAW_MERGED_DETAILS_COLUMN] },
 ];
 const ASC_NULLS_LAST = { ascending: true, nullsFirst: false } as const;
 const DESC_NULLS_LAST = { ascending: false, nullsFirst: false } as const;
@@ -295,7 +305,7 @@ export async function GET(request: Request) {
 
     const [laws, decrees, principles, books, collections] = await Promise.all([
       shouldFetch("laws")
-        ? fetchSection("laws", (on) => `${on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS}, ${LAW_EVENT_DATE_SELECT}` + (on.has("mergedNames") ? `, ${LAW_MERGED_NAMES_COLUMN}` : ""), "laws", (q, on) => {
+        ? fetchSection("laws", (on) => `${on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS}, ${LAW_EVENT_DATE_SELECT}` + (on.has("mergedNames") ? `, ${LAW_MERGED_NAMES_COLUMN}` : "") + (on.has("mergedDetails") ? `, ${LAW_MERGED_DETAILS_COLUMN}` : ""), "laws", (q, on) => {
             let out = q;
             if (lawSectionCode) out = out.eq("section_code", lawSectionCode);
             if (lawType) {
@@ -323,7 +333,7 @@ export async function GET(request: Request) {
             // The موجز for the viewers the ٢٦٠ flag admits (answered: everyone,
             // the guest too); the order for all.
             // The «يشتمل على» names for every viewer (cleaned per tier below).
-            wanted: [...(lawSummaryVisible(hasFullAccess) ? ["summary", "sort", "repealedLast"] : ["sort", "repealedLast"]), "mergedNames"],
+            wanted: [...(lawSummaryVisible(hasFullAccess) ? ["summary", "sort", "repealedLast"] : ["sort", "repealedLast"]), "mergedNames", "mergedDetails"],
           })
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
@@ -425,8 +435,14 @@ export async function GET(request: Request) {
         shaped.summary_brief = summaryForViewer(shaped.summary_brief, hasFullAccess) || null;
       }
       // Owner 2026-11-07: the «يشتمل على» names, cleaned for a non-subscriber.
-      if (LAW_MERGED_NAMES_COLUMN in shaped) {
-        shaped[LAW_MERGED_NAMES_COLUMN] = mergedNamesForViewer(shaped[LAW_MERGED_NAMES_COLUMN], hasFullAccess);
+      // Owner 2026-11-06 item 4: the file's own names first (merged_regulations),
+      // the regulation-ref names when it lists none. The jsonb never leaves.
+      if (LAW_MERGED_NAMES_COLUMN in shaped || LAW_MERGED_DETAILS_COLUMN in shaped) {
+        const fromDetails = mergedNamesFromDetails(shaped[LAW_MERGED_DETAILS_COLUMN], hasFullAccess);
+        shaped[LAW_MERGED_NAMES_COLUMN] = fromDetails.length
+          ? fromDetails
+          : mergedNamesForViewer(shaped[LAW_MERGED_NAMES_COLUMN], hasFullAccess);
+        delete shaped[LAW_MERGED_DETAILS_COLUMN];
       }
       return {
         ...maskListOfficialFields(shaped, hasFullAccess),

@@ -74,6 +74,23 @@ const verifiedEmptyArticles: string[] = [];
  */
 const orphanRegulationAnchors: string[] = [];
 /**
+ * Owner package 2026-11-06 items 5/16: a REGULATION anchor's own `status`
+ * now reaches the parser output. A nonblank value outside the article status
+ * contract is NOT guessed into a status: the regulation keeps no status (the
+ * seeder stores status_undeclared) and the value is listed here, so a full run
+ * shows it instead of failing the whole file. Reported, not gating.
+ */
+const unknownRegulationStatuses: string[] = [];
+/**
+ * Owner package 2026-11-06 item 26: REGULATION anchors whose body is still
+ * empty after the latent-article recovery below. They come from the source
+ * (an anchor with no text under it), not from the parser, so they are kept as
+ * they are (the owner reserves the hide-or-refer decision, and the latent
+ * recovery depends on empty anchors existing) and listed here so a run shows
+ * them. The reader must not draw a headed, empty regulation section for them.
+ */
+const emptyRegulationBlocks: string[] = [];
+/**
  * ب-133: `status: superseded_duplicate` is a LIBRARY DEDUP bookkeeping flag,
  * not a legal status — correctly absent from the manifest's `status` enum
  * (active/partially_active/deferred_effective/issued_publication_unverified/
@@ -222,6 +239,18 @@ export function resolveArticleStatus(rawValue: unknown): ArticleStatus {
   return rawStatus as ArticleStatus;
 }
 
+/**
+ * A REGULATION anchor's `status` (owner 2026-11-06 items 5/16).
+ * undefined: the anchor states none (blank or absent) — passed on as absent.
+ * null: a nonblank value outside the article status contract (reported).
+ * Otherwise the token itself, exactly as the anchor wrote it.
+ */
+export function regulationStatusOf(rawValue: unknown): ArticleStatus | undefined | null {
+  const raw = rawValue == null ? "" : String(rawValue).trim();
+  if (raw === "") return undefined;
+  return KNOWN_ARTICLE_STATUSES.includes(raw) ? (raw as ArticleStatus) : null;
+}
+
 export interface AmendmentEntry {
   date: string;
   decree: string;
@@ -240,10 +269,63 @@ export interface AmendmentEntry {
   type?: string;
 }
 
+/** One entry of `merged_regulation_details`, as stored (owner item 4). */
+export interface MergedRegulationDetail {
+  name: string;
+  type?: string;
+  status?: string;
+  total_articles?: number;
+  issuing_instrument?: string;
+}
+
+/**
+ * The card fields of frontmatter `merged_regulation_details` (owner item 4).
+ * Each entry needs a nonblank `name` (or `title`, the other spelling the
+ * library uses); entries without one are skipped. Only the whitelisted keys
+ * are copied, strings trimmed, total_articles only as a non-negative integer.
+ * Duplicate names keep their first entry. null when nothing named is left.
+ */
+export function mergedRegulationDetailsOf(raw: unknown): MergedRegulationDetail[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: MergedRegulationDetail[] = [];
+  const seen = new Set<string>();
+  // A placeholder («غير محدد», "null" as text…) is not a value (manifest
+  // conventions.forbidden_in_frontmatter): it counts as absent.
+  const PLACEHOLDERS = new Set(["غير متوفر في المصدر", "غير محدد", "لا يوجد", "غير متوفر", "N/A", "null", "None"]);
+  const text = (v: unknown): string => {
+    const s = typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
+    return PLACEHOLDERS.has(s) ? "" : s;
+  };
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const e = entry as Record<string, unknown>;
+    const name = text(e.name) || text(e.title);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const detail: MergedRegulationDetail = { name };
+    const type = text(e.type);
+    if (type) detail.type = type;
+    const status = text(e.status);
+    if (status) detail.status = status;
+    const total = typeof e.total_articles === "number" ? e.total_articles : Number(text(e.total_articles) || NaN);
+    if (Number.isInteger(total) && total >= 0) detail.total_articles = total;
+    const instrument = text(e.issuing_instrument);
+    if (instrument) detail.issuing_instrument = instrument;
+    out.push(detail);
+  }
+  return out.length ? out : null;
+}
+
 export interface ExecutiveRegulation {
   instrument: string;
   ref: string;
   text: string;
+  /**
+   * The anchor's own lifecycle (owner 2026-11-06 items 5/16), one of the
+   * article status tokens. Absent when the anchor states none: the source is
+   * passed on as it is (the seeder stores status_undeclared), never "active".
+   */
+  status?: ArticleStatus;
   regNum?: string;
   sortKey?: string;
   isSecondaryDisplay?: boolean;
@@ -382,6 +464,16 @@ export interface ParsedLaw {
   boe_source_url: string;
   official_source_url: string;
   has_merged_regulation: boolean;
+  /**
+   * Owner package 2026-11-06 item 4 (11-04 message §3): the frontmatter
+   * `merged_regulation_details` list, reduced to the card fields — the name
+   * (`name` or `title`), and type / status / total_articles /
+   * issuing_instrument when the entry states them. Editorial keys
+   * (status_note, note, …) are never copied. null when the file has no named
+   * entry. Seeded into library.laws.merged_regulations (server-only); the /laws
+   * card's «يشتمل على: …» line prefers these names.
+   */
+  merged_regulations: MergedRegulationDetail[] | null;
   /** Structured per-status article counts, e.g. {"active":40,"repealed":3}. DB column is jsonb. */
   article_status_summary: Record<string, unknown> | null;
   law_guid: string;
@@ -1007,6 +1099,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     boe_source_url,
     official_source_url,
     has_merged_regulation,
+    merged_regulations: mergedRegulationDetailsOf(meta.merged_regulation_details),
     article_status_summary,
     latest_update,
     law_guid,
@@ -1236,10 +1329,17 @@ function parseArticlesInBlock(
         .trim();
       const regNum = regMeta?.regNum != null ? String(regMeta.regNum) : undefined;
       const ref = String(regMeta?.ref || "");
+      const status = regulationStatusOf(regMeta?.status);
+      if (status === null) {
+        unknownRegulationStatuses.push(
+          `${sourceLabel} :: REGULATION ${JSON.stringify(ref || regNum || "")} — status ${JSON.stringify(String(regMeta?.status))} is not an article status token; stored as undeclared`,
+        );
+      }
       found.push({
         instrument: String(regMeta?.instrument || "لائحة تنفيذية"),
         ref,
         text: regText,
+        ...(status ? { status } : {}),
         regNum,
         // ب-132 (2026-08-22, council review: Codex): toSortKey(regNum) alone
         // collides whenever two DIFFERENT merged regulations attached to the
@@ -1497,7 +1597,17 @@ function parseArticlesInBlock(
     regulationOwners.set(latent, owner);
   }
 
-  return articles.filter((article) => !suppressedLatentArticles.has(article));
+  const emitted = articles.filter((article) => !suppressedLatentArticles.has(article));
+  for (const article of emitted) {
+    for (const regulation of article.regulations) {
+      if (!regulation.text.trim()) {
+        emptyRegulationBlocks.push(
+          `${sourceLabel} :: article ${article.number_text || article.number} — REGULATION ${JSON.stringify(regulation.ref || regulation.regNum || "")} has no text`,
+        );
+      }
+    }
+  }
+  return emitted;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1518,7 +1628,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
   // fail (or report inflated counts) for an unrelated input.
   for (const bucket of [
     frontmatterWarnings, emptyArticles, verifiedEmptyArticles,
-    orphanRegulationAnchors, supersededDuplicateSkipped, gateZeroExcluded,
+    orphanRegulationAnchors, unknownRegulationStatuses, emptyRegulationBlocks, supersededDuplicateSkipped, gateZeroExcluded,
     lowCoverageFiles, syntheticWholeDocumentArticles, malformedAnchorFiles,
     chapterLevelDiagnostics, unpublishedTextNotices,
   ]) bucket.length = 0;
@@ -1953,6 +2063,14 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     orphanRegulationAnchors,
   );
   printCapped(
+    "⚠️  REGULATION anchor status outside the article status tokens — stored as undeclared (owner items 5/16)",
+    unknownRegulationStatuses,
+  );
+  printCapped(
+    "ℹ️  REGULATION block(s) with no text in the source — kept, the reader must not draw them (owner item 26)",
+    emptyRegulationBlocks,
+  );
+  printCapped(
     "ℹ️  whole-document synthetic article (no ARTICLE_START in source)",
     syntheticWholeDocumentArticles,
   );
@@ -1996,6 +2114,8 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         emptyArticles: emptyArticles.length,
         verifiedEmptyArticles: verifiedEmptyArticles.length,
         orphanRegulationAnchors: orphanRegulationAnchors.length,
+        unknownRegulationStatuses: unknownRegulationStatuses.length,
+        emptyRegulationBlocks: emptyRegulationBlocks.length,
         syntheticWholeDocumentArticles: syntheticWholeDocumentArticles.length,
         malformedAnchorFiles: malformedAnchorFiles.length,
         supersededDuplicateSkipped: supersededDuplicateSkipped.length,
@@ -2019,6 +2139,8 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         emptyArticles,
         verifiedEmptyArticles,
         orphanRegulationAnchors,
+        unknownRegulationStatuses,
+        emptyRegulationBlocks,
         syntheticWholeDocumentArticles,
         malformedAnchorFiles,
         supersededDuplicateSkipped,

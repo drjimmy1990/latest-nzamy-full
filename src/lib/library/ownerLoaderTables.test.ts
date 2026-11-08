@@ -31,13 +31,27 @@ test("note ١١: series_id / volume_number are REQUIRED, never optional or strip
   assert.doesNotMatch(LOADER, /optionalColumns|missingOptionalColumns|stripKeys\.push/);
 });
 
+test("owner 2026-11-06: principles.printed_page is REQUIRED before the first write (migration 20261109_21)", () => {
+  const principles = OWNER_LOADER_TABLES.find((t) => t.name === "principles");
+  assert.ok(principles?.requiredColumns?.includes("printed_page"));
+  assert.ok(!principles?.stripKeys.includes("printed_page"));
+});
+
+test("owner 2026-11-06: laws.merged_regulations is REQUIRED before the first write (migration 20261109_20)", () => {
+  const laws = OWNER_LOADER_TABLES.find((t) => t.name === "laws");
+  assert.ok(laws?.requiredColumns?.includes("merged_regulations"));
+  assert.ok(!laws?.stripKeys.includes("merged_regulations"));
+});
+
 test("preflight: a missing column, a permission error, a timeout or a throw each stop the load", async () => {
   const answers: Record<string, { error: { code?: string; message?: string } | null } | "throw"> = {
     series_id: { error: { code: "42703", message: "column feqh_books.series_id does not exist" } },
     volume_number: { error: { code: "57014", message: "canceling statement due to statement timeout" } },
   };
+  // Columns this test does not name answer "present", so it keeps testing the
+  // feqh_books pair while other tables gain required columns.
   const probe = async (_t: string, c: string) => {
-    const a = answers[c];
+    const a = answers[c] ?? { error: null };
     if (a === "throw") throw new Error("network down");
     return a;
   };
