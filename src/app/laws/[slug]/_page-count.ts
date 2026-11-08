@@ -10,13 +10,15 @@
  * export has 285 documents with «الصفحة N» only, 90 with «Page N» only, 1 with
  * both (the «Page N» sieve itself is #11, parser side).
  *
- * Pure, no imports: `node --test` loads it (_page-count.test.ts).
+ * Pure; its only import is the shared page rule (src/lib/library/pageLocator.ts),
+ * so the parser, the citation and this count can never disagree about a page.
+ * `node --test` loads it (_page-count.test.ts).
  */
 
-const PAGE_ANCHOR = /^\s*(?:الصفحة|صفحة|ص\.?|page)\s*[\d٠-٩۰-۹]/i;
+import { isPageLocator } from "../../../lib/library/pageLocator.ts";
 
 export function isPageAnchor(numberText: string | null | undefined): boolean {
-  return PAGE_ANCHOR.test(String(numberText ?? ""));
+  return isPageLocator(numberText);
 }
 
 /** True when every base-document article (not ملحق / لائحة) is a page anchor. */
