@@ -52,7 +52,11 @@ There are three layers of guard:
    - /ai/assistant
 3. **Client fallback.** The /ai layout renders `LawyerOnlyToolNotice` instead of the page. It offers «اطلب استشارة», «سؤال قانوني سريع» and «الرأي القانوني».
 
-The /ai hub and quick-answer follow-ups also hide those pages. /ai/draft (legal-drafter) and /ai/analyze (case-brief) are not edge-blocked, because they split by role inside the page. The server 403 still applies to them.
+The /ai hub and quick-answer follow-ups also hide those pages. /ai/draft (legal-drafter) and /ai/analyze (case-brief) are not edge-blocked, because they split by role inside the page. Checked:
+- /ai/draft opens the AI step only when `toolRoleRefusal(AI_TOOLS["legal-drafter"], …)` is null, so it follows the registry.
+- /ai/analyze renders `AttachmentSqueezer` / `CaseBriefStudio` only for lawyer, firm or admin; everyone else gets the advisory-template analyzer.
+
+So no non-lawyer screen reaches a run call that now gets a 403, and the server 403 still applies.
 
 The doc comments were rewritten for the 8 Nov answer. `git log -S REGISTERED_ROLES` showed that 4bf783dd had opened these tools to every account; that change has been reverted.
 
@@ -124,6 +128,7 @@ Lawyer, firm and admin see everything as before. For every other role:
   - contract-review: the pasted `contract_text`. It is stored in `ai_runs.input` and read back at the callback.
   - contract-negotiator: the pasted clause texts only, not `their_demand` or `our_goal`.
 - **With no contract text, every percentage still fails** (owner ١٩٣).
+- **Callback path.** `runCore` stores the full checked input (`p_input`, `contract_text` included). Only the package sent to n8n drops the field. The callback reads `ai_runs.input` back. A `callbackWith` test covers it: the row's «٥٪» lets an output quoting «5%» be stored, while «٧٪» is refunded.
 - **n8n.** Only a comment changed in workflows.mjs. The regenerated JSON differed only in line endings and was checked out. The live prompts still ask for rates in words, which pass, so the live n8n needs no change. Allowing digits in the prompt would be a separate prompt change.
 
 ## ٤٤١ — name
@@ -133,6 +138,7 @@ Lawyer, firm and admin see everything as before. For every other role:
 - Two sentences that called the tool «الموجز» now say «الأداة».
 - Comments in navigation.sidebars.legal.ts, tools.ts, caseBrief.test.ts and n8n/ai/workflows.mjs drop both old names.
 - The id `case-brief`, the page /ai/analyze and the label key are unchanged.
+- `git grep` over the whole tree: the old names remain only in historical docs (AI_SERVICES_*_2026-10-28.md, docs/audits/*, docs/plans/2026-10-26-ai-services-inventory.md). They are left as records. No code, SQL or DB label carries them.
 - workflows.mjs changed only in a comment. The regenerated JSON had only line-ending churn and was checked out. The live n8n workflow's prompt never carried the old names, so **the live workflow needs no change**.
 
 ## ٤٤٢ / ٤٠٨ — confirmation only (no change)
@@ -184,7 +190,7 @@ Lawyer, firm and admin see everything as before. For every other role:
 
 ## Tests
 
-- **Full unit suite.** `npm run -s test:unit` after each item: 6324 tests, 6318 pass. The 6 failures are the known baseline:
+- **Full unit suite.** `npm run -s test:unit` after each item: 6325 tests, 6319 pass (final run on HEAD). The 6 failures are the known baseline:
   - T28-24 volume series
   - lawyer dashboard consultant
   - end read ends_at
@@ -205,7 +211,7 @@ Lawyer, firm and admin see everything as before. For every other role:
     - a `startRunWith` 403 for individual and corporate × legal-drafter and case-brief × tool off/staff/live, with no rpc, no platform_settings read and no n8n call.
   - `src/lib/ai/pageCount.test.ts`: tashkeel-heavy text, repeated whitespace, the raw ceiling, the browser and the server agreeing, and the original text being kept.
   - aiFiles: a vocalised 30-page .txt counts as 30 pages.
-  - contractReview and contractNegotiator: verbatim passes, a different rate fails, no input fails, and a rate that appears only in the demand fails.
+  - contractReview and contractNegotiator: verbatim passes, a different rate fails, no input fails, and a rate that appears only in the demand fails. A `callbackWith` test reads the rate from the run row.
   - caseBrief: the old names are absent and the heading uses the label.
 - **Updated source-contract tests.** No coverage deleted. Updated files:
   - betaGatedRoutes
@@ -242,5 +248,6 @@ The callers found by search instead:
 6. `userPermissions.ts` still grants `ai:contracts` and similar permissions to client plans. These are unused for gating (the href filter decides), but they are misleading.
 7. **٤٥١** quick-answer and legal-opinion still require the library tier, so a non-Pro non-lawyer account sees «سؤال قانوني سريع» and «الرأي القانوني» but is refused with the tier copy.
 8. **٤٣٩** The raw file and link ceiling doubled (90k → 180k characters). Model input per run can be up to twice as long in raw characters for heavily vocalised text, though prices follow the counted pages.
-9. **٤٤٠** For an uploaded contract file (the main path) the server never has the text, so any digit percentage still fails the run. The prompts' "write rates in words" rule stays necessary.
-10. The negotiator does not accept a rate stated only in the other side's demand. Confirm that is intended.
+9. **٤٣٩ (cosmetic)** With the raw ceiling, a paste counter can turn red while showing a counted number under the max. This only happens for text made almost entirely of marks or whitespace (more than 2× raw).
+10. **٤٤٠** For an uploaded contract file (the main path) the server never has the text, so any digit percentage still fails the run. The prompts' "write rates in words" rule stays necessary.
+11. The negotiator does not accept a rate stated only in the other side's demand. Confirm that is intended.
