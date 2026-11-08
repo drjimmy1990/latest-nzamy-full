@@ -26,11 +26,21 @@ import { isValidAttachmentId } from "../../../documents/_shared";
  * it with the service role; 66 stops new rows, this check stops old ones —
  * and a share of a document deleted or binned since stops opening.
  *
+ * PASSCODE LOCKOUT (security review 2026-11-08, SAST-04 — 20261109_11): the
+ * passcode is checked by public.share_passcode_check in the database, under a
+ * row lock with a durable counter: 5 wrong in a row lock the share for 15
+ * minutes, and while it is locked every passcode — the right one too — gets
+ * the same 429, so the answer says nothing about the passcode. While that
+ * function is missing (42883 / PGRST202 / 42703 — the SQL has not run) the
+ * route keeps the old in-app constant-time compare (logged once); any other
+ * database error fails closed (500), never falls back.
+ *
  * Responses:
  *   404 { error } — no share row for this token, or its document was never
  *        attached to a storage object, or is no longer servable (see below)
  *   410 { error } — link has expired
  *   401 { error } — passcode mismatch
+ *   429 { error } — the share is locked after repeated wrong passcodes
  *   500 { error } — the storage sign step itself failed
  *   200 { success: true, data: { title, url } } — verified (or the stored
  *        passcode_hash is null → open link)
@@ -79,21 +89,22 @@ export async function POST(
       }
     }
 
-    // Passcode check. A null stored hash means the link is open. Both sides
-    // of the compare are our own sha256Hex() output (64 lowercase hex chars)
-    // so the lengths always match once we reach timingSafeEqual — the length
-    // guard is still there because timingSafeEqual THROWS on a length
-    // mismatch instead of returning false.
+    // Passcode check. A null stored hash means the link is open.
     const storedHash = share.passcode_hash as string | null;
     if (storedHash) {
-      const submittedHash = Buffer.from(sha256Hex(passcode), "utf8");
-      const stored = Buffer.from(storedHash, "utf8");
-      const matches = submittedHash.length === stored.length && timingSafeEqual(submittedHash, stored);
+      const verdict = await checkPasscodeInDb(supabase, sha256Hex(token), sha256Hex(passcode));
+      if (verdict === "locked") {
+        return NextResponse.json({ error: LOCKED_MESSAGE }, { status: 429 });
+      }
+      if (verdict === "none") {
+        return NextResponse.json({ error: "الرابط غير موجود" }, { status: 404 });
+      }
+      if (verdict === "error") {
+        return NextResponse.json({ error: "تعذر التحقق من الرابط" }, { status: 500 });
+      }
+      const matches = verdict === "ok" || (verdict === "missing" && passcodeMatchesInApp(passcode, storedHash));
       if (!matches) {
-        return NextResponse.json(
-          { error: "الرجاء إدخال باسكود صحيح مكون من 6 أرقام" },
-          { status: 401 },
-        );
+        return NextResponse.json({ error: WRONG_PASSCODE_MESSAGE }, { status: 401 });
       }
     }
 
@@ -144,4 +155,66 @@ export async function POST(
     console.error("[share verify POST] Unexpected error:", err);
     return NextResponse.json({ error: "تعذر التحقق من الرابط" }, { status: 500 });
   }
+}
+
+const WRONG_PASSCODE_MESSAGE = "الرجاء إدخال باسكود صحيح مكون من 6 أرقام";
+
+/** The same answer whether the passcode sent during the lock was right or wrong. */
+const LOCKED_MESSAGE =
+  "تم إيقاف إدخال الباسكود لهذا الرابط مؤقتاً بعد محاولات خاطئة متكررة. حاول مرة أخرى بعد ١٥ دقيقة.";
+
+type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
+
+/** "missing" = 20261109_11 has not run here yet; the caller then compares in the app. */
+type PasscodeVerdict = "ok" | "denied" | "locked" | "none" | "missing" | "error";
+
+let inAppCompareLogged = false;
+
+/**
+ * public.share_passcode_check (20261109_11): the compare and the durable
+ * wrong-passcode counter in one locked database statement. Never throws.
+ */
+async function checkPasscodeInDb(
+  supabase: ServiceClient,
+  tokenHash: string,
+  passcodeHash: string,
+): Promise<PasscodeVerdict> {
+  try {
+    const { data, error } = await supabase.rpc("share_passcode_check", {
+      p_token_hash: tokenHash,
+      p_passcode_hash: passcodeHash,
+    });
+    if (error) {
+      if (error.code === "PGRST202" || error.code === "42883" || error.code === "42703") {
+        if (!inAppCompareLogged) {
+          inAppCompareLogged = true;
+          console.warn(
+            "[share verify POST] public.share_passcode_check is missing (20261109_11 not applied): comparing in the app, without the database lockout",
+          );
+        }
+        return "missing";
+      }
+      console.error("[share verify POST] share_passcode_check failed:", error.code, error.message);
+      return "error";
+    }
+    const result = (data as { result?: unknown } | null)?.result;
+    if (result === "ok" || result === "denied" || result === "locked" || result === "none") return result;
+    console.error("[share verify POST] share_passcode_check answered an unexpected shape:", JSON.stringify(data));
+    return "error";
+  } catch (err) {
+    console.error("[share verify POST] share_passcode_check threw:", err instanceof Error ? err.message : err);
+    return "error";
+  }
+}
+
+/**
+ * The old check, kept for a database without 20261109_11. Both sides are our
+ * own sha256Hex() output (64 lowercase hex chars), so the lengths match once
+ * we reach timingSafeEqual — the length guard stays because timingSafeEqual
+ * THROWS on a length mismatch instead of returning false.
+ */
+function passcodeMatchesInApp(passcode: string, storedHash: string): boolean {
+  const submittedHash = Buffer.from(sha256Hex(passcode), "utf8");
+  const stored = Buffer.from(storedHash, "utf8");
+  return submittedHash.length === stored.length && timingSafeEqual(submittedHash, stored);
 }
