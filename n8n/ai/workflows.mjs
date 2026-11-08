@@ -667,7 +667,10 @@ const CONSULT_PARSE = (() => {
 // Two runs of one work (tools.ts «legal-drafter»): phase «issues» turns the
 // facts into the issues, the defences and the requests the lawyer then
 // confirms or edits; phase «draft» writes the pleading from what he confirmed
-// and nothing else. Both stand on the library texts the app sent (<sources>,
+// and nothing else; phase «section» (owner ٤١٠, a later run of the same
+// conversation) rewrites one section of the written pleading as the lawyer
+// asks, and only that section (DRAFTER_PARSE is unchanged: the app's
+// validateOutput keeps {heading, body, cited} and the section's index). Both stand on the library texts the app sent (<sources>,
 // cited inline as [S1]); every article is also listed in `cited` for the
 // library's verdict (citationCheck.ts).
 const LEGAL_DRAFTER_PROMPT = String.raw`${SOURCES_XML}
@@ -692,7 +695,21 @@ const frame = [
   q('أسباب الحكم', j.reasons),
   q('ملاحظات المحامي', i.notes),
 ];
-const task = i.phase === 'draft' ? [
+const sec = i.section || {};
+const outline = (Array.isArray(i.outline) ? i.outline : []).map((h, n) => (n + 1) + '. ' + esc(h)).join('\n');
+const task = i.phase === 'section' ? [
+  'مرحلة تعديل قسم: ' + kind + ' مكتوبة، وطلب المحامي تعديل قسم واحد منها. أعد كتابة هذا القسم وحده وفق طلبه؛ لا تكتب الأقسام الأخرى ولا تكرر محتواها، ولا تعِد المذكرة كاملة.',
+  i.title ? 'عنوان المذكرة: «' + esc(i.title) + '»' : '',
+  outline ? 'أقسام المذكرة، للسياق فقط:\n' + outline : '',
+  'القسم المطلوب (رقم ' + (Number(i.section_index) + 1) + '): «' + esc(sec.heading) + '»\nنصه الحالي: «' + esc(sec.body) + '»',
+  'طلب المحامي في هذا القسم: «' + esc(i.instruction) + '»',
+  i.facts ? 'الوقائع كما أكّدها المحامي: «' + esc(i.facts) + '»' : '',
+  Array.isArray(i.defenses) && i.defenses.length ? 'الدفوع التي اعتمدها المحامي؛ لا تضف دفعاً لم يعتمده:\n' + list(i.defenses, 'basis') : '',
+  reqs ? 'الطلبات كما حددها المحامي؛ لا تضف طلباً ولا تغيّر مبلغاً:\n' + reqs : '',
+  'أبقِ من القسم ما لم يطلب المحامي تغييره بمعناه، ولا تضف واقعة أو دفعاً أو طلباً أو مبلغاً لم يرد في القسم أو في كلام المحامي.',
+  'heading عنوان القسم (أبقه كما هو ما لم يطلب المحامي تغييره)، وbody نص القسم الجديد كاملاً.',
+  'الشكل: {"heading":"","body":"","cited":[{"law":"","article":0,"as_written":""}]}',
+] : i.phase === 'draft' ? [
   'المرحلة الثانية: اكتب نص ' + kind + ' كاملاً بالعربية الفصحى القانونية، بالترتيب المعتاد أمام المحاكم السعودية: البيانات والديباجة، ثم الوقائع، ثم الأسانيد والدفوع، ثم الطلبات.',
   'الوقائع كما أكّدها المحامي: «' + esc(i.facts) + '»',
   'المسائل التي أكّدها المحامي:\n' + list(i.issues, 'detail'),

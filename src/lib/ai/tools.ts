@@ -17,6 +17,16 @@ import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
 import { measurePaste } from "./pageCount.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
+import { stripCitationMarkers } from "./citationMarkers.ts";
+import {
+  SECTION_EDIT_COPY,
+  SECTION_EDIT_MAX_PER_MEMO,
+  SECTION_EDIT_PHASE,
+  SECTION_INSTRUCTION_MAX,
+  countSectionEdits,
+  sectionEditPrice,
+  type SectionEditCounts,
+} from "./sectionEdits.ts";
 
 export type AiToolClass = "fast" | "job";
 export type AiModelTier = "fast" | "deep";
@@ -37,8 +47,33 @@ export interface AiToolSpec {
   roles: readonly string[];
   /** Art. 18: a consultant (practice_kind) may not run it. */
   consultantBlocked: boolean;
-  /** The price in points, from the validated input (metered tools read `pages`). */
-  price: (input: Record<string, unknown>, ctx: { pages: number | null; turn?: number }) => number;
+  /**
+   * The price in points, from the validated input (metered tools read `pages`).
+   * `priorSectionEdits`: the memo's section edits so far, read by runCore from
+   * the conversation's runs for a `sectionEdit` run only (owner ٤١٠).
+   */
+  price: (input: Record<string, unknown>, ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts }) => number;
+  /**
+   * Owner ٤١٠ (legal-drafter): a run whose input.phase is `phase` edits one
+   * section of the memo. runCore counts the memo's earlier section edits for
+   * `price`, and starts it through public.ai_start_section_edit, which counts
+   * again under the start lock (sectionEdits.ts). Such a run never spends a
+   * founder credit.
+   */
+  sectionEdit?: { phase: string };
+  /**
+   * A library tool's run that may succeed citing none of the texts it was sent
+   * (stored as is, unflagged). Owner ٤١٠: a section edit of a section that cited
+   * nothing (the parties' data, a reworded preamble).
+   */
+  citationsOptional?: (input: Record<string, unknown>) => boolean;
+  /**
+   * Owner ٤١٢ (quick-answer): one free question a day per verified phone of an
+   * individual account (freeQuestion.ts). A request with `useFreeQuestion`
+   * starts at price 0 through public.ai_start_free_question, which claims the
+   * day atomically or refuses; it never falls back to a charge or to free.
+   */
+  freeDailyQuestion?: boolean;
   /** Runs per user per Riyadh day while nothing else limits them (plan §1.2). */
   dailyLimit: number;
   /** The mode until an admin sets one in platform_settings.ai_tools. */
@@ -57,6 +92,13 @@ export interface AiToolSpec {
    * after the conversation's earlier runs are read and before the charge.
    */
   checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
+  /**
+   * Rebuilds, from the conversation's stored runs, the parts of the input the
+   * server already holds, so the browser's copy is never trusted (owner ٤١٠:
+   * the section being edited as it now reads, whether it cited, the memo's
+   * frame). Runs right after checkTurn passed; a refusal is uncharged.
+   */
+  fromPrior?: (input: Record<string, unknown>, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => InputCheck;
   /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
   filesRequired?: (input: Record<string, unknown>) => boolean;
   /** What `filesRequired` says when the general «مستندات الوقائع» copy would name the wrong thing. */
@@ -1433,7 +1475,7 @@ function titledList(v: unknown, max: number, second: string, secondMax: number, 
 
 function legalDrafterInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
-  if (raw.phase !== "issues" && raw.phase !== "draft") return { ok: false, error: "المدخلات غير صالحة" };
+  if (raw.phase !== "issues" && raw.phase !== "draft" && raw.phase !== SECTION_EDIT_PHASE) return { ok: false, error: "المدخلات غير صالحة" };
   if (!isDraftKind(raw.kind)) return { ok: false, error: DRAFT_COPY.kind };
   if (!(DRAFT_ROLES as readonly unknown[]).includes(raw.client_role)) return { ok: false, error: DRAFT_COPY.role };
   // Optional: unnamed, the workflow asks the model to infer it from the facts.
@@ -1484,6 +1526,8 @@ function legalDrafterInput(raw: unknown): InputCheck {
     return { ok: true, input: { ...base, facts: factsRaw, facts_in_files: factsInFiles, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
   }
 
+  if (raw.phase === SECTION_EDIT_PHASE) return sectionEditInput(raw, base);
+
   // The draft: what the lawyer confirmed on the analysis screen.
   if (factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
   const issues = titledList(raw.issues, 12, "detail", 2000);
@@ -1494,6 +1538,83 @@ function legalDrafterInput(raw: unknown): InputCheck {
   return { ok: true, input: { ...base, facts: factsRaw, issues, defenses, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
 }
 
+const DRAFT_SECTIONS_MAX = 30;
+const SECTION_BODY_MAX = 12000;
+
+/**
+ * Owner ٤١٠ «عدّل هذا القسم»: from the browser only the section's index and
+ * the lawyer's instruction count. Anything else it sends about the memo (the
+ * section's text, whether it cited, the title, the outline, the facts) is
+ * dropped: sectionFromDraft rebuilds all of it from the stored runs once
+ * checkTurn has passed. Until then `had_citations` is absent, which
+ * citationsOptional reads as "it cited" (the stricter rule).
+ */
+function sectionEditInput(raw: Record<string, unknown>, base: Record<string, unknown>): InputCheck {
+  const index = raw.section_index;
+  if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= DRAFT_SECTIONS_MAX) {
+    return { ok: false, error: SECTION_EDIT_COPY.badSection };
+  }
+  const instruction = boundedText(raw.instruction, SECTION_INSTRUCTION_MAX);
+  if (!instruction) return { ok: false, error: SECTION_EDIT_COPY.instruction };
+  return {
+    ok: true,
+    input: { phase: SECTION_EDIT_PHASE, kind: base.kind, section_index: index, instruction, search_text: instruction },
+  };
+}
+
+/**
+ * The section as the memo now reads it, from this user's own runs of the
+ * conversation (oldest first, as runCore reads them): the succeeded draft's
+ * section, replaced by the newest succeeded edit of it. Its [S…] markers are
+ * taken out (they point at that run's sources; this run searches the library
+ * again and numbers its own) and `had_citations` remembers whether it had any,
+ * for citationsOptional. The memo's frame (parties, facts, issues, defenses,
+ * requests) is the draft run's own stored input.
+ */
+function sectionFromDraft(
+  input: Record<string, unknown>,
+  prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+): InputCheck {
+  if (input.phase !== SECTION_EDIT_PHASE) return { ok: true, input };
+  const draftRun = prior.find((r) => isPlainObject(r.input) && r.input.phase === "draft" && r.status === "succeeded");
+  if (!draftRun || !isPlainObject(draftRun.input) || !isPlainObject(draftRun.output)) return { ok: false, error: SECTION_EDIT_COPY.needDraft };
+  const sections = (Array.isArray(draftRun.output.sections) ? draftRun.output.sections : []).map((s) =>
+    isPlainObject(s) && typeof s.heading === "string" && typeof s.body === "string" ? { heading: s.heading, body: s.body } : null,
+  );
+  for (const r of prior) {
+    if (r.status !== "succeeded" || !isPlainObject(r.input) || r.input.phase !== SECTION_EDIT_PHASE || !isPlainObject(r.output)) continue;
+    const i = r.output.section_index;
+    if (!Number.isInteger(i) || (i as number) < 0 || (i as number) >= sections.length) continue;
+    if (typeof r.output.heading !== "string" || typeof r.output.body !== "string") continue;
+    sections[i as number] = { heading: r.output.heading, body: r.output.body };
+  }
+  const index = input.section_index;
+  const current = Number.isInteger(index) ? sections[index as number] : undefined;
+  if (!current) return { ok: false, error: SECTION_EDIT_COPY.badSection };
+  const heading = boundedText(current.heading, 200);
+  const rawBody = boundedText(current.body, SECTION_BODY_MAX);
+  const body = rawBody ? stripCitationMarkers(rawBody).trim() : "";
+  if (!heading || !rawBody || !body) return { ok: false, error: SECTION_EDIT_COPY.section };
+  const { search_text: _s, phase: _p, ...frame } = draftRun.input;
+  void _s; void _p;
+  const title = boundedText(draftRun.output.title, 200);
+  const instruction = typeof input.instruction === "string" ? input.instruction : "";
+  return {
+    ok: true,
+    input: {
+      ...frame,
+      phase: SECTION_EDIT_PHASE,
+      section_index: index,
+      instruction,
+      section: { heading, body },
+      had_citations: /\[S\d{1,3}\]/.test(rawBody),
+      ...(title ? { title } : {}),
+      outline: sections.map((s) => s?.heading ?? "").filter(Boolean),
+      search_text: [heading, instruction, body].join("\n").slice(0, DRAFT_SEARCH_MAX),
+    },
+  };
+}
+
 /**
  * The analysis or the draft, by the run's phase. All or nothing, as L11: one
  * bad row refuses the result (refunded for the analysis) rather than handing
@@ -1502,6 +1623,13 @@ function legalDrafterInput(raw: unknown): InputCheck {
 function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
   if (!isPlainObject(raw)) return null;
   const cited = Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [];
+  if (input.phase === SECTION_EDIT_PHASE) {
+    // One section, which replaces the one asked for and nothing else.
+    const heading = boundedText(raw.heading, 200);
+    const body = boundedText(raw.body, SECTION_BODY_MAX);
+    if (!heading || !body) return null;
+    return { phase: SECTION_EDIT_PHASE, section_index: input.section_index, heading, body, cited };
+  }
   if (input.phase === "draft") {
     const title = boundedText(raw.title, 200);
     if (!title || !Array.isArray(raw.sections) || raw.sections.length < 2 || raw.sections.length > 30) return null;
@@ -1525,17 +1653,35 @@ function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Recor
   return { phase: "issues", facts_summary, issues, defenses, requests, missing, cited };
 }
 
-/** Turn 0 is the analysis; turn 1 the draft of that same kind, once the analysis succeeded. */
+/**
+ * Turn 0 is the analysis; turn 1 the draft of that same kind, once the analysis
+ * succeeded; every later turn a section edit (owner ٤١٠) of that draft, once it
+ * succeeded, naming one of its sections, up to SECTION_EDIT_MAX_PER_MEMO. A
+ * second draft is refused (it would be a free second memo).
+ */
 function legalDrafterTurn(
   input: Record<string, unknown>,
   turn: number,
   prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
 ): string | null {
   if (turn === 0) return input.phase === "issues" ? null : DRAFT_COPY.firstStep;
-  if (input.phase !== "draft") return DRAFT_COPY.kindChanged;
-  const first = prior[0];
-  if (!first || first.status !== "succeeded") return DRAFT_COPY.waitAnalysis;
-  return isPlainObject(first.input) && first.input.kind === input.kind ? null : DRAFT_COPY.kindChanged;
+  if (turn === 1) {
+    if (input.phase === SECTION_EDIT_PHASE) return SECTION_EDIT_COPY.needDraft;
+    if (input.phase !== "draft") return DRAFT_COPY.kindChanged;
+    const first = prior[0];
+    if (!first || first.status !== "succeeded") return DRAFT_COPY.waitAnalysis;
+    return isPlainObject(first.input) && first.input.kind === input.kind ? null : DRAFT_COPY.kindChanged;
+  }
+  if (input.phase !== SECTION_EDIT_PHASE) return SECTION_EDIT_COPY.draftDone;
+  const draft = prior.find((r) => isPlainObject(r.input) && r.input.phase === "draft");
+  if (!draft) return SECTION_EDIT_COPY.needDraft;
+  if (draft.status !== "succeeded" || !isPlainObject(draft.output)) return SECTION_EDIT_COPY.waitDraft;
+  if (!isPlainObject(draft.input) || draft.input.kind !== input.kind) return DRAFT_COPY.kindChanged;
+  const sections = Array.isArray(draft.output.sections) ? draft.output.sections : [];
+  const index = input.section_index;
+  if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= sections.length) return SECTION_EDIT_COPY.badSection;
+  if (countSectionEdits(prior).total >= SECTION_EDIT_MAX_PER_MEMO) return SECTION_EDIT_COPY.limit;
+  return null;
 }
 
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
@@ -1604,8 +1750,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "fast",
     roles: REGISTERED_ROLES,
     consultantBlocked: false,
-    // Owner ٤١٢ (7 Nov 2026): 10 points.
+    // Owner ٤١٢ (7 Nov 2026): 10 points; one free question a day for an
+    // individual account with a verified phone (inert until OTP exists).
     price: () => 10,
+    freeDailyQuestion: true,
     dailyLimit: 30,
     defaultMode: "off",
     // Owner ٤١٣ option A: an answer that cites none of the texts is kept,
@@ -1834,17 +1982,28 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: LAWYER_FIRM_ROLES,
     // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
     consultantBlocked: true,
-    // Charged once, on the analysis; the draft that follows it is free.
-    price: (input, ctx) => ((ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0),
-    // An analysis and its draft are two runs.
+    // Charged once, on the analysis; the draft that follows it is free. A
+    // section edit (owner ٤١٠): free within 5 per memo and 2 per section, else
+    // 10 points (sectionEdits.ts); unknown counts are paid, never free.
+    price: (input, ctx) =>
+      input.phase === SECTION_EDIT_PHASE
+        ? sectionEditPrice(ctx.priorSectionEdits, input.section_index)
+        : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0,
+    // An analysis and its draft are two runs. Section edits are not held to this
+    // limit (ai_start_section_edit): the memo's ceiling of 30 bounds them.
     dailyLimit: 10,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
     files: DRAFTER_FILES,
     retrieval: { from: "search_text", laws: 8, principles: 4 },
     // The draft's searches are written with the facts the analysis was searched with.
-    conversation: { maxMessages: 2, historyPairs: 1, field: "search_text", replyField: "facts_summary" },
+    // The analysis, the draft, then up to 30 section edits; one more turn so the
+    // 31st edit gets checkTurn's own words, not «اكتملت هذه المحادثة».
+    conversation: { maxMessages: 2 + SECTION_EDIT_MAX_PER_MEMO + 1, historyPairs: 1, field: "search_text", replyField: "facts_summary" },
     checkTurn: legalDrafterTurn,
+    fromPrior: sectionFromDraft,
+    sectionEdit: { phase: SECTION_EDIT_PHASE },
+    citationsOptional: (input) => input.phase === SECTION_EDIT_PHASE && input.had_citations === false,
     filesRequired: (input) => input.phase === "issues" && input.facts_in_files === true,
     validateInput: legalDrafterInput,
     validateOutput: legalDrafterOutput,

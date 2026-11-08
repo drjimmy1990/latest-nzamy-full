@@ -598,6 +598,29 @@ test("legal-drafter prompt, the draft: only the confirmed defences and requests,
   assert.doesNotMatch(claim, /أسباب الاعتراض/, "a claim is not a challenge");
 });
 
+test("legal-drafter prompt, a section edit (owner ٤١٠): that section only, the lawyer's instruction, the citation rules, the one-section shape", () => {
+  const input = {
+    phase: "section", kind: "claim", client_role: "plaintiff", facts: "وقائع مؤكدة",
+    section_index: 1, instruction: "اختصر الفقرة الثانية", section: { heading: "الوقائع", body: "عمل المدعي خمس سنوات" },
+    title: "لائحة دعوى عمالية", outline: ["البيانات", "الوقائع", "الأسانيد"], defenses: [{ title: "الفصل دون سبب", basis: "" }], requests: [],
+  };
+  const p = runCode(def("legal-drafter").build, pkg("legal-drafter", input))[0].json.content as string;
+  assert.match(p, /أعد كتابة هذا القسم وحده وفق طلبه؛ لا تكتب الأقسام الأخرى/);
+  assert.match(p, /القسم المطلوب \(رقم 2\): «الوقائع»\nنصه الحالي: «عمل المدعي خمس سنوات»/);
+  assert.match(p, /طلب المحامي في هذا القسم: «اختصر الفقرة الثانية»/);
+  assert.match(p, /أقسام المذكرة، للسياق فقط:\n1\. البيانات\n2\. الوقائع\n3\. الأسانيد/);
+  assert.match(p, /ولا تضع معرّفاً لم يُرسل إليك/, "the citation rules stay");
+  assert.match(p, /\{"heading":"","body":"","cited":\[/);
+  assert.doesNotMatch(p, /المرحلة الثانية|المرحلة الأولى/);
+  assert.equal(p.includes("undefined"), false);
+  const r = runCode(def("legal-drafter").parse, pkg("legal-drafter", input), { output: JSON.stringify({ heading: "الوقائع", body: "نص أقصر [S1]", cited: [] }) })[0].json;
+  assert.equal(r.status, "succeeded");
+  assert.deepEqual(r.citations, ["S1"]);
+  assert.deepEqual(AI_TOOLS["legal-drafter"].validateOutput(r.output, { phase: "section", section_index: 1 }), {
+    phase: "section", section_index: 1, heading: "الوقائع", body: "نص أقصر [S1]", cited: [],
+  });
+});
+
 test("legal-drafter parse: the [S…] markers become the citations, and the draft passes the app's own check", () => {
   const body = pkg("legal-drafter", {});
   const result = {

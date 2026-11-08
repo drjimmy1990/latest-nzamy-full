@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Sparkle, CheckCircle, XCircle, Plus, Trash, Warning, FileDoc, Scales, ArrowCounterClockwise,
+  Sparkle, CheckCircle, XCircle, Plus, Trash, Warning, FileDoc, Scales, ArrowCounterClockwise, PencilSimple,
 } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
 import AiResultActions from "@/components/AiResultActions";
@@ -19,9 +19,14 @@ import { DRAFT_KINDS, type DraftKindId } from "@/lib/ai/draftKinds";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { creditKindForRun, founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
-  analysisInput, asDraftAnalysis, asPleading, canAnalyse, draftBlocker, draftInput, pleadingBlocks, pleadingText, pleadingWordHtml,
-  type DraftAnalysis, type WizardFacts,
+  analysisInput, asDraftAnalysis, asEditedSection, asPleading, canAnalyse, draftBlocker, draftInput, pleadingBlocks, pleadingText, pleadingWordHtml,
+  sectionEditInput, withEditedSections,
+  type DraftAnalysis, type EditedSection, type WizardFacts,
 } from "@/components/draft/legalDraft";
+import {
+  NO_SECTION_EDITS, SECTION_EDIT_COPY, SECTION_INSTRUCTION_MAX, asSectionEditCounts, sectionEditAllowanceText, sectionEditPriceText,
+  sectionEditQuote, withSectionEdit, type SectionEditCounts,
+} from "@/lib/ai/sectionEdits";
 import { aiSkippedNote } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 
@@ -42,6 +47,12 @@ import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
  * A founder lawyer may pay the analysis with one of his drafting works
  * instead (P3 «استخدم رصيد باقة المؤسس»): FounderCreditChoice, shown only for
  * a kind that spends a work; the draft (turn 1) never sends useCredit.
+ *
+ * Owner ٤١٠ «عدّل هذا القسم»: once written, each section may be rewritten on
+ * its own (a later run of the same conversation). 5 free edits per memo, 2 per
+ * section, then 10 points each (src/lib/ai/sectionEdits.ts); the screen shows
+ * the price before the lawyer confirms and sends it as `expectedPrice`, so the
+ * server never charges a price he was not shown. Never a founder credit.
  */
 
 interface Props {
@@ -69,16 +80,48 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
   const [wordFailed, setWordFailed] = useState(false);
   // Driven by FounderCreditChoice: false whenever it is hidden.
   const [useCredit, setUseCredit] = useState(false);
+  // Owner ٤١٠: the section edits of this memo.
+  const editing = useAiRun();
+  const [draftSent, setDraftSent] = useState<Record<string, unknown> | null>(null);
+  const [edits, setEdits] = useState<Record<number, EditedSection>>({});
+  const [editCites, setEditCites] = useState<Record<number, ReturnType<typeof asCitations>>>({});
+  const [editCounts, setEditCounts] = useState<SectionEditCounts>(NO_SECTION_EDITS);
+  const [editOpen, setEditOpen] = useState<number | null>(null);
+  const [instruction, setInstruction] = useState("");
+  const pendingEdit = useRef<{ index: number; price: number } | null>(null);
 
   const spec = DRAFT_KINDS[kind];
   const read = analysis.phase === "done" ? asDraftAnalysis(analysis.output) : null;
   const edited = read ? changes ?? read : null;
   const sourcesA = asCitations(analysis.citations);
-  const pleading = writing.phase === "done" ? asPleading(writing.output) : null;
+  const draftOnly = writing.phase === "done" ? asPleading(writing.output) : null;
+  // The memo with its edited sections in place: shown, copied and exported.
+  const pleading = draftOnly ? withEditedSections(draftOnly, edits) : null;
   const sourcesB = asCitations(writing.citations);
   const blocker = edited ? draftBlocker(edited) : null;
   const written = pleading ? pleadingText(pleading) : "";
   useEffect(() => { onPleading(written); }, [written, onPleading]);
+  // A section edit settled: put it in place and count it at the price confirmed
+  // (the server refused any other). A refusal with the server's counts resyncs.
+  useEffect(() => {
+    const pending = pendingEdit.current;
+    if (!pending) return;
+    if (editing.phase === "done") {
+      const edit = asEditedSection(editing.output);
+      pendingEdit.current = null;
+      if (edit && edit.index === pending.index) {
+        setEdits((e) => ({ ...e, [edit.index]: edit }));
+        setEditCites((c) => ({ ...c, [edit.index]: asCitations(editing.citations) }));
+        setEditCounts((c) => withSectionEdit(c, pending.index, pending.price));
+        setEditOpen(null);
+        setInstruction("");
+      }
+    } else if (editing.phase === "error") {
+      pendingEdit.current = null;
+      const counts = asSectionEditCounts(editing.details?.sectionEdits);
+      if (counts) setEditCounts(counts);
+    }
+  }, [editing.phase, editing.output, editing.citations, editing.details]);
   const toolOff = analysis.code === "tool_off" || analysis.code === "library_tier" ? analysis.code : null;
   useEffect(() => { if (toolOff) onToolOff(toolOff); }, [toolOff, onToolOff]);
   // The analysis is fixed while the draft is written and once it exists: the
@@ -98,12 +141,40 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
     setSent(input);
     setChanges(null);
     writing.reset();
+    setDraftSent(null);
+    resetEdits();
     void analysis.start("legal-drafter", input, { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}) });
   }
 
   function startDraft() {
     if (!sent || !edited || blocker || !analysis.conversationId) return;
-    void writing.start("legal-drafter", draftInput(sent, edited), { conversationId: analysis.conversationId });
+    const input = draftInput(sent, edited);
+    setDraftSent(input);
+    void writing.start("legal-drafter", input, { conversationId: analysis.conversationId });
+  }
+
+  function resetEdits() {
+    editing.reset();
+    pendingEdit.current = null;
+    setEdits({});
+    setEditCites({});
+    setEditCounts(NO_SECTION_EDITS);
+    setEditOpen(null);
+    setInstruction("");
+  }
+
+  // Owner ٤١٠: the price shown is the price sent; the server refuses another.
+  function startEdit(index: number) {
+    if (!pleading || !draftSent || !analysis.conversationId || editing.busy) return;
+    const text = instruction.trim();
+    if (!text) return;
+    const quote = sectionEditQuote(editCounts, index);
+    if (quote.limitReached) return;
+    pendingEdit.current = { index, price: quote.price };
+    void editing.start("legal-drafter", sectionEditInput(draftSent, pleading, index, text), {
+      conversationId: analysis.conversationId,
+      expectedPrice: quote.price,
+    });
   }
 
   function downloadWord() {
@@ -293,12 +364,56 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
       {pleading && (
         <div className={`${card} p-5 space-y-4`}>
           <h2 className={`text-center text-[17px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{pleading.title}</h2>
-          {pleading.sections.map((s, n) => (
-            <section key={n} className="space-y-1.5">
-              <h3 className={`text-[13px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{s.heading}</h3>
-              <CitedText text={s.body} cites={sourcesB} isDark={isDark} className={`text-[13px] leading-loose ${isDark ? "text-zinc-200" : "text-zinc-800"}`} />
-            </section>
-          ))}
+          {pleading.sections.map((s, n) => {
+            const quote = sectionEditQuote(editCounts, n);
+            const open = editOpen === n;
+            return (
+              <section key={n} className="space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className={`text-[13px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{s.heading}</h3>
+                  {!open && (
+                    <button type="button" disabled={editing.busy || quote.limitReached}
+                      onClick={() => { editing.reset(); pendingEdit.current = null; setInstruction(""); setEditOpen(n); }}
+                      className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold disabled:opacity-40 ${isDark ? "border-white/[0.08] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
+                      <PencilSimple size={12} /> عدّل هذا القسم
+                    </button>
+                  )}
+                </div>
+                {/* An edited section's [S…] markers are its own run's sources, not the draft's. */}
+                <CitedText text={s.body} cites={edits[n] ? editCites[n] ?? [] : sourcesB} isDark={isDark} className={`text-[13px] leading-loose ${isDark ? "text-zinc-200" : "text-zinc-800"}`} />
+                {edits[n] && <p className={`text-[10px] ${muted}`}>عُدّل هذا القسم بطلبك.</p>}
+                {open && (
+                  <div className={`space-y-2 rounded-xl border p-3 ${isDark ? "border-white/[0.08] bg-zinc-950" : "border-zinc-200 bg-zinc-50"}`}>
+                    <label className="block space-y-1">
+                      <span className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ماذا تريد أن يتغيّر في هذا القسم؟</span>
+                      <textarea rows={3} value={instruction} maxLength={SECTION_INSTRUCTION_MAX} disabled={editing.busy}
+                        onChange={(e) => setInstruction(e.target.value.slice(0, SECTION_INSTRUCTION_MAX))}
+                        placeholder="مثال: اختصر الفقرة الثانية وأضف الإشارة إلى تاريخ الإنذار"
+                        className={field} />
+                    </label>
+                    <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{sectionEditAllowanceText(quote)}</p>
+                    <p className={`text-[12px] font-bold ${quote.free ? (isDark ? "text-emerald-400" : "text-emerald-700") : "text-[#C8A762]"}`}>
+                      {quote.limitReached ? SECTION_EDIT_COPY.limit : sectionEditPriceText(quote)}
+                    </p>
+                    <RunStatus isDark={isDark} run={editing} />
+                    {editing.code !== RUN_STILL_RUNNING_CODE && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => startEdit(n)}
+                          disabled={editing.busy || !instruction.trim() || quote.limitReached}
+                          className="flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-white disabled:opacity-40">
+                          <Sparkle size={13} /> {editing.busy ? "جارٍ التعديل..." : quote.free ? "أكّد التعديل — مجاني" : `أكّد التعديل — ${quote.price.toLocaleString("ar-SA")} نقاط`}
+                        </button>
+                        <button type="button" disabled={editing.busy} onClick={() => { setEditOpen(null); setInstruction(""); }}
+                          className={`rounded-xl border px-3 py-2 text-[12px] font-semibold disabled:opacity-40 ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
+                          إلغاء
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            );
+          })}
           {pleading.requests.length > 0 && (
             <section className="space-y-1.5">
               <h3 className={`text-[13px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>الطلبات</h3>
@@ -308,6 +423,12 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
             </section>
           )}
           <SourceList cites={sourcesB} isDark={isDark} compact />
+          {Object.entries(editCites).map(([k, cites]) => cites.length > 0 && (
+            <div key={k} className="space-y-1">
+              <p className={`text-[11px] font-semibold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>مصادر القسم المعدّل: {edits[Number(k)]?.heading}</p>
+              <SourceList cites={cites} isDark={isDark} compact />
+            </div>
+          ))}
           <CitationCheckList
             items={pleading.citation_check}
             isDark={isDark}
@@ -326,7 +447,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
             </button>
             <button type="button" onClick={() => { if (window.confirm(analysis.creditUsed
               ? `صياغة جديدة تبدأ تحليلاً جديداً يُدفع من جديد: بعمل آخر من باقة المؤسس إن بقي لك واخترته، وإلا تُخصم له ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`
-              : `صياغة جديدة تبدأ تحليلاً جديداً وتُخصم لها ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`)) { writing.reset(); analysis.reset(); setSent(null); setChanges(null); } }}
+              : `صياغة جديدة تبدأ تحليلاً جديداً وتُخصم لها ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`)) { writing.reset(); analysis.reset(); setSent(null); setChanges(null); setDraftSent(null); resetEdits(); } }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
               <ArrowCounterClockwise size={14} /> صياغة جديدة (بخصم جديد)
             </button>
