@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getLibraryAccessForUser } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { quotaRefusal, scopedSearchDocKey } from '@/lib/library/readQuota';
@@ -196,10 +197,10 @@ export async function POST(request: Request) {
     try {
       body = await request.json();
     } catch {
-      return NextResponse.json({ error: 'جسم الطلب ليس JSON صالحاً.', code: 'invalid_request' }, { status: 400 });
+      return NextResponse.json({ error: 'جسم الطلب ليس JSON صالحاً.', code: 'invalid_request' }, { status: 400, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const v = validateScopedRequest(body);
-    if (!v.ok) return NextResponse.json({ error: v.error, code: v.code }, { status: 400 });
+    if (!v.ok) return NextResponse.json({ error: v.error, code: v.code }, { status: 400, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     const req = v.request;
 
     let parsed;
@@ -209,14 +210,14 @@ export async function POST(request: Request) {
       if (error instanceof SearchQuerySyntaxError) {
         return NextResponse.json(
           { error: 'صيغة البحث غير صحيحة. راجع علامات التنصيص والأقواس والعوامل.', code: error.code, index: error.index },
-          { status: 400 },
+          { status: 400, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } },
         );
       }
       throw error;
     }
     const tsquery = parsed.tsquery;
     if (!tsquery) {
-      return NextResponse.json({ error: 'اكتب كلمة يُبحث عنها، لا علامات فقط.', code: 'query_empty' }, { status: 400 });
+      return NextResponse.json({ error: 'اكتب كلمة يُبحث عنها، لا علامات فقط.', code: 'query_empty' }, { status: 400, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     const supabase = await createClient();
@@ -224,9 +225,9 @@ export async function POST(request: Request) {
     if (!resolved.scope) {
       if (resolved.error) {
         console.error('[Scoped search] scope lookup failed:', resolved.error);
-        return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 503 });
+        return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 503, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       }
-      return NextResponse.json({ error: 'لم يُعثر على هذا المستند.', code: 'scope_not_found' }, { status: 404 });
+      return NextResponse.json({ error: 'لم يُعثر على هذا المستند.', code: 'scope_not_found' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const scope = resolved.scope;
     const ids = scope.volumes.map((vol) => vol.id);
@@ -239,12 +240,21 @@ export async function POST(request: Request) {
     } catch {
       userId = null;
     }
+    if (userId) recordLibraryActivity(userId, 'search');
+
+    const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
+    // Owner ٤٢٧: the in-document search returns a subscriber's article text,
+    // so it is device-checked like opening the document (fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
+    if (deviceRefusal) return deviceRefusal;
+
     // Owner note ١٣ C07 / C09: an in-document search returns article text,
     // so a signed-in reader spends the scope's document exactly as opening
     // it would (free when already opened today), and a library lock stops it.
+    // AFTER the device check (final review 2026-11-08, item 3): a search
+    // refused for its device spends none of the account's quota.
     // Fails open: no answer (migration not applied, timeout) → go on.
     if (userId) {
-      recordLibraryActivity(userId, 'search');
       const docKey = scopedSearchDocKey(scope.kind, scope.id);
       const refusal = docKey ? quotaRefusal(await libraryReadQuotaHit(userId, docKey), Date.now()) : null;
       if (refusal) {
@@ -253,8 +263,6 @@ export async function POST(request: Request) {
         return NextResponse.json(refusal.body, { status: refusal.status, headers });
       }
     }
-
-    const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
     const access: ViewerAccess = {
       hasFullAccess,
       whitelistedSlugs,
@@ -280,7 +288,7 @@ export async function POST(request: Request) {
         console.warn('[Scoped search] library.search_scoped_page is missing — inline window (apply 20261025_41)');
       } else if (rpcRes.error) {
         console.error('[Scoped search] search_scoped_page failed:', rpcRes.error);
-        return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 503 });
+        return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 503, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       } else {
         const data = (rpcRes.data ?? {}) as { rows?: unknown; count?: unknown };
         window = {
@@ -293,7 +301,7 @@ export async function POST(request: Request) {
     if (!viaRpc) {
       window = await inlineWindow(serverOnly, req.kind, ids, tsquery, from, req.limit, signal);
       if (!window) {
-        return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 503 });
+        return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 503, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       }
     }
     const { rows, count } = window!;
@@ -316,6 +324,6 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error('[Scoped search] Unexpected error:', error);
-    return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 500 });
+    return NextResponse.json({ error: 'تعذّر البحث في هذا المستند. حاول مجدداً.', code: 'search_unavailable' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   }
 }

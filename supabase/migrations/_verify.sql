@@ -2576,6 +2576,11 @@ BEGIN
     RAISE NOTICE '_verify: 20261019_40 is not applied yet — the decree preamble is still anon-readable (the pre-lock posture; apply it after the code deploy)';
     RETURN;
   END IF;
+  IF coalesce(obj_description('library.decrees_circulars'::regclass, 'pg_class'), '')
+       ILIKE '%tier columns server-only since 20261108_10%' THEN
+    RAISE NOTICE '_verify: 20261019_40 — superseded by 20261108_10 (narrower decree allow-list); checked in verify:library_tier_columns_1108';
+    RETURN;
+  END IF;
 
   FOR spec IN
     SELECT * FROM (VALUES
@@ -6018,3 +6023,262 @@ begin
   raise notice '_verify: 20261107_60 OK — a founder drafting work pays for the rejoinder';
 end $$;
 -- <<< verify:founder_rejoinder_410
+
+-- >>> verify:library_tier_columns_1108
+-- 2026-11-08 — 20261108_10_library_decree_tier_columns_lock.sql (owner ٤٢٤ /
+-- ٣٨٠ / ٣١٩; AFTER the deploy): a decree's number (ref), date, official link,
+-- the raw summaries and fts are server-only; anon / authenticated read the 9
+-- catalogue columns only. Read-only, safe to repeat. Keyed on the marker on
+-- library.decrees_circulars: before the migration one NOTICE (and ok = false
+-- rows in the SELECT, which is the truth before it runs).
+-- The SELECT: one row per (role, locked column) — every row must say ok = true.
+select '20261108_10 ' || r.role || ' cannot read decrees_circulars.' || c.col as check,
+       not has_column_privilege(r.role, 'library.decrees_circulars', c.col, 'SELECT') as ok
+  from (values ('anon'), ('authenticated')) as r(role)
+ cross join (values ('ref'), ('date'), ('official_url'), ('summary'), ('summary_brief'), ('fts'), ('preamble')) as c(col)
+union all
+select '20261108_10 ' || r.role || ' holds no table-level SELECT on decrees_circulars',
+       not has_table_privilege(r.role, 'library.decrees_circulars', 'SELECT')
+  from (values ('anon'), ('authenticated')) as r(role)
+union all
+select '20261108_10 ' || r.role || ' still reads the catalogue columns (id, title, type, issuer, category, hashtags, created_at, updated_at, instrument_ar)',
+       bool_and(has_column_privilege(r.role, 'library.decrees_circulars', c.col, 'SELECT'))
+  from (values ('anon'), ('authenticated')) as r(role)
+ cross join (values ('id'), ('title'), ('type'), ('issuer'), ('category'), ('hashtags'), ('created_at'), ('updated_at'), ('instrument_ar')) as c(col)
+ group by r.role;
+
+do $$
+declare
+  tbl     constant text := 'library.decrees_circulars';
+  allowed constant text[] := array['id', 'title', 'type', 'issuer', 'category', 'hashtags', 'created_at', 'updated_at', 'instrument_ar'];
+  r       text;
+  col     text;
+  missing text := '';
+begin
+  if coalesce(obj_description(tbl::regclass, 'pg_class'), '') not ilike '%tier columns server-only since 20261108_10%' then
+    raise notice '_verify: 20261108_10 is not applied yet — a decree''s number, date, official link, summaries and fts are still anon-readable (apply it AFTER the deploy)';
+    return;
+  end if;
+  foreach r in array array['anon', 'authenticated'] loop
+    if has_table_privilege(r, tbl, 'SELECT') then
+      missing := missing || format(' %s holds table-level SELECT on %s (20260922_01 / a schema dump re-applied? re-run 20261018_02 and 20261108_10);', r, tbl);
+    end if;
+    if has_any_column_privilege(r, tbl, 'INSERT') or has_any_column_privilege(r, tbl, 'UPDATE')
+       or has_table_privilege(r, tbl, 'DELETE') or has_table_privilege(r, tbl, 'TRUNCATE') then
+      missing := missing || format(' %s can write %s;', r, tbl);
+    end if;
+    foreach col in array allowed loop
+      if not has_column_privilege(r, tbl, col, 'SELECT') then
+        missing := missing || format(' %s cannot read catalogue column %s.%s (re-run 20261108_10);', r, tbl, col);
+      end if;
+    end loop;
+    for col in
+      select att.attname::text from pg_attribute att
+       where att.attrelid = tbl::regclass and att.attnum > 0 and not att.attisdropped
+    loop
+      if not (col = any (allowed)) and has_column_privilege(r, tbl, col, 'SELECT') then
+        missing := missing || format(' %s can read locked column %s.%s (20261019_40 re-run? re-run 20261108_10);', r, tbl, col);
+      end if;
+    end loop;
+  end loop;
+  if not has_table_privilege('service_role', tbl, 'SELECT') then
+    missing := missing || format(' service_role cannot read %s (every decree page would 404);', tbl);
+  end if;
+  if not exists (select 1 from pg_policies
+                  where schemaname || '.' || tablename = tbl
+                    and cmd in ('SELECT', 'ALL') and roles && array['anon', 'public']::name[]) then
+    missing := missing || format(' no read policy for anon on %s;', tbl);
+  end if;
+  if missing <> '' then
+    raise exception '_verify: the decree tier-column lock (20261108_10) is broken —%', missing;
+  end if;
+  raise notice '_verify: 20261108_10 OK — decrees_circulars ref / date / official_url / summary / summary_brief / fts / preamble are server-only; 9 catalogue columns stay public';
+end $$;
+-- <<< verify:library_tier_columns_1108
+
+-- >>> verify:firm_member_points_1108
+-- 2026-11-08 — 20261108_30_firm_member_points_usage.sql (owner ٤٤٤ part 2:
+-- per-member points counter on /dashboard/firm/finance). Any time — before or
+-- after the deploy (the route answers { available: false } until it exists).
+-- Read-only, safe to repeat. Every row must say ok = true.
+select 'firm_member_points_usage exists' as check_name,
+       to_regprocedure('public.firm_member_points_usage(uuid)') is not null as ok;
+
+select 'firm_member_points_usage is SECURITY DEFINER with search_path = ''''' as check_name,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                   from pg_proc p where p.oid = to_regprocedure('public.firm_member_points_usage(uuid)')), false) as ok;
+
+select 'anon cannot EXECUTE firm_member_points_usage' as check_name,
+       case when to_regprocedure('public.firm_member_points_usage(uuid)') is null then false
+            else not has_function_privilege('anon', 'public.firm_member_points_usage(uuid)', 'EXECUTE') end as ok;
+
+select 'authenticated can EXECUTE firm_member_points_usage' as check_name,
+       case when to_regprocedure('public.firm_member_points_usage(uuid)') is null then false
+            else has_function_privilege('authenticated', 'public.firm_member_points_usage(uuid)', 'EXECUTE') end as ok;
+
+-- the function's owner must bypass RLS on the three tables it reads for other
+-- users, or every member but the caller silently reads «—» and 0
+select 'firm_member_points_usage owner bypasses RLS on points_ledger / firm_members / profiles' as check_name,
+       coalesce((
+         select r.rolsuper or r.rolbypassrls
+                or not exists (select 1 from pg_class c
+                                where c.oid in ('public.points_ledger'::regclass, 'public.firm_members'::regclass, 'public.profiles'::regclass)
+                                  and (c.relowner <> p.proowner or c.relforcerowsecurity))
+           from pg_proc p join pg_roles r on r.oid = p.proowner
+          where p.oid = to_regprocedure('public.firm_member_points_usage(uuid)')), false) as ok;
+
+-- informational: with points_enforcement off nothing is debited and every counter reads 0
+select 'points_enforcement (info — false/no row means every counter reads 0)' as check_name,
+       true as ok,
+       coalesce((select value::text from public.platform_settings where key = 'points_enforcement'), 'no row') as points_enforcement;
+-- <<< verify:firm_member_points_1108
+
+-- >>> verify:library_device_limit_1108
+-- 2026-11-08 — 20261108_20_library_device_limit.sql (owner ٤٢٧; any time,
+-- before or after the deploy): the library device limit. Two settings columns
+-- on library_monitor_settings (shipped OFF at 2), public.user_devices (RLS:
+-- the owner reads his own rows, never the hash), library_device_check /
+-- library_device_revoke (SECURITY DEFINER, search_path '', service_role only).
+-- Read-only, safe to repeat. Before the migration: one NOTICE and ok = false
+-- rows in the SELECT, which is the truth before it runs.
+select '20261108_20 library_monitor_settings has device_limit_enabled + device_limit' as check,
+       (select count(*) = 2 from information_schema.columns
+         where table_schema = 'public' and table_name = 'library_monitor_settings'
+           and column_name in ('device_limit_enabled', 'device_limit')) as ok
+union all
+select '20261108_20 public.user_devices exists with RLS on',
+       coalesce((select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.user_devices')), false)
+union all
+select '20261108_20 ' || f.fn || ' is SECURITY DEFINER with search_path ''''',
+       exists (select 1 from pg_proc p where p.oid = to_regprocedure(f.fn) and p.prosecdef
+                 and p.proconfig @> array['search_path=""'])
+  from (values ('public.library_device_check(uuid,text,text)'),
+               ('public.library_device_revoke(uuid,uuid,text,text,uuid)')) as f(fn)
+union all
+select '20261108_20 ' || r.role || ' cannot execute ' || f.fn,
+       case when to_regprocedure(f.fn) is null then false
+            else not has_function_privilege(r.role, f.fn, 'EXECUTE') end
+  from (values ('anon'), ('authenticated')) as r(role)
+ cross join (values ('public.library_device_check(uuid,text,text)'),
+                    ('public.library_device_revoke(uuid,uuid,text,text,uuid)')) as f(fn)
+union all
+select '20261108_20 authenticated cannot read user_devices.device_hash nor write the table',
+       case when to_regclass('public.user_devices') is null then false
+            else not has_column_privilege('authenticated', 'public.user_devices', 'device_hash', 'SELECT')
+             and not has_table_privilege('authenticated', 'public.user_devices', 'INSERT')
+             and not has_table_privilege('authenticated', 'public.user_devices', 'UPDATE')
+             and not has_table_privilege('authenticated', 'public.user_devices', 'DELETE')
+             and not has_table_privilege('anon', 'public.user_devices', 'SELECT') end;
+
+-- Informational (not a check): is the limit switched on, and at what number?
+-- select device_limit_enabled, device_limit from public.library_monitor_settings where id;
+
+do $$
+begin
+  if to_regprocedure('public.library_device_check(uuid,text,text)') is null then
+    raise notice '_verify: 20261108_20 is not applied yet — no library device limit (the app fails open)';
+  end if;
+end $$;
+-- <<< verify:library_device_limit_1108
+
+-- >>> verify:drafter_section_edits_1108
+-- 2026-11-08 — 20261108_40_drafter_section_edits.sql (owner ٤١٠ «عدّل هذا
+-- القسم»: 5 free section edits per memo, 2 per section, then 10 points; 30 per
+-- memo). Any time — before or after the deploy (the app refuses section edits,
+-- uncharged, until it exists). Read-only, safe to repeat. Every row must say ok = true.
+select 'ai_start_section_edit exists (one overload)' as check_name,
+       to_regprocedure('public.ai_start_section_edit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,int,int,int,int,int)') is not null
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_section_edit') = 1 as ok;
+
+select 'ai_start_section_edit is SECURITY DEFINER with search_path = ''''' as check_name,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_section_edit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,int,int,int,int,int)')), false) as ok;
+
+select 'anon / authenticated cannot EXECUTE ai_start_section_edit; service_role can' as check_name,
+       case when to_regprocedure('public.ai_start_section_edit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,int,int,int,int,int)') is null then false
+            else not has_function_privilege('anon', 'public.ai_start_section_edit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,int,int,int,int,int)', 'EXECUTE')
+             and not has_function_privilege('authenticated', 'public.ai_start_section_edit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,int,int,int,int,int)', 'EXECUTE')
+             and has_function_privilege('service_role', 'public.ai_start_section_edit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,int,int,int,int,int)', 'EXECUTE') end as ok;
+
+-- it calls ai_start_run as its owner: the owner must be able to, or every section edit fails 42501
+select 'the owner of ai_start_section_edit can EXECUTE ai_start_run' as check_name,
+       coalesce((select has_function_privilege(p.proowner,
+                   'public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)', 'EXECUTE')
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_section_edit(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb,int,int,int,int,int)')), false) as ok;
+-- <<< verify:drafter_section_edits_1108
+
+-- >>> verify:free_daily_question_1108
+-- 2026-11-08 — 20261108_50_free_daily_question.sql (owner ٤١٢: one free quick
+-- question a day per verified phone of an individual account; inert until
+-- phone OTP exists). Any time — before or after the deploy. Read-only, safe to
+-- repeat. Every row must say ok = true.
+select 'verified_phones and ai_free_question_claims exist with RLS on' as check_name,
+       coalesce((select bool_and(c.relrowsecurity) and count(*) = 2 from pg_class c
+                  where c.oid in (to_regclass('public.verified_phones'), to_regclass('public.ai_free_question_claims'))), false) as ok;
+
+select 'no session role can INSERT / UPDATE / DELETE verified_phones or the claims' as check_name,
+       case when to_regclass('public.verified_phones') is null or to_regclass('public.ai_free_question_claims') is null then false
+            else not exists (
+              select 1 from (values ('anon'), ('authenticated')) r(role),
+                            (values ('public.verified_phones'), ('public.ai_free_question_claims')) t(tbl),
+                            (values ('INSERT'), ('UPDATE'), ('DELETE')) p(priv)
+               where has_table_privilege(r.role, t.tbl, p.priv)) end as ok;
+
+select 'verified_phones has no write policy; claims are not readable by a session' as check_name,
+       case when to_regclass('public.ai_free_question_claims') is null then false
+            else not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'verified_phones' and cmd <> 'SELECT')
+             and not has_table_privilege('authenticated', 'public.ai_free_question_claims', 'SELECT')
+             and not has_table_privilege('anon', 'public.ai_free_question_claims', 'SELECT') end as ok;
+
+select 'the claim key is (phone, Riyadh day)' as check_name,
+       coalesce((select pg_get_constraintdef(oid) = 'PRIMARY KEY (phone_e164, riyadh_day)'
+                   from pg_constraint where conname = 'ai_free_question_claims_pkey'), false) as ok;
+
+select 'ai_start_free_question: one overload, SECURITY DEFINER, search_path = '''', service role only' as check_name,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                        and has_function_privilege(p.proowner,
+                              'public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)', 'EXECUTE')
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
+
+-- informational: nobody is verified until phone OTP exists, so nobody gets a free question
+select 'verified phones (info — 0 until OTP exists)' as check_name,
+       true as ok,
+       case when to_regclass('public.verified_phones') is null then null
+            else (xpath('/row/n/text()', query_to_xml('select count(*) as n from public.verified_phones', false, true, '')))[1]::text end as verified_phones;
+-- <<< verify:free_daily_question_1108
+
+-- >>> verify:drafter_daily_limit_1108
+-- 2026-11-08 — 20261108_41_drafter_daily_limit_excludes_sections.sql (final
+-- review, owner ٤١٠: a legal-drafter section edit no longer counts toward the
+-- drafter's daily limit, and the free draft after a succeeded analysis is never
+-- refused for the day). Any time — before or after the deploy. Read-only, safe
+-- to repeat. Every row must say ok = true (false = run 20261108_41).
+select 'ai_start_run leaves legal-drafter section edits out of the daily count' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) like '%is distinct from ''section''%'
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false) as ok;
+
+select 'ai_start_run never refuses the draft of a succeeded analysis for the day' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) like '%v_draft_after_analysis%'
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false) as ok;
+
+select 'ai_start_run: one overload, SECURITY DEFINER, search_path = '''', service role only' as check_name,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_run') = 1 as ok;
+-- <<< verify:drafter_daily_limit_1108

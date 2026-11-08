@@ -155,7 +155,8 @@ export async function GET(request: Request) {
     const [lawsCount, principles, ordersCount, feqhCount, topLaws, topOrders, topBooks, topCollections] = await Promise.all([
       count('articles', serverOnly),
       principlesFacet(),
-      count('decrees_circulars'),
+      // Service role: decrees_circulars.fts is server-only since 20261108_10.
+      count('decrees_circulars', serverOnly),
       count('feqh_blocks', serverOnly),
 
       // Top 2 law matches — title-first (the Labor Law for «نظام العمل»),
@@ -183,11 +184,12 @@ export async function GET(request: Request) {
         };
       })(),
 
-      // Top 2 decree matches
-      supabase
+      // Top 2 decree matches — service role: fts is server-only since
+      // 20261108_10. Only id / title / type leave this route.
+      serverOnly
         .schema('library')
         .from('decrees_circulars')
-        .select('id, title, type, ref')
+        .select('id, title, type')
         .textSearch('fts', ftsQuery, { config: LIBRARY_FTS_CONFIG })
         .order('id')
         .limit(4)

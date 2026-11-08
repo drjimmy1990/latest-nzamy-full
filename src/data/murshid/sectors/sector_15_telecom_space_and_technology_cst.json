@@ -1,0 +1,398 @@
+{
+  "sector_no": 15,
+  "sector_code": "S15",
+  "title": "القطاع 15: الاتصالات والفضاء والتقنية والمنصات الرقمية (CST)",
+  "generated_at": "2026-10-28",
+  "specialized_problem_cards_count": 2,
+  "agency_specific_cards_count": 2,
+  "total_cards_count": 4,
+  "cards": [
+    {
+      "card_id": "S15-CST-001",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 15,
+      "agency": {
+        "name": "هيئة الاتصالات والفضاء والتقنية",
+        "website": "https://www.cst.gov.sa/ar/Pages/default.aspx"
+      },
+      "problem_type": "شكاوى مستخدمي خدمات الاتصالات والإنترنت والفوترة ونقل الأرقام وتطبيقات التوصيل",
+      "stage": "شكوى ثم تصعيد",
+      "who_can_file": "المستخدمون والمشتركون (أفراد ومنشآت) في خدمات الاتصالات وتقنية المعلومات",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم شكوى لدى مقدم الخدمة أولاً والحصول على رقم مرجعي؛ فإذا لم يعالجها خلال المدة المقررة أو لم يقتنع المستخدم بالحل، يصعّد الشكوى إلكترونياً لهيئة الاتصالات والفضاء والتقنية عبر منصة (متصل) أو الرقم (19966)",
+          "channel": "portal",
+          "where": "https://mutasilind.cst.gov.sa/",
+          "deadline": {
+            "duration": "خلال المدة المحددة في وثيقة شروط تقديم الخدمة بعد رد مقدم الخدمة أو انتهاء مهلة رده (5 أيام لخدمات الاتصالات)",
+            "from_event": "تاريخ إغلاق الشكوى لدى مقدم الخدمة أو انتهاء مهلة المعالجة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "نظام الاتصالات والفضاء والتقنية ووثيقة تنظيمات حماية حقوق المستخدمين"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "لجنة النظر في مخالفات نظام الاتصالات والفضاء والتقنية ثم المحكمة الإدارية بديوان المظالم",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ التبليغ بقرار اللجنة",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "هيئة الاتصالات والفضاء والتقنية (منصة متصل) ولجنة النظر في المخالفات ثم ديوان المظالم",
+      "documents_required": [
+        "الرقم المرجعي للشكوى لدى مقدم الخدمة",
+        "الفواتير أو العقد أو ما يثبت الانقطاع أو المبالغ المفوترة بالخطأ"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام الاتصالات والفضاء والتقنية",
+          "article": "السابعة والعشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام ديوان المظالم",
+          "article": "الثالثة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@cst.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19966"
+          },
+          {
+            "value": "19552713681"
+          },
+          {
+            "value": "1943405"
+          },
+          {
+            "value": "1917138249"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — هيئة الاتصالات والفضاء والتقنية",
+            "url": "https://www.cst.gov.sa/ar/Pages/default.aspx"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.cst.gov.sa/about/contact-us"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها منصة متصل بهيئة الاتصالات ثم ديوان المظالم"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S15-CST-002",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 15,
+      "agency": {
+        "name": "هيئة الاتصالات والفضاء والتقنية",
+        "website": "https://www.cst.gov.sa/ar/Pages/default.aspx"
+      },
+      "problem_type": "التظلم من قرارات لجنة النظر في مخالفات نظام الاتصالات والفضاء والتقنية (الغرامات، إيقاف الخدمة، أو حجب المنصات)",
+      "stage": "تظلم",
+      "who_can_file": "مقدمو خدمات الاتصالات والتقنية والمنصات الرقمية الصادر بحقهم قرار عقوبة من اللجنة",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الدفاع أمام لجنة النظر في مخالفات نظام الاتصالات والفضاء والتقنية، ثم الطعن في قرار اللجنة أمام المحكمة الإدارية بديوان المظالم عبر منصة معين",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً (أو 30 يوماً وفق النص الخاص الساري)",
+            "from_event": "تاريخ التبليغ بقرار اللجنة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (27) من نظام الاتصالات والفضاء والتقنية ونظام ديوان المظالم"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "محكمة الاستئناف الإدارية بديوان المظالم",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة الحكم الابتدائي",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "المحكمة الإدارية بديوان المظالم",
+      "documents_required": [
+        "قرار لجنة النظر في مخالفات نظام الاتصالات والفضاء والتقنية",
+        "الترخيص الصادر من الهيئة والمستندات الفنية والقانونية"
+      ],
+      "fees": "مجاني أمام ديوان المظالم",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام الاتصالات والفضاء والتقنية",
+          "article": "السابعة والعشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام ديوان المظالم",
+          "article": "الثالثة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@cst.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19966"
+          },
+          {
+            "value": "19552713681"
+          },
+          {
+            "value": "1943405"
+          },
+          {
+            "value": "1917138249"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — هيئة الاتصالات والفضاء والتقنية",
+            "url": "https://www.cst.gov.sa/ar/Pages/default.aspx"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.cst.gov.sa/about/contact-us"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها منصة معين بديوان المظالم"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S15-AG-17597",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 15,
+      "agency": {
+        "name": "وزارة الاتصالات وتقنية المعلومات",
+        "website": "https://www.mcit.gov.sa/en/node"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «وزارة الاتصالات وتقنية المعلومات»",
+      "stage": "شكوى ثم تصعيد",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «وزارة الاتصالات وتقنية المعلومات»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «وزارة الاتصالات وتقنية المعلومات» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.mcit.gov.sa/en/node",
+          "deadline": {
+            "duration": "خلال المدة المحددة في وثيقة شروط تقديم الخدمة بعد رد مقدم الخدمة أو انتهاء مهلة رده (5 أيام لخدمات الاتصالات)",
+            "from_event": "تاريخ إغلاق الشكوى لدى مقدم الخدمة أو انتهاء مهلة المعالجة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "نظام الاتصالات والفضاء والتقنية ووثيقة تنظيمات حماية حقوق المستخدمين"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "لجنة النظر في مخالفات نظام الاتصالات والفضاء والتقنية ثم المحكمة الإدارية بديوان المظالم",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ التبليغ بقرار اللجنة",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "هيئة الاتصالات والفضاء والتقنية (منصة متصل) ولجنة النظر في المخالفات ثم ديوان المظالم",
+      "documents_required": [
+        "الرقم المرجعي للشكوى لدى مقدم الخدمة",
+        "الفواتير أو العقد أو ما يثبت الانقطاع أو المبالغ المفوترة بالخطأ"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام الاتصالات والفضاء والتقنية",
+          "article": "السابعة والعشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام ديوان المظالم",
+          "article": "الثالثة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@mcit.gov.sa"
+          },
+          {
+            "value": "jquery-validation@1.17.0"
+          },
+          {
+            "value": "reporttome@mcit.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "0118144444"
+          },
+          {
+            "value": "8001222030"
+          },
+          {
+            "value": "+966118144114"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ وزارة الاتصالات وتقنية المعلومات",
+            "url": "https://www.mcit.gov.sa/en/node"
+          },
+          {
+            "name": "Complaints and Suggestions",
+            "url": "https://mcit.gov.sa/en/node/add/contact_us"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17597"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها منصة متصل بهيئة الاتصالات ثم ديوان المظالم"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S15-AG-17567",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 15,
+      "agency": {
+        "name": "هيئة الاتصالات والفضاء والتقنية",
+        "website": "https://www.cst.gov.sa/ar/Pages/default.aspx"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «هيئة الاتصالات والفضاء والتقنية»",
+      "stage": "شكوى ثم تصعيد",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «هيئة الاتصالات والفضاء والتقنية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «هيئة الاتصالات والفضاء والتقنية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.cst.gov.sa/ar/Pages/default.aspx",
+          "deadline": {
+            "duration": "خلال المدة المحددة في وثيقة شروط تقديم الخدمة بعد رد مقدم الخدمة أو انتهاء مهلة رده (5 أيام لخدمات الاتصالات)",
+            "from_event": "تاريخ إغلاق الشكوى لدى مقدم الخدمة أو انتهاء مهلة المعالجة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "نظام الاتصالات والفضاء والتقنية ووثيقة تنظيمات حماية حقوق المستخدمين"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "لجنة النظر في مخالفات نظام الاتصالات والفضاء والتقنية ثم المحكمة الإدارية بديوان المظالم",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ التبليغ بقرار اللجنة",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "هيئة الاتصالات والفضاء والتقنية (منصة متصل) ولجنة النظر في المخالفات ثم ديوان المظالم",
+      "documents_required": [
+        "الرقم المرجعي للشكوى لدى مقدم الخدمة",
+        "الفواتير أو العقد أو ما يثبت الانقطاع أو المبالغ المفوترة بالخطأ"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام الاتصالات والفضاء والتقنية",
+          "article": "السابعة والعشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام ديوان المظالم",
+          "article": "الثالثة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@cst.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19966"
+          },
+          {
+            "value": "19552713681"
+          },
+          {
+            "value": "1943405"
+          },
+          {
+            "value": "1917138249"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ هيئة الاتصالات والفضاء والتقنية",
+            "url": "https://www.cst.gov.sa/ar/Pages/default.aspx"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.cst.gov.sa/about/contact-us"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17567"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها منصة متصل بهيئة الاتصالات ثم ديوان المظالم"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    }
+  ]
+}

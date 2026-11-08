@@ -8,6 +8,8 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import LibraryDeviceLimitPage from "@/components/library/LibraryDeviceLimitNotice";
+import { deviceRefusalOf, readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
@@ -105,6 +107,8 @@ export default function FeqhBookPage() {
    * There is no bundled or demo fallback any more.
    */
   const [notice, setNotice] = useState<ReaderNotice | null>(null);
+  // Owner ٤٢٧: the third device — the refusal with the authorised devices.
+  const [deviceRefusal, setDeviceRefusal] = useState<Extract<ReaderRefusal, { kind: "device" }> | null>(null);
 
   // Everything loaded so far, keyed by section (the index lists it), and the
   // sections known to be complete (see linkRun). Refs mirror the state so
@@ -221,6 +225,9 @@ export default function FeqhBookPage() {
       const res = await fetch(`/api/library/books/${apiSlug(slug)}?${cursor}&toc=0&limit=${STREAM_BATCH}`);
       const body = await res.json().catch(() => null);
       if (!res.ok || !body) {
+        // A device refused mid-book (owner ٤٢٧) gets the device page, not a line.
+        const device = deviceRefusalOf(res.status, body);
+        if (device) setDeviceRefusal(device);
         return { ok: false, status: res.status, error: typeof body?.error === "string" ? body.error : "تعذّر تحميل نص الكتاب، حاول مجدداً" };
       }
       return { ok: true, run: runFromCursorResponse(body, dir) };
@@ -449,6 +456,8 @@ export default function FeqhBookPage() {
       const body = await res.json().catch(() => null);
       if (generation !== bookGeneration.current) return;
       if (!res.ok || !body) {
+        const device = deviceRefusalOf(res.status, body);
+        if (device) setDeviceRefusal(device);
         setNavError(typeof body?.error === "string" ? body.error : "تعذّر فتح هذا الموضع، حاول مجدداً");
         return;
       }
@@ -585,6 +594,15 @@ export default function FeqhBookPage() {
         setLoading(false);
         return;
       }
+      // Owner ٤٢٧: a 403 device_limit is the device refusal, not a notice.
+      if (status === 403) {
+        const refusal = readerRefusalFrom(403, body, Date.now());
+        if (refusal?.kind === "device") {
+          setDeviceRefusal(refusal);
+          setLoading(false);
+          return;
+        }
+      }
       // q390: no bundled or demo fallback. 404 → «قريباً» (legacy slug) or not
       // found; 5xx → load error; any other refusal still says something.
       const error = typeof body?.error === "string" ? body.error : failure;
@@ -698,6 +716,8 @@ export default function FeqhBookPage() {
       citeTitle,
     ));
   }, [addEntryToCart, citeTitle]);
+
+  if (deviceRefusal) return <LibraryDeviceLimitPage refusal={deviceRefusal} />;
 
   if (loading) {
     return (

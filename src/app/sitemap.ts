@@ -76,23 +76,19 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/ai", priority: 0.9, changeFrequency: "monthly" },
   // No tool that opens to the beta gate or «قريباً» (TERMINAL_TOOL_ROUTES in
   // src/constants/betaGatedRoutes.ts; sitemap-tools.test.ts holds it).
-  { url: "/ai/analyze-strength", priority: 0.8, changeFrequency: "monthly" },
-  { url: "/ai/assistant", priority: 0.85, changeFrequency: "monthly" },
+  // Nor a lawyer-only tool page (LAWYER_ONLY_AI_PAGES, owner ٤١٧): it sends a
+  // guest to /login and any other account to its dashboard (final review
+  // 2026-11-08, item 8).
   { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/communicate", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/contract-drafter", priority: 0.85, changeFrequency: "monthly" },
-  { url: "/ai/contracts", priority: 0.85, changeFrequency: "monthly" },
   { url: "/ai/direction-support", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/draft", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/fee-calculator", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/legal-opinion", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/legal-translate", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/najiz-optimizer", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/secretary", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/templates", priority: 0.75, changeFrequency: "monthly" },
-  { url: "/ai/wargaming", priority: 0.75, changeFrequency: "monthly" },
 ];
 
 interface PublishedArticleRow {

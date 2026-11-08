@@ -1,0 +1,581 @@
+{
+  "sector_no": 8,
+  "sector_code": "S08",
+  "title": "القطاع 08: التأمين والضمان الصحي التعاوني (IA, IDC & CHI)",
+  "generated_at": "2026-10-28",
+  "specialized_problem_cards_count": 3,
+  "agency_specific_cards_count": 2,
+  "total_cards_count": 5,
+  "cards": [
+    {
+      "card_id": "S08-IA-001",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 8,
+      "agency": {
+        "name": "هيئة التأمين",
+        "website": "https://www.ia.gov.sa/"
+      },
+      "problem_type": "المنازعات الناشئة عن عقود ووثائق التأمين (تأمين المركبات، التأمين الطبي، تأمين الممتلكات والمسؤولية، ودعاوى الحلول)",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "المؤمن لهم والمستفيدون من التغطية التأمينية وشركات التأمين ومزاولو الخدمات المساندة",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم مطالبة مكتوبة لشركة التأمين وانتظار بتها خلال المدة النظامية (أو تقديم شكوى عبر بوابة هيئة التأمين)",
+          "channel": "portal",
+          "where": "https://ia.gov.sa/",
+          "deadline": {
+            "duration": "خلال سريان المطالبة وقبل مضي مدة عدم سماع الدعوى التأمينية",
+            "from_event": "تاريخ وقوع الحادث أو رفض شركة التأمين للمطالبة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (20) من نظام مراقبة شركات التأمين التعاوني وقواعد عمل اللجان التأمينية"
+        },
+        {
+          "n": 2,
+          "action": "قيد صحيفة الدعوى إلكترونياً لدى اللجان الابتدائية للفصل في المنازعات والمخالفات التأمينية عبر بوابة الأمانة العامة للجان التأمينية (IDC)",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "بعد رفض شركة التأمين للمطالبة أو مضي (15) يوماً من تقديم المطالبة المكتملة دون بت",
+            "from_event": "تاريخ تقديم المطالبة لشركة التأمين",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (20) من نظام مراقبة شركات التأمين التعاوني وقواعد وإجراءات عمل اللجان التأمينية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "اللجنة الاستئنافية للفصل في المنازعات والمخالفات التأمينية (IDC) — قراراتها نهائية غير قابلة للتظلم",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ التبليغ بقرار اللجنة الابتدائية",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "اللجان الابتدائية واللجنة الاستئنافية للفصل في المنازعات والمخالفات التأمينية (IDC)",
+      "documents_required": [
+        "وثيقة التأمين وإشعار تقديم المطالبة لشركة التأمين وردها بالرفض",
+        "تقرير الحادث المروري (نجم/المرور) وتقرير تقدير الأضرار (تقدير) في تأمين المركبات",
+        "الهوية الوطنية ورقم الآيبان البنكي والوكالة الشرعية"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة العشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة الثانية والعشرون"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@ia.gov.sa"
+          },
+          {
+            "value": "lic@ia.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "8001240551"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — هيئة التأمين",
+            "url": "https://www.ia.gov.sa/"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.ia.gov.sa/ar/help-and-supports"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://icare.ia.gov.sa/"
+          },
+          {
+            "name": "الإبلاغ عن الفساد",
+            "url": "https://my.gov.sa/ar/content/report-corruption"
+          },
+          {
+            "name": "مؤشر الشكاوى الواردة للهيئة على شركات التامين",
+            "url": "https://www.ia.gov.sa/ar/information-center/reports/complaint-kpi"
+          },
+          {
+            "name": "تفاصيل الخدمة",
+            "url": "https://www.ia.gov.sa/ar/eservices-ia/service-details/Complaint-against-an-insurance-company"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.ia.gov.sa/ar/help-and-supports/contact"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز فيما يتعلق بمطالبة شركة التأمين بموجب وثيقة التأمين (أما مطالبة المتسبب غير المؤمن مباشرة فترفع أمام المحكمة العامة عبر ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S08-IA-002",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 8,
+      "agency": {
+        "name": "هيئة التأمين",
+        "website": "https://www.ia.gov.sa/"
+      },
+      "problem_type": "تظلم شركات التأمين ومزاولي الخدمات المساندة من العقوبات والإجراءات الرقابية الصادرة بحقهم",
+      "stage": "تظلم",
+      "who_can_file": "شركات التأمين وإعادة التأمين وأصحاب المهن الحرة المساندة للتأمين الصادر بحقهم إجراء أو عقوبة",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم التظلم إلى اللجنة الابتدائية للفصل في المنازعات والمخالفات التأمينية عبر بوابة (IDC)",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ الإبلاغ بالإجراء أو العقوبة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (20) من نظام مراقبة شركات التأمين التعاوني"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "اللجنة الاستئنافية للفصل في المنازعات والمخالفات التأمينية (IDC)",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ التبليغ بقرار اللجنة الابتدائية",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "اللجان الابتدائية والاستئنافية التأمينية (IDC)",
+      "documents_required": [
+        "صورة القرار الصادر بالعقوبة أو الإجراء وتاريخ الإبلاغ",
+        "لائحة التظلم والمستندات المؤيدة"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة العشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة الثانية والعشرون"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@ia.gov.sa"
+          },
+          {
+            "value": "lic@ia.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "8001240551"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — هيئة التأمين",
+            "url": "https://www.ia.gov.sa/"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.ia.gov.sa/ar/help-and-supports"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://icare.ia.gov.sa/"
+          },
+          {
+            "name": "الإبلاغ عن الفساد",
+            "url": "https://my.gov.sa/ar/content/report-corruption"
+          },
+          {
+            "name": "مؤشر الشكاوى الواردة للهيئة على شركات التامين",
+            "url": "https://www.ia.gov.sa/ar/information-center/reports/complaint-kpi"
+          },
+          {
+            "name": "تفاصيل الخدمة",
+            "url": "https://www.ia.gov.sa/ar/eservices-ia/service-details/Complaint-against-an-insurance-company"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.ia.gov.sa/ar/help-and-supports/contact"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها بوابة idc.gov.sa"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S08-CHI-003",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 8,
+      "agency": {
+        "name": "مجلس الضمان الصحي",
+        "website": "https://chi.gov.sa/en/Pages/default.aspx"
+      },
+      "problem_type": "شكاوى رفض التغطية التأمينية الصحية الإلزامية ومخالفات نظام الضمان الصحي التعاوني",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "المستفيدون من الضمان الصحي التعاوني، أصحاب العمل، ومقدمو الرعاية الصحية المعتمدة",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم شكوى عبر بوابة مجلس الضمان الصحي (CHI) أو الرقم الموحد (920001177) لإلزام شركة التأمين بالتغطية أو إحالة المخالفة للجنة مخالفات نظام الضمان الصحي",
+          "channel": "portal",
+          "where": "https://www.chi.gov.sa/",
+          "deadline": {
+            "duration": "فوراً عند رفض الموافقة الطبية أو خلال سريان الوثيقة",
+            "from_event": "تاريخ رفض التغطية أو وقوع المخالفة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "نظام الضمان الصحي التعاوني ولائحته التنفيذية"
+        },
+        {
+          "n": 2,
+          "action": "الطعن في قرارات لجنة مخالفات نظام الضمان الصحي التعاوني أمام المحكمة الإدارية بديوان المظالم خلال (60) يوماً من الإبلاغ (والمطالبة المالية بالعوض التأميني أمام اللجان التأمينية IDC)",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ التبليغ بقرار لجنة مخالفات الضمان الصحي",
+            "legal_basis_id": "LB3"
+          },
+          "source": "نظام الضمان الصحي التعاوني والمادة (13/ب) من نظام ديوان المظالم"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "محكمة الاستئناف الإدارية بديوان المظالم",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة الحكم الابتدائي",
+            "legal_basis_id": "LB3"
+          }
+        }
+      ],
+      "final_forum": "لجنة مخالفات نظام الضمان الصحي ثم ديوان المظالم (أو اللجان التأمينية IDC للمطالبات العقدية)",
+      "documents_required": [
+        "بطاقة/وثيقة التأمين الصحي وتقرير الطبيب المعالج وطلب الموافقة المرفوض",
+        "فواتير العلاج المدفوعة (في حال طلب التعويض المالي)",
+        "قرار لجنة مخالفات الضمان الصحي (في حال الطعن الإداري)"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة العشرون"
+        },
+        {
+          "id": "LB3",
+          "instrument": "نظام ديوان المظالم",
+          "article": "الثالثة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@chi.gov.sa"
+          },
+          {
+            "value": "email-address@address.com"
+          },
+          {
+            "value": "moment@2.29.4"
+          },
+          {
+            "value": "portal@chi.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19977"
+          },
+          {
+            "value": "8001240551"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — مجلس الضمان الصحي",
+            "url": "https://chi.gov.sa/en/Pages/default.aspx"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها CHI وIDC وديوان المظالم"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S08-AG-18269",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 8,
+      "agency": {
+        "name": "هيئة التأمين",
+        "website": "https://www.ia.gov.sa/"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «هيئة التأمين»",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «هيئة التأمين»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «هيئة التأمين» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.ia.gov.sa/",
+          "deadline": {
+            "duration": "خلال سريان المطالبة وقبل مضي مدة عدم سماع الدعوى التأمينية",
+            "from_event": "تاريخ وقوع الحادث أو رفض شركة التأمين للمطالبة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (20) من نظام مراقبة شركات التأمين التعاوني وقواعد عمل اللجان التأمينية"
+        },
+        {
+          "n": 2,
+          "action": "قيد صحيفة الدعوى إلكترونياً لدى اللجان الابتدائية للفصل في المنازعات والمخالفات التأمينية عبر بوابة الأمانة العامة للجان التأمينية (IDC)",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "بعد رفض شركة التأمين للمطالبة أو مضي (15) يوماً من تقديم المطالبة المكتملة دون بت",
+            "from_event": "تاريخ تقديم المطالبة لشركة التأمين",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (20) من نظام مراقبة شركات التأمين التعاوني وقواعد وإجراءات عمل اللجان التأمينية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "اللجنة الاستئنافية للفصل في المنازعات والمخالفات التأمينية (IDC) — قراراتها نهائية غير قابلة للتظلم",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ التبليغ بقرار اللجنة الابتدائية",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "اللجان الابتدائية واللجنة الاستئنافية للفصل في المنازعات والمخالفات التأمينية (IDC)",
+      "documents_required": [
+        "وثيقة التأمين وإشعار تقديم المطالبة لشركة التأمين وردها بالرفض",
+        "تقرير الحادث المروري (نجم/المرور) وتقرير تقدير الأضرار (تقدير) في تأمين المركبات",
+        "الهوية الوطنية ورقم الآيبان البنكي والوكالة الشرعية"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة العشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة الثانية والعشرون"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@ia.gov.sa"
+          },
+          {
+            "value": "lic@ia.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "8001240551"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ هيئة التأمين",
+            "url": "https://www.ia.gov.sa/"
+          },
+          {
+            "name": "اتصل بنا",
+            "url": "https://www.ia.gov.sa/ar/help-and-supports"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://icare.ia.gov.sa/"
+          },
+          {
+            "name": "الإبلاغ عن الفساد",
+            "url": "https://my.gov.sa/ar/content/report-corruption"
+          },
+          {
+            "name": "مؤشر الشكاوى الواردة للهيئة على شركات التامين",
+            "url": "https://www.ia.gov.sa/ar/information-center/reports/complaint-kpi"
+          },
+          {
+            "name": "تفاصيل الخدمة",
+            "url": "https://www.ia.gov.sa/ar/eservices-ia/service-details/Complaint-against-an-insurance-company"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.ia.gov.sa/ar/help-and-supports/contact"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/18269"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز فيما يتعلق بمطالبة شركة التأمين بموجب وثيقة التأمين (أما مطالبة المتسبب غير المؤمن مباشرة فترفع أمام المحكمة العامة عبر ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S08-AG-17528",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 8,
+      "agency": {
+        "name": "مجلس الضمان الصحي",
+        "website": "https://chi.gov.sa/en/Pages/default.aspx"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «مجلس الضمان الصحي»",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «مجلس الضمان الصحي»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «مجلس الضمان الصحي» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://chi.gov.sa/en/Pages/default.aspx",
+          "deadline": {
+            "duration": "خلال سريان المطالبة وقبل مضي مدة عدم سماع الدعوى التأمينية",
+            "from_event": "تاريخ وقوع الحادث أو رفض شركة التأمين للمطالبة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (20) من نظام مراقبة شركات التأمين التعاوني وقواعد عمل اللجان التأمينية"
+        },
+        {
+          "n": 2,
+          "action": "قيد صحيفة الدعوى إلكترونياً لدى اللجان الابتدائية للفصل في المنازعات والمخالفات التأمينية عبر بوابة الأمانة العامة للجان التأمينية (IDC)",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "بعد رفض شركة التأمين للمطالبة أو مضي (15) يوماً من تقديم المطالبة المكتملة دون بت",
+            "from_event": "تاريخ تقديم المطالبة لشركة التأمين",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (20) من نظام مراقبة شركات التأمين التعاوني وقواعد وإجراءات عمل اللجان التأمينية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "اللجنة الاستئنافية للفصل في المنازعات والمخالفات التأمينية (IDC) — قراراتها نهائية غير قابلة للتظلم",
+          "channel": "portal",
+          "where": "https://idc.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ التبليغ بقرار اللجنة الابتدائية",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "اللجان الابتدائية واللجنة الاستئنافية للفصل في المنازعات والمخالفات التأمينية (IDC)",
+      "documents_required": [
+        "وثيقة التأمين وإشعار تقديم المطالبة لشركة التأمين وردها بالرفض",
+        "تقرير الحادث المروري (نجم/المرور) وتقرير تقدير الأضرار (تقدير) في تأمين المركبات",
+        "الهوية الوطنية ورقم الآيبان البنكي والوكالة الشرعية"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة العشرون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام مراقبة شركات التأمين التعاوني",
+          "article": "المادة الثانية والعشرون"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@chi.gov.sa"
+          },
+          {
+            "value": "email-address@address.com"
+          },
+          {
+            "value": "moment@2.29.4"
+          },
+          {
+            "value": "portal@chi.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19977"
+          },
+          {
+            "value": "8001240551"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ مجلس الضمان الصحي",
+            "url": "https://chi.gov.sa/en/Pages/default.aspx"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17528"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز فيما يتعلق بمطالبة شركة التأمين بموجب وثيقة التأمين (أما مطالبة المتسبب غير المؤمن مباشرة فترفع أمام المحكمة العامة عبر ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    }
+  ]
+}

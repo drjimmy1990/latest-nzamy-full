@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
+import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
@@ -106,10 +109,10 @@ export async function GET(
 
     if (collError) {
       console.error('[Precedents API] collection lookup failed:', collError);
-      return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     if (!collection) {
-      return NextResponse.json({ error: 'لم يُعثر على مجموعة المبادئ هذه' }, { status: 404 });
+      return NextResponse.json({ error: 'لم يُعثر على مجموعة المبادئ هذه' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     // N2.4: the other volumes of a tagged series, for the reader's volume
@@ -146,6 +149,15 @@ export async function GET(
     // while evaluating explicit free access for every principle below.
     const probe = await checkLibraryAccess(userId, slug, 0, "principles", { includeExplicitFreeItem: false });
     const { hasFullAccess, freeItemsByType, whitelistedSlugs } = await getLibraryAccessForUser(userId);
+    // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
+    // devices (src/lib/library/deviceLimitServer.ts; fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
+    if (deviceRefusal) return deviceRefusal;
+    // Final review 2026-11-08 (3): the document is spent HERE, after the device
+    // check — never in the proxy — so a read refused for its device spends
+    // none of the account's quota and cannot open its lock.
+    const quotaRefusal = await spendLibraryDocument(request, userId);
+    if (quotaRefusal) return quotaRefusal;
     const isWhitelisted = false;
 
     // ?target=<principle id> (q390-ب): open the window that holds it. It only
@@ -192,13 +204,13 @@ export async function GET(
           .eq('collection_id', slug);
         if (head.error) {
           console.error('[Precedents API] principle count failed:', head.error);
-          return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500 });
+          return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
         }
         principles = [];
         total = head.count;
       } else {
         console.error('[Precedents API] principles query failed:', principlesQuery.error);
-        return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       }
     }
     const totalCount = total ?? offset + (principles?.length ?? 0);
@@ -292,9 +304,9 @@ export async function GET(
       hasAccess: hasFullAccess, // legacy field kept for existing client checks
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   } catch (error) {
     console.error('[Precedents API] Error:', error);
-    return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500 });
+    return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   }
 }

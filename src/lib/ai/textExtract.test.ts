@@ -154,7 +154,11 @@ test("textPages: the pinned rule", () => {
   assert.equal(textPages(""), 1);
   assert.equal(textPages("x".repeat(3000)), 1);
   assert.equal(textPages("x".repeat(3001)), 2);
-  assert.equal(textPages("x".repeat(TEXT_FILE_MAX_CHARS)), 30);
+  assert.equal(textPages("x".repeat(90_000)), 30);
+  // Owner ٤٣٩ (8 Nov 2026): the raw ceiling is twice 30 pages, so 30 counted
+  // pages of fully vocalised text are served whole (pageCount.test.ts).
+  assert.equal(TEXT_FILE_MAX_CHARS, 180_000);
+  assert.equal(textPages("x".repeat(TEXT_FILE_MAX_CHARS)), 60);
 });
 
 test("textKindOf: mime first, then the extension for an unhelpful mime", () => {

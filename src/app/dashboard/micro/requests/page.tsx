@@ -42,7 +42,7 @@ import { COMING_SOON_BADGE_AR, isTerminalToolHref } from "@/constants/betaGatedR
 // beta-gated tool (registry: src/constants/betaGatedRoutes.ts) says «قريباً».
 const SERVICE_TYPES = [
   { id: "consult", label: "استشارة قانونية", desc: "رأي متخصص في مسألتك", icon: Headset, price: "", href: "/ai/consult" },
-  { id: "contract", label: "محترف العقود", desc: "عقد مخصص لنشاطك", icon: FileText, price: "", href: "/ai/contracts" },
+  // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» (/ai/contracts) is a lawyer and firm tool — no row here.
   { id: "case", label: "تمثيل قانوني", desc: "محامٍ يمثلك رسمياً", icon: Gavel, price: "حسب القضية", href: "/dashboard/micro/find-lawyer" },
   { id: "notice", label: "إشعار قانوني", desc: "إشعار رسمي لطرف ثالث", icon: Warning, price: "", href: "/ai/consult" },
 ].map((s) => ({ ...s, price: isTerminalToolHref(s.href) ? COMING_SOON_BADGE_AR : s.price }));

@@ -14,6 +14,8 @@ import { isDemoMode } from "@/lib/runtimeMode";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { apiSlug } from '@/utils/apiSlug';
+import LibraryDeviceLimitPage from "@/components/library/LibraryDeviceLimitNotice";
+import { deviceRefusalOf, type ReaderRefusal } from "@/lib/library/readerRefusal";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 interface FeqhBlock {
@@ -144,6 +146,8 @@ export default function FeqhPreviewPage() {
   // Owner decision ١١٥: DEMO_BOOK is demo content. It may stand in only in demo
   // mode; elsewhere the page shows a book only once the server returned one.
   const [loadedFromServer, setLoadedFromServer] = useState(false);
+  // Owner ٤٢٧: a 403 device refusal gets the device page, not «تعذّر عرض الكتاب».
+  const [deviceRefusal, setDeviceRefusal] = useState<Extract<ReaderRefusal, { kind: "device" }> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -163,7 +167,11 @@ export default function FeqhPreviewPage() {
         // Step 2: Fetch full content for the first book
         const firstBook = books[0];
         const bookRes = await fetch(`/api/library/books/${apiSlug(firstBook.id)}`);
-        if (!bookRes.ok) throw new Error("book fetch failed");
+        if (!bookRes.ok) {
+          const device = deviceRefusalOf(bookRes.status, await bookRes.json().catch(() => null));
+          if (device && !cancelled) setDeviceRefusal(device);
+          throw new Error("book fetch failed");
+        }
         const data = await bookRes.json();
 
         if (cancelled) return;
@@ -263,6 +271,8 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
     large: "text-lg md:text-xl leading-loose",
     xlarge: "text-xl md:text-2xl leading-extra-loose",
   }[fontSize];
+
+  if (deviceRefusal) return <LibraryDeviceLimitPage refusal={deviceRefusal} />;
 
   if (!isDemoMode && !loadedFromServer) {
     return (

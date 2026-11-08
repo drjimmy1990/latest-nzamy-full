@@ -298,7 +298,7 @@ let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
 return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
 
-// ── L7 عصارة المرفقات / الموجز القضائي ──────────────────────────────────────
+// ── L7 عصارة المرفقات (its only name, owner ٤٤١) ─────────────────────────────
 // The lawyer's role note and the files → a BriefResult. The app rebuilds the
 // object field by field (tools.ts caseBriefOutput); nothing here is trusted.
 const CASE_BRIEF_PROMPT = String.raw`const wantRequests = i.want_requests !== false;
@@ -329,8 +329,9 @@ const prompt = [
 
 // ── contract review (owner's canonical pricing, item 9) ─────────────────────
 // One contract, for the party the user names. The risk is a word and the app
-// refuses any percentage in the reply (tools.ts hasPercent), a rate the contract
-// itself states included: hence the rule that writes such a rate in words. The
+// refuses any percentage in the reply that the pasted contract does not state
+// verbatim (tools.ts percentsOutsideInput, owner ٤٤٠); an uploaded contract is not
+// read by the app, so the rule that writes a contract's rate in words stays. The
 // clause budget keeps the JSON whole inside maxOutputTokens.
 const CONTRACT_REVIEW_PROMPT = String.raw`const line = (label, v) => (v ? label + ': «' + esc(v) + '»' : '');
 const prompt = [
@@ -666,7 +667,10 @@ const CONSULT_PARSE = (() => {
 // Two runs of one work (tools.ts «legal-drafter»): phase «issues» turns the
 // facts into the issues, the defences and the requests the lawyer then
 // confirms or edits; phase «draft» writes the pleading from what he confirmed
-// and nothing else. Both stand on the library texts the app sent (<sources>,
+// and nothing else; phase «section» (owner ٤١٠, a later run of the same
+// conversation) rewrites one section of the written pleading as the lawyer
+// asks, and only that section (DRAFTER_PARSE is unchanged: the app's
+// validateOutput keeps {heading, body, cited} and the section's index). Both stand on the library texts the app sent (<sources>,
 // cited inline as [S1]); every article is also listed in `cited` for the
 // library's verdict (citationCheck.ts).
 const LEGAL_DRAFTER_PROMPT = String.raw`${SOURCES_XML}
@@ -691,7 +695,21 @@ const frame = [
   q('أسباب الحكم', j.reasons),
   q('ملاحظات المحامي', i.notes),
 ];
-const task = i.phase === 'draft' ? [
+const sec = i.section || {};
+const outline = (Array.isArray(i.outline) ? i.outline : []).map((h, n) => (n + 1) + '. ' + esc(h)).join('\n');
+const task = i.phase === 'section' ? [
+  'مرحلة تعديل قسم: ' + kind + ' مكتوبة، وطلب المحامي تعديل قسم واحد منها. أعد كتابة هذا القسم وحده وفق طلبه؛ لا تكتب الأقسام الأخرى ولا تكرر محتواها، ولا تعِد المذكرة كاملة.',
+  i.title ? 'عنوان المذكرة: «' + esc(i.title) + '»' : '',
+  outline ? 'أقسام المذكرة، للسياق فقط:\n' + outline : '',
+  'القسم المطلوب (رقم ' + (Number(i.section_index) + 1) + '): «' + esc(sec.heading) + '»\nنصه الحالي: «' + esc(sec.body) + '»',
+  'طلب المحامي في هذا القسم: «' + esc(i.instruction) + '»',
+  i.facts ? 'الوقائع كما أكّدها المحامي: «' + esc(i.facts) + '»' : '',
+  Array.isArray(i.defenses) && i.defenses.length ? 'الدفوع التي اعتمدها المحامي؛ لا تضف دفعاً لم يعتمده:\n' + list(i.defenses, 'basis') : '',
+  reqs ? 'الطلبات كما حددها المحامي؛ لا تضف طلباً ولا تغيّر مبلغاً:\n' + reqs : '',
+  'أبقِ من القسم ما لم يطلب المحامي تغييره بمعناه، ولا تضف واقعة أو دفعاً أو طلباً أو مبلغاً لم يرد في القسم أو في كلام المحامي.',
+  'heading عنوان القسم (أبقه كما هو ما لم يطلب المحامي تغييره)، وbody نص القسم الجديد كاملاً.',
+  'الشكل: {"heading":"","body":"","cited":[{"law":"","article":0,"as_written":""}]}',
+] : i.phase === 'draft' ? [
   'المرحلة الثانية: اكتب نص ' + kind + ' كاملاً بالعربية الفصحى القانونية، بالترتيب المعتاد أمام المحاكم السعودية: البيانات والديباجة، ثم الوقائع، ثم الأسانيد والدفوع، ثم الطلبات.',
   'الوقائع كما أكّدها المحامي: «' + esc(i.facts) + '»',
   'المسائل التي أكّدها المحامي:\n' + list(i.issues, 'detail'),

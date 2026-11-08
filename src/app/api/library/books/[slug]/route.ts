@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
+import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
@@ -53,7 +56,7 @@ export async function GET(
     // missing migration. It is a client error — say so before any query.
     const plan = planBlocksRequest(searchParams);
     if (!plan.ok) {
-      return NextResponse.json({ error: plan.error }, { status: 400 });
+      return NextResponse.json({ error: plan.error }, { status: 400, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const { sectionId } = plan; // sectionId: optional, one section's blocks
     const includeToc = searchParams.get('toc') !== '0';
@@ -71,10 +74,10 @@ export async function GET(
 
     if (bookError) {
       console.error('[Books API] book lookup failed:', bookError);
-      return NextResponse.json({ error: 'تعذّر تحميل الكتاب' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل الكتاب' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     if (!book) {
-      return NextResponse.json({ error: 'لم يُعثر على هذا الكتاب' }, { status: 404 });
+      return NextResponse.json({ error: 'لم يُعثر على هذا الكتاب' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     // ?at_page= (owner note ٠٢, «انتقال للصفحة»): the first block printed on
@@ -97,11 +100,11 @@ export async function GET(
         .limit(1);
       if (hitError) {
         console.error(`[Books] page lookup failed for "${slug}":`, hitError);
-        return NextResponse.json({ error: 'تعذّر البحث عن هذه الصفحة' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّر البحث عن هذه الصفحة' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       }
       const order = (hit?.[0] as { order_index?: unknown } | undefined)?.order_index;
       if (typeof order !== 'number') {
-        return NextResponse.json({ error: 'لا توجد هذه الصفحة في هذا الكتاب', pageNotFound: true }, { status: 404 });
+        return NextResponse.json({ error: 'لا توجد هذه الصفحة في هذا الكتاب', pageNotFound: true }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       }
       selection = { mode: 'after', order };
     } else {
@@ -154,6 +157,16 @@ export async function GET(
     const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
     const hasFullAccess = freeLimit === -1 || isWhitelisted;
     const byOverride = probe.freeLimitSource === 'override';
+    // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
+    // devices (src/lib/library/deviceLimitServer.ts; fails open). A free
+    // (whitelisted) book is everyone's, so it is not device-checked.
+    const deviceRefusal = await enforceLibraryDevice(userId, freeLimit === -1 && !isWhitelisted);
+    if (deviceRefusal) return deviceRefusal;
+    // Final review 2026-11-08 (3): the document is spent HERE, after the device
+    // check — never in the proxy — so a read refused for its device spends
+    // none of the account's quota and cannot open its lock.
+    const quotaRefusal = await spendLibraryDocument(request, userId);
+    if (quotaRefusal) return quotaRefusal;
 
     // The order_index from which blocks are locked. Owner answer ١٨٣: the
     // book's first two printed pages (its leading blocks' page_number, public
@@ -203,7 +216,7 @@ export async function GET(
       );
       if (toc.error) {
         console.error(`[Books API] TOC query failed for "${slug}":`, toc.error);
-        return NextResponse.json({ error: 'تعذّر تحميل فهرس هذا الكتاب' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّر تحميل فهرس هذا الكتاب' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       }
       chapters = toc.data;
     }
@@ -415,7 +428,7 @@ export async function GET(
         const head = await countBlocks(s.scope);
         if (head.error) {
           console.error(`[Books] block count failed for "${slug}":`, head.error);
-          return NextResponse.json({ error: 'تعذّر تحميل نصوص هذا الكتاب' }, { status: 500 });
+          return NextResponse.json({ error: 'تعذّر تحميل نصوص هذا الكتاب' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
         }
         blocksError = null;
         blocks = [];
@@ -437,7 +450,7 @@ export async function GET(
         blocksError,
       );
       // Never an empty 200: the reader would show a blank book as if it had no text.
-      return NextResponse.json({ error: 'تعذّر تحميل نصوص هذا الكتاب' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل نصوص هذا الكتاب' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     // Cursor windows: the extra row only signals that more follow; the
@@ -520,9 +533,9 @@ export async function GET(
           },
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   } catch (error) {
     console.error('[Books API] Error:', error);
-    return NextResponse.json({ error: 'تعذّر تحميل الكتاب' }, { status: 500 });
+    return NextResponse.json({ error: 'تعذّر تحميل الكتاب' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   }
 }

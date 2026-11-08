@@ -5,6 +5,7 @@ import {
   X, Copy, BookOpen, ArrowsLeftRight, MagnifyingGlass, Warning, CaretDown
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import LawyerToolLink from "@/components/ai/LawyerToolLink";
 import AiResultActions from "@/components/AiResultActions";
 import {
   LANGS,
@@ -354,10 +355,10 @@ export function ResultView({
                    </tbody>
                  </table>
                  <div className={`mt-4 pt-4 border-t flex justify-end items-center gap-3 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                   <Link href="/ai/wargaming" className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-bold transition-colors ${isDark ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-red-50 text-red-600 hover:bg-red-100"}`}>
+                   <LawyerToolLink href="/ai/wargaming" className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-bold transition-colors ${isDark ? "bg-red-500/10 text-red-500 hover:bg-red-500/20" : "bg-red-50 text-red-600 hover:bg-red-100"}`}>
                      <Warning size={14} weight="bold" />
                      حلّل هذا العقد في محاكي الخصم
-                   </Link>
+                   </LawyerToolLink>
                  </div>
              </div>
            </motion.div>

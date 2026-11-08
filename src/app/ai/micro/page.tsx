@@ -3,45 +3,22 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Storefront, Warning, UsersThree, HouseSimple,
-  ArrowLeft, ClipboardText, Receipt, UserCircle,
+  Storefront, Warning, ChatCircleDots, Brain,
+  ArrowLeft, ClipboardText, UserCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 
 // S3-05. This page used to wait 2.5 seconds and print a template built from the
-// answers, behind the beta gate. The three contract cases now open the real
-// contract drafter, at the drafter's own price. The other three have no engine
-// yet, so they say «قريباً» and open nothing.
+// answers, behind the beta gate. Owner ٤١٧ (answer of 8 Nov 2026): the contract
+// tools («محترف العقود» and the contract drafter) are for lawyers and law firms
+// only, so the three contract cases that opened the drafter are gone; a small
+// business gets the general guidance tools every account runs. The other three
+// cases have no engine yet, so they say «قريباً» and open nothing.
 
-const CONTRACT_CASES = [
-  {
-    id: "labor_contract",
-    icon: UsersThree,
-    title: "عقد عامل / موظف",
-    desc: "عقد عمل بسيط لعامل في المحل",
-    color: "text-blue-500",
-    bg: "bg-blue-500/10",
-    border: "border-blue-500/30",
-  },
-  {
-    id: "rent_contract",
-    icon: HouseSimple,
-    title: "عقد إيجار محل",
-    desc: "عقد تأجير أو استئجار محل تجاري بسيط",
-    color: "text-purple-500",
-    bg: "bg-purple-500/10",
-    border: "border-purple-500/30",
-  },
-  {
-    id: "service_contract",
-    icon: Receipt,
-    title: "عقد خدمة",
-    desc: "اتفاقية خدمة أو صيانة أو توريد بسيطة",
-    color: "text-emerald-500",
-    bg: "bg-emerald-500/10",
-    border: "border-emerald-500/30",
-  },
+/** The general guidance owner ٤١٧ leaves open to every account (tools.ts REGISTERED_ROLES). */
+const GUIDANCE_LINKS = [
+  { href: "/ai/quick-answer", icon: ChatCircleDots, title: "سؤال قانوني سريع", desc: "سؤال محدد عن نشاطك — إجابة مستندة إلى الأنظمة السعودية" },
+  { href: "/ai/legal-opinion", icon: Brain, title: "الرأي القانوني", desc: "استشارة مكتوبة أو خطاب قانوني في مسألتك" },
 ];
 
 const SOON_CASES = [
@@ -76,28 +53,28 @@ export default function MicroBusinessPage() {
           <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>المساعد القانوني للمنشآت الصغيرة</h1>
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-          اختر حالتك. العقود تُكتب بمحرر العقود المختصر، وبقية الحالات قريباً.
+          للتوجيه العام اختر أداة أدناه. صياغة العقود في نظامي من أدوات المحامين ومكاتب المحاماة.
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {CONTRACT_CASES.map((s) => {
+        {GUIDANCE_LINKS.map((s) => {
           const Icon = s.icon;
           return (
-            <motion.div key={s.id} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
+            <motion.div key={s.href} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
               <Link
-                href="/ai/contract-drafter"
+                href={s.href}
                 className={`block rounded-2xl border p-5 text-start transition-all ${
                   isDark ? "border-white/[0.07] hover:bg-white/[0.03]" : "border-zinc-200/70 bg-white hover:bg-zinc-50 shadow-sm"
                 }`}
               >
-                <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${s.bg} ${s.border} border`}>
-                  <Icon size={20} weight="duotone" className={s.color} />
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-[#C8A762]/30 bg-[#C8A762]/10">
+                  <Icon size={20} weight="duotone" className="text-[#C8A762]" />
                 </div>
                 <p className={`font-bold text-[14px] mb-1 ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{s.title}</p>
                 <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{s.desc}</p>
-                <div className={`mt-3 flex items-center gap-1 text-[11px] font-semibold ${s.color}`}>
-                  <span>يُكتب بمحرر العقود المختصر — {aiToolPriceText("contract-drafter", "ar")}</span>
+                <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-[#C8A762]">
+                  <span>افتح الأداة</span>
                   <ArrowLeft size={12} />
                 </div>
               </Link>

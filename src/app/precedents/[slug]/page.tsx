@@ -9,6 +9,8 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import LibraryDeviceLimitPage from "@/components/library/LibraryDeviceLimitNotice";
+import { deviceRefusalOf, readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import PrincipleBlock from "./_principle-block";
@@ -145,6 +147,8 @@ export default function JudicialPrinciplesPage() {
    * There is no bundled fallback any more.
    */
   const [notice, setNotice] = useState<ReaderNotice | null>(null);
+  // Owner ٤٢٧: the third device — the refusal with the authorised devices.
+  const [deviceRefusal, setDeviceRefusal] = useState<Extract<ReaderRefusal, { kind: "device" }> | null>(null);
 
   // Windowed loading. A collection holds up to 2,323 principles, above the
   // database's 1,000-row cap, so the API serves 50-row windows. The page holds
@@ -386,6 +390,15 @@ export default function JudicialPrinciplesPage() {
         setLoading(false);
         return;
       }
+      // Owner ٤٢٧: a 403 device_limit is the device refusal, not a notice.
+      if (status === 403) {
+        const refusal = readerRefusalFrom(403, body, Date.now());
+        if (refusal?.kind === "device") {
+          setDeviceRefusal(refusal);
+          setLoading(false);
+          return;
+        }
+      }
       const error = typeof body?.error === "string" ? body.error : failure;
       // 404 → «قريباً» (legacy slug) or not found; 5xx → load error. Any other
       // refusal (quota, lock) still says something: never a blank page.
@@ -420,6 +433,9 @@ export default function JudicialPrinciplesPage() {
         const body = await res.json().catch(() => null);
         if (generation !== runGeneration.current) return "done";
         if (!res.ok || !body) {
+          // A device refused mid-collection (owner ٤٢٧) gets the device page, not a line.
+          const device = deviceRefusalOf(res.status, body);
+          if (device) { setDeviceRefusal(device); return "error"; }
           setMoreError(typeof body?.error === "string" ? body.error : "تعذّر تحميل المزيد من المبادئ");
           return "error";
         }
@@ -464,6 +480,8 @@ export default function JudicialPrinciplesPage() {
         const body = await res.json().catch(() => null);
         if (generation !== runGeneration.current) return;
         if (!res.ok || !body) {
+          const device = deviceRefusalOf(res.status, body);
+          if (device) { setDeviceRefusal(device); return; }
           setBeforeError(typeof body?.error === "string" ? body.error : "تعذّر تحميل المبادئ السابقة");
           return;
         }
@@ -512,6 +530,8 @@ export default function JudicialPrinciplesPage() {
       const body = await res.json().catch(() => null);
       if (generation !== runGeneration.current) return false;
       if (!res.ok || !body) {
+        const device = deviceRefusalOf(res.status, body);
+        if (device) { setDeviceRefusal(device); return false; }
         setMoreError(typeof body?.error === "string" ? body.error : "تعذّر فتح موضع هذا المبدأ");
         return false;
       }
@@ -773,6 +793,8 @@ export default function JudicialPrinciplesPage() {
     setCopiedPrincipleId(p.id);
     setTimeout(() => setCopiedPrincipleId(""), 2000);
   };
+
+  if (deviceRefusal) return <LibraryDeviceLimitPage refusal={deviceRefusal} />;
 
   if (loading) {
     return (

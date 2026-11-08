@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import LawyerToolLink from "@/components/ai/LawyerToolLink";
 import { motion } from "framer-motion";
 import { PencilLine, SealCheck, FileMagnifyingGlass } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -112,8 +113,10 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
             </div>
           </motion.button>
 
-          {/* B — مراجعة وتدقيق مذكرة (a team order on /ai/brief-check) */}
-          <Link
+          {/* B — مراجعة وتدقيق مذكرة (a team order on /ai/brief-check). Owner ٤١٧ /
+              ٤٤٣ (8 Nov 2026): /ai/brief-check is a lawyer and firm page now, so
+              the card is drawn for them (and an admin) only. */}
+          <LawyerToolLink
             href="/ai/brief-check"
             className={`group relative block overflow-hidden rounded-3xl border p-6 text-start transition-all duration-300 hover:-translate-y-0.5 ${
               isDark
@@ -155,7 +158,7 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
               <span>ارفع مذكرتك</span>
               <motion.span animate={{ x: [0, 4, 0] }} transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}>←</motion.span>
             </div>
-          </Link>
+          </LawyerToolLink>
         </div>
 
         {/* Bottom hint */}

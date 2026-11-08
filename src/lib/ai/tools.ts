@@ -14,8 +14,19 @@
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
 import { strictNationalId } from "../services/clientIdentityRules.ts";
 import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
+import { measurePaste } from "./pageCount.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
+import { stripCitationMarkers } from "./citationMarkers.ts";
+import {
+  SECTION_EDIT_COPY,
+  SECTION_EDIT_MAX_PER_MEMO,
+  SECTION_EDIT_PHASE,
+  SECTION_INSTRUCTION_MAX,
+  countSectionEdits,
+  sectionEditPrice,
+  type SectionEditCounts,
+} from "./sectionEdits.ts";
 
 export type AiToolClass = "fast" | "job";
 export type AiModelTier = "fast" | "deep";
@@ -36,8 +47,33 @@ export interface AiToolSpec {
   roles: readonly string[];
   /** Art. 18: a consultant (practice_kind) may not run it. */
   consultantBlocked: boolean;
-  /** The price in points, from the validated input (metered tools read `pages`). */
-  price: (input: Record<string, unknown>, ctx: { pages: number | null; turn?: number }) => number;
+  /**
+   * The price in points, from the validated input (metered tools read `pages`).
+   * `priorSectionEdits`: the memo's section edits so far, read by runCore from
+   * the conversation's runs for a `sectionEdit` run only (owner ٤١٠).
+   */
+  price: (input: Record<string, unknown>, ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts }) => number;
+  /**
+   * Owner ٤١٠ (legal-drafter): a run whose input.phase is `phase` edits one
+   * section of the memo. runCore counts the memo's earlier section edits for
+   * `price`, and starts it through public.ai_start_section_edit, which counts
+   * again under the start lock (sectionEdits.ts). Such a run never spends a
+   * founder credit.
+   */
+  sectionEdit?: { phase: string };
+  /**
+   * A library tool's run that may succeed citing none of the texts it was sent
+   * (stored as is, unflagged). Owner ٤١٠: a section edit of a section that cited
+   * nothing (the parties' data, a reworded preamble).
+   */
+  citationsOptional?: (input: Record<string, unknown>) => boolean;
+  /**
+   * Owner ٤١٢ (quick-answer): one free question a day per verified phone of an
+   * individual account (freeQuestion.ts). A request with `useFreeQuestion`
+   * starts at price 0 through public.ai_start_free_question, which claims the
+   * day atomically or refuses; it never falls back to a charge or to free.
+   */
+  freeDailyQuestion?: boolean;
   /** Runs per user per Riyadh day while nothing else limits them (plan §1.2). */
   dailyLimit: number;
   /** The mode until an admin sets one in platform_settings.ai_tools. */
@@ -56,6 +92,13 @@ export interface AiToolSpec {
    * after the conversation's earlier runs are read and before the charge.
    */
   checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
+  /**
+   * Rebuilds, from the conversation's stored runs, the parts of the input the
+   * server already holds, so the browser's copy is never trusted (owner ٤١٠:
+   * the section being edited as it now reads, whether it cited, the memo's
+   * frame). Runs right after checkTurn passed; a refusal is uncharged.
+   */
+  fromPrior?: (input: Record<string, unknown>, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => InputCheck;
   /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
   filesRequired?: (input: Record<string, unknown>) => boolean;
   /** What `filesRequired` says when the general «مستندات الوقائع» copy would name the wrong thing. */
@@ -143,13 +186,26 @@ const ECHO_ROLES = ["lawyer", "firm"] as const;
 
 /**
  * Every registered customer account type: profiles.user_type minus `admin`.
- * Owner ٤١٧ (7 Nov 2026): the AI tools are open, for points, to every
- * registered user, and every one of these types can buy points (priceBook
- * top-ups). An admin passes every tool anyway (toolRoleRefusal). Art. 18's
- * consultant lock is the separate `consultantBlocked` flag, and a tool that
- * searches the library still needs the library AI's own tier (runs/route.ts).
+ * Owner ٤١٧, answer of 8 Nov 2026 (it reverses his 7 Nov answer, which had
+ * opened every tool to every registered account): only the general guidance
+ * tools stay open to all of these — the quick answer and the two legal-opinion
+ * types. Every one of these types can buy points (priceBook top-ups). An admin
+ * passes every tool anyway (toolRoleRefusal). Art. 18's consultant lock is the
+ * separate `consultantBlocked` flag, and a tool that searches the library still
+ * needs the library AI's own tier (runs/route.ts).
  */
 export const REGISTERED_ROLES = ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"] as const;
+
+/**
+ * Owner ٤١٧, answer of 8 Nov 2026: «الصائغ القانوني» و«محترف العقود» و«مفاوض
+ * العقود» و«عصارة المرفقات» are for licensed lawyers and law firms only;
+ * individuals and companies get only the general guidance tools. The controller
+ * ruling applies the same line to every working tool (drafter, contracts and
+ * the review inside it, negotiator, case brief, simulator, strength, najiz,
+ * brief check, communicator, assistant, case-board card, contract drafter).
+ * The /ai pages these tools live on follow it too (src/lib/ai/lawyerOnlyTools.ts).
+ */
+export const LAWYER_FIRM_ROLES = ["lawyer", "firm"] as const;
 
 // ── wave 1: text only, fast, no retrieval (plan §5, «Wave 1») ───────────────
 // Both start off: D10 (personal data sent to a provider outside the Kingdom)
@@ -408,7 +464,7 @@ const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T): T
 const listOf = <T>(v: unknown, max: number, map: (x: unknown) => T | null): T[] =>
   (Array.isArray(v) ? v : []).map(map).filter((x): x is T => x !== null).slice(0, max);
 
-/** L7 عصارة المرفقات / الموجز القضائي: who the lawyer acts for, and whether to list what to ask the client for. */
+/** L7 عصارة المرفقات (owner ٤٤١: its only name): who the lawyer acts for, and whether to list what to ask the client for. */
 function caseBriefInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   const roleNote = boundedText(raw.role_note, 1000);
@@ -471,12 +527,16 @@ const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
 /**
  * A pasted text (AiToolSpec.pasteAsFile): absent, or within its limits after
  * trim. Over the limit is refused, never cut: the user sees what was not sent.
+ * The limits are counted characters (owner ٤٣٩, pageCount.measurePaste: no
+ * tashkeel, no tatweel, one space a run), the same count as the paste box; the
+ * text kept and sent is the trimmed original.
  */
 function pastedText(v: unknown, limits: { min: number; max: number; tooShort: string; tooLong: string }): { text: string | null } | { error: string } {
   const text = typeof v === "string" ? v.trim() : "";
-  if (!text) return { text: null };
-  if (text.length < limits.min) return { error: limits.tooShort };
-  if (text.length > limits.max) return { error: limits.tooLong };
+  const m = measurePaste(text, limits);
+  if (m.empty) return { text: null };
+  if (m.tooShort) return { error: limits.tooShort };
+  if (m.tooLong) return { error: limits.tooLong };
   return { text };
 }
 
@@ -1049,7 +1109,7 @@ function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
   return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
 }
 
-/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧ adds government). */
+/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧: general guidance stays open to all). */
 const LEGAL_OPINION_ROLES = REGISTERED_ROLES;
 
 /**
@@ -1105,10 +1165,12 @@ function contractsProOutput(raw: unknown, input: Record<string, unknown>): Recor
 
 /**
  * Owner ١٩٣: no chance and no percentage in a result, in any digit system (JavaScript's
- * \d is ASCII only). A contract's own rate is no exception: the prompts ask for it in
- * words («خمسة في المئة»), which this does not match.
+ * \d is ASCII only). Owner ٤٤٠ (8 Nov 2026): the one exception is a rate the input
+ * contract itself states — see percentsOutsideInput. A rate in words («خمسة في
+ * المئة») is not matched at all.
  */
 export const PERCENT_PATTERN = /[0-9٠-٩۰-۹]+([.,٫][0-9٠-٩۰-۹]+)?\s*[%٪]/u;
+const PERCENT_PATTERN_ALL = new RegExp(PERCENT_PATTERN.source, "gu");
 
 /** Does any string under `v` hold a percentage? Walks arrays and plain objects. */
 export function hasPercent(v: unknown): boolean {
@@ -1118,10 +1180,44 @@ export function hasPercent(v: unknown): boolean {
 }
 
 /**
- * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
- * Owner ٤١٧: every registered account.
+ * One percentage as a value: Arabic-Indic and Persian digits as Latin, any decimal
+ * separator («٫», «,», «.») as «.», no leading zeros, no trailing zeros after the
+ * separator. The sign (% or ٪) and the space before it are dropped. So «١٢٫٥٠ ٪»,
+ * «12.5%» and «12,5%» are one rate.
  */
-export const CONTRACTS_PRO_ROLES = REGISTERED_ROLES;
+export function canonicalPercent(match: string): string {
+  const latin = match.replace(/[٠-٩]/gu, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/gu, (d) => String(d.charCodeAt(0) - 0x06f0));
+  const number = latin.replace(/\s*[%٪]$/u, "");
+  const [whole, fraction = ""] = number.split(/[.,٫]/u);
+  const w = whole.replace(/^0+(?=\d)/, "");
+  const f = fraction.replace(/0+$/, "");
+  return f ? `${w}.${f}` : w;
+}
+
+function percentsIn(v: unknown, into: string[]): string[] {
+  if (typeof v === "string") for (const m of v.matchAll(PERCENT_PATTERN_ALL)) into.push(canonicalPercent(m[0]));
+  else if (Array.isArray(v)) for (const x of v) percentsIn(x, into);
+  else if (isPlainObject(v)) for (const x of Object.values(v)) percentsIn(x, into);
+  return into;
+}
+
+/**
+ * Owner ٤٤٠ (8 Nov 2026): the percentages in a contract tool's output that the
+ * input contract does not state. A rate passes only when the same rate appears in
+ * the contract text the user gave (digits and separator normalised, as
+ * canonicalPercent); with no contract text — an uploaded file the server never
+ * reads — every percentage fails, as before. Empty means the output may pass.
+ */
+export function percentsOutsideInput(output: unknown, inputTexts: readonly string[]): string[] {
+  const stated = new Set(percentsIn(inputTexts, []));
+  return percentsIn(output, []).filter((p) => !stated.has(p));
+}
+
+/**
+ * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
+ * Owner ٤١٧ (answer of 8 Nov 2026): lawyers and law firms only.
+ */
+export const CONTRACTS_PRO_ROLES = LAWYER_FIRM_ROLES;
 
 export const CONTRACT_REVIEW_PRICE = 250;
 // `optional`: the contract may be pasted instead. filesRequired below still refuses a
@@ -1201,7 +1297,7 @@ function reviewClause(c: unknown): Record<string, string> | null {
  * refuses (and refunds) the run rather than handing over a report with a risk
  * silently gone. `cited` becomes the library's verdict (runCore's enricher).
  */
-function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
+function contractReviewOutput(raw: unknown, input: Record<string, unknown> = {}): Record<string, unknown> | null {
   if (!isPlainObject(raw) || !Array.isArray(raw.clauses)) return null;
   const summary = boundedText(raw.summary, 3000);
   const overallRisk = reviewRisk(raw.overall_risk);
@@ -1230,7 +1326,9 @@ function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
     missing,
     cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
   };
-  return hasPercent(output) ? null : output;
+  // Owner ٤٤٠: only a rate the pasted contract states verbatim; an uploaded file is not read here.
+  const contract = typeof input.contract_text === "string" ? [input.contract_text] : [];
+  return percentsOutsideInput(output, contract).length > 0 ? null : output;
 }
 
 // ── مفاوض العقود: three positions for each clause the user pastes ─────────────
@@ -1306,7 +1404,9 @@ function contractNegotiatorOutput(raw: unknown, input: Record<string, unknown>):
     clauses.push(clause);
   }
   const output = { summary, clauses, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [] };
-  return hasPercent(output) ? null : output;
+  // Owner ٤٤٠: only a rate one of the pasted clauses states verbatim (not the demand or the goal).
+  const contract = input.clauses.flatMap((c) => (isPlainObject(c) && typeof c.text === "string" ? [c.text] : []));
+  return percentsOutsideInput(output, contract).length > 0 ? null : output;
 }
 
 // ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
@@ -1375,7 +1475,7 @@ function titledList(v: unknown, max: number, second: string, secondMax: number, 
 
 function legalDrafterInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
-  if (raw.phase !== "issues" && raw.phase !== "draft") return { ok: false, error: "المدخلات غير صالحة" };
+  if (raw.phase !== "issues" && raw.phase !== "draft" && raw.phase !== SECTION_EDIT_PHASE) return { ok: false, error: "المدخلات غير صالحة" };
   if (!isDraftKind(raw.kind)) return { ok: false, error: DRAFT_COPY.kind };
   if (!(DRAFT_ROLES as readonly unknown[]).includes(raw.client_role)) return { ok: false, error: DRAFT_COPY.role };
   // Optional: unnamed, the workflow asks the model to infer it from the facts.
@@ -1426,6 +1526,8 @@ function legalDrafterInput(raw: unknown): InputCheck {
     return { ok: true, input: { ...base, facts: factsRaw, facts_in_files: factsInFiles, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
   }
 
+  if (raw.phase === SECTION_EDIT_PHASE) return sectionEditInput(raw, base);
+
   // The draft: what the lawyer confirmed on the analysis screen.
   if (factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
   const issues = titledList(raw.issues, 12, "detail", 2000);
@@ -1436,6 +1538,83 @@ function legalDrafterInput(raw: unknown): InputCheck {
   return { ok: true, input: { ...base, facts: factsRaw, issues, defenses, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
 }
 
+const DRAFT_SECTIONS_MAX = 30;
+const SECTION_BODY_MAX = 12000;
+
+/**
+ * Owner ٤١٠ «عدّل هذا القسم»: from the browser only the section's index and
+ * the lawyer's instruction count. Anything else it sends about the memo (the
+ * section's text, whether it cited, the title, the outline, the facts) is
+ * dropped: sectionFromDraft rebuilds all of it from the stored runs once
+ * checkTurn has passed. Until then `had_citations` is absent, which
+ * citationsOptional reads as "it cited" (the stricter rule).
+ */
+function sectionEditInput(raw: Record<string, unknown>, base: Record<string, unknown>): InputCheck {
+  const index = raw.section_index;
+  if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= DRAFT_SECTIONS_MAX) {
+    return { ok: false, error: SECTION_EDIT_COPY.badSection };
+  }
+  const instruction = boundedText(raw.instruction, SECTION_INSTRUCTION_MAX);
+  if (!instruction) return { ok: false, error: SECTION_EDIT_COPY.instruction };
+  return {
+    ok: true,
+    input: { phase: SECTION_EDIT_PHASE, kind: base.kind, section_index: index, instruction, search_text: instruction },
+  };
+}
+
+/**
+ * The section as the memo now reads it, from this user's own runs of the
+ * conversation (oldest first, as runCore reads them): the succeeded draft's
+ * section, replaced by the newest succeeded edit of it. Its [S…] markers are
+ * taken out (they point at that run's sources; this run searches the library
+ * again and numbers its own) and `had_citations` remembers whether it had any,
+ * for citationsOptional. The memo's frame (parties, facts, issues, defenses,
+ * requests) is the draft run's own stored input.
+ */
+function sectionFromDraft(
+  input: Record<string, unknown>,
+  prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+): InputCheck {
+  if (input.phase !== SECTION_EDIT_PHASE) return { ok: true, input };
+  const draftRun = prior.find((r) => isPlainObject(r.input) && r.input.phase === "draft" && r.status === "succeeded");
+  if (!draftRun || !isPlainObject(draftRun.input) || !isPlainObject(draftRun.output)) return { ok: false, error: SECTION_EDIT_COPY.needDraft };
+  const sections = (Array.isArray(draftRun.output.sections) ? draftRun.output.sections : []).map((s) =>
+    isPlainObject(s) && typeof s.heading === "string" && typeof s.body === "string" ? { heading: s.heading, body: s.body } : null,
+  );
+  for (const r of prior) {
+    if (r.status !== "succeeded" || !isPlainObject(r.input) || r.input.phase !== SECTION_EDIT_PHASE || !isPlainObject(r.output)) continue;
+    const i = r.output.section_index;
+    if (!Number.isInteger(i) || (i as number) < 0 || (i as number) >= sections.length) continue;
+    if (typeof r.output.heading !== "string" || typeof r.output.body !== "string") continue;
+    sections[i as number] = { heading: r.output.heading, body: r.output.body };
+  }
+  const index = input.section_index;
+  const current = Number.isInteger(index) ? sections[index as number] : undefined;
+  if (!current) return { ok: false, error: SECTION_EDIT_COPY.badSection };
+  const heading = boundedText(current.heading, 200);
+  const rawBody = boundedText(current.body, SECTION_BODY_MAX);
+  const body = rawBody ? stripCitationMarkers(rawBody).trim() : "";
+  if (!heading || !rawBody || !body) return { ok: false, error: SECTION_EDIT_COPY.section };
+  const { search_text: _s, phase: _p, ...frame } = draftRun.input;
+  void _s; void _p;
+  const title = boundedText(draftRun.output.title, 200);
+  const instruction = typeof input.instruction === "string" ? input.instruction : "";
+  return {
+    ok: true,
+    input: {
+      ...frame,
+      phase: SECTION_EDIT_PHASE,
+      section_index: index,
+      instruction,
+      section: { heading, body },
+      had_citations: /\[S\d{1,3}\]/.test(rawBody),
+      ...(title ? { title } : {}),
+      outline: sections.map((s) => s?.heading ?? "").filter(Boolean),
+      search_text: [heading, instruction, body].join("\n").slice(0, DRAFT_SEARCH_MAX),
+    },
+  };
+}
+
 /**
  * The analysis or the draft, by the run's phase. All or nothing, as L11: one
  * bad row refuses the result (refunded for the analysis) rather than handing
@@ -1444,6 +1623,13 @@ function legalDrafterInput(raw: unknown): InputCheck {
 function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Record<string, unknown> | null {
   if (!isPlainObject(raw)) return null;
   const cited = Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [];
+  if (input.phase === SECTION_EDIT_PHASE) {
+    // One section, which replaces the one asked for and nothing else.
+    const heading = boundedText(raw.heading, 200);
+    const body = boundedText(raw.body, SECTION_BODY_MAX);
+    if (!heading || !body) return null;
+    return { phase: SECTION_EDIT_PHASE, section_index: input.section_index, heading, body, cited };
+  }
   if (input.phase === "draft") {
     const title = boundedText(raw.title, 200);
     if (!title || !Array.isArray(raw.sections) || raw.sections.length < 2 || raw.sections.length > 30) return null;
@@ -1467,17 +1653,35 @@ function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Recor
   return { phase: "issues", facts_summary, issues, defenses, requests, missing, cited };
 }
 
-/** Turn 0 is the analysis; turn 1 the draft of that same kind, once the analysis succeeded. */
+/**
+ * Turn 0 is the analysis; turn 1 the draft of that same kind, once the analysis
+ * succeeded; every later turn a section edit (owner ٤١٠) of that draft, once it
+ * succeeded, naming one of its sections, up to SECTION_EDIT_MAX_PER_MEMO. A
+ * second draft is refused (it would be a free second memo).
+ */
 function legalDrafterTurn(
   input: Record<string, unknown>,
   turn: number,
   prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
 ): string | null {
   if (turn === 0) return input.phase === "issues" ? null : DRAFT_COPY.firstStep;
-  if (input.phase !== "draft") return DRAFT_COPY.kindChanged;
-  const first = prior[0];
-  if (!first || first.status !== "succeeded") return DRAFT_COPY.waitAnalysis;
-  return isPlainObject(first.input) && first.input.kind === input.kind ? null : DRAFT_COPY.kindChanged;
+  if (turn === 1) {
+    if (input.phase === SECTION_EDIT_PHASE) return SECTION_EDIT_COPY.needDraft;
+    if (input.phase !== "draft") return DRAFT_COPY.kindChanged;
+    const first = prior[0];
+    if (!first || first.status !== "succeeded") return DRAFT_COPY.waitAnalysis;
+    return isPlainObject(first.input) && first.input.kind === input.kind ? null : DRAFT_COPY.kindChanged;
+  }
+  if (input.phase !== SECTION_EDIT_PHASE) return SECTION_EDIT_COPY.draftDone;
+  const draft = prior.find((r) => isPlainObject(r.input) && r.input.phase === "draft");
+  if (!draft) return SECTION_EDIT_COPY.needDraft;
+  if (draft.status !== "succeeded" || !isPlainObject(draft.output)) return SECTION_EDIT_COPY.waitDraft;
+  if (!isPlainObject(draft.input) || draft.input.kind !== input.kind) return DRAFT_COPY.kindChanged;
+  const sections = Array.isArray(draft.output.sections) ? draft.output.sections : [];
+  const index = input.section_index;
+  if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= sections.length) return SECTION_EDIT_COPY.badSection;
+  if (countSectionEdits(prior).total >= SECTION_EDIT_MAX_PER_MEMO) return SECTION_EDIT_COPY.limit;
+  return null;
 }
 
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
@@ -1513,7 +1717,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/communicate",
     class: "fast",
     tier: "fast",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => 5,
     dailyLimit: 40,
@@ -1527,7 +1731,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/najiz-optimizer",
     class: "fast",
     tier: "fast",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
     // Owner ٤١٦ (7 Nov 2026): the AI condense is 15 points; the rule-based
@@ -1546,8 +1750,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "fast",
     roles: REGISTERED_ROLES,
     consultantBlocked: false,
-    // Owner ٤١٢ (7 Nov 2026): 10 points.
+    // Owner ٤١٢ (7 Nov 2026): 10 points; one free question a day for an
+    // individual account with a verified phone (inert until OTP exists).
     price: () => 10,
+    freeDailyQuestion: true,
     dailyLimit: 30,
     defaultMode: "off",
     // Owner ٤١٣ option A: an answer that cites none of the texts is kept,
@@ -1576,7 +1782,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/assistant",
     class: "fast",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     // D3: the conversation's first message pays for the whole conversation.
     price: (_input, ctx) => ((ctx.turn ?? 0) === 0 ? ASSISTANT_CONVERSATION_PRICE : 0),
@@ -1593,8 +1799,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/canvas-card",
     class: "fast",
     tier: "fast",
-    // Owner ٤١٧: every registered account; the button itself sits on the lawyer and firm case boards.
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026) + controller ruling: lawyers and law firms only (the
+    // button sits on the lawyer and firm case boards; the company board hides it).
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => 10,
     dailyLimit: 40,
@@ -1608,7 +1815,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/case-brief",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     // Owner ٢٨٣: 30 points for 1–5 pages, 150 for 6–30 (scanned pages included).
     price: (_input, ctx) => ((ctx.pages ?? 0) <= CASE_BRIEF_SMALL_PAGES ? CASE_BRIEF_PRICES.small : CASE_BRIEF_PRICES.large),
@@ -1624,7 +1831,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/brief-check",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/brief-check (Art. 18).
     consultantBlocked: true,
     price: () => BRIEF_CHECK_PRICE,
@@ -1643,7 +1850,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/wargaming",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/wargaming (Art. 18).
     consultantBlocked: true,
     price: (input) => wargamingPrice(input.targets),
@@ -1660,7 +1867,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/analyze-strength",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // Part of the simulator (ruling R1): CONSULTANT_BLOCKED_PREFIXES has /ai/analyze-strength (Art. 18).
     consultantBlocked: true,
     price: () => ANALYZE_STRENGTH_PRICE,
@@ -1676,8 +1883,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-drafter",
     class: "job",
     tier: "deep",
-    // Owner ٤١٧: every registered account (plan: individual F «عقد مبسّط ذكي» is the same engine).
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026) + controller ruling: lawyers and law firms only.
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_DRAFT_PRICE,
     dailyLimit: 5,
@@ -1757,8 +1964,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-negotiator",
     class: "job",
     tier: "deep",
-    // Owner ٤١٧: every registered account (the nav rows are still the firm and lawyer sidebars').
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026): «مفاوض العقود» is for lawyers and law firms only.
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_NEGOTIATOR_PRICE,
     dailyLimit: 5,
@@ -1772,20 +1979,33 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/legal-drafter",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
     consultantBlocked: true,
-    // Charged once, on the analysis; the draft that follows it is free.
-    price: (input, ctx) => ((ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0),
-    // An analysis and its draft are two runs.
+    // Charged once, on the analysis; the draft that follows it is free. A
+    // section edit (owner ٤١٠): free within 5 per memo and 2 per section, else
+    // 10 points (sectionEdits.ts); unknown counts are paid, never free.
+    price: (input, ctx) =>
+      input.phase === SECTION_EDIT_PHASE
+        ? sectionEditPrice(ctx.priorSectionEdits, input.section_index)
+        : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0,
+    // An analysis and its draft are two runs. Section edits are not held to this
+    // limit (ai_start_section_edit): the memo's ceiling of 30 bounds them; and
+    // since 20261108_41 they are not counted against it either, and the draft
+    // of a succeeded analysis is never refused for the day.
     dailyLimit: 10,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
     files: DRAFTER_FILES,
     retrieval: { from: "search_text", laws: 8, principles: 4 },
     // The draft's searches are written with the facts the analysis was searched with.
-    conversation: { maxMessages: 2, historyPairs: 1, field: "search_text", replyField: "facts_summary" },
+    // The analysis, the draft, then up to 30 section edits; one more turn so the
+    // 31st edit gets checkTurn's own words, not «اكتملت هذه المحادثة».
+    conversation: { maxMessages: 2 + SECTION_EDIT_MAX_PER_MEMO + 1, historyPairs: 1, field: "search_text", replyField: "facts_summary" },
     checkTurn: legalDrafterTurn,
+    fromPrior: sectionFromDraft,
+    sectionEdit: { phase: SECTION_EDIT_PHASE },
+    citationsOptional: (input) => input.phase === SECTION_EDIT_PHASE && input.had_citations === false,
     filesRequired: (input) => input.phase === "issues" && input.facts_in_files === true,
     validateInput: legalDrafterInput,
     validateOutput: legalDrafterOutput,

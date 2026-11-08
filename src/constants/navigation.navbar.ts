@@ -149,7 +149,7 @@ export const CORPORATE_NAV: NavItem[] = [
   {
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
-      { label: "محترف العقود",    labelEn: "Contract Pro",    href: "/ai/contracts",         icon: "FileText" },
+      // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» is a lawyer and firm tool — not in a company's menu.
       { label: "مراقب الامتثال", labelEn: "Compliance",      href: "/ai/corp/compliance-monitor",   icon: "ShieldCheck", badge: "قريباً" },
       { label: "المستشار التجاري",labelEn: "Corp Advisor",    href: "/ai/corp/advisor",      icon: "Buildings", badge: "قريباً" },
       // Owner answer ١١٥ — these three printed canned output and render
@@ -239,7 +239,7 @@ export const NGO_NAV: NavItem[] = [
   {
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
-      { label: "محترف العقود",  labelEn: "Contract Pro",  href: "/ai/contracts",  icon: "HandHeart" },
+      // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» is a lawyer and firm tool — not in an NGO's menu.
       { label: "مدقق الحوكمة",       labelEn: "Governance Checker",  href: "/ai/ngo/governance-checker",  icon: "ShieldCheck" },
       { label: "محلل التبرعات",      labelEn: "Donation Analyzer",   href: "/ai/ngo/donation-analyzer",   icon: "ChartBar", badge: "قريباً" },
       { label: "مُعد التقارير",      labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", badge: "قريباً" },

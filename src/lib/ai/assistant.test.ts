@@ -63,9 +63,9 @@ const body = (over: Record<string, unknown> = {}) => ({
 });
 const startPayload = (log: FakeQuery[]) => log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>;
 
-test("the registry entry: every registered role (owner ٤١٧), a conversation of fifteen, 30 on the first message only", () => {
+test("the registry entry: lawyers and firms only (owner ٤١٧, 8 Nov), a conversation of fifteen, 30 on the first message only", () => {
   const t = AI_TOOLS.assistant;
-  assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+  assert.deepEqual([...t.roles], ["lawyer", "firm"]);
   assert.equal(t.conversation?.maxMessages, 15);
   assert.equal(ASSISTANT_MESSAGES_PER_CONVERSATION, 15);
   assert.equal(ASSISTANT_CONVERSATION_PRICE, 30);

@@ -507,22 +507,24 @@ export default function ClientDashboard() {
   // the card. /dashboard/client/services prices each one where it is ordered.
   //
   // Constant, so no useMemo: it closes over nothing.
+  // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «صياغة عقد» opened the contract drafter, a
+  // lawyer and firm tool now, and «اسأل ذكاء نظامي · قريباً» (/ai/consult, the
+  // beta gate) was a pending promise. The two cards are the general guidance
+  // tools every account runs (tools.ts REGISTERED_ROLES).
   const QUICK_SERVICES = [
     {
-      label: "اسأل ذكاء نظامي",
-      href: "/ai/consult",
+      label: "سؤال قانوني سريع",
+      href: "/ai/quick-answer",
       icon: Robot,
       color: "from-[#0B3D2E] to-[#1a6b50]",
-      // Not «إجابات فورية»: /ai/consult ends at the beta gate's "not
-      // available" card (betaGatedRoutes.ts, Wave 1 task 6).
-      desc: "قريباً",
+      desc: "إجابة مستندة إلى الأنظمة",
     },
     {
-      label: "صياغة عقد",
-      href: "/ai/contract-drafter",
+      label: "الرأي القانوني",
+      href: "/ai/legal-opinion",
       icon: FileText,
       color: "from-[#155c40] to-[#1e7a55]",
-      desc: "AI يصيغ لك العقد",
+      desc: "استشارة أو خطاب مكتوب",
     },
   ];
 
@@ -673,17 +675,9 @@ export default function ClientDashboard() {
                   <ArrowLeft size={14} />
                 </motion.div>
               </Link>
-              <Link href="/ai/consult">
-                <motion.div
-                  whileHover={{ scale: 1.04, y: -1 }} whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-2 bg-white/10 border border-white/20 text-white font-semibold px-5 py-2.5 rounded-xl text-sm backdrop-blur-sm cursor-pointer"
-                >
-                  <Robot size={16} weight="fill" />
-                  اسأل ذكاء نظامي
-                  {/* /ai/consult ends at the beta gate (Wave 1 task 6). */}
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/15">قريباً</span>
-                </motion.div>
-              </Link>
+              {/* Owner ٤٤٣ (8 Nov 2026): the «اسأل ذكاء نظامي · قريباً» button that
+                  stood here promised /ai/consult, which ends at the beta gate —
+                  a pending promise, removed from the welcome bar. */}
               {/* THE ONLY ENTRY POINT TO THE PROFILE FROM THIS PAGE (WP-5 C-3).
                   An individual has no /dashboard/client/profile — their profile
                   is edited at /settings → «الملف الشخصي» — and until now the

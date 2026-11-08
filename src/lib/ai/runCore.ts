@@ -11,7 +11,11 @@
  *                      → ai_start_run (daily limit + balance + debit, one
  *                        transaction) — or, when the body asks `useCredit`
  *                        and the run qualifies, ai_start_run_with_credit
- *                        (a founder credit instead of points, P3)
+ *                        (a founder credit instead of points, P3) — or, for a
+ *                        drafter section edit (owner ٤١٠), ai_start_section_edit
+ *                        (the memo's free edits counted again under the lock) —
+ *                        or, for the day's free quick question (owner ٤١٢),
+ *                        ai_start_free_question (the phone's day claimed)
  *                    A job tool answers 202 here, with the route's `defer`
  *                    running the rest after the reply (nginx cuts at 60 s, and
  *                    a consultation's searches alone can take most of that).
@@ -45,6 +49,16 @@ import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun } from "../membership/founderPlan.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
+import {
+  SECTION_EDIT_COPY,
+  SECTION_EDIT_FREE_PER_MEMO,
+  SECTION_EDIT_FREE_PER_SECTION,
+  SECTION_EDIT_MAX_PER_MEMO,
+  SECTION_EDIT_PRICE,
+  countSectionEdits,
+  type SectionEditCounts,
+} from "./sectionEdits.ts";
+import { FREE_QUESTION_COPY } from "./freeQuestion.ts";
 import { textPages } from "./textExtract.ts";
 import {
   STEP_LABEL_AR,
@@ -159,6 +173,7 @@ export const AI_COPY = {
   ungrounded: "لم تُجب نصوص المكتبة التي وجدتها عن سؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
   conversation: "معرّف المحادثة غير صالح — ابدأ محادثة جديدة",
   conversationFull: "اكتملت هذه المحادثة — ابدأ محادثة جديدة لتكمل",
+  priceChanged: "تغيّر سعر هذا الطلب — راجع السعر وأكّد من جديد",
   filesRequired: "أرفق مستندات الوقائع أو اكتبها",
   noCredit: "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة",
   creditNotEligible: "هذه الأداة لا تُدفع من رصيد باقة المؤسس",
@@ -189,6 +204,7 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 const isMissingFunction = (code: string | undefined) => code === "42883" || code === "PGRST202";
+const isMissingRelation = (code: string | undefined) => code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205";
 
 export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
   const { data, error } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
@@ -298,7 +314,8 @@ export async function settleRunWith(
   // with no citation that resolves, it is the model's memory, not the library.
   // Owner ٤١٣ option A: quick-answer keeps such an answer, flagged and charged
   // (the page labels it); the bare «النصوص لا تجيب» sentence is still refunded.
-  if (ctx.spec.retrieval && citations.length === 0) {
+  // Owner ٤١٠: a section edit of a section that cited nothing may cite nothing.
+  if (ctx.spec.retrieval && citations.length === 0 && !ctx.spec.citationsOptional?.(ctx.input)) {
     const loose = ctx.spec.retrieval.allowUngrounded;
     if (!loose || isLibraryNoAnswer(output[loose.field])) {
       return fail("ungrounded", "the answer cites none of the sources sent");
@@ -420,7 +437,7 @@ export async function startRunWith(
   // user only, so a conversation id from another account reads as a new one.
   let conversationId: string | null = null;
   let history: Array<{ role: "user" | "assistant"; text: string }> = [];
-  let prior: Array<{ input: unknown; output: unknown; status: string }> = [];
+  let prior: Array<{ input: unknown; output: unknown; status: string; price_points?: unknown }> = [];
   let turn = 0;
   if (spec.conversation) {
     const cid = req.conversationId;
@@ -431,7 +448,7 @@ export async function startRunWith(
     if (typeof cid === "string") {
       const read = await admin
         .from("ai_runs")
-        .select("input, output, status")
+        .select("input, output, status, price_points")
         .eq("user_id", actor.userId)
         .eq("tool", spec.id)
         .eq("conversation_id", conversationId)
@@ -442,7 +459,7 @@ export async function startRunWith(
         console.error("[ai] conversation read failed:", spec.id, read.error.code, read.error.message);
         return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
       }
-      const rows = (Array.isArray(read.data) ? read.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      const rows = (Array.isArray(read.data) ? read.data : []) as Array<{ input: unknown; output: unknown; status: string; price_points?: unknown }>;
       prior = rows;
       turn = rows.length;
       if (turn >= spec.conversation.maxMessages) {
@@ -465,6 +482,13 @@ export async function startRunWith(
   if (spec.checkTurn) {
     const refusal = spec.checkTurn(checked.input, turn, prior);
     if (refusal) return { status: 409, body: { error: refusal, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
+  }
+  // What the stored runs already hold is taken from them, never from the
+  // browser (owner ٤١٠: the section's text and whether it cited).
+  if (spec.fromPrior) {
+    const rebuilt = spec.fromPrior(checked.input, prior);
+    if (!rebuilt.ok) return { status: 409, body: { error: rebuilt.error, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
+    checked.input = rebuilt.input;
   }
 
   // A file tool: every predictable refusal (type, size, pages, an unreadable
@@ -501,7 +525,28 @@ export async function startRunWith(
   if (spec.filesRequired?.(checked.input) && files.length === 0) {
     return { status: 422, body: { error: spec.filesRequiredCopy ?? AI_COPY.filesRequired, code: "files_required" } };
   }
-  const price = spec.price(checked.input, { pages, turn });
+  // Owner ٤١٠: a section edit is priced from the memo's earlier edits, read
+  // above from this user's own runs of this conversation (never the browser's).
+  const sectionEdit = !!spec.sectionEdit && !!conversationId && checked.input.phase === spec.sectionEdit.phase;
+  const priorSectionEdits: SectionEditCounts | undefined = sectionEdit ? countSectionEdits(prior) : undefined;
+  // Owner ٤١٢: the day's free question, asked for by the page when the status
+  // said it is open; ai_start_free_question decides, under the start lock.
+  const freeQuestion = !!spec.freeDailyQuestion && req.useFreeQuestion === true;
+  const price = freeQuestion ? 0 : spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
+  // The screen showed a price before the user confirmed: a different one now is
+  // refused, uncharged, with the counts to show again.
+  if (req.expectedPrice !== undefined && req.expectedPrice !== price) {
+    return {
+      status: 409,
+      body: {
+        error: sectionEdit ? SECTION_EDIT_COPY.priceChanged : AI_COPY.priceChanged,
+        code: "price_changed",
+        price,
+        ...(priorSectionEdits ? { details: { sectionEdits: priorSectionEdits } } : {}),
+        ...(conversationId ? { conversationId } : {}),
+      },
+    };
+  }
   const now = deps.now?.() ?? new Date();
   const deadline = new Date(
     now.getTime() + 1000 * (spec.class === "fast" ? FAST_DEADLINE_SECONDS : spec.jobDeadlineSeconds ?? DEFAULT_JOB_DEADLINE_SECONDS),
@@ -513,8 +558,14 @@ export async function startRunWith(
   // from this user's own runs, never the client's: a drafter's second turn reads
   // 1 there and so goes to plain ai_start_run at price 0. An exempt caller (admin)
   // never spends a credit. Anything else that asks falls back to points.
-  const creditKind = !isAdmin && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
-  const startFn = creditKind ? "ai_start_run_with_credit" : "ai_start_run";
+  // A section edit (owner ٤١٠) never spends a credit: it is not a drafting work.
+  const creditKind = !isAdmin && !sectionEdit && !freeQuestion && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  // A section edit starts through ai_start_section_edit (20261108_40): it takes
+  // ai_start_run's lock, counts the memo's edits again and refuses a price that
+  // is no longer right, so two edits at once cannot both take the last free one.
+  const startFn = freeQuestion
+    ? "ai_start_free_question"
+    : sectionEdit ? "ai_start_section_edit" : creditKind ? "ai_start_run_with_credit" : "ai_start_run";
 
   const { data, error } = await admin.rpc(startFn, {
     p_user: actor.userId,
@@ -532,6 +583,15 @@ export async function startRunWith(
     p_conversation: conversationId,
     p_source_ids: {},
     ...(creditKind ? { p_credit_kind: creditKind } : {}),
+    ...(sectionEdit
+      ? {
+          p_section_index: checked.input.section_index,
+          p_free_per_memo: SECTION_EDIT_FREE_PER_MEMO,
+          p_free_per_section: SECTION_EDIT_FREE_PER_SECTION,
+          p_paid_price: SECTION_EDIT_PRICE,
+          p_max_per_memo: SECTION_EDIT_MAX_PER_MEMO,
+        }
+      : {}),
   });
   if (error) {
     // A credit request never falls back to points on these: the user asked to
@@ -547,6 +607,38 @@ export async function startRunWith(
     }
     if (error.message === "daily_limit") {
       return { status: 429, body: { error: AI_COPY.daily, code: "daily_limit" } };
+    }
+    // A free question refused is never charged instead: the page asks again.
+    if (freeQuestion) {
+      if (error.message === "free_question_used") {
+        return { status: 409, body: { error: FREE_QUESTION_COPY.used, code: "free_question_used" } };
+      }
+      if (error.message === "free_question_not_eligible") {
+        return { status: 403, body: { error: FREE_QUESTION_COPY.notEligible, code: "free_question_not_eligible" } };
+      }
+      if (isMissingFunction(error.code) || isMissingRelation(error.code)) {
+        return { status: 503, body: { error: FREE_QUESTION_COPY.unavailable, code: "free_question_unavailable" } };
+      }
+    }
+    if (sectionEdit) {
+      const again = conversationId ? { conversationId } : {};
+      if (error.message === "section_price_changed") {
+        // Another edit took the free one first: the counts read before it are
+        // stale, so the screen is told to read them again (its next confirm
+        // gets the fresh price and counts from the check above).
+        return { status: 409, body: { error: SECTION_EDIT_COPY.priceChanged, code: "price_changed", ...again } };
+      }
+      if (error.message === "section_edit_limit") {
+        return { status: 409, body: { error: SECTION_EDIT_COPY.limit, code: "turn_refused", ...again } };
+      }
+      if (error.message === "section_no_draft") {
+        return { status: 409, body: { error: SECTION_EDIT_COPY.waitDraft, code: "turn_refused", ...again } };
+      }
+      // Before 20261108_40 is run there is no race-safe start: the edit is
+      // refused, uncharged, rather than started without the lock.
+      if (isMissingFunction(error.code)) {
+        return { status: 503, body: { error: SECTION_EDIT_COPY.unavailable, code: "not_ready" } };
+      }
     }
     if (isMissingFunction(error.code)) {
       return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
@@ -670,30 +762,39 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
     // An open article, or one the question names, is a source even when the
     // writer found nothing to search.
     const named = articleRefs(question).length > 0 || (!!pin.lawSlug && bareArticleNumbers(question).length > 0);
+    // Owner ٤١٠: a section edit of a section that cited nothing (the parties'
+    // data, a preamble) is not refused for finding no library text: it goes on
+    // with no sources, as its answer may cite none (citationsOptional).
+    const sourcesOptional = spec.citationsOptional?.(checked.input) === true;
+    let found: Retrieved = { sources: [], map: {} };
     if (queries.length === 0 && !pin.articleId && !named) {
-      await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
-      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+      if (!sourcesOptional) {
+        await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
+        return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+      }
+    } else {
+      try {
+        found = await deps.retrieve(queries, { laws, principles }, pin);
+      } catch (err) {
+        console.error("[ai] retrieval threw for", run.run_id, errorName(err));
+        found = { sources: [], map: {} };
+      }
     }
-    let found: Retrieved;
-    try {
-      found = await deps.retrieve(queries, { laws, principles }, pin);
-    } catch (err) {
-      console.error("[ai] retrieval threw for", run.run_id, errorName(err));
-      found = { sources: [], map: {} };
-    }
-    if (found.sources.length === 0) {
+    if (found.sources.length === 0 && !sourcesOptional) {
       await failRun(admin, run.run_id, "no_sources", `no library text matched: ${queries.join(" | ")}`);
       return { status: 422, body: { error: AI_COPY.noSources, code: "no_sources", runId: run.run_id } };
     }
-    sources = found.map as SourceMap;
-    pkgSources = found.sources;
-    const stored = await admin.from("ai_runs").update({ source_ids: sources }).eq("id", run.run_id).eq("status", "running");
-    if (stored.error) {
-      console.error("[ai] storing the sources failed for", run.run_id, stored.error.code, stored.error.message);
-      await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
-      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+    if (found.sources.length > 0) {
+      sources = found.map as SourceMap;
+      pkgSources = found.sources;
+      const stored = await admin.from("ai_runs").update({ source_ids: sources }).eq("id", run.run_id).eq("status", "running");
+      if (stored.error) {
+        console.error("[ai] storing the sources failed for", run.run_id, stored.error.code, stored.error.message);
+        await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
+        return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+      }
+      report(deps.progress, run.run_id, actor.userId, sourceEvents(toSourceRefs(found.sources)));
     }
-    report(deps.progress, run.run_id, actor.userId, sourceEvents(toSourceRefs(found.sources)));
   }
 
   const sync = spec.class === "fast";

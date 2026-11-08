@@ -306,11 +306,14 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 //
 // The buckets above are per visitor and in memory: they reset with the
 // process and treat an office NAT as one person. This step is the durable,
-// per-USER layer: on the four document reads it counts the DISTINCT document
-// (law / book / precedent collection / decree) once per Riyadh day in
-// Postgres (src/lib/library/readQuota.ts for the numbers), and on search and
-// the in-document search it checks only the library lock. The library AI
-// (/api/v1/ai/runs) checks the lock in its own route (isLibraryAiTool).
+// per-USER layer: on the four document reads it tallies the activity, and the
+// DISTINCT document (law / book / precedent collection / decree) is counted
+// once per Riyadh day in Postgres by the document's own route, after its
+// device check (spendLibraryDocument, src/lib/library/libraryDocQuota.ts; the
+// numbers in src/lib/library/readQuota.ts); on search it checks the library
+// lock. The in-document search spends its document in its route, and the
+// library AI (/api/v1/ai/runs) checks the lock in its own route
+// (isLibraryAiTool).
 //
 // Who the user is comes from a verified getUser() - never from decoding the
 // cookie's JWT, which would let a forged `sub` spend (and lock) someone else's
@@ -371,11 +374,14 @@ async function applyLibraryReadQuota(req: NextRequest, pathname: string): Promis
     // tally never waits and never fails the request.
     recordLibraryActivity(user.id, libraryActivityKind(target));
 
-    const row = await libraryReadQuotaHit(
-      user.id,
-      target.kind === "doc" ? target.docKey : null,
-      { memoLockCheck: target.kind === "lock-only" },
-    );
+    // A DOCUMENT is spent by its route, right after the route's device check
+    // (src/lib/library/libraryDocQuota.ts — final review 2026-11-08, item 3):
+    // counted here, before that check, a read refused for its device spent the
+    // owner's quota and could open his lock. Only the lock-only targets
+    // (search) are decided here.
+    if (target.kind === "doc") return response;
+
+    const row = await libraryReadQuotaHit(user.id, null, { memoLockCheck: true });
     const refusal = quotaRefusal(row, Date.now());
     if (!refusal) return response;
 
@@ -405,6 +411,15 @@ const PROTECTED = [
   "/ai/contracts",
   "/ai/wargaming",
   "/ai/runs",
+  // Owner ٤١٧ (8 Nov 2026): the lawyer tools' pages — routeAccess.ts gives
+  // each one a lawyer/firm rule, and a rule is read only for a PROTECTED path.
+  "/ai/contract-negotiator",
+  "/ai/contract-drafter",
+  "/ai/analyze-strength",
+  "/ai/najiz-optimizer",
+  "/ai/brief-check",
+  "/ai/communicate",
+  "/ai/assistant",
   "/settings",
   "/notifications",
   "/onboarding",

@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   hourlyCapMessageAr,
   hourlyCapMinutesLeft,
   libraryLockDialogTextAr,
   lockHoursLeftAr,
   readerRefusalFrom,
+  deviceRefusalOf,
 } from "./readerRefusal.ts";
 
 const NOW = Date.parse("2026-11-07T10:00:00.000Z");
@@ -109,4 +112,28 @@ test("429 is classified by its code, not its status", () => {
 
 test("other statuses are not a refusal", () => {
   for (const s of [200, 400, 401, 403, 404, 500, 503]) assert.equal(readerRefusalFrom(s, { error: "x" }, NOW), null);
+});
+
+test("deviceRefusalOf: a later window's 403 device refusal, and nothing else", () => {
+  const body = { code: "device_limit", error: "هذا الحساب مفعّل على جهازين بالفعل.", limit: 2, devices: [{ id: "d1", label: "كمبيوتر — Chrome / Windows", lastSeen: null }] };
+  assert.deepEqual(deviceRefusalOf(403, body), {
+    kind: "device", messageAr: "هذا الحساب مفعّل على جهازين بالفعل.", limit: 2,
+    devices: [{ id: "d1", label: "كمبيوتر — Chrome / Windows", lastSeen: null }],
+  });
+  assert.equal(deviceRefusalOf(403, { code: "device_cookie_required", error: "x" })?.kind, "device");
+  assert.equal(deviceRefusalOf(403, { error: "forbidden" }), null, "another 403");
+  assert.equal(deviceRefusalOf(403, null), null);
+  assert.equal(deviceRefusalOf(423, { code: "library_security_lock" }), null, "a lock is not a device refusal");
+  assert.equal(deviceRefusalOf(500, body), null);
+});
+
+test("final review 2026-11-08 (9): the readers' later fetches and the feqh preview hand a device refusal to the device page", () => {
+  const read = (rel: string) => readFileSync(join(process.cwd(), "src", rel), "utf8").replace(/\r\n/g, "\n");
+  const book = read("app/book/[slug]/page.tsx");
+  assert.equal(book.match(/const device = deviceRefusalOf\(res\.status, body\);\n\s*if \(device\) setDeviceRefusal\(device\);/g)?.length, 2, "book: the window and the section jump");
+  const precedents = read("app/precedents/[slug]/page.tsx");
+  assert.equal(precedents.match(/const device = deviceRefusalOf\(res\.status, body\);\n\s*if \(device\) \{ setDeviceRefusal\(device\); return/g)?.length, 3, "precedents: more, before, target window");
+  const feqh = read("app/laws/feqh-preview/page.tsx");
+  assert.match(feqh, /const device = deviceRefusalOf\(bookRes\.status, await bookRes\.json\(\)\.catch\(\(\) => null\)\);/);
+  assert.match(feqh, /if \(deviceRefusal\) return <LibraryDeviceLimitPage refusal=\{deviceRefusal\} \/>;/);
 });

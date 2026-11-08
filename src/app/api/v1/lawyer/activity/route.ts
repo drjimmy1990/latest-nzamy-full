@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { describeActivityEvent, describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { aiRunActivityItem, readAiRunActivity } from "@/lib/ai/aiRunActivity";
+import { mergeActivityPage } from "@/lib/activity/activityPage";
 
 const PAGE_SIZE = 30;
 
@@ -75,9 +76,11 @@ export async function GET(request: NextRequest) {
     const participant = `requester_user_id.eq.${uid},assigned_to.eq.${uid}`;
 
     // Cursor pagination. A malformed `before` is ignored rather than rejected
-    // so a stale bookmark still renders the first page. Rows sharing an exact
-    // timestamp with the cursor are skipped — acceptable here, and the only
-    // alternative (a keyset on (created_at, id)) needs a composite index.
+    // so a stale bookmark still renders the first page. Rows sharing the
+    // page's oldest timestamp are carried to the next page whole
+    // (mergeActivityPage), so a tie is lost only when more than PAGE_SIZE rows
+    // share one microsecond — a keyset on (created_at, id) would need a
+    // composite index.
     const rawBefore = request.nextUrl.searchParams.get("before");
     const before = rawBefore && !Number.isNaN(Date.parse(rawBefore)) ? rawBefore : null;
 
@@ -207,7 +210,9 @@ export async function GET(request: NextRequest) {
     // does.
     const degraded = !!eventRes.error || !!activityRes.error || aiRes.degraded;
 
-    const items: ActivityItem[] = [];
+    const eventItems: ActivityItem[] = [];
+    const auditItems: ActivityItem[] = [];
+    const activityItems: ActivityItem[] = [];
 
     for (const row of eventRes.data ?? []) {
       const sr = firstEmbed(row.service_requests);
@@ -220,7 +225,7 @@ export async function GET(request: NextRequest) {
         serviceTitleAr,
         requestTitle: sr?.title ?? null,
       });
-      items.push({
+      eventItems.push({
         id: `event:${row.id}`,
         badge: described.badge,
         title: described.title,
@@ -242,7 +247,7 @@ export async function GET(request: NextRequest) {
     }
 
     for (const row of auditRes.data ?? []) {
-      items.push({
+      auditItems.push({
         id: `audit:${row.id}`,
         badge: "notice",
         // `action` is a free-text English admin label — never rendered.
@@ -258,7 +263,7 @@ export async function GET(request: NextRequest) {
 
     for (const row of activityRes.data ?? []) {
       const described = describeActivityEvent({ kind: row.kind, payload: row.payload });
-      items.push({
+      activityItems.push({
         id: `activity:${row.id}`,
         badge: described.badge,
         title: described.title,
@@ -273,10 +278,21 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    for (const row of aiRes.rows) items.push(aiRunActivityItem(row));
-
-    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    const page = items.slice(0, PAGE_SIZE);
+    // A stream that returned a full PAGE_SIZE batch might hold more beyond it,
+    // and two short streams can still merge past PAGE_SIZE: mergeActivityPage
+    // pages on either, and its cursor never skips or repeats a row of any
+    // stream (src/lib/activity/activityPage.ts). Every stream is listed — the
+    // audit stream is empty under RLS for a lawyer, so it never decides
+    // anything, but a stream left out is a stream whose rows could be lost.
+    const { page, nextCursor } = mergeActivityPage(
+      [
+        { items: eventItems, full: (eventRes.data?.length ?? 0) === PAGE_SIZE },
+        { items: auditItems, full: (auditRes.data?.length ?? 0) === PAGE_SIZE },
+        { items: activityItems, full: (activityRes.data?.length ?? 0) === PAGE_SIZE },
+        { items: aiRes.rows.map(aiRunActivityItem), full: aiRes.rows.length === PAGE_SIZE },
+      ],
+      PAGE_SIZE,
+    );
 
     return NextResponse.json({
       items: page,
@@ -299,20 +315,11 @@ export async function GET(request: NextRequest) {
             ordersCompleted: completedRes.count ?? 0,
             ordersTotal: totalRes.count ?? 0,
           },
-      // A stream that returned a full PAGE_SIZE batch might hold more beyond
-      // it — stop only once EVERY stream that can actually page (events,
-      // activity and AI runs; the audit stream is empty under RLS) came back short. Was
-      // gated on the events stream alone, which was safe only because the
-      // audit stream never had anything in it to miss; activity_events is a
-      // real, populated stream now, so the same one-stream gate would have
-      // silently stopped paging while it still had rows left.
-      nextCursor:
-        ((eventRes.data?.length ?? 0) === PAGE_SIZE ||
-          (activityRes.data?.length ?? 0) === PAGE_SIZE ||
-          aiRes.rows.length === PAGE_SIZE)
-        && page.length > 0
-          ? page[page.length - 1].createdAt
-          : null,
+      // Was gated on the events stream alone, then on "some stream came back
+      // full" — which missed two short streams merging past PAGE_SIZE (final
+      // review 2026-11-08): the page was cut and the cursor was null. See the
+      // mergeActivityPage call above.
+      nextCursor,
     });
   } catch (err) {
     // Was a 200 with an empty feed, which the page rendered as

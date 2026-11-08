@@ -387,6 +387,24 @@ function clearDemoSessionMarkers(): void {
 }
 
 /**
+ * Owner ٤٢٧: POST /api/v1/library/devices/sign-out — revokes this browser's
+ * library device (the httpOnly cookie names it) so the slot is free for
+ * another device. Resolves within 1.5 s whatever happens.
+ */
+function releaseLibraryDevice(): Promise<void> {
+  try {
+    return fetch("/api/v1/library/devices/sign-out", {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      signal: AbortSignal.timeout(1500),
+    }).then(() => undefined, () => undefined);
+  } catch {
+    return Promise.resolve();
+  }
+}
+
+/**
  * Log out — clears session, re-renders all components, then navigates to
  * `redirectTo` (/login by default; the onboarding wizard sends the visitor
  * back to the public site instead).
@@ -409,9 +427,14 @@ export function logout(redirectTo: string = "/login"): void {
     } catch { /* ignore quota / private-mode errors */ }
     clearDemoSessionMarkers();
 
+    // Owner ٤٢٧: signing out frees this browser's library device slot. It
+    // needs the session, so it goes first — but never holds the sign-out up
+    // (1.5 s at most, any failure ignored).
     const supabase = createClient();
-    supabase.auth.signOut().finally(() => {
-      window.location.href = redirectTo;
+    releaseLibraryDevice().finally(() => {
+      supabase.auth.signOut().finally(() => {
+        window.location.href = redirectTo;
+      });
     });
     return;
   }

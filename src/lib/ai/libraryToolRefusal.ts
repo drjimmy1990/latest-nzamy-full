@@ -4,9 +4,10 @@
  * libraryAccess): `library_tier` (below Pro, owner ٢٠٦ / ٢٠٧ / ٢٠٩) or
  * `library_closed` (the library's switch is off).
  *
- * Owner ٤١٧ (7 Nov 2026) opened the AI tools to every registered account, but
- * a tool that searches the library (a spec with `retrieval`) still needs the
- * library AI's tier, which the run path checks before the charge. The gate's
+ * Whoever a tool's roles admit (owner ٤١٧, 8 Nov 2026: the quick answer and the
+ * legal opinion for every account, the drafter, the assistant and the case-board
+ * card for lawyers and firms), a tool that searches the library (a spec with
+ * `retrieval`) still needs the library AI's tier, which the run path checks before the charge. The gate's
  * own message names «المساعد الذكي للمكتبة», which is not the page the user is
  * on, so each page says it in its own tool's name.
  *

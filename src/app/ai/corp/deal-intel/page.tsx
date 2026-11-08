@@ -11,6 +11,7 @@ import {
   TrendUp, Newspaper, Bank,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import LawyerToolLink from "@/components/ai/LawyerToolLink";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { useTheme } from "@/components/ThemeProvider";
@@ -525,7 +526,7 @@ function DealIntelInner() {
 
             {/* Action buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Link href="/ai/contracts"
+              <LawyerToolLink href="/ai/contracts"
                 className={`flex items-center gap-3 p-4 rounded-2xl border transition-all hover:scale-[1.02] ${isDark ? "border-white/[0.07] bg-zinc-900 hover:border-[#C8A762]/30" : "border-slate-200 bg-white shadow-sm hover:border-amber-300 hover:shadow-md"}`}>
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
                   <FileText size={18} weight="duotone" className="text-[#C8A762]" />
@@ -535,7 +536,7 @@ function DealIntelInner() {
                   <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>أرسل البنود لمحترف العقود</p>
                 </div>
                 <ArrowRight size={14} className={isDark ? "text-zinc-600" : "text-slate-300"} />
-              </Link>
+              </LawyerToolLink>
               <button onClick={() => { setStage("form"); setDealType(null); setSector(null); setDesc(""); setPartyType(null); setPartyName(""); }}
                 className={`flex items-center gap-3 p-4 rounded-2xl border transition-all hover:scale-[1.02] ${isDark ? "border-white/[0.07] bg-zinc-900" : "border-slate-200 bg-white shadow-sm"}`}>
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? "bg-zinc-800" : "bg-slate-50"}`}>

@@ -100,7 +100,7 @@ function AIBriefCheckPage() {
   const [errors, setErrors] = useState<string[]>([]);
   const ai = useAiRun();
   const report = ai.phase === "done" ? asBriefCheckReport(ai.output) : null;
-  // tool-status before the AI report's box and price (owner ٤١٧: every account;
+  // tool-status before the AI report's box and price (owner ٤١٧, 8 Nov: lawyers and firms;
   // the mode still decides). The team order above it does not depend on it.
   const aiUsable = useToolUsable("brief-check");
 

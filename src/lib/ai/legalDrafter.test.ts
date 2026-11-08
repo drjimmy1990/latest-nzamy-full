@@ -11,9 +11,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
-import { AI_COPY, callbackWith, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
+import { callbackWith, startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { Retrieved } from "./retrieval.ts";
 import { AI_TOOLS, DRAFT_COPY, DRAFT_FACTS_MAX, LIB_QUERIES_PATH } from "./tools.ts";
+import { SECTION_EDIT_COPY } from "./sectionEdits.ts";
 import { DRAFT_KINDS, DRAFT_KIND_IDS, draftKindFromMemo, draftKindPrice } from "./draftKinds.ts";
 import { MEMO_SUB_TYPES_COMMITTEES, MEMO_SUB_TYPES_REGULAR } from "../../components/draft/draftConstants.ts";
 
@@ -127,15 +128,17 @@ test("every pleading sub-type of the wizard maps to a kind; the specialist modes
 
 // ── the registry entry ───────────────────────────────────────────────────────
 
-test("the registry entry: a job for every registered role (owner ٤١٧), off by default, consultants refused, files optional, the library behind it", () => {
+test("the registry entry: a job for lawyers and firms only (owner ٤١٧, 8 Nov), off by default, consultants refused, files optional, the library behind it", () => {
   assert.equal(tool.class, "job");
   assert.equal(tool.n8nPath, "nzamy-ai/legal-drafter");
-  assert.deepEqual([...tool.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+  assert.deepEqual([...tool.roles], ["lawyer", "firm"]);
   assert.equal(tool.consultantBlocked, true);
   assert.equal(tool.defaultMode, "off");
   assert.equal(tool.files?.optional, true);
   assert.equal(tool.retrieval?.from, "search_text");
-  assert.equal(tool.conversation?.maxMessages, 2);
+  // Owner ٤١٠: the analysis, the draft, 30 section edits, and one turn more so
+  // the 31st edit gets its own refusal (sectionEdits.test.ts).
+  assert.equal(tool.conversation?.maxMessages, 2 + 30 + 1);
   assert.equal(tool.price({ kind: "cassation" }, { pages: null, turn: 0 }), 1500);
   assert.equal(tool.price({ kind: "cassation" }, { pages: null, turn: 1 }), 0, "the draft is paid by its analysis");
 });
@@ -232,7 +235,7 @@ test("out of order: a draft first, a draft before the analysis is done, or of an
   }
 });
 
-test("a failed draft is tried again free; once a draft succeeded the work is complete", async () => {
+test("a failed draft is tried again free; once a draft succeeded, a second draft is refused (only section edits follow)", async () => {
   // The failed draft is not a turn (runCore reads running/review/succeeded only).
   const again = db([row(issuesInput())]);
   const r = await startRunWith(again.client as never, deps(), LAWYER, body(draftInput(), { conversationId: CONV }));
@@ -242,8 +245,9 @@ test("a failed draft is tried again free; once a draft succeeded the work is com
   const done = db([row(issuesInput()), row(draftInput(), "succeeded", pleading)]);
   const full = await startRunWith(done.client as never, deps(), LAWYER, body(draftInput(), { conversationId: CONV }));
   assert.equal(full.status, 409);
-  assert.equal(full.body.code, "conversation_full");
-  assert.equal(full.body.error, AI_COPY.conversationFull);
+  assert.equal(full.body.code, "turn_refused");
+  assert.equal(full.body.error, SECTION_EDIT_COPY.draftDone, "owner ٤١٠: never a free second draft");
+  assert.equal(startPayload(done.log), undefined);
 });
 
 test("facts said to be in the files: refused without files, before the charge; accepted with them", async () => {

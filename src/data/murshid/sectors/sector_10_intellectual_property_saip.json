@@ -1,0 +1,330 @@
+{
+  "sector_no": 10,
+  "sector_code": "S10",
+  "title": "القطاع 10: الملكية الفكرية (العلامات التجارية، البراءات، حقوق المؤلف — SAIP)",
+  "generated_at": "2026-10-28",
+  "specialized_problem_cards_count": 2,
+  "agency_specific_cards_count": 1,
+  "total_cards_count": 3,
+  "cards": [
+    {
+      "card_id": "S10-SAIP-001",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 10,
+      "agency": {
+        "name": "الهيئة السعودية للملكية الفكرية",
+        "website": "https://www.saip.gov.sa/"
+      },
+      "problem_type": "التظلم من قرار رفض تسجيل علامة تجارية أو تعليقه على شرط",
+      "stage": "تظلم ثم دعوى",
+      "who_can_file": "طالب تسجيل العلامة التجارية الصادر بحقه قرار رفض أو تعليق من الإدارة المختصة بالهيئة السعودية للملكية الفكرية",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم تظلم إلكتروني أمام لجنة النظر في تظلمات العلامات التجارية عبر بوابة الهيئة السعودية للملكية الفكرية (SAIP)",
+          "channel": "portal",
+          "where": "https://www.saip.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ إبلاغ طالب التسجيل بقرار الرفض",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (13) من نظام العلامات التجارية لدول مجلس التعاون"
+        },
+        {
+          "n": 2,
+          "action": "الطعن في قرار لجنة التظلمات الصادر برفض التظلم أمام المحكمة المختصة خلال (30) يوماً من تاريخ الإبلاغ به",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ الإبلاغ بقرار رفض التظلم",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (13) من نظام العلامات التجارية (مع انتقال الاختصاص القضائي في منازعات الملكية الفكرية للمحاكم التجارية)"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحكمة التجارية",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "لجنة تظلمات العلامات التجارية بالهيئة (SAIP) ثم المحكمة التجارية",
+      "documents_required": [
+        "قرار رفض التسجيل وإشعار التبليغ",
+        "نموذج العلامة التجارية وشهادات التسجيل السابقة أو إثبات الأسبقية والشهرة",
+        "قرار لجنة التظلمات عند الرفع للمحكمة"
+      ],
+      "fees": "رسوم الخدمة المقررة لدى الهيئة السعودية للملكية الفكرية",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام العلامات التجارية",
+          "article": "الثالثة عشرة"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام العلامات التجارية",
+          "article": "الرابعة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "saip@saip.gov.sa"
+          },
+          {
+            "value": "legal@saip.gov.sa"
+          },
+          {
+            "value": "privacy@saip.gov.sa"
+          },
+          {
+            "value": "rs.policies@saip.gov.sa"
+          },
+          {
+            "value": "u003elegal@saip.gov.sa"
+          },
+          {
+            "value": "u003eprivacy@saip.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "920021421"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — الهيئة السعودية للملكية الفكرية",
+            "url": "https://www.saip.gov.sa/"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة التجارية — الدعاوى المتعلقة بالملكية الفكرية (العلامات التجارية) في دليل ناجز"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S10-SAIP-002",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 10,
+      "agency": {
+        "name": "الهيئة السعودية للملكية الفكرية",
+        "website": "https://www.saip.gov.sa/"
+      },
+      "problem_type": "دعاوى التعدي على العلامات التجارية، براءات الاختراع، أو حقوق المؤلف والمطالبة بمنع التعدي والتعويض أو الشطب",
+      "stage": "دعوى",
+      "who_can_file": "مالك العلامة التجارية أو براءة الاختراع أو صاحب حق المؤلف المتضرر من التعدي",
+      "steps": [
+        {
+          "n": 1,
+          "action": "توجيه إخطار رسمي (في الدعاوى التجارية المشمولة) أو تقديم شكوى انتهاك لدى الهيئة السعودية للملكية الفكرية (في الشق الرقابي)، ثم قيد دعوى ملكية فكرية أمام المحكمة التجارية عبر منصة ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "15 يوماً للإخطار المسبق في الدعاوى التجارية المشمولة",
+            "from_event": "قبل قيد صحيفة الدعوى",
+            "legal_basis_id": "LB2"
+          },
+          "source": "نظام المحاكم التجارية المادة (19) وأنظمة الملكية الفكرية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحاكم التجارية عبر ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة صك الحكم الابتدائي",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "المحاكم التجارية عبر منصة ناجز (أو لجنة النظر في منازعات براءات الاختراع ومخالفات حق المؤلف فيما بقي في اختصاصها ثم الطعن أمام المحكمة المختصة)",
+      "documents_required": [
+        "شهادة تسجيل العلامة التجارية أو وثيقة البراءة أو المصنف المحمي",
+        "أدلة وقرائن التعدي أو التقليد (فواتير، عينات، صور موثقة)",
+        "الإخطار القانوني الموجه للمدعى عليه"
+      ],
+      "fees": "تخضع لنظام التكاليف القضائية أمام المحاكم التجارية",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام العلامات التجارية",
+          "article": "الثالثة عشرة"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام المحاكم التجارية",
+          "article": "التاسعة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "saip@saip.gov.sa"
+          },
+          {
+            "value": "legal@saip.gov.sa"
+          },
+          {
+            "value": "privacy@saip.gov.sa"
+          },
+          {
+            "value": "rs.policies@saip.gov.sa"
+          },
+          {
+            "value": "u003elegal@saip.gov.sa"
+          },
+          {
+            "value": "u003eprivacy@saip.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "920021421"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — الهيئة السعودية للملكية الفكرية",
+            "url": "https://www.saip.gov.sa/"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة التجارية — ملكية فكرية (شطب علامة / تعويض عن تعدي / حقوق مؤلف / براءة اختراع) في دليل ناجز"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S10-AG-17807",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 10,
+      "agency": {
+        "name": "الهيئة السعودية للملكية الفكرية",
+        "website": "https://www.saip.gov.sa/"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «الهيئة السعودية للملكية الفكرية»",
+      "stage": "تظلم ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «الهيئة السعودية للملكية الفكرية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «الهيئة السعودية للملكية الفكرية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.saip.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ إبلاغ طالب التسجيل بقرار الرفض",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (13) من نظام العلامات التجارية لدول مجلس التعاون"
+        },
+        {
+          "n": 2,
+          "action": "الطعن في قرار لجنة التظلمات الصادر برفض التظلم أمام المحكمة المختصة خلال (30) يوماً من تاريخ الإبلاغ به",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ الإبلاغ بقرار رفض التظلم",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (13) من نظام العلامات التجارية (مع انتقال الاختصاص القضائي في منازعات الملكية الفكرية للمحاكم التجارية)"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف بالمحكمة التجارية",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "لجنة تظلمات العلامات التجارية بالهيئة (SAIP) ثم المحكمة التجارية",
+      "documents_required": [
+        "قرار رفض التسجيل وإشعار التبليغ",
+        "نموذج العلامة التجارية وشهادات التسجيل السابقة أو إثبات الأسبقية والشهرة",
+        "قرار لجنة التظلمات عند الرفع للمحكمة"
+      ],
+      "fees": "رسوم الخدمة المقررة لدى الهيئة السعودية للملكية الفكرية",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام العلامات التجارية",
+          "article": "الثالثة عشرة"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام العلامات التجارية",
+          "article": "الرابعة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "saip@saip.gov.sa"
+          },
+          {
+            "value": "legal@saip.gov.sa"
+          },
+          {
+            "value": "privacy@saip.gov.sa"
+          },
+          {
+            "value": "rs.policies@saip.gov.sa"
+          },
+          {
+            "value": "u003elegal@saip.gov.sa"
+          },
+          {
+            "value": "u003eprivacy@saip.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "920021421"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ الهيئة السعودية للملكية الفكرية",
+            "url": "https://www.saip.gov.sa/"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17807"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة التجارية — الدعاوى المتعلقة بالملكية الفكرية (العلامات التجارية) في دليل ناجز"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    }
+  ]
+}

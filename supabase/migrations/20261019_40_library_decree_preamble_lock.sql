@@ -84,6 +84,12 @@
 --     SELECT). Re-run this file afterwards.
 --   _verify.sql raises in each case (the marker survives the first two).
 --
+-- NOT AFTER 20261108_10_library_decree_tier_columns_lock.sql
+--   20261108_10 (owner ٤٢٤ / ٣٨٠ / ٣١٩) narrows the allow-list below: ref,
+--   date, official_url, summary, summary_brief and fts become server-only.
+--   Re-running THIS file after it re-grants them to anon. If you must re-run
+--   it, re-run 20261108_10 right after.
+--
 -- ROLLBACK (re-opens the preamble to the anon key — owner decision required)
 --   begin;
 --     grant select on library.decrees_circulars to anon, authenticated;

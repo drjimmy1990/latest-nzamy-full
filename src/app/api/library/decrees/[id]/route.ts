@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
@@ -8,9 +10,10 @@ import { summaryForViewer } from '@/lib/library/legislativeEvent';
 import { maskDecreeOfficialFields, TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 
 /**
- * The decree's catalogue columns, read through the request client. Every one
- * is on the anon allow-list of migration 20261019_40; the preamble is not
- * (it is read below with the service role), and neither is `*`.
+ * The decree's header columns. Read with the SERVICE ROLE since migration
+ * 20261108_10: ref, date, official_url, summary and summary_brief are
+ * server-only (owner ٤٢٤ / ٣٨٠ / ٣١٩) and masked per tier below. The preamble
+ * is read separately (20261019_40); `*` is never selected.
  */
 const DECREE_COLUMNS = 'id, title, type, issuer, ref, date, summary, summary_brief, category, hashtags, official_url';
 
@@ -52,9 +55,13 @@ export async function GET(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    // Service role: the header's number, date, link and summaries are
+    // server-only (20261108_10), the pages and the preamble too (20261018_02,
+    // 20261019_40). Every value is masked per tier below.
+    const serverOnly = await createServiceClient();
 
     // Fetch decree metadata (named columns: `*` needs the locked preamble)
-    const { data: decree, error: decreeError } = await supabase
+    const { data: decree, error: decreeError } = await serverOnly
       .schema('library')
       .from('decrees_circulars')
       .select(DECREE_COLUMNS)
@@ -62,7 +69,7 @@ export async function GET(
       .single();
 
     if (decreeError || !decree) {
-      return NextResponse.json({ error: 'Decree not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Decree not found' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     // Check user authentication
@@ -79,11 +86,19 @@ export async function GET(
     ]);
     const isWhitelisted = probe.isWhitelisted;
     const hasFullAccess = probe.freeLimit === -1 || isWhitelisted;
+    // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
+    // devices (src/lib/library/deviceLimitServer.ts; fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, isSubscriber);
+    if (deviceRefusal) return deviceRefusal;
+    // Final review 2026-11-08 (3): the document is spent HERE, after the device
+    // check — never in the proxy — so a read refused for its device spends
+    // none of the account's quota and cannot open its lock.
+    const quotaRefusal = await spendLibraryDocument(_request, userId);
+    if (quotaRefusal) return quotaRefusal;
 
     // Fetch pages and the preamble — service role: both are server-only
     // (20261018_02, 20261019_40). An error is a 500, never a decree that
     // silently has no pages or no preamble.
-    const serverOnly = await createServiceClient();
     const [{ data: pages, error: pagesError }, { data: preambleRow, error: preambleError }] = await Promise.all([
       serverOnly
         .schema('library')
@@ -101,11 +116,11 @@ export async function GET(
     ]);
     if (pagesError || !Array.isArray(pages)) {
       console.error(`[Decrees API] pages query failed for "${id}":`, pagesError?.code ?? 'no-error-code', pagesError?.message ?? 'null payload');
-      return NextResponse.json({ error: 'تعذّر تحميل صفحات هذا القرار' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل صفحات هذا القرار' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     if (preambleError) {
       console.error(`[Decrees API] preamble query failed for "${id}":`, preambleError.code ?? 'no-error-code', preambleError.message);
-      return NextResponse.json({ error: 'تعذّر تحميل هذا القرار' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل هذا القرار' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const preamble = typeof preambleRow?.preamble === 'string' ? preambleRow.preamble : '';
     // How many leading pages carry their text: all (Pro+, whitelisted), an
@@ -160,6 +175,6 @@ export async function GET(
     return NextResponse.json(response, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   } catch (error) {
     console.error('[Decrees API] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   }
 }

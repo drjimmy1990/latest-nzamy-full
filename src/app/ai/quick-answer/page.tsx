@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ChatCircleDots, CaretLeft, Sparkle, ArrowCounterClockwise,
@@ -15,10 +15,12 @@ import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { FREE_QUESTION_COPY, freeRunRefundText } from "@/lib/ai/freeQuestion";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
+import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
 import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
 import {
@@ -38,6 +40,12 @@ import {
  *
  * S3-06: examples, collapsible sources, the shared result actions, a reset and
  * the next tools. The price is the registry's (owner ٤١٢: 10 points).
+ *
+ * Owner ٤١٢: one free question a day for an individual account with a verified
+ * phone. The page reads GET /api/v1/ai/free-question; only when it answers
+ * `available: true` does it show «سؤالك المجاني اليوم» and price 0 and send
+ * `useFreeQuestion`. Otherwise nothing new is shown (no promise to an account
+ * that cannot have it; nobody is verified until phone OTP exists).
  *
  * The page reads tool-status first (src/hooks/useToolUsable.ts): the tool's mode is
  * "off" by default, and a run would answer 423, so no price and no form until the
@@ -67,19 +75,39 @@ function QuickAnswerTool() {
   const [question, setQuestion] = useState("");
   const user = useUser();
   const run = useAiRun();
+  // Owner ٤١٢: today's free question, as the server says; false until it answers.
+  const [freeOpen, setFreeOpen] = useState(false);
+  // Whether the question on screen was sent as the free one (its refund wording).
+  const [freeSent, setFreeSent] = useState(false);
+  const settled = run.phase === "done" || run.phase === "error" || run.phase === "idle";
+  useEffect(() => {
+    if (!settled) return;
+    let live = true;
+    fetch("/api/v1/ai/free-question", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: unknown) => { if (live) setFreeOpen(!!j && (j as { available?: unknown }).available === true); })
+      .catch(() => { if (live) setFreeOpen(false); });
+    return () => { live = false; };
+  }, [settled, run.runId]);
   const asking = run.busy;
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
   const cites = asCitations(run.citations);
   const ungrounded = isUngroundedAnswer(run.output);
-  // Owner ٤١٧: open to every account, but the library's AI tier still gates it.
+  // Owner ٤١٧: open to every account (general guidance), but the library's AI tier still gates it.
   const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType) : null;
   // Art. 18: /ai/wargaming refuses a consultant, so it is not offered to him.
-  const followUps = QUICK_ANSWER_FOLLOW_UPS.filter((f) => !(user.practiceKind === "consultant" && isConsultantBlockedPath(f.href)));
+  // Owner ٤١٧ (8 Nov): «عصارة المرفقات» (/ai/analyze's lawyer half) and the simulator are
+  // lawyer and firm tools, so another account is offered only the legal opinion.
+  const lawyerTools = canSeeLawyerTools(user.userType);
+  const followUps = QUICK_ANSWER_FOLLOW_UPS
+    .filter((f) => !(user.practiceKind === "consultant" && isConsultantBlockedPath(f.href)))
+    .filter((f) => lawyerTools || !(isLawyerOnlyAiHref(f.href) || f.href === "/ai/analyze"));
 
   function ask() {
     const q = question.trim();
     if (q.length < 8 || asking) return;
-    void run.start("quick-answer", { question: q });
+    setFreeSent(freeOpen);
+    void run.start("quick-answer", { question: q }, freeOpen ? { useFreeQuestion: true } : {});
   }
 
   function askAnother() {
@@ -110,6 +138,11 @@ function QuickAnswerTool() {
             <ChatCircleDots size={18} weight="duotone" className="text-blue-500" />
           </div>
           <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>سؤال قانوني سريع</h1>
+          {freeOpen && (
+            <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${isDark ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+              {FREE_QUESTION_COPY.badge}
+            </span>
+          )}
         </div>
         <p className={`text-[13px] ${muted}`}>
           سؤال محدد ← إجابة مختصرة من نصوص الأنظمة ومبادئ القضاء في مكتبة نظامي، مع رابط كل نص استندت إليه.
@@ -153,7 +186,7 @@ function QuickAnswerTool() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className={`text-[11px] ${muted}`}>
-            {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · {aiToolPriceText("quick-answer", "ar")} للسؤال
+            {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · {freeOpen ? FREE_QUESTION_COPY.price : `${aiToolPriceText("quick-answer", "ar")} للسؤال`}
           </span>
           <motion.button
             whileHover={{ scale: 1.03 }}
@@ -169,7 +202,7 @@ function QuickAnswerTool() {
         {run.phase === "error" && libraryRefusal && <LibraryToolRefusalNote refusal={libraryRefusal} isDark={isDark} />}
         {run.phase === "error" && run.error && !libraryRefusal && (
           <p role="alert" className={`text-[12px] leading-relaxed ${isDark ? "text-red-400" : "text-red-600"}`}>
-            {quickAnswerRefusalText(run.code) ?? run.error}
+            {freeRunRefundText(quickAnswerRefusalText(run.code) ?? run.error, freeSent)}
           </p>
         )}
         <p className={`text-[11px] leading-relaxed ${muted}`}>

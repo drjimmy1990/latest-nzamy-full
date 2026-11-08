@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { TERMINAL_TOOL_ROUTES } from "../constants/betaGatedRoutes.ts";
+import { LAWYER_ONLY_AI_PAGES } from "../lib/ai/lawyerOnlyTools.ts";
 
 const src = readFileSync(new URL("./sitemap.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const urls = [...src.matchAll(/\{ url: "([^"]+)"/g)].map((m) => m[1]);
@@ -27,7 +28,12 @@ test("task 6 review M1: no gate-only or «قريباً» tool route is advertise
 });
 
 test("the tools with a working path stay listed", () => {
-  for (const route of ["/ai/draft", "/ai/legal-opinion", "/ai/contract-drafter", "/ai/wargaming"]) {
+  for (const route of ["/ai/draft", "/ai/legal-opinion", "/ai/templates", "/ai/legal-translate"]) {
     assert.ok(urls.includes(route), route);
   }
+});
+
+test("final review 2026-11-08 (8): no lawyer-only tool page is advertised — it sends a guest to /login", () => {
+  const listed = urls.filter((u) => Object.keys(LAWYER_ONLY_AI_PAGES).some((p) => u === p || u.startsWith(`${p}/`)));
+  assert.deepEqual(listed, []);
 });
