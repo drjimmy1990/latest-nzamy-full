@@ -302,6 +302,12 @@ const task = i.phase === 'section' ? [
   refused before n8n when the library finds nothing (pipeline test for both cases).
 
 ## Concerns for the controller
+- **`had_citations` is sent by the client** (B3). If a user sends `false` for a section that did cite, that
+  edit skips `no_sources` and `ungrounded`. Nothing paid is given away: the edit is still charged or uses a
+  free edit. But it weakens the grounding guarantee on his own memo. A later fix could derive it on the
+  server from the succeeded draft's section body, when that section has not been edited before.
+- The empty-`sources` path needs no extra n8n change: `sourcesXml([])` is valid, and the drafter's
+  citation rule applies only to a paragraph that relies on a text.
 - **Live n8n must be updated** (B3, above) before section edits are switched on. Until then a section
   run fails `schema_invalid` and is refunded.
 - B3 daily limit: section edits bypass the drafter's daily limit, but they still count against a new
