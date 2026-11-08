@@ -9,7 +9,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import LibraryDeviceLimitPage from "@/components/library/LibraryDeviceLimitNotice";
-import { readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
+import { deviceRefusalOf, readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
@@ -225,6 +225,9 @@ export default function FeqhBookPage() {
       const res = await fetch(`/api/library/books/${apiSlug(slug)}?${cursor}&toc=0&limit=${STREAM_BATCH}`);
       const body = await res.json().catch(() => null);
       if (!res.ok || !body) {
+        // A device refused mid-book (owner ٤٢٧) gets the device page, not a line.
+        const device = deviceRefusalOf(res.status, body);
+        if (device) setDeviceRefusal(device);
         return { ok: false, status: res.status, error: typeof body?.error === "string" ? body.error : "تعذّر تحميل نص الكتاب، حاول مجدداً" };
       }
       return { ok: true, run: runFromCursorResponse(body, dir) };
@@ -453,6 +456,8 @@ export default function FeqhBookPage() {
       const body = await res.json().catch(() => null);
       if (generation !== bookGeneration.current) return;
       if (!res.ok || !body) {
+        const device = deviceRefusalOf(res.status, body);
+        if (device) setDeviceRefusal(device);
         setNavError(typeof body?.error === "string" ? body.error : "تعذّر فتح هذا الموضع، حاول مجدداً");
         return;
       }

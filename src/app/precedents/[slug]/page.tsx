@@ -10,7 +10,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import LibraryDeviceLimitPage from "@/components/library/LibraryDeviceLimitNotice";
-import { readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
+import { deviceRefusalOf, readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import PrincipleBlock from "./_principle-block";
@@ -433,6 +433,9 @@ export default function JudicialPrinciplesPage() {
         const body = await res.json().catch(() => null);
         if (generation !== runGeneration.current) return "done";
         if (!res.ok || !body) {
+          // A device refused mid-collection (owner ٤٢٧) gets the device page, not a line.
+          const device = deviceRefusalOf(res.status, body);
+          if (device) { setDeviceRefusal(device); return "error"; }
           setMoreError(typeof body?.error === "string" ? body.error : "تعذّر تحميل المزيد من المبادئ");
           return "error";
         }
@@ -477,6 +480,8 @@ export default function JudicialPrinciplesPage() {
         const body = await res.json().catch(() => null);
         if (generation !== runGeneration.current) return;
         if (!res.ok || !body) {
+          const device = deviceRefusalOf(res.status, body);
+          if (device) { setDeviceRefusal(device); return; }
           setBeforeError(typeof body?.error === "string" ? body.error : "تعذّر تحميل المبادئ السابقة");
           return;
         }
@@ -525,6 +530,8 @@ export default function JudicialPrinciplesPage() {
       const body = await res.json().catch(() => null);
       if (generation !== runGeneration.current) return false;
       if (!res.ok || !body) {
+        const device = deviceRefusalOf(res.status, body);
+        if (device) { setDeviceRefusal(device); return false; }
         setMoreError(typeof body?.error === "string" ? body.error : "تعذّر فتح موضع هذا المبدأ");
         return false;
       }

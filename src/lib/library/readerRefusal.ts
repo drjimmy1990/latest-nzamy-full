@@ -142,6 +142,19 @@ export function readerRefusalFrom(status: number, body: unknown, now: number): R
   return { kind: "limit", scope: "rate", messageAr: text(b.error) ?? RATE_FALLBACK_AR };
 }
 
+/**
+ * The device refusal (owner ٤٢٧) in a reader's LATER fetch — the next window
+ * of a book or a precedents collection, a jump, the feqh preview — or null for
+ * any other answer, which keeps its own error line. A 403 device refusal
+ * replaces the whole reader (LibraryDeviceLimitPage), as on the first load
+ * (final review of batch 2026-11-08, item 9).
+ */
+export function deviceRefusalOf(status: number, body: unknown): Extract<ReaderRefusal, { kind: "device" }> | null {
+  if (status !== 403) return null;
+  const refusal = readerRefusalFrom(403, body, 0);
+  return refusal?.kind === "device" ? refusal : null;
+}
+
 const DEVICE_FALLBACK_AR =
   "هذا الحساب مفعّل على جهازين بالفعل. سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز.";
 
