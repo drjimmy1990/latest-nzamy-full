@@ -1,5 +1,7 @@
 # Batch 2026-11-08 (decree security + owner table ٤٣٩–٤٤٤/٤١٧ + devices, section edits, free question, murshid): your steps, in order
 
+**Status 2026-11-08: Steps 0–5 and 7 DONE on prod.** SQL _20/_30/_40/_41/_50 ok, deploy f5810e9b, _10 ok (decrees_circulars = 9 public columns per role), _verify clean, murshid routes 200. Only Step 6 (device limit test + switch on) is left.
+
 **Where the files are.** Until the branch `batch/2026-11-08-security-table` is merged, the files are in the worktree `D:\nzwt\b1108\`. After the merge they are in `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\`, and on the server after `git pull` in `/www/wwwroot/nzamy/latest-nzamy-full/`. The paths below are relative to that folder.
 
 **Screen or file.** Every SQL result here appears on the screen only. Paste the results back to us.
