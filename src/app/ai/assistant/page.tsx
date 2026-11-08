@@ -205,7 +205,7 @@ function useVoice(onResult: (t: string) => void) {
 }
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
-/** tool-status before the chat and the price (owner ٤١٧: every account; the mode still decides). */
+/** tool-status before the chat and the price (owner ٤١٧, 8 Nov: lawyers and firms; the mode still decides). */
 export default function AssistantRoute() {
   return (
     <ToolUsableGate

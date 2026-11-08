@@ -13,6 +13,8 @@ import NGODashboardLayout from "@/app/dashboard/ngo/layout";
 import FirmDashboardLayout from "@/app/dashboard/firm/layout";
 import MicroDashboardLayout from "@/app/dashboard/micro/layout";
 import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
+import LawyerOnlyToolNotice from "@/components/ai/LawyerOnlyToolNotice";
+import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 
 /**
  * AI Layout — wraps /ai/* pages with the correct dashboard sidebar.
@@ -43,7 +45,7 @@ import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
  * loading gate; UAT-LIVE-AI-001 logged-out escape moved above the lawyer
  * prefixes (a guest is not a permissions problem).
  */
-export default function AILayout({ children }: { children: React.ReactNode }) {
+export default function AILayout({ children: page }: { children: React.ReactNode }) {
   const user = useUser();
   const pathname = usePathname() ?? "/ai";
   const { storedView } = useAdminView(pathname, !user.loading && user.userType === "admin");
@@ -63,6 +65,13 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
     storedView,
     lastDashboard,
   });
+
+  // Owner ٤١٧ (8 Nov 2026): a lawyer tool's page shows a signed-in account other
+  // than lawyer, firm or admin a notice in its own shell, not the tool. A visitor
+  // keeps the page (the edge sends him to /login first; the page has its own
+  // sign-in handling).
+  const lawyerOnlyRefused = shell !== "loading" && user.isLoggedIn && isLawyerOnlyAiHref(pathname) && !canSeeLawyerTools(user.userType);
+  const children = lawyerOnlyRefused ? <LawyerOnlyToolNotice userType={user.userType} /> : page;
 
   switch (shell) {
     case "loading":    return <AILoading />;

@@ -46,9 +46,10 @@ export default function AIDraftPage() {
   // L14 (owner LIVE-F02, NOTE-22): a pleading is written by the AI by
   // default; the team's review is a separate, optional order. The specialist
   // modes (arbitration, notary, report, minutes) have no kind and stay a team
-  // order, as does any account the tool is not open to. Owner ٤١٧: the tool's
-  // roles (tools.ts) are every registered account; the role rule is the run
-  // path's own (toolRoleRefusal), the consultant lock is the line below.
+  // order, as does any account the tool is not open to. Owner ٤١٧ (8 Nov): the
+  // tool's roles (tools.ts) are lawyer and firm, so every other account gets the
+  // team order; the role rule is the run path's own (toolRoleRefusal), the
+  // consultant lock is the line below.
   const kind = draftKindFromMemo(s.memoType, s.memoSubType);
   const aiOpen = kind !== null && toolRoleRefusal(AI_TOOLS["legal-drafter"], { userType: user.userType ?? "", practiceKind: null }) === null;
   // Art. 18: a legal consultant does not plead — neither by the AI nor by
@@ -60,7 +61,7 @@ export default function AIDraftPage() {
   // The run answered `tool_off` (the tool ships off until an admin turns it
   // on): the team order becomes the path.
   const [aiOff, setAiOff] = useState(false);
-  // `library_tier` (owner ٤١٧): the drafter is open to every account, but the
+  // `library_tier`: the drafter's account type may run it (lawyer, firm), but the
   // library's AI tier refused this one; the team order follows, with a note.
   const [aiOffReason, setAiOffReason] = useState<"tool_off" | "library_tier" | null>(null);
   const markAiOff = useCallback((code: "tool_off" | "library_tier") => { setAiOff(true); setAiOffReason(code); }, []);

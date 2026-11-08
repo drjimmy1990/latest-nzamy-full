@@ -57,7 +57,7 @@ function deps(calls: Array<Record<string, unknown>>): StartRunDeps {
   };
 }
 
-test("the registry entry: a 500-point job, off by default, no files, lawyers and individuals alike", () => {
+test("the registry entry: a 500-point job, off by default, no files, lawyers and firms only (owner ٤١٧, 8 Nov)", () => {
   const t = AI_TOOLS["contract-drafter"];
   assert.equal(t.class, "job");
   assert.equal(t.n8nPath, "nzamy-ai/contract-drafter");
@@ -66,7 +66,7 @@ test("the registry entry: a 500-point job, off by default, no files, lawyers and
   assert.equal(t.defaultMode, "off");
   assert.equal(t.files, undefined);
   assert.equal(t.consultantBlocked, false);
-  for (const role of ["lawyer", "firm", "individual", "corporate", "micro"]) assert.ok(t.roles.includes(role as never), role);
+  assert.deepEqual([...t.roles], ["lawyer", "firm"]);
   assert.deepEqual([...CONTRACT_TYPES], ["rent", "service", "employment", "partnership", "sale", "other"]);
 });
 
@@ -105,8 +105,15 @@ test("output: a title and two sections at least; cited kept for the enricher", (
   assert.equal((v({ ...draft, sections: [...draft.sections, { ...long, body: "ب".repeat(12000) }] }, input) as Record<string, any>).sections.length, 3);
 });
 
-test("a lawyer and an individual both start the job: charged 500, sent to n8n with no files", async () => {
-  for (const actor of [LAWYER, INDIVIDUAL]) {
+test("a lawyer starts the job: charged 500, sent to n8n with no files; an individual is refused before any charge (owner ٤١٧)", async () => {
+  {
+    const { client, log } = db();
+    const r = await startRunWith(client as never, deps([]), INDIVIDUAL, { tool: "contract-drafter", input, idempotencyKey: "key-abcdef01" });
+    assert.equal(r.status, 403);
+    assert.equal(r.body.code, "role");
+    assert.equal(log.some((q) => q.table === "ai_start_run"), false);
+  }
+  for (const actor of [LAWYER]) {
     const { client, log } = db();
     const calls: Array<Record<string, unknown>> = [];
     const r = await startRunWith(client as never, deps(calls), actor, { tool: "contract-drafter", input, idempotencyKey: "key-abcdef01" });

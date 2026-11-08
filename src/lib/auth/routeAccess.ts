@@ -13,6 +13,7 @@
  */
 
 import { DB_USER_TYPES, type DbUserType } from "./userTypes.ts";
+import { LAWYER_ONLY_AI_PAGES } from "../ai/lawyerOnlyTools.ts";
 
 // ─── Route → required userTypes ──────────────────────────────────────────────
 //
@@ -96,6 +97,18 @@ export const ROUTE_ACCESS: readonly RouteAccessRule[] = [
   // answers first — so the value is spelled out to say who the prefix is for,
   // not because this list is what lets the admin in.
   { prefix: "/dashboard/admin", allowedTypes: ["admin"] },
+
+  // Owner ٤١٧, answer of 8 Nov 2026: the lawyer tools' pages are for lawyers and
+  // law firms only (src/lib/ai/lawyerOnlyTools.ts; the run route refuses the
+  // tools themselves with 403 «role» either way). Each prefix is also in the
+  // proxy's PROTECTED list, without which this table is never consulted. A
+  // refused account is sent to its own dashboard like any other refusal, and no
+  // dashboard prefix starts with /ai, so the redirect cannot loop. The admin is
+  // answered before any rule (the proxy's isAdmin short-circuit).
+  ...Object.keys(LAWYER_ONLY_AI_PAGES).map((prefix) => ({
+    prefix,
+    allowedTypes: ["lawyer", "firm"] as const,
+  })),
 ];
 
 /**

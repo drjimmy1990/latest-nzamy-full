@@ -154,8 +154,8 @@ test("/ai/analyze: lawyers, firms and admins get the case-brief studio; everyone
   // lawyer and firm, and for an admin, whom the run path lets through so a tool
   // in "staff" mode can be tried before it opens. Every other account, and a
   // guest, reads the gated client analyzer with its advisory notice above it
-  // (owner item ١٨). Owner ٤١٧ opened the tool itself to every registered role;
-  // which screen a client is drawn here stays the page's choice.
+  // (owner item ١٨). Owner ٤١٧ (answer of 8 Nov 2026): «عصارة المرفقات» is for
+  // lawyers and firms only, so the page's split and the tool's roles agree again.
   const page = code("app/ai/analyze/page.tsx");
   assert.ok(!page.includes(SOON_IMPORT));
   assert.match(page, /<SmartAnalyzer\b/);
@@ -164,7 +164,7 @@ test("/ai/analyze: lawyers, firms and admins get the case-brief studio; everyone
   const analyzerAt = page.indexOf("<SmartAnalyzer");
   assert.ok(studioAt > 0 && studioAt < noticeAt && noticeAt < analyzerAt, "the notice sits in the client branch only");
   assert.match(page.slice(0, studioAt), /user\.userType === "lawyer" \|\| user\.userType === "firm" \|\| user\.userType === "admin"/);
-  for (const role of ["lawyer", "firm"]) assert.ok(AI_TOOLS["case-brief"].roles.includes(role), `the studio's roles run the tool: ${role}`);
+  assert.deepEqual([...AI_TOOLS["case-brief"].roles], ["lawyer", "firm"], "the studio's split follows the tool's roles");
 
   // Live for them, at the registry's price, and no longer «قريباً».
   const row = LAWYER_AI_TOOL_BY_PERMISSION["ai:analyze"];
@@ -192,14 +192,19 @@ test("/ai/micro has no canned output", () => {
   assert.ok(!body.includes("BetaReviewGate"));
   assert.ok(!body.includes("GatedToolScreen"));
   assert.ok(!body.includes("saveWorkflowRequest"));
-  // One mapped list holds the three contract ids; the price is read, not typed.
-  assert.ok(body.includes('href="/ai/contract-drafter"'));
-  assert.match(page, /const CONTRACT_CASES[\s\S]*id: "labor_contract"[\s\S]*id: "rent_contract"[\s\S]*id: "service_contract"[\s\S]*const SOON_CASES/);
+  // Owner ٤١٧ (8 Nov): the contract drafter is a lawyer and firm tool, so the
+  // three contract cases are gone; the general guidance tools take their place.
+  assert.ok(!body.includes("/ai/contract-drafter"), "a micro account is not sent to a lawyer tool");
+  assert.ok(!body.includes("CONTRACT_CASES"));
+  assert.ok(!AI_TOOLS["contract-drafter"].roles.includes("micro"), "the drafter is lawyer and firm only");
+  assert.match(page, /const GUIDANCE_LINKS[\s\S]*href: "\/ai\/quick-answer"[\s\S]*href: "\/ai\/legal-opinion"/);
+  for (const href of ["/ai/quick-answer", "/ai/legal-opinion"]) {
+    const tool = href === "/ai/quick-answer" ? "quick-answer" : "legal-opinion-consult";
+    assert.ok(AI_TOOLS[tool].roles.includes("micro"), `${tool} runs for a micro account`);
+  }
   assert.match(page, /const SOON_CASES[\s\S]*id: "warning_letter"[\s\S]*id: "complaint_reply"[\s\S]*id: "consultation"/);
-  assert.ok(body.includes('aiToolPriceText("contract-drafter", "ar")'));
-  assert.ok(!/٥٠٠|500 نقطة/.test(body), "the price is typed by hand");
+  assert.ok(!/٥٠٠|500 نقطة/.test(body), "a price is typed by hand");
   assert.ok(body.includes("قريباً"));
-  assert.ok(AI_TOOLS["contract-drafter"].roles.includes("micro"), "the drafter runs for a micro account");
 });
 
 // ── منقح ناجز: keeps working, loses the fake "AI" delay ──────────────────────

@@ -108,10 +108,8 @@ test("R3: a run's «افتح الأداة» link opens the page the case brief l
   assert.equal(redirects()[AI_TOOL_PAGES["case-brief"] as string], undefined);
 });
 
-test("corporate and NGO contract tools land on a page they may run: both roles are on contracts-pro", () => {
-  assert.ok(AI_TOOLS["contracts-pro"].roles.includes("corporate"));
-  assert.ok(AI_TOOLS["contracts-pro"].roles.includes("ngo"));
-  assert.ok(AI_TOOLS["contracts-pro"].roles.includes("micro"), "the micro dashboard links it too");
+test("owner ٤١٧ (8 Nov): contracts-pro is lawyer and firm only, and /ai/contracts stays behind sign-in", () => {
+  assert.deepEqual([...AI_TOOLS["contracts-pro"].roles], ["lawyer", "firm"]);
   assert.match(read("proxy.ts"), /"\/ai\/contracts",/, "/ai/contracts stays behind sign-in (PROTECTED)");
 });
 

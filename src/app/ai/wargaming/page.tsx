@@ -971,8 +971,8 @@ function AIWargamingPage() {
   // target, 150 for two or more — wargamingPrice, the same count the server charges). Only PDF and image
   // files go to it; a memo counts for «نقض المذكرة» only if it is one of them.
   const ai = useAiRun();
-  // tool-status before the AI simulation's box and price (owner ٤١٧: every
-  // account; the mode still decides). The team order does not depend on it.
+  // tool-status before the AI simulation's box and price (owner ٤١٧, 8 Nov:
+  // lawyers and firms; the mode still decides). The team order does not depend on it.
   const aiUsable = useToolUsable("wargaming");
   // P3: a founder lawyer may spend his one independent output on the
   // simulation instead of points. A consultant never gets here (ConsultantGate),

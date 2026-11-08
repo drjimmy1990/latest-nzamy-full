@@ -1,16 +1,22 @@
 /**
- * Owner ٤١٧ (7 Nov 2026): the AI tools are open, for points, to every registered
- * account; the legal consultant (م ١٨, `practice_kind = 'consultant'`) stays out
- * of the pleading tools. The role matrix below is every tool × every account
- * type × the consultant flag, through the one rule the run path and
- * tool-status share (toolRoleRefusal).
+ * Owner ٤١٧, answer of 8 Nov 2026 (it reverses his 7 Nov answer): «الصائغ
+ * القانوني» و«محترف العقود» و«مفاوض العقود» و«عصارة المرفقات» are for licensed
+ * lawyers and law firms only; individuals and companies get only the general
+ * guidance tools. Controller ruling: every working tool but the quick answer,
+ * the two legal-opinion types and the library's own assistant is lawyer/firm
+ * only. The legal consultant (م ١٨, `practice_kind = 'consultant'`) stays out of
+ * the pleading tools. The role matrix below is every tool × every account type
+ * × the consultant flag, through the one rule the run path and tool-status share
+ * (toolRoleRefusal); the run route's own path (startRunWith) is exercised too.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AI_TOOLS, REGISTERED_ROLES } from "./tools.ts";
+import { AI_TOOLS, LAWYER_FIRM_ROLES, REGISTERED_ROLES } from "./tools.ts";
 import { toolRoleRefusal } from "./aiToolsConfig.ts";
+import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
+import { startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import { libraryToolRefusal, LIBRARY_AI_TIERS, LIBRARY_TOOL_PLANS_HREF, proPlanOnSaleFor } from "./libraryToolRefusal.ts";
 
 const src = (rel: string) => readFileSync(join(process.cwd(), "src", rel), "utf8").replace(/\r\n/g, "\n");
@@ -29,12 +35,19 @@ test("REGISTERED_ROLES is profiles.user_type without admin", () => {
   assert.deepEqual([...REGISTERED_ROLES].sort(), types.sort());
 });
 
-test("every customer tool is open to every registered role (٤١٧)", () => {
-  const customer = Object.keys(AI_TOOLS).filter((id) => !NOT_CUSTOMER_TOOLS.has(id));
-  assert.ok(customer.length >= 16, `only ${customer.length} tools — the registry moved`);
-  for (const id of customer) {
-    assert.deepEqual([...AI_TOOLS[id].roles].sort(), [...REGISTERED_ROLES].sort(), id);
-  }
+/** The controller's table for owner ٤١٧ (8 Nov 2026): general guidance for every account, the rest for lawyers and firms. */
+const GENERAL_GUIDANCE_TOOLS = ["legal-opinion-consult", "legal-opinion-letter", "quick-answer"];
+const LAWYER_FIRM_TOOLS = [
+  "analyze-strength", "assistant", "brief-check", "canvas-card", "case-brief", "communicate", "contract-drafter",
+  "contract-negotiator", "contract-review", "contracts-pro", "legal-drafter", "najiz-optimizer", "wargaming",
+];
+
+test("owner ٤١٧ (8 Nov): the role table — general guidance for every account, every other tool for lawyers and firms", () => {
+  assert.deepEqual([...LAWYER_FIRM_ROLES], ["lawyer", "firm"]);
+  const customer = Object.keys(AI_TOOLS).filter((id) => !NOT_CUSTOMER_TOOLS.has(id)).sort();
+  assert.deepEqual(customer, [...GENERAL_GUIDANCE_TOOLS, ...LAWYER_FIRM_TOOLS].sort(), "a tool joined or left the registry: give it a row here");
+  for (const id of GENERAL_GUIDANCE_TOOLS) assert.equal(AI_TOOLS[id].roles, REGISTERED_ROLES, id);
+  for (const id of LAWYER_FIRM_TOOLS) assert.deepEqual([...AI_TOOLS[id].roles], ["lawyer", "firm"], id);
 });
 
 test("government reaches the legal opinion; the library assistant and the test tools keep their lists", () => {
@@ -70,12 +83,18 @@ test("the matrix: each tool × each account type × the consultant flag", () => 
   }
   assert.ok(cases > 600, `only ${cases} cases`);
 
-  // The rows the owner named, spelled out.
-  const ind = { userType: "individual", practiceKind: null };
-  for (const id of ["quick-answer", "assistant", "analyze-strength", "wargaming", "legal-drafter", "najiz-optimizer", "communicate", "contract-negotiator", "case-brief", "brief-check"]) {
-    assert.equal(toolRoleRefusal(AI_TOOLS[id], ind), null, `an individual runs ${id}`);
+  // The rows the owner named, spelled out: the four he named and the rest of the
+  // controller's list are refused to every account but lawyer and firm.
+  for (const userType of ["individual", "corporate", "micro", "provider", "government", "ngo"]) {
+    const caller = { userType, practiceKind: null };
+    for (const id of LAWYER_FIRM_TOOLS) assert.equal(toolRoleRefusal(AI_TOOLS[id], caller), "role", `${userType} × ${id}`);
+    for (const id of GENERAL_GUIDANCE_TOOLS) assert.equal(toolRoleRefusal(AI_TOOLS[id], caller), null, `${userType} runs ${id}`);
   }
-  assert.equal(toolRoleRefusal(AI_TOOLS["legal-opinion-consult"], { userType: "government", practiceKind: null }), null);
+  for (const userType of ["lawyer", "firm"]) {
+    for (const id of [...LAWYER_FIRM_TOOLS, ...GENERAL_GUIDANCE_TOOLS]) {
+      assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType, practiceKind: "advocate" }), null, `${userType} runs ${id}`);
+    }
+  }
   for (const id of PLEADING_TOOLS) {
     assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "consultant" }), "consultant_blocked", id);
     assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "advocate" }), null, id);
@@ -195,7 +214,7 @@ test("Q443: the links lead to tools the role may run", () => {
   const banner = src("components/OnboardingBanner.tsx");
   assert.match(banner, /\{ label: "استشارة سريعة", href: "\/ai\/quick-answer" \}/);
   assert.match(banner, /\{ label: "الرأي القانوني", href: "\/ai\/legal-opinion" \}/);
-  assert.ok(AI_TOOLS["analyze-strength"].roles.includes("individual"));
+  assert.ok(!AI_TOOLS["analyze-strength"].roles.includes("individual"), "owner ٤١٧ (8 Nov): lawyers and firms only");
   assert.ok(AI_TOOLS["quick-answer"].roles.includes("micro"));
   assert.ok(AI_TOOLS["legal-opinion-consult"].roles.includes("government"));
 });
@@ -208,8 +227,13 @@ test("no AI tool page still says it is for lawyers only", () => {
 
 test("a short table of named cases (tool × account type × practice kind)", () => {
   const table: Array<[string, string, string | null, "role" | "consultant_blocked" | null]> = [
-    ["wargaming", "provider", "advocate", null],
-    ["legal-drafter", "ngo", "consultant", "consultant_blocked"],
+    ["wargaming", "provider", "advocate", "role"],
+    // The role comes before the consultant lock: an NGO is outside the drafter whatever its kind.
+    ["legal-drafter", "ngo", "consultant", "role"],
+    ["legal-drafter", "lawyer", "consultant", "consultant_blocked"],
+    ["case-brief", "individual", null, "role"],
+    ["case-brief", "corporate", null, "role"],
+    ["case-brief", "firm", null, null],
     ["quick-answer", "", null, "role"],
     ["wargaming", "admin", "consultant", null],
     ["legal-opinion-consult", "government", null, null],
@@ -219,7 +243,9 @@ test("a short table of named cases (tool × account type × practice kind)", () 
     ["echo-fast", "individual", null, "role"],
     ["najiz-optimizer", "lawyer", "consultant", "consultant_blocked"],
     ["contracts-pro", "lawyer", "consultant", null],
-    ["analyze-strength", "micro", "advocate", null],
+    ["analyze-strength", "micro", "advocate", "role"],
+    ["legal-opinion-letter", "individual", null, null],
+    ["quick-answer", "corporate", null, null],
     ["brief-check", "firm", "consultant", "consultant_blocked"],
   ];
   for (const [tool, userType, practiceKind, want] of table) {
@@ -264,7 +290,7 @@ test("tool-status before the form and price: communicate and assistant whole-pag
   assert.ok(src("app/ai/quick-answer/page.tsx").includes('useToolUsable("quick-answer")'));
 });
 
-test("the validators ask «صفتك أو صفة موكّلك» on the tools every account now runs", () => {
+test("the validators ask «صفتك أو صفة موكّلك» (wording kept from the 7 Nov opening; still true for a lawyer's own case)", () => {
   for (const id of ["wargaming", "analyze-strength"]) {
     const r = AI_TOOLS[id].validateInput({ role: "nope", case_summary: "س".repeat(400), targets: ["opponent"] });
     assert.deepEqual(r, { ok: false, error: "اختر صفتك أو صفة موكّلك" }, id);
@@ -277,4 +303,40 @@ test("/ai hub: no free queries, no «مجاني» badge on a paid tool, no «ل�
   assert.doesNotMatch(hub, /badge: "مجاني"/);
   assert.doesNotMatch(hub, /للمحامي في البيتا، متاحة مجاناً/);
   assert.doesNotMatch(hub, /جرّب ذكاء نظامي مجاناً/);
+});
+
+// ── owner ٤١٧ (8 Nov): the run route refuses, before any charge ─────────────
+
+test("POST /api/v1/ai/runs (startRunWith): an individual and a company get 403 «role» for legal-drafter and case-brief, before the setting or any charge", async () => {
+  const route = src("app/api/v1/ai/runs/route.ts");
+  assert.match(route, /startRunWith\(/, "the route answers through startRunWith");
+  const bodies: Record<string, Record<string, unknown>> = {
+    "legal-drafter": { tool: "legal-drafter", input: { phase: "issues", kind: "statement_of_claim", facts: "س".repeat(60) }, idempotencyKey: "key-abcdef01" },
+    "case-brief": { tool: "case-brief", input: { acting_for: "plaintiff" }, fileIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"], idempotencyKey: "key-abcdef01" },
+  };
+  for (const userType of ["individual", "corporate"]) {
+    for (const tool of ["legal-drafter", "case-brief"]) {
+      for (const mode of ["off", "staff", "live"]) {
+        const { client, log } = fakeDb((q: FakeQuery) => {
+          if (q.table === "platform_settings") return { data: { value: { [tool]: { mode } } } };
+          if (q.op === "rpc" && q.table === "ai_start_run") return { data: [{ run_id: "r", created: true, status: "running", charged: true, charged_points: 30 }] };
+          return {};
+        });
+        let n8n = 0;
+        const deps: StartRunDeps = {
+          callbackUrl: "https://app.test/api/v1/ai/callback",
+          n8n: async () => { n8n += 1; return { kind: "accepted" }; },
+          resolveFiles: async () => ({ ok: true, pages: 1, files: [] }),
+        };
+        const actor: RunActor = { userId: "u-1", userType, practiceKind: "advocate", displayName: null };
+        const r = await startRunWith(client as never, deps, actor, bodies[tool]);
+        const at = `${userType} × ${tool} × ${mode}`;
+        assert.equal(r.status, 403, at);
+        assert.equal(r.body.code, "role", at);
+        assert.equal(log.some((q) => q.op === "rpc"), false, `${at}: no money function`);
+        assert.equal(log.some((q) => q.table === "platform_settings"), false, `${at}: the role is checked first`);
+        assert.equal(n8n, 0, at);
+      }
+    }
+  }
 });

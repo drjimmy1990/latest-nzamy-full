@@ -43,14 +43,14 @@ const output = (over: Record<string, unknown> = {}) => ({
 
 // ── the registry entry ───────────────────────────────────────────────────────
 
-test("the registry entry: 150 points, every registered role (owner ٤١٧), off by default, no files, no retrieval", () => {
+test("the registry entry: 150 points, lawyers and firms only (owner ٤١٧, 8 Nov), off by default, no files, no retrieval", () => {
   assert.equal(CONTRACT_NEGOTIATOR_PRICE, 150);
   assert.equal(NEGOTIATOR_CLAUSES_MAX, 10);
   assert.equal(TOOL.price({}, { pages: 0, turn: 0 }), 150);
   assert.equal(TOOL.n8nPath, "nzamy-ai/contract-negotiator");
   assert.equal(TOOL.class, "job");
   assert.equal(TOOL.tier, "deep");
-  assert.deepEqual([...TOOL.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+  assert.deepEqual([...TOOL.roles], ["lawyer", "firm"]);
   assert.equal(TOOL.consultantBlocked, false);
   assert.equal(TOOL.dailyLimit, 5);
   assert.equal(TOOL.defaultMode, "off");
@@ -169,8 +169,8 @@ test("owner ١٩٣: no percentage anywhere in the output", () => {
 
 // ── the money ────────────────────────────────────────────────────────────────
 
-const ROLES = ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"];
-const OUTSIDERS = ["arbitrator", "translator", "", "client"];
+const ROLES = ["lawyer", "firm"];
+const OUTSIDERS = ["individual", "corporate", "micro", "provider", "government", "ngo", "arbitrator", "translator", "", "client"];
 const actor = (userType: string): RunActor => ({ userId: "u-1", userType, practiceKind: "advocate", displayName: null });
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
@@ -242,7 +242,7 @@ test("any other role is refused before any charge, in every mode, and the settin
   }
 });
 
-test("live: every registered role is charged exactly the price shown, however many clauses", async () => {
+test("live: a lawyer and a firm are charged exactly the price shown, however many clauses", async () => {
   for (const role of ROLES) {
     for (const n of [1, 10]) {
       const { client, log } = db({ "contract-negotiator": { mode: "live" } });

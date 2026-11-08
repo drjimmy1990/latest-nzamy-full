@@ -127,10 +127,10 @@ test("every pleading sub-type of the wizard maps to a kind; the specialist modes
 
 // ── the registry entry ───────────────────────────────────────────────────────
 
-test("the registry entry: a job for every registered role (owner ٤١٧), off by default, consultants refused, files optional, the library behind it", () => {
+test("the registry entry: a job for lawyers and firms only (owner ٤١٧, 8 Nov), off by default, consultants refused, files optional, the library behind it", () => {
   assert.equal(tool.class, "job");
   assert.equal(tool.n8nPath, "nzamy-ai/legal-drafter");
-  assert.deepEqual([...tool.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+  assert.deepEqual([...tool.roles], ["lawyer", "firm"]);
   assert.equal(tool.consultantBlocked, true);
   assert.equal(tool.defaultMode, "off");
   assert.equal(tool.files?.optional, true);

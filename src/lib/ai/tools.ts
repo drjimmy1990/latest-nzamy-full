@@ -143,13 +143,26 @@ const ECHO_ROLES = ["lawyer", "firm"] as const;
 
 /**
  * Every registered customer account type: profiles.user_type minus `admin`.
- * Owner ٤١٧ (7 Nov 2026): the AI tools are open, for points, to every
- * registered user, and every one of these types can buy points (priceBook
- * top-ups). An admin passes every tool anyway (toolRoleRefusal). Art. 18's
- * consultant lock is the separate `consultantBlocked` flag, and a tool that
- * searches the library still needs the library AI's own tier (runs/route.ts).
+ * Owner ٤١٧, answer of 8 Nov 2026 (it reverses his 7 Nov answer, which had
+ * opened every tool to every registered account): only the general guidance
+ * tools stay open to all of these — the quick answer and the two legal-opinion
+ * types. Every one of these types can buy points (priceBook top-ups). An admin
+ * passes every tool anyway (toolRoleRefusal). Art. 18's consultant lock is the
+ * separate `consultantBlocked` flag, and a tool that searches the library still
+ * needs the library AI's own tier (runs/route.ts).
  */
 export const REGISTERED_ROLES = ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"] as const;
+
+/**
+ * Owner ٤١٧, answer of 8 Nov 2026: «الصائغ القانوني» و«محترف العقود» و«مفاوض
+ * العقود» و«عصارة المرفقات» are for licensed lawyers and law firms only;
+ * individuals and companies get only the general guidance tools. The controller
+ * ruling applies the same line to every working tool (drafter, contracts and
+ * the review inside it, negotiator, case brief, simulator, strength, najiz,
+ * brief check, communicator, assistant, case-board card, contract drafter).
+ * The /ai pages these tools live on follow it too (src/lib/ai/lawyerOnlyTools.ts).
+ */
+export const LAWYER_FIRM_ROLES = ["lawyer", "firm"] as const;
 
 // ── wave 1: text only, fast, no retrieval (plan §5, «Wave 1») ───────────────
 // Both start off: D10 (personal data sent to a provider outside the Kingdom)
@@ -1049,7 +1062,7 @@ function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
   return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
 }
 
-/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧ adds government). */
+/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧: general guidance stays open to all). */
 const LEGAL_OPINION_ROLES = REGISTERED_ROLES;
 
 /**
@@ -1119,9 +1132,9 @@ export function hasPercent(v: unknown): boolean {
 
 /**
  * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
- * Owner ٤١٧: every registered account.
+ * Owner ٤١٧ (answer of 8 Nov 2026): lawyers and law firms only.
  */
-export const CONTRACTS_PRO_ROLES = REGISTERED_ROLES;
+export const CONTRACTS_PRO_ROLES = LAWYER_FIRM_ROLES;
 
 export const CONTRACT_REVIEW_PRICE = 250;
 // `optional`: the contract may be pasted instead. filesRequired below still refuses a
@@ -1513,7 +1526,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/communicate",
     class: "fast",
     tier: "fast",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => 5,
     dailyLimit: 40,
@@ -1527,7 +1540,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/najiz-optimizer",
     class: "fast",
     tier: "fast",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
     // Owner ٤١٦ (7 Nov 2026): the AI condense is 15 points; the rule-based
@@ -1576,7 +1589,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/assistant",
     class: "fast",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     // D3: the conversation's first message pays for the whole conversation.
     price: (_input, ctx) => ((ctx.turn ?? 0) === 0 ? ASSISTANT_CONVERSATION_PRICE : 0),
@@ -1593,8 +1606,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/canvas-card",
     class: "fast",
     tier: "fast",
-    // Owner ٤١٧: every registered account; the button itself sits on the lawyer and firm case boards.
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026) + controller ruling: lawyers and law firms only (the
+    // button sits on the lawyer and firm case boards; the company board hides it).
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => 10,
     dailyLimit: 40,
@@ -1608,7 +1622,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/case-brief",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     // Owner ٢٨٣: 30 points for 1–5 pages, 150 for 6–30 (scanned pages included).
     price: (_input, ctx) => ((ctx.pages ?? 0) <= CASE_BRIEF_SMALL_PAGES ? CASE_BRIEF_PRICES.small : CASE_BRIEF_PRICES.large),
@@ -1624,7 +1638,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/brief-check",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/brief-check (Art. 18).
     consultantBlocked: true,
     price: () => BRIEF_CHECK_PRICE,
@@ -1643,7 +1657,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/wargaming",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/wargaming (Art. 18).
     consultantBlocked: true,
     price: (input) => wargamingPrice(input.targets),
@@ -1660,7 +1674,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/analyze-strength",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // Part of the simulator (ruling R1): CONSULTANT_BLOCKED_PREFIXES has /ai/analyze-strength (Art. 18).
     consultantBlocked: true,
     price: () => ANALYZE_STRENGTH_PRICE,
@@ -1676,8 +1690,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-drafter",
     class: "job",
     tier: "deep",
-    // Owner ٤١٧: every registered account (plan: individual F «عقد مبسّط ذكي» is the same engine).
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026) + controller ruling: lawyers and law firms only.
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_DRAFT_PRICE,
     dailyLimit: 5,
@@ -1757,8 +1771,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-negotiator",
     class: "job",
     tier: "deep",
-    // Owner ٤١٧: every registered account (the nav rows are still the firm and lawyer sidebars').
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026): «مفاوض العقود» is for lawyers and law firms only.
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_NEGOTIATOR_PRICE,
     dailyLimit: 5,
@@ -1772,7 +1786,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/legal-drafter",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
     consultantBlocked: true,
     // Charged once, on the analysis; the draft that follows it is free.

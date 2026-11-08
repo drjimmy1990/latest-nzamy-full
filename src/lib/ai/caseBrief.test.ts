@@ -89,10 +89,10 @@ test("moving the page to /ai/analyze moved no money and no rule: same prices, sa
   assert.equal(t.validateInput(null).ok, false);
 });
 
-test("the registry entry: a job for every registered role (owner ٤١٧), 30 up to 5 pages and 150 above, files required", () => {
+test("the registry entry: a job for lawyers and firms only (owner ٤١٧, 8 Nov), 30 up to 5 pages and 150 above, files required", () => {
   const t = AI_TOOLS["case-brief"];
   assert.equal(t.class, "job");
-  assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+  assert.deepEqual([...t.roles], ["lawyer", "firm"]);
   assert.deepEqual(t.files, CASE_BRIEF_FILES);
   assert.equal(t.price({}, { pages: 5 }), 30);
   assert.equal(t.price({}, { pages: 6 }), 150);
