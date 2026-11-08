@@ -41,6 +41,12 @@ service role, so they already behave correctly. Other library tables that still 
 `feqh_books`, `feqh_chapters`, `feqh_sections`, `smart_folders*`, `issue_reports`) have no per-tier masking, so they are
 out of scope.
 
+Guest-facing HTML (checked): `library-sitemaps/sitemap.ts:55-61` selects decree `id` only, so it has no `lastmod` from
+`date`. `libraryDocumentSeo.ts:93-117` reads `id, title, type, summary_brief, summary` with the service role. Every
+string goes through `publicDocumentTitle` / `publicDescription` (`libraryMetadata.ts:148-208`:
+`stripOfficialRefsFromSummary`, `guestPlainText`, `publicTextLeaks`), and `dateModified` is null for decrees. No `ref`,
+`date` or `official_url` reaches a guest page, so there is no leak there.
+
 ## 2. Readers of the newly locked columns
 
 | Reader | Client before | Now |
@@ -92,9 +98,15 @@ bounded read (decree page `eq id`, init `range`, monitor `limit 1000`).
 the index does not resolve these Next route files. **Risk assessed by hand: LOW.** The handlers are entry points with no
 in-code callers; the change only swaps the client a query runs on; response shapes and masking are unchanged. The tests
 above pin both.
+`detect_changes` (scope compare, base `9421e3d2`, worktree `D:
+zwt1108-sec`): 14 changed files, 0 changed
+symbols resolved, 0 affected processes, risk **low**. As with `impact`, the index does not map these route files to
+symbols.
 
 ## 6. SQL run order (for the controller / user)
 
+0. `20261019_40_library_decree_preamble_lock.sql` changed **in comments only**. Do NOT put it in the SQL run order:
+   re-running it re-opens everything 20261108_10 closes.
 1. **Deploy this commit first.** The new code works the same before and after the SQL.
 2. Then apply `supabase/migrations/20261108_10_library_decree_tier_columns_lock.sql` as postgres (SQL Editor or `docker exec supabase-db psql`). The last statement returns 32 rows; every row must say `ok = t`.
 3. Then `_verify.sql`, but **only after the controller applies the patch below**.
@@ -113,7 +125,10 @@ right after the existing `IF … NOT ILIKE '%preamble server-only since 20261019
   END IF;
 ```
 
-Then append `docs/plans/2026-11-08-snippets/A1-verify.sql` (block `verify:library_tier_columns_1108`). The parity checks
+Then append `docs/plans/2026-11-08-snippets/A1-verify.sql` (block `verify:library_tier_columns_1108`). If `_verify`
+is run between the deploy and the SQL, its SELECT shows `ok = f` for the six new columns, plus a NOTICE saying "not
+applied yet". That is expected and not an error. `library-decree-tier-lock.test.ts` reads this block from `_verify.sql`
+once it is merged there, and from the snippet until then. The parity checks
 in `library-column-lock.test.ts` for the 19_40 block still pass with this insert (they match the list, the marker
 `ILIKE`, and the "not applied yet" NOTICE). Re-run that test after the edit. The historical copy of the same block in
 `SQL_batch_2026-10-22_payments_b1/07_AFTER_ALL_verify.sql` would also raise if anyone re-runs that old batch file.

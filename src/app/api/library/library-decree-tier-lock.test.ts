@@ -29,7 +29,21 @@ const read = (rel: string) => readFileSync(path.join(repo, rel), "utf8");
 
 const MIGRATION = read("supabase/migrations/20261108_10_library_decree_tier_columns_lock.sql");
 const HARNESS = read("supabase/tests/rls/library_tier_columns_1108.test.sql");
-const SNIPPET = read("docs/plans/2026-11-08-snippets/A1-verify.sql");
+/**
+ * The verify block: from _verify.sql once the controller has merged it, else
+ * from the batch snippet (docs/plans/2026-11-08-snippets/A1-verify.sql).
+ */
+const SNIPPET = (() => {
+  const verify = read("supabase/migrations/_verify.sql");
+  const start = verify.indexOf("-- >>> verify:library_tier_columns_1108");
+  if (start >= 0) {
+    const endMark = "-- <<< verify:library_tier_columns_1108";
+    const end = verify.indexOf(endMark, start);
+    assert.ok(end > start, "_verify.sql opens verify:library_tier_columns_1108 but never closes it");
+    return verify.slice(start, end + endMark.length);
+  }
+  return read("docs/plans/2026-11-08-snippets/A1-verify.sql");
+})();
 
 /** Live columns of library.decrees_circulars (controller-verified 2026-10-18). */
 const LIVE = [
