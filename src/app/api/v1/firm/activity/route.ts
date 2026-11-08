@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { describeActivityEvent, type ActivityBadge } from "@/lib/events";
 import { aiRunActivityItem, readAiRunActivity, type AiRunActivityRow } from "@/lib/ai/aiRunActivity";
+import { mergeActivityPage } from "@/lib/activity/activityPage";
 
 /**
  * GET /api/v1/firm/activity
@@ -96,11 +97,8 @@ export async function GET(request: NextRequest) {
       // No firm row for this account — a real state (nothing to show yet),
       // not a failure. Same contract as an empty list anywhere else here.
       // The account's own AI runs exist with or without that row.
-      return NextResponse.json({
-        items: aiItems,
-        degraded: aiRes.degraded,
-        nextCursor: aiRes.rows.length === PAGE_SIZE ? aiItems[aiItems.length - 1].createdAt : null,
-      });
+      const { page, nextCursor } = mergeActivityPage([{ items: aiItems, full: aiRes.rows.length === PAGE_SIZE }], PAGE_SIZE);
+      return NextResponse.json({ items: page, degraded: aiRes.degraded, nextCursor });
     }
 
     let query = supabase
@@ -120,7 +118,7 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = data ?? [];
-    const items: FirmFeedItem[] = rows.map((row) => {
+    const eventItems: FirmFeedItem[] = rows.map((row) => {
       const described = describeActivityEvent({ kind: row.kind, payload: row.payload });
       const caseHref = row.case_request_id ? `/dashboard/firm/cases/${row.case_request_id}` : null;
       return {
@@ -133,20 +131,19 @@ export async function GET(request: NextRequest) {
         createdAt: row.created_at,
       };
     });
-    items.push(...aiItems);
-    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    const page = items.slice(0, PAGE_SIZE);
+    // Two streams merged: the next page exists when either came back full OR
+    // the merge itself overflowed the page (two half-full streams), and the
+    // cursor never skips or repeats a row of either (src/lib/activity/
+    // activityPage.ts) — the same helper as /api/v1/lawyer/activity.
+    const { page, nextCursor } = mergeActivityPage(
+      [
+        { items: eventItems, full: rows.length === PAGE_SIZE },
+        { items: aiItems, full: aiRes.rows.length === PAGE_SIZE },
+      ],
+      PAGE_SIZE,
+    );
 
-    return NextResponse.json({
-      items: page,
-      degraded: aiRes.degraded,
-      // Either stream that came back full may hold more beyond it — the same
-      // two-stream rule as /api/v1/lawyer/activity.
-      nextCursor:
-        (rows.length === PAGE_SIZE || aiRes.rows.length === PAGE_SIZE) && page.length > 0
-          ? page[page.length - 1].createdAt
-          : null,
-    });
+    return NextResponse.json({ items: page, degraded: aiRes.degraded, nextCursor });
   } catch (err) {
     console.error("[firm/activity GET] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

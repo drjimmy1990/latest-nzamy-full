@@ -68,5 +68,7 @@ test("٤٤٤ part 1: the firm log reads the firm ACCOUNT's own AI runs only", ()
   assert.doesNotMatch(activity, /\.in\("user_id"/);
   // the own runs appear even without a firm row, and paging follows both streams
   assert.match(activity, /if \(!firm\) \{[\s\S]*items: aiItems/);
-  assert.match(activity, /rows\.length === PAGE_SIZE \|\| aiRes\.rows\.length === PAGE_SIZE/);
+  // Both streams page (final review 2026-11-08: through mergeActivityPage).
+  assert.match(activity, /\{ items: eventItems, full: rows\.length === PAGE_SIZE \}/);
+  assert.match(activity, /\{ items: aiItems, full: aiRes\.rows\.length === PAGE_SIZE \}/);
 });
