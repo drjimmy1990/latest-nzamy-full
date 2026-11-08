@@ -11,7 +11,9 @@
  *                      → ai_start_run (daily limit + balance + debit, one
  *                        transaction) — or, when the body asks `useCredit`
  *                        and the run qualifies, ai_start_run_with_credit
- *                        (a founder credit instead of points, P3)
+ *                        (a founder credit instead of points, P3) — or, for a
+ *                        drafter section edit (owner ٤١٠), ai_start_section_edit
+ *                        (the memo's free edits counted again under the lock)
  *                    A job tool answers 202 here, with the route's `defer`
  *                    running the rest after the reply (nginx cuts at 60 s, and
  *                    a consultation's searches alone can take most of that).
@@ -45,6 +47,15 @@ import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun } from "../membership/founderPlan.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
+import {
+  SECTION_EDIT_COPY,
+  SECTION_EDIT_FREE_PER_MEMO,
+  SECTION_EDIT_FREE_PER_SECTION,
+  SECTION_EDIT_MAX_PER_MEMO,
+  SECTION_EDIT_PRICE,
+  countSectionEdits,
+  type SectionEditCounts,
+} from "./sectionEdits.ts";
 import { textPages } from "./textExtract.ts";
 import {
   STEP_LABEL_AR,
@@ -159,6 +170,7 @@ export const AI_COPY = {
   ungrounded: "لم تُجب نصوص المكتبة التي وجدتها عن سؤالك، وأُعيدت نقاطك — جرّب صياغة أخرى",
   conversation: "معرّف المحادثة غير صالح — ابدأ محادثة جديدة",
   conversationFull: "اكتملت هذه المحادثة — ابدأ محادثة جديدة لتكمل",
+  priceChanged: "تغيّر سعر هذا الطلب — راجع السعر وأكّد من جديد",
   filesRequired: "أرفق مستندات الوقائع أو اكتبها",
   noCredit: "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة",
   creditNotEligible: "هذه الأداة لا تُدفع من رصيد باقة المؤسس",
@@ -298,7 +310,8 @@ export async function settleRunWith(
   // with no citation that resolves, it is the model's memory, not the library.
   // Owner ٤١٣ option A: quick-answer keeps such an answer, flagged and charged
   // (the page labels it); the bare «النصوص لا تجيب» sentence is still refunded.
-  if (ctx.spec.retrieval && citations.length === 0) {
+  // Owner ٤١٠: a section edit of a section that cited nothing may cite nothing.
+  if (ctx.spec.retrieval && citations.length === 0 && !ctx.spec.citationsOptional?.(ctx.input)) {
     const loose = ctx.spec.retrieval.allowUngrounded;
     if (!loose || isLibraryNoAnswer(output[loose.field])) {
       return fail("ungrounded", "the answer cites none of the sources sent");
@@ -420,7 +433,7 @@ export async function startRunWith(
   // user only, so a conversation id from another account reads as a new one.
   let conversationId: string | null = null;
   let history: Array<{ role: "user" | "assistant"; text: string }> = [];
-  let prior: Array<{ input: unknown; output: unknown; status: string }> = [];
+  let prior: Array<{ input: unknown; output: unknown; status: string; price_points?: unknown }> = [];
   let turn = 0;
   if (spec.conversation) {
     const cid = req.conversationId;
@@ -431,7 +444,7 @@ export async function startRunWith(
     if (typeof cid === "string") {
       const read = await admin
         .from("ai_runs")
-        .select("input, output, status")
+        .select("input, output, status, price_points")
         .eq("user_id", actor.userId)
         .eq("tool", spec.id)
         .eq("conversation_id", conversationId)
@@ -442,7 +455,7 @@ export async function startRunWith(
         console.error("[ai] conversation read failed:", spec.id, read.error.code, read.error.message);
         return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
       }
-      const rows = (Array.isArray(read.data) ? read.data : []) as Array<{ input: unknown; output: unknown; status: string }>;
+      const rows = (Array.isArray(read.data) ? read.data : []) as Array<{ input: unknown; output: unknown; status: string; price_points?: unknown }>;
       prior = rows;
       turn = rows.length;
       if (turn >= spec.conversation.maxMessages) {
@@ -501,7 +514,25 @@ export async function startRunWith(
   if (spec.filesRequired?.(checked.input) && files.length === 0) {
     return { status: 422, body: { error: spec.filesRequiredCopy ?? AI_COPY.filesRequired, code: "files_required" } };
   }
-  const price = spec.price(checked.input, { pages, turn });
+  // Owner ٤١٠: a section edit is priced from the memo's earlier edits, read
+  // above from this user's own runs of this conversation (never the browser's).
+  const sectionEdit = !!spec.sectionEdit && !!conversationId && checked.input.phase === spec.sectionEdit.phase;
+  const priorSectionEdits: SectionEditCounts | undefined = sectionEdit ? countSectionEdits(prior) : undefined;
+  const price = spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
+  // The screen showed a price before the user confirmed: a different one now is
+  // refused, uncharged, with the counts to show again.
+  if (req.expectedPrice !== undefined && req.expectedPrice !== price) {
+    return {
+      status: 409,
+      body: {
+        error: sectionEdit ? SECTION_EDIT_COPY.priceChanged : AI_COPY.priceChanged,
+        code: "price_changed",
+        price,
+        ...(priorSectionEdits ? { details: { sectionEdits: priorSectionEdits } } : {}),
+        ...(conversationId ? { conversationId } : {}),
+      },
+    };
+  }
   const now = deps.now?.() ?? new Date();
   const deadline = new Date(
     now.getTime() + 1000 * (spec.class === "fast" ? FAST_DEADLINE_SECONDS : spec.jobDeadlineSeconds ?? DEFAULT_JOB_DEADLINE_SECONDS),
@@ -513,8 +544,12 @@ export async function startRunWith(
   // from this user's own runs, never the client's: a drafter's second turn reads
   // 1 there and so goes to plain ai_start_run at price 0. An exempt caller (admin)
   // never spends a credit. Anything else that asks falls back to points.
-  const creditKind = !isAdmin && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
-  const startFn = creditKind ? "ai_start_run_with_credit" : "ai_start_run";
+  // A section edit (owner ٤١٠) never spends a credit: it is not a drafting work.
+  const creditKind = !isAdmin && !sectionEdit && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  // A section edit starts through ai_start_section_edit (20261108_40): it takes
+  // ai_start_run's lock, counts the memo's edits again and refuses a price that
+  // is no longer right, so two edits at once cannot both take the last free one.
+  const startFn = sectionEdit ? "ai_start_section_edit" : creditKind ? "ai_start_run_with_credit" : "ai_start_run";
 
   const { data, error } = await admin.rpc(startFn, {
     p_user: actor.userId,
@@ -532,6 +567,15 @@ export async function startRunWith(
     p_conversation: conversationId,
     p_source_ids: {},
     ...(creditKind ? { p_credit_kind: creditKind } : {}),
+    ...(sectionEdit
+      ? {
+          p_section_index: checked.input.section_index,
+          p_free_per_memo: SECTION_EDIT_FREE_PER_MEMO,
+          p_free_per_section: SECTION_EDIT_FREE_PER_SECTION,
+          p_paid_price: SECTION_EDIT_PRICE,
+          p_max_per_memo: SECTION_EDIT_MAX_PER_MEMO,
+        }
+      : {}),
   });
   if (error) {
     // A credit request never falls back to points on these: the user asked to
@@ -547,6 +591,23 @@ export async function startRunWith(
     }
     if (error.message === "daily_limit") {
       return { status: 429, body: { error: AI_COPY.daily, code: "daily_limit" } };
+    }
+    if (sectionEdit) {
+      const again = conversationId ? { conversationId } : {};
+      if (error.message === "section_price_changed") {
+        return { status: 409, body: { error: SECTION_EDIT_COPY.priceChanged, code: "price_changed", ...again } };
+      }
+      if (error.message === "section_edit_limit") {
+        return { status: 409, body: { error: SECTION_EDIT_COPY.limit, code: "turn_refused", ...again } };
+      }
+      if (error.message === "section_no_draft") {
+        return { status: 409, body: { error: SECTION_EDIT_COPY.waitDraft, code: "turn_refused", ...again } };
+      }
+      // Before 20261108_40 is run there is no race-safe start: the edit is
+      // refused, uncharged, rather than started without the lock.
+      if (isMissingFunction(error.code)) {
+        return { status: 503, body: { error: SECTION_EDIT_COPY.unavailable, code: "not_ready" } };
+      }
     }
     if (isMissingFunction(error.code)) {
       return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };

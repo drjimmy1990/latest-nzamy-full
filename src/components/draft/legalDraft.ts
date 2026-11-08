@@ -139,6 +139,63 @@ export function asPleading(output: Record<string, unknown> | null): Pleading | n
   };
 }
 
+/** One section rewritten by «عدّل هذا القسم» (owner ٤١٠). */
+export interface EditedSection {
+  index: number;
+  heading: string;
+  body: string;
+  citation_check: CitationVerdict[];
+}
+
+/**
+ * The section-edit run's input (tools.ts sectionEditInput): the draft's own
+ * frame (what the lawyer confirmed), the section as it reads now and his
+ * instruction. The server strips the section's [S…] markers itself: they point
+ * at the draft's sources, and the edit searches the library again.
+ */
+export function sectionEditInput(
+  draftSent: Record<string, unknown>,
+  pleading: Pick<Pleading, "title" | "sections">,
+  index: number,
+  instruction: string,
+): Record<string, unknown> {
+  const { search_text: _s, phase: _p, ...base } = draftSent;
+  void _s; void _p;
+  const section = pleading.sections[index];
+  return {
+    ...base,
+    phase: "section",
+    section_index: index,
+    instruction: instruction.trim(),
+    section: { heading: section?.heading ?? "", body: section?.body ?? "" },
+    title: pleading.title,
+    outline: pleading.sections.map((s) => s.heading),
+  };
+}
+
+/** A section-edit run's output, or null when it is not one. */
+export function asEditedSection(output: Record<string, unknown> | null): EditedSection | null {
+  if (!output || output.phase !== "section" || typeof output.heading !== "string" || typeof output.body !== "string") return null;
+  const index = output.section_index;
+  if (!Number.isInteger(index) || (index as number) < 0) return null;
+  return {
+    index: index as number,
+    heading: output.heading,
+    body: output.body,
+    citation_check: Array.isArray(output.citation_check) ? (output.citation_check as CitationVerdict[]) : [],
+  };
+}
+
+/**
+ * The pleading with its edited sections in place: what is shown, copied and
+ * exported. The draft's citation check is kept, and each edit's own is added.
+ */
+export function withEditedSections(p: Pleading, edits: Readonly<Record<number, EditedSection>>): Pleading {
+  const sections = p.sections.map((s, i) => (edits[i] ? { heading: edits[i].heading, body: edits[i].body } : s));
+  const extra = Object.values(edits).flatMap((e) => e.citation_check);
+  return { ...p, sections, citation_check: [...p.citation_check, ...extra] };
+}
+
 /** The pleading as one plain text, without the source markers: what is copied and exported. */
 export function pleadingText(p: Pleading): string {
   const parts = [p.title];

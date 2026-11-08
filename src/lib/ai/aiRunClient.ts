@@ -59,6 +59,12 @@ export interface AiRunState {
   startedAt: number | null;
   /** The last job poll failed; the run itself may be fine. A 429 does not set it. */
   stale: boolean;
+  /**
+   * A refusal's structured `details` from the server, or null: a 409
+   * price_changed of a drafter section edit carries the memo's edit counts
+   * (owner ٤١٠), so the screen shows the right price again.
+   */
+  details: Record<string, unknown> | null;
 }
 
 export const IDLE_RUN: AiRunState = {
@@ -75,6 +81,7 @@ export const IDLE_RUN: AiRunState = {
   events: [],
   startedAt: null,
   stale: false,
+  details: null,
 };
 
 /** The code a screen reads to link to /ai/runs/<id>: the run outlived this page's watching. */
@@ -93,6 +100,11 @@ export interface AiRunStartOptions {
   fileIds?: string[];
   conversationId?: string;
   useCredit?: boolean;
+  /**
+   * The price the screen showed and the user confirmed: the server refuses the
+   * run, uncharged (409 price_changed), when its own price differs (owner ٤١٠).
+   */
+  expectedPrice?: number;
 }
 
 export interface AiRunClientDeps {
@@ -355,6 +367,7 @@ export function createAiRunClient(deps: AiRunClientDeps) {
       runId,
       conversationId,
       code: typeof json.code === "string" ? json.code : null,
+      details: json.details !== null && typeof json.details === "object" && !Array.isArray(json.details) ? (json.details as Record<string, unknown>) : null,
       // A credit run that failed after it started got its credit back,
       // though the server's message says «وأُعيدت نقاطك» (R20).
       error: founderCreditRefundText(json.error, opts.useCredit === true),
