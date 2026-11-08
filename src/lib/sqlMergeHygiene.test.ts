@@ -84,7 +84,7 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     // Owner answers 2026-11-07: 20261107_10 / _20 / _30.
     "library_merged_regulation_names", "library_caps_owner_426", "deadline_cassation_urgent_194",
     // 20261107_60 (owner ٤١٠).
-    "founder_rejoinder_410"]) {
+    "founder_rejoinder_410", "library_tier_columns_1108"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });
