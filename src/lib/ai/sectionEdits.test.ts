@@ -311,6 +311,39 @@ test("pipeline: the 31st edit is refused by the turn check, before anything is c
   assert.equal(rpc(log), undefined);
 });
 
+test("pipeline: a section that cited nothing is edited even when the library finds nothing; one that cited is refunded (no_sources)", async () => {
+  const run = async (input: Record<string, unknown>, writer: string[]) => {
+    const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+    const d: StartRunDeps = {
+      ...deps(),
+      n8n: async (call) => {
+        calls.push(call as never);
+        return call.path === LIB_QUERIES_PATH
+          ? { kind: "result", result: { run_id: RUN, status: "succeeded", output: { queries: writer } } }
+          : { kind: "accepted" };
+      },
+      retrieve: async () => ({ sources: [], map: {} }),
+    };
+    const { client, log } = db(memo());
+    const r = await startRunWith(client as never, d, LAWYER, body(input, { expectedPrice: 0 }));
+    return { r, calls, log };
+  };
+  // «البيانات» had no [S…]: no searches, or searches that find nothing — it still goes to n8n, with no sources.
+  for (const writer of [[], ["بيانات الأطراف"]]) {
+    const plain = await run(section(0), writer);
+    assert.equal(plain.r.status, 202, `writer ${JSON.stringify(writer)}`);
+    const pkg = plain.calls.find((c) => c.path === "nzamy-ai/legal-drafter");
+    assert.ok(pkg, "dispatched to n8n");
+    assert.deepEqual(pkg!.body.sources, []);
+    assert.equal(plain.log.some((q) => q.op === "rpc" && q.table === "ai_fail_run"), false);
+  }
+  // «الأسانيد» cited: with nothing found it is refunded as before.
+  const cited = await run(section(2), ["فصل العامل"]);
+  assert.equal(cited.r.status, 422);
+  assert.equal(cited.r.body.code, "no_sources");
+  assert.ok(cited.log.some((q) => q.op === "rpc" && q.table === "ai_fail_run"));
+});
+
 test("settle: an edit of a section that cited nothing may cite nothing; one that cited must cite (else failed, refunded)", async () => {
   const settle = async (input: Record<string, unknown>) => {
     const { client, log } = fakeDb((q: FakeQuery) => {

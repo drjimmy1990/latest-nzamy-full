@@ -58,7 +58,11 @@ take exactly the old path. The full suite checks this.
     the free edit is kept).
   - Exception (new `citationsOptional` spec hook): a section that cited nothing before the edit, such
     as the parties' data or a preamble, may come back citing nothing.
-  - A section that cited before must still cite.
+  - The same hook covers the library search before n8n: for such a section, finding no search
+    words or no sources no longer refuses the run (`no_queries` / `no_sources`); it goes to n8n
+    with an empty `sources` list (follow-up commit, see Commits).
+  - A section that cited before must still cite, and with no sources found it is refunded
+    (`no_sources`) as before.
 - **Pricing and counting (server side):**
   - `runCore` now reads `price_points` together with the conversation's earlier runs.
   - It counts the section edits (`countSectionEdits`, `src/lib/ai/sectionEdits.ts`) and passes them as
@@ -276,7 +280,7 @@ const task = i.phase === 'section' ? [
   - quick-answer only;
   - RLS with and without a stray grant.
   The negative control fails at T0.
-- Full suite after B4: **6400 tests, 7 failures (the same 7 baseline)**; `npx tsc --noEmit -p .` clean.
+- Full suite after B4 and the follow-up: **6401 tests, 7 failures (the same 7 baseline)**; `npx tsc --noEmit -p .` clean.
 
 ### Owner-facing summary (Arabic, for the controller)
 - جهّزنا السؤال المجاني اليومي في «السؤال السريع»: سؤال واحد بلا نقاط كل يوم (بتوقيت الرياض) لكل رقم جوال **موثَّق**، في الحساب الفردي.
@@ -293,7 +297,9 @@ const task = i.phase === 'section' ? [
 
 ## Commits
 - B3: `54d5b74d` feat(ai): owner ٤١٠ «عدّل هذا القسم»…
-- B4: see the next commit on t/aiprice (feat(ai): owner ٤١٢ free daily quick question…).
+- B4: `2fedd70a` feat(ai): owner ٤١٢ free daily quick question…
+- Follow-up (B3): see the last commit on t/aiprice — a section that cited nothing is no longer
+  refused before n8n when the library finds nothing (pipeline test for both cases).
 
 ## Concerns for the controller
 - **Live n8n must be updated** (B3, above) before section edits are switched on. Until then a section

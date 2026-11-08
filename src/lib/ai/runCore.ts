@@ -616,6 +616,9 @@ export async function startRunWith(
     if (sectionEdit) {
       const again = conversationId ? { conversationId } : {};
       if (error.message === "section_price_changed") {
+        // Another edit took the free one first: the counts read before it are
+        // stale, so the screen is told to read them again (its next confirm
+        // gets the fresh price and counts from the check above).
         return { status: 409, body: { error: SECTION_EDIT_COPY.priceChanged, code: "price_changed", ...again } };
       }
       if (error.message === "section_edit_limit") {
@@ -752,30 +755,39 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
     // An open article, or one the question names, is a source even when the
     // writer found nothing to search.
     const named = articleRefs(question).length > 0 || (!!pin.lawSlug && bareArticleNumbers(question).length > 0);
+    // Owner ٤١٠: a section edit of a section that cited nothing (the parties'
+    // data, a preamble) is not refused for finding no library text: it goes on
+    // with no sources, as its answer may cite none (citationsOptional).
+    const sourcesOptional = spec.citationsOptional?.(checked.input) === true;
+    let found: Retrieved = { sources: [], map: {} };
     if (queries.length === 0 && !pin.articleId && !named) {
-      await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
-      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+      if (!sourcesOptional) {
+        await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
+        return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+      }
+    } else {
+      try {
+        found = await deps.retrieve(queries, { laws, principles }, pin);
+      } catch (err) {
+        console.error("[ai] retrieval threw for", run.run_id, errorName(err));
+        found = { sources: [], map: {} };
+      }
     }
-    let found: Retrieved;
-    try {
-      found = await deps.retrieve(queries, { laws, principles }, pin);
-    } catch (err) {
-      console.error("[ai] retrieval threw for", run.run_id, errorName(err));
-      found = { sources: [], map: {} };
-    }
-    if (found.sources.length === 0) {
+    if (found.sources.length === 0 && !sourcesOptional) {
       await failRun(admin, run.run_id, "no_sources", `no library text matched: ${queries.join(" | ")}`);
       return { status: 422, body: { error: AI_COPY.noSources, code: "no_sources", runId: run.run_id } };
     }
-    sources = found.map as SourceMap;
-    pkgSources = found.sources;
-    const stored = await admin.from("ai_runs").update({ source_ids: sources }).eq("id", run.run_id).eq("status", "running");
-    if (stored.error) {
-      console.error("[ai] storing the sources failed for", run.run_id, stored.error.code, stored.error.message);
-      await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
-      return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+    if (found.sources.length > 0) {
+      sources = found.map as SourceMap;
+      pkgSources = found.sources;
+      const stored = await admin.from("ai_runs").update({ source_ids: sources }).eq("id", run.run_id).eq("status", "running");
+      if (stored.error) {
+        console.error("[ai] storing the sources failed for", run.run_id, stored.error.code, stored.error.message);
+        await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
+        return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
+      }
+      report(deps.progress, run.run_id, actor.userId, sourceEvents(toSourceRefs(found.sources)));
     }
-    report(deps.progress, run.run_id, actor.userId, sourceEvents(toSourceRefs(found.sources)));
   }
 
   const sync = spec.class === "fast";
