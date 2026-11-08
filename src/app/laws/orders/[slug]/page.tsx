@@ -15,6 +15,8 @@ import { LibraryAI, CommunityQuestionModal } from "@/app/laws/[slug]/_ai-compone
 import { getLawMeta } from "@/app/laws/law-metadata-map";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import LibraryDeviceLimitPage from "@/components/library/LibraryDeviceLimitNotice";
+import { readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { useTheme } from "@/components/ThemeProvider";
 import { DEMO_ORDERS, type DemoOrder } from "../../demo-data-access";
 import { isSupabaseMode } from "@/lib/services/api";
@@ -116,6 +118,8 @@ export default function OrderReaderPage() {
   const slug = params?.slug as string;
 
   const [order, setOrder] = useState<DemoOrder | null>(null);
+  // Owner ٤٢٧: the third device — the refusal with the authorised devices.
+  const [deviceRefusal, setDeviceRefusal] = useState<Extract<ReaderRefusal, { kind: "device" }> | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [fontSize, setFontSize] = useState<"normal" | "large" | "xlarge">("normal");
   const [showCommunity, setShowCommunity] = useState(false);
@@ -202,6 +206,14 @@ export default function OrderReaderPage() {
           setOrder(data as DemoOrder);
           trackSession(data);
           return;
+        }
+        // Owner ٤٢٧: a 403 device_limit is the device refusal (never the demo fallback).
+        if (res.status === 403) {
+          const refusal = readerRefusalFrom(403, await res.json().catch(() => null), Date.now());
+          if (refusal?.kind === "device") {
+            setDeviceRefusal(refusal);
+            return;
+          }
         }
       } catch (e) {
         console.warn('[OrderReader] API fetch failed, using demo fallback:', e);
@@ -386,6 +398,8 @@ export default function OrderReaderPage() {
       type: "order" as const
     };
   }, [order]);
+
+  if (deviceRefusal) return <LibraryDeviceLimitPage refusal={deviceRefusal} />;
 
   if (!order) {
     return (

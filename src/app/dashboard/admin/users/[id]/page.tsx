@@ -25,6 +25,7 @@ import {
 } from "@/lib/auth/accountTypeClaim";
 import { apiErrorText } from "@/lib/services/apiErrorText";
 import { cyclePrice, cycleUnitAr, subscriptionCycleAr } from "@/lib/payments/planRowPrice";
+import UserLibraryDevicesCard from "./UserLibraryDevicesCard";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 interface SubscriptionPlan {
@@ -1498,6 +1499,8 @@ export default function UserProfilePage() {
               ))}
             </div>
           </div>
+          {/* Owner ٤٢٧: the user's library devices + «إعادة تعيين الأجهزة». */}
+          <UserLibraryDevicesCard userId={U.id} isDark={isDark} card={card} />
         </motion.div>
       )}
     </div>

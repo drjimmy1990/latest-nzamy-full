@@ -2,6 +2,7 @@ import { articleStatusForDetail } from "./_article-status";
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
+import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
@@ -263,6 +264,10 @@ export async function GET(
     // grant, or an admin) or a whitelisted law. checkLibraryAccess opens the
     // text by the same rule (freeLimit -1); this flag is paywall.hasFullAccess.
     const hasFullAccess = isSubscriber || isWhitelisted;
+    // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
+    // devices (src/lib/library/deviceLimitServer.ts; fails open).
+    const deviceRefusal = await enforceLibraryDevice(userId, isSubscriber);
+    if (deviceRefusal) return deviceRefusal;
 
     // T28-22 (owner decision): the decree, its date, the official links and the
     // gazette reference are for SUBSCRIBERS — full library access as above,

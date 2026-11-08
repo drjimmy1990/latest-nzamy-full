@@ -8,6 +8,8 @@ import {
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import LibraryDeviceLimitPage from "@/components/library/LibraryDeviceLimitNotice";
+import { readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
@@ -105,6 +107,8 @@ export default function FeqhBookPage() {
    * There is no bundled or demo fallback any more.
    */
   const [notice, setNotice] = useState<ReaderNotice | null>(null);
+  // Owner ٤٢٧: the third device — the refusal with the authorised devices.
+  const [deviceRefusal, setDeviceRefusal] = useState<Extract<ReaderRefusal, { kind: "device" }> | null>(null);
 
   // Everything loaded so far, keyed by section (the index lists it), and the
   // sections known to be complete (see linkRun). Refs mirror the state so
@@ -585,6 +589,15 @@ export default function FeqhBookPage() {
         setLoading(false);
         return;
       }
+      // Owner ٤٢٧: a 403 device_limit is the device refusal, not a notice.
+      if (status === 403) {
+        const refusal = readerRefusalFrom(403, body, Date.now());
+        if (refusal?.kind === "device") {
+          setDeviceRefusal(refusal);
+          setLoading(false);
+          return;
+        }
+      }
       // q390: no bundled or demo fallback. 404 → «قريباً» (legacy slug) or not
       // found; 5xx → load error; any other refusal still says something.
       const error = typeof body?.error === "string" ? body.error : failure;
@@ -698,6 +711,8 @@ export default function FeqhBookPage() {
       citeTitle,
     ));
   }, [addEntryToCart, citeTitle]);
+
+  if (deviceRefusal) return <LibraryDeviceLimitPage refusal={deviceRefusal} />;
 
   if (loading) {
     return (

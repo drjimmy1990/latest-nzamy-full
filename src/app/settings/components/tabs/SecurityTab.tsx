@@ -18,6 +18,7 @@ import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { createClient } from "@/lib/supabase/client";
 import { EmptyPanel, SectionTitle, LocalActionStatus } from "./_shared";
 import { AccountDeletionPanel } from "./AccountDeletionPanel";
+import { LibraryDevicesPanel } from "./LibraryDevicesPanel";
 import {
   validateNewPassword,
   arabicAuthError,
@@ -304,6 +305,9 @@ export function SecurityTab() {
           description="لا يمكن عرض الأجهزة المسجّلة أو محاولات الدخول من هذه الصفحة حالياً."
         />
       </div>
+
+      {/* «أجهزتي» — owner ٤٢٧: the library's authorised devices. */}
+      <LibraryDevicesPanel />
 
       {/* Danger zone — D6 (owner ٢٩٨): self-service deletion with a 60-day
           freeze. Before 20261026_70 runs (and in demo mode) the panel shows
