@@ -36,7 +36,99 @@ function supabaseStorageRemotePattern() {
 
 const dynamicSupabasePattern = supabaseStorageRemotePattern();
 
+// ── Security headers (audit WEB-01 / WEB-02 / WEB-03, 2026-11-09) ──────────
+// Kept here, in one place in the repo, instead of nginx `add_header` lines on
+// the server (which live traffic showed were never applied). Make sure nginx
+// and Cloudflare do not add a second copy of any of them.
+//
+// - HSTS without `preload`: preload is a one-way door for every subdomain
+//   (auth., n8n., staging.); it waits for the owner's decision.
+// - X-Frame-Options DENY: nothing on our own site frames one of our pages
+//   (the three <iframe>s show Google Maps, YouTube and a signed Storage link
+//   on the Supabase host; the letter print frame is `srcdoc`, which the header
+//   does not touch).
+// - The Content-Security-Policy is REPORT-ONLY: the browser logs what it would
+//   block, in the console, and blocks nothing. No report-uri yet, so read the
+//   console on the main pages (home, laws, checkout, a dashboard, contact)
+//   before turning it into an enforcing policy.
+//
+// CSP sources, each found in the code (2026-11-09):
+//   'unsafe-inline' scripts  Next's inline bootstrap + the theme / service
+//                            worker scripts in src/app/layout.tsx (no nonce)
+//   challenges.cloudflare.com Turnstile (src/components/auth/useTurnstile.ts):
+//                            script, frame, fetch
+//   pay.google.com, applepay.cdn-apple.com, img.mpay.samsung.com
+//                            wallet SDKs moyasar-payment-form injects
+//   api.moyasar.com          the Moyasar form's API calls (base_url)
+//   appsignal-endpoint.net   the Moyasar form's error reporting
+//   fonts.googleapis.com / fonts.gstatic.com
+//                            the consultation print window's <link>; the site
+//                            itself self-hosts its fonts through next/font
+//   the Supabase origin      NEXT_PUBLIC_SUPABASE_URL (auth.nezamy.sa): REST,
+//                            auth and Storage over https, Realtime over wss,
+//                            Storage images and the signed-link preview frame
+//   www.google.com           the contact page's Maps embed
+//   www.youtube-nocookie.com the home page's intro video
+//   img-src https:           blog covers, avatars and a few remote images
+//   blob: / data:            local previews, generated files, inline images
+function supabaseCspOrigins(): string[] {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!raw) return [];
+  try {
+    const { protocol, host } = new URL(raw);
+    if (protocol !== "http:" && protocol !== "https:") return [];
+    return [`${protocol}//${host}`, `${protocol === "https:" ? "wss:" : "ws:"}//${host}`];
+  } catch {
+    return [];
+  }
+}
+
+function contentSecurityPolicyReportOnly(): string {
+  const [supabaseHttp, supabaseWs] = supabaseCspOrigins();
+  const supabase = supabaseHttp ? [supabaseHttp] : [];
+  const devEval = process.env.NODE_ENV === "production" ? [] : ["'unsafe-eval'"];
+  const directives: Record<string, string[]> = {
+    "default-src": ["'self'"],
+    "script-src": [
+      "'self'", "'unsafe-inline'", ...devEval,
+      "https://challenges.cloudflare.com",
+      "https://pay.google.com", "https://applepay.cdn-apple.com", "https://img.mpay.samsung.com",
+    ],
+    "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+    "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
+    "img-src": ["'self'", "data:", "blob:", "https:"],
+    "media-src": ["'self'", "blob:", ...supabase],
+    "connect-src": [
+      "'self'", ...supabase, ...(supabaseWs ? [supabaseWs] : []),
+      "https://api.moyasar.com", "https://appsignal-endpoint.net",
+      "https://challenges.cloudflare.com", "https://pay.google.com",
+    ],
+    "frame-src": [
+      "'self'", "blob:", ...supabase,
+      "https://www.google.com", "https://www.youtube-nocookie.com",
+      "https://challenges.cloudflare.com", "https://pay.google.com",
+    ],
+    "worker-src": ["'self'", "blob:"],
+    "manifest-src": ["'self'"],
+    "object-src": ["'none'"],
+    "base-uri": ["'self'"],
+    "form-action": ["'self'", "https://api.moyasar.com"],
+    "frame-ancestors": ["'none'"],
+  };
+  return Object.entries(directives).map(([name, values]) => `${name} ${values.join(" ")}`).join("; ");
+}
+
+const SECURITY_HEADERS = [
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicyReportOnly() },
+];
+
 const nextConfig: NextConfig = {
+  // No `x-powered-by: Next.js` on responses (audit WEB-03).
+  poweredByHeader: false,
   // ── Build folder ────────────────────────────────────────────────────────────
   // deploy.sh alternates two build folders, `.next-a` and `.next-b`: it builds
   // into the one that is not live, then points the server at it through
@@ -65,6 +157,12 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      {
+        // Every path. Listed FIRST: when two rules set the same header, the later
+        // rule wins, so the stricter Referrer-Policy on /track/:token below stays.
+        source: "/:path*",
+        headers: SECURITY_HEADERS,
+      },
       {
         // Prevent browser from caching /ai/wargaming (bust stale 301)
         source: "/ai/wargaming",

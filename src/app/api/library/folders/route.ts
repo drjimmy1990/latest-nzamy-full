@@ -209,7 +209,9 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: 'Failed to remove item' }, { status: 500 });
       }
       if (!ownerFolder) {
-        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        // Same answer as a missing item: a caller cannot tell another
+        // user's item id from one that does not exist (audit SAST-07).
+        return NextResponse.json({ error: 'Item not found' }, { status: 404 });
       }
 
       const { error } = await serverOnly

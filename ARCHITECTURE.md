@@ -262,8 +262,8 @@ Standardized across: `service-requests/route.ts` (POST), `service-requests/[id]/
 }
 ```
 
-### `POST /api/v1/n8n/trigger`
-The trigger route assembles the payload via `buildWebhookPayload`, `console.log`s it, and returns `{ data, delivered: false }`. It makes **no outbound call** — n8n hosting + delivery is deferred. The route exists so the payload shape is fixed before n8n is built.
+### `POST /api/v1/n8n/trigger` (removed)
+The generic trigger route was removed 2026-11-09 (audit SAST-05): it had no caller in the app, and the write routes dispatch their own lifecycle events through `dispatchToN8n` (`src/lib/n8n/dispatch.ts`).
 
 ### n8n workflow assets
 Importable n8n workflow JSONs live at `n8n/workflows/` with `n8n/README.md` documenting the expected trigger URL, auth, and field mapping. These are reference assets — they are not wired to the running app until n8n is hosted.

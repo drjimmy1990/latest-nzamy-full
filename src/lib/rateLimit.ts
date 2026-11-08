@@ -91,27 +91,41 @@ export interface RateLimiterOptions {
   /** Injectable clock so tests can control time. Defaults to `Date.now`. */
   clock?: Clock;
   /**
-   * Soft cap on distinct (bucket, key) pairs tracked at once. Crossing it
-   * triggers an opportunistic `evictStale()` sweep — it is not a hard limit
-   * (a sweep can leave the store above this size if every entry is still
-   * live), just the threshold that makes a sweep worth its O(n) cost.
+   * Cap on distinct keys tracked at once IN EACH BUCKET. Crossing it
+   * triggers a sweep of that bucket's stale entries and, if every entry is
+   * still live, the oldest-first fallback (see `maybeEvict`).
    */
   maxEntries?: number;
 }
 
 const DEFAULT_MAX_ENTRIES = 20_000;
 
-/** The character used to join bucket and key; chosen so it cannot appear in either. */
-const KEY_SEPARATOR = "\u0000";
-
+/**
+ * PER-BUCKET STORES (audit SAST-03, 2026-11-09). Each bucket has its own Map
+ * and `maxEntries` applies to each bucket separately, so the sweep and the
+ * hard cap below only ever touch the bucket that is over its own cap; one
+ * bucket's eviction never touches another bucket's counters. Bucket names are
+ * constants in the callers (src/proxy.ts and the `rateLimit()` helper below),
+ * so the number of stores is fixed; the memory bound is `maxEntries` × that
+ * number.
+ */
 export class RateLimiter {
-  private readonly store = new Map<string, WindowEntry>();
+  private readonly buckets = new Map<string, Map<string, WindowEntry>>();
   private readonly clock: Clock;
   private readonly maxEntries: number;
 
   constructor(options: RateLimiterOptions = {}) {
     this.clock = options.clock ?? Date.now;
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+  }
+
+  private storeFor(bucket: string): Map<string, WindowEntry> {
+    let store = this.buckets.get(bucket);
+    if (!store) {
+      store = new Map<string, WindowEntry>();
+      this.buckets.set(bucket, store);
+    }
+    return store;
   }
 
   /**
@@ -121,8 +135,8 @@ export class RateLimiter {
    */
   check(bucket: string, key: string, policy: RateLimitPolicy): RateLimitDecision {
     const now = this.clock();
-    const compositeKey = `${bucket}${KEY_SEPARATOR}${key}`;
-    let entry = this.store.get(compositeKey);
+    const store = this.storeFor(bucket);
+    let entry = store.get(key);
 
     if (!entry || now - entry.windowStart >= entry.windowMs) {
       entry = { windowStart: now, windowMs: policy.windowMs, count: 0 };
@@ -131,8 +145,8 @@ export class RateLimiter {
     const resetAt = entry.windowStart + entry.windowMs;
 
     if (entry.count >= policy.max) {
-      this.store.set(compositeKey, entry);
-      this.maybeEvict(now);
+      store.set(key, entry);
+      this.maybeEvict(store, now);
       return {
         allowed: false,
         remaining: 0,
@@ -143,8 +157,8 @@ export class RateLimiter {
     }
 
     entry.count += 1;
-    this.store.set(compositeKey, entry);
-    this.maybeEvict(now);
+    store.set(key, entry);
+    this.maybeEvict(store, now);
 
     return {
       allowed: true,
@@ -162,9 +176,15 @@ export class RateLimiter {
    */
   evictStale(now: number = this.clock()): number {
     let removed = 0;
-    for (const [storedKey, entry] of this.store) {
+    for (const store of this.buckets.values()) removed += RateLimiter.evictStaleIn(store, now);
+    return removed;
+  }
+
+  private static evictStaleIn(store: Map<string, WindowEntry>, now: number): number {
+    let removed = 0;
+    for (const [storedKey, entry] of store) {
       if (now - entry.windowStart >= entry.windowMs) {
-        this.store.delete(storedKey);
+        store.delete(storedKey);
         removed += 1;
       }
     }
@@ -178,22 +198,26 @@ export class RateLimiter {
    */
   reset(bucket?: string, key?: string): void {
     if (bucket === undefined) {
-      this.store.clear();
+      this.buckets.clear();
       return;
     }
     if (key === undefined) {
-      const prefix = `${bucket}${KEY_SEPARATOR}`;
-      for (const storedKey of this.store.keys()) {
-        if (storedKey.startsWith(prefix)) this.store.delete(storedKey);
-      }
+      this.buckets.delete(bucket);
       return;
     }
-    this.store.delete(`${bucket}${KEY_SEPARATOR}${key}`);
+    this.buckets.get(bucket)?.delete(key);
   }
 
   /** Distinct (bucket, key) pairs currently tracked. Test/diagnostic use only. */
   get size(): number {
-    return this.store.size;
+    let total = 0;
+    for (const store of this.buckets.values()) total += store.size;
+    return total;
+  }
+
+  /** Distinct keys tracked in one bucket. Test/diagnostic use only. */
+  bucketSize(bucket: string): number {
+    return this.buckets.get(bucket)?.size ?? 0;
   }
 
   /**
@@ -212,15 +236,16 @@ export class RateLimiter {
    * evicted here — its next request is then treated as a fresh key with a
    * fresh count, i.e. this can only ever make the limiter more permissive for
    * that key, never less. Memory staying bounded takes priority over that
-   * cosmetic loosening.
+   * cosmetic loosening. It runs on ONE bucket's store (the one just written)
+   * and never touches another bucket.
    */
-  private maybeEvict(now: number): void {
-    if (this.store.size <= this.maxEntries) return;
-    this.evictStale(now);
-    if (this.store.size <= this.maxEntries) return;
-    for (const storedKey of this.store.keys()) {
-      if (this.store.size <= this.maxEntries) break;
-      this.store.delete(storedKey);
+  private maybeEvict(store: Map<string, WindowEntry>, now: number): void {
+    if (store.size <= this.maxEntries) return;
+    RateLimiter.evictStaleIn(store, now);
+    if (store.size <= this.maxEntries) return;
+    for (const storedKey of store.keys()) {
+      if (store.size <= this.maxEntries) break;
+      store.delete(storedKey);
     }
   }
 }
