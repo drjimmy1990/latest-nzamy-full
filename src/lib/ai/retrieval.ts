@@ -30,6 +30,7 @@ import type { createServiceClient } from "../supabase/server.ts";
 import { parseSearchQuery } from "../../utils/normalizeArabic.ts";
 import { articleDisplayLabel } from "../../app/api/library/laws/[slug]/_article-label.ts";
 import { apiSlug } from "../../utils/apiSlug.ts";
+import { stripArticleAuditNotes } from "../library/lawPreambleBlocks.ts";
 import { lawNamePattern, rankLaws } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers, lawNames, stripFraming } from "./questionRefs.ts";
 
@@ -145,8 +146,9 @@ export function buildSources(
   const map: Record<string, SourceRef> = {};
   let n = 0;
   for (const a of articles) {
-    // A repealed article keeps its wording in original_text.
-    const text = str(a.text) || str(a.original_text);
+    // A repealed article keeps its wording in original_text. BUG-01 (owner
+    // 6-Nov): the export's audit notes never reach the model or a citation.
+    const text = stripArticleAuditNotes(a.text) || stripArticleAuditNotes(a.original_text);
     if (!text.trim()) continue;
     const slug = str(a.law_slug);
     const id = str(a.id);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
@@ -116,7 +117,7 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     console.error("[admin receipts] insert failed:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
   }
 
   await logAdminAction({
@@ -176,7 +177,7 @@ export async function GET(request: NextRequest) {
   if (requestId) query = query.eq("request_id", requestId);
 
   const { data, count, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return dbErrorJson("admin/receipts GET", error);
   return NextResponse.json({
     success: true,
     data: data ?? [],

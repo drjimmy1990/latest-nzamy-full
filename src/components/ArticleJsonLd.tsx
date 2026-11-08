@@ -24,6 +24,9 @@ export interface ArticleLdData {
 }
 
 import { BLOG_FALLBACK_AUTHOR } from "@/constants/platformContent";
+// Escapes <, >, & and U+2028/9 so no staff-written field can end the script
+// element early (audit X-2); the same helper the library pages use.
+import { serializeJsonLd } from "@/lib/library/libraryMetadata";
 
 const BASE_URL = "https://nezamy.sa";
 
@@ -98,7 +101,7 @@ export function ArticleJsonLd({ article }: { article: ArticleLdData }) {
         <script
           key={i}
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(b) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(b) }}
         />
       ))}
     </>

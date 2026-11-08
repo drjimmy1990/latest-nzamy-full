@@ -196,13 +196,16 @@ test("the document text never travels: export-file reads no body, the kit sends 
   assert.ok(fetches[0].includes("/api/v1/branding/export-file"));
 });
 
-test("the kit encodes only the address the privacy switch chose", () => {
+test("owner ٤٤٢(أ): the kit builds no QR, and print goes through the sheet, which carries none", () => {
   const kit = read("src/components/letterhead/exportKit.ts");
-  assert.ok(kit.includes("letterheadQrPayload(identity)"));
+  assert.ok(!kit.includes("letterheadQrPayload"), "no QR payload is built");
+  assert.ok(!kit.includes("qrcode"), "the QR library is not loaded");
+  assert.ok(!/qrPng/.test(kit), "no QR image reaches the file");
   assert.ok(!kit.includes("/verify/"));
   const doc = read("src/components/letterhead/LetterheadPrintDocument.tsx");
-  assert.ok(doc.includes("<LetterheadSheet"), "print goes through the sheet, whose QR is identity.qr");
+  assert.ok(doc.includes("<LetterheadSheet"), "print goes through the sheet");
   assert.ok(!doc.includes("/verify/"));
+  assert.ok(!doc.includes("svg[role='img']"), "print no longer waits for a QR that is not drawn");
 });
 
 test("both exports pass through the last wall", () => {
@@ -212,7 +215,7 @@ test("both exports pass through the last wall", () => {
   assert.ok(uses.includes("blocks: safe") && uses.includes("blocks={safe}"), "the kit and the print document both get the cleaned blocks");
 });
 
-test("fflate and qrcode load only when the person exports", () => {
+test("fflate (and any QR code) load only when the person exports", () => {
   const bar = read("src/components/letterhead/LetterheadExportBar.tsx");
   assert.ok(bar.includes('import("./exportKit")'));
   assert.ok(!/^import .*exportKit/m.test(bar));

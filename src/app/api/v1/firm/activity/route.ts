@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertRole } from "@/lib/auth/assertRole";
 import { describeActivityEvent, type ActivityBadge } from "@/lib/events";
 import { aiRunActivityItem, readAiRunActivity, type AiRunActivityRow } from "@/lib/ai/aiRunActivity";
@@ -90,7 +91,7 @@ export async function GET(request: NextRequest) {
 
     if (firmError) {
       console.error("[firm/activity GET] firm_profiles lookup failed:", firmError.message);
-      return NextResponse.json({ error: firmError.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     if (!firm) {
@@ -114,7 +115,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[firm/activity GET] activity_events query failed:", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     const rows = data ?? [];

@@ -174,6 +174,39 @@ test("bounded memory: a flood of distinct, still-live keys cannot grow the store
   assert.equal(limiter.size, 3);
 });
 
+test("buckets are isolated: a flood of fresh keys in one bucket keeps another bucket's live counter", () => {
+  const { clock } = fakeClock();
+  const limiter = new RateLimiter({ clock, maxEntries: 3 });
+  const longLivedPolicy = { windowMs: 10 * 60 * 1000, max: 2 };
+
+  // A strict-style counter, spent to its limit.
+  limiter.check("strict", "198.51.100.9", longLivedPolicy);
+  limiter.check("strict", "198.51.100.9", longLivedPolicy);
+  assert.equal(limiter.check("strict", "198.51.100.9", longLivedPolicy).allowed, false);
+
+  for (let i = 0; i < 50; i += 1) limiter.check("read", `visitor-${i}`, longLivedPolicy);
+
+  assert.equal(limiter.bucketSize("read"), 3, "the flooded bucket is held at its own cap");
+  assert.equal(limiter.bucketSize("strict"), 1, "the other bucket keeps its entry");
+  assert.equal(limiter.check("strict", "198.51.100.9", longLivedPolicy).allowed, false, "still denied");
+  assert.equal(limiter.size, 4);
+});
+
+test("reset: one key, one bucket, or everything", () => {
+  const { clock } = fakeClock();
+  const limiter = new RateLimiter({ clock });
+  limiter.check("a", "k1", POLICY);
+  limiter.check("a", "k2", POLICY);
+  limiter.check("b", "k1", POLICY);
+  limiter.reset("a", "k1");
+  assert.equal(limiter.size, 2);
+  limiter.reset("a");
+  assert.equal(limiter.bucketSize("a"), 0);
+  assert.equal(limiter.bucketSize("b"), 1);
+  limiter.reset();
+  assert.equal(limiter.size, 0);
+});
+
 test("resolveClientIp: prefers x-real-ip (nginx sets it to the TCP peer) over x-forwarded-for", () => {
   const headers: Record<string, string> = {
     "x-forwarded-for": "203.0.113.4, 10.0.0.1",

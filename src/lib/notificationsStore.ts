@@ -28,6 +28,8 @@ export interface Notification {
   read: boolean;
   severity: NotifSeverity;
   avatar?: string; // initials for sender
+  /** The row's created_at (ISO) when it came from the server; for day grouping. */
+  createdAt?: string;
 }
 
 const STORAGE_KEY = "nzamy_notifications";

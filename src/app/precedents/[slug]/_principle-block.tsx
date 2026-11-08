@@ -6,6 +6,7 @@ import { JudicialPrincipleItem } from "@/app/laws/data";
 import { cleanPrincipleText, principleParagraphs, principleReferenceLine } from "./_principle-text";
 import { HighlightScope, Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
 import { useNearViewport } from "@/hooks/useNearViewport";
+import { principleLabel } from "./_principle-label";
 
 /**
  * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
@@ -128,7 +129,7 @@ export default function PrincipleBlock({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4 mb-6 border-slate-200 dark:border-white/[0.05]">
         <div className="flex items-center gap-2 text-xs font-black text-amber-600 dark:text-[#C8A762]">
           <FileText size={16} />
-          <span><Hl text={isRTL ? `مبدأ رقم (${p.number})` : `Principle #${p.number}`} /></span>
+          <span><Hl text={principleLabel(p.number, isRTL, isRTL)} /></span>
           {p.decision_number && (
             <>
               <span className="w-1.5 h-1.5 rounded-full bg-[#C8A762]" />

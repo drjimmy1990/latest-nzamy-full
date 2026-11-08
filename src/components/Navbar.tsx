@@ -149,7 +149,8 @@ function NotificationsBell({ isAr }: { isAr: boolean }) {
                     onClick={() => {
                       markRead(n.id);
                       setOpen(false);
-                      window.location.href = n.href;
+                      // A row without a same-site link opens nothing (notificationRow.ts).
+                      if (n.href) window.location.href = n.href;
                     }}
                     className={`w-full flex items-start gap-3 px-4 py-3 text-start transition-colors ${
                       !n.read

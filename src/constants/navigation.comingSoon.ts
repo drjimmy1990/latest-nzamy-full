@@ -23,6 +23,40 @@ export function isComingSoonItem(item: SidebarItem): boolean {
   return item.badge === COMING_SOON_BADGE;
 }
 
+/**
+ * BUG-12 (owner package 2026-11-06): a «قريباً» row backed by an AI registry
+ * tool (`liveToolId`) loses the badge once tool-status confirmed the tool is
+ * open for this user. Applied BEFORE withComingSoonLast, so a live tool stays
+ * in its own group instead of the «قريباً» section. Without a confirmation
+ * (loading, refused, failed read) nothing changes.
+ */
+export function withLiveToolBadges(groups: SidebarGroup[], liveTools: ReadonlySet<string> | null | undefined): SidebarGroup[] {
+  if (!liveTools || liveTools.size === 0) return groups;
+  const isLive = (item: SidebarItem) => !!item.liveToolId && liveTools.has(item.liveToolId) && isComingSoonItem(item);
+  return groups.map((group) => {
+    if (!group.items.some(isLive)) return group;
+    return {
+      ...group,
+      items: group.items.map((item) => {
+        if (!isLive(item)) return item;
+        const { badge: _badge, ...rest } = item; // eslint-disable-line @typescript-eslint/no-unused-vars
+        return rest;
+      }),
+    };
+  });
+}
+
+/** The registry tools whose status the sidebar should ask about: «قريباً» rows with a liveToolId. */
+export function comingSoonToolIds(groups: SidebarGroup[]): string[] {
+  const ids = new Set<string>();
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (item.liveToolId && isComingSoonItem(item)) ids.add(item.liveToolId);
+    }
+  }
+  return [...ids].sort();
+}
+
 export function withComingSoonLast(groups: SidebarGroup[]): SidebarGroup[] {
   const soon: SidebarItem[] = [];
   const kept: SidebarGroup[] = [];

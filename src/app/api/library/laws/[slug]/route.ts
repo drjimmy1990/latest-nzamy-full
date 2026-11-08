@@ -15,7 +15,7 @@ import { splitStoredPreamble } from '@/lib/library/splitPreamble';
 import { latestUpdateDetail, lawReaderExtras, regulationReaderExtras } from '@/lib/library/lawSummaryVisibility';
 import { latestLegislativeEvent } from '@/lib/library/legislativeEvent';
 import { lawArticleCounts } from '@/lib/library/lawCardFields';
-import { stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
+import { stripArticleAuditNotes, stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
 import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
@@ -349,8 +349,10 @@ export async function GET(
         if (r.is_secondary_display === true) return;
         const ref = String(r.ref || '');
         if (!ref) return;
-        // Counted after the two exclusions above: a dual-linked duplicate and a
-        // ref-less row are not "withheld", they are not part of this view at all.
+        // #26: a row with no text (once the audit notes are out) is no article of this view.
+        if (!regulationRowText(r)) return;
+        // Counted after the exclusions above: a dual-linked duplicate, a
+        // ref-less row and an empty one are not "withheld", they are not part of this view at all.
         if (parentLocked) {
           regulationInstrumentsLocked++;
           return;
@@ -365,7 +367,7 @@ export async function GET(
         .sort((a, b) => String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999')))
         .map((r) => ({
           regNum: r.reg_num ?? null,
-          text: r.text || '',
+          text: regulationRowText(r),
           status: articleStatusForDetail(r.status),
           systemArticleNumber: r.system_article_number ?? null,
         })),
@@ -540,6 +542,16 @@ function isArticleLocked(
   return !hasFullAccess && freeLimit !== -1 && globalIndex >= freeLimit;
 }
 
+/**
+ * A regulation row's text without the corpus's audit notes (BUG-01), or ''
+ * when nothing is left: such a row is no regulation block at all (#26, owner
+ * package 6-Nov — 13 blocks in 5 laws drew a headed, empty «اللائحة التنفيذية»).
+ */
+function regulationRowText(r: Record<string, unknown>): string {
+  const text = stripArticleAuditNotes(r.text);
+  return text.trim() ? text : '';
+}
+
 function formatArticleWithPaywall(
   article: Record<string, unknown>,
   hasFullAccess: boolean,
@@ -570,7 +582,7 @@ function formatArticleWithPaywall(
     // Capped when locked: part of the corpus writes statutory text into `title`
     // (longest measured: 531 chars), which would otherwise walk straight past
     // the body preview below.
-    title: isLocked ? preview(article.title, LOCKED_TITLE_CHARS) : (article.title || ''),
+    title: isLocked ? preview(stripArticleAuditNotes(article.title), LOCKED_TITLE_CHARS) : stripArticleAuditNotes(article.title),
     status: articleStatusForDetail(article.status),
     free: !isLocked,
     locked: isLocked,
@@ -580,7 +592,15 @@ function formatArticleWithPaywall(
   // `original_text` is the article's superseded wording. For a REPEALED article
   // it is not supplementary — `text` is legitimately empty and this is the
   // article. It therefore goes through exactly the same paywall as `text`.
-  const originalText = (article.original_text as string) || '';
+  //
+  // BUG-01 (owner package 6-Nov): the corpus's own audit notes («تصحيح
+  // 2026-08-14 (جولة تدقيق منهجي): … راجع سجل المشاكل ف1072») never reach the
+  // browser from ANY text field — `text`, `original_text`, regulation text,
+  // historic regulation text, the title. stripArticleAuditNotes takes audit
+  // markers only; the pipeline-aside filter is not run on statutory text
+  // (feee72fe). Stripped BEFORE the locked preview, so a preview never shows
+  // the start of a note either.
+  const originalText = stripArticleAuditNotes(article.original_text);
 
   // Owner 2026-11-07 (screenshot ٣): the line that introduces the regulation
   // («من اللائحة التنفيذية لنظام المرور (…):») closes the stored text of an
@@ -588,9 +608,10 @@ function formatArticleWithPaywall(
   // so its numbers never reach a locked reader — and, for an unlocked article,
   // becomes `regulationHeading` (instrument number/date withheld per T28-22).
   const regulationRows = (article.article_regulations as Record<string, unknown>[]) || [];
+  const articleText = stripArticleAuditNotes(article.text);
   const lifted = regulationRows.length > 0
-    ? liftRegulationHeading(article.text, !showOfficialMeta)
-    : { text: (article.text as string) || '', heading: null };
+    ? liftRegulationHeading(articleText, !showOfficialMeta)
+    : { text: articleText, heading: null };
 
   if (isLocked) {
     result.text = preview(lifted.text);
@@ -606,8 +627,9 @@ function formatArticleWithPaywall(
   // 20260729_article_history_columns.sql) and must not reach a reader.
 
   // Historic executive-regulation text — supplementary, so unlocked only.
-  if (!isLocked && article.historic_regulation_text) {
-    result.historicRegulationText = article.historic_regulation_text;
+  const historicRegulationText = isLocked ? '' : stripArticleAuditNotes(article.historic_regulation_text);
+  if (historicRegulationText.trim()) {
+    result.historicRegulationText = historicRegulationText;
   }
 
   // Add executive regulation if present (only for unlocked articles).
@@ -622,7 +644,12 @@ function formatArticleWithPaywall(
   // currently reads `executiveReg` (see §1-3 of
   // 00_عقل_القوانين/13_دليل_المبرمج/02_عقد_اللوائح_المدمجة_والبذر.md).
   if (!isLocked) {
-    const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
+    // #26: only rows with text left are blocks. When none is, no regulation
+    // block is sent at all — no heading over nothing (the introducing line is
+    // still lifted off the article text above, so it does not dangle there).
+    const regRows = regulationRows
+      .map((r): Record<string, unknown> & { text: string } => ({ ...r, text: regulationRowText(r) }))
+      .filter((r) => r.text);
     if (regRows.length > 0) {
       const sorted = [...regRows].sort((a, b) =>
         String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999'))
@@ -633,7 +660,7 @@ function formatArticleWithPaywall(
       result.regulations = sorted.map((r) => ({
         ref: refFor(r.ref),
         regNum: r.reg_num ?? null,
-        text: r.text || '',
+        text: r.text,
         status: articleStatusForDetail(r.status),
         isSecondaryDisplay: r.is_secondary_display === true,
       }));
@@ -643,10 +670,10 @@ function formatArticleWithPaywall(
         text: sorted.map((r) => String(r.text || '')).join('\n\n'),
       };
       if (lifted.heading) result.regulationHeading = lifted.heading;
-    } else if (article.executive_reg_text) {
+    } else if (regulationRows.length === 0 && stripArticleAuditNotes(article.executive_reg_text).trim()) {
       result.executiveReg = {
         ref: regulationRefForViewer(article.executive_reg_ref, !showOfficialMeta),
-        text: article.executive_reg_text,
+        text: stripArticleAuditNotes(article.executive_reg_text),
       };
     }
   }

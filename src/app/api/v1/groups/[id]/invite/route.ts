@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { randomUUID } from "crypto";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -69,7 +70,7 @@ export async function POST(
 
     if (updateError) {
       console.error("[groups/invite] failed to set join_code:", updateError.message);
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
   }
 
@@ -112,7 +113,7 @@ export async function POST(
 
     if (error) {
       console.error("[groups/invite] invitation insert failed:", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
     if (data) invitation = { id: data.id };
   }

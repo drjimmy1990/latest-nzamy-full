@@ -79,7 +79,8 @@ test("isGeneralRateLimitedApiPath: excludes the /api/v1/cron/ subtree", () => {
 
 test("isGeneralRateLimitedApiPath: excludes the /api/v1/n8n/ subtree", () => {
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/n8n/callback"), false);
-  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/n8n/trigger"), false);
+  // Any path under the subtree, existing or not (n8n/trigger was removed 2026-11-09).
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/n8n/anything"), false);
 });
 
 test("isGeneralRateLimitedApiPath: excludes exactly /api/v1/payments/webhook (Moyasar's retries must never be throttled)", () => {
@@ -129,12 +130,30 @@ test("isLibraryReadRateLimitedRoute: other methods and other library routes do n
   assert.equal(isLibraryReadRateLimitedRoute("POST", "/api/library/scoped-searchx"), false);
 });
 
-test("libraryReadClientKey: Cloudflare's visitor address wins; otherwise the proxy's resolved IP", () => {
+test("libraryReadClientKey: behind a Cloudflare edge, Cloudflare's visitor address wins; otherwise the proxy's resolved IP", () => {
   const h = (m: Record<string, string>) => (n: string) => m[n] ?? null;
   assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": " 203.0.113.9 " }), "172.70.1.1"), "203.0.113.9");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "203.0.113.9" }), "2606:4700:10::ac43:1"), "203.0.113.9");
   assert.equal(libraryReadClientKey(h({}), "172.70.1.1"), "172.70.1.1");
   assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "  " }), "172.70.1.1"), "172.70.1.1");
-  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "x".repeat(200) }), "f").length, 64);
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "x".repeat(200) }), "172.70.1.1").length, 64);
+});
+
+test("libraryReadClientKey: the header is ignored when the peer is not a Cloudflare edge", () => {
+  const h = (m: Record<string, string>) => (n: string) => m[n] ?? null;
+  // A request that reached the origin directly, or nginx already restored the visitor.
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "203.0.113.9" }), "198.51.100.7"), "198.51.100.7");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "203.0.113.9" }), "2001:db8::1"), "2001:db8::1");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "203.0.113.9" }), "unknown"), "unknown");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "x".repeat(200) }), "f"), "f");
+});
+
+test("libraryReadClientKey: a loopback or private peer (a local hop) still uses the header", () => {
+  const h = (m: Record<string, string>) => (n: string) => m[n] ?? null;
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "203.0.113.9" }), "127.0.0.1"), "203.0.113.9");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "203.0.113.9" }), "172.17.0.1"), "203.0.113.9");
+  assert.equal(libraryReadClientKey(h({ "cf-connecting-ip": "203.0.113.9" }), "::1"), "203.0.113.9");
+  assert.equal(libraryReadClientKey(h({}), "127.0.0.1"), "127.0.0.1");
 });
 
 // ─── isTrackingPageRoute (N3.6) ──────────────────────────────────────────────

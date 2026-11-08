@@ -10,14 +10,30 @@
  * party on several cases is one node; «تشابه اسم» marks a name that is a
  * client in one file and the other side in another — a hint to check, not a
  * conflict finding. Nothing here writes anything.
+ *
+ * STAYS CURRENT (BUG-03): the read runs again when the tab comes back into
+ * view, on window focus, when a case is saved in this tab
+ * (`nzamy-workflow-updated`) and on «تحديث». An unchanged answer is dropped
+ * and a changed one keeps every drawn node where it was
+ * (src/lib/services/officeGraphRefresh.ts). A failed refresh keeps the last
+ * good map on screen and says so.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CircleNotch, MagnifyingGlass, Minus, Plus, Warning, TreeStructure, ArrowSquareOut } from "@phosphor-icons/react";
+import { ArrowClockwise, CircleNotch, MagnifyingGlass, Minus, Plus, Warning, TreeStructure, ArrowSquareOut } from "@phosphor-icons/react";
 import { forceLayout } from "@/app/dashboard/business/kanban/_graph-layout";
 import { getOfficeGraph, type OfficeGraphRead } from "@/lib/services/officeGraphService";
-import type { OfficeNode, OfficeNodeKind } from "@/lib/services/officeGraph";
+import {
+  autoRefetchAllowed,
+  keepPositions,
+  layoutPlan,
+  officeGraphSignature,
+  OFFICE_GRAPH_RELAX_ITERATIONS,
+  seedsFromPrevious,
+  type Point,
+} from "@/lib/services/officeGraphRefresh";
+import type { OfficeGraph, OfficeNode, OfficeNodeKind } from "@/lib/services/officeGraph";
 import { normalizePartyName } from "@/lib/services/caseParties";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 
@@ -34,6 +50,34 @@ function kindColors(kind: OfficeNodeKind, isDark: boolean) {
 
 const clip = (s: string, n = 22) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
+/**
+ * Seeded layout: start from rings (cases inside, parties outside) so the force
+ * pass converges in fewer iterations, then the same layout the case canvas
+ * uses. Same data → same picture. After a refresh (BUG-03, layoutPlan): the
+ * drawn positions as they are ("keep"), or as seeds for a short relaxation
+ * when a node is new ("relax") — never a re-layout of the whole map.
+ */
+function officeGraphLayout(graph: OfficeGraph, previous: ReadonlyMap<string, Point>): Map<string, Point> {
+  const plan = layoutPlan(graph.nodes, previous);
+  const springs = graph.edges.filter((e) => e.relation !== "same_name");
+  if (plan === "keep") return keepPositions(graph.nodes, previous);
+  if (plan === "relax") {
+    return forceLayout(seedsFromPrevious(graph, previous, { w: NODE_W, h: NODE_H }), springs, { iterations: OFFICE_GRAPH_RELAX_ITERATIONS });
+  }
+  const cases = graph.nodes.filter((n) => n.kind === "case");
+  const others = graph.nodes.filter((n) => n.kind !== "case");
+  const ring = (list: OfficeNode[], r: number) =>
+    list.map((n, i) => ({
+      id: n.id,
+      w: NODE_W,
+      h: NODE_H,
+      pos: { x: Math.cos((2 * Math.PI * i) / Math.max(1, list.length)) * r, y: Math.sin((2 * Math.PI * i) / Math.max(1, list.length)) * r },
+    }));
+  const seeds = [...ring(cases, 200 + cases.length * 12), ...ring(others, 420 + others.length * 14)];
+  const n = seeds.length;
+  return forceLayout(seeds, springs, { iterations: n > 250 ? 80 : n > 100 ? 160 : 300 });
+}
+
 export default function OfficeGraphView({ base, isDark }: { base: "lawyer" | "firm"; isDark: boolean }) {
   const [read, setRead] = useState<OfficeGraphRead | null>(null);
   const [state, setState] = useState<"loading" | "error" | "ready">("loading");
@@ -41,35 +85,86 @@ export default function OfficeGraphView({ base, isDark }: { base: "lawyer" | "fi
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState<Record<OfficeNodeKind, boolean>>({ case: true, client: true, opponent: true });
   const [scale, setScale] = useState(1);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  // Laid out when a read arrives (officeGraphLayout below), not during render.
+  const [positions, setPositions] = useState<Map<string, Point>>(() => new Map());
+
+  // BUG-03 — the read, again on demand. Refs, not state: they gate requests
+  // and remember what is drawn; they are read only in callbacks and effects.
+  const inFlight = useRef(false);
+  const lastStartedAt = useRef(0);
+  const askedAgain = useRef(false);
+  const shownSignature = useRef("");
+  const drawnPositions = useRef<Map<string, Point>>(new Map());
+  const readNow = useRef<((mode: "initial" | "auto" | "asked") => void) | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    getOfficeGraph()
-      .then((r) => { if (!cancelled) { setRead(r); setState("ready"); } })
-      .catch(() => { if (!cancelled) setState("error"); });
-    return () => { cancelled = true; };
+    let alive = true;
+    const run = (mode: "initial" | "auto" | "asked") => {
+      if (mode === "auto" && !autoRefetchAllowed(Date.now(), lastStartedAt.current, inFlight.current)) return;
+      if (inFlight.current) {
+        // A case saved or «تحديث» during a read: read once more after it.
+        if (mode === "asked") askedAgain.current = true;
+        return;
+      }
+      inFlight.current = true;
+      lastStartedAt.current = Date.now();
+      if (mode !== "initial") setRefreshing(true);
+      getOfficeGraph()
+        .then((r) => {
+          if (!alive) return;
+          const signature = officeGraphSignature(r.graph, r.truncated);
+          if (signature !== shownSignature.current) {
+            shownSignature.current = signature;
+            const laidOut = officeGraphLayout(r.graph, drawnPositions.current);
+            drawnPositions.current = laidOut;
+            setPositions(laidOut);
+            setRead(r);
+            // A selected node that left the map would dim everything else.
+            setSelected((s) => (s && r.graph.nodes.some((n) => n.id === s) ? s : null));
+          }
+          setState("ready");
+          setRefreshFailed(false);
+        })
+        .catch(() => {
+          if (!alive) return;
+          // The first read failing is the error screen; a later one keeps the
+          // last good map and says it could not refresh.
+          setState((s) => (s === "loading" ? "error" : s));
+          setRefreshFailed(true);
+        })
+        .finally(() => {
+          inFlight.current = false;
+          if (!alive) return;
+          setRefreshing(false);
+          if (askedAgain.current) {
+            askedAgain.current = false;
+            run("asked");
+          }
+        });
+    };
+    readNow.current = run;
+    run("initial");
+    const onVisible = () => { if (document.visibilityState === "visible") run("auto"); };
+    const onFocus = () => run("auto");
+    const onCaseSaved = () => run("asked");
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("nzamy-workflow-updated", onCaseSaved);
+    return () => {
+      alive = false;
+      // A read cut short by unmount must not block the next mount's read.
+      inFlight.current = false;
+      readNow.current = null;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("nzamy-workflow-updated", onCaseSaved);
+    };
   }, []);
+  const refresh = useCallback(() => readNow.current?.("asked"), []);
 
   const graph = read?.graph;
-
-  // Seeded layout: start from rings (cases inside, parties outside) so the
-  // force pass converges in fewer iterations, then the same layout the case
-  // canvas uses. Same data → same picture.
-  const positions = useMemo(() => {
-    if (!graph) return new Map<string, { x: number; y: number }>();
-    const cases = graph.nodes.filter((n) => n.kind === "case");
-    const others = graph.nodes.filter((n) => n.kind !== "case");
-    const ring = (list: OfficeNode[], r: number) =>
-      list.map((n, i) => ({
-        id: n.id,
-        w: NODE_W,
-        h: NODE_H,
-        pos: { x: Math.cos((2 * Math.PI * i) / Math.max(1, list.length)) * r, y: Math.sin((2 * Math.PI * i) / Math.max(1, list.length)) * r },
-      }));
-    const seeds = [...ring(cases, 200 + cases.length * 12), ...ring(others, 420 + others.length * 14)];
-    const n = seeds.length;
-    return forceLayout(seeds, graph.edges.filter((e) => e.relation !== "same_name"), { iterations: n > 250 ? 80 : n > 100 ? 160 : 300 });
-  }, [graph]);
 
   const neighbours = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -128,6 +223,11 @@ export default function OfficeGraphView({ base, isDark }: { base: "lawyer" | "fi
 
   return (
     <div className="space-y-4">
+      {refreshFailed && (
+        <p role="status" className={`rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-red-500/20 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-700"}`}>
+          تعذّر تحديث الخريطة — المعروض آخر قراءة ناجحة. اضغط «تحديث» للمحاولة مجدداً.
+        </p>
+      )}
       {(read.truncated.cases || read.truncated.clients) && (
         <p className={`rounded-xl border px-3 py-2 text-[12px] ${isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
           الخريطة تعرض أحدث {toArabicDigits(read.caps.cases)} قضية و{toArabicDigits(read.caps.clients)} موكّلاً فقط؛ ما بعدها غير مرسوم.
@@ -156,6 +256,10 @@ export default function OfficeGraphView({ base, isDark }: { base: "lawyer" | "fi
           );
         })}
         <div className="ms-auto flex items-center gap-1">
+          <button type="button" onClick={refresh} disabled={refreshing} aria-label="تحديث الخريطة"
+            className={`me-2 flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-semibold disabled:opacity-60 ${isDark ? "text-zinc-300 hover:bg-white/10" : "text-slate-600 hover:bg-slate-100"}`}>
+            <ArrowClockwise size={14} className={refreshing ? "animate-spin" : undefined} /> تحديث
+          </button>
           <button type="button" onClick={() => setScale((s) => Math.max(0.3, s - 0.15))} aria-label="تصغير"
             className={`rounded-lg p-1.5 ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}><Minus size={14} /></button>
           <span className={`w-10 text-center text-[11px] ${muted}`}>{toArabicDigits(Math.round(scale * 100))}٪</span>

@@ -1,155 +1,69 @@
 "use client";
 
 /**
- * AiTabContent — نظامي AI مساعد قانوني ذكي
- * Design: DESIGN_VARIANCE=8, MOTION_INTENSITY=6, VISUAL_DENSITY=4
- * Font: Cairo (brand), IBM Plex Sans Arabic (body), JetBrains Mono (mono)
- * Colors: royal=#0B3D2E, gold=#C8A762, dark-bg=#0c0f12
- * Anti-patterns: No Inter, no centered hero, no 3-col cards, no neon glow
+ * AiTabContent — «باحث المكتبة الذكي», the AI tab of /laws (owner note 02, P0).
+ *
+ * It used to answer every question, after a fake delay, with one fixed text
+ * about the labour law, beside a file button that sent nothing, a green
+ * "online" pill and eight platform-wide tool cards. It now asks the real
+ * library assistant, the same call as the law page's chat: askLibrary →
+ * POST /api/v1/ai/runs, tool `library-assistant` (5 points, owner ٢٥٧). The
+ * server checks the sign-in, the library gate and tier, the library lock, the
+ * tool's mode and the points, charges, searches the library and answers only
+ * from what it found; a failed run is refunded and says so. This screen shows
+ * the server's reply with its citations as links into the library, or the
+ * refusal it gave — never an invented answer.
+ *
+ * Before any question: a visitor is asked to sign in; a signed-in user sees no
+ * box and no price until GET /api/v1/ai/tool-status says he may run the tool
+ * (useToolUsable), and «قيد التفعيل» when it says no.
+ *
+ * Each question is sent on its own (the tool keeps no conversation), so the
+ * screen does not pretend to remember earlier questions. The search covers the
+ * law and regulation articles and the judicial principles (lib/ai/retrieval.ts);
+ * it has no scope filter, so the screen offers none.
  */
 
-import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion";
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, memo } from "react";
+import Link from "next/link";
+import { memo, useEffect, useRef, useState } from "react";
 import {
-  PaperPlaneTilt,
-  Robot,
-  User,
-  Paperclip,
-  WarningDiamond,
-  Copy,
-  ThumbsUp,
-  ThumbsDown,
-  Books,
-  Plus,
-  PencilSimple,
-  MagnifyingGlass,
-  Scales,
-  ChartLineUp,
-  Translate,
-  Notebook,
-  Sparkle,
-  Trash,
-  X,
+  ArrowCounterClockwise,
+  BookOpenText,
   CheckCircle,
-  ChatCircleDots,
-  SidebarSimple,
-  ArrowRight,
-  List,
+  Copy,
+  PaperPlaneTilt,
+  Sparkle,
+  WarningDiamond,
 } from "@phosphor-icons/react";
+import { useUser } from "@/hooks/useUser";
+import { useToolUsable } from "@/hooks/useToolUsable";
+import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
+import { askLibrary, LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
+import type { LibraryAiAction } from "../[slug]/_ai-reply";
 
-// ─── Brand Design Tokens ──────────────────────────────────────────────────────
+// ─── Brand tokens ─────────────────────────────────────────────────────────────
 const ROYAL = "#0B3D2E";
-const GOLD  = "#C8A762";
-const GOLD_DARK = "#b08f4a";
+const GOLD = "#C8A762";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-type MsgRole = "user" | "ai" | "system";
+const TOOL = "library-assistant";
+const QUESTION_MAX = 2000;
 
-interface Msg {
-  id: string;
-  role: MsgRole;
-  text: string;
-  time: string;
-  sources?: string[];
-}
-
-interface Conv {
-  id: string;
-  title: string;
-  date: Date;
-  msgs: Msg[];
-}
-
-// ─── Quick Actions — نظامي's actual services ──────────────────────────────────
-const QUICK_ACTIONS = [
-  {
-    id: "consult",
-    icon: ChatCircleDots,
-    label: "استشارة قانونية",
-    sub: "فورية بناءً على أنظمة المملكة",
-    prompt: "أحتاج استشارة قانونية حول: ",
-    gradient: `linear-gradient(135deg, ${ROYAL}, #1a6b50)`,
-    accent: "#4ade80",
-  },
-  {
-    id: "contract",
-    icon: PencilSimple,
-    label: "صغ عقد أو مذكرة",
-    sub: "صياغة احترافية بالذكاء الاصطناعي",
-    prompt: "ساعدني في صياغة عقد/مذكرة قانونية احترافية حول: ",
-    gradient: "linear-gradient(135deg, #1e3a5f, #2d5f8a)",
-    accent: "#60a5fa",
-  },
-  {
-    id: "review",
-    icon: MagnifyingGlass,
-    label: "راجع عقداً",
-    sub: "تحليل البنود وكشف المخاطر",
-    prompt: "حلّل هذا العقد وأبرز البنود الخطرة والمخاطر القانونية: ",
-    gradient: "linear-gradient(135deg, #3b1f6a, #5a3298)",
-    accent: "#a78bfa",
-  },
-  {
-    id: "litigation",
-    icon: Scales,
-    label: "مسار قضائي",
-    sub: "تقييم فرص القضية واستراتيجيتها",
-    prompt: "قيّم فرص قضيتي القانونية وساعدني في وضع الاستراتيجية المناسبة: ",
-    gradient: "linear-gradient(135deg, #7c2d12, #c2410c)",
-    accent: "#fb923c",
-  },
-  {
-    id: "library",
-    icon: Books,
-    label: "ابحث في المكتبة",
-    sub: "نصوص الأنظمة والمبادئ القضائية",
-    prompt: "ابحث في المكتبة القانونية عن: ",
-    gradient: "linear-gradient(135deg, #134e4a, #0f766e)",
-    accent: "#2dd4bf",
-  },
-  {
-    id: "corporate",
-    icon: ChartLineUp,
-    label: "تأسيس وهيكلة",
-    sub: "الشركات والمشاريع التجارية",
-    prompt: "أحتاج مساعدة قانونية لتأسيس/هيكلة مشروع/شركة: ",
-    gradient: "linear-gradient(135deg, #92400e, #b45309)",
-    accent: GOLD,
-  },
-  {
-    id: "translate",
-    icon: Translate,
-    label: "ترجم مستنداً",
-    sub: "ترجمة قانونية دقيقة المصطلحات",
-    prompt: "ترجم النص القانوني التالي مع الحفاظ على الدقة الاصطلاحية: ",
-    gradient: "linear-gradient(135deg, #1e3a5f, #155e75)",
-    accent: "#38bdf8",
-  },
-  {
-    id: "summary",
-    icon: Notebook,
-    label: "لخّص حكماً",
-    sub: "استخلاص المبادئ من الأحكام",
-    prompt: "لخّص هذا الحكم القضائي واستخلص المبادئ القانونية المستفادة: ",
-    gradient: "linear-gradient(135deg, #312e81, #4338ca)",
-    accent: "#818cf8",
-  },
+/**
+ * Four research questions the library can answer (owner note 02 §2.3). They
+ * fill the box; nothing is sent, and charged, until the user presses send.
+ * The fiqh-books example of the note is left out: the assistant does not
+ * search the books yet.
+ */
+const EXAMPLES = [
+  { label: "نص نظامي وتعديلاته", prompt: "ما نص المادة المتعلقة بـ… في نظام…؟ وهل عُدّلت؟" },
+  { label: "المبادئ والسوابق القضائية", prompt: "ما المبادئ القضائية في مسألة…؟" },
+  { label: "المادة ولائحتها التنفيذية", prompt: "ما الذي تضيفه اللائحة التنفيذية إلى المادة… من نظام…؟" },
+  { label: "شرح مادة بعينها", prompt: "اشرح لي المادة… من نظام… وشروط تطبيقها." },
 ] as const;
 
-// ─── Mock AI Response ─────────────────────────────────────────────────────────
-function mockAI(q: string): { text: string; sources: string[] } {
-  void q;
-  return {
-    text: `بناءً على منظومة الأنظمة السعودية المحدّثة في مكتبة نظامي، إليك تحليلاً شاملاً:\n\n**الإطار النظامي الحاكم**\nيندرج هذا الموضوع ضمن نطاق نظام العمل الصادر بالمرسوم الملكي م/51 لعام 1426هـ، إذ تنصّ المواد من (73) إلى (81) على الضوابط المتعلقة بهذه المسألة.\n\n**الشروط الجوهرية**\n• الركن المادي: إثبات وقوع الفعل أو الامتناع الضار.\n• الركن المعنوي: التعمّد أو الإهمال الجسيم.\n• علاقة السببية: الرابط المباشر بين الفعل والضرر.\n\n**موقف القضاء**\nاستقرّ قضاء المحكمة العمالية ومحاكم الاستئناف على اشتراط توافر هذه العناصر مجتمعةً قبل الحكم بالتعويض.\n\n**التوصية**\nيُنصح بتوثيق جميع المراسلات وضمّ الإثباتات قبل المضيّ في الإجراء القانوني. هل تودّ أن أساعدك في صياغة المذكرة؟`,
-    sources: [
-      "نظام العمل م/51 · المادة 77",
-      "لائحة العمل التنفيذية · الباب الخامس",
-      "مبادئ المحكمة العمالية العليا",
-    ],
-  };
-}
-
 // ─── Lightweight Markdown (bold + bullet lists — no external dependency) ─────
+// Exported: the law page's chat (../[slug]/_ai-components.tsx) uses it too.
 function renderInlineBold(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) =>
@@ -193,612 +107,20 @@ export const LiteMarkdown = memo(function LiteMarkdown({ text }: { text: string 
   );
 });
 
-// ─── Streaming Text (Isolated) ────────────────────────────────────────────────
-const StreamingText = memo(function StreamingText({ text }: { text: string }) {
-  const [shown, setShown] = useState("");
-  useEffect(() => {
-    setShown("");
-    let i = 0;
-    const iv = setInterval(() => {
-      if (i < text.length) { setShown(text.slice(0, i + 4)); i += 4; }
-      else { setShown(text); clearInterval(iv); }
-    }, 14);
-    return () => clearInterval(iv);
-  }, [text]);
-  return <LiteMarkdown text={shown} />;
-});
-
-// ─── Thinking Indicator (Isolated) ───────────────────────────────────────────
-const ThinkingIndicator = memo(function ThinkingIndicator({ isDark }: { isDark: boolean }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-      className="flex items-start gap-3"
-    >
-      {/* AI Avatar */}
-      <div className="mt-0.5 flex-shrink-0 h-8 w-8 rounded-xl flex items-center justify-center"
-        style={{ background: `linear-gradient(135deg, ${ROYAL}, #1a6b50)` }}>
-        <motion.div animate={{ rotate: [0, 360] }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}>
-          <Robot size={14} weight="duotone" style={{ color: GOLD }} />
-        </motion.div>
-      </div>
-      <div className={`rounded-2xl rounded-tl-sm px-4 py-3 text-[13px] ${
-        isDark ? "bg-dark-card border border-white/[0.06]" : "bg-white border border-slate-100 shadow-sm"
-      }`}>
-        <div className="flex items-center gap-1.5">
-          {[0, 0.18, 0.36].map((d, i) => (
-            <motion.span key={i} className="block h-1.5 w-1.5 rounded-full"
-              style={{ background: GOLD }}
-              animate={{ y: [0, -5, 0], opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 0.8, repeat: Infinity, delay: d }} />
-          ))}
-        </div>
-      </div>
-    </motion.div>
-  );
-});
-
-// ─── Message Bubble ───────────────────────────────────────────────────────────
-const MsgBubble = memo(function MsgBubble({
-  msg, isDark, isLatest,
-}: { msg: Msg; isDark: boolean; isLatest: boolean }) {
-  const [copied, setCopied] = useState(false);
-
-  if (msg.role === "system") return (
-    <div className="flex justify-center py-2">
-      <span className={`text-[10px] tracking-wide rounded-full px-3.5 py-1 font-medium ${
-        isDark ? "bg-white/[0.04] text-white/30" : "bg-slate-100 text-slate-400"
-      }`}>{msg.text}</span>
-    </div>
-  );
-
-  const isUser = msg.role === "user";
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: "spring", stiffness: 280, damping: 28 }}
-      className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : ""}`}
-    >
-      {/* Avatar */}
-      <div className={`flex-shrink-0 mt-0.5 h-8 w-8 rounded-xl flex items-center justify-center shadow-sm ${
-        isUser
-          ? isDark ? "bg-white/10" : "bg-slate-800"
-          : ""
-      }`}
-        style={!isUser ? { background: `linear-gradient(135deg, ${ROYAL}, #1a6b50)` } : undefined}>
-        {isUser
-          ? <User size={13} weight="fill" className={isDark ? "text-white/70" : "text-white"} />
-          : <Robot size={13} weight="duotone" style={{ color: GOLD }} />
-        }
-      </div>
-
-      {/* Content */}
-      <div className={`max-w-[84%] flex flex-col gap-1.5 ${isUser ? "items-end" : "items-start"}`}>
-        {!isUser && (
-          <span className="text-[9px] font-bold tracking-widest uppercase px-0.5" style={{ color: GOLD }}>ذكاء نظامي</span>
-        )}
-
-        {/* Bubble */}
-        <div className={`rounded-2xl text-[13px] leading-[1.75] ${
-          isUser
-            ? "px-4 py-3 text-white rounded-tr-sm"
-            : isDark
-              ? "px-4 py-3.5 rounded-tl-sm border border-white/[0.07] bg-dark-card text-zinc-200"
-              : "px-4 py-3.5 rounded-tl-sm border border-slate-100 bg-white text-slate-800 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]"
-        }`}
-          style={isUser ? { background: `linear-gradient(135deg, ${ROYAL} 0%, #1a6b50 100%)` } : undefined}
-          dir="rtl"
-        >
-          {isUser
-            ? <span className="whitespace-pre-wrap">{msg.text}</span>
-            : isLatest
-              ? <StreamingText text={msg.text} />
-              : <LiteMarkdown text={msg.text} />
-          }
-        </div>
-
-        {/* Sources */}
-        {!isUser && msg.sources && msg.sources.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-            className={`w-full rounded-xl px-3.5 py-2.5 text-[11px] border ${
-              isDark ? "border-white/[0.05] bg-white/[0.02]" : "border-slate-100 bg-slate-50/80"
-            }`}
-          >
-            <p className={`flex items-center gap-1.5 font-semibold mb-1.5 ${isDark ? "text-white/40" : "text-slate-400"}`}>
-              <Books size={10} /> المصادر
-            </p>
-            {msg.sources.map((s, i) => (
-              <p key={i} className={`flex items-center gap-1 ${isDark ? "text-white/30" : "text-slate-400"}`}>
-                <span className="h-0.5 w-2 rounded-full inline-block flex-shrink-0" style={{ background: GOLD }} />
-                {s}
-              </p>
-            ))}
-          </motion.div>
-        )}
-
-        {/* Actions */}
-        <div className={`flex items-center gap-3 px-0.5 text-[10px] ${isDark ? "text-white/20" : "text-slate-300"}`}>
-          <span className="font-mono">{msg.time}</span>
-          {!isUser && (
-            <>
-              <button
-                onClick={() => { navigator.clipboard.writeText(msg.text); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-                className={`flex items-center gap-1 transition-colors ${isDark ? "hover:text-white/50" : "hover:text-slate-500"}`}
-              >
-                {copied ? <CheckCircle size={9} style={{ color: "#4ade80" }} /> : <Copy size={9} />}
-                {copied ? "تم" : "نسخ"}
-              </button>
-              <button className="hover:text-emerald-400 transition-colors"><ThumbsUp size={9} /></button>
-              <button className="hover:text-rose-400 transition-colors"><ThumbsDown size={9} /></button>
-            </>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-});
-
-// ─── Conversation List Item ───────────────────────────────────────────────────
-const ConvItem = memo(function ConvItem({
-  conv, isActive, onSelect, onDelete, isDark,
-}: { conv: Conv; isActive: boolean; onSelect: () => void; onDelete: () => void; isDark: boolean }) {
-  return (
-    <motion.div
-      layout
-      whileTap={{ scale: 0.98 }}
-      onClick={onSelect}
-      className={`relative group flex items-center gap-2.5 rounded-xl px-3 py-2.5 cursor-pointer transition-all duration-200 ${
-        isActive
-          ? isDark ? "bg-white/[0.07]" : "bg-royal/[0.06]"
-          : isDark ? "hover:bg-white/[0.04]" : "hover:bg-slate-100/80"
-      }`}
-    >
-      {isActive && (
-        <motion.div
-          layoutId="activeConvBg"
-          className="absolute inset-0 rounded-xl border pointer-events-none"
-          style={{ borderColor: `${GOLD}30` }}
-        />
-      )}
-      <ChatCircleDots
-        size={12}
-        weight={isActive ? "fill" : "regular"}
-        style={isActive ? { color: GOLD } : undefined}
-        className={`flex-shrink-0 ${!isActive && (isDark ? "text-white/30" : "text-slate-400")}`}
-      />
-      <span className={`flex-1 text-[11.5px] truncate font-medium ${
-        isActive
-          ? isDark ? "text-white" : "text-royal"
-          : isDark ? "text-white/50" : "text-slate-500"
-      }`}>
-        {conv.title}
-      </span>
-      <button
-        onClick={e => { e.stopPropagation(); onDelete(); }}
-        aria-label="حذف المحادثة"
-        className={`flex-shrink-0 p-2 rounded-md transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 ${isDark ? "hover:bg-white/[0.08] text-white/30 hover:text-rose-400" : "hover:bg-rose-50 text-slate-300 hover:text-rose-400"}`}
-      >
-        <Trash size={11} />
-      </button>
-    </motion.div>
-  );
-});
-
-// ─── Welcome Screen ───────────────────────────────────────────────────────────
-const WelcomeScreen = memo(function WelcomeScreen({
-  isDark, onAction,
-}: { isDark: boolean; onAction: (prompt: string) => void }) {
-
-  const containerVariants = {
-    hidden: {},
-    visible: { transition: { staggerChildren: 0.07 } },
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Turn {
+  id: string;
+  question: string;
+  /** null while the run is in flight. */
+  answer: null | {
+    text: string;
+    cites: Citation[];
+    action?: LibraryAiAction;
+    refused: boolean;
   };
-  const itemVariants = {
-    hidden: { opacity: 0, y: 16 },
-    visible: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 200, damping: 24 } },
-  };
-
-  return (
-    <div className="flex-1 overflow-y-auto" dir="rtl">
-      <div className="mx-auto max-w-2xl px-5 pt-8 pb-6">
-
-        {/* Hero — Left-aligned, asymmetric (DESIGN_VARIANCE=8: Anti-center bias) */}
-        <div className="flex items-start gap-4 mb-8">
-          {/* Logo block */}
-          <motion.div
-            initial={{ scale: 0.7, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 240, damping: 18 }}
-            className="relative flex-shrink-0"
-          >
-            <div className="h-14 w-14 rounded-2xl flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${ROYAL} 0%, #1a6b50 100%)`, boxShadow: `0 12px 32px -8px ${ROYAL}60` }}>
-              <Robot size={26} weight="duotone" style={{ color: GOLD }} />
-            </div>
-            {/* Pulse dot */}
-            <motion.div
-              animate={{ scale: [1, 1.5, 1], opacity: [1, 0.6, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-              className="absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-400 border-2"
-              style={{ borderColor: isDark ? "#0c0f12" : "#f9fafb" }}
-            />
-          </motion.div>
-
-          <div>
-            <motion.h2
-              initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1, type: "spring", stiffness: 200 }}
-              className="text-lg font-bold tracking-tight"
-              style={{ fontFamily: "var(--font-brand)", color: isDark ? "#fff" : ROYAL }}
-            >
-              ذكاء نظامي — مساعدك القانوني
-            </motion.h2>
-            <motion.p
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.18 }}
-              className={`text-[12.5px] mt-0.5 leading-snug max-w-[36ch] ${isDark ? "text-white/40" : "text-slate-400"}`}
-            >
-              يعتمد المكتبة القانونية السعودية مصدراً — الأنظمة، المبادئ، والسوابق القضائية
-            </motion.p>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <motion.div
-          initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ delay: 0.22, duration: 0.4 }}
-          className="h-px mb-7 origin-right"
-          style={{ background: `linear-gradient(to left, ${GOLD}40, transparent)` }}
-        />
-
-        {/* Quick Actions Grid — 2-col asymmetric (DESIGN_VARIANCE=8: No 3-col) */}
-        <motion.p
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.26 }}
-          className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${isDark ? "text-white/25" : "text-slate-400"}`}
-        >
-          ابدأ بسرعة
-        </motion.p>
-
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="grid grid-cols-2 gap-2"
-        >
-          {QUICK_ACTIONS.map((action) => {
-            const Icon = action.icon;
-            return (
-              <motion.button
-                key={action.id}
-                variants={itemVariants}
-                whileHover={{ y: -2, scale: 1.02 }}
-                whileTap={{ scale: 0.97, y: 0 }}
-                onClick={() => onAction(action.prompt)}
-                className={`group relative flex items-start gap-3 rounded-2xl p-3.5 text-start transition-all duration-200 overflow-hidden border ${
-                  isDark
-                    ? "border-white/[0.06] bg-dark-card hover:border-white/[0.12]"
-                    : "border-slate-200/80 bg-white hover:border-slate-300 hover:shadow-[0_4px_20px_-6px_rgba(0,0,0,0.08)]"
-                }`}
-              >
-                {/* Subtle gradient bg on hover */}
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl"
-                  style={{ background: `${action.gradient.replace("linear-gradient(135deg, ", "linear-gradient(135deg, ").split(")")[0]})`.replace("linear-gradient(135deg, ", "").split(",")[0] + "08)" }} />
-
-                {/* Icon */}
-                <div className="relative flex-shrink-0 h-8 w-8 rounded-xl flex items-center justify-center transition-transform duration-200 group-hover:scale-110"
-                  style={{ background: action.gradient }}>
-                  <Icon size={15} weight="duotone" className="text-white" />
-                </div>
-
-                {/* Text */}
-                <div className="relative min-w-0">
-                  <p className={`text-[12px] font-bold leading-tight mb-0.5 ${isDark ? "text-white/85" : "text-slate-800"}`}>
-                    {action.label}
-                  </p>
-                  <p className={`text-[10px] leading-snug ${isDark ? "text-white/30" : "text-slate-400"}`}>
-                    {action.sub}
-                  </p>
-                </div>
-
-                {/* Arrow — always faintly visible on touch, brightens on hover */}
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 opacity-30 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
-                  <ArrowRight size={12} style={{ color: action.accent }} className="rotate-180" />
-                </div>
-              </motion.button>
-            );
-          })}
-        </motion.div>
-
-        {/* Bottom hint */}
-        <motion.p
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-          className={`text-center text-[10px] mt-5 ${isDark ? "text-white/15" : "text-slate-300"}`}
-        >
-          أو اكتب سؤالك مباشرةً في حقل الإدخال أدناه
-        </motion.p>
-      </div>
-    </div>
-  );
-});
-
-// ─── Sidebar ──────────────────────────────────────────────────────────────────
-function ConvSidebar({
-  convs, activeId, onSelect, onNew, onDelete, isDark, open, onToggle,
-}: {
-  convs: Conv[]; activeId: string | null;
-  onSelect: (id: string) => void; onNew: () => void; onDelete: (id: string) => void;
-  isDark: boolean; open: boolean; onToggle: () => void;
-}) {
-  const now = new Date();
-  const todayStr = now.toDateString();
-  const ystStr = new Date(now.getTime() - 86400000).toDateString();
-
-  const groups = [
-    { label: "اليوم", items: convs.filter(c => new Date(c.date).toDateString() === todayStr) },
-    { label: "أمس", items: convs.filter(c => new Date(c.date).toDateString() === ystStr) },
-    { label: "سابقاً", items: convs.filter(c => {
-      const d = new Date(c.date).toDateString();
-      return d !== todayStr && d !== ystStr;
-    }) },
-  ].filter(g => g.items.length > 0);
-
-  return (
-    <>
-      {/* Mobile backdrop — tapping it closes the drawer */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onToggle}
-            className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          />
-        )}
-      </AnimatePresence>
-
-      <div
-        className={`fixed md:static inset-y-0 right-0 md:inset-auto z-50 md:z-auto
-          flex-shrink-0 flex flex-col overflow-hidden border-e h-full
-          w-[78%] max-w-[300px] ${open ? "md:w-[210px]" : "md:w-[52px]"}
-          ${open ? "translate-x-0" : "translate-x-full"} md:translate-x-0
-          transition-[width,transform] duration-300 ease-out
-          ${isDark ? "bg-[#0e1a14] border-white/[0.05]" : "bg-[#eef7f2] border-slate-200/60"}`}
-        dir="rtl"
-      >
-        {/* Header */}
-        <div className={`flex-shrink-0 flex items-center h-12 px-3 border-b ${
-          isDark ? "border-white/[0.05]" : "border-slate-200/60"
-        }`}>
-          {open && (
-            <span className={`flex-1 text-[11px] font-bold tracking-wide ${isDark ? "text-white/40" : "text-slate-400"}`}>
-              المحادثات
-            </span>
-          )}
-          <button
-            onClick={onToggle}
-            className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
-              isDark ? "text-white/30 hover:text-white/60 hover:bg-white/[0.06]" : "text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
-            }`}
-          >
-            <SidebarSimple size={14} weight={open ? "fill" : "regular"} />
-          </button>
-        </div>
-
-        {/* New Chat Button */}
-        <div className={`flex-shrink-0 p-2 border-b ${isDark ? "border-white/[0.05]" : "border-slate-200/60"}`}>
-          <motion.button
-            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-            onClick={onNew}
-            className={`w-full flex items-center rounded-xl transition-all duration-200 ${
-              open ? "gap-2.5 px-3 py-2.5" : "justify-center px-2 py-2.5"
-            } ${
-              isDark
-                ? "bg-white/[0.05] hover:bg-white/[0.09] text-white/60 hover:text-white"
-                : "bg-white hover:bg-royal hover:text-white text-slate-600 border border-slate-200 hover:border-royal shadow-sm"
-            }`}
-          >
-            <Plus size={13} weight="bold" />
-            {open && <span className="text-[11.5px] font-semibold">محادثة جديدة</span>}
-          </motion.button>
-        </div>
-
-        {/* Conversation List */}
-        {open && (
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {convs.length === 0 ? (
-              <div className={`text-center py-8 text-[10.5px] ${isDark ? "text-white/20" : "text-slate-300"}`}>
-                لا توجد محادثات
-              </div>
-            ) : (
-              groups.map(group => (
-                <div key={group.label} className="mb-2">
-                  <p className={`text-[9px] font-bold uppercase tracking-widest px-3 mb-1 ${isDark ? "text-white/20" : "text-slate-300"}`}>
-                    {group.label}
-                  </p>
-                  <AnimatePresence>
-                    {group.items.map(c => (
-                      <ConvItem key={c.id} conv={c} isActive={c.id === activeId}
-                        onSelect={() => onSelect(c.id)}
-                        onDelete={() => onDelete(c.id)}
-                        isDark={isDark} />
-                    ))}
-                  </AnimatePresence>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-    </>
-  );
 }
 
-// ─── Input Bar ────────────────────────────────────────────────────────────────
-function InputBar({
-  value, onChange, onSend, isThinking, isDark, onQuickAction,
-}: {
-  value: string; onChange: (v: string) => void; onSend: () => void;
-  isThinking: boolean; isDark: boolean; onQuickAction: (p: string) => void;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [showQuick, setShowQuick] = useState(false);
-  const [file, setFile] = useState<string | null>(null);
-  const focused = useRef(false);
-
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 130) + "px";
-    }
-  }, [value]);
-
-  function handleKey(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
-    if (e.key === "Escape") setShowQuick(false);
-  }
-
-  const canSend = value.trim().length > 0 && !isThinking;
-
-  return (
-    <div className={`flex-shrink-0 px-4 pb-3 pt-2.5 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`} dir="rtl">
-
-      {/* File chip */}
-      <AnimatePresence>
-        {file && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-            className={`flex items-center gap-2 mb-2 rounded-xl px-3 py-2 text-[11px] w-fit ${
-              isDark ? "bg-white/[0.05] border border-white/[0.08] text-white/50" : "bg-slate-100 text-slate-500 border border-slate-200"
-            }`}>
-            <Paperclip size={10} style={{ color: GOLD }} />
-            <span className="max-w-[180px] truncate font-mono">{file}</span>
-            <button onClick={() => setFile(null)} className="hover:text-rose-400 transition-colors"><X size={9} /></button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Input container — Liquid glass style */}
-      <div className={`relative flex items-end gap-2 rounded-2xl border px-3.5 py-2.5 transition-all duration-200 ${
-        isDark
-          ? "border-white/[0.08] bg-dark-card hover:border-white/[0.12] focus-within:border-[rgba(200,167,98,0.3)] focus-within:shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-          : "border-slate-200 bg-white hover:border-slate-300 focus-within:border-[rgba(11,61,46,0.3)] focus-within:shadow-[0_2px_16px_-4px_rgba(11,61,46,0.1),inset_0_1px_0_rgba(255,255,255,0.8)]"
-      }`}>
-
-        {/* File upload */}
-        <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.txt" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f.name); }} />
-        <motion.button whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
-          onClick={() => fileRef.current?.click()}
-          title="رفع مستند"
-          className={`flex-shrink-0 p-2 rounded-lg transition-colors ${isDark ? "text-white/25 hover:text-gold" : "text-slate-300 hover:text-royal"}`}>
-          <Paperclip size={15} />
-        </motion.button>
-
-        {/* Quick actions trigger */}
-        <div className="relative flex-shrink-0">
-          <motion.button
-            whileHover={{ scale: 1.15 }} whileTap={{ scale: 0.9 }}
-            onClick={() => setShowQuick(p => !p)}
-            title="أوامر سريعة"
-            className={`p-2 rounded-lg transition-colors ${
-              showQuick ? "text-gold" : isDark ? "text-white/25 hover:text-gold" : "text-slate-300 hover:text-royal"
-            }`}
-          >
-            <Sparkle size={15} weight={showQuick ? "fill" : "regular"} />
-          </motion.button>
-
-          {/* Quick Menu Popup */}
-          <AnimatePresence>
-            {showQuick && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: 8 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 8 }}
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                className={`absolute bottom-full mb-2 right-0 w-60 rounded-2xl border overflow-hidden z-50 ${
-                  isDark
-                    ? "bg-dark-card border-white/[0.08] shadow-[0_16px_40px_-8px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.05)]"
-                    : "bg-white border-slate-200 shadow-[0_16px_40px_-8px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.8)]"
-                }`}
-                dir="rtl"
-              >
-                <div className={`flex items-center justify-between px-4 py-2.5 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-                  <span className={`text-[9px] font-bold uppercase tracking-widest ${isDark ? "text-white/25" : "text-slate-300"}`}>
-                    أوامر سريعة
-                  </span>
-                  <button onClick={() => setShowQuick(false)} className={isDark ? "text-white/20 hover:text-white/50" : "text-slate-300 hover:text-slate-500"}>
-                    <X size={10} />
-                  </button>
-                </div>
-                <div className="p-1.5">
-                  {QUICK_ACTIONS.map(action => {
-                    const Icon = action.icon;
-                    return (
-                      <motion.button
-                        key={action.id}
-                        whileHover={{ x: -2 }}
-                        onClick={() => { onQuickAction(action.prompt); setShowQuick(false); }}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-start transition-colors ${
-                          isDark ? "hover:bg-white/[0.05] text-white/60 hover:text-white/90" : "hover:bg-slate-50 text-slate-600 hover:text-slate-800"
-                        }`}
-                      >
-                        <div className="flex-shrink-0 h-6 w-6 rounded-lg flex items-center justify-center"
-                          style={{ background: action.gradient }}>
-                          <Icon size={12} weight="duotone" className="text-white" />
-                        </div>
-                        <span className="text-[11.5px] font-medium">{action.label}</span>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          onKeyDown={handleKey}
-          placeholder="اسأل عن أي موضوع قانوني في المكتبة..."
-          rows={1}
-          dir="rtl"
-          className={`flex-1 resize-none bg-transparent text-[13px] outline-none leading-relaxed font-body ${
-            isDark ? "text-white/85 placeholder:text-white/20" : "text-slate-800 placeholder:text-slate-300"
-          }`}
-          style={{ maxHeight: 130, fontFamily: "var(--font-body)" }}
-        />
-
-        {/* Send button — Magnetic-style */}
-        <motion.button
-          whileHover={canSend ? { scale: 1.08 } : {}}
-          whileTap={canSend ? { scale: 0.93 } : {}}
-          onClick={onSend}
-          disabled={!canSend}
-          className="flex-shrink-0 flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-200"
-          style={{
-            background: canSend ? `linear-gradient(135deg, ${ROYAL}, #1a6b50)` : isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9",
-            boxShadow: canSend ? `0 4px 14px -4px ${ROYAL}70` : "none",
-          }}
-        >
-          <PaperPlaneTilt
-            size={13} weight="fill"
-            className={canSend ? "text-white" : isDark ? "text-white/15" : "text-slate-300"}
-          />
-        </motion.button>
-      </div>
-
-      {/* Disclaimer */}
-      <div className={`flex items-center justify-center gap-1.5 mt-1.5 text-[9.5px] ${isDark ? "text-white/15" : "text-slate-300"}`}>
-        <WarningDiamond size={8} />
-        الإجابات استرشادية ولا تُعدّ استشارة قانونية رسمية
-      </div>
-    </div>
-  );
-}
+type Access = "checking" | "guest" | "soon" | "open";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 interface AiTabContentProps {
@@ -807,202 +129,266 @@ interface AiTabContentProps {
 }
 
 export function AiTabContent({ isDark }: AiTabContentProps) {
-  const [convs, setConvs] = useState<Conv[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const user = useUser();
+  if (user.loading) return <Shell isDark={isDark} access="checking" />;
+  if (!user.isLoggedIn) return <Shell isDark={isDark} access="guest" />;
+  return <SignedIn isDark={isDark} />;
+}
+
+function SignedIn({ isDark }: { isDark: boolean }) {
+  const usable = useToolUsable(TOOL);
+  return <Shell isDark={isDark} access={usable === null ? "checking" : usable ? "open" : "soon"} />;
+}
+
+function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
   const [input, setInput] = useState("");
-  const [isThinking, setIsThinking] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isMobile, setIsMobile] = useState(false);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const running = turns.some(t => t.answer === null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    setIsMobile(window.innerWidth < 768);
-  }, []);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+    if (turns.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [turns]);
 
-  useEffect(() => {
-    setSidebarOpen(!isMobile);
-  }, [isMobile]);
-
-  const activeConv = convs.find(c => c.id === activeId);
-  const msgs = activeConv?.msgs ?? [];
-  const hasRealMsgs = msgs.some(m => m.role !== "system");
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, isThinking]);
-
-  function nowStr() {
-    const d = new Date();
-    return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
-
-  function startConv(): string {
-    const id = `conv-${Date.now()}`;
-    const sys: Msg = {
-      id: `sys-${id}`,
-      role: "system",
-      text: `ذكاء نظامي · ${new Date().toLocaleDateString("ar-SA-u-nu-latn")}`,
-      time: "",
-    };
-    setConvs(prev => [{
-      id, title: "محادثة جديدة",
-      date: new Date(), msgs: [sys],
-    }, ...prev]);
-    setActiveId(id);
-    return id;
-  }
-
-  async function send(text?: string) {
-    const q = (text ?? input).trim();
-    if (!q || isThinking) return;
+  async function send() {
+    const q = input.trim().slice(0, QUESTION_MAX);
+    if (!q || running || access !== "open") return;
     setInput("");
-
-    let cid = activeId;
-    if (!cid) { cid = startConv(); await new Promise(r => setTimeout(r, 60)); }
-
-    const uMsg: Msg = { id: `u-${Date.now()}`, role: "user", text: q, time: nowStr() };
-
-    setConvs(prev => prev.map(c => c.id === cid
-      ? { ...c, title: q.slice(0, 38) + (q.length > 38 ? "..." : ""), msgs: [...c.msgs, uMsg] }
-      : c
-    ));
-    setIsThinking(true);
-    await new Promise(r => setTimeout(r, 1600 + Math.random() * 600));
-
-    const { text: aiText, sources } = mockAI(q);
-    const aMsg: Msg = { id: `a-${Date.now()}`, role: "ai", text: aiText, time: nowStr(), sources };
-
-    setConvs(prev => prev.map(c => c.id === cid ? { ...c, msgs: [...c.msgs, aMsg] } : c));
-    setIsThinking(false);
+    const id = `t-${Date.now()}`;
+    setTurns(prev => [...prev, { id, question: q, answer: null }]);
+    // The server's reply and citations, or the refusal it gave (askLibrary).
+    const res = await askLibrary({ message: q }, window.location.pathname + window.location.search);
+    setTurns(prev => prev.map(t => t.id === id
+      ? { ...t, answer: { text: res.text, cites: asCitations(res.citations), action: res.action, refused: res.refused === true } }
+      : t));
   }
 
-  function deleteConv(id: string) {
-    setConvs(prev => prev.filter(c => c.id !== id));
-    if (activeId === id) setActiveId(null);
+  function fillExample(prompt: string) {
+    setInput(prompt);
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
+
+  const muted = isDark ? "text-zinc-400" : "text-slate-500";
+  const strong = isDark ? "text-white" : "text-[#0B3D2E]";
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 200, damping: 26 }}
-      className={`relative flex rounded-2xl overflow-hidden border h-[92dvh] md:h-[82vh] md:min-h-[640px] ${
-        isDark
-          ? "border-white/[0.06] bg-dark-bg shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_20px_60px_-20px_rgba(0,0,0,0.6)]"
-          : "border-slate-200/80 bg-slate-50 shadow-[0_8px_40px_-12px_rgba(11,61,46,0.12),inset_0_1px_0_rgba(255,255,255,0.8)]"
-      }`}
+    <div
       dir="rtl"
+      className={`rounded-2xl border ${isDark ? "border-white/[0.07] bg-[#0f1417]" : "border-slate-200 bg-white shadow-[0_8px_32px_-16px_rgba(11,61,46,0.18)]"}`}
     >
-      {/* ── Conversation Sidebar ──────────────────────────────────────────── */}
-      <ConvSidebar
-        convs={convs} activeId={activeId}
-        onSelect={id => { setActiveId(id); if (isMobile) setSidebarOpen(false); }}
-        onNew={() => { setActiveId(null); if (isMobile) setSidebarOpen(false); }}
-        onDelete={deleteConv}
-        isDark={isDark} open={sidebarOpen}
-        onToggle={() => setSidebarOpen(p => !p)}
-      />
-
-      {/* ── Chat Area ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
-
-        {/* Header bar */}
-        <div className={`flex-shrink-0 flex items-center justify-between px-4 h-12 border-b ${
-          isDark ? "border-white/[0.05]" : "border-slate-200/60"
-        }`}>
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              aria-label="فتح المحادثات"
-              className={`md:hidden flex-shrink-0 p-2 -ms-1 rounded-xl transition-colors ${
-                isDark ? "text-white/40 hover:text-white/70 hover:bg-white/[0.06]" : "text-slate-400 hover:text-royal hover:bg-slate-100"
-              }`}
-            >
-              <List size={16} />
-            </button>
-            <div className="h-7 w-7 rounded-xl flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${ROYAL}, #1a6b50)` }}>
-              <Robot size={13} weight="duotone" style={{ color: GOLD }} />
-            </div>
-            <div>
-              <p className="text-[12px] font-bold tracking-tight"
-                style={{ fontFamily: "var(--font-brand)", color: isDark ? "#fff" : ROYAL }}>
-                {activeConv && hasRealMsgs ? activeConv.title : "ذكاء نظامي"}
-              </p>
-              <p className={`text-[9px] ${isDark ? "text-white/25" : "text-slate-400"}`}>مساعد قانوني ذكي</p>
-            </div>
+      {/* Header */}
+      <div className={`flex items-start justify-between gap-3 px-5 pt-5 pb-4 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 h-10 w-10 flex-shrink-0 rounded-xl flex items-center justify-center" style={{ background: ROYAL }}>
+            <Sparkle size={18} weight="duotone" style={{ color: GOLD }} />
           </div>
-
-          <div className="flex items-center gap-2">
-            {/* Online pill */}
-            <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[9px] font-semibold ${
-              isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-600"
-            }`}>
-              <motion.div
-                animate={{ scale: [1, 1.5, 1] }} transition={{ duration: 2.2, repeat: Infinity }}
-                className="h-1.5 w-1.5 rounded-full bg-emerald-400"
-              />
-              متصل
-            </div>
-            {/* New chat */}
-            <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.92 }}
-              onClick={() => setActiveId(null)}
-              title="محادثة جديدة"
-              className={`p-1.5 rounded-xl transition-colors ${
-                isDark ? "text-white/25 hover:text-white/60 hover:bg-white/[0.06]" : "text-slate-400 hover:text-royal hover:bg-slate-100"
-              }`}
-            >
-              <Plus size={14} weight="bold" />
-            </motion.button>
+          <div>
+            <h2 className={`text-base font-bold ${strong}`} style={{ fontFamily: "var(--font-brand)" }}>باحث المكتبة الذكي</h2>
+            <p className={`text-[12.5px] leading-relaxed mt-0.5 max-w-[60ch] ${muted}`}>
+              يبحث في نصوص الأنظمة واللوائح والمبادئ القضائية بمكتبة نظامي، ويجيب موثّقاً بالمواد ومصادرها.
+            </p>
           </div>
         </div>
-
-        {/* Messages / Welcome */}
-        <AnimatePresence mode="wait">
-          {!hasRealMsgs ? (
-            <WelcomeScreen key="welcome" isDark={isDark} onAction={p => setInput(p)} />
-          ) : (
-            <motion.div
-              key="messages"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex-1 overflow-y-auto"
-              dir="rtl"
-            >
-              <div className="px-5 py-5 space-y-5 max-w-2xl mx-auto">
-                {msgs.map((msg, i) => (
-                  <MsgBubble
-                    key={msg.id}
-                    msg={msg}
-                    isDark={isDark}
-                    isLatest={i === msgs.length - 1 && msg.role === "ai"}
-                  />
-                ))}
-                <AnimatePresence>
-                  {isThinking && <ThinkingIndicator key="think" isDark={isDark} />}
-                </AnimatePresence>
-                <div ref={bottomRef} className="h-1" />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Input */}
-        <InputBar
-          value={input}
-          onChange={setInput}
-          onSend={() => send()}
-          isThinking={isThinking}
-          isDark={isDark}
-          onQuickAction={p => setInput(p)}
-        />
+        {turns.length > 0 && (
+          <button
+            onClick={() => setTurns([])}
+            disabled={running}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold border transition-colors disabled:opacity-40 ${
+              isDark ? "border-white/10 text-zinc-300 hover:text-white" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E] hover:border-[#0B3D2E]"
+            }`}
+          >
+            <ArrowCounterClockwise size={13} /> بحث جديد
+          </button>
+        )}
       </div>
-    </motion.div>
+
+      {/* Thread */}
+      {turns.length > 0 && (
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-5 space-y-6">
+          {turns.map(t => <TurnView key={t.id} turn={t} isDark={isDark} />)}
+          <div ref={bottomRef} />
+        </div>
+      )}
+
+      {/* Composer / access state */}
+      <div className={`px-5 pb-5 ${turns.length > 0 ? `pt-4 border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}` : "pt-5"}`}>
+        {access === "checking" && (
+          <p role="status" className={`py-6 text-center text-[12.5px] ${muted}`}>جارٍ التحقق…</p>
+        )}
+
+        {access === "soon" && (
+          <div className={`rounded-xl border px-4 py-4 text-[13px] leading-relaxed whitespace-pre-line ${
+            isDark ? "border-[#C8A762]/25 bg-[#C8A762]/[0.06] text-zinc-200" : "border-amber-200 bg-amber-50 text-amber-900"
+          }`}>
+            <p className="font-bold mb-1">قريباً</p>
+            {LIBRARY_AI_SOON}
+          </div>
+        )}
+
+        {access === "guest" && (
+          <div className={`rounded-xl border px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between ${
+            isDark ? "border-white/10 bg-white/[0.03]" : "border-slate-200 bg-slate-50"
+          }`}>
+            <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
+              سجّل الدخول لتستخدم باحث المكتبة الذكي. اشتراك المكتبة يشمل النصوص دون المساعد.
+            </p>
+            <Link
+              href="/login?next=%2Flaws"
+              className="inline-flex flex-shrink-0 items-center justify-center rounded-xl px-4 py-2 text-[12.5px] font-bold text-white hover:opacity-90"
+              style={{ background: ROYAL }}
+            >
+              تسجيل الدخول
+            </Link>
+          </div>
+        )}
+
+        {access === "open" && (
+          <>
+            <div className={`flex items-end gap-2 rounded-2xl border px-3.5 py-2.5 transition-colors ${
+              isDark
+                ? "border-white/10 bg-white/[0.03] focus-within:border-[#C8A762]/50"
+                : "border-slate-300 bg-white focus-within:border-[#0B3D2E]"
+            }`}>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value.slice(0, QUESTION_MAX))}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                placeholder="اكتب سؤالك عن نص نظامي أو مبدأ قضائي…"
+                aria-label="سؤالك لباحث المكتبة"
+                rows={2}
+                dir="rtl"
+                className={`flex-1 resize-none bg-transparent text-[14px] leading-relaxed outline-none ${
+                  isDark ? "text-zinc-100 placeholder:text-zinc-500" : "text-slate-900 placeholder:text-slate-400"
+                }`}
+                style={{ maxHeight: 160 }}
+              />
+              <button
+                onClick={() => void send()}
+                disabled={!input.trim() || running}
+                aria-label="إرسال السؤال"
+                className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl text-white transition-opacity disabled:opacity-35"
+                style={{ background: ROYAL }}
+              >
+                <PaperPlaneTilt size={15} weight="fill" />
+              </button>
+            </div>
+            <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px] ${muted}`}>
+              <span>{aiToolPriceText(TOOL, "ar")} للسؤال · كل سؤال يُجاب مستقلاً</span>
+              <span className="inline-flex items-center gap-1">
+                <WarningDiamond size={11} /> الإجابات استرشادية ولا تُعدّ استشارة قانونية رسمية
+              </span>
+            </div>
+          </>
+        )}
+
+        {/* Examples: before the first question only; they fill the box, they are not answers. */}
+        {turns.length === 0 && access !== "soon" && (
+          <div className="mt-5">
+            <p className={`text-[11.5px] font-bold mb-2 ${muted}`}>أمثلة لأسئلة بحثية</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {EXAMPLES.map(ex => {
+                const body = (
+                  <>
+                    <span className={`flex items-center gap-1.5 text-[12.5px] font-bold ${strong}`}>
+                      <BookOpenText size={14} style={{ color: GOLD }} /> {ex.label}
+                    </span>
+                    <span className={`block mt-1 text-[12px] leading-snug ${muted}`}>{ex.prompt}</span>
+                  </>
+                );
+                const card = `text-start rounded-xl border px-3.5 py-3 transition-colors ${
+                  isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-slate-200 bg-white"
+                }`;
+                // Clickable only when the box is there to fill; otherwise a plain, readable card.
+                return access === "open" ? (
+                  <button
+                    key={ex.label}
+                    onClick={() => fillExample(ex.prompt)}
+                    className={`${card} ${isDark ? "hover:border-[#C8A762]/40" : "hover:border-[#0B3D2E]/50"}`}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div key={ex.label} className={card}>{body}</div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── One question and its answer ──────────────────────────────────────────────
+function TurnView({ turn, isDark }: { turn: Turn; isDark: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const a = turn.answer;
+  return (
+    <div className="space-y-3">
+      {/* Question */}
+      <div className="flex justify-start">
+        <p className="max-w-[85%] rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13.5px] leading-relaxed text-white whitespace-pre-wrap" style={{ background: ROYAL }}>
+          {turn.question}
+        </p>
+      </div>
+
+      {/* Running */}
+      {a === null && (
+        <div role="status" className={`flex items-center gap-2.5 text-[12.5px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+          <span className="flex gap-1">
+            {[0, 1, 2].map(i => (
+              <span key={i} className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: GOLD, animationDelay: `${i * 150}ms` }} />
+            ))}
+          </span>
+          يبحث في نصوص المكتبة ويكتب الجواب…
+        </div>
+      )}
+
+      {/* Refusal / closed / error: the server's own wording and the way forward */}
+      {a?.refused && (
+        <div className={`rounded-xl border px-4 py-3 text-[13px] leading-relaxed ${
+          isDark ? "border-amber-500/25 bg-amber-500/[0.07] text-amber-100" : "border-amber-200 bg-amber-50 text-amber-900"
+        }`}>
+          <p className="whitespace-pre-line">{a.text}</p>
+          {a.action && (
+            <Link href={a.action.href} className="inline-block mt-2.5 rounded-lg px-3 py-1.5 text-[12px] font-bold text-white hover:opacity-90" style={{ background: ROYAL }}>
+              {a.action.label}
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* The assistant's answer with its sources */}
+      {a && !a.refused && (
+        <div className={`rounded-2xl border px-4 py-4 ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-100" : "border-slate-200 bg-slate-50/60 text-slate-800"}`}>
+          <p className="text-[11px] font-bold mb-2" style={{ color: isDark ? GOLD : ROYAL }}>باحث المكتبة</p>
+          {a.cites.length > 0
+            ? <CitedText text={a.text} cites={a.cites} isDark={isDark} className="text-[13.5px] leading-[1.85]" />
+            : <div className="text-[13.5px] leading-[1.85]"><LiteMarkdown text={a.text} /></div>}
+          {a.cites.length > 0 && (
+            <div className="mt-4">
+              <p className={`text-[11.5px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المصادر — تُفتح في صفحة النص</p>
+              <SourceList cites={a.cites} isDark={isDark} compact />
+            </div>
+          )}
+          <div className="mt-3 flex justify-end">
+            <button
+              onClick={() => {
+                void navigator.clipboard?.writeText(stripCitationMarkers(a.text)).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }).catch(() => {});
+              }}
+              className={`inline-flex items-center gap-1 text-[11.5px] font-semibold ${isDark ? "text-zinc-400 hover:text-white" : "text-slate-500 hover:text-[#0B3D2E]"}`}
+            >
+              {copied ? <CheckCircle size={12} className="text-emerald-500" /> : <Copy size={12} />}
+              {copied ? "نُسخ" : "نسخ الجواب"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

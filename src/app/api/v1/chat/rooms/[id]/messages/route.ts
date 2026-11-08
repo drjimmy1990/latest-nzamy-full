@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
@@ -48,7 +49,7 @@ export async function GET(
     .range(offset, offset + limit - 1);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return dbErrorJson("chat/rooms/[id]/messages GET", error);
   }
 
   // Update last_read_at for current user
@@ -118,7 +119,7 @@ export async function POST(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return dbErrorJson("chat/rooms/[id]/messages POST", error);
   }
 
   // Update sender's last_read_at

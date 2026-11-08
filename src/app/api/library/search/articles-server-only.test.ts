@@ -57,7 +57,8 @@ test("no article text leaves the route except as a capped snippet", () => {
   const block = routeSource.slice(start, end);
   // A locked hit is centred on nothing (`[]` terms → the article's opening),
   // so a query cannot slide the window across a paid article.
-  assert.match(block, /snippet: truncateWithHighlight\(\s*\(r\.text as string\) \|\| \(r\.original_text as string\) \|\| '',\s*isFree \? parsed\.plainTerms : \[\],\s*snippetLen\(isFree\),\s*\)/);
+  // BUG-01 (owner 6-Nov): the text is cleaned of the export's audit notes first.
+  assert.match(block, /snippet: truncateWithHighlight\(\s*(?:\/\/[^\n]*\n\s*)?stripArticleAuditNotes\(r\.text\) \|\| stripArticleAuditNotes\(r\.original_text\),\s*isFree \? parsed\.plainTerms : \[\],\s*snippetLen\(isFree\),\s*\)/);
   assert.doesNotMatch(block, /^\s*text:/m);
   assert.doesNotMatch(block, /originalText|original_text:/);
   assert.match(routeSource, /const snippetLen = \(isFree: boolean\) => \(isFree \? 200 : 100\);/);

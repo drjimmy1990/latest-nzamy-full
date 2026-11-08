@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
@@ -598,7 +599,7 @@ export async function POST(request: NextRequest) {
 
     if (reqError) {
       console.error("[service-requests POST] Supabase error:", reqError.message, reqError.details, reqError.hint, reqError.code);
-      return NextResponse.json({ error: reqError.message, code: reqError.code, hint: reqError.hint }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     // Task 9b — bind intake attachments (uploaded via uploadDocumentFile(file)

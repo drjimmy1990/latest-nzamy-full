@@ -1,440 +1,281 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Bell,
-  Scales,
-  CreditCard,
-  Calendar,
-  CheckCircle,
-  Trash,
-  Eye,
-  X,
-} from "@phosphor-icons/react";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { Bell, CheckCircle, ArrowClockwise, WarningCircle, CaretLeft } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { useUser } from "@/hooks/useUser";
+import { useNotifications } from "@/hooks/useNotifications";
+import { notificationDateGroup, type NotificationDateGroup } from "@/lib/services/notificationRow";
+import type { Notification } from "@/lib/services/notificationService";
 
-import { isSupabaseMode } from "@/lib/services/api";
+/**
+ * /notifications — the signed-in user's notifications (BUG-14).
+ *
+ * It was a demo shell: hard-coded counts per category, nothing fetched, and
+ * «تعليم كمقروء» changed only this tab's memory. It now reads the same source
+ * as the Navbar bell (useNotifications → GET /api/v1/notifications, table
+ * public.notifications) and saves mark-one / mark-all on the server (PATCH);
+ * every mounted bell refetches after a save (NOTIFICATIONS_CHANGED_EVENT).
+ *
+ * The table has no category column, so there are two tabs only: all and
+ * unread, each counted by the server. There is no delete: the API has none.
+ * The layout (./layout.tsx) supplies the dashboard shell, so this page renders
+ * no Navbar or Footer of its own.
+ */
 
-type NotificationType = "system" | "cases" | "payments" | "appointments" | "completed";
-type FilterType = "all" | "unread" | "cases" | "payments" | "system";
+const PAGE_SIZE = 20;
+const MAX_ROWS = 100; // the route's per-request cap
 
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  description: string;
-  timestamp: string;
-  dateGroup: "today" | "yesterday" | "week" | "older";
-  isRead: boolean;
-}
+type Filter = "all" | "unread";
 
-// Demo-only seed data — NEVER shown in production (supabase) mode.
-// When the notifications table is created, this page will fetch real data.
-const DEMO_NOTIFICATIONS: Notification[] = [
-  {
-    id: "n1",
-    type: "appointments",
-    title: "جلستك القادمة غداً الساعة ١١ص",
-    description: "القضية ٢٠٢٥-٠٠١ — محكمة العمل بالرياض",
-    timestamp: "منذ ٥ دقائق",
-    dateGroup: "today",
-    isRead: false,
-  },
-  {
-    id: "n2",
-    type: "cases",
-    title: "تم تحديث حالة قضيتك",
-    description: "المحامي أحمد الغامدي رفع مستنداً جديداً للمراجعة",
-    timestamp: "منذ ٢ ساعة",
-    dateGroup: "today",
-    isRead: false,
-  },
-  {
-    id: "n3",
-    type: "payments",
-    title: "تذكير بالدفع",
-    description: "فاتورة بقيمة ٢,٥٠٠ ر.س مستحقة خلال ٤٨ ساعة",
-    timestamp: "منذ ٣ ساعات",
-    dateGroup: "today",
-    isRead: false,
-  },
-  {
-    id: "n4",
-    type: "cases",
-    title: "رد المحامي على طلبك",
-    description: "المحامي سارة الزهراني قبلت قضية الميراث",
-    timestamp: "منذ ٥ ساعات",
-    dateGroup: "today",
-    isRead: true,
-  },
-  {
-    id: "n5",
-    type: "completed",
-    title: "اكتملت الاستشارة القانونية",
-    description: "تقرير ملخص الاستشارة جاهز للتحميل",
-    timestamp: "منذ ٨ ساعات",
-    dateGroup: "today",
-    isRead: true,
-  },
-  {
-    id: "n6",
-    type: "system",
-    title: "تحديث المنصة الجديد",
-    description: "نظامي V2.4 — ميزات جديدة في إدارة الملفات",
-    timestamp: "أمس ١٠:٣٠م",
-    dateGroup: "yesterday",
-    isRead: true,
-  },
-  {
-    id: "n7",
-    type: "payments",
-    title: "تم استلام دفعتك",
-    description: "تأكيد دفع ١,٢٠٠ ر.س — رقم المرجع #TXN-8821",
-    timestamp: "أمس ٤:٠٠م",
-    dateGroup: "yesterday",
-    isRead: true,
-  },
-  {
-    id: "n8",
-    type: "appointments",
-    title: "تأكيد موعد الجلسة",
-    description: "تمت الموافقة على موعد الجلسة القادمة مع المحكمة",
-    timestamp: "أمس ١١:١٥ص",
-    dateGroup: "yesterday",
-    isRead: true,
-  },
-  {
-    id: "n9",
-    type: "cases",
-    title: "تعليق جديد على قضيتك",
-    description: "المحامي طلب توضيحاً إضافياً حول وثيقة العقد",
-    timestamp: "منذ ٣ أيام",
-    dateGroup: "week",
-    isRead: true,
-  },
-  {
-    id: "n10",
-    type: "system",
-    title: "تحقق من هويتك",
-    description: "يرجى رفع صورة الهوية الوطنية لإكمال التحقق",
-    timestamp: "منذ ٤ أيام",
-    dateGroup: "week",
-    isRead: true,
-  },
-  {
-    id: "n11",
-    type: "payments",
-    title: "فاتورة محدثة",
-    description: "تم تعديل مبلغ الفاتورة وفق اتفاق الأطراف",
-    timestamp: "منذ ٥ أيام",
-    dateGroup: "week",
-    isRead: true,
-  },
-  {
-    id: "n12",
-    type: "cases",
-    title: "انتهت مدة مراجعة القضية",
-    description: "يجب الرد على عرض التسوية قبل انتهاء المهلة",
-    timestamp: "منذ ٦ أيام",
-    dateGroup: "week",
-    isRead: true,
-  },
-  {
-    id: "n13",
-    type: "completed",
-    title: "تم إغلاق القضية بنجاح",
-    description: "القضية ٢٠٢٤-٠٨٩ أُغلقت وصدر الحكم لصالحك",
-    timestamp: "منذ أسبوعين",
-    dateGroup: "older",
-    isRead: true,
-  },
-  {
-    id: "n14",
-    type: "system",
-    title: "مرحباً بك في نظامي",
-    description: "حسابك مفعّل — ابدأ بتقديم استشارتك القانونية الأولى",
-    timestamp: "منذ شهر",
-    dateGroup: "older",
-    isRead: true,
-  },
-  {
-    id: "n15",
-    type: "appointments",
-    title: "تذكير: جلسة تحكيم مقبلة",
-    description: "جلسة التحكيم القضية ٢٠٢٤-٠٧٢ بعد أسبوع",
-    timestamp: "منذ شهر",
-    dateGroup: "older",
-    isRead: true,
-  },
-];
-
-const typeIcon: Record<NotificationType, React.ReactNode> = {
-  system: <Bell size={20} weight="fill" />,
-  cases: <Scales size={20} weight="fill" />,
-  payments: <CreditCard size={20} weight="fill" />,
-  appointments: <Calendar size={20} weight="fill" />,
-  completed: <CheckCircle size={20} weight="fill" />,
-};
-
-const typeColor: Record<NotificationType, string> = {
-  system: "text-blue-400 bg-blue-400/10",
-  cases: "text-royal bg-royal/10 dark:text-emerald-400 dark:bg-emerald-400/10",
-  payments: "text-gold bg-gold/10",
-  appointments: "text-purple-400 bg-purple-400/10",
-  completed: "text-green-400 bg-green-400/10",
-};
-
-const dotColor: Record<NotificationType, string> = {
-  system: "bg-blue-400",
-  cases: "bg-emerald-400",
-  payments: "bg-gold",
-  appointments: "bg-purple-400",
-  completed: "bg-green-400",
-};
-
-const dateGroupLabel: Record<string, string> = {
+const GROUP_LABEL: Record<NotificationDateGroup, string> = {
   today: "اليوم",
   yesterday: "أمس",
-  week: "هذا الأسبوع",
+  week: "آخر ٧ أيام",
   older: "أقدم",
 };
 
-const filterTabs: { id: FilterType; label: string; count: number }[] = [
-  { id: "all", label: "الكل", count: 15 },
-  { id: "unread", label: "غير مقروء", count: 3 },
-  { id: "cases", label: "القضايا", count: 5 },
-  { id: "payments", label: "المدفوعات", count: 3 },
-  { id: "system", label: "النظام", count: 4 },
-];
+function ar(n: number): string {
+  return n.toLocaleString("ar-SA");
+}
 
 export default function NotificationsPage() {
-  const { isRTL, isDark } = useTheme();
-  const [filter, setFilter] = useState<FilterType>("all");
-  const [notifications, setNotifications] = useState<Notification[]>(isSupabaseMode ? [] : DEMO_NOTIFICATIONS);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
-
-  const markAsRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+  const user = useUser();
+  if (user.loading) {
+    return <p role="status" dir="rtl" className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400">جارٍ التحميل…</p>;
+  }
+  if (!user.isLoggedIn) {
+    return (
+      <div dir="rtl" className="max-w-3xl mx-auto py-16 text-center">
+        <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-4">سجّل الدخول لعرض إشعاراتك.</p>
+        <a href="/login?next=%2Fnotifications" className="inline-flex px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-sm font-bold hover:opacity-90">
+          تسجيل الدخول
+        </a>
+      </div>
     );
+  }
+  return <NotificationsInbox />;
+}
+
+function NotificationsInbox() {
+  const { isRTL } = useTheme();
+  const router = useRouter();
+  const [filter, setFilter] = useState<Filter>("all");
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const {
+    notifications,
+    read,
+    state,
+    unreadCount,
+    unreadCountKnown,
+    actionError,
+    clearActionError,
+    markRead,
+    markAllRead,
+    refresh,
+  } = useNotifications(limit, { unreadOnly: filter === "unread" });
+  const [busy, setBusy] = useState(false);
+
+  const total = read && read.ok ? read.total : null;
+  const canLoadMore = total !== null && notifications.length < total && limit < MAX_ROWS;
+  const capped = total !== null && notifications.length < total && limit >= MAX_ROWS;
+
+  // Grouped by the reader's own calendar day, read in the browser when the page opens.
+  const [now] = useState(() => Date.now());
+  const groups = useMemo(() => {
+    const order: NotificationDateGroup[] = ["today", "yesterday", "week", "older"];
+    const by = new Map<NotificationDateGroup, Notification[]>();
+    for (const n of notifications) {
+      const g = notificationDateGroup(n.createdAt, now);
+      by.set(g, [...(by.get(g) ?? []), n]);
+    }
+    return order.filter((g) => by.has(g)).map((g) => ({ group: g, items: by.get(g)! }));
+  }, [notifications, now]);
+
+  // In the unread tab a row read leaves the list, so the server's total is read again.
+  const markOne = async (id: string) => {
+    await markRead(id);
+    if (filter === "unread") await refresh();
   };
 
-  const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  const open = async (n: Notification) => {
+    if (!n.read) await markOne(n.id);
+    if (n.href) router.push(n.href);
   };
 
-  const deleteNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  const onMarkAll = async () => {
+    setBusy(true);
+    await markAllRead();
+    setBusy(false);
   };
 
-  const filtered = notifications.filter((n) => {
-    if (filter === "all") return true;
-    if (filter === "unread") return !n.isRead;
-    if (filter === "cases") return n.type === "cases" || n.type === "completed" || n.type === "appointments";
-    if (filter === "payments") return n.type === "payments";
-    if (filter === "system") return n.type === "system";
-    return true;
-  });
+  const switchFilter = (f: Filter) => {
+    setFilter(f);
+    setLimit(PAGE_SIZE);
+  };
 
-  const groupedNotifications = (["today", "yesterday", "week", "older"] as const).map((group) => ({
-    group,
-    items: filtered.filter((n) => n.dateGroup === group),
-  })).filter((g) => g.items.length > 0);
+  const tabs: { id: Filter; label: string; count: string | null }[] = [
+    { id: "all", label: "الكل", count: filter === "all" && total !== null ? ar(total) : null },
+    { id: "unread", label: "غير مقروء", count: unreadCountKnown ? ar(unreadCount) : null },
+  ];
 
   return (
-    <div
-      dir={isRTL ? "rtl" : "ltr"}
-      className="min-h-screen bg-gray-50 dark:bg-dark-bg transition-colors duration-300"
-    >
-      <Navbar />
-
-      <div className="max-w-3xl mx-auto px-4 py-10">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="flex items-center justify-between mb-8"
-        >
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              الإشعارات
-            </h1>
-            {unreadCount > 0 && (
-              <motion.span
-                key={unreadCount}
-                initial={{ scale: 0.7 }}
-                animate={{ scale: 1 }}
-                className="inline-flex items-center justify-center w-6 h-6 text-xs font-bold text-white bg-royal rounded-full"
-              >
-                {unreadCount}
-              </motion.span>
-            )}
-          </div>
-          {unreadCount > 0 && (
-            <button
-              onClick={markAllRead}
-              className="text-sm text-royal dark:text-gold font-medium hover:underline transition-colors"
-            >
-              تعليم الكل كمقروء
-            </button>
+    <div dir={isRTL ? "rtl" : "ltr"} className="max-w-3xl mx-auto py-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">الإشعارات</h1>
+          {unreadCountKnown && unreadCount > 0 && (
+            <span className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 text-xs font-bold text-white bg-[#0B3D2E] dark:bg-[#C8A762] dark:text-[#0B3D2E] rounded-full">
+              {ar(unreadCount)}
+            </span>
           )}
-        </motion.div>
-
-        {/* Filter Tabs */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.1 }}
-          className="flex gap-2 overflow-x-auto pb-2 mb-6 scrollbar-hide"
-        >
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setFilter(tab.id)}
-              className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                filter === tab.id
-                  ? "bg-royal text-white shadow-md"
-                  : "bg-white dark:bg-dark-card text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-royal dark:hover:border-gold"
-              }`}
-            >
-              {tab.label}
-              <span
-                className={`text-xs px-1.5 py-0.5 rounded-full ${
-                  filter === tab.id
-                    ? "bg-white/20 text-white"
-                    : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                }`}
-              >
-                {tab.id === "unread" ? unreadCount : tab.count}
-              </span>
-            </button>
-          ))}
-        </motion.div>
-
-        {/* Notifications List */}
-        <AnimatePresence mode="wait">
-          {filtered.length === 0 ? (
-            <motion.div
-              key="empty"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="flex flex-col items-center justify-center py-20 text-center"
-            >
-              <div className="w-20 h-20 mb-5 rounded-full bg-gray-100 dark:bg-dark-card flex items-center justify-center">
-                <Bell size={36} className="text-gray-300 dark:text-gray-600" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                لا توجد إشعارات
-              </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-500 max-w-xs">
-                لم يتم العثور على إشعارات تطابق هذا الفلتر
-              </p>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="list"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="space-y-6"
-            >
-              {groupedNotifications.map(({ group, items }) => (
-                <div key={group}>
-                  <h2 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3 px-1">
-                    {dateGroupLabel[group]}
-                  </h2>
-                  <div className="space-y-2">
-                    {items.map((notification, idx) => (
-                      <motion.div
-                        key={notification.id}
-                        initial={{ opacity: 0, x: isRTL ? 20 : -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: isRTL ? -20 : 20 }}
-                        transition={{ duration: 0.25, delay: idx * 0.04 }}
-                        onMouseEnter={() => setHoveredId(notification.id)}
-                        onMouseLeave={() => setHoveredId(null)}
-                        onClick={() => markAsRead(notification.id)}
-                        className={`relative flex items-start gap-4 p-4 rounded-xl cursor-pointer transition-all duration-200 border ${
-                          !notification.isRead
-                            ? "bg-royal/5 dark:bg-royal/10 border-royal/20 dark:border-royal/30"
-                            : "bg-white dark:bg-dark-card border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700"
-                        } hover:shadow-md`}
-                      >
-                        {/* Unread dot */}
-                        {!notification.isRead && (
-                          <span
-                            className={`absolute top-4 ${isRTL ? "left-4" : "right-4"} w-2 h-2 rounded-full ${dotColor[notification.type]}`}
-                          />
-                        )}
-
-                        {/* Icon */}
-                        <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${typeColor[notification.type]}`}>
-                          {typeIcon[notification.type]}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className={`text-sm font-semibold truncate ${!notification.isRead ? "text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300"}`}>
-                              {notification.title}
-                            </p>
-                            <span className="flex-shrink-0 text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                              {notification.timestamp}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">
-                            {notification.description}
-                          </p>
-                        </div>
-
-                        {/* Hover actions */}
-                        <AnimatePresence>
-                          {hoveredId === notification.id && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.9 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.9 }}
-                              transition={{ duration: 0.15 }}
-                              className={`absolute top-3 ${isRTL ? "left-12" : "right-12"} flex items-center gap-1`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {!notification.isRead && (
-                                <button
-                                  onClick={() => markAsRead(notification.id)}
-                                  title="تعليم كمقروء"
-                                  className="w-7 h-7 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-royal dark:hover:text-gold hover:border-royal dark:hover:border-gold transition-colors shadow-sm"
-                                >
-                                  <Eye size={14} />
-                                </button>
-                              )}
-                              <button
-                                onClick={() => deleteNotification(notification.id)}
-                                title="حذف"
-                                className="w-7 h-7 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 flex items-center justify-center text-gray-500 dark:text-gray-300 hover:text-red-500 hover:border-red-300 dark:hover:border-red-500 transition-colors shadow-sm"
-                              >
-                                <Trash size={14} />
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </div>
+        {unreadCountKnown && unreadCount > 0 && (
+          <button
+            onClick={onMarkAll}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0B3D2E] dark:text-[#C8A762] hover:underline disabled:opacity-50"
+          >
+            <CheckCircle size={16} />
+            {busy ? "جارٍ الحفظ…" : "تعليم الكل كمقروء"}
+          </button>
+        )}
       </div>
 
-      <Footer />
+      {/* Tabs */}
+      <div className="flex gap-2 mb-5" role="tablist">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            role="tab"
+            aria-selected={filter === tab.id}
+            onClick={() => switchFilter(tab.id)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              filter === tab.id
+                ? "bg-[#0B3D2E] text-white shadow-sm"
+                : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-white/10 hover:border-[#0B3D2E] dark:hover:border-[#C8A762]"
+            }`}
+          >
+            {tab.label}
+            {tab.count !== null && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === tab.id ? "bg-white/20 text-white" : "bg-zinc-100 dark:bg-white/10 text-zinc-500 dark:text-zinc-300"}`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {actionError && (
+        <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-300">
+          <span>{actionError}</span>
+          <button onClick={clearActionError} className="text-xs font-bold hover:underline flex-shrink-0">إخفاء</button>
+        </div>
+      )}
+
+      {/* Stale rows stay visible under a "could not refresh" marker; never «لا توجد إشعارات» on a failed read. */}
+      {state === "unreadable" && (
+        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+          <span className="flex items-center gap-2"><WarningCircle size={18} /> تعذّرت قراءة الإشعارات الآن.</span>
+          <button onClick={() => void refresh()} className="inline-flex items-center gap-1 text-xs font-bold hover:underline">
+            <ArrowClockwise size={14} /> إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {state === "loading" && notifications.length === 0 ? (
+        <div className="space-y-2" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-16 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-white/5 animate-pulse" />
+          ))}
+        </div>
+      ) : state === "empty" ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-20 h-20 mb-5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-white/10 flex items-center justify-center">
+            <Bell size={36} className="text-zinc-400 dark:text-zinc-500" />
           </div>
+          <h3 className="text-lg font-semibold text-zinc-700 dark:text-zinc-200 mb-2">
+            {filter === "unread" ? "لا توجد إشعارات غير مقروءة" : "لا توجد إشعارات"}
+          </h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-xs">
+            {filter === "unread" ? "قرأت كل إشعاراتك." : "ستظهر هنا إشعارات طلباتك وحسابك عند وصولها."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groups.map(({ group, items }) => (
+            <section key={group}>
+              <h2 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-3 px-1">{GROUP_LABEL[group]}</h2>
+              <ul className="space-y-2">
+                {items.map((n) => (
+                  <motion.li key={n.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+                    <div
+                      className={`relative flex items-start gap-3 p-4 rounded-xl border transition-colors ${
+                        !n.read
+                          ? "bg-[#0B3D2E]/[0.04] dark:bg-[#C8A762]/[0.06] border-[#0B3D2E]/20 dark:border-[#C8A762]/25"
+                          : "bg-white dark:bg-zinc-900 border-zinc-100 dark:border-white/[0.06]"
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${!n.read ? "bg-[#0B3D2E] dark:bg-[#C8A762]" : "bg-zinc-300 dark:bg-zinc-600"}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void open(n)}
+                        className="flex-1 min-w-0 text-start"
+                        aria-label={n.href ? `${n.title} — فتح` : n.title}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className={`text-sm font-semibold ${!n.read ? "text-zinc-900 dark:text-white" : "text-zinc-700 dark:text-zinc-300"}`}>
+                            {n.title}
+                          </p>
+                          <span className="flex-shrink-0 text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{n.time}</span>
+                        </div>
+                        {n.body && <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">{n.body}</p>}
+                        {n.href && (
+                          <span className="mt-1.5 inline-flex items-center gap-0.5 text-xs font-semibold text-[#0B3D2E] dark:text-[#C8A762]">
+                            فتح <CaretLeft size={12} className={isRTL ? "" : "rotate-180"} />
+                          </span>
+                        )}
+                      </button>
+                      {!n.read && (
+                        <button
+                          type="button"
+                          onClick={() => void markOne(n.id)}
+                          className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-white/10 text-zinc-600 dark:text-zinc-300 hover:text-[#0B3D2E] hover:border-[#0B3D2E] dark:hover:text-[#C8A762] dark:hover:border-[#C8A762] transition-colors"
+                        >
+                          تعليم كمقروء
+                        </button>
+                      )}
+                    </div>
+                  </motion.li>
+                ))}
+              </ul>
+            </section>
+          ))}
+
+          {(canLoadMore || capped) && (
+            <div className="text-center pt-2">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+                يُعرض {ar(notifications.length)} من {ar(total ?? 0)}
+              </p>
+              {canLoadMore && (
+                <button
+                  onClick={() => setLimit((l) => Math.min(l + PAGE_SIZE, MAX_ROWS))}
+                  disabled={state === "loading"}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold border border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-zinc-200 hover:border-[#0B3D2E] dark:hover:border-[#C8A762] disabled:opacity-50"
+                >
+                  عرض المزيد
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -36,8 +36,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
-import { Printer, FloppyDisk, CloudArrowUp, Trash, Warning, SpinnerGap, CheckCircle, Info, ArrowClockwise, LockSimple } from "@phosphor-icons/react";
+import { Printer, FloppyDisk, CloudArrowUp, Trash, Warning, SpinnerGap, CheckCircle, ArrowClockwise, LockSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { LetterheadSheet } from "./Letterhead";
 import { useLetterhead } from "./useLetterhead";
@@ -52,7 +51,6 @@ import {
   type BrandingScope,
   type BrandingTextField,
 } from "@/lib/branding/brandingVault";
-import { qrNoteAr } from "@/lib/branding/letterheadIdentity";
 import { LETTERHEAD_PERMISSION_DENIED_AR, type LetterheadPermissions } from "@/lib/branding/firmLetterheadPermissions";
 
 const PRINT_ROOT_ID = "nz-letterhead-print-root";
@@ -243,7 +241,6 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
   }
 
   const data = state.data;
-  const note = identity ? qrNoteAr(identity.qr, data.verifyCard) : null;
   const setField = (key: keyof BrandingFields, value: string) => {
     if (locked) return;
     setFields((f) => ({ ...f, [key]: value }));
@@ -273,7 +270,7 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
         <div>
           <Heading className={`${embedded ? "text-lg" : "text-xl"} font-bold ${tp}`}>الورق المروّس والهوية</Heading>
           <p className={`mt-1 text-[13px] ${ts}`}>
-            {scope === "firm" ? "هوية المكتب على مطبوعاته الرسمية" : "هويتك المهنية على مطبوعاتك الرسمية"} — مع ختم منصة نظامي ورمزها الذكي في الذيل.
+            {scope === "firm" ? "هوية المكتب على مطبوعاته الرسمية" : "هويتك المهنية على مطبوعاتك الرسمية"} — ترويستك وشعارك وحدهما، بلا ختم للمنصة ولا رمز.
           </p>
         </div>
         {permissions.print ? (
@@ -415,17 +412,8 @@ export default function LetterheadWorkspace({ scope, embedded = false, extra }: 
               </LetterheadSheet>
             )}
           </div>
-          {note && (
-            <p className={`flex items-start gap-1.5 text-[11px] ${ts}`}>
-              <Info size={13} className="mt-0.5 flex-shrink-0" />
-              <span>
-                {note}
-                {scope === "lawyer" && data.verifyCard && (identity?.qr.kind === "card" || !data.verifyCard.enabled) && (
-                  <> <Link href="/settings?tab=profession" className="underline">فتح الإعدادات</Link></>
-                )}
-              </span>
-            </p>
-          )}
+          {/* The note that explained where the printed QR leads is gone with
+              the QR itself (owner ٤٤٢(أ)): the paper carries no code now. */}
         </div>
       </div>
 

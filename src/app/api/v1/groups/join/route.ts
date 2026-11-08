@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
 
   if (memberError) {
     console.error("[groups/join] insert failed:", memberError.message);
-    return NextResponse.json({ error: memberError.message }, { status: 500 });
+    return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
   }
 
   return NextResponse.json(

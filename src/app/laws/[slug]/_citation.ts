@@ -62,9 +62,16 @@ export const LOCATOR_NOUNS = [
   "الجدول",
 ] as const;
 
-/** A locator that is really a page position: "الصفحة 3", "صفحة ٤", "ص. 12". */
-const PAGE_LOCATOR_RE =
-  /^\s*(?:الصفحة|صفحة|ص\.?)\s*[\d٠-٩۰-۹]/;
+/**
+ * A locator that is really a page position: "الصفحة 3", "صفحة ٤", "ص. 12",
+ * "Page 3" (owner package 2026-11-06 item 11: 9,116 English anchors).
+ *
+ * A LITERAL COPY of PAGE_LOCATOR_RE in src/lib/library/pageLocator.ts (same
+ * source, same `i` flag): the owner's measuring tool reads this exact
+ * assignment out of this file, so it must stay a literal, not an import.
+ * _citation.test.ts checks the two stay identical.
+ */
+export const PAGE_LOCATOR_RE = /^\s*(?:الصفحة|صفحة|ص\.?|page)\s*[\d٠-٩۰-۹]/i;
 
 /** A leading locator noun, so we never emit «المادة (المادة السادسة)». */
 const LEADING_NOUN_RE = new RegExp(`^\\s*(?:${LOCATOR_NOUNS.join("|")})\\s+`);
@@ -221,7 +228,7 @@ export function buildCitation(subject: CitationSubject, isRTL: boolean): Citatio
 
   // ── Page marker — cite the position verbatim, never as an article ──────────
   if (isPageLocator(rawLocator)) {
-    const pageNum = rawLocator.replace(/^\s*(?:الصفحة|صفحة|ص\.?)\s*/, "").trim();
+    const pageNum = rawLocator.replace(/^\s*(?:الصفحة|صفحة|ص\.?|page)\s*/i, "").trim();
     const prefix = isRTL
       ? `الصفحة (${pageNum}) ${ofDoc} ${tail}`
       : `Page (${pageNum}) ${ofDoc}, ${tail}`;

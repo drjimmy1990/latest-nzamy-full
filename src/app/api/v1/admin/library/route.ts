@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -338,7 +339,7 @@ export async function DELETE(request: NextRequest) {
       .select(column);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("admin/library DELETE", error);
     }
     // A delete that matched nothing is not an error to PostgREST; it is a 404,
     // and there is nothing to audit.
@@ -468,7 +469,7 @@ export async function PATCH(request: NextRequest) {
       );
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("admin/library PATCH", error);
     }
 
     await logAdminAction({

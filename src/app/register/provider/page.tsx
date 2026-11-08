@@ -44,11 +44,10 @@ import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMo
 import { BACKEND_MODE } from "@/lib/runtimeMode";
 import {
   canSubmitWithCaptcha,
-  captchaMessage,
   captchaSubmitError,
-  isCaptchaAuthError,
   withSignupCaptcha,
 } from "@/lib/auth/captcha";
+import { translateAuthError } from "@/lib/auth/translateAuthError";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 
@@ -268,7 +267,9 @@ export default function RegisterProviderPage() {
     // Demo mode is exempt because it never calls Supabase — `setDemoSession`
     // completes locally for all five roles.
     if (step === 1) return providerType !== null && (BACKEND_MODE !== "supabase" || emailSignUpWorks);
-    if (step === 2) return !!(formData.licenseNumber && formData.experience && formData.city);
+    // A licence of spaces only is not a licence (BUG-09). Its format waits on
+    // the owner (what a valid licence number looks like).
+    if (step === 2) return !!(formData.licenseNumber?.trim() && formData.experience && formData.city);
     if (step === 3) {
       const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email || "");
       return emailValid && normalizeSaudiMobile(formData.phone).ok && (formData.password?.length ?? 0) >= 8;
@@ -492,7 +493,7 @@ export default function RegisterProviderPage() {
                                   verification_docs: formData.verification_docs
                                     ? formData.verification_docs.split(", ")
                                     : [],
-                                  license_number: formData.licenseNumber,
+                                  license_number: formData.licenseNumber?.trim(),
                                   experience_years: formData.experience,
                                   selected_plan: selectedPlan,
                                   ...(providerType === "arbitrator" && {
@@ -508,13 +509,9 @@ export default function RegisterProviderPage() {
                             captcha.spend();
 
                             if (error) {
-                              setAuthError(
-                                isCaptchaAuthError(error)
-                                  ? captchaMessage("captchaRejected", isAr)
-                                  : error.message === "User already registered"
-                                  ? (isAr ? "البريد الإلكتروني مسجل بالفعل" : "This email is already registered")
-                                  : error.message
-                              );
+                              // BUG-09: every GoTrue failure in the screen's
+                              // language (captcha included), never the raw text.
+                              setAuthError(translateAuthError(error, { context: "signup", isAr }));
                               setAuthLoading(false);
                               return;
                             }

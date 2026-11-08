@@ -10,6 +10,8 @@
  * arguments; src/proxy.ts imports both and reads no table of its own.
  */
 
+import { isCloudflareIp, isPrivateOrLoopbackIp } from "./cloudflareIp.ts";
+
 // POST-only, matched against `pathname`. Dynamic segments ([token]/[code])
 // are matched with a single-segment wildcard, not a literal value.
 export const STRICT_RATE_LIMITED_ROUTES: readonly RegExp[] = [
@@ -233,18 +235,28 @@ export function isAiRunProgressRoute(method: string, pathname: string): boolean 
 }
 
 /**
- * The key for the library-read bucket. nezamy.sa is served through Cloudflare
- * (Server: cloudflare, CF-RAY on every response, 2026-09-29), and nothing in
- * the repo shows nginx restoring the visitor's address — so X-Real-IP may be a
- * Cloudflare edge shared by many readers, and one busy edge would throttle
- * them all. Cloudflare puts the visitor's address in CF-Connecting-IP; prefer
- * it here. A client that reaches the origin directly can forge the header,
- * which only lets it pick its own bucket — no worse than rotating addresses.
+ * The visitor key for the library-read bucket and the other visitor buckets
+ * in src/proxy.ts. nezamy.sa is served through Cloudflare (Server: cloudflare,
+ * CF-RAY on every response, 2026-09-29), and nothing in the repo shows nginx
+ * restoring the visitor's address — so X-Real-IP may be a Cloudflare edge
+ * shared by many readers, and one busy edge would throttle them all.
+ * Cloudflare puts the visitor's address in CF-Connecting-IP.
+ *
+ * That header is used ONLY when `fallback` (the proxy-resolved peer,
+ * X-Real-IP first) is a Cloudflare edge address (src/lib/cloudflareIp.ts),
+ * where Cloudflare itself sets it, or a loopback / private address (a local
+ * hop such as a tunnel daemon or a container network, where the peer says
+ * nothing about the visitor and the header is the only per-visitor signal —
+ * the behaviour before 2026-11-09). Any other peer is counted by its own
+ * address (audit SAST-03, 2026-11-09). Once nginx restores the visitor
+ * address itself (real_ip_header), the peer is the visitor and this returns
+ * it unchanged.
  */
 export function libraryReadClientKey(
   getHeader: (name: string) => string | null | undefined,
   fallback: string,
 ): string {
+  if (!isCloudflareIp(fallback) && !isPrivateOrLoopbackIp(fallback)) return fallback;
   const cf = getHeader("cf-connecting-ip");
   if (cf && cf.trim() !== "") return cf.trim().slice(0, 64);
   return fallback;
@@ -274,7 +286,8 @@ export const RATE_LIMIT_EXEMPT_API_PATHS: ReadonlySet<string> = new Set([
  * reasoning in src/lib/auth/routeAccess.ts. Verified against the actual route
  * tree rather than assumed: there is no route file at either bare path today
  * (only src/app/api/v1/cron/deadlines/route.ts and
- * src/app/api/v1/n8n/{callback,trigger}/route.ts), so the trailing-slash form
+ * src/app/api/v1/n8n/callback/route.ts; n8n/trigger was removed 2026-11-09),
+ * so the trailing-slash form
  * excludes everything that exists under both subtrees. If a route is ever
  * added directly at `/api/v1/cron` or `/api/v1/n8n` (no further segment), it
  * would NOT match either exclusion and so WOULD be rate-limited by the

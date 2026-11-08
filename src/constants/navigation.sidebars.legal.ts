@@ -30,7 +30,8 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     items: [
       // ١: فهم الملف أولاً
       { label: "عصارة المرفقات",           labelEn: "Attachment Analyzer", href: "/ai/analyze",     icon: "Scan" },
-      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle", badge: "قريباً" },
+      // BUG-12: «قريباً» only until the admin's tool switch opens it for this user.
+      { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle", badge: "قريباً", liveToolId: "quick-answer" },
       { label: "المساعد المتقدم", labelEn: "Advanced Assistant",         href: "/ai/assistant",  icon: "ChatCircle" },
       // ٢: الصياغة — العمل اليومي الأكثر تكراراً
       { label: "الصائغ القانوني",  labelEn: "Legal Drafter",            href: "/ai/draft",         icon: "PencilSimple", divider: true },
@@ -260,13 +261,15 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       // ① فهم الملف أولاً (مضاف S59)
       { label: "عصارة المرفقات",              labelEn: "Attachment Analyzer", href: "/ai/analyze",        icon: "Scan" },
-      { label: "سؤال قانوني سريع",     labelEn: "Quick Legal Q&A",   href: "/ai/quick-answer",      icon: "ChatCircle",   badge: "قريباً" },
+      { label: "سؤال قانوني سريع",     labelEn: "Quick Legal Q&A",   href: "/ai/quick-answer",      icon: "ChatCircle",   badge: "قريباً", liveToolId: "quick-answer" },
       // ② الصياغة والتحرير
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",        labelEn: "Research Collector", href: "/ai/collector",      icon: "Tray",         badge: "جديد" },
       { label: "محترف العقود",           labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
-      { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "قريباً" },
-      { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "قريباً" },
+      // BUG-12: both pages read tool-status themselves (useToolUsable; /ai/contract-reviewer
+      // redirects to /ai/contracts' review mode), so the badge follows the same answer.
+      { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "قريباً", liveToolId: "contract-negotiator" },
+      { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "قريباً", liveToolId: "contract-review" },
       { label: "الرأي الفصل",           labelEn: "Al-Ra'y Al-Fasl", href: "/ai/legal-opinion",    icon: "Lightbulb" },
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية

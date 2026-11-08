@@ -3,16 +3,16 @@
 /**
  * LetterheadPrintDocument — q345: a document on the letterhead, for print or Save
  * as PDF. Hidden on screen, alone on paper: its own root under <body>, the same
- * print CSS pattern as LetterheadWorkspace. Mounting it prints it, once the QR
- * and the images are ready or 3 seconds have passed, and it calls onDone after
- * the print dialog closes.
+ * print CSS pattern as LetterheadWorkspace. Mounting it prints it, once the
+ * images (the office logo) are ready or 3 seconds have passed, and it calls
+ * onDone after the print dialog closes. The sheet carries no QR or platform
+ * stamp (owner ٤٤٢(أ)), so there is nothing else to wait for.
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LetterheadIdentity } from "@/lib/branding/letterheadIdentity";
 import { waitUntil } from "@/lib/docx/exportPolicy";
 import type { DocBlock } from "@/lib/docx/ooxml";
-import { QR_WORDMARK_SRC } from "@/lib/qr/brandedQr";
 import { LetterheadSheet } from "./Letterhead";
 
 export const EXPORT_PRINT_ROOT_ID = "nz-letterhead-export-print-root";
@@ -31,19 +31,8 @@ const PRINT_CSS = `
 const READY_TIMEOUT_MS = 3000;
 
 function isSheetReady(root: HTMLElement): boolean {
-  const qrDrawn = root.querySelector("svg[role='img']") !== null;
-  const imagesDone = Array.from(root.querySelectorAll("img")).every((image) => image.complete);
-  return qrDrawn && imagesDone;
+  return Array.from(root.querySelectorAll("img")).every((image) => image.complete);
 }
-
-/** BrandedQr's <image> cannot be watched, so its wordmark is fetched into the cache first. */
-const wordmarkLoaded = () =>
-  new Promise<void>((resolve) => {
-    const image = new Image();
-    image.onload = () => resolve();
-    image.onerror = () => resolve();
-    image.src = QR_WORDMARK_SRC;
-  });
 
 const paragraphStyle = { whiteSpace: "pre-wrap", margin: "0 0 2mm" } as const;
 const listStyle = { margin: "0 0 2mm", paddingInlineStart: "7mm" } as const;
@@ -97,7 +86,6 @@ export default function LetterheadPrintDocument({
     const closed = () => done.current();
     window.addEventListener("afterprint", closed, { once: true });
     void (async () => {
-      await Promise.race([wordmarkLoaded(), new Promise((resolve) => setTimeout(resolve, READY_TIMEOUT_MS))]);
       await waitUntil(() => isSheetReady(root), { timeoutMs: READY_TIMEOUT_MS, intervalMs: 50 });
       if (cancelled) return;
       // The browser offers the page's title as the PDF's name.

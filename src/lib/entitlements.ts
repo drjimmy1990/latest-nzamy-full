@@ -123,7 +123,7 @@ export async function grantEntitlement(input: GrantInput): Promise<GrantResult> 
 
         // Fail closed: if we cannot read what the user holds, we must not
         // cancel it.
-        if (activeErr) return { ok: false, error: activeErr.message };
+        if (activeErr) return grantDbFailure("active-read", activeErr);
 
         const decision = planGrantDecision({
           activeRows: (activeRows as ActivePlanRow[] | null) ?? [],
@@ -231,7 +231,7 @@ export async function grantEntitlement(input: GrantInput): Promise<GrantResult> 
         .select("id, tier, current_period_end")
         .single();
 
-      if (subErr) return { ok: false, error: subErr.message };
+      if (subErr) return grantDbFailure("subscription-insert", subErr);
 
       // Keep auth metadata tier in sync (used by client useSubscription hydration).
       try {
@@ -280,13 +280,26 @@ export async function grantEntitlement(input: GrantInput): Promise<GrantResult> 
         })
         .select("id, amount")
         .single();
-      if (wErr) return { ok: false, error: wErr.message };
+      if (wErr) return grantDbFailure("wallet-insert", wErr);
 
       return { ok: true, action: "wallet", detail: { wallet_transaction: wt } };
     }
 
     return { ok: false, error: `إجراء غير معروف: ${input.action}` };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "فشل تنفيذ المنحة" };
+    return grantDbFailure("unexpected", e);
   }
+}
+
+/**
+ * SAST-06 (owner package 6-Nov): a database error is logged on the server and
+ * the caller (two admin routes pass `error` to the client) gets a fixed
+ * message, never the database's own text.
+ */
+function grantDbFailure(step: string, err: unknown): { ok: false; error: string } {
+  const e = err as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown } | null;
+  console.error(`[entitlements] grant ${step} failed`, {
+    message: e?.message, code: e?.code, details: e?.details, hint: e?.hint,
+  });
+  return { ok: false, error: "تعذّر تنفيذ المنحة، حاول مرة أخرى" };
 }

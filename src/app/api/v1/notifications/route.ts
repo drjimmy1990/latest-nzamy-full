@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
@@ -22,8 +23,12 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const limit = parseInt(searchParams.get("limit") ?? "20", 10);
-  const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+  // Clamped: a junk value used to reach .range() as NaN, and a huge limit read
+  // the whole table in one request. 1–100 rows per page.
+  const rawLimit = parseInt(searchParams.get("limit") ?? "20", 10);
+  const rawOffset = parseInt(searchParams.get("offset") ?? "0", 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 20;
+  const offset = Number.isFinite(rawOffset) ? Math.max(rawOffset, 0) : 0;
   const unreadOnly = searchParams.get("unread_only") === "true";
 
   let query = supabase
@@ -40,10 +45,7 @@ export async function GET(request: NextRequest) {
   const { data, count, error } = await query;
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+    return dbErrorJson("notifications GET", error);
   }
 
   // Also get unread count
@@ -89,10 +91,7 @@ export async function PATCH(request: Request) {
       .is("read_at", null);
 
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 },
-      );
+      return dbErrorJson("notifications PATCH", error);
     }
     return NextResponse.json({ success: true });
   }
@@ -105,10 +104,7 @@ export async function PATCH(request: Request) {
       .in("id", body.ids);
 
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 },
-      );
+      return dbErrorJson("notifications PATCH", error);
     }
     return NextResponse.json({ success: true });
   }

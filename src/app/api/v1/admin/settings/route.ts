@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
@@ -176,7 +177,7 @@ export async function GET() {
       .select("key, value");
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("admin/settings GET", error);
     }
 
     // Transform array of { key, value } into flat object
@@ -323,7 +324,7 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("admin/settings PATCH", error);
     }
 
     await logAdminAction({

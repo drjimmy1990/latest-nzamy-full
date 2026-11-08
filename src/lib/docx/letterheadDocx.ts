@@ -9,13 +9,19 @@
  *
  * A merged file carries the office's own header and footer only, so it has no
  * QR unless the office put one in its own template.
+ *
+ * Owner ruling ٤٤٢(أ) (package 2026-11-06): the paper carries only the
+ * office's or the lawyer's letterhead and logo. The generated file (no
+ * template, or a template the merge refused) therefore has NO platform stamp
+ * and NO QR: no footer at all unless a caller passes `qrPng` on purpose (a
+ * future opt-in; the export kit passes none).
  */
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { BRANDING_DEFAULT_ACCENT } from "../branding/brandingVault.ts";
-import { PLATFORM_STAMP_AR, type LetterheadIdentity } from "../branding/letterheadIdentity.ts";
+import type { LetterheadIdentity } from "../branding/letterheadIdentity.ts";
 import { blocksToBodyXml, minimalDocx, PACKAGE_RELS_NS, R_NS, runXml, W_NS, xmlEscape, type DocBlock } from "./ooxml.ts";
 
-export const TEMPLATE_FALLBACK_NOTE = "تعذّر استخدام قالب Word المرفوع؛ استُخدمت ترويسة المنصة";
+export const TEMPLATE_FALLBACK_NOTE = "تعذّر استخدام قالب Word المرفوع؛ استُخدمت الترويسة المولّدة من بيانات هويتك";
 
 const EMU_PER_CM = 360_000;
 const LOGO_HEIGHT = Math.round(2.5 * EMU_PER_CM);
@@ -148,11 +154,10 @@ export function generatedHeaderXml(
   return `${XML_DECL}<w:hdr ${PART_NS}>${paragraphs.join("")}</w:hdr>`;
 }
 
-export function generatedFooterXml(stampText: string, qrRelId: string | null, caption: string): string {
-  const paragraphs: string[] = [];
-  if (qrRelId) paragraphs.push(centred(inlineImage(qrRelId, 2, "QR", QR_SIDE, QR_SIDE)));
+/** The opt-in QR footer: the code and its caption, never a platform stamp (٤٤٢(أ)). */
+export function generatedFooterXml(qrRelId: string, caption: string): string {
+  const paragraphs: string[] = [centred(inlineImage(qrRelId, 2, "QR", QR_SIDE, QR_SIDE))];
   if (caption) paragraphs.push(centred(runXml(caption, 16)));
-  paragraphs.push(centred(runXml(stampText, 16)));
   return `${XML_DECL}<w:ftr ${PART_NS}>${paragraphs.join("")}</w:ftr>`;
 }
 
@@ -172,6 +177,7 @@ export interface BuildLetterheadInput {
   identity: LetterheadIdentity;
   template?: Uint8Array | null;
   logoPng?: Uint8Array | null;
+  /** Opt-in only (٤٤٢(أ)): without it the file has no footer and no QR. */
   qrPng?: Uint8Array | null;
 }
 
@@ -191,7 +197,7 @@ export function buildLetterheadDocx(input: BuildLetterheadInput): { bytes: Uint8
   if (qrPng) media.push({ name: "qr.png", bytes: qrPng });
   const bytes = minimalDocx(bodyXml, {
     headerXml: generatedHeaderXml(identity, logoPng ? LOGO_REL_ID : null, logoPng ? pngPixelSize(logoPng) : null),
-    footerXml: generatedFooterXml(PLATFORM_STAMP_AR, qrPng ? QR_REL_ID : null, qrPng ? identity.qr.caption : ""),
+    footerXml: qrPng ? generatedFooterXml(QR_REL_ID, identity.qr.caption) : undefined,
     headerRels: logoPng ? imageRels(LOGO_REL_ID, "media/logo.png") : undefined,
     footerRels: qrPng ? imageRels(QR_REL_ID, "media/qr.png") : undefined,
     media,

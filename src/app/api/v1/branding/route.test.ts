@@ -158,13 +158,14 @@ test("/verify and its API are public: no prefix in ROUTE_ACCESS or PROTECTED", (
   assert.ok(!/"\/verify|letterhead/.test(list));
 });
 
-test("the switch sits with the other privacy switches, and the letterhead page links to it", () => {
+test("the switch sits with the other privacy switches; the letterhead page explains no QR, since paper carries none", () => {
   const tab = read("../../../settings/components/tabs/ProfessionTab.tsx");
   assert.match(tab, /\/api\/v1\/branding\/verify-card/);
   assert.match(tab, /<ToggleRow[\s\S]{0,200}بطاقة التحقق/);
+  // Owner ٤٤٢(أ) (package 2026-11-06): the printed letterhead has no QR, so
+  // the note about where the QR leads (and its settings link) left the page.
   const ws = read("../../../../components/letterhead/LetterheadWorkspace.tsx");
-  assert.match(ws, /qrNoteAr\(identity\.qr, data\.verifyCard\)/);
-  assert.match(ws, /\/settings\?tab=profession/);
+  assert.doesNotMatch(ws, /qrNoteAr\(/);
 });
 
 test("GET reads the vault through the print path (q344, R32), with no print kit", () => {

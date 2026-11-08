@@ -452,21 +452,85 @@ export function stripPipelineNotes(input: string | null | undefined): string {
 const NOTE_MARK = /[\u064B-\u065F\u0670\u0640]/;
 /** Western, Arabic-Indic and Extended Arabic-Indic digits. */
 const AUDIT_DIGIT = "[0-9٠-٩۰-۹]";
+/** A full Gregorian ISO date «2026-08-14», in any of the three digit sets. */
+const AUDIT_ISO_DATE = `(?:20|٢٠|۲۰)${AUDIT_DIGIT}{2}-${AUDIT_DIGIT}{1,2}-${AUDIT_DIGIT}{1,2}`;
+/** One Arabic word, with NOTE_MARKS already folded away. */
+const AUDIT_WORD = "[\\u0621-\\u064A]+";
 /**
  * M1 — a dated correction «تصحيح 2026-08-14». Gregorian 20xx only: the audit
  * rounds are dated that way, while «تصحيح 1441/3/10هـ» is a real Hijri-dated
  * correction of the law. A bare «تصحيح» is legal vocabulary («تصحيح الخطأ
  * المادي») and is never a marker on its own.
+ *
+ * BUG-01 (owner package 6-Nov): the export dates its other note labels the
+ * same way — «تصحيح مهم 2026-08-14», «تصحيح توثيقي (2026-08-28)», «ملاحظة تحقق
+ * 2026-08-14», «ملاحظة (مُنقَّحة 2026-08-14، …)», «ملاحظة هيكلية (تحديث
+ * 2026-08-28)». «تصحيح» / «ملاحظة», up to three words and an optional «(»,
+ * then a full ISO date (hyphens): a law's «ملاحظة» followed by words and a
+ * slash date is not one of them.
+ *
+ * The live-check notes: «تحقق 2026-08-26», «تحقق حي مباشر بتاريخ …», «تحقق
+ * مباشر عبر DOM على البوابة الحية 2026-07-19» (88 articles in the 10-03
+ * export). «تحقق» then ONLY words of that note vocabulary, then the ISO date —
+ * «يتحقق» / «التحقق» never start it (the letter lookbehind).
  */
+const AUDIT_VERIFY_WORDS =
+  "حي|الحي|مباشر|مباشرة|مستقل|بصري|مكتمل|كامل|إضافي|اضافي|مطابق|منهما|عبر|على|من|بتاريخ|البوابة|الحية|DOM|BOE";
 const AUDIT_DATED_CORRECTION = new RegExp(
-  `تصحيح\\s*(?:20|٢٠|۲۰)${AUDIT_DIGIT}{2}[-/]${AUDIT_DIGIT}{1,2}[-/]${AUDIT_DIGIT}{1,2}`,
+  `(?<![\\u0621-\\u064A])(?:تصحيح\\s*(?:20|٢٠|۲۰)${AUDIT_DIGIT}{2}[-/]${AUDIT_DIGIT}{1,2}[-/]${AUDIT_DIGIT}{1,2}` +
+    `|(?:تصحيح|ملاحظة)(?:\\s+${AUDIT_WORD}){0,2}\\s*\\(?\\s*(?:${AUDIT_WORD}\\s+)?${AUDIT_ISO_DATE}` +
+    `|تحقق(?:\\s+(?:${AUDIT_VERIFY_WORDS}))*\\s*\\(?\\s*${AUDIT_ISO_DATE})`,
 );
 /**
- * M1, M3 «سجل المشاكل», M4 «نفس نمط الخلل»: any one marks text as the
- * corpus's internal audit trail. A bare «ف12» is never a marker. Tested on
- * text with NOTE_MARKS folded away. No /g: reused with .test().
+ * M5 — a reference into the export's issue log: «ف1072», «بف1056»,
+ * «ف858/ج-11». Three or four WESTERN digits right after «ف», which starts a
+ * word (an optional «ب» / «و» before it), and no letter after them. Not:
+ * «ف3» (a paragraph), «الف500» / «يكلف800» (inside a word), and the scanned
+ * documents' «في» read as «ف» before an Arabic-Indic date or file number
+ * («ف١٤١٥/١٢/٢», «برقم ٧ / ف٢١٥٣٨») — measured on the owner's 10-03 export.
+ * Nor a Western-digit date after an OCR «ف» («ف1415/12/2»): a slash then a
+ * digit is a date, never an issue ref (final review 2026-11-09, NIT 3).
  */
-const AUDIT_NOTE_MARKERS = new RegExp(`${AUDIT_DATED_CORRECTION.source}|سجل\\s+المشاكل|نفس\\s+نمط\\s+الخلل`);
+const AUDIT_ISSUE_REF = "(?<![\\p{L}\\p{N}])[بو]?ف[0-9]{3,4}(?![0-9\\u0621-\\u064A]|/[0-9])";
+/**
+ * M3 — «سجل المشاكل» as the export's issue log: «راجع سجل المشاكل», or
+ * followed by an issue number. «الدروس المستفادة وسجل المشاكل والحلول» (a
+ * guide's own wording) is not.
+ */
+const AUDIT_ISSUE_LOG = `راجع\\s+سجل\\s+المشاكل|سجل\\s+المشاكل(?=\\s*[(\\[«"]?\\s*[بو]?ف\\s*[0-9٠-٩])`;
+/**
+ * M6 — words no statute uses: «فجوة (ال)تزامن», «لا هلوسة», «تنبيه توثيقي», the
+ * export's internal field and task names, the tools its notes name.
+ */
+const AUDIT_INTERNAL_WORDS =
+  "فجوة\\s+(?:ال)?تزامن|فجوة(?:\\s+[^\\s:*]+){0,4}?\\s+محسومة|لا\\s+هلوسة|تنبيه\\s+توثيقي" +
+  "|(?<![A-Za-z_])(?:review_reason|editorial_notes|needs_human_review|WebSearch|PyMuPDF|qanoniah|AMENDMENT_QUEUE|GetViewerImage|regapis)(?![A-Za-z_])" +
+  "|(?<![A-Za-z0-9])task_[0-9a-f]{6,}";
+/**
+ * M1, M3, M4 «نفس نمط الخلل», M5, M6: any one marks text as the corpus's
+ * internal audit trail. A bare «ف12» is never a marker. Tested on text with
+ * NOTE_MARKS folded away. No /g: reused with .test().
+ */
+const AUDIT_NOTE_MARKERS = new RegExp(
+  `${AUDIT_DATED_CORRECTION.source}|${AUDIT_ISSUE_LOG}|نفس\\s+نمط\\s+الخلل|${AUDIT_ISSUE_REF}|${AUDIT_INTERNAL_WORDS}`,
+  "u",
+);
+/**
+ * A LABEL that names an editing or verification act («تصحيح …», «ملاحظة تحقق
+ * …», «ملاحظة تحرير (استرجاع …)», «ملاحظة هيكلية …») heads a note, whatever
+ * follows it.
+ */
+const AUDIT_NOTE_LABEL = /تصحيح|مصحح|تحقق|تحقيق|تحرير|استرجاع|هيكلي|مطابقة|مصدر|تدقيق|هلوسة|توثيقي|محسوم/;
+/**
+ * After a dated note LABEL («**تصحيح جوهري (2026-08-28):**»), what makes the
+ * rest of the line the note's own body rather than law the label was put in
+ * front of: talk of the stored file, its extraction, sources and errors. The
+ * one label measured with law after it — «ملاحظة ختامية معدَّلة (2026-08-15،
+ * وفق قرار مجلس الوزراء …): تُمنح الفئة (5) …» — has none of these, so only
+ * its label goes.
+ */
+const AUDIT_NOTE_BODY =
+  /المخزن|مخزنا|مخزن|هذا الملف|بهذا الملف|من الملف|ملفنا|نسخة سابقة|التفريغ|الاستخراج|استخرج|استرجع|تصحيف|مضاهاة|بصري|صحح|خطأ|الملاحظة السابقة|كان النص|كانت هذه|مكتوبا هنا|مصدر أولي|المصدر الرسمي|PDF|OCR|DOM|ncar|boe|gaca|momah|ncnp|sama\.gov/i;
 /**
  * M2 «جولة تدقيق» / «تدقيق منهجي» is also law vocabulary («يتولى الديوان
  * إجراء تدقيق منهجي…»). On its own it marks only an aside; beside M1/M3/M4
@@ -477,8 +541,16 @@ const AUDIT_ROUND_MARKER = /جولة\s+تدقيق|تدقيق\s+منهجي/;
 const AUDIT_ASIDE = /\s*(?:\(((?:[^()\n]|\([^()\n]*\))*)\)|\[([^[\]\n]*)\](?!\()|\*\*([^*\n]+)\*\*)/g;
 /** Clause boundaries of a summary: « — », « - », «؛», ". ". Captured, so re-joining keeps them. */
 const AUDIT_CLAUSE_SPLIT = /(\s+[—–-]\s+|\s*؛\s*|\.\s+)/;
-/** What a cut can leave dangling at the end of a line. */
-const AUDIT_DANGLING_TAIL = /[\s(\[—–\-،,:؛;"«]+$/;
+/** What a cut can leave dangling at the end of a line (a «**» or «⚠️» that opened the note too). */
+const AUDIT_DANGLING_TAIL = /[\s(\[—–\-،,:؛;"«*_`\p{Extended_Pictographic}\u200d\ufe0f]+$/u;
+/** A line a cut left as nothing but marks: «> ⚠️ **», «- », «()», «``». */
+const AUDIT_RESIDUE = /^[\s>*_`\-–—•·:،,.؛;()[\]"«»\p{Extended_Pictographic}\u200d\ufe0f]*$/u;
+/** A markdown table row: its cells are cleaned one by one, so a note never eats the row. */
+const AUDIT_TABLE_ROW = /^\s*\|.*\|\s*$/;
+/** A note sentence that is not dated: «تنبيه توثيقي: …». */
+const AUDIT_NOTE_SENTENCE = /تنبيه\s+توثيقي/;
+/** What may stand before a label that opens its line: quote and list marks, an emoji. */
+const AUDIT_LINE_OPENER = /^[\s>*\-•·]*(?:[0-9٠-٩]+[.)-]\s*)?[\p{Extended_Pictographic}\u200d\ufe0f\s]*$/u;
 /** A line that a cut left as nothing but a list label: «ب», «2-», «أ)». */
 const AUDIT_LIST_LABEL_ONLY = /^[\p{L}\d]{1,3}\s*[-–)]?$/u;
 
@@ -497,8 +569,8 @@ function mayHoldAuditNote(text: string): boolean {
   return AUDIT_NOTE_MARKERS.test(folded) || AUDIT_ROUND_MARKER.test(folded);
 }
 
-/** Index in `line` where a dated correction (M1) starts, or -1. */
-function datedCorrectionAt(line: string): number {
+/** Index in `line` where `re` first matches the mark-folded text, or -1. */
+function foldedMatchAt(line: string, re: RegExp): number {
   const kept: number[] = [];
   let folded = "";
   for (let i = 0; i < line.length; i++) {
@@ -506,8 +578,19 @@ function datedCorrectionAt(line: string): number {
     kept.push(i);
     folded += line[i];
   }
-  const m = AUDIT_DATED_CORRECTION.exec(folded);
+  const m = re.exec(folded);
   return m ? kept[m.index] : -1;
+}
+
+/** Index in `line` where a dated correction (M1) starts, or -1. */
+function datedCorrectionAt(line: string): number {
+  return foldedMatchAt(line, AUDIT_DATED_CORRECTION);
+}
+
+/** Where a note SENTENCE starts inside an aside: M1 or «تنبيه توثيقي» — or -1. */
+function noteSentenceAt(text: string): number {
+  const hits = [datedCorrectionAt(text), foldedMatchAt(text, AUDIT_NOTE_SENTENCE)].filter((i) => i >= 0);
+  return hits.length ? Math.min(...hits) : -1;
 }
 
 /** `line` cut where a dated correction starts; a bare list label left behind goes too. */
@@ -516,9 +599,43 @@ function cutAtDatedCorrection(line: string, at: number): string {
   return AUDIT_LIST_LABEL_ONLY.test(kept.trim()) ? "" : kept;
 }
 
-function dropAuditAsides(line: string): string {
-  return line.replace(AUDIT_ASIDE, (all, paren?: string, bracket?: string, bold?: string) =>
-    mayHoldAuditNote(paren ?? bracket ?? bold ?? "") ? "" : all);
+/**
+ * `strongOnly`: only M1/M3–M6 make an aside a note — the rule for statutory
+ * text, where «(… تدقيق منهجي …)» can be law (stripArticleAuditNotes).
+ */
+function dropAuditAsides(line: string, strongOnly = false): string {
+  const isNote = strongOnly ? hasAuditMarker : mayHoldAuditNote;
+  return line.replace(AUDIT_ASIDE, (all, paren?: string, bracket?: string, bold?: string) => {
+    const inner = paren ?? bracket ?? bold ?? "";
+    if (!isNote(inner)) return all;
+    // «(أضاف … بالأمر الملكي رقم أ/293 — تصحيح استكمال توثيق 2026-08-26: …)»:
+    // the aside is law up to the note — keep that part.
+    const at = noteSentenceAt(inner);
+    // Only separators trimmed: a closing quote of the law stays.
+    const kept = at > 0 ? inner.slice(0, at).replace(/[\s—–\-،,:؛;]+$/, "") : "";
+    if (kept.trim().split(/\s+/).length < 3 || hasAuditMarker(kept)) return "";
+    const lead = /^\s*/.exec(all)?.[0] ?? "";
+    return paren !== undefined ? `${lead}(${kept})` : bracket !== undefined ? `${lead}[${kept}]` : `${lead}**${kept}**`;
+  });
+}
+
+/**
+ * A note's LABEL: a «**…**» / «(…)» / «[…]» aside holding a marker that ends
+ * with «:» (inside or right after it) or opens its line — «**تصحيح 2026-08-14
+ * (جولة تدقيق منهجي)**: النص …», «**تنبيه توثيقي (لا هلوسة):** …». Its range,
+ * with the colon; null when the line has none.
+ */
+function noteLabelAt(line: string): { start: number; end: number } | null {
+  for (const m of line.matchAll(AUDIT_ASIDE)) {
+    const start = m.index ?? 0;
+    const end = start + m[0].length;
+    const inner = m[1] ?? m[2] ?? m[3] ?? "";
+    if (!hasAuditMarker(inner)) continue;
+    const colon = /^\s*:/.exec(line.slice(end));
+    if (colon) return { start, end: end + colon[0].length };
+    if (/:\s*\]?$/.test(inner) || AUDIT_LINE_OPENER.test(line.slice(0, start))) return { start, end };
+  }
+  return null;
 }
 
 /** A summary line without the clauses that hold a marker; delimiters kept. */
@@ -575,27 +692,63 @@ function stripSummaryNotes(text: string): string {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function stripFullTextNotes(text: string): string {
+/** One line (or one table cell) of statutory wording without its notes. */
+function stripFullTextSegment(raw: string, strongOnly: boolean): string {
+  let line = raw;
+  // Labels first: dropping one as a plain aside would leave the note's body
+  // (and its «سجل المشاكل» would then take the statutory lead with it).
+  // A LABEL opens a note: when the rest of the line reads as the note's body
+  // (AUDIT_NOTE_BODY), label and body go together; otherwise the label alone.
+  const label = noteLabelAt(line);
+  if (label) {
+    const body = line.slice(label.end);
+    line = hasAuditMarker(body) || AUDIT_NOTE_LABEL.test(foldMarks(line.slice(label.start, label.end))) ||
+      AUDIT_NOTE_BODY.test(foldMarks(body))
+      ? cutAtDatedCorrection(line, label.start)
+      : `${line.slice(0, label.start)} ${body.trimStart()}`;
+  }
+  line = dropAuditAsides(line, strongOnly);
+  // A dated correction runs from where it starts to the end of its line.
+  const at = datedCorrectionAt(line);
+  if (at >= 0) line = cutAtDatedCorrection(line, at);
+  // M3–M6 in the line itself, not an aside: the whole line is a note.
+  if (hasAuditMarker(line)) line = "";
+  return line;
+}
+
+function stripFullTextNotes(text: string, strongOnly = false): string {
+  const isCandidate = strongOnly ? hasAuditMarker : mayHoldAuditNote;
   const out: string[] = [];
   let changed = false;
   for (const raw of text.split(/\r?\n/)) {
-    if (!mayHoldAuditNote(raw)) {
+    if (!isCandidate(raw)) {
       out.push(raw);
       continue;
     }
-    let line = dropAuditAsides(raw);
-    // A dated correction runs from where it starts to the end of its line.
-    const at = datedCorrectionAt(line);
-    if (at >= 0) line = cutAtDatedCorrection(line, at);
-    // M3/M4 in the line itself, not an aside: the whole line is a note.
-    if (hasAuditMarker(line)) line = "";
+    let line: string;
+    if (AUDIT_TABLE_ROW.test(raw)) {
+      let emptied = false;
+      line = raw
+        .split("|")
+        .map((cell, i, cells) => {
+          if (i === 0 || i === cells.length - 1 || !isCandidate(cell)) return cell;
+          const kept = stripFullTextSegment(cell, strongOnly).trim();
+          if (!kept || AUDIT_RESIDUE.test(kept)) emptied = true;
+          return ` ${kept} `;
+        })
+        .join("|");
+      // A row whose cell was nothing but a note («| **✅ تكرار محتوى مؤكَّد** | مقارنة … |») is the note's row.
+      if (emptied) line = "";
+    } else {
+      line = stripFullTextSegment(raw, strongOnly);
+    }
     if (line === raw) {
       out.push(raw);
       continue;
     }
     changed = true;
-    line = tidy(line);
-    if (line.trim()) out.push(line);
+    const kept = tidy(line);
+    if (kept.trim() && !AUDIT_RESIDUE.test(kept)) out.push(kept);
   }
   if (!changed) return text;
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -625,6 +778,23 @@ export function stripAuditNotes(input: string | null | undefined, mode: "summary
   const text = stripPipelineNotes(input);
   if (!text || !mayHoldAuditNote(text)) return text;
   return mode === "summary" ? stripSummaryNotes(text) : stripFullTextNotes(text);
+}
+
+/**
+ * BUG-01 (owner package 6-Nov): the same audit notes in text a reader sees AS
+ * the article — `text`, `original_text` (a repealed article's body),
+ * regulation text, historic regulation text. `fullText` rules, two
+ * differences:
+ * - stripPipelineNotes is NOT run (feee72fe): its «[…تحقق…]» / «[مراجعة …]»
+ *   aside rule was never cleared for statutory bodies;
+ * - «جولة تدقيق» / «تدقيق منهجي» never remove anything on their own, inside an
+ *   aside or not — this is statutory text, where they can be law.
+ * Text holding no M1/M3–M6 marker comes back as it was (the same string).
+ */
+export function stripArticleAuditNotes(input: unknown): string {
+  const text = typeof input === "string" ? input : input == null ? "" : String(input);
+  if (!text || !hasAuditMarker(text)) return text;
+  return stripFullTextNotes(text, true);
 }
 
 /**

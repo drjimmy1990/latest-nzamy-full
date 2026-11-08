@@ -59,6 +59,15 @@ import {
   type ServiceRequestEvent,
   type ServiceRequestAttachment,
 } from "@/lib/services/casesService";
+import { updateWorkflowRequestById } from "@/lib/services/workflowService";
+import {
+  CASE_STATUS_MOVES,
+  CASE_STATUS_MOVE_LABEL_AR,
+  CASE_STATUS_MOVE_ORDER,
+  caseStatusMoveOf,
+  isCaseStatusMove,
+  type CaseStatusMove,
+} from "../_caseListRules";
 import {
   uploadDocumentFile,
   getDocumentFileUrl,
@@ -432,6 +441,9 @@ export default function CaseDetailPage() {
   const [detailState, setDetailState] = useState<"loading" | "unreadable" | "notfound" | "ready">("loading");
   // Bumped by «إعادة المحاولة» so a failed read is retried in place.
   const [reloadKey, setReloadKey] = useState(0);
+  // BUG-05: «تغيير الحالة» from this page — the list board's moves exactly.
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // `?tab=` makes every tab linkable — the dashboard's «جراف القضايا» shortcut
   // is a link straight to ?tab=graph. Validated against TABS rather than trusted:
@@ -1203,6 +1215,32 @@ export default function CaseDetailPage() {
   const assigneeName = caseData.assignedToName?.trim();
   const assigneeDisplay = assigneeName || (caseData.assignedTo ? "مُسندة إلى محامٍ" : "غير مُسندة");
 
+  // BUG-05: the same moves, the same write and the same refresh event as the
+  // list's board (cases/page.tsx onKanbanDrop): optimistic, reverted and said
+  // aloud on failure, then a quiet re-read (no page-wide loading state).
+  const currentMove = caseStatusMoveOf(caseData.status);
+  const changeStatus = async (move: CaseStatusMove) => {
+    if (statusSaving || move === currentMove) return;
+    const nextStatus = CASE_STATUS_MOVES[move];
+    const previousStatus = caseData.status;
+    setStatusSaving(true);
+    setStatusError(null);
+    setRequest((r) => (r ? { ...r, status: nextStatus } : r));
+    try {
+      const updated = await updateWorkflowRequestById(caseData.id, { status: nextStatus });
+      // null is the demo path's "row not found" (see the list's note).
+      if (!updated) throw new Error("status not updated");
+      window.dispatchEvent(new Event("nzamy-workflow-updated"));
+      refreshCaseDetail();
+    } catch (err) {
+      console.error("[lawyer case detail] status change failed:", err);
+      setRequest((r) => (r ? { ...r, status: previousStatus } : r));
+      setStatusError("تعذّر تغيير حالة القضية. لم يتغيّر شيء على الخادم.");
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-[1100px] mx-auto space-y-5" dir="rtl">
 
@@ -1225,6 +1263,28 @@ export default function CaseDetailPage() {
                 <span className={`w-1.5 h-1.5 rounded-full ${statusConf.dot}`} />
                 {statusConf.label}
               </span>
+              {/* BUG-05: change the status here, with the list's own moves. A
+                  cancelled case is not moved (the list cannot move it either). */}
+              {currentMove && (
+                <label className={`inline-flex items-center gap-1.5 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                  <span>تغيير الحالة</span>
+                  <select
+                    value={currentMove}
+                    disabled={statusSaving}
+                    aria-label="تغيير حالة القضية"
+                    onChange={(e) => { if (isCaseStatusMove(e.target.value)) void changeStatus(e.target.value); }}
+                    className={`rounded-lg border px-2 py-1 text-[11px] font-semibold outline-none disabled:opacity-60 ${isDark ? "border-white/10 bg-zinc-800 text-zinc-200" : "border-slate-200 bg-white text-slate-700"}`}
+                  >
+                    {CASE_STATUS_MOVE_ORDER.map((m) => (
+                      <option key={m} value={m}>{CASE_STATUS_MOVE_LABEL_AR[m]}</option>
+                    ))}
+                  </select>
+                  {statusSaving && <span aria-live="polite">جارٍ الحفظ…</span>}
+                </label>
+              )}
+              {statusError && (
+                <span role="alert" className={`text-[11px] font-semibold ${isDark ? "text-red-400" : "text-red-600"}`}>{statusError}</span>
+              )}
               <span className={`text-[11px] px-2 py-1 rounded-lg ${isDark ? "bg-white/[0.04] text-zinc-500" : "bg-slate-100 text-slate-400"}`}>
                 {/* A memo review (/ai/brief-check) is stored as `ai_draft`;
                     only metadata.service tells it from a drafting order. */}

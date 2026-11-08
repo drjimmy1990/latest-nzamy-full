@@ -19,6 +19,8 @@ export interface LibraryAnswer {
   /** The server's citations (CitedAnswer.asCitations reads them). */
   citations: unknown[];
   action?: LibraryAiAction;
+  /** Set on every answer that is not the assistant's reply (a refusal, a closed tool, an error). */
+  refused?: true;
 }
 
 export const LIBRARY_AI_SOON =
@@ -26,6 +28,8 @@ export const LIBRARY_AI_SOON =
 const FALLBACK = "تعذّر الاتصال بالخادم — حاول مرة أخرى";
 /** readQuota.LIBRARY_LOCK_SUPPORT_PATH; not imported, so this client file stays free of the proxy's modules. */
 const LOCK_SUPPORT = "/contact";
+/** Point top-ups and plans are on /pricing (PaywallGate's CreditsBanner links there too). */
+const TOP_UP = { label: "شحن النقاط", href: "/pricing" } as const;
 
 function newKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -65,7 +69,7 @@ export async function askLibrary(
       }),
     });
   } catch {
-    return { text: FALLBACK, citations: [] };
+    return { text: FALLBACK, citations: [], refused: true };
   }
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   const output = (json.output ?? null) as Record<string, unknown> | null;
@@ -76,16 +80,21 @@ export async function askLibrary(
   // Signed out, or a tier below Pro: say what to do (the assistant's own wording).
   if (res.status === 401 || (res.status === 403 && json.code === "library_tier")) {
     const refusal = libraryAiRefusal(res.status, currentPath);
-    if (refusal) return { text: refusal.text, citations: [], action: refusal.action };
+    if (refusal) return { text: refusal.text, citations: [], action: refusal.action, refused: true };
   }
   // A library lock is a 423 too, but not «قيد التفعيل»: the server's own lock
   // message (readQuota.libraryLockMessageAr) and the way to support.
   if (json.code === "library_security_lock" && typeof json.error === "string" && json.error) {
-    return { text: json.error, citations: [], action: { label: "تواصل معنا", href: LOCK_SUPPORT } };
+    return { text: json.error, citations: [], action: { label: "تواصل معنا", href: LOCK_SUPPORT }, refused: true };
+  }
+  // Not enough points (runCore AI_COPY.points): the server's sentence and the way to top up.
+  if (res.status === 402 && json.code === "insufficient_points") {
+    const text = typeof json.error === "string" && json.error ? json.error : "رصيدك من النقاط لا يكفي لهذه الأداة";
+    return { text, citations: [], action: { ...TOP_UP }, refused: true };
   }
   // Switched off or not wired yet: the page's existing «قيد التفعيل».
-  if (res.status === 423 || json.code === "not_ready") return { text: LIBRARY_AI_SOON, citations: [] };
-  if (typeof json.error === "string" && json.error) return { text: json.error, citations: [] };
+  if (res.status === 423 || json.code === "not_ready") return { text: LIBRARY_AI_SOON, citations: [], refused: true };
+  if (typeof json.error === "string" && json.error) return { text: json.error, citations: [], refused: true };
   const refusal = libraryAiRefusal(res.status, currentPath);
-  return { text: refusal?.text ?? FALLBACK, citations: [], action: refusal?.action };
+  return { text: refusal?.text ?? FALLBACK, citations: [], action: refusal?.action, refused: true };
 }

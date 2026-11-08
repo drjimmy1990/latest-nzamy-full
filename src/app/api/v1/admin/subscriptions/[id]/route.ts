@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
@@ -128,10 +129,7 @@ export async function PATCH(
       .single();
 
     if (updateError) {
-      return NextResponse.json(
-        { error: updateError.message },
-        { status: 500 },
-      );
+      return dbErrorJson("admin/subscriptions/[id] PATCH", updateError);
     }
 
     // ── Sync auth metadata if tier changed ─────────────────────────────────
@@ -222,10 +220,7 @@ export async function DELETE(
       .eq("id", subscriptionId);
 
     if (updateError) {
-      return NextResponse.json(
-        { error: updateError.message },
-        { status: 500 },
-      );
+      return dbErrorJson("admin/subscriptions/[id] DELETE", updateError);
     }
 
     // ── Downgrade auth metadata tier to free ─────────────────────────────────

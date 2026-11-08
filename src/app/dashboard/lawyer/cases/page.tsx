@@ -22,6 +22,7 @@ import { getLawyerClient } from "@/lib/services/lawyerClientsService";
 import type { ListRead } from "@/lib/services/listRead";
 import {
   isLawyerCaseRow, matchesClientFilter, summarizeOpenDeadlines, isDeadlineSoon, deadlineSortKey,
+  CASE_STATUS_MOVES, isCaseStatusMove,
   type CaseClientKeys, type CaseDeadlineSummary,
 } from "./_caseListRules";
 import type { WorkflowRequest } from "@/lib/workflowStore";
@@ -265,13 +266,10 @@ export default function CasesPage() {
     // «نشطة» on the very next sync — one this handler triggers itself. There is no
     // backend status that round-trips as "suspended", so the column is gone from
     // KanbanView and from the status filters until one exists.
-    const statusForCol: Record<string, WorkflowRequest["status"]> = {
-      active: "assigned",
-      pending: "pending_assignment",
-      closed: "completed",
-    };
-    const nextStatus = statusForCol[col];
-    if (!nextStatus) return;
+    // The map lives in _caseListRules (CASE_STATUS_MOVES) so the case page's
+    // «تغيير الحالة» offers exactly these moves (BUG-05).
+    if (!isCaseStatusMove(col)) return;
+    const nextStatus = CASE_STATUS_MOVES[col];
     updateWorkflowRequestById(caseId, { status: nextStatus })
       .then(updated => {
         // TWO failure shapes, and both must revert AND say so.

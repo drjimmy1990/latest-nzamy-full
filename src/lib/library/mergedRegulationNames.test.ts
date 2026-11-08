@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { mergedNamesForViewer } from "./mergedRegulationNames.ts";
+import { mergedNamesForViewer, mergedNamesFromDetails } from "./mergedRegulationNames.ts";
 import { regulationNameFromRefs } from "./regulationName.ts";
 import { readWithOptionalFeatures, type OptionalFeature } from "./optionalColumn.ts";
 
@@ -59,15 +59,41 @@ test("owner ٤٢٤ / ٣٨٠: a visitor's name loses its decree number and date; 
 test("the init route reads merged_regulation_names as an optional feature and cleans it per tier", () => {
   assert.match(INIT, /\{ key: "mergedNames", columns: \[LAW_MERGED_NAMES_COLUMN\] \}/);
   assert.match(INIT, /on\.has\("mergedNames"\) \? `, \$\{LAW_MERGED_NAMES_COLUMN\}` : ""/);
-  assert.match(INIT, /"mergedNames"\],/);
+  assert.match(INIT, /"mergedNames", "mergedDetails"\],/);
   assert.match(INIT, /mergedNamesForViewer\(shaped\[LAW_MERGED_NAMES_COLUMN\], hasFullAccess\)/);
+});
+
+test("owner 2026-11-06 item 4: the file's own merged_regulation_details names win, the ref names are the fallback", () => {
+  assert.match(INIT, /\{ key: "mergedDetails", columns: \[LAW_MERGED_DETAILS_COLUMN\] \}/);
+  assert.match(INIT, /const LAW_MERGED_DETAILS_COLUMN = "merged_regulations";/);
+  assert.match(INIT, /on\.has\("mergedDetails"\) \? `, \$\{LAW_MERGED_DETAILS_COLUMN\}` : ""/);
+  assert.match(INIT, /const fromDetails = mergedNamesFromDetails\(shaped\[LAW_MERGED_DETAILS_COLUMN\], hasFullAccess\);/);
+  assert.match(INIT, /shaped\[LAW_MERGED_NAMES_COLUMN\] = fromDetails\.length\s*\?\s*fromDetails\s*:\s*mergedNamesForViewer/);
+  // The jsonb (issuing instruments) never leaves the server.
+  assert.match(INIT, /delete shaped\[LAW_MERGED_DETAILS_COLUMN\];/);
+});
+
+test("mergedNamesFromDetails: whole names kept (no regulation-word gate), cleaned per tier, order kept", () => {
+  assert.deepEqual(mergedNamesFromDetails(null, true), []);
+  assert.deepEqual(mergedNamesFromDetails("x", true), []);
+  assert.deepEqual(mergedNamesFromDetails([
+    { name: "  اللائحة التنفيذية   للعمل التطوعي " },
+    { title: "جدول المخالفات والجزاءات" },
+    { name: "اللائحة التنفيذية للعمل التطوعي" },
+    { name: "" }, { name: 5 }, null, "نص",
+  ], true), ["اللائحة التنفيذية للعمل التطوعي", "جدول المخالفات والجزاءات"]);
+  const long = "اللائحة التنفيذية لنظام العمل الصادرة بالقرار الوزاري رقم (178) وتاريخ 1440/08/12هـ";
+  assert.deepEqual(mergedNamesFromDetails([{ name: long }], true), [long]);
+  const [guest] = mergedNamesFromDetails([{ name: long }], false);
+  assert.ok(guest && guest.startsWith("اللائحة التنفيذية لنظام العمل"), guest);
+  assert.doesNotMatch(guest, /178|1440/);
 });
 
 test("owner ٤٢٤ / ٣٨٠: the init orders list masks the number and date by full access", () => {
   assert.match(INIT, /maskDecreeOfficialFields\(shaped, hasFullAccess\)/);
 });
 
-// The init route's four optional features (LAW_OPTIONAL_FEATURES), as declared there.
+// Four of the init route's optional features (LAW_OPTIONAL_FEATURES), as declared there.
 const FEATURES: readonly OptionalFeature[] = [
   { key: "summary", columns: ["summary_brief"] },
   { key: "sort", columns: ["catalogue_recency_key"] },

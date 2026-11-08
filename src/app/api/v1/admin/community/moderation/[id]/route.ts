@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
@@ -84,7 +85,7 @@ export async function PATCH(
         readError.message,
         readError.code,
       );
-      return NextResponse.json({ error: readError.message }, { status: 500 });
+      return dbErrorJson("admin/community/moderation/[id] PATCH", readError);
     }
 
     if (!existing) {
@@ -109,7 +110,7 @@ export async function PATCH(
         updateError.message,
         updateError.code,
       );
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+      return dbErrorJson("admin/community/moderation/[id] PATCH", updateError);
     }
 
     // Audit trail (best-effort: logAdminAction never throws or fails the decision).

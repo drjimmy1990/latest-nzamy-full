@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { isLibrarySaleRequest, libraryPurchaseEligibility } from "@/lib/library/libraryPurchaseEligibility";
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
     .select("id, kind, status, created_at")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return dbErrorJson("entitlement-requests POST", error);
   return NextResponse.json({ success: true, data });
 }
 
@@ -96,6 +97,6 @@ export async function GET() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return dbErrorJson("entitlement-requests GET", error);
   return NextResponse.json({ success: true, data: data ?? [] });
 }

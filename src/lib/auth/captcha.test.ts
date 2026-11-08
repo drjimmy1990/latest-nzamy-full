@@ -143,7 +143,9 @@ test("login builds its credentials through buildPasswordCredentials and spends t
   const src = read("../../app/login/page.tsx");
   assert.match(src, /buildPasswordCredentials\(/);
   assert.match(src, /signInWithPassword\(credentials\)/);
-  assert.match(src, /isCaptchaAuthError\(/);
+  // The captcha refusal is recognised inside the shared translator
+  // (translateAuthError → isCaptchaAuthError, BUG-09).
+  assert.match(src, /translateAuthError\(/);
   assert.match(src, /captcha\.spend\(\)/);
 });
 
@@ -152,7 +154,7 @@ test("both signup forms send the token and spend it", () => {
     const src = read(p);
     assert.match(src, /withSignupCaptcha\(/, p);
     assert.match(src, /captcha\.spend\(\)/, p);
-    assert.match(src, /isCaptchaAuthError\(/, p);
+    assert.match(src, /translateAuthError\(/, p);
   }
 });
 

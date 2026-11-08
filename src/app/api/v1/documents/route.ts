@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { DOCUMENT_SOURCE_VALUES, isDocumentSource } from "./_shared";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -204,7 +205,7 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("[documents POST] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ error: error.message, code: error.code, hint: error.hint }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     return NextResponse.json({ data }, { status: 201 });

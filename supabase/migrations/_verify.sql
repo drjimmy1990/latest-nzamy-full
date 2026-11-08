@@ -6282,3 +6282,189 @@ select 'ai_start_run: one overload, SECURITY DEFINER, search_path = '''', servic
        and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
              where n.nspname = 'public' and p.proname = 'ai_start_run') = 1 as ok;
 -- <<< verify:drafter_daily_limit_1108
+
+-- >>> verify:library_invitation_redemptions
+-- 2026-11-09 — 20261109_10_library_invitation_redemptions.sql (SAST-02): one
+-- redemption per (library invitation code, account), recorded in the same
+-- transaction as the grant. Run the file BEFORE the deploy.
+-- Docker: supabase/tests/rls/library_invitation_redemptions.test.sql
+select 'redeem_library_invitation(uuid, text) exists, SECURITY DEFINER, service role only (run 20261109_10)' as check,
+       case when to_regprocedure('public.redeem_library_invitation(uuid, text)') is null then false
+            else (select p.prosecdef and 'search_path=""' = any (coalesce(p.proconfig, '{}'))
+                    from pg_proc p where p.oid = to_regprocedure('public.redeem_library_invitation(uuid, text)'))
+                 and not has_function_privilege('anon', 'public.redeem_library_invitation(uuid, text)', 'EXECUTE')
+                 and not has_function_privilege('authenticated', 'public.redeem_library_invitation(uuid, text)', 'EXECUTE')
+                 and has_function_privilege('service_role', 'public.redeem_library_invitation(uuid, text)', 'EXECUTE') end as ok
+union all
+select 'library_invitation_redemptions: RLS on, no policy, no anon / authenticated privilege (run 20261109_10)',
+       case when to_regclass('public.library_invitation_redemptions') is null then false
+            else (select c.relrowsecurity from pg_class c where c.oid = to_regclass('public.library_invitation_redemptions'))
+                 and not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'library_invitation_redemptions')
+                 and not has_table_privilege('anon', 'public.library_invitation_redemptions', 'SELECT, INSERT, UPDATE, DELETE')
+                 and not has_table_privilege('authenticated', 'public.library_invitation_redemptions', 'SELECT, INSERT, UPDATE, DELETE')
+                 and has_table_privilege('service_role', 'public.library_invitation_redemptions', 'SELECT')
+                 and has_table_privilege('service_role', 'public.library_invitation_redemptions', 'INSERT') end
+union all
+select 'the owner of redeem_library_invitation can EXECUTE library_grant_access (else every redeem fails)',
+       case when to_regprocedure('public.redeem_library_invitation(uuid, text)') is null
+              or to_regprocedure('public.library_grant_access(uuid, text, text, integer, uuid, uuid, text, text)') is null then false
+            else has_function_privilege((select pg_get_userbyid(p.proowner) from pg_proc p
+                                          where p.oid = to_regprocedure('public.redeem_library_invitation(uuid, text)')),
+                                        'public.library_grant_access(uuid, text, text, integer, uuid, uuid, text, text)', 'EXECUTE') end;
+-- <<< verify:library_invitation_redemptions
+
+-- >>> verify:share_passcode_lockout
+-- 2026-11-09 — 20261109_11_share_passcode_lockout.sql (SAST-04): share
+-- passcodes checked in the database with a durable counter (5 wrong → 15-minute
+-- lock). Run the file BEFORE the deploy.
+-- Docker: supabase/tests/rls/share_passcode_lockout.test.sql
+select 'share_passcode_check(text, text) exists, SECURITY DEFINER, service role only (run 20261109_11)' as check,
+       case when to_regprocedure('public.share_passcode_check(text, text)') is null then false
+            else (select p.prosecdef and 'search_path=""' = any (coalesce(p.proconfig, '{}'))
+                    from pg_proc p where p.oid = to_regprocedure('public.share_passcode_check(text, text)'))
+                 and not has_function_privilege('anon', 'public.share_passcode_check(text, text)', 'EXECUTE')
+                 and not has_function_privilege('authenticated', 'public.share_passcode_check(text, text)', 'EXECUTE')
+                 and has_function_privilege('service_role', 'public.share_passcode_check(text, text)', 'EXECUTE') end as ok
+union all
+select 'document_shares.failed_attempts + locked_until exist (run 20261109_11)',
+       (select count(*) = 2 from information_schema.columns
+         where table_schema = 'public' and table_name = 'document_shares'
+           and column_name in ('failed_attempts', 'locked_until'))
+union all
+select 'the owner of share_passcode_check can update document_shares past RLS (else every check answers none)',
+       case when to_regprocedure('public.share_passcode_check(text, text)') is null then false
+            else (select has_table_privilege(o.rolname, 'public.document_shares', 'SELECT')
+                         and has_table_privilege(o.rolname, 'public.document_shares', 'UPDATE')
+                         and (o.rolsuper or o.rolbypassrls
+                              or o.oid = (select c.relowner from pg_class c where c.oid = 'public.document_shares'::regclass))
+                    from pg_proc p join pg_roles o on o.oid = p.proowner
+                   where p.oid = to_regprocedure('public.share_passcode_check(text, text)')) end;
+-- <<< verify:share_passcode_lockout
+
+-- >>> verify:group_membership_self_check
+-- 2026-11-09 — 20261109_12_group_membership_self_check.sql (DB-01): group
+-- reads use is_group_member_or_owner_self (the caller only); the two-argument
+-- function is service role only. Any time.
+-- Docker: supabase/tests/rls/group_membership_self_check.test.sql
+select 'is_group_member_or_owner(uuid, uuid) not executable by anon / authenticated / PUBLIC (run 20261109_12)' as check,
+       case when to_regprocedure('public.is_group_member_or_owner(uuid, uuid)') is null then true
+            else not has_function_privilege('anon', 'public.is_group_member_or_owner(uuid, uuid)', 'EXECUTE')
+                 and not has_function_privilege('authenticated', 'public.is_group_member_or_owner(uuid, uuid)', 'EXECUTE')
+                 and not has_function_privilege('public', 'public.is_group_member_or_owner(uuid, uuid)', 'EXECUTE') end as ok
+union all
+select 'is_group_member_or_owner_self(uuid): authenticated yes, anon no (run 20261109_12)',
+       case when to_regprocedure('public.is_group_member_or_owner_self(uuid)') is null then false
+            else has_function_privilege('authenticated', 'public.is_group_member_or_owner_self(uuid)', 'EXECUTE')
+                 and not has_function_privilege('anon', 'public.is_group_member_or_owner_self(uuid)', 'EXECUTE') end
+union all
+select 'no policy calls the two-argument function; both group SELECT policies are TO authenticated on the self check (run 20261109_12)',
+       not exists (select 1 from pg_policies
+                    where coalesce(qual, '') ~ 'is_group_member_or_owner\('
+                       or coalesce(with_check, '') ~ 'is_group_member_or_owner\(')
+       and (select count(*) = 2 from pg_policies
+             where schemaname = 'public'
+               and ((tablename = 'groups' and policyname = 'group members read their groups')
+                 or (tablename = 'group_members' and policyname = 'group members read membership'))
+               and roles = array['authenticated']::name[]
+               and qual ~ 'is_group_member_or_owner_self\(');
+-- <<< verify:group_membership_self_check
+
+-- >>> verify:admin_audit_events_no_guest
+-- 2026-11-09 — 20261109_13_admin_audit_events_no_guest_grant.sql (X-3): a guest
+-- holds no privilege on the audit log; signed-in users keep SELECT (RLS: own
+-- rows / admin all). Any time; re-run it after any re-run of 20261019_30.
+-- Docker: supabase/tests/rls/admin_audit_events_no_guest_grant.test.sql
+select 'anon holds no SELECT on admin_audit_events (run 20261109_13)' as check,
+       case when to_regclass('public.admin_audit_events') is null then true
+            else not (has_table_privilege('anon', 'public.admin_audit_events', 'SELECT')
+                      or has_any_column_privilege('anon', 'public.admin_audit_events', 'SELECT')) end as ok
+union all
+select 'authenticated keeps SELECT on admin_audit_events (the activity feed)',
+       case when to_regclass('public.admin_audit_events') is null then true
+            else has_table_privilege('authenticated', 'public.admin_audit_events', 'SELECT') end;
+-- <<< verify:admin_audit_events_no_guest
+
+-- >>> verify:academy_certificates_policy
+-- 2026-11-09 — 20261109_14_academy_certificates_policy_service_role.sql (X-4):
+-- no write-capable policy on academy.certificates admits PUBLIC / anon /
+-- authenticated. Any time. Passes where schema academy does not exist.
+-- Docker: supabase/tests/rls/academy_certificates_policy.test.sql
+select 'no write-capable policy on academy.certificates admits public / anon / authenticated (run 20261109_14)' as check,
+       not exists (select 1 from pg_policies
+                    where schemaname = 'academy' and tablename = 'certificates'
+                      and cmd <> 'SELECT'
+                      and roles && array['public', 'anon', 'authenticated']::name[]) as ok;
+-- <<< verify:academy_certificates_policy
+
+-- >>> verify:academy_answer_keys
+-- 2026-11-09 — X-5 (OPS check, no migration): can a guest or a signed-in user
+-- read the quiz answer key (academy.questions.correct_answer), directly or
+-- through the view public.academy_questions? By the migrations alone: NO —
+-- schema academy is never granted to the API roles, and the view is
+-- security_invoker (20260922_04). This row checks the LIVE database, which was
+-- restored from a dump and may carry grants the migrations do not show.
+-- ok = false → run the guarded revoke in secdb-report.md (X-5).
+select 'quiz answer keys not readable by anon / authenticated (directly or via public.academy_questions)' as check,
+       not (
+         -- directly: USAGE on the schema + SELECT on the column
+         (case when to_regclass('academy.questions') is null then false
+               else (has_schema_privilege('anon', 'academy', 'USAGE')
+                     and has_column_privilege('anon', 'academy.questions', 'correct_answer', 'SELECT'))
+                 or (has_schema_privilege('authenticated', 'academy', 'USAGE')
+                     and has_column_privilege('authenticated', 'academy.questions', 'correct_answer', 'SELECT')) end)
+         or
+         -- through the view: an owner-rights view (no security_invoker) read by an API role
+         (case when to_regclass('public.academy_questions') is null then false
+               else (has_table_privilege('anon', 'public.academy_questions', 'SELECT')
+                     or has_table_privilege('authenticated', 'public.academy_questions', 'SELECT'))
+                    and not coalesce((select 'security_invoker=true' = any (coalesce(c.reloptions, '{}'))
+                                             or 'security_invoker=on' = any (coalesce(c.reloptions, '{}'))
+                                        from pg_class c where c.oid = to_regclass('public.academy_questions')), false) end)
+       ) as ok;
+-- <<< verify:academy_answer_keys
+
+-- >>> verify:library_merged_regulations
+-- 2026-11-09 — 20261109_20_library_merged_regulations.sql (item 4): the laws
+-- row keeps the card fields of the file's merged_regulation_details; the
+-- «يشتمل على» line reads it. Server-only. Run BEFORE the deploy and BEFORE the
+-- owner's next library load (the loader preflight stops without it).
+select 'library.laws.merged_regulations is jsonb and server-only (run 20261109_20)' as check,
+       case when not exists (select 1 from information_schema.columns
+                              where table_schema = 'library' and table_name = 'laws'
+                                and column_name = 'merged_regulations' and data_type = 'jsonb') then false
+            else not has_column_privilege('anon', 'library.laws', 'merged_regulations', 'SELECT')
+                 and not has_column_privilege('authenticated', 'library.laws', 'merged_regulations', 'SELECT')
+                 and has_column_privilege('service_role', 'library.laws', 'merged_regulations', 'SELECT') end as ok;
+-- <<< verify:library_merged_regulations
+
+-- >>> verify:library_principles_printed_page
+-- 2026-11-09 — 20261109_21_library_principles_printed_page.sql (item 25): the
+-- printed page of a principle / standalone precedent as the owner's export
+-- states it. Server-only. Run BEFORE the owner's export carries printed_page
+-- and BEFORE the next library load.
+select 'library.principles.printed_page is text and server-only (run 20261109_21)' as check,
+       case when not exists (select 1 from information_schema.columns
+                              where table_schema = 'library' and table_name = 'principles'
+                                and column_name = 'printed_page' and data_type = 'text') then false
+            else not has_column_privilege('anon', 'library.principles', 'printed_page', 'SELECT')
+                 and not has_column_privilege('authenticated', 'library.principles', 'printed_page', 'SELECT')
+                 and has_column_privilege('service_role', 'library.principles', 'printed_page', 'SELECT') end as ok;
+-- <<< verify:library_principles_printed_page
+
+-- >>> verify:library_feqh_book_type_data01
+-- 2026-11-09 — 20261109_22_library_feqh_book_type_data01.sql (DATA-01): «الأسس
+-- العامة للعقود الإدارية» is wadi and «الأموال» لأبي عبيد is sharia. Any time.
+-- false also when a book is missing (library wiped) or when a load made with
+-- code older than this batch wrote the old guess again — re-run the file then.
+select 'DATA-01: the two cited fiqh books carry the right type (run 20261109_22)' as check,
+       exists (select 1 from library.feqh_books
+                where title like 'الأسس العامة للعقود الإدارية%' and author like '%الطماوي%')
+       and exists (select 1 from library.feqh_books
+                    where author like '%عبيد%' and (id = 'الأموال' or id like 'الأموال\_%' or title = 'الأموال'))
+       and not exists (select 1 from library.feqh_books
+                        where title like 'الأسس العامة للعقود الإدارية%' and author like '%الطماوي%'
+                          and type is distinct from 'wadi')
+       and not exists (select 1 from library.feqh_books
+                        where author like '%عبيد%' and (id = 'الأموال' or id like 'الأموال\_%' or title = 'الأموال')
+                          and type is distinct from 'sharia') as ok;
+-- <<< verify:library_feqh_book_type_data01

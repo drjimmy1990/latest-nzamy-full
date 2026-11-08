@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (groupError) {
-    return NextResponse.json({ error: groupError.message }, { status: 500 });
+    return dbErrorJson("groups POST", groupError);
   }
 
   // Add creator as owner member

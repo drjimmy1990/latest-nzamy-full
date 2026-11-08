@@ -9,7 +9,8 @@
  * it is written inline and compared against a computed value, never eyeballed.
  */
 import assert from "node:assert/strict";
-import { buildCitation, isPageLocator, LOCATOR_NOUNS } from "./_citation.ts";
+import { buildCitation, isPageLocator, LOCATOR_NOUNS, PAGE_LOCATOR_RE } from "./_citation.ts";
+import { PAGE_LOCATOR_RE as SHARED_PAGE_LOCATOR_RE } from "../../../lib/library/pageLocator.ts";
 
 let passed = 0;
 const test = (name: string, fn: () => void) => {
@@ -268,3 +269,15 @@ test("a long heading that opens with an item ordinal is cited by the ordinal alo
 });
 
 console.log(`✔ _citation: ${passed} tests passed`);
+
+test("owner item 11: an English «Page N» anchor is cited as a page, and the regex is a literal copy of the shared one", () => {
+  assert.equal(PAGE_LOCATOR_RE.source, SHARED_PAGE_LOCATOR_RE.source);
+  assert.equal(PAGE_LOCATOR_RE.flags, SHARED_PAGE_LOCATOR_RE.flags);
+  assert.ok(isPageLocator("Page 3"));
+  assert.ok(isPageLocator("page ١٢"));
+  const ar = buildCitation({ docTitle: "دليل السلامة", docType: "دليل", numberText: "Page 3" }, true);
+  assert.equal(ar.kind, "page");
+  assert.equal(ar.plain, "الصفحة (3) من دليل (دليل السلامة) ونصه:");
+  const en = buildCitation({ docTitle: "Safety Guide", numberText: "Page 3" }, false);
+  assert.equal(en.plain, "Page (3) of (Safety Guide), text:");
+});

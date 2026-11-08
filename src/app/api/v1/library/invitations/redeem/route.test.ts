@@ -179,3 +179,69 @@ test("POST redeem is in the proxy's strict rate-limit bucket", () => {
   assert.equal(isStrictRateLimitedRoute("POST", "/api/v1/library/invitations/redeem"), true);
   assert.equal(isStrictRateLimitedRoute("GET", "/api/v1/library/invitations/redeem"), false);
 });
+
+// ── 5. one grant per account: the one-transaction redeem (20261109_10, SAST-02) ─
+
+/** The body of redeemAtomically (from its declaration to the end of the file). */
+function atomicHelper(source: string): string {
+  const at = source.indexOf("async function redeemAtomically(");
+  assert.ok(at > -1, "the one-transaction redeem helper is gone");
+  return source.slice(at);
+}
+
+test("the route tries the one-transaction redeem first, before the old seat claim", () => {
+  const code = codeOnly(routeSource);
+  const callAt = code.indexOf("await redeemAtomically(admin, userId, code)");
+  const loopAt = code.indexOf("for (let attempt = 0;");
+  assert.ok(callAt > -1, "POST no longer calls redeemAtomically");
+  assert.ok(callAt < loopAt, "the atomic redeem must run before the old claim loop");
+  assert.ok(code.includes("if (atomic) return atomic;"), "an answer from the atomic redeem is final");
+  const helper = atomicHelper(code);
+  assert.ok(
+    helper.includes('admin.rpc("redeem_library_invitation", { p_user: userId, p_code: code })'),
+    "the RPC gets the signed-in caller's id and the normalized code",
+  );
+});
+
+test("the old flow runs ONLY while 20261109_10 is missing — any other error is answered, not retried", () => {
+  const code = codeOnly(routeSource);
+  assert.ok(
+    /function isMissingRedeemFunction[\s\S]*?"PGRST202"[\s\S]*?"42883"[\s\S]*?"42P01"/.test(code),
+    "missing function / table codes are the fallback trigger",
+  );
+  const helper = atomicHelper(code);
+  const missingAt = helper.indexOf("if (isMissingRedeemFunction(error.code)) {");
+  assert.ok(missingAt > -1, "the fallback check is gone");
+  assert.equal(helper.split("return null;").length - 1, 1, "only the missing-function arm may hand over to the old flow");
+  const otherErrorAt = helper.indexOf('console.error("[library/invitations/redeem] redeem_library_invitation failed:"');
+  assert.ok(otherErrorAt > missingAt, "other database errors are logged and answered");
+  const answer = helper.slice(otherErrorAt, helper.indexOf("}", helper.indexOf("status: 400", otherErrorAt)));
+  assert.ok(answer.includes("status: 400") && /المكتبة/.test(answer), "an Arabic 400, like the old failed grant");
+  assert.ok(!answer.includes("error.message }"), "the raw database error is never sent");
+});
+
+test("a second redeem of the same code by the same account gets a clear Arabic 400", () => {
+  const code = codeOnly(routeSource);
+  assert.ok(/const ALREADY_REDEEMED_MESSAGE =\s*"سبق أن استخدمتَ كود الدعوة هذا/.test(code), "the message is Arabic and says what happened");
+  const helper = atomicHelper(code);
+  assert.ok(
+    /case "already_redeemed":\s*return NextResponse\.json\(\{ error: ALREADY_REDEEMED_MESSAGE \}, \{ status: 400 \}\)/.test(helper),
+    "already_redeemed → 400 with the message",
+  );
+  assert.ok(
+    /error\.code === "23505"\)\s*\{\s*return NextResponse\.json\(\{ error: ALREADY_REDEEMED_MESSAGE \}/.test(helper),
+    "the unique key's 23505 (a race) answers the same message",
+  );
+  for (const result of ["invalid", "expired", "exhausted"]) {
+    assert.ok(helper.includes(`case "${result}":`), `the ${result} answer is mapped`);
+  }
+});
+
+test("the atomic success payload has the old shape: library, the code's days, the grant's end", () => {
+  const helper = atomicHelper(codeOnly(routeSource));
+  const okAt = helper.indexOf('case "ok":');
+  const payload = helper.slice(okAt, helper.indexOf("break;", okAt));
+  assert.ok(payload.includes("ok: true") && payload.includes('tier: "library"'), "same keys as the old success");
+  assert.ok(payload.includes("days: typeof row.days === \"number\" ? row.days : DEFAULT_INVITE_GRANT_DAYS"), "the code's days");
+  assert.ok(payload.includes("until: new Date(row.ends_at).toISOString()"), "the grant's own end");
+});

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { VerificationStatus } from "@/types/database";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
   const { data: lawyerData, error: lawyerError } = await lawyerQuery;
 
   if (lawyerError) {
-    return NextResponse.json({ error: lawyerError.message }, { status: 500 });
+    return dbErrorJson("admin/verifications GET", lawyerError);
   }
 
   // ── Licence images (owner answer ٢١٩) ────────────────────────────────────
@@ -99,7 +100,7 @@ export async function GET(request: NextRequest) {
   const { data: providerData, error: providerError } = await providerQuery;
 
   if (providerError) {
-    return NextResponse.json({ error: providerError.message }, { status: 500 });
+    return dbErrorJson("admin/verifications GET", providerError);
   }
 
   // ── Fetch firm verifications ───────────────────────────────────────────────
@@ -116,7 +117,7 @@ export async function GET(request: NextRequest) {
   const { data: firmData, error: firmError } = await firmQuery;
 
   if (firmError) {
-    return NextResponse.json({ error: firmError.message }, { status: 500 });
+    return dbErrorJson("admin/verifications GET", firmError);
   }
 
   // ── Transform & merge results ──────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { markdownBoldToSafeHtml } from "@/utils/sanitize";
 import { articleStatusNotice, isRepealedArticleStatus, type LawArticle, type JudicialPrinciple, type JudicialPrecedent } from "../data";
 import { buildCitation } from "./_citation";
 import { splitAmendedLabelLine, splitAmendedMarker } from "./_amended-marker";
+import { repealedByLine, splitRepealedArticle, splitRepealedMarker, splitStrike } from "./_repealed-article";
 import { splitNumberedItem } from "./_numbered-item";
 import {
   AMENDMENT_DETAILS_FALLBACK_SUMMARY,
@@ -145,12 +146,20 @@ function GeneralToggleDetails({
 }
 
 // ك-13: نفس دمج regulations[]→{ref,text} المستعمل بـpage.tsx/_sidebar.tsx.
-function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
-  if (!a.regulations || a.regulations.length === 0) return null;
-  const distinctRefs = Array.from(new Set(a.regulations.map((r) => r.ref || "").filter(Boolean)));
+// #26 (owner 6-Nov): a row with no text is no block — no «اللائحة التنفيذية»
+// heading over nothing. The law API already leaves such rows out; this keeps
+// an older cached payload from drawing one.
+// #5/#16 (owner 6-Nov): each regulation row keeps its own status. The block
+// says «ملغاة» only when EVERY row in it is repealed; «status_undeclared»
+// shows no badge at all (never a «سارية» the source did not state).
+function getMergedReg(a: LawArticle): { ref: string; text: string; repealed: boolean } | null {
+  const rows = (a.regulations ?? []).filter((r) => (r.text || "").trim());
+  if (rows.length === 0) return null;
+  const distinctRefs = Array.from(new Set(rows.map((r) => r.ref || "").filter(Boolean)));
   return {
     ref: distinctRefs.join("، "),
-    text: a.regulations.map((r) => r.text || "").join("\n\n"),
+    text: rows.map((r) => r.text).join("\n\n"),
+    repealed: rows.every((r) => r.status === "repealed"),
   };
 }
 
@@ -394,13 +403,24 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
           };
           const cls = headingStyles[block.level ?? 3] ?? "text-[13px] font-bold";
           // «المادة (5/3): `[معدّلة]`» → the heading without the token + a badge.
-          const marker = splitAmendedMarker(block.text || "");
+          // «### ~~المادة X~~ `[ملغاة]`» (owner 6-Nov #17) → the struck part drawn
+          // struck, the token → a red badge. Each part still goes through safeHtml.
+          const repealedMark = splitRepealedMarker(block.text || "");
+          const marker = splitAmendedMarker(repealedMark.text);
+          const parts = splitStrike(marker.text);
           const html = safeHtml(marker.text);
-          if (marker.amended) {
+          if (marker.amended || repealedMark.repealed || parts.some((part) => part.struck)) {
             return (
               <p key={index} className={`${cls} ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>
-                <span dangerouslySetInnerHTML={{ __html: html }} />
-                <AmendedBadge isDark={isDark} />
+                {parts.map((part, i) => (
+                  <span key={i} className={part.struck ? "line-through decoration-red-500/70" : undefined} dangerouslySetInnerHTML={{ __html: safeHtml(part.text) }} />
+                ))}
+                {marker.amended && <AmendedBadge isDark={isDark} />}
+                {repealedMark.repealed && (
+                  <span className="ms-1.5 inline-block align-middle text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-500 border border-red-500/25">
+                    ⛔ {isRTL ? "ملغاة" : "Repealed"}
+                  </span>
+                )}
               </p>
             );
           }
@@ -748,8 +768,23 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
    * `text` is legitimately empty, because the live article no longer exists.
    * Measured on the corpus: 1,613 of 1,862 repealed articles are in exactly
    * that shape, and only 9 carry neither.
+   *
+   * Owner 6-Nov #17/#18: the new export also leaves the «🚫 أُلغيت هذه المادة
+   * بموجب: …» line and the «⚠️ تنبيه: المادة الأصلية ملغاة…» warning in `text`.
+   * They used to vanish (`originalText || text`); now the line shows above the
+   * fold, the prior wording folds, the warning shows after it, right before
+   * the regulation (_repealed-article.ts).
    */
-  const repealedText = article.originalText || article.text || "";
+  const repealedParts = useMemo(
+    () => (isRepealed ? splitRepealedArticle(article.text, article.originalText) : null),
+    [isRepealed, article.text, article.originalText],
+  );
+  const repealedText = repealedParts?.prior ?? "";
+  // No line in the text → one from the repeal entry, only when the API sent its instrument.
+  const repealedNotice = repealedParts
+    ? repealedParts.notice || repealedByLine(repealedParts.notice, article.amendments) || ""
+    : "";
+  const repealedWarning = repealedParts?.warning ?? "";
   // Owner note ٠٦: a search match inside a folded part opens it, so the colour
   // (and the legend's ↑ ↓) can reach it. Locked text is never searched here.
   const repealedHasHit = useTextHasHighlight(isRepealed && !isLocked ? repealedText : "");
@@ -767,7 +802,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const handleCopy = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
     // A repealed article's substance is its pre-repeal wording; `text` is empty.
-    const body = isRepealed ? repealedText : article.text;
+    const body = isRepealed ? repealedText || repealedNotice : article.text;
     const selectedText = getSelectedTextWithin(article.id, body);
     const plainText = selectedText || body;
 
@@ -789,7 +824,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
     const html  = `${citation.html}<br>“${md2html(plainText)}”`;
     copyRich(html, plain);
     setCopied(true); setTimeout(() => setCopied(false), 1800);
-  }, [article, isLocked, isRepealed, repealedText, showPaywall, lawName, lawType, isRTL]);
+  }, [article, isLocked, isRepealed, repealedText, repealedNotice, showPaywall, lawName, lawType, isRTL]);
 
   const handleCopyReg = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
@@ -901,12 +936,13 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
       <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${cardHeaderBg}`}
            onClick={e => e.stopPropagation()}>
 
-        <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${mainBadgeStyle}`}>
+        {/* Owner 6-Nov #17: a repealed article's number and title are drawn struck, as in the export («### ~~المادة X~~»); its text is not. */}
+        <span className={`text-[11px] font-black px-2.5 py-1 rounded-lg flex-shrink-0 ${mainBadgeStyle} ${isRepealed && viewMode !== "regulation" ? "line-through decoration-red-500/70" : ""}`}>
           <Hl text={mainBadgeText} />
         </span>
         <p className={`flex-1 text-[12px] font-bold truncate ${
           isRepealed
-            ? isDark ? "text-red-400" : "text-red-600"
+            ? isDark ? "text-red-400 line-through decoration-red-500/60" : "text-red-600 line-through decoration-red-400/70"
             : isAmended
               ? isDark ? "text-amber-200" : "text-amber-800"
               : isDark ? "text-zinc-200" : "text-zinc-700"
@@ -1006,6 +1042,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             {viewMode !== "regulation" && (
               isRepealed ? (
                 <div>
+                  {/* «أُلغيت هذه المادة بموجب: …» — shown, not folded (owner 6-Nov #17). */}
+                  {!isLocked && repealedNotice && (
+                    <div className={`mb-2 px-3 py-2 rounded-xl border ${isDark ? "border-red-500/20 bg-red-900/10" : "border-red-200 bg-red-50/60"}`}>
+                      <MD text={repealedNotice} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                    </div>
+                  )}
                   <button onClick={() => setShowRepealed(!showRepealed)} className={`flex items-center gap-1.5 text-[11px] font-semibold text-red-400 hover:text-red-300`}>
                     {showRepealed ? <CaretUp size={11} /> : <CaretDown size={11} />}
                     {showRepealed ? (isRTL ? "إخفاء نص المادة الملغاة" : "Hide repealed text") : (isRTL ? "عرض النص الأصلي قبل الإلغاء" : "Show original text before repeal")}
@@ -1040,11 +1082,20 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                           ) : (
                             <MD text={repealedText} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
                           )}
-                          {article.repealedBy && <p className={`text-[10px] mt-2 pt-2 border-t font-semibold ${isDark ? "border-red-500/20 text-red-400" : "border-red-200 text-red-600"}`}>{isRTL ? "ألغيت بـ:" : "Repealed by:"} {article.repealedBy}{article.repealedDate && ` — ${article.repealedDate}`}</p>}
                         </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
+                  {/*
+                    The owner's neutral warning («المادة الأصلية ملغاة. وضع اللائحة
+                    المرتبطة بها لا يُستنتج آليًا…», #18): after the fold, right before
+                    the regulation section below — the export's own order.
+                  */}
+                  {!isLocked && repealedWarning && (
+                    <div className={`mt-3 px-3 py-2 rounded-xl border ${isDark ? "border-amber-500/25 bg-amber-900/10" : "border-amber-200 bg-amber-50"}`}>
+                      <MD text={repealedWarning} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                    </div>
+                  )}
                 </div>
               ) : isLocked ? (
                 <div className="relative">
@@ -1133,6 +1184,11 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                   <div className="min-w-0">
                     <p className={`text-[12px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                       {isRTL ? "اللائحة التنفيذية" : "Executive regulation"}
+                      {mergedReg?.repealed && (
+                        <span className={`ms-2 inline-block align-middle text-[10px] font-black px-1.5 py-0.5 rounded ${isDark ? "bg-red-900/30 text-red-300" : "bg-red-50 text-red-700"}`}>
+                          {isRTL ? "ملغاة" : "Repealed"}
+                        </span>
+                      )}
                     </p>
                     {regulationSubtitle && regulationSubtitle !== "اللائحة التنفيذية" && (
                       <p className={`text-[11px] font-semibold mt-0.5 leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>

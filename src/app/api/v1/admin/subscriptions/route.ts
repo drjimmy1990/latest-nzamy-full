@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { requireStaff } from "@/lib/access-control";
@@ -95,7 +96,7 @@ export async function GET(request: NextRequest) {
     const { data, error, count } = await query;
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("admin/subscriptions GET", error);
     }
 
     return NextResponse.json({
@@ -284,10 +285,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (subError) {
-      return NextResponse.json(
-        { error: subError.message },
-        { status: 500 },
-      );
+      return dbErrorJson("admin/subscriptions POST", subError);
     }
 
     // ── CRITICAL: Update auth metadata tier ────────────────────────────────

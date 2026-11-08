@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { DeleteCardButton } from "@/components/payments/BillingControls";
+import { CurrentPlanCard } from "@/components/payments/CurrentPlanCard";
 import { createClient } from "@/lib/supabase/server";
 import { BILLING_UNAVAILABLE_AR, getBillingWith } from "@/lib/payments/billingCore";
 import { arabicDigits, billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr, type BillingData } from "@/lib/payments/billingView";
@@ -30,6 +31,12 @@ export default async function BillingPage() {
           <div><p className="mb-2 text-sm text-zinc-500">حسابك في نظامي</p><h1 className="text-3xl font-extrabold">الفوترة والمدفوعات</h1></div>
           <Link href="/settings?tab=subscription" className="text-sm font-semibold text-[#0B3D2E] dark:text-[#C8A762]">إعدادات الاشتراك</Link>
         </div>
+        {/* BUG-08: the same «باقتك الحالية» as Settings (tier + founder
+            membership), a client island reading the viewer's own rows. */}
+        <section aria-label="باقتك الحالية">
+          <h2 className="mb-3 text-xl font-bold">باقتك الحالية</h2>
+          <CurrentPlanCard plansHref="/settings?tab=subscription#account-plans" />
+        </section>
         {!data ? <p role="alert" className={PANEL}>{BILLING_UNAVAILABLE_AR}</p> : <>
           <section className={PANEL}>
             <h2 className="text-xl font-bold">رصيد النقاط</h2>

@@ -139,7 +139,7 @@ test("a body with attributes and a self-closed final section both merge", () => 
 test("falls back when the template has no body, with the note", () => {
   const built = buildLetterheadDocx({ blocks: BLOCKS, identity: identity(), template: zipSync({ "x.txt": strToU8("x") }) });
   assert.equal(built.usedTemplate, false);
-  assert.equal(built.note, "تعذّر استخدام قالب Word المرفوع؛ استُخدمت ترويسة المنصة");
+  assert.equal(built.note, "تعذّر استخدام قالب Word المرفوع؛ استُخدمت الترويسة المولّدة من بيانات هويتك");
   assert.equal(built.note, TEMPLATE_FALLBACK_NOTE);
   const files = assertPackageOpens(built.bytes);
   assert.ok(text(files, "word/header1.xml").includes("مكتب العدل"));
@@ -159,6 +159,23 @@ test("no template: no note", () => {
   assert.equal(built.usedTemplate, false);
   assert.equal(built.note, null);
   assertPackageOpens(built.bytes);
+});
+
+test("owner ٤٤٢(أ): the generated file carries the office's letterhead only — no platform stamp, no QR, no footer", () => {
+  for (const tpl of [undefined, zipSync({ "x.txt": strToU8("x") })]) {
+    const built = buildLetterheadDocx({ blocks: BLOCKS, identity: identity(), template: tpl, logoPng: PNG4 });
+    const files = assertPackageOpens(built.bytes);
+    assert.ok(!("word/footer1.xml" in files), "no footer part");
+    assert.ok(!("word/media/qr.png" in files), "no QR image");
+    assert.ok(text(files, "word/header1.xml").includes("مكتب العدل"), "the office's own header");
+    for (const name of Object.keys(files)) {
+      if (!name.endsWith(".xml") && !name.endsWith(".rels")) continue;
+      const xml = text(files, name);
+      assert.ok(!xml.includes("صادر عبر منصة نظامي"), `${name}: no platform stamp`);
+      assert.ok(!xml.includes("footerReference"), `${name}: no footer reference`);
+      assert.ok(!xml.includes(QR_CAPTION_PLATFORM), `${name}: no QR caption`);
+    }
+  }
 });
 
 test("generated header names the office", () => {
@@ -192,7 +209,7 @@ test("an accent that is not a colour never reaches an XML attribute", () => {
   assert.ok(generatedHeaderXml(identity({ accent: "#0b3d2e" }), null).includes('w:color="0b3d2e"'));
 });
 
-test("media written in the right rels: logo in the header's, QR in the footer's, neither in the document's", () => {
+test("opt-in QR (a caller passes qrPng on purpose): logo in the header's rels, QR in the footer's, neither in the document's", () => {
   const built = buildLetterheadDocx({ blocks: BLOCKS, identity: identity(), logoPng: PNG4, qrPng: PNG4 });
   const files = assertPackageOpens(built.bytes);
   assert.ok("word/media/logo.png" in files);
@@ -209,10 +226,11 @@ test("media written in the right rels: logo in the header's, QR in the footer's,
   assert.ok(text(files, "word/footer1.xml").includes("r:embed"));
 });
 
-test("logo alone: the QR's parts are absent, and the strict reader is happy", () => {
+test("logo alone: the QR's parts and the footer are absent, and the strict reader is happy", () => {
   const files = assertPackageOpens(buildLetterheadDocx({ blocks: BLOCKS, identity: identity(), logoPng: PNG4 }).bytes);
   assert.ok(!("word/media/qr.png" in files));
-  assert.ok(!text(files, "word/footer1.xml").includes("w:drawing"));
+  assert.ok(!("word/footer1.xml" in files));
+  assert.ok(!text(files, "[Content_Types].xml").includes("footer1.xml"));
 });
 
 test("image size: the logo is 2.5 cm tall and keeps its proportions, the QR 2.2 cm", () => {
@@ -234,13 +252,15 @@ test("image size: the logo is 2.5 cm tall and keeps its proportions, the QR 2.2 
   assert.ok(wideW <= 2160000, "a wide logo is capped at 6 cm");
   assert.equal(Math.round(wideW / wideH), 10, "and stays in proportion");
 
-  assert.deepEqual(ext(generatedFooterXml("ختم", "rId1", "تعليق")), [792000, 792000]);
+  assert.deepEqual(ext(generatedFooterXml("rId1", "تعليق")), [792000, 792000]);
 });
 
-test("the footer carries the stamp and the caption; hostile caption escaped", () => {
-  const root = parseXml(generatedFooterXml("صادر & مختوم", null, "امسح <الرمز>"), "footer");
-  assert.ok(runText(root).includes("صادر & مختوم"));
-  assert.ok(runText(root).includes("امسح <الرمز>"));
+test("the opt-in footer carries the QR and its caption, never a platform stamp; hostile caption escaped", () => {
+  const xml = generatedFooterXml("rId1", "امسح <الرمز> & تحقق");
+  const root = parseXml(xml, "footer");
+  assert.ok(runText(root).includes("امسح <الرمز> & تحقق"));
+  assert.ok(!xml.includes("صادر عبر منصة نظامي"));
+  assert.ok(xml.includes("w:drawing"));
 });
 
 /** q343: the privacy switch reaches the file. */

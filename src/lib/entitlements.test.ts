@@ -284,7 +284,7 @@ test("the guard runs before the cancel, and only replaceActive skips it", () => 
 test("the guard fails closed when the active-subscription read errors", () => {
   assert.match(
     entitlementsSource,
-    /if \(activeErr\) return \{ ok: false, error: activeErr\.message \};/,
+    /if \(activeErr\) return grantDbFailure\("active-read", activeErr\);/,
     "a failed read of what the user holds must not fall through to the cancel",
   );
 });

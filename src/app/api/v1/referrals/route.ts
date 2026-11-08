@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     .eq("referrer_id", user.id)
     .order("created_at", { ascending: false });
 
-  if (refError) return NextResponse.json({ error: refError.message }, { status: 500 });
+  if (refError) return dbErrorJson("referrals GET", refError);
 
   const stats = {
     totalInvites: referrals?.length || 0,

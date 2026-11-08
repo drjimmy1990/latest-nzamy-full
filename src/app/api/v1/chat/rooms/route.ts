@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { createRoomError, parseCreateRoomBody, withRelatedId } from "./_createRoom";
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
     .eq("user_id", user.id);
 
   if (partError) {
-    return NextResponse.json({ error: partError.message }, { status: 500 });
+    return dbErrorJson("chat/rooms GET", partError);
   }
 
   const roomIds = (participations ?? []).map((p) => p.room_id);
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return dbErrorJson("chat/rooms GET", error);
   }
 
   // Fetch last message for each room.

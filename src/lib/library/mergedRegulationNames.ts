@@ -20,6 +20,30 @@ import { regulationNameOf } from "./regulationName.ts";
  * The stored refs are per regulation ARTICLE: each is reduced to its
  * regulation's name (regulationNameOf), and a bare article label is dropped.
  */
+/**
+ * Owner 2026-11-06 item 4: the names one viewer receives from
+ * library.laws.merged_regulations (jsonb, migration 20261109_20) — the owner's
+ * own `merged_regulation_details` names, seeded on every load. These are whole
+ * regulation names already, so they are NOT passed through regulationNameOf
+ * (its regulation-word gate would drop a real name such as «جدول …»): only
+ * whitespace collapsed, blank / repeated / non-string names dropped, and for a
+ * non-subscriber the decree numbers and dates stripped (owner ٣١٩'s stripper).
+ * [] when the value is not an array (no column yet, NULL, or no names) — the
+ * caller then falls back to merged_regulation_names.
+ */
+export function mergedNamesFromDetails(value: unknown, isSubscriber: boolean): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const raw = typeof e.name === "string" ? e.name : typeof e.title === "string" ? e.title : "";
+    const name = summaryForViewer(raw.replace(/\s+/g, " ").trim(), isSubscriber).replace(/\s+/g, " ").trim();
+    if (name && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
 export function mergedNamesForViewer(value: unknown, isSubscriber: boolean): string[] {
   if (!Array.isArray(value)) return [];
   const out: string[] = [];

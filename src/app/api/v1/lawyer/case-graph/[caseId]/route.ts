@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertRole } from "@/lib/auth/assertRole";
 
 /**
@@ -61,7 +62,7 @@ export async function GET(
 
     if (error) {
       console.error("[case-graph GET] query failed:", error.message, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     if (!data) {
@@ -158,7 +159,7 @@ export async function PUT(
         .select("updated_at");
       if (updateError) {
         console.error("[case-graph PUT] update failed:", updateError.message, updateError.code);
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
+        return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
       }
       if (!updated || updated.length === 0) {
         // No row at that version: moved on (conflict), or not visible to this
@@ -206,7 +207,7 @@ export async function PUT(
       if (insertError) {
         if (insertError.code === "23505") return conflict();
         console.error("[case-graph PUT] insert failed:", insertError.message, insertError.code);
-        return NextResponse.json({ error: insertError.message }, { status: 500 });
+        return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
       }
       return NextResponse.json({ success: true, updatedAt: (inserted as { updated_at: string }).updated_at });
     }
@@ -218,7 +219,7 @@ export async function PUT(
 
     if (error) {
       console.error("[case-graph PUT] upsert failed:", error.message, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });

@@ -53,7 +53,35 @@ test("signed out and below Pro are told what to do, with a link", async () => {
 test("a tool that is off reads «قيد التفعيل»; the server's own refusal is shown as it is", async () => {
   assert.equal((await askLibrary({ message: "س" }, "/", reply(423, { error: "off", code: "tool_off" }).fetchImpl)).text, LIBRARY_AI_SOON);
   const none = await askLibrary({ message: "س" }, "/", reply(422, { error: "لم أجد في مكتبة الأنظمة…", code: "no_sources" }).fetchImpl);
-  assert.deepEqual(none, { text: "لم أجد في مكتبة الأنظمة…", citations: [] });
+  assert.deepEqual(none, { text: "لم أجد في مكتبة الأنظمة…", citations: [], refused: true });
+});
+
+test("not enough points (402 insufficient_points) shows the server's sentence and the top-up link", async () => {
+  const out = await askLibrary(
+    { message: "س" },
+    "/laws",
+    reply(402, { error: "رصيدك من النقاط لا يكفي لهذه الأداة", code: "insufficient_points", price: 5 }).fetchImpl,
+  );
+  assert.deepEqual(out, {
+    text: "رصيدك من النقاط لا يكفي لهذه الأداة",
+    citations: [],
+    action: { label: "شحن النقاط", href: "/pricing" },
+    refused: true,
+  });
+});
+
+test("only the assistant's reply is unmarked; every other answer is marked refused", async () => {
+  const ok = await askLibrary({ message: "س" }, "/laws", reply(200, { output: { reply: "ج [S1]" }, citations: [] }).fetchImpl);
+  assert.equal(ok.refused, undefined);
+  for (const [status, body] of [[401, {}], [403, { code: "library_tier" }], [423, { code: "tool_off" }], [502, { error: "تعذّر إكمال الطلب، وأُعيدت نقاطك", code: "tool_failed" }], [500, {}]] as const) {
+    assert.equal((await askLibrary({ message: "س" }, "/laws", reply(status, body).fetchImpl)).refused, true, String(status));
+  }
+});
+
+test("on /laws (no law page) the question goes without a law slug", async () => {
+  const { fetchImpl, sent } = reply(200, { output: { reply: "ج" }, citations: [] });
+  await askLibrary({ message: "س" }, "/laws", fetchImpl);
+  assert.equal((sent[0].input as Record<string, unknown>).law_slug, null);
 });
 
 test("a library lock (423 library_security_lock) shows the lock's own message and the support link, not «قيد التفعيل»", async () => {

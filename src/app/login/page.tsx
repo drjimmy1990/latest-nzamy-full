@@ -38,10 +38,9 @@ import { saudiMobileOrNull } from "@/lib/services/saudiMobile";
 import {
   buildPasswordCredentials,
   canSubmitWithCaptcha,
-  captchaMessage,
   captchaSubmitError,
-  isCaptchaAuthError,
 } from "@/lib/auth/captcha";
+import { translateAuthError } from "@/lib/auth/translateAuthError";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 
@@ -243,12 +242,14 @@ export default function LoginPage() {
         if (authError || !data.user) {
           // A captcha refusal is said as such, so the visitor knows to redo
           // the check rather than their password (which stays in the field).
-          // Every other failure keeps ONE message: GoTrue answers
+          // Every credential failure keeps ONE message: GoTrue answers
           // invalid_credentials for a wrong password and for an unknown
-          // account alike, and this must not tell them apart (CAP-06).
+          // account alike, and this must not tell them apart (CAP-06). The
+          // "login" context adds only what says nothing about the account:
+          // a rate limit, the network, an unconfirmed address (BUG-09).
           setError(
-            isCaptchaAuthError(authError)
-              ? captchaMessage("captchaRejected", isAr)
+            authError
+              ? translateAuthError(authError, { context: "login", isAr })
               : isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials",
           );
           return;

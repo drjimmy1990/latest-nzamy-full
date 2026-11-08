@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { recordEvent, RequestEvent } from "@/lib/events";
+import { resolveClientIp } from "@/lib/rateLimit";
+import { libraryReadClientKey } from "@/lib/rateLimitRoutes";
 import {
   MAX_BODY_BYTES,
   buildLeadRow,
@@ -65,14 +67,18 @@ const recentByIp = new Map<string, number[]>();
  * genuine leads on the very page whose defect was losing leads. An
  * unidentifiable caller is therefore not throttled at all — the whitelist and
  * the length caps, which do not depend on identifying anyone, still apply.
+ *
+ * Which address (audit SAST-07, 2026-11-09): the same visitor key as the
+ * proxy's visitor buckets — the proxy-resolved peer (X-Real-IP, else the LAST
+ * X-Forwarded-For entry, never the client-written first one), and Cloudflare's
+ * CF-Connecting-IP only when that peer is a Cloudflare edge. Using the peer
+ * alone would put every visitor behind one Cloudflare edge into one shared
+ * five-lead budget.
  */
 function clientIp(request: NextRequest): string | null {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  return request.headers.get("x-real-ip")?.trim() || null;
+  const getHeader = (name: string) => request.headers.get(name);
+  const key = libraryReadClientKey(getHeader, resolveClientIp(getHeader));
+  return key === "unknown" ? null : key;
 }
 
 /** Returns true when this IP has already spent its allowance. */

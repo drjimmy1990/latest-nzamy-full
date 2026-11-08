@@ -20,7 +20,7 @@ The automation layer is split across two surfaces:
 
 - **`src/lib/events.ts`** — server helper `recordEvent({ supabase, requestId, event, actorUserId, actorName?, metadata? })`. Inserts a row into `request_events`. Exports the `RequestEvent` namespace map + `RequestEventName` type. **Failures are logged and swallowed** — event recording never breaks the parent write.
 - **`src/lib/n8n/payload.ts`** — pure assembler `buildWebhookPayload({ event, timestamp, request, actor? })` → stable `{ event, entity, actor, recipient, payment, timestamp, data }` envelope. No I/O, no clock — the caller passes the ISO timestamp.
-- **`POST /api/v1/n8n/trigger`** — auth-required endpoint. Body `{ requestId, event? }`. Fetches the `service_requests` row + actor `profiles` row, builds the payload via `buildWebhookPayload`, `console.log`s it, and returns `{ data: payload, delivered: false, note: "n8n not yet wired — payload assembled only" }`. **Makes NO outbound HTTP call today.** When n8n is wired, this endpoint (or each write route directly) will POST that payload to the matching n8n webhook URL.
+- **`POST /api/v1/n8n/trigger`** — Removed 2026-11-09 (audit SAST-05): it had no caller in the app, and the write routes dispatch their own lifecycle events through `dispatchToN8n` (`src/lib/n8n/dispatch.ts`).
 
 ### What lives in n8n
 
@@ -119,7 +119,7 @@ There are two ways to get events into n8n. **Today (2026-06-28) neither sends ye
 
 The Next.js app calls the n8n webhook URL directly. Two flavors:
 
-- **Centralized:** `POST /api/v1/n8n/trigger` receives `{ requestId, event? }`, builds the payload, and (once wired) POSTs it to `{N8N_WEBHOOK_BASE_URL}/{path}`. Today this endpoint returns `delivered: false` and logs the payload.
+- **Centralized (removed 2026-11-09, see above):** `POST /api/v1/n8n/trigger` received `{ requestId, event? }`, builds the payload, and (once wired) POSTs it to `{N8N_WEBHOOK_BASE_URL}/{path}`. Today this endpoint returns `delivered: false` and logs the payload.
 - **Distributed:** each write route (e.g. the route that flips `service_requests.status` to `assigned`) POSTs the payload to the matching n8n webhook inline, right after `recordEvent(...)`.
 
 To enable Option A:
@@ -224,7 +224,7 @@ The Evolution API (WhatsApp) sends incoming messages directly to `/whatsapp-inco
 ## 10. Known Gaps & Next Steps — الفجوات والخطوات التالية
 
 1. **`request_events.metadata` column missing.** The `recordEvent` helper accepts a `metadata` param for forward-compatibility but does NOT persist it — the `request_events` table (migration `20260518_client_workflow_backend_ready.sql`) has columns `id, request_id, event, actor_user_id, actor_name, created_at` only. A future migration must add `metadata jsonb` before n8n can route on rich per-event metadata.
-2. **No outbound dispatch yet.** `POST /api/v1/n8n/trigger` assembles + logs only. A `dispatchToN8n(event, payload)` helper + `N8N_WEBHOOK_BASE_URL` env var + the per-event path mapping must be added before Option A fires.
+2. **No outbound dispatch yet.** (Historical: `POST /api/v1/n8n/trigger` was removed 2026-11-09.) A `dispatchToN8n(event, payload)` helper + `N8N_WEBHOOK_BASE_URL` env var + the per-event path mapping must be added before Option A fires.
 3. **Realtime chat polling.** Not covered by these workflows. Chat is still HTTP-polling on the frontend; a websocket/realtime layer is a separate workstream.
 4. **Payment gateway wiring (Phase 3).** The payment gateway is admin-gated via `platform_settings.payments_gateway` (`status: "disabled" | "test" | "live"`) and the real provider is NOT wired. Phase 3 workflows (payment success, subscription renewal, credit expiry, invoice PDF, wallet sync, referral reward) are blocked on this.
 5. **WF 4.2 reminder columns.** `consultations.reminder_sent` / `reminder_1h_sent` are not yet migrated. Add them in a new migration before activating WF 4.2 in production.
@@ -236,7 +236,7 @@ The Evolution API (WhatsApp) sends incoming messages directly to `/whatsapp-inco
 ## 11. Status
 
 - **Last Updated: 2026-11-03**
-- **Trigger layer:** Built (`src/lib/events.ts`, `src/lib/n8n/payload.ts`, `POST /api/v1/n8n/trigger`). Generic trigger logs only — does not send. **2026-06-29:** shared `namespaceEvent` helper now lives in `src/lib/events.ts` and is used by `POST /api/v1/service-requests/[id]/events` to namespace free-text client events → `service_request.created`, keeping the audit event stream consistent for n8n routing.
+- **Trigger layer:** Built (`src/lib/events.ts`, `src/lib/n8n/payload.ts`; the generic `POST /api/v1/n8n/trigger` was removed 2026-11-09). **2026-06-29:** shared `namespaceEvent` helper now lives in `src/lib/events.ts` and is used by `POST /api/v1/service-requests/[id]/events` to namespace free-text client events → `service_request.created`, keeping the audit event stream consistent for n8n routing.
 - **AI→n8n route (code):** every AI tool, the library assistant included, runs through one route, `POST /api/v1/ai/runs` (`src/lib/ai/runCore.ts` → `callN8n`, configured by `N8N_AI_BASE_URL` + `NZAMY_AI_KEY`). It calls the workflows in `n8n/ai/` (see `n8n/ai/README.md`), and job results come back on `POST /api/v1/ai/callback`. The old free routes `/api/ai/library-chat` and `/api/ai/explain-article` are deleted (owner q374 / q379: library AI for points only), and their webhook env vars `N8N_LIBRARY_CHAT_WEBHOOK_URL` / `N8N_EXPLAIN_WEBHOOK_URL` are read by nothing.
 - **Workflows:** The 7 Phase 1 / Section A workflows are **importable template files** in `n8n/workflows/` (well-formed JSON). Import status of the Phase 1 templates on the live instance is not confirmed here.
 - **n8n hosting:** live at `https://n8n.asra3.com`. The AI tool workflows run there; their ids are in `n8n/ai/README.md`.

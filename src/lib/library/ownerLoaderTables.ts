@@ -54,6 +54,9 @@ export const OWNER_LOADER_TABLES: readonly OwnerLoaderTable[] = [
     pkey: "slug",
     batchSize: 100,
     stripKeys: ["needs_human_review", "review_reason", "summary_brief", "catalogue_recency_key", "latest_amendment_key", "issue_date_key", "catalogue_is_repealed"],
+    // merged_regulations (owner 2026-11-06 item 4; migration 20261109_20):
+    // written on every law row — REQUIRED before the first write.
+    requiredColumns: ["merged_regulations"],
   },
   { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "articles", pkey: "id", batchSize: 100, stripKeys: [] },
@@ -62,7 +65,10 @@ export const OWNER_LOADER_TABLES: readonly OwnerLoaderTable[] = [
   { name: "decrees_circulars", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"] },
   { name: "decree_pages", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "judicial_collections", pkey: "id", batchSize: 100, stripKeys: [] },
-  { name: "principles", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"] },
+  // printed_page (owner 2026-11-06, file 10 §ب1; migration 20261109_21): the
+  // seeder writes it on every principle row, so a load before the SQL would
+  // fail every principles batch — REQUIRED, checked before the first write.
+  { name: "principles", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"], requiredColumns: ["printed_page"] },
   { name: "principle_paragraphs", pkey: "id", batchSize: 200, stripKeys: [] },
   // The 15th table: library_precedent_private.precedent_unparsed_details,
   // behind public.store_private_precedent_details(p_rows jsonb) — 1..100 rows

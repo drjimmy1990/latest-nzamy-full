@@ -5,8 +5,9 @@
  * globals.css @media print hides header/footer/nav/aside/button and forces
  * every background transparent; `.dark` remaps Tailwind's gray tokens. The
  * sheet is therefore built from <div>s with hex inline styles — pinned here,
- * because one innocent <footer> would silently drop the platform stamp from
- * every printed page.
+ * because one innocent <header> would silently drop the letterhead from
+ * every printed page. Owner ٤٤٢(أ): the sheet carries no platform stamp,
+ * wordmark or QR at all.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -26,7 +27,16 @@ test("the sheet uses no element the global print CSS hides, and no theme-remappe
     assert.ok(!/className="[^"]*\b(text|bg|border)-(gray|slate|zinc)-/.test(src), "no Tailwind gray tokens");
   }
   assert.match(sheet, /<thead>/, "the header repeats on every page");
-  assert.match(sheet, /position: fixed; left: 0; right: 0; bottom: 0/, "the footer sits at the foot of every page");
+});
+
+test("owner ٤٤٢(أ): the printed sheet carries the office's letterhead and logo only", () => {
+  const src = code(sheet);
+  assert.ok(!/PLATFORM_STAMP_AR|صادر عبر منصة نظامي/.test(src), "no platform stamp");
+  assert.ok(!/BrandedQr|QR_WORDMARK_SRC|identity\.qr/.test(src), "no QR and no platform wordmark");
+  assert.ok(!/nezamy\.sa/.test(src), "no platform address");
+  assert.match(src, /identity\.logoUrl/, "the office's own logo stays");
+  const ws = code(readFileSync(new URL("./LetterheadWorkspace.tsx", import.meta.url), "utf8"));
+  assert.ok(!/ختم منصة نظامي ورمزها/.test(ws), "the page no longer promises the platform stamp");
 });
 
 test("both dashboards reach the letterhead THROUGH the vault (note 09 §٤); the firm vault is for its owner, managing partner and office admin", () => {
