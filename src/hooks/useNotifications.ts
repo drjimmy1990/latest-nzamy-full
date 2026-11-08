@@ -79,7 +79,25 @@ export interface UseNotificationsReturn {
 
 const POLL_INTERVAL = 30_000; // 30s fallback polling
 
-export function useNotifications(limit = 20): UseNotificationsReturn {
+/**
+ * Fired on window after a read state was saved on the server (mark one / mark
+ * all / remove). Every mounted copy of this hook — the Navbar bell, the admin
+ * bell, /notifications — refetches on it, so the bell's count follows the page
+ * without depending on Realtime reaching this browser (BUG-14).
+ */
+export const NOTIFICATIONS_CHANGED_EVENT = "nzamy-notifications-changed";
+
+function announceChange(source: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT, { detail: { source } }));
+}
+
+let instanceSeq = 0;
+
+export function useNotifications(limit = 20, opts?: { unreadOnly?: boolean }): UseNotificationsReturn {
+  const unreadOnly = opts?.unreadOnly === true;
+  // This copy's id, fixed for its lifetime (its own events are ignored, its channel is its own).
+  const [instanceId] = useState(() => `n${++instanceSeq}`);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [read, setRead] = useState<ListRead<Notification> | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -87,18 +105,33 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof createClient>["channel"]> | null>(null);
+  // Only the newest read may write state: an older one (the other tab of
+  // /notifications, a smaller page) that answers late is dropped.
+  const requestSeq = useRef(0);
+
+  // Switching between all and unread-only: the other list's rows are not shown
+  // while the new one loads.
+  const [listMode, setListMode] = useState(unreadOnly);
+  if (listMode !== unreadOnly) {
+    setListMode(unreadOnly);
+    setNotifications([]);
+    setRead(null);
+    setLoading(true);
+  }
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const refresh = useCallback(async () => {
+    const seq = ++requestSeq.current;
     try {
       // Neither of these rejects any more: the list reader returns `ok: false`
       // and the counter returns `null`. Promise.all is kept so a failed count
       // cannot throw away a perfectly good list, which is the whole reason
       // getUnreadCount() reports null instead of throwing.
       const [listRead, count] = await Promise.all([
-        getNotifications({ limit }),
+        getNotifications({ limit, unreadOnly }),
         getUnreadCount(),
       ]);
+      if (seq !== requestSeq.current) return;
 
       setRead(listRead);
       // Only overwrite the visible list from a read that actually answered.
@@ -118,12 +151,29 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
       // Should be unreachable — both calls handle their own failures — but an
       // unexpected throw here must not be recorded as an empty inbox either.
       console.error("[useNotifications] refresh failed:", error);
+      if (seq !== requestSeq.current) return;
       setRead(listFailed<Notification>());
       setUnreadCountKnown(false);
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
-  }, [limit]);
+  }, [limit, unreadOnly]);
+
+  // ── Another copy of this hook saved a change: read again ──────────────────────
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      if ((e as CustomEvent<{ source?: string }>).detail?.source === instanceId) return;
+      void refresh();
+    };
+    // Back on the tab: read again (Realtime may not reach a self-hosted client).
+    const onFocus = () => { void refresh(); };
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, onChanged);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refresh, instanceId]);
 
   // ── Supabase Realtime subscription ──────────────────────────────────────────
   useEffect(() => {
@@ -133,7 +183,9 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
       try {
         const supabase = createClient();
         const channel = supabase
-          .channel("notifications-realtime")
+          // One channel per copy of the hook: two copies on one name shared a
+          // channel, and the first to unmount removed it for both.
+          .channel(`notifications-realtime-${instanceId}`)
           .on(
             "postgres_changes",
             {
@@ -163,7 +215,7 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
       const interval = setInterval(refresh, POLL_INTERVAL);
       return () => clearInterval(interval);
     }
-  }, [refresh]);
+  }, [refresh, instanceId]);
 
   // ── Actions ─────────────────────────────────────────────────────────────────
   /*
@@ -192,11 +244,12 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
       return;
     }
     setActionError(null);
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    announceChange(instanceId);
+    setNotifications(prev => unreadOnly ? prev.filter(n => n.id !== id) : prev.map(n => n.id === id ? { ...n, read: true } : n));
     // Only adjust a count we actually know. Decrementing an unknown number
     // would invent one.
     if (unreadCountKnown) setUnreadCount(prev => Math.max(0, prev - 1));
-  }, [unreadCountKnown]);
+  }, [unreadCountKnown, unreadOnly, instanceId]);
 
   const markAllRead = useCallback(async () => {
     try {
@@ -207,11 +260,12 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
       return;
     }
     setActionError(null);
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    announceChange(instanceId);
+    setNotifications(prev => unreadOnly ? [] : prev.map(n => ({ ...n, read: true })));
     // Zero here is a fact, not a guess: the server confirmed the write.
     setUnreadCount(0);
     setUnreadCountKnown(true);
-  }, []);
+  }, [unreadOnly, instanceId]);
 
   const remove = useCallback(async (id: string) => {
     const wasUnread = notifications.some(n => n.id === id && !n.read);
@@ -223,6 +277,7 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
       return;
     }
     setActionError(null);
+    announceChange(instanceId);
     // NOTE: in supabase mode the service only marks the row read — there is no
     // DELETE endpoint (notificationService.ts:142) — so the row reappears, read,
     // after the next refresh. Left matching the demo behaviour and this
@@ -230,7 +285,7 @@ export function useNotifications(limit = 20): UseNotificationsReturn {
     // the missing route is reported as a followUp.
     setNotifications(prev => prev.filter(n => n.id !== id));
     if (wasUnread && unreadCountKnown) setUnreadCount(prev => Math.max(0, prev - 1));
-  }, [notifications, unreadCountKnown]);
+  }, [notifications, unreadCountKnown, instanceId]);
 
   const clearActionError = useCallback(() => setActionError(null), []);
 

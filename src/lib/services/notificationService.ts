@@ -45,6 +45,7 @@ import {
   SEVERITY_COLOR,
 } from "@/lib/notificationsStore";
 import type { Notification, NotifType, NotifSeverity } from "@/lib/notificationsStore";
+import { notificationFromRow, type NotificationRow } from "@/lib/services/notificationRow";
 
 // Re-export types and constants
 export type { Notification, NotifType, NotifSeverity };
@@ -53,7 +54,8 @@ export { TYPE_ICONS, SEVERITY_COLOR };
 // ─── API types ────────────────────────────────────────────────────────────────
 
 interface NotificationListResponse {
-  notifications: Notification[];
+  /** The table's own rows (notificationRow.ts maps them). */
+  notifications: NotificationRow[];
   total: number;
   unread_count: number;
 }
@@ -61,13 +63,17 @@ interface NotificationListResponse {
 // ─── Service functions ────────────────────────────────────────────────────────
 
 export async function getNotifications(
-  opts?: { limit?: number; offset?: number },
+  opts?: { limit?: number; offset?: number; unreadOnly?: boolean },
 ): Promise<ListRead<Notification>> {
-  if (!isSupabaseMode) return listOk(getNotificationsLocal());
+  if (!isSupabaseMode) {
+    const local = getNotificationsLocal();
+    return listOk(opts?.unreadOnly ? local.filter((n) => !n.read) : local);
+  }
   try {
     const response = await apiGet<NotificationListResponse>("/api/v1/notifications", {
       limit: opts?.limit,
       offset: opts?.offset,
+      ...(opts?.unreadOnly ? { unread_only: true } : {}),
     });
     // This route's envelope is `{ notifications, total, unread_count }`, not
     // `{ data }`, so `listFromApi` does not fit it; and it 500s on a Supabase
@@ -76,7 +82,10 @@ export async function getNotifications(
     if (!Array.isArray(response?.notifications)) return listFailed<Notification>();
     // `total` is the server's own count, so a bell capped at `limit` can say
     // «يُعرض أحدث ٢٠ من ٤٧» instead of quietly hiding the rest.
-    return listOk(response.notifications, response.total);
+    // The rows are the table's (read_at, created_at, nullable href), mapped once
+    // here so every bell and the page read `read`/`time`/`href` the same way.
+    const now = Date.now();
+    return listOk(response.notifications.map((row) => notificationFromRow(row, now)), response.total);
   } catch (error) {
     console.error("[notificationService] getNotifications failed:", error);
     return listFailed<Notification>();

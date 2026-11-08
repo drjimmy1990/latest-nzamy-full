@@ -187,7 +187,7 @@ export function AdminSidebar() {
                     </div>
                   ) : (
                     notifications.slice(0, 5).map(n => (
-                      <Link key={n.id} href={n.href} onClick={() => { markRead(n.id); setNotifOpen(false); }}
+                      <Link key={n.id} href={n.href || "/notifications"} onClick={() => { markRead(n.id); setNotifOpen(false); }}
                         className={`flex w-full items-start gap-2 px-3 py-2.5 text-start transition-colors hover:bg-white/[0.04] ${!n.read ? "bg-white/[0.02]" : ""}`}>
                         <span className={`mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full ${n.read ? "bg-zinc-700" : "bg-[#C8A762]"}`} />
                         <span className="min-w-0 flex-1">
