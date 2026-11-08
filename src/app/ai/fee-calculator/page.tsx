@@ -10,6 +10,7 @@ import {
   HardHat, Storefront, Scales, Lock, UsersThree, House, Bank
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import LawyerToolLink from "@/components/ai/LawyerToolLink";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import dynamic from "next/dynamic";
@@ -390,9 +391,9 @@ export default function FeeCalculatorPage() {
                       <Link href="/dashboard/lawyer/clients" className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-colors ${isDark ? "border-white/[0.06] text-zinc-300 hover:bg-white/[0.04]" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                         <Gavel size={15} /> إنشاء عقد أتعاب
                       </Link>
-                      <Link href="/ai/contracts" className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-sm font-semibold hover:bg-[#0a3328] transition-colors">
+                      <LawyerToolLink href="/ai/contracts" className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-sm font-semibold hover:bg-[#0a3328] transition-colors">
                         <Clock size={15} /> صياغة اتفاقية أتعاب
-                      </Link>
+                      </LawyerToolLink>
                     </div>
                   </motion.div>
                 )}

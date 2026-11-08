@@ -31,6 +31,7 @@ import { useUser, UserPermission } from "@/hooks/useUser";
 import { LAWYER_AI_TOOLS, type LawyerAiTool } from "@/constants/lawyerAiCatalog";
 import { getLawyerAiBadge } from "@/constants/lawyerAiBadges";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
+import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -646,6 +647,9 @@ function AiHubDashboard() {
     // Art. 18 (owner ١٧٣ / ٢١٩): a consultant may not plead or manage
     // hearings, so the court tools are not offered to him here either.
     if (user.practiceKind === "consultant" && isConsultantBlockedPath(t.href)) return false;
+    // Owner ٤١٧ (8 Nov 2026): a lawyer tool is not offered to any other account,
+    // whatever its plan's permissions say (src/lib/ai/lawyerOnlyTools.ts).
+    if (isLawyerOnlyAiHref(t.href) && !canSeeLawyerTools(user.userType)) return false;
     // ── Access Control Logic ──
     if (t.href === "/ai/global") {
       if (user.userType === "admin") return true;

@@ -9,6 +9,7 @@ import {
   PlusCircle, Scales
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import LawyerToolLink from "@/components/ai/LawyerToolLink";
 import AiResultActions from "@/components/AiResultActions";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { useTheme } from "@/components/ThemeProvider";
@@ -307,9 +308,9 @@ function SupplierRiskAssessmentInner() {
                   <Link href="/dashboard/lawyer/clients" className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border text-[12px] font-bold transition-all ${isDark ? "border-white/[0.06] text-zinc-300 hover:bg-white/[0.04]" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
                     <PlusCircle size={16} /> إضافة لملف الأطراف والعملاء
                   </Link>
-                  <Link href="/ai/contracts" className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-md hover:bg-[#0B3D2E]/90 transition-all`}>
+                  <LawyerToolLink href="/ai/contracts" className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-md hover:bg-[#0B3D2E]/90 transition-all`}>
                     <Scales size={16} /> الانتقال لصياغة العقد استناداً للتحليل
-                  </Link>
+                  </LawyerToolLink>
                 </div>
 
               </motion.div>

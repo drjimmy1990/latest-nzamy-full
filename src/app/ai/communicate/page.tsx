@@ -28,7 +28,7 @@ const TONES = COMMUNICATE_TONES;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-/** tool-status before the form and the price (owner ٤١٧: every account; the mode still decides). */
+/** tool-status before the form and the price (owner ٤١٧, 8 Nov: lawyers and firms; the mode still decides). */
 export default function AICommunicateRoute() {
   return (
     <ToolUsableGate

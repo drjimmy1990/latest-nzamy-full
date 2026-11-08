@@ -54,7 +54,7 @@ interface Props {
   onPleading: (text: string) => void;
   /**
    * The analysis cannot run for this account: the tool is switched off (`tool_off`), or the
-   * library's AI tier refused it (`library_tier`, owner ٤١٧ — open to every account, but the
+   * library's AI tier refused it (`library_tier`: the account type may run it, but the
    * library's Pro rule stands). The page offers the team order instead, with a note for the latter.
    */
   onToolOff: (code: "tool_off" | "library_tier") => void;
@@ -340,7 +340,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
 
 function RunStatus({ isDark, run }: { isDark: boolean; run: ReturnType<typeof useAiRun> }) {
   const stage = <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("legal-drafter")} />;
-  // Owner ٤١٧: open to every account; the library's AI tier still gates the drafter.
+  // Lawyers and firms (owner ٤١٧, 8 Nov); the library's AI tier still gates the drafter.
   // `library_tier` hands over to the team order (onToolOff); `library_closed` is said here.
   const library = run.phase === "error" && run.code === "library_closed" ? libraryToolRefusal(run.code, "الصائغ القانوني", null) : null;
   if (library) return <LibraryToolRefusalNote refusal={library} isDark={isDark} />;

@@ -14,6 +14,7 @@
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
 import { strictNationalId } from "../services/clientIdentityRules.ts";
 import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
+import { measurePaste } from "./pageCount.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
 
@@ -143,13 +144,26 @@ const ECHO_ROLES = ["lawyer", "firm"] as const;
 
 /**
  * Every registered customer account type: profiles.user_type minus `admin`.
- * Owner ٤١٧ (7 Nov 2026): the AI tools are open, for points, to every
- * registered user, and every one of these types can buy points (priceBook
- * top-ups). An admin passes every tool anyway (toolRoleRefusal). Art. 18's
- * consultant lock is the separate `consultantBlocked` flag, and a tool that
- * searches the library still needs the library AI's own tier (runs/route.ts).
+ * Owner ٤١٧, answer of 8 Nov 2026 (it reverses his 7 Nov answer, which had
+ * opened every tool to every registered account): only the general guidance
+ * tools stay open to all of these — the quick answer and the two legal-opinion
+ * types. Every one of these types can buy points (priceBook top-ups). An admin
+ * passes every tool anyway (toolRoleRefusal). Art. 18's consultant lock is the
+ * separate `consultantBlocked` flag, and a tool that searches the library still
+ * needs the library AI's own tier (runs/route.ts).
  */
 export const REGISTERED_ROLES = ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"] as const;
+
+/**
+ * Owner ٤١٧, answer of 8 Nov 2026: «الصائغ القانوني» و«محترف العقود» و«مفاوض
+ * العقود» و«عصارة المرفقات» are for licensed lawyers and law firms only;
+ * individuals and companies get only the general guidance tools. The controller
+ * ruling applies the same line to every working tool (drafter, contracts and
+ * the review inside it, negotiator, case brief, simulator, strength, najiz,
+ * brief check, communicator, assistant, case-board card, contract drafter).
+ * The /ai pages these tools live on follow it too (src/lib/ai/lawyerOnlyTools.ts).
+ */
+export const LAWYER_FIRM_ROLES = ["lawyer", "firm"] as const;
 
 // ── wave 1: text only, fast, no retrieval (plan §5, «Wave 1») ───────────────
 // Both start off: D10 (personal data sent to a provider outside the Kingdom)
@@ -408,7 +422,7 @@ const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T): T
 const listOf = <T>(v: unknown, max: number, map: (x: unknown) => T | null): T[] =>
   (Array.isArray(v) ? v : []).map(map).filter((x): x is T => x !== null).slice(0, max);
 
-/** L7 عصارة المرفقات / الموجز القضائي: who the lawyer acts for, and whether to list what to ask the client for. */
+/** L7 عصارة المرفقات (owner ٤٤١: its only name): who the lawyer acts for, and whether to list what to ask the client for. */
 function caseBriefInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   const roleNote = boundedText(raw.role_note, 1000);
@@ -471,12 +485,16 @@ const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
 /**
  * A pasted text (AiToolSpec.pasteAsFile): absent, or within its limits after
  * trim. Over the limit is refused, never cut: the user sees what was not sent.
+ * The limits are counted characters (owner ٤٣٩, pageCount.measurePaste: no
+ * tashkeel, no tatweel, one space a run), the same count as the paste box; the
+ * text kept and sent is the trimmed original.
  */
 function pastedText(v: unknown, limits: { min: number; max: number; tooShort: string; tooLong: string }): { text: string | null } | { error: string } {
   const text = typeof v === "string" ? v.trim() : "";
-  if (!text) return { text: null };
-  if (text.length < limits.min) return { error: limits.tooShort };
-  if (text.length > limits.max) return { error: limits.tooLong };
+  const m = measurePaste(text, limits);
+  if (m.empty) return { text: null };
+  if (m.tooShort) return { error: limits.tooShort };
+  if (m.tooLong) return { error: limits.tooLong };
   return { text };
 }
 
@@ -1049,7 +1067,7 @@ function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
   return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
 }
 
-/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧ adds government). */
+/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧: general guidance stays open to all). */
 const LEGAL_OPINION_ROLES = REGISTERED_ROLES;
 
 /**
@@ -1105,10 +1123,12 @@ function contractsProOutput(raw: unknown, input: Record<string, unknown>): Recor
 
 /**
  * Owner ١٩٣: no chance and no percentage in a result, in any digit system (JavaScript's
- * \d is ASCII only). A contract's own rate is no exception: the prompts ask for it in
- * words («خمسة في المئة»), which this does not match.
+ * \d is ASCII only). Owner ٤٤٠ (8 Nov 2026): the one exception is a rate the input
+ * contract itself states — see percentsOutsideInput. A rate in words («خمسة في
+ * المئة») is not matched at all.
  */
 export const PERCENT_PATTERN = /[0-9٠-٩۰-۹]+([.,٫][0-9٠-٩۰-۹]+)?\s*[%٪]/u;
+const PERCENT_PATTERN_ALL = new RegExp(PERCENT_PATTERN.source, "gu");
 
 /** Does any string under `v` hold a percentage? Walks arrays and plain objects. */
 export function hasPercent(v: unknown): boolean {
@@ -1118,10 +1138,44 @@ export function hasPercent(v: unknown): boolean {
 }
 
 /**
- * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
- * Owner ٤١٧: every registered account.
+ * One percentage as a value: Arabic-Indic and Persian digits as Latin, any decimal
+ * separator («٫», «,», «.») as «.», no leading zeros, no trailing zeros after the
+ * separator. The sign (% or ٪) and the space before it are dropped. So «١٢٫٥٠ ٪»,
+ * «12.5%» and «12,5%» are one rate.
  */
-export const CONTRACTS_PRO_ROLES = REGISTERED_ROLES;
+export function canonicalPercent(match: string): string {
+  const latin = match.replace(/[٠-٩]/gu, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/gu, (d) => String(d.charCodeAt(0) - 0x06f0));
+  const number = latin.replace(/\s*[%٪]$/u, "");
+  const [whole, fraction = ""] = number.split(/[.,٫]/u);
+  const w = whole.replace(/^0+(?=\d)/, "");
+  const f = fraction.replace(/0+$/, "");
+  return f ? `${w}.${f}` : w;
+}
+
+function percentsIn(v: unknown, into: string[]): string[] {
+  if (typeof v === "string") for (const m of v.matchAll(PERCENT_PATTERN_ALL)) into.push(canonicalPercent(m[0]));
+  else if (Array.isArray(v)) for (const x of v) percentsIn(x, into);
+  else if (isPlainObject(v)) for (const x of Object.values(v)) percentsIn(x, into);
+  return into;
+}
+
+/**
+ * Owner ٤٤٠ (8 Nov 2026): the percentages in a contract tool's output that the
+ * input contract does not state. A rate passes only when the same rate appears in
+ * the contract text the user gave (digits and separator normalised, as
+ * canonicalPercent); with no contract text — an uploaded file the server never
+ * reads — every percentage fails, as before. Empty means the output may pass.
+ */
+export function percentsOutsideInput(output: unknown, inputTexts: readonly string[]): string[] {
+  const stated = new Set(percentsIn(inputTexts, []));
+  return percentsIn(output, []).filter((p) => !stated.has(p));
+}
+
+/**
+ * The accounts /ai/contracts admits: contracts-pro and the review inside it (R21).
+ * Owner ٤١٧ (answer of 8 Nov 2026): lawyers and law firms only.
+ */
+export const CONTRACTS_PRO_ROLES = LAWYER_FIRM_ROLES;
 
 export const CONTRACT_REVIEW_PRICE = 250;
 // `optional`: the contract may be pasted instead. filesRequired below still refuses a
@@ -1201,7 +1255,7 @@ function reviewClause(c: unknown): Record<string, string> | null {
  * refuses (and refunds) the run rather than handing over a report with a risk
  * silently gone. `cited` becomes the library's verdict (runCore's enricher).
  */
-function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
+function contractReviewOutput(raw: unknown, input: Record<string, unknown> = {}): Record<string, unknown> | null {
   if (!isPlainObject(raw) || !Array.isArray(raw.clauses)) return null;
   const summary = boundedText(raw.summary, 3000);
   const overallRisk = reviewRisk(raw.overall_risk);
@@ -1230,7 +1284,9 @@ function contractReviewOutput(raw: unknown): Record<string, unknown> | null {
     missing,
     cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
   };
-  return hasPercent(output) ? null : output;
+  // Owner ٤٤٠: only a rate the pasted contract states verbatim; an uploaded file is not read here.
+  const contract = typeof input.contract_text === "string" ? [input.contract_text] : [];
+  return percentsOutsideInput(output, contract).length > 0 ? null : output;
 }
 
 // ── مفاوض العقود: three positions for each clause the user pastes ─────────────
@@ -1306,7 +1362,9 @@ function contractNegotiatorOutput(raw: unknown, input: Record<string, unknown>):
     clauses.push(clause);
   }
   const output = { summary, clauses, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [] };
-  return hasPercent(output) ? null : output;
+  // Owner ٤٤٠: only a rate one of the pasted clauses states verbatim (not the demand or the goal).
+  const contract = input.clauses.flatMap((c) => (isPlainObject(c) && typeof c.text === "string" ? [c.text] : []));
+  return percentsOutsideInput(output, contract).length > 0 ? null : output;
 }
 
 // ── L14 الصائغ القانوني: two steps of one work ──────────────────────────────
@@ -1513,7 +1571,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/communicate",
     class: "fast",
     tier: "fast",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => 5,
     dailyLimit: 40,
@@ -1527,7 +1585,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/najiz-optimizer",
     class: "fast",
     tier: "fast",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/najiz-optimizer (Art. 18).
     consultantBlocked: true,
     // Owner ٤١٦ (7 Nov 2026): the AI condense is 15 points; the rule-based
@@ -1576,7 +1634,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/assistant",
     class: "fast",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     // D3: the conversation's first message pays for the whole conversation.
     price: (_input, ctx) => ((ctx.turn ?? 0) === 0 ? ASSISTANT_CONVERSATION_PRICE : 0),
@@ -1593,8 +1651,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/canvas-card",
     class: "fast",
     tier: "fast",
-    // Owner ٤١٧: every registered account; the button itself sits on the lawyer and firm case boards.
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026) + controller ruling: lawyers and law firms only (the
+    // button sits on the lawyer and firm case boards; the company board hides it).
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => 10,
     dailyLimit: 40,
@@ -1608,7 +1667,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/case-brief",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     // Owner ٢٨٣: 30 points for 1–5 pages, 150 for 6–30 (scanned pages included).
     price: (_input, ctx) => ((ctx.pages ?? 0) <= CASE_BRIEF_SMALL_PAGES ? CASE_BRIEF_PRICES.small : CASE_BRIEF_PRICES.large),
@@ -1624,7 +1683,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/brief-check",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/brief-check (Art. 18).
     consultantBlocked: true,
     price: () => BRIEF_CHECK_PRICE,
@@ -1643,7 +1702,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/wargaming",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // CONSULTANT_BLOCKED_PREFIXES has /ai/wargaming (Art. 18).
     consultantBlocked: true,
     price: (input) => wargamingPrice(input.targets),
@@ -1660,7 +1719,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/analyze-strength",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // Part of the simulator (ruling R1): CONSULTANT_BLOCKED_PREFIXES has /ai/analyze-strength (Art. 18).
     consultantBlocked: true,
     price: () => ANALYZE_STRENGTH_PRICE,
@@ -1676,8 +1735,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-drafter",
     class: "job",
     tier: "deep",
-    // Owner ٤١٧: every registered account (plan: individual F «عقد مبسّط ذكي» is the same engine).
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026) + controller ruling: lawyers and law firms only.
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_DRAFT_PRICE,
     dailyLimit: 5,
@@ -1757,8 +1816,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/contract-negotiator",
     class: "job",
     tier: "deep",
-    // Owner ٤١٧: every registered account (the nav rows are still the firm and lawyer sidebars').
-    roles: REGISTERED_ROLES,
+    // Owner ٤١٧ (8 Nov 2026): «مفاوض العقود» is for lawyers and law firms only.
+    roles: LAWYER_FIRM_ROLES,
     consultantBlocked: false,
     price: () => CONTRACT_NEGOTIATOR_PRICE,
     dailyLimit: 5,
@@ -1772,7 +1831,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     n8nPath: "nzamy-ai/legal-drafter",
     class: "job",
     tier: "deep",
-    roles: REGISTERED_ROLES,
+    roles: LAWYER_FIRM_ROLES,
     // Pleadings: a consultant does not plead (Art. 18 of نظام المحاماة).
     consultantBlocked: true,
     // Charged once, on the analysis; the draft that follows it is free.

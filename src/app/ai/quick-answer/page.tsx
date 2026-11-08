@@ -19,6 +19,7 @@ import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
+import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
 import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
 import {
@@ -71,10 +72,15 @@ function QuickAnswerTool() {
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
   const cites = asCitations(run.citations);
   const ungrounded = isUngroundedAnswer(run.output);
-  // Owner ٤١٧: open to every account, but the library's AI tier still gates it.
+  // Owner ٤١٧: open to every account (general guidance), but the library's AI tier still gates it.
   const libraryRefusal = run.phase === "error" ? libraryToolRefusal(run.code, "سؤال قانوني سريع", user.userType) : null;
   // Art. 18: /ai/wargaming refuses a consultant, so it is not offered to him.
-  const followUps = QUICK_ANSWER_FOLLOW_UPS.filter((f) => !(user.practiceKind === "consultant" && isConsultantBlockedPath(f.href)));
+  // Owner ٤١٧ (8 Nov): «عصارة المرفقات» (/ai/analyze's lawyer half) and the simulator are
+  // lawyer and firm tools, so another account is offered only the legal opinion.
+  const lawyerTools = canSeeLawyerTools(user.userType);
+  const followUps = QUICK_ANSWER_FOLLOW_UPS
+    .filter((f) => !(user.practiceKind === "consultant" && isConsultantBlockedPath(f.href)))
+    .filter((f) => lawyerTools || !(isLawyerOnlyAiHref(f.href) || f.href === "/ai/analyze"));
 
   function ask() {
     const q = question.trim();

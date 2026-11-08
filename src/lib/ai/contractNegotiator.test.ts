@@ -43,14 +43,14 @@ const output = (over: Record<string, unknown> = {}) => ({
 
 // ── the registry entry ───────────────────────────────────────────────────────
 
-test("the registry entry: 150 points, every registered role (owner ٤١٧), off by default, no files, no retrieval", () => {
+test("the registry entry: 150 points, lawyers and firms only (owner ٤١٧, 8 Nov), off by default, no files, no retrieval", () => {
   assert.equal(CONTRACT_NEGOTIATOR_PRICE, 150);
   assert.equal(NEGOTIATOR_CLAUSES_MAX, 10);
   assert.equal(TOOL.price({}, { pages: 0, turn: 0 }), 150);
   assert.equal(TOOL.n8nPath, "nzamy-ai/contract-negotiator");
   assert.equal(TOOL.class, "job");
   assert.equal(TOOL.tier, "deep");
-  assert.deepEqual([...TOOL.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+  assert.deepEqual([...TOOL.roles], ["lawyer", "firm"]);
   assert.equal(TOOL.consultantBlocked, false);
   assert.equal(TOOL.dailyLimit, 5);
   assert.equal(TOOL.defaultMode, "off");
@@ -167,10 +167,20 @@ test("owner ١٩٣: no percentage anywhere in the output", () => {
   for (const [name, raw] of leaks) assert.equal(TOOL.validateOutput(raw, input), null, name);
 });
 
+test("owner ٤٤٠ (8 Nov 2026): a rate one of the pasted clauses states passes; another rate, or one only in the demand, fails", () => {
+  const withRate = { ...input, clauses: [clauseIn({ text: "يلتزم المستأجر بغرامة ١٠٪ من الأجرة عن كل شهر تأخير" }), clauseIn(), clauseIn({ their_demand: "رفع الغرامة إلى 20%" })] };
+  const third = (over: Record<string, unknown>) => output({ clauses: [clauseOut(0), clauseOut(1), clauseOut(2, over)] });
+  assert.notEqual(TOOL.validateOutput(third({ fallback: "إبقاء الغرامة 10% مع سقف" }), withRate), null, "verbatim passes, in any digits");
+  assert.notEqual(TOOL.validateOutput(output({ summary: "غرامة ١٠٫٠ ٪ بلا سقف" }), withRate), null);
+  assert.equal(TOOL.validateOutput(third({ fallback: "خفض الغرامة إلى ٥٪" }), withRate), null, "a different rate fails");
+  assert.equal(TOOL.validateOutput(third({ issue: "يطلب 20% " }), withRate), null, "the other side's demand is not the contract");
+  assert.equal(TOOL.validateOutput(third({ fallback: "إبقاء الغرامة 10%" }), input), null, "no rate in the clauses: every rate fails");
+});
+
 // ── the money ────────────────────────────────────────────────────────────────
 
-const ROLES = ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"];
-const OUTSIDERS = ["arbitrator", "translator", "", "client"];
+const ROLES = ["lawyer", "firm"];
+const OUTSIDERS = ["individual", "corporate", "micro", "provider", "government", "ngo", "arbitrator", "translator", "", "client"];
 const actor = (userType: string): RunActor => ({ userId: "u-1", userType, practiceKind: "advocate", displayName: null });
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
@@ -242,7 +252,7 @@ test("any other role is refused before any charge, in every mode, and the settin
   }
 });
 
-test("live: every registered role is charged exactly the price shown, however many clauses", async () => {
+test("live: a lawyer and a firm are charged exactly the price shown, however many clauses", async () => {
   for (const role of ROLES) {
     for (const n of [1, 10]) {
       const { client, log } = db({ "contract-negotiator": { mode: "live" } });

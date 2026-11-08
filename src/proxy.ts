@@ -405,6 +405,15 @@ const PROTECTED = [
   "/ai/contracts",
   "/ai/wargaming",
   "/ai/runs",
+  // Owner ٤١٧ (8 Nov 2026): the lawyer tools' pages — routeAccess.ts gives
+  // each one a lawyer/firm rule, and a rule is read only for a PROTECTED path.
+  "/ai/contract-negotiator",
+  "/ai/contract-drafter",
+  "/ai/analyze-strength",
+  "/ai/najiz-optimizer",
+  "/ai/brief-check",
+  "/ai/communicate",
+  "/ai/assistant",
   "/settings",
   "/notifications",
   "/onboarding",

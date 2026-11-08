@@ -22,7 +22,9 @@ import {
   CONTRACT_REVIEW_PRICE,
   CONTRACTS_PRO_ROLES,
   PERCENT_PATTERN,
+  canonicalPercent,
   hasPercent,
+  percentsOutsideInput,
 } from "./tools.ts";
 import { aiToolLabelAr, AI_TOOL_PAGES } from "./toolLabels.ts";
 import { aiToolPointRange, registryPointsLabel, type PricedAiToolId } from "./toolPointsDisplay.ts";
@@ -72,8 +74,8 @@ test("the registry entry: 250 points at any page count, one file up to 15 pages,
   assert.deepEqual(TOOL.files, CONTRACT_REVIEW_FILES);
 });
 
-test("R21 + owner ٤١٧: the contracts-pro roles are every registered role, as one constant", () => {
-  assert.deepEqual([...CONTRACTS_PRO_ROLES], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+test("R21 + owner ٤١٧ (8 Nov): the contracts-pro roles are lawyers and firms, as one constant", () => {
+  assert.deepEqual([...CONTRACTS_PRO_ROLES], ["lawyer", "firm"]);
   assert.equal(TOOL.roles, CONTRACTS_PRO_ROLES, "one constant, not a second list");
   assert.equal(AI_TOOLS["contracts-pro"].roles, CONTRACTS_PRO_ROLES);
 });
@@ -173,6 +175,44 @@ test("owner ١٩٣: no percentage in any string field, in any digit system", () 
   for (const [name, raw] of leaks) assert.equal(TOOL.validateOutput(raw, input), null, name);
 });
 
+// ── owner ٤٤٠ (8 Nov 2026): a rate the input contract states verbatim ─────────
+
+test("٤٤٠: one rate whatever its digits, separator, sign or space", () => {
+  for (const s of ["12.5%", "١٢٫٥٪", "۱۲٫۵٪", "12,5 %", "12.50%", "012.5٪", "١٢٫٥٠ ٪"]) assert.equal(canonicalPercent(s), "12.5", s);
+  for (const s of ["5%", "٥٪", "۵ ٪", "5.0%", "05%"]) assert.equal(canonicalPercent(s), "5", s);
+  assert.equal(canonicalPercent("0%"), "0");
+  assert.equal(canonicalPercent("100٪"), "100");
+  assert.equal(canonicalPercent("10%"), "10", "a trailing zero of the whole number stays");
+});
+
+test("٤٤٠: percentsOutsideInput — verbatim passes, a different rate fails, no input fails", () => {
+  const contract = "يلتزم المستأجر بغرامة تأخير قدرها ٥٪ من الأجرة الشهرية، وزيادة سنوية 2.5 %.";
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة 5%", b: ["زيادة ٢٫٥٪"] }, [contract]), []);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٧٪" }, [contract]), ["7"]);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٥٪", b: "فرصتك 80%" }, [contract]), ["80"]);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٥٪" }, []), ["5"]);
+  assert.deepEqual(percentsOutsideInput({ a: "غرامة ٥٪" }, ["العقد بلا نسب"]), ["5"]);
+  // «15%» in the contract is not «5%»: the whole number is read, not a tail of it.
+  assert.deepEqual(percentsOutsideInput("٥٪", ["عمولة 15%"]), ["5"]);
+  assert.deepEqual(percentsOutsideInput("15%", ["عمولة ١٥٪"]), []);
+  // A rate in words is no percentage at all.
+  assert.deepEqual(percentsOutsideInput("خمسة في المئة", []), []);
+});
+
+test("٤٤٠: the review output — a rate the pasted contract states passes; another, or no pasted contract, fails", () => {
+  const pasted = { ...input, contract_text: `عقد إيجار. ${"ن".repeat(120)} البند الخامس: غرامة تأخير ٥٪ من الأجرة.` };
+  const quoting = output({ clauses: [clause({ quote: "غرامة تأخير ٥٪ من الأجرة", issue: "غرامة 5 % بلا سقف" })] });
+  assert.notEqual(TOOL.validateOutput(quoting, pasted), null, "verbatim passes");
+  const different = output({ clauses: [clause({ quote: "غرامة تأخير ٥٪ من الأجرة", defensive_edit: "تخفض إلى ٢٪" })] });
+  assert.equal(TOOL.validateOutput(different, pasted), null, "a rate the contract does not state fails");
+  assert.equal(TOOL.validateOutput(output({ summary: "فرصتك ٥٪" }), input), null, "an uploaded contract (no pasted text) passes no rate");
+  assert.equal(TOOL.validateOutput(quoting, {}), null, "no input at all fails");
+  // Through the input check, as the run stores it: contract_text is what the callback reads back.
+  const checked = TOOL.validateInput(pasted);
+  assert.ok(checked.ok);
+  assert.notEqual(TOOL.validateOutput(quoting, checked.input), null);
+});
+
 // ── the labels, and nothing leaning on the human catalogue (R19) ──────────────
 
 test("R2: label and page", () => {
@@ -248,7 +288,7 @@ test("q296: the points-standing route does not answer for it — its short reply
 
 const F1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SIX = CONTRACTS_PRO_ROLES as readonly string[];
-const OUTSIDERS = ["arbitrator", "translator", "", "client"];
+const OUTSIDERS = ["individual", "corporate", "micro", "provider", "government", "ngo", "arbitrator", "translator", "", "client"];
 const actor = (userType: string): RunActor => ({ userId: "u-1", userType, practiceKind: "advocate", displayName: null });
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
@@ -294,7 +334,7 @@ test("off: nobody is charged, for every role, whether the setting is empty, unre
   }
 });
 
-test("staff: every registered role is refused before the charge; an admin runs it exempt", async () => {
+test("staff: a lawyer and a firm are refused before the charge; an admin runs it exempt", async () => {
   const setting = { "contract-review": { mode: "staff" } };
   for (const role of SIX) {
     const { client, log } = db(setting);
@@ -311,7 +351,7 @@ test("staff: every registered role is refused before the charge; an admin runs i
   assert.equal((log.find((q) => q.table === "ai_start_run")!.payload as Record<string, unknown>).p_exempt, true);
 });
 
-test("a role outside the registered ones is refused before any charge, in every mode, and the setting is not read", async () => {
+test("a role outside lawyer and firm is refused before any charge, in every mode, and the setting is not read", async () => {
   for (const mode of ["off", "staff", "live"]) {
     for (const role of OUTSIDERS) {
       const { client, log } = db({ "contract-review": { mode } });
@@ -326,7 +366,7 @@ test("a role outside the registered ones is refused before any charge, in every 
   }
 });
 
-test("live: each registered role is charged exactly the price shown, at one page and at fifteen", async () => {
+test("live: a lawyer and a firm are charged exactly the price shown, at one page and at fifteen", async () => {
   for (const role of SIX) {
     for (const pages of [1, 15]) {
       const { client, log } = db({ "contract-review": { mode: "live" } });
@@ -393,10 +433,10 @@ test("a pasted contract: refused uncharged while the flag is off; with it on it 
 
 // ── settling ─────────────────────────────────────────────────────────────────
 
-function settling(status = "running") {
+function settling(status = "running", runInput: Record<string, unknown> = input) {
   const stored: Array<Record<string, unknown>> = [];
   const { client, log } = fakeDb((q: FakeQuery) => {
-    if (q.table === "ai_runs" && q.op === "select") return { data: { id: RUN, user_id: "u-1", tool: "contract-review", status, class: "job", source_ids: {}, input } };
+    if (q.table === "ai_runs" && q.op === "select") return { data: { id: RUN, user_id: "u-1", tool: "contract-review", status, class: "job", source_ids: {}, input: runInput } };
     if (q.table === "ai_runs" && q.op === "update") {
       stored.push(q.payload as Record<string, unknown>);
       return { data: [{ id: RUN }] };
@@ -435,6 +475,20 @@ test("an output with a percentage, or that breaks the shape, fails and is refund
     assert.equal((log.find((q) => q.table === "ai_fail_run")!.payload as Record<string, unknown>).p_code, "schema_invalid");
     assert.equal(stored.length, 0);
   }
+});
+
+test("owner ٤٤٠ on the callback: the run row's pasted contract_text decides — its own rate is stored, another rate is refunded", async () => {
+  const runInput = { ...input, contract_text: `عقد إيجار. ${"ن".repeat(120)} البند الخامس: غرامة تأخير ٥٪ من الأجرة.` };
+  const quoting = output({ clauses: [clause({ quote: "غرامة تأخير ٥٪ من الأجرة", issue: "غرامة 5% بلا سقف" })] });
+  const ok = settling("running", runInput);
+  const r = await callbackWith(ok.admin as never, { run_id: RUN, status: "succeeded", output: quoting, citations: [] });
+  assert.deepEqual(r.body, { ok: true, final: "succeeded" });
+  assert.deepEqual(rpcs(ok.log), []);
+  assert.equal(ok.stored.length, 1);
+  const other = settling("running", runInput);
+  await callbackWith(other.admin as never, { run_id: RUN, status: "succeeded", output: output({ summary: "غرامة ٧٪" }), citations: [] });
+  assert.deepEqual(rpcs(other.log), ["ai_fail_run"]);
+  assert.equal(other.stored.length, 0);
 });
 
 test("the library decides each cited article, not the model: the stored result has citation_check, not cited", async () => {

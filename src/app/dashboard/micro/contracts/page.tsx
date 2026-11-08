@@ -183,14 +183,8 @@ export default function MicroContractsPage() {
             العقود التي يربطها محاميك بحسابك — نسخها، التزاماتها وجدول دفعاتها
           </p>
         </div>
-        <Link href="/ai/contracts">
-          <motion.div
-            whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-            className="flex items-center gap-2 bg-[#0B3D2E] text-white font-bold px-4 py-2.5 rounded-xl text-sm shadow-md cursor-pointer"
-          >
-            <Plus size={16} weight="bold" /> محترف العقود
-          </motion.div>
-        </Link>
+        {/* Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» is a lawyer and firm tool —
+            the button that opened it for a small business is gone. */}
       </motion.div>
 
       {/* Search + Filter */}

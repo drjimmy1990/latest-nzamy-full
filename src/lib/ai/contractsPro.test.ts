@@ -45,7 +45,7 @@ const checked = (raw: unknown) => {
   return r.input;
 };
 
-test("the registry entry: a 1,000-point job, off by default, no files, lawyers and businesses alike", () => {
+test("the registry entry: a 1,000-point job, off by default, no files, lawyers and firms only (owner ٤١٧, 8 Nov)", () => {
   const t = AI_TOOLS["contracts-pro"];
   assert.equal(t.class, "job");
   assert.equal(t.n8nPath, "nzamy-ai/contracts-pro");
@@ -54,7 +54,7 @@ test("the registry entry: a 1,000-point job, off by default, no files, lawyers a
   assert.equal(t.defaultMode, "off");
   assert.equal(t.files, undefined);
   assert.equal(t.retrieval, undefined, "no library gate: the cited articles are checked after, as in L11");
-  for (const role of ["lawyer", "firm", "corporate", "micro", "ngo", "individual"]) assert.ok(t.roles.includes(role as never), role);
+  assert.deepEqual([...t.roles], ["lawyer", "firm"]);
 });
 
 test("every contract type the page offers is one the run knows, and no other", () => {
@@ -160,7 +160,14 @@ function deps(calls: Array<Record<string, unknown>>): StartRunDeps {
 }
 
 test("a lawyer and a company both start the job: charged 1,000 once, sent to n8n with no files and no library search", async () => {
-  for (const actor of [LAWYER, CORPORATE]) {
+  {
+    const { client, log } = db();
+    const r = await startRunWith(client as never, deps([]), CORPORATE, { tool: "contracts-pro", input, idempotencyKey: "key-abcdef01" });
+    assert.equal(r.status, 403, "owner ٤١٧: a company is refused before any charge");
+    assert.equal(r.body.code, "role");
+    assert.equal(log.some((q) => q.table === "ai_start_run"), false);
+  }
+  for (const actor of [LAWYER]) {
     const { client, log } = db();
     const calls: Array<Record<string, unknown>> = [];
     const r = await startRunWith(client as never, deps(calls), actor, { tool: "contracts-pro", input, idempotencyKey: "key-abcdef01" });

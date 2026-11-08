@@ -96,7 +96,7 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
     defaultOpen: false,
     items: [
       { label: "المستشار الذكي",       labelEn: "AI Consultant",      href: "/ai/consult",               icon: "Brain", badge: "قريباً" },
-      { label: "محترف العقود المختصر",   labelEn: "Contract Drafter",   href: "/ai/contract-drafter",     icon: "FileText" },
+      // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود المختصر» (/ai/contract-drafter) is a lawyer and firm tool — no row here.
       { label: "الفاحص الذكي",        labelEn: "Doc Analyzer",       href: "/ai/analyze",              icon: "Scan", badge: "قريباً" },
       { label: "صائغ الخطابات",       labelEn: "Letter Drafter",     href: "/dashboard/client/letters", icon: "PencilLine" },
     ],

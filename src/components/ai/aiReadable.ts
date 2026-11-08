@@ -11,8 +11,10 @@
  *
  * Pure, and safe in a client bundle: `node --test` runs it. It must never import
  * aiFiles.ts, which pulls in pdf-lib and node:crypto; the test pins the wording
- * below to FILE_COPY.doc instead.
+ * below to FILE_COPY.doc instead. pageCount.ts has no imports at all.
  */
+import { measurePaste } from "../../lib/ai/pageCount.ts";
+
 export function aiReadableAccept(textFiles = false): string {
   return `.pdf,.png,.jpg,.jpeg,.webp${textFiles ? ",.docx,.txt,.md" : ""}`;
 }
@@ -49,11 +51,12 @@ export function aiSkippedNote(skipped: readonly string[]): string {
   return `${AI_DOC_FILE_COPY}. لن تُرسل: ${skipped.join("، ")}`;
 }
 
-/** A paste box's state, counted after trim as the server counts it (tools.ts pastedText). */
+/**
+ * A paste box's state, by the server's own function (pageCount.measurePaste,
+ * which tools.ts pastedText calls): `chars` is the counted length — no
+ * tashkeel, no tatweel, one space a run of whitespace (owner ٤٣٩).
+ */
 export function pasteState(text: string, rules: { min: number; max: number }) {
-  const chars = text.trim().length;
-  const empty = chars === 0;
-  const tooShort = !empty && chars < rules.min;
-  const tooLong = chars > rules.max;
+  const { chars, empty, tooShort, tooLong } = measurePaste(text, rules);
   return { chars, empty, tooShort, tooLong, ok: !empty && !tooShort && !tooLong };
 }

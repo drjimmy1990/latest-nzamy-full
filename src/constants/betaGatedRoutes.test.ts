@@ -242,21 +242,24 @@ test("S5-B7: every inline link to a terminal tool carries «قريباً», and 
   }
   assert.ok(terminal.length > 0, "no terminal link found: the walk broke");
 
-  // S3-04 repointed these to the live /ai/contracts: «قريباً» there would be false.
+  // S3-04 repointed these to the live /ai/contracts; owner ٤١٧ / ٤٤٣ (8 Nov 2026)
+  // made it a lawyer and firm tool, so the NGO and small-business screens no
+  // longer link it at all.
   assert.equal(isTerminalToolHref("/ai/contracts"), false);
   for (const rel of ["app/dashboard/ngo/volunteers/page.tsx", "app/dashboard/ngo/contracts/page.tsx", "app/dashboard/micro/contracts/page.tsx"]) {
-    const links = jsxToolLinks(rel).filter((l) => l.href === "/ai/contracts");
-    assert.ok(links.length > 0, `${rel}: the /ai/contracts link moved`);
-    for (const { element } of links) assert.ok(!element.includes(COMING_SOON_BADGE_AR), `${rel}: a live link says «قريباً»`);
+    assert.equal(jsxToolLinks(rel).filter((l) => l.href === "/ai/contracts").length, 0, `${rel}: a lawyer tool is linked`);
+    assert.ok(!read(rel).includes("'/ai/contracts'") && !read(rel).includes('"/ai/contracts"'), `${rel}: a lawyer tool is linked`);
   }
-  assert.match(read("app/dashboard/ngo/volunteers/page.tsx"), /secondaryAction=\{\{ label: "محترف العقود", href: '\/ai\/contracts' \}\}/);
 });
 
 test("S5-B7: OnboardingBanner computes the badge from the route, so it leaves when the tool goes live", () => {
   const banner = read("components/OnboardingBanner.tsx");
   assert.match(banner, /isTerminalToolHref\(a\.href\)[\s\S]{0,200}COMING_SOON_BADGE_AR/);
   const hrefs = [...banner.matchAll(/href: "([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(hrefs.some(isTerminalToolHref), "no banner action is terminal today: this test no longer checks anything");
+  // Owner ٤٤٣ (8 Nov 2026): the welcome bar carries no pending promise, so no
+  // action is terminal today; the badge code above stays for the day one is.
+  assert.ok(hrefs.length >= 20, "the banner's actions moved");
+  assert.deepEqual(hrefs.filter(isTerminalToolHref), [], "a welcome-bar action opens a tool that is not live");
 });
 
 test("S5-B7: the notifications demo seed does not announce the gated advisor as launched", () => {

@@ -298,7 +298,7 @@ let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
 return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
 
-// ── L7 عصارة المرفقات / الموجز القضائي ──────────────────────────────────────
+// ── L7 عصارة المرفقات (its only name, owner ٤٤١) ─────────────────────────────
 // The lawyer's role note and the files → a BriefResult. The app rebuilds the
 // object field by field (tools.ts caseBriefOutput); nothing here is trusted.
 const CASE_BRIEF_PROMPT = String.raw`const wantRequests = i.want_requests !== false;
@@ -329,8 +329,9 @@ const prompt = [
 
 // ── contract review (owner's canonical pricing, item 9) ─────────────────────
 // One contract, for the party the user names. The risk is a word and the app
-// refuses any percentage in the reply (tools.ts hasPercent), a rate the contract
-// itself states included: hence the rule that writes such a rate in words. The
+// refuses any percentage in the reply that the pasted contract does not state
+// verbatim (tools.ts percentsOutsideInput, owner ٤٤٠); an uploaded contract is not
+// read by the app, so the rule that writes a contract's rate in words stays. The
 // clause budget keeps the JSON whole inside maxOutputTokens.
 const CONTRACT_REVIEW_PROMPT = String.raw`const line = (label, v) => (v ? label + ': «' + esc(v) + '»' : '');
 const prompt = [

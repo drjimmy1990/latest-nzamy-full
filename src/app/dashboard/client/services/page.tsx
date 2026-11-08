@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import {
   ChatCircle, FileText, Gavel, ShieldStar, Robot,
   VideoCamera, Users, ArrowLeft, ChatsCircle, Scan,
@@ -96,6 +97,9 @@ function buildCategories(
       services: getClientServicesByCategory(cat.categoryId, catalog)
         .filter((service) => service.enabled !== false)
         .filter((service) => !IS_CLIENT_BETA || service.betaVisibility === "public")
+        // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «صياغة عقد مخصص» opens the contract
+        // drafter, a lawyer and firm tool; this page serves individuals and companies.
+        .filter((service) => !isLawyerOnlyAiHref(service.route))
         // S6 (q327): each card is priced for the viewer's audience — a
         // company's contract-review card reads «يبدأ من ٨٠٠ ر.س».
         .map((card) => resolveClientService(card.serviceId, audience, catalog))
