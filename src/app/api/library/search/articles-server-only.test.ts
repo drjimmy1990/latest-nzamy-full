@@ -33,16 +33,17 @@ test("every library.articles read (relevance window, id window, page, head count
   assert.doesNotMatch(routeSource, /relevancePage\(supabase,/);
   // The head-count fallback goes through the same builder, so it moves with it.
   assert.match(routeSource, /lawQuery\(false, true\)\.abortSignal\(signal\)/);
-  // The law title lookups, and the decrees / fiqh inline queries (only the
-  // fallbacks of their window functions since 20261026_52 / 20261018_02), stay
-  // on the request client: 20261004_01 keeps fts and the columns they read on
-  // the anon allow-list, so they stay under anon's statement_timeout.
+  // The law title lookups and the fiqh inline query (only the fallback of
+  // its window function since 20261018_02) stay on the request client:
+  // 20261004_01 keeps fts and the columns they read on the anon allow-list, so
+  // they stay under anon's statement_timeout.
   // Principles moved to the service role with 20261016_01 (their text and fts
-  // are server-only).
+  // are server-only); the decrees inline query with 20261108_10 (ref, date,
+  // summary_brief and fts are server-only, owner ٤٢٤ / ٣٨٠).
   assert.match(routeSource, /fetchLawTitleHitsChecked\(supabase, \{/);
-  for (const table of ["decrees_circulars", "feqh_blocks"]) {
-    assert.match(routeSource, new RegExp(String.raw`supabase\s*\.schema\('library'\)\s*\.from\('${table}'\)`));
-  }
+  assert.match(routeSource, /supabase\s*\.schema\('library'\)\s*\.from\('feqh_blocks'\)/);
+  assert.match(routeSource, /serverOnly\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)/);
+  assert.doesNotMatch(routeSource, /supabase\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)/);
   assert.match(routeSource, /serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
   assert.doesNotMatch(routeSource, /supabase\s*\.schema\('library'\)\s*\.from\('principles'\)/);
 });
@@ -76,10 +77,10 @@ test("autocomplete counts library.articles with the service role and never selec
   assert.match(auto, /\.select\('id', \{ count: 'estimated', head: true \}\)/);
   // No other articles read in autocomplete.
   assert.equal((auto.match(/'articles'/g) ?? []).length, 1);
-  // Decrees count on the request client (default argument); principles on
-  // the service role since 20261016_01, fiqh blocks since 20261018_02 (their
-  // fts is server-only, owner answer ١٨٣).
-  assert.match(auto, /count\('decrees_circulars'\),/);
+  // Principles count on the service role since 20261016_01, fiqh blocks
+  // since 20261018_02 (their fts is server-only, owner answer ١٨٣), decrees
+  // since 20261108_10 (decrees_circulars.fts is server-only, owner ٤٢٤).
+  assert.match(auto, /count\('decrees_circulars', serverOnly\),/);
   assert.match(auto, /count\('principles', serverOnly\),/);
   assert.match(auto, /count\('feqh_blocks', serverOnly\),/);
 });

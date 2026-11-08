@@ -8,9 +8,10 @@ import { summaryForViewer } from '@/lib/library/legislativeEvent';
 import { maskDecreeOfficialFields, TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 
 /**
- * The decree's catalogue columns, read through the request client. Every one
- * is on the anon allow-list of migration 20261019_40; the preamble is not
- * (it is read below with the service role), and neither is `*`.
+ * The decree's header columns. Read with the SERVICE ROLE since migration
+ * 20261108_10: ref, date, official_url, summary and summary_brief are
+ * server-only (owner ٤٢٤ / ٣٨٠ / ٣١٩) and masked per tier below. The preamble
+ * is read separately (20261019_40); `*` is never selected.
  */
 const DECREE_COLUMNS = 'id, title, type, issuer, ref, date, summary, summary_brief, category, hashtags, official_url';
 
@@ -52,9 +53,13 @@ export async function GET(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    // Service role: the header's number, date, link and summaries are
+    // server-only (20261108_10), the pages and the preamble too (20261018_02,
+    // 20261019_40). Every value is masked per tier below.
+    const serverOnly = await createServiceClient();
 
     // Fetch decree metadata (named columns: `*` needs the locked preamble)
-    const { data: decree, error: decreeError } = await supabase
+    const { data: decree, error: decreeError } = await serverOnly
       .schema('library')
       .from('decrees_circulars')
       .select(DECREE_COLUMNS)
@@ -83,7 +88,6 @@ export async function GET(
     // Fetch pages and the preamble — service role: both are server-only
     // (20261018_02, 20261019_40). An error is a 500, never a decree that
     // silently has no pages or no preamble.
-    const serverOnly = await createServiceClient();
     const [{ data: pages, error: pagesError }, { data: preambleRow, error: preambleError }] = await Promise.all([
       serverOnly
         .schema('library')

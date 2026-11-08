@@ -762,8 +762,10 @@ export async function POST(request: Request) {
       const { from, size } = window('orders');
       const signal = AbortSignal.timeout(SECTION_BUDGET_MS);
       try {
+        // Service role: ref, date, summary_brief and fts are server-only
+        // since 20261108_10 (owner ٤٢٤ / ٣٨٠); masked per tier below.
         const orderQuery = (head = false) => {
-          let q = supabase
+          let q = serverOnly
             .schema('library')
             .from('decrees_circulars')
             .select('id, title, type, issuer, ref, date, summary_brief, category, hashtags', { count: 'estimated', head })
@@ -777,9 +779,9 @@ export async function POST(request: Request) {
         };
 
         // Owner ٢٧٧: the relevance window (20261026_52) first, as the service
-        // role with its 4s statement_timeout (the same public columns). The
-        // request-client query stays for one case only: the function is
-        // missing (then anon's ~3s statement_timeout bounds it, as before).
+        // role with its 4s statement_timeout. The inline query stays for one
+        // case only: the function is missing (the table is ~3.3k rows and
+        // the section's abortSignal bounds the wait).
         const relevance = await relevancePage(serverOnly, 'orders', {
           p_tsquery: ftsQuery,
           p_offset: from,

@@ -92,7 +92,10 @@ const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
 const ASC_NULLS_LAST = { ascending: true, nullsFirst: false } as const;
 const DESC_NULLS_LAST = { ascending: false, nullsFirst: false } as const;
 // `summary` (owner ٢٦٣): the card shows the short موجز, else the source's
-// summary — both are catalogue text, on the anon allow-list of 20261019_40.
+// summary. ref, date, summary and summary_brief are server-only since
+// 20261108_10 (owner ٤٢٤ / ٣٨٠ / ٣١٩), so the decrees section is read with the
+// service role and masked per tier below (summaryForViewer,
+// maskDecreeOfficialFields).
 const DECREE_LIST_COLUMNS =
   "id, title, type, issuer, ref, date, summary_brief, summary, category, hashtags, instrument_ar";
 const BOOK_LIST_COLUMNS =
@@ -109,7 +112,8 @@ export async function GET(request: Request) {
   if (gate) return gate;
 
   const supabase = await createClient();
-  // The laws section only (see the column note above LAW_LIST_COLUMNS).
+  // The laws, decrees and principles sections (locked columns; each masked
+  // per tier below).
   const serverOnly = await createServiceClient();
 
   // Bounded reads: the front-end mounts this once on load, so cap each table
@@ -323,7 +327,7 @@ export async function GET(request: Request) {
           })
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
-        ? fetchSection("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", (q) => q.order("id"))
+        ? fetchSection("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", (q) => q.order("id"), serverOnly)
         : Promise.resolve(emptySection()),
       // Service role: principles.text is server-only since 20261016_01 (owner
       // decision ١٧١); the paywall block below strips it from locked rows.
