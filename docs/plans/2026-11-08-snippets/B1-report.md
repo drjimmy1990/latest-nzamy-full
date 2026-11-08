@@ -65,6 +65,16 @@ All of it runs under `pg_advisory_xact_lock(hashtextextended('library_device:'||
 
 A guest or a non-entitled viewer is never checked. There is no `/api/library/principles` route; the principles are served by the precedents route.
 
+**No device id → refused while the limit is on (controller ruling on question E, 2026-11-08).**
+- A browser always gets a device cookie minted on its first entitled read.
+- A caller that cannot keep one, an `Authorization: Bearer` caller with no valid `nz_lib_device` cookie, is decided without minting (`cookielessGateDecision` + `readCookielessState`):
+  - switch ON and an ordinary subscriber → **403 `{ code: "device_cookie_required", error, limit, devices: [] }`**, text: «لا يمكن فتح نص المكتبة الكامل من هذا الاتصال لأنه لا يحمل معرّف الجهاز. افتح المكتبة من المتصفح، أو حدّث التطبيق إلى إصدار يرسل معرّف الجهاز.»;
+  - switch OFF → nothing changes;
+  - staff → exempt;
+  - migration missing, or a failed settings or profile read → fail open.
+- The readers render `device_cookie_required` with the same notice as `device_limit` (the readers only call these routes from a browser, so in practice they never see it).
+- **The rule a future phone app must handle:** it generates its own device id once (32 random bytes, base64url, 43 characters), keeps it, and sends it on every library read as the cookie `nz_lib_device` (a `Cookie:` header). The server then counts the app as one device, exactly like a browser.
+
 **New routes.**
 
 | Route | Who | What |
@@ -103,7 +113,7 @@ The switch and number got their own route on purpose: the existing «نشاط ا
 - **B.** A cleared browser, or a private window, counts as a new device. Is that acceptable, or should a device that has not been used for a long time drop off by itself (see D)?
 - **C.** From the refused third device the user can sign out one of his other devices directly. This is how «سجّل الخروج من أحد أجهزته» works without holding the other device. Do you approve, or must the sign-out be done only from the device itself?
 - **D.** Should a device unused for N days (e.g. 90) be released automatically?
-- **E.** Today a caller who sends his session token as a Bearer header (the native-app path; no app exists yet) skips the device check. While the limit is on, should such a caller be refused on the library text until there is a phone app with its own device identity? (Recommended: yes. No current client uses that path.)
+- *(FYI, decided by the controller, not a question:* while the limit is on, a connection that carries no device id — a Bearer call, the future phone app's path — is refused on the library text with «لا يمكن فتح نص المكتبة الكامل من هذا الاتصال لأنه لا يحمل معرّف الجهاز…». The phone app, when built, must send its own device id; it then counts as one of the account's devices.)*
 
 ## Known limits / concerns
 
@@ -114,10 +124,10 @@ The switch and number got their own route on purpose: the existing «نشاط ا
 - **Quota before the device refusal.** The proxy spends the read quota (20261030_80) before the route refuses the device, so a refused third device still spends one document of the daily quota. This is harmless, and the reads are the same document.
 - **Memo.** A revoke made on another server process reaches an already-open reader within 60 s. The same applies when the admin switches the limit on: other processes pick it up within 60 s.
 - **Sign-out paths.** Only `logout()` releases the device. `/account-frozen` and the global sign-out in `/reset-password` do not: a frozen account cannot read the library, and the reset page signs out every session (its devices stay until signed out from «أجهزتي» or reset by an admin).
-- **Bearer bypass (decision needed).** A caller with `Authorization: Bearer <token>` and no device cookie is not device-checked; `src/lib/supabase/server.ts` honours Bearer, and the check fails open for it. In practice anyone can copy the access token from his own `sb-` cookie, send it as a Bearer header, and **bypass the device limit entirely**; only the per-user read quota still applies.
-  - No client sends `Authorization` to `/api/library/*` today (grep 2026-11-08: only server-side service-role calls do).
-  - So refusing a Bearer caller without the device cookie while the limit is on would break nothing, and would close the bypass.
-  - It was left fail-open here because of the native-app path. Whether to fail closed is the controller's call (owner question E).
+- **Bearer bypass: CLOSED** (ruling E, commit 3 on this branch). Sending the access token as a Bearer header with no device cookie, the only way to skip the device check, now gets 403 `device_cookie_required` while the limit is on.
+  - No client sends `Authorization` to `/api/library/*` today (grep 2026-11-08: only server-side service-role calls do), so this breaks nothing.
+  - A Bearer caller that sends a valid `nz_lib_device` cookie is counted like any device.
+  - Each such read costs two small service-role reads (the settings row, then `profiles.user_type`); "off" is memoised for 60 s and staff for 5 min.
 - **Lowering the limit evicts nobody.** Devices already registered keep answering `ok`; only new devices are refused once the active count reaches the new number. An admin can reset a user's devices.
 - **`/laws/feqh-preview`** fetches `/api/library/books/...` but has no device-refusal branch. An over-limit subscriber there sees that page's generic error path. It was not wired: it is a preview page, and the book reader itself shows the refusal.
 - **Disabled writes nothing.** While the switch is off no devices are recorded. When it is turned on, every account starts with zero devices, so nobody is grandfathered over the limit.
@@ -142,8 +152,8 @@ No HIGH or CRITICAL risk was found.
 
 **`npx tsc --noEmit -p .`** is clean.
 
-**`npm run -s test:unit`** (worktree root): 6341 tests, 6335 pass, 6 fail. The 6 failures are the known baseline ones; there are no new failures.
-- New: `src/lib/library/deviceLimit.test.ts`, 14 tests:
+**`npm run -s test:unit`** (worktree root): 6343 tests, 6337 pass, 6 fail. The 6 failures are the known baseline ones; there are no new failures (re-run after ruling E).
+- New: `src/lib/library/deviceLimit.test.ts`, 16 tests:
   - user-agent labels (10 agents) and odd input;
   - cookie options and the id format;
   - the sha-256;
@@ -151,13 +161,14 @@ No HIGH or CRITICAL risk was found.
   - the decision (only `refused` refuses; no row allows; what may be memoised);
   - the message wording;
   - missing-schema codes;
-  - Bearer fail-open;
+  - Bearer detection, and ruling E: `cookielessGateDecision` refuses (403 `device_cookie_required`, Arabic copy, no devices) only when the switch is on and the user is not staff; off, unknown and staff all allow;
+  - the reader renders `device_cookie_required` as the device notice;
   - the list without the hash;
   - the settings patch;
   - the reader's 403 parsing and «آخر استخدام».
 - New: `src/app/api/library/device-limit.routes.test.ts`, the source contract:
   - each of the 5 entitled read paths calls `enforceLibraryDevice` once, with the entitled flag, after the entitlement read and before the answer;
-  - the server half fails open;
+  - the server half fails open, and the Bearer-without-cookie branch goes to `cookielessGateDecision` before any id is minted, never a bare `return null`;
   - logout releases before signOut;
   - the user routes take the session user, and the admin routes are staff-gated and audited;
   - all 4 readers render the refusal;
@@ -227,8 +238,8 @@ Rollback is in the migration header (drop the 2 functions and the table, then dr
 
 Final numbers (worktree root, after the last edits):
 
-- `npx tsc --noEmit -p .`: exit 0 (clean).
-- `npm run -s test:unit`: 6341 tests, 6335 pass, **6 fail — exactly the 6 known baseline failures**. They are `books/[slug]/_shape.test.ts:172` (a CRLF regex), `navigation.consultant.test.ts:177`, `libraryAccess.test.ts:225`, `fulfillOrder.test.ts:78` and `trackingWiring.test.ts:93` and `:159`. None of them touches this work.
+- `npx tsc --noEmit -p .`: exit 0 (clean), re-run after ruling E.
+- `npm run -s test:unit`: 6343 tests, 6337 pass, **6 fail — exactly the 6 known baseline failures**. They are `books/[slug]/_shape.test.ts:172` (a CRLF regex), `navigation.consultant.test.ts:177`, `libraryAccess.test.ts:225`, `fulfillOrder.test.ts:78` and `trackingWiring.test.ts:93` and `:159`. None of them touches this work.
 
 ## Files
 

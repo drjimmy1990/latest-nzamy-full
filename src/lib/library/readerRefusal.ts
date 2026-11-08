@@ -151,7 +151,9 @@ const DEVICE_FALLBACK_AR =
  * is not a refusal this file renders (null).
  */
 function deviceRefusalFrom(b: Record<string, unknown>): ReaderRefusal | null {
-  if (b.code !== "device_limit") return null;
+  // device_cookie_required: a read that carried no device id while the limit
+  // is on (a Bearer caller; a browser always gets one minted).
+  if (b.code !== "device_limit" && b.code !== "device_cookie_required") return null;
   const devices: ReaderDevice[] = [];
   if (Array.isArray(b.devices)) {
     for (const d of b.devices) {

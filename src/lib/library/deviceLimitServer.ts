@@ -15,8 +15,13 @@
  *
  * FAILS OPEN, ALWAYS. A missing function or table (the migration not applied),
  * a missing service key, a timeout (1.5 s) or any other error lets the read go
- * on exactly as before this file existed. A Bearer caller without the device
- * cookie (the native-app path, no cookie jar) is not checked either.
+ * on exactly as before this file existed.
+ *
+ * NO DEVICE ID (controller ruling on question E, 2026-11-08). A Bearer caller
+ * without the `nz_lib_device` cookie cannot keep a minted id, so while the
+ * limit is ON its entitled read is refused (403 device_cookie_required);
+ * while it is off, or for staff, nothing changes. A future phone app sends its
+ * own device id as that cookie (deviceLimit.ts DEVICE_COOKIE_REQUIRED_CODE).
  *
  * MEMO. (user, device) allowed is remembered 60 s, so a precedents collection
  * read in 24 windows costs one database call. A revoke made on another server
@@ -28,6 +33,7 @@ import { cookies, headers } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   LIBRARY_DEVICE_COOKIE,
+  cookielessGateDecision,
   deviceGateDecision,
   deviceLabelFromUserAgent,
   hashDeviceId,
@@ -37,7 +43,9 @@ import {
   libraryDeviceCookieOptions,
   newDeviceId,
   parseDeviceCheckRow,
+  type CookielessState,
   type DeviceCheckRow,
+  type DeviceGateDecision,
 } from "./deviceLimit";
 
 const RPC_TIMEOUT_MS = 1_500;
@@ -120,7 +128,11 @@ export async function enforceLibraryDevice(userId: string | null, entitled: bool
     const jar = await cookies();
     const hdrs = await headers();
     let id = jar.get(LIBRARY_DEVICE_COOKIE)?.value ?? null;
-    if (isBearerWithoutDeviceCookie(hdrs.get("authorization"), id)) return null;
+    // Ruling on question E: a Bearer caller has no cookie jar to mint into, so
+    // while the limit is on it is refused unless it sends its own device id.
+    if (isBearerWithoutDeviceCookie(hdrs.get("authorization"), id)) {
+      return finish(userId, null, cookielessGateDecision(await readCookielessState(userId)));
+    }
     if (!isValidDeviceId(id)) {
       id = newDeviceId(crypto.getRandomValues(new Uint8Array(32)));
       jar.set(LIBRARY_DEVICE_COOKIE, id, libraryDeviceCookieOptions(process.env.NODE_ENV === "production"));
@@ -141,20 +153,64 @@ export async function enforceLibraryDevice(userId: string | null, entitled: bool
       return null;
     }
     const row: DeviceCheckRow | null = parseDeviceCheckRow(data);
-    const decision = deviceGateDecision(row);
-    if (decision.action === "allow") {
-      if (decision.remember === "global") memoSet(GLOBAL_DISABLED_KEY, ALLOWED_TTL_MS);
-      else if (decision.remember === "user") memoSet(userKey(userId), EXEMPT_TTL_MS);
-      else if (decision.remember === "device") memoSet(deviceKey(userId, hash), ALLOWED_TTL_MS);
-      return null;
-    }
-    return NextResponse.json(decision.body, {
-      status: decision.status,
-      headers: { "Cache-Control": "private, no-store" },
-    });
+    return finish(userId, hash, deviceGateDecision(row));
   } catch (err) {
     console.error("[library-device] check threw:", err instanceof Error ? err.name : "error");
     return null;
+  }
+}
+
+/** Memoise an allow as the decision says; a refusal becomes the 403, never remembered. */
+function finish(userId: string, hash: string | null, decision: DeviceGateDecision): NextResponse | null {
+  if (decision.action === "allow") {
+    if (decision.remember === "global") memoSet(GLOBAL_DISABLED_KEY, ALLOWED_TTL_MS);
+    else if (decision.remember === "user") memoSet(userKey(userId), EXEMPT_TTL_MS);
+    else if (decision.remember === "device" && hash) memoSet(deviceKey(userId, hash), ALLOWED_TTL_MS);
+    return null;
+  }
+  return NextResponse.json(decision.body, {
+    status: decision.status,
+    headers: { "Cache-Control": "private, no-store" },
+  });
+}
+
+/**
+ * The switch and the staff flag for a caller with no device id (no RPC: there
+ * is no device to register). Never throws; unknown = null, which fails open.
+ */
+async function readCookielessState(userId: string): Promise<CookielessState> {
+  const unknown: CookielessState = { enabled: null, limit: 2, isAdmin: null };
+  try {
+    const service = await createServiceClient();
+    const settings = await service
+      .from("library_monitor_settings")
+      .select("device_limit_enabled, device_limit")
+      .eq("id", true)
+      .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+      .maybeSingle();
+    if (settings.error) {
+      if (!noteMissing(settings.error.code)) console.error("[library-device] settings read failed:", settings.error.code ?? "no-code");
+      return unknown;
+    }
+    const s = (settings.data ?? null) as { device_limit_enabled?: unknown; device_limit?: unknown } | null;
+    if (!s) return unknown;
+    const limit = typeof s.device_limit === "number" ? s.device_limit : 2;
+    if (s.device_limit_enabled !== true) return { enabled: false, limit, isAdmin: null };
+    const profile = await service
+      .from("profiles")
+      .select("user_type")
+      .eq("id", userId)
+      .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+      .maybeSingle();
+    if (profile.error) {
+      console.error("[library-device] profile read failed:", profile.error.code ?? "no-code");
+      return { enabled: true, limit, isAdmin: null };
+    }
+    const type = (profile.data as { user_type?: unknown } | null)?.user_type;
+    return { enabled: true, limit, isAdmin: type === "admin" };
+  } catch (err) {
+    console.error("[library-device] cookieless read threw:", err instanceof Error ? err.name : "error");
+    return unknown;
   }
 }
 

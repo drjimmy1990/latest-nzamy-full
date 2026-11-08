@@ -6,7 +6,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
+  DEVICE_COOKIE_REQUIRED_AR,
+  DEVICE_COOKIE_REQUIRED_CODE,
   DEVICE_LIMIT_CODE,
+  cookielessGateDecision,
   LIBRARY_DEVICE_COOKIE,
   LIBRARY_DEVICE_COOKIE_MAX_AGE_S,
   deviceGateDecision,
@@ -141,7 +144,35 @@ test("missing-schema codes fail open; other codes do not count as missing", () =
   for (const c of ["42501", "22023", "", undefined, null, 42]) assert.equal(isMissingDeviceSchema(c), false);
 });
 
-test("a Bearer caller without the cookie (native app) is not device-checked", () => {
+test("ruling E: a read with no device id is refused while the limit is on — and only then", () => {
+  // switch on, an ordinary subscriber → 403 device_cookie_required
+  const refused = cookielessGateDecision({ enabled: true, limit: 2, isAdmin: false });
+  assert.equal(refused.action, "refuse");
+  if (refused.action === "refuse") {
+    assert.equal(refused.status, 403);
+    assert.equal(refused.body.code, DEVICE_COOKIE_REQUIRED_CODE);
+    assert.equal(refused.body.code, "device_cookie_required");
+    assert.equal(refused.body.error, DEVICE_COOKIE_REQUIRED_AR);
+    assert.match(refused.body.error, /معرّف الجهاز/);
+    assert.deepEqual(refused.body.devices, []);
+    assert.equal(refused.body.limit, 2);
+  }
+  // switch off → nothing changes
+  assert.deepEqual(cookielessGateDecision({ enabled: false, limit: 2, isAdmin: null }), { action: "allow", remember: "global" });
+  // migration missing / settings read failed → fail open
+  assert.deepEqual(cookielessGateDecision({ enabled: null, limit: 2, isAdmin: null }), { action: "allow", remember: null });
+  // staff exempt; staff unknown (failed read) never locks out
+  assert.deepEqual(cookielessGateDecision({ enabled: true, limit: 2, isAdmin: true }), { action: "allow", remember: "user" });
+  assert.deepEqual(cookielessGateDecision({ enabled: true, limit: 2, isAdmin: null }), { action: "allow", remember: null });
+});
+
+test("reader: a 403 device_cookie_required renders as the device refusal", () => {
+  const r = readerRefusalFrom(403, { code: "device_cookie_required", error: DEVICE_COOKIE_REQUIRED_AR, limit: 2, devices: [] }, Date.now());
+  assert.equal(r?.kind, "device");
+  if (r?.kind === "device") assert.equal(r.messageAr, DEVICE_COOKIE_REQUIRED_AR);
+});
+
+test("a Bearer caller without the cookie is recognised (it cannot keep a minted id)", () => {
   const id = newDeviceId(new Uint8Array(32));
   assert.equal(isBearerWithoutDeviceCookie("Bearer abc.def", null), true);
   assert.equal(isBearerWithoutDeviceCookie("  bearer abc", "garbage"), true);

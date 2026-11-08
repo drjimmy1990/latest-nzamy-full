@@ -170,9 +170,24 @@ export function deviceLimitMessageAr(limit: number): string {
 
 export const DEVICE_LIMIT_CODE = "device_limit";
 
+/**
+ * Controller ruling 2026-11-08 on question E: while the limit is ON, an
+ * entitled full-text read that cannot carry a device id (a Bearer caller with
+ * no `nz_lib_device` cookie — no cookie jar to mint one into) is refused with
+ * this code. THE RULE A FUTURE PHONE APP MUST HANDLE: it sends its own device
+ * id — 43 base64url characters from 32 random bytes, generated once and kept
+ * in the app — as the cookie `nz_lib_device` (a `Cookie:` header) on every
+ * library read; the server then counts it as one device like a browser.
+ */
+export const DEVICE_COOKIE_REQUIRED_CODE = "device_cookie_required";
+
+export const DEVICE_COOKIE_REQUIRED_AR =
+  "لا يمكن فتح نص المكتبة الكامل من هذا الاتصال لأنه لا يحمل معرّف الجهاز. " +
+  "افتح المكتبة من المتصفح، أو حدّث التطبيق إلى إصدار يرسل معرّف الجهاز.";
+
 export interface DeviceLimitRefusalBody {
   error: string;
-  code: typeof DEVICE_LIMIT_CODE;
+  code: typeof DEVICE_LIMIT_CODE | typeof DEVICE_COOKIE_REQUIRED_CODE;
   limit: number;
   devices: AuthorisedDevice[];
 }
@@ -219,13 +234,45 @@ export function isMissingDeviceSchema(code: unknown): boolean {
 
 /**
  * True when the caller authenticates with `Authorization: Bearer` and carries
- * no device cookie: the native-app path, which has no cookie jar, so every
- * request would mint a new device. Such a caller is not device-checked
- * (fail open) — an owner question.
+ * no valid device cookie: it has no cookie jar, so a minted id would be lost
+ * and every request would be a new device. Such a read goes through
+ * cookielessGateDecision (refused while the limit is on), never through the
+ * minting path.
  */
 export function isBearerWithoutDeviceCookie(authorization: string | null | undefined, deviceCookie: string | null | undefined): boolean {
   const bearer = typeof authorization === "string" && /^\s*bearer\s+\S/i.test(authorization);
   return bearer && !isValidDeviceId(deviceCookie);
+}
+
+/**
+ * What the server read for a caller without a device id: the switch
+ * (null = unknown: the migration is missing or the read failed) and whether
+ * the user is staff (null = unknown).
+ */
+export interface CookielessState {
+  enabled: boolean | null;
+  limit: number;
+  isAdmin: boolean | null;
+}
+
+/**
+ * The decision for an entitled read with no device id (ruling on question E):
+ *   switch unknown (missing migration, failed read) → allow (fail open);
+ *   switch off → allow, nothing changes;
+ *   staff → allow (exempt, as in library_device_check);
+ *   staff unknown (failed read) → allow (never lock out on an error);
+ *   otherwise → 403 device_cookie_required.
+ */
+export function cookielessGateDecision(state: CookielessState): DeviceGateDecision {
+  if (state.enabled === null) return { action: "allow", remember: null };
+  if (state.enabled === false) return { action: "allow", remember: "global" };
+  if (state.isAdmin === true) return { action: "allow", remember: "user" };
+  if (state.isAdmin === null) return { action: "allow", remember: null };
+  return {
+    action: "refuse",
+    status: 403,
+    body: { error: DEVICE_COOKIE_REQUIRED_AR, code: DEVICE_COOKIE_REQUIRED_CODE, limit: state.limit, devices: [] },
+  };
 }
 
 /** A device row as the settings page and the admin page show it (never the hash). */

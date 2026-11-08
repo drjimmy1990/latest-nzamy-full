@@ -67,7 +67,15 @@ for (const r of ROUTES) {
 test("the server half fails open and keys the cookie strictly", () => {
   const src = read("lib/library/deviceLimitServer.ts");
   assert.match(src, /if \(!userId \|\| !entitled\) return null;/);
-  assert.match(src, /isBearerWithoutDeviceCookie\(/);
+  // Ruling E: a Bearer caller with no device cookie is NOT waved through — it
+  // goes to cookielessGateDecision (403 device_cookie_required while the limit
+  // is on), and is never handed a minted cookie.
+  const bearer = src.indexOf('if (isBearerWithoutDeviceCookie(hdrs.get("authorization"), id)) {');
+  assert.ok(bearer > 0, "the Bearer branch exists");
+  const branch = src.slice(bearer, src.indexOf("}", bearer));
+  assert.match(branch, /return finish\(userId, null, cookielessGateDecision\(await readCookielessState\(userId\)\)\);/);
+  assert.ok(bearer < src.indexOf("newDeviceId("), "decided before any id is minted");
+  assert.doesNotMatch(src, /isBearerWithoutDeviceCookie\([^)]*\)\) return null;/);
   assert.match(src, /abortSignal\(AbortSignal\.timeout\(RPC_TIMEOUT_MS\)\)/);
   assert.match(src, /noteMissing\(error\.code\)/);
   assert.match(src, /"Cache-Control": "private, no-store"/);
