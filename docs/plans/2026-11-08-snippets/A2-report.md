@@ -16,7 +16,7 @@ Branch `t/murshid` (worktree `D:\nzwt\b1108-murshid`). **No SQL** in this task: 
   - The served projection is **byte-identical** to before (1,118,968 bytes across the 32 sectors), so slimming lost nothing the page shows.
   - The routes keep their own projection as a second layer.
   - A unit test walks every committed JSON file. It checks that every key is in `COMMITTED_KEYS`, and that there is no `quote`, `quote_verified`, `source_url`, `mx_ok`, `my_gov_id`, `is_test_record`, `01_المكتبة_القانونية`, `http://` or `10.1.61.83`. It also checks that agency keys are exactly `{name, website}` and legal_basis keys exactly `{id, instrument, article}`.
-  - **History:** the first commit (`6b30b294`) had committed the owner's verbatim files. The branch was never pushed, so I re-made it from the base with `git reset --soft 9421e3d2` followed by a fresh commit. **No commit on `t/murshid` ever contains the statute text, the library paths or the unfiltered guide.** The old hashes `6b30b294` and `0e7eb5cb` are gone; the new hash is in the return message.
+  - **History:** the first commit (`6b30b294`) had committed the owner's verbatim files. The branch was never pushed, so I re-made it from the base with `git reset --soft 9421e3d2` followed by a fresh commit. **No commit on `t/murshid` ever contains the statute text, the library paths or the unfiltered guide.** The old hashes `6b30b294` and `0e7eb5cb` are gone. The feature is now `804e4112`, and this report update is the next commit.
 - **#4, najiz guide.**
   - The importer writes only the reader slice (الباب الثاني and الباب الثالث), with every internal research or audit note removed **at import**: `stripInternalNotes` in `src/lib/murshid/guideBlocks.ts`, which runs again at serve time.
   - Notes are detected by an explicit phrase list (`INTERNAL_NOTE_PHRASES`) plus a pattern (`INTERNAL_NOTE_PATTERN`).
@@ -168,7 +168,7 @@ It needs Node 22.18 or later, which runs the `.ts` helpers directly. It prints t
 - The change is additive: a new mode union, new tabs and new branches. The three existing modes are unchanged.
 - **Risk: LOW.** No existing function was modified beyond the page component's JSX and type.
 - `detect_changes` (scope `compare`, base `9421e3d2`, worktree `D:
-zwt1108-murshid`) returned risk **low**: 52 changed files, 0 changed indexed symbols, 0 affected processes. That reading is consistent with the index not knowing the new files, which also matches impact's "not found".
+zwt1108-murshid`) returned risk **low**: 53 changed files after round 2, 0 changed indexed symbols, 0 affected processes. That reading is consistent with the index not knowing the new files, which also matches impact's "not found".
 
 ## Production working directory and post-deploy check
 - `murshidStore` reads `path.join(process.cwd(), "src/data/murshid")`.
