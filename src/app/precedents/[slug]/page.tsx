@@ -60,6 +60,7 @@ import {
   appendRun, normalizePrinciple, prependRun, runHasMore, runNextOffset, runPrevWindow,
   type CollectionRun,
 } from "./_collection-model";
+import { principleLabel } from "./_principle-label";
 
 /**
  * q390: principles per window — the API's cap (PRINCIPLES_MAX_LIMIT). The
@@ -85,7 +86,7 @@ function referenceForPrinciple(p: JudicialPrincipleItem, collection: JudicialPri
   if (refLine) return cleanPrincipleText(refLine);
   if (p.reference) return cleanPrincipleText(p.reference);
   const court = courtOrIssuer(p, collection?.court, isRTL);
-  return `${isRTL ? "مبدأ رقم" : "Principle #"} (${p.number})، صادر عن (${court})${p.decision_number ? ` ذي الرقم (${p.decision_number})` : ""}${p.session_date ? ` بتاريخ ${p.session_date}` : ""}${collection?.title ? ` - المنشور في (${collection.title})` : ""}${collection?.part ? `، الجزء (${collection.part})` : ""}`;
+  return `${principleLabel(p.number, isRTL, true)}، صادر عن (${court})${p.decision_number ? ` ذي الرقم (${p.decision_number})` : ""}${p.session_date ? ` بتاريخ ${p.session_date}` : ""}${collection?.title ? ` - المنشور في (${collection.title})` : ""}${collection?.part ? `، الجزء (${collection.part})` : ""}`;
 }
 
 /** The principle's own issuing body, else the collection's court, else «جهة غير محددة». */
@@ -265,7 +266,7 @@ export default function JudicialPrinciplesPage() {
     const refText = getReferenceForPrinciple(p);
     return {
       articleId: p.id,
-      articleNum: `${isRTL ? "مبدأ رقم" : "Principle #"} ${p.number}`,
+      articleNum: `${principleLabel(p.number, isRTL, false)}`,
       articleTitle: p.classification_keywords.slice(0, 3).join(" / ") || (mainText.slice(0, 45) + (mainText.length > 45 ? "..." : "")),
       articleText: refText ? `${mainText}\n\nالمرجع: ${refText}` : mainText,
       // The per-record issuing body, not the collection's — a principle carried
@@ -758,19 +759,19 @@ export default function JudicialPrinciplesPage() {
 
     const prefixPlain = isSelectionCopy
       ? (isRTL 
-          ? `مقتبس من مبدأ رقم (${p.number})${decisionSuffix} صادر عن (${court}) ونصه:` 
-          : `Excerpt from Principle #${p.number}${decisionSuffixEn} issued by (${court}):`)
+          ? `مقتبس من ${principleLabel(p.number, true, true)}${decisionSuffix} صادر عن (${court}) ونصه:` 
+          : `Excerpt from ${principleLabel(p.number, false, false)}${decisionSuffixEn} issued by (${court}):`)
       : (isRTL 
-          ? `مبدأ رقم (${p.number})${decisionSuffix} صادر عن (${court}) ونصه:` 
-          : `Principle #${p.number}${decisionSuffixEn} issued by (${court}):`);
+          ? `${principleLabel(p.number, true, true)}${decisionSuffix} صادر عن (${court}) ونصه:` 
+          : `${principleLabel(p.number, false, false)}${decisionSuffixEn} issued by (${court}):`);
 
     const prefixHtml = isSelectionCopy
       ? (isRTL 
-          ? `<b>مقتبس من مبدأ رقم (${p.number})${decisionSuffix} صادر عن (${court}) ونصه:</b>` 
-          : `<b>Excerpt from Principle #${p.number}${decisionSuffixEn} issued by (${court}):</b>`)
+          ? `<b>مقتبس من ${principleLabel(p.number, true, true)}${decisionSuffix} صادر عن (${court}) ونصه:</b>` 
+          : `<b>Excerpt from ${principleLabel(p.number, false, false)}${decisionSuffixEn} issued by (${court}):</b>`)
       : (isRTL 
-          ? `<b>مبدأ رقم (${p.number})${decisionSuffix} صادر عن (${court}) ونصه:</b>` 
-          : `<b>Principle #${p.number}${decisionSuffixEn} issued by (${court}):</b>`);
+          ? `<b>${principleLabel(p.number, true, true)}${decisionSuffix} صادر عن (${court}) ونصه:</b>` 
+          : `<b>${principleLabel(p.number, false, false)}${decisionSuffixEn} issued by (${court}):</b>`);
 
     const refText = getReferenceForPrinciple(p);
     // The same mark-free text the reader shows (_principle-text.ts), in both formats.
@@ -1005,7 +1006,7 @@ export default function JudicialPrinciplesPage() {
                       <p className={`text-[10px] text-center py-3 ${muted}`}>{isRTL ? "لا توجد نتائج" : "No results"}</p>
                     ) : (
                       shownPrinciples.map((p) => {
-                        const label = `${isRTL ? "مبدأ رقم" : "Principle #"} ${p.number}`;
+                        const label = `${principleLabel(p.number, isRTL, false)}`;
                         const keywords = p.classification_keywords.slice(0, 2).join(" / ");
                         return (
                           <button

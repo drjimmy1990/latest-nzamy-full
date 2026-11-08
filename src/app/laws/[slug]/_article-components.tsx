@@ -149,13 +149,17 @@ function GeneralToggleDetails({
 // #26 (owner 6-Nov): a row with no text is no block — no «اللائحة التنفيذية»
 // heading over nothing. The law API already leaves such rows out; this keeps
 // an older cached payload from drawing one.
-function getMergedReg(a: LawArticle): { ref: string; text: string } | null {
+// #5/#16 (owner 6-Nov): each regulation row keeps its own status. The block
+// says «ملغاة» only when EVERY row in it is repealed; «status_undeclared»
+// shows no badge at all (never a «سارية» the source did not state).
+function getMergedReg(a: LawArticle): { ref: string; text: string; repealed: boolean } | null {
   const rows = (a.regulations ?? []).filter((r) => (r.text || "").trim());
   if (rows.length === 0) return null;
   const distinctRefs = Array.from(new Set(rows.map((r) => r.ref || "").filter(Boolean)));
   return {
     ref: distinctRefs.join("، "),
     text: rows.map((r) => r.text).join("\n\n"),
+    repealed: rows.every((r) => r.status === "repealed"),
   };
 }
 
@@ -1180,6 +1184,11 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                   <div className="min-w-0">
                     <p className={`text-[12px] font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                       {isRTL ? "اللائحة التنفيذية" : "Executive regulation"}
+                      {mergedReg?.repealed && (
+                        <span className={`ms-2 inline-block align-middle text-[10px] font-black px-1.5 py-0.5 rounded ${isDark ? "bg-red-900/30 text-red-300" : "bg-red-50 text-red-700"}`}>
+                          {isRTL ? "ملغاة" : "Repealed"}
+                        </span>
+                      )}
                     </p>
                     {regulationSubtitle && regulationSubtitle !== "اللائحة التنفيذية" && (
                       <p className={`text-[11px] font-semibold mt-0.5 leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
