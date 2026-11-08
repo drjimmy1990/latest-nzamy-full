@@ -222,4 +222,30 @@ exception when insufficient_privilege then
 end $$;
 reset role;
 
-do $$ begin raise notice 'firm_member_points_1108: ALL PASS (T1–T8)'; end $$;
+-- T9 the owner-bypasses-RLS guard (migration DO block + B2-verify.sql) catches
+--    a function owned by a plain role: under it the owner would see only his
+--    own row's numbers and «0» for everyone else
+create role nz_plain_1108 nologin;
+grant usage on schema public, auth to nz_plain_1108;
+grant select on public.points_ledger, public.firm_members, public.profiles, public.firm_profiles to nz_plain_1108;
+alter function public.firm_member_points_usage(uuid) owner to nz_plain_1108;
+do $$
+declare ok boolean;
+begin
+  select r.rolsuper or r.rolbypassrls
+         or not exists (select 1 from pg_class c
+                         where c.oid in ('public.points_ledger'::regclass, 'public.firm_members'::regclass, 'public.profiles'::regclass)
+                           and (c.relowner <> p.proowner or c.relforcerowsecurity))
+    into ok
+    from pg_proc p join pg_roles r on r.oid = p.proowner
+   where p.oid = to_regprocedure('public.firm_member_points_usage(uuid)');
+  if ok then
+    raise exception 'T9 FAIL: the owner guard passed a plain, non-bypass owner';
+  end if;
+end $$;
+-- (Calling it under that owner here hits the stubs' recursive firm_members
+-- policy, 42P17 — broken either way, which is what the guard refuses.)
+reset role;
+alter function public.firm_member_points_usage(uuid) owner to postgres;
+
+do $$ begin raise notice 'firm_member_points_1108: ALL PASS (T1–T9)'; end $$;

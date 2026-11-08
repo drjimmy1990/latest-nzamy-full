@@ -109,7 +109,9 @@ grant execute on function public.firm_member_points_usage(uuid) to authenticated
 
 -- ── verify ───────────────────────────────────────────────────────────────────
 do $$
-declare fn constant text := 'public.firm_member_points_usage(uuid)';
+declare
+  fn      constant text := 'public.firm_member_points_usage(uuid)';
+  v_owner oid;
 begin
   if to_regprocedure(fn) is null then
     raise exception '20261108_30 verify: % is missing', fn;
@@ -123,6 +125,19 @@ begin
   if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef
                    and proconfig @> array['search_path=""']) then
     raise exception '20261108_30 verify: % must be SECURITY DEFINER with search_path = ''''', fn;
+  end if;
+  -- The function reads OTHER users' rows of points_ledger / firm_members /
+  -- profiles, so its owner must bypass their RLS. If not, "own points ledger"
+  -- and "own profile" apply inside it and every member but the caller reads
+  -- «—» and 0 — silent zeros that look like data (same class of guard as
+  -- 20261027_10's "give them the same owner" check).
+  select p.proowner into v_owner from pg_proc p where p.oid = to_regprocedure(fn);
+  if not exists (select 1 from pg_roles r where r.oid = v_owner and (r.rolsuper or r.rolbypassrls))
+     and exists (select 1 from pg_class c
+                  where c.oid in ('public.points_ledger'::regclass, 'public.firm_members'::regclass, 'public.profiles'::regclass)
+                    and (c.relowner <> v_owner or c.relforcerowsecurity)) then
+    raise exception '20261108_30 verify: %, the owner of %, does not bypass RLS on points_ledger / firm_members / profiles — every other member would read 0; give the function the tables'' owner (or a BYPASSRLS role)',
+      pg_get_userbyid(v_owner), fn;
   end if;
   raise notice '20261108_30 verify: OK — firm_member_points_usage(uuid) definer, authenticated only';
 end $$;

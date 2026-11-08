@@ -21,6 +21,7 @@ Branch `t/firm` (worktree `D:\nzwt\b1108-firm`). Date 2026-11-08.
     - `usage_refund` is an AI refund (positive delta, migration `20261027_10`).
     - `expiry`, `refund_revoke`, `admin_adjustment` and `credit` are the other reasons.
   - The only debiter is `debit_points`, which only `ai_start_run` calls. Contract-draft pricing also goes through an AI run.
+  - **Exception: founder credits.** `ai_start_run_with_credit` (migration `20261101_10`) starts the run at price 0 and spends a `membership_credits` credit. That path writes **no** `points_ledger` row (checked in the migration source).
   - **Authoritative source of "consumed"** = −sum(delta) over `usage` + `usage_refund`.
   - `ai_runs.charged_points` was not chosen: it is per run and would not net refunds per lot.
 - **How firm membership is modelled.**
@@ -62,7 +63,7 @@ Branch `t/firm` (worktree `D:\nzwt\b1108-firm`). Date 2026-11-08.
   - Execute is revoked from public and anon, and granted to authenticated and service_role.
   - The check is inside the function: `auth.uid()` must be the firm owner or an **active** `managing_partner` of that firm. Anyone else gets 42501.
   - It returns, per active member: `user_id`, `display_name`, `role`, `is_owner`, `joined_at`, `points_month` and `points_total`. That is totals only: no tool, ref, e-mail or run.
-  - The migration's own DO block verifies itself.
+  - The migration's own DO block verifies itself. It also **raises unless the function's owner bypasses RLS** on `points_ledger`, `firm_members` and `profiles`; B2-verify.sql has the same check as an `ok` row. Without that, every member but the caller would silently read «—» and 0. This mirrors 20261027_10's "give them the same owner" guard.
 - **Route** `GET /api/v1/firm/members/points-usage` (`src/app/api/v1/firm/members/points-usage/route.ts`):
   - `assertRole()` → `resolveCallerFirm(supabase, user.id)` → 404 if there is no firm → 403 unless `canViewMemberPoints` (owner or managing partner) → `supabase.rpc("firm_member_points_usage", { p_firm })`.
   - An RPC error 42883 or PGRST202 returns `200 { available: false }`. The migration is not applied yet, and the card never shows zeros in that case.
@@ -85,6 +86,7 @@ Branch `t/firm` (worktree `D:\nzwt\b1108-firm`). Date 2026-11-08.
 4. **"This month"** is the Gregorian calendar month in Riyadh time. A refund counts in the month it was written; in the rare case of a debit on the 31st refunded on the 1st, the month column can be lower than expected.
 5. **Who sees the counter.** Only the firm owner and an active `managing_partner`. `office_admin`, `hr_manager` and `finance_manager` do not see it, even though `finance_manager` is in `FIRM_BILLING_ROLES` for the route. → owner question (B).
 6. **Enforcement switch.** While `platform_settings.points_enforcement` is off, nothing is debited and every counter reads 0. That is correct, not a bug.
+7. **Founder credits are not counted.** The counter shows points only. A run a founder member pays for with a founder credit costs 0 points, so it adds nothing to the counter. A founder who uses only credits reads 0 even though they used the tools. → owner question (D).
 
 ## Tests
 
@@ -95,11 +97,11 @@ Branch `t/firm` (worktree `D:\nzwt\b1108-firm`). Date 2026-11-08.
     - the migration's definer settings, grants, active-only filter, net reasons, since-joining window and totals-only return
     - the finance page's live branch renders the card with no fixtures, and the card has all its states and no light-gray text
     - the activity route passes `user.id`, reads neither `firm_members` nor the service role, keeps runs with no firm row, and pages on both streams
-- **Full unit suite** (`npm run -s test:unit`): **6308 tests, 6302 pass, 6 fail.** The 6 failures are the known baseline: grantPurchase, review 2026-10-26 v1 fallback, T28-24 series, end read, insert/revoke maker rule, lawyer dashboard consultant.
+- **Full unit suite** (`npm run -s test:unit`): **6308 tests, 6302 pass, 6 fail.** The count matches the baseline of 6. The names were not cross-checked against a baseline list, since COMMON lists only the count. The 6 that fail are: grantPurchase, review 2026-10-26 v1 fallback, T28-24 series, end read, insert/revoke maker rule, lawyer dashboard consultant.
   - LIVE-F07 failed transiently mid-work, while the live page had no banner; it passes now.
 - **tsc:** `npx tsc --noEmit -p .` is clean.
 - **eslint** on the touched files: 0 errors. One warning, `react-hooks/set-state-in-effect`, in the new card; the existing firm activity page carries the same warning.
-- **RLS test in Docker:** `supabase/tests/rls/firm_member_points_1108.test.sql` — **ALL PASS (T1–T8)**:
+- **RLS test in Docker:** `supabase/tests/rls/firm_member_points_1108.test.sql` — **ALL PASS (T1–T9)**:
   - anon cannot execute
   - the owner sees exactly the 3 active members, owner first
   - the totals are netted (refund subtracted; expiry, admin and credit ignored)
@@ -108,6 +110,7 @@ Branch `t/firm` (worktree `D:\nzwt\b1108-firm`). Date 2026-11-08.
   - the managing partner gets the same rows
   - a plain member, a removed member, an outsider, another firm's owner, a caller with no session and an unknown firm each get 42501
   - a removed managing partner loses access
+  - T9: the owner-bypasses-RLS guard refuses a function owned by a plain role. Under such an owner the function cannot read other members' rows. On prod that would mean silent zeros; on the stubs it hits the recursive firm_members policy, 42P17.
   - The migration was run twice (it is re-runnable).
   - **Negative control:** with the chain minus `20261108_30`, the test fails with "T0 FAIL".
   - Chain:
@@ -144,15 +147,21 @@ Branch `t/firm` (worktree `D:\nzwt\b1108-firm`). Date 2026-11-08.
 
 ## Owner-facing summary (Arabic, for the report)
 
+**Controller:** before forwarding, run `select value from public.platform_settings where key = 'points_enforcement';` on prod.
+- If it is **true**, drop the sentence «ما دام خصم النقاط غير مفعّل…».
+- If it is **false** or there is no row, keep it as a plain statement: «خصم النقاط غير مفعّل حالياً، فستظهر الأرقام أصفاراً».
+
 > **٤٤٤ — سجل المكتب وعدّاد النقاط:** صار سجل نشاط المكتب يعرض أدوات الذكاء الاصطناعي التي استخدمها **حساب المكتب نفسه** (مع رابط لكل نتيجة)، أما ما يستخدمه المحامون الأعضاء فيبقى في سجل كل واحد منهم كما طلبتم (الدمج لاحقاً في البند ٢٣).
 > وأُضيف في صفحة «مالية المكتب» جدول **«استهلاك النقاط لكل عضو»**: لكل عضو نشط مجموع ما استهلكه من نقاط **هذا الشهر** و**الإجمالي** (بعد خصم ما أُعيد من نقاط)، ويظهر لحساب المكتب والشريك المدير فقط، ولا يعرض تفاصيل ما استخدمه العضو.
 > يُحسب الاستهلاك من تاريخ انضمام العضو إلى المكتب، ولا يظهر العضو المُزال. ما دام خصم النقاط غير مفعّل في المنصة ستظهر الأرقام أصفاراً.
+> الأعمال التي يدفعها العضو المؤسِّس من «رصيد المؤسِّس» لا تُخصم من نقاطه، فلا تظهر في هذا العدّاد.
 > باقي صفحة المالية (الإيرادات وبيانات الأتعاب) ما زال غير مكتمل كما هو موضّح في أعلاها.
 
 ## Open questions for the owner (proposed numbering by the controller)
 
 - **(A)** Should a member's consumption be counted **from the day they joined the firm** (what is built now), or should the firm also see what they consumed before joining?
 - **(B)** Should **«المدير المالي»** (`finance_manager`) see the counter too? Today only the firm account and the managing partner see it.
+- **(D)** Should runs paid with a **founder credit** also appear (for example as a separate «أعمال من رصيد المؤسِّس» column), or is a points-only counter enough?
 - **(C)** Does a **removed member's** consumption stay hidden from the firm after removal (what is built now), or should it appear in a separate «أعضاء سابقون» section?
 
 ## Files
