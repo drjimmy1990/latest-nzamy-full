@@ -93,6 +93,13 @@ grants are all unchanged. What changes:
 
 **Test.** `src/lib/library/libraryDocQuota.test.ts`, a source-order contract.
 
+**Gap check.** The proxy used to count every path that `libraryQuotaTarget` maps to
+a document: `DOC_ROUTE_RE` is `/api/library/(laws|books|precedents|decrees)/<id>`, and
+`canonicalApiPath` only decodes, with no aliases. Those are exactly the four routes
+that now spend, so no document read goes uncounted. Every return in those routes
+before the spend is an error (400/404/500) that carries no text. A test now
+pins `DOC_ROUTE_RE` to the four routes.
+
 ## 12. `private, no-store` on every route that can set the device cookie (03aa0ddc)
 
 Every `NextResponse.json` call in the five routes that call `enforceLibraryDevice`

@@ -71,3 +71,16 @@ test("the helper keys the document exactly as the proxy did, and fails open", ()
   assert.match(src, /"Cache-Control": "private, no-store"/);
   assert.match(src, /\} catch \{\n    return null;\n  \}/);
 });
+
+test("the four document routes are exactly the documents the quota keys (no document read goes uncounted)", () => {
+  const quota = read("lib/library/readQuota.ts");
+  const at = quota.indexOf("const DOC_ROUTE_RE = ");
+  assert.ok(at > 0, "DOC_ROUTE_RE is where it was");
+  const line = quota.slice(at, quota.indexOf("\n", at));
+  assert.ok(line.startsWith("const DOC_ROUTE_RE = /^\\/api\\/library\\/("), line);
+  const kinds = /\(([a-z|]+)\)/.exec(line)?.[1].split("|").sort();
+  assert.deepEqual(kinds, ["books", "decrees", "laws", "precedents"]);
+  for (const kind of kinds ?? []) {
+    assert.ok(DOC_ROUTES.some((r) => r.file.startsWith(`app/api/library/${kind}/`)), `${kind}: a route that spends its document`);
+  }
+});
