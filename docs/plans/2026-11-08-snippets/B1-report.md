@@ -103,7 +103,7 @@ The switch and number got their own route on purpose: the existing «نشاط ا
 - **B.** A cleared browser, or a private window, counts as a new device. Is that acceptable, or should a device that has not been used for a long time drop off by itself (see D)?
 - **C.** From the refused third device the user can sign out one of his other devices directly. This is how «سجّل الخروج من أحد أجهزته» works without holding the other device. Do you approve, or must the sign-out be done only from the device itself?
 - **D.** Should a device unused for N days (e.g. 90) be released automatically?
-- **E.** The phone app (when it exists) signs in without cookies, so today it is not counted as a device. How should it count?
+- **E.** Today a caller who sends his session token as a Bearer header (the native-app path; no app exists yet) skips the device check. While the limit is on, should such a caller be refused on the library text until there is a phone app with its own device identity? (Recommended: yes. No current client uses that path.)
 
 ## Known limits / concerns
 
@@ -114,7 +114,12 @@ The switch and number got their own route on purpose: the existing «نشاط ا
 - **Quota before the device refusal.** The proxy spends the read quota (20261030_80) before the route refuses the device, so a refused third device still spends one document of the daily quota. This is harmless, and the reads are the same document.
 - **Memo.** A revoke made on another server process reaches an already-open reader within 60 s. The same applies when the admin switches the limit on: other processes pick it up within 60 s.
 - **Sign-out paths.** Only `logout()` releases the device. `/account-frozen` and the global sign-out in `/reset-password` do not: a frozen account cannot read the library, and the reset page signs out every session (its devices stay until signed out from «أجهزتي» or reset by an admin).
-- **Bearer callers.** A Bearer-token caller with no device cookie (a future native app) fails open and is not checked (owner question E).
+- **Bearer bypass (decision needed).** A caller with `Authorization: Bearer <token>` and no device cookie is not device-checked; `src/lib/supabase/server.ts` honours Bearer, and the check fails open for it. In practice anyone can copy the access token from his own `sb-` cookie, send it as a Bearer header, and **bypass the device limit entirely**; only the per-user read quota still applies.
+  - No client sends `Authorization` to `/api/library/*` today (grep 2026-11-08: only server-side service-role calls do).
+  - So refusing a Bearer caller without the device cookie while the limit is on would break nothing, and would close the bypass.
+  - It was left fail-open here because of the native-app path. Whether to fail closed is the controller's call (owner question E).
+- **Lowering the limit evicts nobody.** Devices already registered keep answering `ok`; only new devices are refused once the active count reaches the new number. An admin can reset a user's devices.
+- **`/laws/feqh-preview`** fetches `/api/library/books/...` but has no device-refusal branch. An over-limit subscriber there sees that page's generic error path. It was not wired: it is a preview page, and the book reader itself shows the refusal.
 - **Disabled writes nothing.** While the switch is off no devices are recorded. When it is turned on, every account starts with zero devices, so nobody is grandfathered over the limit.
 - **Secure flag.** The cookie is `Secure` only when `NODE_ENV === "production"`, so a phone on the LAN over http can test a dev build.
 
@@ -199,9 +204,14 @@ The verify block `docs/plans/2026-11-08-snippets/B1-verify.sql` (`verify:library
 
 1. **Any time, before or after the deploy:** `supabase/migrations/20261108_20_library_device_limit.sql`. It needs 20261031_10 (already on prod), and the app fails open without it.
 2. Run the `verify:library_device_limit_1108` block once it is merged into `_verify.sql`. Every row must be ok = true.
-3. **After the deploy and a test with two test accounts:** turn it on from «الأمان والحماية ← أجهزة المكتبة», or run:
-   `update public.library_monitor_settings set device_limit_enabled = true where id;`
-   Read-only check: `select device_limit_enabled, device_limit from public.library_monitor_settings where id;`
+3. **After the deploy, as a test subscriber, with the switch on** (from «الأمان والحماية ← أجهزة المكتبة», or `update public.library_monitor_settings set device_limit_enabled = true where id;`). **This is the condition for leaving it on.** The cookie round-trip (`cookies().set()` inside a route helper reaching the browser through nginx) is NOT covered by any automated test.
+   - a. The first entitled law read's response carries `Set-Cookie: nz_lib_device=…; HttpOnly; Secure; SameSite=Lax` (browser devtools → Network), and the second read does not set it again.
+   - b. Open a law, a decree, a precedents collection (scroll several windows), a book, and one in-document search. Then
+     `select count(*) from public.user_devices where user_id = '<test uuid>' and revoked_at is null;` must return **1**.
+   - c. A second browser makes it 2. A third browser gets the refusal with the two devices listed, and «تسجيل خروج هذا الجهاز» there lets the third one in.
+   - d. «تسجيل الخروج» on one browser drops the count by 1.
+   - **If a or b fails:** switch it off at once with `update public.library_monitor_settings set device_limit_enabled = false where id;` (with the cookie lost, every subscriber would be refused on his third read).
+   - Read-only state check: `select device_limit_enabled, device_limit from public.library_monitor_settings where id;`
 
 Rollback is in the migration header (drop the 2 functions and the table, then drop the 2 columns).
 
