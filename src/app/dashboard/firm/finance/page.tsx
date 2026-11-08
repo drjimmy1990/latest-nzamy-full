@@ -8,7 +8,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { isDemoMode } from "@/lib/runtimeMode";
-import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
+import MemberPointsUsageCard from "./_components/MemberPointsUsageCard";
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
 
@@ -323,19 +324,32 @@ function FirmFinancePageDemo() {
 }
 
 /**
- * Owner decision ١١٥ (demo fully separated from production): everything on
- * this screen is a fixture — no API call backs it — so it renders in demo mode
- * only. A production firm sees the honest gate instead of invented rows.
+ * Production page. Owner decision ١١٥ (demo fully separated from production):
+ * the KPIs, the monthly revenue chart, the revenue split and the fee-statement
+ * table above are fixtures — no API backs them — so they stay demo-only, and
+ * the line below says so instead of showing invented rows.
+ *
+ * Owner answer ٤٤٤ (2026-11-08) adds the first real block: points consumed per
+ * active member (MemberPointsUsageCard → /api/v1/firm/members/points-usage,
+ * firm owner / managing partner only).
  */
+function FirmFinancePageLive() {
+  const { isDark } = useTheme();
+  return (
+    <div className="max-w-5xl mx-auto space-y-5 pb-12" dir="rtl">
+      <div>
+        <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>مالية المكتب</h1>
+        <p className={`mt-1 text-sm ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+          الإيرادات وبيانات الأتعاب تُعرض هنا حين تُربط ببيانات مكتبك الفعلية، ولا نعرض بيانات افتراضية مكانها.
+        </p>
+      </div>
+      <UnfinishedModuleNote href="/dashboard/firm/finance" />
+      <MemberPointsUsageCard />
+    </div>
+  );
+}
+
 export default function FirmFinancePage() {
-  if (!isDemoMode) {
-    return (
-      <DashboardComingSoon
-        title="مالية المكتب"
-        description="تُعرض هذه الصفحة حين تُربط ببيانات مكتبك الفعلية، ولا نعرض بيانات افتراضية مكانها."
-        backHref="/dashboard/firm"
-      />
-    );
-  }
+  if (!isDemoMode) return <FirmFinancePageLive />;
   return <FirmFinancePageDemo />;
 }

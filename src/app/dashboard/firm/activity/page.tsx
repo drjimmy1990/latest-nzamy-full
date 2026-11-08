@@ -22,12 +22,19 @@ import type { ActivityBadge } from "@/lib/events";
  * route does not attempt yet.
  */
 
+/**
+ * Owner answer ٤٤٤ part 1: the firm account's OWN AI runs are in this feed
+ * too (id `ai:<uuid>`, a description line, `href` → /ai/runs/<id>). Runs by
+ * the firm's members stay in each member's own log.
+ */
 interface FirmActivityItem {
-  id: number;
+  id: number | string;
   badge: ActivityBadge;
   title: string;
+  description?: string;
   actorName: string | null;
   caseHref: string | null;
+  href?: string | null;
   createdAt: string;
 }
 
@@ -60,11 +67,14 @@ export default function FirmActivityPage() {
   const { isDark } = useTheme();
   const [items, setItems] = useState<FirmActivityItem[]>([]);
   const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
+  // The AI-runs half failed to read while the rest loaded (route `degraded`).
+  const [aiDegraded, setAiDegraded] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await apiGet<{ items: FirmActivityItem[] }>("/api/v1/firm/activity");
+      const res = await apiGet<{ items: FirmActivityItem[]; degraded?: boolean }>("/api/v1/firm/activity");
       setItems(res.items ?? []);
+      setAiDegraded(res.degraded === true);
       setLoadState("ready");
     } catch (err) {
       console.error("[firm/activity] failed to load:", err);
@@ -83,7 +93,7 @@ export default function FirmActivityPage() {
     <div className="max-w-5xl mx-auto space-y-5" dir="rtl">
       <div>
         <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>سجل نشاط المكتب</h1>
-        <p className={`mt-1 text-sm ${muted}`}>الجلسات والمهام المضافة عبر حسابات المكتب — الأحدث أولاً.</p>
+        <p className={`mt-1 text-sm ${muted}`}>الجلسات والمهام المضافة عبر حسابات المكتب، وأدوات الذكاء الاصطناعي التي استخدمها حساب المكتب — الأحدث أولاً.</p>
       </div>
 
       {loadState === "loading" ? (
@@ -101,24 +111,31 @@ export default function FirmActivityPage() {
             <ArrowClockwise size={13} /> إعادة المحاولة
           </button>
         </div>
-      ) : items.length === 0 ? (
+      ) : null}
+
+      {loadState === "ready" && aiDegraded && (
+        <p className={`text-[11px] ${muted}`}>تعذّرت قراءة سجل أدوات الذكاء الاصطناعي الآن — قد يكون لحساب المكتب استخدامات لا تظهر في القائمة.</p>
+      )}
+
+      {loadState !== "ready" ? null : items.length === 0 ? (
         <div className={`${card} p-10 flex flex-col items-center justify-center gap-2`}>
           <CalendarCheck size={28} className={muted} />
           <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>لا يوجد نشاط مسجَّل بعد</p>
-          <p className={`text-[11px] ${muted}`}>يظهر هنا كل جلسة أو مهمة تُضاف من حسابات المكتب.</p>
+          <p className={`text-[11px] ${muted}`}>يظهر هنا كل جلسة أو مهمة تُضاف من حسابات المكتب، وكل استخدام لأدوات الذكاء الاصطناعي من حساب المكتب.</p>
         </div>
       ) : (
         <div className={`${card} p-4`}>
           <div className="space-y-3">
             {items.map((item, index) => {
               const Icon = BADGE_ICON[item.badge] ?? Archive;
-              const Row = item.caseHref ? "a" : "div";
+              const href = item.href ?? item.caseHref;
+              const Row = href ? "a" : "div";
               return (
                 <motion.div key={item.id}
                   initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}>
                   <Row
-                    {...(item.caseHref ? { href: item.caseHref } : {})}
-                    className={`flex items-start gap-3 rounded-xl border p-4 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50"} ${item.caseHref ? "hover:border-royal/30 transition-colors" : ""}`}
+                    {...(href ? { href } : {})}
+                    className={`flex items-start gap-3 rounded-xl border p-4 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50"} ${href ? "hover:border-royal/30 transition-colors" : ""}`}
                   >
                     <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0B3D2E]/15 text-[#C8A762]">
                       <Icon size={18} weight="duotone" />
@@ -128,6 +145,7 @@ export default function FirmActivityPage() {
                         <span className={`inline-flex items-center gap-1 text-[11px] ${muted}`}><Clock size={11} />{relativeTimeAr(item.createdAt)}</span>
                       </div>
                       <p className={`mt-2 text-sm font-black ${isDark ? "text-white" : "text-slate-800"}`}>{item.title}</p>
+                      {item.description && <p className={`mt-1 text-xs ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{item.description}</p>}
                       {item.actorName && <p className={`mt-1 text-xs ${muted}`}>الفاعل: {item.actorName}</p>}
                     </div>
                   </Row>
