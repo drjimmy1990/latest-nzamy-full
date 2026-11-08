@@ -52,8 +52,10 @@ test("anything else is left exactly as it was", () => {
 test("the law route lifts the heading before the locked preview and filters every amendment", async () => {
   const { readFileSync } = await import("node:fs");
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
-  // Lifted only for an article with regulation rows, masked for non-subscribers.
-  assert.match(route, /regulationRows\.length > 0\s*\?\s*liftRegulationHeading\(article\.text, !showOfficialMeta\)/);
+  // Lifted only for an article with regulation rows, masked for non-subscribers —
+  // from the text without the corpus's audit notes (BUG-01, 6-Nov package).
+  assert.match(route, /const articleText = stripArticleAuditNotes\(article\.text\);/);
+  assert.match(route, /regulationRows\.length > 0\s*\?\s*liftRegulationHeading\(articleText, !showOfficialMeta\)/);
   // The locked preview is cut from the text WITHOUT the heading.
   assert.match(route, /result\.text = preview\(lifted\.text\)/);
   assert.doesNotMatch(route, /result\.text = preview\(article\.text\)/);

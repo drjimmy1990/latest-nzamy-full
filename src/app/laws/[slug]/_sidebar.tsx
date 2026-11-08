@@ -10,6 +10,7 @@ import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { dbOfficialRowsUnderCard, gazetteIssueLabel, type LawOfficialMeta } from "./_official-meta";
 import { buildChapterTree } from "./_chapter-tree";
 import { jumpToReaderAnchor } from "./_reader-anchors";
+import { isPageNumberedDocument } from "./_page-count";
 import {
   articleTallyLabel,
   collectOfficialLinks,
@@ -126,6 +127,8 @@ export default function SidebarPanel({
   // (articleCounts.law) when it sent them; else the old total.
   const articleCount = articleCounts?.law.total || Number(lawMeta.total_articles) || law.chapters?.flatMap(c => c.articles).length || 0;
   const articleCountText = articleCounts && articleCounts.law.total > 0 ? articleTallyLabel(articleCounts.law) : String(articleCount);
+  // #13 (owner 6-Nov, ع-6): every "article" a page anchor → the count is pages (_page-count.ts).
+  const pageNumbered = isPageNumberedDocument(law.chapters?.flatMap((c) => c.articles) ?? []);
   const regulationArticleCount = articleCounts?.regulations.length
     ? articleCounts.regulations.reduce((n, r) => n + r.total, 0)
     : lawMeta.regulation_articles;
@@ -572,7 +575,7 @@ export default function SidebarPanel({
 
                 {articleCount > 0 && (
                   <div className="flex items-center justify-between text-[9px] mt-1">
-                    <span className={muted}>{isRTL ? "عدد مواد النظام" : "Law Articles"}</span>
+                    <span className={muted}>{pageNumbered ? (isRTL ? "عدد الصفحات" : "Pages") : (isRTL ? "عدد مواد النظام" : "Law Articles")}</span>
                     <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCountText}</span>
                   </div>
                 )}
@@ -616,7 +619,7 @@ export default function SidebarPanel({
               )}
               {articleCount > 0 && (
                 <div className="flex items-center justify-between text-[9px]">
-                  <span className={muted}>{isRTL ? "عدد المواد" : "Articles"}</span>
+                  <span className={muted}>{pageNumbered ? (isRTL ? "عدد الصفحات" : "Pages") : (isRTL ? "عدد المواد" : "Articles")}</span>
                   <span className={`text-[10px] font-black ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>{articleCountText}</span>
                 </div>
               )}

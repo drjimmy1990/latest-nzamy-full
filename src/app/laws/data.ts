@@ -31,6 +31,8 @@ export interface AmendmentEntry {
   /** T28-22: true when the amending instrument and its date are withheld
    *  from a non-subscriber (the API sends them as null). */
   sourceLocked?: boolean;
+  /** «تعديل» / «إلغاء» from the anchor, when the source says (the law API sends it). */
+  type?: string | null;
   summary: string;
   fullText: string;
 }
