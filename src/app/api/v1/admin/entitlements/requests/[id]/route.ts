@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff, TIER_RANK, type ServerTier } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
@@ -80,7 +81,7 @@ export async function PATCH(
     .eq("id", id)
     .maybeSingle();
 
-  if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+  if (fetchErr) return dbErrorJson("admin/entitlements/requests/[id] PATCH", fetchErr);
   if (!reqRow) return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
   if (reqRow.status !== "pending") {
     return NextResponse.json({ error: "تم البت في هذا الطلب مسبقًا" }, { status: 409 });
@@ -95,7 +96,7 @@ export async function PATCH(
       .from("entitlement_requests")
       .update({ status: "rejected", decided_by: gate.userId, decided_at: nowIso })
       .eq("id", id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return dbErrorJson("admin/entitlements/requests/[id] PATCH", error);
     await logAdminAction({
       actorId: gate.userId,
       action: "entitlement_request_rejected",
@@ -173,7 +174,7 @@ export async function PATCH(
       .from("entitlement_requests")
       .update({ status: "approved", decided_by: gate.userId, decided_at: nowIso })
       .eq("id", id);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return dbErrorJson("admin/entitlements/requests/[id] PATCH", error);
 
     await logAdminAction({
       actorId: gate.userId,

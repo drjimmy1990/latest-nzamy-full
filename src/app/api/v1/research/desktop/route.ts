@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { validateTitle } from "@/app/api/v1/research/items/_shared";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -72,13 +73,12 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("research/desktop GET", error);
     }
 
     return NextResponse.json({ data, total: count });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Failed to get desktop session";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return dbErrorJson("research/desktop GET", e);
   }
 }
 
@@ -130,13 +130,12 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("research/desktop POST", error);
     }
 
     return NextResponse.json({ data }, { status: 201 });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Failed to create desktop item";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return dbErrorJson("research/desktop POST", e);
   }
 }
 
@@ -167,12 +166,11 @@ export async function DELETE() {
       .eq("session_id", sessionId);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("research/desktop DELETE", error);
     }
 
     return NextResponse.json({ success: true });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Failed to clear desktop";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return dbErrorJson("research/desktop DELETE", e);
   }
 }

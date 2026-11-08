@@ -28,8 +28,9 @@ export async function GET(req: NextRequest) {
       questions,
     });
   } catch (error: any) {
+    console.error('[academy/questions GET]', error);
     return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to fetch questions' },
+      { success: false, error: 'Failed to fetch questions' },
       { status: 500 }
     );
   }

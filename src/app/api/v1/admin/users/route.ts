@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTypes";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
@@ -207,7 +208,7 @@ export async function GET(request: NextRequest) {
     const { data, error, count } = await query;
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("admin/users GET", error);
     }
 
     const countResults = countsPromise ? await countsPromise : null;

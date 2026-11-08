@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
@@ -160,7 +161,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ca
 
     if (error) {
       console.error("[lawyer/case-stages GET] query failed:", error.message, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     const rows = (data ?? []) as StageRow[];
@@ -268,7 +269,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ ca
       .single();
 
     if (error || !data) {
-      return NextResponse.json({ error: error?.message || "Insert failed" }, { status: 500 });
+      return dbErrorJson("lawyer/case-stages/[caseId] POST", error);
     }
 
     await recordActivity({
@@ -634,7 +635,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
       .maybeSingle();
     if (storedError) {
       console.error("[lawyer/case-stages PATCH] stage read failed:", storedError.message, storedError.code);
-      return NextResponse.json({ error: storedError.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
     if (!storedRow) return NextResponse.json({ error: "stage not found" }, { status: 404 });
     const stored = storedRow as StageRow;
@@ -676,7 +677,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
         .select(STAGE_SELECT)
         .single();
       if (error || !data) {
-        return NextResponse.json({ error: error?.message || "Update failed" }, { status: 500 });
+        return dbErrorJson("lawyer/case-stages/[caseId] PATCH", error);
       }
       row = data as StageRow;
     }

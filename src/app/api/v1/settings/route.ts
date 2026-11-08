@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { mergePutPreferences } from "@/lib/services/preferencesMerge.ts";
@@ -25,10 +26,7 @@ export async function GET() {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+    return dbErrorJson("settings GET", error);
   }
 
   // If no settings exist yet, return defaults
@@ -136,10 +134,7 @@ export async function PUT(request: Request) {
     .single();
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+    return dbErrorJson("settings PUT", error);
   }
 
   return NextResponse.json({ settings: data });

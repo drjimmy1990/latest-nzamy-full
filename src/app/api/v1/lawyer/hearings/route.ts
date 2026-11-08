@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertRole } from "@/lib/auth/assertRole";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
@@ -86,7 +87,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[lawyer/hearings GET] query failed:", error.message, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     const rows = (data ?? []) as HearingRow[];
@@ -216,7 +217,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error || !data) {
-      return NextResponse.json({ error: error?.message || "Insert failed" }, { status: 500 });
+      return dbErrorJson("lawyer/hearings POST", error);
     }
 
     // Never blocks the response and never fails the create — see recordActivity's own contract.

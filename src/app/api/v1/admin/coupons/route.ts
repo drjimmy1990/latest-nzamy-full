@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
@@ -181,7 +182,7 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("[admin/coupons POST] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     await logAdminAction({

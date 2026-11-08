@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
@@ -43,7 +44,7 @@ export async function GET(
 
     if (error) {
       console.error("[admin/articles/[id] GET] Supabase error:", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
     if (!data) return NextResponse.json({ error: "المقال غير موجود" }, { status: 404 });
     return NextResponse.json({ data });
@@ -118,7 +119,7 @@ export async function PATCH(
 
     if (error) {
       console.error("[admin/articles/[id] PATCH] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     // Field names, not the article body: the row itself holds the text.
@@ -166,7 +167,7 @@ export async function DELETE(
 
     if (error) {
       console.error("[admin/articles/[id] DELETE] Supabase error:", error.message, error.details, error.hint, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
     // A delete that matched nothing is not an error to PostgREST; it is a 404,
     // and there is nothing to audit.

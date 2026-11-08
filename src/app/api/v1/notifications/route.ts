@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 
@@ -44,10 +45,7 @@ export async function GET(request: NextRequest) {
   const { data, count, error } = await query;
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+    return dbErrorJson("notifications GET", error);
   }
 
   // Also get unread count
@@ -93,10 +91,7 @@ export async function PATCH(request: Request) {
       .is("read_at", null);
 
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 },
-      );
+      return dbErrorJson("notifications PATCH", error);
     }
     return NextResponse.json({ success: true });
   }
@@ -109,10 +104,7 @@ export async function PATCH(request: Request) {
       .in("id", body.ids);
 
     if (error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 },
-      );
+      return dbErrorJson("notifications PATCH", error);
     }
     return NextResponse.json({ success: true });
   }

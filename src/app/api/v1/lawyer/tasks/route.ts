@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import { dbErrorJson, DB_ERROR_AR } from "@/lib/api/dbError";
 import { assertRole } from "@/lib/auth/assertRole";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import {
@@ -124,7 +125,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[lawyer/tasks GET] query failed:", error.message, error.code);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 
     const rows = (data ?? []) as TaskRow[];
@@ -269,7 +270,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error || !data) {
-      return NextResponse.json({ error: error?.message || "Insert failed" }, { status: 500 });
+      return dbErrorJson("lawyer/tasks POST", error);
     }
 
     let steps: TaskSubtask[] = [];
@@ -439,7 +440,7 @@ export async function PATCH(request: NextRequest) {
         .maybeSingle();
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return dbErrorJson("lawyer/tasks PATCH", error);
       }
 
       if (status !== undefined && updated) {
@@ -468,7 +469,7 @@ export async function PATCH(request: NextRequest) {
         const { error: delError } = await supabase.from("task_steps").delete().eq("task_id", taskId);
         if (delError) {
           console.error("[lawyer/tasks PATCH] clearing task_steps failed:", delError.message);
-          return NextResponse.json({ error: delError.message }, { status: 500 });
+          return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
         }
       } else {
         const { error: upsertError } = await supabase
@@ -479,7 +480,7 @@ export async function PATCH(request: NextRequest) {
           );
         if (upsertError) {
           console.error("[lawyer/tasks PATCH] task_steps upsert failed:", upsertError.message);
-          return NextResponse.json({ error: upsertError.message }, { status: 500 });
+          return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
         }
         const { error: pruneError } = await supabase
           .from("task_steps")

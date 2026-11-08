@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { recordEvent, namespaceEvent, RequestEvent } from "@/lib/events";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -72,7 +73,7 @@ export async function GET(
     .limit(EVENTS_PAGE);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return dbErrorJson("service-requests/[id]/events GET", error);
   }
 
   return NextResponse.json({
@@ -165,7 +166,7 @@ export async function POST(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return dbErrorJson("service-requests/[id]/events POST", error);
   }
 
   return NextResponse.json({ data }, { status: 201 });

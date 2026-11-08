@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { DETAIL_SELECT, cleanDetail, contactIssueIn, publicDetail, visibilityForTab } from "../_feed";
@@ -207,7 +208,7 @@ export async function PATCH(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return dbErrorJson("community/posts/[id] PATCH", error);
   }
 
   return NextResponse.json({ data });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { recordEvent, RequestEvent } from "@/lib/events";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
@@ -1052,7 +1053,7 @@ export async function PATCH(
         { status: 409 },
       );
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return dbErrorJson("service-requests/[id] PATCH", error);
   }
 
   // Auto-create audit event (namespaced vocabulary via recordEvent).

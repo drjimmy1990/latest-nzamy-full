@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { requireAdmin, requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return dbErrorJson("admin/teams GET", error);
     }
 
     // The roles. Missing table (20261019_30 not applied): staffRolesReady
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest) {
       });
 
     if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 });
+      return dbErrorJson("admin/teams POST", profileError);
     }
 
     await logAdminAction({
@@ -388,7 +389,7 @@ export async function PATCH(request: NextRequest) {
       .eq("id", id);
 
     if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+      return dbErrorJson("admin/teams PATCH", updateError);
     }
 
     await logAdminAction({

@@ -20,8 +20,9 @@ export async function POST(req: NextRequest) {
       result,
     });
   } catch (error: any) {
+    console.error('[academy/attempts POST]', error);
     return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to submit attempt' },
+      { success: false, error: 'Failed to submit attempt' },
       { status: 500 }
     );
   }

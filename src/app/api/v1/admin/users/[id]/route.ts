@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { readAdminBalance } from "@/lib/payments/pointsAdmin";
@@ -255,10 +256,7 @@ export async function PATCH(
       .single();
 
     if (updateError) {
-      return NextResponse.json(
-        { error: updateError.message },
-        { status: 500 },
-      );
+      return dbErrorJson("admin/users/[id] PATCH", updateError);
     }
 
     // ── The audit row's profile half (owner ٢١٠): the profile write is done ──
@@ -542,7 +540,7 @@ export async function DELETE(
       // profiles, subscriptions, lawyer_profiles etc.).
       const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
       if (deleteError) {
-        return NextResponse.json({ error: deleteError.message }, { status: 500 });
+        return dbErrorJson("admin/users/[id] DELETE", deleteError);
       }
     } else {
       // The account is frozen (app_metadata) before the purge runs and stays

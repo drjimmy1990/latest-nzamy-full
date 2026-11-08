@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
 
@@ -91,7 +92,7 @@ export async function GET(request: NextRequest) {
   else if (assignee) query = query.eq("assigned_to", assignee);
 
   const { data: rows, count, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return dbErrorJson("admin/service-orders GET", error);
 
   // No PostgREST FK from service_requests to profiles — enrich separately.
   //

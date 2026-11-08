@@ -21,8 +21,9 @@ export async function GET() {
       categories: categoriesWithStats,
     });
   } catch (error: any) {
+    console.error('[academy/categories GET]', error);
     return NextResponse.json(
-      { success: false, error: error?.message || 'Failed to fetch categories' },
+      { success: false, error: 'Failed to fetch categories' },
       { status: 500 }
     );
   }

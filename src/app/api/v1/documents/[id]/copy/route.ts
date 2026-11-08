@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership";
@@ -127,7 +128,7 @@ export async function POST(
     // orphan in the bucket that nothing will ever reference or clean up.
     await admin.storage.from("documents").remove([targetPath]).catch(() => {});
     console.error("[documents copy] insert failed:", insertError.message);
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+    return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
   }
 
   return NextResponse.json({ success: true, data: created });

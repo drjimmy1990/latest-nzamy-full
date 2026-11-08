@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
 
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
   if (status) query = query.eq("status", status);
 
   const { data: rows, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return dbErrorJson("admin/entitlements/requests GET", error);
 
   // entitlement_requests.user_id → auth.users(id); profiles.id === auth.users.id
   // but there is no PostgREST FK to profiles, so enrich in a second query.

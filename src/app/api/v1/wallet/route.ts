@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 
@@ -107,7 +108,7 @@ export async function GET() {
   ]);
 
   const txError = pageResult.error ?? scanResult.error;
-  if (txError) return NextResponse.json({ error: txError.message }, { status: 500 });
+  if (txError) return dbErrorJson("wallet GET", txError);
 
   const txRows = pageResult.data ?? [];
   const scanRows = scanResult.data ?? [];

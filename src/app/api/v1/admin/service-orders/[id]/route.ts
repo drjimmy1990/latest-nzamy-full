@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbErrorJson } from "@/lib/api/dbError";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
@@ -322,7 +323,7 @@ export async function PATCH(
       .select()
       .single();
     if (routeError) {
-      return NextResponse.json({ error: routeError.message }, { status: 500 });
+      return dbErrorJson("admin/service-orders/[id] PATCH", routeError);
     }
 
     try {
@@ -456,7 +457,7 @@ export async function PATCH(
       { p_request_id: id, p_actor_id: adminUserId, p_now: nowIso },
     );
     if (claimError) {
-      return NextResponse.json({ error: claimError.message }, { status: 500 });
+      return dbErrorJson("admin/service-orders/[id] PATCH", claimError);
     }
     // A SETOF-returning RPC comes back as an array from supabase-js: one row
     // claimed, zero rows means another admin's claim (or a deliver/cancel)
@@ -470,7 +471,7 @@ export async function PATCH(
   } else {
     const { data, error } = await admin
       .from("service_requests").update(patch).eq("id", id).select().single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return dbErrorJson("admin/service-orders/[id] PATCH", error);
     updated = data as Record<string, unknown>;
   }
 
