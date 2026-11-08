@@ -130,6 +130,7 @@ Branch `t/firm` (worktree `D:\nzwt\b1108-firm`). Date 2026-11-08.
 - All three are framework-invoked entry points (a Next page and a route handler). A text search confirms no in-code callers: the only consumer of `/api/v1/firm/activity` is `firm/activity/page.tsx`.
 - `readAiRunActivity`, `aiRunActivityItem` and `resolveCallerFirm` are reused **unchanged**.
 - **Blast radius:** the 2 pages and 1 route above, plus the new files. **Risk: LOW.**
+- `detect_changes` (compare HEAD~1, worktree) on the commit: 12 files changed, 0 indexed symbols mapped (stale index), risk low.
 - The response of `/api/v1/firm/activity` only gained fields (`href`, `description`, `degraded`, string ids). `caseHref` is still sent.
 
 ## SQL run order
