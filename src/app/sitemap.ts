@@ -79,15 +79,14 @@ const publicRoutes: SitemapRoute[] = [
   // Nor a lawyer-only tool page (LAWYER_ONLY_AI_PAGES, owner ٤١٧): it sends a
   // guest to /login and any other account to its dashboard (final review
   // 2026-11-08, item 8).
+  // Nor an older login-only page (/ai/secretary, /ai/fee-calculator,
+  // /ai/direction-support): a guest lands on /login (8 Nov 2026).
   { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/direction-support", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/draft", priority: 0.8, changeFrequency: "monthly" },
-  { url: "/ai/fee-calculator", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/legal-opinion", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/legal-translate", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/secretary", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/templates", priority: 0.75, changeFrequency: "monthly" },
 ];
 
