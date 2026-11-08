@@ -21,6 +21,7 @@
  * Pure: fflate only, so `node --test` runs it. Server code only (not for a page).
  */
 import { Inflate } from "fflate";
+import { RAW_CEILING_FACTOR, TEXT_CHARS_PER_PAGE } from "./pageCount.ts";
 
 export type TextKind = "docx" | "txt" | "md";
 
@@ -29,12 +30,18 @@ export const DOCX_XML_MAX_BYTES = 20 * 1024 * 1024;
 /** The stored file, at most: the AI tools' byte cap (aiFiles FileRules.maxBytes). */
 export const TEXT_SOURCE_MAX_BYTES = 22 * 1024 * 1024;
 /**
- * The pinned page rule: it feeds case-brief's page price and every 30-page cap.
+ * The pinned page rule lives in pageCount.ts (owner ٤٣٩: 3000 characters a page,
+ * counted without tashkeel or tatweel, one space a run), shared with the paste
+ * boxes in the browser. It feeds case-brief's page price and every page cap.
  * Word's own count (docProps/app.xml) is not used, because it is often stale.
  */
-export const TEXT_CHARS_PER_PAGE = 3000;
-/** 30 pages: the most text one file may carry. */
-export const TEXT_FILE_MAX_CHARS = 90_000;
+export { TEXT_CHARS_PER_PAGE, countableChars, countableText, textPages } from "./pageCount.ts";
+/**
+ * The most RAW text one file may carry, and what a text link serves at most:
+ * twice 30 pages, so a fully vocalised file of 30 counted pages still passes
+ * whole. The 30-page cap itself is FileRules.maxPages, by textPages.
+ */
+export const TEXT_FILE_MAX_CHARS = 30 * TEXT_CHARS_PER_PAGE * RAW_CEILING_FACTOR;
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const DOCUMENT_ENTRY = "word/document.xml";
@@ -68,10 +75,6 @@ export function textKindOf(mime: string | null, fileName: string | null): TextKi
   if (dot < 0) return null;
   const ext = (fileName ?? "").slice(dot + 1).trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(EXTENSION_KINDS, ext) ? EXTENSION_KINDS[ext] : null;
-}
-
-export function textPages(text: string): number {
-  return Math.max(1, Math.ceil(text.length / TEXT_CHARS_PER_PAGE));
 }
 
 /** UTF-8 (a BOM dropped), UTF-16 when its BOM says so, else legacy Arabic Windows. */

@@ -268,6 +268,16 @@ test("B3: pages come from the text, and the cap applies", async () => {
   assert.equal(over.ok ? "" : over.code, "too_many_pages");
 });
 
+test("٤٣٩: a vocalised .txt of 30 counted pages passes as 30 pages — the marks are not counted", async () => {
+  const text = "\u0633\u064E".repeat(TEXT_CHARS_PER_PAGE * 30);
+  assert.equal(text.length, TEXT_CHARS_PER_PAGE * 60);
+  const got = await on(fakeAdmin([row(37, "text/plain", 10, "a.txt")], { "u-1/37.bin": strToU8(text) }).admin, [37]);
+  assert.ok(got.ok, JSON.stringify(got).slice(0, 300));
+  assert.equal(got.pages, 30);
+  assert.equal(got.files[0].pages, 30);
+  assert.equal(got.files[0].bytes, new TextEncoder().encode(text).length, "the original text, marks included, is what is served");
+});
+
 test("B3: a text longer than the link can serve is refused, never cut, even under a larger page cap", async () => {
   const long = "س".repeat(TEXT_FILE_MAX_CHARS + 1);
   const got = await on(fakeAdmin([row(37, "text/plain", 10, "a.txt")], { "u-1/37.bin": strToU8(long) }).admin, [37], { ...RULES, maxPages: 500 });

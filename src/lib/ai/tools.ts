@@ -14,6 +14,7 @@
 import { extractLegalRefs, missingLegalRefs } from "./legalRefs.ts";
 import { strictNationalId } from "../services/clientIdentityRules.ts";
 import { DRAFT_KINDS, draftKindPrice, isDraftKind } from "./draftKinds.ts";
+import { measurePaste } from "./pageCount.ts";
 import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
 
@@ -484,12 +485,16 @@ const FINDING_SEVERITIES = ["high", "medium", "low"] as const;
 /**
  * A pasted text (AiToolSpec.pasteAsFile): absent, or within its limits after
  * trim. Over the limit is refused, never cut: the user sees what was not sent.
+ * The limits are counted characters (owner ٤٣٩, pageCount.measurePaste: no
+ * tashkeel, no tatweel, one space a run), the same count as the paste box; the
+ * text kept and sent is the trimmed original.
  */
 function pastedText(v: unknown, limits: { min: number; max: number; tooShort: string; tooLong: string }): { text: string | null } | { error: string } {
   const text = typeof v === "string" ? v.trim() : "";
-  if (!text) return { text: null };
-  if (text.length < limits.min) return { error: limits.tooShort };
-  if (text.length > limits.max) return { error: limits.tooLong };
+  const m = measurePaste(text, limits);
+  if (m.empty) return { text: null };
+  if (m.tooShort) return { error: limits.tooShort };
+  if (m.tooLong) return { error: limits.tooLong };
   return { text };
 }
 
