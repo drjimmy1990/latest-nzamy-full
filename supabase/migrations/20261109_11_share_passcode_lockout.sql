@@ -178,7 +178,9 @@ begin
   -- the function runs as its owner: that role must read and update the row
   -- past RLS (on self-hosted Supabase the migration role is not always a superuser)
   select pg_get_userbyid(p.proowner) into fn_owner from pg_proc p where p.oid = to_regprocedure(fn);
-  if not has_table_privilege(fn_owner, 'public.document_shares', 'SELECT, UPDATE') then
+  -- one privilege per call: a list passes when ANY of them is held
+  if not has_table_privilege(fn_owner, 'public.document_shares', 'SELECT')
+     or not has_table_privilege(fn_owner, 'public.document_shares', 'UPDATE') then
     raise exception '20261109_11 verify: %, the owner of share_passcode_check, cannot read/update public.document_shares', fn_owner;
   end if;
   if not exists (select 1 from pg_roles r where r.rolname = fn_owner and (r.rolsuper or r.rolbypassrls))

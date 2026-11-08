@@ -130,11 +130,24 @@ declare
   self_fn constant text := 'public.is_group_member_or_owner_self(uuid)';
   cfg     text[];
   r       text;
+  fn_owner text;
 begin
   select p.proconfig into cfg from pg_proc p where p.oid = to_regprocedure(self_fn);
   if not (select p.prosecdef from pg_proc p where p.oid = to_regprocedure(self_fn))
      or cfg is null or not ('search_path=""' = any (cfg)) then
     raise exception '20261109_12 verify: % is not SECURITY DEFINER with search_path = ''''', self_fn;
+  end if;
+  -- The function reads groups / group_members, whose SELECT policies call it:
+  -- its owner must read both past RLS, or every group read recurses (42P17).
+  select pg_get_userbyid(p.proowner) into fn_owner from pg_proc p where p.oid = to_regprocedure(self_fn);
+  if not has_table_privilege(fn_owner, 'public.groups', 'SELECT')
+     or not has_table_privilege(fn_owner, 'public.group_members', 'SELECT') then
+    raise exception '20261109_12 verify: %, the owner of %, cannot read public.groups / public.group_members', fn_owner, self_fn;
+  end if;
+  if not exists (select 1 from pg_roles x where x.rolname = fn_owner and (x.rolsuper or x.rolbypassrls))
+     and ((select pg_get_userbyid(c.relowner) from pg_class c where c.oid = 'public.groups'::regclass) <> fn_owner
+          or (select pg_get_userbyid(c.relowner) from pg_class c where c.oid = 'public.group_members'::regclass) <> fn_owner) then
+    raise exception '20261109_12 verify: %, the owner of %, neither owns public.groups and public.group_members nor bypasses RLS — every group read would recurse (42P17)', fn_owner, self_fn;
   end if;
   if has_function_privilege('anon', self_fn, 'EXECUTE') or not has_function_privilege('authenticated', self_fn, 'EXECUTE') then
     raise exception '20261109_12 verify: % must be executable by authenticated and not by anon', self_fn;

@@ -191,8 +191,11 @@ begin
   if not has_function_privilege(fn_owner, 'public.library_grant_access(uuid, text, text, integer, uuid, uuid, text, text)', 'EXECUTE') then
     raise exception '20261109_10 verify: %, the owner of redeem_library_invitation, cannot EXECUTE library_grant_access — run this file as the role that ran 20261030_65', fn_owner;
   end if;
-  if not has_table_privilege(fn_owner, 'library.invitations', 'SELECT, UPDATE')
-     or not has_table_privilege(fn_owner, tbl, 'SELECT, INSERT') then
+  -- one privilege per call: a list passes when ANY of them is held
+  if not has_table_privilege(fn_owner, 'library.invitations', 'SELECT')
+     or not has_table_privilege(fn_owner, 'library.invitations', 'UPDATE')
+     or not has_table_privilege(fn_owner, tbl, 'SELECT')
+     or not has_table_privilege(fn_owner, tbl, 'INSERT') then
     raise exception '20261109_10 verify: %, the owner of redeem_library_invitation, cannot read/update library.invitations or write %', fn_owner, tbl;
   end if;
   if not exists (select 1 from pg_roles r where r.rolname = fn_owner and (r.rolsuper or r.rolbypassrls))

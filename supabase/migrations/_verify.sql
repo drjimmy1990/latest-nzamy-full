@@ -6302,7 +6302,8 @@ select 'library_invitation_redemptions: RLS on, no policy, no anon / authenticat
                  and not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'library_invitation_redemptions')
                  and not has_table_privilege('anon', 'public.library_invitation_redemptions', 'SELECT, INSERT, UPDATE, DELETE')
                  and not has_table_privilege('authenticated', 'public.library_invitation_redemptions', 'SELECT, INSERT, UPDATE, DELETE')
-                 and has_table_privilege('service_role', 'public.library_invitation_redemptions', 'SELECT, INSERT') end
+                 and has_table_privilege('service_role', 'public.library_invitation_redemptions', 'SELECT')
+                 and has_table_privilege('service_role', 'public.library_invitation_redemptions', 'INSERT') end
 union all
 select 'the owner of redeem_library_invitation can EXECUTE library_grant_access (else every redeem fails)',
        case when to_regprocedure('public.redeem_library_invitation(uuid, text)') is null
@@ -6332,7 +6333,8 @@ select 'document_shares.failed_attempts + locked_until exist (run 20261109_11)',
 union all
 select 'the owner of share_passcode_check can update document_shares past RLS (else every check answers none)',
        case when to_regprocedure('public.share_passcode_check(text, text)') is null then false
-            else (select has_table_privilege(o.rolname, 'public.document_shares', 'SELECT, UPDATE')
+            else (select has_table_privilege(o.rolname, 'public.document_shares', 'SELECT')
+                         and has_table_privilege(o.rolname, 'public.document_shares', 'UPDATE')
                          and (o.rolsuper or o.rolbypassrls
                               or o.oid = (select c.relowner from pg_class c where c.oid = 'public.document_shares'::regclass))
                     from pg_proc p join pg_roles o on o.oid = p.proowner
