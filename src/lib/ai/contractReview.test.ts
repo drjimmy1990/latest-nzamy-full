@@ -433,10 +433,10 @@ test("a pasted contract: refused uncharged while the flag is off; with it on it 
 
 // ── settling ─────────────────────────────────────────────────────────────────
 
-function settling(status = "running") {
+function settling(status = "running", runInput: Record<string, unknown> = input) {
   const stored: Array<Record<string, unknown>> = [];
   const { client, log } = fakeDb((q: FakeQuery) => {
-    if (q.table === "ai_runs" && q.op === "select") return { data: { id: RUN, user_id: "u-1", tool: "contract-review", status, class: "job", source_ids: {}, input } };
+    if (q.table === "ai_runs" && q.op === "select") return { data: { id: RUN, user_id: "u-1", tool: "contract-review", status, class: "job", source_ids: {}, input: runInput } };
     if (q.table === "ai_runs" && q.op === "update") {
       stored.push(q.payload as Record<string, unknown>);
       return { data: [{ id: RUN }] };
@@ -475,6 +475,20 @@ test("an output with a percentage, or that breaks the shape, fails and is refund
     assert.equal((log.find((q) => q.table === "ai_fail_run")!.payload as Record<string, unknown>).p_code, "schema_invalid");
     assert.equal(stored.length, 0);
   }
+});
+
+test("owner ٤٤٠ on the callback: the run row's pasted contract_text decides — its own rate is stored, another rate is refunded", async () => {
+  const runInput = { ...input, contract_text: `عقد إيجار. ${"ن".repeat(120)} البند الخامس: غرامة تأخير ٥٪ من الأجرة.` };
+  const quoting = output({ clauses: [clause({ quote: "غرامة تأخير ٥٪ من الأجرة", issue: "غرامة 5% بلا سقف" })] });
+  const ok = settling("running", runInput);
+  const r = await callbackWith(ok.admin as never, { run_id: RUN, status: "succeeded", output: quoting, citations: [] });
+  assert.deepEqual(r.body, { ok: true, final: "succeeded" });
+  assert.deepEqual(rpcs(ok.log), []);
+  assert.equal(ok.stored.length, 1);
+  const other = settling("running", runInput);
+  await callbackWith(other.admin as never, { run_id: RUN, status: "succeeded", output: output({ summary: "غرامة ٧٪" }), citations: [] });
+  assert.deepEqual(rpcs(other.log), ["ai_fail_run"]);
+  assert.equal(other.stored.length, 0);
 });
 
 test("the library decides each cited article, not the model: the stored result has citation_check, not cited", async () => {
