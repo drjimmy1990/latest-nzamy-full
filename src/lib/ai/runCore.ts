@@ -483,6 +483,13 @@ export async function startRunWith(
     const refusal = spec.checkTurn(checked.input, turn, prior);
     if (refusal) return { status: 409, body: { error: refusal, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
   }
+  // What the stored runs already hold is taken from them, never from the
+  // browser (owner ٤١٠: the section's text and whether it cited).
+  if (spec.fromPrior) {
+    const rebuilt = spec.fromPrior(checked.input, prior);
+    if (!rebuilt.ok) return { status: 409, body: { error: rebuilt.error, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
+    checked.input = rebuilt.input;
+  }
 
   // A file tool: every predictable refusal (type, size, pages, an unreadable
   // PDF, someone else's file) happens here, before the charge, and the page

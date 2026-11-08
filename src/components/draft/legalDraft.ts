@@ -148,10 +148,10 @@ export interface EditedSection {
 }
 
 /**
- * The section-edit run's input (tools.ts sectionEditInput): the draft's own
- * frame (what the lawyer confirmed), the section as it reads now and his
- * instruction. The server strips the section's [S…] markers itself: they point
- * at the draft's sources, and the edit searches the library again.
+ * The section-edit run's input (tools.ts sectionEditInput): the section's
+ * index and his instruction are what count. The frame and the section text
+ * sent with them are ignored: the server rebuilds them, with the section
+ * as it now reads, from the stored runs (tools.ts sectionFromDraft).
  */
 export function sectionEditInput(
   draftSent: Record<string, unknown>,

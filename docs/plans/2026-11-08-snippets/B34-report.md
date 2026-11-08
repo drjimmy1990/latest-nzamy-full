@@ -45,11 +45,18 @@ take exactly the old path. The full suite checks this.
   - `conversation.maxMessages` is now 2 + 30 + 1, so the 31st edit gets its own message rather
     than «اكتملت هذه المحادثة».
 - **Input («section»):**
-  - The input carries `section_index`, an `instruction` of 1–1000 characters, the current
-    `section {heading, body}`, and the memo frame for context: title, outline of headings, facts,
-    defences and requests.
-  - The server strips the section's `[S…]` markers, because they point at the draft run's sources.
-    It records `had_citations`.
+  - From the browser only `section_index` and an `instruction` of 1–1000 characters count. Any
+    section text, `had_citations`, title, outline or facts the browser sends are dropped.
+  - After `checkTurn` passes, a new spec hook `fromPrior` (`sectionFromDraft` in `tools.ts`, applied
+    in `runCore` before pricing and the charge) rebuilds the rest from this user's own stored runs
+    of the conversation:
+    - The section is the succeeded draft's section, replaced by the newest succeeded edit of that
+      section if there is one.
+    - The memo frame (parties, facts, issues, defences, requests) is the draft run's stored input.
+      The title and the outline of headings come from the draft's output, with edits applied.
+  - The server strips the section's `[S…]` markers, because they point at an earlier run's sources.
+    It records `had_citations` from the stored text.
+  - The run row and the n8n package carry the server's copy.
   - `search_text` is heading + instruction + body, so the library is searched for that section.
 - **Output:** one `{heading, body, cited}` plus the `section_index` taken from the input. It replaces
   that section only. A whole memo, or an empty heading or body, is refused.
@@ -280,7 +287,7 @@ const task = i.phase === 'section' ? [
   - quick-answer only;
   - RLS with and without a stray grant.
   The negative control fails at T0.
-- Full suite after B4 and the follow-up: **6401 tests, 7 failures (the same 7 baseline)**; `npx tsc --noEmit -p .` clean.
+- Full suite after B4 and both follow-ups: **6405 tests, 7 failures (the same 7 baseline)**; `npx tsc --noEmit -p .` clean.
 
 ### Owner-facing summary (Arabic, for the controller)
 - جهّزنا السؤال المجاني اليومي في «السؤال السريع»: سؤال واحد بلا نقاط كل يوم (بتوقيت الرياض) لكل رقم جوال **موثَّق**، في الحساب الفردي.
@@ -298,14 +305,17 @@ const task = i.phase === 'section' ? [
 ## Commits
 - B3: `54d5b74d` feat(ai): owner ٤١٠ «عدّل هذا القسم»…
 - B4: `2fedd70a` feat(ai): owner ٤١٢ free daily quick question…
-- Follow-up (B3): see the last commit on t/aiprice — a section that cited nothing is no longer
-  refused before n8n when the library finds nothing (pipeline test for both cases).
+- Follow-up (B3): `31ea2b4b` — a section that cited nothing is no longer refused before n8n when
+  the library finds nothing (pipeline test for both cases). `48950bec` is a report-only commit.
+- Follow-up 2 (B3): see the last commit on t/aiprice. The section text and `had_citations` now
+  come from the stored draft, never from the browser (coordinator's ruling on the earlier concern).
 
 ## Concerns for the controller
-- **`had_citations` is sent by the client** (B3). If a user sends `false` for a section that did cite, that
-  edit skips `no_sources` and `ungrounded`. Nothing paid is given away: the edit is still charged or uses a
-  free edit. But it weakens the grounding guarantee on his own memo. A later fix could derive it on the
-  server from the succeeded draft's section body, when that section has not been edited before.
+- ~~`had_citations` is sent by the client~~ **Fixed in follow-up 2.** It is now derived on the server
+  from the stored section, which is the newest succeeded edit or else the draft. The section text
+  sent to n8n is also the stored one. Tests: a browser-sent `false` for a cited section is still
+  citation-checked (`no_sources` before n8n, `ungrounded` at settle), and the stored text wins over
+  the browser's text, both in the n8n package and in the stored run input.
 - The empty-`sources` path needs no extra n8n change: `sourcesXml([])` is valid, and the drafter's
   citation rule applies only to a paragraph that relies on a text.
 - **Live n8n must be updated** (B3, above) before section edits are switched on. Until then a section

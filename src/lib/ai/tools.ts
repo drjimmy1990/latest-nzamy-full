@@ -92,6 +92,13 @@ export interface AiToolSpec {
    * after the conversation's earlier runs are read and before the charge.
    */
   checkTurn?: (input: Record<string, unknown>, turn: number, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => string | null;
+  /**
+   * Rebuilds, from the conversation's stored runs, the parts of the input the
+   * server already holds, so the browser's copy is never trusted (owner ٤١٠:
+   * the section being edited as it now reads, whether it cited, the memo's
+   * frame). Runs right after checkTurn passed; a refusal is uncharged.
+   */
+  fromPrior?: (input: Record<string, unknown>, prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>) => InputCheck;
   /** The input says its facts are in the files (L14): the run is refused, before the charge, without any. */
   filesRequired?: (input: Record<string, unknown>) => boolean;
   /** What `filesRequired` says when the general «مستندات الوقائع» copy would name the wrong thing. */
@@ -1519,7 +1526,7 @@ function legalDrafterInput(raw: unknown): InputCheck {
     return { ok: true, input: { ...base, facts: factsRaw, facts_in_files: factsInFiles, search_text: search.slice(0, DRAFT_SEARCH_MAX) } };
   }
 
-  if (raw.phase === SECTION_EDIT_PHASE) return sectionEditInput(raw, base, factsRaw);
+  if (raw.phase === SECTION_EDIT_PHASE) return sectionEditInput(raw, base);
 
   // The draft: what the lawyer confirmed on the analysis screen.
   if (factsRaw.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
@@ -1535,50 +1542,75 @@ const DRAFT_SECTIONS_MAX = 30;
 const SECTION_BODY_MAX = 12000;
 
 /**
- * Owner ٤١٠ «عدّل هذا القسم»: one section of the written memo, the lawyer's
- * instruction, and the memo's frame for context. The section's [S…] markers
- * are taken out: they point at the draft run's sources, and this run searches
- * the library again and numbers its own (as draftInput does for the bases).
- * `had_citations` remembers whether it cited anything, for citationsOptional.
+ * Owner ٤١٠ «عدّل هذا القسم»: from the browser only the section's index and
+ * the lawyer's instruction count. Anything else it sends about the memo (the
+ * section's text, whether it cited, the title, the outline, the facts) is
+ * dropped: sectionFromDraft rebuilds all of it from the stored runs once
+ * checkTurn has passed. Until then `had_citations` is absent, which
+ * citationsOptional reads as "it cited" (the stricter rule).
  */
-function sectionEditInput(raw: Record<string, unknown>, base: Record<string, unknown>, factsRaw: string): InputCheck {
+function sectionEditInput(raw: Record<string, unknown>, base: Record<string, unknown>): InputCheck {
   const index = raw.section_index;
   if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= DRAFT_SECTIONS_MAX) {
     return { ok: false, error: SECTION_EDIT_COPY.badSection };
   }
   const instruction = boundedText(raw.instruction, SECTION_INSTRUCTION_MAX);
   if (!instruction) return { ok: false, error: SECTION_EDIT_COPY.instruction };
-  const s = isPlainObject(raw.section) ? raw.section : null;
-  const heading = s ? boundedText(s.heading, 200) : null;
-  const rawBody = s ? boundedText(s.body, SECTION_BODY_MAX) : null;
-  if (!heading || !rawBody) return { ok: false, error: SECTION_EDIT_COPY.section };
-  const body = stripCitationMarkers(rawBody).trim();
-  if (!body) return { ok: false, error: SECTION_EDIT_COPY.section };
-  const title = optionalField(raw.title, 200);
-  if (title === null) return { ok: false, error: DRAFT_COPY.tooLong("عنوان المذكرة") };
-  const outline = textList(raw.outline, DRAFT_SECTIONS_MAX, 200);
-  if (!outline) return { ok: false, error: DRAFT_COPY.tooLong("أقسام المذكرة") };
-  // The memo's own frame, for context only; the facts are optional here.
-  const facts = factsRaw.length <= DRAFT_FACTS_MAX ? factsRaw : "";
-  const issues = raw.issues === undefined || raw.issues === null ? [] : titledList(raw.issues, 12, "detail", 2000);
-  const defenses = raw.defenses === undefined || raw.defenses === null ? [] : titledList(raw.defenses, 15, "basis", 3000);
-  if (!issues || !defenses) return { ok: false, error: DRAFT_COPY.tooLong("المسائل والدفوع") };
-  const search = [heading, instruction, body].join("\n");
+  return {
+    ok: true,
+    input: { phase: SECTION_EDIT_PHASE, kind: base.kind, section_index: index, instruction, search_text: instruction },
+  };
+}
+
+/**
+ * The section as the memo now reads it, from this user's own runs of the
+ * conversation (oldest first, as runCore reads them): the succeeded draft's
+ * section, replaced by the newest succeeded edit of it. Its [S…] markers are
+ * taken out (they point at that run's sources; this run searches the library
+ * again and numbers its own) and `had_citations` remembers whether it had any,
+ * for citationsOptional. The memo's frame (parties, facts, issues, defenses,
+ * requests) is the draft run's own stored input.
+ */
+function sectionFromDraft(
+  input: Record<string, unknown>,
+  prior: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+): InputCheck {
+  if (input.phase !== SECTION_EDIT_PHASE) return { ok: true, input };
+  const draftRun = prior.find((r) => isPlainObject(r.input) && r.input.phase === "draft" && r.status === "succeeded");
+  if (!draftRun || !isPlainObject(draftRun.input) || !isPlainObject(draftRun.output)) return { ok: false, error: SECTION_EDIT_COPY.needDraft };
+  const sections = (Array.isArray(draftRun.output.sections) ? draftRun.output.sections : []).map((s) =>
+    isPlainObject(s) && typeof s.heading === "string" && typeof s.body === "string" ? { heading: s.heading, body: s.body } : null,
+  );
+  for (const r of prior) {
+    if (r.status !== "succeeded" || !isPlainObject(r.input) || r.input.phase !== SECTION_EDIT_PHASE || !isPlainObject(r.output)) continue;
+    const i = r.output.section_index;
+    if (!Number.isInteger(i) || (i as number) < 0 || (i as number) >= sections.length) continue;
+    if (typeof r.output.heading !== "string" || typeof r.output.body !== "string") continue;
+    sections[i as number] = { heading: r.output.heading, body: r.output.body };
+  }
+  const index = input.section_index;
+  const current = Number.isInteger(index) ? sections[index as number] : undefined;
+  if (!current) return { ok: false, error: SECTION_EDIT_COPY.badSection };
+  const heading = boundedText(current.heading, 200);
+  const rawBody = boundedText(current.body, SECTION_BODY_MAX);
+  const body = rawBody ? stripCitationMarkers(rawBody).trim() : "";
+  if (!heading || !rawBody || !body) return { ok: false, error: SECTION_EDIT_COPY.section };
+  const { search_text: _s, phase: _p, ...frame } = draftRun.input;
+  void _s; void _p;
+  const title = boundedText(draftRun.output.title, 200);
+  const instruction = typeof input.instruction === "string" ? input.instruction : "";
   return {
     ok: true,
     input: {
-      ...base,
+      ...frame,
       phase: SECTION_EDIT_PHASE,
       section_index: index,
       instruction,
       section: { heading, body },
       had_citations: /\[S\d{1,3}\]/.test(rawBody),
       ...(title ? { title } : {}),
-      outline,
-      facts,
-      issues,
-      defenses,
-      search_text: search.slice(0, DRAFT_SEARCH_MAX),
+      outline: sections.map((s) => s?.heading ?? "").filter(Boolean),
+      search_text: [heading, instruction, body].join("\n").slice(0, DRAFT_SEARCH_MAX),
     },
   };
 }
@@ -1969,6 +2001,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // 31st edit gets checkTurn's own words, not «اكتملت هذه المحادثة».
     conversation: { maxMessages: 2 + SECTION_EDIT_MAX_PER_MEMO + 1, historyPairs: 1, field: "search_text", replyField: "facts_summary" },
     checkTurn: legalDrafterTurn,
+    fromPrior: sectionFromDraft,
     sectionEdit: { phase: SECTION_EDIT_PHASE },
     citationsOptional: (input) => input.phase === SECTION_EDIT_PHASE && input.had_citations === false,
     filesRequired: (input) => input.phase === "issues" && input.facts_in_files === true,

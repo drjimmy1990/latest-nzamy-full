@@ -145,24 +145,71 @@ test("a section edit is not a founder drafting work: creditKindForRun gives none
 
 // ── input, output, turns ─────────────────────────────────────────────────────
 
-test("section input: index, a bounded instruction and the section; markers stripped and remembered; searched from the section", () => {
+test("section input: from the browser only the index and a bounded instruction; the section, had_citations and the frame it sends are dropped", () => {
   const v = tool.validateInput;
   assert.deepEqual(v(section(0, { instruction: " " })), { ok: false, error: SECTION_EDIT_COPY.instruction });
   assert.deepEqual(v(section(0, { instruction: "x".repeat(1001) })), { ok: false, error: SECTION_EDIT_COPY.instruction });
   assert.deepEqual(v(section(30)), { ok: false, error: SECTION_EDIT_COPY.badSection });
   assert.deepEqual(v(section(0, { section_index: "0" })), { ok: false, error: SECTION_EDIT_COPY.badSection });
-  assert.deepEqual(v(section(0, { section: { heading: "", body: "x" } })), { ok: false, error: SECTION_EDIT_COPY.section });
-  assert.deepEqual(v(section(0, { section: { heading: "h", body: "[S1]" } })), { ok: false, error: SECTION_EDIT_COPY.section });
-  const ok = v(section(2));
+  // Whatever the browser says about the section is not even read.
+  const ok = v(section(2, { section: { heading: "", body: "[S1]" }, had_citations: false, title: "مزوّر", facts: "وقائع أخرى" }));
   assert.ok(ok.ok);
   if (ok.ok) {
-    assert.deepEqual(ok.input.section, { heading: "الأسانيد", body: "تنص المادة ٧٧…" });
-    assert.equal(ok.input.had_citations, true);
-    assert.equal(ok.input.search_text, "الأسانيد\nاختصر هذا القسم\nتنص المادة ٧٧…");
-    assert.equal(ok.input.section_index, 2);
+    assert.deepEqual(ok.input, { phase: "section", kind: "claim", section_index: 2, instruction: "اختصر هذا القسم", search_text: "اختصر هذا القسم" });
+    assert.equal(tool.citationsOptional!(ok.input), false, "until the stored section is read, it counts as cited");
   }
-  const plain = v(section(0));
-  assert.equal(plain.ok && plain.input.had_citations, false);
+});
+
+test("section from the stored draft: the stored text wins over the browser's, markers stripped and remembered, the frame is the draft run's", () => {
+  const from = tool.fromPrior!;
+  const browser = tool.validateInput(section(2, { section: { heading: "الأسانيد", body: "نص من المتصفح بلا مصادر" }, had_citations: false }));
+  assert.ok(browser.ok);
+  if (!browser.ok) return;
+  const r = from(browser.input, memo());
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.deepEqual(r.input.section, { heading: "الأسانيد", body: "تنص المادة ٧٧…" });
+  assert.equal(r.input.had_citations, true, "a browser-sent false is ignored");
+  assert.equal(tool.citationsOptional!(r.input), false);
+  assert.equal(r.input.search_text, "الأسانيد\nاختصر هذا القسم\nتنص المادة ٧٧…");
+  assert.equal(r.input.section_index, 2);
+  assert.equal(r.input.title, pleading.title);
+  assert.deepEqual(r.input.outline, ["البيانات", "الوقائع", "الأسانيد"]);
+  assert.equal(r.input.facts, FACTS);
+  assert.deepEqual(r.input.issues, draft.issues);
+  assert.equal(r.input.phase, "section");
+  // A section that cited nothing.
+  const plain = tool.validateInput(section(0, { had_citations: true }));
+  assert.ok(plain.ok);
+  const p0 = plain.ok ? from(plain.input, memo()) : null;
+  assert.ok(p0?.ok && p0.input.had_citations === false && tool.citationsOptional!(p0.input) === true);
+  // Not a section run: untouched.
+  assert.deepEqual(from(draft, memo()), { ok: true, input: draft });
+});
+
+test("section from the stored draft: the newest succeeded edit of that section is the one edited; failed edits and other sections do not count", () => {
+  const from = tool.fromPrior!;
+  const edit = (index: number, body: string, status = "succeeded", heading = "الأسانيد المعدلة") => ({
+    input: { phase: "section", kind: "claim", section_index: index },
+    output: { phase: "section", section_index: index, heading, body },
+    status, price_points: 0,
+  });
+  const v = tool.validateInput(section(2));
+  assert.ok(v.ok);
+  if (!v.ok) return;
+  const once = from(v.input, memo(edit(2, "صيغة أولى [S3]"), edit(2, "صيغة ثانية بلا سند"), edit(1, "الوقائع الجديدة [S1]", "succeeded", "الوقائع المعدلة"), edit(2, "صيغة فاشلة [S1]", "running")));
+  assert.ok(once.ok);
+  if (!once.ok) return;
+  assert.deepEqual(once.input.section, { heading: "الأسانيد المعدلة", body: "صيغة ثانية بلا سند" });
+  assert.equal(once.input.had_citations, false, "the newest version cited nothing");
+  assert.deepEqual(once.input.outline, ["البيانات", "الوقائع المعدلة", "الأسانيد المعدلة"], "the outline follows the edits");
+  const latest = from(v.input, memo(edit(2, "بلا سند"), edit(2, "صيغة أحدث [S2]")));
+  assert.ok(latest.ok && latest.input.had_citations === true && (latest.input.section as { body: string }).body === "صيغة أحدث");
+  // No succeeded draft, or the section is not in it: refused, uncharged (runCore answers 409).
+  assert.deepEqual(from(v.input, memo().slice(0, 1)), { ok: false, error: SECTION_EDIT_COPY.needDraft });
+  const v3 = tool.validateInput(section(3));
+  assert.ok(v3.ok);
+  if (v3.ok) assert.deepEqual(from(v3.input, memo()), { ok: false, error: SECTION_EDIT_COPY.badSection });
 });
 
 test("section output: one {heading, body}, the index from the input; anything else refused", () => {
@@ -344,6 +391,38 @@ test("pipeline: a section that cited nothing is edited even when the library fin
   assert.ok(cited.log.some((q) => q.op === "rpc" && q.table === "ai_fail_run"));
 });
 
+test("pipeline: the stored section, not the browser's, is sent to n8n and stored; a browser-sent false on a cited section still fails no_sources", async () => {
+  const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const d: StartRunDeps = { ...deps(), n8n: async (call) => { calls.push(call as never); return deps().n8n(call); } };
+  const { client, log } = db(memo());
+  const forged = section(1, { section: { heading: "الوقائع", body: "نص مزوّر من المتصفح" }, had_citations: false, title: "عنوان آخر" });
+  const r = await startRunWith(client as never, d, LAWYER, body(forged, { expectedPrice: 0 }));
+  assert.equal(r.status, 202);
+  const sent = calls.find((c) => c.path === "nzamy-ai/legal-drafter")!.body.input as Record<string, unknown>;
+  assert.deepEqual(sent.section, { heading: "الوقائع", body: "عمل المدعي…" });
+  assert.equal(sent.had_citations, true);
+  assert.equal(sent.title, pleading.title);
+  const stored = (rpc(log)!.payload as Record<string, unknown>).p_input as Record<string, unknown>;
+  assert.deepEqual(stored.section, sent.section, "the run row keeps the server's copy");
+  assert.equal(JSON.stringify(calls).includes("مزوّر"), false);
+
+  // The cited «الأسانيد», with the browser claiming it cited nothing and the library finding nothing.
+  const none: StartRunDeps = { ...deps(), retrieve: async () => ({ sources: [], map: {} }) };
+  const second = db(memo());
+  const refused = await startRunWith(second.client as never, none, LAWYER,
+    body(section(2, { had_citations: false, section: { heading: "الأسانيد", body: "بلا مصادر" } }), { expectedPrice: 0 }));
+  assert.equal(refused.status, 422);
+  assert.equal(refused.body.code, "no_sources");
+});
+
+test("pipeline: an edit of a section the stored draft does not have is refused before the charge", async () => {
+  const { client, log } = db(memo());
+  const r = await startRunWith(client as never, deps(), LAWYER, body(section(3), { expectedPrice: 0 }));
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, "turn_refused");
+  assert.equal(rpc(log), undefined);
+});
+
 test("settle: an edit of a section that cited nothing may cite nothing; one that cited must cite (else failed, refunded)", async () => {
   const settle = async (input: Record<string, unknown>) => {
     const { client, log } = fakeDb((q: FakeQuery) => {
@@ -357,13 +436,23 @@ test("settle: an edit of a section that cited nothing may cite nothing; one that
       { run_id: RUN, status: "succeeded", output: { heading: "البيانات", body: "المدعي: فلان", cited: [] }, citations: [] });
     return { out, log };
   };
-  const plain = tool.validateInput(section(0));
-  const cited = tool.validateInput(section(2));
-  assert.ok(plain.ok && cited.ok);
-  if (!plain.ok || !cited.ok) return;
-  assert.equal((await settle(plain.input)).out.kind, "succeeded");
-  const failed = await settle(cited.input);
-  assert.deepEqual(failed.out, { kind: "failed", code: "ungrounded" });
+  // The input as runCore stores it: validated, then rebuilt from the stored draft.
+  const stored = (input: Record<string, unknown>) => {
+    const v = tool.validateInput(input);
+    assert.ok(v.ok);
+    const r = v.ok ? tool.fromPrior!(v.input, memo()) : null;
+    assert.ok(r?.ok);
+    return r && r.ok ? r.input : {};
+  };
+  assert.equal((await settle(stored(section(0)))).out.kind, "succeeded");
+  assert.deepEqual((await settle(stored(section(2)))).out, { kind: "failed", code: "ungrounded" });
+  // A browser that says the cited section cited nothing is still citation-checked.
+  const lying = stored(section(2, { had_citations: false, section: { heading: "الأسانيد", body: "بلا مصادر" } }));
+  assert.deepEqual((await settle(lying)).out, { kind: "failed", code: "ungrounded" });
+  // And an input never rebuilt (no had_citations at all) is held to the stricter rule.
+  const raw = tool.validateInput(section(0));
+  assert.ok(raw.ok);
+  if (raw.ok) assert.deepEqual((await settle(raw.input)).out, { kind: "failed", code: "ungrounded" });
 });
 
 // ── the screen ───────────────────────────────────────────────────────────────
