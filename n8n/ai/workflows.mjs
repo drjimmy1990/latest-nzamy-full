@@ -298,7 +298,7 @@ let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
 return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
 
-// ── L7 عصارة المرفقات / الموجز القضائي ──────────────────────────────────────
+// ── L7 عصارة المرفقات (its only name, owner ٤٤١) ─────────────────────────────
 // The lawyer's role note and the files → a BriefResult. The app rebuilds the
 // object field by field (tools.ts caseBriefOutput); nothing here is trusted.
 const CASE_BRIEF_PROMPT = String.raw`const wantRequests = i.want_requests !== false;

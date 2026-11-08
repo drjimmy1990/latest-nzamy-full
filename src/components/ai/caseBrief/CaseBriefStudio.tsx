@@ -183,12 +183,10 @@ function CaseBriefTool() {
           <div className="w-8 h-8 rounded-xl bg-[#0B3D2E]/10 flex items-center justify-center">
             <Robot size={18} weight="duotone" className="text-[#0B3D2E] dark:text-[#C8A762]" />
           </div>
+          {/* Owner ٤٤١ (8 Nov 2026): «عصارة المرفقات» is the tool's only name (toolLabels.ts). */}
           <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>
-            الموجز القضائي
+            {aiToolLabelAr("case-brief")}
           </h1>
-          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/15 dark:text-[#C8A762] border border-[#0B3D2E]/15 dark:border-[#C8A762]/30">
-            الخطوة صفر
-          </span>
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
           المساعد القانوني الذكي. ارفع أوراق القضية (أحكام، مذكرات، عقود) وسيقوم بقراءتها، تلخيص الوقائع، واستخراج نقاط القوة والضعف لتقديم إحاطة شاملة في ثوانٍ.
@@ -413,7 +411,7 @@ function CaseBriefTool() {
                 </div>
               ))}
               <p className={`text-[10px] italic text-center pt-1 ${isDark ? "text-zinc-700" : "text-zinc-400"}`}>
-                القرار النهائي للمحامي — الموجز يعرض الخيارات فقط.
+                القرار النهائي للمحامي — الأداة تعرض الخيارات فقط.
               </p>
             </div>
 
@@ -474,7 +472,7 @@ function CaseBriefTool() {
                   </div>
 
                   <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-                    حلّل الموجز الأوراق وحدّد ما تحتاجه من العميل — كل طلب مرتبط بثغرة وجدها.
+                    حلّلت الأداة الأوراق وحدّدت ما تحتاجه من العميل — كل طلب مرتبط بثغرة وجدتها.
                   </p>
 
                   {/* Request list */}

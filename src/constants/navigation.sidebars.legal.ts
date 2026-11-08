@@ -28,7 +28,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: true,
     items: [
-      // ١: الخطوة صفر — فهم الملف أولاً
+      // ١: فهم الملف أولاً
       { label: "عصارة المرفقات",           labelEn: "Attachment Analyzer", href: "/ai/analyze",     icon: "Scan" },
       { label: "سؤال قانوني سريع", labelEn: "Quick Legal Q&A",         href: "/ai/quick-answer",  icon: "ChatCircle", badge: "قريباً" },
       { label: "المساعد المتقدم", labelEn: "Advanced Assistant",         href: "/ai/assistant",  icon: "ChatCircle" },
@@ -258,7 +258,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: true,
     items: [
-      // ① الخطوة صفر — فهم الملف أولاً (مضاف S59)
+      // ① فهم الملف أولاً (مضاف S59)
       { label: "عصارة المرفقات",              labelEn: "Attachment Analyzer", href: "/ai/analyze",        icon: "Scan" },
       { label: "سؤال قانوني سريع",     labelEn: "Quick Legal Q&A",   href: "/ai/quick-answer",      icon: "ChatCircle",   badge: "قريباً" },
       // ② الصياغة والتحرير

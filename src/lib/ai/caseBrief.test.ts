@@ -1,5 +1,5 @@
 /**
- * caseBrief.test.ts — L7 عصارة المرفقات / الموجز القضائي through the run
+ * caseBrief.test.ts — L7 عصارة المرفقات (its only name, owner ٤٤١) through the run
  * pipeline: a job tool with files. The files are checked before the charge,
  * the page total picks the tier (30 / 150), the signed files go in the
  * package, n8n answers 202, and the callback's BriefResult is rebuilt field
@@ -15,6 +15,7 @@ import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { FilesCheck } from "./aiFiles.ts";
 import { AI_TOOLS, CASE_BRIEF_FILES, CASE_BRIEF_PRICES, CASE_BRIEF_SMALL_PAGES } from "./tools.ts";
+import { AI_TOOL_PAGES, aiToolLabelAr } from "./toolLabels.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
 const F1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -160,4 +161,27 @@ test("the BriefResult is rebuilt: bounded strings, fixed levels, no extra field,
   assert.deepEqual(out.clientRequests, [{ request: "كشف الحساب", reason: "إثبات الأجر", priority: "normal", type: "financial" }]);
   assert.equal(out.sneaky, undefined);
   assert.equal(AI_TOOLS["case-brief"].validateOutput({ caseCard: {}, story: "" }, {}), null, "no story, no brief");
+});
+
+test("owner ٤٤١ (8 Nov 2026): «عصارة المرفقات» is the tool's only name; the id, page and key stay case-brief", () => {
+  const OLD = ["الموجز القضائي", "الخطوة صفر"];
+  const files = [
+    "src/components/ai/caseBrief/CaseBriefStudio.tsx",
+    "src/app/ai/analyze/_components/AttachmentSqueezer.tsx",
+    "src/app/ai/analyze/page.tsx",
+    "src/constants/navigation.sidebars.legal.ts",
+    "src/lib/ai/toolLabels.ts",
+    "src/lib/ai/tools.ts",
+    "n8n/ai/workflows.mjs",
+    "n8n/ai/case-brief.json",
+  ];
+  for (const rel of files) {
+    const text = readFileSync(join(process.cwd(), rel), "utf8");
+    for (const name of OLD) assert.ok(!text.includes(name), `${rel} still says «${name}»`);
+  }
+  assert.equal(aiToolLabelAr("case-brief"), "عصارة المرفقات");
+  assert.equal(AI_TOOL_PAGES["case-brief"], "/ai/analyze");
+  assert.ok(AI_TOOLS["case-brief"]);
+  const studio = readFileSync(join(process.cwd(), "src/components/ai/caseBrief/CaseBriefStudio.tsx"), "utf8");
+  assert.match(studio, /\{aiToolLabelAr\("case-brief"\)\}\s*<\/h1>/, "the heading is the registry's name");
 });

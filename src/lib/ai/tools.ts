@@ -422,7 +422,7 @@ const oneOf = <T extends string>(v: unknown, list: readonly T[], fallback: T): T
 const listOf = <T>(v: unknown, max: number, map: (x: unknown) => T | null): T[] =>
   (Array.isArray(v) ? v : []).map(map).filter((x): x is T => x !== null).slice(0, max);
 
-/** L7 عصارة المرفقات / الموجز القضائي: who the lawyer acts for, and whether to list what to ask the client for. */
+/** L7 عصارة المرفقات (owner ٤٤١: its only name): who the lawyer acts for, and whether to list what to ask the client for. */
 function caseBriefInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   const roleNote = boundedText(raw.role_note, 1000);
