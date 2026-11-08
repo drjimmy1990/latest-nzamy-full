@@ -155,18 +155,21 @@ export default function LaborServicePage() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <CheckCircle size={20} className="text-gold" />
-                  <span className="text-gold text-sm font-semibold">تحليل أولي بالذكاء الاصطناعي — بالنقاط</span>
+                  <span className="text-gold text-sm font-semibold">استشارة مع محامٍ من نظامي</span>
                 </div>
                 <h2 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-brand)' }}>
                   اعرف حقوقك الآن
                 </h2>
                 <p className="text-white/70 text-sm max-w-[40ch]">
-                  اكتب ملخص قضيتك وأرفق مستنداتها — ويقدّر لك المحلل موقفك ومخاطره الإجرائية، بلا نسب ولا توقّع للحكم.
+                  اطلب استشارة واعرض قضيتك العمالية — ويبيّن لك المحامي موقفك وخطواتك النظامية.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
+                {/* Owner ٤٤٣ (8 Nov 2026): «حلل قضيتي» opens the consultation
+                    request («طلب استشارة»), not the strength analyzer — a lawyer
+                    and firm tool (owner ٤١٧). */}
                 <Link
-                  href="/ai/analyze-strength"
+                  href="/dashboard/client/consultation/new"
                   className="inline-flex items-center gap-2 px-7 py-3.5 bg-gold text-royal font-semibold rounded-xl text-sm transition-all hover:-translate-y-[2px] hover:bg-gold-light active:scale-[0.98]"
                 >
                   حلل قضيتي

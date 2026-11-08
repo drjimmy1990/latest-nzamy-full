@@ -312,7 +312,7 @@ export const NGO_SIDEBAR: SidebarGroup[] = [
   {
     title: "أدوات الذكاء الاصطناعي", titleEn: "AI Tools",
     items: [
-      { label: "محترف العقود",   labelEn: "Contract Pro",  href: "/ai/contracts",  icon: "HandHeart", gateKey: "ngo-ai" },
+      // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» (/ai/contracts) is a lawyer and firm tool — no row here.
       { label: "مدقق الحوكمة",        labelEn: "Governance Checker",  href: "/ai/ngo/governance-checker",  icon: "ShieldCheck", gateKey: "ngo-ai" },
       { label: "محلل التبرعات",       labelEn: "Donation Analyzer",   href: "/ai/ngo/donation-analyzer",   icon: "ChartBar", gateKey: "ngo-ai", badge: "قريباً" },
       { label: "مُعد التقارير",       labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", gateKey: "ngo-ai", badge: "قريباً" },

@@ -267,12 +267,14 @@ export default function ClientContractsPage() {
           <h1 className="text-2xl md:text-3xl font-black tracking-tight" style={{ fontFamily: 'var(--font-brand)' }}>عقودي</h1>
           <p className={`text-sm mt-1.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>العقود التي يربطها محاميك بحسابك — نسخها، التزاماتها وجدول دفعاتها</p>
         </div>
+        {/* Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود المختصر» is a lawyer and
+            firm tool, so a client is offered the consultation request instead. */}
         <Link
-          href="/ai/contract-drafter"
+          href="/dashboard/client/consultation/new"
           className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#0a3328] transition-colors self-start md:self-auto"
         >
           <PlusCircle size={18} weight="bold" />
-          محترف العقود المختصر
+          اطلب استشارة
         </Link>
       </div>
 

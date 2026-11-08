@@ -25,6 +25,7 @@ import { GraphAutosave, canonicalJson, type AutosaveStatus } from "@/lib/service
 import { useUser } from "@/hooks/useUser";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { canSeeLawyerTools } from "@/lib/ai/lawyerOnlyTools";
 
 // NOTE-08 item 03: the groups (name, colour, lock, cards) ride in the viewport
 // jsonb as `viewport.groups` — saved, restored, reset with the board, no SQL.
@@ -506,7 +507,7 @@ export default function CaseGraphView({
                 <Export size={13} />
                 {selectedNodeIds.size > 0 ? `ملخص (${toArabicDigits(selectedNodeIds.size)})` : "ملخص نصي"}
               </button>
-              {canImport && (
+              {canImport && canSeeLawyerTools(userType) && (
                 <button
                   onClick={() => void suggestLawCards()}
                   disabled={aiCard.busy}

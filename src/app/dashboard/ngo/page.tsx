@@ -20,7 +20,7 @@ import {
 // Wave 1 task 6: «قريباً» for a tool that ends at the beta gate
 // (betaGatedRoutes.ts) — no description of what it would do.
 const AI_TOOLS = [
-  { label: "محترف العقود",        sub: "بالذكاء الاصطناعي", href: "/ai/contracts", Icon: Handshake },
+  // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» is a lawyer and firm tool — no card here.
   { label: "مدقق الحوكمة",        sub: "فحص مبدئي — حساب مؤقت لا يُحفظ",         href: "/ai/ngo/governance-checker", Icon: ShieldCheck },
   { label: "محلل التبرعات",       sub: "قريباً", href: "/ai/ngo/donation-analyzer",  Icon: Brain },
   { label: "المستشار الذكي",      sub: "قريباً", href: "/ai/consult",                Icon: Robot },

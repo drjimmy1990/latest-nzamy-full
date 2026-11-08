@@ -119,7 +119,8 @@ test("no sidebar row points twice at /ai/contracts: the sidebar keys its rows by
     const rows = groups.flatMap((g) => g.items).filter((r) => r.href === "/ai/contracts");
     assert.ok(rows.length <= 1, `${name}: ${rows.length} rows to /ai/contracts`);
   }
-  assert.equal(NGO_SIDEBAR.flatMap((g) => g.items).filter((r) => r.href === "/ai/contracts" && r.label === "محترف العقود" && !r.badge).length, 1);
+  // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» is a lawyer and firm tool — the NGO sidebar has no row to it.
+  assert.equal(NGO_SIDEBAR.flatMap((g) => g.items).filter((r) => r.href === "/ai/contracts").length, 0);
 });
 
 test("one «عصارة المرفقات» row in each sidebar, unbadged, on the plain URL", () => {

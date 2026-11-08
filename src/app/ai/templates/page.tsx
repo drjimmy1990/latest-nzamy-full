@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
+import LawyerToolLink from "@/components/ai/LawyerToolLink";
 import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 
 // ─── Types & Imports ─────────────────────────────────────────────────────────
@@ -81,10 +82,10 @@ export default function TemplatesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href="/ai/contracts"
+          <LawyerToolLink href="/ai/contracts"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
             <Sparkle size={15} weight="fill" /> محترف العقود
-          </Link>
+          </LawyerToolLink>
         </div>
       </motion.div>
 

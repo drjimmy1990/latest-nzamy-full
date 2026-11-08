@@ -34,6 +34,11 @@ interface RoleContent {
 }
 
 // ─── Role-specific content ────────────────────────────────────────────────────
+//
+// Owner ٤٤٣ (8 Nov 2026): no lawyer tool and no pending promise for the client,
+// company, small-business, NGO, government and provider accounts — every action
+// opens a live page that account may use, and no sentence promises a feature
+// that is not live (owner ٤١٧: lawyer tools are for lawyers and firms only).
 
 const ROLE_CONTENT: Record<RoleKey, RoleContent> = {
   lawyer: {
@@ -56,43 +61,42 @@ const ROLE_CONTENT: Record<RoleKey, RoleContent> = {
   },
   client: {
     headline: "أهلاً بك — احصل على المساعدة القانونية بسهولة",
-    body: "قدّم طلب خدمة، أو تواصل مع محامٍ متخصص، أو استخدم المجيب السريع للإجابة عن سؤالك القانوني.",
+    body: "قدّم طلب خدمة أو استشارة، أو استخدم المجيب السريع للإجابة عن سؤالك القانوني.",
     actions: [
       { label: "طلب خدمة قانونية", href: "/dashboard/client/requests/new", primary: true },
-      { label: "ابحث عن محامٍ", href: "/dashboard/client/find-lawyer" },
+      { label: "اطلب استشارة", href: "/dashboard/client/consultation/new" },
       { label: "المجيب السريع", href: "/ai/quick-answer" },
     ],
   },
   business: {
     headline: "مرحباً بك — إدارة الملف القانوني لشركتك",
-    body: "اربط مستشارك القانوني، وتابع العقود والتراخيص، وأنشئ طلبات الرأي القانوني من لوحة تحكم واحدة.",
+    body: "اطلب خدمة قانونية أو استشارة، وتابع طلبات منشأتك من لوحة تحكم واحدة.",
     actions: [
-      { label: "قدّم طلب قانوني", href: "/dashboard/business/requests", primary: true },
-      { label: "مراجعة العقود", href: "/dashboard/business/contracts" },
-      { label: "الحوكمة والامتثال", href: "/dashboard/business/governance" },
+      { label: "اطلب خدمة قانونية", href: "/dashboard/client/services", primary: true },
+      { label: "اطلب استشارة", href: "/dashboard/client/consultation/new" },
+      { label: "طلبات منشأتك", href: "/dashboard/client/requests" },
     ],
   },
   government: {
     headline: "منصة نظامي — الشريك القانوني للجهات الحكومية",
-    body: "راجع اللوائح، وأنشئ الصكوك، وتابع قضايا الجهة بكفاءة وشفافية.",
+    body: "تابع قضايا الجهة، واطلب الرأي القانوني، بكفاءة وشفافية.",
     actions: [
       { label: "لوحة القضايا", href: "/dashboard/government/cases", primary: true },
-      { label: "اللوائح والتعليمات", href: "/dashboard/government/regulations" },
       { label: "الرأي القانوني", href: "/ai/legal-opinion" },
     ],
   },
   ngo: {
     headline: "أهلاً بك في منصة نظامي للمنظمات غير الربحية",
-    body: "إدارة المتطوعين، ورفع التقارير، وتنظيم الفعاليات والعقود — كل شيء في مكان واحد.",
+    body: "إدارة المتطوعين والتقارير والامتثال — كل شيء في مكان واحد.",
     actions: [
       { label: "إضافة متطوع", href: "/dashboard/ngo/volunteers/new", primary: true },
-      { label: "إنشاء تقرير", href: "/ai/ngo/report-generator" },
-      { label: "إدارة الفعاليات", href: "/dashboard/ngo/events" },
+      { label: "التقارير الدورية", href: "/dashboard/ngo/reports" },
+      { label: "الرأي القانوني", href: "/ai/legal-opinion" },
     ],
   },
   provider: {
     headline: "مرحباً بك كمزوّد خدمة في سوق نظامي",
-    body: "أكمل ملفك المهني، وابدأ بقبول الطلبات الواردة لعرض خدماتك على آلاف العملاء.",
+    body: "أكمل ملفك المهني، وابدأ بقبول الطلبات الواردة.",
     actions: [
       { label: "أكمل ملفي المهني", href: "/dashboard/provider/profile", primary: true },
       { label: "الطلبات الواردة", href: "/dashboard/provider/requests" },
@@ -101,11 +105,11 @@ const ROLE_CONTENT: Record<RoleKey, RoleContent> = {
   },
   micro: {
     headline: "أهلاً بك — ابدأ رحلتك نحو الامتثال القانوني",
-    body: "تحقق من اشتراطات نشاطك، وأنشئ عقودك الأولى، واحصل على التوجيه بخطوات واضحة.",
+    body: "تحقق من اشتراطات نشاطك، واحصل على التوجيه العام بخطوات واضحة.",
     actions: [
       { label: "قائمة الاشتراطات", href: "/dashboard/micro/requirements", primary: true },
-      { label: "إنشاء عقد", href: "/ai/contracts" },
       { label: "استشارة سريعة", href: "/ai/quick-answer" },
+      { label: "الرأي القانوني", href: "/ai/legal-opinion" },
     ],
   },
 };

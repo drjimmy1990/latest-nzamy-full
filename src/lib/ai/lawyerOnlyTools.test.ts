@@ -88,3 +88,79 @@ test("the /ai hub and the quick answer's follow-ups do not offer a lawyer tool t
   const qa = src("app/ai/quick-answer/page.tsx");
   assert.ok(qa.includes('.filter((f) => lawyerTools || !(isLawyerOnlyAiHref(f.href) || f.href === "/ai/analyze"));'));
 });
+
+// ── owner ٤٤٣: no lawyer-tool link on another account's screens ─────────────
+
+/** The source without comments, so a note about a removed link is not read as the link. */
+const code = (rel: string) => src(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+const LAWYER_HREF = new RegExp(`["'\`](${Object.keys(LAWYER_ONLY_AI_PAGES).map((p) => p.replace(/[/-]/g, "\$&")).join("|")})(?=[?/"'\`])`);
+
+function walk(dir: string): string[] {
+  return readdirSync(join(process.cwd(), "src", dir), { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? walk(`${dir}/${d.name}`) : /\.tsx?$/.test(d.name) && !d.name.includes(".test.") ? [`${dir}/${d.name}`] : [],
+  );
+}
+
+test("Q443: the client, company, small-business, provider, government and NGO menus and dashboards link no lawyer tool", () => {
+  const files = [
+    "constants/navigation.sidebars.primary.ts",
+    "constants/navigation.sidebars.business.ts",
+    "app/services/labor/page.tsx",
+    ...["client", "business", "micro", "provider", "government", "ngo"].flatMap((d) => walk(`app/dashboard/${d}`)),
+  ];
+  assert.ok(files.length > 60, `only ${files.length} files — the walk broke`);
+  for (const rel of files) {
+    const body = rel === "constants/navigation.sidebars.primary.ts" ? code(rel).slice(0, code(rel).indexOf("export const ADMIN_SIDEBAR")) : code(rel);
+    const hit = LAWYER_HREF.exec(body);
+    assert.equal(hit, null, `${rel} links ${hit?.[1]}`);
+  }
+  // The navbar: every role's menu but lawyer, firm and admin.
+  const navbar = code("constants/navigation.navbar.ts");
+  for (const name of ["INDIVIDUAL_NAV", "CORPORATE_NAV", "MICRO_NAV", "PROVIDER_NAV", "GOVERNMENT_NAV", "NGO_NAV"]) {
+    const start = navbar.indexOf(`export const ${name}`);
+    assert.ok(start > 0, name);
+    const block = navbar.slice(start, navbar.indexOf("];", start));
+    assert.equal(LAWYER_HREF.exec(block), null, `${name} links a lawyer tool`);
+  }
+  // The floating services: the company, government and NGO lists.
+  const floating = code("components/floating/constants/floatingServices.tsx");
+  for (const key of ["corp-legal-draft", "corp-contract-ai", "ngo-volunteer-contract"]) assert.ok(!floating.includes(`"${key}"`), key);
+  for (const line of floating.split("\n").filter((l) => /key: "(corp|gov|ngo|micro|client|ind)-/.test(l))) {
+    assert.equal(LAWYER_HREF.exec(line), null, line.trim());
+  }
+  // The welcome bar.
+  const banner = code("components/OnboardingBanner.tsx");
+  for (const role of ["client", "business", "government", "ngo", "provider", "micro"]) {
+    const start = banner.indexOf(`  ${role}: {`);
+    assert.ok(start > 0, role);
+    const block = banner.slice(start, banner.indexOf("\n  },", start));
+    assert.equal(LAWYER_HREF.exec(block), null, `${role} welcome bar links a lawyer tool`);
+  }
+});
+
+test("Q443: shared screens draw a lawyer-tool link only for lawyer, firm and admin", () => {
+  for (const rel of [
+    "app/ai/corp/deal-intel/page.tsx", "app/ai/corp/risk-assessment/page.tsx", "app/ai/debt-collection/page.tsx",
+    "app/ai/fee-calculator/page.tsx", "app/ai/templates/page.tsx", "components/translation/TranslationComponents.tsx",
+    "components/draft/DraftPreStep.tsx",
+  ]) {
+    const body = code(rel);
+    assert.ok(!/<Link\s+href="\/ai\/(contracts|wargaming|brief-check)"/.test(body), `${rel}: a plain Link to a lawyer tool`);
+    assert.match(body, /<LawyerToolLink[\s\S]{0,40}href="\/ai\//, rel);
+  }
+  const gate = src("components/ai/LawyerToolLink.tsx");
+  assert.ok(gate.includes("if (user.loading || !canSeeLawyerTools(user.userType)) return null;"));
+  assert.match(src("app/dashboard/business/kanban/CaseGraphView.tsx"), /\{canImport && canSeeLawyerTools\(userType\) && \(\n\s*<button\n\s*onClick=\{\(\) => void suggestLawCards\(\)\}/);
+  assert.ok(src("app/dashboard/client/services/page.tsx").includes(".filter((service) => !isLawyerOnlyAiHref(service.route))"));
+});
+
+test("Q443: the client welcome bar makes no pending promise", () => {
+  const page = code("app/dashboard/client/page.tsx");
+  assert.ok(!page.includes('href="/ai/consult"'), "the «اسأل ذكاء نظامي · قريباً» button is back");
+  assert.ok(!page.includes('href: "/ai/consult"'));
+  assert.match(page, /const QUICK_SERVICES = \[[\s\S]*href: "\/ai\/quick-answer"[\s\S]*href: "\/ai\/legal-opinion"[\s\S]*\];/);
+  for (const href of ["/ai/quick-answer", "/ai/legal-opinion"]) {
+    const tool = href === "/ai/quick-answer" ? "quick-answer" : "legal-opinion-consult";
+    for (const t of ["individual", "corporate"]) assert.ok(AI_TOOLS[tool].roles.includes(t), `${tool} × ${t}`);
+  }
+});

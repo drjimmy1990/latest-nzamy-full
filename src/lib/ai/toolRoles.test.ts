@@ -209,8 +209,11 @@ test("/ai/analyze-strength: tool-status before the form, inside the consultant l
 });
 
 test("Q443: the links lead to tools the role may run", () => {
-  assert.match(src("app/services/labor/page.tsx"), /href="\/ai\/analyze-strength"/);
-  assert.doesNotMatch(src("app/services/labor/page.tsx"), /استشارة مجانية — بدون التزام|أجب على ٤ أسئلة فقط/, "the tool is paid by points and reads a case summary");
+  // Owner ٤٤٣ (8 Nov 2026): «حلل قضيتي» opens the consultation request, not a lawyer tool.
+  const labor = src("app/services/labor/page.tsx");
+  assert.match(labor, /href="\/dashboard\/client\/consultation\/new"[\s\S]{0,400}حلل قضيتي/);
+  assert.doesNotMatch(labor, /href="\/ai\/analyze-strength"/);
+  assert.doesNotMatch(labor, /استشارة مجانية — بدون التزام|أجب على ٤ أسئلة فقط/, "no free consultation is promised");
   const banner = src("components/OnboardingBanner.tsx");
   assert.match(banner, /\{ label: "استشارة سريعة", href: "\/ai\/quick-answer" \}/);
   assert.match(banner, /\{ label: "الرأي القانوني", href: "\/ai\/legal-opinion" \}/);
