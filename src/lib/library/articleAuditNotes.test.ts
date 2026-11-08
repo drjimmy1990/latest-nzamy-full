@@ -112,3 +112,11 @@ test("the wide-net scanner flags what the stripper leaves for a person to read",
   assert.ok(scanSuspectNotes(LIVE_ART_1).some((h) => h.match === "ف1072"));
   assert.ok(scanSuspectNotes(LIVE_ART_1).some((h) => /سجل/.test(h.match)));
 });
+
+test("final review 2026-11-09 NIT 3: a Western-digit date after an OCR «ف» is law, an issue ref with «/ج» is a note", () => {
+  const law = "صدر بالمرسوم الملكي رقم م/7 ف1415/12/2هـ ويعمل به من تاريخ نشره.";
+  assert.equal(stripArticleAuditNotes(law), law);
+  const note = "نص المادة كما هو.\nراجع سجل المشاكل ف858/ج-11.";
+  assert.equal(stripArticleAuditNotes(note).includes("ف858"), false);
+  assert.ok(stripArticleAuditNotes(note).includes("نص المادة كما هو."));
+});

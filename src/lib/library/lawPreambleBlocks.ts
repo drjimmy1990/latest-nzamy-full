@@ -488,8 +488,10 @@ const AUDIT_DATED_CORRECTION = new RegExp(
  * «ف3» (a paragraph), «الف500» / «يكلف800» (inside a word), and the scanned
  * documents' «في» read as «ف» before an Arabic-Indic date or file number
  * («ف١٤١٥/١٢/٢», «برقم ٧ / ف٢١٥٣٨») — measured on the owner's 10-03 export.
+ * Nor a Western-digit date after an OCR «ف» («ف1415/12/2»): a slash then a
+ * digit is a date, never an issue ref (final review 2026-11-09, NIT 3).
  */
-const AUDIT_ISSUE_REF = "(?<![\\p{L}\\p{N}])[بو]?ف[0-9]{3,4}(?![0-9\\u0621-\\u064A])";
+const AUDIT_ISSUE_REF = "(?<![\\p{L}\\p{N}])[بو]?ف[0-9]{3,4}(?![0-9\\u0621-\\u064A]|/[0-9])";
 /**
  * M3 — «سجل المشاكل» as the export's issue log: «راجع سجل المشاكل», or
  * followed by an issue number. «الدروس المستفادة وسجل المشاكل والحلول» (a

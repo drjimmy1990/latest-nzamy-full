@@ -62,7 +62,8 @@ Paste the output. A line with `000` means that host has no working HTTPS. Tell u
 
 ```sql
 select
-  (select has_function_privilege('anon','public.is_group_member_or_owner(uuid,uuid)','execute')) as db01_anon_exec,
+  (select case when to_regprocedure('public.is_group_member_or_owner(uuid,uuid)') is null then null
+               else has_function_privilege('anon','public.is_group_member_or_owner(uuid,uuid)','execute') end) as db01_anon_exec,
   (select count(*) from pg_policies where qual ~ 'is_group_member_or_owner\(' or with_check ~ 'is_group_member_or_owner\(') as db01_policies,
   (select count(*) filter (where max_uses > 1) from library.invitations) as multi_seat_codes,
   (select has_table_privilege('anon','public.admin_audit_events','select')) as x3_anon_audit_select;
