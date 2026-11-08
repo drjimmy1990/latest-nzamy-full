@@ -1,6 +1,6 @@
 # Batch 2026-11-09 (owner package 6-Nov, owner-free part): your steps, in order
 
-**Status: built, not merged, not deployed.**
+**Status 2026-11-09: DONE on prod.** Steps 0–6 done: all 8 SQL files ok (`_22` returns `f` only because the library is empty, expected), deploy `68747133`, `_verify` clean (academy answer keys `t`, so Step 6 needed nothing). Left: Step 7 (headers / CSP console) and Step 8 (before the owner's next library load).
 
 **Where the files are.** Until the branch `batch/2026-11-09-owner-package` is merged, the files are in the worktree `D:\nzwt\b1109\`. After the merge they are in `D:\DEV\projects\SITE MAPS NZAMY (1)\SITE MAPS NZAMY\nzamy-website\`, and on the server after `git pull` in `/www/wwwroot/nzamy/latest-nzamy-full/`. The paths below are relative to that folder.
 
