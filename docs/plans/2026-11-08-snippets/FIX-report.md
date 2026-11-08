@@ -171,11 +171,11 @@ I left them as they were, because the finding covered only the newly protected p
 
 I listed every workflow on the instance (186) and read the ones that could touch
 the NZAMY database. **None reads `decrees_circulars` or any `library` table**,
-with the anon key or any other key.
+with the anon key or any other key, in the workflows listed below.
 
 | Workflow (ID) | Active | What it reads |
 |---|---|---|
-| NZAMY AI tool workflows (legal-drafter read in detail; the others have the same shape) | yes | Webhook, then file download from URLs the app sends, then Gemini, then callback to the app. Retrieval happens in the app; no table reads. |
+| NZAMY AI tool workflows. Opened: legal-drafter (hhmOLkcaPj3bojmh, 17 nodes), library-assistant (P2wLRQW3ZjlXgNhe, 7), contracts-pro (mMekAog89HsgLz3o, 14). Not opened one by one: the other 15 active "NZAMY · AI ·" workflows, which use the same 7, 13 and 17-node templates. | yes | Webhook, then file download from URLs the app sends, then Gemini, then progress and callback calls to the app. Retrieval happens in the app; no Supabase, Postgres or vector-store nodes. |
 | NZAMY · AI · schedules (8Skwnqn9WIPOxcml) | yes | Only POSTs to `nezamy.sa/api/v1/cron/ai-sweep`, with the `x-cron-secret` header credential. |
 | lib-queries (s8MAOg4WTtt1yIUW) | yes | LLM only. |
 | NZAMY · AI Legal Tools (rtj1TC9rd6Ule7am) | no | noOp placeholders. |
