@@ -37,3 +37,9 @@ test("final review 2026-11-08 (8): no lawyer-only tool page is advertised — it
   const listed = urls.filter((u) => Object.keys(LAWYER_ONLY_AI_PAGES).some((p) => u === p || u.startsWith(`${p}/`)));
   assert.deepEqual(listed, []);
 });
+
+test("8 Nov 2026: the three older login-only pages are not advertised — a guest lands on /login", () => {
+  for (const route of ["/ai/secretary", "/ai/fee-calculator", "/ai/direction-support"]) {
+    assert.ok(!urls.includes(route), route);
+  }
+});
