@@ -6255,3 +6255,30 @@ select 'verified phones (info — 0 until OTP exists)' as check_name,
        case when to_regclass('public.verified_phones') is null then null
             else (xpath('/row/n/text()', query_to_xml('select count(*) as n from public.verified_phones', false, true, '')))[1]::text end as verified_phones;
 -- <<< verify:free_daily_question_1108
+
+-- >>> verify:drafter_daily_limit_1108
+-- 2026-11-08 — 20261108_41_drafter_daily_limit_excludes_sections.sql (final
+-- review, owner ٤١٠: a legal-drafter section edit no longer counts toward the
+-- drafter's daily limit, and the free draft after a succeeded analysis is never
+-- refused for the day). Any time — before or after the deploy. Read-only, safe
+-- to repeat. Every row must say ok = true (false = run 20261108_41).
+select 'ai_start_run leaves legal-drafter section edits out of the daily count' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) like '%is distinct from ''section''%'
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false) as ok;
+
+select 'ai_start_run never refuses the draft of a succeeded analysis for the day' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) like '%v_draft_after_analysis%'
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false) as ok;
+
+select 'ai_start_run: one overload, SECURITY DEFINER, search_path = '''', service role only' as check_name,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_run(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_run') = 1 as ok;
+-- <<< verify:drafter_daily_limit_1108

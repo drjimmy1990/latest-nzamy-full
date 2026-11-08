@@ -84,7 +84,9 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     // Owner answers 2026-11-07: 20261107_10 / _20 / _30.
     "library_merged_regulation_names", "library_caps_owner_426", "deadline_cassation_urgent_194",
     // 20261107_60 (owner ٤١٠).
-    "founder_rejoinder_410", "library_tier_columns_1108", "firm_member_points_1108", "library_device_limit_1108", "drafter_section_edits_1108", "free_daily_question_1108"]) {
+    "founder_rejoinder_410", "library_tier_columns_1108", "firm_member_points_1108", "library_device_limit_1108", "drafter_section_edits_1108", "free_daily_question_1108",
+    // Final review of the 2026-11-08 batch: 20261108_41.
+    "drafter_daily_limit_1108"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

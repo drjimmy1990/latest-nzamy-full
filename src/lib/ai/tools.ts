@@ -1990,7 +1990,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
         ? sectionEditPrice(ctx.priorSectionEdits, input.section_index)
         : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0,
     // An analysis and its draft are two runs. Section edits are not held to this
-    // limit (ai_start_section_edit): the memo's ceiling of 30 bounds them.
+    // limit (ai_start_section_edit): the memo's ceiling of 30 bounds them; and
+    // since 20261108_41 they are not counted against it either, and the draft
+    // of a succeeded analysis is never refused for the day.
     dailyLimit: 10,
     defaultMode: "off",
     jobDeadlineSeconds: 15 * 60,
