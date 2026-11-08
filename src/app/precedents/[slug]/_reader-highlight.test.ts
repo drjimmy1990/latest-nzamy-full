@@ -16,7 +16,8 @@ const ORDERS = read("../../laws/orders/[slug]/page.tsx");
 test("principle block: the dead searchQuery prop is gone; header, body, reference and details go through <Hl>", () => {
   assert.doesNotMatch(BLOCK, /searchQuery/);
   assert.match(BLOCK, /<p key=\{i\} className=\{className\}><Hl text=\{para\} \/><\/p>/);
-  assert.match(BLOCK, /<Hl text=\{isRTL \? `مبدأ رقم \(\$\{p\.number\}\)`/);
+  // #22 (owner 6-Nov): an unnumbered ruling says «مبدأ», never «مبدأ رقم ()».
+  assert.match(BLOCK, /<Hl text=\{principleLabel\(p\.number, isRTL, isRTL\)\} \/>/);
   assert.match(BLOCK, /<Hl text=\{isRTL \? `قرار رقم \(\$\{p\.decision_number\}\)`/);
   assert.match(BLOCK, /<Hl text=\{p\.issuing_body\} \/>/);
   assert.match(BLOCK, /<Hl text=\{cleanRef\} \/>/);
