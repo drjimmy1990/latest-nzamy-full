@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
-import { describeActivityEvent } from "@/lib/events";
+import { describeActivityEvent, type ActivityBadge } from "@/lib/events";
+import { aiRunActivityItem, readAiRunActivity, type AiRunActivityRow } from "@/lib/ai/aiRunActivity";
 
 /**
  * GET /api/v1/firm/activity
@@ -20,9 +21,43 @@ import { describeActivityEvent } from "@/lib/events";
  * A caller with no firm row (should not happen behind the guard, but not
  * asserted) gets an empty feed, not an error — same "genuinely empty, not
  * unreadable" distinction every other list route in this codebase makes.
+ *
+ * Owner answer ٤٤٤ part 1 (2026-11-08): the AI runs made by the FIRM ACCOUNT
+ * itself show here too — `ai_runs` rows with `user_id = <this account>`, read
+ * through the session client (the "own ai runs" policy, 20261027_10) by the
+ * same readAiRunActivity() the lawyer log uses. Runs made by the firm's
+ * MEMBERS are NOT merged in: each stays in that member's own log (merging is
+ * the later item «23»). So the read below is keyed on `user.id`, never on the
+ * firm's member list. A failed AI read degrades (`degraded: true`) instead of
+ * failing the hearings/tasks feed.
  */
 
 const PAGE_SIZE = 30;
+
+interface FirmFeedItem {
+  id: number | string;
+  badge: ActivityBadge;
+  title: string;
+  description?: string;
+  actorName: string | null;
+  caseHref: string | null;
+  href: string | null;
+  createdAt: string;
+}
+
+function firmAiRunItem(row: AiRunActivityRow): FirmFeedItem {
+  const item = aiRunActivityItem(row);
+  return {
+    id: item.id,
+    badge: item.badge,
+    title: item.title,
+    ...(item.description ? { description: item.description } : {}),
+    actorName: null,
+    caseHref: null,
+    href: item.requestHref,
+    createdAt: item.createdAt,
+  };
+}
 
 interface FirmActivityRow {
   id: number;
@@ -39,6 +74,13 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
 
+    const rawBefore = request.nextUrl.searchParams.get("before");
+    const before = rawBefore && !Number.isNaN(Date.parse(rawBefore)) ? rawBefore : null;
+
+    // The firm account's OWN runs — user.id, never a member's (owner ٤٤٤).
+    const aiRes = await readAiRunActivity(supabase, user.id, before, PAGE_SIZE);
+    const aiItems = aiRes.rows.map(firmAiRunItem);
+
     const { data: firm, error: firmError } = await supabase
       .from("firm_profiles")
       .select("id")
@@ -53,11 +95,13 @@ export async function GET(request: NextRequest) {
     if (!firm) {
       // No firm row for this account — a real state (nothing to show yet),
       // not a failure. Same contract as an empty list anywhere else here.
-      return NextResponse.json({ items: [] });
+      // The account's own AI runs exist with or without that row.
+      return NextResponse.json({
+        items: aiItems,
+        degraded: aiRes.degraded,
+        nextCursor: aiRes.rows.length === PAGE_SIZE ? aiItems[aiItems.length - 1].createdAt : null,
+      });
     }
-
-    const rawBefore = request.nextUrl.searchParams.get("before");
-    const before = rawBefore && !Number.isNaN(Date.parse(rawBefore)) ? rawBefore : null;
 
     let query = supabase
       .from("activity_events")
@@ -76,21 +120,32 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = data ?? [];
-    const items = rows.map((row) => {
+    const items: FirmFeedItem[] = rows.map((row) => {
       const described = describeActivityEvent({ kind: row.kind, payload: row.payload });
+      const caseHref = row.case_request_id ? `/dashboard/firm/cases/${row.case_request_id}` : null;
       return {
         id: row.id,
         badge: described.badge,
         title: described.title,
         actorName: row.actor_name || null,
-        caseHref: row.case_request_id ? `/dashboard/firm/cases/${row.case_request_id}` : null,
+        caseHref,
+        href: caseHref,
         createdAt: row.created_at,
       };
     });
+    items.push(...aiItems);
+    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const page = items.slice(0, PAGE_SIZE);
 
     return NextResponse.json({
-      items,
-      nextCursor: rows.length === PAGE_SIZE ? rows[rows.length - 1].created_at : null,
+      items: page,
+      degraded: aiRes.degraded,
+      // Either stream that came back full may hold more beyond it — the same
+      // two-stream rule as /api/v1/lawyer/activity.
+      nextCursor:
+        (rows.length === PAGE_SIZE || aiRes.rows.length === PAGE_SIZE) && page.length > 0
+          ? page[page.length - 1].createdAt
+          : null,
     });
   } catch (err) {
     console.error("[firm/activity GET] Unexpected error:", err);
