@@ -11,6 +11,7 @@ import {
 import { libraryGate } from '@/lib/library-gate';
 import { categoryStoredSpellings, sectionsToSearch, validateSearchRequest } from './filters';
 import { truncateWithHighlight } from './snippet';
+import { stripArticleAuditNotes } from '@/lib/library/lawPreambleBlocks';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import {
   ALL_SECTION_PREVIEW,
@@ -544,7 +545,8 @@ export async function POST(request: Request) {
             // search at a time. The opening is what the law page's locked
             // preview already shows.
             snippet: truncateWithHighlight(
-              (r.text as string) || (r.original_text as string) || '',
+              // BUG-01 (owner 6-Nov): the export's audit notes never reach a snippet.
+              stripArticleAuditNotes(r.text) || stripArticleAuditNotes(r.original_text),
               isFree ? parsed.plainTerms : [],
               snippetLen(isFree),
             ),

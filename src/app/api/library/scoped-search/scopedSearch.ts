@@ -30,6 +30,7 @@
 
 import { articleDisplayLabel } from "../laws/[slug]/_article-label.ts";
 import { truncateWithHighlight } from "../search/snippet.ts";
+import { stripArticleAuditNotes } from "../../../../lib/library/lawPreambleBlocks.ts";
 import { formatLocator } from "../../../book/[slug]/_locator.ts";
 
 export const SCOPED_KINDS = ["law", "collection", "book"] as const;
@@ -191,7 +192,8 @@ export function shapeHit(
   if (kind === "law") {
     const isFree = access.isFree("laws", volumeId);
     const label = articleDisplayLabel(row.number_text as string | null, row.number as string | null);
-    const text = str(row.text) || str(row.original_text);
+    // BUG-01 (owner 6-Nov): the export's audit notes never reach a hit.
+    const text = stripArticleAuditNotes(row.text) || stripArticleAuditNotes(row.original_text);
     return {
       id,
       kind: "article",
@@ -207,7 +209,7 @@ export function shapeHit(
         status: strOrNull(row.status),
       },
       body: isFree
-        ? { title: strOrNull(row.title), text, regulation: strOrNull(row.executive_reg_text) }
+        ? { title: strOrNull(row.title), text, regulation: stripArticleAuditNotes(row.executive_reg_text) || null }
         : null,
     };
   }
