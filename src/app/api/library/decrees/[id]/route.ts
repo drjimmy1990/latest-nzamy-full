@@ -69,7 +69,7 @@ export async function GET(
       .single();
 
     if (decreeError || !decree) {
-      return NextResponse.json({ error: 'Decree not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Decree not found' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     // Check user authentication
@@ -116,11 +116,11 @@ export async function GET(
     ]);
     if (pagesError || !Array.isArray(pages)) {
       console.error(`[Decrees API] pages query failed for "${id}":`, pagesError?.code ?? 'no-error-code', pagesError?.message ?? 'null payload');
-      return NextResponse.json({ error: 'تعذّر تحميل صفحات هذا القرار' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل صفحات هذا القرار' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     if (preambleError) {
       console.error(`[Decrees API] preamble query failed for "${id}":`, preambleError.code ?? 'no-error-code', preambleError.message);
-      return NextResponse.json({ error: 'تعذّر تحميل هذا القرار' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل هذا القرار' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const preamble = typeof preambleRow?.preamble === 'string' ? preambleRow.preamble : '';
     // How many leading pages carry their text: all (Pro+, whitelisted), an
@@ -175,6 +175,6 @@ export async function GET(
     return NextResponse.json(response, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   } catch (error) {
     console.error('[Decrees API] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   }
 }

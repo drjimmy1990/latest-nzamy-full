@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
+import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
@@ -108,10 +109,10 @@ export async function GET(
 
     if (collError) {
       console.error('[Precedents API] collection lookup failed:', collError);
-      return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     if (!collection) {
-      return NextResponse.json({ error: 'لم يُعثر على مجموعة المبادئ هذه' }, { status: 404 });
+      return NextResponse.json({ error: 'لم يُعثر على مجموعة المبادئ هذه' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     // N2.4: the other volumes of a tagged series, for the reader's volume
@@ -203,13 +204,13 @@ export async function GET(
           .eq('collection_id', slug);
         if (head.error) {
           console.error('[Precedents API] principle count failed:', head.error);
-          return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500 });
+          return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
         }
         principles = [];
         total = head.count;
       } else {
         console.error('[Precedents API] principles query failed:', principlesQuery.error);
-        return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّر تحميل مبادئ هذه المجموعة' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
       }
     }
     const totalCount = total ?? offset + (principles?.length ?? 0);
@@ -303,9 +304,9 @@ export async function GET(
       hasAccess: hasFullAccess, // legacy field kept for existing client checks
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   } catch (error) {
     console.error('[Precedents API] Error:', error);
-    return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500 });
+    return NextResponse.json({ error: 'تعذّر تحميل مجموعة المبادئ' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   }
 }

@@ -91,13 +91,13 @@ export async function GET(
       console.error(`[Laws API] Law query failed for "${slug}":`, lawError.code ?? 'no-error-code', lawError.message);
       return NextResponse.json(
         { error: 'تعذّر تحميل هذا النظام' },
-        { status: 500 }
+        { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } }
       );
     }
     if (lawError || !law) {
       return NextResponse.json(
         { error: 'لم يُعثر على هذا النظام' },
-        { status: 404 }
+        { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } }
       );
     }
 
@@ -185,7 +185,7 @@ export async function GET(
       );
       return NextResponse.json(
         { error: 'تعذّر تحميل أبواب هذا النظام' },
-        { status: 500 }
+        { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } }
       );
     }
 
@@ -246,7 +246,7 @@ export async function GET(
       );
       return NextResponse.json(
         { error: 'تعذّر تحميل مواد هذا النظام' },
-        { status: 500 }
+        { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } }
       );
     }
 
@@ -489,7 +489,7 @@ export async function GET(
     console.error('[Laws API] Error:', error);
     return NextResponse.json(
       { error: 'تعذّر تحميل هذا النظام' },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } }
     );
   }
 }
