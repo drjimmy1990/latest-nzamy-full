@@ -1,0 +1,456 @@
+{
+  "sector_no": 3,
+  "sector_code": "S03",
+  "title": "القطاع 03: العمل والموارد البشرية والعمالة المنزلية",
+  "generated_at": "2026-10-28",
+  "specialized_problem_cards_count": 3,
+  "agency_specific_cards_count": 1,
+  "total_cards_count": 4,
+  "cards": [
+    {
+      "card_id": "S03-HRSD-001",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 3,
+      "agency": {
+        "name": "وزارة الموارد البشرية والتنمية الاجتماعية",
+        "website": "https://www.hrsd.gov.sa"
+      },
+      "problem_type": "منازعات عقود العمل الخاضعة لنظام العمل (الأجور المتأخرة، الفصل غير المشروع، مكافأة نهاية الخدمة، رصيد الإجازات، وشهادة الخبرة)",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "العامل أو صاحب العمل في القطاع الخاص والهيئات الخاضعة لنظام العمل",
+      "steps": [
+        {
+          "n": 1,
+          "action": "رفع طلب تسوية ودية للمنازعات العمالية إلكترونياً عبر بوابة (ودي) بوزارة الموارد البشرية والتنمية الاجتماعية كشرط إجرائي وجوبي قبل القضاء",
+          "channel": "portal",
+          "where": "https://www.hrsd.gov.sa/",
+          "deadline": {
+            "duration": "12 شهراً",
+            "from_event": "تاريخ انتهاء علاقة العمل",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (234) من نظام العمل"
+        },
+        {
+          "n": 2,
+          "action": "حضور جلسات التسوية الودية (مدتها 21 يوم عمل)؛ فإن تم الصلح حُرر محضر صلح واجب النفاذ، وإن تعذر الصلح تُحال الدعوى إلكترونياً للمحكمة العمالية عبر ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "21 يوم عمل لمرحلة التسوية الودية",
+            "from_event": "تاريخ قيد الطلب لدى التسوية الودية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "نظام العمل ولائحته التنفيذية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف العمالية عبر منصة ناجز (للدعاوى القابلة للاستئناف التي تتجاوز نصاب الدعاوى اليسيرة)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "اليوم التالي لتاريخ تسلم صورة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "المحاكم العمالية بالقضاء العام (منصة ناجز)",
+      "documents_required": [
+        "عقد العمل الموثق في منصة قوى أو ما يثبت علاقة العمل ومقدار الأجر",
+        "وثيقة الإحالة من مكتب التسوية الودية (محضر تعذر الصلح)",
+        "كشف الحساب البنكي أو مسيرات الأجور وقرار إنهاء الخدمات (إن وجد)"
+      ],
+      "fees": "تعفى الدعاوى العمالية المقدمة من العمال من التكاليف القضائية المسبقة وفق نظام التكاليف القضائية",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام العمل",
+          "article": "الرابعة والثلاثون بعد المائتين"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@hrsd.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19911"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — وزارة الموارد البشرية والتنمية الاجتماعية",
+            "url": "https://www.hrsd.gov.sa"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.hrsd.gov.sa/contact-us"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://www.hrsd.gov.sa/ministry-services/services/client-page"
+          },
+          {
+            "name": "بلاغ رقمي (opens in a new window)",
+            "url": "https://my.gov.sa/ar/digital-complaint"
+          },
+          {
+            "name": "ابلاغ عن فساد",
+            "url": "https://www.hrsd.gov.sa/contact-us/report-corruption"
+          },
+          {
+            "name": "تقديم شكوى (opens in a new window)",
+            "url": "https://selfservice.hrsd.gov.sa/node/"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العمالية — الأجور والبدلات / مكافأة نهاية الخدمة / التعويض عن الإنهاء غير المشروع (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S03-HRSD-002",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 3,
+      "agency": {
+        "name": "وزارة الموارد البشرية والتنمية الاجتماعية",
+        "website": "https://www.hrsd.gov.sa"
+      },
+      "problem_type": "منازعات العمالة المنزلية ومن في حكمهم (الأجور، التغيب، تكاليف الاستقدام، أو إنهاء العقد)",
+      "stage": "شكوى ثم اعتراض",
+      "who_can_file": "صاحب العمل للعمالة المنزلية أو العامل المنزلي ومن في حكمه",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الشكوى عبر منصة (مساند) أو مكتب التسوية الودية المختص لمحاولة الصلح خلال المدة المقررة",
+          "channel": "portal",
+          "where": "https://musaned.com.sa/",
+          "deadline": {
+            "duration": "12 شهراً",
+            "from_event": "تاريخ انتهاء العلاقة التعاقدية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "لائحة عمال الخدمة المنزلية ومن في حكمهم"
+        },
+        {
+          "n": 2,
+          "action": "إحالة النزاع عند تعذر الصلح إلى لجنة الفصل في خلافات ومخالفات العمالة المنزلية ومن في حكمهم (أو المحكمة العمالية بحسب مراحل الانتقال القضائي)",
+          "channel": "portal",
+          "where": "https://www.hrsd.gov.sa/",
+          "deadline": {
+            "duration": "خلال المدة الإجرائية المحددة بالإحالة",
+            "from_event": "تاريخ تعذر التسوية الودية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "لائحة عمال الخدمة المنزلية ومن في حكمهم"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "المحكمة العمالية عبر منصة ناجز (للاعتراض على قرار لجنة العمالة المنزلية)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "10 أيام",
+            "from_event": "تاريخ تسلم قرار لجنة العمالة المنزلية",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "المحاكم العمالية عبر منصة ناجز",
+      "documents_required": [
+        "عقد الاستقدام أو عقد العمل المبرم عبر منصة مساند",
+        "نسخة قرار لجنة العمالة المنزلية عند تقديم الاعتراض أمام المحكمة العمالية",
+        "ما يثبت سداد الأجور أو الإخلال التعاقدي"
+      ],
+      "fees": "مجاني للعامل المنزلي",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام العمل",
+          "article": "الرابعة والثلاثون بعد المائتين"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@hrsd.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19911"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — وزارة الموارد البشرية والتنمية الاجتماعية",
+            "url": "https://www.hrsd.gov.sa"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.hrsd.gov.sa/contact-us"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://www.hrsd.gov.sa/ministry-services/services/client-page"
+          },
+          {
+            "name": "بلاغ رقمي (opens in a new window)",
+            "url": "https://my.gov.sa/ar/digital-complaint"
+          },
+          {
+            "name": "ابلاغ عن فساد",
+            "url": "https://www.hrsd.gov.sa/contact-us/report-corruption"
+          },
+          {
+            "name": "تقديم شكوى (opens in a new window)",
+            "url": "https://selfservice.hrsd.gov.sa/node/"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العمالية — الاعتراض على قرارات لجان العمالة المنزلية (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S03-HRSD-003",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 3,
+      "agency": {
+        "name": "وزارة الموارد البشرية والتنمية الاجتماعية",
+        "website": "https://www.hrsd.gov.sa"
+      },
+      "problem_type": "الاعتراض على غرامات ومخالفات التفتيش العمالي ونظام حماية الأجور والتوطين المفروضة على المنشآت",
+      "stage": "اعتراض ثم دعوى",
+      "who_can_file": "أصحاب العمل والمنشآت التجارية الصادرة بحقهم قرارات إدارية بفرض غرامات مخالفات نظام العمل",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم طلب اعتراض إلكتروني على المخالفة العمالية عبر بوابة الخدمات الإلكترونية للعمل / منصة قوى أمام الإدارة المختصة بنظر الاعتراضات",
+          "channel": "portal",
+          "where": "https://qiwa.sa/",
+          "deadline": {
+            "duration": "30 يوماً (أو 60 يوماً للتظلم الإداري العام)",
+            "from_event": "تاريخ تبليغ المنشأة بقرار إيقاع العقوبة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "نظام العمل ولائحته التنفيذية والمادة (8) من نظام المرافعات أمام ديوان المظالم"
+        },
+        {
+          "n": 2,
+          "action": "الطعن بإلغاء القرار الإداري أمام المحكمة الإدارية بديوان المظالم عبر منصة معين عند رفض الاعتراض",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "60 يوماً",
+            "from_event": "تاريخ العلم بقرار رفض الاعتراض أو انقضاء 60 يوماً دون بت",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (8) من نظام المرافعات أمام ديوان المظالم والمادة (13/ب) من نظام ديوان المظالم"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "محكمة الاستئناف الإدارية بديوان المظالم",
+          "channel": "portal",
+          "where": "https://www.bog.gov.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ تسلم نسخة الحكم الابتدائي",
+            "legal_basis_id": "LB2"
+          }
+        }
+      ],
+      "final_forum": "المحكمة الإدارية بديوان المظالم (بوابة معين)",
+      "documents_required": [
+        "إشعار المخالفة العمالية ورقم السداد وقرار فرض الغرامة",
+        "ما يثبت تقديم الاعتراض الإلكتروني عبر منصة قوى/الوزارة ونتيجته",
+        "المستندات الداحضة للمخالفة (عقود قوى، شهادات مدد وأجور التأمينات، ملفات حماية الأجور)"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام المرافعات أمام ديوان المظالم",
+          "article": "الثامنة"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام ديوان المظالم",
+          "article": "الثالثة عشرة"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@hrsd.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19911"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — وزارة الموارد البشرية والتنمية الاجتماعية",
+            "url": "https://www.hrsd.gov.sa"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.hrsd.gov.sa/contact-us"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://www.hrsd.gov.sa/ministry-services/services/client-page"
+          },
+          {
+            "name": "بلاغ رقمي (opens in a new window)",
+            "url": "https://my.gov.sa/ar/digital-complaint"
+          },
+          {
+            "name": "ابلاغ عن فساد",
+            "url": "https://www.hrsd.gov.sa/contact-us/report-corruption"
+          },
+          {
+            "name": "تقديم شكوى (opens in a new window)",
+            "url": "https://selfservice.hrsd.gov.sa/node/"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها منصة معين بديوان المظالم"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S03-AG-17900",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 3,
+      "agency": {
+        "name": "وزارة الموارد البشرية والتنمية الاجتماعية",
+        "website": "https://www.hrsd.gov.sa"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «وزارة الموارد البشرية والتنمية الاجتماعية»",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «وزارة الموارد البشرية والتنمية الاجتماعية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «وزارة الموارد البشرية والتنمية الاجتماعية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://www.hrsd.gov.sa",
+          "deadline": {
+            "duration": "12 شهراً",
+            "from_event": "تاريخ انتهاء علاقة العمل",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (234) من نظام العمل"
+        },
+        {
+          "n": 2,
+          "action": "حضور جلسات التسوية الودية (مدتها 21 يوم عمل)؛ فإن تم الصلح حُرر محضر صلح واجب النفاذ، وإن تعذر الصلح تُحال الدعوى إلكترونياً للمحكمة العمالية عبر ناجز",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "21 يوم عمل لمرحلة التسوية الودية",
+            "from_event": "تاريخ قيد الطلب لدى التسوية الودية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "نظام العمل ولائحته التنفيذية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "دوائر الاستئناف العمالية عبر منصة ناجز (للدعاوى القابلة للاستئناف التي تتجاوز نصاب الدعاوى اليسيرة)",
+          "channel": "portal",
+          "where": "https://najiz.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "اليوم التالي لتاريخ تسلم صورة صك الحكم الابتدائي",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "المحاكم العمالية بالقضاء العام (منصة ناجز)",
+      "documents_required": [
+        "عقد العمل الموثق في منصة قوى أو ما يثبت علاقة العمل ومقدار الأجر",
+        "وثيقة الإحالة من مكتب التسوية الودية (محضر تعذر الصلح)",
+        "كشف الحساب البنكي أو مسيرات الأجور وقرار إنهاء الخدمات (إن وجد)"
+      ],
+      "fees": "تعفى الدعاوى العمالية المقدمة من العمال من التكاليف القضائية المسبقة وفق نظام التكاليف القضائية",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام العمل",
+          "article": "الرابعة والثلاثون بعد المائتين"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@hrsd.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "19911"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ وزارة الموارد البشرية والتنمية الاجتماعية",
+            "url": "https://www.hrsd.gov.sa"
+          },
+          {
+            "name": "تواصل معنا",
+            "url": "https://www.hrsd.gov.sa/contact-us"
+          },
+          {
+            "name": "تقديم شكوى",
+            "url": "https://www.hrsd.gov.sa/ministry-services/services/client-page"
+          },
+          {
+            "name": "بلاغ رقمي (opens in a new window)",
+            "url": "https://my.gov.sa/ar/digital-complaint"
+          },
+          {
+            "name": "ابلاغ عن فساد",
+            "url": "https://www.hrsd.gov.sa/contact-us/report-corruption"
+          },
+          {
+            "name": "تقديم شكوى (opens in a new window)",
+            "url": "https://selfservice.hrsd.gov.sa/node/"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17900"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "المحكمة العمالية — الأجور والبدلات / مكافأة نهاية الخدمة / التعويض عن الإنهاء غير المشروع (دليل ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    }
+  ]
+}

@@ -1,0 +1,288 @@
+{
+  "sector_no": 6,
+  "sector_code": "S06",
+  "title": "القطاع 06: السوق المالية والأوراق المالية (CMA & CRSD)",
+  "generated_at": "2026-10-28",
+  "specialized_problem_cards_count": 2,
+  "agency_specific_cards_count": 1,
+  "total_cards_count": 3,
+  "cards": [
+    {
+      "card_id": "S06-CMA-001",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 6,
+      "agency": {
+        "name": "هيئة السوق المالية",
+        "website": "https://cma.gov.sa/Pages/default.aspx"
+      },
+      "problem_type": "منازعات الأوراق المالية بين المستثمرين ومؤسسات السوق المالية أو الشركات المدرجة (الحق الخاص والتعويض)",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "المستثمرون والمتعاملون في السوق المالية السعودية",
+      "steps": [
+        {
+          "n": 1,
+          "action": "إيداع الشكوى وجوباً لدى هيئة السوق المالية (CMA) كشرط مسبق قبل قيد الدعوى أمام اللجنة",
+          "channel": "portal",
+          "where": "https://cma.org.sa/Market/Complaints/Pages/default.aspx",
+          "deadline": {
+            "duration": "خلال مدة التقادم المنصوص عليها في نظام السوق المالية (سنة من العلم أو 5 سنوات من وقوع المخالفة)",
+            "from_event": "تاريخ العلم بالوقائع أو وقوع المخالفة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (30) من نظام السوق المالية"
+        },
+        {
+          "n": 2,
+          "action": "قيد صحيفة الدعوى إلكترونياً لدى لجنة الفصل في منازعات الأوراق المالية (CRSD) بعد مضي (90) يوماً من إيداع الشكوى لدى الهيئة أو فور إخطار الهيئة للمشتكي بجواز الإيداع",
+          "channel": "portal",
+          "where": "https://crsd.org.sa/",
+          "deadline": {
+            "duration": "بعد مضي 90 يوماً من الشكوى لدى الهيئة (أو صدور إخطار جواز الإيداع)",
+            "from_event": "تاريخ إيداع الشكوى لدى هيئة السوق المالية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (30) من نظام السوق المالية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "لجنة الاستئناف في منازعات الأوراق المالية (CRSD) — قراراتها نهائية",
+          "channel": "portal",
+          "where": "https://crsd.org.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ التبليغ بقرار لجنة الفصل",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "لجنة الفصل ولجنة الاستئناف في منازعات الأوراق المالية (CRSD)",
+      "documents_required": [
+        "إشعار إيداع الشكوى لدى هيئة السوق المالية وخطاب إخطار جواز القيد (أو ما يثبت مضي 90 يوماً)",
+        "اتفاقية فتح المحفظة الاستثمارية أو عقد إدارة الأصول أو الصندوق الاستثماري",
+        "كشف حساب المحفظة والعمليات محل النزاع"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام السوق المالية",
+          "article": "المادة الثلاثون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام السوق المالية",
+          "article": "المادة الحادية والثلاثون"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@cma.gov.sa"
+          },
+          {
+            "value": "laws.regulations@cma.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "8002451111"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — هيئة السوق المالية",
+            "url": "https://cma.gov.sa/Pages/default.aspx"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها بوابة الأمانة العامة للجان منازعات الأوراق المالية crsd.org.sa (وينفذ قرارها النهائي عبر محاكم التنفيذ في ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S06-CMA-002",
+      "card_kind": "specialized_problem_procedure",
+      "sector_no": 6,
+      "agency": {
+        "name": "هيئة السوق المالية",
+        "website": "https://cma.gov.sa/Pages/default.aspx"
+      },
+      "problem_type": "التظلم من القرارات والإجراءات الإدارية الصادرة عن هيئة السوق المالية أو السوق المالية (تداول)",
+      "stage": "تظلم ثم استئناف",
+      "who_can_file": "كل ذي مصلحة صدر بحقه قرار إداري أو جزاء من هيئة السوق المالية أو السوق",
+      "steps": [
+        {
+          "n": 1,
+          "action": "إيداع التظلم لدى هيئة السوق المالية ثم قيده أمام لجنة الفصل في منازعات الأوراق المالية (CRSD)",
+          "channel": "portal",
+          "where": "https://crsd.org.sa/",
+          "deadline": {
+            "duration": "وفق المدة المحددة في نظام السوق المالية ولائحة إجراءات الفصل في منازعات الأوراق المالية",
+            "from_event": "تاريخ الإبلاغ بالقرار",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (30) من نظام السوق المالية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "لجنة الاستئناف في منازعات الأوراق المالية (CRSD)",
+          "channel": "portal",
+          "where": "https://crsd.org.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ التبليغ بقرار لجنة الفصل",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "لجنة الفصل ولجنة الاستئناف في منازعات الأوراق المالية (CRSD)",
+      "documents_required": [
+        "صورة القرار الصادر من هيئة السوق المالية أو السوق",
+        "لائحة التظلم والمستندات المؤيدة"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام السوق المالية",
+          "article": "المادة الثلاثون"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@cma.gov.sa"
+          },
+          {
+            "value": "laws.regulations@cma.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "8002451111"
+          }
+        ],
+        "portals": [
+          {
+            "name": "الموقع الرسمي — هيئة السوق المالية",
+            "url": "https://cma.gov.sa/Pages/default.aspx"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز وديوان المظالم — تختص بها CRSD"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    },
+    {
+      "card_id": "S06-AG-17579",
+      "card_kind": "agency_specific_grievance_and_contacts",
+      "sector_no": 6,
+      "agency": {
+        "name": "هيئة السوق المالية",
+        "website": "https://cma.gov.sa/Pages/default.aspx"
+      },
+      "problem_type": "التظلم الإداري، الشكاوى، والاستفسارات الخاصة بـ «هيئة السوق المالية»",
+      "stage": "شكوى ثم دعوى",
+      "who_can_file": "كل ذي شأن أو مستفيد أو متعاقد أو موظف يتعامل مع «هيئة السوق المالية»",
+      "steps": [
+        {
+          "n": 1,
+          "action": "تقديم الطلب أو الشكوى أو التظلم الإداري مباشرة عبر القنوات الرسمية لـ «هيئة السوق المالية» (البوابة الإلكترونية أو البريد الرسمي أو الرقم الموحد الموضح في البطاقة) والاحتفاظ برقم القيد",
+          "channel": "portal",
+          "where": "https://cma.gov.sa/Pages/default.aspx",
+          "deadline": {
+            "duration": "خلال مدة التقادم المنصوص عليها في نظام السوق المالية (سنة من العلم أو 5 سنوات من وقوع المخالفة)",
+            "from_event": "تاريخ العلم بالوقائع أو وقوع المخالفة",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (30) من نظام السوق المالية"
+        },
+        {
+          "n": 2,
+          "action": "قيد صحيفة الدعوى إلكترونياً لدى لجنة الفصل في منازعات الأوراق المالية (CRSD) بعد مضي (90) يوماً من إيداع الشكوى لدى الهيئة أو فور إخطار الهيئة للمشتكي بجواز الإيداع",
+          "channel": "portal",
+          "where": "https://crsd.org.sa/",
+          "deadline": {
+            "duration": "بعد مضي 90 يوماً من الشكوى لدى الهيئة (أو صدور إخطار جواز الإيداع)",
+            "from_event": "تاريخ إيداع الشكوى لدى هيئة السوق المالية",
+            "legal_basis_id": "LB1"
+          },
+          "source": "المادة (30) من نظام السوق المالية"
+        }
+      ],
+      "escalation": [
+        {
+          "body": "لجنة الاستئناف في منازعات الأوراق المالية (CRSD) — قراراتها نهائية",
+          "channel": "portal",
+          "where": "https://crsd.org.sa/",
+          "deadline": {
+            "duration": "30 يوماً",
+            "from_event": "تاريخ التبليغ بقرار لجنة الفصل",
+            "legal_basis_id": "LB1"
+          }
+        }
+      ],
+      "final_forum": "لجنة الفصل ولجنة الاستئناف في منازعات الأوراق المالية (CRSD)",
+      "documents_required": [
+        "إشعار إيداع الشكوى لدى هيئة السوق المالية وخطاب إخطار جواز القيد (أو ما يثبت مضي 90 يوماً)",
+        "اتفاقية فتح المحفظة الاستثمارية أو عقد إدارة الأصول أو الصندوق الاستثماري",
+        "كشف حساب المحفظة والعمليات محل النزاع"
+      ],
+      "fees": "مجاني",
+      "legal_basis": [
+        {
+          "id": "LB1",
+          "instrument": "نظام السوق المالية",
+          "article": "المادة الثلاثون"
+        },
+        {
+          "id": "LB2",
+          "instrument": "نظام السوق المالية",
+          "article": "المادة الحادية والثلاثون"
+        }
+      ],
+      "contacts": {
+        "emails": [
+          {
+            "value": "info@cma.gov.sa"
+          },
+          {
+            "value": "laws.regulations@cma.gov.sa"
+          }
+        ],
+        "phones": [
+          {
+            "value": "8002451111"
+          }
+        ],
+        "portals": [
+          {
+            "name": "البوابة الرسمية لـ هيئة السوق المالية",
+            "url": "https://cma.gov.sa/Pages/default.aspx"
+          },
+          {
+            "name": "صفحة الجهة في المنصة الوطنية الموحدة (my.gov.sa)",
+            "url": "https://my.gov.sa/ar/agencies/17579"
+          }
+        ]
+      },
+      "unverified_items": [],
+      "unverified_contacts": [],
+      "related_najiz_classification": [
+        "خارج اختصاص ناجز — تختص بها بوابة الأمانة العامة للجان منازعات الأوراق المالية crsd.org.sa (وينفذ قرارها النهائي عبر محاكم التنفيذ في ناجز)"
+      ],
+      "last_verified": "2026-10-28",
+      "confidence": "high"
+    }
+  ]
+}
