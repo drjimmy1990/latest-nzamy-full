@@ -497,6 +497,63 @@ export function resolveArticleIdentityStatus(article: Record<string, unknown>): 
   return status;
 }
 
+/**
+ * The number part of an article id: the printed number, or `i<index in its
+ * chapter>` for an article without one (parse-laws.ts uses 0 as "no number").
+ */
+export function articleBaseNum(article: Record<string, unknown>, chapterArticles: readonly unknown[]): string {
+  const n = article.number;
+  const hasRealNumber = n !== null && n !== undefined && n !== 0;
+  return hasRealNumber ? String(n) : `i${chapterArticles.indexOf(article)}`;
+}
+
+/** How many articles of ONE law share each `__art-<N>` number. */
+export function countLawArticleBaseNums(chapters: readonly any[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const ch of chapters || []) {
+    const articles = (ch?.articles || []) as any[];
+    for (const art of articles) {
+      const base = articleBaseNum(art, articles);
+      counts.set(base, (counts.get(base) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Article identity core (owner report 2026-11-09, problem 2). The status is
+ * NOT part of an article's id: `__art-<N>` stays the same when the article is
+ * later amended, repealed or restored, so links, saved items and the loader's
+ * upsert keep pointing at one row instead of leaving the old row behind.
+ *
+ * The status suffix is kept only as a tie-breaker inside a law where two or
+ * more articles share one number (a repealed article 10 and an added article
+ * 10): those keep their historic ids `__art-10` / `__art-10-added` exactly.
+ * Further duplicates still fall back to the chapter/position suffix.
+ */
+export function articleIdentityCore(baseNum: string, identityStatus: string, sharedNumber: boolean): string {
+  const base = `__art-${baseNum}`;
+  if (!sharedNumber || identityStatus === "active") return base;
+  return `${base}-${identityStatus}`;
+}
+
+/**
+ * A decree page's number (owner report 2026-11-09, problem 1). page_number is
+ * an integer column; a file that numbers its units 32.1 or 40.11 used to fail
+ * the whole row. The whole part goes to page_number, the printed label to
+ * number_text, and the source order to order_index (the reader sorts by
+ * page_number, then order_index). The page id still uses the printed value,
+ * so 32.1 never takes page 32's id.
+ */
+export function decreePageNumber(raw: unknown): { page_number: number; number_text: string | null } {
+  if (raw === null || raw === undefined || raw === "" || raw === 0) return { page_number: 0, number_text: null };
+  const label = String(raw).trim();
+  const n = Number(label);
+  if (Number.isInteger(n) && n >= -2147483648 && n <= 2147483647) return { page_number: n, number_text: null };
+  if (Number.isFinite(n) && Math.abs(n) <= 2147483647) return { page_number: Math.trunc(n), number_text: label };
+  return { page_number: 0, number_text: label || null };
+}
+
 /** Source-order rank for every article in a law, independent of printed numbers. */
 export function buildArticleOrderByRef(chapters: any[]): Map<any, number> {
   const orderByArticle = new Map<any, number>();
@@ -637,6 +694,7 @@ export async function seedLaws(
     const articleIds: string[][] = [];
     const chapterIds: string[] = [];
     const seenArtIds = new Set<string>();
+    const baseNumCounts = countLawArticleBaseNums(chapters);
     const buildArtId = (core: string) => {
       const full = `${lawId}${core}`;
       if (full.length <= 150) return full;
@@ -654,11 +712,9 @@ export async function seedLaws(
       const articles = (ch.articles || []) as any[];
       articleIds.push([]);
       for (const art of articles) {
-        const hasRealNumber = art.number !== null && art.number !== undefined && art.number !== 0;
-        const baseNum = hasRealNumber ? art.number : `i${articles.indexOf(art)}`;
+        const baseNum = articleBaseNum(art, articles);
         const identityStatus = resolveArticleIdentityStatus(art);
-        const statusSuffix = identityStatus !== "active" ? `-${identityStatus}` : "";
-        let artCore = `__art-${baseNum}${statusSuffix}`;
+        let artCore = articleIdentityCore(baseNum, identityStatus, (baseNumCounts.get(baseNum) || 0) > 1);
         let artId = buildArtId(artCore);
         if (seenArtIds.has(artId)) {
           artCore = `${artCore}__ch${ch.number ?? "x"}_i${articles.indexOf(art)}`;
@@ -995,10 +1051,14 @@ export async function seedDecrees(
 
     for (let pi = 0; pi < arts.length; pi++) {
       const art = arts[pi];
+      const pageNumber = decreePageNumber(art.number);
       pageRows.push({
         id: toUuid(`${decId}__pg-${art.number ?? pi}`), // decree_pages.id is `uuid`
         decree_id: decId,
-        page_number: art.number || 0,
+        page_number: pageNumber.page_number,
+        // number_text / order_index: columns of 20261018_02 (live).
+        number_text: pageNumber.number_text,
+        order_index: pi,
         content: art.text || "",
       });
     }
