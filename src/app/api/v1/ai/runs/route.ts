@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
 import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
+import { embedQueryText } from "@/lib/ai/embeddingClient";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
@@ -128,7 +129,9 @@ export async function POST(request: NextRequest) {
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
         libraryAccess: libraryAccessFor(user.id),
         onRunCreated: libraryRunCreatedFor(user.id),
-        retrieve: (queries, limits, pin) => retrieveLibrary(admin, queries, limits, pin),
+        embedQuery: (text) => embedQueryText(text).then((r) => (r ? { modelId: r.modelId, literal: r.literal } : null)),
+        retrieve: (queries, limits, pin, opts) =>
+          retrieveLibrary(admin, queries, limits, pin, undefined, opts ?? { useGraph: true }),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
         ...(textFiles ? { pastedFileUrl: pastedFileUrlFrom(textFiles) } : {}),
         progress: progressSink(admin, (work) => after(work)),

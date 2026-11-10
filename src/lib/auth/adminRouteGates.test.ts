@@ -318,6 +318,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "founder/orders/[id]/activate/route.ts", method: "POST", action: "settings.write", logs: 1 },
   // S6-T7 (R18): an admin edits one client-catalogue price row (one audited update)
   { file: "pricing-catalog/[serviceId]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  // Legal GraphRAG admin controls: switch_model, trigger_sync, set_feqh_vectors (3 audited arms)
+  { file: "graph-rag/route.ts", method: "POST", action: "settings.write", logs: 3 },
 ];
 
 for (const { file, method, action, logs } of GATES) {

@@ -90,7 +90,9 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     // Batch 2026-11-09 (owner package 6-Nov): 20261109_10..14 and _20..22.
     "library_invitation_redemptions", "share_passcode_lockout", "group_membership_self_check", "admin_audit_events_no_guest",
     "academy_certificates_policy", "academy_answer_keys", "library_merged_regulations", "library_principles_printed_page",
-    "library_feqh_book_type_data01"]) {
+    "library_feqh_book_type_data01",
+    // Legal GraphRAG (20261110_10):
+    "library_graph_rag"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

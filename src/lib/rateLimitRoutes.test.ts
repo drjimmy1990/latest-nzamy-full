@@ -332,6 +332,7 @@ test("proxy: the verify read is keyed like the tracking page, the visitor key pl
 
 test("isGeneralRateLimitedApiPath: n8n's AI callback is exempt, the browser's AI runs route is not", () => {
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback"), false);
+  assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/graph-retrieve"), false);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/runs"), true);
   assert.equal(isGeneralRateLimitedApiPath("POST", "/api/v1/ai/callback/x"), true);
 });

@@ -37,17 +37,32 @@ import { articleRefs, bareArticleNumbers, lawNames, stripFraming } from "./quest
 /** The service-role client: the relevance functions and the article text are service-role only. */
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
 
+export type SourceKind = "article" | "principle" | "decree" | "feqh";
+
 export interface RetrievalLimits {
   /** Articles kept, at most. */
   laws: number;
   /** Principles kept, at most. */
   principles: number;
+  /** Royal decrees / circulars kept when GraphRAG matches (optional). */
+  decrees?: number;
+  /** Fiqh jurisprudence blocks kept when GraphRAG matches (optional). */
+  feqh?: number;
+}
+
+export interface RetrieveGraphOptions {
+  /** Enable Hybrid Legal GraphRAG (`public.graph_rag_retrieve`) with automatic fallback to FTS RPCs. */
+  useGraph?: boolean;
+  /** Normalized `halfvec` literal (`'[0.012,-0.034,...]'`) for semantic + 1-hop retrieval. */
+  queryEmbedding?: string | null;
+  /** Explicit model_id override; defaults to DB's active `is_default` model. */
+  modelId?: string | null;
 }
 
 /** One library text as the model sees it. */
 export interface PackageSource {
   sid: string;
-  kind: "article" | "principle";
+  kind: SourceKind;
   title: string;
   text: string;
   /** The article the user has open (L5 «اشرح لي»): always S1, whatever the searches found. */
@@ -66,7 +81,7 @@ export interface RetrievalPin {
 
 /** The run's source map entry (runCore.SourceMap): what a citation resolves to. */
 export interface SourceRef {
-  kind: "article" | "principle";
+  kind: SourceKind;
   id: string;
   title: string;
   url: string;
@@ -291,12 +306,43 @@ async function pinnedArticle(admin: ServiceClient, id: string, signal: AbortSign
   return (data as Row | null) ?? null;
 }
 
+const EDGE_PROVENANCE_AR: Record<string, string> = {
+  EXEMPTS_FROM: "استثناء نظامي مرتبط",
+  AMENDS_ARTICLE: "تعديل نظامي مرتبط",
+  INTERPRETS_ARTICLE: "تفسير قضائي مرتبط",
+  PARENT_LAW: "النظام الأساسي المرتبط",
+  CITES_ARTICLE: "إحالة نظامية مرتبطة",
+  ESTABLISHES_RULE: "قاعدة نظامية مرتبطة",
+};
+
+interface GraphRpcHit {
+  kind: SourceKind;
+  id: string;
+  law_slug?: string | null;
+  collection_id?: string | null;
+  status?: string | null;
+  title: string;
+  url: string;
+  text: string;
+  via_edge_type?: string | null;
+  via_from_title?: string | null;
+}
+
+interface GraphRpcResult {
+  ready?: boolean;
+  articles?: GraphRpcHit[];
+  principles?: GraphRpcHit[];
+  decrees?: GraphRpcHit[];
+  feqh?: GraphRpcHit[];
+}
+
 export async function retrieveLibrary(
   admin: ServiceClient,
   queries: string[],
   limits: RetrievalLimits,
   pin: RetrievalPin = {},
   budgetMs = RETRIEVAL_BUDGET_MS,
+  options?: RetrieveGraphOptions,
 ): Promise<Retrieved> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), budgetMs);
@@ -322,11 +368,6 @@ export async function retrieveLibrary(
     };
     // The law to search first: the page the reader is on, else the first law the question names.
     const scopeName = pin.lawSlug ? null : (refs[0]?.law ?? lawNames(question, 1)[0] ?? null);
-    const scoped = (async (): Promise<Row[][]> => {
-      if (limits.laws === 0 || parsed.length === 0) return [];
-      const slug = pin.lawSlug ?? (scopeName ? await slugOf(scopeName) : null);
-      return slug ? Promise.all(parsed.map((t) => lawScopedRows(admin, slug, t, FETCH_PER_QUERY.laws, ctrl.signal))) : [];
-    })();
     const direct = Promise.all([
       ...refs.map(async (r) => {
         const slug = await slugOf(r.law);
@@ -334,6 +375,124 @@ export async function retrieveLibrary(
       }),
       ...onPage.map((n) => articleByNumber(admin, pin.lawSlug as string, n, ctrl.signal)),
     ]);
+
+    // ── Path A: Hybrid Legal GraphRAG (`public.graph_rag_retrieve`) across all 4 corpora ──
+    const canCallGraphRpc =
+      Boolean(options?.useGraph || options?.queryEmbedding) &&
+      typeof (admin as unknown as { rpc?: unknown }).rpc === "function";
+
+    if (canCallGraphRpc) {
+      const resolvedScopeSlug = pin.lawSlug ?? (scopeName ? await slugOf(scopeName) : null);
+      const decreeLimit =
+        limits.decrees ?? (limits.principles > 0 ? Math.min(2, Math.max(1, Math.floor(limits.laws / 4))) : 0);
+      const feqhLimit =
+        limits.feqh ?? (limits.principles > 0 ? Math.min(2, Math.floor(limits.principles / 2)) : 0);
+
+      const rpcCaller = admin as unknown as {
+        rpc: (
+          fn: string,
+          args: Record<string, unknown>,
+        ) => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
+      };
+
+      const [pinned, directRows, graphOutcome] = await Promise.all([
+        pin.articleId ? pinnedArticle(admin, pin.articleId, ctrl.signal) : Promise.resolve(null),
+        direct,
+        Promise.resolve(
+          rpcCaller.rpc("graph_rag_retrieve", {
+            p_tsqueries: parsed,
+            p_query_embedding: options?.queryEmbedding ?? null,
+            p_model_id: options?.modelId ?? null,
+            p_law_slug: resolvedScopeSlug,
+            p_limit_laws: limits.laws + 2,
+            p_limit_principles: limits.principles,
+            p_limit_decrees: decreeLimit,
+            p_limit_feqh: feqhLimit,
+            p_enable_graph_hop: true,
+          }),
+        ).catch(() => ({ data: null, error: { code: "GRAPH_ERR", message: "failed" } })),
+      ]);
+
+      const graphPayload = (graphOutcome?.data ?? null) as GraphRpcResult | null;
+      if (!graphOutcome?.error && graphPayload && graphPayload.ready === true) {
+        const leadSeen = new Set<string>();
+        const leadRows: Row[] = [];
+        for (const r of [pinned, ...directRows]) {
+          if (r && str(r.id) && !leadSeen.has(str(r.id))) {
+            leadSeen.add(str(r.id));
+            leadRows.push(r);
+          }
+        }
+
+        const leadSlugs = [...new Set(leadRows.map((a) => str(a.law_slug)).filter(Boolean))];
+        const leadTitles = new Map<string, string>();
+        if (leadSlugs.length > 0) {
+          const { data } = await admin.schema("library").from("laws").select("slug, title").in("slug", leadSlugs);
+          for (const l of (data ?? []) as Row[]) leadTitles.set(str(l.slug), str(l.title));
+        }
+
+        const builtLead = buildSources(leadRows, [], leadTitles, pinned ? str(pinned.id) : null);
+        const sources: PackageSource[] = [...builtLead.sources];
+        const map: Record<string, SourceRef> = { ...builtLead.map };
+        let n = sources.length;
+
+        const maxArticlesTotal = limits.laws + (pinned ? 1 : 0);
+        let articleCount = sources.filter((s) => s.kind === "article").length;
+
+        const appendGraphHits = (hits: readonly GraphRpcHit[] | undefined, sectionCap?: number) => {
+          let added = 0;
+          for (const h of hits ?? []) {
+            if (!h || !h.id || !h.text?.trim()) continue;
+            if (h.kind === "article") {
+              if (leadSeen.has(h.id)) continue;
+              if (articleCount >= maxArticlesTotal) continue;
+              leadSeen.add(h.id);
+              articleCount++;
+            } else if (sectionCap !== undefined && added >= sectionCap) {
+              continue;
+            }
+
+            const cleanText = stripArticleAuditNotes(h.text).trim();
+            if (!cleanText) continue;
+
+            const plainTitle = h.title.trim() || h.id;
+            const statusNote = STATUS_NOTE[str(h.status)];
+            const edgeNote = h.via_edge_type ? EDGE_PROVENANCE_AR[h.via_edge_type] : undefined;
+            const annotations = [statusNote, edgeNote].filter(Boolean).join(" · ");
+            const modelTitle = annotations ? `${plainTitle} (${annotations})` : plainTitle;
+
+            const sid = `S${++n}`;
+            sources.push({
+              sid,
+              kind: h.kind,
+              title: modelTitle,
+              text: clip(cleanText),
+            });
+            map[sid] = {
+              kind: h.kind,
+              id: h.id,
+              title: plainTitle,
+              url: h.url,
+            };
+            added++;
+          }
+        };
+
+        appendGraphHits(graphPayload.articles);
+        appendGraphHits(graphPayload.principles, limits.principles);
+        appendGraphHits(graphPayload.decrees, decreeLimit);
+        appendGraphHits(graphPayload.feqh, feqhLimit);
+
+        return { sources, map };
+      }
+    }
+
+    // ── Path B: Classic Lexical Relevance Fallback (pre-migration / empty graph) ──
+    const scoped = (async (): Promise<Row[][]> => {
+      if (limits.laws === 0 || parsed.length === 0) return [];
+      const slug = pin.lawSlug ?? (scopeName ? await slugOf(scopeName) : null);
+      return slug ? Promise.all(parsed.map((t) => lawScopedRows(admin, slug, t, FETCH_PER_QUERY.laws, ctrl.signal))) : [];
+    })();
     const [pinned, directRows, scopedLists, lawLists, principleLists] = await Promise.all([
       pin.articleId ? pinnedArticle(admin, pin.articleId, ctrl.signal) : Promise.resolve(null),
       direct,

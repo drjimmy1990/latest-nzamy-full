@@ -255,3 +255,157 @@ test("the tsquery every retrieval search sends stays non-empty and bounded under
 test("cleanQueries drops the framing the answering text never says («تعريف عقد البيع» → «عقد البيع»)", () => {
   assert.deepEqual(cleanQueries(["تعريف عقد البيع", "ما هو التعريف", "المادة الأولى نظام العمل"]), ["عقد البيع", "نظام العمل"]);
 });
+
+
+// ── Legal GraphRAG Hybrid + 1-Hop + 4-Corpus Tests ───────────────────────────
+
+test("GraphRAG: retrieveLibrary uses graph_rag_retrieve across all 4 corpora, preserves pinned S1, and annotates 1-hop legal edges", async () => {
+  const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+  const graphAdmin = {
+    rpc(fn: string, args: Record<string, unknown>) {
+      rpcCalls.push({ fn, args });
+      return Promise.resolve({
+        data: {
+          ready: true,
+          model_id: "gemini-embedding-2-768",
+          vector_used: true,
+          articles: [
+            {
+              kind: "article",
+              id: "labor-law__art-77",
+              law_slug: "labor-law",
+              status: "active",
+              title: "نظام العمل — المادة 77",
+              url: "/laws/labor-law#labor-law__art-77",
+              text: "التعويض عن الإنهاء لسبب غير مشروع",
+              score: 0.035,
+              via_edge_type: null,
+              via_from_title: null,
+            },
+            {
+              kind: "article",
+              id: "labor-law__art-80",
+              law_slug: "labor-law",
+              status: "active",
+              title: "نظام العمل — المادة 80",
+              url: "/laws/labor-law#labor-law__art-80",
+              text: "فسخ العقد دون مكافأة استثناء من المادة 77",
+              score: 0.021,
+              via_edge_type: "EXEMPTS_FROM",
+              via_from_title: "نظام العمل — المادة 77",
+            },
+          ],
+          principles: [
+            {
+              kind: "principle",
+              id: "sup__p1",
+              collection_id: "sup",
+              status: "active",
+              title: "مجموعة المبادئ — المبدأ رقم 1",
+              url: "/precedents/sup#sup__p1",
+              text: "مبدأ قضائي عمالي",
+              score: 0.019,
+            },
+          ],
+          decrees: [
+            {
+              kind: "decree",
+              id: "m-46",
+              status: "active",
+              title: "المرسوم الملكي م/46",
+              url: "/laws/orders/m-46",
+              text: "تعديل نظام العمل",
+              score: 0.018,
+            },
+          ],
+          feqh: [
+            {
+              kind: "feqh",
+              id: "mugni__b1",
+              status: "active",
+              title: "المغني — الإجارة",
+              url: "/book/mugni#mugni__b1",
+              text: "الأجير الخاص",
+              score: 0.016,
+            },
+          ],
+        },
+        error: null,
+      });
+    },
+    schema(name: string) {
+      assert.equal(name, "library");
+      return {
+        from(table: string) {
+          if (table === "articles") {
+            return {
+              select: () => ({
+                eq: (_c: string, id: string) => ({
+                  abortSignal: () => ({
+                    maybeSingle: () =>
+                      Promise.resolve({
+                        data: id === "labor-law__art-74"
+                          ? { id: "labor-law__art-74", law_slug: "labor-law", number: 74, text: "ينتهي عقد العمل", status: "active" }
+                          : null,
+                        error: null,
+                      }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            select: () => ({
+              in: () => Promise.resolve({ data: [{ slug: "labor-law", title: "نظام العمل" }], error: null }),
+            }),
+          };
+        },
+        rpc: () => ({ abortSignal: () => Promise.resolve({ data: { ranked: true, rows: [] }, error: null }) }),
+      };
+    },
+  };
+
+  const out = await retrieveLibrary(
+    graphAdmin as never,
+    ["فصل تعسفي"],
+    { laws: 6, principles: 3 },
+    { articleId: "labor-law__art-74", question: "طردوني من الشركة بدون سبب" },
+    6000,
+    { useGraph: true, queryEmbedding: "[1,0,0,0]", modelId: "gemini-embedding-2-768" },
+  );
+
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(rpcCalls[0].fn, "graph_rag_retrieve");
+  assert.equal(out.sources[0].sid, "S1");
+  assert.equal(out.sources[0].pinned, true);
+  assert.equal(out.map.S1.id, "labor-law__art-74");
+
+  const kinds = out.sources.map((s) => s.kind);
+  assert.deepEqual(kinds, ["article", "article", "article", "principle", "decree", "feqh"]);
+  assert.match(out.sources[2].title, /استثناء نظامي مرتبط/, "1-hop EXEMPTS_FROM edge informs the LLM");
+  assert.equal(out.map.S3.title, "نظام العمل — المادة 80", "citation chip keeps clean statutory title");
+  assert.equal(out.map.S5.url, "/laws/orders/m-46");
+  assert.equal(out.map.S6.url, "/book/mugni#mugni__b1");
+});
+
+test("GraphRAG: retrieveLibrary falls back seamlessly to FTS relevance RPCs when graph_rag_retrieve is not ready", async () => {
+  const { admin: base } = fakeAdmin({
+    search_law_articles_relevance: { ranked: true, rows: [{ id: "labor__art-77", law_slug: "labor", number: 77, text: "تعويض" }] },
+    search_principles_relevance: { ranked: true, rows: [] },
+  });
+  const hybridUnreadyAdmin = {
+    ...base,
+    rpc: () => Promise.resolve({ data: { ready: false, articles: [], principles: [], decrees: [], feqh: [] }, error: null }),
+  };
+
+  const out = await retrieveLibrary(
+    hybridUnreadyAdmin as never,
+    ["فصل العامل"],
+    { laws: 4, principles: 2 },
+    {},
+    6000,
+    { useGraph: true, queryEmbedding: "[1,0,0,0]" },
+  );
+  assert.equal(out.sources.length, 1);
+  assert.equal(out.map.S1.id, "labor__art-77");
+});

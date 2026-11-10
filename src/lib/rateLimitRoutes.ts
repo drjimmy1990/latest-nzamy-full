@@ -273,6 +273,8 @@ export const RATE_LIMIT_EXEMPT_API_PATHS: ReadonlySet<string> = new Set([
   // n8n's AI job results (20261027_10): one address, key-authenticated;
   // throttling it would leave paid runs to time out and be refunded.
   "/api/v1/ai/callback",
+  // n8n mid-workflow Hybrid Legal GraphRAG lookup: key-authenticated via X-Nzamy-Key.
+  "/api/v1/ai/graph-retrieve",
 ]);
 
 /**
