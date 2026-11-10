@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 import { unambiguousIdentityFixtures } from "./corpus-scope-test-fixtures";
-import { resolveLawArticleIds, resolveLawChapterIds, seedLaws, toUuid } from "./seed-library.ts";
+import { countLawArticleBaseNums, resolveLawArticleIds, resolveLawChapterIds, seedLaws, toUuid } from "./seed-library.ts";
 import { corpusFile, historicalParseFile } from "./test-evidence.ts";
 
 // Deliberately external, immutable test evidence. This makes the test a local
@@ -28,6 +28,9 @@ function expectedIdentityPlan(laws: Row[]) {
     if (lawId.includes("EXTRACTION_REPORT")) continue;
     const sourceChapters = (law.chapters || []) as Row[];
     const seenArticleIds = new Set<string>();
+    // Owner report 2026-11-09: status only breaks a tie between articles that
+    // share one number in the same law (seed-library.ts articleIdentityCore).
+    const shared = countLawArticleBaseNums(sourceChapters);
     const buildArticleId = (core: string) => {
       const full = `${lawId}${core}`;
       return full.length <= 150 ? full : `${lawId.substring(0, Math.max(0, 150 - core.length))}${core}`;
@@ -42,7 +45,8 @@ function expectedIdentityPlan(laws: Row[]) {
       for (const article of sourceArticles) {
         const hasRealNumber = article.number !== null && article.number !== undefined && article.number !== 0;
         const baseNum = hasRealNumber ? article.number : `i${sourceArticles.indexOf(article)}`;
-        const statusSuffix = article.status && article.status !== "active" ? `-${article.status}` : "";
+        const sharedNumber = (shared.get(String(baseNum)) || 0) > 1;
+        const statusSuffix = sharedNumber && article.status && article.status !== "active" ? `-${article.status}` : "";
         let core = `__art-${baseNum}${statusSuffix}`;
         let legacyId = buildArticleId(core);
         if (seenArticleIds.has(legacyId)) {

@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
 import { unambiguousIdentityFixtures } from "./corpus-scope-test-fixtures";
-import { resolveArticleIdentityStatus, resolveLawArticleIds, seedLaws } from "./seed-library.ts";
+import { countLawArticleBaseNums, resolveArticleIdentityStatus, resolveLawArticleIds, seedLaws } from "./seed-library.ts";
 import { historicalParseFile } from "./test-evidence.ts";
 
 const BASELINE = historicalParseFile("baseline-laws.json", "/Volumes/باك اب المكتبة القانونية/Raw_Vault_Archive/بذر_جاف_تيست_20260918_QUdyGW/laws.json");
@@ -21,6 +21,9 @@ function articleIds(laws: Row[], identityOf: (article: Row) => string): string[]
     const lawId = String(law.slug || law.id);
     if (lawId.includes("EXTRACTION_REPORT")) continue;
     const seen = new Set<string>();
+    // Owner report 2026-11-09: the status is part of the id only when two
+    // articles of the law share one number (seed-library.ts articleIdentityCore).
+    const shared = countLawArticleBaseNums((law.chapters || []) as Row[]);
     const build = (core: string) => {
       const full = `${lawId}${core}`;
       return full.length <= 150 ? full : `${lawId.substring(0, Math.max(0, 150 - core.length))}${core}`;
@@ -31,7 +34,8 @@ function articleIds(laws: Row[], identityOf: (article: Row) => string): string[]
         const hasRealNumber = article.number !== null && article.number !== undefined && article.number !== 0;
         const baseNum = hasRealNumber ? article.number : `i${articles.indexOf(article)}`;
         const identityStatus = identityOf(article);
-        let core = `__art-${baseNum}${identityStatus === "active" ? "" : `-${identityStatus}`}`;
+        const sharedNumber = (shared.get(String(baseNum)) || 0) > 1;
+        let core = `__art-${baseNum}${!sharedNumber || identityStatus === "active" ? "" : `-${identityStatus}`}`;
         let id = build(core);
         if (seen.has(id)) {
           core = `${core}__ch${chapter.number ?? "x"}_i${articles.indexOf(article)}`;
@@ -77,8 +81,10 @@ test("provenance restores every historical ID that a missing-status correction w
   assert.equal(baselineIds.length, 110_794);
   assert.equal(newlyUndeclared, 52_646);
   // Duplicate-resolution cascades can change additional IDs beyond the
-  // articles whose status changed: measure the actual identity delta.
-  assert.equal(baselineIds.filter((id, index) => id !== wideIdsWithoutProvenance[index]).length, 52_795);
+  // articles whose status changed. Before 2026-11-09 the status was in every
+  // non-active id and this delta was 52,795; now it is limited to articles
+  // that share a number with another article of the same law.
+  assert.ok(baselineIds.filter((id, index) => id !== wideIdsWithoutProvenance[index]).length < 52_795);
   assert.equal(baselineIds.filter((id, index) => id !== wideIdsWithProvenance[index]).length, 0);
 
   const selectedFixtures = unambiguousIdentityFixtures(wideWithProvenance);
