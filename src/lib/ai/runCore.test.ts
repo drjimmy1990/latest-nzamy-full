@@ -1395,3 +1395,61 @@ test("E6: an old n8n's bare progress post still moves the step, with no progress
   assert.equal((await callbackWith(client as never, { run_id: RUN, status: "progress", step: "reading" })).status, 200);
   assert.deepEqual(log.find((q) => q.op === "update")!.payload, { progress_step: "reading" });
 });
+
+
+// ── Legal GraphRAG Runtime Integration Tests ─────────────────────────────────
+
+test("GraphRAG: embedQuery runs in parallel with lib-queries and rescues colloquial runs when lib-queries returns zero searches", async () => {
+  const { client, log } = db({ setting: { "quick-answer": { mode: "live" } } });
+  const reported: Reported[] = [];
+  let gotRetrieveOpts: unknown = null;
+
+  const graphRetrieved: Retrieved = {
+    sources: [
+      { sid: "S1", kind: "article", title: "نظام العمل — المادة 77", text: "يستحق الطرف المتضرر تعويضاً" },
+      { sid: "S2", kind: "decree", title: "المرسوم الملكي م/46", text: "تعديل نظام العمل" },
+      { sid: "S3", kind: "feqh", title: "المغني — الإجارة", text: "ضمان الأجير" },
+    ],
+    map: {
+      S1: { kind: "article", id: "labor-law__art-77", title: "نظام العمل — المادة 77", url: "/laws/labor-law#labor-law__art-77" },
+      S2: { kind: "decree", id: "m-46", title: "المرسوم الملكي م/46", url: "/laws/orders/m-46" },
+      S3: { kind: "feqh", id: "mugni__b1", title: "المغني — الإجارة", url: "/book/mugni#mugni__b1" },
+    },
+  };
+
+  const r = await startRunWith(
+    client as never,
+    {
+      callbackUrl: "https://app.test/api/v1/ai/callback",
+      n8n: async (call) => {
+        if (call.path === LIB_QUERIES_PATH) {
+          // Simulate colloquial query where keyword search writer finds 0 formal keywords
+          return { kind: "result", result: { run_id: RUN, status: "succeeded", output: { queries: [] } } };
+        }
+        return okReply({ answer: "تستحق التعويض استناداً إلى [S1] والمرسوم [S2]." });
+      },
+      libraryAccess: async () => null,
+      embedQuery: async () => ({ modelId: "gemini-embedding-2-768", literal: "[1,0,0,0]" }),
+      retrieve: async (_queries, _limits, _pin, opts) => {
+        gotRetrieveOpts = opts;
+        return graphRetrieved;
+      },
+      progress: collector(reported),
+    },
+    LAWYER,
+    body({
+      tool: "quick-answer",
+      input: { question: "طردوني من الشركة فجأة بدون سبب وش أسوي؟" },
+    }),
+  );
+
+  assert.equal(r.status, 200, "colloquial query rescued by semantic GraphRAG embedding instead of failing with no_queries");
+  assert.ok(!rpcs(log).includes("ai_fail_run"));
+  assert.deepEqual(gotRetrieveOpts, {
+    useGraph: true,
+    queryEmbedding: "[1,0,0,0]",
+    modelId: "gemini-embedding-2-768",
+  });
+  const kinds = reported.flatMap((x) => x.events.map((e) => e.kind));
+  assert.ok(kinds.includes("law") && kinds.includes("note"), "decree maps to law and feqh maps to note within DB CHECK constraint");
+});

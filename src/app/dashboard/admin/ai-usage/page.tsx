@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Robot, ArrowClockwise, CheckCircle, XCircle, Play } from "@phosphor-icons/react";
+import { Robot, ArrowClockwise, CheckCircle, XCircle, Play, Graph, Lightning } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
+import type { AdminGraphRagStatusPayload } from "@/lib/ai/adminGraphRagCore";
 
 /**
  * /dashboard/admin/ai-usage — «تشغيلات الذكاء الاصطناعي» (AI wave 0, plan §5).
@@ -69,24 +70,61 @@ export default function AdminAIUsagePage() {
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testText, setTestText] = useState("اختبار الاتصال");
   const [useModel, setUseModel] = useState(false);
+  const [graphStatus, setGraphStatus] = useState<AdminGraphRagStatusPayload | null>(null);
+  const [selectedModelId, setSelectedModelId] = useState<string>("gemini-embedding-2-768");
+  const [graphBusy, setGraphBusy] = useState(false);
   const run = useAiRun();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/v1/admin/ai-runs", { cache: "no-store" });
+      const [res, graphRes] = await Promise.all([
+        fetch("/api/v1/admin/ai-runs", { cache: "no-store" }),
+        fetch("/api/v1/admin/graph-rag", { cache: "no-store" }).catch(() => null),
+      ]);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "تعذّر تحميل التشغيلات");
       setTools(json.tools ?? []);
       setRuns(json.runs ?? []);
       setCharging(json.charging === true);
       setSchemaMissing(json.schemaMissing === true);
+      if (graphRes && graphRes.ok) {
+        const gJson = (await graphRes.json()) as AdminGraphRagStatusPayload;
+        setGraphStatus(gJson);
+        if (gJson.default_model_id) setSelectedModelId(gJson.default_model_id);
+      }
     } catch (err) {
       setToast({ ok: false, msg: (err as Error).message });
     } finally {
       setLoading(false);
     }
   }, []);
+
+  async function runGraphAction(
+    payload:
+      | { action: "switch_model"; modelId: string }
+      | { action: "trigger_sync" }
+      | { action: "set_feqh_vectors"; enabled: boolean },
+    successMsg: string,
+  ) {
+    setGraphBusy(true);
+    setToast(null);
+    try {
+      const res = await fetch("/api/v1/admin/graph-rag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "تعذّر تنفيذ إجراء الجراف");
+      setToast({ ok: true, msg: successMsg });
+      await load();
+    } catch (err) {
+      setToast({ ok: false, msg: (err as Error).message });
+    } finally {
+      setGraphBusy(false);
+    }
+  }
 
   useEffect(() => {
     load();
@@ -201,6 +239,153 @@ export default function AdminAIUsagePage() {
           {saving ? "جارٍ الحفظ…" : "حفظ"}
         </button>
       </section>
+
+      {graphStatus && (
+        <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Graph size={18} weight="duotone" className="text-[#C8A762]" />
+              <h2 className="text-[14px] font-black text-white">الجراف القانوني والبحث الدلالي (GraphRAG)</h2>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                  graphStatus.active_provider_ready
+                    ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
+                    : "bg-amber-500/10 text-amber-300 border border-amber-500/30"
+                }`}
+              >
+                {graphStatus.active_provider_ready ? "مفتاح المزوّد جاهز" : "مفتاح المزوّد غير مضبوط في .env.local"}
+              </span>
+            </div>
+            <button
+              disabled={graphBusy || graphStatus.schemaMissing}
+              onClick={() => runGraphAction({ action: "trigger_sync" }, "طُلبت مزامنة الجراف القانوني فوراً")}
+              className="flex items-center gap-1.5 rounded-xl border border-[#C8A762]/40 px-3 py-1.5 text-[12px] font-bold text-[#C8A762] disabled:opacity-50"
+            >
+              <Lightning size={14} weight="fill" /> طلب مزامنة فورية
+            </button>
+          </div>
+
+          {graphStatus.schemaMissing ? (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-200">
+              مخطط الجراف القانوني غير مطبّق بعد — خُذ نسخة احتياطية عبر{" "}
+              <code className="font-mono text-amber-100">npm run db:backup-schema</code> ثم نفّذ ملف{" "}
+              <code className="font-mono text-amber-100">20261110_10_library_graph_rag.sql</code>. (تعمل الأدوات حالياً بالبحث النصي الاحتياطي دون توقف).
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-xl border border-zinc-800/80 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-500">العقد القانونية</div>
+                  <div className="mt-1 text-base font-black text-white">
+                    {Object.values(graphStatus.node_counts)
+                      .reduce((s, n) => s + (Number(n) || 0), 0)
+                      .toLocaleString("en-US")}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-400">
+                    مواد: {(graphStatus.node_counts.article ?? 0).toLocaleString("en-US")} · مبادئ:{" "}
+                    {(graphStatus.node_counts.principle ?? 0).toLocaleString("en-US")} · مراسيم:{" "}
+                    {(graphStatus.node_counts.decree ?? 0).toLocaleString("en-US")}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-zinc-800/80 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-500">الروابط القانونية</div>
+                  <div className="mt-1 text-base font-black text-white">
+                    {Object.values(graphStatus.edge_counts)
+                      .reduce((s, n) => s + (Number(n) || 0), 0)
+                      .toLocaleString("en-US")}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-400">
+                    استثناءات: {(graphStatus.edge_counts.EXEMPTS_FROM ?? 0).toLocaleString("en-US")} · إحالات:{" "}
+                    {(graphStatus.edge_counts.CITES_ARTICLE ?? 0).toLocaleString("en-US")}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-zinc-800/80 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-500">خزنة المتجهات الدائمة</div>
+                  <div className="mt-1 text-base font-black text-white">
+                    {graphStatus.vault_total_vectors.toLocaleString("en-US")}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-400">
+                    عقد قابلة للتضمين: {graphStatus.embeddable_nodes.toLocaleString("en-US")}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-zinc-800/80 bg-black/30 p-3">
+                  <div className="text-[11px] text-zinc-500">حالة المزامنة التلقائية</div>
+                  <div className="mt-1 text-base font-black text-white">
+                    {graphStatus.sync_state?.dirty
+                      ? "بانتظار المزامنة"
+                      : graphStatus.sync_state?.last_sync_status === "running"
+                        ? "قيد المزامنة…"
+                        : graphStatus.sync_state?.last_sync_status === "succeeded"
+                          ? "متزامن"
+                          : graphStatus.sync_state?.last_sync_status ?? "جاهز"}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-zinc-400">
+                    {graphStatus.sync_state?.last_synced_at
+                      ? `آخر مزامنة: ${new Date(graphStatus.sync_state.last_synced_at).toLocaleString("ar-SA-u-nu-latn")}`
+                      : "لم تُنفَّذ مزامنة كاملة بعد"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800/70 pt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[12px] text-zinc-400">نموذج التضمين النشط:</span>
+                  <select
+                    value={selectedModelId}
+                    onChange={(e) => setSelectedModelId(e.target.value)}
+                    className="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-[12px] text-zinc-100 font-mono"
+                  >
+                    {graphStatus.models.map((m) => (
+                      <option key={m.model_id} value={m.model_id}>
+                        {m.model_id} ({m.dimensions}d · نشط {m.active_vectors.toLocaleString("en-US")} ·{" "}
+                        {m.credentialsConfigured ? "مفتاح متوفر" : "بدون مفتاح"})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    disabled={graphBusy || selectedModelId === graphStatus.default_model_id}
+                    onClick={() =>
+                      runGraphAction(
+                        { action: "switch_model", modelId: selectedModelId },
+                        `فُعِّل النموذج ${selectedModelId} ورُبطت الخزنة تلقائياً`,
+                      )
+                    }
+                    className="rounded-xl bg-[#C8A762] px-3 py-1.5 text-[12px] font-black text-black disabled:opacity-40"
+                  >
+                    تفعيل النموذج
+                  </button>
+                </div>
+
+                <label className="flex items-center gap-2 text-[12px] text-zinc-300">
+                  <input
+                    type="checkbox"
+                    disabled={graphBusy}
+                    checked={graphStatus.sync_state?.include_feqh_vectors === true}
+                    onChange={(e) =>
+                      runGraphAction(
+                        { action: "set_feqh_vectors", enabled: e.target.checked },
+                        e.target.checked
+                          ? "فُعِّل تضمين متجهات كتب الفقه"
+                          : "أُوقف تضمين متجهات كتب الفقه (تبقى مفهرسة نصياً في الجراف)",
+                      )
+                    }
+                  />
+                  تضمين متجهات كتب الفقه (~42 ألف فقرة)
+                </label>
+              </div>
+
+              {graphStatus.sync_state?.last_error && (
+                <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+                  آخر خطأ في المزامنة: {graphStatus.sync_state.last_error}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
         <h2 className="mb-1 text-[14px] font-black text-white">اختبار الاتصال مع n8n</h2>

@@ -6468,3 +6468,39 @@ select 'DATA-01: the two cited fiqh books carry the right type (run 20261109_22)
                         where author like '%عبيد%' and (id = 'الأموال' or id like 'الأموال\_%' or title = 'الأموال')
                           and type is distinct from 'sharia') as ok;
 -- <<< verify:library_feqh_book_type_data01
+
+
+-- >>> verify:library_graph_rag
+-- 2026-11-10 — 20261110_10_library_graph_rag.sql: private `library_graph`
+-- schema (halfvec(768) Partial Expression HNSW index, permanent SHA-256
+-- `embedding_vault`, zero foreign keys into `library.*` so clean wipes never
+-- block, statement-level dirty triggers, and service_role-only `public.graph_rag_*`
+-- RPCs). Always run `npm run db:backup-schema` before applying 20261110_10.
+-- Docker: supabase/tests/rls/library_graph_rag.test.sql
+select 'library_graph schema, halfvec(768) HNSW, zero FKs into library.*, and service_role-only graph_rag_* RPCs (run 20261110_10)' as check,
+       case when to_regnamespace('library_graph') is null then false
+            else to_regclass('library_graph.embedding_vault') is not null
+                 and to_regclass('library_graph.nodes') is not null
+                 and to_regclass('library_graph.node_embeddings') is not null
+                 and to_regclass('library_graph.edges') is not null
+                 and to_regclass('library_graph.idx_lg_hnsw_gemini_embedding_2_768') is not null
+                 and exists (
+                   select 1 from library_graph.embedding_models
+                    where model_id = 'gemini-embedding-2-768' and is_default = true and dimensions = 768
+                 )
+                 and not exists (
+                   select 1 from pg_catalog.pg_constraint c
+                     join pg_catalog.pg_namespace n on n.oid = c.connamespace
+                     join pg_catalog.pg_class refc on refc.oid = c.confrelid
+                    where n.nspname = 'library_graph'
+                      and c.contype = 'f'
+                      and refc.relnamespace = 'library'::regnamespace
+                 )
+                 and not has_schema_privilege('anon', 'library_graph', 'USAGE')
+                 and not has_schema_privilege('authenticated', 'library_graph', 'USAGE')
+                 and to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)') is not null
+                 and not has_function_privilege('anon', 'public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)', 'EXECUTE')
+                 and not has_function_privilege('authenticated', 'public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)', 'EXECUTE')
+                 and has_function_privilege('service_role', 'public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)', 'EXECUTE')
+       end as ok;
+-- <<< verify:library_graph_rag
