@@ -41,6 +41,23 @@ import {
 export const DEFAULT_QUIET_WINDOW_MS = 180_000; // 3 minutes settle time after last library write
 export const MIN_SAFE_LAWS_COUNT = 10; // Mid-wipe safety guard
 
+/** Free-tier quota pause: first wait 15 min, doubling up to 6 h (daily quotas reset once a day). */
+export const QUOTA_BACKOFF_MIN_MS = 15 * 60_000;
+export const QUOTA_BACKOFF_MAX_MS = 6 * 60 * 60_000;
+
+/** True for a provider rate-limit / quota failure (HTTP 429, RESOURCE_EXHAUSTED, "exceeded your quota"). */
+export function isEmbeddingQuotaError(err: unknown): boolean {
+  if (err === null || err === undefined) return false;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Embedding HTTP 429\b|RESOURCE_EXHAUSTED|exceeded (?:your )?(?:current )?quota|rate limit/i.test(msg);
+}
+
+/** The next pause after a quota error: 15 min, then doubling, capped at 6 h. */
+export function nextQuotaBackoffMs(previousMs: number): number {
+  if (!Number.isFinite(previousMs) || previousMs <= 0) return QUOTA_BACKOFF_MIN_MS;
+  return Math.min(QUOTA_BACKOFF_MAX_MS, Math.max(QUOTA_BACKOFF_MIN_MS, previousMs * 2));
+}
+
 export interface SyncDecisionInput {
   dirty: boolean;
   lastWriteAt: string | null;
@@ -167,6 +184,8 @@ export interface SyncRunSummary {
   vaultRelinked: number;
   apiEmbedded: number;
   errorMessage?: string;
+  /** The embedding provider's quota/rate limit stopped this pass; stored vectors were kept. */
+  quotaPaused?: true;
 }
 
 const NODE_BATCH_LIMIT = 350;
@@ -185,6 +204,10 @@ export async function runGraphSyncPass(
     allowSmallCorpus?: boolean;
     maxEmbedNodes?: number;
     batchDelayMs?: number;
+    /** Catch-up mode: the graph is current, so skip every library stream and only embed missing vectors. */
+    embedOnly?: boolean;
+    /** Quota pause: rebuild the graph (+ $0 vault relink) but call no embedding API. */
+    skipEmbedding?: boolean;
     env?: Record<string, string | undefined>;
     embedFn?: (texts: readonly string[], profile: EmbeddingModelProfile) => Promise<number[][]>;
     onProgress?: (msg: string) => void;
@@ -260,179 +283,204 @@ export async function runGraphSyncPass(
   };
 
   try {
-    // ── Pass 1: Stream Laws, Articles, Active Regulations & Amendments ────────
-    const lawMap: LawIndexMap = new Map();
-    const articleEdgeStubs: Array<{
-      node_key: string;
-      law_slug: string | null;
-      is_page_numbered: boolean;
-      display_text: string;
-    }> = [];
+    // embedOnly (catch-up): the graph is already current, so embed until the missing-vector cursor is empty.
+    let missingAfterRelink = Number.POSITIVE_INFINITY;
+    let quotaPaused = false;
 
-    log(`[graph-watchdog] Streaming laws & articles...`);
-    for await (const bundle of backend.streamLawBundles()) {
-      const built = buildArticleGraphNodes(bundle);
-      const artKeyByNumber = new Map<number, string>();
-      for (const n of built) {
-        if (n.article_number !== null && !artKeyByNumber.has(n.article_number)) {
-          artKeyByNumber.set(n.article_number, n.node_key);
+    if (options.embedOnly) {
+      log(`[graph-watchdog] Catch-up mode: graph is current, embedding missing vectors only...`);
+    } else {
+      // ── Pass 1: Stream Laws, Articles, Active Regulations & Amendments ────────
+      const lawMap: LawIndexMap = new Map();
+      const articleEdgeStubs: Array<{
+        node_key: string;
+        law_slug: string | null;
+        is_page_numbered: boolean;
+        display_text: string;
+      }> = [];
+
+      log(`[graph-watchdog] Streaming laws & articles...`);
+      for await (const bundle of backend.streamLawBundles()) {
+        const built = buildArticleGraphNodes(bundle);
+        const artKeyByNumber = new Map<number, string>();
+        for (const n of built) {
+          if (n.article_number !== null && !artKeyByNumber.has(n.article_number)) {
+            artKeyByNumber.set(n.article_number, n.node_key);
+          }
         }
-      }
-      const rootNodeKey = artKeyByNumber.get(1) ?? built[0]?.node_key ?? null;
-      lawMap.set(bundle.law.slug, {
-        slug: bundle.law.slug,
-        title: bundle.law.title,
-        normalizedTitle: normalizeArabicKey(bundle.law.title),
-        parentLawId: bundle.law.parent_law_id ?? null,
-        supersedesLawSlug: bundle.law.supersedes_law_slug ?? null,
-        enablingArticle: bundle.law.enabling_article ?? null,
-        articleKeyByNumber: artKeyByNumber,
-        rootNodeKey,
-      });
+        const rootNodeKey = artKeyByNumber.get(1) ?? built[0]?.node_key ?? null;
+        lawMap.set(bundle.law.slug, {
+          slug: bundle.law.slug,
+          title: bundle.law.title,
+          normalizedTitle: normalizeArabicKey(bundle.law.title),
+          parentLawId: bundle.law.parent_law_id ?? null,
+          supersedesLawSlug: bundle.law.supersedes_law_slug ?? null,
+          enablingArticle: bundle.law.enabling_article ?? null,
+          articleKeyByNumber: artKeyByNumber,
+          rootNodeKey,
+        });
 
-      for (const n of built) {
-        nodeBuffer.push(n);
-        if (
-          !n.is_page_numbered &&
-          (n.node_key === rootNodeKey || /الماد(?:ة|تين)/.test(n.display_text))
-        ) {
-          articleEdgeStubs.push({
-            node_key: n.node_key,
-            law_slug: n.law_slug,
-            is_page_numbered: n.is_page_numbered,
-            display_text: n.display_text,
-          });
+        for (const n of built) {
+          nodeBuffer.push(n);
+          if (
+            !n.is_page_numbered &&
+            (n.node_key === rootNodeKey || /الماد(?:ة|تين)/.test(n.display_text))
+          ) {
+            articleEdgeStubs.push({
+              node_key: n.node_key,
+              law_slug: n.law_slug,
+              is_page_numbered: n.is_page_numbered,
+              display_text: n.display_text,
+            });
+          }
         }
-      }
-      if (nodeBuffer.length >= NODE_BATCH_LIMIT) {
-        await flushNodes();
-      }
-    }
-    await flushNodes();
-
-    // ── Pass 2: Stream Judicial Principles & Extract `INTERPRETS_ARTICLE` ─────
-    log(`[graph-watchdog] Streaming judicial principles...`);
-    for await (const bundle of backend.streamPrincipleBundles()) {
-      const pNodes = buildPrincipleGraphNodes(bundle);
-      for (const p of pNodes) {
-        nodeBuffer.push(p);
-        if (p.display_text.includes("الماد")) {
-          edgeBuffer.push(...extractPrincipleInterpretationEdges(p, lawMap));
-        }
-      }
-      if (nodeBuffer.length >= NODE_BATCH_LIMIT) await flushNodes();
-    }
-    await flushNodes();
-
-    // ── Pass 3: Stream Royal Decrees & Extract `AMENDS_ARTICLE` ───────────────
-    log(`[graph-watchdog] Streaming decrees & circulars...`);
-    for await (const batch of backend.streamDecreeBundles()) {
-      const dNodes = buildDecreeGraphNodes(batch);
-      for (const d of dNodes) {
-        nodeBuffer.push(d);
-        if (d.display_text.includes("الماد")) {
-          edgeBuffer.push(...extractDecreeAmendmentEdges(d, lawMap));
-        }
-      }
-      if (nodeBuffer.length >= NODE_BATCH_LIMIT) await flushNodes();
-    }
-    await flushNodes();
-
-    // ── Pass 4: Stream Fiqh Jurisprudence Blocks (bounded RAM) ────────────────
-    log(`[graph-watchdog] Streaming fiqh jurisprudence blocks (embedVectors=${includeFeqhVectors})...`);
-    for await (const bundle of backend.streamFeqhBundles()) {
-      const fNodes = buildFeqhGraphNodes({
-        ...bundle,
-        includeFeqhVectors,
-      });
-      for (const f of fNodes) {
-        nodeBuffer.push(f);
         if (nodeBuffer.length >= NODE_BATCH_LIMIT) {
           await flushNodes();
         }
       }
-    }
-    await flushNodes();
+      await flushNodes();
 
-    // ── Pass 5: Curated Saudi Legal Concept Bridge Nodes ──────────────────────
-    const conceptNodes = buildCuratedConceptNodes();
-    nodeBuffer.push(...conceptNodes);
-    await flushNodes();
-
-    // ── Pass 6: Upsert All Typed Legal Graph Edges (after all target nodes exist!) ─
-    log(`[graph-watchdog] Extracting & upserting typed legal graph edges...`);
-    for (const stub of articleEdgeStubs) {
-      edgeBuffer.push(...extractArticleEdges(stub, lawMap));
-      if (edgeBuffer.length >= EDGE_BATCH_LIMIT) {
-        await flushEdges();
-      }
-    }
-    edgeBuffer.push(...extractConceptEdges(lawMap));
-    await flushEdges();
-
-    // ── Pass 7: Prune Stale Nodes/Auto-Edges & Instant SQL Vault Relink ($0) ──
-    const pruned = await backend.pruneStale(touchTime);
-    nodesDeleted = pruned.deleted_nodes;
-    const relink = await backend.relinkVault(profile.modelId);
-    vaultRelinked = relink.relinked;
-    log(
-      `[graph-watchdog] Graph synced: upserted=${nodesUpserted}, pruned=${nodesDeleted}, edges=${edgesUpserted}, vaultRelinked=${vaultRelinked}, missingVectors=${relink.missing}`,
-    );
-
-    // ── Pass 8: Incremental Delta Embedding (deduplicated by content_sha256) ──
-    const canEmbed = Boolean(options.embedFn) || hasEmbeddingCredentials(profile, env);
-    if (relink.missing > 0 && canEmbed) {
-      const maxEmbed = options.maxEmbedNodes ?? Number.POSITIVE_INFINITY;
-      const delayMs = options.batchDelayMs ?? Number(env.GRAPH_RAG_BATCH_DELAY_MS ?? 0);
-      let cursor = "";
-
-      while (apiEmbedded < maxEmbed) {
-        const take = Math.min(EMBED_CURSOR_PAGE, maxEmbed - apiEmbedded);
-        const missingBatch = await backend.fetchMissingEmbeddings(profile.modelId, cursor, take);
-        if (missingBatch.length === 0) break;
-        cursor = missingBatch[missingBatch.length - 1].node_key;
-
-        // Deduplicate identical content_sha256 within the batch so duplicate texts embed once!
-        const uniqueShaList: string[] = [];
-        const textBySha = new Map<string, string>();
-        for (const row of missingBatch) {
-          if (!textBySha.has(row.content_sha256)) {
-            uniqueShaList.push(row.content_sha256);
-            textBySha.set(
-              row.content_sha256,
-              [row.contextual_header.trim(), row.display_text.trim()].filter(Boolean).join("\n"),
-            );
+      // ── Pass 2: Stream Judicial Principles & Extract `INTERPRETS_ARTICLE` ─────
+      log(`[graph-watchdog] Streaming judicial principles...`);
+      for await (const bundle of backend.streamPrincipleBundles()) {
+        const pNodes = buildPrincipleGraphNodes(bundle);
+        for (const p of pNodes) {
+          nodeBuffer.push(p);
+          if (p.display_text.includes("الماد")) {
+            edgeBuffer.push(...extractPrincipleInterpretationEdges(p, lawMap));
           }
         }
+        if (nodeBuffer.length >= NODE_BATCH_LIMIT) await flushNodes();
+      }
+      await flushNodes();
 
-        const uniqueTexts = uniqueShaList.map((sha) => textBySha.get(sha) ?? " ");
-        const vectors = options.embedFn
-          ? await options.embedFn(uniqueTexts, profile)
-          : await embedTexts(uniqueTexts, { profile, mode: "document", env });
+      // ── Pass 3: Stream Royal Decrees & Extract `AMENDS_ARTICLE` ───────────────
+      log(`[graph-watchdog] Streaming decrees & circulars...`);
+      for await (const batch of backend.streamDecreeBundles()) {
+        const dNodes = buildDecreeGraphNodes(batch);
+        for (const d of dNodes) {
+          nodeBuffer.push(d);
+          if (d.display_text.includes("الماد")) {
+            edgeBuffer.push(...extractDecreeAmendmentEdges(d, lawMap));
+          }
+        }
+        if (nodeBuffer.length >= NODE_BATCH_LIMIT) await flushNodes();
+      }
+      await flushNodes();
 
-        const literalBySha = new Map<string, string>();
-        uniqueShaList.forEach((sha, idx) => {
-          literalBySha.set(sha, formatHalfvecLiteral(vectors[idx]));
+      // ── Pass 4: Stream Fiqh Jurisprudence Blocks (bounded RAM) ────────────────
+      log(`[graph-watchdog] Streaming fiqh jurisprudence blocks (embedVectors=${includeFeqhVectors})...`);
+      for await (const bundle of backend.streamFeqhBundles()) {
+        const fNodes = buildFeqhGraphNodes({
+          ...bundle,
+          includeFeqhVectors,
         });
-
-        const toStore = missingBatch
-          .map((row) => ({
-            node_key: row.node_key,
-            content_sha256: row.content_sha256,
-            embedding: literalBySha.get(row.content_sha256) ?? "",
-          }))
-          .filter((r) => r.embedding !== "");
-
-        apiEmbedded += await backend.storeEmbeddings(profile.modelId, toStore);
-        log(`[graph-watchdog] Embedded +${toStore.length} vectors (total apiEmbedded=${apiEmbedded})...`);
-
-        if (delayMs > 0) {
-          await sleep(delayMs);
+        for (const f of fNodes) {
+          nodeBuffer.push(f);
+          if (nodeBuffer.length >= NODE_BATCH_LIMIT) {
+            await flushNodes();
+          }
         }
       }
-    } else if (relink.missing > 0 && !canEmbed) {
+      await flushNodes();
+
+      // ── Pass 5: Curated Saudi Legal Concept Bridge Nodes ──────────────────────
+      const conceptNodes = buildCuratedConceptNodes();
+      nodeBuffer.push(...conceptNodes);
+      await flushNodes();
+
+      // ── Pass 6: Upsert All Typed Legal Graph Edges (after all target nodes exist!) ─
+      log(`[graph-watchdog] Extracting & upserting typed legal graph edges...`);
+      for (const stub of articleEdgeStubs) {
+        edgeBuffer.push(...extractArticleEdges(stub, lawMap));
+        if (edgeBuffer.length >= EDGE_BATCH_LIMIT) {
+          await flushEdges();
+        }
+      }
+      edgeBuffer.push(...extractConceptEdges(lawMap));
+      await flushEdges();
+
+      // ── Pass 7: Prune Stale Nodes/Auto-Edges & Instant SQL Vault Relink ($0) ──
+      const pruned = await backend.pruneStale(touchTime);
+      nodesDeleted = pruned.deleted_nodes;
+      const relink = await backend.relinkVault(profile.modelId);
+      vaultRelinked = relink.relinked;
+      missingAfterRelink = relink.missing;
       log(
-        `[graph-watchdog] Note: ${relink.missing} nodes await vectors, but no API key is set for ${profile.modelId}. Graph + FTS retrieval remain active.`,
+        `[graph-watchdog] Graph synced: upserted=${nodesUpserted}, pruned=${nodesDeleted}, edges=${edgesUpserted}, vaultRelinked=${vaultRelinked}, missingVectors=${relink.missing}`,
+      );
+    }
+
+    // ── Pass 8: Incremental Delta Embedding (deduplicated by content_sha256) ──
+    // A provider quota/rate-limit error pauses here: every vector already stored is kept,
+    // the graph stays valid, and the daemon backs off before retrying (catch-up mode).
+    const canEmbed = Boolean(options.embedFn) || hasEmbeddingCredentials(profile, env);
+    if (options.skipEmbedding) {
+      if (missingAfterRelink > 0) {
+        log(`[graph-watchdog] Embedding paused (quota backoff): ${missingAfterRelink} nodes await vectors. Graph + FTS retrieval remain active.`);
+      }
+    } else if (missingAfterRelink > 0 && canEmbed) {
+      const maxEmbed = options.maxEmbedNodes ?? Number.POSITIVE_INFINITY;
+      const delayMs = options.batchDelayMs ?? Number(env.GRAPH_RAG_BATCH_DELAY_MS ?? 0);
+      // Texts per embedding call. Free tiers cap tokens/minute (~30k), so ~20–25 Arabic
+      // articles per call fits; paid tiers can use the provider maximum of 100.
+      const rawPage = Math.trunc(Number(env.GRAPH_RAG_EMBED_BATCH_SIZE));
+      const pageSize = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, EMBED_CURSOR_PAGE) : EMBED_CURSOR_PAGE;
+      let cursor = "";
+
+      try {
+        while (apiEmbedded < maxEmbed) {
+          const take = Math.min(pageSize, maxEmbed - apiEmbedded);
+          const missingBatch = await backend.fetchMissingEmbeddings(profile.modelId, cursor, take);
+          if (missingBatch.length === 0) break;
+          cursor = missingBatch[missingBatch.length - 1].node_key;
+
+          // Deduplicate identical content_sha256 within the batch so duplicate texts embed once!
+          const uniqueShaList: string[] = [];
+          const textBySha = new Map<string, string>();
+          for (const row of missingBatch) {
+            if (!textBySha.has(row.content_sha256)) {
+              uniqueShaList.push(row.content_sha256);
+              textBySha.set(
+                row.content_sha256,
+                [row.contextual_header.trim(), row.display_text.trim()].filter(Boolean).join("\n"),
+              );
+            }
+          }
+
+          const uniqueTexts = uniqueShaList.map((sha) => textBySha.get(sha) ?? " ");
+          const vectors = options.embedFn
+            ? await options.embedFn(uniqueTexts, profile)
+            : await embedTexts(uniqueTexts, { profile, mode: "document", env });
+
+          const literalBySha = new Map<string, string>();
+          uniqueShaList.forEach((sha, idx) => {
+            literalBySha.set(sha, formatHalfvecLiteral(vectors[idx]));
+          });
+
+          const toStore = missingBatch
+            .map((row) => ({
+              node_key: row.node_key,
+              content_sha256: row.content_sha256,
+              embedding: literalBySha.get(row.content_sha256) ?? "",
+            }))
+            .filter((r) => r.embedding !== "");
+
+          apiEmbedded += await backend.storeEmbeddings(profile.modelId, toStore);
+          log(`[graph-watchdog] Embedded +${toStore.length} vectors (total apiEmbedded=${apiEmbedded})...`);
+
+          if (delayMs > 0) {
+            await sleep(delayMs);
+          }
+        }
+      } catch (embedErr) {
+        if (!isEmbeddingQuotaError(embedErr)) throw embedErr;
+        quotaPaused = true;
+        log(`[graph-watchdog] Embedding quota reached after +${apiEmbedded} vectors; pausing (stored vectors are kept).`);
+      }
+    } else if (missingAfterRelink > 0 && !canEmbed) {
+      log(
+        `[graph-watchdog] Note: nodes await vectors, but no API key is set for ${profile.modelId}. Graph + FTS retrieval remain active.`,
       );
     }
 
@@ -445,9 +493,14 @@ export async function runGraphSyncPass(
       edges_upserted: edgesUpserted,
       vault_relinked: vaultRelinked,
       api_embedded: apiEmbedded,
+      ...(quotaPaused
+        ? { error_message: "Embedding quota/rate limit reached; vectors so far are kept and embedding resumes automatically." }
+        : {}),
       details: {
         include_feqh_vectors: includeFeqhVectors,
         model_id: profile.modelId,
+        embed_only: Boolean(options.embedOnly),
+        quota_paused: quotaPaused,
       },
     });
 
@@ -459,6 +512,7 @@ export async function runGraphSyncPass(
       edgesUpserted,
       vaultRelinked,
       apiEmbedded,
+      ...(quotaPaused ? { quotaPaused: true as const } : {}),
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
