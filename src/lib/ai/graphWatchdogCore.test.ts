@@ -7,7 +7,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  FAILURE_BACKOFF_MAX_MS,
+  FAILURE_BACKOFF_MIN_MS,
   isEmbeddingQuotaError,
+  missingVectorsFrom,
+  nextFailureBackoffMs,
   nextQuotaBackoffMs,
   QUOTA_BACKOFF_MAX_MS,
   QUOTA_BACKOFF_MIN_MS,
@@ -375,4 +379,39 @@ test("GRAPH_RAG_EMBED_BATCH_SIZE shrinks each embedding call for free-tier token
     },
   });
   assert.deepEqual(bigSizes, [100, 50]);
+});
+
+// ─── 2026-11-14 review fixes ──────────────────────────────────────────────────
+
+test("nextFailureBackoffMs: a failed pass waits 1 min, doubling, capped at 1 h", () => {
+  assert.equal(nextFailureBackoffMs(0), FAILURE_BACKOFF_MIN_MS);
+  assert.equal(nextFailureBackoffMs(FAILURE_BACKOFF_MIN_MS), 2 * FAILURE_BACKOFF_MIN_MS);
+  assert.equal(nextFailureBackoffMs(FAILURE_BACKOFF_MAX_MS), FAILURE_BACKOFF_MAX_MS);
+});
+
+test("missingVectorsFrom prefers the server's missing_vectors; repealed texts are not missing", () => {
+  const base = {
+    default_model_id: "m",
+    library_laws_count: 400,
+    embeddable_nodes: 100,
+    sync_state: null,
+    models: [{ model_id: "m", provider: "gemini", api_model: "x", dimensions: 4, is_default: true, active_vectors: 90 }],
+  };
+  // 10 repealed nodes have vectors that are not "active": the old count said 10 missing forever.
+  assert.equal(missingVectorsFrom({ ...base, missing_vectors: 0 }), 0);
+  assert.equal(missingVectorsFrom(base), 10, "older servers: embeddable minus active");
+});
+
+test("a pass asked to stop between batches is recorded as failed, and a skipped prune is reported", async () => {
+  const { backend, finishes } = quotaBackend(3);
+  const stopped = await runGraphSyncPass(backend, { embedFn: async (texts) => texts.map(() => [1, 0, 0, 0]), shouldStop: () => true });
+  assert.equal(stopped.status, "failed");
+  assert.match(stopped.errorMessage ?? "", /shutting down/);
+  assert.equal(finishes.at(-1)?.status, "failed");
+
+  const skipping = quotaBackend(0);
+  skipping.backend.pruneStale = async () => ({ deleted_nodes: 0, deleted_edges: 0, skipped: true });
+  const res = await runGraphSyncPass(skipping.backend, {});
+  assert.equal(res.status, "succeeded");
+  assert.equal(res.pruneSkipped, true);
 });

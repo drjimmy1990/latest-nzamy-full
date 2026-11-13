@@ -13,6 +13,7 @@
 
 import type { createServiceClient } from "../supabase/server.ts";
 import { embedQueryText, rerankCandidates, resolveEmbeddingModelProfile } from "./embeddingClient.ts";
+import { embedQueryWithin, graphRagEnabled, QUERY_EMBED_DEADLINE_MS } from "./graphRagSwitch.ts";
 import {
   retrieveLibrary,
   type PackageSource,
@@ -119,6 +120,8 @@ export interface SearchLegalGraphDeps {
   ) => Promise<Retrieved>;
   /** Optional custom reranker returning reordered 0-based indices (used in tests or custom hooks). */
   rerank?: (query: string, sources: readonly PackageSource[]) => Promise<number[] | null>;
+  /** The graph path on/off; defaults to the NZAMY_GRAPH_RAG switch. Off = the keyword search only. */
+  enabled?: boolean;
 }
 
 export async function searchLegalGraphWith(
@@ -126,19 +129,17 @@ export async function searchLegalGraphWith(
   req: GraphRetrieveRequest,
   deps: SearchLegalGraphDeps = {},
 ): Promise<Retrieved> {
+  const enabled = deps.enabled ?? graphRagEnabled();
   const embedFn =
     deps.embedQuery ??
     ((text: string, modelId?: string | null) =>
-      embedQueryText(
-        text,
-        modelId ? { profile: resolveEmbeddingModelProfile(modelId) } : undefined,
-      )
-        .then((r) => r?.literal ?? null)
-        .catch(() => null));
+      embedQueryWithin(text, QUERY_EMBED_DEADLINE_MS, (q, o) =>
+        embedQueryText(q, modelId ? { ...o, profile: resolveEmbeddingModelProfile(modelId) } : o),
+      ).then((r) => r?.literal ?? null));
   const retrieveFn = deps.retrieve ?? retrieveLibrary;
 
   const semanticSeed = (req.question || req.queries?.join(" ") || "").trim();
-  const queryEmbedding = semanticSeed ? await embedFn(semanticSeed, req.modelId).catch(() => null) : null;
+  const queryEmbedding = enabled && semanticSeed ? await embedFn(semanticSeed, req.modelId).catch(() => null) : null;
 
   const retrieved = await retrieveFn(
     admin,
@@ -150,11 +151,7 @@ export async function searchLegalGraphWith(
       lawSlug: req.lawSlug ?? undefined,
     },
     undefined,
-    {
-      queryEmbedding,
-      modelId: req.modelId ?? null,
-      useGraph: true,
-    },
+    enabled ? { queryEmbedding, modelId: req.modelId ?? null, useGraph: true } : undefined,
   );
 
   if (retrieved.sources.length <= 1 || !semanticSeed) {

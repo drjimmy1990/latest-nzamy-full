@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
 import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
-import { embedQueryText } from "@/lib/ai/embeddingClient";
+import { embedQueryWithin, graphRagEnabled } from "@/lib/ai/graphRagSwitch";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
@@ -115,6 +115,7 @@ export async function POST(request: NextRequest) {
     };
 
     const admin = await createServiceClient();
+    const graphOn = graphRagEnabled();
     // Off unless NZAMY_AI_TEXT_FILES is on: .docx, .txt, .md and pasted text are
     // then refused before any charge (aiFiles.ts, runCore.ts).
     const textFiles = aiTextFilesConfig({
@@ -129,9 +130,11 @@ export async function POST(request: NextRequest) {
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
         libraryAccess: libraryAccessFor(user.id),
         onRunCreated: libraryRunCreatedFor(user.id),
-        embedQuery: (text) => embedQueryText(text).then((r) => (r ? { modelId: r.modelId, literal: r.literal } : null)),
+        // GraphRAG only behind NZAMY_GRAPH_RAG=on (graphRagSwitch): off, the
+        // run never embeds the question and never calls the graph.
+        ...(graphOn ? { embedQuery: (text: string) => embedQueryWithin(text) } : {}),
         retrieve: (queries, limits, pin, opts) =>
-          retrieveLibrary(admin, queries, limits, pin, undefined, opts ?? { useGraph: true }),
+          retrieveLibrary(admin, queries, limits, pin, undefined, graphOn ? (opts ?? { useGraph: true }) : undefined),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
         ...(textFiles ? { pastedFileUrl: pastedFileUrlFrom(textFiles) } : {}),
         progress: progressSink(admin, (work) => after(work)),

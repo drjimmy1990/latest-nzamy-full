@@ -91,8 +91,8 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     "library_invitation_redemptions", "share_passcode_lockout", "group_membership_self_check", "admin_audit_events_no_guest",
     "academy_certificates_policy", "academy_answer_keys", "library_merged_regulations", "library_principles_printed_page",
     "library_feqh_book_type_data01",
-    // Legal GraphRAG (20261110_10):
-    "library_graph_rag"]) {
+    // Legal GraphRAG (20261110_10), its explorer (20261113_10) and review fixes (20261114_10):
+    "library_graph_rag", "library_graph_explorer", "library_graph_rag_fixes"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

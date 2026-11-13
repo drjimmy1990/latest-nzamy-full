@@ -38,6 +38,8 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/subscriptions/orders": "payments.read",
   "/dashboard/admin/subscriptions/payments": "read",
   "/dashboard/admin/ai-usage": "read",
+  // Legal Graph Explorer: GET /api/v1/admin/graph-explorer is requireStaff("read").
+  "/dashboard/admin/graph-explorer": "read",
   "/dashboard/admin/ai-usage/credits": "read",
   "/dashboard/admin/ai-usage/reports": "read",
   "/dashboard/admin/reviews": "read",

@@ -18,11 +18,14 @@ import {
   buildDecreeGraphNodes,
   buildFeqhGraphNodes,
   buildPrincipleGraphNodes,
-  extractArticleEdges,
   extractConceptEdges,
   extractDecreeAmendmentEdges,
   extractPrincipleInterpretationEdges,
   normalizeArabicKey,
+  resolveArticleEdges,
+  resolveParentLawSlugs,
+  scanArticleRefs,
+  type ArticleRefCandidate,
   type GraphEdgePayload,
   type GraphNodePayload,
   type LawIndexMap,
@@ -44,6 +47,24 @@ export const MIN_SAFE_LAWS_COUNT = 10; // Mid-wipe safety guard
 /** Free-tier quota pause: first wait 15 min, doubling up to 6 h (daily quotas reset once a day). */
 export const QUOTA_BACKOFF_MIN_MS = 15 * 60_000;
 export const QUOTA_BACKOFF_MAX_MS = 6 * 60 * 60_000;
+
+/** After a failed pass (or an embed-only pass that stored nothing): 1 min, doubling up to 1 h. */
+export const FAILURE_BACKOFF_MIN_MS = 60_000;
+export const FAILURE_BACKOFF_MAX_MS = 60 * 60_000;
+
+/** The next pause after a failed or stuck pass: 1 min, then doubling, capped at 1 h. */
+export function nextFailureBackoffMs(previousMs: number): number {
+  if (!Number.isFinite(previousMs) || previousMs <= 0) return FAILURE_BACKOFF_MIN_MS;
+  return Math.min(FAILURE_BACKOFF_MAX_MS, Math.max(FAILURE_BACKOFF_MIN_MS, previousMs * 2));
+}
+
+/** Thrown between batches once the daemon is asked to stop; the run is then recorded as failed. */
+export class SyncStoppedError extends Error {
+  constructor() {
+    super("stopped: the watchdog is shutting down");
+    this.name = "SyncStoppedError";
+  }
+}
 
 /** True for a provider rate-limit / quota failure (HTTP 429, RESOURCE_EXHAUSTED, "exceeded your quota"). */
 export function isEmbeddingQuotaError(err: unknown): boolean {
@@ -120,6 +141,8 @@ export interface GraphStatusSnapshot {
   default_model_id: string | null;
   library_laws_count: number;
   embeddable_nodes: number;
+  /** Embeddable nodes with no vector for the default model (20261114_10); absent on the first migration. */
+  missing_vectors?: number;
   sync_state: {
     dirty?: boolean;
     include_feqh_vectors?: boolean;
@@ -166,7 +189,8 @@ export interface GraphWatchdogBackend {
   }>;
   upsertNodes(rows: readonly GraphNodePayload[], touchTime: string): Promise<number>;
   upsertEdges(rows: readonly GraphEdgePayload[], touchTime: string): Promise<number>;
-  pruneStale(syncStartedAt: string): Promise<{ deleted_nodes: number; deleted_edges: number }>;
+  /** `skipped` (20261114_10): a library write landed during the pass, so nothing was deleted. */
+  pruneStale(syncStartedAt: string): Promise<{ deleted_nodes: number; deleted_edges: number; skipped?: boolean }>;
   relinkVault(modelId: string): Promise<{ relinked: number; pruned: number; missing: number }>;
   fetchMissingEmbeddings(modelId: string, afterKey: string, limit: number): Promise<MissingEmbeddingRow[]>;
   storeEmbeddings(
@@ -186,6 +210,21 @@ export interface SyncRunSummary {
   errorMessage?: string;
   /** The embedding provider's quota/rate limit stopped this pass; stored vectors were kept. */
   quotaPaused?: true;
+  /** A library write landed during the pass, so stale nodes were kept for the next pass. */
+  pruneSkipped?: true;
+}
+
+/**
+ * Nodes still missing a vector, from a status snapshot: the server's exact
+ * count when it has one, else embeddable nodes minus the default model's
+ * active vectors (an over-count: repealed texts' vectors are not "active").
+ */
+export function missingVectorsFrom(status: GraphStatusSnapshot): number {
+  if (typeof status.missing_vectors === "number" && Number.isFinite(status.missing_vectors)) {
+    return Math.max(0, status.missing_vectors);
+  }
+  const dbModel = status.models?.find((m) => m.is_default) ?? status.models?.[0];
+  return Math.max(0, Number(status.embeddable_nodes ?? 0) - Number(dbModel?.active_vectors ?? 0));
 }
 
 const NODE_BATCH_LIMIT = 350;
@@ -211,10 +250,15 @@ export async function runGraphSyncPass(
     env?: Record<string, string | undefined>;
     embedFn?: (texts: readonly string[], profile: EmbeddingModelProfile) => Promise<number[][]>;
     onProgress?: (msg: string) => void;
+    /** Checked between batches: true stops the pass, which is then recorded as failed (SIGTERM). */
+    shouldStop?: () => boolean;
   } = {},
 ): Promise<SyncRunSummary> {
   const env = options.env ?? process.env;
   const log = options.onProgress ?? (() => {});
+  const checkStop = () => {
+    if (options.shouldStop?.()) throw new SyncStoppedError();
+  };
   const status = await backend.getStatus();
 
   const dbDefault = status.models?.find((m) => m.is_default) ?? status.models?.[0];
@@ -267,6 +311,7 @@ export async function runGraphSyncPass(
   let edgeBuffer: GraphEdgePayload[] = [];
 
   const flushNodes = async () => {
+    checkStop();
     while (nodeBuffer.length > 0) {
       const slice = nodeBuffer.slice(0, NODE_BATCH_LIMIT);
       nodeBuffer = nodeBuffer.slice(NODE_BATCH_LIMIT);
@@ -275,6 +320,7 @@ export async function runGraphSyncPass(
   };
 
   const flushEdges = async () => {
+    checkStop();
     while (edgeBuffer.length > 0) {
       const slice = edgeBuffer.slice(0, EDGE_BATCH_LIMIT);
       edgeBuffer = edgeBuffer.slice(EDGE_BATCH_LIMIT);
@@ -286,17 +332,20 @@ export async function runGraphSyncPass(
     // embedOnly (catch-up): the graph is already current, so embed until the missing-vector cursor is empty.
     let missingAfterRelink = Number.POSITIVE_INFINITY;
     let quotaPaused = false;
+    let pruneSkipped = false;
 
     if (options.embedOnly) {
       log(`[graph-watchdog] Catch-up mode: graph is current, embedding missing vectors only...`);
     } else {
       // ── Pass 1: Stream Laws, Articles, Active Regulations & Amendments ────────
       const lawMap: LawIndexMap = new Map();
+      // Only the references each article makes (small records), never the article texts:
+      // holding ~100k texts until Pass 6 cost >200 MB and got the daemon restarted mid-pass.
       const articleEdgeStubs: Array<{
         node_key: string;
         law_slug: string | null;
         is_page_numbered: boolean;
-        display_text: string;
+        refs: ArticleRefCandidate[];
       }> = [];
 
       log(`[graph-watchdog] Streaming laws & articles...`);
@@ -314,6 +363,7 @@ export async function runGraphSyncPass(
           title: bundle.law.title,
           normalizedTitle: normalizeArabicKey(bundle.law.title),
           parentLawId: bundle.law.parent_law_id ?? null,
+          instrumentId: bundle.law.instrument_id ?? null,
           supersedesLawSlug: bundle.law.supersedes_law_slug ?? null,
           enablingArticle: bundle.law.enabling_article ?? null,
           articleKeyByNumber: artKeyByNumber,
@@ -322,15 +372,14 @@ export async function runGraphSyncPass(
 
         for (const n of built) {
           nodeBuffer.push(n);
-          if (
-            !n.is_page_numbered &&
-            (n.node_key === rootNodeKey || /الماد(?:ة|تين)/.test(n.display_text))
-          ) {
+          if (n.is_page_numbered) continue;
+          const refs = scanArticleRefs(n.display_text);
+          if (refs.length > 0 || n.node_key === rootNodeKey) {
             articleEdgeStubs.push({
               node_key: n.node_key,
               law_slug: n.law_slug,
               is_page_numbered: n.is_page_numbered,
-              display_text: n.display_text,
+              refs,
             });
           }
         }
@@ -339,6 +388,8 @@ export async function runGraphSyncPass(
         }
       }
       await flushNodes();
+      // `parent_law_id` is a registry instrument_id: map it to the parent's slug.
+      resolveParentLawSlugs(lawMap);
 
       // ── Pass 2: Stream Judicial Principles & Extract `INTERPRETS_ARTICLE` ─────
       log(`[graph-watchdog] Streaming judicial principles...`);
@@ -346,7 +397,7 @@ export async function runGraphSyncPass(
         const pNodes = buildPrincipleGraphNodes(bundle);
         for (const p of pNodes) {
           nodeBuffer.push(p);
-          if (p.display_text.includes("الماد")) {
+          if (/ماد(?:ة|تين)/.test(p.display_text)) {
             edgeBuffer.push(...extractPrincipleInterpretationEdges(p, lawMap));
           }
         }
@@ -360,7 +411,7 @@ export async function runGraphSyncPass(
         const dNodes = buildDecreeGraphNodes(batch);
         for (const d of dNodes) {
           nodeBuffer.push(d);
-          if (d.display_text.includes("الماد")) {
+          if (/ماد(?:ة|تين)/.test(d.display_text)) {
             edgeBuffer.push(...extractDecreeAmendmentEdges(d, lawMap));
           }
         }
@@ -392,7 +443,7 @@ export async function runGraphSyncPass(
       // ── Pass 6: Upsert All Typed Legal Graph Edges (after all target nodes exist!) ─
       log(`[graph-watchdog] Extracting & upserting typed legal graph edges...`);
       for (const stub of articleEdgeStubs) {
-        edgeBuffer.push(...extractArticleEdges(stub, lawMap));
+        edgeBuffer.push(...resolveArticleEdges(stub, lawMap));
         if (edgeBuffer.length >= EDGE_BATCH_LIMIT) {
           await flushEdges();
         }
@@ -401,8 +452,13 @@ export async function runGraphSyncPass(
       await flushEdges();
 
       // ── Pass 7: Prune Stale Nodes/Auto-Edges & Instant SQL Vault Relink ($0) ──
+      checkStop();
       const pruned = await backend.pruneStale(touchTime);
       nodesDeleted = pruned.deleted_nodes;
+      if (pruned.skipped) {
+        pruneSkipped = true;
+        log(`[graph-watchdog] Prune skipped: the library changed during this pass; the next pass re-checks.`);
+      }
       const relink = await backend.relinkVault(profile.modelId);
       vaultRelinked = relink.relinked;
       missingAfterRelink = relink.missing;
@@ -430,6 +486,7 @@ export async function runGraphSyncPass(
 
       try {
         while (apiEmbedded < maxEmbed) {
+          checkStop();
           const take = Math.min(pageSize, maxEmbed - apiEmbedded);
           const missingBatch = await backend.fetchMissingEmbeddings(profile.modelId, cursor, take);
           if (missingBatch.length === 0) break;
@@ -501,6 +558,7 @@ export async function runGraphSyncPass(
         model_id: profile.modelId,
         embed_only: Boolean(options.embedOnly),
         quota_paused: quotaPaused,
+        prune_skipped: pruneSkipped,
       },
     });
 
@@ -513,6 +571,7 @@ export async function runGraphSyncPass(
       vaultRelinked,
       apiEmbedded,
       ...(quotaPaused ? { quotaPaused: true as const } : {}),
+      ...(pruneSkipped ? { pruneSkipped: true as const } : {}),
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
