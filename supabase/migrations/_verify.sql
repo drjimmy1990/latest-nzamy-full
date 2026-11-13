@@ -6505,6 +6505,21 @@ select 'library_graph schema, halfvec(768) HNSW, zero FKs into library.*, and se
        end as ok;
 -- <<< verify:library_graph_rag
 
+-- >>> verify:library_graph_explorer
+-- 2026-11-13 — 20261113_10_library_graph_explorer.sql: four read-only,
+-- service_role-only RPCs behind /dashboard/admin/graph-explorer. Requires
+-- 20261110_10.
+select 'graph explorer RPCs exist, service_role only (run 20261113_10)' as check,
+       to_regprocedure('public.graph_rag_explore_overview()') is not null
+       and to_regprocedure('public.graph_rag_explore_search(text, text[], integer)') is not null
+       and to_regprocedure('public.graph_rag_explore_neighborhood(text, integer, text[], integer)') is not null
+       and to_regprocedure('public.graph_rag_explore_node(text)') is not null
+       and not has_function_privilege('anon', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+       as ok;
+-- <<< verify:library_graph_explorer
+
 
 -- >>> verify:library_graph_rag_fixes
 -- 2026-11-14 — 20261114_10_library_graph_rag_fixes.sql: no graph function

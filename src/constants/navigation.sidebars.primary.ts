@@ -179,6 +179,7 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
     title: "استخدام الذكاء الاصطناعي", titleEn: "AI Usage",
     items: [
       { label: "تشغيلات AI",         labelEn: "AI Runs",         href: "/dashboard/admin/ai-usage",              icon: "Robot" },
+      { label: "مستكشف الجراف القانوني", labelEn: "Legal Graph Explorer", href: "/dashboard/admin/graph-explorer", icon: "TreeStructure" },
       { label: "استهلاك الذكاء الاصطناعي",labelEn: "AI Usage",      href: "/dashboard/admin/ai-usage/credits",       icon: "Coins", badge: "قريباً" },
       { label: "تقارير الجودة",       labelEn: "Quality",           href: "/dashboard/admin/ai-usage/reports",       icon: "ChartLineUp", badge: "قريباً" },
     ],

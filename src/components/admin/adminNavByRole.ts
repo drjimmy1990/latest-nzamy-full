@@ -12,7 +12,7 @@ import {
   Scales, ShieldCheck, Database, ClipboardText,
   Money, Megaphone, Star, Globe, BookOpen, Article,
   Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray, Files,
-  Lightbulb,
+  Lightbulb, Graph,
 } from "@phosphor-icons/react";
 import type { StaffRole } from "../../lib/auth/staffRoles.ts";
 import { filterNavGroupsByRole } from "../../lib/auth/adminNavAccess.ts";
@@ -45,6 +45,7 @@ export const NAV = [
     section: "النظام",
     items: [
       { href: "/dashboard/admin/ai-usage",   icon: Robot,   label: "استخدام الذكاء الاصطناعي" },
+      { href: "/dashboard/admin/graph-explorer", icon: Graph, label: "مستكشف الجراف القانوني" },
       { href: "/dashboard/admin/service-orders", icon: Files, label: "طلبات الخدمات" },
       { href: "/dashboard/admin/tickets",    icon: Ticket,  label: "تذاكر الدعم" },
       { href: "/dashboard/admin/feature-requests", icon: Lightbulb, label: "طلبات الميزات" },

@@ -256,13 +256,21 @@ export default function AdminAIUsagePage() {
                 {graphStatus.active_provider_ready ? "مفتاح المزوّد جاهز" : "مفتاح المزوّد غير مضبوط في .env.local"}
               </span>
             </div>
-            <button
-              disabled={graphBusy || graphStatus.schemaMissing}
-              onClick={() => runGraphAction({ action: "trigger_sync" }, "طُلبت مزامنة الجراف القانوني فوراً")}
-              className="flex items-center gap-1.5 rounded-xl border border-[#C8A762]/40 px-3 py-1.5 text-[12px] font-bold text-[#C8A762] disabled:opacity-50"
-            >
-              <Lightning size={14} weight="fill" /> طلب مزامنة فورية
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href="/dashboard/admin/graph-explorer"
+                className="flex items-center gap-1.5 rounded-xl border border-zinc-700 px-3 py-1.5 text-[12px] font-bold text-zinc-200 hover:border-[#C8A762]/60"
+              >
+                <Graph size={14} /> فتح المستكشف
+              </a>
+              <button
+                disabled={graphBusy || graphStatus.schemaMissing}
+                onClick={() => runGraphAction({ action: "trigger_sync" }, "طُلبت مزامنة الجراف القانوني فوراً")}
+                className="flex items-center gap-1.5 rounded-xl border border-[#C8A762]/40 px-3 py-1.5 text-[12px] font-bold text-[#C8A762] disabled:opacity-50"
+              >
+                <Lightning size={14} weight="fill" /> طلب مزامنة فورية
+              </button>
+            </div>
           </div>
 
           {graphStatus.schemaMissing ? (
