@@ -24,6 +24,7 @@ import {
   resolveEmbeddingModelProfile,
 } from "../src/lib/ai/embeddingClient.ts";
 import {
+  nextQuotaBackoffMs,
   runGraphSyncPass,
   shouldTriggerSync,
 } from "../src/lib/ai/graphWatchdogCore.ts";
@@ -426,6 +427,10 @@ async function main() {
   }
 
   console.log(`[graph-watchdog] Daemon started (poll every ${intervalSec}s, quiet window 180s)...`);
+  // Free-tier quota pause: after a 429 / RESOURCE_EXHAUSTED the daemon stops calling the
+  // embedding API for 15 min (doubling up to 6 h). Library changes still rebuild the graph.
+  let quotaPausedUntil = 0;
+  let quotaBackoffMs = 0;
   while (!shuttingDown) {
     try {
       const st = await backend.getStatus();
@@ -435,26 +440,42 @@ async function main() {
         : resolveEmbeddingModelProfile(st.default_model_id);
       const activeVecs = Number(dbModel?.active_vectors ?? 0);
       const missingVecs = Math.max(0, Number(st.embeddable_nodes ?? 0) - activeVecs);
+      const quotaPaused = Date.now() < quotaPausedUntil;
 
       const decision = shouldTriggerSync({
         dirty: Boolean(st.sync_state?.dirty),
         lastWriteAt: st.sync_state?.last_write_at ?? null,
         libraryLawsCount: Number(st.library_laws_count ?? 0),
-        missingVectors: missingVecs,
+        missingVectors: quotaPaused ? 0 : missingVecs,
         hasCredentials: hasEmbeddingCredentials(profile),
         force: isForce,
       });
 
       if (decision.trigger) {
-        console.log(`[graph-watchdog] Triggering sync (${decision.reason})...`);
+        const embedOnly = decision.reason === "missing_embeddings";
+        console.log(
+          `[graph-watchdog] Triggering sync (${decision.reason}${embedOnly ? ", embed-only catch-up" : ""}${quotaPaused ? ", embedding paused" : ""})...`,
+        );
         const res = await runGraphSyncPass(backend, {
           triggerSource: `watchdog_${decision.reason}`,
           includeFeqhVectors: includeFeqhFlag,
           maxEmbedNodes,
           batchDelayMs,
+          embedOnly,
+          skipEmbedding: quotaPaused,
           onProgress: (m) => console.log(m),
         });
         console.log("[graph-watchdog] Pass finished:", JSON.stringify(res));
+
+        if (res.quotaPaused) {
+          quotaBackoffMs = nextQuotaBackoffMs(quotaBackoffMs);
+          quotaPausedUntil = Date.now() + quotaBackoffMs;
+          console.log(
+            `[graph-watchdog] Embedding quota reached — pausing API calls for ${Math.round(quotaBackoffMs / 60000)} min (until ${new Date(quotaPausedUntil).toISOString()}).`,
+          );
+        } else if (res.status === "succeeded" && !quotaPaused) {
+          quotaBackoffMs = 0;
+        }
       }
     } catch (err) {
       console.error("[graph-watchdog] Poll error:", err instanceof Error ? err.message : err);

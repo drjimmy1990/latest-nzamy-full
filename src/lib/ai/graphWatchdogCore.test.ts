@@ -7,6 +7,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isEmbeddingQuotaError,
+  nextQuotaBackoffMs,
+  QUOTA_BACKOFF_MAX_MS,
+  QUOTA_BACKOFF_MIN_MS,
   runGraphSyncPass,
   shouldTriggerSync,
   type GraphWatchdogBackend,
@@ -200,4 +204,175 @@ test("runGraphSyncPass builds nodes & edges across all corpora, relinks vault, d
   assert.equal(summary.vaultRelinked, 1);
   assert.ok(embedApiCalls > 0);
   assert.equal(finishPayloads[0]?.status, "succeeded");
+});
+
+// ─── Free-tier quota resilience ───────────────────────────────────────────────
+
+/** A backend whose graph already exists: N embeddable nodes waiting for vectors. */
+function quotaBackend(nodeCount: number) {
+  const pending = Array.from({ length: nodeCount }, (_, i) => ({
+    node_key: `article:law__art-${String(i).padStart(4, "0")}`,
+    node_type: "article",
+    content_sha256: `sha-${i}`,
+    contextual_header: "نظام العمل",
+    display_text: `نص المادة ${i}`,
+  }));
+  const embedded = new Set<string>();
+  const calls = { streams: 0, prune: 0, relink: 0 };
+  const finishes: Array<Record<string, unknown>> = [];
+  const empty = async function* () {
+    calls.streams++;
+  };
+  const backend: GraphWatchdogBackend = {
+    async getStatus() {
+      return {
+        default_model_id: "gemini-embedding-2-768",
+        library_laws_count: 4566,
+        embeddable_nodes: nodeCount,
+        sync_state: { dirty: false, include_feqh_vectors: false, last_write_at: null },
+        models: [
+          {
+            model_id: "gemini-embedding-2-768",
+            provider: "gemini",
+            api_model: "models/gemini-embedding-2-preview",
+            dimensions: 4,
+            is_default: true,
+            active_vectors: embedded.size,
+          },
+        ],
+      };
+    },
+    async startRun() {
+      return { ok: true, run_id: 7, started_at: "2026-11-13T18:00:00Z" };
+    },
+    async finishRun(p) {
+      finishes.push(p);
+    },
+    streamLawBundles: empty,
+    streamPrincipleBundles: empty,
+    streamDecreeBundles: empty,
+    streamFeqhBundles: empty,
+    async upsertNodes(rows) {
+      return rows.length;
+    },
+    async upsertEdges(rows) {
+      return rows.length;
+    },
+    async pruneStale() {
+      calls.prune++;
+      return { deleted_nodes: 0, deleted_edges: 0 };
+    },
+    async relinkVault() {
+      calls.relink++;
+      return { relinked: 0, pruned: 0, missing: pending.length - embedded.size };
+    },
+    async fetchMissingEmbeddings(_m, afterKey, limit) {
+      return pending.filter((r) => !embedded.has(r.node_key) && r.node_key > afterKey).slice(0, limit);
+    },
+    async storeEmbeddings(_m, rows) {
+      for (const r of rows) embedded.add(r.node_key);
+      return rows.length;
+    },
+  };
+  return { backend, embedded, calls, finishes };
+}
+
+test("isEmbeddingQuotaError recognises Gemini/OpenAI rate-limit and quota failures only", () => {
+  assert.equal(isEmbeddingQuotaError(new Error('Embedding HTTP 429: {"error":{"status":"RESOURCE_EXHAUSTED"}}')), true);
+  assert.equal(isEmbeddingQuotaError(new Error("You exceeded your current quota, please check your plan")), true);
+  assert.equal(isEmbeddingQuotaError("RESOURCE_EXHAUSTED"), true);
+  assert.equal(isEmbeddingQuotaError(new Error("Embedding HTTP 400: invalid argument")), false);
+  assert.equal(isEmbeddingQuotaError(new Error("library.laws read failed: timeout")), false);
+  assert.equal(isEmbeddingQuotaError(null), false);
+});
+
+test("nextQuotaBackoffMs starts at 15 minutes, doubles, and caps at 6 hours", () => {
+  assert.equal(QUOTA_BACKOFF_MIN_MS, 15 * 60_000);
+  assert.equal(QUOTA_BACKOFF_MAX_MS, 6 * 60 * 60_000);
+  assert.equal(nextQuotaBackoffMs(0), QUOTA_BACKOFF_MIN_MS);
+  assert.equal(nextQuotaBackoffMs(QUOTA_BACKOFF_MIN_MS), 30 * 60_000);
+  assert.equal(nextQuotaBackoffMs(4 * 60 * 60_000), QUOTA_BACKOFF_MAX_MS);
+  assert.equal(nextQuotaBackoffMs(QUOTA_BACKOFF_MAX_MS), QUOTA_BACKOFF_MAX_MS);
+});
+
+test("embedOnly catch-up never re-streams the library: it only embeds the missing vectors", async () => {
+  const { backend, embedded, calls } = quotaBackend(250);
+  const summary = await runGraphSyncPass(backend, {
+    embedOnly: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key" },
+    embedFn: async (texts) => texts.map(() => [1, 0, 0, 0]),
+  });
+  assert.equal(summary.status, "succeeded");
+  assert.equal(calls.streams, 0, "no library table is streamed in catch-up mode");
+  assert.equal(calls.prune, 0, "nothing is pruned in catch-up mode");
+  assert.equal(embedded.size, 250);
+  assert.equal(summary.apiEmbedded, 250);
+  assert.equal(summary.quotaPaused, undefined);
+});
+
+test("a quota error mid-embedding keeps the vectors already stored and pauses instead of failing", async () => {
+  const { backend, embedded, finishes } = quotaBackend(300);
+  let call = 0;
+  const summary = await runGraphSyncPass(backend, {
+    embedOnly: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key" },
+    embedFn: async (texts) => {
+      call++;
+      if (call === 3) throw new Error('Embedding HTTP 429: {"error":{"status":"RESOURCE_EXHAUSTED"}}');
+      return texts.map(() => [1, 0, 0, 0]);
+    },
+  });
+  assert.equal(summary.status, "succeeded", "the graph is fine; only the vectors are paused");
+  assert.equal(summary.quotaPaused, true);
+  assert.equal(embedded.size, 200, "the first two batches stay stored");
+  assert.equal(summary.apiEmbedded, 200);
+  assert.equal(finishes[0]?.status, "succeeded");
+  assert.match(String(finishes[0]?.error_message ?? ""), /quota/i);
+});
+
+test("skipEmbedding rebuilds the graph while the quota is paused, without calling the embedding API", async () => {
+  const { backend, embedded, calls } = quotaBackend(50);
+  let apiCalls = 0;
+  const summary = await runGraphSyncPass(backend, {
+    skipEmbedding: true,
+    allowSmallCorpus: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key" },
+    embedFn: async (texts) => {
+      apiCalls++;
+      return texts.map(() => [1, 0, 0, 0]);
+    },
+  });
+  assert.equal(summary.status, "succeeded");
+  assert.ok(calls.streams > 0, "the graph itself is rebuilt");
+  assert.equal(calls.relink, 1, "the $0 vault relink still runs");
+  assert.equal(apiCalls, 0);
+  assert.equal(embedded.size, 0);
+});
+
+test("GRAPH_RAG_EMBED_BATCH_SIZE shrinks each embedding call for free-tier token-per-minute limits", async () => {
+  const { backend, embedded } = quotaBackend(45);
+  const callSizes: number[] = [];
+  await runGraphSyncPass(backend, {
+    embedOnly: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key", GRAPH_RAG_EMBED_BATCH_SIZE: "20" },
+    embedFn: async (texts) => {
+      callSizes.push(texts.length);
+      return texts.map(() => [1, 0, 0, 0]);
+    },
+  });
+  assert.deepEqual(callSizes, [20, 20, 5]);
+  assert.equal(embedded.size, 45);
+
+  // Out-of-range values fall back to safe bounds (1..100)
+  const big = quotaBackend(150);
+  const bigSizes: number[] = [];
+  await runGraphSyncPass(big.backend, {
+    embedOnly: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key", GRAPH_RAG_EMBED_BATCH_SIZE: "5000" },
+    embedFn: async (texts) => {
+      bigSizes.push(texts.length);
+      return texts.map(() => [1, 0, 0, 0]);
+    },
+  });
+  assert.deepEqual(bigSizes, [100, 50]);
 });
