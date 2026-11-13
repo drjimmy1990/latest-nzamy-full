@@ -7,7 +7,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSources, cleanQueries, interleave, retrieveLibrary, SOURCE_TEXT_MAX } from "./retrieval.ts";
+import { buildSources, cleanQueries, GRAPH_BUDGET_MS, interleave, retrieveLibrary, SOURCE_TEXT_MAX } from "./retrieval.ts";
 
 test("cleanQueries keeps 1–4 distinct short searches and strips the search operators", () => {
   assert.deepEqual(cleanQueries(["مكافأة نهاية الخدمة", "  استقالة   العامل ", "مكافأة نهاية الخدمة"]), [
@@ -368,7 +368,7 @@ test("GraphRAG: retrieveLibrary uses graph_rag_retrieve across all 4 corpora, pr
   const out = await retrieveLibrary(
     graphAdmin as never,
     ["فصل تعسفي"],
-    { laws: 6, principles: 3 },
+    { laws: 6, principles: 3, decrees: 1, feqh: 1 },
     { articleId: "labor-law__art-74", question: "طردوني من الشركة بدون سبب" },
     6000,
     { useGraph: true, queryEmbedding: "[1,0,0,0]", modelId: "gemini-embedding-2-768" },
@@ -408,4 +408,78 @@ test("GraphRAG: retrieveLibrary falls back seamlessly to FTS relevance RPCs when
   );
   assert.equal(out.sources.length, 1);
   assert.equal(out.map.S1.id, "labor__art-77");
+});
+
+// ── GraphRAG fallbacks (2026-11-14 review): the graph never makes an answer worse than the keyword search ──
+
+function graphOverFts(graphRpc: () => unknown) {
+  const { admin: base, calls } = fakeAdmin({
+    search_law_articles_relevance: { ranked: true, rows: [{ id: "labor__art-77", law_slug: "labor", number: 77, text: "تعويض" }] },
+    search_principles_relevance: { ranked: true, rows: [] },
+  });
+  let graphCalls = 0;
+  const admin = {
+    ...base,
+    rpc: () => {
+      graphCalls++;
+      return graphRpc();
+    },
+  };
+  return { admin, calls, graphCalls: () => graphCalls };
+}
+
+test("GraphRAG: a ready graph that finds nothing falls back to the keyword search", async () => {
+  const { admin, graphCalls } = graphOverFts(() => ({
+    abortSignal: () => Promise.resolve({ data: { ready: true, articles: [], principles: [], decrees: [], feqh: [] }, error: null }),
+  }));
+  const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.equal(graphCalls(), 1);
+  assert.equal(out.map.S1.id, "labor__art-77");
+});
+
+test("GraphRAG: a graph call that hangs is cut at its deadline and the keyword search still answers", async () => {
+  let aborted = false;
+  const { admin } = graphOverFts(() => ({
+    abortSignal: (s: AbortSignal) => {
+      s.addEventListener("abort", () => (aborted = true));
+      return new Promise(() => {});
+    },
+  }));
+  const started = Date.now();
+  const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.ok(Date.now() - started < GRAPH_BUDGET_MS + 1500, "the graph's own deadline, not the whole budget");
+  assert.equal(aborted, true, "the graph request itself is cancelled");
+  assert.equal(out.map.S1.id, "labor__art-77");
+});
+
+test("GraphRAG: a graph error falls back, and no options means the graph is never called", async () => {
+  const failing = graphOverFts(() => ({ abortSignal: () => Promise.resolve({ data: null, error: { code: "XX000", message: "boom" } }) }));
+  const out = await retrieveLibrary(failing.admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.equal(out.map.S1.id, "labor__art-77");
+
+  const off = graphOverFts(() => {
+    throw new Error("the graph must not be called");
+  });
+  const plain = await retrieveLibrary(off.admin as never, ["فصل العامل"], { laws: 4, principles: 2 });
+  assert.equal(off.graphCalls(), 0);
+  assert.equal(plain.map.S1.id, "labor__art-77");
+});
+
+test("GraphRAG: decrees and fiqh blocks stay out unless the caller asks for them", async () => {
+  const { admin } = graphOverFts(() => ({
+    abortSignal: () =>
+      Promise.resolve({
+        data: {
+          ready: true,
+          articles: [{ kind: "article", id: "labor__art-80", law_slug: "labor", status: "active", title: "نظام العمل — المادة 80", url: "/laws/labor#labor__art-80", text: "نص" }],
+          principles: [],
+          decrees: [{ kind: "decree", id: "m-46", status: "active", title: "م/46", url: "/laws/orders/m-46", text: "تعديل" }],
+          feqh: [{ kind: "feqh", id: "b1", status: "active", title: "المغني", url: "/book/x#b1", text: "نص" }],
+        },
+        error: null,
+      }),
+  }));
+  const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.deepEqual(out.sources.map((s) => s.kind), ["article"]);
+  assert.equal(out.map.S1.id, "labor__art-80");
 });

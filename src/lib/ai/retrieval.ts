@@ -336,6 +336,52 @@ interface GraphRpcResult {
   feqh?: GraphRpcHit[];
 }
 
+/** The graph call's own deadline: past it the keyword search still has most of the budget. */
+export const GRAPH_BUDGET_MS = 2500;
+
+/** Article + principle hits with text: zero means the graph found nothing usable. */
+function graphHitCount(r: GraphRpcResult): number {
+  const usable = (hits: GraphRpcHit[] | undefined) => (hits ?? []).filter((h) => h && h.id && h.text?.trim()).length;
+  return usable(r.articles) + usable(r.principles);
+}
+
+/**
+ * One `graph_rag_retrieve` call, cancelled at `deadlineMs` or when the whole
+ * retrieval is cancelled. Null on any error or timeout (the caller falls back).
+ */
+async function callGraphRpc(
+  admin: ServiceClient,
+  args: Record<string, unknown>,
+  parent: AbortSignal,
+  deadlineMs: number,
+): Promise<GraphRpcResult | null> {
+  const ctrl = new AbortController();
+  const onParentAbort = () => ctrl.abort();
+  if (parent.aborted) return null;
+  parent.addEventListener("abort", onParentAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    type RpcBuilder = PromiseLike<{ data: unknown; error: unknown }> & { abortSignal?: (s: AbortSignal) => unknown };
+    const rpc = (admin as unknown as { rpc: (fn: string, a: Record<string, unknown>) => RpcBuilder }).rpc;
+    const built = rpc.call(admin, "graph_rag_retrieve", args);
+    const call = (typeof built.abortSignal === "function" ? built.abortSignal(ctrl.signal) : built) as RpcBuilder;
+    const deadline = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        ctrl.abort();
+        resolve(null);
+      }, deadlineMs);
+    });
+    const outcome = await Promise.race([Promise.resolve(call).catch(() => null), deadline]);
+    if (!outcome || outcome.error || !outcome.data || typeof outcome.data !== "object") return null;
+    return outcome.data as GraphRpcResult;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+    parent.removeEventListener("abort", onParentAbort);
+  }
+}
+
 export async function retrieveLibrary(
   admin: ServiceClient,
   queries: string[],
@@ -376,45 +422,42 @@ export async function retrieveLibrary(
       ...onPage.map((n) => articleByNumber(admin, pin.lawSlug as string, n, ctrl.signal)),
     ]);
 
-    // ── Path A: Hybrid Legal GraphRAG (`public.graph_rag_retrieve`) across all 4 corpora ──
+    // Fetched once, shared by both paths.
+    const pinnedP: Promise<Row | null> = pin.articleId ? pinnedArticle(admin, pin.articleId, ctrl.signal) : Promise.resolve(null);
+
+    // ── Path A: Hybrid Legal GraphRAG (`public.graph_rag_retrieve`) ──
+    // Only when the caller asked for it (the NZAMY_GRAPH_RAG switch, read by
+    // the route). The graph gets its own short deadline so Path B keeps most
+    // of the budget, and any miss — error, timeout, graph not ready, or no
+    // article/principle hit — falls through to Path B.
     const canCallGraphRpc =
-      Boolean(options?.useGraph || options?.queryEmbedding) &&
-      typeof (admin as unknown as { rpc?: unknown }).rpc === "function";
+      Boolean(options?.useGraph) && typeof (admin as unknown as { rpc?: unknown }).rpc === "function";
 
     if (canCallGraphRpc) {
       const resolvedScopeSlug = pin.lawSlug ?? (scopeName ? await slugOf(scopeName) : null);
-      const decreeLimit =
-        limits.decrees ?? (limits.principles > 0 ? Math.min(2, Math.max(1, Math.floor(limits.laws / 4))) : 0);
-      const feqhLimit =
-        limits.feqh ?? (limits.principles > 0 ? Math.min(2, Math.floor(limits.principles / 2)) : 0);
+      // Decrees and fiqh blocks only when a caller asks for them: the answer
+      // screens and the citation check know articles and principles.
+      const decreeLimit = Math.max(0, limits.decrees ?? 0);
+      const feqhLimit = Math.max(0, limits.feqh ?? 0);
+      const graphOutcome = await callGraphRpc(
+        admin,
+        {
+          p_tsqueries: parsed,
+          p_query_embedding: options?.queryEmbedding ?? null,
+          p_model_id: options?.modelId ?? null,
+          p_law_slug: resolvedScopeSlug,
+          p_limit_laws: limits.laws + 2,
+          p_limit_principles: limits.principles,
+          p_limit_decrees: decreeLimit,
+          p_limit_feqh: feqhLimit,
+          p_enable_graph_hop: true,
+        },
+        ctrl.signal,
+        Math.min(GRAPH_BUDGET_MS, budgetMs),
+      );
 
-      const rpcCaller = admin as unknown as {
-        rpc: (
-          fn: string,
-          args: Record<string, unknown>,
-        ) => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
-      };
-
-      const [pinned, directRows, graphOutcome] = await Promise.all([
-        pin.articleId ? pinnedArticle(admin, pin.articleId, ctrl.signal) : Promise.resolve(null),
-        direct,
-        Promise.resolve(
-          rpcCaller.rpc("graph_rag_retrieve", {
-            p_tsqueries: parsed,
-            p_query_embedding: options?.queryEmbedding ?? null,
-            p_model_id: options?.modelId ?? null,
-            p_law_slug: resolvedScopeSlug,
-            p_limit_laws: limits.laws + 2,
-            p_limit_principles: limits.principles,
-            p_limit_decrees: decreeLimit,
-            p_limit_feqh: feqhLimit,
-            p_enable_graph_hop: true,
-          }),
-        ).catch(() => ({ data: null, error: { code: "GRAPH_ERR", message: "failed" } })),
-      ]);
-
-      const graphPayload = (graphOutcome?.data ?? null) as GraphRpcResult | null;
-      if (!graphOutcome?.error && graphPayload && graphPayload.ready === true) {
+      if (graphOutcome && graphOutcome.ready === true && graphHitCount(graphOutcome) > 0) {
+        const [pinned, directRows] = await Promise.all([pinnedP, direct]);
         const leadSeen = new Set<string>();
         const leadRows: Row[] = [];
         for (const r of [pinned, ...directRows]) {
@@ -439,62 +482,54 @@ export async function retrieveLibrary(
         const maxArticlesTotal = limits.laws + (pinned ? 1 : 0);
         let articleCount = sources.filter((s) => s.kind === "article").length;
 
-        const appendGraphHits = (hits: readonly GraphRpcHit[] | undefined, sectionCap?: number) => {
+        const appendGraphHits = (hits: readonly GraphRpcHit[] | undefined, sectionCap: number) => {
           let added = 0;
           for (const h of hits ?? []) {
             if (!h || !h.id || !h.text?.trim()) continue;
             if (h.kind === "article") {
               if (leadSeen.has(h.id)) continue;
               if (articleCount >= maxArticlesTotal) continue;
-              leadSeen.add(h.id);
-              articleCount++;
-            } else if (sectionCap !== undefined && added >= sectionCap) {
+            } else if (added >= sectionCap) {
               continue;
             }
 
             const cleanText = stripArticleAuditNotes(h.text).trim();
             if (!cleanText) continue;
+            if (h.kind === "article") {
+              leadSeen.add(h.id);
+              articleCount++;
+            }
 
-            const plainTitle = h.title.trim() || h.id;
+            const plainTitle = (h.title ?? "").trim() || h.id;
             const statusNote = STATUS_NOTE[str(h.status)];
             const edgeNote = h.via_edge_type ? EDGE_PROVENANCE_AR[h.via_edge_type] : undefined;
             const annotations = [statusNote, edgeNote].filter(Boolean).join(" · ");
             const modelTitle = annotations ? `${plainTitle} (${annotations})` : plainTitle;
 
             const sid = `S${++n}`;
-            sources.push({
-              sid,
-              kind: h.kind,
-              title: modelTitle,
-              text: clip(cleanText),
-            });
-            map[sid] = {
-              kind: h.kind,
-              id: h.id,
-              title: plainTitle,
-              url: h.url,
-            };
+            sources.push({ sid, kind: h.kind, title: modelTitle, text: clip(cleanText) });
+            map[sid] = { kind: h.kind, id: h.id, title: plainTitle, url: h.url };
             added++;
           }
         };
 
-        appendGraphHits(graphPayload.articles);
-        appendGraphHits(graphPayload.principles, limits.principles);
-        appendGraphHits(graphPayload.decrees, decreeLimit);
-        appendGraphHits(graphPayload.feqh, feqhLimit);
+        appendGraphHits(graphOutcome.articles, limits.laws);
+        appendGraphHits(graphOutcome.principles, limits.principles);
+        appendGraphHits(graphOutcome.decrees, decreeLimit);
+        appendGraphHits(graphOutcome.feqh, feqhLimit);
 
-        return { sources, map };
+        if (sources.length > builtLead.sources.length) return { sources, map };
       }
     }
 
-    // ── Path B: Classic Lexical Relevance Fallback (pre-migration / empty graph) ──
+    // ── Path B: the keyword search (switch off, graph not ready, or the graph found nothing) ──
     const scoped = (async (): Promise<Row[][]> => {
       if (limits.laws === 0 || parsed.length === 0) return [];
       const slug = pin.lawSlug ?? (scopeName ? await slugOf(scopeName) : null);
       return slug ? Promise.all(parsed.map((t) => lawScopedRows(admin, slug, t, FETCH_PER_QUERY.laws, ctrl.signal))) : [];
     })();
     const [pinned, directRows, scopedLists, lawLists, principleLists] = await Promise.all([
-      pin.articleId ? pinnedArticle(admin, pin.articleId, ctrl.signal) : Promise.resolve(null),
+      pinnedP,
       direct,
       scoped,
       limits.laws > 0

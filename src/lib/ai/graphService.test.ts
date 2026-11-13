@@ -73,6 +73,7 @@ test("searchLegalGraphWith embeds question, invokes retrieveLibrary with useGrap
         };
       },
       rerank: async (_q, docs) => [1, 0].slice(0, docs.length),
+      enabled: true,
     },
   );
 
@@ -84,6 +85,28 @@ test("searchLegalGraphWith embeds question, invokes retrieveLibrary with useGrap
   assert.equal(out.map.S1?.id, "labor-law__art-80");
   assert.equal(out.sources[1]?.sid, "S2");
   assert.equal(out.map.S2?.id, "labor-law__art-77");
+});
+
+test("searchLegalGraphWith with the switch off never embeds and never asks for the graph", async () => {
+  let embedded = false;
+  let receivedOpts: unknown = "unset";
+  await searchLegalGraphWith(
+    {} as never,
+    { question: "ما تعويض الفصل غير المشروع؟", queries: ["فصل غير مشروع"], limits: { laws: 6, principles: 3 } },
+    {
+      enabled: false,
+      embedQuery: async () => {
+        embedded = true;
+        return "[1]";
+      },
+      retrieve: async (_admin, _q, _l, _p, _b, opts) => {
+        receivedOpts = opts;
+        return { sources: [], map: {} };
+      },
+    },
+  );
+  assert.equal(embedded, false);
+  assert.equal(receivedOpts, undefined);
 });
 
 test("POST /api/v1/ai/graph-retrieve enforces X-Nzamy-Key timing-safe auth for n8n & internal services", () => {
