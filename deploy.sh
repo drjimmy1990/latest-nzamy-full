@@ -133,9 +133,15 @@ purge_cache
 # The GraphRAG watchdog runs the code on disk: when it is running, restart it on
 # this commit too. A stopped or never-started watchdog is left as it is —
 # starting it is a deliberate step (pm2 start ecosystem.config.js --only nzamy-graph-watchdog).
-GRAPH_PID="$(pm2 pid nzamy-graph-watchdog 2>/dev/null | tail -n 1 | tr -d '[:space:]')"
+# `|| true`: under set -euo pipefail a pm2 error here must never fail a deploy
+# that has already switched the site.
+GRAPH_PID="$( (pm2 pid nzamy-graph-watchdog 2>/dev/null || true) | tail -n 1 | tr -d '[:space:]')"
 if [ -n "$GRAPH_PID" ] && [ "$GRAPH_PID" != "0" ]; then
-  pm2 restart nzamy-graph-watchdog >/dev/null && echo "  Restarted nzamy-graph-watchdog on the new code."
+  if pm2 restart nzamy-graph-watchdog >/dev/null 2>&1; then
+    echo "  Restarted nzamy-graph-watchdog on the new code."
+  else
+    echo "  ⚠ Could not restart nzamy-graph-watchdog — run: pm2 restart nzamy-graph-watchdog"
+  fi
 fi
 
 echo "✔ Deployed $(git rev-parse --short HEAD) — live build folder: $TARGET."
