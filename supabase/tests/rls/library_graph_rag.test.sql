@@ -81,7 +81,7 @@ begin
     raise exception 'T2: expected to run as service_role, running as %', current_user;
   end if;
 
-  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"test"}'::jsonb);
+  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"watchdog_test"}'::jsonb);
 
   perform public.graph_rag_upsert_nodes(jsonb_build_array(
     jsonb_build_object('node_key', 'article:labor-law__art-77', 'node_type', 'article', 'source_id', 'labor-law__art-77',
@@ -258,7 +258,7 @@ declare
   v_run jsonb;
   v_out jsonb;
 begin
-  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"test"}'::jsonb);
+  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"watchdog_test"}'::jsonb);
   if (public.graph_rag_sync_control('start_run', '{}'::jsonb)->>'ok')::boolean is not false then
     raise exception 'T8: a second start_run was allowed while one is running';
   end if;
@@ -271,7 +271,17 @@ begin
     raise exception 'T8: start_run still blocked after abandon_running';
   end if;
   perform public.graph_rag_sync_control('abandon_running', '{}'::jsonb);
-  raise notice 'T8 ok — abandon_running unblocks start_run at once';
+
+  -- A CLI pass (npm run graph:sync) may be alive: a daemon restart leaves it running.
+  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"cli_once"}'::jsonb);
+  v_out := public.graph_rag_sync_control('abandon_running', '{}'::jsonb);
+  if (v_out->>'abandoned')::integer <> 0
+     or (select status from library_graph.sync_runs where id = (v_run->>'run_id')::bigint) <> 'running' then
+    raise exception 'T8: abandon_running failed a live CLI pass: %', v_out;
+  end if;
+  perform public.graph_rag_sync_control('finish_run', jsonb_build_object(
+    'run_id', v_run->'run_id', 'started_at', v_run->>'started_at', 'status', 'failed'));
+  raise notice 'T8 ok — abandon_running unblocks start_run at once and spares a CLI pass';
 end $$;
 
 -- T9: the 768 → 3072 dimension switch builds its partial HNSW index
@@ -301,3 +311,39 @@ begin
   end if;
   raise notice 'T10 ok — the dirty trigger failed softly and the library write stood';
 end $$;
+
+-- T11: neither an admin "sync now" during a pass nor an embed-only pass can
+-- mark a stale graph ready
+set role service_role;
+do $$
+declare
+  v_run    jsonb;
+  v_synced timestamptz;
+begin
+  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"watchdog_dirty_settled"}'::jsonb);
+  perform public.graph_rag_sync_control('finish_run', jsonb_build_object(
+    'run_id', v_run->'run_id', 'started_at', v_run->>'started_at', 'status', 'succeeded'));
+  if (select dirty from library_graph.sync_state where id = 1) then
+    raise exception 'T11: a clean full pass left dirty set';
+  end if;
+
+  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"watchdog_dirty_settled"}'::jsonb);
+  perform public.graph_rag_sync_control('mark_dirty_now', '{"reason":"manual_admin"}'::jsonb);
+  perform public.graph_rag_sync_control('finish_run', jsonb_build_object(
+    'run_id', v_run->'run_id', 'started_at', v_run->>'started_at', 'status', 'succeeded'));
+  if not (select dirty from library_graph.sync_state where id = 1) then
+    raise exception 'T11: a sync request made during a pass was lost';
+  end if;
+
+  select last_synced_at into v_synced from library_graph.sync_state where id = 1;
+  v_run := public.graph_rag_sync_control('start_run', '{"trigger_source":"watchdog_missing_embeddings"}'::jsonb);
+  perform public.graph_rag_sync_control('finish_run', jsonb_build_object(
+    'run_id', v_run->'run_id', 'started_at', v_run->>'started_at', 'status', 'succeeded',
+    'details', jsonb_build_object('embed_only', true)));
+  if not (select dirty from library_graph.sync_state where id = 1)
+     or (select last_synced_at from library_graph.sync_state where id = 1) is distinct from v_synced then
+    raise exception 'T11: an embed-only pass cleared dirty or moved last_synced_at';
+  end if;
+  raise notice 'T11 ok — admin requests during a pass and embed-only passes keep the graph off';
+end $$;
+reset role;

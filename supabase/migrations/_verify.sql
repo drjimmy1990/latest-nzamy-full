@@ -6510,14 +6510,15 @@ select 'library_graph schema, halfvec(768) HNSW, zero FKs into library.*, and se
 -- service_role-only RPCs behind /dashboard/admin/graph-explorer. Requires
 -- 20261110_10.
 select 'graph explorer RPCs exist, service_role only (run 20261113_10)' as check,
-       to_regprocedure('public.graph_rag_explore_overview()') is not null
-       and to_regprocedure('public.graph_rag_explore_search(text, text[], integer)') is not null
-       and to_regprocedure('public.graph_rag_explore_neighborhood(text, integer, text[], integer)') is not null
-       and to_regprocedure('public.graph_rag_explore_node(text)') is not null
-       and not has_function_privilege('anon', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
-       and not has_function_privilege('authenticated', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
-       and has_function_privilege('service_role', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
-       as ok;
+       case when to_regprocedure('public.graph_rag_explore_overview()') is null
+              or to_regprocedure('public.graph_rag_explore_search(text, text[], integer)') is null
+              or to_regprocedure('public.graph_rag_explore_neighborhood(text, integer, text[], integer)') is null
+              or to_regprocedure('public.graph_rag_explore_node(text)') is null
+            then false
+            else not has_function_privilege('anon', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+                 and not has_function_privilege('authenticated', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+                 and has_function_privilege('service_role', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+       end as ok;
 -- <<< verify:library_graph_explorer
 
 

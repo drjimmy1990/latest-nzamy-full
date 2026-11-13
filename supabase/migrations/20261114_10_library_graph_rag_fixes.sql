@@ -473,7 +473,14 @@ declare
   v_run_id    bigint;
   v_started   timestamptz;
   v_abandoned integer := 0;
+  v_running   boolean;
 begin
+  -- An admin request (sync now / fiqh vectors) never hides a real write: while a
+  -- pass runs it is dated now, so that pass's finish keeps `dirty` and its prune
+  -- is skipped; with no pass running, a library write from the last 3 minutes
+  -- keeps its quiet window; otherwise it is backdated so the next poll starts at once.
+  v_running := exists (select 1 from library_graph.sync_runs where status = 'running');
+
   if p_action = 'mark_dirty_now' then
     update library_graph.sync_state
        set dirty = true,
@@ -482,8 +489,11 @@ begin
                from pg_catalog.unnest(dirty_tables || array[coalesce(p_payload->>'reason', 'manual_admin')]) as x
            ),
            first_dirty_at = coalesce(first_dirty_at, now()),
-           -- Backdate last_write_at so Watchdog's quiet-window debounce runs immediately
-           last_write_at = now() - interval '10 minutes',
+           last_write_at = case
+             when v_running then pg_catalog.clock_timestamp()
+             when last_write_at > pg_catalog.clock_timestamp() - interval '3 minutes' then last_write_at
+             else pg_catalog.clock_timestamp() - interval '10 minutes'
+           end,
            updated_at = now()
      where id = 1;
     return pg_catalog.jsonb_build_object('ok', true);
@@ -493,21 +503,27 @@ begin
     update library_graph.sync_state
        set include_feqh_vectors = coalesce((p_payload->>'enabled')::boolean, false),
            dirty = true,
-           last_write_at = now() - interval '10 minutes',
+           last_write_at = case
+             when v_running then pg_catalog.clock_timestamp()
+             when last_write_at > pg_catalog.clock_timestamp() - interval '3 minutes' then last_write_at
+             else pg_catalog.clock_timestamp() - interval '10 minutes'
+           end,
            updated_at = now()
      where id = 1;
     return pg_catalog.jsonb_build_object('ok', true);
   end if;
 
   if p_action = 'abandon_running' then
-    -- The watchdog runs as ONE process: at its start, any `running` row is a
-    -- pass a killed process never finished. Fail them now instead of blocking
-    -- every new pass for 2 hours.
+    -- The watchdog runs as ONE process: at its start, any `running` row of its
+    -- own (trigger_source watchdog*) is a pass a killed process never finished.
+    -- Fail them now instead of blocking every new pass for 2 hours. A CLI pass
+    -- (npm run graph:sync) may still be alive, so it is left to finish.
     update library_graph.sync_runs
        set status = 'failed',
            finished_at = now(),
            error_message = 'abandoned: the watchdog restarted before this pass finished'
-     where status = 'running';
+     where status = 'running'
+       and trigger_source like 'watchdog%';
     get diagnostics v_abandoned = row_count;
     if v_abandoned > 0 then
       update library_graph.sync_state
@@ -568,7 +584,16 @@ begin
            details        = coalesce(p_payload->'details', '{}'::jsonb)
      where id = v_run_id;
 
-    if coalesce(p_payload->>'status', 'succeeded') = 'succeeded' then
+    if coalesce(p_payload->>'status', 'succeeded') = 'succeeded'
+       and coalesce((p_payload->'details'->>'embed_only')::boolean, false) then
+      -- An embed-only catch-up read no library table: it proves nothing about
+      -- freshness, so `dirty` and `last_synced_at` stay as they were.
+      update library_graph.sync_state
+         set last_sync_status = 'succeeded',
+             last_error       = null,
+             updated_at       = now()
+       where id = 1;
+    elsif coalesce(p_payload->>'status', 'succeeded') = 'succeeded' then
       -- Clear `dirty` ONLY if no newer write landed in `library.*` after `v_started`!
       update library_graph.sync_state
          set dirty            = (last_write_at > v_started),
