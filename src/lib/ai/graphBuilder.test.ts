@@ -14,6 +14,7 @@ import {
   buildFeqhGraphNodes,
   buildPrincipleGraphNodes,
   extractArticleEdges,
+  resolveParentLawSlugs,
   extractConceptEdges,
   extractPrincipleInterpretationEdges,
   parseArabicArticleNumber,
@@ -241,4 +242,103 @@ test("buildPrincipleGraphNodes, buildDecreeGraphNodes, buildFeqhGraphNodes, and 
     conceptEdges.some((e) => e.edge_type === "HAS_CONCEPT" && e.target_key === "article:labor-law__art-77"),
     "unfair-dismissal concept must link to article:labor-law__art-77 via HAS_CONCEPT",
   );
+});
+
+// ─── 2026-11-14 review fixes ──────────────────────────────────────────────────
+
+function twoLaws(): LawIndexMap {
+  return new Map([
+    [
+      "labor-law",
+      {
+        slug: "labor-law",
+        title: "نظام العمل",
+        normalizedTitle: "نظام العمل",
+        instrumentId: "INS-LABOR",
+        articleKeyByNumber: new Map([
+          [5, "article:labor-law__art-5"],
+          [77, "article:labor-law__art-77"],
+        ]),
+        rootNodeKey: "article:labor-law__art-1",
+      },
+    ],
+    [
+      "labor-reg",
+      {
+        slug: "labor-reg",
+        title: "اللائحة التنفيذية لنظام العمل",
+        normalizedTitle: "اللائحه التنفيذيه لنظام العمل",
+        parentLawId: "INS-LABOR",
+        enablingArticle: "المادة 5",
+        articleKeyByNumber: new Map([
+          [1, "article:labor-reg__art-1"],
+          [5, "article:labor-reg__art-5"],
+        ]),
+        rootNodeKey: "article:labor-reg__art-1",
+      },
+    ],
+  ]);
+}
+
+test("a reference to another, unresolved document never falls back to the same-numbered article of the current law", () => {
+  const edges = extractArticleEdges(
+    {
+      node_key: "article:labor-reg__art-1",
+      law_slug: "labor-reg",
+      is_page_numbered: false,
+      display_text: "وفقاً للمادة (5) من نظام المرافعات الشرعية",
+    },
+    twoLaws(),
+  );
+  assert.equal(edges.filter((e) => e.edge_type === "CITES_ARTICLE").length, 0);
+});
+
+test("«من نظام العمل» resolves to that law; «من هذا النظام» stays in the current one", () => {
+  const map = twoLaws();
+  const cross = extractArticleEdges(
+    { node_key: "article:labor-reg__art-1", law_slug: "labor-reg", is_page_numbered: false, display_text: "وفقاً للمادة (77) من نظام العمل" },
+    map,
+  );
+  assert.ok(cross.some((e) => e.edge_type === "CITES_ARTICLE" && e.target_key === "article:labor-law__art-77"));
+  const own = extractArticleEdges(
+    { node_key: "article:labor-reg__art-1", law_slug: "labor-reg", is_page_numbered: false, display_text: "وفقاً للمادة (5) من هذا النظام" },
+    map,
+  );
+  assert.ok(own.some((e) => e.edge_type === "CITES_ARTICLE" && e.target_key === "article:labor-reg__art-5"));
+});
+
+test("the fused executive-regulation section is not read as the law's own references", () => {
+  const edges = extractArticleEdges(
+    {
+      node_key: "article:labor-law__art-77",
+      law_slug: "labor-law",
+      is_page_numbered: false,
+      display_text: ["التعويض عن الإنهاء.", "«اللائحة التنفيذية المرتبطة»:", "وفقاً للمادة (5) من هذه اللائحة"].join("\n\n"),
+    },
+    twoLaws(),
+  );
+  assert.equal(edges.length, 0);
+});
+
+test("PARENT_LAW: parent_law_id is a registry instrument_id, resolved to the parent's slug", () => {
+  const map = twoLaws();
+  resolveParentLawSlugs(map);
+  assert.equal(map.get("labor-reg")?.parentLawId, "labor-law");
+  const edges = extractArticleEdges(
+    { node_key: "article:labor-reg__art-1", law_slug: "labor-reg", is_page_numbered: false, display_text: "تصدر هذه اللائحة" },
+    map,
+  );
+  const parent = edges.find((e) => e.edge_type === "PARENT_LAW");
+  assert.equal(parent?.target_key, "article:labor-law__art-5", "the enabling article of the parent law");
+});
+
+test("a decree, collection or book with no title still builds (no crash, non-blank title)", () => {
+  const d = buildDecreeGraphNodes([{ decree: { id: "dec-x", title: null as unknown as string, summary_brief: "ملخص" }, pages: [] }]);
+  assert.equal(d.length, 1);
+  assert.ok(d[0].title.trim().length > 0);
+  const p = buildPrincipleGraphNodes({
+    collection: { id: "c", title: "" },
+    principles: [{ id: "c__p1", collection_id: "c", principle_number: "1", text: "نص" }],
+  });
+  assert.ok(p[0].title.startsWith("مبادئ قضائية"));
 });

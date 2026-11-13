@@ -6504,3 +6504,26 @@ select 'library_graph schema, halfvec(768) HNSW, zero FKs into library.*, and se
                  and has_function_privilege('service_role', 'public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)', 'EXECUTE')
        end as ok;
 -- <<< verify:library_graph_rag
+
+
+-- >>> verify:library_graph_rag_fixes
+-- 2026-11-14 — 20261114_10_library_graph_rag_fixes.sql: no graph function
+-- calls halfvec_dims() (pgvector has vector_dims(halfvec)) or
+-- pg_catalog.greatest/least (SQL syntax, not functions); retrieve is ready only
+-- after a finished pass with no library write since; sync_control has
+-- abandon_running; status reports missing_vectors.
+-- Docker: supabase/tests/rls/library_graph_rag.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG fixes: vector_dims, no pg_catalog.greatest, readiness, abandon_running (run 20261114_10)' as check,
+       not exists (
+         select 1 from pg_catalog.pg_proc p
+          where p.proname like 'graph_rag_%'
+            and (p.prosrc like '%halfvec_dims(%' or p.prosrc like '%pg_catalog.greatest(%' or p.prosrc like '%pg_catalog.least(%')
+       )
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)'))
+                    like '%last_synced_at is not null and s.dirty = false%', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_sync_control(text, jsonb)'))
+                    like '%abandon_running%', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_status()'))
+                    like '%missing_vectors%', false)
+       as ok;
+-- <<< verify:library_graph_rag_fixes

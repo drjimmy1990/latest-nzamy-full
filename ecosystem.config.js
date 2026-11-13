@@ -51,7 +51,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
       },
-      max_memory_restart: '220M',
+      // Holds the law index + per-article reference records for one pass (no article
+      // texts since 2026-11-14); 400M leaves room above the ~90 MB tsx/supabase-js base.
+      max_memory_restart: '400M',
       exp_backoff_restart_delay: 500,
       max_restarts: 15,
       min_uptime: '10s',

@@ -24,6 +24,8 @@ import {
   resolveEmbeddingModelProfile,
 } from "../src/lib/ai/embeddingClient.ts";
 import {
+  missingVectorsFrom,
+  nextFailureBackoffMs,
   nextQuotaBackoffMs,
   runGraphSyncPass,
   shouldTriggerSync,
@@ -123,6 +125,19 @@ function createSupabaseWatchdogBackend() {
       return data;
     },
 
+    async abandonRunning() {
+      const { data, error } = await admin.rpc("graph_rag_sync_control", {
+        p_action: "abandon_running",
+        p_payload: {},
+      });
+      if (error) {
+        // The first migration has no abandon_running: a stuck run then waits out its 2 h timeout.
+        console.warn(`[graph-watchdog] abandon_running unavailable (${error.message}); apply 20261114_10.`);
+        return 0;
+      }
+      return Number(data?.abandoned ?? 0);
+    },
+
     async finishRun(payload) {
       const { error } = await admin.rpc("graph_rag_sync_control", {
         p_action: "finish_run",
@@ -138,7 +153,7 @@ function createSupabaseWatchdogBackend() {
         const { data: laws, error } = await admin
           .schema("library")
           .from("laws")
-          .select("slug, title, type, status, parent_law_id, supersedes_law_slug, enabling_article")
+          .select("slug, title, type, status, parent_law_id, instrument_id, supersedes_law_slug, enabling_article")
           .order("slug", { ascending: true })
           .range(lawOffset, lawOffset + lawsPageSize - 1);
         if (error) throw new Error(`library.laws read failed: ${error.message}`);
@@ -152,7 +167,8 @@ function createSupabaseWatchdogBackend() {
                 .from("chapters")
                 .select("id, title")
                 .eq("law_slug", law.slug)
-                .order("order_index", { ascending: true }),
+                .order("order_index", { ascending: true })
+                .order("id", { ascending: true }),
             ),
             fetchAllPages(() =>
               admin
@@ -160,7 +176,8 @@ function createSupabaseWatchdogBackend() {
                 .from("articles")
                 .select("id, law_slug, chapter_id, number, number_text, title, status, text, executive_reg_text, order_index")
                 .eq("law_slug", law.slug)
-                .order("order_index", { ascending: true }),
+                .order("order_index", { ascending: true })
+                .order("id", { ascending: true }),
             ),
             fetchAllPages(() =>
               admin
@@ -168,7 +185,8 @@ function createSupabaseWatchdogBackend() {
                 .from("article_regulations")
                 .select("id, article_id, text, status, sort_key")
                 .eq("law_slug", law.slug)
-                .order("sort_key", { ascending: true }),
+                .order("sort_key", { ascending: true })
+                .order("id", { ascending: true }),
             ),
           ]);
 
@@ -189,8 +207,11 @@ function createSupabaseWatchdogBackend() {
               admin
                 .schema("library")
                 .from("article_amendments")
-                .select("article_id, summary, date")
-                .in("article_id", ids),
+                .select("id, article_id, summary, date")
+                .in("article_id", ids)
+                // Oldest first, so "the last summary" is the same on every pass (stable content hash).
+                .order("date", { ascending: true, nullsFirst: true })
+                .order("id", { ascending: true }),
             );
             for (const am of amends) {
               const list = amendmentsByArticleId.get(am.article_id) ?? [];
@@ -232,6 +253,7 @@ function createSupabaseWatchdogBackend() {
             .select("id, collection_id, principle_number, issuing_body, text, ruling_basis, year_hijri, order_index")
             .eq("collection_id", collection.id)
             .order("order_index", { ascending: true })
+            .order("id", { ascending: true })
             .range(pOffset, pOffset + pPage - 1);
           if (error) throw new Error(`library.principles read failed: ${error.message}`);
           if (!principles || principles.length === 0) break;
@@ -260,10 +282,12 @@ function createSupabaseWatchdogBackend() {
           admin
             .schema("library")
             .from("decree_pages")
-            .select("decree_id, page_number, content")
+            .select("id, decree_id, page_number, content")
             .in("decree_id", ids)
             .lte("page_number", 6)
-            .order("page_number", { ascending: true }),
+            .order("decree_id", { ascending: true })
+            .order("page_number", { ascending: true })
+            .order("id", { ascending: true }),
         );
         const pagesByDecree = new Map();
         for (const pg of pages) {
@@ -297,7 +321,8 @@ function createSupabaseWatchdogBackend() {
             .schema("library")
             .from("feqh_chapters")
             .select("id, title")
-            .eq("book_id", book.id),
+            .eq("book_id", book.id)
+            .order("id", { ascending: true }),
         );
         const chaptersById = new Map(chapters.map((c) => [String(c.id), String(c.title || "")]));
 
@@ -311,7 +336,8 @@ function createSupabaseWatchdogBackend() {
               .schema("library")
               .from("feqh_sections")
               .select("id, chapter_id, title")
-              .in("chapter_id", slice),
+              .in("chapter_id", slice)
+              .order("id", { ascending: true }),
           );
           for (const s of secs) {
             const chTitle = chaptersById.get(String(s.chapter_id)) || "";
@@ -415,6 +441,7 @@ async function main() {
 
   if (isOnce) {
     const res = await runGraphSyncPass(backend, {
+      shouldStop: () => shuttingDown,
       triggerSource: isForce ? "cli_force" : "cli_once",
       includeFeqhVectors: includeFeqhFlag,
       maxEmbedNodes,
@@ -427,19 +454,34 @@ async function main() {
   }
 
   console.log(`[graph-watchdog] Daemon started (poll every ${intervalSec}s, quiet window 180s)...`);
+  // Only one daemon runs (PM2 fork mode): a `running` row left by a previous process that
+  // was killed mid-pass is dead, and would otherwise block every new pass for 2 hours.
+  try {
+    const abandoned = await backend.abandonRunning();
+    if (abandoned > 0) console.log(`[graph-watchdog] Marked ${abandoned} unfinished run(s) from a previous process as failed.`);
+  } catch (err) {
+    console.error("[graph-watchdog] abandon_running failed:", err instanceof Error ? err.message : err);
+  }
   // Free-tier quota pause: after a 429 / RESOURCE_EXHAUSTED the daemon stops calling the
   // embedding API for 15 min (doubling up to 6 h). Library changes still rebuild the graph.
   let quotaPausedUntil = 0;
   let quotaBackoffMs = 0;
+  // A failed pass (or an embed-only pass that stored nothing) waits 1 min, doubling to 1 h,
+  // instead of restreaming the whole library on every poll.
+  let failurePausedUntil = 0;
+  let failureBackoffMs = 0;
   while (!shuttingDown) {
     try {
+      if (Date.now() < failurePausedUntil) {
+        await new Promise((r) => setTimeout(r, 1000));
+        continue;
+      }
       const st = await backend.getStatus();
       const dbModel = st.models?.find((m) => m.is_default) ?? st.models?.[0];
       const profile = dbModel
         ? profileFromDbRow(dbModel)
         : resolveEmbeddingModelProfile(st.default_model_id);
-      const activeVecs = Number(dbModel?.active_vectors ?? 0);
-      const missingVecs = Math.max(0, Number(st.embeddable_nodes ?? 0) - activeVecs);
+      const missingVecs = missingVectorsFrom(st);
       const quotaPaused = Date.now() < quotaPausedUntil;
 
       const decision = shouldTriggerSync({
@@ -457,6 +499,7 @@ async function main() {
           `[graph-watchdog] Triggering sync (${decision.reason}${embedOnly ? ", embed-only catch-up" : ""}${quotaPaused ? ", embedding paused" : ""})...`,
         );
         const res = await runGraphSyncPass(backend, {
+          shouldStop: () => shuttingDown,
           triggerSource: `watchdog_${decision.reason}`,
           includeFeqhVectors: includeFeqhFlag,
           maxEmbedNodes,
@@ -475,6 +518,17 @@ async function main() {
           );
         } else if (res.status === "succeeded" && !quotaPaused) {
           quotaBackoffMs = 0;
+        }
+
+        const stuck = res.status === "succeeded" && embedOnly && !res.quotaPaused && res.apiEmbedded === 0;
+        if ((res.status === "failed" && !shuttingDown) || stuck) {
+          failureBackoffMs = nextFailureBackoffMs(failureBackoffMs);
+          failurePausedUntil = Date.now() + failureBackoffMs;
+          console.log(
+            `[graph-watchdog] ${stuck ? "Catch-up stored no vectors" : "Pass failed"} — next try in ${Math.round(failureBackoffMs / 60000)} min.`,
+          );
+        } else if (res.status === "succeeded") {
+          failureBackoffMs = 0;
         }
       }
     } catch (err) {

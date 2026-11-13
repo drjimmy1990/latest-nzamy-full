@@ -66,6 +66,8 @@ export interface LawIndexEntry {
   parentLawId?: string | null;
   supersedesLawSlug?: string | null;
   enablingArticle?: string | null;
+  /** The law's registry instrument_id (what other laws' `parent_law_id` holds). */
+  instrumentId?: string | null;
   articleKeyByNumber: Map<number, string>;
   rootNodeKey: string | null;
 }
@@ -222,6 +224,7 @@ export interface RawLawRow {
   type?: string | null;
   status?: string | null;
   parent_law_id?: string | null;
+  instrument_id?: string | null;
   supersedes_law_slug?: string | null;
   enabling_article?: string | null;
 }
@@ -383,6 +386,8 @@ export function buildPrincipleGraphNodes(params: {
 }): GraphNodePayload[] {
   const { collection, principles } = params;
   const out: GraphNodePayload[] = [];
+  // nodes.title must be non-blank: a collection with no title still gets a label.
+  const collectionTitle = (collection.title ?? "").trim() || "مبادئ قضائية";
 
   for (const p of principles) {
     const mainText = stripArticleAuditNotes(p.text || "").trim();
@@ -397,9 +402,9 @@ export function buildPrincipleGraphNodes(params: {
     const trackLabel = (p.track || collection.track || "").trim();
     const yearLabel = p.year_hijri ?? p.hijri_year ?? collection.year_hijri;
     const numLabel = pNum != null && String(pNum).trim() !== "" ? `المبدأ رقم ${pNum}` : "مبدأ قضائي";
-    const title = `${collection.title} — ${numLabel}`;
+    const title = `${collectionTitle} — ${numLabel}`;
     const contextualHeader = [
-      `المجموعة القضائية: ${collection.title}`,
+      `المجموعة القضائية: ${collectionTitle}`,
       courtLabel ? `الجهة القضائية: ${courtLabel}` : "",
       trackLabel ? `المسار: ${trackLabel}` : "",
       yearLabel ? `السنة: ${yearLabel}` : "",
@@ -473,10 +478,10 @@ export function buildDecreeGraphNodes(
       .map((pg) => stripArticleAuditNotes(pg.content || "").trim())
       .filter(Boolean);
 
-    const displayText = clipBody([summary, preamble, ...pageTexts].filter(Boolean).join("\n\n") || decree.title);
+    const title = (decree.title ?? "").trim() || `أمر أو تعميم ${decree.id}`;
+    const displayText = clipBody([summary, preamble, ...pageTexts].filter(Boolean).join("\n\n") || title);
     if (!displayText) continue;
 
-    const title = decree.title.trim();
     const contextualHeader = [
       `الأمر/التعميم: ${title}`,
       decree.type ? `النوع: ${decree.type}` : "",
@@ -548,6 +553,7 @@ export function buildFeqhGraphNodes(params: {
   const { book, chaptersById, sectionsById, blocks, includeFeqhVectors } = params;
   const out: GraphNodePayload[] = [];
   const typeLabel = book.type === "wadi" ? "فقه قانوني وضعي" : "فقه إسلامي";
+  const bookTitle = (book.title ?? "").trim() || "مرجع فقهي";
 
   for (const b of blocks) {
     const topic = stripArticleAuditNotes(b.topic || "").trim();
@@ -565,9 +571,9 @@ export function buildFeqhGraphNodes(params: {
     const chapterTitle =
       (b.chapter_id ? chaptersById.get(b.chapter_id) || "" : "") ||
       (b.section_id && sectionsById ? sectionsById.get(b.section_id) || "" : "");
-    const title = `${book.title}${topic ? ` — ${topic}` : chapterTitle ? ` — ${chapterTitle}` : ""}`;
+    const title = `${bookTitle}${topic ? ` — ${topic}` : chapterTitle ? ` — ${chapterTitle}` : ""}`;
     const contextualHeader = [
-      `المرجع الفقهي: ${book.title}`,
+      `المرجع الفقهي: ${bookTitle}`,
       book.author ? `المؤلف: ${book.author}` : "",
       `التصنيف: ${typeLabel}`,
       chapterTitle ? `الكتاب/الباب: ${chapterTitle}` : "",
@@ -934,18 +940,83 @@ function findLawByTitleFragment(fragment: string, lawMap: LawIndexMap): LawIndex
   return best;
 }
 
+/** One article reference found in an article's own words, kept small until every law is known. */
+export interface ArticleRefCandidate {
+  edgeType: "EXEMPTS_FROM" | "CITES_ARTICLE";
+  num: number;
+  /** The words right after the number (≤ 65 chars): «من نظام …» names the law it belongs to. */
+  after: string;
+  evidence: string;
+}
+
+/** Sections the builder fuses after an article's own text: they cite «هذه اللائحة», not the law. */
+const FUSED_SECTION_MARKERS = ["«اللائحة التنفيذية المرتبطة»", "«ملخص التعديل»"];
+
+/** The article's own words, without the fused regulation / amendment sections. */
+export function lawOwnText(displayText: string): string {
+  let cut = displayText.length;
+  for (const marker of FUSED_SECTION_MARKERS) {
+    const i = displayText.indexOf(marker);
+    if (i >= 0 && i < cut) cut = i;
+  }
+  return displayText.slice(0, cut);
+}
+
+/** A fresh copy: a V8 slice can keep its whole parent string (an article's text) alive. */
+function detach(s: string): string {
+  return Buffer.from(s, "utf8").toString("utf8");
+}
+
+/** «من هذا النظام»: the article's own law. */
+const THIS_LAW_REF = /^\s*(?:من|في|ب)\s*(?:هذا\s+النظام|النظام\s+هذا)/;
+/** «من نظام …», «من اللائحة …», «من النظام الأساسي …»: some other document, named or not. */
+const OTHER_DOC_REF = /^\s*(?:من|في)\s+(?:هذه\s+اللائحة|(?:ال)?(?:نظام|لائحة|قرار|مرسوم|أمر|قواعد|ضوابط|تنظيم))/;
+
 /**
- * Extracts `EXEMPTS_FROM`, `CITES_ARTICLE`, `PARENT_LAW`, and `SUPERSEDES_LAW`
- * edges for an article node. Strictly skips article-number extraction when
- * `is_page_numbered === true` so `"Page 5"` never impersonates `"Article 5"`.
+ * The law a reference points to: the article's own law when nothing follows the
+ * number (or «من هذا النظام»); the named law when «من نظام …» resolves; null when
+ * it names another document the library cannot resolve — never a guess at the
+ * same-numbered article of the current law.
  */
-export function extractArticleEdges(
-  node: {
-    node_key: string;
-    law_slug: string | null;
-    is_page_numbered: boolean;
-    display_text: string;
-  },
+function targetLawFor(after: string, currentLaw: LawIndexEntry, lawMap: LawIndexMap): LawIndexEntry | null {
+  if (THIS_LAW_REF.test(after)) return currentLaw;
+  if (OTHER_DOC_REF.test(after)) return findLawByTitleFragment(after, lawMap);
+  return currentLaw;
+}
+
+/**
+ * Every `EXEMPTS_FROM` / `CITES_ARTICLE` reference in an article's own words.
+ * Needs no law index, so the watchdog keeps these small records instead of the
+ * article texts until all laws are streamed.
+ */
+export function scanArticleRefs(displayText: string): ArticleRefCandidate[] {
+  const text = lawOwnText(displayText);
+  // «المادة» and «للمادة» (the alif drops after لِـ) both contain «ماد».
+  if (!/ماد(?:ة|تين)/.test(text)) return [];
+  const out: ArticleRefCandidate[] = [];
+  const scan = (patterns: readonly RegExp[], edgeType: ArticleRefCandidate["edgeType"]) => {
+    for (const pat of patterns) {
+      pat.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = pat.exec(text)) !== null) {
+        const num = parseArabicArticleNumber(m[1]);
+        if (!num) continue;
+        // A spelled-out number can swallow «… من نظام X» into the capture: keep that tail too.
+        const inCapture = m[1].search(/\s(?:من|في)\s/);
+        const end = m.index + m[0].length;
+        const after = (inCapture >= 0 ? m[1].slice(inCapture) : "") + text.slice(end, end + 65);
+        out.push({ edgeType, num, after: detach(after), evidence: detach(m[0].trim().slice(0, 180)) });
+      }
+    }
+  };
+  scan(EXEMPTION_PATTERNS, "EXEMPTS_FROM");
+  scan(CITATION_PATTERNS, "CITES_ARTICLE");
+  return out;
+}
+
+/** The edges of one article from its scanned references, once every law is in `lawMap`. */
+export function resolveArticleEdges(
+  node: { node_key: string; law_slug: string | null; is_page_numbered: boolean; refs: readonly ArticleRefCandidate[] },
   lawMap: LawIndexMap,
 ): GraphEdgePayload[] {
   if (!node.law_slug || node.is_page_numbered) return [];
@@ -968,44 +1039,25 @@ export function extractArticleEdges(
     }
   };
 
-  // 1. High-priority statutory exception / qualification edges (`EXEMPTS_FROM`)
+  // 1. Statutory exception / qualification edges (`EXEMPTS_FROM`) first, then
+  // 2. general cross-references (`CITES_ARTICLE`) to articles not already exempted.
   const exemptedTargets = new Set<string>();
-  for (const pat of EXEMPTION_PATTERNS) {
-    pat.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = pat.exec(node.display_text)) !== null) {
-      const num = parseArabicArticleNumber(m[1]);
-      if (!num) continue;
-      // Check if followed immediately by "من نظام <Other Law>"
-      const afterSlice = node.display_text.slice(m.index + m[0].length, m.index + m[0].length + 65);
-      const externalLaw = afterSlice.includes("من نظام") ? findLawByTitleFragment(afterSlice, lawMap) : null;
-      const targetLaw = externalLaw ?? currentLaw;
-      const targetKey = targetLaw.articleKeyByNumber.get(num);
-      if (targetKey) {
-        exemptedTargets.add(targetKey);
-        addEdge(targetKey, "EXEMPTS_FROM", 1.25, m[0].trim());
-      }
+  for (const ref of node.refs) {
+    if (ref.edgeType !== "EXEMPTS_FROM") continue;
+    const targetKey = targetLawFor(ref.after, currentLaw, lawMap)?.articleKeyByNumber.get(ref.num);
+    if (targetKey) {
+      exemptedTargets.add(targetKey);
+      addEdge(targetKey, "EXEMPTS_FROM", 1.25, ref.evidence);
     }
   }
-
-  // 2. General statutory cross-reference edges (`CITES_ARTICLE`)
-  for (const pat of CITATION_PATTERNS) {
-    pat.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = pat.exec(node.display_text)) !== null) {
-      const num = parseArabicArticleNumber(m[1]);
-      if (!num) continue;
-      const afterSlice = node.display_text.slice(m.index + m[0].length, m.index + m[0].length + 65);
-      const externalLaw = afterSlice.includes("من نظام") ? findLawByTitleFragment(afterSlice, lawMap) : null;
-      const targetLaw = externalLaw ?? currentLaw;
-      const targetKey = targetLaw.articleKeyByNumber.get(num);
-      if (targetKey && !exemptedTargets.has(targetKey)) {
-        addEdge(targetKey, "CITES_ARTICLE", 0.9, m[0].trim());
-      }
-    }
+  for (const ref of node.refs) {
+    if (ref.edgeType !== "CITES_ARTICLE") continue;
+    const targetKey = targetLawFor(ref.after, currentLaw, lawMap)?.articleKeyByNumber.get(ref.num);
+    if (targetKey && !exemptedTargets.has(targetKey)) addEdge(targetKey, "CITES_ARTICLE", 0.9, ref.evidence);
   }
 
-  // 3. Structural law-level hierarchy edges (`PARENT_LAW` & `SUPERSEDES_LAW`) attached once on the law's root article
+  // 3. Law-level hierarchy edges (`PARENT_LAW` & `SUPERSEDES_LAW`) attached once on the law's root article.
+  // `parentLawId` is a registry instrument_id; `resolveParentLawSlugs` maps it to a slug first.
   if (currentLaw.rootNodeKey === node.node_key) {
     if (currentLaw.parentLawId) {
       const parent = lawMap.get(currentLaw.parentLawId);
@@ -1026,6 +1078,42 @@ export function extractArticleEdges(
   }
 
   return [...edges.values()];
+}
+
+/**
+ * `laws.parent_law_id` holds the parent's registry `instrument_id`, while
+ * `lawMap` is keyed by slug: rewrite each entry's `parentLawId` to the parent's
+ * slug (null when the parent is not in the library). Call once all laws are in.
+ */
+export function resolveParentLawSlugs(lawMap: LawIndexMap): void {
+  const slugByInstrument = new Map<string, string>();
+  for (const e of lawMap.values()) {
+    const id = e.instrumentId?.trim();
+    if (id) slugByInstrument.set(id, e.slug);
+  }
+  for (const e of lawMap.values()) {
+    const ref = e.parentLawId?.trim();
+    if (!ref) continue;
+    e.parentLawId = slugByInstrument.get(ref) ?? (lawMap.has(ref) ? ref : null);
+  }
+}
+
+/**
+ * Extracts `EXEMPTS_FROM`, `CITES_ARTICLE`, `PARENT_LAW`, and `SUPERSEDES_LAW`
+ * edges for an article node. Strictly skips article-number extraction when
+ * `is_page_numbered === true` so `"Page 5"` never impersonates `"Article 5"`.
+ */
+export function extractArticleEdges(
+  node: {
+    node_key: string;
+    law_slug: string | null;
+    is_page_numbered: boolean;
+    display_text: string;
+  },
+  lawMap: LawIndexMap,
+): GraphEdgePayload[] {
+  if (!node.law_slug || node.is_page_numbered) return [];
+  return resolveArticleEdges({ ...node, refs: scanArticleRefs(node.display_text) }, lawMap);
 }
 
 /**
