@@ -51,9 +51,10 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
       },
-      // Holds the law index + per-article reference records for one pass (no article
-      // texts since 2026-11-14); 400M leaves room above the ~90 MB tsx/supabase-js base.
-      max_memory_restart: '400M',
+      // Holds the law index + per-article reference records for one whole pass. The
+      // production library (~99k articles, ~136k nodes) went past 400M mid-pass, so PM2
+      // restarted the watchdog every ~15 min and no pass ever reached the edge stage.
+      max_memory_restart: '1500M',
       exp_backoff_restart_delay: 500,
       max_restarts: 15,
       min_uptime: '10s',
