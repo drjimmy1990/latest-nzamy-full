@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Cairo, IBM_Plex_Sans_Arabic, JetBrains_Mono } from "next/font/google";
+import { Cairo, IBM_Plex_Sans_Arabic } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import ThemeProvider from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
@@ -22,9 +23,14 @@ const ibmPlexSansArabic = IBM_Plex_Sans_Arabic({
   variable: "--font-ibm-plex-sans-arabic",
 });
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// JetBrains Mono ships from the repo (latin subset, variable 400–700, OFL):
+// on 2026-11-14 Google Fonts began answering the production server with
+// /l/font?kit= URLs that Turbopack's next/font/google cannot resolve, which
+// failed every deploy build.
+const jetbrainsMono = localFont({
+  src: "./fonts/JetBrainsMono-latin-var.woff2",
+  weight: "400 700",
+  style: "normal",
   display: "swap",
   variable: "--font-jetbrains-mono",
 });
