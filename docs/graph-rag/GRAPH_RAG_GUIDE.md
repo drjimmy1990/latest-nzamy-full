@@ -76,6 +76,16 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 
 What to expect on screen: `NOTICE: 20261117_10 verify: OK` and a `check | ok` row with `t`. No rebuild and no `mark_dirty_now`: the graph itself does not change.
 
+### 1d. The owner's links file (`20261118_10`)
+
+The owner's files name what replaced or repealed a law and which laws and articles a decree amends. This file adds the columns the seeder writes them into (server-only) and the function that finds a repealed article's replacement again when its law's successor changes. Run it **before the owner's next library load**: his loader stops before the first write without it. Before the deploy is simplest:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261118_10_library_owner_links.sql
+```
+
+What to expect on screen: `NOTICE: 20261118_10 verify: OK` and a `check | ok` row with `t`. Then: deploy; after the merge into owner-edits the owner pulls, re-parses (`parse-laws` lists every link that names no single law, for him to fix) and loads; then `mark_dirty_now` for one rebuild. The watchdog log shows `Laws' successors changed: N repealed articles queued…` when the refresh resets anything.
+
 ## 2. Deploy the code
 
 ```bash
@@ -261,3 +271,4 @@ M=supabase/migrations; PG_IMAGE=pgvector/pgvector:pg16 bash supabase/tests/rls/r
 ```
 
 For the other database tests, add `$M/20261117_10_library_graph_seeds.sql` after `20261116_10` and run the same command with `library_graph_explorer.test.sql`, `library_graph_depth.test.sql`, `library_graph_links.test.sql`, `library_graph_routing.test.sql` or `library_graph_seeds.test.sql` as the last file.
+`library_owner_links.test.sql` needs the library's column locks too; its header has the full command.

@@ -43,6 +43,14 @@ test("owner 2026-11-06: laws.merged_regulations is REQUIRED before the first wri
   assert.ok(!laws?.stripKeys.includes("merged_regulations"));
 });
 
+test("20261118_10: owner_links is REQUIRED on laws and decrees before the first write, never stripped", () => {
+  for (const name of ["laws", "decrees_circulars"]) {
+    const t = OWNER_LOADER_TABLES.find((x) => x.name === name);
+    assert.ok(t?.requiredColumns?.includes("owner_links"), name);
+    assert.ok(!t?.stripKeys.includes("owner_links"), name);
+  }
+});
+
 test("preflight: a missing column, a permission error, a timeout or a throw each stop the load", async () => {
   const answers: Record<string, { error: { code?: string; message?: string } | null } | "throw"> = {
     series_id: { error: { code: "42703", message: "column feqh_books.series_id does not exist" } },

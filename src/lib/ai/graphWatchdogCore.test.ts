@@ -763,3 +763,117 @@ test("a pass writes each law's section, the library's IMPLEMENTED_BY links and e
   assert.equal(meta("principle:gp1").subject_section, "04");
   assert.equal(meta("principle:gp1").governing_laws, undefined);
 });
+
+test("runSimilarityStep refreshes the replacements once first; a failed refresh does not stop the links", async () => {
+  let refreshes = 0;
+  const pages = [10, 3];
+  const backend = {
+    async refreshReplacements() {
+      refreshes++;
+      return { changed_laws: 1, reset: 4 };
+    },
+    async buildSimilarity() {
+      return { processed: pages.shift() ?? 0, similar: 0, replaced: 1 };
+    },
+  };
+  const step = await runSimilarityStep(backend, { modelId: "m", timeBudgetMs: 60_000, pageSize: 10 });
+  assert.equal(refreshes, 1, "once per step, not once per page");
+  assert.equal(step.refreshed, 4);
+  assert.equal(step.calls, 2);
+
+  const quiet = await runSimilarityStep(
+    { async refreshReplacements() { return { changed_laws: 0, reset: 0 }; }, async buildSimilarity() { return { processed: 0, similar: 0, replaced: 0 }; } },
+    { modelId: "m", timeBudgetMs: 1 },
+  );
+  assert.equal(quiet.refreshed, undefined, "nothing reset: nothing to report");
+
+  const failing = await runSimilarityStep(
+    { async refreshReplacements(): Promise<{ changed_laws: number; reset: number }> { throw new Error("timeout"); }, async buildSimilarity() { return { processed: 2, similar: 1, replaced: 0 }; } },
+    { modelId: "m", timeBudgetMs: 60_000 },
+  );
+  assert.equal(failing.refreshError, "timeout");
+  assert.equal(failing.processed, 2, "the similarity pages still ran");
+});
+
+test("a pass turns the owner's links into SUPERSEDES_LAW and AMENDS_ARTICLE edges, and skips what names no single law", async () => {
+  const storedNodes = new Map<string, GraphNodePayload>();
+  const storedEdges: GraphEdgePayload[] = [];
+  const bundle = (law: Record<string, unknown>, numbers: string[]) => ({
+    law: { type: "نظام", section_code: "00", ...law } as never,
+    chaptersById: new Map(),
+    articles: numbers.map((n) => ({ id: `${law.slug}__art-${n}`, law_slug: law.slug as string, number: n, text: `نص المادة ${n}` })),
+    regulationsByArticleId: new Map(),
+    amendmentsByArticleId: new Map(),
+  });
+  const backend: GraphWatchdogBackend = {
+    async getStatus() {
+      return {
+        default_model_id: "m",
+        library_laws_count: 2,
+        embeddable_nodes: 0,
+        sync_state: { dirty: true, include_feqh_vectors: false, last_write_at: "2026-11-18T09:00:00Z" },
+        models: [{ model_id: "m", provider: "gemini", api_model: "x", dimensions: 4, task_document: "D", task_query: "Q", is_default: true, active_vectors: 0 }],
+      };
+    },
+    async startRun() {
+      return { ok: true, run_id: 9, started_at: "2026-11-18T10:00:00Z" };
+    },
+    async finishRun() {},
+    async *streamLawBundles() {
+      yield bundle({ slug: "old-notary", title: "لائحة كتاب العدل", status: "repealed",
+        owner_links: [{ kind: "repealed_by", name: "نظام التوثيق" }, { kind: "related", name: "نظام آخر" }] }, ["1"]);
+      yield bundle({ slug: "notary", title: "نظام التوثيق", status: "active" }, ["1", "3"]);
+    },
+    async *streamPrincipleBundles() {},
+    async *streamDecreeBundles() {
+      yield [{
+        decree: {
+          id: "d1", title: "مرسوم ملكي بتعديل نظام التوثيق", type: "royal", summary: "تعديل المادة الثالثة",
+          owner_links: [
+            { kind: "affects", slug: "notary", articles: ["3"] },
+            { kind: "affects", name: "نظام لا وجود له", articles: ["1"] },
+          ],
+        },
+        pages: [],
+      }];
+    },
+    async *streamFeqhBundles() {},
+    async upsertNodes(rows) {
+      for (const r of rows) storedNodes.set(r.node_key, r);
+      return rows.length;
+    },
+    async upsertEdges(rows) {
+      for (const r of rows) {
+        assert.ok(storedNodes.has(r.source_key), `edge source ${r.source_key} written before its node`);
+        assert.ok(storedNodes.has(r.target_key), `edge target ${r.target_key} written before its node`);
+      }
+      storedEdges.push(...rows);
+      return rows.length;
+    },
+    async pruneStale() {
+      return { deleted_nodes: 0, deleted_edges: 0 };
+    },
+    async relinkVault() {
+      return { relinked: 0, pruned: 0, missing: 0 };
+    },
+    async fetchMissingEmbeddings() {
+      return [];
+    },
+    async storeEmbeddings() {
+      return 0;
+    },
+  };
+
+  const summary = await runGraphSyncPass(backend, { triggerSource: "unit_test", allowSmallCorpus: true, skipEmbedding: true, env: {} });
+  assert.equal(summary.status, "succeeded", summary.errorMessage);
+
+  const owner = storedEdges.filter((e) => (e.metadata as Record<string, unknown> | undefined)?.source === "owner_links");
+  assert.deepEqual(
+    owner.map((e) => [e.edge_type, e.source_key, e.target_key]).sort(),
+    [
+      ["AMENDS_ARTICLE", "decree:d1", "article:notary__art-3"],
+      ["SUPERSEDES_LAW", "law:notary", "law:old-notary"],
+    ],
+    "the successor replaces the repealed law; the decree amends article 3; the unknown law and the related link make no edge",
+  );
+});

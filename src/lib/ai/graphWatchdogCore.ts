@@ -40,6 +40,7 @@ import {
   type DefinitionRecord,
   type GraphEdgePayload,
   type GraphNodePayload,
+  type LawIndexEntry,
   type LawIndexMap,
   type RawAmendmentRow,
   type RawArticleRow,
@@ -61,6 +62,13 @@ import {
   normalizeSectionCode,
   resolveCommitteeLaws,
 } from "./graphRouting.ts";
+import {
+  buildOwnerLinkIndex,
+  formatOwnerLinkStats,
+  newOwnerLinkStats,
+  ownerLinkEdges,
+  type OwnerLinkIndex,
+} from "./graphOwnerLinks.ts";
 
 export const DEFAULT_QUIET_WINDOW_MS = 180_000; // 3 minutes settle time after last library write
 export const MIN_SAFE_LAWS_COUNT = 10; // Mid-wipe safety guard
@@ -224,6 +232,13 @@ export interface GraphWatchdogBackend {
    * changed. Optional: absent before the migration, and in tests that skip it.
    */
   buildSimilarity?(modelId: string, limit: number, params: SimilarityParams): Promise<SimilarityPageResult>;
+  /**
+   * `graph_rag_refresh_replacements` (20261118_10): when the laws' successors
+   * (SUPERSEDES_LAW) changed since the last call, the repealed articles of the
+   * affected laws are queued for the vector pass again. Optional: absent before
+   * the migration (the backend then answers `{ reset: 0 }`).
+   */
+  refreshReplacements?(): Promise<{ changed_laws: number; reset: number }>;
 }
 
 /** Thresholds (cosine similarity, 0–1) the database applies; unset keys keep the SQL defaults. */
@@ -241,6 +256,10 @@ export interface SimilarityPageResult {
   replaced: number;
   /** Why the database built nothing yet: "graph_not_ready", "vectors_incomplete". */
   skipped?: string;
+  /** Repealed articles queued again because their law's successors changed (runSimilarityStep only). */
+  refreshed?: number;
+  /** Why the replacement refresh failed this step (runSimilarityStep only; retried next step). */
+  refreshError?: string;
 }
 
 const SIMILARITY_ENV: Readonly<Record<keyof SimilarityParams, string>> = {
@@ -278,7 +297,7 @@ export function similarityPageFrom(raw: string | number | undefined): number {
  * where it left off, and only nodes with a new or changed vector are redone.
  */
 export async function runSimilarityStep(
-  backend: Pick<GraphWatchdogBackend, "buildSimilarity">,
+  backend: Pick<GraphWatchdogBackend, "buildSimilarity" | "refreshReplacements">,
   options: {
     modelId: string;
     timeBudgetMs: number;
@@ -290,6 +309,18 @@ export async function runSimilarityStep(
 ): Promise<SimilarityPageResult & { done: boolean; calls: number }> {
   const total: SimilarityPageResult & { done: boolean; calls: number } = { processed: 0, similar: 0, replaced: 0, done: false, calls: 0 };
   if (!backend.buildSimilarity) return { ...total, done: true };
+  // The repealed articles of a law whose successors changed get their
+  // replacement found again (20261118_10): the stamps alone never notice.
+  // A failed refresh does not hold up the links: the pairs stay as they were,
+  // so the next step sees the same change and tries again.
+  if (backend.refreshReplacements) {
+    try {
+      const r = await backend.refreshReplacements();
+      if (r.reset > 0) total.refreshed = r.reset;
+    } catch (e) {
+      total.refreshError = e instanceof Error ? e.message : String(e);
+    }
+  }
   const now = options.now ?? Date.now;
   const pageSize = options.pageSize ?? SIMILARITY_PAGE_DEFAULT;
   const started = now();
@@ -476,6 +507,11 @@ export async function runGraphSyncPass(
       const repealCoresByLaw = new Map<string, string[]>();
       // The library's own article → regulation references (title + number), resolved in Pass 6.
       const regulationLinks: RegulationLinkCandidate[] = [];
+      // The owner's own links (laws.owner_links, 20261118_10): small lists, resolved once every law is known.
+      const ownerLinksByLaw = new Map<string, unknown>();
+      const deferredOwnerEdges: GraphEdgePayload[] = [];
+      const ownerStats = newOwnerLinkStats();
+      let ownerIdx: OwnerLinkIndex<LawIndexEntry> | null = null;
 
       log(`[graph-watchdog] Streaming laws & articles...`);
       for await (const bundle of backend.streamLawBundles()) {
@@ -506,11 +542,17 @@ export async function runGraphSyncPass(
           lawNodeKey,
           parentLawId: bundle.law.parent_law_id ?? null,
           instrumentId: bundle.law.instrument_id ?? null,
+          lawGuid: bundle.law.law_guid ?? null,
+          issuingInstrument: bundle.law.issuing_instrument ?? null,
           supersedesLawSlug: bundle.law.supersedes_law_slug ?? null,
           enablingArticle: bundle.law.enabling_article ?? null,
           articleKeyByNumber: artKeyByNumber,
           rootNodeKey,
         });
+
+        if (Array.isArray(bundle.law.owner_links) && bundle.law.owner_links.length > 0) {
+          ownerLinksByLaw.set(bundle.law.slug, bundle.law.owner_links);
+        }
 
         const repealCores: string[] = [];
         for (const n of built) {
@@ -615,13 +657,21 @@ export async function runGraphSyncPass(
 
       // ── Pass 3: Stream Royal Decrees & Extract `AMENDS_ARTICLE` ───────────────
       log(`[graph-watchdog] Streaming decrees & circulars...`);
+      ownerIdx = buildOwnerLinkIndex(lawMap.values());
       for await (const batch of backend.streamDecreeBundles()) {
         const dNodes = buildDecreeGraphNodes(batch);
+        const dKeys = new Set(dNodes.map((d) => d.node_key));
         for (const d of dNodes) {
           nodeBuffer.push(d);
           if (mayNameArticle(d.display_text)) {
             edgeBuffer.push(...extractDecreeAmendmentEdges(d, lawMap));
           }
+        }
+        // The owner's «affected_laws»: decree → each article it names (written in Pass 6 with the other edges).
+        for (const { decree } of batch) {
+          const nodeKey = `decree:${decree.id}`;
+          if (!dKeys.has(nodeKey) || !Array.isArray(decree.owner_links) || decree.owner_links.length === 0) continue;
+          deferredOwnerEdges.push(...ownerLinkEdges({ kind: "decree", nodeKey }, decree.owner_links, lawMap, ownerIdx, ownerStats));
         }
         if (nodeBuffer.length >= NODE_BATCH_LIMIT) await flushNodes();
       }
@@ -672,6 +722,18 @@ export async function runGraphSyncPass(
         edgeBuffer.push(...resolveLawSupersession(law.slug, cores, lawMap, coreIndex));
         if (edgeBuffer.length >= EDGE_BATCH_LIMIT) await flushEdges();
       }
+      // The owner's own links: what replaced / repealed each law, what it affects.
+      ownerIdx ??= buildOwnerLinkIndex(lawMap.values());
+      for (const [slug, links] of ownerLinksByLaw) {
+        const law = lawMap.get(slug);
+        if (!law) continue;
+        edgeBuffer.push(...ownerLinkEdges({ kind: "law", law }, links, lawMap, ownerIdx, ownerStats));
+        if (edgeBuffer.length >= EDGE_BATCH_LIMIT) await flushEdges();
+      }
+      ownerLinksByLaw.clear();
+      edgeBuffer.push(...deferredOwnerEdges);
+      deferredOwnerEdges.length = 0;
+      if (ownerStats.links > 0) log(`[graph-watchdog] ${formatOwnerLinkStats(ownerStats)}`);
       await flushEdges();
 
       // ── Pass 7: Prune Stale Nodes/Auto-Edges & Instant SQL Vault Relink ($0) ──

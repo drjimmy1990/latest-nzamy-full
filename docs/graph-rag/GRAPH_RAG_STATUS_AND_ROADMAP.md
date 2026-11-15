@@ -43,6 +43,7 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-15 | Embeddings moved to Google Cloud Vertex AI (Cloud billing), several calls at once (`b4720339`). Deployed; the vectors filled to about 123k. |
 | 2026-11-16 | **Links + routing batch** (`20261116_10`, commit `35970cd6`). Defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, vector links, and routing by section and judicial track (section 4.6). Deployed 2026-11-15, SQL run. |
 | 2026-11-17 | **Seeds + gold set** (`20261117_10`, section 4.8). An article the question names leads the graph answer and its links follow it; the lab does the same lookup as the AI; a 39-question gold set and `npm run graph:gold` measure recall and the switch-on timing. Not merged or deployed yet. |
+| 2026-11-18 | **The owner's own links** (`20261118_10`, section 4.9). The parser reads the owner's `superseded_by`, `repealed_by`, `supersedes`, `repeals`, `affected_laws` and `related_laws`; the graph turns them into `SUPERSEDES_LAW` and `AMENDS_ARTICLE` links, strictly, and a repealed article's replacement is found again when its law's successor changes. Not merged or deployed yet; needs the owner's next load and one rebuild. |
 
 ---
 
@@ -197,6 +198,31 @@ Tests:
 
 Tests: `library_graph_seeds.test.sql` (S0–S7), the seed and fallback cases in `retrieval.test.ts`, `graphGoldCore.test.ts`, and the 20261117_10 contract in `graphSchemaContract.test.ts`. `_verify.sql` has the block `verify:library_graph_seeds`. The three earlier graph rows now accept the eleven-argument signature.
 
+### 4.9 The owner's own links (`20261118_10`)
+
+The owner's files say, in their frontmatter, what replaced or repealed a law, what a law replaced, which laws and articles a decree amends, and which laws are related. The parser used to drop all of it, and the graph only guessed supersession from the library's own fields. Now:
+
+- **Parser.** `extractOwnerLinks` (`src/lib/library/ownerLinks.ts`) reads `superseded_by`, `repealed_by`, `supersedes`, `repeals`, `affected_laws` and `related_laws` (with their `_slug`, `_registry_id` and `_path` forms) into `[{kind, name?, slug?, id?, guid?, articles?}]`. A file path becomes the target law's slug and registry id, as the laws parser stores them: for laws after every drop, for decrees from the target file (its slug line, else its file name, through the same slug rule). Editorial notes are never read, and the stored name keeps only the title: a bracketed aside without a number and anything after «ملاحظة» are dropped (a decree number such as «(م/164)» stays). `cross_reference` and `amends` are not read either: they are free text, not a reference to one law.
+- **Columns.** `library.laws.owner_links` and `library.decrees_circulars.owner_links` (jsonb), server-only. The seeder writes them on every row (NULL when the file has none), so a link the owner deletes is gone after his next load. The owner loader's preflight stops before the first write when the SQL has not run.
+- **The owner's own check.** `parse-laws` prints a tally of the links and lists each one that names no single law, with the reason, so the owner fixes the file before he loads. The decree parser prints the count by kind. The numbers come from his run on his current files; none are quoted here.
+- **Graph.** The watchdog resolves each link strictly against the live laws: slug, registry id, BOE guid; then a title that names exactly one law; then the decree number («م/53») against the issuing instrument; then the status (a `repealed_by` target should be in force) when that leaves exactly one. Anything else is counted and logged, never guessed.
+  - `superseded_by` / `repealed_by` → `SUPERSEDES_LAW` from the successor to this law, only when this law is repealed. When it is not, the link is counted as "still in force" and makes no edge.
+  - `supersedes` / `repeals` → `SUPERSEDES_LAW` from this law to the target, only when the target is repealed (else "still in force"). A link to itself is dropped.
+  - `affected_laws` with article numbers → `AMENDS_ARTICLE` (weight 1.2) to each named article, from the decree, or from the amending law's first article when a law states it. Without numbers it is counted only.
+  - `related_laws` → kept in the column, no edge.
+  - These edges carry `metadata.source = "owner_links"` and, as evidence, the library's own title of the target (never the owner's wording). When the library's fields make the same link, either copy may be the one kept.
+- **What it changes in answers.** `AMENDS_ARTICLE` is walked at hop 1, so an amended article brings its amending decree (or law). `SUPERSEDES_LAW` is not walked; it decides where a repealed article's `REPLACED_BY` looks first (the successor law's articles).
+- **Replacement refresh.** A `REPLACED_BY` link was computed once per article and never revisited. `graph_rag_refresh_replacements()` keeps the (replaced law → successor law) pairs of the last settled graph in `library_graph.replacement_pairs`. When a pair is added or removed, it clears the similarity state of that law's repealed articles only, and the next similarity pages recompute them. The watchdog calls it once before each similarity step; a failure is logged and retried next step. On a graph that is not settled it does nothing, and it locks the sync row so a pass cannot start under it. The SQL seeds the pairs from the current graph, so the first refresh reacts only to what the owner's links change. The watchdog probes for the column at the start of every pass, so it reads the links from the first pass after the SQL, without a restart.
+
+Run order:
+
+1. Run `20261118_10`, before the owner's next load (his loader stops without it). Before the deploy is simplest; the deployed watchdog also works without it.
+2. Deploy.
+3. After this batch is merged into owner-edits: the owner pulls, re-parses, fixes what the tally lists, and loads.
+4. `mark_dirty_now`: one rebuild. The replacement refresh then runs by itself.
+
+Tests: `library_owner_links.test.sql` (T1–T9; negative control: without the column locks the SQL stops), `ownerLinks.test.ts`, `graphOwnerLinks.test.ts`, `parse-laws.owner-links.test.ts`, `parse-decrees.owner-links.test.ts`, two watchdog tests in `graphWatchdogCore.test.ts`, the loader preflight test and the 20261118_10 contract. `_verify.sql` has the block `verify:library_owner_links`.
+
 ### 4.7 Tests and checks (depth batch)
 
 - **Unit:** `graphBuilder.test.ts`, `graphWatchdogCore.test.ts` (a mock that enforces foreign-key order), `graphExplorerCore.test.ts`, and `graphSchemaContract.test.ts`. The contract test checks that the migration's type lists equal the explorer's, that the signature and readiness check are unchanged, and that no forbidden pgvector calls appear.
@@ -231,13 +257,13 @@ From the original review, with what A + B + C closed:
 | **Fiqh blocks have no links** | ❌ open. They are searchable as nodes but connected to nothing. Fix: D. |
 | **Concepts are a fixed list of 32** | ❌ open. Fix: D. |
 | `ESTABLISHES_RULE` / `DECONSTRUCTS_CONCEPT` are never created | ❌ open. Retrieval already weighs `ESTABLISHES_RULE` (0.48), but nothing writes it. Fix: D. |
-| `PARENT_LAW` / `SUPERSEDES_LAW` only where the library fields are filled | ⚠ data, not code. The owner's export decides it. |
+| `PARENT_LAW` / `SUPERSEDES_LAW` only where the library fields are filled | ⚠ data, not code. The owner's export decides it; since `20261118_10` his own links add `SUPERSEDES_LAW` too (4.9). |
 | Citations to documents that are not in the library | ⚠ by design, no link. Better nothing than a wrong target. |
 | Chapters without a title get no chapter node | ⚠ by design. Those articles link straight to their law. |
 | Hop 2 over citations is inactive without vectors | ✅ closed: the vectors are filled (Vertex AI) |
 | A labour question pulled administrative principles, and the reverse | ✅ closed in code (`20261116_10` routing), waits for deploy |
 | Regulation articles were not linked to the article they implement | ✅ closed in code (`IMPLEMENTED_BY`), waits for deploy |
-| The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`, cross references) are not read | ❌ open. Next candidate after this batch. |
+| The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`) are not read | ✅ closed in code (`20261118_10`, 4.9), waits for the SQL, the deploy, the owner's load and one rebuild. Cross references stay unread (free text). |
 | No quality measurement of answers | ✅ closed in code: the gold set and `npm run graph:gold` (4.8). The set waits for the owner's approval. |
 | A named article did not seed the graph | ✅ closed in code (`20261117_10` seeds), waits for deploy |
 
@@ -302,7 +328,7 @@ An AI-written summary for every law and chapter node, embedded so search can mat
 
 1. 7.1, all of it.
 2. ~~Direct article lookup~~: done as seeds (4.8).
-2a. The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`, cross references): its own batch, timed with the owner's next library load.
+2a. ~~The owner's own metadata links~~: built in `20261118_10` (4.9), timed with the owner's next library load.
 3. D.
 4. E.
 5. PageRank, only if the gold set shows that two steps are not enough.

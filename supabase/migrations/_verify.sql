@@ -6615,3 +6615,30 @@ select 'GraphRAG seeds: named articles lead the graph answer (run 20261117_10)' 
              where p.pronamespace = 'public'::regnamespace and p.proname = 'graph_rag_retrieve_scoped') = 1
        as ok;
 -- <<< verify:library_graph_seeds
+-- >>> verify:library_owner_links
+-- 2026-11-18 — 20261118_10_library_owner_links.sql: library.laws.owner_links and
+-- library.decrees_circulars.owner_links (the owner's own links from the
+-- frontmatter: superseded_by, repealed_by, supersedes, repeals, affected_laws,
+-- related_laws), server-only; the graph watchdog turns them into SUPERSEDES_LAW /
+-- AMENDS_ARTICLE links. public.graph_rag_refresh_replacements() resets the
+-- REPLACED_BY state of the repealed articles whose law gained or lost a
+-- successor (library_graph.replacement_pairs). Run BEFORE the deploy and before
+-- the owner's next load (his loader's preflight needs the column).
+-- Docker: supabase/tests/rls/library_owner_links.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Owner links: laws/decrees owner_links server-only, replacement refresh (run 20261118_10)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'library' and table_name = 'laws'
+                  and column_name = 'owner_links' and data_type = 'jsonb')
+       and exists (select 1 from information_schema.columns
+                    where table_schema = 'library' and table_name = 'decrees_circulars'
+                      and column_name = 'owner_links' and data_type = 'jsonb')
+       and not has_column_privilege('anon', 'library.laws', 'owner_links', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.laws', 'owner_links', 'SELECT')
+       and not has_column_privilege('anon', 'library.decrees_circulars', 'owner_links', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.decrees_circulars', 'owner_links', 'SELECT')
+       and to_regclass('library_graph.replacement_pairs') is not null
+       and to_regprocedure('public.graph_rag_refresh_replacements()') is not null
+       and not has_function_privilege('anon', 'public.graph_rag_refresh_replacements()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.graph_rag_refresh_replacements()', 'EXECUTE')
+       as ok;
+-- <<< verify:library_owner_links

@@ -51,6 +51,8 @@ import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnn
 // Owner 2026-11-07: the corpus's own audit notes never reach an amendment summary.
 import { stripAuditNotes } from "../../src/lib/library/lawPreambleBlocks";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
+import { extractOwnerLinks, type OwnerLink } from "../../src/lib/library/ownerLinks";
+import { tallyOwnerLinks } from "./lib/owner-links-tally";
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -474,6 +476,15 @@ export interface ParsedLaw {
    * card's «يشتمل على: …» line prefers these names.
    */
   merged_regulations: MergedRegulationDetail[] | null;
+  /**
+   * The owner's own links in the frontmatter (superseded_by, repealed_by,
+   * supersedes, repeals, affected_laws, related_laws), normalised by
+   * src/lib/library/ownerLinks.ts; a file path is resolved against this run's
+   * laws to the target's final slug. Seeded into library.laws.owner_links
+   * (server-only, migration 20261118_10); the graph turns them into links.
+   * null when the file states none.
+   */
+  owner_links?: OwnerLink[] | null;
   /** Structured per-status article counts, e.g. {"active":40,"repealed":3}. DB column is jsonb. */
   article_status_summary: Record<string, unknown> | null;
   law_guid: string;
@@ -2087,6 +2098,28 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     unpublishedTextNotices,
   );
 
+  // The owner's own links (20261118_10). Read after every drop, so a path
+  // resolves to a law that is really in this output, by its final slug.
+  const lawByPath = new Map<string, ParsedLaw>();
+  for (const law of laws) {
+    const src = lawSourceFile.get(law);
+    if (src) lawByPath.set(src.replace(/\\/g, "/").normalize("NFC"), law);
+  }
+  const lawOfPath = (ref: string) => {
+    const want = ref.replace(/\\/g, "/").normalize("NFC");
+    for (const [src, law] of lawByPath) {
+      if (src.endsWith(want) || src.endsWith(want.replace(/^01_المكتبة_القانونية\//, ""))) return { slug: law.slug, id: law.instrument_id || law.id };
+    }
+    return undefined;
+  };
+  for (const law of laws) {
+    const links = extractOwnerLinks(law.metadata ?? {}, lawOfPath);
+    law.owner_links = links.length > 0 ? links : null;
+  }
+  const ownerTally = tallyOwnerLinks(laws);
+  console.log(`\nℹ️  ${ownerTally.summary}`);
+  printCapped("ℹ️  owner links that name no single library law (kept, no graph link)", ownerTally.unresolved);
+
   if (failed.length > 0) {
     console.error(`\n🛑 ${failed.length} file(s) failed to parse and are MISSING from the output.`);
   }
@@ -2129,6 +2162,9 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         lowCoverageFiles: lowCoverageFiles.length,
         chapterLevelDiagnostics: chapterLevelDiagnostics.length,
         unpublishedTextNotices: unpublishedTextNotices.length,
+        ownerLinks: ownerTally.links,
+        ownerLinksResolved: ownerTally.resolved,
+        ownerLinksUnresolved: ownerTally.unresolved.length,
       },
       excluded: excludedList,
       frontmatterWarnings,

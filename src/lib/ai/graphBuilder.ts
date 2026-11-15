@@ -87,6 +87,10 @@ export interface LawIndexEntry {
   enablingArticle?: string | null;
   /** The law's registry instrument_id (what other laws' `parent_law_id` holds). */
   instrumentId?: string | null;
+  /** laws.law_guid (BOE): what the owner's links may name a law by. */
+  lawGuid?: string | null;
+  /** laws.issuing_instrument («مرسوم ملكي رقم م/53»): breaks a title tie in the owner's links. */
+  issuingInstrument?: string | null;
   /** `law_status` / `laws.status` ("repealed", "active", …): picks the old law a repeal clause names. */
   status?: string | null;
   /** laws.section_code ("00".."29"), normalised; null when the law is unfiled. */
@@ -254,6 +258,11 @@ export interface RawLawRow {
   enabling_article?: string | null;
   /** The library section ("00".."29"); retrieve routes a question to its section by it (law node metadata only). */
   section_code?: string | null;
+  /** BOE guid and issuing instrument: identities the owner's links may name the law by. */
+  law_guid?: string | null;
+  issuing_instrument?: string | null;
+  /** The owner's own links (20261118_10; src/lib/library/ownerLinks.ts), as stored. */
+  owner_links?: unknown;
 }
 
 export interface RawArticleRow {
@@ -663,6 +672,8 @@ export interface RawDecreeRow {
   summary?: string | null;
   preamble?: string | null;
   status?: string | null;
+  /** The owner's own links (20261118_10): «affected_laws» become AMENDS_ARTICLE. */
+  owner_links?: unknown;
 }
 
 export interface RawDecreePageRow {

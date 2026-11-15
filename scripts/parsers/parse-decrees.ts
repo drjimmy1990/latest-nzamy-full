@@ -28,8 +28,10 @@ import {
   buildSlugIndexFromCategoryInput,
   resolveCrossDomain,
   resolvePathSurvivor,
+  lawIdentityOfPath,
   resolveSlugSurvivor,
 } from "./lib/entity-prescan";
+import { extractOwnerLinks, type OwnerLink } from "../../src/lib/library/ownerLinks";
 import { filterMeta, assertManifestLoadable } from "./manifest";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyInstrument, type InstrumentType } from "./lib/instrument";
@@ -82,6 +84,13 @@ export interface ParsedDecree {
   official_url: string;
   raw_pages: string[];
   metadata: Record<string, unknown>;
+  /**
+   * The owner's own links in the frontmatter — mostly `affected_laws`: the
+   * laws (and articles) this instrument amends (src/lib/library/ownerLinks.ts).
+   * Seeded into library.decrees_circulars.owner_links (server-only, 20261118_10);
+   * the graph makes AMENDS_ARTICLE links of them. null when none.
+   */
+  owner_links?: OwnerLink[] | null;
   /**
    * ب-137: same convention as ب-133 in parse-laws.ts, ported here after
    * council review (2026-08-22) found it live and unhandled — `id` here is
@@ -495,9 +504,25 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
     for (const line of decreeUnverifiedSupersededTags) console.error(`   • ${line}`);
   }
 
+  // The owner's own links (20261118_10), after every drop. A law named by its
+  // file path is read from that file's frontmatter (slug, registry id).
+  const lawOfPath = (ref: string) => lawIdentityOfPath(resolvedPath, ref);
+  let ownerLinkCount = 0;
+  const ownerKinds = new Map<string, number>();
+  for (const d of allDecrees) {
+    const links = extractOwnerLinks(d.metadata ?? {}, lawOfPath);
+    d.owner_links = links.length > 0 ? links : null;
+    ownerLinkCount += links.length;
+    for (const l of links) ownerKinds.set(l.kind, (ownerKinds.get(l.kind) ?? 0) + 1);
+  }
+
   const totalArticles = allDecrees.reduce((sum, d) => sum + d.articles.length, 0);
   console.log(`\n📜 Decree Parser Summary`);
   console.log(`  Total decrees: ${allDecrees.length}`);
+  console.log(
+    `  Owner links: ${ownerLinkCount} (${[...ownerKinds].map(([k, n]) => `${k} ${n}`).join(", ") || "none"}) — ` +
+      `resolved against the live laws by the graph watchdog, which logs what it could not resolve`,
+  );
   console.log(`  Total articles: ${totalArticles}`);
   // Full histogram, not three hardcoded buckets — the taxonomy now has ~21
   // instrument types and a fixed three-way count would hide the rest.

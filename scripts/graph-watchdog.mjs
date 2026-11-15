@@ -108,6 +108,21 @@ async function fetchAllPages(buildQuery, pageSize = 500) {
   return rows;
 }
 
+/**
+ * The owner's links (20261118_10). Read when the database has them; before
+ * that migration the read falls back to the other columns and the pass goes
+ * on without them. Probed again at the start of every pass, so the links are
+ * read from the first pass after the SQL runs, without a restart.
+ */
+const LAW_COLS =
+  "slug, title, type, status, parent_law_id, instrument_id, supersedes_law_slug, enabling_article, section_code, law_guid, issuing_instrument";
+const LAW_OWNER_COLS = ", owner_links";
+const DECREE_COLS = "id, title, type, issuer, summary, summary_brief, preamble";
+const DECREE_OWNER_COLS = ", owner_links";
+let ownerLinkColumns = true;
+/** A select naming a column the database does not have (PostgREST passes Postgres 42703 through). */
+const isMissingColumn = (error) => error?.code === "42703" || /column .* does not exist/i.test(error?.message ?? "");
+
 /** Builds the production Supabase-backed `GraphWatchdogBackend`. */
 function createSupabaseWatchdogBackend() {
   return {
@@ -152,15 +167,23 @@ function createSupabaseWatchdogBackend() {
     },
 
     async *streamLawBundles() {
+      ownerLinkColumns = true;
       const lawsPageSize = 20;
       let lawOffset = 0;
       for (;;) {
-        const { data: laws, error } = await admin
-          .schema("library")
-          .from("laws")
-          .select("slug, title, type, status, parent_law_id, instrument_id, supersedes_law_slug, enabling_article, section_code")
-          .order("slug", { ascending: true })
-          .range(lawOffset, lawOffset + lawsPageSize - 1);
+        const readLaws = () =>
+          admin
+            .schema("library")
+            .from("laws")
+            .select(ownerLinkColumns ? LAW_COLS + LAW_OWNER_COLS : LAW_COLS)
+            .order("slug", { ascending: true })
+            .range(lawOffset, lawOffset + lawsPageSize - 1);
+        let { data: laws, error } = await readLaws();
+        if (error && ownerLinkColumns && isMissingColumn(error)) {
+          ownerLinkColumns = false;
+          console.warn("[graph-watchdog] library.laws has no owner_links yet (run 20261118_10): the owner's links are skipped this pass.");
+          ({ data: laws, error } = await readLaws());
+        }
         if (error) throw new Error(`library.laws read failed: ${error.message}`);
         if (!laws || laws.length === 0) break;
 
@@ -273,12 +296,18 @@ function createSupabaseWatchdogBackend() {
       let dOffset = 0;
       const dPage = 50;
       for (;;) {
-        const { data: decrees, error } = await admin
-          .schema("library")
-          .from("decrees_circulars")
-          .select("id, title, type, issuer, summary, summary_brief, preamble")
-          .order("id", { ascending: true })
-          .range(dOffset, dOffset + dPage - 1);
+        const readDecrees = () =>
+          admin
+            .schema("library")
+            .from("decrees_circulars")
+            .select(ownerLinkColumns ? DECREE_COLS + DECREE_OWNER_COLS : DECREE_COLS)
+            .order("id", { ascending: true })
+            .range(dOffset, dOffset + dPage - 1);
+        let { data: decrees, error } = await readDecrees();
+        if (error && ownerLinkColumns && isMissingColumn(error)) {
+          ownerLinkColumns = false;
+          ({ data: decrees, error } = await readDecrees());
+        }
         if (error) throw new Error(`library.decrees_circulars read failed: ${error.message}`);
         if (!decrees || decrees.length === 0) break;
 
@@ -441,6 +470,16 @@ function createSupabaseWatchdogBackend() {
         skipped: typeof data?.skipped === "string" ? data.skipped : undefined,
       };
     },
+
+    async refreshReplacements() {
+      const { data, error } = await admin.rpc("graph_rag_refresh_replacements");
+      if (error) {
+        // Before 20261118_10 the function does not exist: nothing to refresh.
+        if (error.code === "PGRST202" || error.code === "42883") return { changed_laws: 0, reset: 0 };
+        throw new Error(`graph_rag_refresh_replacements: ${error.message}`);
+      }
+      return { changed_laws: Number(data?.changed_laws ?? 0), reset: Number(data?.reset ?? 0) };
+    },
   };
 }
 
@@ -572,6 +611,12 @@ async function main() {
             params: similarityParams,
             shouldStop: () => shuttingDown,
           });
+          if (step.refreshError) {
+            console.warn(`[graph-watchdog] Replacement refresh failed (retried next step): ${step.refreshError}`);
+          }
+          if (step.refreshed) {
+            console.log(`[graph-watchdog] Laws' successors changed: ${step.refreshed} repealed articles queued to find their replacement again.`);
+          }
           if (step.skipped !== lastSimilaritySkip) {
             lastSimilaritySkip = step.skipped;
             if (step.skipped === "vectors_incomplete") {
