@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/access-control";
 import { hasEmbeddingCredentials, resolveEmbeddingModelProfile } from "@/lib/ai/embeddingClient";
 import { embedQueryWithin } from "@/lib/ai/graphRagSwitch";
 import {
-  LAB_LIMITS,
+  labLimits,
   deriveLabQueries,
   isExplorerNodeType,
   parseExplorerRequest,
@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
       clearTimeout(lookupTimer),
     );
     const seeds = graphSeedKeys([pinned, ...directRows]);
-    const limits = req.wide ? LAB_LIMITS.wide : LAB_LIMITS.ai;
+    const limits = labLimits(req.wide, req.size);
 
     const args = {
       p_tsqueries: tsqueries,
@@ -159,7 +159,7 @@ export async function GET(request: NextRequest) {
       p_limit_principles: limits.principles,
       p_limit_decrees: limits.decrees,
       p_limit_feqh: limits.feqh,
-      p_enable_graph_hop: true,
+      p_enable_graph_hop: req.links,
     };
     // `auto` with no seeds is exactly the nine-argument call; seeds need
     // 20261117_10 (before it the lab drops them, as a live run does), the
@@ -220,6 +220,8 @@ export async function GET(request: NextRequest) {
           article_id: req.articleId,
           article_found: req.articleId ? pinned !== null : null,
           wide: req.wide,
+          links: req.links,
+          size: req.size,
           hits,
         },
       },
@@ -233,5 +235,13 @@ export async function GET(request: NextRequest) {
 
 function failed(what: string, error: { code?: string; message?: string }) {
   console.error(`[admin/graph-explorer] ${what} failed:`, error.code, error.message);
+  // 57014: the function's own statement_timeout (4 s for the lab's search).
+  // Usually a cold cache: the same request right after is much faster.
+  if (error.code === "57014") {
+    return NextResponse.json(
+      { error: "انتهت مهلة البحث في قاعدة البيانات. أعد المحاولة: الطلب الثاني أسرع عادةً." },
+      { status: 503, headers: NO_STORE },
+    );
+  }
   return NextResponse.json({ error: "تعذّر تحميل بيانات الجراف" }, { status: 503, headers: NO_STORE });
 }

@@ -23,6 +23,10 @@ import {
   layoutRadial,
   mergeNeighborhoods,
   LAB_LIMITS,
+  labLimits,
+  labLayer,
+  labLayerCounts,
+  labLinksDiff,
   describeNodeMetadata,
   edgeMetaFor,
   edgeProvenance,
@@ -93,7 +97,7 @@ test("parseExplorerRequest validates each action and clamps every number", () =>
   const r = p("action=retrieve&q=%D8%B7%D8%B1%D8%AF%D9%88%D9%86%D9%8A&keywords=%D9%81%D8%B5%D9%84,%D8%AA%D8%B9%D9%88%D9%8A%D8%B6");
   assert.deepEqual(r, {
     ok: true,
-    value: { action: "retrieve", q: "طردوني", keywords: ["فصل", "تعويض"], scope: "auto", lawSlug: null, articleId: null, wide: false },
+    value: { action: "retrieve", q: "طردوني", keywords: ["فصل", "تعويض"], scope: "auto", lawSlug: null, articleId: null, wide: false, links: true, size: 1 },
   });
 
   assert.equal(p("action=drop_table").ok, false, "unknown actions are refused");
@@ -501,6 +505,53 @@ test("parseExplorerRequest: status; the lab's page law, open article and width",
   assert.equal(sneaky.ok, false, "decoding never lets a space or quote through");
 });
 
+test("lab request: links on unless links=0; size 1..3 (clamped)", () => {
+  const on = parseExplorerRequest(new URLSearchParams("action=retrieve&q=سؤال"));
+  assert.ok(on.ok && on.value.action === "retrieve" && on.value.links === true && on.value.size === 1);
+  const off = parseExplorerRequest(new URLSearchParams("action=retrieve&q=سؤال&links=0&size=3"));
+  assert.ok(off.ok && off.value.action === "retrieve" && off.value.links === false && off.value.size === 3);
+  const big = parseExplorerRequest(new URLSearchParams("action=retrieve&q=سؤال&size=9"));
+  assert.ok(big.ok && big.value.action === "retrieve" && big.value.size === 3);
+  const junk = parseExplorerRequest(new URLSearchParams("action=retrieve&q=سؤال&size=x&links=yes"));
+  assert.ok(junk.ok && junk.value.action === "retrieve" && junk.value.size === 1 && junk.value.links === true);
+});
+
+test("labLimits multiplies the AI's (or the wide) limits by the size", () => {
+  assert.deepEqual(labLimits(false, 1), LAB_LIMITS.ai);
+  assert.deepEqual(labLimits(false, 2), { laws: 20, principles: 8, decrees: 0, feqh: 0 });
+  assert.deepEqual(labLimits(true, 3), {
+    laws: LAB_LIMITS.wide.laws * 3,
+    principles: LAB_LIMITS.wide.principles * 3,
+    decrees: LAB_LIMITS.wide.decrees * 3,
+    feqh: LAB_LIMITS.wide.feqh * 3,
+  });
+});
+
+test("labLayer / labLayerCounts: direct (named articles too), first hop, second hop", () => {
+  const hits = [
+    { node_key: "a", hop: 0 },
+    { node_key: "b", hop: 0, seed: true },
+    { node_key: "c", hop: 1, via_edge_type: "EXEMPTS_FROM" },
+    { node_key: "d", via_edge_type: "CITES_ARTICLE" },
+    { node_key: "e", hop: 2, via_edge_type: "INTERPRETS" },
+    { node_key: "f", hop: 5 },
+  ];
+  assert.deepEqual(hits.map(labLayer), [0, 0, 1, 1, 2, 2]);
+  assert.deepEqual(labLayerCounts(hits), { 0: 2, 1: 2, 2: 2 });
+  assert.deepEqual(labLayerCounts([]), { 0: 0, 1: 0, 2: 0 });
+});
+
+test("labLinksDiff: what the links added, and what they pushed out of the results", () => {
+  const withLinks = [{ node_key: "a" }, { node_key: "b" }, { node_key: "x" }];
+  const without = [{ node_key: "a" }, { node_key: "b" }, { node_key: "y", title: "Y" }];
+  const d = labLinksDiff(withLinks, without);
+  assert.deepEqual([...d.added], ["x"]);
+  assert.deepEqual(d.pushedOut.map((h) => h.node_key), ["y"]);
+  const same = labLinksDiff(withLinks, withLinks);
+  assert.equal(same.added.size, 0);
+  assert.equal(same.pushedOut.length, 0);
+});
+
 test("LAB_LIMITS: the AI's own limits by default (laws 8 + 2, principles 4, no decrees or fiqh)", () => {
   assert.deepEqual(LAB_LIMITS.ai, { laws: 10, principles: 4, decrees: 0, feqh: 0 });
   assert.ok(LAB_LIMITS.wide.decrees > 0 && LAB_LIMITS.wide.feqh > 0);
@@ -576,7 +627,9 @@ test("the explorer route: a status action, the lab's page context, the open arti
   assert.ok(src.includes("missing(STATUS_MIGRATION)"), "a missing 20261119_10 answers schemaMissing for the status tab only");
   assert.ok(src.includes("questionRefLookups(admin, req.q, req.lawSlug ?? undefined, true, lookup.signal)"));
   assert.ok(src.includes("graphSeedKeys([pinned, ...directRows])"), "the open article leads the seeds, as retrieval.ts does");
-  assert.ok(src.includes("req.wide ? LAB_LIMITS.wide : LAB_LIMITS.ai"));
+  assert.ok(src.includes("labLimits(req.wide, req.size)"));
+  assert.ok(src.includes("p_enable_graph_hop: req.links"), "the lab's «بدون روابط» turns the graph links off on the server");
+  assert.ok(src.includes('error.code === "57014"'), "a timeout gets its own message");
   assert.doesNotMatch(src, /p_limit_decrees: 2/, "no fixed lab limits left");
 });
 

@@ -13,26 +13,35 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   MagnifyingGlass, Compass, Flask, CircleNotch, Lightning, Graph, ArrowElbowDownLeft, Warning, Pulse, ArrowsClockwise,
+  ArrowsLeftRight, Crosshair,
 } from "@phosphor-icons/react";
 import {
   EDGE_ORIGIN_LABELS,
   EDGE_TYPE_META,
   EXPLORER_EDGE_TYPES,
   EXPLORER_NODE_TYPES,
-  LAB_LIMITS,
+  LAB_LAYERS,
   LAB_ROUTING_SOURCE_LABELS,
   LAB_SCOPES,
   LAB_SCOPE_LABELS,
+  LAB_SIZES,
+  LAB_SIZE_LABELS,
   NODE_TYPE_META,
   edgeMetaFor,
   isRepealedNode,
   labHop,
   labHopLabel,
+  labLayer,
+  labLayerCounts,
+  labLimits,
+  labLinksDiff,
   nodeMetaFor,
   syncVerdict,
   type ExplorerNodeType,
   type ExplorerStatus,
+  type LabLayer,
   type LabScope,
+  type LabSize,
 } from "@/lib/ai/graphExplorerCore";
 import { explorerApi, type LabOptions, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
 
@@ -51,7 +60,22 @@ interface Props {
   onRunLab: (question: string, keywords: string, scope: LabScope, opts: LabOptions) => void;
   onShowLab: () => void;
   onLabSelect: (key: string) => void;
+  /** Opens a lab result in explore mode, centred, with its whole neighbourhood. */
+  onLabExplore: (key: string) => void;
+  /** The same question without the graph links (null until compared). */
+  labBaseline: LabResult | null;
+  labBaselineLoading: boolean;
+  onCompareLab: () => void;
+  hiddenLabLayers: ReadonlySet<LabLayer>;
+  onToggleLabLayer: (layer: LabLayer) => void;
 }
+
+/** The lab's layer chips, coloured as the step badges. */
+const LAYER_STYLE: Record<LabLayer, string> = {
+  0: "border-zinc-700 text-zinc-300",
+  1: "border-sky-500/40 text-sky-300",
+  2: "border-violet-500/40 text-violet-300",
+};
 
 const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
 
@@ -348,13 +372,22 @@ function StartTab({ overview, onFocus }: Props) {
 
 const LAB_EXAMPLES = ["طردوني من الشركة فجأة بدون سبب ولا تعويض", "صاحب العمل ما سلّمني راتبي ثلاثة أشهر", "هل يجوز فسخ عقد الإيجار قبل انتهاء المدة؟"];
 
-function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onLabSelect }: Props) {
+function LabTab({
+  lab, labLoading, labError, labActive, onRunLab, onShowLab, onLabSelect, onLabExplore,
+  labBaseline, labBaselineLoading, onCompareLab, hiddenLabLayers, onToggleLabLayer,
+}: Props) {
   const [question, setQuestion] = useState("");
   const [keywords, setKeywords] = useState("");
   const [scope, setScope] = useState<LabScope>("auto");
   const [lawSlug, setLawSlug] = useState("");
   const [articleId, setArticleId] = useState("");
   const [wide, setWide] = useState(false);
+  const [links, setLinks] = useState(true);
+  const [size, setSize] = useState<LabSize>(1);
+  const lim = labLimits(wide, size);
+  const layerCounts = lab ? labLayerCounts(lab.hits) : null;
+  const diff = lab && labBaseline ? labLinksDiff(lab.hits, labBaseline.hits) : null;
+  const hiddenCount = lab ? lab.hits.filter((h) => hiddenLabLayers.has(labLayer(h))).length : 0;
 
   return (
     <div className="p-3">
@@ -423,13 +456,41 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
         <input type="checkbox" checked={wide} onChange={(e) => setWide(e.target.checked)} className="mt-0.5 accent-[#C8A762]" />
         <span>
           أضف المراسيم والنصوص الفقهية
+          <span className="block text-[10.5px] text-zinc-600">المساعد لا يطلبها في أسئلة العملاء.</span>
+        </span>
+      </label>
+      <label className="mt-1.5 flex items-start gap-2 px-1 text-[11px] leading-relaxed text-zinc-400">
+        <input type="checkbox" checked={!links} onChange={(e) => setLinks(!e.target.checked)} className="mt-0.5 accent-[#C8A762]" />
+        <span>
+          بدون روابط الجراف
           <span className="block text-[10.5px] text-zinc-600">
-            {wide
-              ? `أوسع مما يطلبه المساعد: ${LAB_LIMITS.wide.laws} مواد، ${LAB_LIMITS.wide.principles} مبادئ، ${LAB_LIMITS.wide.decrees} مراسيم، ${LAB_LIMITS.wide.feqh} نصوص فقهية.`
-              : `بحدود المساعد نفسها: ${LAB_LIMITS.ai.laws} مواد و${LAB_LIMITS.ai.principles} مبادئ، بلا مراسيم ولا فقه.`}
+            المطابقة المباشرة وحدها (نصي ودلالي)، لترى ما تضيفه الروابط. المساعد يعمل بالروابط دائمًا.
           </span>
         </span>
       </label>
+      <div className="mt-2 flex items-center gap-2 px-1 text-[11px] text-zinc-400">
+        <span className="shrink-0">عدد النتائج</span>
+        <div role="radiogroup" aria-label="عدد النتائج" className="flex flex-1 rounded-lg border border-zinc-800 bg-zinc-900/60 p-0.5">
+          {LAB_SIZES.map((s) => (
+            <button
+              key={s}
+              role="radio"
+              aria-checked={size === s}
+              onClick={() => setSize(s)}
+              className={`flex-1 rounded-md py-1 text-[10.5px] font-bold transition ${
+                size === s ? "bg-[#C8A762]/15 text-[#C8A762]" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {LAB_SIZE_LABELS[s]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="mt-1 px-1 text-[10.5px] leading-relaxed text-zinc-600">
+        {`يطلب ${lim.laws} مادة و${lim.principles} مبادئ`}
+        {lim.decrees > 0 ? `، و${lim.decrees} مراسيم و${lim.feqh} نصوص فقهية` : "، بلا مراسيم ولا فقه"}
+        {!wide && size === 1 ? "، بحدود المساعد نفسها." : "، أوسع مما يطلبه المساعد."}
+      </p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {LAB_EXAMPLES.map((ex) => (
           <button key={ex} onClick={() => setQuestion(ex)} className="rounded-full border border-zinc-800 px-2.5 py-1 text-[10.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200">
@@ -439,7 +500,7 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
       </div>
       <button
         disabled={labLoading || question.trim().length < 3}
-        onClick={() => onRunLab(question, keywords, scope, { lawSlug, articleId, wide })}
+        onClick={() => onRunLab(question, keywords, scope, { lawSlug, articleId, wide, links, size })}
         className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#C8A762] py-2.5 text-[12.5px] font-black text-black transition hover:bg-[#d4b87a] disabled:opacity-40"
       >
         {labLoading ? <CircleNotch size={15} className="animate-spin" /> : <Lightning size={15} weight="fill" />} تشغيل البحث
@@ -478,6 +539,12 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
               </span>
             )}
             {lab.wide && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">موسَّع</span>}
+            {(lab.size ?? 1) > 1 && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">×{lab.size}</span>}
+            {lab.links === false && (
+              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-200" title="جرى البحث بلا روابط الجراف: المطابقة المباشرة وحدها">
+                بدون روابط
+              </span>
+            )}
           </div>
           {lab.article_found === false && (
             <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-200">
@@ -509,14 +576,74 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
             </button>
           )}
 
+          {layerCounts && lab.hits.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="طبقات النتائج">
+              <span className="text-[10.5px] text-zinc-500">الطبقات:</span>
+              {LAB_LAYERS.map((l) => {
+                const off = hiddenLabLayers.has(l);
+                return (
+                  <button
+                    key={l}
+                    aria-pressed={!off}
+                    disabled={layerCounts[l] === 0}
+                    onClick={() => onToggleLabLayer(l)}
+                    title={off ? "اعرض هذه الطبقة" : "أخفِ هذه الطبقة من القائمة والخريطة"}
+                    className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition disabled:opacity-30 ${LAYER_STYLE[l]} ${off ? "line-through opacity-40" : "hover:bg-zinc-800"}`}
+                  >
+                    {labHopLabel(l)} {layerCounts[l]}
+                  </button>
+                );
+              })}
+              {hiddenCount > 0 && <span className="text-[10.5px] text-zinc-600">({hiddenCount} مخفية)</span>}
+            </div>
+          )}
+
+          {lab.links !== false && lab.ready && lab.hits.length > 0 &&
+            (diff && labBaseline ? (
+              <div className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-2.5 text-[11px] leading-relaxed text-zinc-300">
+                <p className="font-bold text-emerald-200">
+                  المقارنة بالبحث بدون روابط ({labBaseline.hits.length} نتيجة، {labBaseline.elapsed_ms}ms)
+                </p>
+                <p className="mt-1">
+                  {diff.added.size > 0
+                    ? `أضافت الروابط ${diff.added.size} نتيجة لم يجدها البحث المباشر، وعليها علامة «أضافتها الروابط».`
+                    : "لم تُضف الروابط نتيجة جديدة لهذا السؤال."}
+                </p>
+                {diff.pushedOut.length > 0 && (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer select-none text-zinc-400">
+                      وأزاحت {diff.pushedOut.length} نتيجة كانت ستظهر بدونها
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 pr-3 text-zinc-400">
+                      {diff.pushedOut.slice(0, 12).map((h) => (
+                        <li key={h.node_key}>
+                          <button onClick={() => onLabExplore(h.node_key)} title="افتحها في الاستكشاف" className="text-right hover:text-zinc-200">
+                            • {h.title}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={onCompareLab}
+                disabled={labBaselineLoading}
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-700 py-2 text-[11.5px] font-bold text-zinc-300 hover:border-zinc-500 disabled:opacity-40"
+              >
+                {labBaselineLoading ? <CircleNotch size={13} className="animate-spin" /> : <ArrowsLeftRight size={13} />} قارن بالبحث بدون روابط
+              </button>
+            ))}
+
           <ol className="mt-3 space-y-1.5">
-            {lab.hits.map((h, i) => {
+            {lab.hits.map((h, i) => ({ h, i })).filter(({ h }) => !hiddenLabLayers.has(labLayer(h))).map(({ h, i }) => {
               const c = nodeMetaFor(h.kind).color;
               const via = h.via_edge_type ? edgeMetaFor(h.via_edge_type) : null;
               const hop = labHop(h);
               return (
-                <li key={h.node_key}>
-                  <button onClick={() => onLabSelect(h.node_key)} className="relative w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2.5 pr-3.5 text-right hover:border-zinc-600">
+                <li key={h.node_key} className="relative">
+                  <button onClick={() => onLabSelect(h.node_key)} className="relative w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2.5 pb-7 pr-3.5 text-right hover:border-zinc-600">
                     <span aria-hidden className="absolute inset-y-2 right-0 w-[3px] rounded-l-full" style={{ background: c }} />
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="flex items-center gap-1.5">
@@ -528,6 +655,11 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
                         >
                           {h.seed ? "مذكورة في السؤال" : labHopLabel(hop)}
                         </span>
+                        {diff?.added.has(h.node_key) && (
+                          <span className="rounded border border-emerald-500/40 px-1 font-bold text-emerald-300" title="لم تظهر في البحث بدون روابط">
+                            أضافتها الروابط
+                          </span>
+                        )}
                       </span>
                       <span className="font-mono text-zinc-500">{h.score.toFixed(4)}</span>
                     </div>
@@ -537,6 +669,13 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
                         ↳ عبر «{via.label}» من {h.via_from_title}
                       </p>
                     )}
+                  </button>
+                  <button
+                    onClick={() => onLabExplore(h.node_key)}
+                    title="افتحها في الاستكشاف مع جوارها كاملًا (العمق وروابط المعنى وأدوات الاستكشاف كلها)"
+                    className="absolute bottom-1.5 left-2 flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900/90 px-1.5 py-0.5 text-[10px] font-bold text-zinc-400 hover:border-[#C8A762]/60 hover:text-[#C8A762]"
+                  >
+                    <Crosshair size={10} weight="bold" /> استكشف جوارها
                   </button>
                 </li>
               );
