@@ -248,12 +248,13 @@ Tests: `library_owner_links.test.sql` (T1–T9; negative control: without the co
 
 | Item | State |
 |---|---|
-| Graph build with depth | Deployed. The first rebuild pass was running at the time of writing. |
-| Link counts after the rebuild | **To fill in** (`select edge_type, count(*) …`, section 8). Expected about 200k, mostly `PART_OF` / `NEXT_ARTICLE`, and roughly 3× the old `CITES_ARTICLE`. |
-| Retrieve timing on prod | **To measure**. Must stay well under 2.5 s, or every call falls back silently. |
-| Vectors | About 123k (Vertex AI, 2026-11-15). |
-| Switch `NZAMY_GRAPH_RAG` | **Off.** Keep it off until vectors are nearly complete: hop 2 and the citation guard need them. |
-| Step badges in the explorer | Pushed (`178ae36a`), not deployed. |
+| Graph build with depth, links, routing, seeds, owner links | Deployed, every SQL file through `20261119_10` run, `_verify` OK. |
+| Link counts after the rebuild | Not recorded here; run section 8's first query. |
+| Retrieve timing on prod | Measured by `graph:gold` 2026-11-15: AI-path p95 637 ms, max 738 ms, no timeout (warm cache: `shared_buffers` 1536MB + hourly prewarm). |
+| Vectors | 119,004 article / principle vectors; 105,657 similarity states (2026-11-15). |
+| Switch `NZAMY_GRAPH_RAG` | **On** since 2026-11-15. |
+| Owner links on prod | 0 laws carry them (2026-11-15): waits for the owner's re-parse and load, then `mark_dirty_now`. |
+| Step badges in the explorer | Deployed. |
 | Explorer parity (`20261119_10`) | Deployed (`fc0b9512`), SQL run, `_verify` OK. |
 
 ---
