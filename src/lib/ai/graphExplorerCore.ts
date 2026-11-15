@@ -11,7 +11,7 @@
 
 // ─── Types & labels ───────────────────────────────────────────────────────────
 
-import { SECTION_LABELS, normalizeSectionCode } from "./graphRouting.ts";
+import { COMMITTEE_FAMILIES, SECTION_LABELS, normalizeSectionCode } from "./graphRouting.ts";
 
 export const EXPLORER_NODE_TYPES = ["article", "principle", "decree", "feqh", "concept", "law", "chapter", "term"] as const;
 export type ExplorerNodeType = (typeof EXPLORER_NODE_TYPES)[number];
@@ -192,6 +192,179 @@ export function edgePhrase(type: ExplorerEdgeType, direction: "out" | "in"): str
   return EDGE_TYPE_META[type][direction];
 }
 
+/** The definition and meaning links: walked at hop 2 only when asked for by name (20261116_10). */
+export const MEANING_EDGE_TYPES: readonly ExplorerEdgeType[] = ["DEFINES_TERM", "SIMILAR_TO"];
+
+type NodeMeta = { label: string; plural: string; color: string };
+type EdgeMeta = { label: string; out: string; in: string; color: string; dashed?: boolean; hint: string };
+
+const UNKNOWN_NODE_META: NodeMeta = { label: "نوع غير معروف", plural: "أنواع غير معروفة", color: "#71717a" };
+const UNKNOWN_EDGE_META: EdgeMeta = {
+  label: "رابط غير معروف",
+  out: "يرتبط بـ",
+  in: "مرتبط بـ",
+  color: "#71717a",
+  dashed: true,
+  hint: "نوع رابط لا تعرفه هذه الشاشة بعد.",
+};
+
+/**
+ * A node type's label and colour; a type this screen does not know (a newer
+ * server) gets a neutral grey entry instead of crashing the page.
+ */
+export function nodeMetaFor(t: unknown): NodeMeta {
+  return isExplorerNodeType(t) ? NODE_TYPE_META[t] : UNKNOWN_NODE_META;
+}
+
+/** A link type's label, phrases and colour; an unknown type gets a neutral grey entry, never «مطابقة». */
+export function edgeMetaFor(t: unknown): EdgeMeta {
+  return isExplorerEdgeType(t) ? EDGE_TYPE_META[t] : UNKNOWN_EDGE_META;
+}
+
+// ─── Where a link came from ──────────────────────────────────────────────────
+
+/** `library_graph.edges.origin` (edges_origin_check), plus the lab's own pictures. */
+export const EDGE_ORIGIN_LABELS: Readonly<Record<string, string>> = {
+  auto_watchdog: "مستخرجة من نصوص المكتبة",
+  auto_similarity: "مبنية من التقارب الدلالي",
+  owner_curated: "مُدخلة يدويًا",
+  lab: "رسم المختبر",
+};
+
+export type EdgeProvenanceKind = "owner" | "similarity" | "library" | "curated" | "other";
+
+export interface EdgeProvenance {
+  kind: EdgeProvenanceKind;
+  label: string;
+  /** e.g. the similarity score and how the replacement was found; null when nothing to add. */
+  detail: string | null;
+}
+
+/**
+ * Where a link came from, for the inspector's badge: the owner's own files
+ * (metadata.source = owner_links, 20261118_10), the vector builder (with its
+ * score and method), the library's texts, or a hand-made link.
+ */
+export function edgeProvenance(e: Pick<ExplorerEdge, "origin" | "metadata">): EdgeProvenance {
+  const md = e.metadata ?? null;
+  if (md?.source === "owner_links") return { kind: "owner", label: "من روابط المالك", detail: null };
+  if (e.origin === "auto_similarity") {
+    const parts: string[] = [];
+    if (typeof md?.sim === "number" && Number.isFinite(md.sim)) parts.push(`التقارب ${md.sim.toFixed(3)}`);
+    if (md?.method === "successor_law") parts.push("من النظام الذي حلّ محله");
+    else if (md?.method === "nearest_active") parts.push("أقرب مادة سارية");
+    return { kind: "similarity", label: "تقارب دلالي", detail: parts.length > 0 ? parts.join(" · ") : null };
+  }
+  if (e.origin === "owner_curated") return { kind: "curated", label: "مُدخل يدويًا", detail: null };
+  if (e.origin === "auto_watchdog") return { kind: "library", label: "من نصوص المكتبة", detail: null };
+  return { kind: "other", label: EDGE_ORIGIN_LABELS[e.origin] ?? e.origin, detail: null };
+}
+
+/** The link's metadata as the neighbourhood RPC returns it (20261119_10); absent from an older server. */
+function edgeMetadataFrom(raw: unknown): ExplorerEdgeMetadata | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const out: ExplorerEdgeMetadata = {};
+  if (typeof r.source === "string") out.source = r.source.slice(0, 40);
+  if (typeof r.sim === "number" && Number.isFinite(r.sim)) out.sim = r.sim;
+  if (typeof r.method === "string") out.method = r.method.slice(0, 40);
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Normalises the neighbourhood's links: a known shape for metadata, whatever the server sent. */
+export function normalizeEdges(raw: unknown): ExplorerEdge[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ExplorerEdge[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const e = item as Record<string, unknown>;
+    if (typeof e.source !== "string" || typeof e.target !== "string" || typeof e.edge_type !== "string") continue;
+    out.push({
+      source: e.source,
+      target: e.target,
+      edge_type: e.edge_type as ExplorerEdge["edge_type"],
+      origin: typeof e.origin === "string" ? e.origin : "",
+      weight: typeof e.weight === "number" ? e.weight : 1,
+      evidence: typeof e.evidence === "string" ? e.evidence : null,
+      hop: typeof e.hop === "number" ? e.hop : 1,
+      metadata: edgeMetadataFrom(e.metadata),
+    });
+  }
+  return out;
+}
+
+// ─── A node's routing details ────────────────────────────────────────────────
+
+export const TRACK_CLASS_LABELS: Readonly<Record<string, string>> = {
+  admin: "القضاء الإداري",
+  ordinary: "القضاء العام",
+  semi: "اللجان شبه القضائية",
+};
+
+export interface NodeMetaRow {
+  label: string;
+  value: string;
+  /** A list value (laws, committees), already capped; `value` then says how many. */
+  list?: string[];
+}
+
+const META_LIST_MAX = 30;
+
+function strList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()) : [];
+}
+
+function listRow(label: string, items: string[]): NodeMetaRow | null {
+  if (items.length === 0) return null;
+  const shown = items.slice(0, META_LIST_MAX);
+  const more = items.length - shown.length;
+  return { label, value: more > 0 ? `${items.length} (يُعرض ${shown.length})` : String(items.length), list: shown };
+}
+
+/**
+ * The routing and source details a node carries in `metadata` (never
+ * embedded): a law's section, a principle's court, track class, subject
+ * section, committees and governing laws, a term's laws, a concept's target
+ * laws, a decree's type and issuer. Unknown keys are not shown.
+ */
+export function describeNodeMetadata(nodeType: unknown, metadata: unknown): NodeMetaRow[] {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const m = metadata as Record<string, unknown>;
+  const rows: Array<NodeMetaRow | null> = [];
+  const str = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
+
+  const section = normalizeSectionCode(m.section_code);
+  if (section) rows.push({ label: "القسم", value: `${section} · ${SECTION_LABELS[section] ?? "—"}` });
+  const court = str(m.court);
+  if (court) rows.push({ label: "الجهة القضائية", value: court });
+  const track = str(m.track);
+  if (track) rows.push({ label: "المسار", value: track });
+  const trackClass = str(m.track_class);
+  if (trackClass) rows.push({ label: "فئة المسار (للتوجيه)", value: TRACK_CLASS_LABELS[trackClass] ?? trackClass });
+  const subject = normalizeSectionCode(m.subject_section);
+  if (subject) rows.push({ label: "قسم الموضوع", value: `${subject} · ${SECTION_LABELS[subject] ?? "—"}` });
+  const families = strList(m.committee_families).map((id) => COMMITTEE_FAMILIES.find((f) => f.id === id)?.label ?? id);
+  rows.push(listRow("اللجان", families));
+  rows.push(listRow("الأنظمة الحاكمة", strList(m.governing_laws)));
+  if (nodeType === "term") {
+    const count = typeof m.law_count === "number" ? m.law_count : null;
+    const laws = strList(m.laws);
+    const row = listRow("الأنظمة التي تعرّفه", laws);
+    if (row && count !== null && count > laws.length) row.value = `${count} (يُعرض ${row.list?.length ?? 0})`;
+    rows.push(row);
+  }
+  rows.push(listRow("الأنظمة المستهدفة", strList(m.target_laws)));
+  const type = str(m.type);
+  if (type && nodeType === "decree") rows.push({ label: "نوع الوثيقة", value: type });
+  const issuer = str(m.issuer);
+  if (issuer) rows.push({ label: "الجهة المصدرة", value: issuer });
+  if (typeof m.amendment_count === "number" && m.amendment_count > 0) rows.push({ label: "عدد التعديلات", value: String(m.amendment_count) });
+  if (m.has_inline_regulation === true) rows.push({ label: "لائحة مضمّنة", value: "نعم" });
+  const bookType = str(m.book_type);
+  if (bookType && nodeType === "feqh") rows.push({ label: "نوع الكتاب", value: bookType });
+  return rows.filter((r): r is NodeMetaRow => r !== null);
+}
+
 export function isExplorerEdgeType(v: unknown): v is ExplorerEdgeType {
   return typeof v === "string" && (EXPLORER_EDGE_TYPES as readonly string[]).includes(v);
 }
@@ -215,6 +388,15 @@ export interface ExplorerNode {
   snippet?: string;
 }
 
+export interface ExplorerEdgeMetadata {
+  /** "owner_links": read from the owner's own files (20261118_10). */
+  source?: string;
+  /** A vector link's cosine similarity. */
+  sim?: number;
+  /** How a REPLACED_BY link was found: "successor_law" or "nearest_active". */
+  method?: string;
+}
+
 export interface ExplorerEdge {
   source: string;
   target: string;
@@ -223,6 +405,8 @@ export interface ExplorerEdge {
   weight: number;
   evidence: string | null;
   hop: number;
+  /** 20261119_10; null or absent from an older server. */
+  metadata?: ExplorerEdgeMetadata | null;
 }
 
 export interface ExplorerGraph {
@@ -242,10 +426,39 @@ export function edgeId(e: Pick<ExplorerEdge, "source" | "target" | "edge_type">)
 
 export type ExplorerRequest =
   | { action: "overview" }
+  | { action: "status" }
   | { action: "search"; q: string; types: ExplorerNodeType[]; limit: number }
   | { action: "neighborhood"; key: string; depth: 1 | 2; limit: number; edges: ExplorerEdgeType[] }
   | { action: "node"; key: string }
-  | { action: "retrieve"; q: string; keywords: string[]; scope: LabScope };
+  | {
+      action: "retrieve";
+      q: string;
+      keywords: string[];
+      scope: LabScope;
+      /** The law page the question is asked on (a live run's `law_slug`): «المادة ٧٧» alone then means that law's. */
+      lawSlug: string | null;
+      /** The article the reader has open (a live run's `article_id`): it seeds the answer and leads it. */
+      articleId: string | null;
+      /** true: also decrees and fiqh, more articles; false: the AI's own limits. */
+      wide: boolean;
+    };
+
+/**
+ * The lab's result limits. `ai` is what the AI services ask for (tools.ts:
+ * laws 8 → the graph is asked for 8 + 2, principles 4, no decrees or fiqh);
+ * `wide` shows decrees and fiqh too.
+ */
+export const LAB_LIMITS = {
+  ai: { laws: 10, principles: 4, decrees: 0, feqh: 0 },
+  wide: { laws: 8, principles: 4, decrees: 2, feqh: 2 },
+} as const;
+
+/** Where the routed section came from (retrieve's `routing.source`). */
+export const LAB_ROUTING_SOURCE_LABELS: Readonly<Record<"law" | "vote" | "none", string>> = {
+  law: "من النظام المسمّى أو الصفحة",
+  vote: "من أقوى النتائج",
+  none: "بلا مصدر",
+};
 
 /**
  * The lab's routing switch (graph_rag_retrieve_scoped, 20261116_10): `auto` is
@@ -267,6 +480,26 @@ export type ParseExplorerResult = { ok: true; value: ExplorerRequest } | { ok: f
 
 /** Node keys look like `article:labor-law__art-77`; never whitespace, quotes or `;`. */
 const NODE_KEY_RE = /^[^\s;'"\\]{3,260}$/u;
+/** A law slug (laws.slug) or an article id (articles.id): same rule, shorter. */
+const LIBRARY_ID_RE = /^[^\s;'"\\,،/?#]{1,200}$/u;
+
+/**
+ * A slug or id typed or pasted by an admin. One percent-decode (a slug copied
+ * from the address bar is still encoded after the query string is parsed),
+ * then NFC as the library stores ids; validated after decoding.
+ */
+function libraryId(raw: string | null): string | null {
+  let v = (raw ?? "").trim();
+  if (/%[0-9A-Fa-f]{2}/.test(v)) {
+    try {
+      v = decodeURIComponent(v).trim();
+    } catch {
+      // a malformed escape stays as typed
+    }
+  }
+  v = v.normalize("NFC");
+  return v && LIBRARY_ID_RE.test(v) ? v : null;
+}
 
 function clampInt(raw: string | null, fallback: number, min: number, max: number): number {
   const n = raw === null || raw === "" ? NaN : Math.trunc(Number(raw));
@@ -285,6 +518,7 @@ export function parseExplorerRequest(params: URLSearchParams): ParseExplorerResu
   const action = (params.get("action") ?? "overview").trim() || "overview";
 
   if (action === "overview") return { ok: true, value: { action: "overview" } };
+  if (action === "status") return { ok: true, value: { action: "status" } };
 
   if (action === "search") {
     const q = (params.get("q") ?? "").trim().slice(0, 200);
@@ -310,7 +544,14 @@ export function parseExplorerRequest(params: URLSearchParams): ParseExplorerResu
       .slice(0, 6);
     const rawScope = (params.get("scope") ?? "").trim();
     const scope: LabScope = isLabScope(rawScope) ? rawScope : "auto";
-    return { ok: true, value: { action: "retrieve", q, keywords, scope } };
+    const rawLaw = params.get("law");
+    const rawArticle = params.get("article");
+    const lawSlug = libraryId(rawLaw);
+    const articleId = libraryId(rawArticle);
+    if ((rawLaw ?? "").trim() !== "" && !lawSlug) return { ok: false, error: "معرّف النظام غير صالح" };
+    if ((rawArticle ?? "").trim() !== "" && !articleId) return { ok: false, error: "معرّف المادة غير صالح" };
+    const wide = params.get("wide") === "1";
+    return { ok: true, value: { action: "retrieve", q, keywords, scope, lawSlug, articleId, wide } };
   }
 
   return { ok: false, error: "إجراء غير معروف" };
@@ -734,4 +975,143 @@ export function buildLabGraph(question: string, hits: readonly LabHit[]): Explor
     }
   }
   return { nodes, edges, ranks };
+}
+
+// ─── Status tab (graph_rag_explore_status, 20261119_10) ─────────────────────
+
+/** The watchdog's owner-link reading of its last full pass (graphOwnerLinks.ts OwnerLinkStats). */
+export interface OwnerLinkRunStats {
+  links: number;
+  edges: number;
+  resolved: Record<string, number>;
+  notFound: number;
+  ambiguous: number;
+  stillInForce: number;
+  contradictory: number;
+  lawLevel: number;
+  articlesNotInLaw: number;
+  related: number;
+  decreeOther: number;
+}
+
+export interface ExplorerStatus {
+  default_model_id: string | null;
+  sync: {
+    dirty: boolean;
+    dirty_tables: string[];
+    first_dirty_at: string | null;
+    last_write_at: string | null;
+    last_synced_at: string | null;
+    last_sync_status: string;
+    last_error: string | null;
+  } | null;
+  running_run: { id: number; started_at: string; trigger_source: string } | null;
+  last_run: {
+    status: string;
+    trigger_source: string;
+    started_at: string | null;
+    finished_at: string | null;
+    nodes_upserted: number;
+    nodes_deleted: number;
+    edges_upserted: number;
+    api_embedded: number;
+    embed_only: boolean;
+    error_message: string | null;
+  } | null;
+  owner_links_run: { finished_at: string | null; stats: OwnerLinkRunStats } | null;
+  owner_links: { laws: number; decrees: number; edges: Record<string, number> };
+  similarity: { with_vector: number; done: number; repealed_done: number; last_computed_at: string | null };
+  replacement_pairs: number;
+}
+
+const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const strOrNull = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+const obj = (v: unknown): Record<string, unknown> | null =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+function numberRecord(v: unknown): Record<string, number> {
+  const o = obj(v);
+  if (!o) return {};
+  const out: Record<string, number> = {};
+  for (const [k, x] of Object.entries(o)) if (typeof x === "number" && Number.isFinite(x)) out[k] = x;
+  return out;
+}
+
+/** Reads graph_rag_explore_status(); every field defaults, so a partial answer never breaks the tab. */
+export function parseExplorerStatus(raw: unknown): ExplorerStatus {
+  const r = obj(raw) ?? {};
+  const sync = obj(r.sync);
+  const running = obj(r.running_run);
+  const last = obj(r.last_run);
+  const ownerRun = obj(r.owner_links_run);
+  const ownerStats = obj(ownerRun?.stats);
+  const owner = obj(r.owner_links) ?? {};
+  const sim = obj(r.similarity) ?? {};
+  return {
+    default_model_id: strOrNull(r.default_model_id),
+    sync: sync
+      ? {
+          dirty: sync.dirty === true,
+          dirty_tables: strList(sync.dirty_tables),
+          first_dirty_at: strOrNull(sync.first_dirty_at),
+          last_write_at: strOrNull(sync.last_write_at),
+          last_synced_at: strOrNull(sync.last_synced_at),
+          last_sync_status: strOrNull(sync.last_sync_status) ?? "",
+          last_error: strOrNull(sync.last_error),
+        }
+      : null,
+    running_run:
+      running && strOrNull(running.started_at)
+        ? { id: num(running.id), started_at: String(running.started_at), trigger_source: strOrNull(running.trigger_source) ?? "" }
+        : null,
+    last_run: last
+      ? {
+          status: strOrNull(last.status) ?? "",
+          trigger_source: strOrNull(last.trigger_source) ?? "",
+          started_at: strOrNull(last.started_at),
+          finished_at: strOrNull(last.finished_at),
+          nodes_upserted: num(last.nodes_upserted),
+          nodes_deleted: num(last.nodes_deleted),
+          edges_upserted: num(last.edges_upserted),
+          api_embedded: num(last.api_embedded),
+          embed_only: last.embed_only === true,
+          error_message: strOrNull(last.error_message),
+        }
+      : null,
+    owner_links_run: ownerStats
+      ? {
+          finished_at: strOrNull(ownerRun?.finished_at),
+          stats: {
+            links: num(ownerStats.links),
+            edges: num(ownerStats.edges),
+            resolved: numberRecord(ownerStats.resolved),
+            notFound: num(ownerStats.notFound),
+            ambiguous: num(ownerStats.ambiguous),
+            stillInForce: num(ownerStats.stillInForce),
+            contradictory: num(ownerStats.contradictory),
+            lawLevel: num(ownerStats.lawLevel),
+            articlesNotInLaw: num(ownerStats.articlesNotInLaw),
+            related: num(ownerStats.related),
+            decreeOther: num(ownerStats.decreeOther),
+          },
+        }
+      : null,
+    owner_links: { laws: num(owner.laws), decrees: num(owner.decrees), edges: numberRecord(owner.edges) },
+    similarity: {
+      with_vector: num(sim.with_vector),
+      done: num(sim.done),
+      repealed_done: num(sim.repealed_done),
+      last_computed_at: strOrNull(sim.last_computed_at),
+    },
+    replacement_pairs: num(r.replacement_pairs),
+  };
+}
+
+/** The status tab's one-line verdict on the graph. */
+export function syncVerdict(s: Pick<ExplorerStatus, "sync" | "running_run">): { tone: "ok" | "busy" | "wait" | "error"; label: string } {
+  if (s.running_run) return { tone: "busy", label: "مزامنة جارية الآن" };
+  if (!s.sync) return { tone: "wait", label: "لا حالة مزامنة بعد" };
+  if (s.sync.last_sync_status === "failed") return { tone: "error", label: "فشلت آخر مزامنة" };
+  if (s.sync.dirty || !s.sync.last_synced_at) return { tone: "wait", label: "بانتظار إعادة البناء" };
+  return { tone: "ok", label: "مستقر وجاهز" };
 }

@@ -13,12 +13,15 @@ import {
 } from "@phosphor-icons/react";
 import {
   EDGE_TYPE_META,
-  NODE_TYPE_META,
-  edgePhrase,
+  describeNodeMetadata,
+  edgeMetaFor,
+  edgeProvenance,
   isExplorerEdgeType,
   isRepealedNode,
   labHop,
   labHopLabel,
+  nodeMetaFor,
+  type EdgeProvenanceKind,
   type ExplorerEdge,
   type ExplorerEdgeType,
   type ExplorerNode,
@@ -45,6 +48,14 @@ interface Props {
   onSelect: (key: string) => void;
   onClose: () => void;
 }
+
+/** Badge colours by where a link came from; library-made links get no badge (most links are). */
+const PROVENANCE_STYLE: Partial<Record<EdgeProvenanceKind, string>> = {
+  owner: "border-[#C8A762]/40 bg-[#C8A762]/10 text-[#C8A762]",
+  similarity: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+  curated: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  other: "border-zinc-700 bg-zinc-800/60 text-zinc-300",
+};
 
 const STATUS_AR: Record<string, string> = {
   active: "ساري",
@@ -79,7 +90,8 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
     );
   }
 
-  const meta = NODE_TYPE_META[node.node_type];
+  const meta = nodeMetaFor(node.node_type);
+  const metaRows = detail ? describeNodeMetadata(detail.node_type, detail.metadata) : [];
   const status = detail?.item_status ?? node.item_status ?? detail?.doc_status ?? node.doc_status ?? null;
   const repealed = isRepealedNode(detail ?? node);
   const hasVector = detail ? detail.embeddings.some((e) => e.is_default) : node.has_vector;
@@ -186,6 +198,35 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
           </section>
         )}
 
+        {metaRows.length > 0 && (
+          <section>
+            <h3 className="mb-2 text-[11px] font-bold tracking-wide text-zinc-500">بيانات التوجيه والمصدر</h3>
+            <dl className="space-y-1.5 text-[11.5px]">
+              {metaRows.map((r) => (
+                <div key={r.label} className="rounded-lg bg-zinc-900/50 px-2.5 py-1.5">
+                  <dt className="text-[10.5px] text-zinc-500">{r.label}</dt>
+                  <dd className="mt-0.5 text-zinc-200">
+                    {r.list ? (
+                      <>
+                        <span className="font-mono text-[10.5px] text-zinc-500">{r.value}</span>
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {r.list.map((x) => (
+                            <span key={x} dir="auto" className="rounded border border-zinc-700/80 px-1.5 py-0.5 text-[10.5px] text-zinc-300">
+                              {x}
+                            </span>
+                          ))}
+                        </span>
+                      </>
+                    ) : (
+                      r.value
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
+
         <section>
           <h3 className="mb-2 text-[11px] font-bold tracking-wide text-zinc-500">الروابط الظاهرة على الخريطة ({connections.length})</h3>
           {connections.length === 0 ? (
@@ -194,8 +235,9 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
             <div className="space-y-3">
               {[...grouped.entries()].map(([k, list]) => {
                 const [type, direction] = k.split("|") as [string, "out" | "in"];
-                const color = isExplorerEdgeType(type) ? EDGE_TYPE_META[type].color : "#C8A762";
-                const phrase = isExplorerEdgeType(type) ? edgePhrase(type, direction) : "مطابقة للسؤال";
+                const isMatch = type === "MATCH";
+                const color = isMatch ? "#C8A762" : edgeMetaFor(type).color;
+                const phrase = isMatch ? "مطابقة للسؤال" : edgeMetaFor(type)[direction];
                 return (
                   <div key={k}>
                     <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-bold" style={{ color }}>
@@ -203,19 +245,30 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
                       {phrase} <span className="font-normal text-zinc-500">({list.length})</span>
                     </div>
                     <ul className="space-y-1">
-                      {list.slice(0, 40).map(({ edge, other }) => (
+                      {list.slice(0, 40).map(({ edge, other }) => {
+                        const prov = edge.edge_type === "MATCH" ? null : edgeProvenance(edge);
+                        const badge = prov ? PROVENANCE_STYLE[prov.kind] : undefined;
+                        return (
                         <li key={`${edge.source}|${edge.target}|${edge.edge_type}`}>
                           <button
                             onClick={() => other && onSelect(other.node_key)}
+                            title={prov ? `${prov.label}${prov.detail ? ` · ${prov.detail}` : ""} · الوزن ${edge.weight}` : undefined}
                             className="w-full rounded-lg px-2 py-1.5 text-right text-[12px] text-zinc-300 hover:bg-zinc-800/70"
                           >
                             <span className="line-clamp-1">{other?.title ?? "—"}</span>
+                            {prov && badge && (
+                              <span className={`mt-1 inline-flex items-center gap-1 rounded border px-1.5 py-px text-[10px] font-bold ${badge}`}>
+                                {prov.label}
+                                {prov.detail && <span className="font-normal opacity-80">· {prov.detail}</span>}
+                              </span>
+                            )}
                             {edge.evidence && (
                               <span className="mt-0.5 line-clamp-2 block text-[10.5px] italic leading-relaxed text-zinc-500">«{edge.evidence}»</span>
                             )}
                           </button>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </div>
                 );

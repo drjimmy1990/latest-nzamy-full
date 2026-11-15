@@ -45,6 +45,7 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-17 | **Seeds + gold set** (`20261117_10`, section 4.8). An article the question names leads the graph answer and its links follow it; the lab does the same lookup as the AI; a 39-question gold set and `npm run graph:gold` measure recall and the switch-on timing. Deployed 2026-11-15 (`41931b72`), SQL run, `_verify` all `t`. The server `npm run graph:gold` run passed the same day (next row). |
 | 2026-11-18 | **The owner's own links** (`20261118_10`, section 4.9). The parser reads the owner's `superseded_by`, `repealed_by`, `supersedes`, `repeals`, `affected_laws` and `related_laws`; the graph turns them into `SUPERSEDES_LAW` and `AMENDS_ARTICLE` links, strictly, and a repealed article's replacement is found again when its law's successor changes. Deployed 2026-11-15 (`41931b72`), SQL run, `_verify` all `t`. Waits for the owner's next load and one rebuild. |
 | 2026-11-15 | **Switched on.** The server `npm run graph:gold` said **GO** on its third run: recall@8 graph 79% vs keyword 36%, the 3 named-article questions 100%, 39/39 answered by the graph, AI-path p50 371 ms, p95 637 ms, max 738 ms, no timeouts. The first two runs failed on the cold tail: Postgres had `shared_buffers` 128MB. It is now 1536MB with `effective_cache_size` 4GB (`ALTER SYSTEM` + restart of `supabase-db`), and `/root/nzamy-graph-prewarm.sh` loads the hot indexes and the `library_graph.nodes` heap and toast with `pg_prewarm` (cron: hourly at :17 and 3 minutes after reboot). Then `NZAMY_GRAPH_RAG=on` + `pm2 restart nzamy`. |
+| 2026-11-19 | **Explorer parity** (`20261119_10`, section 4.10). Each link in the explorer shows where it came from (the owner's links, or the vector builder with its score and method); meaning links load at hop 2 on demand and the legend loads the rest of a cut type; the inspector shows a node's routing metadata; the lab uses the AI's own limits and takes a page law and an open article; a status tab (sync, passes, owner-link reading, vector-link progress, replacement pairs); unknown types fall back safely. Functions only, run before or after the deploy. Not merged or deployed yet. |
 
 ---
 
@@ -146,6 +147,16 @@ Rules for every leg:
 - In a neighbourhood, legal links sort before structural ones, and hop 2 never fans out through a law, chapter or concept node.
 - The retrieval lab puts second-step results on the outer ring, linked to the result that led to them. It shows a step badge (deploy pending).
 
+### 4.10 Explorer parity (`20261119_10`)
+
+- **Link provenance.** `graph_rag_explore_neighborhood` returns, per link, `metadata` reduced to `source`, `sim` and `method` (never the raw jsonb). The inspector badges «من روابط المالك» (`source = owner_links`) and «تقارب دلالي» with the score and «من النظام الذي حلّ محله» / «أقرب مادة سارية». An owner link the library's fields also make may be stored as the library's copy (`on conflict do nothing`), so it shows no badge.
+- **Meaning links on demand.** With no link types named, hop 2 still leaves out `DEFINES_TERM` / `SIMILAR_TO` (unchanged). The toolbar's «روابط المعنى» names every type, which turns them on. The legend's «+» loads every link of one type around the centre (up to 200) when the limit cut them.
+- **Node metadata.** The inspector reads `metadata` from `graph_rag_explore_node` (it was already returned): section, court, track, track class, subject section, committee families, governing laws, a term's laws, a concept's target laws, a decree's type and issuer.
+- **Lab parity.** Default limits are the AI's (laws 8 + 2, principles 4, no decrees or fiqh); «أضف المراسيم والنصوص الفقهية» restores the wider set. Optional page law (`law=`, a live run's `law_slug`) and open article (`article=`, `article_id`): the open article leads the seeds, as in `retrieval.ts`. `routing.source` is shown. Search words still come from the lab (or the typed keywords), not n8n.
+- **Status tab.** `graph_rag_explore_status()` (new, service_role): sync row, running and last finished pass, the last full pass's owner-link reading (`sync_runs.details.owner_links`, written by the watchdog from this batch on), owner-link counts on laws / decrees and in the graph, vector-link progress (`similarity_state` against article / principle vectors), replacement pairs. It never scans `library_graph.nodes`. A missing function only shows a note in that tab.
+- **Fallbacks.** `nodeMetaFor` / `edgeMetaFor` give an unknown type a grey «نوع غير معروف» / «رابط غير معروف» instead of crashing or reading «السؤال» / «مطابقة».
+- Not done: a per-result route factor in the lab (it would change `graph_rag_retrieve_scoped`, the AI's hot path).
+
 ### 4.6 The links + routing batch (`20261116_10`)
 
 New links:
@@ -242,6 +253,7 @@ Tests: `library_owner_links.test.sql` (T1–T9; negative control: without the co
 | Vectors | About 123k (Vertex AI, 2026-11-15). |
 | Switch `NZAMY_GRAPH_RAG` | **Off.** Keep it off until vectors are nearly complete: hop 2 and the citation guard need them. |
 | Step badges in the explorer | Pushed (`178ae36a`), not deployed. |
+| Explorer parity (`20261119_10`) | On its own branch, not merged or deployed. |
 
 ---
 

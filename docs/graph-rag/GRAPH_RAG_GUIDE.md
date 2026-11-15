@@ -86,6 +86,16 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 
 What to expect on screen: `NOTICE: 20261118_10 verify: OK` and a `check | ok` row with `t`. Then: deploy; after the merge into owner-edits the owner pulls, re-parses (`parse-laws` lists every link that names no single law, for him to fix) and loads; then `mark_dirty_now` for one rebuild. The watchdog log shows `Laws' successors changed: N repealed articles queued…` when the refresh resets anything.
 
+### 1e. The explorer parity file (`20261119_10`)
+
+Functions only (no table changes): the explorer's links carry their source, and its status tab gets its data. Run it before or after the deploy:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261119_10_library_graph_explorer_parity.sql
+```
+
+What to expect on screen: `NOTICE: 20261119_10 verify: OK` and a `step | ok` row with `t`. No rebuild. Database test: `supabase/tests/rls/library_graph_explorer_parity.test.sql` (its header has the chain).
+
 ## 2. Deploy the code
 
 ```bash
@@ -167,7 +177,9 @@ Open `/dashboard/admin/graph-explorer` while logged in as staff. It is also in t
 - **Overview**: counts per type, vector coverage, the most-linked nodes and the concepts.
 - **Search**: type an article (for example `المادة 77 نظام العمل`) and open it. The canvas then shows its neighbours one or two hops away, with each link's type and the sentence it came from.
 - **Inspector**: click a node to see its full text, status, links and whether it has a vector.
-- **Retrieval lab**: type a question as a client would. It runs the same search the AI uses and shows which articles it would cite, and why (direct match, or reached through a link). Like a live run, an article the question names becomes a seed (badge «مذكورة في السؤال», chip «مواد مذكورة»), and a law the question names is searched first.
+- **Retrieval lab**: type a question as a client would. It runs the same search the AI uses and shows which articles it would cite, and why (direct match, or reached through a link). Like a live run, an article the question names becomes a seed (badge «مذكورة في السؤال», chip «مواد مذكورة»), and a law the question names is searched first. By default it asks for what the AI asks for (no decrees or fiqh; tick «أضف المراسيم والنصوص الفقهية» for more). Under «سياق الصفحة» you can give a law slug (the question is asked on that law's page, so «المادة ٧٧» alone means its article 77) and an open article id (it leads the answer).
+- **Link sources** (`20261119_10`): a link's row in the inspector says «من روابط المالك» when it came from the owner's files, or «تقارب دلالي» with its score. «روابط المعنى» in the toolbar loads definition and similarity links at the second hop; «+» next to a link type in the legend loads all of that type around the centre.
+- **الحالة** tab (`20261119_10`): is the graph settled, waiting for a rebuild, or building; the last pass; how many laws and decrees carry owner links and how many became graph links; what the last full pass could not resolve; vector-link progress. Without the SQL file only this tab shows a note.
 
 ## Routing by section and judicial track (since `20261116_10`)
 

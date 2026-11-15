@@ -798,6 +798,7 @@ test("runSimilarityStep refreshes the replacements once first; a failed refresh 
 test("a pass turns the owner's links into SUPERSEDES_LAW and AMENDS_ARTICLE edges, and skips what names no single law", async () => {
   const storedNodes = new Map<string, GraphNodePayload>();
   const storedEdges: GraphEdgePayload[] = [];
+  const finished: Array<Record<string, unknown>> = [];
   const bundle = (law: Record<string, unknown>, numbers: string[]) => ({
     law: { type: "نظام", section_code: "00", ...law } as never,
     chaptersById: new Map(),
@@ -818,7 +819,9 @@ test("a pass turns the owner's links into SUPERSEDES_LAW and AMENDS_ARTICLE edge
     async startRun() {
       return { ok: true, run_id: 9, started_at: "2026-11-18T10:00:00Z" };
     },
-    async finishRun() {},
+    async finishRun(p) {
+      finished.push(p);
+    },
     async *streamLawBundles() {
       yield bundle({ slug: "old-notary", title: "لائحة كتاب العدل", status: "repealed",
         owner_links: [{ kind: "repealed_by", name: "نظام التوثيق" }, { kind: "related", name: "نظام آخر" }] }, ["1"]);
@@ -876,4 +879,11 @@ test("a pass turns the owner's links into SUPERSEDES_LAW and AMENDS_ARTICLE edge
     ],
     "the successor replaces the repealed law; the decree amends article 3; the unknown law and the related link make no edge",
   );
+  // The reading is kept in the run's details for the explorer's status tab (20261119_10).
+  const details = finished[0]?.details as Record<string, unknown> | undefined;
+  const stats = details?.owner_links as Record<string, unknown> | undefined;
+  assert.ok(stats, "finishRun details carry owner_links");
+  assert.equal(stats.links, 4, "two law links + two decree links read");
+  assert.equal(stats.edges, 2);
+  assert.equal(stats.notFound, 1, "the decree's unknown law");
 });

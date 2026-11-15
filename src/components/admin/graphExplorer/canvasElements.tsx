@@ -24,7 +24,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { Seal } from "@phosphor-icons/react";
-import { NODE_TYPE_META, isRepealedNode, type ExplorerNode } from "@/lib/ai/graphExplorerCore";
+import { isRepealedNode, nodeMetaFor, type ExplorerNode } from "@/lib/ai/graphExplorerCore";
 
 export const QUERY_COLOR = "#F2E6C4";
 
@@ -74,7 +74,8 @@ function HiddenHandles() {
 
 export const LegalNodeCard = memo(function LegalNodeCard({ data }: NodeProps<LegalFlowNode>) {
   const { node, isCenter, isSelected, dimmed, rank, enterDelay } = data;
-  const meta = node.node_type === "query" ? null : NODE_TYPE_META[node.node_type];
+  // A type this screen does not know gets a neutral grey label, never «السؤال».
+  const meta = node.node_type === "query" ? null : nodeMetaFor(node.node_type);
   const color = meta?.color ?? QUERY_COLOR;
   const repealed = isRepealedNode(node);
 
