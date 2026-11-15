@@ -65,6 +65,24 @@ GRAPH_RAG_EMBEDDING_MODEL_ID=gemini-embedding-2-768
 
 Optional, for the free tier: `GRAPH_RAG_EMBED_BATCH_SIZE=20` sends smaller batches. When Google answers "quota", the watchdog pauses and retries later by itself.
 
+### Or: Google Cloud Vertex AI (bills the Cloud account, where Cloud credits apply)
+
+The AI Studio key bills a separate prepaid balance; Google Cloud welcome/trial credit does not pay for it. Vertex AI bills the Cloud billing account instead, and its limits are far higher. Same model family, same 768 numbers per text.
+
+1. In the Google Cloud project: enable the **Vertex AI API**, create a service account with the role **Agent Platform User** (`roles/aiplatform.user`), and create a JSON key for it. (An organization with "secure by default" policies blocks key creation: lift `iam.disableServiceAccountKeyCreation` for the project, create the key, then restore the policy. The key keeps working.)
+2. Put the key in `.env.local` as one base64 line, never as a file in the project folder:
+
+```
+GRAPH_RAG_EMBEDDING_BACKEND=vertex
+VERTEX_SERVICE_ACCOUNT_JSON_B64=<the JSON key, base64-encoded on one line>
+GRAPH_RAG_EMBED_CONCURRENCY=8
+GRAPH_RAG_BATCH_DELAY_MS=0
+```
+
+Optional: `VERTEX_LOCATION` (default `global`), `VERTEX_EMBEDDING_MODEL` (default `gemini-embedding-2`), `VERTEX_PROJECT_ID` (default: the key's project).
+
+`GRAPH_RAG_EMBED_CONCURRENCY` sends that many batches of 100 at once (1–16, default 1). Both the watchdog and the website read these lines: the website embeds each question the same way, so restart both after a change. Vectors made by the AI Studio preview model are not mixed with Vertex ones: delete them once when switching (`delete from library_graph.node_embeddings where model_id = 'gemini-embedding-2-768'` and the same on `library_graph.embedding_vault`), and the watchdog re-embeds them.
+
 ## 4. Start the watchdog (this fills the RAG with the laws)
 
 ```bash
