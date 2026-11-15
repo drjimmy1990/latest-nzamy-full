@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import { stripArticleAuditNotes, stripAuditNotes } from "../library/lawPreambleBlocks.ts";
 import { libraryDocPath } from "../library/libraryMetadata.ts";
 import { isPageLocator, isPageNumberedDocument } from "../library/pageLocator.ts";
+import { markdownToPlain } from "../text/markdownToPlain.ts";
 
 export type GraphNodeType = "article" | "principle" | "decree" | "feqh" | "concept" | "law" | "chapter";
 
@@ -623,12 +624,15 @@ export function buildDecreeGraphNodes(
 ): GraphNodePayload[] {
   const out: GraphNodePayload[] = [];
   for (const { decree, pages } of items) {
-    const summary = stripAuditNotes(decree.summary_brief || decree.summary || "", "summary").trim();
-    const preamble = stripArticleAuditNotes(decree.preamble || "").trim();
+    // Decree rows are page layout (identity table, <details> blocks, headings):
+    // plain text for the node, and the preamble's «موجز» block only when there
+    // is no summary already (it is the same text).
+    const summary = markdownToPlain(stripAuditNotes(decree.summary_brief || decree.summary || "", "summary"));
+    const preamble = markdownToPlain(stripArticleAuditNotes(decree.preamble || ""), { dropSummaryBlocks: summary !== "" });
     const pageTexts = [...pages]
       .sort((a, b) => (a.page_number ?? 0) - (b.page_number ?? 0))
       .slice(0, 6)
-      .map((pg) => stripArticleAuditNotes(pg.content || "").trim())
+      .map((pg) => markdownToPlain(stripArticleAuditNotes(pg.content || "")))
       .filter(Boolean);
 
     const title = (decree.title ?? "").trim() || `أمر أو تعميم ${decree.id}`;
