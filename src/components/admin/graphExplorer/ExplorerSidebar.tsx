@@ -16,12 +16,15 @@ import {
   EDGE_TYPE_META,
   EXPLORER_EDGE_TYPES,
   EXPLORER_NODE_TYPES,
+  LAB_SCOPES,
+  LAB_SCOPE_LABELS,
   NODE_TYPE_META,
   isExplorerEdgeType,
   isRepealedNode,
   labHop,
   labHopLabel,
   type ExplorerNodeType,
+  type LabScope,
 } from "@/lib/ai/graphExplorerCore";
 import { explorerApi, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
 
@@ -37,7 +40,7 @@ interface Props {
   labLoading: boolean;
   labError: string | null;
   labActive: boolean;
-  onRunLab: (question: string, keywords: string) => void;
+  onRunLab: (question: string, keywords: string, scope: LabScope) => void;
   onShowLab: () => void;
   onLabSelect: (key: string) => void;
 }
@@ -319,6 +322,7 @@ const LAB_EXAMPLES = ["طردوني من الشركة فجأة بدون سبب �
 function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onLabSelect }: Props) {
   const [question, setQuestion] = useState("");
   const [keywords, setKeywords] = useState("");
+  const [scope, setScope] = useState<LabScope>("auto");
 
   return (
     <div className="p-3">
@@ -339,6 +343,30 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
         placeholder="كلمات بحث اختيارية مفصولة بفواصل (مثل: فصل تعسفي، تعويض)"
         className="mt-2 w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/50 focus:outline-none"
       />
+      <div className="mt-2" role="radiogroup" aria-label="نطاق الأقسام">
+        <div className="flex rounded-xl border border-zinc-800 bg-zinc-900/60 p-0.5">
+          {LAB_SCOPES.map((s) => (
+            <button
+              key={s}
+              role="radio"
+              aria-checked={scope === s}
+              onClick={() => setScope(s)}
+              className={`flex-1 rounded-[10px] py-1.5 text-[11px] font-bold transition ${
+                scope === s ? "bg-[#C8A762]/15 text-[#C8A762]" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {LAB_SCOPE_LABELS[s]}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 px-1 text-[10.5px] leading-relaxed text-zinc-600">
+          {scope === "auto"
+            ? "كما تعمل أدوات الذكاء الاصطناعي: يرجّح قسم السؤال ويخفّض ما سواه، والروابط النظامية الصريحة تعبر الأقسام."
+            : scope === "section"
+              ? "يقصر النتائج على قسم السؤال والقسم الإجرائي، وتبقى الروابط النظامية الصريحة (استثناء، قيد، إحالة، لائحة…) عابرة للأقسام."
+              : "بلا توجيه: كل الأقسام وكل المسارات القضائية بنفس الوزن، للمقارنة."}
+        </p>
+      </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {LAB_EXAMPLES.map((ex) => (
           <button key={ex} onClick={() => setQuestion(ex)} className="rounded-full border border-zinc-800 px-2.5 py-1 text-[10.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200">
@@ -348,7 +376,7 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
       </div>
       <button
         disabled={labLoading || question.trim().length < 3}
-        onClick={() => onRunLab(question, keywords)}
+        onClick={() => onRunLab(question, keywords, scope)}
         className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#C8A762] py-2.5 text-[12.5px] font-black text-black transition hover:bg-[#d4b87a] disabled:opacity-40"
       >
         {labLoading ? <CircleNotch size={15} className="animate-spin" /> : <Lightning size={15} weight="fill" />} تشغيل البحث
@@ -364,6 +392,17 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
             </span>
             <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">{lab.elapsed_ms}ms</span>
             <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">{lab.hits.length} نتيجة</span>
+            {lab.routing && (
+              <span
+                title={lab.routing.laws.length ? `أنظمة السؤال: ${lab.routing.laws.join("، ")}` : undefined}
+                className={`rounded-full px-2 py-0.5 ${lab.routing.section ? "bg-emerald-500/10 text-emerald-300" : "bg-zinc-800 text-zinc-400"}`}
+              >
+                {lab.routing.section_label
+                  ? `القسم: ${lab.routing.section_label}${lab.routing.confident ? " (مؤكد)" : " (مرجّح)"}`
+                  : "القسم: غير محدد"}
+                {lab.routing.scope !== "auto" ? ` · ${LAB_SCOPE_LABELS[lab.routing.scope]}` : ""}
+              </span>
+            )}
           </div>
           {!lab.ready && (
             <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-sky-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-sky-200">

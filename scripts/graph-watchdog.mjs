@@ -28,7 +28,10 @@ import {
   nextFailureBackoffMs,
   nextQuotaBackoffMs,
   runGraphSyncPass,
+  runSimilarityStep,
   shouldTriggerSync,
+  similarityPageFrom,
+  similarityParamsFrom,
 } from "../src/lib/ai/graphWatchdogCore.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +76,8 @@ const maxEmbedNodes = maxEmbedOpt ? Number(maxEmbedOpt) : undefined;
 const batchDelayOpt = getOpt("--batch-delay-ms", "");
 const batchDelayMs = batchDelayOpt ? Number(batchDelayOpt) : undefined;
 const intervalSec = Math.max(10, Number(getOpt("--interval-sec", "30")) || 30);
+/** One quiet poll's share of the vector-link step; the loop re-checks the library between steps. */
+const SIMILARITY_BUDGET_MS = 25_000;
 
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "").trim();
 const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
@@ -153,7 +158,7 @@ function createSupabaseWatchdogBackend() {
         const { data: laws, error } = await admin
           .schema("library")
           .from("laws")
-          .select("slug, title, type, status, parent_law_id, instrument_id, supersedes_law_slug, enabling_article")
+          .select("slug, title, type, status, parent_law_id, instrument_id, supersedes_law_slug, enabling_article, section_code")
           .order("slug", { ascending: true })
           .range(lawOffset, lawOffset + lawsPageSize - 1);
         if (error) throw new Error(`library.laws read failed: ${error.message}`);
@@ -183,7 +188,7 @@ function createSupabaseWatchdogBackend() {
               admin
                 .schema("library")
                 .from("article_regulations")
-                .select("id, article_id, text, status, sort_key")
+                .select("id, article_id, text, status, sort_key, ref, reg_num")
                 .eq("law_slug", law.slug)
                 .order("sort_key", { ascending: true })
                 .order("id", { ascending: true }),
@@ -417,6 +422,25 @@ function createSupabaseWatchdogBackend() {
       if (error) throw new Error(`graph_rag_store_embeddings: ${error.message}`);
       return Number(data ?? 0);
     },
+
+    async buildSimilarity(modelId, limit, params) {
+      const { data, error } = await admin.rpc("graph_rag_build_similarity", {
+        p_model_id: modelId,
+        p_limit: limit,
+        p_params: params,
+      });
+      if (error) {
+        const err = new Error(`graph_rag_build_similarity: ${error.message}`);
+        err.code = error.code;
+        throw err;
+      }
+      return {
+        processed: Number(data?.processed ?? 0),
+        similar: Number(data?.similar ?? 0),
+        replaced: Number(data?.replaced ?? 0),
+        skipped: typeof data?.skipped === "string" ? data.skipped : undefined,
+      };
+    },
   };
 }
 
@@ -470,6 +494,12 @@ async function main() {
   // instead of restreaming the whole library on every poll.
   let failurePausedUntil = 0;
   let failureBackoffMs = 0;
+  // Vector links (20261116_10): GRAPH_RAG_SIMILARITY=off turns the step off.
+  let similarityEnabled = (process.env.GRAPH_RAG_SIMILARITY ?? "").trim().toLowerCase() !== "off";
+  let lastSimilaritySkip;
+  const similarityParams = similarityParamsFrom(process.env);
+  const similarityPage = similarityPageFrom(process.env.GRAPH_RAG_SIMILARITY_PAGE);
+  let skipSleep = false;
   while (!shuttingDown) {
     try {
       if (Date.now() < failurePausedUntil) {
@@ -530,11 +560,48 @@ async function main() {
         } else if (res.status === "succeeded") {
           failureBackoffMs = 0;
         }
+      } else if (similarityEnabled && !st.sync_state?.dirty) {
+        // Quiet poll: the vector links (similar articles and principles, the current
+        // counterpart of a repealed article) for nodes whose vector is new or changed.
+        // Time-boxed, so a library change is still picked up within the budget.
+        try {
+          const step = await runSimilarityStep(backend, {
+            modelId: profile.modelId,
+            timeBudgetMs: SIMILARITY_BUDGET_MS,
+            pageSize: similarityPage,
+            params: similarityParams,
+            shouldStop: () => shuttingDown,
+          });
+          if (step.skipped !== lastSimilaritySkip) {
+            lastSimilaritySkip = step.skipped;
+            if (step.skipped === "vectors_incomplete") {
+              console.log("[graph-watchdog] Vector links wait: more than 0.5% of articles/principles have no vector yet.");
+            }
+          }
+          if (step.processed > 0) {
+            console.log(
+              `[graph-watchdog] Vector links: +${step.processed} nodes (similar=${step.similar}, replaced=${step.replaced})${step.done ? " — all current." : "..."}`,
+            );
+          }
+          skipSleep = !step.done;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (err?.code === "PGRST202" || /Could not find the function|does not exist/i.test(msg)) {
+            similarityEnabled = false;
+            console.log("[graph-watchdog] Vector links off: apply supabase/migrations/20261116_10_library_graph_links.sql first.");
+          } else {
+            console.error("[graph-watchdog] Vector links error:", msg);
+          }
+        }
       }
     } catch (err) {
       console.error("[graph-watchdog] Poll error:", err instanceof Error ? err.message : err);
     }
 
+    if (skipSleep) {
+      skipSleep = false;
+      continue;
+    }
     for (let i = 0; i < intervalSec && !shuttingDown; i++) {
       await new Promise((r) => setTimeout(r, 1000));
     }

@@ -17,7 +17,11 @@ import {
   QUOTA_BACKOFF_MAX_MS,
   QUOTA_BACKOFF_MIN_MS,
   runGraphSyncPass,
+  runSimilarityStep,
   shouldTriggerSync,
+  SIMILARITY_PAGE_DEFAULT,
+  similarityPageFrom,
+  similarityParamsFrom,
   type GraphWatchdogBackend,
 } from "./graphWatchdogCore.ts";
 import type { GraphEdgePayload, GraphNodePayload } from "./graphBuilder.ts";
@@ -486,4 +490,276 @@ test("a pass asked to stop between batches is recorded as failed, and a skipped 
   const res = await runGraphSyncPass(skipping.backend, {});
   assert.equal(res.status, "succeeded");
   assert.equal(res.pruneSkipped, true);
+});
+
+// ─── 20261116 batch: terms, penalties, repeals, vector links ──────────────────
+
+test("a pass writes term nodes, DEFINES_TERM, law-level PENALIZES and SUPERSEDES_LAW, each after its nodes", async () => {
+  const storedNodes = new Map<string, GraphNodePayload>();
+  const storedEdges: GraphEdgePayload[] = [];
+  const backend: GraphWatchdogBackend = {
+    async getStatus() {
+      return {
+        default_model_id: "m",
+        library_laws_count: 15,
+        embeddable_nodes: 0,
+        sync_state: { dirty: true, include_feqh_vectors: false, last_write_at: "2026-11-16T09:00:00Z" },
+        models: [{ model_id: "m", provider: "gemini", api_model: "x", dimensions: 4, task_document: "D", task_query: "Q", is_default: true, active_vectors: 0 }],
+      };
+    },
+    async startRun() {
+      return { ok: true, run_id: 7, started_at: "2026-11-16T10:00:00Z" };
+    },
+    async finishRun() {},
+    async *streamLawBundles() {
+      yield {
+        law: { slug: "old-labor", title: "نظام العمل والعمال", type: "نظام", status: "repealed" },
+        chaptersById: new Map(),
+        articles: [{ id: "old-labor__art-1", law_slug: "old-labor", number: "1", text: "حكم قديم" }],
+        regulationsByArticleId: new Map(),
+        amendmentsByArticleId: new Map(),
+      };
+      yield {
+        law: { slug: "labor-law", title: "نظام العمل", type: "نظام", status: "active" },
+        chaptersById: new Map(),
+        articles: [
+          {
+            id: "labor-law__art-1",
+            law_slug: "labor-law",
+            number: "1",
+            text: [
+              "يقصد بالألفاظ الآتية المعاني المبينة أمامها:",
+              "العامل: كل شخص طبيعي يعمل لمصلحة صاحب عمل وتحت إدارته أو إشرافه مقابل أجر.",
+            ].join("\n"),
+          },
+          { id: "labor-law__art-230", law_slug: "labor-law", number: "230", text: "يعاقب كل من يخالف أحكام هذا النظام بغرامة لا تزيد على خمسين ألف ريال" },
+          {
+            id: "labor-law__art-245",
+            law_slug: "labor-law",
+            number: "245",
+            text: "يلغي هذا النظام نظام العمل والعمال الصادر بالمرسوم الملكي رقم (م/21) وتاريخ 6/9/1389هـ",
+          },
+        ],
+        regulationsByArticleId: new Map(),
+        amendmentsByArticleId: new Map(),
+      };
+    },
+    async *streamPrincipleBundles() {},
+    async *streamDecreeBundles() {},
+    async *streamFeqhBundles() {},
+    async upsertNodes(rows) {
+      for (const r of rows) storedNodes.set(r.node_key, r);
+      return rows.length;
+    },
+    async upsertEdges(rows) {
+      for (const r of rows) {
+        assert.ok(storedNodes.has(r.source_key), `edge source ${r.source_key} written before its node`);
+        assert.ok(storedNodes.has(r.target_key), `edge target ${r.target_key} written before its node`);
+      }
+      storedEdges.push(...rows);
+      return rows.length;
+    },
+    async pruneStale() {
+      return { deleted_nodes: 0, deleted_edges: 0 };
+    },
+    async relinkVault() {
+      return { relinked: 0, pruned: 0, missing: 0 };
+    },
+    async fetchMissingEmbeddings() {
+      return [];
+    },
+    async storeEmbeddings() {
+      return 0;
+    },
+  };
+
+  const summary = await runGraphSyncPass(backend, { triggerSource: "unit_test", allowSmallCorpus: true, skipEmbedding: true, env: {} });
+  assert.equal(summary.status, "succeeded", summary.errorMessage);
+
+  const term = storedNodes.get("term:العامل");
+  assert.ok(term, "the defined term has a node");
+  assert.equal(term.node_type, "term");
+  assert.equal(term.is_embeddable, true);
+  const link = (t: string, s: string, d: string) =>
+    storedEdges.some((e) => e.edge_type === t && e.source_key === s && e.target_key === d);
+  assert.ok(link("DEFINES_TERM", "article:labor-law__art-1", "term:العامل"));
+  assert.ok(link("PENALIZES", "article:labor-law__art-230", "law:labor-law"));
+  assert.ok(link("SUPERSEDES_LAW", "law:labor-law", "law:old-labor"));
+  assert.ok(!storedEdges.some((e) => e.edge_type === "PENALIZES" && e.source_key !== "article:labor-law__art-230"));
+});
+
+test("similarityParamsFrom keeps only thresholds strictly between 0 and 1; similarityPageFrom clamps", () => {
+  assert.deepEqual(
+    similarityParamsFrom({
+      GRAPH_RAG_SIMILAR_ARTICLE_MIN: "0.82",
+      GRAPH_RAG_SIMILAR_PRINCIPLE_MIN: "1",
+      GRAPH_RAG_REPLACED_SUCCESSOR_MIN: "abc",
+      GRAPH_RAG_REPLACED_ANY_MIN: " ",
+    }),
+    { article_min: 0.82 },
+  );
+  assert.deepEqual(similarityParamsFrom({}), {});
+  assert.equal(similarityPageFrom(undefined), SIMILARITY_PAGE_DEFAULT);
+  assert.equal(similarityPageFrom("40"), 40);
+  assert.equal(similarityPageFrom("9999"), 500);
+  assert.equal(similarityPageFrom("-3"), SIMILARITY_PAGE_DEFAULT);
+});
+
+test("runSimilarityStep pages until a short page, the time budget, or a stop", async () => {
+  const pages = [150, 150, 40];
+  const calls: Array<[string, number, object]> = [];
+  const backend = {
+    async buildSimilarity(modelId: string, limit: number, params: object) {
+      calls.push([modelId, limit, params]);
+      const processed = pages.shift() ?? 0;
+      return { processed, similar: processed * 2, replaced: 1 };
+    },
+  };
+  const done = await runSimilarityStep(backend, { modelId: "m", timeBudgetMs: 60_000, params: { article_min: 0.9 } });
+  assert.deepEqual(done, { processed: 340, similar: 680, replaced: 3, done: true, calls: 3 });
+  assert.deepEqual(calls[0], ["m", SIMILARITY_PAGE_DEFAULT, { article_min: 0.9 }]);
+
+  // The budget is spent after the first full page: not done, resumes next time.
+  let t = 0;
+  const slow = { async buildSimilarity() { t += 30_000; return { processed: 10, similar: 0, replaced: 0 }; } };
+  const partial = await runSimilarityStep(slow, { modelId: "m", timeBudgetMs: 25_000, pageSize: 10, now: () => t });
+  assert.equal(partial.done, false);
+  assert.equal(partial.calls, 1);
+
+  const stopped = await runSimilarityStep(slow, { modelId: "m", timeBudgetMs: 25_000, shouldStop: () => true });
+  assert.equal(stopped.calls, 0);
+
+  // An older backend without the RPC: nothing to do.
+  assert.equal((await runSimilarityStep({}, { modelId: "m", timeBudgetMs: 1 })).done, true);
+});
+
+test("a pass writes each law's section, the library's IMPLEMENTED_BY links and every collection's routing labels", async () => {
+  const storedNodes = new Map<string, GraphNodePayload>();
+  const storedEdges: GraphEdgePayload[] = [];
+  const law = (slug: string, title: string, section: string) => ({ slug, title, type: "نظام", status: "active", section_code: section });
+  const backend: GraphWatchdogBackend = {
+    async getStatus() {
+      return {
+        default_model_id: "m",
+        library_laws_count: 15,
+        embeddable_nodes: 0,
+        sync_state: { dirty: true, include_feqh_vectors: false, last_write_at: "2026-11-16T09:00:00Z" },
+        models: [{ model_id: "m", provider: "gemini", api_model: "x", dimensions: 4, task_document: "D", task_query: "Q", is_default: true, active_vectors: 0 }],
+      };
+    },
+    async startRun() {
+      return { ok: true, run_id: 8, started_at: "2026-11-16T10:00:00Z" };
+    },
+    async finishRun() {},
+    async *streamLawBundles() {
+      yield {
+        law: law("labor-law", "نظام العمل", "06"),
+        chaptersById: new Map(),
+        articles: [
+          { id: "labor-law__art-1", law_slug: "labor-law", number: "1", text: "أحكام عامة" },
+          { id: "labor-law__art-2", law_slug: "labor-law", number: "2", text: "ساعات العمل" },
+        ],
+        regulationsByArticleId: new Map([
+          [
+            "labor-law__art-2",
+            [
+              { article_id: "labor-law__art-2", text: "تفصيل ساعات العمل", ref: "اللائحة التنفيذية لنظام العمل", reg_num: "5" },
+              { article_id: "labor-law__art-2", text: "فقرة", ref: "اللائحة التنفيذية لنظام العمل", reg_num: "5/2" },
+            ],
+          ],
+        ]),
+        amendmentsByArticleId: new Map(),
+      };
+      yield {
+        law: law("labor-reg", "اللائحة التنفيذية لنظام العمل", "06"),
+        chaptersById: new Map(),
+        articles: [{ id: "labor-reg__art-5", law_slug: "labor-reg", number: "5", text: "تفصيل ساعات العمل" }],
+        regulationsByArticleId: new Map(),
+        amendmentsByArticleId: new Map(),
+      };
+      yield {
+        law: law("bank-law", "نظام مراقبة البنوك", "08"),
+        chaptersById: new Map(),
+        articles: [{ id: "bank-law__art-1", law_slug: "bank-law", number: "1", text: "البنوك" }],
+        regulationsByArticleId: new Map(),
+        amendmentsByArticleId: new Map(),
+      };
+    },
+    async *streamPrincipleBundles() {
+      yield {
+        collection: { id: "bankc", title: "مبادئ تسوية المنازعات المصرفية", court: "لجنة تسوية المنازعات المصرفية", track: "semi" },
+        principles: [{ id: "bp1", collection_id: "bankc", text: "يلتزم البنك بالعقد" }],
+      };
+      // One collection over two pages (the real backend pages by 250): its
+      // laws are learned from both pages together — each page alone has one
+      // citation, below the two a law needs.
+      const labc = { id: "labc", title: "مدونة المبادئ العمالية", court: "الهيئة العليا لتسوية الخلافات العمالية", track: "ordinary" };
+      yield {
+        collection: labc,
+        principles: [
+          { id: "lp1", collection_id: "labc", text: "استناداً إلى المادة 2 من نظام العمل" },
+          { id: "lp3", collection_id: "labc", text: "مبدأ بلا إحالة" },
+        ],
+      };
+      yield {
+        collection: labc,
+        principles: [{ id: "lp2", collection_id: "labc", text: "وفقاً للمادة 2 من نظام العمل" }],
+      };
+      yield {
+        collection: { id: "bogc", title: "مجموعة الأحكام والمبادئ التجارية لعام 1437هـ", court: "ديوان المظالم", track: "admin" },
+        principles: [{ id: "gp1", collection_id: "bogc", text: "مبدأ تجاري" }],
+      };
+    },
+    async *streamDecreeBundles() {},
+    async *streamFeqhBundles() {},
+    async upsertNodes(rows) {
+      for (const r of rows) storedNodes.set(r.node_key, r);
+      return rows.length;
+    },
+    async upsertEdges(rows) {
+      for (const r of rows) {
+        assert.ok(storedNodes.has(r.source_key), `edge source ${r.source_key} written before its node`);
+        assert.ok(storedNodes.has(r.target_key), `edge target ${r.target_key} written before its node`);
+      }
+      storedEdges.push(...rows);
+      return rows.length;
+    },
+    async pruneStale() {
+      return { deleted_nodes: 0, deleted_edges: 0 };
+    },
+    async relinkVault() {
+      return { relinked: 0, pruned: 0, missing: 0 };
+    },
+    async fetchMissingEmbeddings() {
+      return [];
+    },
+    async storeEmbeddings() {
+      return 0;
+    },
+  };
+
+  const summary = await runGraphSyncPass(backend, { triggerSource: "unit_test", allowSmallCorpus: true, skipEmbedding: true, env: {} });
+  assert.equal(summary.status, "succeeded", summary.errorMessage);
+
+  assert.equal(storedNodes.get("law:labor-law")?.metadata.section_code, "06");
+  assert.equal(storedNodes.get("law:bank-law")?.metadata.section_code, "08");
+
+  const implemented = storedEdges.filter((e) => e.edge_type === "IMPLEMENTED_BY");
+  assert.deepEqual(
+    implemented.map((e) => [e.source_key, e.target_key]),
+    [["article:labor-law__art-2", "article:labor-reg__art-5"]],
+    "one link per whole regulation article; the paragraph «5/2» is not one",
+  );
+
+  const meta = (k: string) => storedNodes.get(k)?.metadata ?? {};
+  assert.equal(meta("principle:bp1").track_class, "semi");
+  assert.deepEqual(meta("principle:bp1").committee_families, ["banking"]);
+  assert.deepEqual(meta("principle:bp1").governing_laws, ["bank-law"], "the banking committee applies the banking law");
+  assert.equal(meta("principle:lp3").track_class, "ordinary");
+  for (const k of ["principle:lp1", "principle:lp2", "principle:lp3"]) {
+    assert.deepEqual(meta(k).governing_laws, ["labor-law"], `${k}: learned from the whole collection's citations, on every principle`);
+  }
+  assert.equal(meta("principle:gp1").track_class, "admin");
+  assert.equal(meta("principle:gp1").subject_section, "04");
+  assert.equal(meta("principle:gp1").governing_laws, undefined);
 });

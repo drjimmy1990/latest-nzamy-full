@@ -140,17 +140,107 @@ test("20261115_10 is one transaction, keeps the retrieve signature and readiness
   assert.doesNotMatch(sql, /grant execute .* to (anon|authenticated)/i, "no new grants to clients");
 });
 
-test("20261115_10 type lists equal the explorer's node and edge types", async () => {
+test("20261115_10 type lists are the explorer's, minus what 20261116_10 added", async () => {
   const { EXPLORER_EDGE_TYPES, EXPLORER_NODE_TYPES } = await import("./graphExplorerCore.ts");
   const sql = readFileSync(DEPTH_PATH, "utf8").replace(/\r\n/g, "\n");
+  const later = new Set<string>(["term", "SUBJECT_TO", "PENALIZES", "DEFINES_TERM", "SIMILAR_TO", "REPLACED_BY", "IMPLEMENTED_BY"]);
 
   const nodes = sqlList(sql, "nodes_node_type_check");
-  assert.deepEqual([...nodes].sort(), [...EXPLORER_NODE_TYPES].sort());
+  assert.deepEqual([...nodes].sort(), EXPLORER_NODE_TYPES.filter((t) => !later.has(t)).sort());
   assert.deepEqual(sqlList(sql, "node_embeddings_node_type_check").sort(), [...nodes].sort());
-  assert.deepEqual(sqlList(sql, "edges_edge_type_check").sort(), [...EXPLORER_EDGE_TYPES].sort());
+  assert.deepEqual(sqlList(sql, "edges_edge_type_check").sort(), EXPLORER_EDGE_TYPES.filter((t) => !later.has(t)).sort());
 
   const verify = readFileSync(VERIFY_PATH, "utf8");
   assert.match(verify, /^-- >>> verify:library_graph_depth$/m);
   assert.match(verify, /^-- <<< verify:library_graph_depth$/m);
   assert.ok(existsSync(join(ROOT, "supabase", "tests", "rls", "library_graph_depth.test.sql")));
+});
+
+// ─── 20261116_10: more link types ─────────────────────────────────────────────
+
+const LINKS_PATH = join(ROOT, "supabase", "migrations", "20261116_10_library_graph_links.sql");
+
+test("20261116_10 is one transaction, keeps the retrieve signature, adds a service_role-only builder, ends with `as ok`", () => {
+  assert.ok(existsSync(LINKS_PATH), "migration 20261116_10_library_graph_links.sql must exist");
+  const sql = readFileSync(LINKS_PATH, "utf8").replace(/\r\n/g, "\n");
+
+  assert.equal((sql.match(/^begin;$/gm) ?? []).length, 1, "exactly one top-level begin;");
+  assert.equal((sql.match(/^commit;$/gm) ?? []).length, 1, "exactly one top-level commit;");
+  assert.match(sql.slice(sql.lastIndexOf("commit;")), /\bas ok\s*;/);
+
+  const bodies = sql.slice(sql.indexOf("-- ── 2."), sql.indexOf("-- ── Verify"));
+  assert.ok(bodies.length > 1000, "function section found");
+  assert.match(
+    bodies,
+    /create or replace function public\.graph_rag_retrieve\(\s*p_tsqueries\s+text\[\][^)]*p_enable_graph_hop boolean default true\s*\)/,
+    "retrieve keeps its nine-argument signature",
+  );
+  assert.ok(sql.includes(RETRIEVE_SIG), "the verify block checks the same signature");
+  assert.match(bodies, /last_synced_at is not null and s\.dirty = false/, "retrieve keeps the readiness check");
+  assert.match(bodies, /hop2_scored/);
+  assert.match(bodies, /term_candidates/);
+  assert.match(bodies, /penalty_candidates/);
+  assert.doesNotMatch(bodies, /pg_catalog\.(greatest|least)\(|halfvec_dims\(/);
+  assert.doesNotMatch(sql, /grant execute .* to (anon|authenticated)/i, "no grants to clients");
+  assert.match(sql, /revoke all on function public\.graph_rag_build_similarity\(text, integer, jsonb\) from public, anon, authenticated;/);
+  assert.match(sql, /grant execute on function public\.graph_rag_build_similarity\(text, integer, jsonb\) to service_role;/);
+  assert.match(sql, /revoke all on table library_graph\.similarity_state from public, anon, authenticated;/);
+  assert.doesNotMatch(sql, /references\s+library\./i, "no foreign key into library.*");
+});
+
+test("20261116_10 routes inside graph_rag_retrieve_scoped; graph_rag_retrieve stays one nine-argument wrapper", () => {
+  const sql = readFileSync(LINKS_PATH, "utf8").replace(/\r\n/g, "\n");
+  const SCOPED_SIG = "public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)";
+  const ROUTE_SIG = "library_graph.route_factor(text, text, text, text, boolean, text[])";
+
+  // One definition per name: a second graph_rag_retrieve signature would make PostgREST calls ambiguous (PGRST203).
+  assert.equal((sql.match(/create or replace function public\.graph_rag_retrieve\(/g) ?? []).length, 1);
+  assert.equal((sql.match(/create or replace function public\.graph_rag_retrieve_scoped\(/g) ?? []).length, 1);
+  assert.match(sql, /p_enable_graph_hop boolean default true,\s*p_scope\s+text\s+default 'auto'\s*\)/);
+
+  const wrapperAt = sql.indexOf("create or replace function public.graph_rag_retrieve(");
+  const wrapper = sql.slice(wrapperAt, sql.indexOf("$$;", sql.indexOf("as $$", wrapperAt)));
+  assert.match(wrapper, /return public\.graph_rag_retrieve_scoped\([\s\S]*'auto'\s*\)/, "the wrapper routes with 'auto'");
+
+  const scopedAt = sql.indexOf("create or replace function public.graph_rag_retrieve_scoped(");
+  const scoped = sql.slice(scopedAt, wrapperAt);
+  assert.match(scoped, /last_synced_at is not null and s\.dirty = false/, "the readiness check moved with the body");
+  for (const cte of ["q_pinned", "vote_top", "q_route", "route_laws", "rrf_primary", "hop2_scored", "'routing'"]) {
+    assert.ok(scoped.includes(cte), `scoped retrieve has ${cte}`);
+  }
+  assert.equal((scoped.match(/library_graph\.route_factor\(/g) ?? []).length, 3, "primary, hop 1 and hop 2 are routed");
+  assert.match(scoped, /'IMPLEMENTED_BY'\s+then case when e\.target_key = ts\.node_key then 0\.50 else 0\.15 end/);
+
+  for (const sig of [SCOPED_SIG, ROUTE_SIG, RETRIEVE_SIG]) {
+    assert.ok(sql.includes(`revoke all on function ${sig} from public, anon, authenticated;`), `${sig} revoked from clients`);
+    assert.ok(sql.includes(`grant execute on function ${sig} to service_role;`), `${sig} granted to service_role`);
+  }
+});
+
+test("20261116_10 type lists equal the explorer's node and edge types", async () => {
+  const { EXPLORER_EDGE_TYPES, EXPLORER_NODE_TYPES } = await import("./graphExplorerCore.ts");
+  const sql = readFileSync(LINKS_PATH, "utf8").replace(/\r\n/g, "\n");
+
+  const nodes = sqlList(sql, "nodes_node_type_check");
+  assert.deepEqual([...nodes].sort(), [...EXPLORER_NODE_TYPES].sort());
+  assert.deepEqual(sqlList(sql, "node_embeddings_node_type_check").sort(), [...nodes].sort());
+  assert.deepEqual(sqlList(sql, "edges_edge_type_check").sort(), [...EXPLORER_EDGE_TYPES].sort());
+  assert.deepEqual(sqlList(sql, "edges_origin_check").sort(), ["auto_similarity", "auto_watchdog", "owner_curated"]);
+
+  const verify = readFileSync(VERIFY_PATH, "utf8");
+  assert.match(verify, /^-- >>> verify:library_graph_links\r?$/m);
+  assert.match(verify, /^-- <<< verify:library_graph_links\r?$/m);
+  assert.ok(existsSync(join(ROOT, "supabase", "tests", "rls", "library_graph_links.test.sql")));
+});
+
+test("the builder's GraphNodeType / GraphEdgeType lists match the explorer's", async () => {
+  const src = readFileSync(join(ROOT, "src", "lib", "ai", "graphBuilder.ts"), "utf8");
+  const { EXPLORER_EDGE_TYPES, EXPLORER_NODE_TYPES } = await import("./graphExplorerCore.ts");
+  const union = (name: string) => {
+    const at = src.indexOf(`export type ${name} =`);
+    assert.ok(at >= 0, `${name} found`);
+    return [...src.slice(at, src.indexOf(";", at)).matchAll(/"([A-Za-z_]+)"/g)].map((m) => m[1]).sort();
+  };
+  assert.deepEqual(union("GraphNodeType"), [...EXPLORER_NODE_TYPES].sort());
+  assert.deepEqual(union("GraphEdgeType"), [...EXPLORER_EDGE_TYPES].sort());
 });

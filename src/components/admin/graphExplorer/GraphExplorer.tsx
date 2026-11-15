@@ -52,6 +52,7 @@ import {
   type ExplorerGraph,
   type ExplorerNode,
   type LaneLabel,
+  type LabScope,
   type XY,
 } from "@/lib/ai/graphExplorerCore";
 import {
@@ -247,10 +248,10 @@ function ExplorerInner() {
   );
 
   const runLab = useCallback(
-    async (question: string, keywords: string) => {
+    async (question: string, keywords: string, scope: LabScope) => {
       setLabLoading(true);
       setLabError(null);
-      const res = await explorerApi.retrieve(question.trim(), keywords);
+      const res = await explorerApi.retrieve(question.trim(), keywords, scope);
       setLabLoading(false);
       if (!res.ok) {
         if (res.schemaMissing) setSchemaMissing(res.migration ?? "20261113_10_library_graph_explorer.sql");
@@ -568,7 +569,7 @@ function ExplorerInner() {
             labLoading={labLoading}
             labError={labError}
             labActive={mode === "lab"}
-            onRunLab={(q, kw) => void runLab(q, kw)}
+            onRunLab={(q, kw, scope) => void runLab(q, kw, scope)}
             onShowLab={() => lab && showLabGraph(lab)}
             onLabSelect={(k) => select(k, true)}
           />

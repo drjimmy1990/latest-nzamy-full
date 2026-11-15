@@ -18,16 +18,26 @@ import {
   buildDecreeGraphNodes,
   buildFeqhGraphNodes,
   buildLawStructure,
+  buildNormalizedTitleIndex,
   buildPrincipleGraphNodes,
+  buildTermGraph,
+  buildTitleCoreIndex,
   extractConceptEdges,
   extractDecreeAmendmentEdges,
+  extractDefinitions,
   extractPrincipleInterpretationEdges,
+  isPenaltyArticle,
+  lawPenaltyEdge,
   mayNameArticle,
   normalizeArabicKey,
   resolveArticleEdges,
+  resolveLawSupersession,
   resolveParentLawSlugs,
+  resolveRegulationEdges,
   scanArticleRefs,
+  scanRepealClauses,
   type ArticleRefCandidate,
+  type DefinitionRecord,
   type GraphEdgePayload,
   type GraphNodePayload,
   type LawIndexMap,
@@ -41,7 +51,16 @@ import {
   type RawLawRow,
   type RawPrincipleRow,
   type RawRegulationRow,
+  type RegulationLinkCandidate,
 } from "./graphBuilder.ts";
+import {
+  classifyTrack,
+  committeeFamilies,
+  learnCollectionLaws,
+  mergeGoverningLaws,
+  normalizeSectionCode,
+  resolveCommitteeLaws,
+} from "./graphRouting.ts";
 
 export const DEFAULT_QUIET_WINDOW_MS = 180_000; // 3 minutes settle time after last library write
 export const MIN_SAFE_LAWS_COUNT = 10; // Mid-wipe safety guard
@@ -199,6 +218,95 @@ export interface GraphWatchdogBackend {
     modelId: string,
     rows: readonly { node_key: string; content_sha256: string; embedding: string }[],
   ): Promise<number>;
+  /**
+   * `graph_rag_build_similarity` (20261116_10): the links found from the vectors
+   * (`SIMILAR_TO`, `REPLACED_BY`) for up to `limit` nodes whose vector is new or
+   * changed. Optional: absent before the migration, and in tests that skip it.
+   */
+  buildSimilarity?(modelId: string, limit: number, params: SimilarityParams): Promise<SimilarityPageResult>;
+}
+
+/** Thresholds (cosine similarity, 0–1) the database applies; unset keys keep the SQL defaults. */
+export interface SimilarityParams {
+  article_min?: number;
+  principle_min?: number;
+  replaced_successor_min?: number;
+  replaced_any_min?: number;
+}
+
+export interface SimilarityPageResult {
+  /** Nodes whose links were (re)computed in this call. */
+  processed: number;
+  similar: number;
+  replaced: number;
+  /** Why the database built nothing yet: "graph_not_ready", "vectors_incomplete". */
+  skipped?: string;
+}
+
+const SIMILARITY_ENV: Readonly<Record<keyof SimilarityParams, string>> = {
+  article_min: "GRAPH_RAG_SIMILAR_ARTICLE_MIN",
+  principle_min: "GRAPH_RAG_SIMILAR_PRINCIPLE_MIN",
+  replaced_successor_min: "GRAPH_RAG_REPLACED_SUCCESSOR_MIN",
+  replaced_any_min: "GRAPH_RAG_REPLACED_ANY_MIN",
+};
+
+/** Threshold overrides from the environment: only numbers strictly between 0 and 1. */
+export function similarityParamsFrom(env: Record<string, string | undefined>): SimilarityParams {
+  const out: SimilarityParams = {};
+  for (const [key, name] of Object.entries(SIMILARITY_ENV) as [keyof SimilarityParams, string][]) {
+    const raw = env[name];
+    if (raw === undefined || raw.trim() === "") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0 && n < 1) out[key] = n;
+  }
+  return out;
+}
+
+/** Nodes per `graph_rag_build_similarity` call: small enough to stay well under the statement timeout. */
+export const SIMILARITY_PAGE_DEFAULT = 150;
+const SIMILARITY_PAGE_MAX = 500;
+
+export function similarityPageFrom(raw: string | number | undefined): number {
+  const n = Math.trunc(Number(raw));
+  return Number.isFinite(n) && n > 0 ? Math.min(n, SIMILARITY_PAGE_MAX) : SIMILARITY_PAGE_DEFAULT;
+}
+
+/**
+ * One bounded run of the vector-link step: pages of `graph_rag_build_similarity`
+ * until no node is pending (`done`), the time budget is spent, or a stop is
+ * asked for. Pending state lives in the database, so a stopped step resumes
+ * where it left off, and only nodes with a new or changed vector are redone.
+ */
+export async function runSimilarityStep(
+  backend: Pick<GraphWatchdogBackend, "buildSimilarity">,
+  options: {
+    modelId: string;
+    timeBudgetMs: number;
+    pageSize?: number;
+    params?: SimilarityParams;
+    shouldStop?: () => boolean;
+    now?: () => number;
+  },
+): Promise<SimilarityPageResult & { done: boolean; calls: number }> {
+  const total: SimilarityPageResult & { done: boolean; calls: number } = { processed: 0, similar: 0, replaced: 0, done: false, calls: 0 };
+  if (!backend.buildSimilarity) return { ...total, done: true };
+  const now = options.now ?? Date.now;
+  const pageSize = options.pageSize ?? SIMILARITY_PAGE_DEFAULT;
+  const started = now();
+  while (!options.shouldStop?.()) {
+    const page = await backend.buildSimilarity(options.modelId, pageSize, options.params ?? {});
+    total.calls++;
+    total.processed += page.processed;
+    total.similar += page.similar;
+    total.replaced += page.replaced;
+    if (page.skipped) total.skipped = page.skipped;
+    if (page.processed < pageSize) {
+      total.done = true;
+      break;
+    }
+    if (now() - started >= options.timeBudgetMs) break;
+  }
+  return total;
 }
 
 export interface SyncRunSummary {
@@ -362,6 +470,13 @@ export async function runGraphSyncPass(
         refs: ArticleRefCandidate[];
       }> = [];
 
+      // Small records kept until every law is known: each definition (≤ 320 chars)
+      // and each law's repeal-clause titles.
+      const definitionRecords: DefinitionRecord[] = [];
+      const repealCoresByLaw = new Map<string, string[]>();
+      // The library's own article → regulation references (title + number), resolved in Pass 6.
+      const regulationLinks: RegulationLinkCandidate[] = [];
+
       log(`[graph-watchdog] Streaming laws & articles...`);
       for await (const bundle of backend.streamLawBundles()) {
         const built = buildArticleGraphNodes(bundle);
@@ -372,31 +487,6 @@ export async function runGraphSyncPass(
           }
         }
         const rootNodeKey = artKeyByNumber.get(1) ?? built[0]?.node_key ?? null;
-        lawMap.set(bundle.law.slug, {
-          slug: bundle.law.slug,
-          title: bundle.law.title,
-          normalizedTitle: normalizeArabicKey(bundle.law.title),
-          parentLawId: bundle.law.parent_law_id ?? null,
-          instrumentId: bundle.law.instrument_id ?? null,
-          supersedesLawSlug: bundle.law.supersedes_law_slug ?? null,
-          enablingArticle: bundle.law.enabling_article ?? null,
-          articleKeyByNumber: artKeyByNumber,
-          rootNodeKey,
-        });
-
-        for (const n of built) {
-          nodeBuffer.push(n);
-          if (n.is_page_numbered) continue;
-          const refs = scanArticleRefs(n.display_text);
-          if (refs.length > 0 || n.node_key === rootNodeKey) {
-            articleEdgeStubs.push({
-              node_key: n.node_key,
-              law_slug: n.law_slug,
-              is_page_numbered: n.is_page_numbered,
-              refs,
-            });
-          }
-        }
         // The law's outline: law + chapter nodes, PART_OF and NEXT_ARTICLE edges.
         // Written per law (nodes first, so both ends of every edge exist) instead of
         // held until Pass 6: ~200k structural edges would cost the memory Pass 1 saves.
@@ -406,6 +496,58 @@ export async function runGraphSyncPass(
           articles: bundle.articles,
           articleNodes: built,
         });
+        const lawNodeKey = structure.nodes.find((n) => n.node_type === "law")?.node_key ?? null;
+        lawMap.set(bundle.law.slug, {
+          slug: bundle.law.slug,
+          title: bundle.law.title,
+          normalizedTitle: normalizeArabicKey(bundle.law.title),
+          status: bundle.law.status ?? null,
+          sectionCode: normalizeSectionCode(bundle.law.section_code),
+          lawNodeKey,
+          parentLawId: bundle.law.parent_law_id ?? null,
+          instrumentId: bundle.law.instrument_id ?? null,
+          supersedesLawSlug: bundle.law.supersedes_law_slug ?? null,
+          enablingArticle: bundle.law.enabling_article ?? null,
+          articleKeyByNumber: artKeyByNumber,
+          rootNodeKey,
+        });
+
+        const repealCores: string[] = [];
+        for (const n of built) {
+          nodeBuffer.push(n);
+          // Page-numbered documents (decision compendia, guides) quote other laws'
+          // penalties and definitions: they get no definition or penalty links.
+          if (n.is_page_numbered) continue;
+          for (const r of bundle.regulationsByArticleId.get(n.source_id) ?? []) {
+            if (!r.ref || r.reg_num === null || r.reg_num === undefined) continue;
+            regulationLinks.push({
+              article_key: n.node_key,
+              law_slug: bundle.law.slug,
+              ref: r.ref,
+              reg_num: r.reg_num,
+              status: r.status ?? null,
+            });
+          }
+          const refs = scanArticleRefs(n.display_text);
+          if (refs.length > 0 || n.node_key === rootNodeKey) {
+            articleEdgeStubs.push({
+              node_key: n.node_key,
+              law_slug: n.law_slug,
+              is_page_numbered: n.is_page_numbered,
+              refs,
+            });
+          }
+          for (const d of extractDefinitions(n.display_text)) {
+            definitionRecords.push({ ...d, articleKey: n.node_key, lawSlug: bundle.law.slug, lawTitle: bundle.law.title });
+          }
+          if (lawNodeKey && isPenaltyArticle(n.display_text)) {
+            edgeBuffer.push(lawPenaltyEdge(n.node_key, lawNodeKey, n.display_text));
+          }
+          for (const core of scanRepealClauses(n.display_text)) {
+            if (!repealCores.includes(core)) repealCores.push(core);
+          }
+        }
+        if (repealCores.length > 0) repealCoresByLaw.set(bundle.law.slug, repealCores);
         nodeBuffer.push(...structure.nodes);
         edgeBuffer.push(...structure.edges);
         if (edgeBuffer.length >= EDGE_BATCH_LIMIT) {
@@ -421,17 +563,54 @@ export async function runGraphSyncPass(
       resolveParentLawSlugs(lawMap);
 
       // ── Pass 2: Stream Judicial Principles & Extract `INTERPRETS_ARTICLE` ─────
+      // Each collection's governing laws (node metadata, read by retrieve's routing):
+      // a committee's known laws by title, plus the laws its principles cite.
       log(`[graph-watchdog] Streaming judicial principles...`);
-      for await (const bundle of backend.streamPrincipleBundles()) {
-        const pNodes = buildPrincipleGraphNodes(bundle);
-        for (const p of pNodes) {
-          nodeBuffer.push(p);
-          if (mayNameArticle(p.display_text)) {
-            edgeBuffer.push(...extractPrincipleInterpretationEdges(p, lawMap));
-          }
-        }
-        if (nodeBuffer.length >= NODE_BATCH_LIMIT) await flushNodes();
+      const lawTitles = [...lawMap.values()].map((l) => ({ slug: l.slug, title: l.title }));
+      const lawOfArticle = new Map<string, string>();
+      for (const law of lawMap.values()) {
+        for (const key of law.articleKeyByNumber.values()) lawOfArticle.set(key, law.slug);
       }
+      // The backend pages a collection (250 principles a page); its governing
+      // laws are learned from ALL its pages, so the pages of one collection are
+      // gathered first (they arrive one after another) and stamped together.
+      let current: { collection: RawCollectionRow; principles: RawPrincipleRow[] } | null = null;
+      const finishCollection = async (): Promise<void> => {
+        if (!current) return;
+        const { collection, principles } = current;
+        current = null;
+        const routing = classifyTrack({
+          track: collection.track,
+          court: [collection.court, collection.court_body].filter(Boolean).join(" "),
+          title: collection.title,
+        });
+        const families = routing.track_class === "semi" ? committeeFamilies(collection.court ?? collection.court_body, collection.title) : [];
+        const pNodes = buildPrincipleGraphNodes({ collection, principles, committeeFamilies: families });
+        const pEdges: GraphEdgePayload[] = [];
+        for (const p of pNodes) {
+          if (mayNameArticle(p.display_text)) pEdges.push(...extractPrincipleInterpretationEdges(p, lawMap));
+        }
+        const governing = mergeGoverningLaws(
+          resolveCommitteeLaws(families, lawTitles),
+          learnCollectionLaws(pEdges.filter((e) => e.edge_type === "INTERPRETS_ARTICLE").map((e) => lawOfArticle.get(e.target_key))),
+        );
+        for (const p of pNodes) {
+          if (governing.length > 0) p.metadata = { ...p.metadata, governing_laws: governing };
+          nodeBuffer.push(p);
+        }
+        edgeBuffer.push(...pEdges);
+        if (nodeBuffer.length >= NODE_BATCH_LIMIT) await flushNodes();
+      };
+      for await (const bundle of backend.streamPrincipleBundles()) {
+        if (current && current.collection.id === bundle.collection.id) {
+          current.principles.push(...bundle.principles);
+          continue;
+        }
+        await finishCollection();
+        current = { collection: bundle.collection, principles: [...bundle.principles] };
+      }
+      await finishCollection();
+      lawOfArticle.clear();
       await flushNodes();
 
       // ── Pass 3: Stream Royal Decrees & Extract `AMENDS_ARTICLE` ───────────────
@@ -464,9 +643,12 @@ export async function runGraphSyncPass(
       }
       await flushNodes();
 
-      // ── Pass 5: Curated Saudi Legal Concept Bridge Nodes ──────────────────────
+      // ── Pass 5: Curated Saudi Legal Concept Bridge Nodes + Defined Terms ─────
       const conceptNodes = buildCuratedConceptNodes();
       nodeBuffer.push(...conceptNodes);
+      const termGraph = buildTermGraph(definitionRecords);
+      definitionRecords.length = 0;
+      nodeBuffer.push(...termGraph.nodes);
       await flushNodes();
 
       // ── Pass 6: Upsert All Typed Legal Graph Edges (after all target nodes exist!) ─
@@ -478,6 +660,18 @@ export async function runGraphSyncPass(
         }
       }
       edgeBuffer.push(...extractConceptEdges(lawMap));
+      edgeBuffer.push(...termGraph.edges);
+      // System article → the executive-regulation article the library says implements it.
+      edgeBuffer.push(...resolveRegulationEdges(regulationLinks, lawMap, buildNormalizedTitleIndex(lawMap)));
+      regulationLinks.length = 0;
+      // Law → the law it replaced: `supersedes_law_slug` and «يلغي هذا النظام …».
+      const coreIndex = buildTitleCoreIndex(lawMap);
+      for (const law of lawMap.values()) {
+        const cores = repealCoresByLaw.get(law.slug) ?? [];
+        if (cores.length === 0 && !law.supersedesLawSlug) continue;
+        edgeBuffer.push(...resolveLawSupersession(law.slug, cores, lawMap, coreIndex));
+        if (edgeBuffer.length >= EDGE_BATCH_LIMIT) await flushEdges();
+      }
       await flushEdges();
 
       // ── Pass 7: Prune Stale Nodes/Auto-Edges & Instant SQL Vault Relink ($0) ──

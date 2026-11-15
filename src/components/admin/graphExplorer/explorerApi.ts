@@ -1,7 +1,7 @@
 /**
  * explorerApi.ts — typed client calls for GET /api/v1/admin/graph-explorer.
  */
-import type { ExplorerEdge, ExplorerEdgeType, ExplorerNode, ExplorerNodeType, LabHit } from "@/lib/ai/graphExplorerCore";
+import type { ExplorerEdge, ExplorerEdgeType, ExplorerNode, ExplorerNodeType, LabHit, LabRouting, LabScope } from "@/lib/ai/graphExplorerCore";
 
 export interface OverviewData {
   default_model_id: string | null;
@@ -64,6 +64,8 @@ export interface LabResult {
   model_id: string | null;
   embedding: "used" | "no_key" | "failed";
   elapsed_ms: number;
+  /** null from a server before 20261116_10. */
+  routing: LabRouting | null;
   hits: LabHit[];
 }
 
@@ -90,5 +92,6 @@ export const explorerApi = {
   neighborhood: (key: string, depth: 1 | 2, limit: number) =>
     call({ action: "neighborhood", key, depth: String(depth), limit: String(limit) }, (j) => j.neighborhood as NeighborhoodData),
   node: (key: string) => call({ action: "node", key }, (j) => j.node as NodeDetail),
-  retrieve: (q: string, keywords: string) => call({ action: "retrieve", q, keywords }, (j) => j.lab as LabResult),
+  retrieve: (q: string, keywords: string, scope: LabScope) =>
+    call({ action: "retrieve", q, keywords, scope }, (j) => j.lab as LabResult),
 };

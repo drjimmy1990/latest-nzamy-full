@@ -13,6 +13,15 @@ import {
   buildEmbeddingInput,
   buildFeqhGraphNodes,
   buildLawStructure,
+  buildTermGraph,
+  buildTitleCoreIndex,
+  extractDefinitions,
+  isPenaltyArticle,
+  lawPenaltyEdge,
+  normalizeArabicKey,
+  resolveLawSupersession,
+  scanRepealClauses,
+  titleCore,
   buildPrincipleGraphNodes,
   extractArticleEdges,
   resolveParentLawSlugs,
@@ -384,7 +393,7 @@ test("findArticleMentions: noun forms, diacritics, and the per-noun cap", () => 
   assert.deepEqual(m("الموادّ الغذائية"), []);
 });
 
-test("bare spelled-out references and lists become CITES_ARTICLE / EXEMPTS_FROM edges", () => {
+test("bare spelled-out references and lists become CITES_ARTICLE / SUBJECT_TO edges", () => {
   const map = twoLaws();
   const cites = extractArticleEdges(
     { node_key: "article:labor-law__art-1", law_slug: "labor-law", is_page_numbered: false, display_text: "يطبق ما نصت عليه المادة الخامسة" },
@@ -404,8 +413,8 @@ test("bare spelled-out references and lists become CITES_ARTICLE / EXEMPTS_FROM 
   assert.deepEqual(
     exempt.map((e) => [e.edge_type, e.target_key]).sort(),
     [
-      ["EXEMPTS_FROM", "article:labor-law__art-5"],
-      ["EXEMPTS_FROM", "article:labor-law__art-77"],
+      ["SUBJECT_TO", "article:labor-law__art-5"],
+      ["SUBJECT_TO", "article:labor-law__art-77"],
     ],
   );
   assert.ok(exempt.every((e) => e.evidence?.includes("الإخلال")));
@@ -418,7 +427,7 @@ test("a bare «من النظام» inside a regulation is its parent law; «من
     { node_key: "article:labor-reg__art-1", law_slug: "labor-reg", is_page_numbered: false, display_text: "مع مراعاة المادة (77) من النظام، تحدد" },
     map,
   );
-  assert.ok(toParent.some((e) => e.edge_type === "CITES_ARTICLE" && e.target_key === "article:labor-law__art-77"));
+  assert.ok(toParent.some((e) => e.edge_type === "SUBJECT_TO" && e.target_key === "article:labor-law__art-77"));
 
   const own = extractArticleEdges(
     { node_key: "article:labor-reg__art-1", law_slug: "labor-reg", is_page_numbered: false, display_text: "الواردة في المادة (5) من اللائحة." },
@@ -538,4 +547,124 @@ test("buildDecreeGraphNodes stores plain text: no layout marks, the «موجز»
   assert.match(text, /الجهة المصدرة: الديوان الملكي/);
   assert.match(text, /بعون الله تعالى/);
   assert.doesNotMatch(text, /صفحة 1/);
+});
+
+// ─── 20261116 batch: lead-ins, definitions, penalties, repeals ────────────────
+
+function lawsWithOutline(): LawIndexMap {
+  const map = twoLaws();
+  for (const [slug, e] of map) map.set(slug, { ...e, lawNodeKey: `law:${slug}`, status: "active" });
+  map.set("old-labor", {
+    slug: "old-labor",
+    title: "نظام العمل والعمال",
+    normalizedTitle: normalizeArabicKey("نظام العمل والعمال"),
+    articleKeyByNumber: new Map(),
+    rootNodeKey: null,
+    lawNodeKey: "law:old-labor",
+    status: "repealed",
+  });
+  return map;
+}
+
+const art1 = (display_text: string) => ({
+  node_key: "article:labor-law__art-1",
+  law_slug: "labor-law",
+  is_page_numbered: false,
+  display_text,
+});
+
+test("the lead-in decides the link: exception (both directions), subject-to, penalty, plain citation", () => {
+  const map = twoLaws();
+  const kinds = (t: string) => extractArticleEdges(art1(t), map).map((e) => [e.edge_type, e.source_key, e.target_key]);
+
+  assert.deepEqual(kinds("استثناءً من المادة الخامسة، يجوز"), [
+    ["EXEMPTS_FROM", "article:labor-law__art-1", "article:labor-law__art-5"],
+  ]);
+  // «فيما عدا ما ورد في المادة…»: the NAMED article is the exception to this one.
+  assert.deepEqual(kinds("فيما عدا ما ورد في المادة (77)، تسري"), [
+    ["EXEMPTS_FROM", "article:labor-law__art-77", "article:labor-law__art-1"],
+  ]);
+  assert.deepEqual(kinds("مع مراعاة المادة (77) يلتزم"), [
+    ["SUBJECT_TO", "article:labor-law__art-1", "article:labor-law__art-77"],
+  ]);
+  assert.deepEqual(kinds("يعاقب كل من يخالف المادة (77) بغرامة لا تزيد على عشرة آلاف ريال"), [
+    ["PENALIZES", "article:labor-law__art-1", "article:labor-law__art-77"],
+  ]);
+  assert.deepEqual(kinds("وفقاً للمادة (77)"), [["CITES_ARTICLE", "article:labor-law__art-1", "article:labor-law__art-77"]]);
+});
+
+test("isPenaltyArticle / lawPenaltyEdge: a penalty article is tagged to its law node", () => {
+  const text = "يعاقب كل من يخالف أحكام هذا النظام بغرامة لا تزيد على خمسين ألف ريال";
+  assert.equal(isPenaltyArticle(text), true);
+  assert.equal(isPenaltyArticle("يلتزم صاحب العمل بدفع الأجر في موعده"), false);
+  const e = lawPenaltyEdge("article:labor-law__art-230", "law:labor-law", text);
+  assert.equal(e.edge_type, "PENALIZES");
+  assert.equal(e.source_key, "article:labor-law__art-230");
+  assert.equal(e.target_key, "law:labor-law");
+  assert.match(e.evidence ?? "", /يعاقب/);
+});
+
+test("extractDefinitions reads a definitions article and drops name-only entries", () => {
+  const defs = extractDefinitions(
+    [
+      "يقصد بالألفاظ والعبارات الآتية -أينما وردت في هذا النظام- المعاني المبينة أمامها ما لم يقتض السياق خلاف ذلك:",
+      "العامل: كل شخص طبيعي يعمل لمصلحة صاحب عمل وتحت إدارته أو إشرافه مقابل أجر.",
+      "الوزارة: وزارة الموارد البشرية.",
+      "الأجر الفعلي: الأجر الأساسي مضافاً إليه سائر الزيادات المستحقة الأخرى.",
+    ].join("\n"),
+  );
+  assert.deepEqual(defs.map((d) => d.term), ["العامل", "الأجر الفعلي"]);
+  assert.equal(defs[1].normalized, normalizeArabicKey("الأجر الفعلي"));
+  assert.match(defs[0].definition, /شخص طبيعي/);
+  assert.deepEqual(extractDefinitions("يلتزم صاحب العمل بدفع الأجر"), []);
+});
+
+test("buildTermGraph: one embeddable term node per term, one DEFINES_TERM per defining article", () => {
+  const defs = extractDefinitions(
+    ["يقصد بالألفاظ الآتية المعاني المبينة أمامها:", "العامل: كل شخص طبيعي يعمل لمصلحة صاحب عمل وتحت إدارته مقابل أجر."].join("\n"),
+  );
+  const records = [
+    { ...defs[0], articleKey: "article:labor-law__art-1", lawSlug: "labor-law", lawTitle: "نظام العمل" },
+    {
+      ...defs[0],
+      definition: "كل من يعمل لدى صاحب العمل في القطاع الخاص بمقابل أجر شهري",
+      articleKey: "article:ins__art-1",
+      lawSlug: "ins",
+      lawTitle: "نظام التأمينات الاجتماعية",
+    },
+  ];
+  const g = buildTermGraph(records);
+  assert.equal(g.nodes.length, 1);
+  const [node] = g.nodes;
+  assert.equal(node.node_key, "term:العامل");
+  assert.equal(node.node_type, "term");
+  assert.equal(node.is_embeddable, true);
+  assert.equal((node.metadata as { law_count: number }).law_count, 2);
+  assert.match(node.display_text, /نظام العمل/);
+  assert.match(node.display_text, /نظام التأمينات الاجتماعية/);
+  assert.deepEqual(
+    g.edges.map((e) => [e.source_key, e.target_key, e.edge_type]).sort(),
+    [
+      ["article:ins__art-1", "term:العامل", "DEFINES_TERM"],
+      ["article:labor-law__art-1", "term:العامل", "DEFINES_TERM"],
+    ],
+  );
+});
+
+test("repeal clauses become a law-level SUPERSEDES_LAW, never backwards from a repealed law", () => {
+  const clause = "يلغي هذا النظام نظام العمل والعمال الصادر بالمرسوم الملكي رقم (م/21) وتاريخ 6/9/1389هـ، ويلغي ما يتعارض معه من أحكام.";
+  assert.deepEqual(scanRepealClauses(clause), ["نظام العمل والعمال"]);
+  assert.equal(titleCore("نظام العمل والعمال الصادر بالمرسوم الملكي رقم (م/21)"), "نظام العمل والعمال");
+
+  const map = lawsWithOutline();
+  const index = buildTitleCoreIndex(map);
+  assert.deepEqual(
+    resolveLawSupersession("labor-law", scanRepealClauses(clause), map, index).map((e) => [e.edge_type, e.source_key, e.target_key]),
+    [["SUPERSEDES_LAW", "law:labor-law", "law:old-labor"]],
+  );
+  // A repealed law «repealing» an active one is a misread: no edge.
+  assert.deepEqual(resolveLawSupersession("old-labor", ["نظام العمل"], map, index), []);
+  // A law with no outline node gets no law-level link.
+  const bare = twoLaws();
+  assert.deepEqual(resolveLawSupersession("labor-law", ["نظام العمل والعمال"], bare, buildTitleCoreIndex(bare)), []);
 });
