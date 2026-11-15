@@ -33,6 +33,7 @@ import * as path from "path";
 import { parseFrontmatter } from "./frontmatter";
 import { applyExclusions } from "./exclusions";
 import { resolveCorpusScope } from "../corpus-scope";
+import { slugifyArabic, nameForId } from "./slug";
 
 export type EntityKind = "law" | "decree";
 
@@ -320,4 +321,24 @@ export function resolvePathSurvivor(
   if (statusVal === "superseded_duplicate" || statusVal === "merged") return undefined;
   if (!isPublishedSurvivor(file)) return undefined;
   return { kind, path: file, isSupersededDuplicate: false };
+}
+
+/**
+ * The owner's links (src/lib/library/ownerLinks.ts) may name a LAW by its file
+ * path. Decrees are parsed apart from the laws, so the decrees parser reads the
+ * target file's own frontmatter: its `slug` and registry `id`. The graph
+ * checks the slug against the live library and falls back to the id.
+ */
+export function lawIdentityOfPath(anyInputPath: string, ref: string): { slug?: string; id?: string } | undefined {
+  const hit = resolvePathSurvivor(anyInputPath, ref, ["law"]);
+  if (!hit) return undefined;
+  const meta = readFrontmatterCheap(hit.path);
+  if (!meta) return undefined;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
+  // The slug the laws parser stores (parse-laws.ts): the frontmatter slug,
+  // else the file name; an Arabic or spaced one goes through slugifyArabic.
+  const rawSlug = str(meta.slug) ?? str(nameForId(path.basename(hit.path, ".md")));
+  const slug = rawSlug && /[\s\u0600-\u06FF]/.test(rawSlug) ? slugifyArabic(rawSlug) : rawSlug;
+  const id = str(meta.instrument_id) ?? str(meta.id);
+  return slug || id ? { ...(slug ? { slug } : {}), ...(id ? { id } : {}) } : undefined;
 }

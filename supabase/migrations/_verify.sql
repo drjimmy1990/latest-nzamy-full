@@ -6468,3 +6468,205 @@ select 'DATA-01: the two cited fiqh books carry the right type (run 20261109_22)
                         where author like '%عبيد%' and (id = 'الأموال' or id like 'الأموال\_%' or title = 'الأموال')
                           and type is distinct from 'sharia') as ok;
 -- <<< verify:library_feqh_book_type_data01
+
+
+-- >>> verify:library_graph_rag
+-- 2026-11-10 — 20261110_10_library_graph_rag.sql: private `library_graph`
+-- schema (halfvec(768) Partial Expression HNSW index, permanent SHA-256
+-- `embedding_vault`, zero foreign keys into `library.*` so clean wipes never
+-- block, statement-level dirty triggers, and service_role-only `public.graph_rag_*`
+-- RPCs). Always run `npm run db:backup-schema` before applying 20261110_10.
+-- Docker: supabase/tests/rls/library_graph_rag.test.sql
+select 'library_graph schema, halfvec(768) HNSW, zero FKs into library.*, and service_role-only graph_rag_* RPCs (run 20261110_10)' as check,
+       case when to_regnamespace('library_graph') is null then false
+            else to_regclass('library_graph.embedding_vault') is not null
+                 and to_regclass('library_graph.nodes') is not null
+                 and to_regclass('library_graph.node_embeddings') is not null
+                 and to_regclass('library_graph.edges') is not null
+                 and to_regclass('library_graph.idx_lg_hnsw_gemini_embedding_2_768') is not null
+                 and exists (
+                   select 1 from library_graph.embedding_models
+                    where model_id = 'gemini-embedding-2-768' and is_default = true and dimensions = 768
+                 )
+                 and not exists (
+                   select 1 from pg_catalog.pg_constraint c
+                     join pg_catalog.pg_namespace n on n.oid = c.connamespace
+                     join pg_catalog.pg_class refc on refc.oid = c.confrelid
+                    where n.nspname = 'library_graph'
+                      and c.contype = 'f'
+                      and refc.relnamespace = 'library'::regnamespace
+                 )
+                 and not has_schema_privilege('anon', 'library_graph', 'USAGE')
+                 and not has_schema_privilege('authenticated', 'library_graph', 'USAGE')
+                 and to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)') is not null
+                 and not has_function_privilege('anon', 'public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)', 'EXECUTE')
+                 and not has_function_privilege('authenticated', 'public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)', 'EXECUTE')
+                 and has_function_privilege('service_role', 'public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)', 'EXECUTE')
+       end as ok;
+-- <<< verify:library_graph_rag
+
+-- >>> verify:library_graph_explorer
+-- 2026-11-13 — 20261113_10_library_graph_explorer.sql: four read-only,
+-- service_role-only RPCs behind /dashboard/admin/graph-explorer. Requires
+-- 20261110_10.
+select 'graph explorer RPCs exist, service_role only (run 20261113_10)' as check,
+       case when to_regprocedure('public.graph_rag_explore_overview()') is null
+              or to_regprocedure('public.graph_rag_explore_search(text, text[], integer)') is null
+              or to_regprocedure('public.graph_rag_explore_neighborhood(text, integer, text[], integer)') is null
+              or to_regprocedure('public.graph_rag_explore_node(text)') is null
+            then false
+            else not has_function_privilege('anon', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+                 and not has_function_privilege('authenticated', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+                 and has_function_privilege('service_role', 'public.graph_rag_explore_neighborhood(text, integer, text[], integer)', 'EXECUTE')
+       end as ok;
+-- <<< verify:library_graph_explorer
+
+
+-- >>> verify:library_graph_rag_fixes
+-- 2026-11-14 — 20261114_10_library_graph_rag_fixes.sql: no graph function
+-- calls halfvec_dims() (pgvector has vector_dims(halfvec)) or
+-- pg_catalog.greatest/least (SQL syntax, not functions); retrieve is ready only
+-- after a finished pass with no library write since; sync_control has
+-- abandon_running; status reports missing_vectors.
+-- Docker: supabase/tests/rls/library_graph_rag.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG fixes: vector_dims, no pg_catalog.greatest, readiness, abandon_running (run 20261114_10)' as check,
+       not exists (
+         select 1 from pg_catalog.pg_proc p
+          where p.proname like 'graph_rag_%'
+            and (p.prosrc like '%halfvec_dims(%' or p.prosrc like '%pg_catalog.greatest(%' or p.prosrc like '%pg_catalog.least(%')
+       )
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'),
+                                                             to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+                                                             to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
+                    like '%last_synced_at is not null and s.dirty = false%', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_sync_control(text, jsonb)'))
+                    like '%abandon_running%', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_status()'))
+                    like '%missing_vectors%', false)
+       as ok;
+-- <<< verify:library_graph_rag_fixes
+
+-- >>> verify:library_graph_depth
+-- 2026-11-15 — 20261115_10_library_graph_depth.sql: the graph holds law and
+-- chapter nodes and PART_OF / NEXT_ARTICLE edges, and retrieve walks a second
+-- hop. Run it BEFORE deploying the code that writes the new types.
+-- Docker: supabase/tests/rls/library_graph_depth.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG depth: law/chapter nodes, PART_OF/NEXT_ARTICLE, two-hop retrieve (run 20261115_10)' as check,
+       exists (select 1 from pg_catalog.pg_constraint c
+                where c.conname = 'nodes_node_type_check'
+                  and c.conrelid = to_regclass('library_graph.nodes')
+                  and pg_catalog.pg_get_constraintdef(c.oid) like '%chapter%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'node_embeddings_node_type_check'
+                      and c.conrelid = to_regclass('library_graph.node_embeddings')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%chapter%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'edges_edge_type_check'
+                      and c.conrelid = to_regclass('library_graph.edges')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%NEXT_ARTICLE%')
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'),
+                                                             to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+                                                             to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
+                    like '%hop2_scored%', false)
+       as ok;
+-- <<< verify:library_graph_depth
+-- >>> verify:library_graph_links
+-- 2026-11-16 — 20261116_10_library_graph_links.sql: term nodes; SUBJECT_TO,
+-- PENALIZES, DEFINES_TERM links; vector-built SIMILAR_TO / REPLACED_BY links
+-- (origin auto_similarity, rebuilt per node via library_graph.similarity_state);
+-- retrieve walks them plus a terms leg and a penalty leg; IMPLEMENTED_BY (the
+-- library's article → regulation link); routing by section and judicial track
+-- (graph_rag_retrieve_scoped + library_graph.route_factor). Run it BEFORE
+-- deploying the code that writes the new types.
+-- Docker: supabase/tests/rls/library_graph_links.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG links: terms, SUBJECT_TO/PENALIZES/DEFINES_TERM/IMPLEMENTED_BY, SIMILAR_TO/REPLACED_BY, routing (run 20261116_10)' as check,
+       exists (select 1 from pg_catalog.pg_constraint c
+                where c.conname = 'nodes_node_type_check'
+                  and c.conrelid = to_regclass('library_graph.nodes')
+                  and pg_catalog.pg_get_constraintdef(c.oid) like '%''term''%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'edges_edge_type_check'
+                      and c.conrelid = to_regclass('library_graph.edges')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%REPLACED_BY%'
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%IMPLEMENTED_BY%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'edges_origin_check'
+                      and c.conrelid = to_regclass('library_graph.edges')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%auto_similarity%')
+       and to_regclass('library_graph.similarity_state') is not null
+       and to_regprocedure('public.graph_rag_build_similarity(text, integer, jsonb)') is not null
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'),
+                                                             to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+                                                             to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
+                    like '%penalty_candidates%route_factor(%', false)
+       and to_regprocedure('library_graph.route_factor(text, text, text, text, boolean, text[])') is not null
+       as ok;
+-- <<< verify:library_graph_links
+-- >>> verify:library_graph_seeds
+-- 2026-11-17 — 20261117_10_library_graph_seeds.sql: graph_rag_retrieve_scoped
+-- gains p_seed_keys (the articles a question names lead the graph answer, are
+-- never routed away, and their links follow them); the old ten-argument
+-- signature is dropped. Run before or after the deploy (the code falls back).
+-- Docker: supabase/tests/rls/library_graph_seeds.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG seeds: named articles lead the graph answer (run 20261117_10)' as check,
+       coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'))
+                like '%seed_nodes%rr.is_seed then 1.0%', false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_proc p
+             where p.pronamespace = 'public'::regnamespace and p.proname = 'graph_rag_retrieve_scoped') = 1
+       as ok;
+-- <<< verify:library_graph_seeds
+-- >>> verify:library_owner_links
+-- 2026-11-18 — 20261118_10_library_owner_links.sql: library.laws.owner_links and
+-- library.decrees_circulars.owner_links (the owner's own links from the
+-- frontmatter: superseded_by, repealed_by, supersedes, repeals, affected_laws,
+-- related_laws), server-only; the graph watchdog turns them into SUPERSEDES_LAW /
+-- AMENDS_ARTICLE links. public.graph_rag_refresh_replacements() resets the
+-- REPLACED_BY state of the repealed articles whose law gained or lost a
+-- successor (library_graph.replacement_pairs). Run BEFORE the deploy and before
+-- the owner's next load (his loader's preflight needs the column).
+-- Docker: supabase/tests/rls/library_owner_links.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Owner links: laws/decrees owner_links server-only, replacement refresh (run 20261118_10)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'library' and table_name = 'laws'
+                  and column_name = 'owner_links' and data_type = 'jsonb')
+       and exists (select 1 from information_schema.columns
+                    where table_schema = 'library' and table_name = 'decrees_circulars'
+                      and column_name = 'owner_links' and data_type = 'jsonb')
+       and not has_column_privilege('anon', 'library.laws', 'owner_links', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.laws', 'owner_links', 'SELECT')
+       and not has_column_privilege('anon', 'library.decrees_circulars', 'owner_links', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.decrees_circulars', 'owner_links', 'SELECT')
+       and to_regclass('library_graph.replacement_pairs') is not null
+       and to_regprocedure('public.graph_rag_refresh_replacements()') is not null
+       and not has_function_privilege('anon', 'public.graph_rag_refresh_replacements()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.graph_rag_refresh_replacements()', 'EXECUTE')
+       as ok;
+-- <<< verify:library_owner_links
+-- >>> verify:library_graph_explorer_parity
+-- 2026-11-19 — 20261119_10_library_graph_explorer_parity.sql: the admin graph
+-- explorer's links carry their metadata (source = owner_links, a vector link's
+-- sim / method), and public.graph_rag_explore_status() feeds its status tab.
+-- Functions only; service_role only. Run before or after the deploy.
+-- Docker: supabase/tests/rls/library_graph_explorer_parity.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Graph explorer parity: link metadata + status tab (run 20261119_10)' as check,
+       coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_explore_neighborhood(text, integer, text[], integer)'))
+                like '%''metadata'',%a.metadata->>''source''%', false)
+       and to_regprocedure('public.graph_rag_explore_status()') is not null
+       and not has_function_privilege('anon', 'public.graph_rag_explore_status()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.graph_rag_explore_status()', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.graph_rag_explore_status()', 'EXECUTE')
+       as ok;
+-- <<< verify:library_graph_explorer_parity
+-- >>> verify:library_graph_title_search_index
+-- 2026-11-20 — 20261120_10_library_graph_title_search_index.sql: a trigram
+-- index on library_graph.fold_tashkeel(title), so the admin graph explorer's
+-- search box no longer reads every node for a title "contains" match (it timed
+-- out at 8 s on prod). Index only. Run before or after the deploy.
+-- Docker: supabase/tests/rls/library_graph_title_search_index.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Graph explorer title search index (run 20261120_10)' as check,
+       exists (select 1 from pg_catalog.pg_index i
+                where i.indexrelid = to_regclass('library_graph.idx_lg_nodes_title_fold_trgm')
+                  and i.indisvalid
+                  and pg_catalog.pg_get_indexdef(i.indexrelid) like '%fold_tashkeel(title)%gin_trgm_ops%')
+       as ok;
+-- <<< verify:library_graph_title_search_index

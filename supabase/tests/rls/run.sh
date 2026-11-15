@@ -31,7 +31,9 @@ for input in "${MIGS[@]}" "$TEST"; do
   }
 done
 
-docker run -d --name "$NAME" -e POSTGRES_PASSWORD=pw postgres:16-alpine >/dev/null
+# PG_IMAGE picks another image when a test needs an extension the default
+# lacks (pgvector: PG_IMAGE=pgvector/pgvector:pg16).
+docker run -d --name "$NAME" -e POSTGRES_PASSWORD=pw "${PG_IMAGE:-postgres:16-alpine}" >/dev/null
 ready=0
 for _ in $(seq 1 40); do
   if docker exec "$NAME" pg_isready -U postgres -q 2>/dev/null; then

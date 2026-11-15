@@ -64,7 +64,9 @@ export function toSourceRefs(sources: PackageSource[]): Pick<PackageSource, "kin
 }
 
 export function sourceEvents(sources: Pick<PackageSource, "kind" | "title">[]): ProgressEvent[] {
-  return sources.flatMap((s) => events(s.kind === "article" ? "law" : "principle", [s.title]));
+  return sources.flatMap((s) =>
+    events(s.kind === "principle" ? "principle" : s.kind === "feqh" ? "note" : "law", [s.title]),
+  );
 }
 
 export function verifyEvent(output: Record<string, unknown>): ProgressEvent | null {

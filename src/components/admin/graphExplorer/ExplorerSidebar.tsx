@@ -1,0 +1,900 @@
+"use client";
+
+/**
+ * ExplorerSidebar.tsx — three ways into the graph, and its state:
+ *   البحث          find any node by title, key or text (type filters)
+ *   البداية         corpus coverage, link mix and sources, the legal concepts, top hubs
+ *   المختبر         run a real question through the same hybrid retrieval the
+ *                   AI tools use and see what it would cite, and why
+ *   الحالة          sync, the running and last pass, the owner's links, vector
+ *                   links (graph_rag_explore_status, 20261119_10)
+ */
+
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  MagnifyingGlass, Compass, Flask, CircleNotch, Lightning, Graph, ArrowElbowDownLeft, Warning, Pulse, ArrowsClockwise,
+  ArrowsLeftRight, Crosshair,
+} from "@phosphor-icons/react";
+import {
+  EDGE_ORIGIN_LABELS,
+  EDGE_TYPE_META,
+  EXPLORER_EDGE_TYPES,
+  EXPLORER_NODE_TYPES,
+  LAB_LAYERS,
+  LAB_ROUTING_SOURCE_LABELS,
+  LAB_SCOPES,
+  LAB_SCOPE_LABELS,
+  LAB_SIZES,
+  LAB_SIZE_LABELS,
+  NODE_TYPE_META,
+  edgeMetaFor,
+  isRepealedNode,
+  labHop,
+  labHopLabel,
+  labLayer,
+  labLayerCounts,
+  labLimits,
+  labLinksDiff,
+  nodeMetaFor,
+  syncVerdict,
+  type ExplorerNodeType,
+  type ExplorerStatus,
+  type LabLayer,
+  type LabScope,
+  type LabSize,
+} from "@/lib/ai/graphExplorerCore";
+import { explorerApi, type LabOptions, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
+
+export type SidebarTab = "search" | "start" | "lab" | "status";
+
+interface Props {
+  tab: SidebarTab;
+  onTab: (t: SidebarTab) => void;
+  overview: OverviewData | null;
+  onFocus: (key: string) => void;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  lab: LabResult | null;
+  labLoading: boolean;
+  labError: string | null;
+  labActive: boolean;
+  onRunLab: (question: string, keywords: string, scope: LabScope, opts: LabOptions) => void;
+  onShowLab: () => void;
+  onLabSelect: (key: string) => void;
+  /** Opens a lab result in explore mode, centred, with its whole neighbourhood. */
+  onLabExplore: (key: string) => void;
+  /** The same question without the graph links (null until compared). */
+  labBaseline: LabResult | null;
+  labBaselineLoading: boolean;
+  onCompareLab: () => void;
+  hiddenLabLayers: ReadonlySet<LabLayer>;
+  onToggleLabLayer: (layer: LabLayer) => void;
+}
+
+/** The lab's layer chips, coloured as the step badges. */
+const LAYER_STYLE: Record<LabLayer, string> = {
+  0: "border-zinc-700 text-zinc-300",
+  1: "border-sky-500/40 text-sky-300",
+  2: "border-violet-500/40 text-violet-300",
+};
+
+const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("en-US");
+
+export default function ExplorerSidebar(props: Props) {
+  const { tab, onTab } = props;
+  const tabs: Array<{ id: SidebarTab; label: string; icon: typeof MagnifyingGlass }> = [
+    { id: "search", label: "البحث", icon: MagnifyingGlass },
+    { id: "start", label: "البداية", icon: Compass },
+    { id: "lab", label: "المختبر", icon: Flask },
+    { id: "status", label: "الحالة", icon: Pulse },
+  ];
+  return (
+    <div className="flex h-full flex-col">
+      <div role="tablist" className="grid grid-cols-4 gap-1 border-b border-zinc-800/80 p-2">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => onTab(id)}
+            className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-[11.5px] font-bold transition ${
+              tab === id ? "bg-[#C8A762]/12 text-[#C8A762] shadow-[inset_0_0_0_1px_rgba(200,167,98,0.35)]" : "text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200"
+            }`}
+          >
+            <Icon size={14} weight={tab === id ? "fill" : "regular"} /> {label}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {tab === "search" && <SearchTab {...props} />}
+        {tab === "start" && <StartTab {...props} />}
+        {tab === "lab" && <LabTab {...props} />}
+        {tab === "status" && <StatusTab overview={props.overview} />}
+      </div>
+    </div>
+  );
+}
+
+// ─── Search ──────────────────────────────────────────────────────────────────
+
+function SearchTab({ onFocus, searchInputRef }: Props) {
+  const [q, setQ] = useState("");
+  const [types, setTypes] = useState<ExplorerNodeType[]>([]);
+  const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seq = useRef(0);
+  // One search at a time: the database keeps running a search the page no
+  // longer waits for, so typing fast used to stack several of them (57014).
+  // While one runs, only the latest text waits, and it is sent when that one ends.
+  const inFlight = useRef(false);
+  const pending = useRef<{ query: string; typeList: ExplorerNodeType[] } | null>(null);
+
+  async function send(query: string, typeList: ExplorerNodeType[]) {
+    if (inFlight.current) {
+      pending.current = { query, typeList };
+      return;
+    }
+    inFlight.current = true;
+    const mine = ++seq.current;
+    const res = await explorerApi.search(query, typeList);
+    inFlight.current = false;
+    const next = pending.current;
+    pending.current = null;
+    if (next) {
+      void send(next.query, next.typeList);
+      return;
+    }
+    if (mine !== seq.current) return;
+    setLoading(false);
+    if (res.ok) {
+      setResults(res.data);
+      setError(null);
+    } else {
+      setError(res.error);
+    }
+  }
+
+  function run(query: string, typeList: ExplorerNodeType[]) {
+    if (timer.current) clearTimeout(timer.current);
+    if (query.trim().length < 2) {
+      pending.current = null;
+      seq.current++;
+      setResults(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    timer.current = setTimeout(() => void send(query.trim(), typeList), 280);
+  }
+
+  function toggleType(t: ExplorerNodeType) {
+    const next = types.includes(t) ? types.filter((x) => x !== t) : [...types, t];
+    setTypes(next);
+    run(q, next);
+  }
+
+  return (
+    <div className="p-3">
+      <label className="relative block">
+        <MagnifyingGlass size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+        <input
+          ref={searchInputRef}
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            run(e.target.value, types);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && results?.[0]) onFocus(results[0].node_key);
+          }}
+          placeholder="ابحث: «نظام العمل 77»، «الفصل التعسفي»، معرّف عقدة…"
+          className="w-full rounded-xl border border-zinc-700/80 bg-zinc-900/80 py-2.5 pl-9 pr-9 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:border-[#C8A762]/60 focus:outline-none focus:ring-2 focus:ring-[#C8A762]/20"
+        />
+        {loading ? (
+          <CircleNotch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 animate-spin text-zinc-500" />
+        ) : (
+          <kbd className="absolute left-2.5 top-1/2 -translate-y-1/2 rounded border border-zinc-700 px-1.5 font-mono text-[10px] text-zinc-500">/</kbd>
+        )}
+      </label>
+
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {EXPLORER_NODE_TYPES.map((t) => {
+          const on = types.includes(t);
+          const c = NODE_TYPE_META[t].color;
+          return (
+            <button
+              key={t}
+              onClick={() => toggleType(t)}
+              aria-pressed={on}
+              className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-bold transition"
+              style={on ? { borderColor: c, color: c, background: `${c}18` } : { borderColor: "#3f3f46", color: "#a1a1aa" }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} /> {NODE_TYPE_META[t].label}
+            </button>
+          );
+        })}
+      </div>
+
+      {error && <p className="mt-3 text-[12px] text-red-300">{error}</p>}
+
+      {results === null ? (
+        <p className="mt-6 px-1 text-center text-[12px] leading-relaxed text-zinc-500">
+          اكتب حرفين على الأقل. <span className="text-zinc-400">Enter</span> يفتح أول نتيجة.
+        </p>
+      ) : results.length === 0 ? (
+        <p className="mt-6 text-center text-[12px] text-zinc-500">لا نتائج. جرّب كلمة أقصر أو أزل فلتر النوع.</p>
+      ) : (
+        <ul className="mt-3 space-y-1.5">
+          {results.map((r) => {
+            const c = r.node_type === "query" ? "#C8A762" : nodeMetaFor(r.node_type).color;
+            return (
+              <li key={r.node_key}>
+                <button
+                  onClick={() => onFocus(r.node_key)}
+                  className="group relative w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2.5 pr-3.5 text-right transition hover:border-zinc-600 hover:bg-zinc-900"
+                >
+                  <span aria-hidden className="absolute inset-y-2 right-0 w-[3px] rounded-l-full" style={{ background: c }} />
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
+                    <span style={{ color: c }} className="font-bold">{r.node_type !== "query" && nodeMetaFor(r.node_type).label}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-mono">{r.degree}</span> رابط
+                      <span className="inline-block h-1.5 w-1.5 rounded-full" style={r.has_vector ? { background: "#C8A762" } : { border: "1px solid #52525b" }} />
+                    </span>
+                  </div>
+                  <p className={`mt-1 line-clamp-2 text-[12.5px] font-bold leading-snug ${isRepealedNode(r) ? "text-zinc-500 line-through" : "text-zinc-100"}`}>{r.title}</p>
+                  {r.snippet && <p className="mt-0.5 line-clamp-1 text-[11px] text-zinc-500">{r.snippet}</p>}
+                  <ArrowElbowDownLeft size={12} className="absolute bottom-2.5 left-2.5 text-zinc-600 opacity-0 transition group-hover:opacity-100" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── Starting points (overview) ──────────────────────────────────────────────
+
+function StartTab({ overview, onFocus }: Props) {
+  if (!overview) {
+    return (
+      <div className="space-y-2 p-4">
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="h-10 animate-pulse rounded-xl bg-zinc-900/70" />
+        ))}
+      </div>
+    );
+  }
+  const totalNodes = Object.values(overview.node_counts).reduce((s, n) => s + (n ?? 0), 0);
+  const totalEdges = Object.values(overview.edge_counts).reduce((s, n) => s + (n ?? 0), 0);
+  const maxEdge = Math.max(1, ...Object.values(overview.edge_counts).map((n) => n ?? 0));
+
+  return (
+    <div className="space-y-6 p-4">
+      <section>
+        <div className="flex items-baseline justify-between">
+          <h3 className="font-heading text-[13px] font-bold text-zinc-200">التغطية الدلالية</h3>
+          <span className="font-mono text-[10.5px] text-zinc-500">{overview.default_model_id ?? "—"}</span>
+        </div>
+        <div className="mt-3 space-y-2.5">
+          {EXPLORER_NODE_TYPES.map((t) => {
+            const total = overview.node_counts[t] ?? 0;
+            if (total === 0) return null;
+            const embeddable = overview.embeddable_counts[t] ?? 0;
+            const embedded = overview.embedded_counts[t] ?? 0;
+            const pct = embeddable > 0 ? Math.min(100, (embedded / embeddable) * 100) : 0;
+            const c = NODE_TYPE_META[t].color;
+            return (
+              <div key={t}>
+                <div className="flex items-center justify-between text-[11.5px]">
+                  <span className="flex items-center gap-1.5 text-zinc-300">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} /> {NODE_TYPE_META[t].plural}
+                  </span>
+                  <span className="font-mono text-[10.5px] text-zinc-500">
+                    {embeddable > 0 ? `${fmt(embedded)} / ${fmt(embeddable)}` : `${fmt(total)} · نصي فقط`}
+                  </span>
+                </div>
+                <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-800">
+                  <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${pct}%`, background: c }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-[11px] text-zinc-500">
+          {fmt(totalNodes)} عقدة · {fmt(totalEdges)} رابط · {fmt(overview.repealed_nodes)} ملغاة
+          {overview.last_synced_at && ` · آخر مزامنة ${new Date(overview.last_synced_at).toLocaleString("ar-SA-u-nu-latn")}`}
+        </p>
+      </section>
+
+      <section>
+        <h3 className="font-heading text-[13px] font-bold text-zinc-200">أنواع الروابط</h3>
+        <div className="mt-3 space-y-2">
+          {EXPLORER_EDGE_TYPES.filter((t) => (overview.edge_counts[t] ?? 0) > 0).map((t) => {
+            const n = overview.edge_counts[t] ?? 0;
+            const m = EDGE_TYPE_META[t];
+            return (
+              <div key={t} title={m.hint}>
+                <div className="flex items-center justify-between text-[11.5px]">
+                  <span style={{ color: m.color }} className="font-bold">{m.label}</span>
+                  <span className="font-mono text-[10.5px] text-zinc-500">{fmt(n)}</span>
+                </div>
+                <div className="mt-1 h-1 rounded-full bg-zinc-800">
+                  <div className="h-full rounded-full" style={{ width: `${(n / maxEdge) * 100}%`, background: m.color, opacity: 0.8 }} />
+                </div>
+              </div>
+            );
+          })}
+          {totalEdges === 0 && <p className="text-[12px] text-zinc-500">لا روابط بعد — تُبنى عند أول مزامنة.</p>}
+        </div>
+      </section>
+
+      {Object.keys(overview.origin_counts ?? {}).length > 0 && (
+        <section>
+          <h3 className="font-heading text-[13px] font-bold text-zinc-200">مصادر الروابط</h3>
+          <div className="mt-2.5 space-y-1.5">
+            {Object.entries(overview.origin_counts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([origin, n]) => (
+                <div key={origin} className="flex items-center justify-between text-[11.5px]">
+                  <span className="text-zinc-300">{EDGE_ORIGIN_LABELS[origin] ?? origin}</span>
+                  <span className="font-mono text-[10.5px] text-zinc-500">{fmt(n)}</span>
+                </div>
+              ))}
+          </div>
+          <p className="mt-2 text-[10.5px] leading-relaxed text-zinc-600">
+            روابط المالك (من رؤوس ملفاته) تُعدّ ضمن «مستخرجة من نصوص المكتبة»، وتظهر بشارتها عند فتح الرابط. عددها في تبويب «الحالة».
+          </p>
+        </section>
+      )}
+
+      {overview.concepts.length > 0 && (
+        <section>
+          <h3 className="font-heading text-[13px] font-bold text-zinc-200">المفاهيم القانونية</h3>
+          <p className="mt-1 text-[11px] text-zinc-500">كل مفهوم يجمع المواد التي تحكمه عبر الأنظمة.</p>
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {overview.concepts.map((c) => (
+              <button
+                key={c.node_key}
+                onClick={() => onFocus(c.node_key)}
+                className="rounded-full border border-[#7FA8DC]/35 bg-[#7FA8DC]/[0.06] px-2.5 py-1 text-[11px] text-[#a9c4e8] transition hover:border-[#7FA8DC]/70 hover:bg-[#7FA8DC]/15"
+              >
+                {c.title} <span className="font-mono text-[9.5px] text-[#7FA8DC]/70">{c.degree}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {overview.top_hubs.length > 0 && (
+        <section>
+          <h3 className="font-heading text-[13px] font-bold text-zinc-200">أكثر النصوص ترابطاً</h3>
+          <ol className="mt-2.5 space-y-1">
+            {overview.top_hubs.map((h, i) => (
+              <li key={h.node_key}>
+                <button onClick={() => onFocus(h.node_key)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-right hover:bg-zinc-800/60">
+                  <span className="w-5 font-mono text-[10.5px] text-zinc-600">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: NODE_TYPE_META[h.node_type]?.color }} />
+                  <span className="line-clamp-1 flex-1 text-[12px] text-zinc-300">{h.title}</span>
+                  <span className="font-mono text-[10.5px] text-[#C8A762]">{h.degree}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ─── Retrieval lab ───────────────────────────────────────────────────────────
+
+const LAB_EXAMPLES = ["طردوني من الشركة فجأة بدون سبب ولا تعويض", "صاحب العمل ما سلّمني راتبي ثلاثة أشهر", "هل يجوز فسخ عقد الإيجار قبل انتهاء المدة؟"];
+
+function LabTab({
+  lab, labLoading, labError, labActive, onRunLab, onShowLab, onLabSelect, onLabExplore,
+  labBaseline, labBaselineLoading, onCompareLab, hiddenLabLayers, onToggleLabLayer,
+}: Props) {
+  const [question, setQuestion] = useState("");
+  const [keywords, setKeywords] = useState("");
+  const [scope, setScope] = useState<LabScope>("auto");
+  const [lawSlug, setLawSlug] = useState("");
+  const [articleId, setArticleId] = useState("");
+  const [wide, setWide] = useState(false);
+  const [links, setLinks] = useState(true);
+  const [size, setSize] = useState<LabSize>(1);
+  const lim = labLimits(wide, size);
+  const layerCounts = lab ? labLayerCounts(lab.hits) : null;
+  const diff = lab && labBaseline ? labLinksDiff(lab.hits, labBaseline.hits) : null;
+  const hiddenCount = lab ? lab.hits.filter((h) => hiddenLabLayers.has(labLayer(h))).length : 0;
+
+  return (
+    <div className="p-3">
+      <p className="mb-2.5 px-1 text-[11.5px] leading-relaxed text-zinc-500">
+        يشغّل السؤال على نفس محرّك البحث الهجين الذي تستخدمه أدوات الذكاء الاصطناعي (نصي + دلالي + خطوتان عبر روابط الجراف)، ويعرض ما كانت ستستشهد به ولماذا.
+      </p>
+      <textarea
+        value={question}
+        onChange={(e) => setQuestion(e.target.value)}
+        rows={3}
+        maxLength={1000}
+        placeholder="اكتب سؤالاً كما يكتبه المستخدم، بالعامية أو الفصحى…"
+        className="w-full resize-none rounded-xl border border-zinc-700/80 bg-zinc-900/80 p-3 text-[13px] leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:border-[#C8A762]/60 focus:outline-none focus:ring-2 focus:ring-[#C8A762]/20"
+      />
+      <input
+        value={keywords}
+        onChange={(e) => setKeywords(e.target.value)}
+        placeholder="كلمات بحث اختيارية مفصولة بفواصل (مثل: فصل تعسفي، تعويض)"
+        className="mt-2 w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/50 focus:outline-none"
+      />
+      <div className="mt-2" role="radiogroup" aria-label="نطاق الأقسام">
+        <div className="flex rounded-xl border border-zinc-800 bg-zinc-900/60 p-0.5">
+          {LAB_SCOPES.map((s) => (
+            <button
+              key={s}
+              role="radio"
+              aria-checked={scope === s}
+              onClick={() => setScope(s)}
+              className={`flex-1 rounded-[10px] py-1.5 text-[11px] font-bold transition ${
+                scope === s ? "bg-[#C8A762]/15 text-[#C8A762]" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {LAB_SCOPE_LABELS[s]}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 px-1 text-[10.5px] leading-relaxed text-zinc-600">
+          {scope === "auto"
+            ? "كما تعمل أدوات الذكاء الاصطناعي: يرجّح قسم السؤال ويخفّض ما سواه، والروابط النظامية الصريحة تعبر الأقسام."
+            : scope === "section"
+              ? "يقصر النتائج على قسم السؤال والقسم الإجرائي، وتبقى الروابط النظامية الصريحة (استثناء، قيد، إحالة، لائحة…) عابرة للأقسام."
+              : "بلا توجيه: كل الأقسام وكل المسارات القضائية بنفس الوزن، للمقارنة."}
+        </p>
+      </div>
+      <details className="mt-2 rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-[11px] text-zinc-400" open={Boolean(lawSlug || articleId)}>
+        <summary className="cursor-pointer select-none font-bold text-zinc-300">سياق الصفحة (اختياري)</summary>
+        <p className="mt-1.5 leading-relaxed text-zinc-500">
+          كما يُسأل المساعد من صفحة نظام أو من مادة مفتوحة: على صفحة النظام يُفهم «المادة ٧٧» وحدها على أنها مادة ذلك النظام، والمادة المفتوحة تتقدّم النتائج دائمًا.
+        </p>
+        <input
+          value={lawSlug}
+          onChange={(e) => setLawSlug(e.target.value)}
+          dir="ltr"
+          placeholder="معرّف النظام (slug)، مثل labor-law"
+          className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 font-mono text-[11.5px] text-zinc-200 placeholder:font-sans placeholder:text-zinc-600 focus:border-[#C8A762]/50 focus:outline-none"
+        />
+        <input
+          value={articleId}
+          onChange={(e) => setArticleId(e.target.value)}
+          dir="ltr"
+          placeholder="معرّف المادة المفتوحة، مثل labor-law__art-77"
+          className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 font-mono text-[11.5px] text-zinc-200 placeholder:font-sans placeholder:text-zinc-600 focus:border-[#C8A762]/50 focus:outline-none"
+        />
+      </details>
+      <label className="mt-2 flex items-start gap-2 px-1 text-[11px] leading-relaxed text-zinc-400">
+        <input type="checkbox" checked={wide} onChange={(e) => setWide(e.target.checked)} className="mt-0.5 accent-[#C8A762]" />
+        <span>
+          أضف المراسيم والنصوص الفقهية
+          <span className="block text-[10.5px] text-zinc-600">المساعد لا يطلبها في أسئلة العملاء.</span>
+        </span>
+      </label>
+      <label className="mt-1.5 flex items-start gap-2 px-1 text-[11px] leading-relaxed text-zinc-400">
+        <input type="checkbox" checked={!links} onChange={(e) => setLinks(!e.target.checked)} className="mt-0.5 accent-[#C8A762]" />
+        <span>
+          بدون روابط الجراف
+          <span className="block text-[10.5px] text-zinc-600">
+            المطابقة المباشرة وحدها (نصي ودلالي)، لترى ما تضيفه الروابط. المساعد يعمل بالروابط دائمًا.
+          </span>
+        </span>
+      </label>
+      <div className="mt-2 flex items-center gap-2 px-1 text-[11px] text-zinc-400">
+        <span className="shrink-0">عدد النتائج</span>
+        <div role="radiogroup" aria-label="عدد النتائج" className="flex flex-1 rounded-lg border border-zinc-800 bg-zinc-900/60 p-0.5">
+          {LAB_SIZES.map((s) => (
+            <button
+              key={s}
+              role="radio"
+              aria-checked={size === s}
+              onClick={() => setSize(s)}
+              className={`flex-1 rounded-md py-1 text-[10.5px] font-bold transition ${
+                size === s ? "bg-[#C8A762]/15 text-[#C8A762]" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {LAB_SIZE_LABELS[s]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="mt-1 px-1 text-[10.5px] leading-relaxed text-zinc-600">
+        {`يطلب ${lim.laws} مادة و${lim.principles} مبادئ`}
+        {lim.decrees > 0 ? `، و${lim.decrees} مراسيم و${lim.feqh} نصوص فقهية` : "، بلا مراسيم ولا فقه"}
+        {!wide && size === 1 ? "، بحدود المساعد نفسها." : "، أوسع مما يطلبه المساعد."}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {LAB_EXAMPLES.map((ex) => (
+          <button key={ex} onClick={() => setQuestion(ex)} className="rounded-full border border-zinc-800 px-2.5 py-1 text-[10.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200">
+            {ex}
+          </button>
+        ))}
+      </div>
+      <button
+        disabled={labLoading || question.trim().length < 3}
+        onClick={() => onRunLab(question, keywords, scope, { lawSlug, articleId, wide, links, size })}
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#C8A762] py-2.5 text-[12.5px] font-black text-black transition hover:bg-[#d4b87a] disabled:opacity-40"
+      >
+        {labLoading ? <CircleNotch size={15} className="animate-spin" /> : <Lightning size={15} weight="fill" />} تشغيل البحث
+      </button>
+
+      {labError && <p className="mt-3 text-[12px] text-red-300">{labError}</p>}
+
+      {lab && (
+        <div className="mt-5">
+          <div className="flex flex-wrap gap-1.5 text-[10.5px] font-bold">
+            <span className={`rounded-full px-2 py-0.5 ${lab.vector_used ? "bg-[#C8A762]/12 text-[#C8A762]" : "bg-zinc-800 text-zinc-400"}`}>
+              {lab.vector_used ? "دلالي + نصي + جراف" : "نصي + جراف (بلا متجه)"}
+            </span>
+            <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">{lab.elapsed_ms}ms</span>
+            <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">{lab.hits.length} نتيجة</span>
+            {(lab.seeds?.length ?? 0) > 0 && (
+              <span className="rounded-full bg-[#C8A762]/12 px-2 py-0.5 text-[#C8A762]" title="مواد ذكرها السؤال بنصها: قُدِّمت في النتائج وتبعتها روابطها">
+                مواد مذكورة: {lab.seeds?.length}
+              </span>
+            )}
+            {lab.routing && (
+              <span
+                title={lab.routing.laws.length ? `أنظمة السؤال: ${lab.routing.laws.join("، ")}` : undefined}
+                className={`rounded-full px-2 py-0.5 ${lab.routing.section ? "bg-emerald-500/10 text-emerald-300" : "bg-zinc-800 text-zinc-400"}`}
+              >
+                {lab.routing.section_label
+                  ? `القسم: ${lab.routing.section_label}${lab.routing.confident ? " (مؤكد)" : " (مرجّح)"}`
+                  : "القسم: غير محدد"}
+                {lab.routing.scope !== "auto" ? ` · ${LAB_SCOPE_LABELS[lab.routing.scope]}` : ""}
+                {lab.routing.section ? ` · ${LAB_ROUTING_SOURCE_LABELS[lab.routing.source]}` : ""}
+              </span>
+            )}
+            {lab.law_slug && (
+              <span dir="ltr" className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-300" title="النظام الذي بُحث فيه أولًا">
+                {lab.law_slug}
+              </span>
+            )}
+            {lab.wide && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">موسَّع</span>}
+            {(lab.size ?? 1) > 1 && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">×{lab.size}</span>}
+            {lab.links === false && (
+              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-200" title="جرى البحث بلا روابط الجراف: المطابقة المباشرة وحدها">
+                بدون روابط
+              </span>
+            )}
+          </div>
+          {lab.article_found === false && (
+            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-200">
+              <Warning size={13} className="mt-0.5 shrink-0" />
+              المادة المفتوحة <span dir="ltr" className="font-mono">{lab.article_id}</span> غير موجودة في المكتبة، فجرى البحث بدونها.
+            </p>
+          )}
+          {!lab.ready && (
+            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-sky-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-sky-200">
+              <CircleNotch size={13} className="mt-0.5 shrink-0 animate-spin" />
+              الجراف قيد إعادة البناء الآن (المكتبة تغيّرت أو طُلبت مزامنة)، فلا يُستعمل حتى تنتهي المزامنة، وتعمل أدوات الذكاء الاصطناعي في هذه الأثناء بالبحث النصي وحده. أعد التجربة بعد انتهائها.
+            </p>
+          )}
+          {lab.ready && lab.embedding !== "used" && (
+            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-200">
+              <Warning size={13} className="mt-0.5 shrink-0" />
+              {lab.embedding === "no_key"
+                ? "لا يوجد مفتاح تضمين على الخادم (GEMINI_EMBEDDING_API_KEY)، فجرى البحث نصياً وعبر الروابط فقط."
+                : "تعذّر حساب متجه السؤال الآن (حد المزوّد أو انقطاع)، فجرى البحث نصياً وعبر الروابط فقط."}
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-zinc-500">
+            كلمات البحث: {lab.queries.length ? lab.queries.map((q) => `«${q}»`).join("، ") : "—"}
+          </p>
+
+          {!labActive && lab.hits.length > 0 && (
+            <button onClick={onShowLab} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#C8A762]/40 py-2 text-[11.5px] font-bold text-[#C8A762] hover:bg-[#C8A762]/10">
+              <Graph size={13} /> عرض النتائج على الخريطة
+            </button>
+          )}
+
+          {layerCounts && lab.hits.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="طبقات النتائج">
+              <span className="text-[10.5px] text-zinc-500">الطبقات:</span>
+              {LAB_LAYERS.map((l) => {
+                const off = hiddenLabLayers.has(l);
+                return (
+                  <button
+                    key={l}
+                    aria-pressed={!off}
+                    disabled={layerCounts[l] === 0}
+                    onClick={() => onToggleLabLayer(l)}
+                    title={off ? "اعرض هذه الطبقة" : "أخفِ هذه الطبقة من القائمة والخريطة"}
+                    className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition disabled:opacity-30 ${LAYER_STYLE[l]} ${off ? "line-through opacity-40" : "hover:bg-zinc-800"}`}
+                  >
+                    {labHopLabel(l)} {layerCounts[l]}
+                  </button>
+                );
+              })}
+              {hiddenCount > 0 && <span className="text-[10.5px] text-zinc-600">({hiddenCount} مخفية)</span>}
+            </div>
+          )}
+
+          {lab.links !== false && lab.ready && lab.hits.length > 0 &&
+            (diff && labBaseline ? (
+              <div className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-2.5 text-[11px] leading-relaxed text-zinc-300">
+                <p className="font-bold text-emerald-200">
+                  المقارنة بالبحث بدون روابط ({labBaseline.hits.length} نتيجة، {labBaseline.elapsed_ms}ms)
+                </p>
+                <p className="mt-1">
+                  {diff.added.size > 0
+                    ? `أضافت الروابط ${diff.added.size} نتيجة لم يجدها البحث المباشر، وعليها علامة «أضافتها الروابط».`
+                    : "لم تُضف الروابط نتيجة جديدة لهذا السؤال."}
+                </p>
+                {diff.pushedOut.length > 0 && (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer select-none text-zinc-400">
+                      وأزاحت {diff.pushedOut.length} نتيجة كانت ستظهر بدونها
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 pr-3 text-zinc-400">
+                      {diff.pushedOut.slice(0, 12).map((h) => (
+                        <li key={h.node_key}>
+                          <button onClick={() => onLabExplore(h.node_key)} title="افتحها في الاستكشاف" className="text-right hover:text-zinc-200">
+                            • {h.title}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={onCompareLab}
+                disabled={labBaselineLoading}
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-700 py-2 text-[11.5px] font-bold text-zinc-300 hover:border-zinc-500 disabled:opacity-40"
+              >
+                {labBaselineLoading ? <CircleNotch size={13} className="animate-spin" /> : <ArrowsLeftRight size={13} />} قارن بالبحث بدون روابط
+              </button>
+            ))}
+
+          <ol className="mt-3 space-y-1.5">
+            {lab.hits.map((h, i) => ({ h, i })).filter(({ h }) => !hiddenLabLayers.has(labLayer(h))).map(({ h, i }) => {
+              const c = nodeMetaFor(h.kind).color;
+              const via = h.via_edge_type ? edgeMetaFor(h.via_edge_type) : null;
+              const hop = labHop(h);
+              return (
+                <li key={h.node_key} className="relative">
+                  <button onClick={() => onLabSelect(h.node_key)} className="relative w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2.5 pb-7 pr-3.5 text-right hover:border-zinc-600">
+                    <span aria-hidden className="absolute inset-y-2 right-0 w-[3px] rounded-l-full" style={{ background: c }} />
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="flex items-center gap-1.5">
+                        <span className="rounded bg-[#C8A762] px-1.5 font-mono font-black text-black">S{i + 1}</span>
+                        <span style={{ color: c }} className="font-bold">{nodeMetaFor(h.kind).label}</span>
+                        <span
+                          className={`rounded border px-1 font-bold ${h.seed ? "border-[#C8A762]/50 text-[#C8A762]" : hop === 0 ? "border-zinc-700 text-zinc-400" : hop === 1 ? "border-sky-500/40 text-sky-300" : "border-violet-500/40 text-violet-300"}`}
+                          title={h.seed ? "مادة ذكرها السؤال بنصه، فقُدِّمت وتبعتها روابطها" : hop === 0 ? "وجدها البحث النصي/الدلالي مباشرة" : `وصل إليها المساعد بعد ${hop === 1 ? "خطوة واحدة" : "خطوتين"} على روابط الجراف`}
+                        >
+                          {h.seed ? "مذكورة في السؤال" : labHopLabel(hop)}
+                        </span>
+                        {diff?.added.has(h.node_key) && (
+                          <span className="rounded border border-emerald-500/40 px-1 font-bold text-emerald-300" title="لم تظهر في البحث بدون روابط">
+                            أضافتها الروابط
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-mono text-zinc-500">{h.score.toFixed(4)}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[12.5px] font-bold leading-snug text-zinc-100">{h.title}</p>
+                    {via && (
+                      <p className="mt-1 text-[10.5px]" style={{ color: via.color }}>
+                        ↳ عبر «{via.label}» من {h.via_from_title}
+                      </p>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => onLabExplore(h.node_key)}
+                    title="افتحها في الاستكشاف مع جوارها كاملًا (العمق وروابط المعنى وأدوات الاستكشاف كلها)"
+                    className="absolute bottom-1.5 left-2 flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900/90 px-1.5 py-0.5 text-[10px] font-bold text-zinc-400 hover:border-[#C8A762]/60 hover:text-[#C8A762]"
+                  >
+                    <Crosshair size={10} weight="bold" /> استكشف جوارها
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+          {lab.ready && lab.hits.length === 0 && <p className="mt-4 text-center text-[12px] text-zinc-500">لا نتائج. جرّب كلمات بحث صريحة.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Status ──────────────────────────────────────────────────────────────────
+
+const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("ar-SA-u-nu-latn") : "—");
+
+const VERDICT_STYLE: Record<"ok" | "busy" | "wait" | "error", string> = {
+  ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  busy: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+  wait: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+  error: "border-red-500/30 bg-red-500/10 text-red-200",
+};
+
+const OWNER_STAT_LABELS: Array<[keyof Omit<NonNullable<ExplorerStatus["owner_links_run"]>["stats"], "resolved">, string]> = [
+  ["links", "روابط قُرئت"],
+  ["edges", "روابط دخلت الجراف"],
+  ["notFound", "لم يُعثر على النظام"],
+  ["ambiguous", "تحتمل أكثر من نظام"],
+  ["stillInForce", "النظام «الملغى» ساري في المكتبة"],
+  ["contradictory", "متناقضة أو تشير إلى نفسها"],
+  ["lawLevel", "تعدّل النظام كله (بلا أرقام مواد)"],
+  ["articlesNotInLaw", "مواد غير موجودة في النظام"],
+  ["related", "أنظمة ذات صلة (لا تُرسم)"],
+  ["decreeOther", "روابط مراسيم غير التعديل"],
+];
+
+function Row({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 text-[11.5px]">
+      <span className="text-zinc-400">{label}</span>
+      <span className={`text-left text-zinc-200 ${mono ? "font-mono text-[11px]" : ""}`}>{typeof value === "number" ? fmt(value) : value}</span>
+    </div>
+  );
+}
+
+function StatusTab({ overview }: { overview: OverviewData | null }) {
+  const [status, setStatus] = useState<ExplorerStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState<string | null>(null);
+
+  const apply = useCallback((res: Awaited<ReturnType<typeof explorerApi.status>>) => {
+    setLoading(false);
+    if (res.ok) {
+      setStatus(res.data);
+      setMissing(null);
+      setError(null);
+    } else if (res.schemaMissing) {
+      // Only this tab needs 20261119_10: say so here, not in the page banner.
+      setMissing(res.migration ?? "20261119_10_library_graph_explorer_parity.sql");
+    } else {
+      setError(res.error);
+    }
+  }, []);
+
+  const load = () => {
+    setLoading(true);
+    void explorerApi.status().then(apply);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    void explorerApi.status().then((res) => {
+      if (alive) apply(res);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [apply]);
+
+  const missingVectors = overview
+    ? Math.max(
+        0,
+        Object.values(overview.embeddable_counts).reduce((s, n) => s + (n ?? 0), 0) -
+          Object.values(overview.embedded_counts).reduce((s, n) => s + (n ?? 0), 0),
+      )
+    : null;
+
+  if (missing) {
+    return (
+      <div className="p-4 text-[12px] leading-relaxed text-amber-100">
+        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+          <Warning size={15} className="mt-0.5 shrink-0 text-amber-300" />
+          <span>
+            تبويب الحالة يحتاج ملف قاعدة البيانات{" "}
+            <code dir="ltr" className="rounded bg-black/30 px-1 font-mono text-[11px]">supabase/migrations/{missing}</code>. بقية المستكشف تعمل بدونه.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const verdict = status ? syncVerdict(status) : null;
+  const sim = status?.similarity;
+  const simPct = sim && sim.with_vector > 0 ? Math.min(100, (sim.done / sim.with_vector) * 100) : 0;
+  const ownerEdges = status ? Object.entries(status.owner_links.edges) : [];
+
+  return (
+    <div className="space-y-5 p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-heading text-[13px] font-bold text-zinc-200">حالة الجراف</h3>
+        <button onClick={load} disabled={loading} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40">
+          {loading ? <CircleNotch size={12} className="animate-spin" /> : <ArrowsClockwise size={12} />} تحديث
+        </button>
+      </div>
+      {error && <p className="text-[12px] text-red-300">{error}</p>}
+      {!status && !error && <div className="h-24 animate-pulse rounded-xl bg-zinc-900/70" />}
+
+      {status && verdict && (
+        <>
+          <section className={`rounded-xl border p-3 ${VERDICT_STYLE[verdict.tone]}`}>
+            <p className="text-[12.5px] font-black">{verdict.label}</p>
+            <div className="mt-2 space-y-1">
+              {status.running_run && <Row label="بدأت المزامنة الجارية" value={when(status.running_run.started_at)} />}
+              <Row label="آخر مزامنة ناجحة" value={when(status.sync?.last_synced_at)} />
+              {status.sync?.dirty && status.sync.dirty_tables.length > 0 && (
+                <Row label="تغيّر منذها" value={status.sync.dirty_tables.join("، ")} mono />
+              )}
+              {status.sync?.last_error && <p className="text-[11px] leading-relaxed opacity-90">{status.sync.last_error}</p>}
+            </div>
+          </section>
+
+          {status.last_run && (
+            <section>
+              <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">آخر تمريرة منتهية</h4>
+              <div className="mt-2 space-y-1">
+                <Row label="النتيجة" value={`${status.last_run.status}${status.last_run.embed_only ? " · تضمين فقط" : ""}`} mono />
+                <Row label="انتهت" value={when(status.last_run.finished_at)} />
+                <Row label="عقد كُتبت / حُذفت" value={`${fmt(status.last_run.nodes_upserted)} / ${fmt(status.last_run.nodes_deleted)}`} mono />
+                <Row label="روابط كُتبت" value={status.last_run.edges_upserted} mono />
+                <Row label="متجهات جديدة" value={status.last_run.api_embedded} mono />
+                {status.last_run.error_message && <p className="text-[11px] leading-relaxed text-amber-200">{status.last_run.error_message}</p>}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">روابط المالك (من رؤوس ملفاته)</h4>
+            <div className="mt-2 space-y-1">
+              <Row label="أنظمة فيها روابط" value={status.owner_links.laws} mono />
+              <Row label="مراسيم وقرارات فيها روابط" value={status.owner_links.decrees} mono />
+              {ownerEdges.length === 0 ? (
+                <Row label="روابط في الجراف" value="0" mono />
+              ) : (
+                ownerEdges.map(([t, n]) => <Row key={t} label={`في الجراف: ${edgeMetaFor(t).label}`} value={n} mono />)
+              )}
+            </div>
+            {status.owner_links_run ? (
+              <div className="mt-2.5 rounded-xl border border-zinc-800 bg-zinc-900/40 p-2.5">
+                <p className="text-[10.5px] text-zinc-500">قراءة آخر تمريرة كاملة ({when(status.owner_links_run.finished_at)})</p>
+                <div className="mt-1.5 space-y-1">
+                  {OWNER_STAT_LABELS.map(([k, label]) => {
+                    const v = status.owner_links_run!.stats[k];
+                    return v > 0 || k === "links" || k === "edges" ? <Row key={k} label={label} value={v} mono /> : null;
+                  })}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                لم تمرّ مزامنة كاملة منذ هذا التحديث، فلا قراءة محفوظة بعد. تظهر بعد إعادة البناء التالية (بعد تحميل المالك).
+              </p>
+            )}
+          </section>
+
+          <section>
+            <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">روابط المعنى (التقارب والبديل)</h4>
+            <div className="mt-2 space-y-1">
+              <Row label="مواد ومبادئ لها متجه" value={sim?.with_vector ?? 0} mono />
+              <Row label="حُسبت روابطها" value={sim?.done ?? 0} mono />
+              <Row label="منها مواد ملغاة (بحث عن بديل)" value={sim?.repealed_done ?? 0} mono />
+              <Row label="آخر حساب" value={when(sim?.last_computed_at)} />
+            </div>
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-800">
+              <div className="h-full rounded-full bg-sky-400/80" style={{ width: `${simPct}%` }} />
+            </div>
+            <p className="mt-1 text-[10.5px] text-zinc-600">تقريبي: المواد المرقّمة بالصفحات لها متجه ولا تُحسب لها روابط.</p>
+          </section>
+
+          <section>
+            <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">أخرى</h4>
+            <div className="mt-2 space-y-1">
+              <Row label="أزواج «نظام حلّ محل نظام» المحفوظة" value={status.replacement_pairs} mono />
+              {missingVectors !== null && <Row label="نصوص بانتظار المتجه" value={missingVectors} mono />}
+              <Row label="نموذج التضمين" value={status.default_model_id ?? "—"} mono />
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}

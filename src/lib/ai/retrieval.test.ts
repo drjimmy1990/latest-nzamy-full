@@ -7,7 +7,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSources, cleanQueries, interleave, retrieveLibrary, SOURCE_TEXT_MAX } from "./retrieval.ts";
+import { buildSources, cleanQueries, GRAPH_BUDGET_MS, GRAPH_SEEDS_MAX, graphSeedKeys, interleave, retrieveLibrary, SEED_LOOKUP_MS, SOURCE_TEXT_MAX, withinMs, type RetrieveTrace } from "./retrieval.ts";
 
 test("cleanQueries keeps 1–4 distinct short searches and strips the search operators", () => {
   assert.deepEqual(cleanQueries(["مكافأة نهاية الخدمة", "  استقالة   العامل ", "مكافأة نهاية الخدمة"]), [
@@ -254,4 +254,338 @@ test("the tsquery every retrieval search sends stays non-empty and bounded under
 
 test("cleanQueries drops the framing the answering text never says («تعريف عقد البيع» → «عقد البيع»)", () => {
   assert.deepEqual(cleanQueries(["تعريف عقد البيع", "ما هو التعريف", "المادة الأولى نظام العمل"]), ["عقد البيع", "نظام العمل"]);
+});
+
+
+// ── Legal GraphRAG Hybrid + 1-Hop + 4-Corpus Tests ───────────────────────────
+
+test("GraphRAG: retrieveLibrary uses the graph across all 4 corpora, preserves pinned S1, and annotates 1-hop legal edges", async () => {
+  const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+  const graphAdmin = {
+    rpc(fn: string, args: Record<string, unknown>) {
+      rpcCalls.push({ fn, args });
+      return Promise.resolve({
+        data: {
+          ready: true,
+          model_id: "gemini-embedding-2-768",
+          vector_used: true,
+          articles: [
+            {
+              kind: "article",
+              id: "labor-law__art-77",
+              law_slug: "labor-law",
+              status: "active",
+              title: "نظام العمل — المادة 77",
+              url: "/laws/labor-law#labor-law__art-77",
+              text: "التعويض عن الإنهاء لسبب غير مشروع",
+              score: 0.035,
+              via_edge_type: null,
+              via_from_title: null,
+            },
+            {
+              kind: "article",
+              id: "labor-law__art-80",
+              law_slug: "labor-law",
+              status: "active",
+              title: "نظام العمل — المادة 80",
+              url: "/laws/labor-law#labor-law__art-80",
+              text: "فسخ العقد دون مكافأة استثناء من المادة 77",
+              score: 0.021,
+              via_edge_type: "EXEMPTS_FROM",
+              via_from_title: "نظام العمل — المادة 77",
+            },
+          ],
+          principles: [
+            {
+              kind: "principle",
+              id: "sup__p1",
+              collection_id: "sup",
+              status: "active",
+              title: "مجموعة المبادئ — المبدأ رقم 1",
+              url: "/precedents/sup#sup__p1",
+              text: "مبدأ قضائي عمالي",
+              score: 0.019,
+            },
+          ],
+          decrees: [
+            {
+              kind: "decree",
+              id: "m-46",
+              status: "active",
+              title: "المرسوم الملكي م/46",
+              url: "/laws/orders/m-46",
+              text: "تعديل نظام العمل",
+              score: 0.018,
+            },
+          ],
+          feqh: [
+            {
+              kind: "feqh",
+              id: "mugni__b1",
+              status: "active",
+              title: "المغني — الإجارة",
+              url: "/book/mugni#mugni__b1",
+              text: "الأجير الخاص",
+              score: 0.016,
+            },
+          ],
+        },
+        error: null,
+      });
+    },
+    schema(name: string) {
+      assert.equal(name, "library");
+      return {
+        from(table: string) {
+          if (table === "articles") {
+            return {
+              select: () => ({
+                eq: (_c: string, id: string) => ({
+                  abortSignal: () => ({
+                    maybeSingle: () =>
+                      Promise.resolve({
+                        data: id === "labor-law__art-74"
+                          ? { id: "labor-law__art-74", law_slug: "labor-law", number: 74, text: "ينتهي عقد العمل", status: "active" }
+                          : null,
+                        error: null,
+                      }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            select: () => ({
+              in: () => Promise.resolve({ data: [{ slug: "labor-law", title: "نظام العمل" }], error: null }),
+            }),
+          };
+        },
+        rpc: () => ({ abortSignal: () => Promise.resolve({ data: { ranked: true, rows: [] }, error: null }) }),
+      };
+    },
+  };
+
+  const out = await retrieveLibrary(
+    graphAdmin as never,
+    ["فصل تعسفي"],
+    { laws: 6, principles: 3, decrees: 1, feqh: 1 },
+    { articleId: "labor-law__art-74", question: "طردوني من الشركة بدون سبب" },
+    6000,
+    { useGraph: true, queryEmbedding: "[1,0,0,0]", modelId: "gemini-embedding-2-768" },
+  );
+
+  assert.equal(rpcCalls.length, 1);
+  // The open article seeds the graph (20261117_10).
+  assert.equal(rpcCalls[0].fn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(rpcCalls[0].args.p_seed_keys, ["article:labor-law__art-74"]);
+  assert.equal(out.sources[0].sid, "S1");
+  assert.equal(out.sources[0].pinned, true);
+  assert.equal(out.map.S1.id, "labor-law__art-74");
+
+  const kinds = out.sources.map((s) => s.kind);
+  assert.deepEqual(kinds, ["article", "article", "article", "principle", "decree", "feqh"]);
+  assert.match(out.sources[2].title, /استثناء نظامي مرتبط/, "1-hop EXEMPTS_FROM edge informs the LLM");
+  assert.equal(out.map.S3.title, "نظام العمل — المادة 80", "citation chip keeps clean statutory title");
+  assert.equal(out.map.S5.url, "/laws/orders/m-46");
+  assert.equal(out.map.S6.url, "/book/mugni#mugni__b1");
+});
+
+test("GraphRAG: retrieveLibrary falls back seamlessly to FTS relevance RPCs when graph_rag_retrieve is not ready", async () => {
+  const { admin: base } = fakeAdmin({
+    search_law_articles_relevance: { ranked: true, rows: [{ id: "labor__art-77", law_slug: "labor", number: 77, text: "تعويض" }] },
+    search_principles_relevance: { ranked: true, rows: [] },
+  });
+  const hybridUnreadyAdmin = {
+    ...base,
+    rpc: () => Promise.resolve({ data: { ready: false, articles: [], principles: [], decrees: [], feqh: [] }, error: null }),
+  };
+
+  const out = await retrieveLibrary(
+    hybridUnreadyAdmin as never,
+    ["فصل العامل"],
+    { laws: 4, principles: 2 },
+    {},
+    6000,
+    { useGraph: true, queryEmbedding: "[1,0,0,0]" },
+  );
+  assert.equal(out.sources.length, 1);
+  assert.equal(out.map.S1.id, "labor__art-77");
+});
+
+// ── GraphRAG fallbacks (2026-11-14 review): the graph never makes an answer worse than the keyword search ──
+
+function graphOverFts(graphRpc: () => unknown) {
+  const { admin: base, calls } = fakeAdmin({
+    search_law_articles_relevance: { ranked: true, rows: [{ id: "labor__art-77", law_slug: "labor", number: 77, text: "تعويض" }] },
+    search_principles_relevance: { ranked: true, rows: [] },
+  });
+  let graphCalls = 0;
+  const admin = {
+    ...base,
+    rpc: () => {
+      graphCalls++;
+      return graphRpc();
+    },
+  };
+  return { admin, calls, graphCalls: () => graphCalls };
+}
+
+test("GraphRAG: a ready graph that finds nothing falls back to the keyword search", async () => {
+  const { admin, graphCalls } = graphOverFts(() => ({
+    abortSignal: () => Promise.resolve({ data: { ready: true, articles: [], principles: [], decrees: [], feqh: [] }, error: null }),
+  }));
+  const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.equal(graphCalls(), 1);
+  assert.equal(out.map.S1.id, "labor__art-77");
+});
+
+test("GraphRAG: a graph call that hangs is cut at its deadline and the keyword search still answers", async () => {
+  let aborted = false;
+  const { admin } = graphOverFts(() => ({
+    abortSignal: (s: AbortSignal) => {
+      s.addEventListener("abort", () => (aborted = true));
+      return new Promise(() => {});
+    },
+  }));
+  const started = Date.now();
+  const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.ok(Date.now() - started < GRAPH_BUDGET_MS + 1500, "the graph's own deadline, not the whole budget");
+  assert.equal(aborted, true, "the graph request itself is cancelled");
+  assert.equal(out.map.S1.id, "labor__art-77");
+});
+
+test("GraphRAG: a graph error falls back, and no options means the graph is never called", async () => {
+  const failing = graphOverFts(() => ({ abortSignal: () => Promise.resolve({ data: null, error: { code: "XX000", message: "boom" } }) }));
+  const out = await retrieveLibrary(failing.admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.equal(out.map.S1.id, "labor__art-77");
+
+  const off = graphOverFts(() => {
+    throw new Error("the graph must not be called");
+  });
+  const plain = await retrieveLibrary(off.admin as never, ["فصل العامل"], { laws: 4, principles: 2 });
+  assert.equal(off.graphCalls(), 0);
+  assert.equal(plain.map.S1.id, "labor__art-77");
+});
+
+test("GraphRAG: decrees and fiqh blocks stay out unless the caller asks for them", async () => {
+  const { admin } = graphOverFts(() => ({
+    abortSignal: () =>
+      Promise.resolve({
+        data: {
+          ready: true,
+          articles: [{ kind: "article", id: "labor__art-80", law_slug: "labor", status: "active", title: "نظام العمل — المادة 80", url: "/laws/labor#labor__art-80", text: "نص" }],
+          principles: [],
+          decrees: [{ kind: "decree", id: "m-46", status: "active", title: "م/46", url: "/laws/orders/m-46", text: "تعديل" }],
+          feqh: [{ kind: "feqh", id: "b1", status: "active", title: "المغني", url: "/book/x#b1", text: "نص" }],
+        },
+        error: null,
+      }),
+  }));
+  const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
+  assert.deepEqual(out.sources.map((s) => s.kind), ["article"]);
+  assert.equal(out.map.S1.id, "labor__art-80");
+});
+
+// ── Seeds (20261117_10): the articles a question names lead the graph answer ──
+
+function seededGraph(lib: Parameters<typeof chainAdmin>[0], answer: (fn: string, args: Record<string, unknown>) => { data: unknown; error: unknown }) {
+  const { admin: base } = chainAdmin(lib);
+  const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+  const admin = {
+    ...base,
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      calls.push({ fn, args });
+      return { abortSignal: () => Promise.resolve(answer(fn, args)) };
+    },
+  };
+  return { admin, calls };
+}
+
+const GRAPH_HIT = {
+  ready: true,
+  routing: { scope: "auto", seeds: 1 },
+  articles: [
+    { kind: "article", id: "labor-law__art-1", law_slug: "labor-law", status: "active", title: "نظام العمل — المادة 1", url: "/laws/labor-law#labor-law__art-1", text: "يسمى هذا النظام نظام العمل" },
+    { kind: "article", id: "labor-law__art-9", law_slug: "labor-law", status: "active", title: "نظام العمل — المادة 9", url: "/laws/labor-law#labor-law__art-9", text: "استثناء", via_edge_type: "EXEMPTS_FROM" },
+  ],
+  principles: [],
+};
+
+test("graphSeedKeys: article node keys in order, once each, four at most", () => {
+  assert.deepEqual(graphSeedKeys([null, { id: "a" }, { id: "a" }, { id: "" }, { id: "b" }, undefined]), ["article:a", "article:b"]);
+  assert.equal(graphSeedKeys(["1", "2", "3", "4", "5"].map((id) => ({ id }))).length, GRAPH_SEEDS_MAX);
+});
+
+test("GraphRAG seeds: a named article is sent as a seed to graph_rag_retrieve_scoped and leads the answer", async () => {
+  const { admin, calls } = seededGraph(LIB, () => ({ data: GRAPH_HIT, error: null }));
+  const traces: RetrieveTrace[] = [];
+  const out = await retrieveLibrary(admin as never, ["نظام العمل"], { laws: 6, principles: 3 }, { question: "ما هي المادة الأولى من نظام العمل؟" }, 6000, {
+    useGraph: true,
+    onTrace: (t) => traces.push(t),
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].fn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(calls[0].args.p_seed_keys, ["article:labor-law__art-1"]);
+  assert.equal(calls[0].args.p_scope, "auto");
+  assert.equal(calls[0].args.p_law_slug, "labor-law");
+  assert.deepEqual(Object.values(out.map).map((s) => s.id), ["labor-law__art-1", "labor-law__art-9"], "the seed once, then its link");
+  assert.equal(traces.length, 1);
+  assert.equal(traces[0].path, "graph");
+  assert.equal(traces[0].graphFn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(traces[0].seeds, ["article:labor-law__art-1"]);
+  assert.equal(traces[0].graphMiss, null);
+});
+
+test("GraphRAG seeds: before 20261117_10 (PGRST202) the nine-argument function answers, without seeds", async () => {
+  const { admin, calls } = seededGraph(LIB, (fn) =>
+    fn === "graph_rag_retrieve_scoped" ? { data: null, error: { code: "PGRST202", message: "not found" } } : { data: GRAPH_HIT, error: null },
+  );
+  const traces: RetrieveTrace[] = [];
+  const out = await retrieveLibrary(admin as never, ["نظام العمل"], { laws: 6, principles: 3 }, { question: "ما هي المادة الأولى من نظام العمل؟" }, 6000, {
+    useGraph: true,
+    onTrace: (t) => traces.push(t),
+  });
+  assert.deepEqual(calls.map((c) => c.fn), ["graph_rag_retrieve_scoped", "graph_rag_retrieve"]);
+  assert.equal("p_seed_keys" in calls[1].args, false);
+  assert.equal("p_scope" in calls[1].args, false);
+  assert.equal(out.map.S1.id, "labor-law__art-1");
+  assert.equal(traces[0].graphFn, "graph_rag_retrieve");
+});
+
+test("GraphRAG seeds: no named article means the nine-argument call, as before; a miss is traced as keyword", async () => {
+  const { admin, calls } = seededGraph(LIB, () => ({ data: { ready: false }, error: null }));
+  const traces: RetrieveTrace[] = [];
+  await retrieveLibrary(admin as never, ["عقد"], { laws: 6, principles: 3 }, { question: "ما حكم عقد العمل؟" }, 6000, {
+    useGraph: true,
+    onTrace: (t) => traces.push(t),
+  });
+  assert.deepEqual(calls.map((c) => c.fn), ["graph_rag_retrieve"]);
+  assert.equal("p_seed_keys" in calls[0].args, false);
+  assert.equal(traces[0].path, "keyword");
+  assert.equal(traces[0].graphMiss, "not_ready");
+
+  // A thrown onTrace never breaks the answer.
+  const out = await retrieveLibrary(admin as never, ["عقد"], { laws: 6, principles: 3 }, {}, 6000, {
+    useGraph: true,
+    onTrace: () => {
+      throw new Error("boom");
+    },
+  });
+  assert.ok(Array.isArray(out.sources));
+});
+
+test("GraphRAG seeds: the open article is a seed too", async () => {
+  const { admin, calls } = seededGraph(LIB, () => ({ data: GRAPH_HIT, error: null }));
+  await retrieveLibrary(admin as never, ["الضمان"], { laws: 6, principles: 3 }, { articleId: "social-security-law__art-1", lawSlug: "social-security-law", question: "اشرح لي" }, 6000, {
+    useGraph: true,
+  });
+  assert.equal(calls[0].fn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(calls[0].args.p_seed_keys, ["article:social-security-law__art-1"]);
+});
+
+test("withinMs: the value in time, else the fallback (late or rejected); the seed lookup is capped below the graph window", async () => {
+  assert.deepEqual(await withinMs(Promise.resolve(["a"]), 50, []), ["a"]);
+  assert.deepEqual(await withinMs(new Promise<string[]>((r) => setTimeout(() => r(["late"]), 80)), 10, []), []);
+  assert.deepEqual(await withinMs(Promise.reject(new Error("db")), 50, ["fb"]), ["fb"]);
+  assert.ok(SEED_LOOKUP_MS < GRAPH_BUDGET_MS);
 });

@@ -56,13 +56,16 @@ export const OWNER_LOADER_TABLES: readonly OwnerLoaderTable[] = [
     stripKeys: ["needs_human_review", "review_reason", "summary_brief", "catalogue_recency_key", "latest_amendment_key", "issue_date_key", "catalogue_is_repealed"],
     // merged_regulations (owner 2026-11-06 item 4; migration 20261109_20):
     // written on every law row — REQUIRED before the first write.
-    requiredColumns: ["merged_regulations"],
+    // owner_links (migration 20261118_10): the owner's own links, written on
+    // every law row — REQUIRED before the first write, the same way.
+    requiredColumns: ["merged_regulations", "owner_links"],
   },
   { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "articles", pkey: "id", batchSize: 100, stripKeys: [] },
   { name: "article_amendments", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "article_regulations", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "decrees_circulars", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"] },
+  // owner_links (migration 20261118_10): written on every decree row — REQUIRED.
+  { name: "decrees_circulars", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"], requiredColumns: ["owner_links"] },
   { name: "decree_pages", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "judicial_collections", pkey: "id", batchSize: 100, stripKeys: [] },
   // printed_page (owner 2026-11-06, file 10 §ب1; migration 20261109_21): the

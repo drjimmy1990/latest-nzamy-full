@@ -43,7 +43,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
 import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
-import { cleanQueries, type PackageSource, type RetrievalLimits, type RetrievalPin, type Retrieved } from "./retrieval.ts";
+import {
+  cleanQueries,
+  type PackageSource,
+  type RetrievalLimits,
+  type RetrievalPin,
+  type Retrieved,
+  type RetrieveGraphOptions,
+} from "./retrieval.ts";
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
@@ -128,7 +135,19 @@ export interface StartRunDeps {
    */
   onRunCreated?: (toolId: string) => void;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
-  retrieve?: (queries: string[], limits: RetrievalLimits, pin: RetrievalPin) => Promise<Retrieved>;
+  retrieve?: (
+    queries: string[],
+    limits: RetrievalLimits,
+    pin: RetrievalPin,
+    options?: RetrieveGraphOptions,
+  ) => Promise<Retrieved>;
+  /**
+   * Optional semantic query embedder for Hybrid Legal GraphRAG. Runs in parallel
+   * with `lib-queries` so semantic vector + 1-hop graph search adds ~0 ms of
+   * serial latency and rescues colloquial Arabic questions when `lib-queries`
+   * produces zero formal keyword phrases.
+   */
+  embedQuery?: (text: string) => Promise<{ modelId: string; literal: string } | null>;
   /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
   resolveFiles?: (userId: string, fileIds: unknown, rules: FileRules) => Promise<FilesCheck>;
   /**
@@ -739,42 +758,57 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
       ...(typeof pinned === "string" && pinned ? { articleId: pinned } : {}),
       ...(typeof scope === "string" && scope ? { lawSlug: scope } : {}),
     };
-    const asked = await deps.n8n({
-      path: LIB_QUERIES_PATH,
-      mode: "sync",
-      // A follow-up («وما مدته؟») is searched together with the question before it.
-      body: {
-        v: 1,
-        run_id: run.run_id,
-        tool: "lib-queries",
-        input: {
-          text: [...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text), question].join("\n"),
+    const searchSeedText = [
+      ...history.filter((h) => h.role === "user").slice(-1).map((h) => h.text),
+      question,
+    ].join("\n");
+    const [asked, embedded] = await Promise.all([
+      deps.n8n({
+        path: LIB_QUERIES_PATH,
+        mode: "sync",
+        // A follow-up («وما مدته؟») is searched together with the question before it.
+        body: {
+          v: 1,
+          run_id: run.run_id,
+          tool: "lib-queries",
+          input: {
+            text: searchSeedText,
+          },
         },
-      },
-      timeoutMs: LIB_QUERIES_TIMEOUT_MS,
-    });
+        timeoutMs: LIB_QUERIES_TIMEOUT_MS,
+      }),
+      deps.embedQuery ? deps.embedQuery(searchSeedText).catch(() => null) : Promise.resolve(null),
+    ]);
     const reply = asked.kind === "result" && isPlainObject(asked.result) ? asked.result : null;
     const queries =
       reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
         ? cleanQueries(reply.output.queries)
         : [];
     report(deps.progress, run.run_id, actor.userId, queryEvents(queries));
-    // An open article, or one the question names, is a source even when the
-    // writer found nothing to search.
+    // An open article, one the question names, or a semantic GraphRAG query
+    // embedding is a source path even when the keyword writer found nothing.
     const named = articleRefs(question).length > 0 || (!!pin.lawSlug && bareArticleNumbers(question).length > 0);
+    const hasVector = Boolean(embedded?.literal);
     // Owner ٤١٠: a section edit of a section that cited nothing (the parties'
     // data, a preamble) is not refused for finding no library text: it goes on
     // with no sources, as its answer may cite none (citationsOptional).
     const sourcesOptional = spec.citationsOptional?.(checked.input) === true;
     let found: Retrieved = { sources: [], map: {} };
-    if (queries.length === 0 && !pin.articleId && !named) {
+    if (queries.length === 0 && !hasVector && !pin.articleId && !named) {
       if (!sourcesOptional) {
         await failRun(admin, run.run_id, "no_queries", asked.kind === "failed" ? asked.detail : "the search writer returned no searches");
         return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
       }
     } else {
       try {
-        found = await deps.retrieve(queries, { laws, principles }, pin);
+        const retrieveOpts: RetrieveGraphOptions | undefined = embedded?.literal
+          ? { useGraph: true, queryEmbedding: embedded.literal, modelId: embedded.modelId }
+          : deps.embedQuery
+            ? { useGraph: true }
+            : undefined;
+        found = retrieveOpts
+          ? await deps.retrieve(queries, { laws, principles }, pin, retrieveOpts)
+          : await deps.retrieve(queries, { laws, principles }, pin);
       } catch (err) {
         console.error("[ai] retrieval threw for", run.run_id, errorName(err));
         found = { sources: [], map: {} };

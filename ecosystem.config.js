@@ -39,5 +39,31 @@ module.exports = {
       listen_timeout: 10000,
       shutdown_with_message: true,
     },
+    {
+      // ─── Legal GraphRAG Auto-Sync Watchdog Daemon ─────
+      name: 'nzamy-graph-watchdog',
+      script: 'scripts/graph-watchdog.mjs',
+      args: '--watch --interval-sec=30',
+      node_args: '--import tsx',
+      cwd: '/www/wwwroot/nzamy/latest-nzamy-full',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+      },
+      // Holds the law index + per-article reference records for one whole pass. The
+      // production library (~99k articles, ~136k nodes) went past 400M mid-pass, so PM2
+      // restarted the watchdog every ~15 min and no pass ever reached the edge stage.
+      max_memory_restart: '1500M',
+      exp_backoff_restart_delay: 500,
+      max_restarts: 15,
+      min_uptime: '10s',
+      error_file: '/www/wwwroot/nzamy/latest-nzamy-full/logs/graph-watchdog-error.log',
+      out_file: '/www/wwwroot/nzamy/latest-nzamy-full/logs/graph-watchdog-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      watch: false,
+      kill_timeout: 10000,
+    },
   ],
 };

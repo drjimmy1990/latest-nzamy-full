@@ -792,6 +792,12 @@ export async function seedLaws(
       merged_regulations: Array.isArray(law.merged_regulations) && law.merged_regulations.length
         ? law.merged_regulations
         : null,
+      // The owner's own links (superseded_by, repealed_by, affected_laws, …),
+      // normalised by the parser (src/lib/library/ownerLinks.ts). jsonb,
+      // server-only, REQUIRES migration 20261118_10 — the owner loader's
+      // preflight stops before the first write without it. Written on every
+      // load, so a link the owner removes leaves the graph on the next pass.
+      owner_links: Array.isArray(law.owner_links) && law.owner_links.length ? law.owner_links : null,
       status: cap("laws", "status", lawId, law.law_status || "status_undeclared", 30),
       boe_source_url: cap("laws", "boe_source_url", lawId, String(law.boe_source_url || law.boe_url || ""), 500),
       official_source_url: cap("laws", "official_source_url", lawId, String(law.official_source_url || ""), 500),
@@ -1041,6 +1047,9 @@ export async function seedDecrees(
       preamble: dec.preamble || "",
       hashtags: dec.hashtags || [],
       official_url: dec.official_url || "",
+      // The owner's «affected_laws» and other links (src/lib/library/ownerLinks.ts):
+      // jsonb, server-only, REQUIRES migration 20261118_10 (loader preflight).
+      owner_links: Array.isArray(dec.owner_links) && dec.owner_links.length ? dec.owner_links : null,
       // needs_human_review / review_reason are no longer written as columns
       // (2026-10-04): internal by library contract 1.6, and a column on a
       // public table is readable with the anon key. The ب-139 audit report
