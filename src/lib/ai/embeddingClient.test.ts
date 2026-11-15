@@ -12,8 +12,102 @@ import {
   hasEmbeddingCredentials,
   l2Normalize,
   rerankCandidates,
+  resetVertexTokenCache,
   resolveEmbeddingModelProfile,
+  resolveVertexCredentials,
 } from "./embeddingClient.ts";
+import { generateKeyPairSync } from "node:crypto";
+
+function fakeServiceAccountB64(): string {
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const sa = {
+    type: "service_account",
+    project_id: "demo-project",
+    client_email: "embedder@demo-project.iam.gserviceaccount.com",
+    private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  };
+  return Buffer.from(JSON.stringify(sa)).toString("base64");
+}
+
+test("resolveVertexCredentials only switches on with GRAPH_RAG_EMBEDDING_BACKEND=vertex and a valid service account", () => {
+  const b64 = fakeServiceAccountB64();
+  assert.equal(resolveVertexCredentials({ VERTEX_SERVICE_ACCOUNT_JSON_B64: b64 }), null, "backend not selected");
+  assert.equal(resolveVertexCredentials({ GRAPH_RAG_EMBEDDING_BACKEND: "vertex" }), null, "no account");
+  assert.equal(
+    resolveVertexCredentials({ GRAPH_RAG_EMBEDDING_BACKEND: "vertex", VERTEX_SERVICE_ACCOUNT_JSON_B64: "bm90LWpzb24=" }),
+    null,
+    "not JSON",
+  );
+  const creds = resolveVertexCredentials({ GRAPH_RAG_EMBEDDING_BACKEND: "Vertex", VERTEX_SERVICE_ACCOUNT_JSON_B64: b64 });
+  assert.equal(creds?.projectId, "demo-project");
+  assert.equal(creds?.location, "global");
+  assert.equal(creds?.model, "gemini-embedding-2");
+  const custom = resolveVertexCredentials({
+    GRAPH_RAG_EMBEDDING_BACKEND: "vertex",
+    VERTEX_SERVICE_ACCOUNT_JSON_B64: b64,
+    VERTEX_LOCATION: "us-central1",
+    VERTEX_EMBEDDING_MODEL: "gemini-embedding-001",
+  });
+  assert.equal(custom?.location, "us-central1");
+  assert.equal(custom?.model, "gemini-embedding-001");
+
+  const profile = resolveEmbeddingModelProfile();
+  assert.equal(hasEmbeddingCredentials(profile, { GRAPH_RAG_EMBEDDING_BACKEND: "vertex", VERTEX_SERVICE_ACCOUNT_JSON_B64: b64 }), true);
+  assert.equal(
+    hasEmbeddingCredentials(profile, { GRAPH_RAG_EMBEDDING_BACKEND: "vertex", GEMINI_EMBEDDING_API_KEY: "k" }),
+    false,
+    "vertex selected: the AI Studio key is not used",
+  );
+});
+
+test("embedTexts on Vertex logs in once, sends a Bearer token to the Vertex batch address, and re-logs in after a 401", async () => {
+  resetVertexTokenCache();
+  const env = { GRAPH_RAG_EMBEDDING_BACKEND: "vertex", VERTEX_SERVICE_ACCOUNT_JSON_B64: fakeServiceAccountB64() };
+  let logins = 0;
+  let rejectNext = false;
+  const embedCalls: Array<{ url: string; auth: string; body: { requests: Array<Record<string, unknown>> } }> = [];
+  const fakeFetch: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url === "https://oauth2.googleapis.com/token") {
+      logins++;
+      const form = new URLSearchParams(String(init?.body));
+      assert.equal(form.get("grant_type"), "urn:ietf:params:oauth:grant-type:jwt-bearer");
+      assert.equal(String(form.get("assertion")).split(".").length, 3, "a signed JWT");
+      return new Response(JSON.stringify({ access_token: `token-${logins}`, expires_in: 3600 }), { status: 200 });
+    }
+    const headers = Object.fromEntries(new Headers(init?.headers).entries());
+    if (rejectNext) {
+      rejectNext = false;
+      return new Response('{"error":{"code":401}}', { status: 401 });
+    }
+    const body = JSON.parse(String(init?.body));
+    embedCalls.push({ url, auth: headers.authorization, body });
+    return new Response(
+      JSON.stringify({ embeddings: body.requests.map(() => ({ values: new Array(768).fill(0.5) })) }),
+      { status: 200 },
+    );
+  };
+
+  const opts = { env, fetchImpl: fakeFetch, maxRetries: 0 };
+  const [a, b] = await Promise.all([embedTexts(["أ", "ب"], opts), embedTexts(["ج"], opts)]);
+  assert.equal(a.length, 2);
+  assert.equal(b.length, 1);
+  assert.equal(logins, 1, "parallel calls share one login");
+  assert.equal(
+    embedCalls[0].url,
+    "https://aiplatform.googleapis.com/v1/projects/demo-project/locations/global/publishers/google/models/gemini-embedding-2:batchEmbedContents",
+  );
+  assert.equal(embedCalls[0].auth, "Bearer token-1");
+  assert.equal(embedCalls[0].body.requests[0].taskType, "RETRIEVAL_DOCUMENT");
+  assert.equal(embedCalls[0].body.requests[0].outputDimensionality, 768);
+  assert.equal(embedCalls[0].body.requests[0].model, undefined, "Vertex takes the model from the address");
+
+  rejectNext = true;
+  await assert.rejects(embedTexts(["د"], opts), /Embedding HTTP 401/);
+  await embedTexts(["هـ"], opts);
+  assert.equal(logins, 2, "a rejected token is dropped and the next call logs in again");
+  assert.equal(embedCalls.at(-1)?.auth, "Bearer token-2");
+});
 
 test("l2Normalize re-normalizes shortened Matryoshka slices to unit length and clamps float16 extremes", () => {
   const raw = [0.3, 0.4, 0]; // norm = 0.5 (simulates a truncated 768d Matryoshka slice)

@@ -232,6 +232,16 @@ export function missingVectorsFrom(status: GraphStatusSnapshot): number {
 const NODE_BATCH_LIMIT = 350;
 const EDGE_BATCH_LIMIT = 900;
 const EMBED_CURSOR_PAGE = 100;
+/** The most rows `graph_rag_missing_embeddings` / one store call handle at once. */
+const MISSING_PAGE_MAX = 250;
+/** Upper bound for GRAPH_RAG_EMBED_CONCURRENCY (embedding calls in flight per round). */
+const MAX_EMBED_CONCURRENCY = 16;
+
+/** Embedding calls per round from GRAPH_RAG_EMBED_CONCURRENCY: 1 (one call at a time) unless set higher. */
+export function embedConcurrencyFrom(raw: string | number | undefined): number {
+  const n = Math.trunc(Number(raw));
+  return Number.isFinite(n) && n > 1 ? Math.min(n, MAX_EMBED_CONCURRENCY) : 1;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -245,6 +255,8 @@ export async function runGraphSyncPass(
     allowSmallCorpus?: boolean;
     maxEmbedNodes?: number;
     batchDelayMs?: number;
+    /** Embedding calls sent at once per round (default: GRAPH_RAG_EMBED_CONCURRENCY, else 1). */
+    embedConcurrency?: number;
     /** Catch-up mode: the graph is current, so skip every library stream and only embed missing vectors. */
     embedOnly?: boolean;
     /** Quota pause: rebuild the graph (+ $0 vault relink) but call no embedding API. */
@@ -499,17 +511,34 @@ export async function runGraphSyncPass(
       // articles per call fits; paid tiers can use the provider maximum of 100.
       const rawPage = Math.trunc(Number(env.GRAPH_RAG_EMBED_BATCH_SIZE));
       const pageSize = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, EMBED_CURSOR_PAGE) : EMBED_CURSOR_PAGE;
+      // Calls in flight per round. 1 = the original one-call-at-a-time loop; a paid
+      // backend with high limits (Vertex) can send several batches at once.
+      const concurrency = embedConcurrencyFrom(options.embedConcurrency ?? env.GRAPH_RAG_EMBED_CONCURRENCY);
       let cursor = "";
 
       try {
         while (apiEmbedded < maxEmbed) {
           checkStop();
-          const take = Math.min(pageSize, maxEmbed - apiEmbedded);
-          const missingBatch = await backend.fetchMissingEmbeddings(profile.modelId, cursor, take);
+          // One round: up to `concurrency` calls' worth of missing rows (the DB hands out ≤250 per page).
+          const want = Math.min(pageSize * concurrency, maxEmbed - apiEmbedded);
+          const missingBatch: Awaited<ReturnType<GraphWatchdogBackend["fetchMissingEmbeddings"]>> = [];
+          let exhausted = false;
+          while (missingBatch.length < want) {
+            const page = await backend.fetchMissingEmbeddings(
+              profile.modelId,
+              cursor,
+              Math.min(MISSING_PAGE_MAX, want - missingBatch.length),
+            );
+            if (page.length === 0) {
+              exhausted = true;
+              break;
+            }
+            cursor = page[page.length - 1].node_key;
+            missingBatch.push(...page);
+          }
           if (missingBatch.length === 0) break;
-          cursor = missingBatch[missingBatch.length - 1].node_key;
 
-          // Deduplicate identical content_sha256 within the batch so duplicate texts embed once!
+          // Deduplicate identical content_sha256 within the round so duplicate texts embed once!
           const uniqueShaList: string[] = [];
           const textBySha = new Map<string, string>();
           for (const row of missingBatch) {
@@ -522,16 +551,31 @@ export async function runGraphSyncPass(
             }
           }
 
-          const uniqueTexts = uniqueShaList.map((sha) => textBySha.get(sha) ?? " ");
-          const vectors = options.embedFn
-            ? await options.embedFn(uniqueTexts, profile)
-            : await embedTexts(uniqueTexts, { profile, mode: "document", env });
+          // Split into calls of `pageSize` texts and send them together.
+          const calls: string[][] = [];
+          for (let i = 0; i < uniqueShaList.length; i += pageSize) calls.push(uniqueShaList.slice(i, i + pageSize));
+          const settled = await Promise.allSettled(
+            calls.map((shas) => {
+              const texts = shas.map((sha) => textBySha.get(sha) ?? " ");
+              return options.embedFn
+                ? options.embedFn(texts, profile)
+                : embedTexts(texts, { profile, mode: "document", env });
+            }),
+          );
 
           const literalBySha = new Map<string, string>();
-          uniqueShaList.forEach((sha, idx) => {
-            literalBySha.set(sha, formatHalfvecLiteral(vectors[idx]));
+          let callError: unknown = null;
+          settled.forEach((result, callIdx) => {
+            if (result.status === "rejected") {
+              callError ??= result.reason;
+              return;
+            }
+            calls[callIdx].forEach((sha, idx) => {
+              literalBySha.set(sha, formatHalfvecLiteral(result.value[idx]));
+            });
           });
 
+          // Store what succeeded, even when another call in the round failed.
           const toStore = missingBatch
             .map((row) => ({
               node_key: row.node_key,
@@ -539,9 +583,14 @@ export async function runGraphSyncPass(
               embedding: literalBySha.get(row.content_sha256) ?? "",
             }))
             .filter((r) => r.embedding !== "");
-
-          apiEmbedded += await backend.storeEmbeddings(profile.modelId, toStore);
-          log(`[graph-watchdog] Embedded +${toStore.length} vectors (total apiEmbedded=${apiEmbedded})...`);
+          for (let i = 0; i < toStore.length; i += MISSING_PAGE_MAX) {
+            apiEmbedded += await backend.storeEmbeddings(profile.modelId, toStore.slice(i, i + MISSING_PAGE_MAX));
+          }
+          if (toStore.length > 0) {
+            log(`[graph-watchdog] Embedded +${toStore.length} vectors (total apiEmbedded=${apiEmbedded})...`);
+          }
+          if (callError !== null) throw callError;
+          if (exhausted) break;
 
           if (delayMs > 0) {
             await sleep(delayMs);
@@ -550,7 +599,8 @@ export async function runGraphSyncPass(
       } catch (embedErr) {
         if (!isEmbeddingQuotaError(embedErr)) throw embedErr;
         quotaPaused = true;
-        log(`[graph-watchdog] Embedding quota reached after +${apiEmbedded} vectors; pausing (stored vectors are kept).`);
+        const reason = (embedErr instanceof Error ? embedErr.message : String(embedErr)).replace(/\s+/g, " ").slice(0, 220);
+        log(`[graph-watchdog] Embedding quota reached after +${apiEmbedded} vectors; pausing (stored vectors are kept). Provider said: ${reason}`);
       }
     } else if (missingAfterRelink > 0 && !canEmbed) {
       log(

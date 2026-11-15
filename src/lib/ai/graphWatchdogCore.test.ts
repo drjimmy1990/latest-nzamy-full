@@ -9,6 +9,7 @@ import test from "node:test";
 import {
   FAILURE_BACKOFF_MAX_MS,
   FAILURE_BACKOFF_MIN_MS,
+  embedConcurrencyFrom,
   isEmbeddingQuotaError,
   missingVectorsFrom,
   nextFailureBackoffMs,
@@ -394,6 +395,62 @@ test("GRAPH_RAG_EMBED_BATCH_SIZE shrinks each embedding call for free-tier token
     },
   });
   assert.deepEqual(bigSizes, [100, 50]);
+});
+
+test("GRAPH_RAG_EMBED_CONCURRENCY sends several embedding calls at once and stores every vector", async () => {
+  assert.equal(embedConcurrencyFrom(undefined), 1);
+  assert.equal(embedConcurrencyFrom("0"), 1);
+  assert.equal(embedConcurrencyFrom("abc"), 1);
+  assert.equal(embedConcurrencyFrom("6"), 6);
+  assert.equal(embedConcurrencyFrom("500"), 16, "capped");
+
+  const { backend, embedded } = quotaBackend(1050);
+  const fetchLimits: number[] = [];
+  const fetchMissing = backend.fetchMissingEmbeddings.bind(backend);
+  backend.fetchMissingEmbeddings = async (m, after, limit) => {
+    fetchLimits.push(limit);
+    return fetchMissing(m, after, limit);
+  };
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const callSizes: number[] = [];
+  const summary = await runGraphSyncPass(backend, {
+    embedOnly: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key", GRAPH_RAG_EMBED_CONCURRENCY: "4" },
+    embedFn: async (texts) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      callSizes.push(texts.length);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return texts.map(() => [1, 0, 0, 0]);
+    },
+  });
+  assert.equal(summary.status, "succeeded");
+  assert.equal(embedded.size, 1050);
+  assert.equal(summary.apiEmbedded, 1050);
+  assert.equal(maxInFlight, 4, "four calls in flight per round");
+  assert.ok(callSizes.every((n) => n <= 100), "each call stays within 100 texts");
+  assert.ok(fetchLimits.every((n) => n <= 250), "the DB is asked for at most 250 rows at a time");
+});
+
+test("with concurrency, a quota error in one call keeps the round's other vectors and pauses", async () => {
+  const { backend, embedded } = quotaBackend(400);
+  let call = 0;
+  const summary = await runGraphSyncPass(backend, {
+    embedOnly: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key" },
+    embedConcurrency: 4,
+    embedFn: async (texts) => {
+      call++;
+      if (call === 2) throw new Error('Embedding HTTP 429: {"error":{"status":"RESOURCE_EXHAUSTED"}}');
+      return texts.map(() => [1, 0, 0, 0]);
+    },
+  });
+  assert.equal(summary.status, "succeeded");
+  assert.equal(summary.quotaPaused, true);
+  assert.equal(embedded.size, 300, "the three calls that succeeded are stored");
+  assert.equal(summary.apiEmbedded, 300);
 });
 
 // ─── 2026-11-14 review fixes ──────────────────────────────────────────────────

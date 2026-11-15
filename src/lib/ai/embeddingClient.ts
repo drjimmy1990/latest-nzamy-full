@@ -14,7 +14,8 @@
  *      `?key=` query strings that could leak into proxy or error logs).
  *   3. Multi-Provider Agnosticism: Supports `gemini`, `openai`, `voyage`,
  *      `cohere`, `jina`, `cloudflare`, and `openai-compatible` (`BAAI/bge-m3`,
- *      `Qwen3-Embedding`, Ollama, vLLM).
+ *      `Qwen3-Embedding`, Ollama, vLLM). The Gemini models can run through
+ *      Google Cloud Vertex AI instead of AI Studio (`GRAPH_RAG_EMBEDDING_BACKEND=vertex`).
  */
 
 export type EmbeddingProvider =
@@ -177,12 +178,121 @@ export function formatHalfvecLiteral(values: readonly number[]): string {
   return `[${values.map((v) => (Number.isFinite(v) ? String(v) : "0")).join(",")}]`;
 }
 
+/**
+ * Google Cloud Vertex AI login for the Gemini embedding models. Selected with
+ * `GRAPH_RAG_EMBEDDING_BACKEND=vertex`; bills the Cloud billing account (where
+ * Cloud credits apply) instead of the AI Studio prepaid balance. The service
+ * account JSON comes base64-encoded in `VERTEX_SERVICE_ACCOUNT_JSON_B64` (one
+ * line, so it fits `.env.local`); it is never logged or put in a URL.
+ */
+export interface VertexCredentials {
+  clientEmail: string;
+  privateKey: string;
+  projectId: string;
+  location: string;
+  model: string;
+}
+
+type ProviderCredentials = { apiKey: string; baseUrl?: string; accountId?: string; vertex?: VertexCredentials };
+
+const vertexAccountCache = new Map<string, VertexCredentials | null>();
+
+export function resolveVertexCredentials(env: Record<string, string | undefined>): VertexCredentials | null {
+  if ((env.GRAPH_RAG_EMBEDDING_BACKEND || "").trim().toLowerCase() !== "vertex") return null;
+  const encoded = (env.VERTEX_SERVICE_ACCOUNT_JSON_B64 || "").trim();
+  if (!encoded) return null;
+  let account = vertexAccountCache.get(encoded);
+  if (account === undefined) {
+    account = null;
+    try {
+      const sa = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as Record<string, unknown>;
+      const clientEmail = typeof sa.client_email === "string" ? sa.client_email : "";
+      const privateKey = typeof sa.private_key === "string" ? sa.private_key : "";
+      const projectId = typeof sa.project_id === "string" ? sa.project_id : "";
+      if (clientEmail && privateKey && projectId) {
+        account = { clientEmail, privateKey, projectId, location: "", model: "" };
+      }
+    } catch {
+      account = null;
+    }
+    vertexAccountCache.set(encoded, account);
+  }
+  if (!account) return null;
+  return {
+    ...account,
+    projectId: (env.VERTEX_PROJECT_ID || "").trim() || account.projectId,
+    location: (env.VERTEX_LOCATION || "").trim() || "global",
+    model: (env.VERTEX_EMBEDDING_MODEL || "").trim() || "gemini-embedding-2",
+  };
+}
+
+const VERTEX_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const vertexTokenCache = new Map<string, { token: Promise<string>; expiresAt: number }>();
+
+function base64Url(input: string): string {
+  return Buffer.from(input).toString("base64url");
+}
+
+/** An OAuth access token for the service account, cached until 5 min before it expires. */
+async function vertexAccessToken(
+  creds: VertexCredentials,
+  net: { fetchImpl: typeof fetch; timeoutMs: number; maxRetries: number; retryBaseMs: number },
+): Promise<string> {
+  const cached = vertexTokenCache.get(creds.clientEmail);
+  if (cached && cached.expiresAt > Date.now()) return cached.token;
+
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const token = (async () => {
+    const { createSign } = await import("node:crypto");
+    const unsigned = `${base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64Url(
+      JSON.stringify({
+        iss: creds.clientEmail,
+        scope: "https://www.googleapis.com/auth/cloud-platform",
+        aud: VERTEX_TOKEN_URL,
+        iat: issuedAt,
+        exp: issuedAt + 3600,
+      }),
+    )}`;
+    const signature = createSign("RSA-SHA256").update(unsigned).sign(creds.privateKey).toString("base64url");
+    const res = await fetchWithRetry(
+      VERTEX_TOKEN_URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion: `${unsigned}.${signature}`,
+        }).toString(),
+      },
+      net,
+    );
+    const json = (await res.json()) as { access_token?: string; expires_in?: number };
+    if (!json.access_token) throw new Error("Vertex login returned no access token");
+    const lifetimeSec = Number(json.expires_in) > 0 ? Number(json.expires_in) : 3600;
+    vertexTokenCache.set(creds.clientEmail, { token: Promise.resolve(json.access_token), expiresAt: Date.now() + (lifetimeSec - 300) * 1000 });
+    return json.access_token;
+  })();
+  // Parallel calls share one login; a failed login is not cached.
+  vertexTokenCache.set(creds.clientEmail, { token, expiresAt: Date.now() + 60_000 });
+  token.catch(() => vertexTokenCache.delete(creds.clientEmail));
+  return token;
+}
+
+/** Test seam: forget cached Vertex logins. */
+export function resetVertexTokenCache(): void {
+  vertexTokenCache.clear();
+}
+
 function resolveProviderCredentials(
   profile: EmbeddingModelProfile,
   env: Record<string, string | undefined>,
-): { apiKey: string; baseUrl?: string; accountId?: string } | null {
+): ProviderCredentials | null {
   switch (profile.provider) {
     case "gemini": {
+      if ((env.GRAPH_RAG_EMBEDDING_BACKEND || "").trim().toLowerCase() === "vertex") {
+        const vertex = resolveVertexCredentials(env);
+        return vertex ? { apiKey: "", vertex } : null;
+      }
       const apiKey = (env.GEMINI_EMBEDDING_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY || "").trim();
       return apiKey ? { apiKey } : null;
     }
@@ -306,32 +416,47 @@ async function embedChunk(
   chunk: string[],
   profile: EmbeddingModelProfile,
   mode: "document" | "query",
-  creds: { apiKey: string; baseUrl?: string; accountId?: string },
+  creds: ProviderCredentials,
   net: { fetchImpl: typeof fetch; timeoutMs: number; maxRetries: number; retryBaseMs: number },
 ): Promise<number[][]> {
   const task = mode === "query" ? profile.taskQuery : profile.taskDocument;
 
   if (profile.provider === "gemini") {
     const modelPath = profile.apiModel.startsWith("models/") ? profile.apiModel : `models/${profile.apiModel}`;
-    const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:batchEmbedContents`;
+    const vertex = creds.vertex;
+    // Vertex takes the same batchEmbedContents body (without the per-request model) at its own address.
+    const url = vertex
+      ? `${vertex.location === "global" ? "https://aiplatform.googleapis.com" : `https://${vertex.location}-aiplatform.googleapis.com`}` +
+        `/v1/projects/${encodeURIComponent(vertex.projectId)}/locations/${encodeURIComponent(vertex.location)}` +
+        `/publishers/google/models/${encodeURIComponent(vertex.model)}:batchEmbedContents`
+      : `https://generativelanguage.googleapis.com/v1beta/${modelPath}:batchEmbedContents`;
     const requests = chunk.map((text) => ({
-      model: modelPath,
+      ...(vertex ? {} : { model: modelPath }),
       content: { parts: [{ text }] },
       ...(task ? { taskType: task } : {}),
       outputDimensionality: profile.dimensions,
     }));
-    const res = await fetchWithRetry(
-      url,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": creds.apiKey,
+    const auth: Record<string, string> = vertex
+      ? { Authorization: `Bearer ${await vertexAccessToken(vertex, net)}` }
+      : { "x-goog-api-key": creds.apiKey };
+    let res: Response;
+    try {
+      res = await fetchWithRetry(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...auth },
+          body: JSON.stringify({ requests }),
         },
-        body: JSON.stringify({ requests }),
-      },
-      net,
-    );
+        net,
+      );
+    } catch (err) {
+      // A rejected login token: log in again on the next call instead of reusing it for up to an hour.
+      if (vertex && err instanceof Error && err.message.startsWith("Embedding HTTP 401")) {
+        vertexTokenCache.delete(vertex.clientEmail);
+      }
+      throw err;
+    }
     const json = (await res.json()) as { embeddings?: Array<{ values?: number[] }> };
     const list = json.embeddings ?? [];
     if (list.length !== chunk.length) {
