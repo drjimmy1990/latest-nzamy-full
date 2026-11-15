@@ -103,3 +103,54 @@ test("_verify.sql and RLS harness cover library_graph_rag including clean-wipe s
   assert.match(rls, /truncate table library\.article_amendments/i, "RLS test must verify clean-wipe TRUNCATE survival");
   assert.match(rls, /graph_rag_relink_vault/i, "RLS test must verify zero-cost vault relinking after reload");
 });
+
+// ─── 20261115_10: graph depth ────────────────────────────────────────────────
+
+const DEPTH_PATH = join(ROOT, "supabase", "migrations", "20261115_10_library_graph_depth.sql");
+const RETRIEVE_SIG =
+  "public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)";
+
+function sqlList(sql: string, constraint: string): string[] {
+  const at = sql.indexOf(`add constraint ${constraint}`);
+  assert.ok(at >= 0, `${constraint} is added`);
+  const body = sql.slice(at, sql.indexOf(";", at));
+  return [...body.matchAll(/'([A-Za-z_]+)'/g)].map((m) => m[1]);
+}
+
+test("20261115_10 is one transaction, keeps the retrieve signature and readiness check, ends with `as ok`", () => {
+  assert.ok(existsSync(DEPTH_PATH), "migration 20261115_10_library_graph_depth.sql must exist");
+  const sql = readFileSync(DEPTH_PATH, "utf8").replace(/\r\n/g, "\n");
+
+  assert.equal((sql.match(/^begin;$/gm) ?? []).length, 1, "exactly one top-level begin;");
+  assert.equal((sql.match(/^commit;$/gm) ?? []).length, 1, "exactly one top-level commit;");
+  assert.match(sql.slice(sql.lastIndexOf("commit;")), /\bas ok\s*;/);
+
+  // The function bodies only: the verify block names the forbidden calls in its own checks.
+  const bodies = sql.slice(sql.indexOf("-- ── 2."), sql.indexOf("-- ── Verify"));
+  assert.ok(bodies.length > 1000, "function section found");
+  assert.match(
+    bodies,
+    /create or replace function public\.graph_rag_retrieve\(\s*p_tsqueries\s+text\[\][^)]*p_enable_graph_hop boolean default true\s*\)/,
+    "retrieve keeps its nine-argument signature",
+  );
+  assert.ok(sql.includes(RETRIEVE_SIG), "the verify block checks the same signature");
+  assert.match(bodies, /last_synced_at is not null and s\.dirty = false/, "retrieve keeps the readiness check");
+  assert.match(bodies, /hop2_scored/);
+  assert.doesNotMatch(bodies, /pg_catalog\.(greatest|least)\(|halfvec_dims\(/);
+  assert.doesNotMatch(sql, /grant execute .* to (anon|authenticated)/i, "no new grants to clients");
+});
+
+test("20261115_10 type lists equal the explorer's node and edge types", async () => {
+  const { EXPLORER_EDGE_TYPES, EXPLORER_NODE_TYPES } = await import("./graphExplorerCore.ts");
+  const sql = readFileSync(DEPTH_PATH, "utf8").replace(/\r\n/g, "\n");
+
+  const nodes = sqlList(sql, "nodes_node_type_check");
+  assert.deepEqual([...nodes].sort(), [...EXPLORER_NODE_TYPES].sort());
+  assert.deepEqual(sqlList(sql, "node_embeddings_node_type_check").sort(), [...nodes].sort());
+  assert.deepEqual(sqlList(sql, "edges_edge_type_check").sort(), [...EXPLORER_EDGE_TYPES].sort());
+
+  const verify = readFileSync(VERIFY_PATH, "utf8");
+  assert.match(verify, /^-- >>> verify:library_graph_depth$/m);
+  assert.match(verify, /^-- <<< verify:library_graph_depth$/m);
+  assert.ok(existsSync(join(ROOT, "supabase", "tests", "rls", "library_graph_depth.test.sql")));
+});

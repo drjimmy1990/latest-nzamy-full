@@ -138,6 +138,7 @@ export async function GET(request: NextRequest) {
           score: Number(h.score ?? 0),
           via_edge_type: typeof h.via_edge_type === "string" ? h.via_edge_type : null,
           via_from_title: typeof h.via_from_title === "string" ? h.via_from_title : null,
+          hop: typeof h.hop === "number" ? h.hop : undefined,
           law_slug: typeof h.law_slug === "string" ? h.law_slug : null,
           status: typeof h.status === "string" ? h.status : null,
           url: typeof h.url === "string" ? h.url : "",

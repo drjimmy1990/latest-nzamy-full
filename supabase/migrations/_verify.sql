@@ -6543,3 +6543,26 @@ select 'GraphRAG fixes: vector_dims, no pg_catalog.greatest, readiness, abandon_
                     like '%missing_vectors%', false)
        as ok;
 -- <<< verify:library_graph_rag_fixes
+
+-- >>> verify:library_graph_depth
+-- 2026-11-15 — 20261115_10_library_graph_depth.sql: the graph holds law and
+-- chapter nodes and PART_OF / NEXT_ARTICLE edges, and retrieve walks a second
+-- hop. Run it BEFORE deploying the code that writes the new types.
+-- Docker: supabase/tests/rls/library_graph_depth.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG depth: law/chapter nodes, PART_OF/NEXT_ARTICLE, two-hop retrieve (run 20261115_10)' as check,
+       exists (select 1 from pg_catalog.pg_constraint c
+                where c.conname = 'nodes_node_type_check'
+                  and c.conrelid = to_regclass('library_graph.nodes')
+                  and pg_catalog.pg_get_constraintdef(c.oid) like '%chapter%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'node_embeddings_node_type_check'
+                      and c.conrelid = to_regclass('library_graph.node_embeddings')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%chapter%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'edges_edge_type_check'
+                      and c.conrelid = to_regclass('library_graph.edges')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%NEXT_ARTICLE%')
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)'))
+                    like '%hop2_scored%', false)
+       as ok;
+-- <<< verify:library_graph_depth

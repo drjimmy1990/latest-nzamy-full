@@ -17,10 +17,12 @@ import {
   buildCuratedConceptNodes,
   buildDecreeGraphNodes,
   buildFeqhGraphNodes,
+  buildLawStructure,
   buildPrincipleGraphNodes,
   extractConceptEdges,
   extractDecreeAmendmentEdges,
   extractPrincipleInterpretationEdges,
+  mayNameArticle,
   normalizeArabicKey,
   resolveArticleEdges,
   resolveParentLawSlugs,
@@ -383,11 +385,26 @@ export async function runGraphSyncPass(
             });
           }
         }
-        if (nodeBuffer.length >= NODE_BATCH_LIMIT) {
+        // The law's outline: law + chapter nodes, PART_OF and NEXT_ARTICLE edges.
+        // Written per law (nodes first, so both ends of every edge exist) instead of
+        // held until Pass 6: ~200k structural edges would cost the memory Pass 1 saves.
+        const structure = buildLawStructure({
+          law: bundle.law,
+          chaptersById: bundle.chaptersById,
+          articles: bundle.articles,
+          articleNodes: built,
+        });
+        nodeBuffer.push(...structure.nodes);
+        edgeBuffer.push(...structure.edges);
+        if (edgeBuffer.length >= EDGE_BATCH_LIMIT) {
+          await flushNodes();
+          await flushEdges();
+        } else if (nodeBuffer.length >= NODE_BATCH_LIMIT) {
           await flushNodes();
         }
       }
       await flushNodes();
+      await flushEdges();
       // `parent_law_id` is a registry instrument_id: map it to the parent's slug.
       resolveParentLawSlugs(lawMap);
 
@@ -397,7 +414,7 @@ export async function runGraphSyncPass(
         const pNodes = buildPrincipleGraphNodes(bundle);
         for (const p of pNodes) {
           nodeBuffer.push(p);
-          if (/ماد(?:ة|تين)/.test(p.display_text)) {
+          if (mayNameArticle(p.display_text)) {
             edgeBuffer.push(...extractPrincipleInterpretationEdges(p, lawMap));
           }
         }
@@ -411,7 +428,7 @@ export async function runGraphSyncPass(
         const dNodes = buildDecreeGraphNodes(batch);
         for (const d of dNodes) {
           nodeBuffer.push(d);
-          if (/ماد(?:ة|تين)/.test(d.display_text)) {
+          if (mayNameArticle(d.display_text)) {
             edgeBuffer.push(...extractDecreeAmendmentEdges(d, lawMap));
           }
         }

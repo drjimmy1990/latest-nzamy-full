@@ -11,10 +11,10 @@
 
 // ─── Types & labels ───────────────────────────────────────────────────────────
 
-export const EXPLORER_NODE_TYPES = ["article", "principle", "decree", "feqh", "concept"] as const;
+export const EXPLORER_NODE_TYPES = ["article", "principle", "decree", "feqh", "concept", "law", "chapter"] as const;
 export type ExplorerNodeType = (typeof EXPLORER_NODE_TYPES)[number];
 
-/** Same order as the radial sectors; matches the edge_type check of 20261110_10. */
+/** Same order as the radial sectors; matches the edge_type check of 20261115_10 (the outline links come last). */
 export const EXPLORER_EDGE_TYPES = [
   "EXEMPTS_FROM",
   "AMENDS_ARTICLE",
@@ -25,6 +25,8 @@ export const EXPLORER_EDGE_TYPES = [
   "CITES_ARTICLE",
   "DECONSTRUCTS_CONCEPT",
   "HAS_CONCEPT",
+  "NEXT_ARTICLE",
+  "PART_OF",
 ] as const;
 export type ExplorerEdgeType = (typeof EXPLORER_EDGE_TYPES)[number];
 
@@ -36,6 +38,8 @@ export const NODE_TYPE_META: Readonly<Record<ExplorerNodeType, { label: string; 
   decree: { label: "مرسوم / تعميم", plural: "المراسيم والتعاميم", color: "#D9826F" },
   feqh: { label: "نص فقهي", plural: "النصوص الفقهية", color: "#A3B86C" },
   concept: { label: "مفهوم قانوني", plural: "المفاهيم القانونية", color: "#7FA8DC" },
+  law: { label: "نظام / لائحة", plural: "الأنظمة واللوائح", color: "#E8D5A3" },
+  chapter: { label: "باب / فصل", plural: "الأبواب والفصول", color: "#9C8E6B" },
 };
 
 /**
@@ -108,6 +112,22 @@ export const EDGE_TYPE_META: Readonly<
     color: "#7FA8DC",
     dashed: true,
     hint: "مفهوم قانوني منسَّق (مثل «الفصل التعسفي») يجمع المواد التي تحكمه.",
+  },
+  NEXT_ARTICLE: {
+    label: "المادة التالية",
+    out: "تليها",
+    in: "تسبقها",
+    color: "#6E6E78",
+    dashed: true,
+    hint: "ترتيب المواد في النظام نفسه: كل مادة مرتبطة بالمادة التي بعدها.",
+  },
+  PART_OF: {
+    label: "ضمن",
+    out: "ضمن",
+    in: "يضم",
+    color: "#5A5A63",
+    dashed: true,
+    hint: "هيكل المستند: المادة ضمن بابها أو فصلها، والباب ضمن النظام.",
   },
 };
 
@@ -544,16 +564,23 @@ export interface LabHit {
   score: number;
   via_edge_type?: string | null;
   via_from_title?: string | null;
+  /** 0 direct hit, 1 or 2 graph hops (20261115_10); absent from an older server: read from via_edge_type. */
+  hop?: number;
   law_slug?: string | null;
   status?: string | null;
   url?: string;
   text?: string;
 }
 
+function labHop(h: LabHit): number {
+  return typeof h.hop === "number" && h.hop >= 0 ? h.hop : h.via_edge_type ? 1 : 0;
+}
+
 /**
  * The lab's picture: the question in the middle, each direct hit linked to it,
- * each graph-hop hit linked to the hit that led to it (or to the question when
- * that seed is not among the results). `ranks` is the final 1-based order.
+ * each graph-hop hit linked to the hit that led to it — a second-hop hit to the
+ * first-hop hit it came through — or to the question when that seed is not
+ * among the results. `ranks` is the final 1-based order.
  */
 export function buildLabGraph(question: string, hits: readonly LabHit[]): ExplorerGraph & { ranks: Map<string, number> } {
   const ordered = [...hits].sort((a, b) => b.score - a.score || a.node_key.localeCompare(b.node_key));
@@ -563,14 +590,17 @@ export function buildLabGraph(question: string, hits: readonly LabHit[]): Explor
   const nodes: ExplorerNode[] = [
     { node_key: QUERY_NODE_KEY, node_type: "query", title: question.slice(0, 140), hop: 0, degree: ordered.length, has_vector: false },
   ];
+  // A seed is named by its title: the nearest hit with that title wins.
   const keyByTitle = new Map<string, string>();
+  for (const h of [...ordered].sort((a, b) => labHop(a) - labHop(b))) {
+    if (!keyByTitle.has(h.title)) keyByTitle.set(h.title, h.node_key);
+  }
   for (const h of ordered) {
-    if (!h.via_edge_type) keyByTitle.set(h.title, h.node_key);
     nodes.push({
       node_key: h.node_key,
       node_type: h.kind,
       title: h.title,
-      hop: h.via_edge_type ? 2 : 1,
+      hop: labHop(h) + 1,
       degree: 0,
       has_vector: false,
       law_slug: h.law_slug ?? null,
@@ -583,8 +613,8 @@ export function buildLabGraph(question: string, hits: readonly LabHit[]): Explor
   const edges: ExplorerEdge[] = [];
   for (const h of ordered) {
     const seed = h.via_edge_type && h.via_from_title ? keyByTitle.get(h.via_from_title) : undefined;
-    if (seed && isExplorerEdgeType(h.via_edge_type)) {
-      edges.push({ source: seed, target: h.node_key, edge_type: h.via_edge_type, origin: "lab", weight: 1, evidence: null, hop: 2 });
+    if (seed && seed !== h.node_key && isExplorerEdgeType(h.via_edge_type)) {
+      edges.push({ source: seed, target: h.node_key, edge_type: h.via_edge_type, origin: "lab", weight: 1, evidence: null, hop: labHop(h) + 1 });
     } else {
       edges.push({ source: QUERY_NODE_KEY, target: h.node_key, edge_type: "MATCH", origin: "lab", weight: h.score, evidence: null, hop: 1 });
     }

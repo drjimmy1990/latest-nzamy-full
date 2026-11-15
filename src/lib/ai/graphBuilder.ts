@@ -10,6 +10,13 @@
  *   mechanics (`EXEMPTS_FROM`, `AMENDS_ARTICLE`, `INTERPRETS_ARTICLE`,
  *   `PARENT_LAW`, `SUPERSEDES_LAW`, `CITES_ARTICLE`, `HAS_CONCEPT`) with zero
  *   fabrication and $0 extraction cost.
+ *
+ * Structure (20261115_10): `buildLawStructure` adds one `law` node per law and
+ * one `chapter` node per titled chapter (never embedded), with `PART_OF`
+ * (article → chapter → law) and `NEXT_ARTICLE` (reading order). Citations are
+ * read by `findArticleMentions`: singular, dual and plural article nouns,
+ * digit and word numbers, lists and ranges, and «من النظام / من هذه اللائحة»
+ * resolved to the right document.
  */
 import { createHash } from "node:crypto";
 
@@ -17,9 +24,11 @@ import { stripArticleAuditNotes, stripAuditNotes } from "../library/lawPreambleB
 import { libraryDocPath } from "../library/libraryMetadata.ts";
 import { isPageLocator, isPageNumberedDocument } from "../library/pageLocator.ts";
 
-export type GraphNodeType = "article" | "principle" | "decree" | "feqh" | "concept";
+export type GraphNodeType = "article" | "principle" | "decree" | "feqh" | "concept" | "law" | "chapter";
 
 export type GraphEdgeType =
+  | "PART_OF"
+  | "NEXT_ARTICLE"
   | "PARENT_LAW"
   | "SUPERSEDES_LAW"
   | "EXEMPTS_FROM"
@@ -353,6 +362,150 @@ export function buildArticleGraphNodes(params: {
   }
 
   return out;
+}
+
+// ── 1b. Law Structure: law + chapter nodes, PART_OF and NEXT_ARTICLE edges ────
+
+/** `node_key` length bound of `library_graph.nodes` (20261110_10). */
+const MAX_NODE_KEY_LENGTH = 260;
+
+/**
+ * The shape of one law in the graph: a `law:<slug>` node, a `chapter:<id>` node
+ * per titled chapter that holds articles, `PART_OF` edges (article → chapter →
+ * law, or article → law when the article has no titled chapter) and
+ * `NEXT_ARTICLE` edges between consecutive articles in reading order.
+ *
+ * Law and chapter nodes are never embedded (`is_embeddable: false`): every
+ * article already carries its law and chapter in its contextual header, so they
+ * cost no embedding calls. Retrieval does not return them either; they exist so
+ * the explorer can show a law's outline and so an answer can widen to the
+ * neighbouring articles.
+ *
+ * `articles` must be in reading order (the watchdog streams them by `order_index`).
+ */
+export function buildLawStructure(params: {
+  law: RawLawRow;
+  chaptersById: ReadonlyMap<string, string>;
+  articles: readonly RawArticleRow[];
+  articleNodes: readonly GraphNodePayload[];
+}): { nodes: GraphNodePayload[]; edges: GraphEdgePayload[] } {
+  const { law, chaptersById, articles, articleNodes } = params;
+  const lawKey = `law:${law.slug}`;
+  const builtKeys = new Set(articleNodes.map((n) => n.node_key));
+  const ordered = articles.filter((a) => builtKeys.has(`article:${a.id}`));
+  if (ordered.length === 0 || lawKey.length > MAX_NODE_KEY_LENGTH || !law.title?.trim()) {
+    return { nodes: [], edges: [] };
+  }
+
+  const lawTitle = law.title.trim();
+  const lawUrl = libraryDocPath("law", law.slug);
+  const header = [
+    `المستند: ${lawTitle}`,
+    law.type ? `التصنيف: ${law.type}` : "",
+    `حالة المستند: ${statusArabic(law.status)}`,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
+  // Titled chapters that hold at least one built article, in reading order.
+  const chapterArticles = new Map<string, RawArticleRow[]>();
+  for (const a of ordered) {
+    const cid = a.chapter_id ? String(a.chapter_id) : "";
+    const title = cid ? (chaptersById.get(cid) ?? "").trim() : "";
+    if (!title || `chapter:${cid}`.length > MAX_NODE_KEY_LENGTH) continue;
+    const list = chapterArticles.get(cid) ?? [];
+    list.push(a);
+    chapterArticles.set(cid, list);
+  }
+
+  const node = (
+    key: string,
+    sourceId: string,
+    title: string,
+    displayText: string,
+    url: string,
+    metadata: Record<string, unknown>,
+  ): GraphNodePayload => ({
+    node_key: key,
+    node_type: key.startsWith("law:") ? "law" : "chapter",
+    source_id: sourceId,
+    law_slug: law.slug,
+    collection_id: null,
+    article_number: null,
+    doc_status: law.status ?? "active",
+    item_status: "active",
+    is_page_numbered: false,
+    is_embeddable: false,
+    title,
+    url,
+    display_text: displayText,
+    contextual_header: header,
+    content_sha256: sha256Hex(buildEmbeddingInput({ contextual_header: header, title, display_text: displayText })),
+    metadata,
+  });
+
+  const chapterTitles = [...chapterArticles.keys()].map((cid) => (chaptersById.get(cid) ?? "").trim());
+  const lawText = clipBody(
+    [
+      lawTitle,
+      law.type ? `التصنيف: ${law.type}` : "",
+      `حالة المستند: ${statusArabic(law.status)}`,
+      `عدد المواد: ${ordered.length}`,
+      chapterTitles.length > 0 ? `الأبواب والفصول:\n${chapterTitles.map((t) => `- ${t}`).join("\n")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+
+  const nodes: GraphNodePayload[] = [
+    node(lawKey, law.slug, lawTitle, lawText, lawUrl, {
+      article_count: ordered.length,
+      chapter_count: chapterArticles.size,
+    }),
+  ];
+  const edges: GraphEdgePayload[] = [];
+  const edge = (source: string, target: string, type: GraphEdgeType, evidence: string | null): void => {
+    edges.push({
+      source_key: source,
+      target_key: target,
+      edge_type: type,
+      origin: "auto_watchdog",
+      weight: 1.0,
+      evidence: evidence ? evidence.slice(0, 180) : null,
+    });
+  };
+
+  let order = 0;
+  for (const [cid, arts] of chapterArticles) {
+    const chapterTitle = (chaptersById.get(cid) ?? "").trim();
+    const chapterKey = `chapter:${cid}`;
+    nodes.push(
+      node(
+        chapterKey,
+        cid,
+        `${lawTitle} — ${chapterTitle}`,
+        `${chapterTitle}\nمن: ${lawTitle}\nعدد المواد: ${arts.length}`,
+        `${lawUrl}#${encodeURIComponent(arts[0].id)}`,
+        { article_count: arts.length, order: order++ },
+      ),
+    );
+    edge(chapterKey, lawKey, "PART_OF", `ضمن: ${lawTitle}`);
+  }
+
+  for (const a of ordered) {
+    const cid = a.chapter_id ? String(a.chapter_id) : "";
+    if (cid && chapterArticles.has(cid)) {
+      edge(`article:${a.id}`, `chapter:${cid}`, "PART_OF", `ضمن: ${(chaptersById.get(cid) ?? "").trim()}`);
+    } else {
+      edge(`article:${a.id}`, lawKey, "PART_OF", `ضمن: ${lawTitle}`);
+    }
+  }
+
+  for (let i = 1; i < ordered.length; i++) {
+    edge(`article:${ordered[i - 1].id}`, `article:${ordered[i].id}`, "NEXT_ARTICLE", null);
+  }
+
+  return { nodes, edges };
 }
 
 // ── 2. Judicial Principles Node Builder ──────────────────────────────────────
@@ -912,18 +1065,185 @@ export function buildCuratedConceptNodes(): GraphNodePayload[] {
 
 // ── 6. Deterministic Legal Edge Extractors ───────────────────────────────────
 
-const EXEMPTION_PATTERNS = [
-  /(?:استثناءً?|استثناء)\s+من\s+(?:حكم\s+|أحكام\s+|نص\s+)?الماد(?:ة|تين)\s*\(?([^)،.\n;:]{1,42})\)?/g,
-  /(?:مع\s+عدم\s+الإخلال|دون\s+إخلال|دون\s+الإخلال)\s+ب(?:حكم\s+|أحكام\s+|ما\s+ورد\s+في\s+)?الماد(?:ة|تين)\s*\(?([^)،.\n;:]{1,42})\)?/g,
-  /ما\s+لم\s+ينص\s+(?:عليه\s+)?في\s+الماد(?:ة|تين)\s*\(?([^)،.\n;:]{1,42})\)?/g,
+// Every article reference starts with the noun: «المادة», «للمادة», «بالمادة», «والمادة»,
+// «مادة», the dual «المادتين/المادتان» or the plural «المواد». Diacritics may sit
+// between the letters («المادّة»).
+const MARK = "[\\u064B-\\u0652\\u0670\\u0640]*";
+const ARTICLE_NOUN_RE = new RegExp(
+  `(?<![\\p{L}\\p{M}])((?:[وف])?(?:بال|لل|ال|ب|ل|ك)?)` +
+    `(م${MARK}ا${MARK}د${MARK}(?:ت${MARK}ي${MARK}ن|ت${MARK}ا${MARK}ن|ة)|م${MARK}و${MARK}ا${MARK}د)` +
+    `(?![\\p{L}\\p{M}])`,
+  "gu",
+);
+
+/** A dual names at most two articles; a list or range stops here (a bad range must not explode). */
+const MAX_LISTED_ARTICLES = 40;
+const MAX_RANGE_SPAN = 30;
+
+/** Words that may sit between the numbers of one list («رقم», a repeated «المادة»). */
+const LIST_GLUE_WORDS = new Set(["الماده", "والماده", "المواد", "والمواد", "المادتين", "المادتان", "رقم", "رقمي", "ارقام", "و"]);
+const RANGE_WORDS = new Set(["الي", "حتي"]);
+
+function isNumberWord(w: string): boolean {
+  return UNITS_MAP[w] !== undefined || TENS_MAP[w] !== undefined || HUNDREDS_MAP[w] !== undefined;
+}
+
+export type ArticleNounKind = "single" | "dual" | "plural";
+
+/**
+ * The article numbers at the start of `s` (the text right after the noun):
+ * «(5)», «(5، 6 و7)», «من (3) إلى (7)», «الخامسة عشرة» (15), «الخامسة والعشرين» (25),
+ * «الخامسة والسادسة» (5 and 6), «التاسعة بعد المائة» (109). Reading stops at the
+ * first word that is neither a number nor list glue, or at a sentence break.
+ * `end` is the index just past the last number read (0 when none).
+ */
+export function readArticleNumbers(s: string): { numbers: number[]; end: number } {
+  const text = toAsciiDigits(s);
+  const out: number[] = [];
+  let lastEnd = 0;
+  let pendingRange = false;
+  let cur: { u: number; t: number; h: number; end: number } | null = null;
+
+  const emit = (n: number, end: number) => {
+    if (pendingRange && out.length > 0) {
+      const from = out[out.length - 1];
+      if (n > from && n - from <= MAX_RANGE_SPAN) {
+        for (let k = from + 1; k <= n; k++) out.push(k);
+      } else {
+        out.push(n);
+      }
+    } else {
+      out.push(n);
+    }
+    pendingRange = false;
+    lastEnd = end;
+  };
+  const closeCur = () => {
+    if (!cur) return;
+    const v = cur.u + cur.t + cur.h;
+    if (v > 0 && v <= 9999) emit(v, cur.end);
+    cur = null;
+  };
+
+  let prevEnd = 0;
+  for (const m of text.matchAll(/\d+(?:\s*[/\\]\s*\d+)?|[\p{L}\p{M}]+/gu)) {
+    const idx = m.index ?? 0;
+    if (idx > 140) break;
+    // A sentence or clause break ends the reference; a line break only after the
+    // first number («المادة\n(١٤)» is one reference, a list does not run over lines).
+    if ((prevEnd === 0 ? /[.:;؛]/ : /[.:;\n؛]/).test(text.slice(prevEnd, idx))) break;
+    prevEnd = idx + m[0].length;
+    const raw = m[0];
+
+    if (/^\d/.test(raw)) {
+      closeCur();
+      const n = Number(/^\d+/.exec(raw)![0]);
+      if (n <= 0 || n > 9999) break;
+      emit(n, prevEnd);
+      continue;
+    }
+
+    const tok = normalizeArabicKey(raw);
+    if (!tok) continue;
+    const started = out.length > 0 || cur !== null;
+    if (LIST_GLUE_WORDS.has(tok)) continue;
+    if (tok === "من") {
+      if (!started) continue; // «المواد من (3) إلى (7)»
+      break; // «… من نظام …» names the document
+    }
+    if (tok === "بعد") {
+      if (cur) continue; // «التاسعة بعد المائة»
+      break;
+    }
+    if (RANGE_WORDS.has(tok)) {
+      closeCur();
+      if (out.length === 0) break;
+      pendingRange = true;
+      continue;
+    }
+
+    let w = tok;
+    if (!isNumberWord(w) && w.startsWith("و") && isNumberWord(w.slice(1))) w = w.slice(1);
+    if (!isNumberWord(w)) break;
+
+    const unit = UNITS_MAP[w];
+    const ten = TENS_MAP[w];
+    const hundred = HUNDREDS_MAP[w];
+    const c = cur as { u: number; t: number; h: number; end: number } | null;
+    if (unit !== undefined) {
+      // «الخامسة عشرة»: a units word, then «عشر/عشرة» → the teens.
+      if ((w === "عشر" || w === "عشره") && c && c.u > 0 && c.u < 10 && c.t === 0 && c.h === 0) {
+        c.u += 10;
+        c.end = prevEnd;
+        continue;
+      }
+      // Units always come first in an Arabic ordinal: a second units word starts the next article.
+      closeCur();
+      cur = { u: unit, t: 0, h: 0, end: prevEnd };
+    } else if (ten !== undefined) {
+      if (c && c.t === 0 && c.h === 0 && c.u < 10) {
+        c.t = ten;
+        c.end = prevEnd;
+      } else {
+        closeCur();
+        cur = { u: 0, t: ten, h: 0, end: prevEnd };
+      }
+    } else if (hundred !== undefined) {
+      if (c && c.h === 0) {
+        c.h = hundred;
+        c.end = prevEnd;
+      } else {
+        closeCur();
+        cur = { u: 0, t: 0, h: hundred, end: prevEnd };
+      }
+    }
+  }
+  closeCur();
+  return { numbers: out, end: lastEnd };
+}
+
+/** One place a text names one or more articles. */
+export interface ArticleMention {
+  /** Index of the noun's first letter (its prefix included). */
+  start: number;
+  /** The noun's attached prefix: «ال», «لل», «بال», «و», … */
+  prefix: string;
+  kind: ArticleNounKind;
+  /** Index just past the last article number. */
+  end: number;
+  numbers: number[];
+}
+
+/** Every article mention in `text`, with the numbers each one names. */
+export function findArticleMentions(text: string): ArticleMention[] {
+  const out: ArticleMention[] = [];
+  for (const m of text.matchAll(ARTICLE_NOUN_RE)) {
+    const start = m.index ?? 0;
+    const nounEnd = start + m[0].length;
+    const noun = m[2].replace(ARABIC_DIACRITICS_RE, "");
+    const kind: ArticleNounKind = noun === "مواد" ? "plural" : noun.startsWith("مادت") ? "dual" : "single";
+    const { numbers, end } = readArticleNumbers(text.slice(nounEnd, nounEnd + 160));
+    if (numbers.length === 0) continue;
+    const cap = kind === "single" ? 1 : kind === "dual" ? 2 : MAX_LISTED_ARTICLES;
+    out.push({ start, prefix: m[1], kind, end: nounEnd + end, numbers: [...new Set(numbers)].slice(0, cap) });
+  }
+  return out;
+}
+
+/**
+ * Lead-ins that make a mention an exception or qualification (`EXEMPTS_FROM`).
+ * Tested against the 60 characters before the noun plus the noun's own prefix.
+ */
+const EXEMPTION_LEADS = [
+  /(?:استثناءً?|استثناء)\s+من\s+(?:حكم\s+|أحكام\s+|نص\s+)?(?:ال)?$/,
+  /(?:مع\s+عدم\s+الإخلال|دون\s+(?:ال)?إخلال)\s+(?:(?:بحكم|بأحكام)\s+(?:ال)?|بما\s+ورد\s+في\s+(?:ال)?|بال|ب)?$/,
+  /ما\s+لم\s+ينص\s+(?:عليه\s+)?في\s+(?:ال)?$/,
 ];
 
-const CITATION_PATTERNS = [
-  /(?:وفقاً?|وفقا|طبقاً?|طبقا|عملاً?|عملا|استناداً?|استنادا|تطبيقاً?|تطبيقا)\s+(?:للماد(?:ة|تين)|ل(?:حكم\s+|أحكام\s+|نص\s+)الماد(?:ة|تين))\s*\(?([^)،.\n;:]{1,42})\)?/g,
-  /بموجب\s+(?:حكم\s+|أحكام\s+|نص\s+)?الماد(?:ة|تين)\s*\(?([^)،.\n;:]{1,42})\)?/g,
-  /(?:المشار\s+إليها|المنصوص\s+عليها)\s+في\s+الماد(?:ة|تين)\s*\(?([^)،.\n;:]{1,42})\)?/g,
-  /الماد(?:ة|تين)\s*\(?(\d{1,4}|[٠-٩]{1,4})\)?/g,
-];
+/** The text right after a mention's last number, without the closing bracket. */
+function textAfterMention(text: string, end: number, len: number): string {
+  return text.slice(end, end + len).replace(/^[\s)\]»"']+/, "");
+}
 
 function findLawByTitleFragment(fragment: string, lawMap: LawIndexMap): LawIndexEntry | null {
   const normFrag = normalizeArabicKey(fragment);
@@ -967,50 +1287,87 @@ function detach(s: string): string {
   return Buffer.from(s, "utf8").toString("utf8");
 }
 
-/** «من هذا النظام»: the article's own law. */
-const THIS_LAW_REF = /^\s*(?:من|في|ب)\s*(?:هذا\s+النظام|النظام\s+هذا)/;
+/** «من هذا النظام», «من هذه اللائحة», «من هذه الاتفاقية»: the document itself, whatever it calls itself. */
+const THIS_DOC_REF = /^\s*(?:من|في|ب)\s*(?:(?:هذا|هذه)\s+ال[\p{L}\p{M}]+|النظام\s+هذا)/u;
+/**
+ * A bare definite noun nothing names: «من النظام», «من اللائحة», «من التنظيم».
+ * «من النظام الأساسي …» or «من اللائحة التنفيذية …» go on to name a document
+ * and do not match.
+ */
+const BARE_DOC_REF =
+  /^\s*(?:من|في)\s+ال(نظام|لائحة|تنظيم|قواعد|ضوابط|اتفاقية|ميثاق|قرار|تعليمات|لوائح)(?:\s*$|[\s)]*[^\s\p{L}\p{M}]|\s+(?:المشار|المذكور)|\s+و)/u;
 /** «من نظام …», «من اللائحة …», «من النظام الأساسي …»: some other document, named or not. */
-const OTHER_DOC_REF = /^\s*(?:من|في)\s+(?:هذه\s+اللائحة|(?:ال)?(?:نظام|لائحة|قرار|مرسوم|أمر|قواعد|ضوابط|تنظيم))/;
+const OTHER_DOC_REF = /^\s*(?:من|في)\s+(?:(?:ال)?(?:نظام|لائحة|قرار|مرسوم|أمر|قواعد|ضوابط|تنظيم))/;
+
+/** The stem a document's own title carries when it calls itself by `noun` («لائحة» → «لائح»). */
+const DOC_NOUN_STEM: Readonly<Record<string, string>> = {
+  نظام: "نظام",
+  لائحة: "لائح",
+  لوائح: "لائح",
+  تنظيم: "تنظيم",
+  قواعد: "قواعد",
+  ضوابط: "ضوابط",
+  اتفاقية: "اتفاقي",
+  ميثاق: "ميثاق",
+  قرار: "قرار",
+  تعليمات: "تعليمات",
+};
+
+function isRegulationTitle(title: string): boolean {
+  return /لائح|قواعد|ضوابط|تعليمات/.test(title);
+}
 
 /**
- * The law a reference points to: the article's own law when nothing follows the
- * number (or «من هذا النظام»); the named law when «من نظام …» resolves; null when
- * it names another document the library cannot resolve — never a guess at the
- * same-numbered article of the current law.
+ * The law a reference points to:
+ *  - the article's own document when nothing follows the number, or «من هذا النظام / هذه اللائحة …»;
+ *  - for a bare «من النظام»: the parent law of a regulation, else the law itself;
+ *  - for a bare «من اللائحة / التنظيم …»: the document itself when its title says so;
+ *  - the named law when «من نظام …» resolves;
+ *  - null when it names a document the library cannot resolve — never a guess at
+ *    the same-numbered article of the current law.
  */
 function targetLawFor(after: string, currentLaw: LawIndexEntry, lawMap: LawIndexMap): LawIndexEntry | null {
-  if (THIS_LAW_REF.test(after)) return currentLaw;
+  if (THIS_DOC_REF.test(after)) return currentLaw;
+  const bare = BARE_DOC_REF.exec(after);
+  if (bare) {
+    const noun = bare[1];
+    if (noun === "نظام") {
+      const parent = currentLaw.parentLawId ? lawMap.get(currentLaw.parentLawId) : undefined;
+      if (parent) return parent;
+      return isRegulationTitle(currentLaw.title) ? null : currentLaw;
+    }
+    return currentLaw.title.includes(DOC_NOUN_STEM[noun] ?? noun) ? currentLaw : null;
+  }
   if (OTHER_DOC_REF.test(after)) return findLawByTitleFragment(after, lawMap);
   return currentLaw;
 }
 
+/** The words around a mention (≤ 180 chars, same line): what the explorer shows as evidence. */
+function mentionEvidence(text: string, mention: ArticleMention, tail = 1): string {
+  const from = Math.max(0, mention.start - 30);
+  const seg = text.slice(from, mention.end + tail);
+  const nl = seg.lastIndexOf("\n", mention.start - from);
+  return (nl >= 0 ? seg.slice(nl + 1) : seg).trim().slice(0, 180);
+}
+
 /**
- * Every `EXEMPTS_FROM` / `CITES_ARTICLE` reference in an article's own words.
+ * Every `EXEMPTS_FROM` / `CITES_ARTICLE` reference in an article's own words:
+ * digits or spelled-out ordinals, single articles, duals, lists and ranges.
  * Needs no law index, so the watchdog keeps these small records instead of the
  * article texts until all laws are streamed.
  */
 export function scanArticleRefs(displayText: string): ArticleRefCandidate[] {
   const text = lawOwnText(displayText);
-  // «المادة» and «للمادة» (the alif drops after لِـ) both contain «ماد».
-  if (!/ماد(?:ة|تين)/.test(text)) return [];
   const out: ArticleRefCandidate[] = [];
-  const scan = (patterns: readonly RegExp[], edgeType: ArticleRefCandidate["edgeType"]) => {
-    for (const pat of patterns) {
-      pat.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = pat.exec(text)) !== null) {
-        const num = parseArabicArticleNumber(m[1]);
-        if (!num) continue;
-        // A spelled-out number can swallow «… من نظام X» into the capture: keep that tail too.
-        const inCapture = m[1].search(/\s(?:من|في)\s/);
-        const end = m.index + m[0].length;
-        const after = (inCapture >= 0 ? m[1].slice(inCapture) : "") + text.slice(end, end + 65);
-        out.push({ edgeType, num, after: detach(after), evidence: detach(m[0].trim().slice(0, 180)) });
-      }
-    }
-  };
-  scan(EXEMPTION_PATTERNS, "EXEMPTS_FROM");
-  scan(CITATION_PATTERNS, "CITES_ARTICLE");
+  for (const mention of findArticleMentions(text)) {
+    const lead = text.slice(Math.max(0, mention.start - 60), mention.start) + mention.prefix;
+    const edgeType: ArticleRefCandidate["edgeType"] = EXEMPTION_LEADS.some((re) => re.test(lead))
+      ? "EXEMPTS_FROM"
+      : "CITES_ARTICLE";
+    const after = detach(textAfterMention(text, mention.end, 65));
+    const evidence = detach(mentionEvidence(text, mention));
+    for (const num of mention.numbers) out.push({ edgeType, num, after, evidence });
+  }
   return out;
 }
 
@@ -1116,38 +1473,78 @@ export function extractArticleEdges(
   return resolveArticleEdges({ ...node, refs: scanArticleRefs(node.display_text) }, lawMap);
 }
 
+/** «من نظام …», «من النظام الأساسي …», «من اللائحة التنفيذية لنظام …»: the document a mention names. */
+const NAMED_DOC_RE = /^\s*من\s+((?:نظام|النظام|اللائحة|لائحة|قواعد|تنظيم)\s+[^\n،.;:()]{3,55})/;
+
+/**
+ * The library document a principle or decree names right after its article
+ * numbers. A reference to a regulation («من اللائحة …») never resolves to the
+ * law it implements: article N of the regulation is not article N of the law.
+ */
+function namedDocAfter(after: string, lawMap: LawIndexMap): LawIndexEntry | null {
+  const m = NAMED_DOC_RE.exec(after);
+  if (!m) return null;
+  const law = findLawByTitleFragment(m[1], lawMap);
+  if (!law) return null;
+  if (/^(?:ال)?لائحة/.test(m[1]) && !/لائح/.test(law.title)) return null;
+  return law;
+}
+
+/** Edges from one text to every article it names as «المادة/المواد … من نظام <title>». */
+function namedArticleEdges(
+  sourceKey: string,
+  text: string,
+  lawMap: LawIndexMap,
+  edgeType: "INTERPRETS_ARTICLE" | "AMENDS_ARTICLE",
+  weight: number,
+  lead?: RegExp,
+): GraphEdgePayload[] {
+  const edges = new Map<string, GraphEdgePayload>();
+  for (const mention of findArticleMentions(text)) {
+    if (lead) {
+      const before = text.slice(Math.max(0, mention.start - 40), mention.start) + mention.prefix;
+      if (!lead.test(before)) continue;
+    }
+    const law = namedDocAfter(textAfterMention(text, mention.end, 90), lawMap);
+    if (!law) continue;
+    const evidence = mentionEvidence(text, mention, 60);
+    for (const num of mention.numbers) {
+      const targetKey = law.articleKeyByNumber.get(num);
+      if (!targetKey || targetKey === sourceKey) continue;
+      const k = `${sourceKey}|${targetKey}`;
+      if (!edges.has(k)) {
+        edges.set(k, {
+          source_key: sourceKey,
+          target_key: targetKey,
+          edge_type: edgeType,
+          origin: "auto_watchdog",
+          weight,
+          evidence,
+        });
+      }
+    }
+  }
+  return [...edges.values()];
+}
+
+/** True when a text may name an article (the cheap test before the full scan). */
+export function mayNameArticle(text: string): boolean {
+  return /م[ً-ْ]*ا[ً-ْ]*د|مواد/.test(text);
+}
+
 /**
  * Extracts `INTERPRETS_ARTICLE` edges from Judicial Principles that cite
- * `"المادة (X) من نظام <Law Title>"`.
+ * `"المادة (X) من نظام <Law Title>"` — also lists, ranges and spelled-out numbers.
  */
 export function extractPrincipleInterpretationEdges(
   principleNode: { node_key: string; display_text: string },
   lawMap: LawIndexMap,
 ): GraphEdgePayload[] {
-  const edges = new Map<string, GraphEdgePayload>();
-  const pat = /الماد(?:ة|تين)\s*\(?([^)،.\n;:]{1,42})\)?\s+من\s+(نظام\s+[^\n،.;:()]{3,55})/g;
-  let m: RegExpExecArray | null;
-  while ((m = pat.exec(principleNode.display_text)) !== null) {
-    const artNum = parseArabicArticleNumber(m[1]);
-    if (!artNum) continue;
-    const matchedLaw = findLawByTitleFragment(m[2], lawMap);
-    if (!matchedLaw) continue;
-    const targetKey = matchedLaw.articleKeyByNumber.get(artNum);
-    if (!targetKey) continue;
-    const k = `${principleNode.node_key}|${targetKey}`;
-    if (!edges.has(k)) {
-      edges.set(k, {
-        source_key: principleNode.node_key,
-        target_key: targetKey,
-        edge_type: "INTERPRETS_ARTICLE",
-        origin: "auto_watchdog",
-        weight: 1.15,
-        evidence: m[0].trim().slice(0, 180),
-      });
-    }
-  }
-  return [...edges.values()];
+  return namedArticleEdges(principleNode.node_key, principleNode.display_text, lawMap, "INTERPRETS_ARTICLE", 1.15);
 }
+
+/** «تعديل / إضافة / حذف / إلغاء (حكم|نص)? المادة …»: the lead-in of an amendment. */
+const AMENDMENT_LEAD = /(?:تعديل|إضافة|حذف|إلغاء)\s+(?:حكم\s+|نص\s+)?(?:ال)?$/;
 
 /**
  * Extracts `AMENDS_ARTICLE` edges from Royal Decrees that cite `"تعديل المادة (X) من نظام <Law Title>"`.
@@ -1156,29 +1553,7 @@ export function extractDecreeAmendmentEdges(
   decreeNode: { node_key: string; display_text: string },
   lawMap: LawIndexMap,
 ): GraphEdgePayload[] {
-  const edges = new Map<string, GraphEdgePayload>();
-  const pat = /(?:تعديل|إضافة|حذف)\s+(?:حكم\s+|نص\s+)?الماد(?:ة|تين)\s*\(?([^)،.\n;:]{1,42})\)?\s+من\s+(نظام\s+[^\n،.;:()]{3,55})/g;
-  let m: RegExpExecArray | null;
-  while ((m = pat.exec(decreeNode.display_text)) !== null) {
-    const artNum = parseArabicArticleNumber(m[1]);
-    if (!artNum) continue;
-    const matchedLaw = findLawByTitleFragment(m[2], lawMap);
-    if (!matchedLaw) continue;
-    const targetKey = matchedLaw.articleKeyByNumber.get(artNum);
-    if (!targetKey) continue;
-    const k = `${decreeNode.node_key}|${targetKey}`;
-    if (!edges.has(k)) {
-      edges.set(k, {
-        source_key: decreeNode.node_key,
-        target_key: targetKey,
-        edge_type: "AMENDS_ARTICLE",
-        origin: "auto_watchdog",
-        weight: 1.2,
-        evidence: m[0].trim().slice(0, 180),
-      });
-    }
-  }
-  return [...edges.values()];
+  return namedArticleEdges(decreeNode.node_key, decreeNode.display_text, lawMap, "AMENDS_ARTICLE", 1.2, AMENDMENT_LEAD);
 }
 
 /**

@@ -313,6 +313,7 @@ const EDGE_PROVENANCE_AR: Record<string, string> = {
   PARENT_LAW: "النظام الأساسي المرتبط",
   CITES_ARTICLE: "إحالة نظامية مرتبطة",
   ESTABLISHES_RULE: "قاعدة نظامية مرتبطة",
+  NEXT_ARTICLE: "مادة مجاورة في النظام نفسه",
 };
 
 interface GraphRpcHit {

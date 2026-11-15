@@ -47,7 +47,8 @@ test("every node and edge type has an Arabic label and a colour", () => {
     assert.ok(m.label && m.out && m.in, t);
     assert.match(m.color, /^#[0-9a-f]{6}$/i, t);
   }
-  assert.equal(EXPLORER_EDGE_TYPES.length, 9, "matches the edge_type check constraint of 20261110_10");
+  assert.equal(EXPLORER_EDGE_TYPES.length, 11, "matches the edge_type check constraint of 20261115_10");
+  assert.equal(EXPLORER_NODE_TYPES.length, 7, "matches the node_type check constraint of 20261115_10");
 });
 
 test("edgePhrase reads the link from the viewer's side (outgoing vs incoming)", () => {
