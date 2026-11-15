@@ -16,6 +16,8 @@ import {
   buildLabGraph,
   deriveLabQueries,
   edgePhrase,
+  labHop,
+  labHopLabel,
   layoutExpansion,
   layoutLanes,
   layoutRadial,
@@ -320,4 +322,14 @@ test("layoutLanes handles a lone centre and a single neighbour", () => {
   const one = layoutLanes("c", [node("c", 0), node("a", 1)], [edge("c", "a", "AMENDS_ARTICLE")]);
   assertNoOverlap(one.positions, "c");
   assert.equal(one.lanes.length, 1);
+});
+
+test("labHop reads the server's hop, else infers it from the link; labHopLabel names the step", () => {
+  assert.equal(labHop({ hop: 2, via_edge_type: "EXEMPTS_FROM" }), 2);
+  assert.equal(labHop({ hop: 0 }), 0);
+  assert.equal(labHop({ via_edge_type: "CITES_ARTICLE" }), 1, "an older server sends no hop: a link means one step");
+  assert.equal(labHop({}), 0);
+  assert.equal(labHopLabel(0), "مباشر");
+  assert.equal(labHopLabel(1), "خطوة ١");
+  assert.equal(labHopLabel(2), "خطوة ٢");
 });
