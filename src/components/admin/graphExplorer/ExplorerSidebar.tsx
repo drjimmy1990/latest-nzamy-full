@@ -124,27 +124,48 @@ function SearchTab({ onFocus, searchInputRef }: Props) {
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seq = useRef(0);
+  // One search at a time: the database keeps running a search the page no
+  // longer waits for, so typing fast used to stack several of them (57014).
+  // While one runs, only the latest text waits, and it is sent when that one ends.
+  const inFlight = useRef(false);
+  const pending = useRef<{ query: string; typeList: ExplorerNodeType[] } | null>(null);
+
+  async function send(query: string, typeList: ExplorerNodeType[]) {
+    if (inFlight.current) {
+      pending.current = { query, typeList };
+      return;
+    }
+    inFlight.current = true;
+    const mine = ++seq.current;
+    const res = await explorerApi.search(query, typeList);
+    inFlight.current = false;
+    const next = pending.current;
+    pending.current = null;
+    if (next) {
+      void send(next.query, next.typeList);
+      return;
+    }
+    if (mine !== seq.current) return;
+    setLoading(false);
+    if (res.ok) {
+      setResults(res.data);
+      setError(null);
+    } else {
+      setError(res.error);
+    }
+  }
 
   function run(query: string, typeList: ExplorerNodeType[]) {
     if (timer.current) clearTimeout(timer.current);
     if (query.trim().length < 2) {
+      pending.current = null;
+      seq.current++;
       setResults(null);
       setLoading(false);
       return;
     }
     setLoading(true);
-    timer.current = setTimeout(async () => {
-      const mine = ++seq.current;
-      const res = await explorerApi.search(query.trim(), typeList);
-      if (mine !== seq.current) return;
-      setLoading(false);
-      if (res.ok) {
-        setResults(res.data);
-        setError(null);
-      } else {
-        setError(res.error);
-      }
-    }, 280);
+    timer.current = setTimeout(() => void send(query.trim(), typeList), 280);
   }
 
   function toggleType(t: ExplorerNodeType) {
