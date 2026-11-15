@@ -641,6 +641,8 @@ export interface LabHit {
   via_from_title?: string | null;
   /** 0 direct hit, 1 or 2 graph hops (20261115_10); absent from an older server: read from via_edge_type. */
   hop?: number;
+  /** An article the question names outright, sent to the graph as a seed (20261117_10). */
+  seed?: boolean;
   law_slug?: string | null;
   status?: string | null;
   url?: string;
@@ -656,6 +658,8 @@ export interface LabRouting {
   /** "law" (a pinned law), "vote" (the strongest results), "none". */
   source: "law" | "vote" | "none";
   laws: string[];
+  /** How many named articles seeded the answer (20261117_10); 0 from an older server. */
+  seeds: number;
 }
 
 /** Reads retrieve's `routing` object; null from a server before 20261116_10. */
@@ -671,6 +675,7 @@ export function parseLabRouting(raw: unknown): LabRouting | null {
     confident: r.confident === true,
     source,
     laws: Array.isArray(r.laws) ? r.laws.filter((l): l is string => typeof l === "string").slice(0, 12) : [],
+    seeds: typeof r.seeds === "number" && Number.isFinite(r.seeds) && r.seeds > 0 ? Math.floor(r.seeds) : 0,
   };
 }
 

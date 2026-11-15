@@ -41,7 +41,8 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-15 | The retrieval lab now says «الجراف قيد إعادة البناء» while the graph is not ready. Before, a rebuild looked like «لا نتائج», as if the question were wrong. Pushed with this document; not deployed yet. |
 | 2026-11-15 | Decree text cleaned (`src/lib/text/markdownToPlain.ts`). The preamble's layout (identity table, `<details>` blocks, headings, emoji, links) becomes plain `key: value` text, and the «موجز» is no longer stored twice. On the local library: 4,393 of 4,398 decree nodes had markup and now 0 do, the decree text to embed shrank 8.6% (14.5M → 13.3M characters), and amendment links are unchanged at 469. The explorer inspector shows every node's text through the same cleaner (display only). Needs `mark_dirty_now` after the deploy, so the decrees are rebuilt and their few existing vectors redone. |
 | 2026-11-15 | Embeddings moved to Google Cloud Vertex AI (Cloud billing), several calls at once (`b4720339`). Deployed; the vectors filled to about 123k. |
-| 2026-11-16 | **Links + routing batch** (`20261116_10`, branch `feat/graph-links-batch`). Defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, vector links, and routing by section and judicial track (section 4.6). Not merged or deployed yet. |
+| 2026-11-16 | **Links + routing batch** (`20261116_10`, commit `35970cd6`). Defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, vector links, and routing by section and judicial track (section 4.6). Deployed 2026-11-15, SQL run. |
+| 2026-11-17 | **Seeds + gold set** (`20261117_10`, section 4.8). An article the question names leads the graph answer and its links follow it; the lab does the same lookup as the AI; a 39-question gold set and `npm run graph:gold` measure recall and the switch-on timing. Not merged or deployed yet. |
 
 ---
 
@@ -174,6 +175,28 @@ Tests:
 - Database: `library_graph_links.test.sql` and `library_graph_routing.test.sql` (R0–R6: the vote, confidence, each track, the scopes, explicit links crossing).
 - Unit: `graphRouting.test.ts`, plus the routing pass in `graphWatchdogCore.test.ts`.
 
+### 4.8 Seeds and the gold set (`20261117_10`)
+
+**Seeds.** The AI already read the articles a question names («المادة ٧٧ من نظام العمل»; «المادة ٧٧» on a law page; the open article) and put them first. The graph never knew about them: it searched the words, so the named article's exceptions and regulations came only if the words happened to find the article itself. Now:
+
+- `retrieveLibrary` looks the named articles up **before** the graph call and sends them as `p_seed_keys` (`article:<id>`) to `graph_rag_retrieve_scoped`. Before `20261117_10` that call answers `PGRST202`, and the code asks the nine-argument `graph_rag_retrieve` instead, inside the same 2.5 s.
+- In SQL, a seed (at most four) enters just above the strongest search result, first named first. It votes for the section, is never routed away, and its law counts as one of the question's laws. It seeds hop 1 and hop 2 like any strong result. Every item carries `seed`, and `routing` carries `seeds`.
+- With no seeds the call is the nine-argument one, unchanged.
+- The retrieval lab uses the same lookup (`questionRefLookups`): the named law becomes the pinned law, the named articles become seeds. Badge «مذكورة في السؤال».
+
+**Gold set.** `docs/graph-rag/gold-set.json` has 39 client-style questions in labour, civil, personal status, evidence, procedure, criminal, commercial, data protection and the legal profession. Three of them name an article. Each expected article was checked against its text in the owner's corpus. `must_contain` keeps another article that shares the number from counting: one export holds two rows numbered 80 in the labour law. **DRAFT** until the owner approves it (question ٥١٤).
+
+**The measure.** `npm run graph:gold` (`scripts/graph-gold.mjs`, scoring in `src/lib/ai/graphGoldCore.ts`) is read-only. Per question it gets n8n's search phrases, embeds the question, runs `retrieveLibrary` with the graph and without it, then repeats the exact graph call in auto / section / all. It reports Recall@8 and Hit@8 for graph vs keyword (also over the questions the graph itself answered), the cold AI-path call and the warm replays, and `GO` / `NO-GO`.
+
+**First reading (2026-11-15, two questions, from the PC over the internet, `--no-n8n`; not the gate).**
+
+- Cold, each question's first graph call was cut at 2.5 s, and the keyword relevance functions themselves hit statement timeouts (`57014`).
+- Run again at once, the same calls took 0.4–0.8 s, and the warm scope replays 0.3–0.6 s.
+- Warm, «شخص صدم سيارتي وتضررت، هل يلزمه يعوضني؟» found the civil transactions article 120 first through the graph. The keyword search did not find it in its top 8.
+- So the switch-on question is the cold first call, which only the server run can answer.
+
+Tests: `library_graph_seeds.test.sql` (S0–S7), the seed and fallback cases in `retrieval.test.ts`, `graphGoldCore.test.ts`, and the 20261117_10 contract in `graphSchemaContract.test.ts`. `_verify.sql` has the block `verify:library_graph_seeds`. The three earlier graph rows now accept the eleven-argument signature.
+
 ### 4.7 Tests and checks (depth batch)
 
 - **Unit:** `graphBuilder.test.ts`, `graphWatchdogCore.test.ts` (a mock that enforces foreign-key order), `graphExplorerCore.test.ts`, and `graphSchemaContract.test.ts`. The contract test checks that the migration's type lists equal the explorer's, that the signature and readiness check are unchanged, and that no forbidden pgvector calls appear.
@@ -215,7 +238,8 @@ From the original review, with what A + B + C closed:
 | A labour question pulled administrative principles, and the reverse | ✅ closed in code (`20261116_10` routing), waits for deploy |
 | Regulation articles were not linked to the article they implement | ✅ closed in code (`IMPLEMENTED_BY`), waits for deploy |
 | The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`, cross references) are not read | ❌ open. Next candidate after this batch. |
-| No quality measurement of answers | ❌ open. `graph:benchmark` measures embeddings only. See 7.1. |
+| No quality measurement of answers | ✅ closed in code: the gold set and `npm run graph:gold` (4.8). The set waits for the owner's approval. |
+| A named article did not seed the graph | ✅ closed in code (`20261117_10` seeds), waits for deploy |
 
 Known small issues:
 
@@ -230,12 +254,12 @@ Known small issues:
 ### 7.1 Before turning the switch on (needed)
 
 1. **Measure the rebuild:** link counts by type, and connected versus isolated nodes per type (section 8).
-2. **Measure timing:** run `graph_rag_retrieve` on 5–10 realistic questions after the pass. Every one must finish well under 2.5 s. If not, add indexes or lower the seed counts (8 / 6) before going live.
+2. **Measure timing and quality:** `npm run graph:gold` on the server, after a quiet spell (4.8). Every p95 must be under 2.5 s, with no cold AI-path timeout. If only the cold call fails, the next step is warming the database cache (for example `pg_prewarm` on the graph's tables and vector index), not changing the graph.
 3. **Paid embedding key:**
    - About 152.6M characters are left to embed, which is about **$8–13 one time** for `gemini-embedding-2-768`.
    - Steps: swap `GEMINI_EMBEDDING_API_KEY`, delete `GRAPH_RAG_EMBED_BATCH_SIZE=20`, then run `pm2 restart nzamy-graph-watchdog --update-env`.
    - Don't rotate free keys to get around the quota: Google's terms forbid it, and at 1,000 per day it would take about 120 days.
-4. **A small gold set:** 30–50 real client-style questions, each with the articles a lawyer would expect. Run each through the retrieval lab with the graph on and off, and record Recall@8 (did the expected articles appear in the top 8?). This becomes the yardstick for every change below.
+4. **The gold set:** built (4.8), 39 questions. The owner approves or corrects it (question ٥١٤). It is the yardstick for every change below.
 5. **Turn it on:** set `NZAMY_GRAPH_RAG=on`, then run `pm2 restart nzamy --update-env`. Watch the fallback rate for the first days.
 
 ### 7.2 D — AI-extracted links and concepts (recommended next build)
@@ -269,7 +293,7 @@ An AI-written summary for every law and chapter node, embedded so search can mat
 | Option | What it gives | Effort |
 |---|---|---|
 | **Personalized PageRank** instead of fixed hops | Spreads weight from the best hits along every legal link and ranks by where it settles. Finds chains longer than 2 without hand-tuned limits. | One SQL function, or a precomputed score; needs timing care |
-| **Direct article lookup** | «المادة 77 من نظام العمل» in the question jumps straight to that node before any search | Small; reuses `findArticleMentions` on the question |
+| ~~Direct article lookup~~ | Done in `20261117_10` as seeds (4.8) | — |
 | **Reranker** after retrieval | A cross-encoder re-sorts the top 20. `searchLegalGraphWith` already has an optional rerank hook. | Small code; per-question cost |
 | **Repealed-chain awareness** | When a hit is repealed, follow `SUPERSEDES_LAW` to the article in force | Small, once the library fields are filled |
 | **Explorer: whole-chapter view** | Open a chapter node and read its articles in order along `NEXT_ARTICLE` | Small UI |
@@ -277,7 +301,8 @@ An AI-written summary for every law and chapter node, embedded so search can mat
 **Suggested order:**
 
 1. 7.1, all of it.
-2. Direct article lookup: cheap, and gives an immediate quality gain.
+2. ~~Direct article lookup~~: done as seeds (4.8).
+2a. The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`, cross references): its own batch, timed with the owner's next library load.
 3. D.
 4. E.
 5. PageRank, only if the gold set shows that two steps are not enough.

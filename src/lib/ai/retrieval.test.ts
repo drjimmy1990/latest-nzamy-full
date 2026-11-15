@@ -7,7 +7,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSources, cleanQueries, GRAPH_BUDGET_MS, interleave, retrieveLibrary, SOURCE_TEXT_MAX } from "./retrieval.ts";
+import { buildSources, cleanQueries, GRAPH_BUDGET_MS, GRAPH_SEEDS_MAX, graphSeedKeys, interleave, retrieveLibrary, SEED_LOOKUP_MS, SOURCE_TEXT_MAX, withinMs, type RetrieveTrace } from "./retrieval.ts";
 
 test("cleanQueries keeps 1–4 distinct short searches and strips the search operators", () => {
   assert.deepEqual(cleanQueries(["مكافأة نهاية الخدمة", "  استقالة   العامل ", "مكافأة نهاية الخدمة"]), [
@@ -259,7 +259,7 @@ test("cleanQueries drops the framing the answering text never says («تعريف
 
 // ── Legal GraphRAG Hybrid + 1-Hop + 4-Corpus Tests ───────────────────────────
 
-test("GraphRAG: retrieveLibrary uses graph_rag_retrieve across all 4 corpora, preserves pinned S1, and annotates 1-hop legal edges", async () => {
+test("GraphRAG: retrieveLibrary uses the graph across all 4 corpora, preserves pinned S1, and annotates 1-hop legal edges", async () => {
   const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
   const graphAdmin = {
     rpc(fn: string, args: Record<string, unknown>) {
@@ -375,7 +375,9 @@ test("GraphRAG: retrieveLibrary uses graph_rag_retrieve across all 4 corpora, pr
   );
 
   assert.equal(rpcCalls.length, 1);
-  assert.equal(rpcCalls[0].fn, "graph_rag_retrieve");
+  // The open article seeds the graph (20261117_10).
+  assert.equal(rpcCalls[0].fn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(rpcCalls[0].args.p_seed_keys, ["article:labor-law__art-74"]);
   assert.equal(out.sources[0].sid, "S1");
   assert.equal(out.sources[0].pinned, true);
   assert.equal(out.map.S1.id, "labor-law__art-74");
@@ -482,4 +484,108 @@ test("GraphRAG: decrees and fiqh blocks stay out unless the caller asks for them
   const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
   assert.deepEqual(out.sources.map((s) => s.kind), ["article"]);
   assert.equal(out.map.S1.id, "labor__art-80");
+});
+
+// ── Seeds (20261117_10): the articles a question names lead the graph answer ──
+
+function seededGraph(lib: Parameters<typeof chainAdmin>[0], answer: (fn: string, args: Record<string, unknown>) => { data: unknown; error: unknown }) {
+  const { admin: base } = chainAdmin(lib);
+  const calls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+  const admin = {
+    ...base,
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      calls.push({ fn, args });
+      return { abortSignal: () => Promise.resolve(answer(fn, args)) };
+    },
+  };
+  return { admin, calls };
+}
+
+const GRAPH_HIT = {
+  ready: true,
+  routing: { scope: "auto", seeds: 1 },
+  articles: [
+    { kind: "article", id: "labor-law__art-1", law_slug: "labor-law", status: "active", title: "نظام العمل — المادة 1", url: "/laws/labor-law#labor-law__art-1", text: "يسمى هذا النظام نظام العمل" },
+    { kind: "article", id: "labor-law__art-9", law_slug: "labor-law", status: "active", title: "نظام العمل — المادة 9", url: "/laws/labor-law#labor-law__art-9", text: "استثناء", via_edge_type: "EXEMPTS_FROM" },
+  ],
+  principles: [],
+};
+
+test("graphSeedKeys: article node keys in order, once each, four at most", () => {
+  assert.deepEqual(graphSeedKeys([null, { id: "a" }, { id: "a" }, { id: "" }, { id: "b" }, undefined]), ["article:a", "article:b"]);
+  assert.equal(graphSeedKeys(["1", "2", "3", "4", "5"].map((id) => ({ id }))).length, GRAPH_SEEDS_MAX);
+});
+
+test("GraphRAG seeds: a named article is sent as a seed to graph_rag_retrieve_scoped and leads the answer", async () => {
+  const { admin, calls } = seededGraph(LIB, () => ({ data: GRAPH_HIT, error: null }));
+  const traces: RetrieveTrace[] = [];
+  const out = await retrieveLibrary(admin as never, ["نظام العمل"], { laws: 6, principles: 3 }, { question: "ما هي المادة الأولى من نظام العمل؟" }, 6000, {
+    useGraph: true,
+    onTrace: (t) => traces.push(t),
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].fn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(calls[0].args.p_seed_keys, ["article:labor-law__art-1"]);
+  assert.equal(calls[0].args.p_scope, "auto");
+  assert.equal(calls[0].args.p_law_slug, "labor-law");
+  assert.deepEqual(Object.values(out.map).map((s) => s.id), ["labor-law__art-1", "labor-law__art-9"], "the seed once, then its link");
+  assert.equal(traces.length, 1);
+  assert.equal(traces[0].path, "graph");
+  assert.equal(traces[0].graphFn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(traces[0].seeds, ["article:labor-law__art-1"]);
+  assert.equal(traces[0].graphMiss, null);
+});
+
+test("GraphRAG seeds: before 20261117_10 (PGRST202) the nine-argument function answers, without seeds", async () => {
+  const { admin, calls } = seededGraph(LIB, (fn) =>
+    fn === "graph_rag_retrieve_scoped" ? { data: null, error: { code: "PGRST202", message: "not found" } } : { data: GRAPH_HIT, error: null },
+  );
+  const traces: RetrieveTrace[] = [];
+  const out = await retrieveLibrary(admin as never, ["نظام العمل"], { laws: 6, principles: 3 }, { question: "ما هي المادة الأولى من نظام العمل؟" }, 6000, {
+    useGraph: true,
+    onTrace: (t) => traces.push(t),
+  });
+  assert.deepEqual(calls.map((c) => c.fn), ["graph_rag_retrieve_scoped", "graph_rag_retrieve"]);
+  assert.equal("p_seed_keys" in calls[1].args, false);
+  assert.equal("p_scope" in calls[1].args, false);
+  assert.equal(out.map.S1.id, "labor-law__art-1");
+  assert.equal(traces[0].graphFn, "graph_rag_retrieve");
+});
+
+test("GraphRAG seeds: no named article means the nine-argument call, as before; a miss is traced as keyword", async () => {
+  const { admin, calls } = seededGraph(LIB, () => ({ data: { ready: false }, error: null }));
+  const traces: RetrieveTrace[] = [];
+  await retrieveLibrary(admin as never, ["عقد"], { laws: 6, principles: 3 }, { question: "ما حكم عقد العمل؟" }, 6000, {
+    useGraph: true,
+    onTrace: (t) => traces.push(t),
+  });
+  assert.deepEqual(calls.map((c) => c.fn), ["graph_rag_retrieve"]);
+  assert.equal("p_seed_keys" in calls[0].args, false);
+  assert.equal(traces[0].path, "keyword");
+  assert.equal(traces[0].graphMiss, "not_ready");
+
+  // A thrown onTrace never breaks the answer.
+  const out = await retrieveLibrary(admin as never, ["عقد"], { laws: 6, principles: 3 }, {}, 6000, {
+    useGraph: true,
+    onTrace: () => {
+      throw new Error("boom");
+    },
+  });
+  assert.ok(Array.isArray(out.sources));
+});
+
+test("GraphRAG seeds: the open article is a seed too", async () => {
+  const { admin, calls } = seededGraph(LIB, () => ({ data: GRAPH_HIT, error: null }));
+  await retrieveLibrary(admin as never, ["الضمان"], { laws: 6, principles: 3 }, { articleId: "social-security-law__art-1", lawSlug: "social-security-law", question: "اشرح لي" }, 6000, {
+    useGraph: true,
+  });
+  assert.equal(calls[0].fn, "graph_rag_retrieve_scoped");
+  assert.deepEqual(calls[0].args.p_seed_keys, ["article:social-security-law__art-1"]);
+});
+
+test("withinMs: the value in time, else the fallback (late or rejected); the seed lookup is capped below the graph window", async () => {
+  assert.deepEqual(await withinMs(Promise.resolve(["a"]), 50, []), ["a"]);
+  assert.deepEqual(await withinMs(new Promise<string[]>((r) => setTimeout(() => r(["late"]), 80)), 10, []), []);
+  assert.deepEqual(await withinMs(Promise.reject(new Error("db")), 50, ["fb"]), ["fb"]);
+  assert.ok(SEED_LOOKUP_MS < GRAPH_BUDGET_MS);
 });

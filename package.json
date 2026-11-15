@@ -20,6 +20,7 @@
     "graph:watch": "node --import tsx scripts/graph-watchdog.mjs --watch",
     "graph:status": "node --import tsx scripts/graph-watchdog.mjs --status",
     "graph:benchmark": "node --import tsx scripts/graph-benchmark.mjs",
+    "graph:gold": "node --import tsx scripts/graph-gold.mjs",
     "blog:backup": "node blog-toolkit/blog-backup.mjs",
     "blog:clear": "node blog-toolkit/blog-clear.mjs",
     "blog:images": "node blog-toolkit/seed-blog-images.mjs",

@@ -57,6 +57,53 @@ export interface RetrieveGraphOptions {
   queryEmbedding?: string | null;
   /** Explicit model_id override; defaults to DB's active `is_default` model. */
   modelId?: string | null;
+  /** Told which path answered and how long the graph took (scripts/graph-gold.mjs). Never throws into the caller. */
+  onTrace?: (trace: RetrieveTrace) => void;
+}
+
+/** What one retrieval did — for measurement only; the answer never depends on it. */
+export interface RetrieveTrace {
+  /** "graph": the graph answered; "keyword": the keyword search did (switch off, or the graph missed). */
+  path: "graph" | "keyword";
+  /** The graph function called last, or null when the graph was not asked. */
+  graphFn: string | null;
+  /** The graph call(s), milliseconds; null when the graph was not asked. */
+  graphMs: number | null;
+  /** Why the graph did not answer: a PostgREST / Postgres code, "timeout", "not_ready", "no_hits"; null when it answered. */
+  graphMiss: string | null;
+  /** The node keys sent as seeds (the articles the question names). */
+  seeds: string[];
+  /** The graph's `routing` object, as returned. */
+  routing: unknown;
+  /** The arguments of the last graph call, so a measurement can replay them (the embedding included); null when the graph was not asked. */
+  graphArgs: Record<string, unknown> | null;
+}
+
+/** At most this many seeds reach the graph (the SQL keeps four). */
+export const GRAPH_SEEDS_MAX = 4;
+
+/** How long the graph waits for the named-article lookup before going without seeds. */
+export const SEED_LOOKUP_MS = 1500;
+
+/** `p`'s value, or `fallback` when it rejects or takes longer than `ms`. */
+export function withinMs<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), Math.max(0, ms));
+  });
+  return Promise.race([p.catch(() => fallback), late]).finally(() => clearTimeout(timer));
+}
+
+/** Graph node keys of looked-up articles, in order, once each (graphBuilder: `article:<id>`). */
+export function graphSeedKeys(rows: ReadonlyArray<Record<string, unknown> | null | undefined>): string[] {
+  const out: string[] = [];
+  for (const r of rows) {
+    const id = r && typeof r.id === "string" ? r.id.trim() : "";
+    const key = id ? `article:${id}` : "";
+    if (key && !out.includes(key)) out.push(key);
+    if (out.length >= GRAPH_SEEDS_MAX) break;
+  }
+  return out;
 }
 
 /** One library text as the model sees it. */
@@ -306,6 +353,52 @@ async function pinnedArticle(admin: ServiceClient, id: string, signal: AbortSign
   return (data as Row | null) ?? null;
 }
 
+/** The articles a question names, and the law to search first. */
+export interface QuestionRefLookups {
+  /** «المادة ٧٧ من نظام العمل» (and, on a law page, «المادة ٧٧» alone): the version in force first; null where none. */
+  direct: Promise<Array<Row | null>>;
+  /** The law to search first: the page the reader is on, else the first law the question names; null when none. */
+  scopeSlug: () => Promise<string | null>;
+  /** Whether the question names any article (so `direct` is worth awaiting). */
+  namesArticles: boolean;
+}
+
+/**
+ * The lookups for what a question names outright, shared by the AI's retrieval
+ * and the admin retrieval lab so the lab shows what a run would get. Each named
+ * law is looked up once, however many refs name it.
+ */
+export function questionRefLookups(
+  admin: ServiceClient,
+  question: string,
+  lawSlug: string | undefined,
+  wantArticles: boolean,
+  signal: AbortSignal,
+): QuestionRefLookups {
+  const refs = wantArticles ? articleRefs(question, DIRECT_REFS_MAX) : [];
+  // «المادة الأولى» with no law named, asked on a law page: that law's article.
+  const onPage = wantArticles && lawSlug ? bareArticleNumbers(question, DIRECT_REFS_MAX) : [];
+  const slugs = new Map<string, Promise<string | null>>();
+  const slugOf = (name: string) => {
+    if (!slugs.has(name)) slugs.set(name, lawSlugByName(admin, name, signal));
+    return slugs.get(name) as Promise<string | null>;
+  };
+  const scopeName = lawSlug ? null : (refs[0]?.law ?? lawNames(question, 1)[0] ?? null);
+  const direct = Promise.all([
+    ...refs.map(async (r) => {
+      const slug = await slugOf(r.law);
+      return slug ? articleByNumber(admin, slug, r.article, signal) : null;
+    }),
+    ...onPage.map((n) => articleByNumber(admin, lawSlug as string, n, signal)),
+  ]);
+  let scope: Promise<string | null> | null = null;
+  return {
+    direct,
+    namesArticles: refs.length + onPage.length > 0,
+    scopeSlug: () => (scope ??= lawSlug ? Promise.resolve(lawSlug) : scopeName ? slugOf(scopeName) : Promise.resolve(null)),
+  };
+}
+
 const EDGE_PROVENANCE_AR: Record<string, string> = {
   EXEMPTS_FROM: "استثناء نظامي مرتبط",
   AMENDS_ARTICLE: "تعديل نظامي مرتبط",
@@ -337,6 +430,7 @@ interface GraphRpcHit {
 
 interface GraphRpcResult {
   ready?: boolean;
+  routing?: unknown;
   articles?: GraphRpcHit[];
   principles?: GraphRpcHit[];
   decrees?: GraphRpcHit[];
@@ -352,37 +446,56 @@ function graphHitCount(r: GraphRpcResult): number {
   return usable(r.articles) + usable(r.principles);
 }
 
+/** A graph call's outcome: the answer, or why there is none (a PostgREST / Postgres code, "timeout", "error"). */
+interface GraphCall {
+  result: GraphRpcResult | null;
+  miss: string | null;
+}
+
+/** The function is not there (or not with these arguments): PostgREST PGRST202, Postgres 42883. */
+export function graphFunctionMissing(code: string | null | undefined): boolean {
+  return code === "PGRST202" || code === "42883";
+}
+
 /**
- * One `graph_rag_retrieve` call, cancelled at `deadlineMs` or when the whole
- * retrieval is cancelled. Null on any error or timeout (the caller falls back).
+ * One graph function call, cancelled at `deadlineMs` or when the whole
+ * retrieval is cancelled. Never throws: a miss carries its reason and the
+ * caller falls back.
  */
 async function callGraphRpc(
   admin: ServiceClient,
+  fn: string,
   args: Record<string, unknown>,
   parent: AbortSignal,
   deadlineMs: number,
-): Promise<GraphRpcResult | null> {
+): Promise<GraphCall> {
   const ctrl = new AbortController();
   const onParentAbort = () => ctrl.abort();
-  if (parent.aborted) return null;
+  if (parent.aborted || deadlineMs <= 0) return { result: null, miss: "timeout" };
   parent.addEventListener("abort", onParentAbort, { once: true });
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     type RpcBuilder = PromiseLike<{ data: unknown; error: unknown }> & { abortSignal?: (s: AbortSignal) => unknown };
     const rpc = (admin as unknown as { rpc: (fn: string, a: Record<string, unknown>) => RpcBuilder }).rpc;
-    const built = rpc.call(admin, "graph_rag_retrieve", args);
+    const built = rpc.call(admin, fn, args);
     const call = (typeof built.abortSignal === "function" ? built.abortSignal(ctrl.signal) : built) as RpcBuilder;
-    const deadline = new Promise<null>((resolve) => {
+    const deadline = new Promise<"timeout">((resolve) => {
       timer = setTimeout(() => {
         ctrl.abort();
-        resolve(null);
+        resolve("timeout");
       }, deadlineMs);
     });
     const outcome = await Promise.race([Promise.resolve(call).catch(() => null), deadline]);
-    if (!outcome || outcome.error || !outcome.data || typeof outcome.data !== "object") return null;
-    return outcome.data as GraphRpcResult;
+    if (outcome === "timeout") return { result: null, miss: "timeout" };
+    if (!outcome) return { result: null, miss: parent.aborted ? "timeout" : "error" };
+    if (outcome.error) {
+      const code = (outcome.error as { code?: unknown }).code;
+      return { result: null, miss: typeof code === "string" && code ? code : "error" };
+    }
+    if (!outcome.data || typeof outcome.data !== "object") return { result: null, miss: "error" };
+    return { result: outcome.data as GraphRpcResult, miss: null };
   } catch {
-    return null;
+    return { result: null, miss: "error" };
   } finally {
     if (timer) clearTimeout(timer);
     parent.removeEventListener("abort", onParentAbort);
@@ -410,29 +523,22 @@ export async function retrieveLibrary(
       })
       .filter(Boolean);
     const question = pin.question ?? "";
-    const refs = limits.laws > 0 ? articleRefs(question, DIRECT_REFS_MAX) : [];
-    // «المادة الأولى» with no law named, asked on a law page: that law's article.
-    const onPage = limits.laws > 0 && pin.lawSlug ? bareArticleNumbers(question, DIRECT_REFS_MAX) : [];
-    // Each named law is looked up once, however many refs name it.
-    const slugs = new Map<string, Promise<string | null>>();
-    const slugOf = (name: string) => {
-      if (!slugs.has(name)) slugs.set(name, lawSlugByName(admin, name, ctrl.signal));
-      return slugs.get(name) as Promise<string | null>;
-    };
-    // The law to search first: the page the reader is on, else the first law the question names.
-    const scopeName = pin.lawSlug ? null : (refs[0]?.law ?? lawNames(question, 1)[0] ?? null);
-    const direct = Promise.all([
-      ...refs.map(async (r) => {
-        const slug = await slugOf(r.law);
-        return slug ? articleByNumber(admin, slug, r.article, ctrl.signal) : null;
-      }),
-      ...onPage.map((n) => articleByNumber(admin, pin.lawSlug as string, n, ctrl.signal)),
-    ]);
+    const named = questionRefLookups(admin, question, pin.lawSlug, limits.laws > 0, ctrl.signal);
+    const direct = named.direct;
 
     // Fetched once, shared by both paths.
     const pinnedP: Promise<Row | null> = pin.articleId ? pinnedArticle(admin, pin.articleId, ctrl.signal) : Promise.resolve(null);
 
-    // ── Path A: Hybrid Legal GraphRAG (`public.graph_rag_retrieve`) ──
+    const trace = (t: RetrieveTrace) => {
+      try {
+        options?.onTrace?.(t);
+      } catch {
+        /* measurement only */
+      }
+    };
+    let graphTrace: Omit<RetrieveTrace, "path"> = { graphFn: null, graphMs: null, graphMiss: null, seeds: [], routing: null, graphArgs: null };
+
+    // ── Path A: Hybrid Legal GraphRAG ──
     // Only when the caller asked for it (the NZAMY_GRAPH_RAG switch, read by
     // the route). The graph gets its own short deadline so Path B keeps most
     // of the budget, and any miss — error, timeout, graph not ready, or no
@@ -441,29 +547,58 @@ export async function retrieveLibrary(
       Boolean(options?.useGraph) && typeof (admin as unknown as { rpc?: unknown }).rpc === "function";
 
     if (canCallGraphRpc) {
-      const resolvedScopeSlug = pin.lawSlug ?? (scopeName ? await slugOf(scopeName) : null);
+      const resolvedScopeSlug = await named.scopeSlug();
+      // The articles the question names (and the open article) seed the graph
+      // (20261117_10): they lead its answer and their legal links follow them.
+      // Small indexed lookups, needed by either path anyway. Capped: on a slow
+      // database the graph goes without seeds rather than losing its window.
+      const seeds =
+        named.namesArticles || pin.articleId
+          ? await withinMs(
+              Promise.all([pinnedP, direct]).then(([p, d]) => graphSeedKeys([p, ...d])),
+              SEED_LOOKUP_MS,
+              [] as string[],
+            )
+          : [];
       // Decrees and fiqh blocks only when a caller asks for them: the answer
       // screens and the citation check know articles and principles.
       const decreeLimit = Math.max(0, limits.decrees ?? 0);
       const feqhLimit = Math.max(0, limits.feqh ?? 0);
-      const graphOutcome = await callGraphRpc(
-        admin,
-        {
-          p_tsqueries: parsed,
-          p_query_embedding: options?.queryEmbedding ?? null,
-          p_model_id: options?.modelId ?? null,
-          p_law_slug: resolvedScopeSlug,
-          p_limit_laws: limits.laws + 2,
-          p_limit_principles: limits.principles,
-          p_limit_decrees: decreeLimit,
-          p_limit_feqh: feqhLimit,
-          p_enable_graph_hop: true,
-        },
-        ctrl.signal,
-        Math.min(GRAPH_BUDGET_MS, budgetMs),
-      );
+      const baseArgs = {
+        p_tsqueries: parsed,
+        p_query_embedding: options?.queryEmbedding ?? null,
+        p_model_id: options?.modelId ?? null,
+        p_law_slug: resolvedScopeSlug,
+        p_limit_laws: limits.laws + 2,
+        p_limit_principles: limits.principles,
+        p_limit_decrees: decreeLimit,
+        p_limit_feqh: feqhLimit,
+        p_enable_graph_hop: true,
+      };
+      const graphStarted = Date.now();
+      const deadlineAt = graphStarted + Math.min(GRAPH_BUDGET_MS, budgetMs);
+      // With seeds: the scoped function; before 20261117_10 it does not take
+      // them (PGRST202), so the nine-argument one answers within the same deadline.
+      let graphFn = seeds.length > 0 ? "graph_rag_retrieve_scoped" : "graph_rag_retrieve";
+      let graphArgs: Record<string, unknown> = seeds.length > 0 ? { ...baseArgs, p_scope: "auto", p_seed_keys: seeds } : baseArgs;
+      let call = await callGraphRpc(admin, graphFn, graphArgs, ctrl.signal, deadlineAt - Date.now());
+      if (seeds.length > 0 && graphFunctionMissing(call.miss)) {
+        graphFn = "graph_rag_retrieve";
+        graphArgs = baseArgs;
+        call = await callGraphRpc(admin, graphFn, graphArgs, ctrl.signal, deadlineAt - Date.now());
+      }
+      const graphOutcome = call.result;
+      const graphUsable = Boolean(graphOutcome && graphOutcome.ready === true && graphHitCount(graphOutcome) > 0);
+      graphTrace = {
+        graphFn,
+        graphMs: Date.now() - graphStarted,
+        graphMiss: call.miss ?? (graphOutcome?.ready !== true ? "not_ready" : graphUsable ? null : "no_hits"),
+        seeds,
+        routing: graphOutcome?.routing ?? null,
+        graphArgs,
+      };
 
-      if (graphOutcome && graphOutcome.ready === true && graphHitCount(graphOutcome) > 0) {
+      if (graphOutcome && graphUsable) {
         const [pinned, directRows] = await Promise.all([pinnedP, direct]);
         const leadSeen = new Set<string>();
         const leadRows: Row[] = [];
@@ -525,14 +660,19 @@ export async function retrieveLibrary(
         appendGraphHits(graphOutcome.decrees, decreeLimit);
         appendGraphHits(graphOutcome.feqh, feqhLimit);
 
-        if (sources.length > builtLead.sources.length) return { sources, map };
+        if (sources.length > builtLead.sources.length) {
+          trace({ path: "graph", ...graphTrace });
+          return { sources, map };
+        }
+        // Only the named articles came back: the keyword search adds more.
+        graphTrace = { ...graphTrace, graphMiss: "no_hits" };
       }
     }
 
     // ── Path B: the keyword search (switch off, graph not ready, or the graph found nothing) ──
     const scoped = (async (): Promise<Row[][]> => {
       if (limits.laws === 0 || parsed.length === 0) return [];
-      const slug = pin.lawSlug ?? (scopeName ? await slugOf(scopeName) : null);
+      const slug = await named.scopeSlug();
       return slug ? Promise.all(parsed.map((t) => lawScopedRows(admin, slug, t, FETCH_PER_QUERY.laws, ctrl.signal))) : [];
     })();
     const [pinned, directRows, scopedLists, lawLists, principleLists] = await Promise.all([
@@ -568,6 +708,7 @@ export async function retrieveLibrary(
       if (error) console.warn("[ai/retrieval] law titles", error.code, error.message);
       for (const l of (data ?? []) as Row[]) titles.set(str(l.slug), str(l.title));
     }
+    trace({ path: "keyword", ...graphTrace });
     return buildSources(articles, principles, titles, pinned ? str(pinned.id) : null);
   } finally {
     clearTimeout(timer);

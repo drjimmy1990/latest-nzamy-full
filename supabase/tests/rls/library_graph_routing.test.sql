@@ -232,7 +232,9 @@ declare
   fn text;
 begin
   foreach fn in array array[
-    'public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)',
+    -- 20261117_10 adds p_seed_keys: test whichever signature is installed.
+    coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])')::text,
+             'public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
     'library_graph.route_factor(text, text, text, text, boolean, text[])'
   ] loop
     if exists (select 1 from pg_roles where rolname = 'anon') and has_function_privilege('anon', fn, 'EXECUTE') then

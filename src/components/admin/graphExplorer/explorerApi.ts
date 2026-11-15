@@ -66,6 +66,10 @@ export interface LabResult {
   elapsed_ms: number;
   /** null from a server before 20261116_10. */
   routing: LabRouting | null;
+  /** The law the question names, searched first (a live run pins it too); absent from an older server. */
+  law_slug?: string | null;
+  /** The articles the question names, sent as seeds (20261117_10); empty when none or before that file. */
+  seeds?: string[];
   hits: LabHit[];
 }
 
