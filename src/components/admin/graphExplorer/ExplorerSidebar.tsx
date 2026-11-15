@@ -1,34 +1,42 @@
 "use client";
 
 /**
- * ExplorerSidebar.tsx — three ways into the graph:
+ * ExplorerSidebar.tsx — three ways into the graph, and its state:
  *   البحث          find any node by title, key or text (type filters)
- *   نقاط البداية    corpus coverage, link mix, the 32 legal concepts, top hubs
- *   مختبر البحث     run a real question through the same hybrid retrieval the
+ *   البداية         corpus coverage, link mix and sources, the legal concepts, top hubs
+ *   المختبر         run a real question through the same hybrid retrieval the
  *                   AI tools use and see what it would cite, and why
+ *   الحالة          sync, the running and last pass, the owner's links, vector
+ *                   links (graph_rag_explore_status, 20261119_10)
  */
 
-import { useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
-  MagnifyingGlass, Compass, Flask, CircleNotch, Lightning, Graph, ArrowElbowDownLeft, Warning,
+  MagnifyingGlass, Compass, Flask, CircleNotch, Lightning, Graph, ArrowElbowDownLeft, Warning, Pulse, ArrowsClockwise,
 } from "@phosphor-icons/react";
 import {
+  EDGE_ORIGIN_LABELS,
   EDGE_TYPE_META,
   EXPLORER_EDGE_TYPES,
   EXPLORER_NODE_TYPES,
+  LAB_LIMITS,
+  LAB_ROUTING_SOURCE_LABELS,
   LAB_SCOPES,
   LAB_SCOPE_LABELS,
   NODE_TYPE_META,
-  isExplorerEdgeType,
+  edgeMetaFor,
   isRepealedNode,
   labHop,
   labHopLabel,
+  nodeMetaFor,
+  syncVerdict,
   type ExplorerNodeType,
+  type ExplorerStatus,
   type LabScope,
 } from "@/lib/ai/graphExplorerCore";
-import { explorerApi, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
+import { explorerApi, type LabOptions, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
 
-export type SidebarTab = "search" | "start" | "lab";
+export type SidebarTab = "search" | "start" | "lab" | "status";
 
 interface Props {
   tab: SidebarTab;
@@ -40,7 +48,7 @@ interface Props {
   labLoading: boolean;
   labError: string | null;
   labActive: boolean;
-  onRunLab: (question: string, keywords: string, scope: LabScope) => void;
+  onRunLab: (question: string, keywords: string, scope: LabScope, opts: LabOptions) => void;
   onShowLab: () => void;
   onLabSelect: (key: string) => void;
 }
@@ -51,12 +59,13 @@ export default function ExplorerSidebar(props: Props) {
   const { tab, onTab } = props;
   const tabs: Array<{ id: SidebarTab; label: string; icon: typeof MagnifyingGlass }> = [
     { id: "search", label: "البحث", icon: MagnifyingGlass },
-    { id: "start", label: "نقاط البداية", icon: Compass },
-    { id: "lab", label: "مختبر البحث", icon: Flask },
+    { id: "start", label: "البداية", icon: Compass },
+    { id: "lab", label: "المختبر", icon: Flask },
+    { id: "status", label: "الحالة", icon: Pulse },
   ];
   return (
     <div className="flex h-full flex-col">
-      <div role="tablist" className="grid grid-cols-3 gap-1 border-b border-zinc-800/80 p-2">
+      <div role="tablist" className="grid grid-cols-4 gap-1 border-b border-zinc-800/80 p-2">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -75,6 +84,7 @@ export default function ExplorerSidebar(props: Props) {
         {tab === "search" && <SearchTab {...props} />}
         {tab === "start" && <StartTab {...props} />}
         {tab === "lab" && <LabTab {...props} />}
+        {tab === "status" && <StatusTab overview={props.overview} />}
       </div>
     </div>
   );
@@ -172,7 +182,7 @@ function SearchTab({ onFocus, searchInputRef }: Props) {
       ) : (
         <ul className="mt-3 space-y-1.5">
           {results.map((r) => {
-            const c = r.node_type === "query" ? "#C8A762" : NODE_TYPE_META[r.node_type].color;
+            const c = r.node_type === "query" ? "#C8A762" : nodeMetaFor(r.node_type).color;
             return (
               <li key={r.node_key}>
                 <button
@@ -181,7 +191,7 @@ function SearchTab({ onFocus, searchInputRef }: Props) {
                 >
                   <span aria-hidden className="absolute inset-y-2 right-0 w-[3px] rounded-l-full" style={{ background: c }} />
                   <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
-                    <span style={{ color: c }} className="font-bold">{r.node_type !== "query" && NODE_TYPE_META[r.node_type].label}</span>
+                    <span style={{ color: c }} className="font-bold">{r.node_type !== "query" && nodeMetaFor(r.node_type).label}</span>
                     <span className="flex items-center gap-1.5">
                       <span className="font-mono">{r.degree}</span> رابط
                       <span className="inline-block h-1.5 w-1.5 rounded-full" style={r.has_vector ? { background: "#C8A762" } : { border: "1px solid #52525b" }} />
@@ -276,6 +286,25 @@ function StartTab({ overview, onFocus }: Props) {
         </div>
       </section>
 
+      {Object.keys(overview.origin_counts ?? {}).length > 0 && (
+        <section>
+          <h3 className="font-heading text-[13px] font-bold text-zinc-200">مصادر الروابط</h3>
+          <div className="mt-2.5 space-y-1.5">
+            {Object.entries(overview.origin_counts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([origin, n]) => (
+                <div key={origin} className="flex items-center justify-between text-[11.5px]">
+                  <span className="text-zinc-300">{EDGE_ORIGIN_LABELS[origin] ?? origin}</span>
+                  <span className="font-mono text-[10.5px] text-zinc-500">{fmt(n)}</span>
+                </div>
+              ))}
+          </div>
+          <p className="mt-2 text-[10.5px] leading-relaxed text-zinc-600">
+            روابط المالك (من رؤوس ملفاته) تُعدّ ضمن «مستخرجة من نصوص المكتبة»، وتظهر بشارتها عند فتح الرابط. عددها في تبويب «الحالة».
+          </p>
+        </section>
+      )}
+
       {overview.concepts.length > 0 && (
         <section>
           <h3 className="font-heading text-[13px] font-bold text-zinc-200">المفاهيم القانونية</h3>
@@ -323,6 +352,9 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
   const [question, setQuestion] = useState("");
   const [keywords, setKeywords] = useState("");
   const [scope, setScope] = useState<LabScope>("auto");
+  const [lawSlug, setLawSlug] = useState("");
+  const [articleId, setArticleId] = useState("");
+  const [wide, setWide] = useState(false);
 
   return (
     <div className="p-3">
@@ -367,6 +399,37 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
               : "بلا توجيه: كل الأقسام وكل المسارات القضائية بنفس الوزن، للمقارنة."}
         </p>
       </div>
+      <details className="mt-2 rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-[11px] text-zinc-400" open={Boolean(lawSlug || articleId)}>
+        <summary className="cursor-pointer select-none font-bold text-zinc-300">سياق الصفحة (اختياري)</summary>
+        <p className="mt-1.5 leading-relaxed text-zinc-500">
+          كما يُسأل المساعد من صفحة نظام أو من مادة مفتوحة: على صفحة النظام يُفهم «المادة ٧٧» وحدها على أنها مادة ذلك النظام، والمادة المفتوحة تتقدّم النتائج دائمًا.
+        </p>
+        <input
+          value={lawSlug}
+          onChange={(e) => setLawSlug(e.target.value)}
+          dir="ltr"
+          placeholder="معرّف النظام (slug)، مثل labor-law"
+          className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 font-mono text-[11.5px] text-zinc-200 placeholder:font-sans placeholder:text-zinc-600 focus:border-[#C8A762]/50 focus:outline-none"
+        />
+        <input
+          value={articleId}
+          onChange={(e) => setArticleId(e.target.value)}
+          dir="ltr"
+          placeholder="معرّف المادة المفتوحة، مثل labor-law__art-77"
+          className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 font-mono text-[11.5px] text-zinc-200 placeholder:font-sans placeholder:text-zinc-600 focus:border-[#C8A762]/50 focus:outline-none"
+        />
+      </details>
+      <label className="mt-2 flex items-start gap-2 px-1 text-[11px] leading-relaxed text-zinc-400">
+        <input type="checkbox" checked={wide} onChange={(e) => setWide(e.target.checked)} className="mt-0.5 accent-[#C8A762]" />
+        <span>
+          أضف المراسيم والنصوص الفقهية
+          <span className="block text-[10.5px] text-zinc-600">
+            {wide
+              ? `أوسع مما يطلبه المساعد: ${LAB_LIMITS.wide.laws} مواد، ${LAB_LIMITS.wide.principles} مبادئ، ${LAB_LIMITS.wide.decrees} مراسيم، ${LAB_LIMITS.wide.feqh} نصوص فقهية.`
+              : `بحدود المساعد نفسها: ${LAB_LIMITS.ai.laws} مواد و${LAB_LIMITS.ai.principles} مبادئ، بلا مراسيم ولا فقه.`}
+          </span>
+        </span>
+      </label>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {LAB_EXAMPLES.map((ex) => (
           <button key={ex} onClick={() => setQuestion(ex)} className="rounded-full border border-zinc-800 px-2.5 py-1 text-[10.5px] text-zinc-400 hover:border-zinc-600 hover:text-zinc-200">
@@ -376,7 +439,7 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
       </div>
       <button
         disabled={labLoading || question.trim().length < 3}
-        onClick={() => onRunLab(question, keywords, scope)}
+        onClick={() => onRunLab(question, keywords, scope, { lawSlug, articleId, wide })}
         className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#C8A762] py-2.5 text-[12.5px] font-black text-black transition hover:bg-[#d4b87a] disabled:opacity-40"
       >
         {labLoading ? <CircleNotch size={15} className="animate-spin" /> : <Lightning size={15} weight="fill" />} تشغيل البحث
@@ -406,9 +469,22 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
                   ? `القسم: ${lab.routing.section_label}${lab.routing.confident ? " (مؤكد)" : " (مرجّح)"}`
                   : "القسم: غير محدد"}
                 {lab.routing.scope !== "auto" ? ` · ${LAB_SCOPE_LABELS[lab.routing.scope]}` : ""}
+                {lab.routing.section ? ` · ${LAB_ROUTING_SOURCE_LABELS[lab.routing.source]}` : ""}
               </span>
             )}
+            {lab.law_slug && (
+              <span dir="ltr" className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-300" title="النظام الذي بُحث فيه أولًا">
+                {lab.law_slug}
+              </span>
+            )}
+            {lab.wide && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">موسَّع</span>}
           </div>
+          {lab.article_found === false && (
+            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-200">
+              <Warning size={13} className="mt-0.5 shrink-0" />
+              المادة المفتوحة <span dir="ltr" className="font-mono">{lab.article_id}</span> غير موجودة في المكتبة، فجرى البحث بدونها.
+            </p>
+          )}
           {!lab.ready && (
             <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-sky-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-sky-200">
               <CircleNotch size={13} className="mt-0.5 shrink-0 animate-spin" />
@@ -435,8 +511,8 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
 
           <ol className="mt-3 space-y-1.5">
             {lab.hits.map((h, i) => {
-              const c = NODE_TYPE_META[h.kind].color;
-              const via = h.via_edge_type && isExplorerEdgeType(h.via_edge_type) ? EDGE_TYPE_META[h.via_edge_type] : null;
+              const c = nodeMetaFor(h.kind).color;
+              const via = h.via_edge_type ? edgeMetaFor(h.via_edge_type) : null;
               const hop = labHop(h);
               return (
                 <li key={h.node_key}>
@@ -445,7 +521,7 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="flex items-center gap-1.5">
                         <span className="rounded bg-[#C8A762] px-1.5 font-mono font-black text-black">S{i + 1}</span>
-                        <span style={{ color: c }} className="font-bold">{NODE_TYPE_META[h.kind].label}</span>
+                        <span style={{ color: c }} className="font-bold">{nodeMetaFor(h.kind).label}</span>
                         <span
                           className={`rounded border px-1 font-bold ${h.seed ? "border-[#C8A762]/50 text-[#C8A762]" : hop === 0 ? "border-zinc-700 text-zinc-400" : hop === 1 ? "border-sky-500/40 text-sky-300" : "border-violet-500/40 text-violet-300"}`}
                           title={h.seed ? "مادة ذكرها السؤال بنصه، فقُدِّمت وتبعتها روابطها" : hop === 0 ? "وجدها البحث النصي/الدلالي مباشرة" : `وصل إليها المساعد بعد ${hop === 1 ? "خطوة واحدة" : "خطوتين"} على روابط الجراف`}
@@ -468,6 +544,196 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
           </ol>
           {lab.ready && lab.hits.length === 0 && <p className="mt-4 text-center text-[12px] text-zinc-500">لا نتائج. جرّب كلمات بحث صريحة.</p>}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Status ──────────────────────────────────────────────────────────────────
+
+const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("ar-SA-u-nu-latn") : "—");
+
+const VERDICT_STYLE: Record<"ok" | "busy" | "wait" | "error", string> = {
+  ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+  busy: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+  wait: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+  error: "border-red-500/30 bg-red-500/10 text-red-200",
+};
+
+const OWNER_STAT_LABELS: Array<[keyof Omit<NonNullable<ExplorerStatus["owner_links_run"]>["stats"], "resolved">, string]> = [
+  ["links", "روابط قُرئت"],
+  ["edges", "روابط دخلت الجراف"],
+  ["notFound", "لم يُعثر على النظام"],
+  ["ambiguous", "تحتمل أكثر من نظام"],
+  ["stillInForce", "النظام «الملغى» ساري في المكتبة"],
+  ["contradictory", "متناقضة أو تشير إلى نفسها"],
+  ["lawLevel", "تعدّل النظام كله (بلا أرقام مواد)"],
+  ["articlesNotInLaw", "مواد غير موجودة في النظام"],
+  ["related", "أنظمة ذات صلة (لا تُرسم)"],
+  ["decreeOther", "روابط مراسيم غير التعديل"],
+];
+
+function Row({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 text-[11.5px]">
+      <span className="text-zinc-400">{label}</span>
+      <span className={`text-left text-zinc-200 ${mono ? "font-mono text-[11px]" : ""}`}>{typeof value === "number" ? fmt(value) : value}</span>
+    </div>
+  );
+}
+
+function StatusTab({ overview }: { overview: OverviewData | null }) {
+  const [status, setStatus] = useState<ExplorerStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState<string | null>(null);
+
+  const apply = useCallback((res: Awaited<ReturnType<typeof explorerApi.status>>) => {
+    setLoading(false);
+    if (res.ok) {
+      setStatus(res.data);
+      setMissing(null);
+      setError(null);
+    } else if (res.schemaMissing) {
+      // Only this tab needs 20261119_10: say so here, not in the page banner.
+      setMissing(res.migration ?? "20261119_10_library_graph_explorer_parity.sql");
+    } else {
+      setError(res.error);
+    }
+  }, []);
+
+  const load = () => {
+    setLoading(true);
+    void explorerApi.status().then(apply);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    void explorerApi.status().then((res) => {
+      if (alive) apply(res);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [apply]);
+
+  const missingVectors = overview
+    ? Math.max(
+        0,
+        Object.values(overview.embeddable_counts).reduce((s, n) => s + (n ?? 0), 0) -
+          Object.values(overview.embedded_counts).reduce((s, n) => s + (n ?? 0), 0),
+      )
+    : null;
+
+  if (missing) {
+    return (
+      <div className="p-4 text-[12px] leading-relaxed text-amber-100">
+        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+          <Warning size={15} className="mt-0.5 shrink-0 text-amber-300" />
+          <span>
+            تبويب الحالة يحتاج ملف قاعدة البيانات{" "}
+            <code dir="ltr" className="rounded bg-black/30 px-1 font-mono text-[11px]">supabase/migrations/{missing}</code>. بقية المستكشف تعمل بدونه.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const verdict = status ? syncVerdict(status) : null;
+  const sim = status?.similarity;
+  const simPct = sim && sim.with_vector > 0 ? Math.min(100, (sim.done / sim.with_vector) * 100) : 0;
+  const ownerEdges = status ? Object.entries(status.owner_links.edges) : [];
+
+  return (
+    <div className="space-y-5 p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-heading text-[13px] font-bold text-zinc-200">حالة الجراف</h3>
+        <button onClick={load} disabled={loading} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40">
+          {loading ? <CircleNotch size={12} className="animate-spin" /> : <ArrowsClockwise size={12} />} تحديث
+        </button>
+      </div>
+      {error && <p className="text-[12px] text-red-300">{error}</p>}
+      {!status && !error && <div className="h-24 animate-pulse rounded-xl bg-zinc-900/70" />}
+
+      {status && verdict && (
+        <>
+          <section className={`rounded-xl border p-3 ${VERDICT_STYLE[verdict.tone]}`}>
+            <p className="text-[12.5px] font-black">{verdict.label}</p>
+            <div className="mt-2 space-y-1">
+              {status.running_run && <Row label="بدأت المزامنة الجارية" value={when(status.running_run.started_at)} />}
+              <Row label="آخر مزامنة ناجحة" value={when(status.sync?.last_synced_at)} />
+              {status.sync?.dirty && status.sync.dirty_tables.length > 0 && (
+                <Row label="تغيّر منذها" value={status.sync.dirty_tables.join("، ")} mono />
+              )}
+              {status.sync?.last_error && <p className="text-[11px] leading-relaxed opacity-90">{status.sync.last_error}</p>}
+            </div>
+          </section>
+
+          {status.last_run && (
+            <section>
+              <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">آخر تمريرة منتهية</h4>
+              <div className="mt-2 space-y-1">
+                <Row label="النتيجة" value={`${status.last_run.status}${status.last_run.embed_only ? " · تضمين فقط" : ""}`} mono />
+                <Row label="انتهت" value={when(status.last_run.finished_at)} />
+                <Row label="عقد كُتبت / حُذفت" value={`${fmt(status.last_run.nodes_upserted)} / ${fmt(status.last_run.nodes_deleted)}`} mono />
+                <Row label="روابط كُتبت" value={status.last_run.edges_upserted} mono />
+                <Row label="متجهات جديدة" value={status.last_run.api_embedded} mono />
+                {status.last_run.error_message && <p className="text-[11px] leading-relaxed text-amber-200">{status.last_run.error_message}</p>}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">روابط المالك (من رؤوس ملفاته)</h4>
+            <div className="mt-2 space-y-1">
+              <Row label="أنظمة فيها روابط" value={status.owner_links.laws} mono />
+              <Row label="مراسيم وقرارات فيها روابط" value={status.owner_links.decrees} mono />
+              {ownerEdges.length === 0 ? (
+                <Row label="روابط في الجراف" value="0" mono />
+              ) : (
+                ownerEdges.map(([t, n]) => <Row key={t} label={`في الجراف: ${edgeMetaFor(t).label}`} value={n} mono />)
+              )}
+            </div>
+            {status.owner_links_run ? (
+              <div className="mt-2.5 rounded-xl border border-zinc-800 bg-zinc-900/40 p-2.5">
+                <p className="text-[10.5px] text-zinc-500">قراءة آخر تمريرة كاملة ({when(status.owner_links_run.finished_at)})</p>
+                <div className="mt-1.5 space-y-1">
+                  {OWNER_STAT_LABELS.map(([k, label]) => {
+                    const v = status.owner_links_run!.stats[k];
+                    return v > 0 || k === "links" || k === "edges" ? <Row key={k} label={label} value={v} mono /> : null;
+                  })}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                لم تمرّ مزامنة كاملة منذ هذا التحديث، فلا قراءة محفوظة بعد. تظهر بعد إعادة البناء التالية (بعد تحميل المالك).
+              </p>
+            )}
+          </section>
+
+          <section>
+            <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">روابط المعنى (التقارب والبديل)</h4>
+            <div className="mt-2 space-y-1">
+              <Row label="مواد ومبادئ لها متجه" value={sim?.with_vector ?? 0} mono />
+              <Row label="حُسبت روابطها" value={sim?.done ?? 0} mono />
+              <Row label="منها مواد ملغاة (بحث عن بديل)" value={sim?.repealed_done ?? 0} mono />
+              <Row label="آخر حساب" value={when(sim?.last_computed_at)} />
+            </div>
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-800">
+              <div className="h-full rounded-full bg-sky-400/80" style={{ width: `${simPct}%` }} />
+            </div>
+            <p className="mt-1 text-[10.5px] text-zinc-600">تقريبي: المواد المرقّمة بالصفحات لها متجه ولا تُحسب لها روابط.</p>
+          </section>
+
+          <section>
+            <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">أخرى</h4>
+            <div className="mt-2 space-y-1">
+              <Row label="أزواج «نظام حلّ محل نظام» المحفوظة" value={status.replacement_pairs} mono />
+              {missingVectors !== null && <Row label="نصوص بانتظار المتجه" value={missingVectors} mono />}
+              <Row label="نموذج التضمين" value={status.default_model_id ?? "—"} mono />
+            </div>
+          </section>
+        </>
       )}
     </div>
   );

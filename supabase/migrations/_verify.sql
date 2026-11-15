@@ -6642,3 +6642,18 @@ select 'Owner links: laws/decrees owner_links server-only, replacement refresh (
        and not has_function_privilege('authenticated', 'public.graph_rag_refresh_replacements()', 'EXECUTE')
        as ok;
 -- <<< verify:library_owner_links
+-- >>> verify:library_graph_explorer_parity
+-- 2026-11-19 — 20261119_10_library_graph_explorer_parity.sql: the admin graph
+-- explorer's links carry their metadata (source = owner_links, a vector link's
+-- sim / method), and public.graph_rag_explore_status() feeds its status tab.
+-- Functions only; service_role only. Run before or after the deploy.
+-- Docker: supabase/tests/rls/library_graph_explorer_parity.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Graph explorer parity: link metadata + status tab (run 20261119_10)' as check,
+       coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_explore_neighborhood(text, integer, text[], integer)'))
+                like '%''metadata'',%a.metadata->>''source''%', false)
+       and to_regprocedure('public.graph_rag_explore_status()') is not null
+       and not has_function_privilege('anon', 'public.graph_rag_explore_status()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.graph_rag_explore_status()', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.graph_rag_explore_status()', 'EXECUTE')
+       as ok;
+-- <<< verify:library_graph_explorer_parity

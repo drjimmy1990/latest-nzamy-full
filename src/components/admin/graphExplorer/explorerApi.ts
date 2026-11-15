@@ -1,7 +1,17 @@
 /**
  * explorerApi.ts — typed client calls for GET /api/v1/admin/graph-explorer.
  */
-import type { ExplorerEdge, ExplorerEdgeType, ExplorerNode, ExplorerNodeType, LabHit, LabRouting, LabScope } from "@/lib/ai/graphExplorerCore";
+import {
+  normalizeEdges,
+  type ExplorerEdge,
+  type ExplorerEdgeType,
+  type ExplorerNode,
+  type ExplorerNodeType,
+  type ExplorerStatus,
+  type LabHit,
+  type LabRouting,
+  type LabScope,
+} from "@/lib/ai/graphExplorerCore";
 
 export interface OverviewData {
   default_model_id: string | null;
@@ -50,6 +60,8 @@ export interface NodeDetail {
   updated_at: string;
   embeddings: Array<{ model_id: string; is_default: boolean; updated_at: string }>;
   edge_counts: EdgeCounts;
+  /** Routing and source details (section, track, governing laws…); see describeNodeMetadata. */
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface SearchResult extends ExplorerNode {
@@ -70,7 +82,19 @@ export interface LabResult {
   law_slug?: string | null;
   /** The articles the question names, sent as seeds (20261117_10); empty when none or before that file. */
   seeds?: string[];
+  /** The open article asked for, and whether it was found (null when none was asked for). */
+  article_id?: string | null;
+  article_found?: boolean | null;
+  /** true: decrees and fiqh were asked for too (not the AI's limits). */
+  wide?: boolean;
   hits: LabHit[];
+}
+
+/** The lab's optional page context and result width. */
+export interface LabOptions {
+  lawSlug?: string;
+  articleId?: string;
+  wide?: boolean;
 }
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string; schemaMissing?: boolean; migration?: string };
@@ -93,9 +117,34 @@ export const explorerApi = {
   overview: () => call({ action: "overview" }, (j) => j.overview as OverviewData),
   search: (q: string, types: ExplorerNodeType[]) =>
     call({ action: "search", q, types: types.join(","), limit: "30" }, (j) => (j.results as SearchResult[]) ?? []),
-  neighborhood: (key: string, depth: 1 | 2, limit: number) =>
-    call({ action: "neighborhood", key, depth: String(depth), limit: String(limit) }, (j) => j.neighborhood as NeighborhoodData),
+  status: () => call({ action: "status" }, (j) => j.status as ExplorerStatus),
+  /** `edges` names the link types (all of them turns the meaning links on at hop 2); empty = the server's default. */
+  neighborhood: (key: string, depth: 1 | 2, limit: number, edges: readonly ExplorerEdgeType[] = []) =>
+    call(
+      {
+        action: "neighborhood",
+        key,
+        depth: String(depth),
+        limit: String(limit),
+        ...(edges.length > 0 ? { edges: edges.join(",") } : {}),
+      },
+      (j) => {
+        const n = j.neighborhood as NeighborhoodData;
+        return n && n.found ? { ...n, edges: normalizeEdges(n.edges) } : n;
+      },
+    ),
   node: (key: string) => call({ action: "node", key }, (j) => j.node as NodeDetail),
-  retrieve: (q: string, keywords: string, scope: LabScope) =>
-    call({ action: "retrieve", q, keywords, scope }, (j) => j.lab as LabResult),
+  retrieve: (q: string, keywords: string, scope: LabScope, opts: LabOptions = {}) =>
+    call(
+      {
+        action: "retrieve",
+        q,
+        keywords,
+        scope,
+        ...(opts.lawSlug?.trim() ? { law: opts.lawSlug.trim() } : {}),
+        ...(opts.articleId?.trim() ? { article: opts.articleId.trim() } : {}),
+        ...(opts.wide ? { wide: "1" } : {}),
+      },
+      (j) => j.lab as LabResult,
+    ),
 };

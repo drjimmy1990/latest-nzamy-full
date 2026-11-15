@@ -68,6 +68,7 @@ import {
   newOwnerLinkStats,
   ownerLinkEdges,
   type OwnerLinkIndex,
+  type OwnerLinkStats,
 } from "./graphOwnerLinks.ts";
 
 export const DEFAULT_QUIET_WINDOW_MS = 180_000; // 3 minutes settle time after last library write
@@ -459,6 +460,9 @@ export async function runGraphSyncPass(
   let edgesUpserted = 0;
   let vaultRelinked = 0;
   let apiEmbedded = 0;
+  // The owner-link reading of a full pass, kept in the run's details for the
+  // explorer's status tab (graph_rag_explore_status, 20261119_10).
+  let ownerLinkStats: OwnerLinkStats | null = null;
 
   let nodeBuffer: GraphNodePayload[] = [];
   let edgeBuffer: GraphEdgePayload[] = [];
@@ -734,6 +738,7 @@ export async function runGraphSyncPass(
       edgeBuffer.push(...deferredOwnerEdges);
       deferredOwnerEdges.length = 0;
       if (ownerStats.links > 0) log(`[graph-watchdog] ${formatOwnerLinkStats(ownerStats)}`);
+      ownerLinkStats = ownerStats;
       await flushEdges();
 
       // ── Pass 7: Prune Stale Nodes/Auto-Edges & Instant SQL Vault Relink ($0) ──
@@ -882,6 +887,7 @@ export async function runGraphSyncPass(
         embed_only: Boolean(options.embedOnly),
         quota_paused: quotaPaused,
         prune_skipped: pruneSkipped,
+        ...(ownerLinkStats ? { owner_links: ownerLinkStats } : {}),
       },
     });
 

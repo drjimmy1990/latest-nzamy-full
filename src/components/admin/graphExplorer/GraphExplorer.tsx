@@ -34,7 +34,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   Graph, ArrowRight, ArrowLeft, ArrowsOut, ArrowsIn, Crosshair, DownloadSimple, ArrowsClockwise,
-  CircleNotch, Warning, GearSix, Flask, X, Columns, CircleDashed,
+  CircleNotch, Warning, GearSix, Flask, X, Columns, CircleDashed, Sparkle, Plus,
 } from "@phosphor-icons/react";
 import {
   EDGE_TYPE_META,
@@ -44,11 +44,14 @@ import {
   QUERY_NODE_KEY,
   buildLabGraph,
   edgeId,
+  edgeMetaFor,
   isExplorerEdgeType,
+  nodeMetaFor,
   layoutExpansion,
   layoutLanes,
   layoutRadial,
   mergeNeighborhoods,
+  type ExplorerEdgeType,
   type ExplorerGraph,
   type ExplorerNode,
   type LaneLabel,
@@ -66,7 +69,7 @@ import {
 } from "./canvasElements";
 import ExplorerSidebar, { type SidebarTab } from "./ExplorerSidebar";
 import NodeInspector, { type InspectorConnection } from "./NodeInspector";
-import { explorerApi, type EdgeCounts, type LabResult, type NodeDetail, type OverviewData } from "./explorerApi";
+import { explorerApi, type EdgeCounts, type LabOptions, type LabResult, type NodeDetail, type OverviewData } from "./explorerApi";
 
 const nodeTypes: NodeTypes = { legal: LegalNodeCard, query: QueryNode, orbits: OrbitsNode, lane: LaneLabelNode };
 const edgeTypes: EdgeTypes = { floating: FloatingEdge };
@@ -118,6 +121,10 @@ function ExplorerInner() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [depth, setDepth] = useState<1 | 2>(1);
   const [limit, setLimit] = useState<number>(60);
+  // Definition and meaning links (DEFINES_TERM, SIMILAR_TO) at hop 2: the
+  // server walks them only when the link types are named (20261116_10).
+  const [meaningLinks, setMeaningLinks] = useState(false);
+  const [typeLoading, setTypeLoading] = useState<string | null>(null);
   const [hiddenEdges, setHiddenEdges] = useState<ReadonlySet<string>>(new Set());
   const [hiddenTypes, setHiddenTypes] = useState<ReadonlySet<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -153,11 +160,12 @@ function ExplorerInner() {
   }, []);
 
   const focus = useCallback(
-    async (key: string, opts: { push?: boolean; depth?: 1 | 2; limit?: number; layout?: LayoutMode } = {}) => {
+    async (key: string, opts: { push?: boolean; depth?: 1 | 2; limit?: number; layout?: LayoutMode; meaning?: boolean } = {}) => {
       const mine = ++focusSeq.current;
       setLoading(true);
       setError(null);
-      const res = await explorerApi.neighborhood(key, opts.depth ?? depth, opts.limit ?? limit);
+      const named = opts.meaning ?? meaningLinks;
+      const res = await explorerApi.neighborhood(key, opts.depth ?? depth, opts.limit ?? limit, named ? EXPLORER_EDGE_TYPES : []);
       if (mine !== focusSeq.current) return;
       setLoading(false);
       if (!res.ok) {
@@ -194,7 +202,30 @@ function ExplorerInner() {
       void loadDetail(key);
       fitSoon();
     },
-    [depth, limit, layoutMode, loadDetail, fitSoon],
+    [depth, limit, layoutMode, meaningLinks, loadDetail, fitSoon],
+  );
+
+  /** Loads every link of one type around the centre (the legend's «+»): the limit cut the rest. */
+  const loadType = useCallback(
+    async (type: ExplorerEdgeType) => {
+      if (!centerKey || centerKey === QUERY_NODE_KEY) return;
+      setTypeLoading(type);
+      const res = await explorerApi.neighborhood(centerKey, 1, 200, [type]);
+      setTypeLoading(null);
+      if (!res.ok || !res.data.found) {
+        setError(res.ok ? "تعذّر تحميل روابط هذا النوع" : res.error);
+        return;
+      }
+      const extra: ExplorerGraph = { nodes: res.data.nodes, edges: res.data.edges };
+      const merged = mergeNeighborhoods(graph, extra);
+      const laid = computeLayout(layoutMode, centerKey, merged);
+      setGraph(merged);
+      setCenters(laid.centers);
+      setLanes(laid.lanes);
+      setTitles((t) => ({ ...t, ...Object.fromEntries(extra.nodes.map((n) => [n.node_key, n.title])) }));
+      fitSoon();
+    },
+    [centerKey, graph, layoutMode, fitSoon],
   );
 
   const expand = useCallback(
@@ -248,10 +279,10 @@ function ExplorerInner() {
   );
 
   const runLab = useCallback(
-    async (question: string, keywords: string, scope: LabScope) => {
+    async (question: string, keywords: string, scope: LabScope, opts: LabOptions) => {
       setLabLoading(true);
       setLabError(null);
-      const res = await explorerApi.retrieve(question.trim(), keywords, scope);
+      const res = await explorerApi.retrieve(question.trim(), keywords, scope, opts);
       setLabLoading(false);
       if (!res.ok) {
         if (res.schemaMissing) setSchemaMissing(res.migration ?? "20261113_10_library_graph_explorer.sql");
@@ -380,7 +411,7 @@ function ExplorerInner() {
   const rfEdges = useMemo<Edge[]>(
     () =>
       visibleEdges.map((e) => {
-        const m = e.edge_type === "MATCH" ? null : EDGE_TYPE_META[e.edge_type];
+        const m = e.edge_type === "MATCH" ? null : edgeMetaFor(e.edge_type);
         const color = m?.color ?? LAB_MATCH_COLOR;
         const touches = attention !== null && (e.source === attention || e.target === attention);
         const data: FloatingEdgeData = {
@@ -569,7 +600,7 @@ function ExplorerInner() {
             labLoading={labLoading}
             labError={labError}
             labActive={mode === "lab"}
-            onRunLab={(q, kw, scope) => void runLab(q, kw, scope)}
+            onRunLab={(q, kw, scope, opts) => void runLab(q, kw, scope, opts)}
             onShowLab={() => lab && showLabGraph(lab)}
             onLabSelect={(k) => select(k, true)}
           />
@@ -610,7 +641,7 @@ function ExplorerInner() {
                 if (n.type === "orbits") return "transparent";
                 if (n.type === "query") return "#F2E6C4";
                 const t = (n.data as { node?: ExplorerNode }).node?.node_type;
-                return t && t !== "query" ? NODE_TYPE_META[t].color : "#71717a";
+                return t && t !== "query" ? nodeMetaFor(t).color : "#71717a";
               }}
               nodeStrokeWidth={0}
             />
@@ -647,6 +678,24 @@ function ExplorerInner() {
                       </button>
                     ))}
                   </div>
+                )}
+                {mode === "explore" && (
+                  <button
+                    type="button"
+                    aria-pressed={meaningLinks}
+                    title="روابط التعريف والتقارب في المعنى تُحمَّل في الحلقة الثانية عند الطلب فقط، لأنها كثيرة. شغّلها لتظهر حول جيران المركز."
+                    onClick={() => {
+                      const next = !meaningLinks;
+                      setMeaningLinks(next);
+                      if (next && depth === 1) setDepth(2);
+                      if (centerKey) void focus(centerKey, { push: false, meaning: next, depth: next && depth === 1 ? 2 : depth });
+                    }}
+                    className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold transition ${
+                      meaningLinks ? "bg-[#C9A0C9]/15 text-[#e2c4e2]" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                    }`}
+                  >
+                    <Sparkle size={12} weight={meaningLinks ? "fill" : "regular"} /> روابط المعنى
+                  </button>
                 )}
                 {mode === "explore" && (
                   <label className="flex items-center gap-1.5 px-1 text-[11px] text-zinc-400">
@@ -713,26 +762,51 @@ function ExplorerInner() {
                     );
                   })}
                   <Divider />
+                  {(() => {
+                    const unknown = Object.entries(onCanvasCounts.byEdge)
+                      .filter(([t]) => t !== "MATCH" && !isExplorerEdgeType(t))
+                      .reduce((s, [, n]) => s + n, 0);
+                    return unknown > 0 ? (
+                      <span title="أنواع روابط لا تعرفها هذه الشاشة بعد" className="rounded-lg px-2 py-1 text-[10.5px] font-bold text-zinc-400">
+                        روابط غير معروفة <span className="font-mono font-normal text-zinc-500">{unknown}</span>
+                      </span>
+                    ) : null;
+                  })()}
                   {EXPLORER_EDGE_TYPES.filter((t) => onCanvasCounts.byEdge[t]).map((t) => {
                     const off = hiddenEdges.has(t);
                     const m = EDGE_TYPE_META[t];
                     const all = meta?.counts[t];
+                    const shown = onCanvasCounts.byEdge[t] ?? 0;
+                    const more = mode === "explore" && all ? all.in + all.out > shown : false;
                     return (
-                      <button
-                        key={t}
-                        title={m.hint}
-                        onClick={() => setHiddenEdges((s) => toggle(s, t))}
-                        aria-pressed={!off}
-                        className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10.5px] font-bold transition ${off ? "text-zinc-600 line-through" : "hover:bg-zinc-800"}`}
-                        style={off ? undefined : { color: m.color }}
-                      >
-                        <span className="inline-block h-[2px] w-3.5 rounded" style={{ background: off ? "#3f3f46" : m.color }} />
-                        {m.label}
-                        <span className="font-mono font-normal text-zinc-500">
-                          {onCanvasCounts.byEdge[t]}
-                          {all && all.in + all.out > (onCanvasCounts.byEdge[t] ?? 0) ? `/${all.in + all.out}` : ""}
-                        </span>
-                      </button>
+                      <span key={t} className="flex items-center">
+                        <button
+                          title={m.hint}
+                          onClick={() => setHiddenEdges((s) => toggle(s, t))}
+                          aria-pressed={!off}
+                          className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10.5px] font-bold transition ${off ? "text-zinc-600 line-through" : "hover:bg-zinc-800"}`}
+                          style={off ? undefined : { color: m.color }}
+                        >
+                          <span className="inline-block h-[2px] w-3.5 rounded" style={{ background: off ? "#3f3f46" : m.color }} />
+                          {m.label}
+                          <span className="font-mono font-normal text-zinc-500">
+                            {shown}
+                            {all && all.in + all.out > shown ? `/${all.in + all.out}` : ""}
+                          </span>
+                        </button>
+                        {more && all && all.in + all.out <= 200 && (
+                          <button
+                            type="button"
+                            title={`حمّل كل روابط «${m.label}» لهذا المركز (${all.in + all.out})`}
+                            aria-label={`حمّل كل روابط ${m.label}`}
+                            disabled={typeLoading !== null}
+                            onClick={() => void loadType(t)}
+                            className="rounded-md p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
+                          >
+                            {typeLoading === t ? <CircleNotch size={11} className="animate-spin" /> : <Plus size={11} weight="bold" />}
+                          </button>
+                        )}
+                      </span>
                     );
                   })}
                 </div>

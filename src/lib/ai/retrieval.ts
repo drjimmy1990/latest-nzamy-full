@@ -340,8 +340,8 @@ async function lawScopedRows(admin: ServiceClient, slug: string, tsquery: string
   return (data ?? []) as Row[];
 }
 
-/** One article by id, or null (missing, unreadable, or over the budget). */
-async function pinnedArticle(admin: ServiceClient, id: string, signal: AbortSignal): Promise<Row | null> {
+/** One article by id, or null (missing, unreadable, or over the budget). Also the explorer lab's open article. */
+export async function pinnedArticle(admin: ServiceClient, id: string, signal: AbortSignal): Promise<Row | null> {
   const { data, error } = await admin
     .schema("library")
     .from("articles")

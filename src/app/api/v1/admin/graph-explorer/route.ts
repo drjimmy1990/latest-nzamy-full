@@ -3,8 +3,16 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { hasEmbeddingCredentials, resolveEmbeddingModelProfile } from "@/lib/ai/embeddingClient";
 import { embedQueryWithin } from "@/lib/ai/graphRagSwitch";
-import { deriveLabQueries, isExplorerNodeType, parseExplorerRequest, parseLabRouting, type LabHit } from "@/lib/ai/graphExplorerCore";
-import { graphFunctionMissing, graphSeedKeys, questionRefLookups } from "@/lib/ai/retrieval";
+import {
+  LAB_LIMITS,
+  deriveLabQueries,
+  isExplorerNodeType,
+  parseExplorerRequest,
+  parseExplorerStatus,
+  parseLabRouting,
+  type LabHit,
+} from "@/lib/ai/graphExplorerCore";
+import { graphFunctionMissing, graphSeedKeys, pinnedArticle, questionRefLookups } from "@/lib/ai/retrieval";
 import { parseSearchQuery } from "@/utils/normalizeArabic";
 
 /**
@@ -12,14 +20,17 @@ import { parseSearchQuery } from "@/utils/normalizeArabic";
  * (/dashboard/admin/graph-explorer). Read-only; any staff role (requireStaff("read")).
  *
  *   ?action=overview                               corpus stats, coverage, hubs, concepts
+ *   ?action=status                                 sync, passes, owner links, vector links (20261119_10)
  *   ?action=search&q=&types=&limit=                node search
  *   ?action=neighborhood&key=&depth=&edges=&limit= 1–2 hop neighbourhood
  *   ?action=node&key=                              one node in full
- *   ?action=retrieve&q=&keywords=                  the retrieval lab: runs the
- *       same hybrid graph retrieve the AI tools use (one query embedding when
- *       a key is set; the articles the question names as seeds and its named
- *       law as the pinned law, 20261117_10), so staff can see what a question
- *       would cite.
+ *   ?action=retrieve&q=&keywords=&scope=&law=&article=&wide=
+ *       the retrieval lab: runs the same hybrid graph retrieve the AI tools
+ *       use (one query embedding when a key is set; the articles the question
+ *       names, and the open article, as seeds; its named law, or the page's
+ *       law, as the pinned law, 20261117_10), with the AI's own limits unless
+ *       `wide=1` asks for decrees and fiqh too, so staff can see what a
+ *       question would cite.
  *
  * Service client: library_graph is server-only. Before 20261113_10 is applied
  * the explorer RPCs do not exist; that answers { schemaMissing: true }.
@@ -31,6 +42,8 @@ const NO_STORE = { "Cache-Control": "private, no-store" } as const;
 const EXPLORER_MIGRATION = "20261113_10_library_graph_explorer.sql";
 /** The lab's "section only" / "all sections" scopes call graph_rag_retrieve_scoped. */
 const ROUTING_MIGRATION = "20261116_10_library_graph_links.sql";
+/** The status tab's function. */
+const STATUS_MIGRATION = "20261119_10_library_graph_explorer_parity.sql";
 /** The articles a question names — like a live AI run's. */
 const NAMED_LOOKUP_MS = 2000;
 
@@ -64,6 +77,12 @@ export async function GET(request: NextRequest) {
       const { data, error } = await admin.rpc("graph_rag_explore_overview");
       if (error) return explorerSchemaMissing(error) ? missing() : failed("overview", error);
       return NextResponse.json({ ok: true, overview: data }, { headers: NO_STORE });
+    }
+
+    if (req.action === "status") {
+      const { data, error } = await admin.rpc("graph_rag_explore_status");
+      if (error) return explorerSchemaMissing(error) ? missing(STATUS_MIGRATION) : failed("status", error);
+      return NextResponse.json({ ok: true, status: parseExplorerStatus(data) }, { headers: NO_STORE });
     }
 
     if (req.action === "search") {
@@ -119,22 +138,27 @@ export async function GET(request: NextRequest) {
     }
 
     // What the question names outright, looked up as a live run does: the
-    // articles become seeds, the named law the pinned law.
+    // articles become seeds, the named law (or the page's law) the pinned
+    // law; the open article leads the seeds (retrieval.ts, Path A).
     const lookup = new AbortController();
     const lookupTimer = setTimeout(() => lookup.abort(), NAMED_LOOKUP_MS);
-    const named = questionRefLookups(admin, req.q, undefined, true, lookup.signal);
-    const [directRows, scopeSlug] = await Promise.all([named.direct, named.scopeSlug()]).finally(() => clearTimeout(lookupTimer));
-    const seeds = graphSeedKeys(directRows);
+    const named = questionRefLookups(admin, req.q, req.lawSlug ?? undefined, true, lookup.signal);
+    const pinnedP = req.articleId ? pinnedArticle(admin, req.articleId, lookup.signal) : Promise.resolve(null);
+    const [pinned, directRows, scopeSlug] = await Promise.all([pinnedP, named.direct, named.scopeSlug()]).finally(() =>
+      clearTimeout(lookupTimer),
+    );
+    const seeds = graphSeedKeys([pinned, ...directRows]);
+    const limits = req.wide ? LAB_LIMITS.wide : LAB_LIMITS.ai;
 
     const args = {
       p_tsqueries: tsqueries,
       p_query_embedding: literal,
       p_model_id: literal ? modelId : null,
       p_law_slug: scopeSlug,
-      p_limit_laws: 8,
-      p_limit_principles: 4,
-      p_limit_decrees: 2,
-      p_limit_feqh: 2,
+      p_limit_laws: limits.laws,
+      p_limit_principles: limits.principles,
+      p_limit_decrees: limits.decrees,
+      p_limit_feqh: limits.feqh,
       p_enable_graph_hop: true,
     };
     // `auto` with no seeds is exactly the nine-argument call; seeds need
@@ -192,6 +216,10 @@ export async function GET(request: NextRequest) {
           routing: parseLabRouting(payload.routing),
           law_slug: scopeSlug,
           seeds: seedsUsed ? seeds : [],
+          // The open article as asked for and as found (null: not found or not asked).
+          article_id: req.articleId,
+          article_found: req.articleId ? pinned !== null : null,
+          wide: req.wide,
           hits,
         },
       },

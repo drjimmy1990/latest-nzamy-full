@@ -22,8 +22,16 @@ import {
   layoutLanes,
   layoutRadial,
   mergeNeighborhoods,
+  LAB_LIMITS,
+  describeNodeMetadata,
+  edgeMetaFor,
+  edgeProvenance,
+  nodeMetaFor,
+  normalizeEdges,
   parseExplorerRequest,
+  parseExplorerStatus,
   parseLabRouting,
+  syncVerdict,
   type ExplorerEdge,
   type ExplorerNode,
   type XY,
@@ -83,7 +91,10 @@ test("parseExplorerRequest validates each action and clamps every number", () =>
   assert.equal(p("action=node&key=bad key; drop").ok, false, "keys never contain spaces or ;");
 
   const r = p("action=retrieve&q=%D8%B7%D8%B1%D8%AF%D9%88%D9%86%D9%8A&keywords=%D9%81%D8%B5%D9%84,%D8%AA%D8%B9%D9%88%D9%8A%D8%B6");
-  assert.deepEqual(r, { ok: true, value: { action: "retrieve", q: "طردوني", keywords: ["فصل", "تعويض"], scope: "auto" } });
+  assert.deepEqual(r, {
+    ok: true,
+    value: { action: "retrieve", q: "طردوني", keywords: ["فصل", "تعويض"], scope: "auto", lawSlug: null, articleId: null, wide: false },
+  });
 
   assert.equal(p("action=drop_table").ok, false, "unknown actions are refused");
 });
@@ -367,4 +378,206 @@ test("the lab's scope: auto by default, section / all on request, anything else 
   assert.equal(parseLabRouting({ seeds: "3" })?.seeds, 0, "a server before 20261117_10 sends no seed count");
   assert.equal(parseLabRouting(undefined), null, "a server before 20261116_10 sends no routing");
   assert.equal(parseLabRouting([]), null);
+});
+
+// ─── 20261119_10: parity with the graph batches ──────────────────────────────
+
+test("nodeMetaFor / edgeMetaFor give an unknown type a neutral entry, never «السؤال» or «مطابقة»", () => {
+  assert.equal(nodeMetaFor("article"), NODE_TYPE_META.article);
+  assert.equal(edgeMetaFor("AMENDS_ARTICLE"), EDGE_TYPE_META.AMENDS_ARTICLE);
+  const n = nodeMetaFor("statute_v9");
+  const e = edgeMetaFor("NEW_LINK");
+  assert.equal(n.label, "نوع غير معروف");
+  assert.equal(e.label, "رابط غير معروف");
+  assert.notEqual(e.label, "مطابقة");
+  assert.match(n.color, /^#[0-9a-f]{6}$/i);
+  assert.ok(e.out && e.in, "phrases for both directions");
+});
+
+test("edgeProvenance: owner links first, then the vector builder with score and method, then the library", () => {
+  assert.deepEqual(edgeProvenance({ origin: "auto_watchdog", metadata: { source: "owner_links" } }), {
+    kind: "owner",
+    label: "من روابط المالك",
+    detail: null,
+  });
+  const sim = edgeProvenance({ origin: "auto_similarity", metadata: { sim: 0.9123, method: "successor_law" } });
+  assert.equal(sim.kind, "similarity");
+  assert.equal(sim.detail, "التقارب 0.912 · من النظام الذي حلّ محله");
+  assert.equal(edgeProvenance({ origin: "auto_similarity", metadata: { sim: 0.85, method: "nearest_active" } }).detail, "التقارب 0.850 · أقرب مادة سارية");
+  assert.equal(edgeProvenance({ origin: "auto_similarity", metadata: null }).detail, null);
+  assert.equal(edgeProvenance({ origin: "auto_watchdog" }).kind, "library", "an older server sends no metadata");
+  assert.equal(edgeProvenance({ origin: "owner_curated", metadata: null }).kind, "curated");
+  assert.deepEqual(edgeProvenance({ origin: "something_new", metadata: null }), { kind: "other", label: "something_new", detail: null });
+});
+
+test("normalizeEdges keeps only source / sim / method from metadata and drops malformed rows", () => {
+  const out = normalizeEdges([
+    { source: "a", target: "b", edge_type: "SIMILAR_TO", origin: "auto_similarity", weight: 0.9, evidence: "x", hop: 2,
+      metadata: { sim: 0.9, params: "v2", noise: 1 } },
+    { source: "a", target: "c", edge_type: "CITES_ARTICLE", origin: "auto_watchdog", weight: 1, evidence: null, hop: 1, metadata: {} },
+    { source: "a", target: "d", edge_type: "SUPERSEDES_LAW", origin: "auto_watchdog", metadata: { source: "owner_links" } },
+    { source: "a", edge_type: "X" },
+    null,
+    "junk",
+  ]);
+  assert.equal(out.length, 3);
+  assert.deepEqual(out[0].metadata, { sim: 0.9 });
+  assert.equal(out[1].metadata, null);
+  assert.deepEqual(out[2].metadata, { source: "owner_links" });
+  assert.equal(out[2].weight, 1, "a missing weight defaults to 1");
+  assert.equal(out[2].hop, 1);
+  assert.deepEqual(normalizeEdges("nope"), []);
+});
+
+test("describeNodeMetadata reads a principle's routing, a law's section, a term's laws; ignores the rest", () => {
+  const p = describeNodeMetadata("principle", {
+    court: "ديوان المظالم",
+    track: "إداري",
+    track_class: "admin",
+    subject_section: "08",
+    committee_families: ["insurance", "unknown-family"],
+    governing_laws: ["labor-law", "civil-transactions"],
+    secret_key: "x",
+  });
+  const byLabel = Object.fromEntries(p.map((r) => [r.label, r]));
+  assert.equal(byLabel["فئة المسار (للتوجيه)"].value, "القضاء الإداري");
+  assert.equal(byLabel["الجهة القضائية"].value, "ديوان المظالم");
+  assert.match(byLabel["قسم الموضوع"].value, /^08 · /);
+  assert.equal(byLabel["اللجان"].list?.[0], "لجان الفصل في المنازعات والمخالفات التأمينية");
+  assert.equal(byLabel["اللجان"].list?.[1], "unknown-family", "an unknown family shows its id");
+  assert.deepEqual(byLabel["الأنظمة الحاكمة"].list, ["labor-law", "civil-transactions"]);
+  assert.equal(p.some((r) => r.value === "x"), false, "unknown keys are not shown");
+
+  const law = describeNodeMetadata("law", { section_code: "1" });
+  assert.match(law[0].value, /^01 · /);
+
+  const many = Array.from({ length: 45 }, (_, i) => `law-${i}`);
+  const term = describeNodeMetadata("term", { law_count: 52, laws: many });
+  assert.equal(term[0].list?.length, 30, "capped");
+  assert.equal(term[0].value, "52 (يُعرض 30)");
+
+  assert.deepEqual(describeNodeMetadata("article", null), []);
+  assert.deepEqual(describeNodeMetadata("article", ["x"]), []);
+  assert.deepEqual(describeNodeMetadata("article", { amendment_count: 0, has_inline_regulation: false }), []);
+});
+
+test("parseExplorerRequest: status; the lab's page law, open article and width", () => {
+  assert.deepEqual(parseExplorerRequest(new URLSearchParams("action=status")), { ok: true, value: { action: "status" } });
+
+  const plain = parseExplorerRequest(new URLSearchParams("action=retrieve&q=سؤال"));
+  assert.ok(plain.ok && plain.value.action === "retrieve");
+  if (plain.ok && plain.value.action === "retrieve") {
+    assert.equal(plain.value.lawSlug, null);
+    assert.equal(plain.value.articleId, null);
+    assert.equal(plain.value.wide, false, "the AI's limits by default");
+  }
+
+  const full = parseExplorerRequest(new URLSearchParams("action=retrieve&q=المادة 77&law=labor-law&article=labor-law__art-77&wide=1"));
+  assert.ok(full.ok && full.value.action === "retrieve");
+  if (full.ok && full.value.action === "retrieve") {
+    assert.equal(full.value.lawSlug, "labor-law");
+    assert.equal(full.value.articleId, "labor-law__art-77");
+    assert.equal(full.value.wide, true);
+  }
+
+  for (const bad of ["law=a b", "law=x'y", "article=a;drop", "law=a,b", "article=" + "x".repeat(201)]) {
+    const r = parseExplorerRequest(new URLSearchParams(`action=retrieve&q=س&${bad}`));
+    assert.equal(r.ok, false, bad);
+  }
+  const blank = parseExplorerRequest(new URLSearchParams("action=retrieve&q=س&law=&article=%20"));
+  assert.ok(blank.ok, "empty inputs mean none");
+});
+
+test("LAB_LIMITS: the AI's own limits by default (laws 8 + 2, principles 4, no decrees or fiqh)", () => {
+  assert.deepEqual(LAB_LIMITS.ai, { laws: 10, principles: 4, decrees: 0, feqh: 0 });
+  assert.ok(LAB_LIMITS.wide.decrees > 0 && LAB_LIMITS.wide.feqh > 0);
+});
+
+test("parseExplorerStatus defaults every field; syncVerdict reads the state", () => {
+  const empty = parseExplorerStatus(null);
+  assert.equal(empty.sync, null);
+  assert.equal(empty.running_run, null);
+  assert.equal(empty.owner_links_run, null);
+  assert.deepEqual(empty.owner_links, { laws: 0, decrees: 0, edges: {} });
+  assert.equal(empty.similarity.done, 0);
+  assert.equal(syncVerdict(empty).tone, "wait");
+
+  const s = parseExplorerStatus({
+    default_model_id: "m",
+    sync: { dirty: false, dirty_tables: [], last_synced_at: "2026-11-19T10:00:00Z", last_sync_status: "succeeded" },
+    running_run: null,
+    last_run: { status: "succeeded", edges_upserted: 5, embed_only: true },
+    owner_links_run: { finished_at: "2026-11-19T09:00:00Z", stats: { links: 3, edges: 1, notFound: 2, resolved: { slug: 1, bad: "x" } } },
+    owner_links: { laws: 4, decrees: 1, edges: { SUPERSEDES_LAW: 1, AMENDS_ARTICLE: "2" } },
+    similarity: { with_vector: 100, done: 40, repealed_done: 3, last_computed_at: "2026-11-19T08:00:00Z" },
+    replacement_pairs: 7,
+  });
+  assert.equal(syncVerdict(s).tone, "ok");
+  assert.equal(s.last_run?.embed_only, true);
+  assert.equal(s.owner_links_run?.stats.notFound, 2);
+  assert.deepEqual(s.owner_links_run?.stats.resolved, { slug: 1 });
+  assert.deepEqual(s.owner_links.edges, { SUPERSEDES_LAW: 1 }, "non-numbers dropped");
+  assert.equal(s.replacement_pairs, 7);
+
+  assert.equal(syncVerdict({ ...s, running_run: { id: 1, started_at: "x", trigger_source: "w" } }).tone, "busy");
+  assert.equal(syncVerdict({ ...s, sync: { ...s.sync!, dirty: true } }).tone, "wait");
+  assert.equal(syncVerdict({ ...s, sync: { ...s.sync!, last_sync_status: "failed" } }).tone, "error");
+});
+
+test("20261119_10 is functions-only, service_role only, keeps the neighbourhood's signature, and whitelists link metadata", () => {
+  const path = join(ROOT, "supabase", "migrations", "20261119_10_library_graph_explorer_parity.sql");
+  assert.ok(existsSync(path));
+  const sql = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  assert.equal((sql.match(/^begin;$/gm) ?? []).length, 1);
+  assert.equal((sql.match(/^commit;$/gm) ?? []).length, 1);
+  assert.match(sql, /notify pgrst, 'reload schema';/);
+  assert.match(sql.slice(sql.lastIndexOf("commit;")), /\bas ok\s*;/);
+  assert.ok(sql.includes("raise exception '20261119_10: apply 20261118_10_library_owner_links.sql first'"));
+  const body = sql.replace(/--.*$/gm, "");
+  assert.equal(/\b(create|alter|drop)\s+(table|index|trigger|policy|schema)\b/i.test(body), false, "no DDL on tables");
+  assert.equal(/\b(insert\s+into|update\s+library|delete\s+from|truncate)\b/i.test(body), false, "no DML");
+  assert.ok(sql.includes("create or replace function public.graph_rag_explore_neighborhood(\n  p_node_key   text,\n  p_depth      integer default 1,\n  p_edge_types text[]  default null,\n  p_limit      integer default 60\n)"));
+  assert.ok(sql.includes("create or replace function public.graph_rag_explore_status()"));
+  // only these three keys of the link's metadata leave the database
+  assert.match(sql, /'metadata',\s+pg_catalog\.jsonb_strip_nulls\(pg_catalog\.jsonb_build_object\(\s*'source',[^)]*\),\s*'sim',[^\n]*\n\s*'method',/);
+  assert.doesNotMatch(sql, /'metadata',\s+a\.metadata\b/, "never the raw jsonb");
+  // the status never scans the nodes heap
+  const status = sql.slice(sql.indexOf("create or replace function public.graph_rag_explore_status()"), sql.indexOf("revoke all on function public.graph_rag_explore_status()"));
+  assert.doesNotMatch(status, /library_graph\.nodes\b/, "status reads no nodes");
+  for (const sig of ["public.graph_rag_explore_status()", "public.graph_rag_explore_neighborhood(text, integer, text[], integer)"]) {
+    assert.ok(sql.includes(`revoke all on function ${sig} from public, anon, authenticated;`), sig);
+    assert.ok(sql.includes(`grant execute on function ${sig} to service_role;`), sig);
+  }
+  assert.equal((body.match(/security invoker/g) ?? []).length, 2);
+  assert.equal((body.match(/set statement_timeout/g) ?? []).length, 2);
+
+  const verify = readFileSync(join(ROOT, "supabase", "migrations", "_verify.sql"), "utf8");
+  assert.match(verify, /^-- >>> verify:library_graph_explorer_parity\r?$/m);
+  assert.match(verify, /^-- <<< verify:library_graph_explorer_parity\r?$/m);
+  assert.ok(existsSync(join(ROOT, "supabase", "tests", "rls", "library_graph_explorer_parity.test.sql")));
+});
+
+test("the explorer route: a status action, the lab's page context, the open article as the first seed, the AI's limits", () => {
+  const src = readFileSync(join(ROOT, "src", "app", "api", "v1", "admin", "graph-explorer", "route.ts"), "utf8");
+  assert.ok(src.includes('admin.rpc("graph_rag_explore_status")'));
+  assert.ok(src.includes("missing(STATUS_MIGRATION)"), "a missing 20261119_10 answers schemaMissing for the status tab only");
+  assert.ok(src.includes("questionRefLookups(admin, req.q, req.lawSlug ?? undefined, true, lookup.signal)"));
+  assert.ok(src.includes("graphSeedKeys([pinned, ...directRows])"), "the open article leads the seeds, as retrieval.ts does");
+  assert.ok(src.includes("req.wide ? LAB_LIMITS.wide : LAB_LIMITS.ai"));
+  assert.doesNotMatch(src, /p_limit_decrees: 2/, "no fixed lab limits left");
+});
+
+test("the explorer client asks for meaning links by naming every type, and never crashes on an unknown type", () => {
+  const dir = join(ROOT, "src", "components", "admin", "graphExplorer");
+  const api = readFileSync(join(dir, "explorerApi.ts"), "utf8");
+  assert.ok(api.includes('edges: edges.join(",")'));
+  assert.ok(api.includes("normalizeEdges(n.edges)"));
+  const ge = readFileSync(join(dir, "GraphExplorer.tsx"), "utf8");
+  assert.ok(ge.includes("named ? EXPLORER_EDGE_TYPES : []"));
+  for (const f of ["GraphExplorer.tsx", "NodeInspector.tsx", "ExplorerSidebar.tsx", "canvasElements.tsx"]) {
+    const src = readFileSync(join(dir, f), "utf8");
+    assert.doesNotMatch(src, /NODE_TYPE_META\[(?:node\.node_type|r\.node_type|h\.kind|n\.node_type)\]/, `${f}: node meta through nodeMetaFor`);
+  }
+  // «السؤال» is the lab question's own label; any other type goes through nodeMetaFor.
+  assert.ok(readFileSync(join(dir, "canvasElements.tsx"), "utf8").includes('node.node_type === "query" ? null : nodeMetaFor(node.node_type)'));
 });
