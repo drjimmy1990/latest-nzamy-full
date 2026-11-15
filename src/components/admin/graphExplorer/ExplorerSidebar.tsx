@@ -323,7 +323,7 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
   return (
     <div className="p-3">
       <p className="mb-2.5 px-1 text-[11.5px] leading-relaxed text-zinc-500">
-        يشغّل السؤال على نفس محرّك البحث الهجين الذي تستخدمه أدوات الذكاء الاصطناعي (نصي + دلالي + رابط واحد عبر الجراف)، ويعرض ما كانت ستستشهد به ولماذا.
+        يشغّل السؤال على نفس محرّك البحث الهجين الذي تستخدمه أدوات الذكاء الاصطناعي (نصي + دلالي + خطوتان عبر روابط الجراف)، ويعرض ما كانت ستستشهد به ولماذا.
       </p>
       <textarea
         value={question}
@@ -365,7 +365,13 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
             <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">{lab.elapsed_ms}ms</span>
             <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">{lab.hits.length} نتيجة</span>
           </div>
-          {lab.embedding !== "used" && (
+          {!lab.ready && (
+            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-sky-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-sky-200">
+              <CircleNotch size={13} className="mt-0.5 shrink-0 animate-spin" />
+              الجراف قيد إعادة البناء الآن (المكتبة تغيّرت أو طُلبت مزامنة)، فلا يُستعمل حتى تنتهي المزامنة، وتعمل أدوات الذكاء الاصطناعي في هذه الأثناء بالبحث النصي وحده. أعد التجربة بعد انتهائها.
+            </p>
+          )}
+          {lab.ready && lab.embedding !== "used" && (
             <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-200">
               <Warning size={13} className="mt-0.5 shrink-0" />
               {lab.embedding === "no_key"
@@ -416,7 +422,7 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
               );
             })}
           </ol>
-          {lab.hits.length === 0 && <p className="mt-4 text-center text-[12px] text-zinc-500">لا نتائج. جرّب كلمات بحث صريحة.</p>}
+          {lab.ready && lab.hits.length === 0 && <p className="mt-4 text-center text-[12px] text-zinc-500">لا نتائج. جرّب كلمات بحث صريحة.</p>}
         </div>
       )}
     </div>

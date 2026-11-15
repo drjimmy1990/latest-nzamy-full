@@ -38,6 +38,7 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-14/15 | First full build on prod: **364,376 nodes, 6,667 links, 32 concepts**. Watchdog memory limit raised to 1500M, because 400M restarted it in the middle of a pass. The free Gemini key embedded 1,000 nodes per day. |
 | 2026-11-15 | **Depth batch A + B + C** (`20261115_10`, commit `0c8cc788`). Deployed, SQL run, `_verify` all `t`. |
 | 2026-11-15 | Explorer step badges («مباشر / خطوة ١ / خطوة ٢»), commit `178ae36a`. Pushed; not deployed yet. |
+| 2026-11-15 | The retrieval lab now says «الجراف قيد إعادة البناء» while the graph is not ready. Before, a rebuild looked like «لا نتائج», as if the question were wrong. Pushed with this document; not deployed yet. |
 
 ---
 
