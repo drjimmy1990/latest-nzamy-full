@@ -6657,3 +6657,16 @@ select 'Graph explorer parity: link metadata + status tab (run 20261119_10)' as 
        and has_function_privilege('service_role', 'public.graph_rag_explore_status()', 'EXECUTE')
        as ok;
 -- <<< verify:library_graph_explorer_parity
+-- >>> verify:library_graph_title_search_index
+-- 2026-11-20 — 20261120_10_library_graph_title_search_index.sql: a trigram
+-- index on library_graph.fold_tashkeel(title), so the admin graph explorer's
+-- search box no longer reads every node for a title "contains" match (it timed
+-- out at 8 s on prod). Index only. Run before or after the deploy.
+-- Docker: supabase/tests/rls/library_graph_title_search_index.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Graph explorer title search index (run 20261120_10)' as check,
+       exists (select 1 from pg_catalog.pg_index i
+                where i.indexrelid = to_regclass('library_graph.idx_lg_nodes_title_fold_trgm')
+                  and i.indisvalid
+                  and pg_catalog.pg_get_indexdef(i.indexrelid) like '%fold_tashkeel(title)%gin_trgm_ops%')
+       as ok;
+-- <<< verify:library_graph_title_search_index

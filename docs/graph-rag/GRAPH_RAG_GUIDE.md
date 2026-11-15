@@ -96,6 +96,16 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 
 What to expect on screen: `NOTICE: 20261119_10 verify: OK` and a `step | ok` row with `t`. No rebuild. Database test: `supabase/tests/rls/library_graph_explorer_parity.test.sql` (its header has the chain).
 
+### 1f. The explorer title-search index (`20261120_10`)
+
+One trigram index on `library_graph.fold_tashkeel(title)`: the explorer's search box no longer reads every node for a title "contains" match (measured on prod 2026-11-15: 4.36 s for a rare phrase, and timeouts at 8 s when several were typed in a row). Index only. Run it before or after the deploy:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261120_10_library_graph_title_search_index.sql
+```
+
+What to expect on screen: `NOTICE: 20261120_10 verify: OK` and a `step | ok` row with `t`. It takes a few seconds; writes to the graph wait meanwhile, reads do not. No rebuild. Database test: `supabase/tests/rls/library_graph_title_search_index.test.sql`.
+
 ## 2. Deploy the code
 
 ```bash
@@ -179,6 +189,7 @@ Open `/dashboard/admin/graph-explorer` while logged in as staff. It is also in t
 - **Inspector**: click a node to see its full text, status, links and whether it has a vector.
 - **Retrieval lab**: type a question as a client would. It runs the same search the AI uses and shows which articles it would cite, and why (direct match, or reached through a link). Like a live run, an article the question names becomes a seed (badge «مذكورة في السؤال», chip «مواد مذكورة»), and a law the question names is searched first. By default it asks for what the AI asks for (no decrees or fiqh; tick «أضف المراسيم والنصوص الفقهية» for more). Under «سياق الصفحة» you can give a law slug (the question is asked on that law's page, so «المادة ٧٧» alone means its article 77) and an open article id (it leads the answer).
 - **Lab tools** (no SQL): «الطبقات» chips (مباشر / خطوة ١ / خطوة ٢, with counts) hide a layer from the list and the canvas; «بدون روابط الجراف» runs the question with the graph links off (direct matches only); «قارن بالبحث بدون روابط» re-runs the last question that way and marks «أضافتها الروابط» on what the links added, listing what they pushed out; «عدد النتائج» asks for 1×, 2× or 3× the limits; «استكشف جوارها» on a result opens it in explore mode. A database timeout (`57014`, the search's 4 s limit, usually a cold cache) now says «انتهت مهلة البحث…» instead of «تعذّر تحميل بيانات الجراف»; the AI itself never shows it (its 2.5 s budget falls back to keyword search).
+- **Search box** (`20261120_10`): one search at a time; while one runs, only the latest text waits and is sent when it ends.
 - **Link sources** (`20261119_10`): a link's row in the inspector says «من روابط المالك» when it came from the owner's files, or «تقارب دلالي» with its score. «روابط المعنى» in the toolbar loads definition and similarity links at the second hop; «+» next to a link type in the legend loads all of that type around the centre.
 - **الحالة** tab (`20261119_10`): is the graph settled, waiting for a rebuild, or building; the last pass; how many laws and decrees carry owner links and how many became graph links; what the last full pass could not resolve; vector-link progress. Without the SQL file only this tab shows a note.
 
