@@ -45,7 +45,7 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-17 | **Seeds + gold set** (`20261117_10`, section 4.8). An article the question names leads the graph answer and its links follow it; the lab does the same lookup as the AI; a 39-question gold set and `npm run graph:gold` measure recall and the switch-on timing. Deployed 2026-11-15 (`41931b72`), SQL run, `_verify` all `t`. The server `npm run graph:gold` run passed the same day (next row). |
 | 2026-11-18 | **The owner's own links** (`20261118_10`, section 4.9). The parser reads the owner's `superseded_by`, `repealed_by`, `supersedes`, `repeals`, `affected_laws` and `related_laws`; the graph turns them into `SUPERSEDES_LAW` and `AMENDS_ARTICLE` links, strictly, and a repealed article's replacement is found again when its law's successor changes. Deployed 2026-11-15 (`41931b72`), SQL run, `_verify` all `t`. Waits for the owner's next load and one rebuild. |
 | 2026-11-15 | **Switched on.** The server `npm run graph:gold` said **GO** on its third run: recall@8 graph 79% vs keyword 36%, the 3 named-article questions 100%, 39/39 answered by the graph, AI-path p50 371 ms, p95 637 ms, max 738 ms, no timeouts. The first two runs failed on the cold tail: Postgres had `shared_buffers` 128MB. It is now 1536MB with `effective_cache_size` 4GB (`ALTER SYSTEM` + restart of `supabase-db`), and `/root/nzamy-graph-prewarm.sh` loads the hot indexes and the `library_graph.nodes` heap and toast with `pg_prewarm` (cron: hourly at :17 and 3 minutes after reboot). Then `NZAMY_GRAPH_RAG=on` + `pm2 restart nzamy`. |
-| 2026-11-19 | **Explorer parity** (`20261119_10`, section 4.10). Each link in the explorer shows where it came from (the owner's links, or the vector builder with its score and method); meaning links load at hop 2 on demand and the legend loads the rest of a cut type; the inspector shows a node's routing metadata; the lab uses the AI's own limits and takes a page law and an open article; a status tab (sync, passes, owner-link reading, vector-link progress, replacement pairs); unknown types fall back safely. Functions only, run before or after the deploy. Not merged or deployed yet. |
+| 2026-11-19 | **Explorer parity** (`20261119_10`, section 4.10). Each link in the explorer shows where it came from (the owner's links, or the vector builder with its score and method); meaning links load at hop 2 on demand and the legend loads the rest of a cut type; the inspector shows a node's routing metadata; the lab uses the AI's own limits and takes a page law and an open article; a status tab (sync, passes, owner-link reading, vector-link progress, replacement pairs); unknown types fall back safely. Functions only. DEPLOYED `fc0b9512` 2026-11-15, SQL run, `_verify` OK. |
 
 ---
 
@@ -253,7 +253,7 @@ Tests: `library_owner_links.test.sql` (T1–T9; negative control: without the co
 | Vectors | About 123k (Vertex AI, 2026-11-15). |
 | Switch `NZAMY_GRAPH_RAG` | **Off.** Keep it off until vectors are nearly complete: hop 2 and the citation guard need them. |
 | Step badges in the explorer | Pushed (`178ae36a`), not deployed. |
-| Explorer parity (`20261119_10`) | On its own branch, not merged or deployed. |
+| Explorer parity (`20261119_10`) | Deployed (`fc0b9512`), SQL run, `_verify` OK. |
 
 ---
 
