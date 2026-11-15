@@ -12,10 +12,14 @@ import {
   buildDecreeGraphNodes,
   buildEmbeddingInput,
   buildFeqhGraphNodes,
+  buildLawStructure,
   buildPrincipleGraphNodes,
   extractArticleEdges,
   resolveParentLawSlugs,
   extractConceptEdges,
+  extractDecreeAmendmentEdges,
+  findArticleMentions,
+  readArticleNumbers,
   extractPrincipleInterpretationEdges,
   parseArabicArticleNumber,
   type LawIndexMap,
@@ -341,4 +345,166 @@ test("a decree, collection or book with no title still builds (no crash, non-bla
     principles: [{ id: "c__p1", collection_id: "c", principle_number: "1", text: "نص" }],
   });
   assert.ok(p[0].title.startsWith("مبادئ قضائية"));
+});
+
+// ─── 2026-11-15 graph depth: every way a text names an article ───────────────
+
+test("readArticleNumbers: digits, Arabic-Indic, teens, compounds, duals, lists and capped ranges", () => {
+  const nums = (s: string) => readArticleNumbers(s).numbers;
+  assert.deepEqual(nums(" (5) من النظام"), [5]);
+  assert.deepEqual(nums(" ١٢ من الاتفاقية"), [12]);
+  assert.deepEqual(nums(" الخامسة عشرة"), [15]);
+  assert.deepEqual(nums(" الثامنة عشر"), [18]);
+  assert.deepEqual(nums(" (الحادية والعشرين)"), [21]);
+  assert.deepEqual(nums(" التاسعة بعد المائة"), [109]);
+  assert.deepEqual(nums(" الثالثة والعشرين بعد المائتين"), [223]);
+  assert.deepEqual(nums(" الخامسة والسادسة"), [5, 6], "two units words are two articles, not 11");
+  assert.deepEqual(nums(" الرابعة عشرة والخامسة عشرة"), [14, 15], "not 29");
+  assert.deepEqual(nums(" (16) و(18) و (19)"), [16, 18, 19]);
+  assert.deepEqual(nums(" (5، 6، 7)"), [5, 6, 7]);
+  assert.deepEqual(nums(" من (3) إلى (7)"), [3, 4, 5, 6, 7]);
+  assert.deepEqual(nums(" ٤ الى ٨"), [4, 5, 6, 7, 8]);
+  assert.deepEqual(nums(" من 1 إلى 300"), [1, 300], "a range wider than 30 keeps its ends only");
+  assert.deepEqual(nums("\n(١٤)"), [14], "the number may sit on the next line");
+  assert.deepEqual(nums(" (5). والمادة (6)"), [5], "a sentence break ends the reference");
+  assert.deepEqual(nums(" (5) من نظام العمل والمادة (6)"), [5], "«من …» ends the list");
+  assert.deepEqual(nums(" السابقة"), []);
+  assert.deepEqual(nums(" المخدرة الخامسة"), [], "the first word must be a number");
+});
+
+test("findArticleMentions: noun forms, diacritics, and the per-noun cap", () => {
+  const m = (s: string) => findArticleMentions(s).map((x) => [x.kind, x.numbers]);
+  assert.deepEqual(m("وفقاً للمادة الخامسة"), [["single", [5]]]);
+  assert.deepEqual(m("بالمادّة (٧)"), [["single", [7]]]);
+  assert.deepEqual(m("في المادتين (9) و (10) من اللائحة"), [["dual", [9, 10]]]);
+  assert.deepEqual(m("أحكام المواد من (3) إلى (5)"), [["plural", [3, 4, 5]]]);
+  assert.deepEqual(m("المادة (3) و(4)"), [["single", [3]]], "a singular noun names one article");
+  assert.deepEqual(m("حيازة مادة مخدرة"), []);
+  assert.deepEqual(m("المشار إليها في المادة السابقة"), []);
+  assert.deepEqual(m("الموادّ الغذائية"), []);
+});
+
+test("bare spelled-out references and lists become CITES_ARTICLE / EXEMPTS_FROM edges", () => {
+  const map = twoLaws();
+  const cites = extractArticleEdges(
+    { node_key: "article:labor-law__art-1", law_slug: "labor-law", is_page_numbered: false, display_text: "يطبق ما نصت عليه المادة الخامسة" },
+    map,
+  );
+  assert.deepEqual(cites.map((e) => [e.edge_type, e.target_key]), [["CITES_ARTICLE", "article:labor-law__art-5"]]);
+
+  const exempt = extractArticleEdges(
+    {
+      node_key: "article:labor-law__art-1",
+      law_slug: "labor-law",
+      is_page_numbered: false,
+      display_text: "مع عدم الإخلال بالمادتين (5) و(77)، يلتزم صاحب العمل",
+    },
+    map,
+  );
+  assert.deepEqual(
+    exempt.map((e) => [e.edge_type, e.target_key]).sort(),
+    [
+      ["EXEMPTS_FROM", "article:labor-law__art-5"],
+      ["EXEMPTS_FROM", "article:labor-law__art-77"],
+    ],
+  );
+  assert.ok(exempt.every((e) => e.evidence?.includes("الإخلال")));
+});
+
+test("a bare «من النظام» inside a regulation is its parent law; «من اللائحة» is the regulation itself", () => {
+  const map = twoLaws();
+  resolveParentLawSlugs(map);
+  const toParent = extractArticleEdges(
+    { node_key: "article:labor-reg__art-1", law_slug: "labor-reg", is_page_numbered: false, display_text: "مع مراعاة المادة (77) من النظام، تحدد" },
+    map,
+  );
+  assert.ok(toParent.some((e) => e.edge_type === "CITES_ARTICLE" && e.target_key === "article:labor-law__art-77"));
+
+  const own = extractArticleEdges(
+    { node_key: "article:labor-reg__art-1", law_slug: "labor-reg", is_page_numbered: false, display_text: "الواردة في المادة (5) من اللائحة." },
+    map,
+  );
+  assert.ok(own.some((e) => e.edge_type === "CITES_ARTICLE" && e.target_key === "article:labor-reg__art-5"));
+
+  // A law that says «من الاتفاقية» cites a document it does not name: no edge.
+  const treaty = extractArticleEdges(
+    { node_key: "article:labor-law__art-1", law_slug: "labor-law", is_page_numbered: false, display_text: "دون مساس بالمادة ٥ من الاتفاقية، يتعين" },
+    map,
+  );
+  assert.equal(treaty.filter((e) => e.edge_type === "CITES_ARTICLE").length, 0);
+});
+
+test("principles and decrees: lists, spelled numbers, and a regulation is never read as its law", () => {
+  const map = twoLaws();
+  const interp = extractPrincipleInterpretationEdges(
+    { node_key: "principle:p1", display_text: "استناداً إلى المادتين (الخامسة) و(السابعة والسبعين) من نظام العمل" },
+    map,
+  );
+  assert.deepEqual(interp.map((e) => e.target_key).sort(), ["article:labor-law__art-5", "article:labor-law__art-77"]);
+
+  const lawOnly: LawIndexMap = new Map([["labor-law", map.get("labor-law")!]]);
+  const regRef = extractPrincipleInterpretationEdges(
+    { node_key: "principle:p2", display_text: "المادة (77) من اللائحة التنفيذية لنظام العمل" },
+    lawOnly,
+  );
+  assert.equal(regRef.length, 0, "article 77 of the regulation is not article 77 of the law");
+
+  const amends = extractDecreeAmendmentEdges(
+    { node_key: "decree:d1", display_text: "تعديل المواد (5، 77) من نظام العمل لتكون بالنص الآتي" },
+    map,
+  );
+  assert.deepEqual(amends.map((e) => [e.edge_type, e.target_key]).sort(), [
+    ["AMENDS_ARTICLE", "article:labor-law__art-5"],
+    ["AMENDS_ARTICLE", "article:labor-law__art-77"],
+  ]);
+  const notAmendment = extractDecreeAmendmentEdges(
+    { node_key: "decree:d2", display_text: "وفقاً للمادة (77) من نظام العمل" },
+    map,
+  );
+  assert.equal(notAmendment.length, 0, "only an amendment lead-in makes AMENDS_ARTICLE");
+});
+
+test("buildLawStructure: law + titled chapters (never embedded), PART_OF and NEXT_ARTICLE in reading order", () => {
+  const law = { slug: "labor-law", title: "نظام العمل", type: "نظام", status: "active" };
+  const articles = [
+    { id: "a1", law_slug: "labor-law", chapter_id: "ch1", number: 1, text: "نص الأولى" },
+    { id: "a2", law_slug: "labor-law", chapter_id: "ch1", number: 2, text: "نص الثانية" },
+    { id: "a3", law_slug: "labor-law", chapter_id: "ch-untitled", number: 3, text: "نص الثالثة" },
+    { id: "a4", law_slug: "labor-law", chapter_id: "ch2", number: 4, text: "" },
+  ];
+  const chaptersById = new Map([
+    ["ch1", "الباب الأول: التعريفات"],
+    ["ch-untitled", ""],
+    ["ch2", "الباب الثاني"],
+  ]);
+  const articleNodes = buildArticleGraphNodes({
+    law,
+    chaptersById,
+    articles,
+    regulationsByArticleId: new Map(),
+    amendmentsByArticleId: new Map(),
+  });
+  const { nodes, edges } = buildLawStructure({ law, chaptersById, articles, articleNodes });
+
+  assert.deepEqual(
+    nodes.map((n) => [n.node_key, n.node_type]),
+    [
+      ["law:labor-law", "law"],
+      ["chapter:ch1", "chapter"],
+    ],
+    "an untitled chapter, and a chapter whose only article is empty, get no node",
+  );
+  assert.ok(nodes.every((n) => n.is_embeddable === false && n.display_text.trim().length > 0));
+  assert.match(nodes[0].display_text, /عدد المواد: 3/);
+
+  const of = (t: string) => edges.filter((e) => e.edge_type === t).map((e) => `${e.source_key}>${e.target_key}`);
+  assert.deepEqual(of("PART_OF"), [
+    "chapter:ch1>law:labor-law",
+    "article:a1>chapter:ch1",
+    "article:a2>chapter:ch1",
+    "article:a3>law:labor-law",
+  ]);
+  assert.deepEqual(of("NEXT_ARTICLE"), ["article:a1>article:a2", "article:a2>article:a3"]);
+
+  assert.deepEqual(buildLawStructure({ law, chaptersById, articles: [], articleNodes: [] }), { nodes: [], edges: [] });
 });

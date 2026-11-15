@@ -4,13 +4,15 @@ Server repo folder: `/www/wwwroot/nzamy/latest-nzamy-full` (every command below 
 
 ## What it is
 
-- **Graph store**: the `library_graph` schema in Supabase. Every law article, judicial principle, decree and fiqh entry becomes a *node*. Links between them become *edges*: an article that cites another article, an exception, a parent law, a principle that interprets an article, and a shared legal concept. Each node also gets a 768-number vector (`gemini-embedding-2-768`) for meaning-based search.
+- **Graph store**: the `library_graph` schema in Supabase. Every law article, judicial principle, decree and fiqh entry becomes a *node*. Links between them become *edges*: an article that cites another article, an exception, a parent law, a principle that interprets an article, a decree that amends an article, and a shared legal concept. Each node also gets a 768-number vector (`gemini-embedding-2-768`) for meaning-based search.
+- **Structure** (since `20261115_10`): each law or regulation also has a `law` node, and each titled chapter a `chapter` node. Every article is linked `PART_OF` its chapter (or its law), and `NEXT_ARTICLE` to the article after it. These outline nodes are never embedded, so they add no embedding cost and no missing vectors.
+- **Depth**: a search finds articles directly (hop 0), then follows links one step (hop 1: exceptions, amendments, interpretations, citations, the parent law, and the next article of the three strongest results), then one more step from the six strongest hop-1 results (hop 2, at half the weight). An exception, amendment or interpretation always passes on hop 2. A citation or parent-law link passes only when its text is close in meaning to the question, so hop 2 needs vectors. The search never walks `PART_OF` and never returns law, chapter or concept nodes. Each result says which hop found it.
 - **Watchdog**: the PM2 app `nzamy-graph-watchdog` (`scripts/graph-watchdog.mjs`). It checks every 30 s. When the library has changed and then been quiet for 3 minutes, it rebuilds the graph from `library.*` (read-only, it never writes to the library). Then it embeds the nodes that still have no vector.
 - **The switch**: `NZAMY_GRAPH_RAG=on` in `.env.local`. While it is off (the default), every AI run uses the keyword search exactly as before. While it is on, a run first asks the graph, giving it at most 2.5 s. It falls back to the keyword search on an error, on a timeout, when the graph is not ready, or when the graph finds nothing.
 - **Ready** means all three hold: the graph has nodes, at least one sync pass has finished, and the library has not changed since that pass. While the owner is uploading laws, the graph turns itself off until the next pass.
 - **Explorer**: `/dashboard/admin/graph-explorer`, a staff-only page to browse the graph and try questions.
 
-## 1. Apply the two SQL files (once)
+## 1. Apply the SQL files (once)
 
 Run in this order, from the server repo folder after `git pull`:
 
@@ -22,7 +24,17 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261114_10_library_graph_rag_fixes.sql
 ```
 
-What to expect on screen: each file ends with a `check | ok` row where `ok` is `t`. The second file also prints `NOTICE: 20261114_10 verify: OK`.
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261115_10_library_graph_depth.sql
+```
+
+What to expect on screen: each file ends with a `check | ok` row where `ok` is `t`. The second and third files also print `NOTICE: 20261114_10 verify: OK` and `NOTICE: 20261115_10 verify: OK`.
+
+`20261115_10` must run **before** deploying the code that ships with it: that code writes the new `law` / `chapter` nodes and `PART_OF` / `NEXT_ARTICLE` links, which the old lists refuse. After that deploy, ask for one full rebuild:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -c "select public.graph_rag_sync_control('mark_dirty_now', '{\"reason\":\"graph_depth_20261115\"}'::jsonb);"
+```
 
 Then run the shared check:
 
@@ -30,7 +42,7 @@ Then run the shared check:
 docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/_verify.sql 2>&1 | grep -E "graph|ERROR"
 ```
 
-What to expect on screen: the `library_graph_rag`, `graph explorer` and `20261114_10` rows all show `t`.
+What to expect on screen: the `library_graph_rag`, `graph explorer`, `20261114_10` and `20261115_10` rows all show `t`.
 
 ## 2. Deploy the code
 
@@ -134,7 +146,7 @@ node --test src/lib/ai/*.test.ts
 Database tests need Docker and pgvector. Run them on the PC, from the repo folder in Git Bash:
 
 ```bash
-M=supabase/migrations; PG_IMAGE=pgvector/pgvector:pg16 bash supabase/tests/rls/run.sh supabase/tests/rls/prelude_extensions_schema.sql $M/20260626_legal_library_schema.sql $M/20260730_article_regulations.sql $M/20261110_10_library_graph_rag.sql $M/20261113_10_library_graph_explorer.sql $M/20261114_10_library_graph_rag_fixes.sql supabase/tests/rls/library_graph_rag.test.sql
+M=supabase/migrations; PG_IMAGE=pgvector/pgvector:pg16 bash supabase/tests/rls/run.sh supabase/tests/rls/prelude_extensions_schema.sql $M/20260626_legal_library_schema.sql $M/20260730_article_regulations.sql $M/20261110_10_library_graph_rag.sql $M/20261113_10_library_graph_explorer.sql $M/20261114_10_library_graph_rag_fixes.sql $M/20261115_10_library_graph_depth.sql supabase/tests/rls/library_graph_rag.test.sql
 ```
 
-For the explorer's database test, run the same command with `library_graph_explorer.test.sql` as the last file.
+For the explorer's and the depth database tests, run the same command with `library_graph_explorer.test.sql` or `library_graph_depth.test.sql` as the last file.

@@ -151,6 +151,12 @@ test("runGraphSyncPass builds nodes & edges across all corpora, relinks vault, d
       return rows.length;
     },
     async upsertEdges(rows) {
+      // library_graph.edges has foreign keys on both ends: an edge written
+      // before its nodes fails the whole batch on the server.
+      for (const r of rows) {
+        assert.ok(storedNodes.has(r.source_key), `edge source ${r.source_key} written before its node`);
+        assert.ok(storedNodes.has(r.target_key), `edge target ${r.target_key} written before its node`);
+      }
       storedEdges.push(...rows);
       return rows.length;
     },
@@ -204,6 +210,15 @@ test("runGraphSyncPass builds nodes & edges across all corpora, relinks vault, d
   assert.ok(storedEdges.some((e) => e.edge_type === "INTERPRETS_ARTICLE"));
   assert.ok(storedEdges.some((e) => e.edge_type === "AMENDS_ARTICLE"));
   assert.ok(storedEdges.some((e) => e.edge_type === "HAS_CONCEPT"));
+
+  // The law's outline: never embedded, linked article → chapter → law, and in reading order.
+  assert.equal(storedNodes.get("law:labor-law")?.is_embeddable, false);
+  assert.equal(storedNodes.get("chapter:ch-5")?.is_embeddable, false);
+  const link = (t: string, s: string, d: string) =>
+    storedEdges.some((e) => e.edge_type === t && e.source_key === s && e.target_key === d);
+  assert.ok(link("PART_OF", "article:labor-law__art-77", "chapter:ch-5"));
+  assert.ok(link("PART_OF", "chapter:ch-5", "law:labor-law"));
+  assert.ok(link("NEXT_ARTICLE", "article:labor-law__art-77", "article:labor-law__art-80"));
 
   assert.equal(summary.vaultRelinked, 1);
   assert.ok(embedApiCalls > 0);
