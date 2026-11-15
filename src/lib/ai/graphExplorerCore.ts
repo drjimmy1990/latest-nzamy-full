@@ -572,8 +572,15 @@ export interface LabHit {
   text?: string;
 }
 
-function labHop(h: LabHit): number {
+/** How far from the question a lab hit is: 0 direct, 1 or 2 graph steps. */
+export function labHop(h: Pick<LabHit, "hop" | "via_edge_type">): number {
   return typeof h.hop === "number" && h.hop >= 0 ? h.hop : h.via_edge_type ? 1 : 0;
+}
+
+/** The lab's step badge: «مباشر» (direct match), «خطوة ١», «خطوة ٢». */
+export function labHopLabel(hop: number): string {
+  if (hop <= 0) return "مباشر";
+  return hop === 1 ? "خطوة ١" : "خطوة ٢";
 }
 
 /**

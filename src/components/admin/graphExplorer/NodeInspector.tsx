@@ -17,6 +17,8 @@ import {
   edgePhrase,
   isExplorerEdgeType,
   isRepealedNode,
+  labHop,
+  labHopLabel,
   type ExplorerEdge,
   type ExplorerEdgeType,
   type ExplorerNode,
@@ -139,11 +141,11 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
         {labHit && (
           <div className="mt-3 rounded-xl border border-[#C8A762]/30 bg-[#C8A762]/[0.06] p-2.5 text-[11.5px] text-zinc-300">
             <div className="flex items-center gap-2 font-bold text-[#C8A762]">
-              <Lightning size={13} weight="fill" /> الترتيب S{labHit.rank} · الدرجة {labHit.score.toFixed(4)}
+              <Lightning size={13} weight="fill" /> الترتيب S{labHit.rank} · الدرجة {labHit.score.toFixed(4)} · {labHopLabel(labHop(labHit))}
             </div>
             {labHit.via_edge_type && isExplorerEdgeType(labHit.via_edge_type) ? (
               <p className="mt-1 text-zinc-400">
-                جاء عبر رابط «{EDGE_TYPE_META[labHit.via_edge_type].label}» من: <span className="text-zinc-200">{labHit.via_from_title}</span>
+                {labHop(labHit) >= 2 ? "جاء في الخطوة الثانية عبر رابط" : "جاء عبر رابط"} «{EDGE_TYPE_META[labHit.via_edge_type].label}» من: <span className="text-zinc-200">{labHit.via_from_title}</span>
               </p>
             ) : (
               <p className="mt-1 text-zinc-400">نتيجة مباشرة من البحث النصي/الدلالي.</p>

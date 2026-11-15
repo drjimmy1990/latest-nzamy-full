@@ -19,6 +19,8 @@ import {
   NODE_TYPE_META,
   isExplorerEdgeType,
   isRepealedNode,
+  labHop,
+  labHopLabel,
   type ExplorerNodeType,
 } from "@/lib/ai/graphExplorerCore";
 import { explorerApi, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
@@ -385,6 +387,7 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
             {lab.hits.map((h, i) => {
               const c = NODE_TYPE_META[h.kind].color;
               const via = h.via_edge_type && isExplorerEdgeType(h.via_edge_type) ? EDGE_TYPE_META[h.via_edge_type] : null;
+              const hop = labHop(h);
               return (
                 <li key={h.node_key}>
                   <button onClick={() => onLabSelect(h.node_key)} className="relative w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50 p-2.5 pr-3.5 text-right hover:border-zinc-600">
@@ -393,6 +396,12 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
                       <span className="flex items-center gap-1.5">
                         <span className="rounded bg-[#C8A762] px-1.5 font-mono font-black text-black">S{i + 1}</span>
                         <span style={{ color: c }} className="font-bold">{NODE_TYPE_META[h.kind].label}</span>
+                        <span
+                          className={`rounded border px-1 font-bold ${hop === 0 ? "border-zinc-700 text-zinc-400" : hop === 1 ? "border-sky-500/40 text-sky-300" : "border-violet-500/40 text-violet-300"}`}
+                          title={hop === 0 ? "وجدها البحث النصي/الدلالي مباشرة" : `وصل إليها المساعد بعد ${hop === 1 ? "خطوة واحدة" : "خطوتين"} على روابط الجراف`}
+                        >
+                          {labHopLabel(hop)}
+                        </span>
                       </span>
                       <span className="font-mono text-zinc-500">{h.score.toFixed(4)}</span>
                     </div>
