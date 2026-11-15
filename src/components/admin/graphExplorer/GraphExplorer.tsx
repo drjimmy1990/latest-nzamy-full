@@ -55,6 +55,7 @@ import {
   type ExplorerGraph,
   type ExplorerNode,
   type LaneLabel,
+  type LabLayer,
   type LabScope,
   type XY,
 } from "@/lib/ai/graphExplorerCore";
@@ -137,6 +138,12 @@ function ExplorerInner() {
   const [labLoading, setLabLoading] = useState(false);
   const [labError, setLabError] = useState<string | null>(null);
   const [labRanks, setLabRanks] = useState<ReadonlyMap<string, number>>(new Map());
+  // The same question without the graph links (the lab's comparison), and the
+  // lab layers hidden from the list and the canvas.
+  const [labBaseline, setLabBaseline] = useState<LabResult | null>(null);
+  const [labBaselineLoading, setLabBaselineLoading] = useState(false);
+  const [hiddenLabLayers, setHiddenLabLayers] = useState<ReadonlySet<LabLayer>>(new Set());
+  const lastLab = useRef<{ question: string; keywords: string; scope: LabScope; opts: LabOptions } | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
 
   const fitSoon = useCallback(
@@ -280,6 +287,9 @@ function ExplorerInner() {
 
   const runLab = useCallback(
     async (question: string, keywords: string, scope: LabScope, opts: LabOptions) => {
+      lastLab.current = { question, keywords, scope, opts };
+      setLabBaseline(null);
+      setHiddenLabLayers(new Set());
       setLabLoading(true);
       setLabError(null);
       const res = await explorerApi.retrieve(question.trim(), keywords, scope, opts);
@@ -294,6 +304,21 @@ function ExplorerInner() {
     },
     [showLabGraph],
   );
+
+  /** Re-runs the last lab question without the graph links, to show what they changed. */
+  const compareLab = useCallback(async () => {
+    const last = lastLab.current;
+    if (!last) return;
+    setLabBaselineLoading(true);
+    const res = await explorerApi.retrieve(last.question.trim(), last.keywords, last.scope, { ...last.opts, links: false });
+    setLabBaselineLoading(false);
+    if (lastLab.current !== last) return; // a newer question was run meanwhile
+    if (!res.ok) {
+      setLabError(res.error);
+      return;
+    }
+    setLabBaseline(res.data);
+  }, []);
 
   // First paint: overview, then a deep-linked node if the URL names one.
   useEffect(() => {
@@ -333,8 +358,19 @@ function ExplorerInner() {
 
   // ── derived canvas state ───────────────────────────────────────────────────
   const visibleKeys = useMemo(
-    () => new Set(graph.nodes.filter((n) => n.node_type === "query" || !hiddenTypes.has(n.node_type)).map((n) => n.node_key)),
-    [graph.nodes, hiddenTypes],
+    () =>
+      new Set(
+        graph.nodes
+          .filter(
+            (n) =>
+              n.node_type === "query" ||
+              (!hiddenTypes.has(n.node_type) &&
+                // a lab node's hop is its layer + 1 (buildLabGraph)
+                !(mode === "lab" && hiddenLabLayers.has(Math.min(Math.max(n.hop - 1, 0), 2) as LabLayer))),
+          )
+          .map((n) => n.node_key),
+      ),
+    [graph.nodes, hiddenTypes, mode, hiddenLabLayers],
   );
   const visibleEdges = useMemo(
     () => graph.edges.filter((e) => !hiddenEdges.has(e.edge_type) && visibleKeys.has(e.source) && visibleKeys.has(e.target)),
@@ -603,6 +639,19 @@ function ExplorerInner() {
             onRunLab={(q, kw, scope, opts) => void runLab(q, kw, scope, opts)}
             onShowLab={() => lab && showLabGraph(lab)}
             onLabSelect={(k) => select(k, true)}
+            onLabExplore={(k) => void focus(k)}
+            labBaseline={labBaseline}
+            labBaselineLoading={labBaselineLoading}
+            onCompareLab={() => void compareLab()}
+            hiddenLabLayers={hiddenLabLayers}
+            onToggleLabLayer={(l) =>
+              setHiddenLabLayers((s) => {
+                const next = new Set(s);
+                if (next.has(l)) next.delete(l);
+                else next.add(l);
+                return next;
+              })
+            }
           />
         </aside>
 

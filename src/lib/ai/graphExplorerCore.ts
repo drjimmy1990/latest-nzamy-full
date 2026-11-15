@@ -441,6 +441,10 @@ export type ExplorerRequest =
       articleId: string | null;
       /** true: also decrees and fiqh, more articles; false: the AI's own limits. */
       wide: boolean;
+      /** false: the graph links are turned off (direct matches only), to compare. */
+      links: boolean;
+      /** How many times the limits to ask for (1 = as the AI asks). */
+      size: LabSize;
     };
 
 /**
@@ -452,6 +456,17 @@ export const LAB_LIMITS = {
   ai: { laws: 10, principles: 4, decrees: 0, feqh: 0 },
   wide: { laws: 8, principles: 4, decrees: 2, feqh: 2 },
 } as const;
+
+/** The lab's result sizes: the limits as they are, or two / three times them. */
+export const LAB_SIZES = [1, 2, 3] as const;
+export type LabSize = (typeof LAB_SIZES)[number];
+export const LAB_SIZE_LABELS: Readonly<Record<LabSize, string>> = { 1: "عادي", 2: "ضعفه", 3: "ثلاثة أضعافه" };
+
+/** The limits the lab asks for: the AI's (or the wide ones) times the size. */
+export function labLimits(wide: boolean, size: LabSize): { laws: number; principles: number; decrees: number; feqh: number } {
+  const base = wide ? LAB_LIMITS.wide : LAB_LIMITS.ai;
+  return { laws: base.laws * size, principles: base.principles * size, decrees: base.decrees * size, feqh: base.feqh * size };
+}
 
 /** Where the routed section came from (retrieve's `routing.source`). */
 export const LAB_ROUTING_SOURCE_LABELS: Readonly<Record<"law" | "vote" | "none", string>> = {
@@ -551,7 +566,9 @@ export function parseExplorerRequest(params: URLSearchParams): ParseExplorerResu
     if ((rawLaw ?? "").trim() !== "" && !lawSlug) return { ok: false, error: "معرّف النظام غير صالح" };
     if ((rawArticle ?? "").trim() !== "" && !articleId) return { ok: false, error: "معرّف المادة غير صالح" };
     const wide = params.get("wide") === "1";
-    return { ok: true, value: { action: "retrieve", q, keywords, scope, lawSlug, articleId, wide } };
+    const links = params.get("links") !== "0";
+    const size = clampInt(params.get("size"), 1, 1, 3) as LabSize;
+    return { ok: true, value: { action: "retrieve", q, keywords, scope, lawSlug, articleId, wide, links, size } };
   }
 
   return { ok: false, error: "إجراء غير معروف" };
@@ -923,6 +940,37 @@ export function parseLabRouting(raw: unknown): LabRouting | null {
 /** How far from the question a lab hit is: 0 direct, 1 or 2 graph steps. */
 export function labHop(h: Pick<LabHit, "hop" | "via_edge_type">): number {
   return typeof h.hop === "number" && h.hop >= 0 ? h.hop : h.via_edge_type ? 1 : 0;
+}
+
+/** A lab hit's layer: 0 direct (a named article too), 1 the first hop, 2 the second (or further). */
+export type LabLayer = 0 | 1 | 2;
+export const LAB_LAYERS: readonly LabLayer[] = [0, 1, 2];
+export function labLayer(h: Pick<LabHit, "hop" | "via_edge_type">): LabLayer {
+  return Math.min(labHop(h), 2) as LabLayer;
+}
+
+/** How many hits sit in each layer (the lab's layer chips). */
+export function labLayerCounts(hits: ReadonlyArray<Pick<LabHit, "hop" | "via_edge_type">>): Record<LabLayer, number> {
+  const out: Record<LabLayer, number> = { 0: 0, 1: 0, 2: 0 };
+  for (const h of hits) out[labLayer(h)]++;
+  return out;
+}
+
+/**
+ * What the graph links changed, comparing a run with them to the same
+ * question without them: the hits only the linked run has, and the hits the
+ * linked run no longer shows (the links pushed them out of the limits).
+ */
+export function labLinksDiff<H extends Pick<LabHit, "node_key">>(
+  withLinks: readonly H[],
+  without: readonly H[],
+): { added: Set<string>; pushedOut: H[] } {
+  const base = new Set(without.map((h) => h.node_key));
+  const linked = new Set(withLinks.map((h) => h.node_key));
+  return {
+    added: new Set(withLinks.filter((h) => !base.has(h.node_key)).map((h) => h.node_key)),
+    pushedOut: without.filter((h) => !linked.has(h.node_key)),
+  };
 }
 
 /** The lab's step badge: «مباشر» (direct match), «خطوة ١», «خطوة ٢». */

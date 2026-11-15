@@ -11,6 +11,7 @@ import {
   type LabHit,
   type LabRouting,
   type LabScope,
+  type LabSize,
 } from "@/lib/ai/graphExplorerCore";
 
 export interface OverviewData {
@@ -87,6 +88,10 @@ export interface LabResult {
   article_found?: boolean | null;
   /** true: decrees and fiqh were asked for too (not the AI's limits). */
   wide?: boolean;
+  /** false: the graph links were off (direct matches only). Absent from an older server: on. */
+  links?: boolean;
+  /** The limits' multiple (1 = as the AI asks). */
+  size?: number;
   hits: LabHit[];
 }
 
@@ -95,6 +100,9 @@ export interface LabOptions {
   lawSlug?: string;
   articleId?: string;
   wide?: boolean;
+  /** false: run without the graph links (direct matches only). */
+  links?: boolean;
+  size?: LabSize;
 }
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string; schemaMissing?: boolean; migration?: string };
@@ -144,6 +152,8 @@ export const explorerApi = {
         ...(opts.lawSlug?.trim() ? { law: opts.lawSlug.trim() } : {}),
         ...(opts.articleId?.trim() ? { article: opts.articleId.trim() } : {}),
         ...(opts.wide ? { wide: "1" } : {}),
+        ...(opts.links === false ? { links: "0" } : {}),
+        ...(opts.size && opts.size > 1 ? { size: String(opts.size) } : {}),
       },
       (j) => j.lab as LabResult,
     ),
