@@ -24,6 +24,7 @@ import {
   type ExplorerNode,
   type LabHit,
 } from "@/lib/ai/graphExplorerCore";
+import { markdownToPlain } from "@/lib/text/markdownToPlain";
 import type { NodeDetail } from "./explorerApi";
 
 export interface InspectorConnection {
@@ -100,7 +101,8 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
     }
   }
 
-  const text = detail?.display_text ?? node.snippet ?? "";
+  // Library rows carry page layout (headings, tables, <details>): show it as plain text.
+  const text = markdownToPlain(detail?.display_text ?? node.snippet ?? "");
 
   return (
     <div className="flex h-full flex-col overflow-hidden">

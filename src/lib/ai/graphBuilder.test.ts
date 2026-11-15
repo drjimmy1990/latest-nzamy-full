@@ -508,3 +508,34 @@ test("buildLawStructure: law + titled chapters (never embedded), PART_OF and NEX
 
   assert.deepEqual(buildLawStructure({ law, chaptersById, articles: [], articleNodes: [] }), { nodes: [], edges: [] });
 });
+
+test("buildDecreeGraphNodes stores plain text: no layout marks, the «موجز» once, every fact kept", () => {
+  const [node] = buildDecreeGraphNodes([
+    {
+      decree: {
+        id: "d-91",
+        title: "مرسوم ملكي رقم (م/91)",
+        type: "royal_decree",
+        summary_brief: "القرار المتخذ: تعديل المادة (6) من نظام خدمة الأفراد.",
+        preamble: [
+          "# مرسوم ملكي رقم (م/91)",
+          "<details open>",
+          "<summary>📝 موجز القرار (خلاصة سريعة)</summary>",
+          "> القرار المتخذ: تعديل المادة (6) من نظام خدمة الأفراد.",
+          "</details>",
+          "### 📊 بطاقة تعريف المرسوم/القرار",
+          "| الحقل | القيمة |",
+          "| :--- | :--- |",
+          "| **الجهة المصدرة** | الديوان الملكي |",
+        ].join("\n"),
+      },
+      pages: [{ page_number: 1, content: "#### [صفحة 1]\n**بعون الله تعالى**" }],
+    },
+  ]);
+  const text = node.display_text;
+  assert.doesNotMatch(text, /<details|<summary|\||\*\*|#|📝|📊/);
+  assert.equal(text.match(/القرار المتخذ/g)?.length, 1, "the موجز appears once, from the summary");
+  assert.match(text, /الجهة المصدرة: الديوان الملكي/);
+  assert.match(text, /بعون الله تعالى/);
+  assert.doesNotMatch(text, /صفحة 1/);
+});
