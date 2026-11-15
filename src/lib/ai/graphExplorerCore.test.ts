@@ -486,6 +486,19 @@ test("parseExplorerRequest: status; the lab's page law, open article and width",
   }
   const blank = parseExplorerRequest(new URLSearchParams("action=retrieve&q=س&law=&article=%20"));
   assert.ok(blank.ok, "empty inputs mean none");
+
+  // A slug pasted from the address bar is still percent-encoded once the query string is parsed.
+  const params = new URLSearchParams({ action: "retrieve", q: "س", law: encodeURIComponent("نظام-العمل"), article: "نظام-العمل__art-77".normalize("NFD") });
+  const pasted = parseExplorerRequest(params);
+  assert.ok(pasted.ok && pasted.value.action === "retrieve");
+  if (pasted.ok && pasted.value.action === "retrieve") {
+    assert.equal(pasted.value.lawSlug, "نظام-العمل", "decoded once");
+    assert.equal(pasted.value.articleId, "نظام-العمل__art-77".normalize("NFC"), "NFC, as the library stores ids");
+  }
+  const broken = parseExplorerRequest(new URLSearchParams({ action: "retrieve", q: "س", law: "%E0%A4%A" }));
+  assert.ok(broken.ok && broken.value.action === "retrieve" && broken.value.lawSlug === "%E0%A4%A", "a malformed escape stays as typed");
+  const sneaky = parseExplorerRequest(new URLSearchParams({ action: "retrieve", q: "س", law: "a%20b" }));
+  assert.equal(sneaky.ok, false, "decoding never lets a space or quote through");
 });
 
 test("LAB_LIMITS: the AI's own limits by default (laws 8 + 2, principles 4, no decrees or fiqh)", () => {

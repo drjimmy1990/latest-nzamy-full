@@ -483,8 +483,21 @@ const NODE_KEY_RE = /^[^\s;'"\\]{3,260}$/u;
 /** A law slug (laws.slug) or an article id (articles.id): same rule, shorter. */
 const LIBRARY_ID_RE = /^[^\s;'"\\,،/?#]{1,200}$/u;
 
+/**
+ * A slug or id typed or pasted by an admin. One percent-decode (a slug copied
+ * from the address bar is still encoded after the query string is parsed),
+ * then NFC as the library stores ids; validated after decoding.
+ */
 function libraryId(raw: string | null): string | null {
-  const v = (raw ?? "").trim();
+  let v = (raw ?? "").trim();
+  if (/%[0-9A-Fa-f]{2}/.test(v)) {
+    try {
+      v = decodeURIComponent(v).trim();
+    } catch {
+      // a malformed escape stays as typed
+    }
+  }
+  v = v.normalize("NFC");
   return v && LIBRARY_ID_RE.test(v) ? v : null;
 }
 
