@@ -42,8 +42,9 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-15 | Decree text cleaned (`src/lib/text/markdownToPlain.ts`). The preamble's layout (identity table, `<details>` blocks, headings, emoji, links) becomes plain `key: value` text, and the «موجز» is no longer stored twice. On the local library: 4,393 of 4,398 decree nodes had markup and now 0 do, the decree text to embed shrank 8.6% (14.5M → 13.3M characters), and amendment links are unchanged at 469. The explorer inspector shows every node's text through the same cleaner (display only). Needs `mark_dirty_now` after the deploy, so the decrees are rebuilt and their few existing vectors redone. |
 | 2026-11-15 | Embeddings moved to Google Cloud Vertex AI (Cloud billing), several calls at once (`b4720339`). Deployed; the vectors filled to about 123k. |
 | 2026-11-16 | **Links + routing batch** (`20261116_10`, commit `35970cd6`). Defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, vector links, and routing by section and judicial track (section 4.6). Deployed 2026-11-15, SQL run. |
-| 2026-11-17 | **Seeds + gold set** (`20261117_10`, section 4.8). An article the question names leads the graph answer and its links follow it; the lab does the same lookup as the AI; a 39-question gold set and `npm run graph:gold` measure recall and the switch-on timing. Deployed 2026-11-15 (`41931b72`), SQL run, `_verify` all `t`. The server `npm run graph:gold` run is still to come. |
+| 2026-11-17 | **Seeds + gold set** (`20261117_10`, section 4.8). An article the question names leads the graph answer and its links follow it; the lab does the same lookup as the AI; a 39-question gold set and `npm run graph:gold` measure recall and the switch-on timing. Deployed 2026-11-15 (`41931b72`), SQL run, `_verify` all `t`. The server `npm run graph:gold` run passed the same day (next row). |
 | 2026-11-18 | **The owner's own links** (`20261118_10`, section 4.9). The parser reads the owner's `superseded_by`, `repealed_by`, `supersedes`, `repeals`, `affected_laws` and `related_laws`; the graph turns them into `SUPERSEDES_LAW` and `AMENDS_ARTICLE` links, strictly, and a repealed article's replacement is found again when its law's successor changes. Deployed 2026-11-15 (`41931b72`), SQL run, `_verify` all `t`. Waits for the owner's next load and one rebuild. |
+| 2026-11-15 | **Switched on.** The server `npm run graph:gold` said **GO** on its third run: recall@8 graph 79% vs keyword 36%, the 3 named-article questions 100%, 39/39 answered by the graph, AI-path p50 371 ms, p95 637 ms, max 738 ms, no timeouts. The first two runs failed on the cold tail: Postgres had `shared_buffers` 128MB. It is now 1536MB with `effective_cache_size` 4GB (`ALTER SYSTEM` + restart of `supabase-db`), and `/root/nzamy-graph-prewarm.sh` loads the hot indexes and the `library_graph.nodes` heap and toast with `pg_prewarm` (cron: hourly at :17 and 3 minutes after reboot). Then `NZAMY_GRAPH_RAG=on` + `pm2 restart nzamy`. |
 
 ---
 
@@ -280,13 +281,13 @@ Known small issues:
 ### 7.1 Before turning the switch on (needed)
 
 1. **Measure the rebuild:** link counts by type, and connected versus isolated nodes per type (section 8).
-2. **Measure timing and quality:** `npm run graph:gold` on the server, after a quiet spell (4.8). Every p95 must be under 2.5 s, with no cold AI-path timeout. If only the cold call fails, the next step is warming the database cache (for example `pg_prewarm` on the graph's tables and vector index), not changing the graph.
+2. **Done 2026-11-15: GO** (timeline row). Measure timing and quality: `npm run graph:gold` on the server, after a quiet spell (4.8). Every p95 must be under 2.5 s, with no cold AI-path timeout. If only the cold call fails, the next step is warming the database cache (for example `pg_prewarm` on the graph's tables and vector index), not changing the graph.
 3. **Paid embedding key:**
    - About 152.6M characters are left to embed, which is about **$8–13 one time** for `gemini-embedding-2-768`.
    - Steps: swap `GEMINI_EMBEDDING_API_KEY`, delete `GRAPH_RAG_EMBED_BATCH_SIZE=20`, then run `pm2 restart nzamy-graph-watchdog --update-env`.
    - Don't rotate free keys to get around the quota: Google's terms forbid it, and at 1,000 per day it would take about 120 days.
 4. **The gold set:** built (4.8), 39 questions. The owner approves or corrects it (question ٥١٤). It is the yardstick for every change below.
-5. **Turn it on:** set `NZAMY_GRAPH_RAG=on`, then run `pm2 restart nzamy --update-env`. Watch the fallback rate for the first days.
+5. **Done 2026-11-15.** Turn it on: set `NZAMY_GRAPH_RAG=on`, then run `pm2 restart nzamy --update-env`. Watch the fallback rate for the first days.
 
 ### 7.2 D — AI-extracted links and concepts (recommended next build)
 
