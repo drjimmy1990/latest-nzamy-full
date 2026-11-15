@@ -94,7 +94,9 @@ test("_verify.sql: every verify block is opened once and closed once, in order",
     // Legal GraphRAG (20261110_10), its explorer (20261113_10) and review fixes (20261114_10):
     "library_graph_rag", "library_graph_explorer", "library_graph_rag_fixes",
     // Graph depth (20261115_10): law/chapter nodes, PART_OF/NEXT_ARTICLE, two-hop retrieve.
-    "library_graph_depth"]) {
+    "library_graph_depth",
+    // Graph links (20261116_10): terms, SUBJECT_TO/PENALIZES/DEFINES_TERM, SIMILAR_TO/REPLACED_BY.
+    "library_graph_links"]) {
     assert.ok(opened.has(name), `verify:${name} is present`);
   }
 });

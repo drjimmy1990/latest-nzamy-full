@@ -11,20 +11,31 @@
 
 // ─── Types & labels ───────────────────────────────────────────────────────────
 
-export const EXPLORER_NODE_TYPES = ["article", "principle", "decree", "feqh", "concept", "law", "chapter"] as const;
+import { SECTION_LABELS, normalizeSectionCode } from "./graphRouting.ts";
+
+export const EXPLORER_NODE_TYPES = ["article", "principle", "decree", "feqh", "concept", "law", "chapter", "term"] as const;
 export type ExplorerNodeType = (typeof EXPLORER_NODE_TYPES)[number];
 
-/** Same order as the radial sectors; matches the edge_type check of 20261115_10 (the outline links come last). */
+/**
+ * Same order as the radial sectors; matches the edge_type check of 20261116_10
+ * (legal links first, then definition and meaning links, the outline links last).
+ */
 export const EXPLORER_EDGE_TYPES = [
   "EXEMPTS_FROM",
+  "SUBJECT_TO",
   "AMENDS_ARTICLE",
   "INTERPRETS_ARTICLE",
+  "IMPLEMENTED_BY",
+  "PENALIZES",
   "SUPERSEDES_LAW",
+  "REPLACED_BY",
   "PARENT_LAW",
   "ESTABLISHES_RULE",
   "CITES_ARTICLE",
   "DECONSTRUCTS_CONCEPT",
   "HAS_CONCEPT",
+  "DEFINES_TERM",
+  "SIMILAR_TO",
   "NEXT_ARTICLE",
   "PART_OF",
 ] as const;
@@ -40,6 +51,7 @@ export const NODE_TYPE_META: Readonly<Record<ExplorerNodeType, { label: string; 
   concept: { label: "مفهوم قانوني", plural: "المفاهيم القانونية", color: "#7FA8DC" },
   law: { label: "نظام / لائحة", plural: "الأنظمة واللوائح", color: "#E8D5A3" },
   chapter: { label: "باب / فصل", plural: "الأبواب والفصول", color: "#9C8E6B" },
+  term: { label: "مصطلح معرَّف", plural: "المصطلحات المعرَّفة", color: "#C9A0C9" },
 };
 
 /**
@@ -54,7 +66,14 @@ export const EDGE_TYPE_META: Readonly<
     out: "يستثني من",
     in: "مستثنى منها في",
     color: "#E39B54",
-    hint: "نص يقيّد حكم مادة أخرى أو يستثني منها («استثناءً من المادة…»، «مع عدم الإخلال…»).",
+    hint: "نص يستثني من حكم مادة أخرى («استثناءً من المادة…»، «على الرغم من…»، «فيما عدا ما ورد في…»).",
+  },
+  SUBJECT_TO: {
+    label: "قيد / مع مراعاة",
+    out: "مقيَّدة بـ",
+    in: "قيدٌ على",
+    color: "#D6B15E",
+    hint: "نص يُطبَّق مع مراعاة مادة أخرى ودون الإخلال بها («مع مراعاة المادة…»، «مع عدم الإخلال بـ…»).",
   },
   AMENDS_ARTICLE: {
     label: "تعديل",
@@ -70,12 +89,34 @@ export const EDGE_TYPE_META: Readonly<
     color: "#5FB3A1",
     hint: "مبدأ قضائي طبّق المادة أو فسّرها.",
   },
+  PENALIZES: {
+    label: "عقوبة",
+    out: "يعاقب على مخالفة",
+    in: "عقوبة مخالفتها في",
+    color: "#C0504D",
+    hint: "مادة عقوبات: تعاقب على مخالفة مادة بعينها، أو على مخالفة أحكام النظام كله (فتُربط بعقدة النظام).",
+  },
+  IMPLEMENTED_BY: {
+    label: "لائحتها التنفيذية",
+    out: "تنفّذها",
+    in: "تنفيذ لـ",
+    color: "#6FA8C8",
+    hint: "مادة النظام ← مادة اللائحة التنفيذية التي تنفّذها، كما ربطتهما المكتبة نفسها (نص اللائحة يظهر أيضاً داخل مادة النظام).",
+  },
   SUPERSEDES_LAW: {
     label: "إحلال",
     out: "يحلّ محل",
     in: "حلّ محله",
     color: "#E06C6C",
     hint: "نظام جديد ألغى نظاماً سابقاً وحلّ محله.",
+  },
+  REPLACED_BY: {
+    label: "المقابل الساري",
+    out: "يقابلها الآن",
+    in: "تقابل المادة الملغاة",
+    color: "#E68A8A",
+    dashed: true,
+    hint: "مادة ملغاة ← أقرب مادة سارية إليها في المعنى، في النظام الذي حلّ محل نظامها أولاً. يُحسب بالبصمات الدلالية.",
   },
   PARENT_LAW: {
     label: "نظام أم",
@@ -112,6 +153,22 @@ export const EDGE_TYPE_META: Readonly<
     color: "#7FA8DC",
     dashed: true,
     hint: "مفهوم قانوني منسَّق (مثل «الفصل التعسفي») يجمع المواد التي تحكمه.",
+  },
+  DEFINES_TERM: {
+    label: "تعريف",
+    out: "تعرِّف",
+    in: "معرَّف في",
+    color: "#C9A0C9",
+    dashed: true,
+    hint: "مادة التعريفات في نظام تعرِّف مصطلحاً («يُقصد بـ… »). والمصطلح المعرَّف في أكثر من نظام يصل بينها.",
+  },
+  SIMILAR_TO: {
+    label: "معنى متقارب",
+    out: "تقارب في المعنى",
+    in: "تقارب في المعنى",
+    color: "#7FB0C0",
+    dashed: true,
+    hint: "مادتان في نظامين مختلفين، أو مبدآن قضائيان، متقاربان في المعنى. يُحسب بالبصمات الدلالية، والرقم درجة التقارب.",
   },
   NEXT_ARTICLE: {
     label: "المادة التالية",
@@ -188,7 +245,23 @@ export type ExplorerRequest =
   | { action: "search"; q: string; types: ExplorerNodeType[]; limit: number }
   | { action: "neighborhood"; key: string; depth: 1 | 2; limit: number; edges: ExplorerEdgeType[] }
   | { action: "node"; key: string }
-  | { action: "retrieve"; q: string; keywords: string[] };
+  | { action: "retrieve"; q: string; keywords: string[]; scope: LabScope };
+
+/**
+ * The lab's routing switch (graph_rag_retrieve_scoped, 20261116_10): `auto` is
+ * what the AI tools get; `section` keeps only the question's section (explicit
+ * legal links still cross); `all` turns routing off.
+ */
+export const LAB_SCOPES = ["auto", "section", "all"] as const;
+export type LabScope = (typeof LAB_SCOPES)[number];
+export const LAB_SCOPE_LABELS: Record<LabScope, string> = {
+  auto: "تلقائي",
+  section: "القسم فقط",
+  all: "كل الأقسام",
+};
+export function isLabScope(v: unknown): v is LabScope {
+  return typeof v === "string" && (LAB_SCOPES as readonly string[]).includes(v);
+}
 
 export type ParseExplorerResult = { ok: true; value: ExplorerRequest } | { ok: false; error: string };
 
@@ -235,7 +308,9 @@ export function parseExplorerRequest(params: URLSearchParams): ParseExplorerResu
     const keywords = csv(params.get("keywords"))
       .map((k) => k.slice(0, 80))
       .slice(0, 6);
-    return { ok: true, value: { action: "retrieve", q, keywords } };
+    const rawScope = (params.get("scope") ?? "").trim();
+    const scope: LabScope = isLabScope(rawScope) ? rawScope : "auto";
+    return { ok: true, value: { action: "retrieve", q, keywords, scope } };
   }
 
   return { ok: false, error: "إجراء غير معروف" };
@@ -570,6 +645,33 @@ export interface LabHit {
   status?: string | null;
   url?: string;
   text?: string;
+}
+
+/** The section and laws retrieve routed a question to (the answer's `routing` object). */
+export interface LabRouting {
+  scope: LabScope;
+  section: string | null;
+  section_label: string | null;
+  confident: boolean;
+  /** "law" (a pinned law), "vote" (the strongest results), "none". */
+  source: "law" | "vote" | "none";
+  laws: string[];
+}
+
+/** Reads retrieve's `routing` object; null from a server before 20261116_10. */
+export function parseLabRouting(raw: unknown): LabRouting | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const section = normalizeSectionCode(r.section);
+  const source = r.source === "law" || r.source === "vote" ? r.source : "none";
+  return {
+    scope: isLabScope(r.scope) ? r.scope : "auto",
+    section,
+    section_label: section ? SECTION_LABELS[section] ?? null : null,
+    confident: r.confident === true,
+    source,
+    laws: Array.isArray(r.laws) ? r.laws.filter((l): l is string => typeof l === "string").slice(0, 12) : [],
+  };
 }
 
 /** How far from the question a lab hit is: 0 direct, 1 or 2 graph steps. */

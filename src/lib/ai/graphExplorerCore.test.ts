@@ -23,6 +23,7 @@ import {
   layoutRadial,
   mergeNeighborhoods,
   parseExplorerRequest,
+  parseLabRouting,
   type ExplorerEdge,
   type ExplorerNode,
   type XY,
@@ -49,8 +50,8 @@ test("every node and edge type has an Arabic label and a colour", () => {
     assert.ok(m.label && m.out && m.in, t);
     assert.match(m.color, /^#[0-9a-f]{6}$/i, t);
   }
-  assert.equal(EXPLORER_EDGE_TYPES.length, 11, "matches the edge_type check constraint of 20261115_10");
-  assert.equal(EXPLORER_NODE_TYPES.length, 7, "matches the node_type check constraint of 20261115_10");
+  assert.equal(EXPLORER_EDGE_TYPES.length, 17, "matches the edge_type check constraint of 20261116_10");
+  assert.equal(EXPLORER_NODE_TYPES.length, 8, "matches the node_type check constraint of 20261116_10");
 });
 
 test("edgePhrase reads the link from the viewer's side (outgoing vs incoming)", () => {
@@ -82,7 +83,7 @@ test("parseExplorerRequest validates each action and clamps every number", () =>
   assert.equal(p("action=node&key=bad key; drop").ok, false, "keys never contain spaces or ;");
 
   const r = p("action=retrieve&q=%D8%B7%D8%B1%D8%AF%D9%88%D9%86%D9%8A&keywords=%D9%81%D8%B5%D9%84,%D8%AA%D8%B9%D9%88%D9%8A%D8%B6");
-  assert.deepEqual(r, { ok: true, value: { action: "retrieve", q: "طردوني", keywords: ["فصل", "تعويض"] } });
+  assert.deepEqual(r, { ok: true, value: { action: "retrieve", q: "طردوني", keywords: ["فصل", "تعويض"], scope: "auto" } });
 
   assert.equal(p("action=drop_table").ok, false, "unknown actions are refused");
 });
@@ -332,4 +333,35 @@ test("labHop reads the server's hop, else infers it from the link; labHopLabel n
   assert.equal(labHopLabel(0), "مباشر");
   assert.equal(labHopLabel(1), "خطوة ١");
   assert.equal(labHopLabel(2), "خطوة ٢");
+});
+
+test("the lab's scope: auto by default, section / all on request, anything else auto; routing parsed defensively", () => {
+  const scopeOf = (q: string) => {
+    const r = parseExplorerRequest(new URLSearchParams(`action=retrieve&q=x${q}`));
+    assert.ok(r.ok && r.value.action === "retrieve");
+    return r.value.scope;
+  };
+  assert.equal(scopeOf(""), "auto");
+  assert.equal(scopeOf("&scope=section"), "section");
+  assert.equal(scopeOf("&scope=all"), "all");
+  assert.equal(scopeOf("&scope=drop table"), "auto");
+
+  assert.deepEqual(parseLabRouting({ scope: "section", section: "03", confident: true, source: "law", laws: ["civ", 7] }), {
+    scope: "section",
+    section: "03",
+    section_label: "المدني والأحوال الشخصية",
+    confident: true,
+    source: "law",
+    laws: ["civ"],
+  });
+  assert.deepEqual(parseLabRouting({ section: null, confident: false, source: "none", laws: [] }), {
+    scope: "auto",
+    section: null,
+    section_label: null,
+    confident: false,
+    source: "none",
+    laws: [],
+  });
+  assert.equal(parseLabRouting(undefined), null, "a server before 20261116_10 sends no routing");
+  assert.equal(parseLabRouting([]), null);
 });

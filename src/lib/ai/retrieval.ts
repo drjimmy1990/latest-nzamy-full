@@ -314,6 +314,12 @@ const EDGE_PROVENANCE_AR: Record<string, string> = {
   CITES_ARTICLE: "إحالة نظامية مرتبطة",
   ESTABLISHES_RULE: "قاعدة نظامية مرتبطة",
   NEXT_ARTICLE: "مادة مجاورة في النظام نفسه",
+  SUBJECT_TO: "قيد نظامي مرتبط (مع مراعاة)",
+  PENALIZES: "عقوبة المخالفة في النظام نفسه",
+  REPLACED_BY: "المادة السارية المقابلة للمادة الملغاة",
+  DEFINES_TERM: "تعريف المصطلح في النظام",
+  SIMILAR_TO: "نص متقارب في المعنى من نظام آخر",
+  IMPLEMENTED_BY: "المادة المقابلة في اللائحة التنفيذية أو في نظامها",
 };
 
 interface GraphRpcHit {

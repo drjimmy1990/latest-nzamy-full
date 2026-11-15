@@ -6535,7 +6535,8 @@ select 'GraphRAG fixes: vector_dims, no pg_catalog.greatest, readiness, abandon_
           where p.proname like 'graph_rag_%'
             and (p.prosrc like '%halfvec_dims(%' or p.prosrc like '%pg_catalog.greatest(%' or p.prosrc like '%pg_catalog.least(%')
        )
-       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)'))
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+                                                             to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
                     like '%last_synced_at is not null and s.dirty = false%', false)
        and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_sync_control(text, jsonb)'))
                     like '%abandon_running%', false)
@@ -6562,7 +6563,39 @@ select 'GraphRAG depth: law/chapter nodes, PART_OF/NEXT_ARTICLE, two-hop retriev
                     where c.conname = 'edges_edge_type_check'
                       and c.conrelid = to_regclass('library_graph.edges')
                       and pg_catalog.pg_get_constraintdef(c.oid) like '%NEXT_ARTICLE%')
-       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)'))
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+                                                             to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
                     like '%hop2_scored%', false)
        as ok;
 -- <<< verify:library_graph_depth
+-- >>> verify:library_graph_links
+-- 2026-11-16 — 20261116_10_library_graph_links.sql: term nodes; SUBJECT_TO,
+-- PENALIZES, DEFINES_TERM links; vector-built SIMILAR_TO / REPLACED_BY links
+-- (origin auto_similarity, rebuilt per node via library_graph.similarity_state);
+-- retrieve walks them plus a terms leg and a penalty leg; IMPLEMENTED_BY (the
+-- library's article → regulation link); routing by section and judicial track
+-- (graph_rag_retrieve_scoped + library_graph.route_factor). Run it BEFORE
+-- deploying the code that writes the new types.
+-- Docker: supabase/tests/rls/library_graph_links.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG links: terms, SUBJECT_TO/PENALIZES/DEFINES_TERM/IMPLEMENTED_BY, SIMILAR_TO/REPLACED_BY, routing (run 20261116_10)' as check,
+       exists (select 1 from pg_catalog.pg_constraint c
+                where c.conname = 'nodes_node_type_check'
+                  and c.conrelid = to_regclass('library_graph.nodes')
+                  and pg_catalog.pg_get_constraintdef(c.oid) like '%''term''%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'edges_edge_type_check'
+                      and c.conrelid = to_regclass('library_graph.edges')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%REPLACED_BY%'
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%IMPLEMENTED_BY%')
+       and exists (select 1 from pg_catalog.pg_constraint c
+                    where c.conname = 'edges_origin_check'
+                      and c.conrelid = to_regclass('library_graph.edges')
+                      and pg_catalog.pg_get_constraintdef(c.oid) like '%auto_similarity%')
+       and to_regclass('library_graph.similarity_state') is not null
+       and to_regprocedure('public.graph_rag_build_similarity(text, integer, jsonb)') is not null
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+                                                             to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
+                    like '%penalty_candidates%route_factor(%', false)
+       and to_regprocedure('library_graph.route_factor(text, text, text, text, boolean, text[])') is not null
+       as ok;
+-- <<< verify:library_graph_links

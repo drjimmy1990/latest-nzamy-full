@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { hasEmbeddingCredentials, resolveEmbeddingModelProfile } from "@/lib/ai/embeddingClient";
 import { embedQueryWithin } from "@/lib/ai/graphRagSwitch";
-import { deriveLabQueries, isExplorerNodeType, parseExplorerRequest, type LabHit } from "@/lib/ai/graphExplorerCore";
+import { deriveLabQueries, isExplorerNodeType, parseExplorerRequest, parseLabRouting, type LabHit } from "@/lib/ai/graphExplorerCore";
 import { parseSearchQuery } from "@/utils/normalizeArabic";
 
 /**
@@ -26,6 +26,8 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "private, no-store" } as const;
 const EXPLORER_MIGRATION = "20261113_10_library_graph_explorer.sql";
+/** The lab's "section only" / "all sections" scopes call graph_rag_retrieve_scoped. */
+const ROUTING_MIGRATION = "20261116_10_library_graph_links.sql";
 
 type RpcError = { code?: string; message?: string } | null;
 
@@ -36,8 +38,8 @@ function explorerSchemaMissing(error: RpcError): boolean {
   return /graph_rag_explore|library_graph/i.test(error.message ?? "") && /does not exist|could not find/i.test(error.message ?? "");
 }
 
-function missing() {
-  return NextResponse.json({ schemaMissing: true, migration: EXPLORER_MIGRATION }, { headers: NO_STORE });
+function missing(migration: string = EXPLORER_MIGRATION) {
+  return NextResponse.json({ schemaMissing: true, migration }, { headers: NO_STORE });
 }
 
 export async function GET(request: NextRequest) {
@@ -111,7 +113,7 @@ export async function GET(request: NextRequest) {
       embedding = literal ? "used" : "failed";
     }
 
-    const { data, error } = await admin.rpc("graph_rag_retrieve", {
+    const args = {
       p_tsqueries: tsqueries,
       p_query_embedding: literal,
       p_model_id: literal ? modelId : null,
@@ -121,8 +123,16 @@ export async function GET(request: NextRequest) {
       p_limit_decrees: 2,
       p_limit_feqh: 2,
       p_enable_graph_hop: true,
-    });
-    if (error) return explorerSchemaMissing(error) ? missing() : failed("retrieve", error);
+    };
+    // `auto` runs exactly what the AI tools run; the other scopes need 20261116_10.
+    const { data, error } =
+      req.scope === "auto"
+        ? await admin.rpc("graph_rag_retrieve", args)
+        : await admin.rpc("graph_rag_retrieve_scoped", { ...args, p_scope: req.scope });
+    if (error) {
+      if (!explorerSchemaMissing(error)) return failed("retrieve", error);
+      return missing(req.scope === "auto" ? EXPLORER_MIGRATION : ROUTING_MIGRATION);
+    }
 
     const payload = (data ?? {}) as Record<string, unknown>;
     const hits: LabHit[] = [];
@@ -159,6 +169,7 @@ export async function GET(request: NextRequest) {
           model_id: literal ? modelId : null,
           embedding,
           elapsed_ms: Date.now() - started,
+          routing: parseLabRouting(payload.routing),
           hits,
         },
       },

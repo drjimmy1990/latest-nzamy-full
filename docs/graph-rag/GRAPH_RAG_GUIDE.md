@@ -44,6 +44,28 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 
 What to expect on screen: the `library_graph_rag`, `graph explorer`, `20261114_10` and `20261115_10` rows all show `t`.
 
+### 1b. The links and routing file (`20261116_10`)
+
+It adds defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, links found from the vectors, and routing by section and judicial track (see "Routing" below). Like `20261115_10`, run it **before** deploying the code that ships with it:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261116_10_library_graph_links.sql
+```
+
+What to expect on screen: `NOTICE: 20261116_10 verify: OK` and a `check | ok` row with `t`. Then deploy (step 2), then ask for one full rebuild:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -c "select public.graph_rag_sync_control('mark_dirty_now', '{\"reason\":\"graph_links_20261116\"}'::jsonb);"
+```
+
+Until that rebuild has finished, routing changes nothing. The law nodes don't carry their section yet, and the principles don't carry their track. When the graph is settled, the vector links (`SIMILAR_TO`, `REPLACED_BY`) build by themselves, a page of 150 nodes at a time, on quiet polls. They wait until at most 0.5% of articles and principles are still missing a vector. Until then the watchdog log shows `Vector links wait: …`. A link built against half the vectors would not be revisited.
+
+The neighbour search filters by law (or collection) inside the vector index. That needs pgvector **0.8 or newer**, so the index keeps scanning until it finds neighbours outside the node's own law. On an older pgvector, a node in a large law or collection may find none. Check the version (screen output):
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -c "select extversion from pg_extension where extname = 'vector';"
+```
+
 ## 2. Deploy the code
 
 ```bash
@@ -127,7 +149,51 @@ Open `/dashboard/admin/graph-explorer` while logged in as staff. It is also in t
 - **Inspector**: click a node to see its full text, status, links and whether it has a vector.
 - **Retrieval lab**: type a question as a client would. It runs the same search the AI uses and shows which articles it would cite, and why (direct match, or reached through a link).
 
+## Routing by section and judicial track (since `20261116_10`)
+
+- **The question's section.** If the question names a law, that law's section wins. Otherwise the twelve strongest results vote, weighted by score: an article votes for its law's section, and a Board of Grievances principle votes for `02` (administrative) or for its circuit's subject (`04` commercial, `01` criminal). Procedure (`00`) and international agreements (`29`) never vote. The section is decided at half the vote weight, and **confident** at two thirds with at least two votes. When the vote is split, there is no section and nothing is routed. "Section only" then shows almost the same results as "auto".
+- **Articles** from another section are kept, but lowered: ×0.88, or ×0.7 when the section is confident. Procedure (`00`) is never lowered.
+- **Board of Grievances principles** (administrative track) count fully for an administrative question, or when they cite a law of the question's strongest articles, or that law governs them. They are dropped when the section is confidently something else. Board volumes from the commercial or criminal circuits are judged like articles of `04` / `01`.
+- **Ordinary courts** (the principles and decisions, the Court of Cassation reports, the Ministry of Justice precedents): every question except a confidently administrative one.
+- **Committees** (quasi-judicial): each committee is tied to its governing laws (21 known committee families, plus the laws its own principles cite most). A committee principle needs one of those laws among the question's laws.
+- **Explicit legal links always cross sections.** A result reached through an exception, condition, amendment, interpretation, penalty, citation, regulation, replacement or parent-law link is never lowered or dropped.
+
+The AI always uses **auto**. The explorer's retrieval lab has three buttons to compare: **تلقائي** (auto), **القسم فقط** (section only: drops everything outside the section, while explicit links still cross) and **كل الأقسام** (no routing). A chip shows the section the question was routed to, and whether it was confident.
+
+## Links from the vectors (since `20261116_10`)
+
+- `SIMILAR_TO`: an article and an article **of another law**, or a principle and a principle **of another collection**, whose texts are very close in meaning. The retrieve walks it only when the question is close to the target too.
+- `REPLACED_BY`: a repealed article goes to the closest active article, first in the law that replaced its law.
+
+Options in `/www/wwwroot/nzamy/latest-nzamy-full/.env.local` (restart the watchdog after a change):
+
+| Line | Default | Meaning |
+|---|---|---|
+| `GRAPH_RAG_SIMILARITY=off` | on | stops the step |
+| `GRAPH_RAG_SIMILARITY_PAGE` | 150 (max 500) | nodes per database call |
+| `GRAPH_RAG_SIMILAR_ARTICLE_MIN` | 0.80 | article ↔ article |
+| `GRAPH_RAG_SIMILAR_PRINCIPLE_MIN` | 0.85 | principle ↔ principle |
+| `GRAPH_RAG_REPLACED_SUCCESSOR_MIN` | 0.80 | repealed article → the replacing law |
+| `GRAPH_RAG_REPLACED_ANY_MIN` | 0.90 | repealed article → any other active law |
+
+How the thresholds were chosen, on a sample of the real library embedded with the same model:
+
+- Two random articles of different laws never reached 0.80 (highest 0.79).
+- 94% of repealed articles and their new versions did reach it.
+- Principles of different collections never reached 0.85.
+- Principles of the **same** collection did in 57% of pairs. That is why the same collection is never linked (repeated wording, not new knowledge).
+
+The principle threshold is calibrated. The article threshold is **not proven** against the tail of the whole library: a random sample cannot show how many of ~100,000 articles have one close neighbour by chance. Watch the watchdog log: each step prints `Vector links: +N nodes (similar=S, replaced=R)`. If `S` runs well above `N` (roughly three times or more), the article threshold is too loose. Raise `GRAPH_RAG_SIMILAR_ARTICLE_MIN` (for example to 0.83), restart the watchdog, then rebuild every vector link:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -c "truncate library_graph.similarity_state;"
+```
+
+A `SIMILAR_TO` link is stored one way, from the node that was processed. When a node's text changes, its own links are rebuilt, but links other nodes made to it stay until those nodes are processed again. The truncate above rebuilds them all.
+
 ## 7. Turn it on for the AI
+
+**Go / no-go first:** in the explorer's retrieval lab, run the test questions with each of the three buttons (auto, section only, all sections). Each run shows its time. Every run should stay under **2500 ms**, which is the AI's limit, after which it falls back to the keyword search. If auto is slower than that, leave the switch off and tell the developers.
 
 When step 5 shows the graph ready and `missing_vectors` at or near 0, add this line to `/www/wwwroot/nzamy/latest-nzamy-full/.env.local`:
 
@@ -164,7 +230,7 @@ node --test src/lib/ai/*.test.ts
 Database tests need Docker and pgvector. Run them on the PC, from the repo folder in Git Bash:
 
 ```bash
-M=supabase/migrations; PG_IMAGE=pgvector/pgvector:pg16 bash supabase/tests/rls/run.sh supabase/tests/rls/prelude_extensions_schema.sql $M/20260626_legal_library_schema.sql $M/20260730_article_regulations.sql $M/20261110_10_library_graph_rag.sql $M/20261113_10_library_graph_explorer.sql $M/20261114_10_library_graph_rag_fixes.sql $M/20261115_10_library_graph_depth.sql supabase/tests/rls/library_graph_rag.test.sql
+M=supabase/migrations; PG_IMAGE=pgvector/pgvector:pg16 bash supabase/tests/rls/run.sh supabase/tests/rls/prelude_extensions_schema.sql $M/20260626_legal_library_schema.sql $M/20260730_article_regulations.sql $M/20261110_10_library_graph_rag.sql $M/20261113_10_library_graph_explorer.sql $M/20261114_10_library_graph_rag_fixes.sql $M/20261115_10_library_graph_depth.sql $M/20261116_10_library_graph_links.sql supabase/tests/rls/library_graph_rag.test.sql
 ```
 
-For the explorer's and the depth database tests, run the same command with `library_graph_explorer.test.sql` or `library_graph_depth.test.sql` as the last file.
+For the other database tests, run the same command with `library_graph_explorer.test.sql`, `library_graph_depth.test.sql`, `library_graph_links.test.sql` or `library_graph_routing.test.sql` as the last file.

@@ -40,6 +40,8 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-15 | Explorer step badges («مباشر / خطوة ١ / خطوة ٢»), commit `178ae36a`. Pushed; not deployed yet. |
 | 2026-11-15 | The retrieval lab now says «الجراف قيد إعادة البناء» while the graph is not ready. Before, a rebuild looked like «لا نتائج», as if the question were wrong. Pushed with this document; not deployed yet. |
 | 2026-11-15 | Decree text cleaned (`src/lib/text/markdownToPlain.ts`). The preamble's layout (identity table, `<details>` blocks, headings, emoji, links) becomes plain `key: value` text, and the «موجز» is no longer stored twice. On the local library: 4,393 of 4,398 decree nodes had markup and now 0 do, the decree text to embed shrank 8.6% (14.5M → 13.3M characters), and amendment links are unchanged at 469. The explorer inspector shows every node's text through the same cleaner (display only). Needs `mark_dirty_now` after the deploy, so the decrees are rebuilt and their few existing vectors redone. |
+| 2026-11-15 | Embeddings moved to Google Cloud Vertex AI (Cloud billing), several calls at once (`b4720339`). Deployed; the vectors filled to about 123k. |
+| 2026-11-16 | **Links + routing batch** (`20261116_10`, branch `feat/graph-links-batch`). Defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, vector links, and routing by section and judicial track (section 4.6). Not merged or deployed yet. |
 
 ---
 
@@ -141,7 +143,38 @@ Rules for every leg:
 - In a neighbourhood, legal links sort before structural ones, and hop 2 never fans out through a law, chapter or concept node.
 - The retrieval lab puts second-step results on the outer ring, linked to the result that led to them. It shows a step badge (deploy pending).
 
-### 4.6 Tests and checks
+### 4.6 The links + routing batch (`20261116_10`)
+
+New links:
+
+| Link | From → to | Source |
+|---|---|---|
+| `DEFINES_TERM` | definitions article → `term` node | the law's definitions article («يقصد بـ… »). A term defined in two documents bridges them. |
+| `SUBJECT_TO` | article → the article it is subject to | «مع مراعاة», «مع عدم الإخلال», «بما لا يتعارض مع» |
+| `PENALIZES` | penalty article → the article or law it punishes | the penalty wording |
+| `IMPLEMENTED_BY` | system article → regulation article | the library's own `article_regulations.ref` + `reg_num`. Only a `reg_num` that is all digits (about 13.3k of 15.7k rows; «9/2», «9.1», «جدول الغرامات رقم 9» are not one article), only one in-force document with that title, never the same law. |
+| `SIMILAR_TO` | article ↔ article of another law; principle ↔ principle of another collection | vectors (guide: "Links from the vectors") |
+| `REPLACED_BY` | repealed article → the closest active article | vectors, the replacing law first |
+
+Routing:
+
+- Each law node stores its section (`section_code`, `00`–`29`).
+- Each principle stores its track: `admin` (Board of Grievances), `ordinary` or `semi` (committees). Board volumes of a commercial or criminal circuit also store their subject (`04` / `01`). Committees store their governing laws: the laws of their committee family (21 families in `src/lib/ai/graphRouting.ts`), plus the laws their own principles cite most (at least 2 citations and 5% of the collection's citations, at most 30 laws; 60 in all).
+- `graph_rag_retrieve_scoped(…, p_scope)` does the work. The nine-argument `graph_rag_retrieve` calls it with `auto`, so there is still one function per name for PostgREST.
+- `library_graph.route_factor` scores each result. The rules are in the guide ("Routing by section and judicial track") and in the migration header.
+
+On the local copy of the library, 209 collections:
+
+- 127 are Board of Grievances: 79 administrative, 38 commercial circuits, 10 criminal circuits.
+- 50 are ordinary.
+- 32 are committees. All 32 match a committee family, using 13 of the 21 families, and every family resolves to at least one law.
+
+Tests:
+
+- Database: `library_graph_links.test.sql` and `library_graph_routing.test.sql` (R0–R6: the vote, confidence, each track, the scopes, explicit links crossing).
+- Unit: `graphRouting.test.ts`, plus the routing pass in `graphWatchdogCore.test.ts`.
+
+### 4.7 Tests and checks (depth batch)
 
 - **Unit:** `graphBuilder.test.ts`, `graphWatchdogCore.test.ts` (a mock that enforces foreign-key order), `graphExplorerCore.test.ts`, and `graphSchemaContract.test.ts`. The contract test checks that the migration's type lists equal the explorer's, that the signature and readiness check are unchanged, and that no forbidden pgvector calls appear.
 - **Database (Docker, `PG_IMAGE=pgvector/pgvector:pg16`):** `library_graph_depth.test.sql` D1–D3 (types accepted and rejected; two-step retrieve rules; explorer). The existing `library_graph_rag.test.sql` and `library_graph_explorer.test.sql` also pass on top of the new migration.
@@ -156,7 +189,7 @@ Rules for every leg:
 | Graph build with depth | Deployed. The first rebuild pass was running at the time of writing. |
 | Link counts after the rebuild | **To fill in** (`select edge_type, count(*) …`, section 8). Expected about 200k, mostly `PART_OF` / `NEXT_ARTICLE`, and roughly 3× the old `CITES_ARTICLE`. |
 | Retrieve timing on prod | **To measure**. Must stay well under 2.5 s, or every call falls back silently. |
-| Vectors | About 1,000 of about 123k content nodes. The free key gives 1,000 per day. |
+| Vectors | About 123k (Vertex AI, 2026-11-15). |
 | Switch `NZAMY_GRAPH_RAG` | **Off.** Keep it off until vectors are nearly complete: hop 2 and the citation guard need them. |
 | Step badges in the explorer | Pushed (`178ae36a`), not deployed. |
 
@@ -178,7 +211,10 @@ From the original review, with what A + B + C closed:
 | `PARENT_LAW` / `SUPERSEDES_LAW` only where the library fields are filled | ⚠ data, not code. The owner's export decides it. |
 | Citations to documents that are not in the library | ⚠ by design, no link. Better nothing than a wrong target. |
 | Chapters without a title get no chapter node | ⚠ by design. Those articles link straight to their law. |
-| Hop 2 over citations is inactive without vectors | ⚠ closes by itself once the paid key fills the vectors |
+| Hop 2 over citations is inactive without vectors | ✅ closed: the vectors are filled (Vertex AI) |
+| A labour question pulled administrative principles, and the reverse | ✅ closed in code (`20261116_10` routing), waits for deploy |
+| Regulation articles were not linked to the article they implement | ✅ closed in code (`IMPLEMENTED_BY`), waits for deploy |
+| The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`, cross references) are not read | ❌ open. Next candidate after this batch. |
 | No quality measurement of answers | ❌ open. `graph:benchmark` measures embeddings only. See 7.1. |
 
 Known small issues:
@@ -213,7 +249,7 @@ A cheap Flash-class model reads each article **once** and returns structured JSO
 Design:
 
 - Results are cached by a hash of the article text, so a rebuild never pays twice. Only new or changed articles cost anything.
-- New edge types need a small migration: for example `DEFINES` (article → concept), `IMPOSES_OBLIGATION`, `PENALIZES`, plus finally writing `ESTABLISHES_RULE`.
+- New edge types need a small migration: for example `IMPOSES_OBLIGATION`, plus finally writing `ESTABLISHES_RULE`. (Definitions and penalties are now rule-based since `20261116_10`; D would widen them.)
 - Concept nodes become thousands instead of 32. Fiqh blocks connect to the same concepts, which closes the fiqh gap.
 - Precision control:
   - Every AI link keeps its `origin` (for example `ai_extract_v1`) and the quoted sentence as evidence.
@@ -278,6 +314,15 @@ Timing of one search. Run it only after a pass has finished; otherwise the graph
 docker exec -i supabase-db psql -U supabase_admin -d postgres <<'SQL'
 \timing on
 select length(public.graph_rag_retrieve(array['فصل & العامل'], null, null, null, 8, 4, 0, 0, true)::text);
+SQL
+```
+
+The same search with routing (after `20261116_10`). The last argument is `auto`, `section` or `all`. Look at the `routing` part of the answer:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres <<'SQL'
+\timing on
+select public.graph_rag_retrieve_scoped(array['فصل & العامل'], null, null, null, 8, 4, 0, 0, true, 'section')->'routing';
 SQL
 ```
 

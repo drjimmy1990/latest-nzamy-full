@@ -24,8 +24,9 @@ import { stripArticleAuditNotes, stripAuditNotes } from "../library/lawPreambleB
 import { libraryDocPath } from "../library/libraryMetadata.ts";
 import { isPageLocator, isPageNumberedDocument } from "../library/pageLocator.ts";
 import { markdownToPlain } from "../text/markdownToPlain.ts";
+import { classifyTrack, normalizeSectionCode } from "./graphRouting.ts";
 
-export type GraphNodeType = "article" | "principle" | "decree" | "feqh" | "concept" | "law" | "chapter";
+export type GraphNodeType = "article" | "principle" | "decree" | "feqh" | "concept" | "law" | "chapter" | "term";
 
 export type GraphEdgeType =
   | "PART_OF"
@@ -33,12 +34,20 @@ export type GraphEdgeType =
   | "PARENT_LAW"
   | "SUPERSEDES_LAW"
   | "EXEMPTS_FROM"
+  | "SUBJECT_TO"
+  | "PENALIZES"
+  | "DEFINES_TERM"
   | "CITES_ARTICLE"
   | "AMENDS_ARTICLE"
   | "INTERPRETS_ARTICLE"
   | "ESTABLISHES_RULE"
   | "DECONSTRUCTS_CONCEPT"
-  | "HAS_CONCEPT";
+  | "HAS_CONCEPT"
+  // Built by the database from the vectors (graph_rag_build_similarity, 20261116_10), never by this module.
+  | "SIMILAR_TO"
+  | "REPLACED_BY"
+  // The library's own article → executive-regulation link (article_regulations.ref + reg_num), 20261116_10.
+  | "IMPLEMENTED_BY";
 
 export interface GraphNodePayload {
   node_key: string;
@@ -78,6 +87,12 @@ export interface LawIndexEntry {
   enablingArticle?: string | null;
   /** The law's registry instrument_id (what other laws' `parent_law_id` holds). */
   instrumentId?: string | null;
+  /** `law_status` / `laws.status` ("repealed", "active", …): picks the old law a repeal clause names. */
+  status?: string | null;
+  /** laws.section_code ("00".."29"), normalised; null when the law is unfiled. */
+  sectionCode?: string | null;
+  /** `law:<slug>` when `buildLawStructure` wrote the law's outline node (law-level links need both ends). */
+  lawNodeKey?: string | null;
   articleKeyByNumber: Map<number, string>;
   rootNodeKey: string | null;
 }
@@ -237,6 +252,8 @@ export interface RawLawRow {
   instrument_id?: string | null;
   supersedes_law_slug?: string | null;
   enabling_article?: string | null;
+  /** The library section ("00".."29"); retrieve routes a question to its section by it (law node metadata only). */
+  section_code?: string | null;
 }
 
 export interface RawArticleRow {
@@ -258,6 +275,10 @@ export interface RawRegulationRow {
   article_id: string;
   text?: string | null;
   status?: string | null;
+  /** The regulation document's title, as the library cites it («اللائحة التنفيذية لنظام العمل»). */
+  ref?: string | null;
+  /** The regulation article's number in that document («12», or «12/3» for a paragraph). */
+  reg_num?: string | number | null;
 }
 
 export interface RawAmendmentRow {
@@ -462,6 +483,7 @@ export function buildLawStructure(params: {
     node(lawKey, law.slug, lawTitle, lawText, lawUrl, {
       article_count: ordered.length,
       chapter_count: chapterArticles.size,
+      section_code: normalizeSectionCode(law.section_code),
     }),
   ];
   const edges: GraphEdgePayload[] = [];
@@ -537,8 +559,11 @@ export interface RawPrincipleRow {
 export function buildPrincipleGraphNodes(params: {
   collection: RawCollectionRow;
   principles: readonly RawPrincipleRow[];
+  /** Semi-judicial collections: the committee families it belongs to (graphRouting.committeeFamilies). */
+  committeeFamilies?: readonly string[];
 }): GraphNodePayload[] {
   const { collection, principles } = params;
+  const families = params.committeeFamilies ?? [];
   const out: GraphNodePayload[] = [];
   // nodes.title must be non-blank: a collection with no title still gets a label.
   const collectionTitle = (collection.title ?? "").trim() || "مبادئ قضائية";
@@ -591,13 +616,39 @@ export function buildPrincipleGraphNodes(params: {
       display_text: combined,
       contextual_header: contextualHeader,
       content_sha256: contentSha,
-      metadata: {
-        court: courtLabel || null,
-        track: p.track ?? null,
-      },
+      metadata: principleRouting(p, collection, courtLabel, families),
     });
   }
 
+  return out;
+}
+
+/**
+ * Routing labels of a principle (metadata only, never embedded): its track
+ * (the principle's own, else its collection's), the class retrieve routes by,
+ * a subject section for the Board of Grievances' commercial / criminal
+ * circuits, and the committee families of a semi-judicial collection. The
+ * watchdog adds `governing_laws` once the collection's citations are known.
+ */
+function principleRouting(
+  p: RawPrincipleRow,
+  collection: RawCollectionRow,
+  courtLabel: string,
+  families: readonly string[],
+): Record<string, unknown> {
+  const track = (p.track || collection.track || "").trim() || null;
+  const routing = classifyTrack({
+    track,
+    court: [courtLabel, collection.court, collection.court_body].filter(Boolean).join(" "),
+    title: collection.title,
+  });
+  const out: Record<string, unknown> = {
+    court: courtLabel || null,
+    track,
+    track_class: routing.track_class,
+    subject_section: routing.subject_section,
+  };
+  if (routing.track_class === "semi" && families.length > 0) out.committee_families = [...families];
   return out;
 }
 
@@ -1234,15 +1285,73 @@ export function findArticleMentions(text: string): ArticleMention[] {
   return out;
 }
 
+// Lead-ins, tested against the 60 characters before the noun plus the noun's own
+// prefix («لل», «بال»…). `WHAT_IS_IN` is «ما ورد في / ما نصت عليه …»,
+// `PROVISION_OF` is «حكم / أحكام / نص».
+const WHAT_IS_IN = String.raw`(?:ما\s+(?:ورد|نصت|نص|جاء)\s+(?:عليه\s+)?(?:في|ب)\s+)`;
+const PROVISION_OF = String.raw`(?:(?:حكم|أحكام|نص)\s+)`;
+
 /**
- * Lead-ins that make a mention an exception or qualification (`EXEMPTS_FROM`).
- * Tested against the 60 characters before the noun plus the noun's own prefix.
+ * This article is an exception from (or overrides) the article it names
+ * (`EXEMPTS_FROM`, this → named): «استثناءً من المادة…», «على الرغم من أحكام
+ * المادة…», «خلافاً للمادة…».
  */
 const EXEMPTION_LEADS = [
-  /(?:استثناءً?|استثناء)\s+من\s+(?:حكم\s+|أحكام\s+|نص\s+)?(?:ال)?$/,
-  /(?:مع\s+عدم\s+الإخلال|دون\s+(?:ال)?إخلال)\s+(?:(?:بحكم|بأحكام)\s+(?:ال)?|بما\s+ورد\s+في\s+(?:ال)?|بال|ب)?$/,
-  /ما\s+لم\s+ينص\s+(?:عليه\s+)?في\s+(?:ال)?$/,
+  new RegExp(String.raw`(?:و?استثناءً?|و?استثناء)\s+من\s+${PROVISION_OF}?(?:ال)?$`, "u"),
+  new RegExp(String.raw`على\s+الرغم\s+(?:مما\s+(?:ورد|نصت|نص|جاء)\s+(?:عليه\s+)?في\s+|من\s+${PROVISION_OF}?)(?:ال)?$`, "u"),
+  new RegExp(String.raw`خلاف[اًا]?\s+(?:لما\s+(?:ورد|نصت|نص|جاء)\s+(?:عليه\s+)?في\s+(?:ال)?|ل(?:حكم|أحكام|نص)\s+(?:ال)?|لل|ل)$`, "u"),
 ];
+
+/**
+ * The named article is the exception from this one (`EXEMPTS_FROM`, named →
+ * this): «فيما عدا / باستثناء ما ورد في المادة…», «ما لم ينص في المادة…».
+ */
+const REVERSE_EXEMPTION_LEADS = [
+  new RegExp(String.raw`(?:فيما\s+عدا|باستثناء|عدا)\s+${WHAT_IS_IN}?${PROVISION_OF}?(?:ال)?$`, "u"),
+  new RegExp(String.raw`ما\s+لم\s+(?:ينص|تنص|يرد)\s+(?:عليه\s+)?(?:في\s+)?(?:ال)?$`, "u"),
+];
+
+/**
+ * This article applies subject to the one it names (`SUBJECT_TO`): «مع مراعاة
+ * المادة…», «مع عدم الإخلال بحكم المادة…», «بما لا يتعارض مع المادة…». A
+ * condition, not an exception, so it is weaker than `EXEMPTS_FROM` in retrieval.
+ */
+const QUALIFIER_LEADS = [
+  new RegExp(String.raw`مع\s+مراعاة\s+${WHAT_IS_IN}?${PROVISION_OF}?(?:ال)?$`, "u"),
+  new RegExp(
+    String.raw`(?:مع\s+عدم\s+الإخلال|دون\s+(?:ال)?إخلال|بدون\s+إخلال)\s+(?:(?:بحكم|بأحكام|بنص)\s+(?:ال)?|بما\s+(?:ورد|نصت|نص|جاء)\s+(?:عليه\s+)?في\s+(?:ال)?|بال|ب)?$`,
+    "u",
+  ),
+  new RegExp(String.raw`بما\s+لا\s+يتعارض\s+مع\s+${PROVISION_OF}?(?:ال)?$`, "u"),
+];
+
+/** «يعاقب كل من خالف (أحكام) المادة…»: a violation word right before the noun… */
+const VIOLATION_LEAD =
+  /(?:خالف|يخالف|تخالف|يخالفون|خالفوا|مخالفة|مخالفته|مخالفتها|بمخالفة|لمخالفة|يمتنع\s+عن\s+تنفيذ|لم\s+يلتزم\s+ب|أخل\s+ب|الإخلال\s+ب)\s+(?:أي\s+)?(?:(?:حكم|أحكام|نص|نصوص)\s+(?:من\s+)?)?(?:ال)?$/u;
+/** …and a penalty word in the same sentence. */
+const PENALTY_WORD = /يعاقب|يُعاقب|يعاقَب|يُعاقَب|تعاقب|تُعاقب|عقوبة|العقوبة|بغرامة|غرامة|بالسجن|يجازى|يُجازى|جزاء|الجزاءات|يغرم|يُغرَّم/u;
+
+/**
+ * A penalty article: it imposes a fine, prison or a sanction («يعاقب…»,
+ * «بغرامة لا تزيد…», «بالسجن مدة…»). Most of them name no article («كل من
+ * خالف أحكام هذا النظام»), so the builder links them to their law's node and
+ * retrieval brings them in when a question asks about a penalty.
+ */
+const PENALTY_ARTICLE_RE =
+  /(?:^|[\s(«"،-])(?:يعاقب|يُعاقب|يعاقَب|يُعاقَب|تعاقب|تُعاقب|يجازى|يُجازى)\s|بغرامة\s+(?:لا|مالية|قدرها|تصل|تعادل|مقدارها)|بالسجن\s+(?:مدة|لمدة)|(?:العقوبات|الجزاءات)\s+(?:الآتية|التالية)/u;
+
+export function isPenaltyArticle(displayText: string): boolean {
+  return PENALTY_ARTICLE_RE.test(lawOwnText(displayText));
+}
+
+/** The sentence around `[from, to)`: from the last break before it to the next one after it. */
+function sentenceAround(text: string, from: number, to: number): string {
+  let start = 0;
+  for (const ch of [".", "\n", "؛"]) start = Math.max(start, text.lastIndexOf(ch, from - 1) + 1);
+  const rest = text.slice(to);
+  const stop = rest.search(/[.\n؛]/);
+  return text.slice(start, to + (stop < 0 ? rest.length : stop));
+}
 
 /** The text right after a mention's last number, without the closing bracket. */
 function textAfterMention(text: string, end: number, len: number): string {
@@ -1266,7 +1375,9 @@ function findLawByTitleFragment(fragment: string, lawMap: LawIndexMap): LawIndex
 
 /** One article reference found in an article's own words, kept small until every law is known. */
 export interface ArticleRefCandidate {
-  edgeType: "EXEMPTS_FROM" | "CITES_ARTICLE";
+  edgeType: "EXEMPTS_FROM" | "SUBJECT_TO" | "PENALIZES" | "CITES_ARTICLE";
+  /** `EXEMPTS_FROM` only: the named article is the exception from this one («فيما عدا ما ورد في المادة…»). */
+  reverse?: boolean;
   num: number;
   /** The words right after the number (≤ 65 chars): «من نظام …» names the law it belongs to. */
   after: string;
@@ -1365,15 +1476,39 @@ export function scanArticleRefs(displayText: string): ArticleRefCandidate[] {
   const out: ArticleRefCandidate[] = [];
   for (const mention of findArticleMentions(text)) {
     const lead = text.slice(Math.max(0, mention.start - 60), mention.start) + mention.prefix;
-    const edgeType: ArticleRefCandidate["edgeType"] = EXEMPTION_LEADS.some((re) => re.test(lead))
-      ? "EXEMPTS_FROM"
-      : "CITES_ARTICLE";
+    const kind = classifyLead(text, mention, lead);
     const after = detach(textAfterMention(text, mention.end, 65));
     const evidence = detach(mentionEvidence(text, mention));
-    for (const num of mention.numbers) out.push({ edgeType, num, after, evidence });
+    for (const num of mention.numbers) {
+      out.push(kind.reverse ? { edgeType: kind.edgeType, reverse: true, num, after, evidence } : { edgeType: kind.edgeType, num, after, evidence });
+    }
   }
   return out;
 }
+
+/** What a mention's lead-in makes it: exception (either way), condition, penalty, or a plain citation. */
+function classifyLead(
+  text: string,
+  mention: ArticleMention,
+  lead: string,
+): { edgeType: ArticleRefCandidate["edgeType"]; reverse?: boolean } {
+  if (EXEMPTION_LEADS.some((re) => re.test(lead))) return { edgeType: "EXEMPTS_FROM" };
+  if (REVERSE_EXEMPTION_LEADS.some((re) => re.test(lead))) return { edgeType: "EXEMPTS_FROM", reverse: true };
+  if (QUALIFIER_LEADS.some((re) => re.test(lead))) return { edgeType: "SUBJECT_TO" };
+  const near = text.slice(Math.max(0, mention.start - 40), mention.start) + mention.prefix;
+  if (VIOLATION_LEAD.test(near) && PENALTY_WORD.test(sentenceAround(text, mention.start, mention.end))) {
+    return { edgeType: "PENALIZES" };
+  }
+  return { edgeType: "CITES_ARTICLE" };
+}
+
+/** Link weights per type: what retrieval multiplies a hop's transfer by. */
+const REF_WEIGHT: Readonly<Record<ArticleRefCandidate["edgeType"], number>> = {
+  EXEMPTS_FROM: 1.25,
+  PENALIZES: 1.2,
+  SUBJECT_TO: 1.1,
+  CITES_ARTICLE: 0.9,
+};
 
 /** The edges of one article from its scanned references, once every law is in `lawMap`. */
 export function resolveArticleEdges(
@@ -1385,12 +1520,12 @@ export function resolveArticleEdges(
   if (!currentLaw) return [];
 
   const edges = new Map<string, GraphEdgePayload>();
-  const addEdge = (targetKey: string, edgeType: GraphEdgeType, weight: number, evidence: string) => {
-    if (!targetKey || targetKey === node.node_key) return;
-    const dedupeKey = `${node.node_key}|${targetKey}|${edgeType}`;
+  const addEdge = (targetKey: string, edgeType: GraphEdgeType, weight: number, evidence: string, sourceKey = node.node_key) => {
+    if (!targetKey || !sourceKey || targetKey === sourceKey) return;
+    const dedupeKey = `${sourceKey}|${targetKey}|${edgeType}`;
     if (!edges.has(dedupeKey)) {
       edges.set(dedupeKey, {
-        source_key: node.node_key,
+        source_key: sourceKey,
         target_key: targetKey,
         edge_type: edgeType,
         origin: "auto_watchdog",
@@ -1400,21 +1535,20 @@ export function resolveArticleEdges(
     }
   };
 
-  // 1. Statutory exception / qualification edges (`EXEMPTS_FROM`) first, then
-  // 2. general cross-references (`CITES_ARTICLE`) to articles not already exempted.
-  const exemptedTargets = new Set<string>();
-  for (const ref of node.refs) {
-    if (ref.edgeType !== "EXEMPTS_FROM") continue;
-    const targetKey = targetLawFor(ref.after, currentLaw, lawMap)?.articleKeyByNumber.get(ref.num);
-    if (targetKey) {
-      exemptedTargets.add(targetKey);
-      addEdge(targetKey, "EXEMPTS_FROM", 1.25, ref.evidence);
+  // The strongest kind wins per named article: an exception, then a condition,
+  // then a penalty; a plain citation only for articles none of those named.
+  // A reversed exception («فيما عدا ما ورد في المادة ٥») runs from the named
+  // article to this one: article 5 is the exception.
+  const linkedTargets = new Set<string>();
+  for (const kind of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "CITES_ARTICLE"] as const) {
+    for (const ref of node.refs) {
+      if (ref.edgeType !== kind) continue;
+      const targetKey = targetLawFor(ref.after, currentLaw, lawMap)?.articleKeyByNumber.get(ref.num);
+      if (!targetKey || linkedTargets.has(targetKey)) continue;
+      linkedTargets.add(targetKey);
+      if (ref.reverse) addEdge(node.node_key, kind, REF_WEIGHT[kind], ref.evidence, targetKey);
+      else addEdge(targetKey, kind, REF_WEIGHT[kind], ref.evidence);
     }
-  }
-  for (const ref of node.refs) {
-    if (ref.edgeType !== "CITES_ARTICLE") continue;
-    const targetKey = targetLawFor(ref.after, currentLaw, lawMap)?.articleKeyByNumber.get(ref.num);
-    if (targetKey && !exemptedTargets.has(targetKey)) addEdge(targetKey, "CITES_ARTICLE", 0.9, ref.evidence);
   }
 
   // 3. Law-level hierarchy edges (`PARENT_LAW` & `SUPERSEDES_LAW`) attached once on the law's root article.
@@ -1614,4 +1748,356 @@ export function extractConceptEdges(lawMap: LawIndexMap): GraphEdgePayload[] {
     }
   }
   return out;
+}
+
+// ── 7. Defined terms (`term` nodes, `DEFINES_TERM`) ──────────────────────────
+
+/** «يقصد بالألفاظ والعبارات الآتية… المعاني المبينة أمامها»: the opening of a definitions article. */
+const DEFINITIONS_LEAD =
+  /يُ?قصد\s+ب(?:ال)?(?:ألفاظ|الفاظ|كلمات|عبارات|مصطلحات|تعبيرات)|تعني\s+(?:ال)?(?:ألفاظ|كلمات|عبارات|مصطلحات)|يكون\s+لل(?:ألفاظ|كلمات|عبارات|مصطلحات)|لل(?:ألفاظ|مصطلحات|كلمات)\s+(?:والعبارات\s+)?الآتية|المعاني\s+(?:المبينة|الموضحة|المحددة)/u;
+/** One «المصطلح: تعريفه» line of a definitions list (markdown bold and list marks removed first). */
+const DEFINITION_LINE =
+  /^[\s\-–•>]*(?:\(?[0-9٠-٩]{1,3}\s*[).\-–]\s*|\(?[أ-ي]\s*[).\-–]\s+)?([^:\n]{2,45}?)\s*[:：]\s*(.+)$/u;
+/** «ويقصد بمصطلح "الإتاوات" …»: one definition inside an ordinary article. */
+const INLINE_DEFINITION =
+  /يُ?قصد\s+ب(?:مصطلح|عبارة|كلمة|لفظ|لفظة|تعبير)?\s*[«"“]([^»"”\n]{2,40})[»"”]\s*(?:المستخدم[ةه]?\s+[^،,\n]{0,40}\s+)?([^\n]{20,320})/gu;
+
+/**
+ * Terms every law defines as a label for itself or an authority (الوزارة، الهيئة،
+ * المجلس…): they mean a different body in each law and would join unrelated laws.
+ */
+const BOILERPLATE_TERMS = new Set(
+  [
+    "الهيئة", "الوزارة", "الوزير", "المجلس", "الرئيس", "النظام", "اللائحة", "اللوائح", "القواعد", "الضوابط",
+    "المحافظ", "المملكة", "الجهة المختصة", "الجهات المختصة", "الرئيس التنفيذي", "مجلس الإدارة", "الأمين العام",
+    "الأمانة", "الوكالة", "الوكيل", "المدير العام", "المدير", "الصندوق", "المركز", "المؤسسة", "الإدارة",
+    "الجهة", "المحكمة", "الديوان", "الترتيبات التنظيمية", "التنظيم", "الاتفاقية", "الدولة", "الدول الأعضاء",
+    "اللجنة", "الهيئة العامة", "الأمير", "البلدية", "المحافظة", "المنطقة", "الجامعة", "الكلية", "الشركة",
+    "البنك", "البنك المركزي", "المصرف", "المجمع", "الإدارة العامة", "المستشفى", "المعهد", "السجل", "الدليل",
+    "الخطة", "الاستراتيجية", "البرنامج", "المنصة", "النظام الأساسي", "الوزارة المختصة", "اللائحة التنفيذية",
+    "الأمانة العامة", "الإدارة المختصة", "الجهات ذات العلاقة", "الجهات المعنية", "الجهة المشرفة", "الوحدة",
+  ].map((t) => normalizeArabicKey(t)),
+);
+
+/** A definition that only names a document («نظام الشركات الصادر بالمرسوم…») defines nothing. */
+const DOCUMENT_REFERENCE_DEFINITION = /^(?:ال)?(?:نظام|لائحة|قرار|مرسوم|أمر|قواعد|ضوابط|تنظيم|اتفاقية)\s[^\n]{0,80}(?:الصادر|الصادرة|الموافق)/u;
+
+const MAX_TERMS_PER_ARTICLE = 80;
+const TERM_DEFINITION_MAX_CHARS = 320;
+
+export interface TermDefinition {
+  /** As the law writes it («الأجر الفعلي»). */
+  term: string;
+  /** `normalizeArabicKey(term)`: the same term in every law. */
+  normalized: string;
+  definition: string;
+}
+
+function keepDefinition(term: string, definition: string): TermDefinition | null {
+  const cleanTerm = term
+    .replace(/[«»"“”()[\]]/g, "")
+    .replace(/^[\s\-–.]*(?:[0-9٠-٩]{1,3}|[أ-ي]ـ?)\s*[-–.)]+\s*/u, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const normalized = normalizeArabicKey(cleanTerm);
+  const def = definition.replace(/\s+/g, " ").trim();
+  if (!normalized || /[0-9٠-٩۰-۹]/.test(normalized) || normalized.split(" ").length > 5) return null;
+  if (BOILERPLATE_TERMS.has(normalized) || def.length < 35) return null;
+  if (DOCUMENT_REFERENCE_DEFINITION.test(def)) return null;
+  // «اللجنة الوطنية: اللجنة الوطنية للتربية…» only spells the name out.
+  if (normalizeArabicKey(def).startsWith(normalized)) return null;
+  // detach: the watchdog keeps these until every law is streamed, not the article texts.
+  return { term: detach(cleanTerm), normalized: detach(normalized), definition: detach(def.slice(0, TERM_DEFINITION_MAX_CHARS)) };
+}
+
+/**
+ * The terms an article defines: the «المصطلح: تعريفه» lines after a definitions
+ * lead-in, and «يقصد بمصطلح "…"» sentences. Only the article's own words (not a
+ * fused regulation), boilerplate labels and name-only definitions left out.
+ */
+export function extractDefinitions(displayText: string): TermDefinition[] {
+  const text = lawOwnText(displayText);
+  const out = new Map<string, TermDefinition>();
+  const add = (d: TermDefinition | null) => {
+    if (d && !out.has(d.normalized) && out.size < MAX_TERMS_PER_ARTICLE) out.set(d.normalized, d);
+  };
+  const lead = DEFINITIONS_LEAD.exec(text);
+  if (lead) {
+    for (const raw of text.slice(lead.index).split("\n").slice(1, 200)) {
+      // Markdown bold, table pipes and heading marks («### ٣ -. أصل الوثيقة: …», «| المرخص له: | …»).
+      const line = raw.replace(/\*+/g, "").replace(/\|/g, " ").replace(/^\s*#+\s*/, "");
+      const m = DEFINITION_LINE.exec(line);
+      if (m) add(keepDefinition(m[1], m[2]));
+    }
+  }
+  for (const m of text.matchAll(INLINE_DEFINITION)) add(keepDefinition(m[1], m[2]));
+  return [...out.values()];
+}
+
+/** One definition as the watchdog keeps it until every law is streamed. */
+export interface DefinitionRecord extends TermDefinition {
+  articleKey: string;
+  lawSlug: string;
+  lawTitle: string;
+}
+
+/** `node_key` of the term node for a normalized term. */
+export function termNodeKey(normalized: string): string {
+  return `term:${normalized}`;
+}
+
+const TERM_NODE_MAX_LAWS = 8;
+
+/**
+ * One `term` node per normalized term, with the definitions of up to eight
+ * laws in its text, and a `DEFINES_TERM` link from every defining article.
+ * Retrieval uses a term only to bring in the definition from the laws a
+ * question already reached, so a term defined in 100 regulations is not a
+ * bridge between them.
+ */
+export function buildTermGraph(records: readonly DefinitionRecord[]): { nodes: GraphNodePayload[]; edges: GraphEdgePayload[] } {
+  const byTerm = new Map<string, DefinitionRecord[]>();
+  for (const r of records) {
+    if (termNodeKey(r.normalized).length > MAX_NODE_KEY_LENGTH) continue;
+    const list = byTerm.get(r.normalized) ?? [];
+    list.push(r);
+    byTerm.set(r.normalized, list);
+  }
+
+  const nodes: GraphNodePayload[] = [];
+  const edges: GraphEdgePayload[] = [];
+  for (const [normalized, defs] of [...byTerm].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+    const key = termNodeKey(normalized);
+    const lawSlugs = [...new Set(defs.map((d) => d.lawSlug))];
+    // The surface form most laws use.
+    const formCount = new Map<string, number>();
+    for (const d of defs) formCount.set(d.term, (formCount.get(d.term) ?? 0) + 1);
+    const title = [...formCount].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
+    const shown: string[] = [];
+    const seenLaw = new Set<string>();
+    for (const d of defs) {
+      if (seenLaw.has(d.lawSlug) || shown.length >= TERM_NODE_MAX_LAWS) continue;
+      seenLaw.add(d.lawSlug);
+      shown.push(`— في ${d.lawTitle}: ${d.definition}`);
+    }
+    const displayText = clipBody(
+      [`تعريف «${title}»:`, ...shown, lawSlugs.length > shown.length ? `ومعرَّف كذلك في ${lawSlugs.length - shown.length} مستند آخر.` : ""]
+        .filter(Boolean)
+        .join("\n"),
+      4_000,
+    );
+    const header = `مصطلح نظامي معرَّف | عدد المستندات المعرِّفة: ${lawSlugs.length}`;
+    nodes.push({
+      node_key: key,
+      node_type: "term",
+      source_id: normalized,
+      law_slug: null,
+      collection_id: null,
+      article_number: null,
+      doc_status: "active",
+      item_status: "active",
+      is_page_numbered: false,
+      is_embeddable: true,
+      title,
+      url: "",
+      display_text: displayText,
+      contextual_header: header,
+      content_sha256: sha256Hex(buildEmbeddingInput({ contextual_header: header, title, display_text: displayText })),
+      metadata: { law_count: lawSlugs.length, laws: lawSlugs.slice(0, 20) },
+    });
+    const seenArticle = new Set<string>();
+    for (const d of defs) {
+      if (seenArticle.has(d.articleKey)) continue;
+      seenArticle.add(d.articleKey);
+      edges.push({
+        source_key: d.articleKey,
+        target_key: key,
+        edge_type: "DEFINES_TERM",
+        origin: "auto_watchdog",
+        weight: 1.0,
+        evidence: `«${d.term}»: ${d.definition}`.slice(0, 180),
+      });
+    }
+  }
+  return { nodes, edges };
+}
+
+// ── 8. Law-level links: penalty articles, repeal clauses ─────────────────────
+
+/** `PENALIZES` from a penalty article to its own law's node: «كل من خالف أحكام هذا النظام». */
+export function lawPenaltyEdge(articleKey: string, lawNodeKey: string, displayText: string): GraphEdgePayload {
+  const own = lawOwnText(displayText);
+  const hit = PENALTY_ARTICLE_RE.exec(own);
+  const at = hit ? hit.index : 0;
+  return {
+    source_key: articleKey,
+    target_key: lawNodeKey,
+    edge_type: "PENALIZES",
+    origin: "auto_watchdog",
+    weight: 1.0,
+    evidence: sentenceAround(own, at + 1, at + 2).trim().slice(0, 180) || null,
+  };
+}
+
+/** «يلغي هذا النظام نظام … الصادر…», «يحل هذا النظام محل …»: the document a law repeals. */
+const REPEAL_CLAUSE =
+  /(?:يلغي|يُلغي|تلغي|تُلغي|يلغى|يُلغى|تلغى|تُلغى|ويلغي|ويُلغي|وتلغى|ويلغى|ويُلغى)\s+(?:هذا\s+(?:النظام|التنظيم)\s+|هذه\s+(?:اللائحة|القواعد|الضوابط)\s+)?((?:ال)?(?:نظام|لائحة|تنظيم|قواعد|ضوابط)\s+[^\n.؛]{3,140})|(?:يحل|تحل)\s+(?:هذا\s+(?:النظام|التنظيم)|هذه\s+(?:اللائحة|القواعد|الضوابط))\s+محل\s+([^\n.؛]{3,140})/gu;
+/** Where a cited title stops: «… الصادر بالمرسوم…», «… لعام 1426هـ». */
+const TITLE_TAIL = /\s+(?:الصادر|الصادره|المقر|المقره|الموافق|المعتمد|المعتمده|بالمرسوم|بقرار|رقم|لعام|لسنه|وتاريخ)(?:\s.*)?$/u;
+
+/** A title without its issue tail and year: what a repeal clause and a library title share. */
+export function titleCore(title: string): string {
+  return normalizeArabicKey(title).replace(TITLE_TAIL, "").replace(/\s+\d+\s*ه?$/u, "").trim();
+}
+
+/** The cited titles of every repeal clause in an article's own words. */
+export function scanRepealClauses(displayText: string): string[] {
+  const text = lawOwnText(displayText);
+  const out: string[] = [];
+  for (const m of text.matchAll(REPEAL_CLAUSE)) {
+    const core = titleCore(m[1] ?? m[2] ?? "");
+    if (core.split(" ").length >= 2 && !out.includes(core)) out.push(detach(core));
+  }
+  return out;
+}
+
+/**
+ * `SUPERSEDES_LAW` between law nodes (new → old) from `supersedes_law_slug` and
+ * from repeal clauses. A clause resolves only when exactly one other library
+ * law has that title (a repealed one preferred when several do): a guess
+ * between two versions of a law would link the wrong one.
+ */
+export function resolveLawSupersession(
+  lawSlug: string,
+  repealCores: readonly string[],
+  lawMap: LawIndexMap,
+  coreIndex: ReadonlyMap<string, readonly LawIndexEntry[]>,
+): GraphEdgePayload[] {
+  const current = lawMap.get(lawSlug);
+  if (!current?.lawNodeKey) return [];
+  const out = new Map<string, GraphEdgePayload>();
+  const add = (old: LawIndexEntry | undefined, evidence: string) => {
+    if (!old?.lawNodeKey || old.slug === current.slug || out.has(old.slug)) return;
+    out.set(old.slug, {
+      source_key: current.lawNodeKey as string,
+      target_key: old.lawNodeKey,
+      edge_type: "SUPERSEDES_LAW",
+      origin: "auto_watchdog",
+      weight: 1.0,
+      evidence: evidence.slice(0, 180),
+    });
+  };
+  if (current.supersedesLawSlug) {
+    const old = lawMap.get(current.supersedesLawSlug);
+    add(old, `يحل محل: ${old?.title ?? ""}`);
+  }
+  const isRepealed = (e: LawIndexEntry) => (e.status ?? "").toLowerCase() === "repealed";
+  const ownCore = titleCore(current.title).replace(/\s+/g, "");
+  for (const core of repealCores) {
+    const candidates = (coreIndex.get(core) ?? []).filter((e) => e.slug !== current.slug);
+    const repealed = candidates.filter(isRepealed);
+    const pick = candidates.length === 1 ? candidates[0] : repealed.length === 1 ? repealed[0] : undefined;
+    if (!pick) continue;
+    // A repealed law cannot have replaced one still in force, and a law that
+    // repeals its own name (an older version) is only safe when the library
+    // marks the other copy repealed: otherwise either copy could be the old one.
+    if (isRepealed(current) && !isRepealed(pick)) continue;
+    if (core.replace(/\s+/g, "") === ownCore && !(isRepealed(pick) && !isRepealed(current))) continue;
+    add(pick, `يلغي: ${pick.title}`);
+  }
+  return [...out.values()];
+}
+
+/** title core → the laws that carry it (for `resolveLawSupersession`). */
+export function buildTitleCoreIndex(lawMap: LawIndexMap): Map<string, LawIndexEntry[]> {
+  const index = new Map<string, LawIndexEntry[]>();
+  for (const e of lawMap.values()) {
+    const core = titleCore(e.title);
+    if (!core) continue;
+    const list = index.get(core) ?? [];
+    list.push(e);
+    index.set(core, list);
+  }
+  return index;
+}
+
+// ── 9. The library's own regulation links ────────────────────────────────────
+
+/** One `article_regulations` row, kept for `resolveRegulationEdges` once every law is indexed. */
+export interface RegulationLinkCandidate {
+  /** `article:<id>` of the system article the regulation text hangs on. */
+  article_key: string;
+  law_slug: string;
+  ref?: string | null;
+  reg_num?: string | number | null;
+  status?: string | null;
+}
+
+/** normalised title → the laws that carry it (for `resolveRegulationEdges`). */
+export function buildNormalizedTitleIndex(lawMap: LawIndexMap): Map<string, LawIndexEntry[]> {
+  const index = new Map<string, LawIndexEntry[]>();
+  for (const e of lawMap.values()) {
+    if (!e.normalizedTitle) continue;
+    const list = index.get(e.normalizedTitle) ?? [];
+    list.push(e);
+    index.set(e.normalizedTitle, list);
+  }
+  return index;
+}
+
+/**
+ * «12» / «١٢» → 12. Anything else is not one whole article and gives null:
+ * «12/3», «12.5», «12 مكرر», «12 أ», «5 فقرة 2», «جدول الغرامات رقم 9», a
+ * section name. The library's reg_num holds only digits when it names one
+ * article (13,304 of the ~15.7k rows), so nothing else is guessed at.
+ */
+export function wholeRegulationNumber(raw: string | number | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const text = String(raw).trim();
+  if (!/^[0-9٠-٩۰-۹]{1,4}$/.test(text)) return null;
+  const n = parseArabicArticleNumber(text);
+  return n !== null && n > 0 ? n : null;
+}
+
+/**
+ * `IMPLEMENTED_BY` (system article → the article of its executive regulation
+ * that implements it), from the library's own article_regulations rows: `ref`
+ * names the regulation document, `reg_num` its article. The regulation's text
+ * already sits inside the system article's node; this link joins the two
+ * documents so an answer that lands on the regulation article finds the
+ * system article it implements, and the explorer shows the pair.
+ *
+ * A link is made only when the reference is certain: one whole article number,
+ * a title that names exactly one in-force library document, never the
+ * article's own law, and an
+ * article with that number in the regulation.
+ */
+export function resolveRegulationEdges(
+  candidates: readonly RegulationLinkCandidate[],
+  lawMap: LawIndexMap,
+  titleIndex: ReadonlyMap<string, readonly LawIndexEntry[]>,
+): GraphEdgePayload[] {
+  const out = new Map<string, GraphEdgePayload>();
+  for (const c of candidates) {
+    if ((c.status ?? "active").toLowerCase() === "repealed") continue;
+    const num = wholeRegulationNumber(c.reg_num);
+    const refKey = normalizeArabicKey(c.ref ?? "");
+    if (num === null || !refKey || !lawMap.has(c.law_slug)) continue;
+    const docs = (titleIndex.get(refKey) ?? []).filter((e) => e.slug !== c.law_slug);
+    const inForce = docs.filter((e) => (e.status ?? "").toLowerCase() !== "repealed");
+    const doc = inForce.length === 1 ? inForce[0] : undefined;
+    const targetKey = doc?.articleKeyByNumber.get(num);
+    if (!doc || !targetKey || targetKey === c.article_key) continue;
+    const key = `${c.article_key}|${targetKey}`;
+    if (out.has(key)) continue;
+    out.set(key, {
+      source_key: c.article_key,
+      target_key: targetKey,
+      edge_type: "IMPLEMENTED_BY",
+      origin: "auto_watchdog",
+      weight: 0.9,
+      evidence: `${doc.title} — المادة ${num}`.slice(0, 180),
+    });
+  }
+  return [...out.values()];
 }
