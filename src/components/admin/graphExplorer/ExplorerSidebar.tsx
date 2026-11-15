@@ -392,6 +392,11 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
             </span>
             <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-mono text-zinc-400">{lab.elapsed_ms}ms</span>
             <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-400">{lab.hits.length} نتيجة</span>
+            {(lab.seeds?.length ?? 0) > 0 && (
+              <span className="rounded-full bg-[#C8A762]/12 px-2 py-0.5 text-[#C8A762]" title="مواد ذكرها السؤال بنصها: قُدِّمت في النتائج وتبعتها روابطها">
+                مواد مذكورة: {lab.seeds?.length}
+              </span>
+            )}
             {lab.routing && (
               <span
                 title={lab.routing.laws.length ? `أنظمة السؤال: ${lab.routing.laws.join("، ")}` : undefined}
@@ -442,10 +447,10 @@ function LabTab({ lab, labLoading, labError, labActive, onRunLab, onShowLab, onL
                         <span className="rounded bg-[#C8A762] px-1.5 font-mono font-black text-black">S{i + 1}</span>
                         <span style={{ color: c }} className="font-bold">{NODE_TYPE_META[h.kind].label}</span>
                         <span
-                          className={`rounded border px-1 font-bold ${hop === 0 ? "border-zinc-700 text-zinc-400" : hop === 1 ? "border-sky-500/40 text-sky-300" : "border-violet-500/40 text-violet-300"}`}
-                          title={hop === 0 ? "وجدها البحث النصي/الدلالي مباشرة" : `وصل إليها المساعد بعد ${hop === 1 ? "خطوة واحدة" : "خطوتين"} على روابط الجراف`}
+                          className={`rounded border px-1 font-bold ${h.seed ? "border-[#C8A762]/50 text-[#C8A762]" : hop === 0 ? "border-zinc-700 text-zinc-400" : hop === 1 ? "border-sky-500/40 text-sky-300" : "border-violet-500/40 text-violet-300"}`}
+                          title={h.seed ? "مادة ذكرها السؤال بنصه، فقُدِّمت وتبعتها روابطها" : hop === 0 ? "وجدها البحث النصي/الدلالي مباشرة" : `وصل إليها المساعد بعد ${hop === 1 ? "خطوة واحدة" : "خطوتين"} على روابط الجراف`}
                         >
-                          {labHopLabel(hop)}
+                          {h.seed ? "مذكورة في السؤال" : labHopLabel(hop)}
                         </span>
                       </span>
                       <span className="font-mono text-zinc-500">{h.score.toFixed(4)}</span>

@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/access-control";
 import { hasEmbeddingCredentials, resolveEmbeddingModelProfile } from "@/lib/ai/embeddingClient";
 import { embedQueryWithin } from "@/lib/ai/graphRagSwitch";
 import { deriveLabQueries, isExplorerNodeType, parseExplorerRequest, parseLabRouting, type LabHit } from "@/lib/ai/graphExplorerCore";
+import { graphFunctionMissing, graphSeedKeys, questionRefLookups } from "@/lib/ai/retrieval";
 import { parseSearchQuery } from "@/utils/normalizeArabic";
 
 /**
@@ -15,8 +16,10 @@ import { parseSearchQuery } from "@/utils/normalizeArabic";
  *   ?action=neighborhood&key=&depth=&edges=&limit= 1–2 hop neighbourhood
  *   ?action=node&key=                              one node in full
  *   ?action=retrieve&q=&keywords=                  the retrieval lab: runs the
- *       same hybrid graph_rag_retrieve the AI tools use (one query embedding
- *       when a key is set), so staff can see what a question would cite.
+ *       same hybrid graph retrieve the AI tools use (one query embedding when
+ *       a key is set; the articles the question names as seeds and its named
+ *       law as the pinned law, 20261117_10), so staff can see what a question
+ *       would cite.
  *
  * Service client: library_graph is server-only. Before 20261113_10 is applied
  * the explorer RPCs do not exist; that answers { schemaMissing: true }.
@@ -28,6 +31,8 @@ const NO_STORE = { "Cache-Control": "private, no-store" } as const;
 const EXPLORER_MIGRATION = "20261113_10_library_graph_explorer.sql";
 /** The lab's "section only" / "all sections" scopes call graph_rag_retrieve_scoped. */
 const ROUTING_MIGRATION = "20261116_10_library_graph_links.sql";
+/** The articles a question names — like a live AI run's. */
+const NAMED_LOOKUP_MS = 2000;
 
 type RpcError = { code?: string; message?: string } | null;
 
@@ -113,22 +118,36 @@ export async function GET(request: NextRequest) {
       embedding = literal ? "used" : "failed";
     }
 
+    // What the question names outright, looked up as a live run does: the
+    // articles become seeds, the named law the pinned law.
+    const lookup = new AbortController();
+    const lookupTimer = setTimeout(() => lookup.abort(), NAMED_LOOKUP_MS);
+    const named = questionRefLookups(admin, req.q, undefined, true, lookup.signal);
+    const [directRows, scopeSlug] = await Promise.all([named.direct, named.scopeSlug()]).finally(() => clearTimeout(lookupTimer));
+    const seeds = graphSeedKeys(directRows);
+
     const args = {
       p_tsqueries: tsqueries,
       p_query_embedding: literal,
       p_model_id: literal ? modelId : null,
-      p_law_slug: null,
+      p_law_slug: scopeSlug,
       p_limit_laws: 8,
       p_limit_principles: 4,
       p_limit_decrees: 2,
       p_limit_feqh: 2,
       p_enable_graph_hop: true,
     };
-    // `auto` runs exactly what the AI tools run; the other scopes need 20261116_10.
-    const { data, error } =
-      req.scope === "auto"
-        ? await admin.rpc("graph_rag_retrieve", args)
-        : await admin.rpc("graph_rag_retrieve_scoped", { ...args, p_scope: req.scope });
+    // `auto` with no seeds is exactly the nine-argument call; seeds need
+    // 20261117_10 (before it the lab drops them, as a live run does), the
+    // other scopes 20261116_10.
+    const scoped = (withSeeds: boolean) =>
+      admin.rpc("graph_rag_retrieve_scoped", { ...args, p_scope: req.scope, ...(withSeeds ? { p_seed_keys: seeds } : {}) });
+    let seedsUsed = seeds.length > 0;
+    let { data, error } = seedsUsed || req.scope !== "auto" ? await scoped(seedsUsed) : await admin.rpc("graph_rag_retrieve", args);
+    if (error && seedsUsed && graphFunctionMissing(error.code)) {
+      seedsUsed = false;
+      ({ data, error } = req.scope === "auto" ? await admin.rpc("graph_rag_retrieve", args) : await scoped(false));
+    }
     if (error) {
       if (!explorerSchemaMissing(error)) return failed("retrieve", error);
       return missing(req.scope === "auto" ? EXPLORER_MIGRATION : ROUTING_MIGRATION);
@@ -149,6 +168,7 @@ export async function GET(request: NextRequest) {
           via_edge_type: typeof h.via_edge_type === "string" ? h.via_edge_type : null,
           via_from_title: typeof h.via_from_title === "string" ? h.via_from_title : null,
           hop: typeof h.hop === "number" ? h.hop : undefined,
+          seed: h.seed === true,
           law_slug: typeof h.law_slug === "string" ? h.law_slug : null,
           status: typeof h.status === "string" ? h.status : null,
           url: typeof h.url === "string" ? h.url : "",
@@ -170,6 +190,8 @@ export async function GET(request: NextRequest) {
           embedding,
           elapsed_ms: Date.now() - started,
           routing: parseLabRouting(payload.routing),
+          law_slug: scopeSlug,
+          seeds: seedsUsed ? seeds : [],
           hits,
         },
       },

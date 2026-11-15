@@ -41,7 +41,9 @@ Every article, judicial principle, decree and fiqh entry in the Nzamy library be
 | 2026-11-15 | The retrieval lab now says «الجراف قيد إعادة البناء» while the graph is not ready. Before, a rebuild looked like «لا نتائج», as if the question were wrong. Pushed with this document; not deployed yet. |
 | 2026-11-15 | Decree text cleaned (`src/lib/text/markdownToPlain.ts`). The preamble's layout (identity table, `<details>` blocks, headings, emoji, links) becomes plain `key: value` text, and the «موجز» is no longer stored twice. On the local library: 4,393 of 4,398 decree nodes had markup and now 0 do, the decree text to embed shrank 8.6% (14.5M → 13.3M characters), and amendment links are unchanged at 469. The explorer inspector shows every node's text through the same cleaner (display only). Needs `mark_dirty_now` after the deploy, so the decrees are rebuilt and their few existing vectors redone. |
 | 2026-11-15 | Embeddings moved to Google Cloud Vertex AI (Cloud billing), several calls at once (`b4720339`). Deployed; the vectors filled to about 123k. |
-| 2026-11-16 | **Links + routing batch** (`20261116_10`, branch `feat/graph-links-batch`). Defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, vector links, and routing by section and judicial track (section 4.6). Not merged or deployed yet. |
+| 2026-11-16 | **Links + routing batch** (`20261116_10`, commit `35970cd6`). Defined terms, «مع مراعاة» conditions, penalties, the library's own article → regulation links, vector links, and routing by section and judicial track (section 4.6). Deployed 2026-11-15, SQL run. |
+| 2026-11-17 | **Seeds + gold set** (`20261117_10`, section 4.8). An article the question names leads the graph answer and its links follow it; the lab does the same lookup as the AI; a 39-question gold set and `npm run graph:gold` measure recall and the switch-on timing. Not merged or deployed yet. |
+| 2026-11-18 | **The owner's own links** (`20261118_10`, section 4.9). The parser reads the owner's `superseded_by`, `repealed_by`, `supersedes`, `repeals`, `affected_laws` and `related_laws`; the graph turns them into `SUPERSEDES_LAW` and `AMENDS_ARTICLE` links, strictly, and a repealed article's replacement is found again when its law's successor changes. Not merged or deployed yet; needs the owner's next load and one rebuild. |
 
 ---
 
@@ -174,6 +176,53 @@ Tests:
 - Database: `library_graph_links.test.sql` and `library_graph_routing.test.sql` (R0–R6: the vote, confidence, each track, the scopes, explicit links crossing).
 - Unit: `graphRouting.test.ts`, plus the routing pass in `graphWatchdogCore.test.ts`.
 
+### 4.8 Seeds and the gold set (`20261117_10`)
+
+**Seeds.** The AI already read the articles a question names («المادة ٧٧ من نظام العمل»; «المادة ٧٧» on a law page; the open article) and put them first. The graph never knew about them: it searched the words, so the named article's exceptions and regulations came only if the words happened to find the article itself. Now:
+
+- `retrieveLibrary` looks the named articles up **before** the graph call and sends them as `p_seed_keys` (`article:<id>`) to `graph_rag_retrieve_scoped`. Before `20261117_10` that call answers `PGRST202`, and the code asks the nine-argument `graph_rag_retrieve` instead, inside the same 2.5 s.
+- In SQL, a seed (at most four) enters just above the strongest search result, first named first. It votes for the section, is never routed away, and its law counts as one of the question's laws. It seeds hop 1 and hop 2 like any strong result. Every item carries `seed`, and `routing` carries `seeds`.
+- With no seeds the call is the nine-argument one, unchanged.
+- The retrieval lab uses the same lookup (`questionRefLookups`): the named law becomes the pinned law, the named articles become seeds. Badge «مذكورة في السؤال».
+
+**Gold set.** `docs/graph-rag/gold-set.json` has 39 client-style questions in labour, civil, personal status, evidence, procedure, criminal, commercial, data protection and the legal profession. Three of them name an article. Each expected article was checked against its text in the owner's corpus. `must_contain` keeps another article that shares the number from counting: one export holds two rows numbered 80 in the labour law. **DRAFT** until the owner approves it (question ٥١٤).
+
+**The measure.** `npm run graph:gold` (`scripts/graph-gold.mjs`, scoring in `src/lib/ai/graphGoldCore.ts`) is read-only. Per question it gets n8n's search phrases, embeds the question, runs `retrieveLibrary` with the graph and without it, then repeats the exact graph call in auto / section / all. It reports Recall@8 and Hit@8 for graph vs keyword (also over the questions the graph itself answered), the cold AI-path call and the warm replays, and `GO` / `NO-GO`.
+
+**First reading (2026-11-15, two questions, from the PC over the internet, `--no-n8n`; not the gate).**
+
+- Cold, each question's first graph call was cut at 2.5 s, and the keyword relevance functions themselves hit statement timeouts (`57014`).
+- Run again at once, the same calls took 0.4–0.8 s, and the warm scope replays 0.3–0.6 s.
+- Warm, «شخص صدم سيارتي وتضررت، هل يلزمه يعوضني؟» found the civil transactions article 120 first through the graph. The keyword search did not find it in its top 8.
+- So the switch-on question is the cold first call, which only the server run can answer.
+
+Tests: `library_graph_seeds.test.sql` (S0–S7), the seed and fallback cases in `retrieval.test.ts`, `graphGoldCore.test.ts`, and the 20261117_10 contract in `graphSchemaContract.test.ts`. `_verify.sql` has the block `verify:library_graph_seeds`. The three earlier graph rows now accept the eleven-argument signature.
+
+### 4.9 The owner's own links (`20261118_10`)
+
+The owner's files say, in their frontmatter, what replaced or repealed a law, what a law replaced, which laws and articles a decree amends, and which laws are related. The parser used to drop all of it, and the graph only guessed supersession from the library's own fields. Now:
+
+- **Parser.** `extractOwnerLinks` (`src/lib/library/ownerLinks.ts`) reads `superseded_by`, `repealed_by`, `supersedes`, `repeals`, `affected_laws` and `related_laws` (with their `_slug`, `_registry_id` and `_path` forms) into `[{kind, name?, slug?, id?, guid?, articles?}]`. A file path becomes the target law's slug and registry id, as the laws parser stores them: for laws after every drop, for decrees from the target file (its slug line, else its file name, through the same slug rule). Editorial notes are never read, and the stored name keeps only the title: a bracketed aside without a number and anything after «ملاحظة» are dropped (a decree number such as «(م/164)» stays). `cross_reference` and `amends` are not read either: they are free text, not a reference to one law.
+- **Columns.** `library.laws.owner_links` and `library.decrees_circulars.owner_links` (jsonb), server-only. The seeder writes them on every row (NULL when the file has none), so a link the owner deletes is gone after his next load. The owner loader's preflight stops before the first write when the SQL has not run.
+- **The owner's own check.** `parse-laws` prints a tally of the links and lists each one that names no single law, with the reason, so the owner fixes the file before he loads. The decree parser prints the count by kind. The numbers come from his run on his current files; none are quoted here.
+- **Graph.** The watchdog resolves each link strictly against the live laws: slug, registry id, BOE guid; then a title that names exactly one law; then the decree number («م/53») against the issuing instrument; then the status (a `repealed_by` target should be in force) when that leaves exactly one. Anything else is counted and logged, never guessed.
+  - `superseded_by` / `repealed_by` → `SUPERSEDES_LAW` from the successor to this law, only when this law is repealed. When it is not, the link is counted as "still in force" and makes no edge.
+  - `supersedes` / `repeals` → `SUPERSEDES_LAW` from this law to the target, only when the target is repealed (else "still in force"). A link to itself is dropped.
+  - `affected_laws` with article numbers → `AMENDS_ARTICLE` (weight 1.2) to each named article, from the decree, or from the amending law's first article when a law states it. Without numbers it is counted only.
+  - `related_laws` → kept in the column, no edge.
+  - These edges carry `metadata.source = "owner_links"` and, as evidence, the library's own title of the target (never the owner's wording). When the library's fields make the same link, either copy may be the one kept.
+- **What it changes in answers.** `AMENDS_ARTICLE` is walked at hop 1, so an amended article brings its amending decree (or law). `SUPERSEDES_LAW` is not walked; it decides where a repealed article's `REPLACED_BY` looks first (the successor law's articles).
+- **Replacement refresh.** A `REPLACED_BY` link was computed once per article and never revisited. `graph_rag_refresh_replacements()` keeps the (replaced law → successor law) pairs of the last settled graph in `library_graph.replacement_pairs`. When a pair is added or removed, it clears the similarity state of that law's repealed articles only, and the next similarity pages recompute them. The watchdog calls it once before each similarity step; a failure is logged and retried next step. On a graph that is not settled it does nothing, and it locks the sync row so a pass cannot start under it. The SQL seeds the pairs from the current graph, so the first refresh reacts only to what the owner's links change. The watchdog probes for the column at the start of every pass, so it reads the links from the first pass after the SQL, without a restart.
+
+Run order:
+
+1. Run `20261118_10`, before the owner's next load (his loader stops without it). Before the deploy is simplest; the deployed watchdog also works without it.
+2. Deploy.
+3. After this batch is merged into owner-edits: the owner pulls, re-parses, fixes what the tally lists, and loads.
+4. `mark_dirty_now`: one rebuild. The replacement refresh then runs by itself.
+
+Tests: `library_owner_links.test.sql` (T1–T9; negative control: without the column locks the SQL stops), `ownerLinks.test.ts`, `graphOwnerLinks.test.ts`, `parse-laws.owner-links.test.ts`, `parse-decrees.owner-links.test.ts`, two watchdog tests in `graphWatchdogCore.test.ts`, the loader preflight test and the 20261118_10 contract. `_verify.sql` has the block `verify:library_owner_links`.
+
 ### 4.7 Tests and checks (depth batch)
 
 - **Unit:** `graphBuilder.test.ts`, `graphWatchdogCore.test.ts` (a mock that enforces foreign-key order), `graphExplorerCore.test.ts`, and `graphSchemaContract.test.ts`. The contract test checks that the migration's type lists equal the explorer's, that the signature and readiness check are unchanged, and that no forbidden pgvector calls appear.
@@ -208,14 +257,15 @@ From the original review, with what A + B + C closed:
 | **Fiqh blocks have no links** | ❌ open. They are searchable as nodes but connected to nothing. Fix: D. |
 | **Concepts are a fixed list of 32** | ❌ open. Fix: D. |
 | `ESTABLISHES_RULE` / `DECONSTRUCTS_CONCEPT` are never created | ❌ open. Retrieval already weighs `ESTABLISHES_RULE` (0.48), but nothing writes it. Fix: D. |
-| `PARENT_LAW` / `SUPERSEDES_LAW` only where the library fields are filled | ⚠ data, not code. The owner's export decides it. |
+| `PARENT_LAW` / `SUPERSEDES_LAW` only where the library fields are filled | ⚠ data, not code. The owner's export decides it; since `20261118_10` his own links add `SUPERSEDES_LAW` too (4.9). |
 | Citations to documents that are not in the library | ⚠ by design, no link. Better nothing than a wrong target. |
 | Chapters without a title get no chapter node | ⚠ by design. Those articles link straight to their law. |
 | Hop 2 over citations is inactive without vectors | ✅ closed: the vectors are filled (Vertex AI) |
 | A labour question pulled administrative principles, and the reverse | ✅ closed in code (`20261116_10` routing), waits for deploy |
 | Regulation articles were not linked to the article they implement | ✅ closed in code (`IMPLEMENTED_BY`), waits for deploy |
-| The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`, cross references) are not read | ❌ open. Next candidate after this batch. |
-| No quality measurement of answers | ❌ open. `graph:benchmark` measures embeddings only. See 7.1. |
+| The owner's own metadata links (`superseded_by`, `repealed_by`, `related_laws`, `affected_laws`) are not read | ✅ closed in code (`20261118_10`, 4.9), waits for the SQL, the deploy, the owner's load and one rebuild. Cross references stay unread (free text). |
+| No quality measurement of answers | ✅ closed in code: the gold set and `npm run graph:gold` (4.8). The set waits for the owner's approval. |
+| A named article did not seed the graph | ✅ closed in code (`20261117_10` seeds), waits for deploy |
 
 Known small issues:
 
@@ -230,12 +280,12 @@ Known small issues:
 ### 7.1 Before turning the switch on (needed)
 
 1. **Measure the rebuild:** link counts by type, and connected versus isolated nodes per type (section 8).
-2. **Measure timing:** run `graph_rag_retrieve` on 5–10 realistic questions after the pass. Every one must finish well under 2.5 s. If not, add indexes or lower the seed counts (8 / 6) before going live.
+2. **Measure timing and quality:** `npm run graph:gold` on the server, after a quiet spell (4.8). Every p95 must be under 2.5 s, with no cold AI-path timeout. If only the cold call fails, the next step is warming the database cache (for example `pg_prewarm` on the graph's tables and vector index), not changing the graph.
 3. **Paid embedding key:**
    - About 152.6M characters are left to embed, which is about **$8–13 one time** for `gemini-embedding-2-768`.
    - Steps: swap `GEMINI_EMBEDDING_API_KEY`, delete `GRAPH_RAG_EMBED_BATCH_SIZE=20`, then run `pm2 restart nzamy-graph-watchdog --update-env`.
    - Don't rotate free keys to get around the quota: Google's terms forbid it, and at 1,000 per day it would take about 120 days.
-4. **A small gold set:** 30–50 real client-style questions, each with the articles a lawyer would expect. Run each through the retrieval lab with the graph on and off, and record Recall@8 (did the expected articles appear in the top 8?). This becomes the yardstick for every change below.
+4. **The gold set:** built (4.8), 39 questions. The owner approves or corrects it (question ٥١٤). It is the yardstick for every change below.
 5. **Turn it on:** set `NZAMY_GRAPH_RAG=on`, then run `pm2 restart nzamy --update-env`. Watch the fallback rate for the first days.
 
 ### 7.2 D — AI-extracted links and concepts (recommended next build)
@@ -269,7 +319,7 @@ An AI-written summary for every law and chapter node, embedded so search can mat
 | Option | What it gives | Effort |
 |---|---|---|
 | **Personalized PageRank** instead of fixed hops | Spreads weight from the best hits along every legal link and ranks by where it settles. Finds chains longer than 2 without hand-tuned limits. | One SQL function, or a precomputed score; needs timing care |
-| **Direct article lookup** | «المادة 77 من نظام العمل» in the question jumps straight to that node before any search | Small; reuses `findArticleMentions` on the question |
+| ~~Direct article lookup~~ | Done in `20261117_10` as seeds (4.8) | — |
 | **Reranker** after retrieval | A cross-encoder re-sorts the top 20. `searchLegalGraphWith` already has an optional rerank hook. | Small code; per-question cost |
 | **Repealed-chain awareness** | When a hit is repealed, follow `SUPERSEDES_LAW` to the article in force | Small, once the library fields are filled |
 | **Explorer: whole-chapter view** | Open a chapter node and read its articles in order along `NEXT_ARTICLE` | Small UI |
@@ -277,7 +327,8 @@ An AI-written summary for every law and chapter node, embedded so search can mat
 **Suggested order:**
 
 1. 7.1, all of it.
-2. Direct article lookup: cheap, and gives an immediate quality gain.
+2. ~~Direct article lookup~~: done as seeds (4.8).
+2a. ~~The owner's own metadata links~~: built in `20261118_10` (4.9), timed with the owner's next library load.
 3. D.
 4. E.
 5. PageRank, only if the gold set shows that two steps are not enough.

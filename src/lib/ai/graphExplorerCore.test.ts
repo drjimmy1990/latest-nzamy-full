@@ -346,13 +346,14 @@ test("the lab's scope: auto by default, section / all on request, anything else 
   assert.equal(scopeOf("&scope=all"), "all");
   assert.equal(scopeOf("&scope=drop table"), "auto");
 
-  assert.deepEqual(parseLabRouting({ scope: "section", section: "03", confident: true, source: "law", laws: ["civ", 7] }), {
+  assert.deepEqual(parseLabRouting({ scope: "section", section: "03", confident: true, source: "law", laws: ["civ", 7], seeds: 2 }), {
     scope: "section",
     section: "03",
     section_label: "المدني والأحوال الشخصية",
     confident: true,
     source: "law",
     laws: ["civ"],
+    seeds: 2,
   });
   assert.deepEqual(parseLabRouting({ section: null, confident: false, source: "none", laws: [] }), {
     scope: "auto",
@@ -361,7 +362,9 @@ test("the lab's scope: auto by default, section / all on request, anything else 
     confident: false,
     source: "none",
     laws: [],
+    seeds: 0,
   });
+  assert.equal(parseLabRouting({ seeds: "3" })?.seeds, 0, "a server before 20261117_10 sends no seed count");
   assert.equal(parseLabRouting(undefined), null, "a server before 20261116_10 sends no routing");
   assert.equal(parseLabRouting([]), null);
 });

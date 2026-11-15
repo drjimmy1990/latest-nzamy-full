@@ -66,6 +66,26 @@ The neighbour search filters by law (or collection) inside the vector index. Tha
 docker exec -i supabase-db psql -U supabase_admin -d postgres -c "select extversion from pg_extension where extname = 'vector';"
 ```
 
+### 1c. The seeds file (`20261117_10`)
+
+When a question names an article outright («المادة ٧٧ من نظام العمل», or «المادة ٧٧» on a law's page, or the article the reader has open), that article now leads the graph's answer, and its exceptions, regulations, interpretations and penalties follow it. Run it **before** the deploy. The code works without it, but until it runs, every such question asks the database twice and loses part of the 2.5 s graph budget:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261117_10_library_graph_seeds.sql
+```
+
+What to expect on screen: `NOTICE: 20261117_10 verify: OK` and a `check | ok` row with `t`. No rebuild and no `mark_dirty_now`: the graph itself does not change.
+
+### 1d. The owner's links file (`20261118_10`)
+
+The owner's files name what replaced or repealed a law and which laws and articles a decree amends. This file adds the columns the seeder writes them into (server-only) and the function that finds a repealed article's replacement again when its law's successor changes. Run it **before the owner's next library load**: his loader stops before the first write without it. Before the deploy is simplest:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261118_10_library_owner_links.sql
+```
+
+What to expect on screen: `NOTICE: 20261118_10 verify: OK` and a `check | ok` row with `t`. Then: deploy; after the merge into owner-edits the owner pulls, re-parses (`parse-laws` lists every link that names no single law, for him to fix) and loads; then `mark_dirty_now` for one rebuild. The watchdog log shows `Laws' successors changed: N repealed articles queued…` when the refresh resets anything.
+
 ## 2. Deploy the code
 
 ```bash
@@ -147,7 +167,7 @@ Open `/dashboard/admin/graph-explorer` while logged in as staff. It is also in t
 - **Overview**: counts per type, vector coverage, the most-linked nodes and the concepts.
 - **Search**: type an article (for example `المادة 77 نظام العمل`) and open it. The canvas then shows its neighbours one or two hops away, with each link's type and the sentence it came from.
 - **Inspector**: click a node to see its full text, status, links and whether it has a vector.
-- **Retrieval lab**: type a question as a client would. It runs the same search the AI uses and shows which articles it would cite, and why (direct match, or reached through a link).
+- **Retrieval lab**: type a question as a client would. It runs the same search the AI uses and shows which articles it would cite, and why (direct match, or reached through a link). Like a live run, an article the question names becomes a seed (badge «مذكورة في السؤال», chip «مواد مذكورة»), and a law the question names is searched first.
 
 ## Routing by section and judicial track (since `20261116_10`)
 
@@ -193,7 +213,24 @@ A `SIMILAR_TO` link is stored one way, from the node that was processed. When a 
 
 ## 7. Turn it on for the AI
 
-**Go / no-go first:** in the explorer's retrieval lab, run the test questions with each of the three buttons (auto, section only, all sections). Each run shows its time. Every run should stay under **2500 ms**, which is the AI's limit, after which it falls back to the keyword search. If auto is slower than that, leave the switch off and tell the developers.
+**Go / no-go first: the gold set.** `docs/graph-rag/gold-set.json` holds 39 questions as clients would type them, each with the articles a good answer must rest on (a draft until the owner approves it, question ٥١٤). On the server, from `/www/wwwroot/nzamy/latest-nzamy-full`, after a quiet spell (not right after another run):
+
+```bash
+npm run graph:gold
+```
+
+It writes nothing to the database. It works with the switch on or off, because it asks the graph itself. It costs one n8n «lib-queries» call and one embedding per question. For each question it does what a live AI run does: it gets the search phrases from n8n, embeds the question, and retrieves with the graph and without it. Then it repeats the same graph call in each routing scope.
+
+What to expect on screen: one line per question (`#1` = the expected article came first, `✗` = not in the top 8), then these totals:
+
+- `Recall@8` for graph and keyword, and the same over the questions the graph itself answered;
+- the AI path's graph call, which is each question's **first** call, so the database reads its pages from disk (**cold**) the way a new question does for a live user. Cut at 2500 ms;
+- each scope's **warm** replay (auto, section, all), p50 and p95;
+- `GO` or `NO-GO` with the reasons.
+
+`GO` needs every p95 under 2500 ms, **no** AI-path timeout, and the graph answering at least once. The full report is written as JSON. Its path is printed on the last line (screen output), in the server's `/tmp`. Options: `--only=labor-01,civil-06`, `--repeat=3` (more warm replays), `--no-n8n` (picks the words itself, unlike a live run; use it only if n8n is down), `--out=/path/report.json`.
+
+A second run right away is all warm and looks better than live. If warm is GO and cold is NO-GO, leave the switch off and tell the developers: that is a database cache question, not a graph question.
 
 When step 5 shows the graph ready and `missing_vectors` at or near 0, add this line to `/www/wwwroot/nzamy/latest-nzamy-full/.env.local`:
 
@@ -233,4 +270,5 @@ Database tests need Docker and pgvector. Run them on the PC, from the repo folde
 M=supabase/migrations; PG_IMAGE=pgvector/pgvector:pg16 bash supabase/tests/rls/run.sh supabase/tests/rls/prelude_extensions_schema.sql $M/20260626_legal_library_schema.sql $M/20260730_article_regulations.sql $M/20261110_10_library_graph_rag.sql $M/20261113_10_library_graph_explorer.sql $M/20261114_10_library_graph_rag_fixes.sql $M/20261115_10_library_graph_depth.sql $M/20261116_10_library_graph_links.sql supabase/tests/rls/library_graph_rag.test.sql
 ```
 
-For the other database tests, run the same command with `library_graph_explorer.test.sql`, `library_graph_depth.test.sql`, `library_graph_links.test.sql` or `library_graph_routing.test.sql` as the last file.
+For the other database tests, add `$M/20261117_10_library_graph_seeds.sql` after `20261116_10` and run the same command with `library_graph_explorer.test.sql`, `library_graph_depth.test.sql`, `library_graph_links.test.sql`, `library_graph_routing.test.sql` or `library_graph_seeds.test.sql` as the last file.
+`library_owner_links.test.sql` needs the library's column locks too; its header has the full command.

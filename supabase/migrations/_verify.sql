@@ -6535,7 +6535,8 @@ select 'GraphRAG fixes: vector_dims, no pg_catalog.greatest, readiness, abandon_
           where p.proname like 'graph_rag_%'
             and (p.prosrc like '%halfvec_dims(%' or p.prosrc like '%pg_catalog.greatest(%' or p.prosrc like '%pg_catalog.least(%')
        )
-       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'),
+                                                             to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
                                                              to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
                     like '%last_synced_at is not null and s.dirty = false%', false)
        and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_sync_control(text, jsonb)'))
@@ -6563,7 +6564,8 @@ select 'GraphRAG depth: law/chapter nodes, PART_OF/NEXT_ARTICLE, two-hop retriev
                     where c.conname = 'edges_edge_type_check'
                       and c.conrelid = to_regclass('library_graph.edges')
                       and pg_catalog.pg_get_constraintdef(c.oid) like '%NEXT_ARTICLE%')
-       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'),
+                                                             to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
                                                              to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
                     like '%hop2_scored%', false)
        as ok;
@@ -6593,9 +6595,50 @@ select 'GraphRAG links: terms, SUBJECT_TO/PENALIZES/DEFINES_TERM/IMPLEMENTED_BY,
                       and pg_catalog.pg_get_constraintdef(c.oid) like '%auto_similarity%')
        and to_regclass('library_graph.similarity_state') is not null
        and to_regprocedure('public.graph_rag_build_similarity(text, integer, jsonb)') is not null
-       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
+       and coalesce(pg_catalog.pg_get_functiondef(coalesce(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'),
+                                                             to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text)'),
                                                              to_regprocedure('public.graph_rag_retrieve(text[], text, text, text, integer, integer, integer, integer, boolean)')))
                     like '%penalty_candidates%route_factor(%', false)
        and to_regprocedure('library_graph.route_factor(text, text, text, text, boolean, text[])') is not null
        as ok;
 -- <<< verify:library_graph_links
+-- >>> verify:library_graph_seeds
+-- 2026-11-17 — 20261117_10_library_graph_seeds.sql: graph_rag_retrieve_scoped
+-- gains p_seed_keys (the articles a question names lead the graph answer, are
+-- never routed away, and their links follow them); the old ten-argument
+-- signature is dropped. Run before or after the deploy (the code falls back).
+-- Docker: supabase/tests/rls/library_graph_seeds.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'GraphRAG seeds: named articles lead the graph answer (run 20261117_10)' as check,
+       coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])'))
+                like '%seed_nodes%rr.is_seed then 1.0%', false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_proc p
+             where p.pronamespace = 'public'::regnamespace and p.proname = 'graph_rag_retrieve_scoped') = 1
+       as ok;
+-- <<< verify:library_graph_seeds
+-- >>> verify:library_owner_links
+-- 2026-11-18 — 20261118_10_library_owner_links.sql: library.laws.owner_links and
+-- library.decrees_circulars.owner_links (the owner's own links from the
+-- frontmatter: superseded_by, repealed_by, supersedes, repeals, affected_laws,
+-- related_laws), server-only; the graph watchdog turns them into SUPERSEDES_LAW /
+-- AMENDS_ARTICLE links. public.graph_rag_refresh_replacements() resets the
+-- REPLACED_BY state of the repealed articles whose law gained or lost a
+-- successor (library_graph.replacement_pairs). Run BEFORE the deploy and before
+-- the owner's next load (his loader's preflight needs the column).
+-- Docker: supabase/tests/rls/library_owner_links.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Owner links: laws/decrees owner_links server-only, replacement refresh (run 20261118_10)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'library' and table_name = 'laws'
+                  and column_name = 'owner_links' and data_type = 'jsonb')
+       and exists (select 1 from information_schema.columns
+                    where table_schema = 'library' and table_name = 'decrees_circulars'
+                      and column_name = 'owner_links' and data_type = 'jsonb')
+       and not has_column_privilege('anon', 'library.laws', 'owner_links', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.laws', 'owner_links', 'SELECT')
+       and not has_column_privilege('anon', 'library.decrees_circulars', 'owner_links', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.decrees_circulars', 'owner_links', 'SELECT')
+       and to_regclass('library_graph.replacement_pairs') is not null
+       and to_regprocedure('public.graph_rag_refresh_replacements()') is not null
+       and not has_function_privilege('anon', 'public.graph_rag_refresh_replacements()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.graph_rag_refresh_replacements()', 'EXECUTE')
+       as ok;
+-- <<< verify:library_owner_links

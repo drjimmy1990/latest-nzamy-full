@@ -244,3 +244,73 @@ test("the builder's GraphNodeType / GraphEdgeType lists match the explorer's", a
   assert.deepEqual(union("GraphNodeType"), [...EXPLORER_NODE_TYPES].sort());
   assert.deepEqual(union("GraphEdgeType"), [...EXPLORER_EDGE_TYPES].sort());
 });
+
+test("20261117_10 seeds: the scoped retrieve takes p_seed_keys last, replaces the ten-argument one, keeps the wrapper", () => {
+  const path = join(ROOT, "supabase", "migrations", "20261117_10_library_graph_seeds.sql");
+  assert.ok(existsSync(path));
+  const sql = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  const SEEDED_SIG = "public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text, text[])";
+
+  assert.match(sql, /^begin;$/m);
+  assert.match(sql, /^commit;$/m);
+  assert.ok(
+    sql.includes("drop function if exists public.graph_rag_retrieve_scoped(text[], text, text, text, integer, integer, integer, integer, boolean, text);"),
+    "the ten-argument signature is dropped (one function per name)",
+  );
+  assert.equal((sql.match(/create or replace function public\.graph_rag_retrieve_scoped\(/g) ?? []).length, 1);
+  assert.equal((sql.match(/create or replace function public\.graph_rag_retrieve\(/g) ?? []).length, 1);
+  assert.match(sql, /p_scope\s+text\s+default 'auto',\s*p_seed_keys\s+text\[\]\s+default null\s*\)/);
+  assert.match(sql, /v_scope,\s*p_seed_keys;/, "the seeds reach the query as the tenth parameter");
+
+  const scopedAt = sql.indexOf("create or replace function public.graph_rag_retrieve_scoped(");
+  const wrapperAt = sql.indexOf("create or replace function public.graph_rag_retrieve(");
+  const scoped = sql.slice(scopedAt, wrapperAt);
+  for (const piece of ["seed_nodes", "limit 4", "rrf_search", "rrf_top", "when rr.is_seed then 1.0", "'seeds'", "'seed'", "hop2_scored", "last_synced_at is not null and s.dirty = false"]) {
+    assert.ok(scoped.includes(piece), `scoped retrieve has ${piece}`);
+  }
+  const wrapper = sql.slice(wrapperAt, sql.indexOf("$$;", sql.indexOf("as $$", wrapperAt)));
+  assert.match(wrapper, /return public\.graph_rag_retrieve_scoped\([\s\S]*'auto'\s*\)/);
+
+  for (const sig of [SEEDED_SIG, RETRIEVE_SIG]) {
+    assert.ok(sql.includes(`revoke all on function ${sig} from public, anon, authenticated;`), `${sig} revoked from clients`);
+    assert.ok(sql.includes(`grant execute on function ${sig} to service_role;`), `${sig} granted to service_role`);
+  }
+  assert.match(sql, /notify pgrst, 'reload schema';/);
+
+  const verify = readFileSync(VERIFY_PATH, "utf8");
+  assert.match(verify, /^-- >>> verify:library_graph_seeds\r?$/m);
+  assert.match(verify, /^-- <<< verify:library_graph_seeds\r?$/m);
+  assert.ok(existsSync(join(ROOT, "supabase", "tests", "rls", "library_graph_seeds.test.sql")));
+});
+
+test("20261118_10 owner links: server-only columns on laws and decrees, a service-role refresh that diffs both ways", () => {
+  const path = join(ROOT, "supabase", "migrations", "20261118_10_library_owner_links.sql");
+  assert.ok(existsSync(path));
+  const sql = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  const SIG = "public.graph_rag_refresh_replacements()";
+
+  assert.match(sql, /^begin;$/m);
+  assert.match(sql, /^commit;$/m);
+  assert.ok(sql.includes("raise exception '20261118_10: apply 20261117_10_library_graph_seeds.sql first'"));
+  assert.ok(sql.includes("add column if not exists owner_links jsonb"));
+  assert.match(sql, /alter table library\.laws\s+add column if not exists owner_links jsonb;/);
+  assert.match(sql, /alter table library\.decrees_circulars\s+add column if not exists owner_links jsonb;/);
+  assert.ok(sql.includes("revoke select (owner_links), insert (owner_links), update (owner_links)"), "the column is revoked from the API roles");
+  assert.doesNotMatch(sql, /grant [^;]*owner_links[^;]* to (anon|authenticated)/, "never granted to an API role");
+
+  assert.equal((sql.match(/create or replace function public\.graph_rag_refresh_replacements\(/g) ?? []).length, 1);
+  const fn = sql.slice(sql.indexOf("create or replace function public.graph_rag_refresh_replacements("), sql.indexOf("comment on function public.graph_rag_refresh_replacements"));
+  for (const piece of ["security invoker", "set search_path = ''", "s.dirty = false and s.last_synced_at is not null", "'graph_not_ready'", "except", "union", "s.was_active = false", "delete from library_graph.replacement_pairs"]) {
+    assert.ok(fn.includes(piece), `the refresh has ${piece}`);
+  }
+  assert.ok(sql.includes(`revoke all on function ${SIG} from public, anon, authenticated;`));
+  assert.ok(sql.includes(`grant execute on function ${SIG} to service_role;`));
+  assert.ok(sql.includes("alter table library_graph.replacement_pairs force row level security;"));
+  assert.ok(sql.includes("and not exists (select 1 from library_graph.replacement_pairs)"), "seeded only when empty");
+  assert.match(sql, /notify pgrst, 'reload schema';/);
+
+  const verify = readFileSync(VERIFY_PATH, "utf8");
+  assert.match(verify, /^-- >>> verify:library_owner_links\r?$/m);
+  assert.match(verify, /^-- <<< verify:library_owner_links\r?$/m);
+  assert.ok(existsSync(join(ROOT, "supabase", "tests", "rls", "library_owner_links.test.sql")));
+});
