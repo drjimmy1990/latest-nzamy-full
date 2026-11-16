@@ -20,10 +20,11 @@
 --      C minus A minus B is roughly what the links and hops cost.
 --
 -- HOW TO RUN (server, /www/wwwroot/nzamy/latest-nzamy-full). Without
--- ON_ERROR_STOP on purpose: if part C hits its own 4 s limit, the rest still
--- prints. The output is screen text, not a file:
+-- ON_ERROR_STOP on purpose, and with ON_ERROR_ROLLBACK (set below): a part
+-- that fails (a 4 s limit, say) is reported and the other parts still run.
+-- The output is screen text, saved to a file by the redirect:
 --   docker exec -i supabase-db psql -U supabase_admin -d postgres < supabase/one-time/graph_retrieve_cold_profile.sql > /root/graph-cold-profile.txt 2>&1
---   cat /root/graph-cold-profile.txt
+--   cut -c1-400 /root/graph-cold-profile.txt
 -- Then send the whole of /root/graph-cold-profile.txt to the team.
 --
 -- Run it twice if you can: once a few minutes after the hourly prewarm (:17),
@@ -32,6 +33,7 @@
 -- =============================================================================
 
 \pset pager off
+\set ON_ERROR_ROLLBACK on
 \timing on
 
 begin transaction read only;

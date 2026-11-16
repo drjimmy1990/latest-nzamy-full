@@ -118,13 +118,13 @@ What to expect on screen: `NOTICE: 20261121_10 verify: OK` and a `step | ok` row
 
 ### 1h. Where the search spends its reads (read-only measurement)
 
-`supabase/one-time/graph_retrieve_cold_profile.sql` runs in a `READ ONLY` transaction and ends with `ROLLBACK`. It prints the graph's table and index sizes, the disk-versus-memory page reads since the last stats reset, and `EXPLAIN (ANALYZE, BUFFERS)` of the keyword part, the vector part, and the whole `graph_rag_retrieve` call. Run it without `ON_ERROR_STOP`, so a 4 s timeout in the last part still prints the rest:
+`supabase/one-time/graph_retrieve_cold_profile.sql` runs in a `READ ONLY` transaction and ends with `ROLLBACK`. It prints the graph's table and index sizes, the disk-versus-memory page reads since the last stats reset, and `EXPLAIN (ANALYZE, BUFFERS)` of the keyword part, the vector part, and the whole `graph_rag_retrieve` call. Run it without `ON_ERROR_STOP`; the script sets `ON_ERROR_ROLLBACK`, so a part that fails (a 4 s timeout, say) is reported and the other parts still run:
 
 ```bash
 docker exec -i supabase-db psql -U supabase_admin -d postgres < supabase/one-time/graph_retrieve_cold_profile.sql > /root/graph-cold-profile.txt 2>&1
 ```
 
-The output is in `/root/graph-cold-profile.txt` (screen text saved to a file). Run it once a few minutes after the hourly prewarm (:17) and once long after it. The part with the most pages (hit + read) is the one to make lighter.
+The output is in `/root/graph-cold-profile.txt` (screen text saved to a file); read it with `cut -c1-400 /root/graph-cold-profile.txt`, since part B's plan prints the whole query vector on one line. Run it once a few minutes after the hourly prewarm (:17) and once long after it. The part with the most pages (hit + read) is the one to make lighter.
 
 ## 2. Deploy the code
 
