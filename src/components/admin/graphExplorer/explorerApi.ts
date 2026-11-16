@@ -13,6 +13,7 @@ import {
   type LabScope,
   type LabSize,
 } from "@/lib/ai/graphExplorerCore";
+import type { ExplorerLiveStats } from "@/lib/ai/graphCallLog";
 
 export interface OverviewData {
   default_model_id: string | null;
@@ -126,6 +127,7 @@ export const explorerApi = {
   search: (q: string, types: ExplorerNodeType[]) =>
     call({ action: "search", q, types: types.join(","), limit: "30" }, (j) => (j.results as SearchResult[]) ?? []),
   status: () => call({ action: "status" }, (j) => j.status as ExplorerStatus),
+  live: (hours: number) => call({ action: "live", hours: String(hours) }, (j) => j.live as ExplorerLiveStats),
   /** `edges` names the link types (all of them turns the meaning links on at hop 2); empty = the server's default. */
   neighborhood: (key: string, depth: 1 | 2, limit: number, edges: readonly ExplorerEdgeType[] = []) =>
     call(

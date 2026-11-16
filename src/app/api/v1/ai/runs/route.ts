@@ -5,6 +5,7 @@ import { practiceKindFromRead } from "@/lib/auth/courtPracticeDecision";
 import { callN8n } from "@/lib/ai/n8nClient";
 import { embedQueryWithin, graphRagEnabled } from "@/lib/ai/graphRagSwitch";
 import { retrieveLibrary } from "@/lib/ai/retrieval";
+import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
@@ -133,8 +134,17 @@ export async function POST(request: NextRequest) {
         // GraphRAG only behind NZAMY_GRAPH_RAG=on (graphRagSwitch): off, the
         // run never embeds the question and never calls the graph.
         ...(graphOn ? { embedQuery: (text: string) => embedQueryWithin(text) } : {}),
+        // Each graph call leaves one row in library_graph.call_log (20261121_10):
+        // path, time, fallback reason; never the question. Not awaited.
         retrieve: (queries, limits, pin, opts) =>
-          retrieveLibrary(admin, queries, limits, pin, undefined, graphOn ? (opts ?? { useGraph: true }) : undefined),
+          retrieveLibrary(
+            admin,
+            queries,
+            limits,
+            pin,
+            undefined,
+            graphOn ? withGraphCallLog(opts ?? { useGraph: true }, admin, "ai_run") : undefined,
+          ),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
         ...(textFiles ? { pastedFileUrl: pastedFileUrlFrom(textFiles) } : {}),
         progress: progressSink(admin, (work) => after(work)),

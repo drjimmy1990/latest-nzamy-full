@@ -6670,3 +6670,21 @@ select 'Graph explorer title search index (run 20261120_10)' as check,
                   and pg_catalog.pg_get_indexdef(i.indexrelid) like '%fold_tashkeel(title)%gin_trgm_ops%')
        as ok;
 -- <<< verify:library_graph_title_search_index
+
+-- >>> verify:library_graph_call_log
+-- 2026-11-21 — 20261121_10_library_graph_call_log.sql: one row per graph call
+-- (AI runs, the graph-retrieve endpoint, the explorer lab: path, time, miss
+-- reason, lab options; no question text, no user id), kept 30 days, and the
+-- explorer status tab's live numbers. Service_role only.
+-- Docker: supabase/tests/rls/library_graph_call_log.test.sql (PG_IMAGE=pgvector/pgvector:pg16)
+select 'Graph call log + live stats (run 20261121_10)' as check,
+       case
+         when to_regclass('library_graph.call_log') is null
+           or to_regprocedure('public.graph_rag_log_call(jsonb)') is null
+           or to_regprocedure('public.graph_rag_explore_live_stats(integer)') is null then false
+         else (select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('library_graph.call_log'))
+              and not has_function_privilege('anon', 'public.graph_rag_log_call(jsonb)', 'EXECUTE')
+              and not has_function_privilege('authenticated', 'public.graph_rag_explore_live_stats(integer)', 'EXECUTE')
+              and not has_table_privilege('anon', 'library_graph.call_log', 'SELECT')
+       end as ok;
+-- <<< verify:library_graph_call_log

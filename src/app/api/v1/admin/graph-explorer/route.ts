@@ -13,6 +13,7 @@ import {
   type LabHit,
 } from "@/lib/ai/graphExplorerCore";
 import { graphFunctionMissing, graphSeedKeys, pinnedArticle, questionRefLookups } from "@/lib/ai/retrieval";
+import { logGraphCall, parseExplorerLiveStats, type GraphCallRow } from "@/lib/ai/graphCallLog";
 import { parseSearchQuery } from "@/utils/normalizeArabic";
 
 /**
@@ -21,6 +22,7 @@ import { parseSearchQuery } from "@/utils/normalizeArabic";
  *
  *   ?action=overview                               corpus stats, coverage, hubs, concepts
  *   ?action=status                                 sync, passes, owner links, vector links (20261119_10)
+ *   ?action=live&hours=                            the graph's live numbers: answered / fallbacks / time; lab failures (20261121_10)
  *   ?action=search&q=&types=&limit=                node search
  *   ?action=neighborhood&key=&depth=&edges=&limit= 1–2 hop neighbourhood
  *   ?action=node&key=                              one node in full
@@ -44,6 +46,8 @@ const EXPLORER_MIGRATION = "20261113_10_library_graph_explorer.sql";
 const ROUTING_MIGRATION = "20261116_10_library_graph_links.sql";
 /** The status tab's function. */
 const STATUS_MIGRATION = "20261119_10_library_graph_explorer_parity.sql";
+/** The live numbers in the status tab. */
+const LIVE_MIGRATION = "20261121_10_library_graph_call_log.sql";
 /** The articles a question names — like a live AI run's. */
 const NAMED_LOOKUP_MS = 2000;
 
@@ -83,6 +87,12 @@ export async function GET(request: NextRequest) {
       const { data, error } = await admin.rpc("graph_rag_explore_status");
       if (error) return explorerSchemaMissing(error) ? missing(STATUS_MIGRATION) : failed("status", error);
       return NextResponse.json({ ok: true, status: parseExplorerStatus(data) }, { headers: NO_STORE });
+    }
+
+    if (req.action === "live") {
+      const { data, error } = await admin.rpc("graph_rag_explore_live_stats", { p_hours: req.hours });
+      if (error) return explorerSchemaMissing(error) ? missing(LIVE_MIGRATION) : failed("live", error);
+      return NextResponse.json({ ok: true, live: parseExplorerLiveStats(data) }, { headers: NO_STORE });
     }
 
     if (req.action === "search") {
@@ -164,16 +174,47 @@ export async function GET(request: NextRequest) {
     // `auto` with no seeds is exactly the nine-argument call; seeds need
     // 20261117_10 (before it the lab drops them, as a live run does), the
     // other scopes 20261116_10.
-    const scoped = (withSeeds: boolean) =>
-      admin.rpc("graph_rag_retrieve_scoped", { ...args, p_scope: req.scope, ...(withSeeds ? { p_seed_keys: seeds } : {}) });
+    let graphFn = "graph_rag_retrieve";
+    const scoped = (withSeeds: boolean) => {
+      graphFn = "graph_rag_retrieve_scoped";
+      return admin.rpc("graph_rag_retrieve_scoped", { ...args, p_scope: req.scope, ...(withSeeds ? { p_seed_keys: seeds } : {}) });
+    };
+    const plain = () => {
+      graphFn = "graph_rag_retrieve";
+      return admin.rpc("graph_rag_retrieve", args);
+    };
+    const graphStarted = Date.now();
     let seedsUsed = seeds.length > 0;
-    let { data, error } = seedsUsed || req.scope !== "auto" ? await scoped(seedsUsed) : await admin.rpc("graph_rag_retrieve", args);
+    let { data, error } = seedsUsed || req.scope !== "auto" ? await scoped(seedsUsed) : await plain();
     if (error && seedsUsed && graphFunctionMissing(error.code)) {
       seedsUsed = false;
-      ({ data, error } = req.scope === "auto" ? await admin.rpc("graph_rag_retrieve", args) : await scoped(false));
+      ({ data, error } = req.scope === "auto" ? await plain() : await scoped(false));
     }
+    // One row in library_graph.call_log per lab run (20261121_10): its options,
+    // time and failure code, so a lab timeout can be traced to what was on.
+    // Never the question. Not awaited.
+    const labRow = (path: GraphCallRow["path"], miss: string | null, routing: ReturnType<typeof parseLabRouting>): GraphCallRow => ({
+      source: "lab",
+      path,
+      graph_fn: graphFn,
+      graph_ms: Date.now() - graphStarted,
+      graph_miss: miss,
+      seed_count: seedsUsed ? seeds.length : 0,
+      vector_used: Boolean(literal),
+      scope: req.scope,
+      decrees: limits.decrees > 0,
+      feqh: limits.feqh > 0,
+      size: String(req.size),
+      links: req.links,
+      route_section: routing?.section ?? null,
+      route_source: routing?.source ?? null,
+      route_confident: routing ? routing.confident : null,
+    });
     if (error) {
-      if (!explorerSchemaMissing(error)) return failed("retrieve", error);
+      if (!explorerSchemaMissing(error)) {
+        void logGraphCall(admin, labRow("error", error.code ?? "error", null));
+        return failed("retrieve", error);
+      }
       return missing(req.scope === "auto" ? EXPLORER_MIGRATION : ROUTING_MIGRATION);
     }
 
@@ -201,6 +242,8 @@ export async function GET(request: NextRequest) {
       }
     }
     hits.sort((a, b) => b.score - a.score);
+    const routing = parseLabRouting(payload.routing);
+    void logGraphCall(admin, labRow("graph", payload.ready !== true ? "not_ready" : hits.length === 0 ? "no_hits" : null, routing));
 
     return NextResponse.json(
       {
@@ -213,7 +256,7 @@ export async function GET(request: NextRequest) {
           model_id: literal ? modelId : null,
           embedding,
           elapsed_ms: Date.now() - started,
-          routing: parseLabRouting(payload.routing),
+          routing,
           law_slug: scopeSlug,
           seeds: seedsUsed ? seeds : [],
           // The open article as asked for and as found (null: not found or not asked).

@@ -106,6 +106,26 @@ docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1
 
 What to expect on screen: `NOTICE: 20261120_10 verify: OK` and a `step | ok` row with `t`. It takes a few seconds; writes to the graph wait meanwhile, reads do not. No rebuild. Database test: `supabase/tests/rls/library_graph_title_search_index.test.sql`.
 
+### 1g. The graph call log (`20261121_10`)
+
+One row per graph call: AI runs (`ai_run`), the n8n graph-retrieve endpoint (`graph_api`) and the explorer lab (`lab`). Each row holds the path that answered, the graph's time, the miss reason (`timeout`, `not_ready`, `no_hits`, or a Postgres code), the seed count, whether a query vector was used, the routing section, and the lab's options. No question text, no user id, no embedding. Rows are kept 30 days. The explorer's status tab reads `graph_rag_explore_live_stats(hours)`: share answered by the graph, each fallback reason, graph time p50 / p95 / max, and the lab's last failures with their options. Writing is never awaited and never throws (`src/lib/ai/graphCallLog.ts`). Run it before or after the deploy:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261121_10_library_graph_call_log.sql
+```
+
+What to expect on screen: `NOTICE: 20261121_10 verify: OK` and a `step | ok` row with `t`. Not a library table: it never marks the graph dirty. Database test: `supabase/tests/rls/library_graph_call_log.test.sql`.
+
+### 1h. Where the search spends its reads (read-only measurement)
+
+`supabase/one-time/graph_retrieve_cold_profile.sql` runs in a `READ ONLY` transaction and ends with `ROLLBACK`. It prints the graph's table and index sizes, the disk-versus-memory page reads since the last stats reset, and `EXPLAIN (ANALYZE, BUFFERS)` of the keyword part, the vector part, and the whole `graph_rag_retrieve` call. Run it without `ON_ERROR_STOP`, so a 4 s timeout in the last part still prints the rest:
+
+```bash
+docker exec -i supabase-db psql -U supabase_admin -d postgres < supabase/one-time/graph_retrieve_cold_profile.sql > /root/graph-cold-profile.txt 2>&1
+```
+
+The output is in `/root/graph-cold-profile.txt` (screen text saved to a file). Run it once a few minutes after the hourly prewarm (:17) and once long after it. The part with the most pages (hit + read) is the one to make lighter.
+
 ## 2. Deploy the code
 
 ```bash
