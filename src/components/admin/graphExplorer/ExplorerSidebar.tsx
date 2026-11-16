@@ -43,6 +43,7 @@ import {
   type LabScope,
   type LabSize,
 } from "@/lib/ai/graphExplorerCore";
+import { LIVE_WINDOWS, graphMissLabel, livePercent, type ExplorerLiveStats } from "@/lib/ai/graphCallLog";
 import { explorerApi, type LabOptions, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
 
 export type SidebarTab = "search" | "start" | "lab" | "status";
@@ -742,6 +743,117 @@ function Row({ label, value, mono }: { label: string; value: string | number; mo
   );
 }
 
+const SCOPE_AR: Record<string, string> = { auto: "تلقائي", section: "القسم فقط", all: "كل الأقسام" };
+
+/** The graph's live numbers (20261121_10): how often customers got a graph answer, why it fell back, and the lab's failures. */
+function LivePanel() {
+  const [hours, setHours] = useState<number>(LIVE_WINDOWS[0]);
+  const [live, setLive] = useState<ExplorerLiveStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    void explorerApi.live(hours).then((res) => {
+      if (!alive) return;
+      setLoading(false);
+      if (res.ok) {
+        setLive(res.data);
+        setError(null);
+        setMissing(null);
+      } else if (res.schemaMissing) {
+        setMissing(res.migration || "20261121_10_library_graph_call_log.sql");
+      } else {
+        setError(res.error);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [hours]);
+
+  const c = live?.customer;
+  const reasons = c ? Object.entries(c.by_reason).sort((a, b) => b[1] - a[1]) : [];
+  const ms = (v: number | null) => (v === null ? "—" : `${fmt(v)} مللي ث`);
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-[11px] font-bold tracking-wide text-zinc-500">أسئلة العملاء الفعلية</h4>
+        <div role="radiogroup" aria-label="المدة" className="flex rounded-lg border border-zinc-800 p-0.5">
+          {LIVE_WINDOWS.map((h) => (
+            <button
+              key={h}
+              role="radio"
+              aria-checked={hours === h}
+              onClick={() => {
+                if (h === hours) return;
+                setLoading(true);
+                setHours(h);
+              }}
+              className={`rounded-md px-2 py-0.5 text-[10.5px] font-bold ${hours === h ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+            >
+              {h === 24 ? "٢٤ ساعة" : "٧ أيام"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {missing && (
+        <p className="mt-2 text-[11px] leading-relaxed text-amber-200">
+          تحتاج ملف قاعدة البيانات{" "}
+          <code dir="ltr" className="rounded bg-black/30 px-1 font-mono text-[10.5px]">supabase/migrations/{missing}</code>.
+        </p>
+      )}
+      {error && <p className="mt-2 text-[11px] text-red-300">{error}</p>}
+      {loading && !live && !missing && !error && <div className="mt-2 h-16 animate-pulse rounded-lg bg-zinc-900/70" />}
+
+      {live && c && (
+        <div className={`mt-2 space-y-1 ${loading ? "opacity-60" : ""}`}>
+          {c.total === 0 ? (
+            <p className="text-[11px] leading-relaxed text-zinc-500">
+              لا أسئلة مسجّلة في هذه المدة. يبدأ التسجيل بعد نشر هذا التحديث وتنفيذ ملفه، ولا يسجَّل شيء والجراف متوقف.
+            </p>
+          ) : (
+            <>
+              <Row label="أسئلة سُئل فيها الجراف" value={c.total} mono />
+              <Row label="أجاب الجراف" value={`${fmt(c.graph)} (${livePercent(c.graph, c.total)})`} mono />
+              <Row label="رجع إلى البحث النصي" value={`${fmt(c.keyword)} (${livePercent(c.keyword, c.total)})`} mono />
+              {reasons.map(([reason, n]) => (
+                <Row key={reason} label={`↳ ${graphMissLabel(reason)}`} value={`${fmt(n)} (${livePercent(n, c.total)})`} mono />
+              ))}
+              <Row label="زمن الجراف: الوسيط / ٩٥٪ / الأقصى" value={`${ms(c.graph_ms_p50)} / ${ms(c.graph_ms_p95)} / ${ms(c.graph_ms_max)}`} mono />
+              <Row label="بحث بالمعنى (متجه السؤال)" value={livePercent(c.vector_used, c.total)} mono />
+            </>
+          )}
+
+          <div className="mt-2 border-t border-zinc-800 pt-2">
+            <Row
+              label="المختبر: تشغيلات / أخطاء / مهلة"
+              value={`${fmt(live.lab.total)} / ${fmt(live.lab.failed)} / ${fmt(live.lab.timeouts)}`}
+              mono
+            />
+            {live.lab.recent_failures.length > 0 && (
+              <ul className="mt-1.5 space-y-1">
+                {live.lab.recent_failures.map((f, i) => (
+                  <li key={`${f.at ?? i}-${i}`} className="rounded-lg bg-black/20 px-2 py-1 text-[10.5px] leading-relaxed text-zinc-400">
+                    <span className="text-zinc-300">{when(f.at)}</span> · {f.miss ? graphMissLabel(f.miss) : "خطأ"} · {ms(f.ms)}
+                    <br />
+                    النطاق: {SCOPE_AR[f.scope ?? ""] ?? f.scope ?? "—"} · المراسيم: {f.decrees ? "نعم" : "لا"} · الفقه: {f.feqh ? "نعم" : "لا"} · العدد: ×{f.size ?? "1"}
+                    {!f.links && " · بدون روابط"}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {live.logging_since && <p className="pt-1 text-[10px] text-zinc-600">التسجيل منذ {when(live.logging_since)} · يُحفظ ٣٠ يومًا</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function StatusTab({ overview }: { overview: OverviewData | null }) {
   const [status, setStatus] = useState<ExplorerStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -812,6 +924,7 @@ function StatusTab({ overview }: { overview: OverviewData | null }) {
           {loading ? <CircleNotch size={12} className="animate-spin" /> : <ArrowsClockwise size={12} />} تحديث
         </button>
       </div>
+      <LivePanel />
       {error && <p className="text-[12px] text-red-300">{error}</p>}
       {!status && !error && <div className="h-24 animate-pulse rounded-xl bg-zinc-900/70" />}
 

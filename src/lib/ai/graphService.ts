@@ -14,6 +14,7 @@
 import type { createServiceClient } from "../supabase/server.ts";
 import { embedQueryText, rerankCandidates, resolveEmbeddingModelProfile } from "./embeddingClient.ts";
 import { embedQueryWithin, graphRagEnabled, QUERY_EMBED_DEADLINE_MS } from "./graphRagSwitch.ts";
+import { withGraphCallLog } from "./graphCallLog.ts";
 import {
   retrieveLibrary,
   type PackageSource,
@@ -196,5 +197,9 @@ export async function searchLegalGraph(
   admin: ServiceClient,
   req: GraphRetrieveRequest,
 ): Promise<Retrieved> {
-  return searchLegalGraphWith(admin, req);
+  // Each graph call leaves one row in library_graph.call_log (20261121_10). Not awaited.
+  return searchLegalGraphWith(admin, req, {
+    retrieve: (client, queries, limits, pin, budgetMs, options) =>
+      retrieveLibrary(client, queries, limits, pin, budgetMs, withGraphCallLog(options, client, "graph_api")),
+  });
 }

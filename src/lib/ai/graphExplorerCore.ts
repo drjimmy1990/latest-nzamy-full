@@ -427,6 +427,8 @@ export function edgeId(e: Pick<ExplorerEdge, "source" | "target" | "edge_type">)
 export type ExplorerRequest =
   | { action: "overview" }
   | { action: "status" }
+  /** The graph's live numbers over the last `hours` (20261121_10). */
+  | { action: "live"; hours: number }
   | { action: "search"; q: string; types: ExplorerNodeType[]; limit: number }
   | { action: "neighborhood"; key: string; depth: 1 | 2; limit: number; edges: ExplorerEdgeType[] }
   | { action: "node"; key: string }
@@ -534,6 +536,7 @@ export function parseExplorerRequest(params: URLSearchParams): ParseExplorerResu
 
   if (action === "overview") return { ok: true, value: { action: "overview" } };
   if (action === "status") return { ok: true, value: { action: "status" } };
+  if (action === "live") return { ok: true, value: { action: "live", hours: clampInt(params.get("hours"), 24, 1, 720) } };
 
   if (action === "search") {
     const q = (params.get("q") ?? "").trim().slice(0, 200);
