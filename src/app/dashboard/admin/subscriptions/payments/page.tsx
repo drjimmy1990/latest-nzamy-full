@@ -76,6 +76,8 @@ const STATUS_LABEL: Record<string, string> = {
   failed: "فشل",
   requires_payment: "قيد الدفع",
   not_required: "غير مطلوب",
+  // N01-14 (20261126_30): an office fee statement voided by its issuer.
+  void: "ملغى",
   pending: "قيد الدفع",
   debit: "خصم",
   usage: "استخدام",
