@@ -30,7 +30,14 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { buildImport, parseCsv, toPsqlScript } from "./registryCsv.mjs";
+import { buildImport, hijriToGregorian, parseCsv, toPsqlScript } from "./registryCsv.mjs";
+
+// A Node built with small ICU silently answers Gregorian for the Umm al-Qura
+// calendar: ~4,600 expiry dates would then be lost. Refuse to run instead.
+if (hijriToGregorian("01-09-1447") !== "2026-02-18") {
+  console.error("This Node cannot convert Hijri (Umm al-Qura) dates — it lacks full ICU. Use the official Node build (node -p \"process.versions.icu\").");
+  process.exit(2);
+}
 
 const args = process.argv.slice(2);
 const apply = args.includes("--apply");

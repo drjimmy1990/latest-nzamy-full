@@ -364,6 +364,9 @@ begin
 end
 $verify$;
 
+-- 7. PostgREST: see the two new functions now (else the routes answer 503 until it reloads)
+notify pgrst, 'reload schema';
+
 commit;
 
 select '20261122_40 lawyer_registry' as step,
