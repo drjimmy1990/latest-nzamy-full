@@ -4,7 +4,9 @@ import { resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
 import {
   canViewMemberPoints,
   memberPointsRpcOutcome,
+  parsePointsOverview,
   toMemberPointsUsage,
+  type PointsOverview,
 } from "@/lib/services/firmMemberPoints";
 
 /**
@@ -12,7 +14,9 @@ import {
  *
  * Per ACTIVE member of the caller's firm: the points they consumed this Riyadh
  * month and since they joined. Visible to the firm owner or an active
- * managing partner only.
+ * managing partner — and, since 20261125_40 (Q469), an active finance manager.
+ * The same response carries the firm account's points balance and each
+ * member's founder-credit runs (Q470) from public.firm_points_overview.
  *
  * ── WHY THE SESSION CLIENT, NOT THE SERVICE ROLE ────────────────────────────
  * The sums come from public.firm_member_points_usage (20261108_30), a SECURITY
@@ -53,7 +57,7 @@ export async function GET() {
     }
     if (!canViewMemberPoints(firm)) {
       return NextResponse.json(
-        { error: "هذا العدّاد للشريك المدير وحساب المكتب فقط." },
+        { error: "هذا العدّاد لحساب المكتب والشريك المدير والمدير المالي فقط." },
         { status: 403, headers: NO_STORE },
       );
     }
@@ -65,7 +69,7 @@ export async function GET() {
     }
     if (outcome === "forbidden") {
       return NextResponse.json(
-        { error: "هذا العدّاد للشريك المدير وحساب المكتب فقط." },
+        { error: "هذا العدّاد لحساب المكتب والشريك المدير والمدير المالي فقط." },
         { status: 403, headers: NO_STORE },
       );
     }
@@ -74,7 +78,28 @@ export async function GET() {
       return NextResponse.json({ error: "تعذّر تحميل استهلاك النقاط." }, { status: 500, headers: NO_STORE });
     }
 
-    return NextResponse.json({ available: true, members: toMemberPointsUsage(data) }, { headers: NO_STORE });
+    // Q468–Q470 (20261125_40): the firm account's balance and the founder-credit
+    // runs per member. Best effort and separate: before that migration runs (or
+    // on any failure) both stay null — the card then shows neither, never a 0.
+    let overview: PointsOverview = { ownerBalance: null, founderWorks: null };
+    const ov = await supabase.rpc("firm_points_overview", { p_firm: firm.id });
+    if (ov.error) {
+      if (memberPointsRpcOutcome(ov.error) === "failed") {
+        console.error("[firm/members/points-usage GET] overview failed:", ov.error.code);
+      }
+    } else {
+      overview = parsePointsOverview(ov.data);
+    }
+
+    return NextResponse.json(
+      {
+        available: true,
+        members: toMemberPointsUsage(data, overview.founderWorks),
+        ownerBalance: overview.ownerBalance,
+        founderWorksAvailable: overview.founderWorks !== null,
+      },
+      { headers: NO_STORE },
+    );
   } catch (err) {
     console.error("[firm/members/points-usage GET] threw:", (err as { name?: string } | null)?.name ?? "error");
     return NextResponse.json({ error: "تعذّر تحميل استهلاك النقاط." }, { status: 500, headers: NO_STORE });

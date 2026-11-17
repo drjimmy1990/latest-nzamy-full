@@ -12,10 +12,13 @@
  * Pure: no imports, so `node --test` loads it.
  */
 
-/** Who may see the counter: the firm owner, or an active managing partner. */
+/**
+ * Who may see the counter: the firm owner, or an active managing partner or
+ * finance manager (Q469, 20261125_40 widens the SQL check the same way).
+ */
 export function canViewMemberPoints(firm: { isOwner: boolean; role: string } | null): boolean {
   if (!firm) return false;
-  return firm.isOwner || firm.role === "managing_partner";
+  return firm.isOwner || firm.role === "managing_partner" || firm.role === "finance_manager";
 }
 
 export type MemberPointsRpcOutcome = "ok" | "unavailable" | "forbidden" | "failed";
@@ -40,6 +43,41 @@ export interface MemberPointsUsage {
   joinedAt: string | null;
   pointsMonth: number;
   pointsTotal: number;
+  /**
+   * Q470 «أعمال من رصيد المؤسس»: AI runs paid with a founder membership
+   * credit since joining (public.firm_points_overview, 20261125_40). Present
+   * only when the overview was read.
+   */
+  founderWorksMonth?: number;
+  founderWorksTotal?: number;
+}
+
+/** Founder-credit runs per member, keyed by user id (read and dropped before the DTO). */
+export type FounderWorks = Map<string, { month: number; total: number }>;
+
+export interface PointsOverview {
+  /** The firm account's unexpired points; null when it could not be read here. */
+  ownerBalance: number | null;
+  /** null when the founder membership tables are not installed. */
+  founderWorks: FounderWorks | null;
+}
+
+/** public.firm_points_overview's jsonb → the two parts, null where not available. */
+export function parsePointsOverview(data: unknown): PointsOverview {
+  const o = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+  const balance = o.owner_balance;
+  const ownerBalance = balance === null || balance === undefined ? null : toInt(balance);
+  let founderWorks: FounderWorks | null = null;
+  if (Array.isArray(o.founder_works)) {
+    founderWorks = new Map();
+    for (const r of o.founder_works) {
+      if (!r || typeof r !== "object") continue;
+      const row = r as Record<string, unknown>;
+      if (typeof row.user_id !== "string") continue;
+      founderWorks.set(row.user_id, { month: toInt(row.works_month), total: toInt(row.works_total) });
+    }
+  }
+  return { ownerBalance, founderWorks };
 }
 
 function toInt(value: unknown): number {
@@ -47,19 +85,28 @@ function toInt(value: unknown): number {
   return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
-/** Maps the RPC rows to the response DTO. `user_id` is read and dropped. */
-export function toMemberPointsUsage(rows: unknown): MemberPointsUsage[] {
+/**
+ * Maps the RPC rows to the response DTO. `user_id` is read and dropped; with
+ * `founder` (Q470) each member also carries his founder-credit runs (0 when
+ * he has none).
+ */
+export function toMemberPointsUsage(rows: unknown, founder?: FounderWorks | null): MemberPointsUsage[] {
   if (!Array.isArray(rows)) return [];
   return rows
     .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
-    .map((r) => ({
-      displayName: typeof r.display_name === "string" && r.display_name.trim() ? r.display_name.trim() : "—",
-      role: typeof r.role === "string" ? r.role : "",
-      isOwner: r.is_owner === true,
-      joinedAt: typeof r.joined_at === "string" ? r.joined_at : null,
-      pointsMonth: toInt(r.points_month),
-      pointsTotal: toInt(r.points_total),
-    }));
+    .map((r) => {
+      const base: MemberPointsUsage = {
+        displayName: typeof r.display_name === "string" && r.display_name.trim() ? r.display_name.trim() : "—",
+        role: typeof r.role === "string" ? r.role : "",
+        isOwner: r.is_owner === true,
+        joinedAt: typeof r.joined_at === "string" ? r.joined_at : null,
+        pointsMonth: toInt(r.points_month),
+        pointsTotal: toInt(r.points_total),
+      };
+      if (!founder) return base;
+      const f = typeof r.user_id === "string" ? founder.get(r.user_id) : undefined;
+      return { ...base, founderWorksMonth: f?.month ?? 0, founderWorksTotal: f?.total ?? 0 };
+    });
 }
 
 /** The card's footer line: the firm-wide sums of the two columns. */

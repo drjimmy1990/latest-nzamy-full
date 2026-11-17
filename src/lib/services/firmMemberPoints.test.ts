@@ -5,13 +5,16 @@ import {
   memberPointsRpcOutcome,
   sumMemberPoints,
   toMemberPointsUsage,
+  parsePointsOverview,
 } from "./firmMemberPoints.ts";
 
 test("٤٤٤: only the firm owner or a managing partner may see the per-member counter", () => {
   assert.equal(canViewMemberPoints(null), false);
   assert.equal(canViewMemberPoints({ isOwner: true, role: "managing_partner" }), true);
   assert.equal(canViewMemberPoints({ isOwner: false, role: "managing_partner" }), true);
-  for (const role of ["partner", "lawyer", "trainee", "office_admin", "hr_manager", "finance_manager", ""]) {
+  // Q469: the financial manager reads the counter too.
+  assert.equal(canViewMemberPoints({ isOwner: false, role: "finance_manager" }), true);
+  for (const role of ["partner", "lawyer", "trainee", "office_admin", "hr_manager", ""]) {
     assert.equal(canViewMemberPoints({ isOwner: false, role }), false, role);
   }
   // the owner flag wins whatever the role string says
@@ -52,4 +55,19 @@ test("٤٤٤: the footer sums both columns", () => {
   ]);
   assert.deepEqual(sumMemberPoints(members), { month: 7, total: 30 });
   assert.deepEqual(sumMemberPoints([]), { month: 0, total: 0 });
+});
+
+test("Q470: the overview parses to a balance and founder runs per member; absent parts stay null", () => {
+  const o = parsePointsOverview({ owner_balance: "1200", founder_works: [{ user_id: "u2", works_month: 1, works_total: 3 }, null, { works_total: 9 }] });
+  assert.equal(o.ownerBalance, 1200);
+  assert.deepEqual([...(o.founderWorks ?? new Map()).entries()], [["u2", { month: 1, total: 3 }]]);
+  const none = parsePointsOverview({ owner_balance: null, founder_works: null });
+  assert.equal(none.ownerBalance, null);
+  assert.equal(none.founderWorks, null);
+  const out = toMemberPointsUsage(
+    [{ user_id: "u1", display_name: "A", role: "lawyer" }, { user_id: "u2", display_name: "B", role: "lawyer" }],
+    o.founderWorks,
+  );
+  assert.deepEqual(out.map((m) => [m.founderWorksMonth, m.founderWorksTotal]), [[0, 0], [1, 3]]);
+  for (const row of out) assert.equal("userId" in row || "user_id" in row, false);
 });
