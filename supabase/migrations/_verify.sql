@@ -6741,3 +6741,36 @@ select 'Several contracts per case (run 20261123_40)' as check,
        and to_regclass('public.idx_contracts_request_id') is not null
        as ok;
 -- <<< verify:launch_2026_11_17
+-- >>> verify:l3_signup
+-- Lawyer signup verification (owner ٢٠–٢١): run 20261124_70 after 20261122_40.
+select 'Lawyer signup verification server-only + own-row read (run 20261124_70)' as check,
+       to_regclass('public.lawyer_signup_verifications') is not null
+       and to_regclass('public.lawyer_otp_challenges') is not null
+       and to_regclass('public.lawyer_licence_images') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.lawyer_otp_challenges')), false)
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.lawyer_licence_images')), false)
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.lawyer_signup_verifications')), false)
+       and not has_table_privilege('authenticated', 'public.lawyer_otp_challenges', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.lawyer_licence_images', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.lawyer_signup_verifications', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.lawyer_signup_verifications', 'mobile_change_new_mobile', 'SELECT')
+       and not has_table_privilege('anon', 'public.lawyer_signup_verifications', 'SELECT')
+       as ok;
+select 'Lawyer signup RPCs service_role only (run 20261124_70)' as check,
+       to_regprocedure('public.lawyer_otp_verify(uuid, text, text)') is not null
+       and not has_function_privilege('authenticated', 'public.lawyer_signup_registry_mobile(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.lawyer_signup_registry_check(uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.lawyer_otp_issue(uuid, text, text, text, text, text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.lawyer_otp_verify(uuid, text, text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.lawyer_signup_registry_mobile(uuid)', 'EXECUTE')
+       as ok;
+select 'Private bucket lawyer-licences, own-folder insert only (run 20261124_70 as supabase_admin)' as check,
+       exists (select 1 from storage.buckets where id = 'lawyer-licences' and public = false)
+       and exists (select 1 from pg_catalog.pg_policy
+                    where polrelid = 'storage.objects'::regclass and polname = 'lawyer-licences insert own' and polcmd = 'a')
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid = 'storage.objects'::regclass and polcmd <> 'a'
+                          and (coalesce(pg_catalog.pg_get_expr(polqual, polrelid), '')
+                               || coalesce(pg_catalog.pg_get_expr(polwithcheck, polrelid), '')) like '%lawyer-licences%')
+       as ok;
+-- <<< verify:l3_signup
