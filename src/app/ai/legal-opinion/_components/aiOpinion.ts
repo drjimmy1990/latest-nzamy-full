@@ -106,7 +106,7 @@ export function letterDraftBlocks(l: LetterDraft): DocBlock[] {
  */
 export function aiOpinionErrorText(code: string | null, error: string | null): string {
   const team = "يمكنك طلبها من فريق نظامي أدناه.";
-  if (code === "library_tier") return `الاستشارة الآلية تجيب من نصوص مكتبة الأنظمة، وهي متاحة لمشتركي Pro أو أعلى. ${team}`;
+  if (code === "library_tier") return `الاستشارة الآلية تجيب من نصوص مكتبة الأنظمة، وهي متاحة لمشتركي الباقة الاحترافية أو أعلى. ${team}`;
   if (code === "library_closed") return `مكتبة الأنظمة مغلقة الآن، فلا تعمل الاستشارة الآلية. ${team}`;
   if (code === "tool_off") return `التوليد الآلي غير مفعّل بعد. ${team}`;
   return `${error || "تعذّر إكمال الطلب"} — ${team}`;

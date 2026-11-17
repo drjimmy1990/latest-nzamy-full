@@ -132,7 +132,7 @@ function StreamBlock({
       {block.locked && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] text-xs font-bold text-amber-700 dark:text-amber-400">
           <Lock size={14} weight="fill" />
-          <span>المعاينة المجانية أول صفحتين من الكتاب؛ نص هذا الموضع متاح لمشتركي Pro أو أعلى.</span>
+          <span>المعاينة المجانية أول صفحتين من الكتاب؛ نص هذا الموضع متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية.</span>
         </div>
       )}
 

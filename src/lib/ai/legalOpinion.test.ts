@@ -283,5 +283,5 @@ test("page helpers: the inputs the page sends pass the server's checks; results 
     assert.match(text, /فريق نظامي أدناه/, String(code));
     assert.doesNotMatch(text, /المساعد الذكي للمكتبة/);
   }
-  assert.match(aiOpinionErrorText("library_tier", null), /Pro/);
+  assert.match(aiOpinionErrorText("library_tier", null), /الباقة الاحترافية/, "names the plan the tool needs, in Arabic (N05-L12)");
 });
