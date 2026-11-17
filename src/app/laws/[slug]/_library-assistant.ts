@@ -30,6 +30,8 @@ const FALLBACK = "تعذّر الاتصال بالخادم — حاول مرة �
 const LOCK_SUPPORT = "/contact";
 /** Point top-ups and plans are on /pricing (PaywallGate's CreditsBanner links there too). */
 const TOP_UP = { label: "شحن النقاط", href: "/pricing" } as const;
+/** draftingRequest.DRAFTER_HREF: the one link a drafting refusal may carry. */
+const DRAFTER_HREF = "/ai/draft";
 
 function newKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -76,6 +78,13 @@ export async function askLibrary(
 
   if (res.ok && typeof output?.reply === "string" && output.reply.trim()) {
     return { text: output.reply, citations: Array.isArray(json.citations) ? json.citations : [] };
+  }
+  // Owner Q485: a request to write a memo or a pleading (runCore, before any
+  // charge): the server's polite refusal, and the drafter only when it offers it.
+  if (json.code === "drafting_refused" && typeof json.error === "string" && json.error) {
+    const a = json.action as Record<string, unknown> | null | undefined;
+    const action = a && a.href === DRAFTER_HREF && typeof a.label === "string" && a.label ? { label: a.label, href: DRAFTER_HREF } : undefined;
+    return { text: json.error, citations: [], ...(action ? { action } : {}), refused: true };
   }
   // Signed out, or a tier below Pro: say what to do (the assistant's own wording).
   if (res.status === 401 || (res.status === 403 && json.code === "library_tier")) {

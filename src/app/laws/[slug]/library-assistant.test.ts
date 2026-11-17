@@ -105,3 +105,16 @@ test("a network failure is a plain error, never an invented reply", async () => 
   assert.equal(out.citations.length, 0);
   assert.match(out.text, /تعذّر/);
 });
+
+test("a refused drafting request (owner Q485) shows the server's sentence, and the drafter only at /ai/draft", async () => {
+  const text = "عذراً، مساعد المكتبة … لا يكتب المذكرات";
+  const lawyer = await askLibrary({ message: "اكتب لي مذكرة" }, "/laws/a",
+    reply(422, { error: text, code: "drafting_refused", action: { label: "افتح الصائغ القانوني", href: "/ai/draft" } }).fetchImpl);
+  assert.deepEqual(lawyer, { text, citations: [], action: { label: "افتح الصائغ القانوني", href: "/ai/draft" }, refused: true });
+  const individual = await askLibrary({ message: "اكتب لي مذكرة" }, "/laws/a", reply(422, { error: text, code: "drafting_refused" }).fetchImpl);
+  assert.deepEqual(individual, { text, citations: [], refused: true });
+  // Any other link is dropped.
+  const odd = await askLibrary({ message: "اكتب لي مذكرة" }, "/laws/a",
+    reply(422, { error: text, code: "drafting_refused", action: { label: "x", href: "https://evil.example" } }).fetchImpl);
+  assert.equal(odd.action, undefined);
+});
