@@ -66,7 +66,7 @@ export const PUBLIC_NAV: NavItem[] = [
       { label: "المجتمع القانوني",  labelEn: "Legal Community", href: "/community",  icon: "ChatCircle" },
       { label: "المدونة القانونية",  labelEn: "Legal Blog",      href: "/blog",      icon: "Article" },
       { label: "ميديا نظامي",       labelEn: "Nezamy Media",     href: "/media",     icon: "PlayCircle", badge: "جديد" },
-      { label: "أكاديمية نظامي",    labelEn: "Nezamy Academy",  href: "/academy",   icon: "GraduationCap", badge: "جديد" },
+      { label: "أكاديمية نظامي",    labelEn: "Nezamy Academy",  href: "/academy",   icon: "GraduationCap", badge: "قريباً" },
     ],
   },
 ];
@@ -84,7 +84,7 @@ export const LAWYER_NAV: NavItem[] = [
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple" },
       { label: "محترف العقود",       labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
       { label: "المحاكي الشامل",    labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales", badge: "مُدمَج" },
-      { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",  href: "/ai/legal-opinion",    icon: "Lightbulb", badge: "PRO" },
+      { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",  href: "/ai/legal-opinion",    icon: "Lightbulb", badge: "احترافي" },
       { label: "المرشد القضائي",     labelEn: "Court Guide",      href: "/ai/procedures",       icon: "Gavel" },
       { label: "السكرتير الذكي",     labelEn: "AI Secretary",     href: "/ai/secretary",        icon: "Robot", badge: "قريباً" },
     ],
@@ -157,7 +157,7 @@ export const CORPORATE_NAV: NavItem[] = [
       // cannedOutputGate.test.ts does.
       { label: "LegalMail",       labelEn: "LegalMail",       href: "/ai/mail-advisor",      icon: "Envelope", badge: "قريباً" },
       { label: "مستشار HR",       labelEn: "HR Advisor",      href: "/ai/corp/hr",           icon: "Users", badge: "قريباً" },
-      { label: "CorpMind",        labelEn: "CorpMind",        href: "/ai/corp/corpmind",     icon: "Robot", badge: "قريباً" },
+      { label: "المستشار المؤسسي", labelEn: "CorpMind",        href: "/ai/corp/corpmind",     icon: "Robot", badge: "قريباً" },
     ],
   },
   {
