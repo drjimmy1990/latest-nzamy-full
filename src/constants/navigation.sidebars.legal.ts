@@ -210,7 +210,6 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "دليل العملاء",   labelEn: "Clients",       href: "/dashboard/firm/clients",       icon: "AddressBook" },
       { label: "الاستشارات",     labelEn: "Consultations", href: "/dashboard/firm/consultations", icon: "ChatDots" },
       { label: "بوابة العميل",   labelEn: "Client Portal", href: "/dashboard/firm/client-portal", icon: "Globe", gateKey: "firm-client-portal" },
-      { label: "تخصيص البوابة",  labelEn: "Branding",      href: "/dashboard/firm/branding",      icon: "Palette", gateKey: "firm-branding" },
     ],
   },
   {

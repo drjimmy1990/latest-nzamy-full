@@ -9,8 +9,10 @@ import {
   LinkSimple, ShieldCheck,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
-export default function FirmBrandingPage() {
+function FirmBrandingPageDemo() {
   const { isDark } = useTheme();
   const [firmName, setFirmName] = useState("مكتب المنشاوي وشركاه");
   const [firmNameEn, setFirmNameEn] = useState("Al-Menshawi & Partners");
@@ -240,4 +242,22 @@ export default function FirmBrandingPage() {
       </div>
     </div>
   );
+}
+/**
+ * N07-60 (owner package 13 Nov): every field here (the firm name, the domain,
+ * the colours) is a fixture and «حفظ» saves nothing, so the screen renders in
+ * demo mode only. A production firm sees the honest gate; the sidebar no
+ * longer links here.
+ */
+export default function FirmBrandingPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="تخصيص البوابة"
+        description="تخصيص بوابة العميل بشعار المكتب وألوانه ونطاقه يُضاف قريبًا."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmBrandingPageDemo />;
 }
