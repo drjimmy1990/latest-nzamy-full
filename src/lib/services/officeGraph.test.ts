@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildOfficeGraph, isCaseRow, officeCaseOrFilter, type OfficeCaseInput } from "./officeGraph.ts";
+import { buildOfficeGraph, isCaseRow, officeCaseOrFilter, officeOwnRowsFilter, type OfficeCaseInput } from "./officeGraph.ts";
 
 const kase = (id: string, o: Partial<OfficeCaseInput> = {}): OfficeCaseInput => ({
   id, title: `قضية ${id}`, status: "assigned", lawyerClientId: null, requester: { name: "" }, metadata: {}, ...o,
@@ -75,4 +75,128 @@ test("officeCaseOrFilter: own rows and own firms only — never the open marketp
     `requester_user_id.eq.${uid},assigned_to.eq.${uid},firm_id.in.(${f1})`,
     "duplicates folded, anything that is not a uuid dropped",
   );
+});
+
+// ── N07-49: one client, one node ─────────────────────────────────────────
+
+test("N07-49: a platform case by the account a card is linked to joins that card — one node, both links", () => {
+  const g = buildOfficeGraph(
+    [
+      kase("own", { lawyerClientId: "c1", requester: { name: "سارة العتيبي" } }),
+      kase("web", { requesterUserId: "acct-1", requester: { name: "ساره العتيبى" } }),
+    ],
+    [{ id: "c1", name: "سارة العتيبي", clientType: "individual", clientUserId: "acct-1" }],
+  );
+  const clients = g.nodes.filter((n) => n.kind === "client");
+  assert.deepEqual(clients.map((n) => n.id), ["client:c1"], "no floating duplicate");
+  assert.equal(clients[0].caseCount, 2);
+  assert.match(clients[0].facts!.find((f) => f.label === "المصدر")!.value, /بطاقة موكّل \+ حساب على المنصة/);
+  assert.ok(!JSON.stringify(g).includes("acct-1"), "the account id never leaves the server");
+});
+
+test("N07-49: a case naming no card merges into the ONE card with that normalised name", () => {
+  const g = buildOfficeGraph(
+    [kase("a", { requester: { name: "شركة الأفق" } })],
+    [{ id: "c1", name: "شركة الافق", clientType: "company" }],
+  );
+  assert.deepEqual(g.nodes.filter((n) => n.kind === "client").map((n) => n.id), ["client:c1"]);
+  assert.deepEqual(g.edges, [{ from: "case:a", to: "client:c1", relation: "client" }]);
+});
+
+test("N07-49: two cards with the same name are not guessed between", () => {
+  const g = buildOfficeGraph(
+    [kase("a", { requester: { name: "محمد" } })],
+    [{ id: "c1", name: "محمد", clientType: "individual" }, { id: "c2", name: "محمد", clientType: "individual" }],
+  );
+  const target = g.edges.find((e) => e.from === "case:a")!.to;
+  assert.equal(target, "client:name:محمد");
+});
+
+test("N07-49: an account with no card is one node across its cases, and a name-only mention joins it", () => {
+  const g = buildOfficeGraph(
+    [
+      kase("x", { requester: { name: "خالد" }, metadata: { intake: { parties: { one: { fullName: "خالد" } } } } }),
+      kase("w1", { requesterUserId: "acct-9", requester: { name: "خالد" } }),
+      kase("w2", { requesterUserId: "acct-9", requester: { name: "خالد" } }),
+    ],
+    [],
+  );
+  const clients = g.nodes.filter((n) => n.kind === "client");
+  assert.equal(clients.length, 1);
+  assert.equal(clients[0].caseCount, 3);
+});
+
+test("an opponent is never folded into a client card of the same name", () => {
+  const g = buildOfficeGraph(
+    [kase("b", { metadata: { opponentName: "شركة الأفق" } })],
+    [{ id: "c9", name: "شركة الأفق", clientType: "company" }],
+  );
+  assert.ok(g.nodes.some((n) => n.id === "opponent:شركه الافق"));
+  assert.equal(g.clashes.length, 1);
+});
+
+// ── N07-50..52: the office's other records ────────────────────────────────
+
+test("contracts, consultations, hearings, tasks and fees hang on what is drawn — nothing else", () => {
+  const g = buildOfficeGraph(
+    [kase("a", { lawyerClientId: "c1", requester: { name: "مؤسسة النور" }, metadata: { court: "المحكمة العامة بالرياض" } })],
+    [{ id: "c1", name: "مؤسسة النور", clientType: "company", feeTotalSar: 10000, feePaidSar: 2500 }],
+    {
+      contracts: [
+        { id: "k1", title: "عقد أتعاب", status: "active", contractType: "fee_agreement", lawyerClientId: "c1", clientUserId: null, requestId: "a", counterpartyName: null, valueSar: 5000, endsOn: "2027-01-31" },
+        { id: "k2", title: "عقد يتيم", status: "draft", contractType: "other", lawyerClientId: null, clientUserId: null, requestId: "not-drawn", counterpartyName: null, valueSar: null, endsOn: null },
+      ],
+      consultations: [
+        { id: "s1", status: "completed", mode: "video", specialty: "تجاري", scheduledAt: "2026-11-01T10:00:00Z", lawyerClientId: "c1", requesterUserId: null, convertedCaseId: null, feeSar: null, feePaid: false },
+      ],
+      hearings: [
+        { id: "h2", caseId: "a", title: "جلسة ثانية", kind: "judicial", date: "2026-12-10", time: null, courtName: "" },
+        { id: "h1", caseId: "a", title: "جلسة أولى", kind: "judicial", date: "2026-11-20", time: "09:30:00", courtName: "المحكمة التجارية" },
+        { id: "hx", caseId: "restricted", title: "لا تظهر", kind: "judicial", date: "2026-11-21", time: null, courtName: "" },
+      ],
+      tasks: [{ id: "t1", caseId: "a", title: "إعداد مذكرة", status: "todo", priority: "high", dueDate: "2026-11-19" }],
+      invoices: [
+        { id: "p1", caseId: "a", lawyerClientId: null, amount: 3000, paid: 3000 },
+        { id: "p2", caseId: "a", lawyerClientId: null, amount: 2000, paid: 500 },
+        { id: "p3", caseId: null, lawyerClientId: "c1", amount: 700, paid: 0 },
+      ],
+    },
+  );
+  const ids = new Set(g.nodes.map((n) => n.id));
+  for (const id of ["contract:k1", "consultation:s1", "hearing:h1", "hearing:h2", "task:t1", "fee:case:a", "fee:client:c1"]) assert.ok(ids.has(id), id);
+  assert.ok(!ids.has("contract:k2"), "a contract on nothing drawn is not drawn");
+  assert.ok(!ids.has("hearing:hx"), "a hearing of a case not on the map is not drawn");
+  assert.ok(!JSON.stringify(g).includes("لا تظهر"));
+  assert.deepEqual(g.unlinked, { contracts: 1, consultations: 0 });
+
+  const fee = g.nodes.find((n) => n.id === "fee:case:a")!;
+  assert.equal(fee.facts!.find((f) => f.label === "الفواتير")!.value, "٢");
+  assert.match(fee.facts!.find((f) => f.label === "المتبقي")!.value, /١[٬,]?٥٠٠/);
+  const kaseNode = g.nodes.find((n) => n.id === "case:a")!;
+  assert.equal(kaseNode.facts!.find((f) => f.label === "الجلسة القادمة")!.value, "٢٠/١١/٢٠٢٦ — ٠٩:٣٠", "the soonest one");
+  assert.equal(kaseNode.facts!.find((f) => f.label === "المحكمة")!.value, "المحكمة العامة بالرياض");
+  assert.equal(kaseNode.link?.kind, "case");
+  assert.deepEqual(g.nodes.find((n) => n.id === "contract:k1")!.link, { kind: "contract", id: "k1" });
+  assert.ok(g.edges.some((e) => e.from === "client:c1" && e.to === "contract:k1"));
+  assert.ok(g.edges.some((e) => e.from === "case:a" && e.to === "contract:k1"));
+  const card = g.nodes.find((n) => n.id === "client:c1")!;
+  assert.ok(card.facts!.some((f) => f.label === "الأتعاب المتفق عليها"));
+  assert.equal(card.caseCount, 1, "satellite edges are not cases");
+});
+
+test("no invoice read, no fee node — never a «٠» guessed for an unbilled case", () => {
+  const g = buildOfficeGraph([kase("a")], [], { invoices: [] });
+  assert.ok(!g.nodes.some((n) => n.kind === "fee"));
+});
+
+test("a fee hidden from the caller is not drawn as a value", () => {
+  const g = buildOfficeGraph([], [{ id: "c1", name: "موكّل", clientType: "individual", feeTotalSar: null, feePaidSar: null }]);
+  assert.ok(!g.nodes[0].facts!.some((f) => f.label.includes("الأتعاب")));
+});
+
+test("officeOwnRowsFilter: own rows and own firms only", () => {
+  const uid = "11111111-0000-0000-0000-000000000001";
+  const f1 = "ffffffff-0000-0000-0000-0000000000f1";
+  assert.equal(officeOwnRowsFilter("lawyer_user_id", uid, [f1, "bad)"]), `lawyer_user_id.eq.${uid},firm_id.in.(${f1})`);
+  assert.equal(officeOwnRowsFilter("owner_user_id", uid, []), `owner_user_id.eq.${uid}`);
 });
