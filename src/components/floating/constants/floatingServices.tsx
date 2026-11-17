@@ -367,7 +367,7 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
     return addSupport([
       { key: "firm-trainee-tasks", icon: <ClipboardText {...iconProps} />, label: "مهامي", sub: "تكليفات تحت إشراف", href: "/dashboard/firm/tasks" },
       { key: "firm-trainee-templates", icon: <FileText {...iconProps} />, label: "النماذج", sub: "مذكرات وقوالب مساعدة", href: "/dashboard/firm/templates" },
-      { key: "firm-trainee-library", icon: <BookOpen {...iconProps} />, label: "المكتبة القانونية", sub: "أنظمة وسوابق للتعلم", href: "/erp/library" },
+      { key: "firm-trainee-library", icon: <BookOpen {...iconProps} />, label: "المكتبة القانونية", sub: "أنظمة وسوابق للتعلم", href: "/laws" },
       { key: "firm-trainee-ai", icon: <Robot {...iconProps} />, label: "سؤال قانوني سريع", sub: "إجابة تدريبية داخلية", next: "ai-chat" },
       quick,
     ], "دعم المتدرب");

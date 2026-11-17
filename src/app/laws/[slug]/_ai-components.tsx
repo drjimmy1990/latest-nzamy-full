@@ -10,6 +10,7 @@ import type { LawArticle } from "../data";
 import { LiteMarkdown } from "../components/AiTabContent";
 import type { LibraryAiAction } from "./_ai-reply";
 import { askLibrary } from "./_library-assistant";
+import { explainGreeting, explainSubtitle } from "./_explain-greeting";
 import { asCitations, CitedText, SourceList, type Citation } from "@/components/ai/CitedAnswer";
 
 
@@ -222,16 +223,16 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
 
 // ─── Preamble collapsible ──────────────────────────────────────────────────────
 
-export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: { article: LawArticle; isDark: boolean; onClose: () => void; isRTL?: boolean }) {
+export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, lawName }: { article: LawArticle; isDark: boolean; onClose: () => void; isRTL?: boolean; lawName?: string }) {
   const [input, setInput] = useState("");
+  // N02-5: an untitled article is named by its law, never by "" (_explain-greeting.ts).
   const [msgs, setMsgs]   = useState<AIMessage[]>([
     {
       role: "ai",
-      text: isRTL
-        ? `أهلاً بك. هل تريدني أن أشرح لك ${article.num} المتضمنة لـ "${article.title}" أم لديك استفسار محدد حولها؟ أجيب من نصوص المكتبة وحدها، وأذكر مصدر كل جملة.`
-        : `Welcome. Would you like an explanation of ${article.num} (${article.title}), or do you have a specific question about it? I answer from the library's texts only and cite each one.`
+      text: explainGreeting({ num: article.num, articleTitle: article.title, lawName, isRTL }),
     }
   ]);
+  const subtitle = explainSubtitle(article.title, lawName);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -295,7 +296,7 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true }: 
           </div>
           <div className="flex-1 mt-0.5 min-w-0">
             <p className={`text-[14px] font-bold ${isDark ? "text-zinc-100" : "text-zinc-800"}`}>{isRTL ? "اشرح لي" : "Explain"} — {article.num}</p>
-            <p className={`text-[11px] mt-0.5 line-clamp-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{article.title}</p>
+            {subtitle && <p className={`text-[11px] mt-0.5 line-clamp-1 ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{subtitle}</p>}
           </div>
           <button onClick={onClose} className={`flex-shrink-0 p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
             <X size={16} />

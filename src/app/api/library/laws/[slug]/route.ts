@@ -616,7 +616,7 @@ function formatArticleWithPaywall(
   if (isLocked) {
     result.text = preview(lifted.text);
     if (originalText) result.originalText = preview(originalText);
-    result.lockedMessage = 'يتطلب اشتراك Pro أو أعلى لعرض النص الكامل';
+    result.lockedMessage = 'للاطلاع على النص الكامل، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية';
   } else {
     result.text = lifted.text;
     if (originalText) result.originalText = originalText;

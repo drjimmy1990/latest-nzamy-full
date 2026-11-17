@@ -20,6 +20,8 @@
 
 import { orderLabelWithPointsAr, sellableItem } from "./catalog.ts";
 import { fulfilmentNoticeAr } from "./fulfillDecision.ts";
+import { FOUNDER_PLAN_ID } from "../membership/founderPlan.ts";
+import { FOUNDER_BENEFITS } from "../pricing/founderCard.ts";
 
 export interface ResultOrder {
   id: string;
@@ -172,4 +174,47 @@ export function paymentResultView(result: ResultInput, order: ResultOrder): Resu
 export function resultViewWithoutPayment(order: ResultOrder): ResultView {
   if (order.status === "created" || order.status === "initiated" || order.status === "paid") return pendingView();
   return closedView(order);
+}
+
+// ── F16: the founder welcome (owner, 13-Nov package, files 02 + 08) ─────────
+
+export const FOUNDER_WELCOME_TITLE = "أهلاً بك في نخبة المؤسسين";
+export const FOUNDER_WELCOME_TOOLS_LABEL = "ابدأ استخدام أدواتك الآن";
+export const FOUNDER_WELCOME_RECEIPT_LABEL = "عرض الإيصال";
+/** The AI tools hub (the lawyer's tools are listed there). */
+export const FOUNDER_WELCOME_TOOLS_HREF = "/ai";
+
+export interface FounderWelcome {
+  title: string;
+  /** The activation sentence the success view already carries (term + receipt number). */
+  body: string;
+  /** What the membership includes: the founder card's own list (FOUNDER_BENEFITS), never a typed copy. */
+  benefits: readonly string[];
+  toolsHref: string;
+  receiptHref: string;
+}
+
+/**
+ * The gold welcome card, or null for the ordinary result card.
+ *
+ * Only a SUCCESSFUL founder membership order gets it: kind "membership" and
+ * item FOUNDER_PLAN_ID, and a success view (granted, or a refresh after it).
+ * A founder payment that did not seat (already_entitled → «قيد المراجعة»), a
+ * failure, a pending or a refund keeps the ordinary card. Every other order
+ * keeps the ordinary card too.
+ *
+ * No points line: founder_activate (20261101_10) grants credits, a seat and
+ * library access — no points. The «+٧٠٠ نقطة» in the owner's request is the
+ * top-up counter (topup-500), not part of this membership.
+ */
+export function founderWelcomeFor(view: ResultView, order: Pick<ResultOrder, "kind" | "item_id">): FounderWelcome | null {
+  if (view.tone !== "success" || !view.receiptHref) return null;
+  if (order.kind !== "membership" || order.item_id !== FOUNDER_PLAN_ID) return null;
+  return {
+    title: FOUNDER_WELCOME_TITLE,
+    body: view.body,
+    benefits: FOUNDER_BENEFITS,
+    toolsHref: FOUNDER_WELCOME_TOOLS_HREF,
+    receiptHref: view.receiptHref,
+  };
 }

@@ -85,7 +85,8 @@ export default function MarketplaceOrdersPage() {
               </linearGradient>
             </defs>
             <path d="M0,55 L30,48 L60,52 L90,40 L120,35 L150,42 L180,30 L210,25 L240,28 L270,18 L300,12 L300,70 L0,70 Z" fill="url(#orders-fill)"/>
-            <path d="M0,55 L30,48 L60,52 L90,40 L120,35 L150,42 L180,30 L210,25 L240,28 L270,18 L300,12" fill="none" stroke="#C8A762" strokeWidth="2" strokeLinecap="round"/>
+            {/* N07-68: a non-scaling stroke keeps the line's thickness in this stretched SVG. */}
+            <path d="M0,55 L30,48 L60,52 L90,40 L120,35 L150,42 L180,30 L210,25 L240,28 L270,18 L300,12" fill="none" stroke="#C8A762" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
           </svg>
         </div>
 

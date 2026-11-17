@@ -65,3 +65,21 @@ test("both FAB containers use the safe-area bottom offset, not the old phone lif
   assert.equal((src.match(/style=\{FAB_BOTTOM_STYLE\}/g) ?? []).length, 2);
   assert.ok(!src.includes("bottom-20 md:bottom-6"), "the old bottom-20 phone lift is back");
 });
+
+// ── N02-3: one draft button per reader ───────────────────────────────────────
+
+test("N02-3: no floating draft button on a reader whose header has its own «المسودة» button", async () => {
+  const src = await readFile(SRC, "utf8");
+  assert.ok(src.includes("const showDraftFab = cartCount > 0 && isItemDetail && !readerHasOwnDraftButton(pathname);"));
+  assert.ok(src.includes('return !pathname.startsWith("/precedents/judgment/");'));
+  // each reader the helper names really has the header button that opens the drawer
+  for (const page of [
+    "src/app/laws/[slug]/page.tsx",
+    "src/app/laws/orders/[slug]/page.tsx",
+    "src/app/precedents/[slug]/page.tsx",
+    "src/app/book/[slug]/page.tsx",
+  ]) {
+    const reader = await readFile(page, "utf8");
+    assert.match(reader, /isRTL \? "المسودة" : "Draft"/, page);
+  }
+});

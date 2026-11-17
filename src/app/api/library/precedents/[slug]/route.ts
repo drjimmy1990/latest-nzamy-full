@@ -282,7 +282,7 @@ export async function GET(
             ? (p.classification_keywords as unknown[]).filter((k): k is string => typeof k === 'string')
             : [],
           locked: isLocked,
-          lockedMessage: isLocked ? 'يتطلب اشتراك Pro أو أعلى لعرض المبدأ كاملاً' : undefined,
+          lockedMessage: isLocked ? 'للاطلاع على المبدأ كاملاً، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية' : undefined,
           // Locked principles: paragraphs & details are withheld from the payload.
           paragraphs: isLocked
             ? []

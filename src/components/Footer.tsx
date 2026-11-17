@@ -46,7 +46,7 @@ const footerLinksAr = {
   ],
   "للمحامين": [
     { label: "نظامي ERP", href: "/erp" },
-    { label: "المكتبة القانونية", href: "/erp/library" },
+    { label: "المكتبة القانونية", href: "/laws" },
     { label: "ذكاء نظامي", href: "/ai#max" },
     // «سوق المهنيين» is appended below, and only when the marketplace is
     // actually offered. Advertising it from every page while the route
@@ -79,7 +79,7 @@ const footerLinksEn = {
   ],
   "For Lawyers": [
     { label: "Nezamy ERP", href: "/erp" },
-    { label: "Legal Library", href: "/erp/library" },
+    { label: "Legal Library", href: "/laws" },
     { label: "Nezamy AI", href: "/ai#max" },
   ],
 };

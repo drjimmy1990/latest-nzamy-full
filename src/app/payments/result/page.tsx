@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
@@ -9,9 +10,13 @@ import { fulfillOrder } from "@/lib/payments/fulfillOrder";
 import { isMissingPaymentsObject } from "@/lib/payments/fulfillDecision";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import {
+  FOUNDER_WELCOME_RECEIPT_LABEL,
+  FOUNDER_WELCOME_TOOLS_LABEL,
+  founderWelcomeFor,
   paymentResultView,
   pendingView,
   resultViewWithoutPayment,
+  type FounderWelcome,
   type ResultOrder,
   type ResultTone,
   type ResultView,
@@ -138,13 +143,75 @@ function ResultCard({ view, refreshHref }: { view: ResultView; refreshHref: stri
   );
 }
 
-function Shell({ view, refreshHref }: { view: ResultView; refreshHref: string }) {
+const GOLD_PRIMARY = `${BUTTON} bg-[#0B3D2E] text-white shadow-[0_6px_18px_rgba(11,61,46,0.35)] hover:bg-[#0E4D3A] dark:bg-[#C8A762] dark:text-[#0B3D2E] dark:hover:bg-[#d6b877]`;
+const GOLD_SECONDARY = `${BUTTON} border border-[#C8A762] text-[#7a6230] hover:bg-[#C8A762]/10 dark:text-[#e5cca0]`;
+
+/** A four-point sparkle; decorative only. */
+function Sparkle({ className, style }: { className: string; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} style={style}>
+      <path d="M12 0 L14.2 9.8 L24 12 L14.2 14.2 L12 24 L9.8 14.2 L0 12 L9.8 9.8 Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
+ * F16 — the founder membership's welcome (owner, 13-Nov package): a gold
+ * #C8A762 frame, the founders' greeting, what the membership includes and two
+ * ways on: the tools, and the receipt. A server component: the motion is CSS
+ * only (globals.css .nz-founder-*), and prefers-reduced-motion turns it off.
+ */
+function FounderWelcomeCard({ welcome }: { welcome: FounderWelcome }) {
+  return (
+    <section
+      aria-live="polite"
+      className="nz-founder-rise relative rounded-3xl bg-gradient-to-br from-[#C8A762] via-[#e5cca0] to-[#b8974f] p-[2px] shadow-[0_0_48px_rgba(11,61,46,0.28)]"
+    >
+      <div className="relative overflow-hidden rounded-[calc(1.5rem-2px)] bg-[#fffdf8] px-6 py-8 text-center text-zinc-900 sm:px-10 dark:bg-[#0d1512] dark:text-zinc-100">
+        <Sparkle className="nz-founder-sparkle absolute right-6 top-6 h-4 w-4 text-[#C8A762]" />
+        <Sparkle className="nz-founder-sparkle absolute left-8 top-12 h-3 w-3 text-[#C8A762]" style={{ animationDelay: "0.6s" }} />
+        <Sparkle className="nz-founder-sparkle absolute bottom-10 right-10 h-3 w-3 text-[#C8A762]" style={{ animationDelay: "1.2s" }} />
+
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#C8A762] to-[#b8974f] text-[#0B3D2E] shadow-[0_8px_24px_rgba(200,167,98,0.45)]">
+          {/* a crown */}
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="h-8 w-8">
+            <path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 10H5L3 8z" fill="currentColor" />
+            <rect x="5" y="19.5" width="14" height="2" rx="1" fill="currentColor" />
+          </svg>
+        </div>
+
+        <h1 className="text-2xl font-extrabold text-[#0B3D2E] sm:text-3xl dark:text-[#e5cca0]">{welcome.title}</h1>
+        <p className="mx-auto mt-3 max-w-md leading-7 text-zinc-700 dark:text-zinc-300">{welcome.body}</p>
+
+        <ul className="mx-auto mt-6 max-w-md space-y-2 text-start text-sm">
+          {welcome.benefits.map((benefit) => (
+            <li key={benefit} className="flex items-start gap-2 rounded-xl border border-[#C8A762]/30 bg-[#C8A762]/[0.07] px-3 py-2">
+              <span aria-hidden="true" className="mt-0.5 font-bold text-[#b8974f]">✓</span>
+              <span>{benefit}</span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          <Link href={welcome.toolsHref} className={GOLD_PRIMARY}>
+            {FOUNDER_WELCOME_TOOLS_LABEL}
+          </Link>
+          <Link href={welcome.receiptHref} className={GOLD_SECONDARY}>
+            {FOUNDER_WELCOME_RECEIPT_LABEL}
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Shell({ view, refreshHref, welcome = null }: { view: ResultView; refreshHref: string; welcome?: FounderWelcome | null }) {
   return (
     <>
       <Navbar />
       <main dir="rtl" className="min-h-[70dvh] bg-zinc-50 px-4 pb-20 pt-32 dark:bg-[#0A0A0A]">
         <div className="mx-auto max-w-xl">
-          <ResultCard view={view} refreshHref={refreshHref} />
+          {welcome ? <FounderWelcomeCard welcome={welcome} /> : <ResultCard view={view} refreshHref={refreshHref} />}
         </div>
       </main>
       <Footer />
@@ -231,5 +298,7 @@ export default async function PaymentResultPage({ searchParams }: { searchParams
     }
   }
 
-  return <Shell view={view} refreshHref={selfHref} />;
+  // F16: a successful founder membership gets the gold welcome; every other
+  // outcome and order keeps the ordinary card.
+  return <Shell view={view} refreshHref={selfHref} welcome={founderWelcomeFor(view, order)} />;
 }

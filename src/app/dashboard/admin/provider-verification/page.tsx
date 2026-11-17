@@ -317,7 +317,7 @@ export default function ProviderVerificationPage() {
                   const dash = (pct/100)*circumference;
                   const el = <circle key={i} cx="60" cy="60" r="45" fill="none" stroke={s.color} strokeWidth="12"
                     strokeDasharray={`${dash} ${circumference-dash}`}
-                    strokeDashoffset={-(offset/100)*circumference} strokeLinecap="round"
+                    strokeDashoffset={-(offset/100)*circumference} strokeLinecap="butt"
                     className="transition-all duration-700"/>;
                   offset += pct;
                   return el;
@@ -378,7 +378,8 @@ export default function ProviderVerificationPage() {
               </linearGradient>
             </defs>
             <path d="M0,45 L33,38 L66,42 L100,30 L133,25 L166,20 L200,12 L200,60 L0,60 Z" fill="url(#approval-fill)"/>
-            <path d="M0,45 L33,38 L66,42 L100,30 L133,25 L166,20 L200,12" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round"/>
+            {/* N07-68: a non-scaling stroke keeps the line's thickness in this stretched SVG. */}
+            <path d="M0,45 L33,38 L66,42 L100,30 L133,25 L166,20 L200,12" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
           </svg>
         </div>
       </div>

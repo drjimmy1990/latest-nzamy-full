@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+/** The widest a bar may be, whatever the number of buckets (N07-65). */
+const MAX_BAR_W = 24;
+/** Fixed corner radius: a radius derived from the width is what drew the oval. */
+const BAR_RADIUS = 5;
+
 export function AreaBarChart({ data, isDark }: { data: { label: string; paid: number; pending: number }[]; isDark: boolean }) {
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -13,7 +18,11 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
   // empty state; a chart frame with no bars would read as "billed nothing".
   const hasData = data.length > 0;
 
-  const barW = hasData ? Math.max((W_INNER / data.length) - 16, 12) : 0;
+  // N07-65: the width is capped. With one or two buckets the old formula made
+  // a single bar ~600 units wide, and `rx={barW/2}` (no ry) turned it into a
+  // giant brown oval across the whole chart. A slot can be wide; a bar is not.
+  const slotW = hasData ? W_INNER / data.length : 0;
+  const barW = hasData ? Math.min(MAX_BAR_W, Math.max(slotW - 16, 12)) : 0;
 
   // The axis used to be floored at 1,000 and every bar at 2px, so a set of
   // all-zero months still drew a ٠–1.0k scale with visible bars sitting on the
@@ -23,7 +32,7 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
   const maxVal = Math.max(...data.map(d => d.paid + d.pending), 0);
   const scale = maxVal > 0 ? H_INNER / maxVal : 0;
 
-  const barX = (i: number) => PAD.l + i * (W_INNER / data.length) + (W_INNER / data.length - barW) / 2;
+  const barX = (i: number) => PAD.l + i * slotW + (slotW - barW) / 2;
   const barH = (v: number) => (v > 0 && scale > 0 ? Math.max(v * scale, 2) : 0);
   const barY = (v: number) => H - PAD.b - barH(v);
 
@@ -106,19 +115,19 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
           const isHovered = hovered === i;
           return (
             <g key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} className="cursor-pointer">
-              {/* Invisible touch target for easier hover */}
-              <rect x={x - 8} y={PAD.t} width={barW + 16} height={H_INNER} fill="transparent" />
+              {/* Invisible touch target: the whole slot, since the bar itself is narrow */}
+              <rect x={PAD.l + i * slotW} y={PAD.t} width={slotW} height={H_INNER} fill="transparent" />
 
               {/* Pending part */}
               {d.pending > 0 && (
-                <motion.rect x={x} y={barY(total)} width={barW} height={totalBarH - paidBarH} fill="url(#barGradPendPremium)" rx={barW/2}
+                <motion.rect x={x} y={barY(total)} width={barW} height={totalBarH - paidBarH} fill="url(#barGradPendPremium)" rx={BAR_RADIUS} ry={BAR_RADIUS}
                   opacity={isHovered ? 1 : 0.85}
                   initial={{ height: 0, y: H - PAD.b }} animate={{ height: totalBarH - paidBarH, y: barY(total) }}
                   transition={{ duration: 0.6, delay: i * 0.05 }} />
               )}
               {/* Paid part */}
               {d.paid > 0 && (
-                <motion.rect x={x} y={barY(d.paid)} width={barW} height={paidBarH} fill="url(#barGradPaidPremium)" rx={barW/2}
+                <motion.rect x={x} y={barY(d.paid)} width={barW} height={paidBarH} fill="url(#barGradPaidPremium)" rx={BAR_RADIUS} ry={BAR_RADIUS}
                   opacity={isHovered ? 1 : 0.9}
                   initial={{ height: 0, y: H - PAD.b }} animate={{ height: paidBarH, y: barY(d.paid) }}
                   transition={{ duration: 0.7, delay: i * 0.05 }} />
@@ -146,7 +155,7 @@ export function AreaBarChart({ data, isDark }: { data: { label: string; paid: nu
             initial={{ opacity: 0, y: 10, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
             className={`absolute pointer-events-none z-10 px-4 py-3 rounded-2xl shadow-xl backdrop-blur-md border ${isDark ? "bg-zinc-900/90 border-white/10" : "bg-white/95 border-emerald-900/5"} `}
             style={{
-              left: `${(barX(hovered) / W) * 100}%`,
+              left: `${((barX(hovered) + barW / 2) / W) * 100}%`,
               top: `${Math.max(10, (barY(data[hovered].paid + Math.max(data[hovered].pending, 0)) / H) * 100 - 45)}%`,
               transform: 'translate(-50%, -100%)'
             }}
@@ -210,6 +219,9 @@ export function DonutChart({
   }
 
   const r = 42; const cx = 50; const cy = 50;
+  // N07-66: butt caps and a small gap. Round caps reach past each arc's end by
+  // half the stroke width, so small neighbouring arcs drew on top of each other.
+  const DONUT_GAP = 1.5;
   const circ = 2 * Math.PI * r;
 
   return (
@@ -226,11 +238,11 @@ export function DonutChart({
             return (
               <motion.circle key={i} cx={cx} cy={cy} r={r}
                 fill="none" stroke={seg.color} strokeWidth={strokeW}
-                strokeLinecap="round"
+                strokeLinecap="butt"
                 strokeDasharray={`${segPct * circ} ${circ}`}
                 transform={`rotate(${rotate - 90} ${cx} ${cy})`}
                 initial={{ strokeDasharray: `0 ${circ}`, strokeWidth: 10 }}
-                animate={{ strokeDasharray: `${Math.max(segPct * circ - 4, 1)} ${circ}`, strokeWidth: strokeW }}
+                animate={{ strokeDasharray: `${Math.max(segPct * circ - (segs.length > 1 ? DONUT_GAP : 0), 1)} ${circ}`, strokeWidth: strokeW }}
                 transition={{ duration: 0.8, delay: i * 0.1, ease: "easeOut" }}
                 onMouseEnter={() => setHoveredData({lbl: seg.label, val: seg.value, pct: Math.round(segPct*100), color: seg.color})}
                 onMouseLeave={() => setHoveredData(null)}

@@ -69,7 +69,7 @@ export async function GET(
       .single();
 
     if (decreeError || !decree) {
-      return NextResponse.json({ error: 'Decree not found' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
+      return NextResponse.json({ error: 'لم يُعثر على هذا القرار' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
     // Check user authentication
@@ -175,6 +175,6 @@ export async function GET(
     return NextResponse.json(response, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   } catch (error) {
     console.error('[Decrees API] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع، حاول مرة أخرى' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
   }
 }
