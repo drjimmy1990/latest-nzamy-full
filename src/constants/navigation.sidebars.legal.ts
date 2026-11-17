@@ -248,7 +248,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance", badge: "قريباً",           icon: "Money", gateKey: "firm-finance" },
       { label: "الأتعاب",          labelEn: "Fees",       href: "/dashboard/firm/fees",              icon: "Receipt", gateKey: "firm-finance" },
-      { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance" },
+      { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance", badge: "قريباً" },
       { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics" },
     ],
   },

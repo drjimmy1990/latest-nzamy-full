@@ -50,7 +50,7 @@ export function Tabs({
           on ? "border-[#C8A762] bg-[#C8A762] font-bold text-[#2A1F07]" : "border-white/30 bg-transparent text-[#F2F5F1]"
         }`
       : `min-h-[44px] rounded-full border-[1.5px] px-[18px] py-2 text-sm motion-safe:transition ${
-          on ? "border-[#0B3D2E] bg-[#0B3D2E] font-bold text-white" : "border-[#D9E1DB] bg-white text-[#14261F]"
+          on ? "border-[#0B3D2E] bg-[#0B3D2E] font-bold text-white" : "border-[#D9E1DB] bg-white text-[#14261F] dark:border-white/20 dark:bg-transparent dark:text-zinc-200"
         }`;
 
   return (
