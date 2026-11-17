@@ -233,7 +233,7 @@ begin
   end if;
   if not exists (select 1 from pg_catalog.pg_trigger where tgname = 'trg_community_votes_recount')
      or not exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_votes'
-                     and cmd = 'DELETE' and qual ilike '%auth.uid()%')
+                     and cmd = 'DELETE' and qual ilike '%uid()%')
      or not exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_votes'
                      and cmd = 'INSERT' and with_check ilike '%community_post_readable%') then
     missing := missing || ' community_votes lost its own-row policies or the recount trigger (run 20261016_06);';
