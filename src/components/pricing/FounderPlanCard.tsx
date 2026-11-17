@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle, Crown, Info, SealCheck } from "@phosphor-icons/react";
+import { ArrowLeft, CheckCircle, Crown, Info, SealCheck } from "@phosphor-icons/react";
+import { FOUNDER_PAGE_PATH } from "@/lib/founder/landingCopy";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import type { AudienceTab } from "@/constants/pricingData";
@@ -211,6 +212,15 @@ export function FounderPlanCard({
             <p className={quiet} role="status" aria-live="polite">{cta.label}</p>
           )}
         </div>
+
+        {/* F6 (owner package 17 Nov): the campaign's own page, with the samples, the clock and the seats. */}
+        <Link
+          href={FOUNDER_PAGE_PATH}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/50 px-5 py-3 text-sm font-bold text-[#0B3D2E] transition hover:bg-gold/10 dark:border-[#C8A762]/40 dark:text-[#C8A762]"
+        >
+          تفاصيل الباقة كاملة
+          <ArrowLeft size={16} weight="bold" aria-hidden />
+        </Link>
 
         <p className="mt-4 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{FOUNDER_FINE_PRINT}</p>
       </div>
