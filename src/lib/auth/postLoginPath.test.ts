@@ -31,7 +31,11 @@ test("/login reads ?next= through postLoginPath on every success path", () => {
   assert.match(src, /import \{ postLoginPath \} from "@\/lib\/auth\/postLoginPath";/);
   // Already signed in and password sign-in. Demo mode has no password
   // sign-in any more (ticket S13): it sends the user to /demo-login.
-  assert.equal((src.match(/postLoginPath\(nextFromUrl\(\), getDashboardRoute\(/g) || []).length, 2);
+  // N01-25/26/27: the fallback is the firm dashboard for an active firm
+  // member, else getDashboardRoute — `?next=` still wins on both paths.
+  assert.equal((src.match(/postLoginPath\(\s*nextFromUrl\(\),/g) || []).length, 2);
+  assert.match(src, /firmLandingFor\(user\.userType, hasFirmMembership\) \?\? getDashboardRoute\(user\.userType\)/);
+  assert.match(src, /session\.defaultDashboardPath === FIRM_DASHBOARD_PATH\s*\?\s*FIRM_DASHBOARD_PATH\s*:\s*getDashboardRoute\(session\.userType\)/);
   assert.match(src, /router\.push\("\/demo-login"\);/);
   assert.doesNotMatch(src, /test-credentials|authenticateTest/);
   // A signed-in account with no usable type still goes to /onboarding.

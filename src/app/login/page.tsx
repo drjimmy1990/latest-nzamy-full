@@ -30,6 +30,7 @@ import { useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { isDbUserType } from "@/lib/auth/userTypes";
 import { postLoginPath } from "@/lib/auth/postLoginPath";
+import { firmLandingFor, FIRM_DASHBOARD_PATH } from "@/lib/auth/firmLanding";
 import { postLoginCookieAssignment, stashablePostLoginPath } from "@/lib/auth/postLoginCookie";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoUiEnabled, BACKEND_MODE } from "@/lib/runtimeMode";
@@ -190,12 +191,16 @@ export default function LoginPage() {
   const captcha = useTurnstile({ isAr, theme, action: "login" });
 
   // Redirect if user is already logged in
+  // N01-25/26/27: an active firm member (a lawyer or an individual on a
+  // firm's roster) lands on /dashboard/firm, not on their type's dashboard.
+  const hasFirmMembership = !!user.firmMembership;
   useEffect(() => {
     if (!user.loading && user.isLoggedIn) {
-      const dest = postLoginPath(nextFromUrl(), getDashboardRoute(user.userType));
+      const home = firmLandingFor(user.userType, hasFirmMembership) ?? getDashboardRoute(user.userType);
+      const dest = postLoginPath(nextFromUrl(), home);
       router.replace(dest);
     }
-  }, [user.loading, user.isLoggedIn, user.userType, router]);
+  }, [user.loading, user.isLoggedIn, user.userType, hasFirmMembership, router]);
 
   async function handleLogin() {
     setError("");
@@ -304,10 +309,20 @@ export default function LoginPage() {
         // could not be read to the CLIENT dashboard — the same demotion
         // UAT-LIVE-AI-001 is about. A signed-in account with no usable type has
         // an incomplete profile, and /onboarding is where that belongs.
-        const session = (await handshake.json()) as { userType?: string | null };
+        //
+        // N01-25/26/27: the handshake also reports `defaultDashboardPath` for an
+        // active firm member. It replaces only the type-based FALLBACK — a
+        // `?next=` still wins — and only when it is the one value the server
+        // ever sends (/dashboard/firm); anything else is ignored.
+        const session = (await handshake.json()) as { userType?: string | null; defaultDashboardPath?: unknown };
         const dest =
           typeof session.userType === "string" && isDbUserType(session.userType)
-            ? postLoginPath(nextFromUrl(), getDashboardRoute(session.userType))
+            ? postLoginPath(
+                nextFromUrl(),
+                session.defaultDashboardPath === FIRM_DASHBOARD_PATH
+                  ? FIRM_DASHBOARD_PATH
+                  : getDashboardRoute(session.userType),
+              )
             : "/onboarding";
 
         // A FULL document load, not router.push: the next request has to reach

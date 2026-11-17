@@ -9,7 +9,8 @@ import { sessionResponseFor } from "@/lib/auth/sessionResponse";
  * Contract (the decision itself is the pure sessionResponseFor in
  * src/lib/auth/sessionResponse.ts, tested in its own .test.ts; ./route.test.ts
  * pins what only this file can show):
- *   200 { userId: string, userType: string | null }  the server sees the session
+ *   200 { userId: string, userType: string | null,   the server sees the session
+ *         defaultDashboardPath?: "/dashboard/firm" }  (present for an active firm member)
  *   401 { error: "غير مصرح — يرجى تسجيل الدخول" }     the server did NOT accept it
  *   503 { error: AUTH_UNAVAILABLE_AR }                the check could not be made
  *
@@ -33,16 +34,36 @@ export async function GET() {
 
   // Only read `profiles` when there is a user to read it for.
   let profile: { user_type?: string | null } | null = null;
+  // N01-25/26/27: an ACTIVE firm membership moves a lawyer/individual's
+  // landing to /dashboard/firm (src/lib/auth/firmLanding.ts). Own-row RLS read
+  // ("<x>_members: own row …" — the same arm src/proxy.ts uses), in parallel
+  // with the profile. A failed read counts as "not a member": the landing
+  // falls back to the type's own dashboard, which is today's behaviour.
+  let isActiveFirmMember = false;
   if (outcome === "ok" && user) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("user_type")
-      .eq("id", user.id)
-      .maybeSingle();
-    profile = data;
+    const [profileRead, membershipRead] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("user_type")
+        .eq("id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("firm_members")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    profile = profileRead.data;
+    if (membershipRead.error) {
+      console.error("[auth/session] firm membership read failed:", membershipRead.error.message, membershipRead.error.code);
+    } else {
+      isActiveFirmMember = !!membershipRead.data;
+    }
   }
 
-  const decision = sessionResponseFor(outcome, user?.id ?? null, profile);
+  const decision = sessionResponseFor(outcome, user?.id ?? null, profile, isActiveFirmMember);
 
   return NextResponse.json(decision.body, {
     status: decision.status,

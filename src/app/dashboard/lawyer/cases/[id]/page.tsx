@@ -95,6 +95,7 @@ import {
 } from "@/lib/services/caseNotesService";
 import { getCaseTeam, addCaseTeamMember, removeCaseTeamMember } from "@/lib/services/caseTeamService";
 import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
+import LinkedContractsList from "../../_components/contracts/LinkedContractsList";
 import { REQUEST_TYPE_LABELS_AR } from "@/lib/services/requestTypeLabels";
 import {
   NoteScopePicker,
@@ -1629,6 +1630,13 @@ export default function CaseDetailPage() {
           {activeTab === "overview" && (
             <div className="mt-5">
               <CaseTrackingLinksPanel caseId={id} isDark={isDark} />
+            </div>
+          )}
+
+          {/* ── N01-7: عقود هذه القضية (contracts.request_id) — read-only ── */}
+          {activeTab === "overview" && (
+            <div className="mt-5">
+              <LinkedContractsList requestId={id} isDark={isDark} />
             </div>
           )}
 

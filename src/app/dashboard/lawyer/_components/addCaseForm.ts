@@ -34,6 +34,8 @@ export type AddCaseDraft = {
   courtOther: string;
   priority: string;
   description: string;
+  /** N07-48: the other side's name (optional field). */
+  opponentName?: string;
 };
 
 /** True when closing would throw away something the lawyer typed or picked (CODE-F34). */
@@ -45,6 +47,7 @@ export function isAddCaseDirty(d: AddCaseDraft): boolean {
     d.courtChoice ||
     d.courtOther.trim() ||
     d.description.trim() ||
+    (d.opponentName ?? "").trim() ||
     d.priority !== "normal",
   );
 }

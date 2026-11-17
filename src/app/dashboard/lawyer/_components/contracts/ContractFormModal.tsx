@@ -11,7 +11,35 @@ import {
   CONTRACT_TYPES, CONTRACT_TYPE_AR, CONTRACT_STATUSES, CONTRACT_STATUS_AR,
   canTransitionContract, type ContractType, type ContractStatus,
 } from "@/lib/services/contractVocabulary";
-import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import {
+  getLawyerClients, createLawyerClient, type LawyerClient, type ClientType,
+} from "@/lib/services/lawyerClientsService";
+import { isSupabaseMode } from "@/lib/runtimeMode";
+import { apiGet } from "@/lib/services/api";
+import type { WorkflowRequest } from "@/lib/workflowStore";
+import { isLawyerCaseRow } from "../../cases/_caseListRules";
+
+/** A case the contract can be linked to (N01-6) — the rows the case list shows. */
+interface CaseOption { id: string; title: string }
+
+/**
+ * N01-6: the caller's cases, narrowed to one client card's when one is picked
+ * (service-requests GET `lawyer_client_id`). Same rows and rule as the
+ * hearing modal's case picker (isLawyerCaseRow, cancelled left out). The
+ * server re-checks the link on save (own case, same client card).
+ */
+async function loadCaseOptions(lawyerClientId: string): Promise<CaseOption[]> {
+  const rows = await apiGet<{ data?: WorkflowRequest[]; degraded?: boolean }>("/api/v1/service-requests", {
+    receiver: "lawyer",
+    limit: 200,
+    ...(lawyerClientId ? { lawyer_client_id: lawyerClientId } : {}),
+  });
+  if (rows.degraded) throw new Error("degraded");
+  return (rows.data ?? [])
+    .filter(isLawyerCaseRow)
+    .filter((r) => r.status !== "cancelled")
+    .map((r) => ({ id: r.id, title: r.title || "قضية بدون عنوان" }));
+}
 
 /**
  * ContractFormModal.tsx
@@ -56,6 +84,58 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
   const [clientsUnreadable, setClientsUnreadable] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(initial?.lawyerClientId ?? "");
 
+  // N01-6 «ربط بقضية قائمة»: optional; the list follows the picked client card.
+  const [selectedRequestId, setSelectedRequestId] = useState(initial?.requestId ?? "");
+  const [caseRead, setCaseRead] = useState<{ key: string; ok: boolean; items: CaseOption[] } | null>(null);
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    const key = selectedClientId;
+    loadCaseOptions(key)
+      .then((items) => { if (!cancelled) setCaseRead({ key, ok: true, items }); })
+      .catch((err) => {
+        console.error("[ContractFormModal] cases load failed:", err);
+        if (!cancelled) setCaseRead({ key, ok: false, items: [] });
+      });
+    return () => { cancelled = true; };
+  }, [selectedClientId]);
+  const casesLoading = !caseRead || caseRead.key !== selectedClientId;
+
+  // N01-4 (owner 13-Nov): a quick client card from inside the contract — the
+  // same POST /api/v1/lawyer/clients AddCaseModal uses — selected on save.
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickName, setQuickName] = useState("");
+  const [quickType, setQuickType] = useState<ClientType>("individual");
+  const [quickPhone, setQuickPhone] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+
+  async function handleQuickClient() {
+    const name = quickName.trim();
+    if (!name) { setQuickError("اكتب اسم الموكّل."); return; }
+    setQuickSaving(true);
+    setQuickError(null);
+    try {
+      const card = await createLawyerClient({
+        name,
+        clientType: quickType,
+        ...(quickPhone.trim() ? { phone: quickPhone.trim() } : {}),
+      });
+      setClientCards((prev) => [card, ...prev.filter((c) => c.id !== card.id)]);
+      setSelectedClientId(card.id);
+      // A new card has no cases yet: a case picked before cannot stay linked.
+      setSelectedRequestId("");
+      if (!counterpartyName.trim()) setCounterpartyName(card.name);
+      setQuickOpen(false);
+      setQuickName("");
+      setQuickPhone("");
+    } catch (err) {
+      setQuickError(err instanceof Error && err.message ? err.message : "تعذّر حفظ الموكّل.");
+    } finally {
+      setQuickSaving(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     getLawyerClients().then((read) => {
@@ -72,7 +152,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
   // is the baseline.
   const snapshot = JSON.stringify([
     title, contractType, status, counterpartyName, selectedClientId, valueSar,
-    startsOn, endsOn, autoRenew, renewalNoticeDays, signedOn, notes,
+    startsOn, endsOn, autoRenew, renewalNoticeDays, signedOn, notes, selectedRequestId,
   ]);
   const [baseline] = useState(snapshot);
   const dirty = snapshot !== baseline;
@@ -122,6 +202,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
           contractType,
           counterpartyName: counterpartyName.trim() || null,
           lawyerClientId: selectedClientId || null,
+          requestId: selectedRequestId || null,
           valueSar: valueNum,
           startsOn: startsOn || null,
           endsOn: endsOn || null,
@@ -140,6 +221,8 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
         if (nextCounterparty !== initial.counterpartyName) patch.counterpartyName = nextCounterparty;
         const nextClientId = selectedClientId || null;
         if (nextClientId !== (initial.lawyerClientId ?? null)) patch.lawyerClientId = nextClientId;
+        const nextRequestId = selectedRequestId || null;
+        if (nextRequestId !== (initial.requestId ?? null)) patch.requestId = nextRequestId;
         if (valueNum !== initial.valueSar) patch.valueSar = valueNum;
         const nextStartsOn = startsOn || null;
         if (nextStartsOn !== initial.startsOn) patch.startsOn = nextStartsOn;
@@ -210,7 +293,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
             <input type="text" value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder="اسم الطرف الآخر أو الجهة" className={inputCls} />
           </div>
 
-          {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
+          {!clientsUnreadable && (clientsLoading || clientCards.length > 0 || isSupabaseMode) && (
             <div>
               <label className={labelCls}>بطاقة الموكّل (اختياري)</label>
               <select
@@ -218,6 +301,9 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
                 onChange={(e) => {
                   const id = e.target.value;
                   setSelectedClientId(id);
+                  // The case list follows the client, so a case picked for
+                  // another client is cleared — never saved while hidden.
+                  if (id !== selectedClientId) setSelectedRequestId("");
                   // N01-5 (owner package 13 Nov): picking the client fills «الطرف الآخر»
                   // when it is still empty; a name the lawyer typed is never overwritten.
                   const picked = clientCards.find((c) => c.id === id);
@@ -229,6 +315,85 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
                 <option value="">{clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون ربط —"}</option>
                 {clientCards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {isSupabaseMode && !clientsLoading && !quickOpen && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickOpen(true); setQuickError(null); }}
+                  className={`mt-1.5 text-[11.5px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} hover:underline`}
+                >
+                  + إضافة موكّل جديد
+                </button>
+              )}
+              {quickOpen && (
+                <div className={`mt-2 space-y-2 rounded-xl border p-3 ${isDark ? "border-white/[0.08] bg-zinc-900" : "border-zinc-200 bg-white"}`}>
+                  <input
+                    type="text"
+                    value={quickName}
+                    onChange={(e) => setQuickName(e.target.value)}
+                    placeholder="اسم الموكّل"
+                    className={inputCls}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={quickType} onChange={(e) => setQuickType(e.target.value as ClientType)} className={inputCls}>
+                      <option value="individual">فرد</option>
+                      <option value="company">شركة</option>
+                    </select>
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={quickPhone}
+                      onChange={(e) => setQuickPhone(e.target.value)}
+                      placeholder="05xxxxxxxx (اختياري)"
+                      className={inputCls}
+                    />
+                  </div>
+                  {quickError && <p className="text-[11px] font-semibold text-red-500">{quickError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleQuickClient}
+                      disabled={quickSaving}
+                      className="flex-1 rounded-xl bg-[#0B3D2E] py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] disabled:opacity-60"
+                    >
+                      {quickSaving ? "جارٍ الحفظ..." : "حفظ الموكّل واختياره"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setQuickOpen(false); setQuickError(null); }}
+                      disabled={quickSaving}
+                      className={`rounded-xl border px-3 py-2 text-[12px] font-bold ${isDark ? "border-white/[0.08] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isSupabaseMode && (
+            <div>
+              <label className={labelCls}>ربط بقضية قائمة (اختياري)</label>
+              <select
+                value={selectedRequestId}
+                onChange={(e) => setSelectedRequestId(e.target.value)}
+                disabled={casesLoading}
+                className={inputCls}
+              >
+                <option value="">
+                  {casesLoading ? "جارٍ تحميل القضايا..." : caseRead && !caseRead.ok ? "تعذّر تحميل القضايا" : "— بدون ربط —"}
+                </option>
+                {initial?.requestId && selectedRequestId === initial.requestId &&
+                  !(caseRead?.items ?? []).some((c) => c.id === initial.requestId) && (
+                  <option value={initial.requestId}>القضية المرتبطة حالياً</option>
+                )}
+                {(casesLoading ? [] : caseRead?.items ?? []).map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+              {!casesLoading && caseRead?.ok && caseRead.items.length === 0 && (
+                <p className={`mt-1.5 text-[10.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                  {selectedClientId ? "لا توجد قضايا مسجّلة لهذا الموكّل." : "لا توجد قضايا لربطها."}
+                </p>
+              )}
             </div>
           )}
 

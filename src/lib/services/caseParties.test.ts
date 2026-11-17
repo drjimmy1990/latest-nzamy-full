@@ -52,3 +52,22 @@ test("a government opponent and a missing or malformed intake", () => {
   assert.deepEqual(extractCaseParties({ requester: null, metadata: null }), []);
   assert.deepEqual(extractCaseParties({ requester: { name: "x" }, metadata: { intake: "junk" } }).length, 1);
 });
+
+test("N07-48: a lawyer-dashboard case names its opponent through metadata.opponentName", () => {
+  const parties = extractCaseParties({
+    requester: { name: "محمد" },
+    lawyerClientId: "card-1",
+    metadata: { court: "المحكمة العامة", opponentName: "  شركة الأفق  ", priority: "normal" },
+  });
+  assert.deepEqual(parties.map((p) => [p.role, p.name]), [["client", "محمد"], ["opponent", "شركة الأفق"]]);
+  // the same opponent written by an intake too is one party, not two
+  const both = extractCaseParties({
+    requester: { name: "محمد" },
+    metadata: { opponentName: "مؤسسة النور", intake: { otherParty: "مؤسسه النور" } },
+  });
+  assert.equal(both.filter((p) => p.role === "opponent").length, 1);
+  // absent, blank or not a string: no opponent
+  for (const v of [undefined, "", "   ", 42, { name: "x" }]) {
+    assert.equal(extractCaseParties({ requester: { name: "محمد" }, metadata: { opponentName: v } }).length, 1, String(v));
+  }
+});

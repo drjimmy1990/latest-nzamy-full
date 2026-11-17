@@ -8,9 +8,11 @@
  *   * on an intake that has them, `metadata.intake.parties.one` (the client's
  *     own side — StepCase labels it «الطرف الأول» under the client's role) and
  *     `.parties.two` (the other side), plus a contracts intake's
- *     `metadata.intake.otherParty`.
- * A case added from the lawyer dashboard records NO opponent at all; the
- * screens say so instead of guessing one.
+ *     `metadata.intake.otherParty`;
+ *   * on a case added from the lawyer dashboard, `metadata.opponentName` — the
+ *     optional «الخصم» field of AddCaseModal (N07-48, owner 13-Nov). A case
+ *     saved without it, or before it existed, records NO opponent; the
+ *     screens say so instead of guessing one.
  *
  * Identity numbers, commercial registers and addresses on PartyData are never
  * read into the result — a party here is a key, a display name and a side.
@@ -88,5 +90,6 @@ export function extractCaseParties(src: CasePartySource): CaseParty[] {
     }
     add("opponent", text(intake.otherParty));
   }
+  if (isRecord(src.metadata)) add("opponent", text(src.metadata.opponentName));
   return out;
 }

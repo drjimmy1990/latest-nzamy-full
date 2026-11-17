@@ -171,13 +171,25 @@ test("the edge imports the same helper the browser guard's membership arm uses",
   );
 });
 
-test("the lookup runs only after the allowedTypes comparison has already failed", () => {
+test("the lookup runs only after the allowedTypes comparison has already failed — or on the firm-landing root", () => {
   // Nothing but comments may sit between the branch opening and the call. This
   // is what makes "owners and type-matching users pay no extra round trip" a
   // fact about the code rather than an intention: they never enter the branch.
+  // The one exception (N01-25/26/27, 13-Nov) is `firmLandingCheck`: a lawyer
+  // on the EXACT /dashboard/lawyer root, which firmLanding.test.ts pins; it
+  // is computed as `!typeRefused && …`, so the two are exclusive and a
+  // request still makes at most one membership read.
   assert.match(
     proxySource,
-    /\(knownType === null \|\| !\(rbacRule\.allowedTypes as readonly string\[\]\)\.includes\(knownType\)\)\n\s*\) \{\n(?:\s*\/\/.*\n)*\s*const membershipKind = entityMembershipKindForPath\(pathname\);/,
+    /const typeRefused =\n\s*!!rbacRule &&\n\s*!isAdmin &&\n\s*\(knownType === null \|\| !\(rbacRule\.allowedTypes as readonly string\[\]\)\.includes\(knownType\)\);/,
+  );
+  assert.match(
+    proxySource,
+    /const firmLandingCheck = !typeRefused && isFirmLandingCheckPath\(pathname, knownType\);/,
+  );
+  assert.match(
+    proxySource,
+    /if \(typeRefused \|\| firmLandingCheck\) \{\n(?:\s*\/\/.*\n)*\s*const membershipKind = typeRefused \? entityMembershipKindForPath\(pathname\) : "firm";/,
   );
 });
 
@@ -244,12 +256,19 @@ test("both exits return supabaseResponse, never a fresh NextResponse.next()", ()
   // its cause.
   assert.match(proxySource, /if \(membership\) return supabaseResponse;/);
   const block = proxySource.slice(
-    proxySource.indexOf("const membershipKind = entityMembershipKindForPath(pathname);"),
+    proxySource.indexOf('const membershipKind = typeRefused ? entityMembershipKindForPath(pathname) : "firm";'),
     proxySource.indexOf("const url = req.nextUrl.clone();", proxySource.indexOf("const membershipKind =")),
   );
   assert.ok(block.length > 0, "membership block not found");
   assert.doesNotMatch(block, /NextResponse\.next\(\)/);
-  assert.doesNotMatch(block, /NextResponse\.redirect/);
+  // The block's ONLY redirect is the firm-landing one, it sits under
+  // `if (firmLandingCheck)`, a non-member there passes through untouched, and
+  // the refreshed cookies ride on it.
+  assert.equal((block.match(/NextResponse\.redirect/g) ?? []).length, 1);
+  assert.match(
+    block,
+    /if \(firmLandingCheck\) \{\n\s*if \(!membership\) return supabaseResponse;\n\s*const firmUrl = req\.nextUrl\.clone\(\);\n\s*firmUrl\.pathname = FIRM_DASHBOARD_PATH;\n\s*const firmRedirect = NextResponse\.redirect\(firmUrl\);\n\s*supabaseResponse\.cookies\.getAll\(\)\.forEach\(\(cookie\) => firmRedirect\.cookies\.set\(cookie\)\);\n\s*return firmRedirect;\n\s*\}/,
+  );
 });
 
 test("the refusal that was already there is still the fall-through", () => {
