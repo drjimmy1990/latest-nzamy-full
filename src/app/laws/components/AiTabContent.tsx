@@ -41,6 +41,7 @@ import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
 import { askLibrary, LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
 import type { LibraryAiAction } from "../[slug]/_ai-reply";
+import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton";
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const ROYAL = "#0B3D2E";
@@ -377,7 +378,9 @@ function TurnView({ turn, isDark }: { turn: Turn; isDark: boolean }) {
               <SourceList cites={a.cites} isDark={isDark} compact />
             </div>
           )}
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex flex-wrap items-start justify-end gap-4">
+            {/* Q485 / P1-13: lawyers and firms only (the button decides). */}
+            <SendToDrafterNotesButton text={a.text} sourceLabel="باحث المكتبة" isDark={isDark} />
             <button
               onClick={() => {
                 void navigator.clipboard?.writeText(stripCitationMarkers(a.text)).then(() => {

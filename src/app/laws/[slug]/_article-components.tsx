@@ -30,6 +30,7 @@ import type { HighlightTerm } from "@/lib/search/multiColorSearch";
 import { highlightSafeHtml, textHasHighlight } from "./_highlight-html";
 import { PreviousVersionText } from "./_word-diff";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
+import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton"; // l6-tools Q485
 
 const NO_TERMS: readonly HighlightTerm[] = [];
 
@@ -993,6 +994,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               </button>
             )}
 
+            {!isLocked && !isRepealed && viewMode !== "regulation" && <SendToDrafterNotesButton text={article.text} sourceLabel={`${lawName} — ${article.numberText || article.num}`} isDark={isDark} className="px-1" />}
             <button onClick={mainOnCopy} className={`p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
               {mainCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
             </button>
