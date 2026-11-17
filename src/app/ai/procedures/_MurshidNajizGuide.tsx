@@ -129,9 +129,10 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
         <span className={`text-[13px] font-bold ${t.strong}`}>خطوات رفع صحيفة الدعوى في ناجز ({toArabicDigits(steps.length)})</span>
         <CaretDown size={14} className={`flex-shrink-0 transition-transform group-open:rotate-180 ${t.muted}`} />
       </summary>
-      <ol className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+      {/* A strip that scrolls sideways on a phone (one step per swipe), a grid from sm up. */}
+      <ol className="mt-3 -mx-1 px-1 pb-1 flex gap-2 overflow-x-auto snap-x snap-mandatory sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:overflow-visible">
         {steps.map((s) => (
-          <li key={s.no} className={`rounded-xl border p-3 ${line} ${isDark ? "bg-zinc-900/40" : "bg-slate-50/60"}`}>
+          <li key={s.no} className={`w-[78%] flex-shrink-0 snap-start sm:w-auto rounded-xl border p-3 ${line} ${isDark ? "bg-zinc-900/40" : "bg-slate-50/60"}`}>
             <div className="flex items-center gap-2">
               <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${isDark ? "bg-emerald-500/15 text-emerald-300" : "bg-[#0B3D2E] text-white"}`}>
                 {toArabicDigits(s.no)}
@@ -153,7 +154,6 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
       <label className="relative block">
         <MagnifyingGlass size={14} className={`absolute top-1/2 -translate-y-1/2 start-3 ${t.muted}`} />
         <input
-          type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Escape") setQ(""); }}
