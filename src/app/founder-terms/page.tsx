@@ -7,6 +7,8 @@ import {
   FOUNDER_TERMS_PENDING_NOTE,
   FOUNDER_TERMS_PUBLISHED,
   FOUNDER_TERMS_TITLE,
+  FOUNDER_TERMS_UPDATED_AR,
+  FOUNDER_TERMS_VERSION,
   boldSegments,
   type TermsItem,
 } from "@/lib/founder/founderTerms";
@@ -14,10 +16,12 @@ import {
 /**
  * /founder-terms — the founder package's terms (owner draft + the
  * platform-protection clause). Gated by FOUNDER_TERMS_PUBLISHED
- * (src/lib/founder/founderTerms.ts): until a lawyer has reviewed the draft
- * and the owner has confirmed the refund item, the page shows only a short
- * honest note and a link to /terms, and is noindex. Never a 404 — /founder
- * links here.
+ * (src/lib/founder/founderTerms.ts): published since owner decision ١٦
+ * (17 Nov 2026) and indexed; while the flag is off the page shows only a
+ * short honest note and a link to /terms, and is noindex. Never a 404 —
+ * /founder and the founder checkout's consent checkbox link here. Item ٩
+ * promises the last-update date: it is FOUNDER_TERMS_VERSION, the version
+ * each founder order records.
  */
 
 export const metadata = buildMetadata({
@@ -94,6 +98,9 @@ export default function FounderTermsPage() {
           </div>
         ) : (
           <>
+            <p className="mb-8 text-sm text-[#4B6158] dark:text-zinc-400">
+              آخر تحديث: <time dateTime={FOUNDER_TERMS_VERSION}>{FOUNDER_TERMS_UPDATED_AR}</time>
+            </p>
             {FOUNDER_TERMS_ITEMS.map((item) => (
               <Item key={item.title} item={item} />
             ))}

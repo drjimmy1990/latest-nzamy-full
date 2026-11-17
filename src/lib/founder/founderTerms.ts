@@ -1,24 +1,33 @@
 /**
  * founderTerms.ts — the text of /founder-terms and its publication switch.
  *
- * The text is the owner's draft «مسودة شروط وأحكام باقة المحامي المؤسس»
- * (TERMS-founder-draft.md, 17 Nov 2026) plus the platform-protection clause
- * (owner file 11, part «ثالثاً — أ», revised 16 Nov 2026), which the owner
- * asked to be added to /founder-terms as well.
+ * The text is the owner's founder terms (TERMS-founder-draft.md, 17 Nov
+ * 2026, items ١–٩ and the live-search line, copied as is) plus the
+ * platform-protection clause (owner file 11, part «ثالثاً — أ», revised
+ * 16 Nov 2026), which the owner asked to be added to /founder-terms as well.
  *
- * The draft says it needs the responsible lawyer's final review before it is
- * published, and its refund item (٧) is still a bracketed proposal waiting on
- * the owner. So:
+ * Owner decision ١٦ (17 Nov 2026): the owner, a lawyer, reviewed and approved
+ * the text, including the 14-day refund in item ٧; it is published before the
+ * founder sale opens, under a production title (never «مسودة»). The editorial
+ * notes of the source file are not part of the terms and are not carried.
  *   - FOUNDER_TERMS_PUBLISHED = false → the page shows only a short honest
  *     note and a link to /terms, and is `noindex`;
- *   - flip it to true only after the lawyer's review AND after item ٧ is
- *     replaced by the owner's confirmed wording (founderTerms.test.ts fails
- *     while the flag is true and any bracketed placeholder is left).
+ *   - founderTerms.test.ts fails while the flag is true and a bracketed
+ *     placeholder or the word «مسودة» is left in anything shown.
+ *
+ * FOUNDER_TERMS_VERSION names this text. The founder checkout requires the
+ * buyer to accept exactly this version (founderConsent.ts) and stores it on
+ * the order: change it whenever a word of the terms changes.
  *
  * `**…**` marks bold, rendered by the page. Pure: no imports.
  */
 
-export const FOUNDER_TERMS_PUBLISHED: boolean = false;
+export const FOUNDER_TERMS_PUBLISHED: boolean = true;
+
+/** The version of the text below, as recorded on each founder order (metadata.founder_terms_version). */
+export const FOUNDER_TERMS_VERSION = "2026-11-17";
+/** FOUNDER_TERMS_VERSION as the page shows it (item ٩: the date of the last update). */
+export const FOUNDER_TERMS_UPDATED_AR = "17 نوفمبر 2026";
 
 export const FOUNDER_TERMS_TITLE = "شروط وأحكام باقة المحامي المؤسس";
 
@@ -31,9 +40,9 @@ export interface TermsItem {
   bullets?: readonly string[];
 }
 
-/** Item ٧ — the owner's proposed wording, NOT confirmed yet (README «مفتوح»). */
+/** Item ٧ — the owner's refund wording (decision ١١ / ١٦, 17 Nov 2026). */
 export const FOUNDER_REFUND_CLAUSE =
-  "[يؤكده المالك: صيغة مقترحة: استرداد كامل قبل أي استخدام للأعمال أو النقاط أو الأدوات.]";
+  "يحق لك الاسترداد خلال **14 يوماً** من الشراء بشرط **عدم استخدام أي من خدمات الباقة** (الأعمال أو النقاط أو الأدوات).";
 
 export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
   {
@@ -63,7 +72,7 @@ export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
     bullets: [
       "**6 أعمال قانونية** عبر الصائغ، من الأنواع السبعة المؤهلة، متنوعة أو مكررة، خلال سنة العضوية. جولة التنقيح الثانية داخل الجلسة لا تخصم عملاً.",
       "**مخرج مستقل واحد** إجمالاً تختاره من أدوات المحترفين الأربع.",
-      "**المكتبة القانونية** مفتوحة لك ما دام في رصيدك نقاط. فإذا نفدت النقاط لزم **شحن النقاط بأي قيمة** لإعادة فتحها. والسؤال الواحد على المكتبة يخصم **5 نقاط**.",
+      "**المكتبة القانونية** لسنة كاملة من تفعيل الباقة، وتبقى مفتوحة لك ما دام في رصيدك نقاط، و**الشحن لا يجدّد السنة**. ويصلك **100 نقطة تأسيسية** لمساعد المكتبة الذكي. فإذا نفدت النقاط لزم **شحن النقاط بأي قيمة** لإعادة فتحها. والسؤال الواحد على مساعد المكتبة الذكي يخصم **5 نقاط**.",
       "إدارة المكتب قريباً: مدتها ضمن سنة العضوية من التفعيل، ولا تبدأ سنة جديدة عند إتاحتها.",
       "خصم المؤسس **15%** على شحنات النقاط ورسوم نظامي المؤهلة. وإذا وُجد عرض عام أقل سعراً يُطبَّق الأفضل فقط دون جمع الخصمين، ولا يشمل الرسوم الحكومية ولا مبالغ الأطراف الثالثة.",
       "**3 دعوات** تتجدد شهرياً لمحامين مرخصين جدد لم يسبق لهم التسجيل، ولا تتراكم.",
