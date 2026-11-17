@@ -80,9 +80,10 @@ test("MoyasarCheckout POSTs the checkout from the click, never from an effect", 
   assert.match(form, /^"use client";/);
   assert.match(form, /fetch\("\/api\/v1\/payments\/checkout", \{\s*method: "POST"/);
   // with a coupon (P7) the code rides along; without one the body is unchanged
-  assert.match(form, /JSON\.stringify\(couponCode \? \{ itemId, billing, couponCode \} : \{ itemId, billing \}\)/);
-  // the refresh near its expiry sends the same coupon, never dropping the discount
-  assert.equal(form.match(/startCheckout\(itemId, billing, couponCode\.current\)/g)?.length, 2);
+  // (checkoutRequestBody, checkoutView.test.ts); the founder terms consent (owner ١٦) when ticked
+  assert.match(form, /JSON\.stringify\(checkoutRequestBody\(itemId, billing, couponCode, founderTermsVersion\)\)/);
+  // the refresh near its expiry sends the same coupon and the same consent, never dropping either
+  assert.equal(form.match(/startCheckout\(itemId, billing, couponCode\.current, termsVersion\.current\)/g)?.length, 2);
   assert.match(form, /onClick=\{onStart\}/);
   // a double press is ignored by an in-flight ref, set before the POST
   assert.match(form, /if \(inFlight\.current \|\| current\.current\) return;\s*inFlight\.current = true;/);
@@ -144,4 +145,20 @@ test("the buy buttons go to /checkout only through buyButtonAction, wait while t
   const libPayAt = subscribe.indexOf("const action = buyButtonAction(");
   const libRequestAt = subscribe.indexOf('requestEntitlement({ kind: "library"');
   assert.ok(libPayAt > -1 && libPayAt < libRequestAt);
+});
+
+test("owner ١٦: the founder checkout carries an UNCHECKED terms checkbox; «متابعة الدفع» waits for it", () => {
+  // the page hands the current version to the form, for the founder membership only
+  assert.match(page, /founderTermsVersion=\{item\.kind === "membership" \? FOUNDER_TERMS_VERSION : null\}/);
+  // the checkbox: the owner's label, unchecked at first, a link to /founder-terms in a new tab
+  assert.match(form, /type="checkbox"/);
+  assert.match(form, /const \[termsAccepted, setTermsAccepted\] = useState\(false\);/);
+  assert.match(form, /const termsVersion = useRef<string \| null>\(null\);/);
+  assert.match(form, /\{FOUNDER_CONSENT_LABEL_AR\}/);
+  assert.match(form, /href=\{FOUNDER_TERMS_HREF\}\s*target="_blank"\s*rel="noopener noreferrer"/);
+  // the version is sent only while the box is ticked
+  assert.match(form, /termsVersion\.current = checked && needsTerms \? founderTermsVersion : null/);
+  // the button is disabled, and a click ignored, until it is ticked
+  assert.match(form, /disabled=\{phase\.kind === "starting" \|\| \(needsTerms && !termsAccepted\)\}/);
+  assert.match(form, /if \(needsTerms && !termsVersion\.current\) return;/);
 });

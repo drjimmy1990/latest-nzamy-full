@@ -5,13 +5,17 @@ import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { createMoyasarClient, type MoyasarClient } from "@/lib/payments/moyasarClient";
 import { parseCheckoutBody, resolveCallbackOrigin } from "@/lib/payments/checkoutRules";
 import { startCheckoutWith } from "@/lib/payments/checkoutCore";
+import { parseFounderConsent } from "@/lib/payments/founderConsent";
 import { checkoutModeAllowed } from "@/lib/payments/testModeAccess";
 import { frozenAccountResponse } from "@/lib/auth/apiAuth";
 
 /**
  * POST /api/v1/payments/checkout — starts one online payment (Moyasar
  * payments B1, Task 6). Body `{ itemId, billing, couponCode? }` (the coupon:
- * P7, applied inside the order by startCheckoutWith); signed-in only.
+ * P7, applied inside the order by startCheckoutWith); signed-in only. The
+ * founder membership also needs `acceptFounderTerms: true` and the current
+ * `founderTermsVersion` (owner ١٦, src/lib/payments/founderConsent.ts):
+ * without them startCheckoutWith answers 400 before anything is written.
  *
  * This file does the request-bound checks and builds the clients:
  *   1. 401 without a session; 400 for a body that is not {itemId, billing}.
@@ -117,6 +121,7 @@ export async function POST(request: NextRequest) {
         itemId: parsed.itemId,
         billing: parsed.billing,
         couponCode: parsed.couponCode ?? null,
+        founderConsent: parseFounderConsent(raw),
         origin: origin.origin,
         publishableKey: cfg.publishableKey,
       },

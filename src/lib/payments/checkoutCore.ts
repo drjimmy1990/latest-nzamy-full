@@ -62,6 +62,13 @@
  *       first-year price is already the discount and nothing stacks. No
  *       coupon is read and no try is spent (couponRules refuses the kind too,
  *       for the preview route).
+ *   0c. The founder terms consent (owner ١٦, founderConsent.ts): the body
+ *       must carry acceptFounderTerms: true and the current
+ *       founderTermsVersion, else 400 (FOUNDER_TERMS_REQUIRED_AR /
+ *       FOUNDER_TERMS_STALE_AR) before anything is read or written; terms
+ *       not published → 410. The order's metadata records
+ *       founder_terms_version and founder_terms_accepted_at (this request's
+ *       server clock, deps.now, ISO).
  *   5b. After the order row, the seat: deps.reserveFounderSeat (the route's
  *       founder_reserve_seat RPC, 20261101_10). Anything but 'reserved'
  *       cancels the order (still 'created', no intent yet) and answers:
@@ -92,6 +99,7 @@ import { COUPON_PENDING_AR, isCouponOrderConflict, priceWithCoupon } from "./cou
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import type { BookEntry } from "../pricing/priceBook.ts";
 import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
+import { checkFounderConsent, type FounderConsent, type FounderTermsState } from "./founderConsent.ts";
 import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
@@ -141,6 +149,8 @@ export interface CheckoutDeps {
   book?: Readonly<Record<string, BookEntry>>;
   /** P3: whether the founder membership is on sale; FOUNDER_MEMBERSHIP_ON_SALE unless a test passes its own. */
   onSale?: boolean;
+  /** Owner ١٦: the founder terms (published + version); CURRENT_FOUNDER_TERMS unless a test passes its own. */
+  founderTerms?: FounderTermsState;
   /**
    * P3: reserves a founder seat for this membership order — the route's
    * founder_reserve_seat RPC. Answers reserved | already_member | full |
@@ -165,6 +175,8 @@ export interface CheckoutInput {
   publishableKey: string;
   /** A normalised coupon code (parseCheckoutBody), or null / absent for none. */
   couponCode?: string | null;
+  /** Owner ١٦: the founder terms consent (parseFounderConsent); read for the founder membership only. */
+  founderConsent?: FounderConsent | null;
 }
 
 export type CheckoutReply =
@@ -258,11 +270,16 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   const attempts = deps.attempts ?? COUPON_ATTEMPTS;
   const catalog = deps.catalog ?? PAYABLE_ITEMS;
 
-  // 0 (P3). the founder membership: the sale switch, then no coupon — before any read
+  // 0 (P3). the founder membership: the sale switch, then no coupon, then the
+  // terms consent (owner ١٦) — before any read
   const isMembership = resolveItem(input.itemId, catalog)?.kind === "membership";
+  let consentMeta: Record<string, string> | null = null;
   if (isMembership) {
     if (!(deps.onSale ?? FOUNDER_MEMBERSHIP_ON_SALE)) return fail(410, FOUNDER_CLOSED_AR);
     if (input.couponCode) return fail(400, FOUNDER_NO_COUPON_AR);
+    const consent = checkFounderConsent(input.founderConsent, deps.now?.() ?? new Date(), deps.founderTerms);
+    if (!consent.ok) return fail(consent.status, consent.error);
+    consentMeta = consent.metadata;
   }
 
   // 0. a buyer who spent his coupon tries is answered before any read
@@ -358,6 +375,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       metadata: {
         user_email: user.email ?? null,
         ...(couponMeta ? { coupon: couponMeta } : {}),
+        ...(consentMeta ?? {}),
         ...(q.launch
           ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
           : {}),

@@ -1,11 +1,11 @@
 /**
  * draftKinds.ts — L14 الصائغ القانوني (plan §5 wave 5): the pleadings the AI
  * writes and what each costs. One work is one subject, one stage and one
- * output, so the price keys on the kind, never on the main type alone:
- * 200 for a claim (owner ٤٠٩, 7 Nov 2026), 500 for the memos of the first
- * instance, 1,000 for an appeal, 1,500 for cassation and a petition for
- * review (the reply / appeal / cassation / petition prices wait on owner
- * question ٤٤٦).
+ * output, so the price keys on the kind, never on the main type alone
+ * (owner decision ٩, 17 Nov 2026): 500 for a claim and for the memos of the
+ * first instance (reply, rejoinder, supplementary, closing), 800 for an
+ * appeal, 1,500 for cassation and a petition for review. Founder members pay
+ * none of it for their six included works (credits, not points).
  *
  * The wizard's main type and sub-type (src/components/draft/draftConstants.ts)
  * map onto a kind here; the specialist modes (arbitration, notary, report,
@@ -15,12 +15,12 @@
  */
 
 export const DRAFT_KINDS = {
-  claim: { label: "لائحة دعوى", price: 200, challenge: false },
+  claim: { label: "لائحة دعوى", price: 500, challenge: false },
   reply: { label: "مذكرة رد", price: 500, challenge: false },
   rejoinder: { label: "مذكرة تعقيب", price: 500, challenge: false },
   supplementary: { label: "مذكرة إلحاقية", price: 500, challenge: false },
   closing: { label: "مذكرة ختامية", price: 500, challenge: false },
-  appeal: { label: "لائحة اعتراض بالاستئناف", price: 1000, challenge: true },
+  appeal: { label: "لائحة اعتراض بالاستئناف", price: 800, challenge: true },
   cassation: { label: "مذكرة اعتراض بطلب النقض", price: 1500, challenge: true },
   petition: { label: "التماس إعادة النظر", price: 1500, challenge: true },
 } as const;

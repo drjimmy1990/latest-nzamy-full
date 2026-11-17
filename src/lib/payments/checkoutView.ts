@@ -454,3 +454,27 @@ export function parseCouponPreview(body: unknown): CouponPreview | null {
 export function couponFieldShown(item: Pick<PayableItem, "kind">, couponsReady: boolean): boolean {
   return couponsReady && item.kind !== "topup" && item.kind !== "membership";
 }
+
+// ── the checkout request ────────────────────────────────────────────────────
+
+/**
+ * The body MoyasarCheckout POSTs: `{ itemId, billing }`, the coupon code when
+ * one is applied (P7), and — for the founder membership, once its terms
+ * checkbox is ticked (owner ١٦) — `acceptFounderTerms: true` with the
+ * version of the terms the buyer was shown. Both the first checkout and the
+ * near-expiry refresh send the same body, so a refresh never loses the
+ * consent (the server refuses a founder order without it).
+ */
+export function checkoutRequestBody(
+  itemId: string,
+  billing: Billing,
+  couponCode: string | null,
+  founderTermsVersion: string | null,
+): Record<string, unknown> {
+  return {
+    itemId,
+    billing,
+    ...(couponCode ? { couponCode } : {}),
+    ...(founderTermsVersion ? { acceptFounderTerms: true, founderTermsVersion } : {}),
+  };
+}

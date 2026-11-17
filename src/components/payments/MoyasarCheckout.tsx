@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatHalalas, type Billing } from "@/lib/payments/catalog";
 import { NOT_FOR_SALE_AR, type CheckoutResponse } from "@/lib/payments/checkoutRules";
+import { FOUNDER_CONSENT_LABEL_AR, FOUNDER_TERMS_HREF } from "@/lib/payments/founderConsent";
 import {
+  checkoutRequestBody,
   intentNeedsRefresh,
   moyasarInitConfig,
   parseCheckoutResponse,
@@ -42,6 +44,14 @@ import {
  *      which applies it inside the order (the same rule — the preview is the
  *      charge). The field locks once the intent exists; a refreshed intent
  *      sends the same code.
+ *   6. The founder membership (owner ١٦): when the page passes
+ *      founderTermsVersion, an UNCHECKED checkbox «قرأتُ شروط باقة المحامي
+ *      المؤسس وأوافق عليها» with a link to /founder-terms (new tab) sits
+ *      above «متابعة الدفع», which stays disabled until it is ticked. The
+ *      checkout body then carries acceptFounderTerms + founderTermsVersion
+ *      (checkoutRequestBody) — on the first checkout and on the near-expiry
+ *      refresh alike; the server refuses a founder order without them and
+ *      records the version and its own clock on the order.
  * 401 → /login and back here; 403 / 503 / 400 → the server's Arabic copy.
  * 403 (not this account type) and 410 (retired item or cycle, «لم يعد هذا
  * المنتج متاحاً للشراء») are final: «العودة إلى الباقات», never a retry.
@@ -70,13 +80,14 @@ async function startCheckout(
   itemId: string,
   billing: Billing,
   couponCode: string | null,
+  founderTermsVersion: string | null,
 ): Promise<StartResult | "signed-out"> {
   let res: Response;
   try {
     res = await fetch("/api/v1/payments/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(couponCode ? { itemId, billing, couponCode } : { itemId, billing }),
+      body: JSON.stringify(checkoutRequestBody(itemId, billing, couponCode, founderTermsVersion)),
       cache: "no-store",
     });
   } catch {
@@ -146,11 +157,14 @@ export default function MoyasarCheckout({
   itemId,
   billing,
   couponsEnabled = false,
+  founderTermsVersion = null,
 }: {
   itemId: string;
   billing: Billing;
   /** Show the coupon field (the page: 20261026_20 has run, not a top-up). */
   couponsEnabled?: boolean;
+  /** The founder membership only (owner ١٦): the terms version the consent checkbox accepts; null → no checkbox. */
+  founderTermsVersion?: string | null;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -167,14 +181,25 @@ export default function MoyasarCheckout({
   const inFlight = useRef(false);
   const initialised = useRef(false);
   const moyasar = useRef<MoyasarApi | null>(null);
+  /** Owner ١٦: the founder terms checkbox (unchecked at first). */
+  const needsTerms = typeof founderTermsVersion === "string" && founderTermsVersion !== "";
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  /** The terms version the checkout body carries — set only while the box is ticked; read by the intent refresh too. */
+  const termsVersion = useRef<string | null>(null);
+
+  function onTermsChange(checked: boolean) {
+    setTermsAccepted(checked);
+    termsVersion.current = checked && needsTerms ? founderTermsVersion : null;
+  }
 
   async function onStart() {
+    if (needsTerms && !termsVersion.current) return;
     if (inFlight.current || current.current) return;
     inFlight.current = true;
     setNotice(null);
     setPhase({ kind: "starting" });
     try {
-      const result = await startCheckout(itemId, billing, couponCode.current);
+      const result = await startCheckout(itemId, billing, couponCode.current, termsVersion.current);
       if (result === "signed-out") {
         router.push(loginHref());
         return;
@@ -237,7 +262,7 @@ export default function MoyasarCheckout({
       const held = current.current;
       if (!held) return null;
       if (!intentNeedsRefresh(held.resp, held.at, Date.now())) return held.resp;
-      const fresh = await startCheckout(itemId, billing, couponCode.current);
+      const fresh = await startCheckout(itemId, billing, couponCode.current, termsVersion.current);
       if (fresh === "signed-out") {
         router.push(loginHref());
         return null;
@@ -396,11 +421,34 @@ export default function MoyasarCheckout({
             {notice}
           </p>
         ) : null}
+        {needsTerms ? (
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm leading-7 text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+            <label htmlFor="nz-founder-terms" className="flex cursor-pointer items-start gap-3 font-semibold">
+              <input
+                id="nz-founder-terms"
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => onTermsChange(e.target.checked)}
+                disabled={phase.kind === "starting"}
+                className="mt-1.5 h-4 w-4 shrink-0 accent-[#0B3D2E] dark:accent-[#C8A762]"
+              />
+              <span>{FOUNDER_CONSENT_LABEL_AR}</span>
+            </label>
+            <a
+              href={FOUNDER_TERMS_HREF}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ms-7 inline-block text-xs font-bold text-[#0B3D2E] underline underline-offset-2 dark:text-[#C8A762]"
+            >
+              اقرأ شروط باقة المحامي المؤسس (تُفتح في نافذة جديدة)
+            </a>
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={onStart}
-          disabled={phase.kind === "starting"}
-          className="inline-flex w-full items-center justify-center rounded-xl bg-[#0B3D2E] px-6 py-3.5 text-sm font-bold text-white transition-colors hover:bg-[#0E4D3A] disabled:cursor-wait disabled:opacity-70"
+          disabled={phase.kind === "starting" || (needsTerms && !termsAccepted)}
+          className="inline-flex w-full items-center justify-center rounded-xl bg-[#0B3D2E] px-6 py-3.5 text-sm font-bold text-white transition-colors hover:bg-[#0E4D3A] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {phase.kind === "starting" ? "جارٍ تجهيز الدفع…" : "متابعة الدفع"}
         </button>
