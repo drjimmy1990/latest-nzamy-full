@@ -176,3 +176,31 @@ export function shapeLawLinks(raw: unknown): { links: LawLink[]; truncated: bool
   }
   return { links, truncated: r.truncated === true };
 }
+
+/**
+ * The graph stores `item_status: art.status ?? "active"` (graphBuilder): an
+ * article with no recorded status reads «active» there, and the graph is only
+ * as fresh as its last sync. So the bar's statuses come from library.* at
+ * request time: an article's from library.articles (unknown → undeclared,
+ * never «active»), a law's from library.laws; a link whose article row is gone
+ * is dropped. `articleStatus` / `lawStatus` normalise the raw column.
+ */
+export function applyLiveStatuses(
+  links: ArticleLinks,
+  articleRows: ReadonlyArray<{ id: unknown; status: unknown }>,
+  lawRows: ReadonlyArray<{ slug: unknown; status: unknown }>,
+  articleStatus: (raw: unknown) => string,
+  lawStatus: (raw: unknown) => string,
+): ArticleLinks {
+  const art = new Map(articleRows.map((r) => [String(r.id), r.status]));
+  const law = new Map(lawRows.map((r) => [String(r.slug), r.status]));
+  const fix = (side: ReaderLink[]) =>
+    side.flatMap((l): ReaderLink[] => {
+      if (l.kind === "article") {
+        if (!l.articleId || !art.has(l.articleId)) return [];
+        return [{ ...l, status: articleStatus(art.get(l.articleId)) }];
+      }
+      return [{ ...l, status: law.has(l.lawSlug) ? lawStatus(law.get(l.lawSlug)) : "status_undeclared" }];
+    });
+  return { ...links, outgoing: fix(links.outgoing), incoming: fix(links.incoming) };
+}

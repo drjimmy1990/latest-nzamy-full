@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { docNameCandidates, parseNumbers, shapeArticleLinks, shapeLawLinks, validArticleId } from "./_shape.ts";
+import { applyLiveStatuses, docNameCandidates, parseNumbers, shapeArticleLinks, shapeLawLinks, validArticleId } from "./_shape.ts";
 
 const SECRET = "نص المادة السري الذي لا يراه الزائر";
 const neighborhood = {
@@ -75,4 +75,17 @@ test("route contract: libraryGate first, service role only for graph and article
   assert.doesNotMatch(route, /select\([^)]*\btext\b/);
   assert.doesNotMatch(route, /spendLibraryDocument/);
   assert.match(route, /shapeArticleLinks\(data, id, slug\)/);
+});
+
+test("live statuses: library.* overrides the graph's «active» default; a vanished article is dropped", () => {
+  const shaped = shapeArticleLinks(neighborhood, "a5", "labor");
+  const out = applyLiveStatuses(
+    shaped,
+    [{ id: "a7", status: null }],
+    [{ slug: "old", status: "repealed" }],
+    (raw) => (raw == null || raw === "" ? "status_undeclared" : String(raw)),
+    (raw) => String(raw ?? "status_undeclared"),
+  );
+  assert.deepEqual(out.outgoing.map((l) => [l.articleId, l.status]), [["a7", "status_undeclared"], [null, "repealed"]]);
+  assert.equal(out.incoming.length, 0, "x1 has no library row any more");
 });

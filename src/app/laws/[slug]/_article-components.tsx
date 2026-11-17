@@ -347,6 +347,23 @@ function renderMarkdownTableToHtml(tableMd: string, cellHtml: (md: string) => st
  * the legend's ↑ ↓ and the arrival scroll onto text the reader cannot read.
  * Outside a provider (موجز box, notices) nothing changes.
  */
+/**
+ * Linked html, cached (a large law re-renders every card on each scroll-driven
+ * activeId change; linking a whole 1,838-article law costs ~190 ms, measured).
+ * Bounded: cleared past CITE_CACHE_MAX entries.
+ */
+const CITE_CACHE_MAX = 6000;
+const citeHtmlCache = new Map<string, string>();
+function cachedCitationsHtml(html: string, docTitle: string, selfNumber: number | null, isDark: boolean): string {
+  const key = `${docTitle}\u0000${selfNumber ?? ""}\u0000${isDark ? 1 : 0}\u0000${html}`;
+  const hit = citeHtmlCache.get(key);
+  if (hit !== undefined) return hit;
+  if (citeHtmlCache.size >= CITE_CACHE_MAX) citeHtmlCache.clear();
+  const linked = linkCitationsHtml(html, { docTitle, selfNumber, isDark });
+  citeHtmlCache.set(key, linked);
+  return linked;
+}
+
 export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", highlight = true, cite }: {
   text: string; isDark: boolean; isRTL?: boolean; fontClass?: string; highlight?: boolean;
   /**
@@ -367,9 +384,12 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
   const citeOn = !!cite && !!citeCtx;
   // Every markdown → sanitised-HTML conversion below goes through this one.
   // Chips go in before the search colours, so a match inside a chip is still coloured.
-  const safeHtml = (md: string) => {
+  // `chips` false: a blockquote (regulation articles quoted in the text), whose
+  // «المادة (٣)» is not this law's article 3.
+  const safeHtml = (md: string, chips = true) => {
     const html = markdownBoldToSafeHtml(md);
-    const linked = citeOn ? linkCitationsHtml(html, { docTitle: citeCtx.lawTitle, selfNumber: cite.selfNumber, isDark }) : html;
+    let linked = html;
+    if (chips && citeOn) linked = cachedCitationsHtml(html, citeCtx.lawTitle, cite.selfNumber, isDark);
     return highlightSafeHtml(linked, hlTerms, hlFocus);
   };
   // One delegated handler: a click on a chip opens its popover.
@@ -394,9 +414,10 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
           // `open`, but only on current text: superseded text stays folded.
           const open = textHasHighlight(block.content, hlTerms);
           if (isAmendmentDetails(summaryText, block.content)) {
+            // Superseded wording: no chips (a chip would show today's article and status).
             return (
               <AmendedToggleDetails key={index} summary={summaryText || AMENDMENT_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open}>
-                {body}
+                <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} />
               </AmendedToggleDetails>
             );
           }
@@ -471,12 +492,12 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
             return (
               <p key={index}
                  className={`${fontClass} leading-relaxed ${listIndent} border-r-2 pr-3 border-[#C8A762]/40 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                <span dangerouslySetInnerHTML={{ __html: safeHtml(labelMarker.text) }} />
+                <span dangerouslySetInnerHTML={{ __html: safeHtml(labelMarker.text, false) }} />
                 <AmendedBadge isDark={isDark} />
               </p>
             );
           }
-          const html = safeHtml(block.text);
+          const html = safeHtml(block.text, false);
           return (
             <p key={index}
                className={`${fontClass} leading-relaxed ${listIndent} border-r-2 pr-3 border-[#C8A762]/40 ${isDark ? "text-zinc-400" : "text-zinc-500"}`}

@@ -2,10 +2,12 @@
  * _cite-status.ts — the status pill of a citation chip's popover and of the
  * «الإحالات المرتبطة» bar (owner TODO N02-15): 🟢 سارية / 🟡 معدّلة / 🔴 ملغاة.
  *
- * Only an explicit status earns a colour. `status_undeclared`, an unknown
- * token or no status at all is NOT shown as in force (the law page's own rule:
- * a missing status is never evidence the article is active) — it gets the
- * neutral «الحالة غير محددة».
+ * Only an explicit status earns a pill. `status_undeclared`, an unknown token
+ * or no status at all gets NO pill — never «سارية» (the law page's own rule: a
+ * missing status is never evidence the article is active; owner ٢٥٩: nothing
+ * is shown for an unrecorded status). A LAW's status has its own vocabulary
+ * (law-status.ts, eight values): `lawStatusPill` reads it through
+ * lawStatusPresentation, so a law pill always says what the law badge says.
  *
  * Also the number → article index the chips resolve against, built from the
  * reader's own articles: law articles only (a regulation or annex article «٥»
@@ -16,6 +18,7 @@
 
 import { parseArabicArticleNumber } from "../../../lib/library/articleMentions.ts";
 import { isPageLocator } from "../../../lib/library/pageLocator.ts";
+import { lawStatusPresentation } from "../law-status.ts";
 
 export type PillTone = "active" | "amended" | "repealed" | "unknown";
 
@@ -26,20 +29,29 @@ export interface StatusPill {
   labelEn: string;
 }
 
-const PILLS: Record<PillTone, StatusPill> = {
+const PILLS: Record<Exclude<PillTone, "unknown">, StatusPill> = {
   active: { tone: "active", emoji: "🟢", labelAr: "سارية", labelEn: "In force" },
   amended: { tone: "amended", emoji: "🟡", labelAr: "معدّلة", labelEn: "Amended" },
   repealed: { tone: "repealed", emoji: "🔴", labelAr: "ملغاة", labelEn: "Repealed" },
-  unknown: { tone: "unknown", emoji: "⚪", labelAr: "الحالة غير محددة", labelEn: "Status not stated" },
 };
 
-/** An article's (or a law's) status as a pill. */
-export function statusPill(status: string | null | undefined): StatusPill {
-  const s = String(status ?? "").trim().toLowerCase();
+/** An ARTICLE's status as a pill; null when the source records none (no pill shown). */
+export function statusPill(status: string | null | undefined): StatusPill | null {
+  const s = String(status ?? "").trim();
   if (s === "active") return PILLS.active;
   if (s === "amended") return PILLS.amended;
   if (s === "repealed") return PILLS.repealed;
-  return PILLS.unknown;
+  return null;
+}
+
+/** A LAW's status as a pill, worded as the law's own badge; null when none is recorded. */
+export function lawStatusPill(status: string | null | undefined): StatusPill | null {
+  const p = lawStatusPresentation(status);
+  if (!p) return null;
+  if (p.tone === "effective") return { tone: "active", emoji: "🟢", labelAr: p.labelAr, labelEn: p.labelEn };
+  if (p.tone === "repealed") return { tone: "repealed", emoji: "🔴", labelAr: p.labelAr, labelEn: p.labelEn };
+  if (p.tone === "caution") return { tone: "amended", emoji: "🟡", labelAr: p.labelAr, labelEn: p.labelEn };
+  return { tone: "unknown", emoji: "⚪", labelAr: p.labelAr, labelEn: p.labelEn };
 }
 
 /** Tailwind classes per tone (fixed strings). */

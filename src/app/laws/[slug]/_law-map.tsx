@@ -13,10 +13,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Background, BackgroundVariant, Controls, Handle, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { apiSlug } from "@/utils/apiSlug";
-import { statusPill } from "./_cite-status";
+import { lawStatusPill } from "./_cite-status";
 
 interface LawLink {
   slug: string;
@@ -38,7 +39,7 @@ interface LawNodeData extends Record<string, unknown> {
 }
 
 function LawNode({ data }: NodeProps<Node<LawNodeData>>) {
-  const pill = statusPill(data.status);
+  const pill = lawStatusPill(data.status);
   const cls = data.center
     ? data.isDark ? "bg-[#0B3D2E] border-[#C8A762]/60 text-white" : "bg-[#0B3D2E] border-[#C8A762] text-white"
     : data.isDark ? "bg-zinc-900 border-white/[0.12] text-zinc-200 hover:border-[#C8A762]/60" : "bg-white border-slate-300 text-zinc-800 hover:border-amber-400";
@@ -46,7 +47,7 @@ function LawNode({ data }: NodeProps<Node<LawNodeData>>) {
     <div dir="rtl" className={`w-[190px] rounded-xl border px-3 py-2 text-[11px] shadow-sm cursor-pointer ${cls}`}>
       <Handle type="target" position={Position.Top} className="!opacity-0" isConnectable={false} />
       <div className="flex items-start gap-1.5">
-        <span aria-hidden title={pill.labelAr}>{pill.emoji}</span>
+        {pill && <span role="img" aria-label={pill.labelAr} title={pill.labelAr}>{pill.emoji}</span>}
         <span className="font-bold leading-snug line-clamp-3">{data.title}</span>
       </div>
       {!data.center && (
@@ -75,7 +76,8 @@ export default function LawMap({ slug, lawTitle, lawStatus, isDark }: { slug: st
     return () => { cancelled = true; };
   }, [slug]);
 
-  const links = state.data && state.data.available ? state.data.links : [];
+  const router = useRouter();
+  const links = useMemo(() => (state.data && state.data.available ? state.data.links : []), [state.data]);
   const { nodes, edges } = useMemo(() => {
     const nodes: Node<LawNodeData>[] = [
       { id: slug, type: "law", position: { x: 0, y: 0 }, data: { title: lawTitle, status: lawStatus, center: true, isDark, out: 0, in: 0 }, draggable: false },
@@ -124,7 +126,7 @@ export default function LawMap({ slug, lawTitle, lawStatus, isDark }: { slug: st
           colorMode={isDark ? "dark" : "light"}
           proOptions={{ hideAttribution: true }}
           onNodeClick={(_, n) => {
-            if (n.id !== slug) window.location.assign(`/laws/${encodeURIComponent(n.id)}`);
+            if (n.id !== slug) router.push(`/laws/${encodeURIComponent(n.id)}`);
           }}
         >
           <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={isDark ? "#27272a" : "#e2e8f0"} />

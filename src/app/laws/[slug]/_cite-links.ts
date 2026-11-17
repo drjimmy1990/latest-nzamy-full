@@ -117,7 +117,17 @@ function docAfter(after: string, opts: CiteScanOptions): { scope: CiteScope | nu
   const skip = AFTER_NUMBER.exec(after)?.[0].length ?? 0;
   const rest = after.slice(skip);
   const self = THIS_DOC_REF.exec(rest);
-  if (self) return { scope: "self", len: skip + self[0].length, docName: "" };
+  if (self) {
+    // «من هذه اللائحة» in a نظام is not this law: the noun must fit the title
+    // (as for the bare noun below). No title known → the document itself.
+    const title = opts.docTitle ?? "";
+    const noun = /(?:هذا|هذه)\s+ال([\p{L}\p{M}]+)/u.exec(self[0])?.[1] ?? (/النظام\s+هذا/u.test(self[0]) ? "نظام" : "");
+    const stem = DOC_NOUN_STEM[noun];
+    const len = skip + self[0].length;
+    if (!title || !stem) return { scope: "self", len, docName: "" };
+    if (noun === "نظام") return { scope: isRegulationTitle(title) ? "parent" : "self", len, docName: "" };
+    return title.includes(stem) ? { scope: "self", len, docName: "" } : { scope: null, len: 0, docName: "" };
+  }
   const bare = BARE_DOC_REF.exec(rest);
   if (bare) {
     const noun = bare[1];

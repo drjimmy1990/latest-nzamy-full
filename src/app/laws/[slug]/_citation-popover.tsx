@@ -26,7 +26,7 @@ import type { LawArticle } from "../data";
 import { apiSlug } from "@/utils/apiSlug";
 import { buildCitation } from "./_citation";
 import { scanCitations, type CiteKind, type CiteScope } from "./_cite-links";
-import { pillClass, statusPill } from "./_cite-status";
+import { lawStatusPill, pillClass, statusPill, type StatusPill } from "./_cite-status";
 import { scrollToReaderAnchor } from "./_reader-anchors";
 
 export interface CitationReaderContext {
@@ -182,8 +182,9 @@ function CitationPopover({ chip, ctx, onClose }: { chip: OpenChip; ctx: Citation
   );
 }
 
-function Pill({ status, isDark, isRTL }: { status: string | null | undefined; isDark: boolean; isRTL: boolean }) {
-  const p = statusPill(status);
+/** A status pill; nothing at all when the source records no status. */
+function Pill({ pill: p, isDark, isRTL }: { pill: StatusPill | null; isDark: boolean; isRTL: boolean }) {
+  if (!p) return null;
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${pillClass(p.tone, isDark)}`}>
       <span aria-hidden>{p.emoji}</span>
@@ -244,7 +245,7 @@ function SelfArticles({ chip, ctx, onClose }: { chip: OpenChip; ctx: CitationRea
         return (
           <div key={n} className="space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <Pill status={a.status} isDark={isDark} isRTL={isRTL} />
+              <Pill pill={statusPill(a.status)} isDark={isDark} isRTL={isRTL} />
               <span className="font-black text-[12px]">{a.num}</span>
             </div>
             {a.title && <p className="font-bold text-[12px] leading-relaxed">{a.title}</p>}
@@ -324,13 +325,13 @@ function RemoteBody({ chip, ctx }: { chip: OpenChip; ctx: CitationReaderContext 
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2 flex-wrap">
-        <Pill status={law.status} isDark={isDark} isRTL={isRTL} />
+        <Pill pill={lawStatusPill(law.status)} isDark={isDark} isRTL={isRTL} />
         <Link href={lawHref} className="font-black text-[12px] hover:underline">{law.title}</Link>
       </div>
       {articles.map((a) => (
         <div key={a.id} className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <Pill status={a.status} isDark={isDark} isRTL={isRTL} />
+            <Pill pill={statusPill(a.status)} isDark={isDark} isRTL={isRTL} />
             <span className="font-bold">{isRTL ? `المادة (${a.number})` : `Article (${a.number})`}</span>
           </div>
           {a.title && <p className="leading-relaxed">{a.title}</p>}

@@ -1,14 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { articleNumberOf, articlesByNumber, statusPill } from "./_cite-status.ts";
+import { articleNumberOf, articlesByNumber, lawStatusPill, statusPill } from "./_cite-status.ts";
 
-test("only an explicit status earns a colour; undeclared is never «سارية»", () => {
-  assert.equal(statusPill("active").emoji, "🟢");
-  assert.equal(statusPill("amended").labelAr, "معدّلة");
-  assert.equal(statusPill("repealed").emoji, "🔴");
+test("article pills: only an explicit status; undeclared shows nothing, never «سارية»", () => {
+  assert.equal(statusPill("active")?.emoji, "🟢");
+  assert.equal(statusPill("amended")?.labelAr, "معدّلة");
+  assert.equal(statusPill("repealed")?.emoji, "🔴");
   for (const s of ["status_undeclared", "", null, undefined, "suspended", "added"]) {
-    assert.equal(statusPill(s).tone, "unknown", String(s));
+    assert.equal(statusPill(s), null, String(s));
   }
+});
+
+test("law pills speak the law vocabulary (law-status.ts), undeclared shows nothing", () => {
+  assert.deepEqual([lawStatusPill("active")?.emoji, lawStatusPill("active")?.labelAr], ["🟢", "ساري"]);
+  assert.deepEqual([lawStatusPill("repealed")?.emoji, lawStatusPill("repealed")?.labelAr], ["🔴", "ملغى"]);
+  assert.equal(lawStatusPill("partially_active")?.emoji, "🟡");
+  assert.equal(lawStatusPill("superseded_duplicate")?.emoji, "⚪");
+  for (const s of ["status_undeclared", "", null, "amended"]) assert.equal(lawStatusPill(s), null, String(s));
 });
 
 test("article numbers: digits, written ordinals, never a page", () => {

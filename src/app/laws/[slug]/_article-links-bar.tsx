@@ -16,7 +16,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CaretDown, CaretUp, LinkSimple } from "@phosphor-icons/react";
 import { apiSlug } from "@/utils/apiSlug";
-import { pillClass, statusPill } from "./_cite-status";
+import { lawStatusPill, pillClass, statusPill } from "./_cite-status";
 import { scrollToReaderAnchor } from "./_reader-anchors";
 
 interface Link_ {
@@ -117,14 +117,14 @@ function Group({ title, items, lawSlug, isDark, isRTL }: { title: string; items:
       <p className={`mb-1 font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{title}</p>
       <ul className="flex flex-wrap gap-1.5">
         {items.map((l) => {
-          const pill = statusPill(l.status);
+          const pill = l.kind === "law" ? lawStatusPill(l.status) : statusPill(l.status);
           const same = l.lawSlug === lawSlug && l.articleId;
           const href = l.articleId ? `/laws/${encodeURIComponent(l.lawSlug)}#${encodeURIComponent(l.articleId)}` : `/laws/${encodeURIComponent(l.lawSlug)}`;
           const label = LINK_LABEL[l.linkType]?.[l.direction];
           const cls = `inline-flex items-center gap-1 max-w-full px-2 py-1 rounded-lg border ${isDark ? "border-white/[0.08] bg-zinc-900 text-zinc-200 hover:border-[#C8A762]/40" : "border-slate-200 bg-white text-zinc-700 hover:border-amber-300"}`;
           const inner = (
             <>
-              <span aria-hidden title={isRTL ? pill.labelAr : pill.labelEn}>{pill.emoji}</span>
+              {pill && <span role="img" aria-label={isRTL ? pill.labelAr : pill.labelEn} title={isRTL ? pill.labelAr : pill.labelEn}>{pill.emoji}</span>}
               <span className="truncate">{l.title}</span>
               {label && isRTL && <span className={`flex-shrink-0 text-[9px] px-1 rounded border ${pillClass("unknown", isDark)}`}>{label}</span>}
             </>

@@ -1,6 +1,6 @@
 /**
  * _cite-links.test.ts — the reader's citation chips (N02-14).
- * Run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test "src/app/laws/[slug]/_cite-links.test.ts"
+ * Run: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON "src/app/laws/[slug]/_cite-links.test.ts" (with --test a [slug] path is read as a glob and runs nothing)
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -47,6 +47,13 @@ test("«من هذا النظام» is this document and is part of the chip", ()
   assert.deepEqual(c.numbers, [5]);
   assert.equal("مع مراعاة ما ورد في المادة الخامسة من هذا النظام، يجوز".slice(c.start, c.end), "المادة الخامسة من هذا النظام");
   assert.equal(scanCitations("المادة (٤) من هذه اللائحة")[0].scope, "self");
+});
+
+test("«من هذه اللائحة» must fit the document: no chip in a نظام, self in a لائحة", () => {
+  assert.equal(scanCitations("المادة (٤) من هذه اللائحة", { docTitle: "نظام العمل" }).length, 0);
+  assert.equal(scanCitations("المادة (٤) من هذه اللائحة", { docTitle: "اللائحة التنفيذية لنظام العمل" })[0].scope, "self");
+  assert.equal(scanCitations("المادة (٤) من هذا النظام", { docTitle: "نظام العمل" })[0].scope, "self");
+  assert.equal(scanCitations("المادة (٤) من هذا النظام", { docTitle: "اللائحة التنفيذية لنظام العمل" })[0].scope, "parent");
 });
 
 test("«من النظام»: this law in a law, the parent law in a regulation", () => {

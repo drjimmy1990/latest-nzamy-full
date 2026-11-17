@@ -6,6 +6,7 @@ import { stripArticleAuditNotes } from '@/lib/library/lawPreambleBlocks';
 import { articleStatusForDetail } from '../_article-status';
 import {
   READER_LINK_TYPES,
+  applyLiveStatuses,
   capTitle,
   docNameCandidates,
   parseNumbers,
@@ -78,7 +79,24 @@ export async function GET(
         console.error('[citations] article links failed:', error.code ?? 'no-code', error.message);
         return json({ error: 'تعذّر تحميل الإحالات' }, 500);
       }
-      return json({ available: true, ...shapeArticleLinks(data, id, slug) });
+      const shaped = shapeArticleLinks(data, id, slug);
+      // Statuses from library.* now, not the graph's copy (see applyLiveStatuses).
+      const ids = [...shaped.outgoing, ...shaped.incoming].flatMap((l) => (l.articleId ? [l.articleId] : []));
+      const slugs = [...shaped.outgoing, ...shaped.incoming].flatMap((l) => (l.kind === 'law' ? [l.lawSlug] : []));
+      const [arts, laws] = await Promise.all([
+        ids.length ? serverOnly.schema('library').from('articles').select('id, status').in('id', ids) : Promise.resolve({ data: [], error: null }),
+        slugs.length ? serverOnly.schema('library').from('laws').select('slug, status').in('slug', slugs) : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (arts.error) throw arts.error;
+      if (laws.error) throw laws.error;
+      const live = applyLiveStatuses(
+        shaped,
+        (arts.data ?? []) as Array<{ id: unknown; status: unknown }>,
+        (laws.data ?? []) as Array<{ slug: unknown; status: unknown }>,
+        safeArticleStatus,
+        lawStatusForDetail,
+      );
+      return json({ available: true, ...live });
     }
 
     // ── The law's linked laws (the map) ──────────────────────────────────────
