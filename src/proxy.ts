@@ -420,6 +420,10 @@ const PROTECTED = [
   "/ai/brief-check",
   "/ai/communicate",
   "/ai/assistant",
+  // N05-V2 (owner package 13 Nov): the company tools are for a signed-in
+  // corporate account (routeAccess.ts rule), and the advisor is not a guest page.
+  "/ai/corp",
+  "/ai/consult",
   "/settings",
   "/notifications",
   "/onboarding",

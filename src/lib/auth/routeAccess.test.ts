@@ -224,3 +224,9 @@ test('unrelated API paths are untouched', () => {
     assert.equal(isProtectedApiPath(path), false, path);
   }
 });
+test("N05-V2: /ai/corp is for the corporate account only", () => {
+  assert.equal(isRouteAllowedFor("/ai/corp/hr", "corporate"), true);
+  for (const t of ["lawyer", "firm", "individual", "ngo", null]) {
+    assert.equal(isRouteAllowedFor("/ai/corp/advisor", t), false, String(t));
+  }
+});
