@@ -48,13 +48,13 @@ export const OUTPUT_TYPES: {
   },
   {
     id: "due-diligence", icon: ChartBar, title: "تقرير العناية الواجبة", titleEn: "Due Diligence",
-    desc: "فحص قانوني شامل لصفقة أو كيان — Due Diligence",
+    desc: "فحص قانوني شامل لصفقة أو كيان (الفحص النافي للجهالة)",
     // No "settings" step: due-diligence's SettingsStep panel had nothing
     // type-specific to show (only the now-hidden agent-preview card), so
     // routing through it would land the client on a blank screen.
     depth: "comprehensive", steps: ["type", "context", "submit"],
     color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/30",
-    audience: "شركات · M&A · مستثمرون",
+    audience: "شركات · اندماج واستحواذ · مستثمرون",
   },
   {
     id: "letter", icon: Envelope, title: "خطاب رسمي", titleEn: "Official Letter",

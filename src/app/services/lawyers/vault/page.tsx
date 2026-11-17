@@ -42,7 +42,7 @@ import { useTheme } from "@/components/ThemeProvider";
  */
 
 const PROJECT_TYPES = [
-  { icon: Buildings, label: "Due Diligence — اندماج واستحواذ", desc: "فحص شامل لعقود الشركة المُستحوذ عليها", tag: "M&A" },
+  { icon: Buildings, label: "الفحص النافي للجهالة — اندماج واستحواذ", desc: "فحص شامل لعقود الشركة المُستحوذ عليها", tag: "اندماج واستحواذ" },
   { icon: FileText, label: "فحص عقود شامل", desc: "مراجعة جماعية لعقود عميل — كشف المخاطر والفرص", tag: "عقود" },
   { icon: ShieldCheck, label: "تدقيق امتثال", desc: "مطابقة المستندات مع الأنظمة واللوائح المعمول بها", tag: "امتثال" },
   { icon: Scales, label: "ملف قضية معقدة", desc: "تحليل مئات الوثائق لملف قضية متشعب", tag: "قضائي" },
