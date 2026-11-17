@@ -5,14 +5,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Gavel, BookOpen, ArrowRight, CaretLeft,
   Clock, Info, MapPin, CaretDown,
-  ClipboardText, Buildings, Lock, Scales, PhoneCall,
+  ClipboardText, Buildings, Scales, PhoneCall,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import BetaReviewGate from "@/components/BetaReviewGate";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import { useUser } from "@/hooks/useUser";
-import { BETA_REVIEW_MODE } from "@/lib/betaConfig";
 
 
 // ─── Types & Imports ─────────────────────────────────────────────────────────
@@ -31,14 +29,9 @@ type Mode = "circuits" | "agencies" | "procedures" | "grievances" | "channels" |
 export default function ProceduresPage() {
   const { isDark } = useTheme();
   const user = useUser();
-  // Live test LIVE-F12 (2026-10-30): a card read «المحكمة التجارية (٩ خطوات)
-  // · عرض الخطوات» and the click opened «غير متاح خلال البيتا». The steps sit
-  // behind <BetaReviewGate reviewScope="legal-data"> (procedures.manual-guide),
-  // which shows them only when beta review is off or to a demo-bypass account
-  // — the same condition here, so a card that cannot open says so before the
-  // click instead of promising steps.
-  const stepsGated = BETA_REVIEW_MODE && !user.isDemoBypass;
-  const [mode, setMode] = useState<Mode>("circuits");
+  // Owner package 13 Nov (N06-2): the court steps are shown to everyone; the
+  // beta review gate that hid them is removed.
+  const [mode, setMode] = useState<Mode>("najiz");
   const [selectedCourt, setSelectedCourt] = useState<string | null>(null);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
 
@@ -133,7 +126,10 @@ export default function ProceduresPage() {
             <div className={`rounded-xl flex items-start gap-2.5 p-3.5 border ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50"}`}>
               <Info size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
               <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                المعلومات للإرشاد العام فقط. المدد والإجراءات قد تختلف حسب القضية وتقدير المحكمة. <span className={`font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>استشر محاميك.</span>
+                المعلومات للإرشاد العام فقط. المدد والإجراءات قد تختلف حسب القضية وتقدير المحكمة.{" "}
+                {user.userType === "lawyer" || user.userType === "firm" ? null : (
+                  <span className={`font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>استشر محاميك.</span>
+                )}
               </p>
             </div>
           </motion.div>
@@ -152,47 +148,11 @@ export default function ProceduresPage() {
 
             {/* The canned «استشر الذكاء الاصطناعي» box that sat here is gone
                 (see the note at the top of this component). */}
-            {stepsGated ? (
-              <div className={`rounded-2xl border p-4 flex items-start gap-3 ${isDark ? "border-white/[0.06] bg-zinc-900/60" : "border-slate-100 bg-white shadow-sm"}`}>
-                <Lock size={18} weight="duotone" className="text-amber-500 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 space-y-2">
-                  <p className={`text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>دليل خطوات التقاضي غير متاح خلال البيتا</p>
-                  <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                    خطوات التقاضي ومددها قيد المراجعة القانونية، فلا تُعرض الآن. الخدمة المتاحة حالياً: الصائغ القانوني لصياغة المذكرات واللوائح.
-                  </p>
-                  <Link href="/ai/draft" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold">
-                    <BookOpen size={13} /> الصائغ القانوني
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+            <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
                 اختر المحكمة لعرض خطوات التقاضي أمامها
               </p>
-            )}
 
-            {stepsGated ? (
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8" aria-label="المحاكم — الدليل غير متاح خلال البيتا">
-                {COURTS_LIST.map((court, i) => {
-                  const Icon = court.icon;
-                  const isLastOdd = i === COURTS_LIST.length - 1 && COURTS_LIST.length % 2 === 1;
-                  return (
-                    <li key={court.id}
-                      className={`${card} p-4 flex items-start gap-3 opacity-70 ${isLastOdd ? "sm:col-span-2" : ""}`}>
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${court.bg}`}>
-                        <Icon size={18} weight="duotone" className={court.color} />
-                      </div>
-                      <div className="flex-1">
-                        <p className={`text-[13px] font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>{court.name}</p>
-                        <p className={`text-[11px] mt-0.5 flex items-center gap-1 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                          <Lock size={10} /> غير متاح خلال البيتا
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : !selectedCourt ? (
+            {!selectedCourt ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
                 {COURTS_LIST.map((court, i) => {
                   const Icon = court.icon;
@@ -237,7 +197,6 @@ export default function ProceduresPage() {
                   </div>
                 </div>
 
-                <BetaReviewGate toolId="procedures.manual-guide" toolName="دليل الإجراءات القضائية" reviewScope="legal-data">
                 {/* Steps */}
                 <div className="flex flex-col gap-2">
                   {procedure?.steps.map((step, i) => (
@@ -294,7 +253,6 @@ export default function ProceduresPage() {
                     <BookOpen size={13} /> الصائغ
                   </Link>
                 </div>
-                </BetaReviewGate>
               </motion.div>
             )}
           </motion.div>
