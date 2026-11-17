@@ -22,6 +22,7 @@ import {
 } from "@/lib/services/clientPickOptions";
 import { getContracts, getContract } from "@/lib/services/contractsService";
 import { readInvoiceIntent, initialInvoiceAmount, INVOICE_PAGE } from "@/lib/services/invoiceFromContract";
+import { LedgerTabBody } from "@/components/dashboard/financeLedger/FinanceLedgerTabs";
 
 /** Owner ٤٣٠: the label every fee statement carries (not a ZATCA e-invoice). DB/API names stay «invoice». */
 const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";
@@ -887,6 +888,10 @@ export default function FinancePage() {
               { key: "invoices"  as FinanceTab, label: "إدارة بيانات الأتعاب",    short: "البيانات",  icon: Receipt },
               { key: "expenses"  as FinanceTab, label: "حركات محفظة المنصة",   short: "المحفظة",  icon: Wallet },
               { key: "pl"        as FinanceTab, label: "ملخص الأتعاب والتحصيل", short: "الملخص",   icon: Scales },
+              // l6-ledger (owner F3/F4): time, client trust, office expenses.
+              { key: "time"           as FinanceTab, label: "الوقت",     short: "الوقت",     icon: Clock },
+              { key: "trust"          as FinanceTab, label: "الأمانات",  short: "الأمانات",  icon: Bank },
+              { key: "lawyerExpenses" as FinanceTab, label: "المصروفات", short: "المصروفات", icon: Coins },
             ] as const).map(tab => {
               const isActive = activeTab === tab.key;
               return (
@@ -1413,6 +1418,13 @@ export default function FinancePage() {
                     </div>
                   </div>
                 )}
+              </motion.div>
+            )}
+
+            {/* ── l6-ledger: الوقت · الأمانات · المصروفات (components/dashboard/financeLedger) ── */}
+            {(activeTab === "time" || activeTab === "trust" || activeTab === "lawyerExpenses") && (
+              <motion.div key={activeTab} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <LedgerTabBody kind={activeTab === "lawyerExpenses" ? "expenses" : activeTab} isDark={isDark} statementHref={`${INVOICE_PAGE}/statement`} />
               </motion.div>
             )}
 

@@ -105,6 +105,7 @@ import {
   type CaseTeamState,
 } from "@/components/dashboard/caseNotes/NoteScope";
 import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
+import CaseTimeExpensesSection from "@/components/dashboard/financeLedger/CaseTimeExpensesSection";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -1638,6 +1639,13 @@ export default function CaseDetailPage() {
           {activeTab === "overview" && (
             <div className="mt-5">
               <LinkedContractsList requestId={id} isDark={isDark} />
+            </div>
+          )}
+
+          {/* ── l6-ledger (owner F3/F4): الوقت والمصروفات of this case ── */}
+          {activeTab === "overview" && (
+            <div className="mt-5">
+              <CaseTimeExpensesSection caseId={id} isDark={isDark} statementBase="/dashboard/lawyer/finance/statement" />
             </div>
           )}
 

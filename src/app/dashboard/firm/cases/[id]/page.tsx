@@ -111,6 +111,7 @@ import {
   type CaseTeamState,
 } from "@/components/dashboard/caseNotes/NoteScope";
 import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
+import CaseTimeExpensesSection from "@/components/dashboard/financeLedger/CaseTimeExpensesSection";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -898,6 +899,12 @@ export default function FirmCaseDetailsPage() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+          {/* ── l6-ledger (owner F3/F4): الوقت والمصروفات of this case ── */}
+          {activeTab === "overview" && (
+            <div className="mt-4">
+              <CaseTimeExpensesSection caseId={id} isDark={isDark} statementBase="/dashboard/firm/finance/statement" />
             </div>
           )}
 
