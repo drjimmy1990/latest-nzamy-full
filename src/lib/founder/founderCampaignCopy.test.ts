@@ -67,3 +67,20 @@ test("the landing page keeps the owner's required lines", () => {
   }
   assert.doesNotMatch(page, /<Navbar|<Footer/, "the site-wide navbar/footer name removed products");
 });
+
+test("owner 17 Nov (١٢، ١٥، ١٧، ١٨): the library year, the 100 founding points, the 14-day refund, «ساعات لا أيام»", () => {
+  const page = code(join(SRC, "app", "founder", "page.tsx"));
+  for (const s of [
+    "مكتبة قانونية ضخمة لسنة كاملة من تفعيلك، تغذّي الصائغ بالنص ولائحته",
+    "<li>١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي.</li>",
+    "والشحن لا يجدّد السنة",
+    "ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي، والسؤال الواحد عليه يخصم ٥ نقاط.",
+    "نعم، خلال ١٤ يوماً من الشراء بشرط عدم استخدام أي من خدمات الباقة، وفق",
+    "في ساعات لا في أيام",
+  ]) {
+    assert.ok(page.includes(s), s);
+  }
+  assert.doesNotMatch(page, /٣٦٥ يوماً/, "the library is a year from activation, not a fixed 365 days");
+  // the refund answer links the terms page
+  assert.match(page, /وفق\{" "\}\s*<Link href=\{FOUNDER_TERMS_PATH\}/);
+});
