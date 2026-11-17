@@ -429,6 +429,9 @@ const PROTECTED = [
   "/settings",
   "/notifications",
   "/onboarding",
+  // N05-A4 (owner package 13 Nov): personal academy pages — sign-in at the edge, not only client-side.
+  "/academy/my-courses",
+  "/academy/certificates",
 ];
 
 // ─── Deprecated route redirects ────────────────────────────────────────────────
