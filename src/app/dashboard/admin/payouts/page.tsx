@@ -109,8 +109,9 @@ export default function PayoutsPage() {
               const area = line + ` L${pts[pts.length-1].x},80 L${pts[0].x},80 Z`;
               return <>
                 <path d={area} fill="url(#payout-fill)"/>
-                <path d={line} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round"/>
-                {pts.map((p,i)=><circle key={i} cx={p.x} cy={p.y} r="3" fill="#10b981"/>)}
+                {/* N07-68: this SVG stretches to the card (preserveAspectRatio="none"); a non-scaling stroke keeps the line's thickness, and the dots are zero-length round-capped strokes so they stay round. */}
+                <path d={line} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
+                {pts.map((p,i)=><path key={i} d={`M${p.x},${p.y} h0`} stroke="#10b981" strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>)}
               </>;
             })()}
           </svg>

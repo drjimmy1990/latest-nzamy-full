@@ -14,6 +14,7 @@ import { type FinanceTab, type InvoiceStatus, type FeeType, type Period, STATUS_
 import { apiGet, apiMutate, ApiTimeoutError, isSupabaseMode } from "@/lib/services/api";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
+import { groupInvoices, lastMonthsBuckets, remainderOf } from "./chartBuckets";
 
 /** Owner ٤٣٠: the label every fee statement carries (not a ZATCA e-invoice). DB/API names stay «invoice». */
 const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";
@@ -64,19 +65,7 @@ const CREATE_ERROR_AR: Record<string, string> = {
 };
 const hasArabic = (text: string) => /[\u0600-\u06FF]/.test(text);
 
-/**
- * أسماء الشهور الميلادية.
- *
- * الخادم يشتق `month`/`quarter`/`year` من `payments.created_at` عبر
- * getMonth()/getFullYear()، وكلاهما ميلادي؛ بينما التاريخ المطبوع على بطاقة
- * الفاتورة هجري (ar-SA = أم القرى، كما في بقية لوحة المحامي). لذلك تُكتب السنة
- * الميلادية صراحةً في تسميات المحور حتى لا يُقرأ الشهر على أنه هجري. توحيد
- * التقويمين على مستوى المنتج قرار يخص المالك، لا هذه الصفحة.
- */
-const GREGORIAN_MONTHS_AR = [
-  "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-  "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
-];
+// أسماء الشهور الميلادية وتسميات المحور: chartBuckets.ts (GREGORIAN_MONTHS_AR).
 
 /**
  * تصنيف حركة المحفظة. العمود `amount` في wallet_transactions بلا إشارة،
@@ -96,10 +85,6 @@ const newCollectKey = () =>
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
-/** المتبقي على الفاتورة، بلا سالب — لا يُفترض وجوده لكن صفاً قديماً قد يحمله. */
-const remainderOf = (inv: any) =>
-  Math.max((Number(inv?.totalFee) || 0) - (Number(inv?.paidAmount) || 0), 0);
-
 /**
  * بطاقة «لا توجد بيانات» — تُعرض فقط بعد قراءة ناجحة، فهي تقول «لا يوجد»
  * لا «تعذّرت القراءة». حالة الخطأ لها بطاقتها المستقلة مع زر إعادة المحاولة.
@@ -112,34 +97,6 @@ function EmptyCard({ text, cardCls }: { text: string; cardCls: string }) {
   );
 }
 
-type ChartBucket = { sort: number; label: string; paid: number; pending: number };
-
-/**
- * يجمّع الفواتير في فترات مشتقة من تواريخها الفعلية.
- *
- * كان المحور قبل ذلك أربع تسميات ثابتة («يناير…أبريل») ورثتها الصفحة عن بيانات
- * تجريبية محذوفة، فكانت كل فاتورة صادرة من مايو إلى ديسمبر — أي كل فاتورة
- * تُصدر اليوم — تسقط خارج المحور تماماً بينما يبدو الرسم مأهولاً.
- *
- * الفاتورة التي لا يمكن تأريخها بثقة تُترك خارج المحور بدل وضعها في فترة
- * مُختلقة؛ ومجاميع المؤشرات أعلاه غير محدودة بفترة فلا يضيع منها شيء.
- */
-function groupInvoices(
-  invoices: any[],
-  bucketOf: (inv: any) => { key: string; sort: number; label: string } | null,
-  keepMostRecent: number,
-): ChartBucket[] {
-  const map = new Map<string, ChartBucket>();
-  for (const inv of invoices) {
-    const b = bucketOf(inv);
-    if (!b) continue;
-    const cur = map.get(b.key) ?? { sort: b.sort, label: b.label, paid: 0, pending: 0 };
-    cur.paid += Number(inv.paidAmount) || 0;
-    cur.pending += remainderOf(inv);
-    map.set(b.key, cur);
-  }
-  return [...map.values()].sort((a, b) => a.sort - b.sort).slice(-keepMostRecent);
-}
 
 /** صفوف القراءتين التي يعرض منها نموذج الإصدار الموكّل وقضاياه (CODE-F21). */
 type CrmClientRow = { id?: unknown; name?: unknown; clientType?: string | null; source?: string };
@@ -302,11 +259,9 @@ export default function FinancePage() {
   ], [totalCollected, partialRemainder, pendingRemainder, overdueRemainder]);
 
   // ── بيانات الرسم البياني الحية (فترات مشتقة من تواريخ الفواتير) ──
-  const monthlyData = useMemo(() => groupInvoices(invoices, (inv) => {
-    const y = Number(inv.year); const m = Number(inv.month);
-    if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null;
-    return { key: `${y}-${m}`, sort: y * 12 + m, label: `${GREGORIAN_MONTHS_AR[m - 1]} ${y}` };
-  }, 6), [invoices]);
+  // N07-64: ستة أشهر متتالية دائماً (الشهر الخالي = ٠) تنتهي بالشهر الحالي.
+  // الساعة ساعة المتصفح: الفواتير تُقرأ في المتصفح، فعرض الخادم يأخذ مسار القائمة الفارغة.
+  const monthlyData = useMemo(() => lastMonthsBuckets(invoices, 6, new Date()), [invoices]);
 
   const quarterlyData = useMemo(() => groupInvoices(invoices, (inv) => {
     const y = Number(inv.year); const q = Number(inv.quarter);
@@ -324,7 +279,7 @@ export default function FinancePage() {
   const chartScopeLabel =
     period === "quarterly" ? "آخر أربعة أرباع فيها فواتير"
     : period === "annual"  ? "آخر خمس سنوات فيها فواتير"
-    : "آخر ستة أشهر فيها فواتير";
+    : "آخر ستة أشهر";
 
   // ── تصفية الفواتير ──
   // الترتيب بـ createdAt لا بـ id: معرّف الفاتورة UUID عشوائي، وترتيب القائمة
