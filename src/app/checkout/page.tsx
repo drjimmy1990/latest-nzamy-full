@@ -6,12 +6,14 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MoyasarCheckout from "@/components/payments/MoyasarCheckout";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { getPaymentGatewayStatus } from "@/lib/access-control";
+import { getPaymentGatewayStatus, TIER_RANK } from "@/lib/access-control";
 import { viewerGatewayState } from "@/lib/payments/testModeAccess";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { AUDIENCE_REFUSED_AR, NOT_FOR_SALE_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
 import { buyerAllowed, formatHalalas, quote, sellableItem } from "@/lib/payments/catalog";
 import { couponsAvailable } from "@/lib/payments/couponServer";
+import { readUpgrade, upgradeCreditLineAr } from "@/lib/payments/upgradeProration";
+import { FOUNDER_DISCOUNT_LABEL_AR, founderDiscountApplies, founderDiscountHalalas, isActiveFounder } from "@/lib/payments/founderDiscount";
 import { FOUNDER_TERMS_VERSION } from "@/lib/founder/founderTerms";
 import {
   billingLabelAr,
@@ -140,6 +142,32 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
   const notes = checkoutItemNotes(item);
 
+  // l6-pay: before paying, what the POST will take off — the same server
+  // functions checkout prices with (upgradeProration / founderDiscount). A
+  // downgrade is refused here as it is there. A failed read shows nothing
+  // extra: the POST decides (and refuses rather than guess). Never for the
+  // founder membership.
+  let creditHalalas = 0;
+  let founderHalalas = 0;
+  if (priced.ok && item.kind === "plan" && item.tier) {
+    try {
+      const held = await readUpgrade(await createServiceClient(), { userId: user.id, tier: item.tier, now: new Date(), ranks: TIER_RANK });
+      if (held?.kind === "refused") return <Notice title={held.error} />;
+      if (held?.kind === "credit") creditHalalas = held.creditHalalas;
+    } catch {
+      console.warn("[checkout] reading the held plans threw");
+    }
+  }
+  if (priced.ok && founderDiscountApplies(item.kind)) {
+    try {
+      if ((await isActiveFounder(await createServiceClient(), user.id, new Date())) === true) {
+        founderHalalas = founderDiscountHalalas(priced.netHalalas);
+      }
+    } catch {
+      console.warn("[checkout] reading the founder seat threw");
+    }
+  }
+
   let couponsReady = false;
   // no coupon ever applies to a point top-up or the founder membership (couponFieldShown)
   if (item.kind !== "topup" && item.kind !== "membership") {
@@ -169,6 +197,16 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
           </p>
         ) : null}
         <p className="mt-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{listedVatNotice(item)}</p>
+        {creditHalalas > 0 ? (
+          <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+            {upgradeCreditLineAr(creditHalalas)} — بحسب الأيام المتبقية منها، وتبدأ الباقة الجديدة من اليوم
+          </p>
+        ) : null}
+        {founderHalalas > 0 ? (
+          <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
+            {FOUNDER_DISCOUNT_LABEL_AR}: − {formatHalalas(founderHalalas)}
+          </p>
+        ) : null}
 
         {notes.length > 0 ? (
           <ul className="mt-5 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">

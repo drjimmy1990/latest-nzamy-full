@@ -24,7 +24,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ItemKind } from "./catalog.ts";
-import { isMissingPaymentsObject } from "./fulfillDecision.ts";
+
+/** A table / column / function of a migration not applied yet (fulfillDecision.isMissingPaymentsObject, copied: this module is also imported by the browser, and fulfillDecision imports node:crypto). */
+const MISSING_CODES: readonly string[] = ["42P01", "42703", "42883", "PGRST202", "PGRST204", "PGRST205"];
 
 export const FOUNDER_DISCOUNT_PCT = 15;
 /** The kinds the founder discount applies to (F12). */
@@ -81,7 +83,7 @@ export async function isActiveFounder(admin: SupabaseClient, userId: string, now
       .gt("ends_at", now.toISOString())
       .limit(1);
     if (error) {
-      if (isMissingPaymentsObject(error.code)) return false;
+      if (MISSING_CODES.includes(error.code ?? "")) return false;
       console.error("[payments/founder-discount] reading the founder seat failed:", error.code);
       return null;
     }
