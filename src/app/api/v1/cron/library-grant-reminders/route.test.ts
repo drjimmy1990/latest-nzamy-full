@@ -62,3 +62,18 @@ test("migration 66: the primary key is the idempotency, the table is service rol
   assert.match(sql, /20261030_66 verify:/);
   assert.match(sql, /as server_can_write;\s*$/);
 });
+
+test("e-mail (step 4): after the in-app loop, its own once-only rows, never stopping the in-app answer", () => {
+  const post = src.slice(src.indexOf("export async function POST("), src.indexOf("async function sendLibraryReminderEmails("));
+  const loopAt = post.indexOf("for (const r of due)");
+  const emailAt = post.indexOf("const email = await sendLibraryReminderEmails(admin, due, now);");
+  assert.ok(loopAt > -1 && emailAt > loopAt, "the e-mail step runs after the in-app notices");
+  assert.match(post, /return NextResponse\.json\(\{ ok: true, candidates: userIds\.length, due: due\.length, sent, already, errors, email \}\);/);
+  const step = src.slice(src.indexOf("async function sendLibraryReminderEmails("));
+  assert.match(step, /if \(!emailConfigured\(process\.env\)\) return \{ \.\.\.report, skipped: "email_unavailable" \};/);
+  assert.match(step, /loadEmailRecipients\(admin, due\.map\(\(r\) => r\.userId\), \["renewal"\]\)/);
+  assert.match(step, /await sendReminderOnce\(admin, key, \{ to, \.\.\.libraryEmailMessage\(r, now\) \}\)/);
+  assert.match(step, /if \(outcome === "schema_missing"\) return \{ \.\.\.report, skipped: "schema_missing" \};/);
+  assert.doesNotMatch(step, /NextResponse/, "the e-mail step returns a report, never the route's answer");
+  assert.doesNotMatch(src, /\bsendEmail\(/);
+});
