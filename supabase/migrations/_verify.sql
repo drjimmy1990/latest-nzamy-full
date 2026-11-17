@@ -6858,3 +6858,24 @@ select 'Hearings: the Art. 18 guard names assignee_user_id among its SET NULL po
                        and t.tgname = 'trg_00_refuse_consultant_court_rows'), false)
        as ok;
 -- <<< verify:l3_firm
+-- >>> verify:l3_requests
+-- 2026-11-24 — open requests: city + server-written summary, no title (owner ١٠ + ١٩).
+-- 20261124_30 BEFORE the deploy of batch/2026-11-17-l3-requests.
+-- Docker: supabase/tests/rls/open_requests_city_summary.test.sql
+select 'Open requests: city + public_summary, server-only summary, no title (run 20261124_30)' as check,
+       exists (select 1 from pg_catalog.pg_attribute
+                where attrelid = 'public.service_requests'::regclass and attname = 'city' and not attisdropped)
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_public_summary_check')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_city_slug_check')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.service_requests'::regclass
+                      and tgname = 'trg_01_service_requests_public_summary_guard' and tgenabled <> 'D')
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      like '%public_summary%', false)
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      not like '%title%', false)
+       and not has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE')
+       as ok;
+-- <<< verify:l3_requests
