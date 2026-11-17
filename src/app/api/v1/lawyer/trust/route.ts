@@ -11,7 +11,7 @@ import {
   trustBalanceAfter,
   type TrustRow,
 } from "@/lib/financeLedger/financeLedgerRules";
-import { errorResponse, financeDbError, labelRows } from "../_financeLedger/server";
+import { errorResponse, labelRows } from "../_financeLedger/server";
 
 /**
  * /api/v1/lawyer/trust — «أمانات العميل» (owner TODO F3/F4;
@@ -139,11 +139,7 @@ export async function POST(request: NextRequest) {
       })
       .select(TRUST_SELECT)
       .single();
-    if (error || !data) {
-      const m = financeDbError(error);
-      console.error("[lawyer/trust POST] insert failed:", error?.code, error?.message);
-      return NextResponse.json({ error: m.message }, { status: m.status });
-    }
+    if (error || !data) return errorResponse(error, "lawyer/trust POST insert");
     const row = data as unknown as TrustRow;
     const names = await labelRows(supabase, [row]);
     return NextResponse.json({ data: toTrustDto(row, user.id, names(row)), balanceHalalas: after }, { status: 201 });
