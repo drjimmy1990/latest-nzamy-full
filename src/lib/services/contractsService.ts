@@ -55,6 +55,10 @@ export interface Contract {
   contractType: ContractType;
   status: ContractStatus;
   counterpartyName: string | null;
+  /** N01-5: «الطرف الآخر» contact (contracts.metadata.counterparty). */
+  counterpartyPhone: string | null;
+  /** N01-5: a commercial register / 700 number — never an individual's national ID. */
+  counterpartyIdNo: string | null;
   valueSar: number | null;
   currency: string;
   startsOn: string | null;
@@ -144,6 +148,8 @@ export interface CreateContractInput {
   contractType: ContractType;
   status?: ContractStatus;
   counterpartyName?: string | null;
+  counterpartyPhone?: string | null;
+  counterpartyIdNo?: string | null;
   lawyerClientId?: string | null;
   /** Share with the client's platform account (they then see it under «عقودي»). */
   clientUserId?: string | null;

@@ -13,6 +13,7 @@ import {
 } from "./_shared";
 import { parseRequestIdInput } from "@/lib/services/contractCaseLink";
 import { assertLinkableAccount } from "../clients/_link";
+import { parseCounterpartyContact, mergeCounterpartyMetadata } from "@/lib/services/contractCounterparty";
 
 /**
  * /api/v1/lawyer/contracts — Phase 3 (مدير العقود).
@@ -101,6 +102,9 @@ interface CreateBody {
   contractType?: string;
   status?: string;
   counterpartyName?: string | null;
+  /** N01-5: «الطرف الآخر» contact, stored in metadata.counterparty. */
+  counterpartyPhone?: string | null;
+  counterpartyIdNo?: string | null;
   lawyerClientId?: string | null;
   clientUserId?: string | null;
   /** N01-6: one of the caller's own cases (service_requests.id). */
@@ -262,6 +266,11 @@ export async function POST(request: NextRequest) {
     const notes = typeof body.notes === "string" ? body.notes.trim() : "";
     const counterpartyName =
       typeof body.counterpartyName === "string" ? body.counterpartyName.trim() || null : null;
+    const counterpartyContact = parseCounterpartyContact(body);
+    if (!counterpartyContact.ok) {
+      return NextResponse.json({ error: counterpartyContact.error }, { status: 400 });
+    }
+    const counterpartyMetadata = mergeCounterpartyMetadata({}, counterpartyContact);
 
     let lawyerClientId: string | null = null;
     // The linked lawyer_clients row's own platform account, when it has one —
@@ -357,6 +366,7 @@ export async function POST(request: NextRequest) {
         renewal_notice_days: renewalNoticeDays,
         signed_on: signedOn,
         notes,
+        ...(counterpartyMetadata ? { metadata: counterpartyMetadata } : {}),
       })
       .select(CONTRACT_SELECT)
       .single();
