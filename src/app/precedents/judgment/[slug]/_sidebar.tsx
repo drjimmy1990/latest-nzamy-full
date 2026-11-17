@@ -1,7 +1,7 @@
 "use client";
 
 import { FolderSimple, TextT, NotePencil, ListNumbers, Gavel, Bookmark } from "@phosphor-icons/react";
-import { DemoPrecedent } from "../../../laws/demo-data";
+import type { DemoPrecedent } from "../../../laws/demo-data";
 
 interface SidebarPanelProps {
   isDark: boolean;

@@ -1,13 +1,10 @@
 import * as PhosphorIcons from "@phosphor-icons/react";
 import { BookOpen } from "@phosphor-icons/react";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
-import {
-  DEMO_PRINCIPLES,
-  DEMO_PRECEDENTS,
-  DEMO_ORDERS,
-  type PrincipleSubject,
-  type PrincipleSourceId,
-} from "@/app/laws/demo-data";
+// Types only: no demo record is bundled from here (N05-L13). The category
+// counts that used to be summed from the DEMO_* arrays (and one fake
+// FULL_LAWS_SYSTEMS law) had no reader left; /laws counts its own rows.
+import type { PrincipleSubject, PrincipleSourceId } from "@/app/laws/demo-data";
 
 export type Cat = string;
 export type ContentType = "all" | "laws" | "orders" | "precedents" | "feqh";
@@ -209,26 +206,6 @@ export const PRINCIPLE_SOURCE_LABELS_EN: Record<PrincipleSourceId, string> = {
   prosecution: "Public Prosecution",
 };
 
-// ─── Laws data ──────────────────────────────────────────────────────────────────
-export const FULL_LAWS_SYSTEMS = [
-  {
-    id: "law-companies",
-    slug: "companies-law",
-    free: true,
-    cat: "SA-04",
-    type: "laws",
-    subType: "basic",
-    title: "نظام الشركات (نسخة جمعية قضاء)",
-    titleEn: "Companies Law",
-    desc: "ينظم هذا النظام أشكال الشركات وتأسيسها وحصص الشركاء والإدارة المالية، متضمناً اللوائح التنفيذية الصادرة عن وزارة التجارة وهيئة السوق المالية.",
-    descEn: "Regulates company forms, incorporation, partner shares, and financial management.",
-    articlesCount: 281,
-    chaptersCount: 14,
-    lastUpdated: "1/9/1446هـ",
-    progress: 0,
-  },
-];
-
 export function matchesFeqhCategory(book: { type: string; category: string; id: string }, cat: string): boolean {
   if (cat === "all") return true;
   if (cat === "SA-01") return book.category === "criminal";
@@ -236,51 +213,6 @@ export function matchesFeqhCategory(book: { type: string; category: string; id: 
   if (cat === "SA-03") return book.category === "civil" || book.type === "sharia" || book.type === "comparative";
   if (cat === "SA-04") return book.category === "corporate" || book.id === "fb-5";
   return false;
-}
-
-// ─── Category content counts (حسب الداتا الموجودة) ─────────────────────────────
-export const CAT_LAWS_COUNT: Record<string, number> = { "SA-04": 1 };
-export const CAT_PRINCIPLES_COUNT: Record<string, number> = DEMO_PRINCIPLES.reduce<Record<string, number>>(
-  (acc, p) => { acc[p.cat] = (acc[p.cat] || 0) + 1; return acc; }, {}
-);
-export const CAT_PRECEDENTS_COUNT: Record<string, number> = DEMO_PRECEDENTS.reduce<Record<string, number>>(
-  (acc, p) => { acc[p.cat] = (acc[p.cat] || 0) + 1; return acc; }, {}
-);
-export const CAT_ORDERS_COUNT: Record<string, number> = DEMO_ORDERS.reduce<Record<string, number>>(
-  (acc, o) => { acc[o.cat] = (acc[o.cat] || 0) + 1; return acc; }, {}
-);
-
-// We define the counts for the 10 demo feqh books dynamically using matchesFeqhCategory
-const DEMO_FEQH_BOOKS_MOCK = [
-  { id: "fb-1", type: "sharia", category: "sharuh" },
-  { id: "fb-2", type: "sharia", category: "mutun" },
-  { id: "fb-3", type: "sharia", category: "encyclopedia" },
-  { id: "fb-4", type: "sharia", category: "sharuh" },
-  { id: "fb-5", type: "comparative", category: "encyclopedia" },
-  { id: "fb-6", type: "wadi", category: "civil" },
-  { id: "fb-7", type: "wadi", category: "criminal" },
-  { id: "fb-8", type: "wadi", category: "criminal" },
-  { id: "fb-9", type: "wadi", category: "corporate" },
-  { id: "fb-10", type: "wadi", category: "admin" }
-];
-
-export const CAT_FEQH_COUNT: Record<string, number> = ["SA-01", "SA-02", "SA-03", "SA-04"].reduce<Record<string, number>>((acc, catId) => {
-  acc[catId] = DEMO_FEQH_BOOKS_MOCK.filter(b => matchesFeqhCategory(b, catId)).length;
-  return acc;
-}, {});
-
-export function catTotalCount(catId: string, type: ContentType): number {
-  const feqhTotal = DEMO_FEQH_BOOKS_MOCK.filter(b => matchesFeqhCategory(b, catId)).length;
-  if (catId === "all") {
-    const total = (FULL_LAWS_SYSTEMS.length + DEMO_PRINCIPLES.length + DEMO_PRECEDENTS.length + DEMO_ORDERS.length + DEMO_FEQH_BOOKS_MOCK.length);
-    return total;
-  }
-  if (type === "laws")       return CAT_LAWS_COUNT[catId] || 0;
-  if (type === "precedents") return (CAT_PRINCIPLES_COUNT[catId] || 0) + (CAT_PRECEDENTS_COUNT[catId] || 0);
-  if (type === "orders")     return CAT_ORDERS_COUNT[catId] || 0;
-  if (type === "feqh")       return CAT_FEQH_COUNT[catId] || 0;
-  return (CAT_LAWS_COUNT[catId] || 0) + (CAT_PRINCIPLES_COUNT[catId] || 0) +
-    (CAT_PRECEDENTS_COUNT[catId] || 0) + (CAT_ORDERS_COUNT[catId] || 0) + feqhTotal;
 }
 
 // ─── Category Tab section ───────────────────────────────────────────────────────
