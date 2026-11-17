@@ -21,6 +21,9 @@ import { resolveAuthOutcome, AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthO
 // D6 (owner ٢٩٨): a frozen account opens nothing but /account-frozen. Pure; it
 // reads the user `getUser()` already returned (app_metadata), no query.
 import { freezeStateFromUser, ACCOUNT_FROZEN_PATH, ACCOUNT_FROZEN_AR } from "@/lib/auth/accountFreeze";
+// TODO 3.5: an account suspended by the administration. Pure; reads the user
+// getUser() returned (GoTrue's banned_until, app_metadata), no query.
+import { isSuspendedUser, ACCOUNT_SUSPENDED_PATH, ACCOUNT_SUSPENDED_AR, ACCOUNT_SUSPENDED_CODE } from "@/lib/auth/accountSuspension";
 import { isSupabaseMode, isDemoMode } from "@/lib/runtimeMode";
 import {
   RateLimiter,
@@ -657,6 +660,10 @@ export default async function proxy(req: NextRequest) {
     if (freezeStateFromUser(user).frozen) {
       return NextResponse.json({ error: ACCOUNT_FROZEN_AR, code: "account_frozen" }, { status: 403 });
     }
+    // TODO 3.5: a suspended account is refused every gated API.
+    if (isSuspendedUser(user)) {
+      return NextResponse.json({ error: ACCOUNT_SUSPENDED_AR, code: ACCOUNT_SUSPENDED_CODE }, { status: 403 });
+    }
     return apiResponse;
   }
 
@@ -818,6 +825,19 @@ export default async function proxy(req: NextRequest) {
       const frozenRedirect = NextResponse.redirect(frozenUrl);
       supabaseResponse.cookies.getAll().forEach((cookie) => frozenRedirect.cookies.set(cookie));
       return frozenRedirect;
+    }
+
+    // ─── TODO 3.5: a suspended account sees only the suspended page ────────
+    // Normally its sessions were ended with the ban (20261124_60), so it never
+    // gets here; this holds when they could not be (the migration not run, a
+    // token not yet expired). /account-suspended is not PROTECTED: no loop.
+    if (isSuspendedUser(user)) {
+      const suspendedUrl = req.nextUrl.clone();
+      suspendedUrl.pathname = ACCOUNT_SUSPENDED_PATH;
+      suspendedUrl.search = "";
+      const suspendedRedirect = NextResponse.redirect(suspendedUrl);
+      supabaseResponse.cookies.getAll().forEach((cookie) => suspendedRedirect.cookies.set(cookie));
+      return suspendedRedirect;
     }
 
     // ─── One read of `profiles`, shared by both gates below ─────────────────

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse } from '@/lib/auth/apiAuth';
 import { freezeStateFromUser, ACCOUNT_FROZEN_AR } from '@/lib/auth/accountFreeze';
+import { isSuspendedUser, ACCOUNT_SUSPENDED_AR, ACCOUNT_SUSPENDED_CODE } from '@/lib/auth/accountSuspension';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 type Ok = { ok: true; user: User; userType: string; supabase: SupabaseClient };
@@ -49,6 +50,18 @@ export async function assertRole(allowed?: string[]): Promise<Ok | Err> {
       ok: false,
       response: NextResponse.json(
         { error: ACCOUNT_FROZEN_AR, code: 'account_frozen' },
+        { status: 403 },
+      ),
+    };
+  }
+
+  // TODO 3.5: an account suspended by the administration (GoTrue ban or the
+  // app_metadata copy, both on the user just returned; no query).
+  if (isSuspendedUser(user)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: ACCOUNT_SUSPENDED_AR, code: ACCOUNT_SUSPENDED_CODE },
         { status: 403 },
       ),
     };

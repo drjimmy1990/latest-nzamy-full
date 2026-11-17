@@ -21,6 +21,7 @@ import {
   freezeAccountWith,
   purgeNowWith,
 } from "@/lib/accountDeletion/accountDeletionServer";
+import { suspendAccountWith, liftSuspensionWith } from "@/lib/accountSuspension/suspensionServer";
 
 /**
  * GET /api/v1/admin/users/[id] — Fetch single user with full details
@@ -138,7 +139,7 @@ export async function GET(
 /**
  * PATCH /api/v1/admin/users/[id] — Update user profile
  *
- * Body: { status?: "suspended", user_type?: string, metadata?: object, verified?: boolean }
+ * Body: { status?: "suspended" | "active", user_type?: string, metadata?: object, verified?: boolean }
  *
  * Owner answer ٢١٠: each field needs its own staff action (usersPatchActions):
  * user_type and metadata need users.change_type, a suspension users.suspend,
@@ -147,7 +148,12 @@ export async function GET(
  * user_type is checked on the server: never "admin" (only the staff-management
  * path creates staff), and otherwise one of the types the database allows.
  *
- * If status is 'suspended', also cancels any active subscription.
+ * status "suspended" (TODO 3.5, real suspension): GoTrue bans the account
+ * (ban_duration) and the app_metadata copy the gates read is written in the
+ * same call, then its open sessions are ended (20261124_60), then — as
+ * before — any active subscription is cancelled and the auth tier set to free.
+ * status "active" lifts the ban (the cancelled subscription is NOT restored).
+ * Neither is allowed on the caller's own account or on an admin account.
  *
  * Demoting an admin to another type (Task 3.4) removes them from staff: it is
  * refused while they are the last super admin (400 «لا يمكن إزالة آخر مشرف
@@ -198,6 +204,11 @@ export async function PATCH(
   ) {
     return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
   }
+  // TODO 3.5: suspending or lifting it — never one's own account.
+  const changesSuspension = body.status === "suspended" || body.status === "active";
+  if (changesSuspension && userId.toLowerCase() === actorId.toLowerCase()) {
+    return NextResponse.json({ error: "لا يمكنك إيقاف حسابك أو رفع الإيقاف عنه من لوحة الإدارة" }, { status: 400 });
+  }
 
   const adminClient = await createServiceClient();
 
@@ -214,6 +225,17 @@ export async function PATCH(
     if (body.user_type !== undefined && existingError) {
       console.error("[admin/users/[id]] PATCH: reading the account before a type change failed:", existingError.code, existingError.message);
       return NextResponse.json({ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 });
+    }
+    // The same for a suspension: it must not reach an admin account unseen.
+    if (changesSuspension && existingError) {
+      console.error("[admin/users/[id]] PATCH: reading the account before a suspension failed:", existingError.code, existingError.message);
+      return NextResponse.json({ error: STAFF_CHECK_UNAVAILABLE_AR }, { status: 503 });
+    }
+
+    // TODO 3.5: an admin account is not suspended from here (demote it first,
+    // as a freeze requires), so no suspension can lock the console out.
+    if (body.status === "suspended" && (existing as { user_type?: unknown } | null)?.user_type === "admin") {
+      return NextResponse.json({ error: "لا يمكن إيقاف حساب مشرف — أزل صلاحية الإشراف أولاً" }, { status: 400 });
     }
 
     // ── Demoting an admin: the last super admin stays (owner ٢١٠) ──────────
@@ -314,6 +336,19 @@ export async function PATCH(
         return NextResponse.json({ error: "تعذّر إكمال الإيقاف" }, { status: 500 });
       };
 
+      // 1. The ban + the gates' copy (one GoTrue call), then the open sessions.
+      //    Before the subscription writes: the access is what must stop now.
+      const ban = await suspendAccountWith(adminClient, { userId, actorId, nowIso: new Date().toISOString() });
+      if (!ban.ok) {
+        console.error("[admin/users/[id]] suspension: the GoTrue ban failed:", ban.error);
+        return suspensionFailed({ banned: false, ban_error: ban.error, cancelled_count: null, auth_tier: "unchanged" });
+      }
+      after.banned = true;
+      after.sessions = ban.sessions.state === "ended" ? ban.sessions.count : ban.sessions.state;
+      if (ban.sessions.state === "failed") {
+        console.error("[admin/users/[id]] suspension: ending the open sessions failed:", ban.sessions.error);
+      }
+
       const { data: cancelledRows, error: cancelError } = await adminClient
         .from("subscriptions")
         .update({
@@ -342,12 +377,36 @@ export async function PATCH(
       after.auth_tier = (tierResult?.user?.user_metadata as { tier?: unknown } | undefined)?.tier ?? null;
     }
 
+    // ── Lifting a suspension (TODO 3.5) ────────────────────────────────────
+    if (body.status === "active") {
+      const lifted = await liftSuspensionWith(adminClient, { userId, actorId, nowIso: new Date().toISOString() });
+      if (!lifted.ok) {
+        console.error("[admin/users/[id]] lifting the suspension failed:", lifted.error);
+        await logAdminAction({
+          actorId,
+          action: "user_unsuspension_failed",
+          targetType: "profile",
+          targetId: userId,
+          before,
+          after: { ...after, banned: "unchanged", error: lifted.error },
+          metadata: { fields: Object.keys(after) },
+        });
+        return NextResponse.json(
+          { error: lifted.status === 404 ? "المستخدم غير موجود" : "تعذّر رفع الإيقاف" },
+          { status: lifted.status },
+        );
+      }
+      after.banned = false;
+    }
+
     await logAdminAction({
       actorId,
       action:
         body.status === "suspended"
           ? "user_suspended"
-          : body.user_type !== undefined
+          : body.status === "active"
+            ? "user_unsuspended"
+            : body.user_type !== undefined
             ? "user_type_updated"
             : body.verified !== undefined
               ? body.verified
