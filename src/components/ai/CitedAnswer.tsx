@@ -96,7 +96,10 @@ function loadPreview(c: Citation & { id: string }): Promise<PreviewState> {
       const body = (await res.json().catch(() => null)) as (Preview & { error?: string }) | null;
       if (!res.ok || !body || typeof body.excerpt !== "string") {
         previewCache.delete(key); // a failed read is tried again next time
-        return { phase: "error", message: res.status === 404 ? "لم يُعثر على هذا النص في سجل طلباتك." : "تعذّر تحميل النص الآن." };
+        return {
+          phase: "error",
+          message: res.status === 401 ? "سجّل الدخول لعرض النص." : res.status === 404 ? "لم يُعثر على هذا النص في سجل طلباتك." : "تعذّر تحميل النص الآن.",
+        };
       }
       return { phase: "ready", preview: body };
     })

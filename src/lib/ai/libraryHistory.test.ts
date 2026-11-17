@@ -48,16 +48,20 @@ test("the limit counts conversations; a row with no question or answer (retentio
   assert.deepEqual(out.map((c) => c.turns[0].question), ["س", "ق١"]);
 });
 
-test("citations leave as links only (sid / kind / id / title / url), never anything else a row may hold", () => {
+test("citations leave as links only (sid / kind / id / title / url, and a pill status), never anything else a row may hold", () => {
   const out = groupLibraryConversations([
     row(C1, "س", "ج", "2026-11-17T10:00:00Z", [
       { sid: "S1", kind: "article", id: "labor-law__art-80", title: "نظام العمل — الثمانون", url: "/laws/labor-law#labor-law__art-80", text: "نص المادة" },
       { sid: "S2", title: "بلا رابط" },
+      { sid: "S3", kind: "article", id: "a3", title: "ملغاة", url: "/laws/x#a3", status: "repealed" },
+      { sid: "S4", kind: "article", id: "a4", title: "غير مذكورة", url: "/laws/x#a4", status: "<b>" },
       "junk",
     ]),
   ]);
   assert.deepEqual(out[0].turns[0].citations, [
     { sid: "S1", kind: "article", id: "labor-law__art-80", title: "نظام العمل — الثمانون", url: "/laws/labor-law#labor-law__art-80" },
+    { sid: "S3", kind: "article", id: "a3", title: "ملغاة", url: "/laws/x#a3", status: "repealed" },
+    { sid: "S4", kind: "article", id: "a4", title: "غير مذكورة", url: "/laws/x#a4" },
   ]);
 });
 

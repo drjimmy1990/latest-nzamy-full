@@ -9,6 +9,8 @@
  * after 90 days, so a conversation older than that is no longer listed.
  */
 
+import { citedStatus } from "./citationStatus.ts";
+
 export const LIBRARY_HISTORY_TOOL = "library-assistant";
 /** Conversations listed per law. */
 export const LIBRARY_HISTORY_CONVERSATIONS = 10;
@@ -38,7 +40,7 @@ export const LIBRARY_HISTORY_COLUMNS = "id, conversation_id, input, output, cita
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** One link of a citation: only sid / kind / id / title / url leave (CitedAnswer.asCitations reads them). */
+/** One link of a citation: only sid / kind / id / title / url, and a pill status, leave (CitedAnswer.asCitations reads them). */
 function cleanCitations(raw: unknown): unknown[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -46,7 +48,8 @@ function cleanCitations(raw: unknown): unknown[] {
     .slice(0, 50)
     .map((c) => {
       const o = c as Record<string, unknown>;
-      return { sid: o.sid, kind: str(o.kind), id: str(o.id), title: o.title, url: o.url };
+      const status = citedStatus(o.status);
+      return { sid: o.sid, kind: str(o.kind), id: str(o.id), title: o.title, url: o.url, ...(status ? { status } : {}) };
     });
 }
 
