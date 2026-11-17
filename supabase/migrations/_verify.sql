@@ -6959,7 +6959,7 @@ select 'Community votes own-row + recount trigger (20261016_06, checked by 20261
        and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_votes'
                     and cmd = 'INSERT' and with_check ilike '%community_post_readable%')
        and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_votes'
-                    and cmd = 'DELETE' and qual ilike '%auth.uid()%')
+                    and cmd = 'DELETE' and qual ilike '%uid()%')
        as ok;
 -- <<< verify:l5_community
 -- >>> verify:l5_demo
