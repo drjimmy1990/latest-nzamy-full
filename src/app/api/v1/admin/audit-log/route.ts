@@ -32,6 +32,8 @@ const WARNING_KEYWORDS = [
   "grant",
   "moderate",
   "escrow",
+  // S2: an admin reading a user's own data («عرض كمستخدم»)
+  "view_as",
 ];
 
 function deriveSeverity(action: string): Severity {
