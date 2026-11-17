@@ -95,19 +95,20 @@ export async function GET(
     // ── A named law (or a known one) and its articles ────────────────────────
     const numbers = parseNumbers(url.searchParams.get('n'));
     const supabase = await createClient();
-    let law: { slug: string; title: string; status: unknown } | null = null;
+    type LawRow = { slug: string; title: string; status: unknown };
+    let law: LawRow | null = null;
     const lawParam = url.searchParams.get('law');
     if (lawParam) {
       const { data, error } = await supabase.schema('library').from('laws').select(LAW_COLUMNS).eq('slug', lawParam).limit(1);
       if (error) throw error;
-      law = (data?.[0] as typeof law) ?? null;
+      law = (data?.[0] as LawRow | undefined) ?? null;
     } else {
       const candidates = docNameCandidates(url.searchParams.get('name'));
       if (candidates.length === 0) return json({ law: null, articles: [] });
       const { data, error } = await supabase.schema('library').from('laws').select(LAW_COLUMNS).in('title', candidates).limit(10);
       if (error) throw error;
       // The longest exact title wins: «نظام العمل» from «نظام العمل الصادر …».
-      law = ((data ?? []) as NonNullable<typeof law>[])
+      law = ((data ?? []) as LawRow[])
         .sort((a, b) => b.title.length - a.title.length)[0] ?? null;
     }
     if (!law) return json({ law: null, articles: [] });
