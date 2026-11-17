@@ -6741,3 +6741,29 @@ select 'Several contracts per case (run 20261123_40)' as check,
        and to_regclass('public.idx_contracts_request_id') is not null
        as ok;
 -- <<< verify:launch_2026_11_17
+
+-- >>> verify:l3_firm
+-- 2026-11-24 — 20261124_50_hearings_assignee.sql (owner N01-18): run BEFORE the
+-- l3-firm deploy. Re-running 20261019_21 resets the Art. 18 guard's arguments
+-- on hearings to two — re-run 20261124_50 after it.
+-- Docker: supabase/tests/rls/hearings_assignee.test.sql
+select 'Hearings assignee: column (SET NULL to auth.users) + member check trigger (run 20261124_50)' as check,
+       exists (select 1 from pg_catalog.pg_constraint c
+                 join pg_catalog.pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+                where c.conrelid = 'public.hearings'::regclass and c.contype = 'f'
+                  and a.attname = 'assignee_user_id'
+                  and c.confrelid = 'auth.users'::regclass and c.confdeltype = 'n')
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = 'public.hearings'::regclass and t.tgname = 'trg_hearings_assignee_member'
+                      and t.tgenabled in ('O', 'A'))
+       and coalesce((select p.prosecdef from pg_catalog.pg_proc p
+                      where p.oid = to_regprocedure('public.hearing_assignee_member_check()')), false)
+       as ok;
+select 'Hearings: the Art. 18 guard names assignee_user_id among its SET NULL pointers (re-run 20261124_50 after 20261019_21)' as check,
+       to_regprocedure('public.refuse_consultant_court_rows()') is null
+       or coalesce((select position('assignee_user_id' in encode(t.tgargs, 'escape')) > 0
+                      from pg_catalog.pg_trigger t
+                     where t.tgrelid = 'public.hearings'::regclass
+                       and t.tgname = 'trg_00_refuse_consultant_court_rows'), false)
+       as ok;
+-- <<< verify:l3_firm
