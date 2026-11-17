@@ -125,7 +125,7 @@ export default function AIDraftPage() {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>الصائغ القانوني</h1>
-            <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">PRO</span>
+            <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">احترافية</span>
             {/* Mode badge — shown when arriving from a sidebar link with ?mode= */}
             {modeParam && MODE_BADGE_LABELS[modeParam] && (
               <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${

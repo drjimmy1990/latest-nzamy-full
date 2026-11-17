@@ -1,12 +1,14 @@
 "use client";
 import GatedToolScreen from "@/components/GatedToolScreen";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldWarning, CaretLeft, CheckCircle, Warning, XCircle, ArrowRight,
   Download, Buildings, MagnifyingGlass, Handshake, FileText, ArrowCounterClockwise,
-  PlusCircle, Scales
+  Scales
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import LawyerToolLink from "@/components/ai/LawyerToolLink";
@@ -82,21 +84,21 @@ function evaluateRisk(inp: RiskInputs): RiskResult {
 
 function formatRiskAssessmentReport(inp: RiskInputs, result: RiskResult) {
   return [
-    "Counterparty Risk Assessment",
-    `Party: ${inp.partyName}`,
-    `Party type: ${inp.partyType || "-"}`,
-    `Contract value: ${inp.contractValue || "-"}`,
-    `Duration: ${inp.duration || "-"}`,
-    `Risk level: ${result.level}`,
-    `Risk score: ${result.score}/100`,
+    "تحليل مخاطر الطرف التعاقدي",
+    `الطرف: ${inp.partyName}`,
+    `نوع الطرف: ${inp.partyType || "-"}`,
+    `قيمة العقد: ${inp.contractValue || "-"}`,
+    `المدة: ${inp.duration || "-"}`,
+    `مستوى المخاطرة: ${result.level === "high" ? "عالية" : result.level === "medium" ? "متوسطة" : "منخفضة"}`,
+    `درجة المخاطر: ${result.score}/100`,
     "",
-    "Recommendations:",
+    "التوصيات:",
     ...result.recommendations.map((rec) => `- ${rec}`),
-    inp.notes ? `\nNotes:\n${inp.notes}` : "",
+    inp.notes ? `\nملاحظات:\n${inp.notes}` : "",
   ].filter(Boolean).join("\n");
 }
 
-function SupplierRiskAssessmentInner() {
+function SupplierRiskAssessmentInnerDemo() {
   const { isDark } = useTheme();
   const [inp, setInp] = useState<RiskInputs>({
     partyName: "", partyType: "", duration: "", contractValue: "",
@@ -286,7 +288,7 @@ function SupplierRiskAssessmentInner() {
                   <h2 className={`text-[24px] font-black mb-1 ${result.level === "high" ? "text-red-500" : result.level === "medium" ? "text-amber-500" : "text-emerald-500"}`}>
                     {result.level === "high" ? "مخاطرة عالية" : result.level === "medium" ? "مخاطرة متوسطة" : "مخاطرة منخفضة (آمن)"}
                   </h2>
-                  <p className={`text-[13px] font-medium font-mono ${isDark ? "text-zinc-400" : "text-slate-500"}`}>Risk Score: {result.score}/100</p>
+                  <p className={`text-[13px] font-medium font-mono ${isDark ? "text-zinc-400" : "text-slate-500"}`}>درجة المخاطر: {result.score}/100</p>
                 </div>
 
                 <div className={`${card} p-6`}>
@@ -305,8 +307,10 @@ function SupplierRiskAssessmentInner() {
                 </BetaReviewGate>
 
                 <div className="grid grid-cols-1 gap-2">
-                  <Link href="/dashboard/lawyer/clients" className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border text-[12px] font-bold transition-all ${isDark ? "border-white/[0.06] text-zinc-300 hover:bg-white/[0.04]" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                    <PlusCircle size={16} /> إضافة لملف الأطراف والعملاء
+                  {/* N05-V6: this is a company tool, so the link opens the company
+                      dashboard, not the lawyer's clients page; it adds nothing. */}
+                  <Link href="/dashboard/business" className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl border text-[12px] font-bold transition-all ${isDark ? "border-white/[0.06] text-zinc-300 hover:bg-white/[0.04]" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    <Buildings size={16} /> العودة إلى لوحة الشركة
                   </Link>
                   <LawyerToolLink href="/ai/contracts" className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-md hover:bg-[#0B3D2E]/90 transition-all`}>
                     <Scales size={16} /> الانتقال لصياغة العقد استناداً للتحليل
@@ -321,6 +325,23 @@ function SupplierRiskAssessmentInner() {
       </div>
     </div>
   );
+}
+
+// N05-V3 (owner package 13 Nov): the body under the gate is a canned result
+// (fixed text, a timer, no AI run), so it renders in demo mode only. In
+// production the gate card shows while the review gate is on, and the honest
+// «قريباً» screen when it is off: never the canned result.
+function SupplierRiskAssessmentInner() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="تحليل مخاطر الطرف التعاقدي — قريباً"
+        description="تحليل مخاطر الطرف التعاقدي غير متاح حالياً وسيُفعَّل قريباً. لا تُعرض هنا درجة أو توصيات جاهزة مكان تحليل حقيقي."
+        backHref="/ai"
+      />
+    );
+  }
+  return <SupplierRiskAssessmentInnerDemo />;
 }
 
 // Wave 1 task 6: the beta gate first — no form or timer before it.

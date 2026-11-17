@@ -16,9 +16,15 @@ export async function GET(request: NextRequest) {
   const adminClient = await createServiceClient();
 
   try {
-    // 2. Fetch all required tables in parallel for in-memory joins
+    // 2. Fetch all required tables in parallel for in-memory joins.
+    // N05-E2 (owner package 13 Nov): only the columns this screen reads. The
+    // plan embed stays `( * )`, as in admin/stats: monthlyEquivalent reads the
+    // cycle price columns 20261026_10 added, and a missing column would fail
+    // the whole read.
     const [firmsRes, membersRes, casesRes, subsRes] = await Promise.all([
-      adminClient.from("firm_profiles").select("*"),
+      adminClient
+        .from("firm_profiles")
+        .select("id, owner_user_id, name_ar, size, verification_status, rating:metadata->rating, city:metadata->>city"),
       adminClient.from("firm_members").select("firm_id, user_id").eq("status", "active"),
       adminClient.from("cases").select("assigned_user_id, status").or("status.eq.active,status.eq.open"),
       adminClient.from("subscriptions").select(`
@@ -61,10 +67,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Map rating and city from metadata
-      const ratingVal = firm.metadata?.rating;
-      const rating = ratingVal !== undefined ? Number(ratingVal) : 4.5;
-      const city = firm.metadata?.city || "الرياض";
+      // Rating and city from metadata, or null: no invented 4.5 or «الرياض»
+      // for a firm that never gave one (N05-E2).
+      const ratingNum = firm.rating === null || firm.rating === undefined ? NaN : Number(firm.rating);
+      const rating = Number.isFinite(ratingNum) ? ratingNum : null;
+      const city = typeof firm.city === "string" && firm.city.trim() !== "" ? firm.city.trim() : null;
 
       // Map status matching ERPTab.tsx keys: 'excellent' | 'good' | 'average' | 'warning'
       let status = "good";
@@ -112,7 +119,7 @@ export async function GET(request: NextRequest) {
   } catch (err: any) {
     console.error("[admin/erp] GET error:", err);
     return NextResponse.json(
-      { error: "حدث خطأ أثناء جلب سجلات الـ ERP" },
+      { error: "حدث خطأ أثناء جلب سجلات المكاتب" },
       { status: 500 }
     );
   }

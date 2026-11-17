@@ -169,7 +169,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       // file cannot reach.
       { label: "المجتمع القانوني",  labelEn: "Community",    href: "/community", icon: "ChatCircle", divider: true },
       { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",              icon: "BookOpen" },
-      { label: "أكاديمية نظامي",   labelEn: "Academy",       href: "/academy",           icon: "GraduationCap", badge: "جديد" },
+      { label: "أكاديمية نظامي",   labelEn: "Academy",       href: "/academy",           icon: "GraduationCap", badge: "قريباً" },
       { label: "الإشعارات",         labelEn: "Notifications", href: "/notifications",     icon: "Bell" },
       { label: "الإعدادات",          labelEn: "Settings",      href: "/settings",          icon: "GearSix" },
     ],
@@ -339,7 +339,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "المجتمع القانوني",  labelEn: "Legal Community", href: "/community",   icon: "ChatCircle", divider: true },
       { label: "المدونة القانونية", labelEn: "Legal Blog",      href: "/blog",                icon: "Article" },
       { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",          icon: "BookOpen" },
-      { label: "أكاديمية نظامي",   labelEn: "Nezamy Academy",  href: "/academy",       icon: "GraduationCap", badge: "جديد" },
+      { label: "أكاديمية نظامي",   labelEn: "Nezamy Academy",  href: "/academy",       icon: "GraduationCap", badge: "قريباً" },
       { label: "الإشعارات",         labelEn: "Notifications", href: "/notifications", icon: "Bell" },
       { label: "الإعدادات",          labelEn: "Settings",      href: "/settings",      icon: "GearSix" },
     ],

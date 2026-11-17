@@ -1,5 +1,7 @@
 "use client";
 import GatedToolScreen from "@/components/GatedToolScreen";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef, useEffect } from "react";
@@ -166,7 +168,7 @@ function AIMessageBubble({ msg, isDark, isLatest }: { msg: Message; isDark: bool
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-function AIConsultInner() {
+function AIConsultInnerDemo() {
   const { isDark, lang } = useTheme();
   const isRTL = lang === "ar";
   const router = useRouter();
@@ -454,6 +456,23 @@ function AIConsultInner() {
       </div>
     </div>
   );
+}
+
+// N05-V3 (owner package 13 Nov): the body under the gate is a canned result
+// (fixed text, a timer, no AI run), so it renders in demo mode only. In
+// production the gate card shows while the review gate is on, and the honest
+// «قريباً» screen when it is off: never the canned result.
+function AIConsultInner() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الاستشارة القانونية الذكية — قريباً"
+        description="الاستشارة الذكية غير متاحة حالياً وستُفعَّل قريباً. لا تُعرض هنا إجابات جاهزة مكان إجابة حقيقية."
+        backHref="/ai"
+      />
+    );
+  }
+  return <AIConsultInnerDemo />;
 }
 
 // Wave 1 task 6: the beta gate first — no form or timer before it.

@@ -183,7 +183,7 @@ export default function TemplatesPage() {
                 <button onClick={() => setPremFilter(p => p === "premium" ? "all" : "premium")}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all ${
                     premFilter === "premium" ? "bg-[#C8A762]/15 text-[#C8A762] border-[#C8A762]/30" : isDark ? "border-white/[0.06] text-zinc-600" : "border-slate-200 text-slate-400"
-                  }`}><Crown size={9} />PRO</button>
+                  }`}><Crown size={9} />احترافية</button>
                 {(catFilter !== "all" || areaFilter !== "all" || premFilter !== "all") && (
                   <button onClick={() => { setCatFilter("all"); setAreaFilter("all"); setPremFilter("all"); }}
                     className={`text-[10px] font-semibold underline ${isDark ? "text-zinc-600 hover:text-zinc-400" : "text-slate-400 hover:text-slate-600"}`}>مسح</button>
@@ -219,7 +219,7 @@ export default function TemplatesPage() {
                   <CatIcon size={10} weight="duotone" /> {catCfg.label}
                 </span>
                 {tmpl.isNew && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20">جديد</span>}
-                {tmpl.isPremium && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#C8A762]/15 text-[#C8A762] border border-[#C8A762]/30 flex items-center gap-0.5"><Crown size={8} />PRO</span>}
+                {tmpl.isPremium && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-[#C8A762]/15 text-[#C8A762] border border-[#C8A762]/30 flex items-center gap-0.5"><Crown size={8} />احترافية</span>}
               </div>
 
               {/* Title + desc */}

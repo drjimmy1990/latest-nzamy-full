@@ -191,7 +191,7 @@ function AIContractsPageInner() {
       <div>
         <div className="flex items-center gap-2 mb-1">
           <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>محترف العقود</h1>
-          <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">PRO</span>
+          <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">احترافية</span>
           <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">جديد</span>
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>

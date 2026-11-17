@@ -39,7 +39,7 @@ export default function ERPTab() {
     fetchData();
   }, []);
 
-  const filtered = firms.filter((f) => f.name.includes(search) || f.city.includes(search));
+  const filtered = firms.filter((f) => (f.name ?? "").includes(search) || (f.city ?? "").includes(search));
 
   return (
     <motion.div key="erp" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
@@ -105,13 +105,17 @@ export default function ERPTab() {
                       </span>
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-zinc-500">
-                      <span>{f.city}</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <Star size={11} weight="fill" className="text-amber-400" />
-                        {f.rating}
-                      </span>
-                      <span>•</span>
+                      {/* N05-E2: no city or rating is shown for a firm that never gave one. */}
+                      {f.city && (<><span>{f.city}</span><span>•</span></>)}
+                      {f.rating !== null && f.rating !== undefined && (
+                        <>
+                          <span className="flex items-center gap-1">
+                            <Star size={11} weight="fill" className="text-amber-400" />
+                            {f.rating}
+                          </span>
+                          <span>•</span>
+                        </>
+                      )}
                       <span
                         className={`font-bold ${
                           f.plan === "Enterprise" || f.plan === "المؤسسات"

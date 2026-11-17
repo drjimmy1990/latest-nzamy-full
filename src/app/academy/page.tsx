@@ -9,6 +9,9 @@ import {
   ArrowLeft, Sparkle, Trophy
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
+import { isDemoMode } from '@/lib/runtimeMode';
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import AcademyComingSoon from './_AcademyComingSoon';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -233,7 +236,7 @@ function CourseCard({ course, isDark }: { course: Course; isDark: boolean }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function AcademyPage() {
+function AcademyPageDemo() {
   const { isDark } = useTheme();
   const [search,   setSearch]   = useState('');
   const [catFilter, setCatFilter] = useState<CourseCategory | 'الكل'>('الكل');
@@ -420,5 +423,22 @@ export default function AcademyPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * N05-A3/4/5 (owner package 13 Nov): this page showed six invented courses, instructors, prices and «١٢,٠٠٠+ متدرب».
+ * No academy store sits behind it, so it renders in demo mode only; production
+ * shows the honest «قريباً» notice inside the academy frame.
+ */
+export default function AcademyPage() {
+  if (isDemoMode) return <AcademyPageDemo />;
+  return (
+    <AcademyComingSoon showQuizLink>
+      <DashboardComingSoon
+        title="أكاديمية نظامي — قريباً"
+        description="الدورات المعتمدة تُطلق قريباً، ولم تُفتح أي دورة للتسجيل بعد. الدورات والمدربون والأرقام التي كانت تظهر هنا كانت أمثلة ثابتة."
+      />
+    </AcademyComingSoon>
   );
 }
