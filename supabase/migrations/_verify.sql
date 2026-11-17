@@ -6733,4 +6733,11 @@ select 'Academy certificates: holder only + verify by number and name (run 20261
                           and policyname = 'Public verify certificates')
            and to_regprocedure('public.academy_verify_certificate(text, text)') is not null)
        as ok;
+select 'Several contracts per case (run 20261123_40)' as check,
+       not exists (select 1 from pg_catalog.pg_index i
+                    join pg_catalog.pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0]
+                   where i.indrelid = 'public.contracts'::regclass
+                     and i.indisunique and i.indnatts = 1 and a.attname = 'request_id')
+       and to_regclass('public.idx_contracts_request_id') is not null
+       as ok;
 -- <<< verify:launch_2026_11_17
