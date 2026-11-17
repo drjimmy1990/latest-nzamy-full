@@ -1437,7 +1437,7 @@ export default function CaseDetailPage() {
                       : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
                     }`}>
                     <Icon size={13} weight={selected ? "duotone" : "regular"} aria-hidden="true" />
-                    <span className="sr-only sm:not-sr-only">{tab.label}</span>
+                    <span className="text-[11px] sm:text-[12px]">{tab.label}</span>
                   </button>
                 );
               })}
