@@ -84,8 +84,10 @@ export interface AiToolSpec {
    * A chat tool (L4): runs share a conversation_id, the earlier turns are read
    * back from ai_runs (never taken from the browser) and sent as `history`, and
    * `price` gets the 0-based `turn`. A conversation holds `maxMessages` runs.
+   * `turnMax` (Q458): the longest text one history turn carries, cut on the
+   * server whatever the stored run holds.
    */
-  conversation?: { maxMessages: number; historyPairs: number; field: string; replyField: string };
+  conversation?: { maxMessages: number; historyPairs: number; field: string; replyField: string; turnMax?: number };
   /**
    * A conversation tool whose turns are different steps (L14: the analysis,
    * then the draft): the Arabic refusal of a turn out of order, or null. Runs
@@ -337,6 +339,16 @@ const LIBRARY_ROLES = ["individual", "lawyer", "firm", "corporate", "provider", 
 
 export const LIBRARY_MESSAGE_MAX = 4000;
 export const LIBRARY_REPLY_MAX = 6000;
+/**
+ * Owner Q458: the library assistant answers a follow-up with the last six
+ * question/answer turns of its conversation (read back from ai_runs, never
+ * from the browser), each turn cut to LIBRARY_HISTORY_TURN_MAX characters. A
+ * conversation holds LIBRARY_MESSAGES_PER_CONVERSATION questions; the next
+ * starts a new one. Every question still costs 5 points (owner ٢٥٧ / ١٥).
+ */
+export const LIBRARY_HISTORY_PAIRS = 6;
+export const LIBRARY_HISTORY_TURN_MAX = 1500;
+export const LIBRARY_MESSAGES_PER_CONVERSATION = 30;
 /** Article ids are slugs such as `labor-law__art-80` (library.articles.id). */
 const ARTICLE_ID = /^[\p{L}\p{N}_.\-]{1,200}$/u;
 const LAW_SLUG = /^[\p{L}\p{N}_.\-]{1,200}$/u;
@@ -1794,6 +1806,16 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     draftingGuard: { field: "message" },
     // Owner ١٣ / ٢٢: never hands out its instructions.
     promptGuard: { field: "message", replyField: "reply" },
+    // Owner Q458 / L3: the last six turns go with a follow-up, and the turns
+    // stay in ai_runs so the panel lists them on any device. The price above
+    // ignores the turn: 5 points a question, first or thirtieth.
+    conversation: {
+      maxMessages: LIBRARY_MESSAGES_PER_CONVERSATION,
+      historyPairs: LIBRARY_HISTORY_PAIRS,
+      field: "message",
+      replyField: "reply",
+      turnMax: LIBRARY_HISTORY_TURN_MAX,
+    },
     validateInput: libraryAssistantInput,
     validateOutput: libraryAssistantOutput,
   },

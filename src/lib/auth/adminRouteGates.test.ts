@@ -311,6 +311,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // owner ٤٢٧ (20261108_20): the device-limit switch and number; a user's «إعادة تعيين الأجهزة»
   { file: "library-monitor/devices/route.ts", method: "PUT", action: "settings.write", logs: 1 },
   { file: "users/[id]/library-devices/route.ts", method: "POST", action: "library.lock_lift", logs: 1 },
+  // S3 (20261125_50): the demo flag
+  { file: "users/[id]/demo/route.ts", method: "PATCH", action: "users.change_type", logs: 1 },
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "tickets/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },

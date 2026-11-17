@@ -6,6 +6,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { asCitations, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
 import { AI_TOOL_PAGES, aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { runPageView, runStatusLabelAr } from "@/lib/ai/runPageView";
+import SaveToCaseButton from "@/components/ai/SaveToCaseButton";
 
 /**
  * /ai/runs/<id> — one AI run of the signed-in user, in plain reading: the tool,
@@ -162,6 +163,18 @@ export default function AiRunPage({ params }: { params: Promise<{ id: string }> 
             </section>
           ))}
         </div>
+      )}
+
+      {view.kind === "output" && view.blocks.length > 0 && (
+        <SaveToCaseButton
+          text={view.blocks
+            .map((b) => [b.heading ?? "", ...b.paragraphs.map(stripCitationMarkers), ...b.items.map((it) => `- ${stripCitationMarkers(it)}`)]
+              .filter((line) => line.trim() !== "")
+              .join("\n"))
+            .join("\n\n")}
+          title={aiToolLabelAr(run.tool)}
+          runId={run.id}
+        />
       )}
 
       {cites.length > 0 && (

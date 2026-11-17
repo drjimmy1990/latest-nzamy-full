@@ -13,11 +13,13 @@
  *              WhatsApp off (ZERNIO_ADAPTER_IMPLEMENTED = false).
  *   SMS      — sender name NEZAMY; no provider chosen yet (the owner has the
  *              quotes). The interface exists; no implementation.
- *   e-mail   — Resend (the e-mail provider the n8n workflows already use).
+ *   e-mail   — Resend (the e-mail provider the n8n workflows already use),
+ *              through the shared sender src/lib/email/sendEmail.ts.
  */
 
 import type { Env, SignupProviderConfig } from "./providerConfig.ts";
 import { otpMessageAr, OTP_TTL_MINUTES } from "./otpCode.ts";
+import { sendEmail } from "../email/sendEmail.ts";
 
 export type SendResult = "sent" | "unavailable" | "failed";
 export type Locale = "ar" | "en";
@@ -81,18 +83,9 @@ export function resendEmailAdapter(
         locale === "ar"
           ? `${otpMessageAr(code)}\nهذا الرمز لتأكيد بريدك الإلكتروني فقط.`
           : `Your Nezamy code: ${code}\nValid for ${OTP_TTL_MINUTES} minutes. Do not share it.`;
-      const from = env.EMAIL_FROM_NAME ? `${env.EMAIL_FROM_NAME} <${env.EMAIL_FROM}>` : env.EMAIL_FROM;
-      try {
-        const res = await fetchImpl("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ from, to: [to], subject, text }),
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-        return res.ok ? "sent" : "failed";
-      } catch {
-        return "failed";
-      }
+      // The one shared sender (src/lib/email/sendEmail.ts): never throws,
+      // never logs the code or the full address.
+      return sendEmail({ to, subject, text, tag: "lawyer_signup_otp" }, { env, fetchImpl, timeoutMs: TIMEOUT_MS });
     },
   };
 }

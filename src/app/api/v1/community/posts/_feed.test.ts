@@ -159,3 +159,14 @@ test("contactIssueIn refuses the first value carrying contact, strings or lists"
   assert.match(contactIssueIn(["عنوان", "اتصل 0501234567"]) ?? "", /رقم هاتف/);
   assert.match(contactIssueIn(["عنوان", undefined, ["@lawyer_x"]]) ?? "", /معرّف حساب/);
 });
+
+test("toFeedItem carries the reader's own vote and save, and none for a guest", () => {
+  const guest = toFeedItem(ROW);
+  assert.equal(guest.myVote, 0);
+  assert.equal(guest.saved, false);
+  const member = toFeedItem(ROW, { myVote: 1, saved: true });
+  assert.equal(member.myVote, 1);
+  assert.equal(member.saved, true);
+  assert.equal(toFeedItem(ROW, { myVote: 7 }).myVote, 0, "only -1 | 0 | 1");
+  assert.equal("search_fts" in toFeedItem({ ...ROW, search_fts: "'0501234567':3" }), false);
+});

@@ -24,7 +24,7 @@ type LoadState =
   | { kind: "error" }
   | { kind: "forbidden" }
   | { kind: "unavailable" }
-  | { kind: "ready"; members: MemberPointsUsage[] };
+  | { kind: "ready"; members: MemberPointsUsage[]; ownerBalance: number | null; founderColumn: boolean };
 
 const nf = new Intl.NumberFormat("ar-SA");
 
@@ -50,12 +50,25 @@ export default function MemberPointsUsageCard() {
         setState({ kind: "error" });
         return;
       }
-      const body = (await res.json()) as { available?: boolean; members?: MemberPointsUsage[] };
+      const body = (await res.json()) as {
+        available?: boolean;
+        members?: MemberPointsUsage[];
+        ownerBalance?: number | null;
+        founderWorksAvailable?: boolean;
+      };
       if (body.available === false) {
         setState({ kind: "unavailable" });
         return;
       }
-      setState({ kind: "ready", members: Array.isArray(body.members) ? body.members : [] });
+      const members = Array.isArray(body.members) ? body.members : [];
+      setState({
+        kind: "ready",
+        members,
+        ownerBalance: typeof body.ownerBalance === "number" ? body.ownerBalance : null,
+        // Q470: the column appears only when the numbers were read AND a member
+        // actually spent a founder credit — never a column of invented zeros.
+        founderColumn: body.founderWorksAvailable === true && members.some((m) => (m.founderWorksTotal ?? 0) > 0),
+      });
     } catch {
       setState({ kind: "error" });
     }
@@ -85,6 +98,15 @@ export default function MemberPointsUsageCard() {
         </div>
       </div>
 
+      {state.kind === "ready" && state.ownerBalance !== null && (
+        <div className={`mb-4 flex items-baseline justify-between gap-3 rounded-xl border px-4 py-3 ${rule}`}>
+          <span className={`text-xs font-semibold ${muted}`}>رصيد حساب المكتب الآن</span>
+          <span className={`font-mono text-lg font-black ${title}`}>
+            {nf.format(state.ownerBalance)} <span className={`text-xs font-semibold ${muted}`}>نقطة</span>
+          </span>
+        </div>
+      )}
+
       {state.kind === "loading" ? (
         <div className="flex items-center justify-center gap-2 py-10">
           <Spinner size={18} className="text-royal animate-spin" />
@@ -101,7 +123,7 @@ export default function MemberPointsUsageCard() {
           </button>
         </div>
       ) : state.kind === "forbidden" ? (
-        <p className={`py-8 text-center text-sm ${muted}`}>هذا العدّاد يظهر للشريك المدير وحساب المكتب فقط.</p>
+        <p className={`py-8 text-center text-sm ${muted}`}>هذا العدّاد يظهر لحساب المكتب والشريك المدير والمدير المالي فقط.</p>
       ) : state.kind === "unavailable" ? (
         <p className={`py-8 text-center text-sm ${muted}`}>هذا العدّاد غير متاح بعد — سيظهر بعد تحديث قاعدة البيانات.</p>
       ) : state.members.length === 0 ? (
@@ -119,6 +141,9 @@ export default function MemberPointsUsageCard() {
                 <th scope="col" className={`px-3 py-2 border-b ${rule} hidden sm:table-cell`}>الدور</th>
                 <th scope="col" className={`px-3 py-2 border-b ${rule}`}>هذا الشهر</th>
                 <th scope="col" className={`px-3 py-2 border-b ${rule}`}>الإجمالي</th>
+                {state.founderColumn && (
+                  <th scope="col" className={`px-3 py-2 border-b ${rule}`}>أعمال من رصيد المؤسس</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -131,6 +156,9 @@ export default function MemberPointsUsageCard() {
                   <td className={`px-3 py-3 hidden sm:table-cell ${muted}`}>{roleLabel(m.role)}</td>
                   <td className={`px-3 py-3 font-mono font-bold ${strong}`}>{nf.format(m.pointsMonth)}</td>
                   <td className={`px-3 py-3 font-mono font-bold ${strong}`}>{nf.format(m.pointsTotal)}</td>
+                  {state.founderColumn && (
+                    <td className={`px-3 py-3 font-mono font-bold ${strong}`}>{nf.format(m.founderWorksTotal ?? 0)}</td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -143,6 +171,11 @@ export default function MemberPointsUsageCard() {
                     <td className="px-3 pt-3 hidden sm:table-cell" />
                     <td className="px-3 pt-3 font-mono">{nf.format(sum.month)}</td>
                     <td className="px-3 pt-3 font-mono">{nf.format(sum.total)}</td>
+                    {state.founderColumn && (
+                      <td className="px-3 pt-3 font-mono">
+                        {nf.format(state.members.reduce((acc, m) => acc + (m.founderWorksTotal ?? 0), 0))}
+                      </td>
+                    )}
                   </tr>
                 );
               })()}
@@ -150,6 +183,7 @@ export default function MemberPointsUsageCard() {
           </table>
           <p className={`mt-3 text-[11px] ${muted}`}>
             «هذا الشهر» بالتقويم الميلادي وتوقيت الرياض. لا تظهر هنا تفاصيل ما استخدمه العضو — فقط مجموع النقاط.
+            {state.founderColumn && " «أعمال من رصيد المؤسس» عدد ما أنجزه العضو بأرصدة عضوية المؤسس منذ انضمامه."}
           </p>
         </div>
       )}

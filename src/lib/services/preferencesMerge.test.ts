@@ -4,6 +4,9 @@ import assert from "node:assert/strict";
 import {
   validatePreferencesPatch, mergePreferences, mergePutPreferences, PREFERENCE_KEYS, RECENT_SESSIONS_MAX,
 } from "./preferencesMerge.ts";
+import {
+  AI_INSTRUCTIONS_DEFAULT, AI_INSTRUCTIONS_MAX, AI_TEMPLATE_MAX, AI_TEMPLATES_MAX, readAiInstructions,
+} from "../aiInstructions.ts";
 
 const VALID_READING_ACTIVITY = {
   lawsThisWeek: 3,
@@ -245,4 +248,63 @@ test("PUT merge refuses a preferences value that is not a plain object", () => {
     assert.equal(result.ok, false, `expected ${JSON.stringify(bad)} to be rejected`);
     if (!result.ok) assert.match(result.error, /[؀-ۿ]/);
   }
+});
+
+// ── aiInstructions (N06-24: /ai/settings out of the browser) ────────────────
+
+const AI = { style: "رسمي", specialization: "قانون العمل", instructions: "  أفضّل الإجابات المختصرة  ", templates: [" مذكرة دفاعية ", "عقد عمل"] };
+
+test("aiInstructions: a valid object is accepted, its text trimmed", () => {
+  assert.ok((PREFERENCE_KEYS as readonly string[]).includes("aiInstructions"));
+  const result = validatePreferencesPatch({ aiInstructions: AI });
+  assert.deepEqual(result, {
+    ok: true,
+    patch: { aiInstructions: { style: "رسمي", specialization: "قانون العمل", instructions: "أفضّل الإجابات المختصرة", templates: ["مذكرة دفاعية", "عقد عمل"] } },
+  });
+  // The neutral defaults a user who never saved sees are themselves valid.
+  assert.equal(validatePreferencesPatch({ aiInstructions: AI_INSTRUCTIONS_DEFAULT }).ok, true);
+});
+
+test("aiInstructions: bad style/specialisation, long text, bad or duplicate templates and unknown fields are 400s", () => {
+  const bad: unknown[] = [
+    null, [], "x",
+    { ...AI, style: "عامي" },
+    { ...AI, specialization: "قانون جنائي" },
+    { ...AI, instructions: 5 },
+    { ...AI, instructions: "ب".repeat(AI_INSTRUCTIONS_MAX + 1) },
+    { ...AI, templates: "عقد" },
+    { ...AI, templates: ["عقد", " عقد "] },
+    { ...AI, templates: [""] },
+    { ...AI, templates: [3] },
+    { ...AI, templates: ["ب".repeat(AI_TEMPLATE_MAX + 1)] },
+    { ...AI, templates: Array.from({ length: AI_TEMPLATES_MAX + 1 }, (_, i) => `قالب ${i}`) },
+    { ...AI, model: "x" },
+    { style: "رسمي" },
+  ];
+  for (const value of bad) {
+    const result = validatePreferencesPatch({ aiInstructions: value });
+    assert.equal(result.ok, false, `expected ${JSON.stringify(value).slice(0, 80)} to be rejected`);
+    if (!result.ok) assert.match(result.error, /[؀-ۿ]/, "the error must be Arabic");
+  }
+  assert.equal(validatePreferencesPatch({ aiInstructions: { ...AI, instructions: "ب".repeat(AI_INSTRUCTIONS_MAX) } }).ok, true);
+});
+
+test("aiInstructions is PATCH-owned and merges without touching the other keys", () => {
+  const existing = { notifications: { sms: true }, quickTools: ["cases", "draft", "calculator"], aiInstructions: AI_INSTRUCTIONS_DEFAULT };
+  const put = mergePutPreferences(existing, { aiInstructions: { ...AI_INSTRUCTIONS_DEFAULT, instructions: "قديم" }, notifications: { sms: false } });
+  assert.deepEqual(put, { ok: true, merged: { ...existing, notifications: { sms: false } } });
+  const patch = validatePreferencesPatch({ aiInstructions: AI });
+  assert.ok(patch.ok);
+  if (patch.ok) {
+    const merged = mergePreferences(existing, patch.patch);
+    assert.deepEqual(merged.notifications, { sms: true });
+    assert.deepEqual(merged.quickTools, ["cases", "draft", "calculator"]);
+    assert.equal((merged.aiInstructions as { specialization: string }).specialization, "قانون العمل");
+  }
+});
+
+test("readAiInstructions: a cached value is used only when it is still valid", () => {
+  assert.equal(readAiInstructions(null), null);
+  assert.equal(readAiInstructions({ ...AI, style: "?" }), null);
+  assert.equal(readAiInstructions(AI)?.templates.length, 2);
 });

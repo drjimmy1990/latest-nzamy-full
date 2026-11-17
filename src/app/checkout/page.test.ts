@@ -81,9 +81,13 @@ test("MoyasarCheckout POSTs the checkout from the click, never from an effect", 
   assert.match(form, /fetch\("\/api\/v1\/payments\/checkout", \{\s*method: "POST"/);
   // with a coupon (P7) the code rides along; without one the body is unchanged
   // (checkoutRequestBody, checkoutView.test.ts); the founder terms consent (owner ١٦) when ticked
-  assert.match(form, /JSON\.stringify\(checkoutRequestBody\(itemId, billing, couponCode, founderTermsVersion\)\)/);
+  // S6b: and this attempt's Turnstile token (founder membership only)
+  assert.match(form, /JSON\.stringify\(checkoutRequestBody\(itemId, billing, couponCode, founderTermsVersion, turnstileToken\)\)/);
   // the refresh near its expiry sends the same coupon and the same consent, never dropping either
-  assert.equal(form.match(/startCheckout\(itemId, billing, couponCode\.current, termsVersion\.current\)/g)?.length, 2);
+  assert.equal(
+    form.match(/startCheckout\(itemId, billing, couponCode\.current, termsVersion\.current, (turnstileToken|spent\.token)\)/g)?.length,
+    2,
+  );
   assert.match(form, /onClick=\{onStart\}/);
   // a double press is ignored by an in-flight ref, set before the POST
   assert.match(form, /if \(inFlight\.current \|\| current\.current\) return;\s*inFlight\.current = true;/);
@@ -159,6 +163,29 @@ test("owner ١٦: the founder checkout carries an UNCHECKED terms checkbox; «م
   // the version is sent only while the box is ticked
   assert.match(form, /termsVersion\.current = checked && needsTerms \? founderTermsVersion : null/);
   // the button is disabled, and a click ignored, until it is ticked
-  assert.match(form, /disabled=\{phase\.kind === "starting" \|\| \(needsTerms && !termsAccepted\)\}/);
+  // (S6b adds the Turnstile token to the same condition)
+  assert.match(form, /disabled=\{phase\.kind === "starting" \|\| \(needsTerms && !termsAccepted\)( \|\| !captchaReady)?\}/);
   assert.match(form, /if \(needsTerms && !termsVersion\.current\) return;/);
+});
+
+test("S6b: the founder checkout carries a Turnstile token per attempt, spends it after every POST, and a captcha 403 is retryable", () => {
+  // the page turns the widget on for the founder membership only
+  assert.match(page, /captchaRequired=\{item\.kind === "membership"\}/);
+  assert.match(form, /useTurnstile\(\{ isAr: true, theme, action: CHECKOUT_TURNSTILE_ACTION \}\)/);
+  // the widget is rendered only when captchaRequired (other items load no script)
+  const widgets = form.match(/\{captchaRequired \? <TurnstileWidget control=\{captcha\} isAr \/> : null\}/g) ?? [];
+  assert.equal(widgets.length, 2, "before «متابعة الدفع» and beside the Moyasar form (for the refresh)");
+  assert.doesNotMatch(form.replace(/\{captchaRequired \? <TurnstileWidget[^}]*\} isAr \/> : null\}/g, ""), /<TurnstileWidget/);
+  // «متابعة الدفع» waits for a token; onStart refuses without one
+  assert.match(form, /const captchaReady = !captchaRequired \|\| canSubmitWithCaptcha\(captcha\.state\);/);
+  assert.match(form, /disabled=\{phase\.kind === "starting" \|\| \(needsTerms && !termsAccepted\) \|\| !captchaReady\}/);
+  assert.match(form, /if \(!captchaReady\) return;/);
+  // one token per attempt: spent in finally (any answer) and after the refresh POST
+  assert.match(form, /\} finally \{\s*if \(captchaRequired\) captcha\.spend\(\);\s*inFlight\.current = false;/);
+  assert.match(form, /spent\.token\);\s*if \(captchaRequired\) spent\.spend\(\);/);
+  // a captcha 403 is checked before the audience mapping, and is not final
+  const captchaAt = form.indexOf("=== CHECKOUT_CAPTCHA_CODE");
+  const audienceAt = form.indexOf("audience: res.status === 403");
+  assert.ok(captchaAt > 0 && captchaAt < audienceAt, "captcha first");
+  assert.match(form, /=== CHECKOUT_CAPTCHA_CODE\) \{\s*return \{ ok: false, message: serverCopy \?\? CHECKOUT_CAPTCHA_REFUSED_AR, audience: false \};/);
 });

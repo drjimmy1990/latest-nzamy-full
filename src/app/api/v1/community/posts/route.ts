@@ -9,6 +9,13 @@ import {
   toFeedItem,
   visibilityForTab,
 } from "./_feed";
+import {
+  COMMUNITY_SEARCH_CONFIG,
+  buildCommunityTsQuery,
+  communitySortColumns,
+  communitySortFor,
+} from "./_search";
+import { viewerStateFor } from "./_viewer";
 
 /**
  * GET /api/v1/community/posts — List community posts
@@ -17,6 +24,15 @@ import {
  *   - offset (default: 0)
  *   - tab ('public' | 'lawyers') or visibility ('public' | 'lawyers_only' | 'private')
  *   - category (a UI category id or a community_posts.category value)
+ *   - q        server search over title + body (N05-C8): Arabic-folded,
+ *              'simple' config, see ./_search.ts. It searches every post the
+ *              reader may see, not only the page already on screen.
+ *   - sort     'hot' (votes) | 'top' (answers) | 'new' (default) — ordered
+ *              here, so «تحميل المزيد» continues the same order.
+ *   - mine=1   the signed-in reader's own questions, any visibility.
+ *
+ * A signed-in reader's rows also carry `myVote` and `saved` (his own
+ * community_votes / community_saves rows — RLS lets him read only those).
  *
  * Item 53 (فك قفل القراءة half only — the 27-category unification and the
  * SSR/Schema.org half are NOT done here). The RLS policy "anyone reads
@@ -52,10 +68,14 @@ export async function GET(request: NextRequest) {
     : "public";
   const rawCategory = searchParams.get("category");
   const category = dbCategoryFor(rawCategory);
+  const mine = user != null && searchParams.get("mine") === "1";
+  const rawQuery = (searchParams.get("q") ?? "").trim();
+  const tsQuery = rawQuery ? buildCommunityTsQuery(rawQuery) : null;
 
   // A category the column cannot hold matches nothing — it must not silently
-  // widen to "all".
-  if (rawCategory && rawCategory !== "all" && !category) {
+  // widen to "all". Likewise a search with nothing searchable left in it
+  // («!!!») finds nothing; it is not a request for every post.
+  if ((rawCategory && rawCategory !== "all" && !category) || (rawQuery && !tsQuery)) {
     return NextResponse.json({ data: [], total: 0 });
   }
 
@@ -63,16 +83,25 @@ export async function GET(request: NextRequest) {
     .from("community_posts")
     .select(LIST_SELECT, { count: "exact" })
     .neq("status", "deleted")
-    .neq("status", "moderated")
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+    .neq("status", "moderated");
 
-  if (visibility) {
+  for (const [column, ascending] of communitySortColumns(communitySortFor(searchParams.get("sort")))) {
+    query = query.order(column, { ascending });
+  }
+  query = query.range(offset, offset + limit - 1);
+
+  if (mine) {
+    query = query.eq("author_id", user.id);
+  } else if (visibility) {
     query = query.eq("visibility", visibility);
   }
 
   if (category) {
     query = query.eq("category", category);
+  }
+
+  if (tsQuery) {
+    query = query.textSearch("search_fts", tsQuery, { config: COMMUNITY_SEARCH_CONFIG });
   }
 
   const { data, count, error } = await query;
@@ -82,7 +111,11 @@ export async function GET(request: NextRequest) {
   }
 
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
-  return NextResponse.json({ data: rows.map(toFeedItem), total: count });
+  const viewer = await viewerStateFor(supabase, user?.id ?? null, rows.map((r) => String(r.id ?? "")));
+  return NextResponse.json({
+    data: rows.map((r) => toFeedItem(r, viewer.forPost(String(r.id ?? "")))),
+    total: count,
+  });
 }
 
 /**

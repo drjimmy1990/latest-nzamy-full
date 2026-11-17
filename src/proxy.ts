@@ -57,6 +57,14 @@ import {
 // library-only security lock (public.library_read_quota_hit, 20261030_80).
 import { libraryQuotaTarget, hasSupabaseAuthCookie, quotaRefusal } from "@/lib/library/readQuota";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
+// F13: the first-touch utm cookie. Pure, no DB, no network.
+import {
+  ATTRIBUTION_COOKIE,
+  attributionCookieOptions,
+  attributionFromUrl,
+  serializeAttribution,
+  shouldCaptureAttribution,
+} from "@/lib/attribution/utmAttribution";
 // «نشاط المكتبة» (20261031_10): the per-reader activity tally.
 import { libraryActivityKind } from "@/lib/library/activityMeter";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
@@ -568,7 +576,43 @@ if (process.env.NODE_ENV === "production" && !isSupabaseMode) {
   );
 }
 
+// F13 (owner package 17 Nov): the first-touch utm cookie. Every response of
+// proxyRoutes below — whichever branch returned it — passes through here, so
+// no early return can skip it. Cheap on purpose: a cookie lookup and a URL
+// read; nothing else, never a DB read. Set only on a top-level GET page load
+// whose URL carries a utm_* parameter, and only when the browser has none yet
+// (src/lib/attribution/utmAttribution.ts says why, nginx cache included).
+// POST /api/v1/payments/checkout copies it into the order's metadata.
+function withAttributionCookie(req: NextRequest, response: NextResponse): NextResponse {
+  try {
+    if (
+      !shouldCaptureAttribution({
+        method: req.method,
+        pathname: req.nextUrl.pathname,
+        hasCookie: req.cookies.has(ATTRIBUTION_COOKIE),
+        header: (name) => req.headers.get(name),
+      })
+    ) {
+      return response;
+    }
+    const attribution = attributionFromUrl(req.nextUrl.searchParams, req.nextUrl.pathname, new Date());
+    if (!attribution) return response;
+    response.cookies.set(
+      ATTRIBUTION_COOKIE,
+      serializeAttribution(attribution),
+      attributionCookieOptions(process.env.NODE_ENV === "production"),
+    );
+  } catch {
+    // attribution is a nice-to-have: never let it break a page
+  }
+  return response;
+}
+
 export default async function proxy(req: NextRequest) {
+  return withAttributionCookie(req, await proxyRoutes(req));
+}
+
+async function proxyRoutes(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // 0. Rate limiting — first step, before anything else below, and only for

@@ -104,6 +104,7 @@ import {
   CaseTeamPanel,
   type CaseTeamState,
 } from "@/components/dashboard/caseNotes/NoteScope";
+import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -2341,6 +2342,7 @@ export default function CaseDetailPage() {
               </div>
 
               <CaseTeamPanel team={caseTeam} onAdd={addToCaseTeam} onRemove={removeFromCaseTeam} onRetry={loadCaseTeam} card={card} />
+              <CaseRestrictionToggle caseId={id} card={card} />
 
               <div className="space-y-3">
                 {caseNotesView === "loading" ? (

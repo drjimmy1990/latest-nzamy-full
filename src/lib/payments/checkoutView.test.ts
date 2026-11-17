@@ -448,3 +448,15 @@ test("checkoutRequestBody: {itemId, billing}, the coupon when applied, the found
     founderTermsVersion: "2026-11-17",
   });
 });
+
+test("S6b: checkoutRequestBody carries this attempt's Turnstile token when there is one, never an empty one", () => {
+  assert.deepEqual(checkoutRequestBody("lawyer-founder-2026", "once", null, "2026-11-17", "tok-1"), {
+    itemId: "lawyer-founder-2026",
+    billing: "once",
+    acceptFounderTerms: true,
+    founderTermsVersion: "2026-11-17",
+    turnstileToken: "tok-1",
+  });
+  assert.deepEqual(checkoutRequestBody("lawyer-pro", "yearly", null, null, null), { itemId: "lawyer-pro", billing: "yearly" });
+  assert.deepEqual(checkoutRequestBody("lawyer-pro", "yearly", null, null, ""), { itemId: "lawyer-pro", billing: "yearly" });
+});

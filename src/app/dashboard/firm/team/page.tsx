@@ -58,6 +58,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import FirmInviteLinks from "./_components/FirmInviteLinks";
+import LeaveFirmCard from "./_components/LeaveFirmCard";
 import EmptyState from "@/components/ui/EmptyState";
 import {
   getFirmMembers, addFirmMember, updateFirmMember,
@@ -736,6 +738,12 @@ export default function FirmTeamPage() {
             </ul>
           )}
         </div>
+      )}
+
+      {/* F7: invitation links (owner) and «مغادرة المكتب» (a member) */}
+      {canManage && <FirmInviteLinks isDark={isDark} card={card} />}
+      {!user.loading && user.isLoggedIn && user.userType !== "firm" && user.userType !== "admin" && (
+        <LeaveFirmCard isDark={isDark} card={card} />
       )}
 
       <AnimatePresence>

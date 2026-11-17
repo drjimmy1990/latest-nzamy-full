@@ -43,6 +43,7 @@ import SmartFolders from "./components/SmartFolders";
 import { MyNotesSection } from "./components/MyNotesSection";
 import { GamificationCard } from "./components/GamificationCard";
 import EnactmentCountdownWidget from "./components/EnactmentCountdownWidget";
+import LegislativeUpdates from "./components/LegislativeUpdates";
 
 import {
   type Cat,
@@ -1925,6 +1926,20 @@ export default function LegalLibraryPage() {
             {/* Right Column: Sessions, Folders & Notes (Desktop Col 3, Mobile stacks below results) */}
             {showSidebars && (
               <aside className="lg:col-span-3 space-y-6 order-2 lg:order-1">
+                {isLoggedIn && (
+                  // N02-9 / P1-11: the way into «مكتبتي» (/laws/my) from the library home.
+                  <Link
+                    href="/laws/my"
+                    className={`flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+                      isDark
+                        ? "border-[#2d3748] bg-[#161b22]/60 text-[#C8A762] hover:border-[#C8A762]/30"
+                        : "border-gray-200/70 bg-white/70 text-[#0B3D2E] hover:border-[#0B3D2E]/30"
+                    }`}
+                  >
+                    <span>مكتبتي</span>
+                    <span className={`text-[11px] font-medium ${isDark ? "text-gray-400" : "text-gray-500"}`}>مجلداتك وملاحظاتك واشتراكك وأجهزتك</span>
+                  </Link>
+                )}
                 <RecentSessions isDark={isDark} isRTL={isRTL} />
                 <SmartFolders isDark={isDark} isRTL={isRTL} />
                 <MyNotesSection isDark={isDark} isRTL={isRTL} />
@@ -2399,11 +2414,12 @@ export default function LegalLibraryPage() {
                     the results with the other tools, and «إخفاء الأدوات»
                     hides it with them. */}
                 <EnactmentCountdownWidget isDark={isDark} isRTL={isRTL} />
-                {/* «التحديثات التشريعية» (LegislativeUpdates) is not mounted: it
-                    rendered a hardcoded list of amendments that were never issued
-                    (owner test 2026-09-28, T28-01; re-mounted by mistake in 5beb71b,
-                    removed again 2026-10-15). It returns once an amendments feed
-                    exists in the library data. */}
+                {/* «أحدث التحديثات التشريعية» (owner TODO P1-12): real laws only —
+                    title, link and the «آخر تحديث تشريعي» date alone, from
+                    /api/library/legislative-updates. It used to render a
+                    hardcoded list of amendments that were never issued (T28-01,
+                    removed 2026-10-15); it renders nothing when the list is empty. */}
+                <LegislativeUpdates isDark={isDark} isRTL={isRTL} />
               </aside>
             )}
 

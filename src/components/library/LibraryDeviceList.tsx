@@ -21,9 +21,12 @@ export interface LibraryDeviceRow {
 export default function LibraryDeviceList({
   devices,
   onRevoked,
+  revokeLabel = "تسجيل خروج هذا الجهاز",
 }: {
   devices: LibraryDeviceRow[];
   onRevoked: (id: string) => void;
+  /** The button's wording; «مكتبتي» (/laws/my) says «إنهاء الجلسة». */
+  revokeLabel?: string;
 }) {
   const { isDark } = useTheme();
   const [busy, setBusy] = useState<string | null>(null);
@@ -96,7 +99,7 @@ export default function LibraryDeviceList({
               }`}
             >
               {busy === d.id ? <SpinnerGap size={13} className="animate-spin" /> : <SignOut size={13} />}
-              تسجيل خروج هذا الجهاز
+              {revokeLabel}
             </button>
           </div>
         );

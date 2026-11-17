@@ -8,47 +8,117 @@ import {
   Notebook, Scales,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isSupabaseMode } from "@/lib/services/api";
+import { getPreferences, patchPreferences } from "@/lib/services/preferencesService";
+import {
+  AI_STYLES, AI_SPECIALIZATIONS, AI_INSTRUCTIONS_DEFAULT, AI_INSTRUCTIONS_MAX,
+  AI_TEMPLATES_MAX, AI_TEMPLATE_MAX, readAiInstructions,
+  type AiInstructions, type AiStyle, type AiSpecialization,
+} from "@/lib/aiInstructions";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+// N06-24: the settings live on the server, in user_settings.preferences
+// .aiInstructions (PATCH /api/v1/settings/preferences). localStorage is only a
+// cache, so the page shows the last copy at once and offline; the server's
+// copy replaces it as soon as it arrives. «تم الحفظ» shows only after the
+// server kept it. In demo mode (no backend) the cache is the only store.
 
 const SETTINGS_STORAGE_KEY = "nzamy-ai-settings";
 
+function readCache(): AiInstructions | null {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    return raw ? readAiInstructions(JSON.parse(raw)) : null;
+  } catch {
+    return null; // corrupted/unavailable storage
+  }
+}
+
+function writeCache(value: AiInstructions) {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // private mode / quota — the server copy is the one that counts
+  }
+}
+
 export default function AISettingsPage() {
   const { isDark } = useTheme();
-  const [style, setStyle] = useState("رسمي");
-  const [specialization, setSpecialization] = useState("قانون العمل");
-  const [instructions, setInstructions] = useState("أنا محامٍ متخصص في قضايا العمل. أُفضّل الإجابات المختصرة مع الاستشهاد بالمواد القانونية مباشرةً.");
-  const [templates, setTemplates] = useState(["مذكرة دفاعية عمالية", "عقد عمل محدد المدة"]);
+  // Neutral defaults: nothing is written in the user's name until he writes it.
+  const [style, setStyle] = useState<AiStyle>(AI_INSTRUCTIONS_DEFAULT.style);
+  const [specialization, setSpecialization] = useState<AiSpecialization>(AI_INSTRUCTIONS_DEFAULT.specialization);
+  const [instructions, setInstructions] = useState(AI_INSTRUCTIONS_DEFAULT.instructions);
+  const [templates, setTemplates] = useState<string[]>(AI_INSTRUCTIONS_DEFAULT.templates);
   const [newTemplate, setNewTemplate] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  const STYLES = ["رسمي جداً", "رسمي", "احترافي واضح", "مبسّط"];
-  const SPECS = ["قانون العمل", "قانون الأحوال الشخصية", "قانون تجاري", "قانون عقاري", "قانون إداري", "تحكيم", "عام"];
+  const STYLES = AI_STYLES;
+  const SPECS = AI_SPECIALIZATIONS;
 
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-zinc-200/70 rounded-2xl";
 
-  // Load previously saved settings on mount
+  function apply(value: AiInstructions) {
+    setStyle(value.style);
+    setSpecialization(value.specialization);
+    setInstructions(value.instructions);
+    setTemplates(value.templates);
+  }
+
+  // The cache first, then the server's copy (which wins and refreshes the cache).
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (typeof parsed.style === "string") setStyle(parsed.style);
-      if (typeof parsed.specialization === "string") setSpecialization(parsed.specialization);
-      if (typeof parsed.instructions === "string") setInstructions(parsed.instructions);
-      if (Array.isArray(parsed.templates)) {
-        setTemplates(parsed.templates.filter((t: unknown): t is string => typeof t === "string"));
+    let alive = true;
+    const cached = readCache();
+    if (cached) apply(cached);
+    if (!isSupabaseMode) return;
+    getPreferences().then((prefs) => {
+      if (!alive) return;
+      if (prefs === null) {
+        setLoadFailed(true);
+        return;
       }
-    } catch {
-      // corrupted/unavailable storage — keep defaults
-    }
+      const stored = readAiInstructions(prefs.aiInstructions);
+      if (stored) {
+        apply(stored);
+        writeCache(stored);
+      }
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  function save() {
-    try {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ style, specialization, instructions, templates }));
-    } catch {
-      // localStorage unavailable (private mode / quota) — the toast below still confirms the in-session save
+  function addTemplate() {
+    const name = newTemplate.trim();
+    if (!name) return;
+    setTemplates((prev) => (prev.includes(name) || prev.length >= AI_TEMPLATES_MAX ? prev : [...prev, name]));
+    setNewTemplate("");
+  }
+
+  async function save() {
+    if (saving) return;
+    const value: AiInstructions = { style, specialization, instructions: instructions.trim(), templates };
+    setError(null);
+    if (!isSupabaseMode) {
+      writeCache(value);
+    } else {
+      setSaving(true);
+      try {
+        const prefs = await patchPreferences({ aiInstructions: value });
+        const stored = readAiInstructions(prefs.aiInstructions) ?? value;
+        apply(stored);
+        writeCache(stored);
+        setLoadFailed(false);
+      } catch (err) {
+        // The route's own Arabic message when there is one ("Unauthorized"/"API error: 500" are not shown).
+        const msg = err instanceof Error ? err.message : "";
+        setError(/[؀-ۿ]/.test(msg) ? msg : "تعذّر حفظ التعليمات. حاول مرة أخرى.");
+        return;
+      } finally {
+        setSaving(false);
+      }
     }
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -77,6 +147,12 @@ export default function AISettingsPage() {
           </p>
         </div>
       </div>
+
+      {loadFailed && (
+        <p role="status" className={`rounded-xl border px-4 py-2.5 text-[12px] ${isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+          تعذّر تحميل تعليماتك المحفوظة من الخادم؛ المعروض هنا آخر نسخة على هذا الجهاز أو القيم الافتراضية.
+        </p>
+      )}
 
       {/* Writing style */}
       <div className={`${card} p-5 shadow-sm`}>
@@ -130,9 +206,10 @@ export default function AISettingsPage() {
           value={instructions} onChange={e => setInstructions(e.target.value)}
           placeholder="مثال: أنا محامٍ في شركة تجارية — أُفضّل الإجابات المختصرة مع مقارنة بين الخيارات القانونية..."
           rows={4}
+          maxLength={AI_INSTRUCTIONS_MAX}
           className={`w-full resize-none rounded-xl border p-3.5 text-[13px] outline-none leading-relaxed ${isDark ? "border-white/[0.08] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600 focus:border-[#C8A762]/40" : "border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-[#0B3D2E]/40"}`}
         />
-        <p className={`mt-2 text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{instructions.length}/500 حرف</p>
+        <p className={`mt-2 text-[11px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>{instructions.length}/{AI_INSTRUCTIONS_MAX} حرف</p>
       </div>
 
       {/* Favorite templates */}
@@ -156,11 +233,13 @@ export default function AISettingsPage() {
         </div>
         <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${isDark ? "border-white/[0.08] bg-zinc-800/60" : "border-zinc-200 bg-zinc-50"}`}>
           <input value={newTemplate} onChange={e => setNewTemplate(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && newTemplate.trim()) { setTemplates(prev => [...prev, newTemplate.trim()]); setNewTemplate(""); } }}
-            placeholder="أضف قالباً مفضلاً..."
+            onKeyDown={e => { if (e.key === "Enter") addTemplate(); }}
+            maxLength={AI_TEMPLATE_MAX}
+            disabled={templates.length >= AI_TEMPLATES_MAX}
+            placeholder={templates.length >= AI_TEMPLATES_MAX ? `الحد الأقصى ${AI_TEMPLATES_MAX} قالباً` : "أضف قالباً مفضلاً..."}
             className={`flex-1 bg-transparent text-[13px] outline-none ${isDark ? "text-zinc-200 placeholder:text-zinc-600" : "text-zinc-700 placeholder:text-zinc-400"}`}
           />
-          <button onClick={() => { if (newTemplate.trim()) { setTemplates(prev => [...prev, newTemplate.trim()]); setNewTemplate(""); } }}
+          <button onClick={addTemplate} aria-label="أضف القالب"
             className={`text-[#C8A762] hover:text-[#b8974f]`}>
             <PlusCircle size={17} />
           </button>
@@ -168,16 +247,20 @@ export default function AISettingsPage() {
       </div>
 
       {/* Save */}
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-2">
+        {error && (
+          <p role="alert" className={`text-[12px] ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</p>
+        )}
         <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
           onClick={save}
+          disabled={saving}
           className={`flex items-center gap-2 rounded-xl px-7 py-3 text-[14px] font-bold shadow-md transition-all ${saved
             ? "bg-emerald-600 text-white"
             : "bg-[#0B3D2E] text-white hover:bg-[#0d4c38]"
           }`}
         >
           {saved ? <CheckCircle size={16} weight="fill" /> : <Sparkle size={16} weight="fill" className="text-[#C8A762]" />}
-          {saved ? "تم الحفظ!" : "حفظ التعليمات"}
+          {saved ? "تم الحفظ!" : saving ? "جارٍ الحفظ..." : "حفظ التعليمات"}
         </motion.button>
       </div>
     </div>

@@ -113,6 +113,21 @@ export interface CommunityFeedItem {
   isAnswered: boolean;
   isPinned: boolean;
   createdAt: string;
+  /** The signed-in reader's own vote on this post (0 = none, or a guest). */
+  myVote: -1 | 0 | 1;
+  /** The signed-in reader saved («حفظ») this post. Always false for a guest. */
+  saved: boolean;
+}
+
+/** What the list route knows about the reader for one row (own vote / save). */
+export interface FeedViewerState {
+  myVote?: number | null;
+  saved?: boolean;
+}
+
+/** A vote row's value as the UI's -1 | 0 | 1. */
+export function voteValue(v: unknown): -1 | 0 | 1 {
+  return v === 1 ? 1 : v === -1 ? -1 : 0;
 }
 
 type Row = Record<string, unknown>;
@@ -157,7 +172,7 @@ export function cleanText(v: unknown): string {
   return out + input.slice(cursor);
 }
 
-export function toFeedItem(row: Row): CommunityFeedItem {
+export function toFeedItem(row: Row, viewer?: FeedViewerState): CommunityFeedItem {
   const visibility = text(row.visibility) || "public";
   // `answer_count` is a real column, but nothing maintains it (no trigger in
   // any migration), so it is always 0. The embed count is the real number.
@@ -180,6 +195,8 @@ export function toFeedItem(row: Row): CommunityFeedItem {
     isAnswered: answerCount > 0 || (typeof row.accepted_answer_id === "string" && row.accepted_answer_id.length > 0),
     isPinned: row.is_pinned === true,
     createdAt: text(row.created_at),
+    myVote: voteValue(viewer?.myVote),
+    saved: viewer?.saved === true,
   };
 }
 
@@ -189,16 +206,19 @@ export function toFeedItem(row: Row): CommunityFeedItem {
  * returned exactly as read.
  */
 /**
- * The public shape of a question page: `author_id` and `metadata` are dropped
- * from the post and from every answer. The list route never sent author ids;
+ * The public shape of a question page: `author_id`, `metadata` and
+ * `search_fts` are dropped from the post and from every answer. The list route never sent author ids;
  * the detail route reads them only to find the lawyers' profile slugs, and the
  * page never reads them. (Guests can open this route.)
  */
 export function publicDetail(post: Row): Row {
   const strip = (r: Row): Row => {
-    const { author_id: _a, metadata: _m, ...rest } = r;
+    // search_fts (20261125_53) is the search index of the UNREDACTED text —
+    // cleanText() exists to keep phone numbers and links out of the page.
+    const { author_id: _a, metadata: _m, search_fts: _s, ...rest } = r;
     void _a;
     void _m;
+    void _s;
     return rest;
   };
   const answers = Array.isArray(post.answers)

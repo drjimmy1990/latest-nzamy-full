@@ -9,8 +9,8 @@ import {
   layoutPlan,
   officeGraphSignature,
   OFFICE_GRAPH_AUTO_REFETCH_GAP_MS,
-  seedsFromPrevious,
 } from "./officeGraphRefresh.ts";
+import { layeredLayout, placeNewNodes } from "./officeGraphLayout.ts";
 
 const graph = (extra = false): OfficeGraph => ({
   nodes: [
@@ -51,13 +51,21 @@ test("layout plan: full on first draw, keep when nothing is new, relax when a no
   assert.deepEqual([...keepPositions([graph().nodes[0]], drawn).keys()], ["case:1"]);
 });
 
-test("seeds: drawn nodes start where they were; a new case starts beside its client", () => {
-  const drawn = new Map([["case:1", { x: 40, y: 40 }], ["client:c1", { x: 300, y: 40 }]]);
-  const seeds = seedsFromPrevious(graph(true), drawn, { w: 170, h: 44 });
-  assert.deepEqual(seeds.find((s) => s.id === "case:1")!.pos, { x: 40, y: 40 });
-  assert.deepEqual(seeds.find((s) => s.id === "client:c1")!.pos, { x: 300, y: 40 });
-  const fresh = seeds.find((s) => s.id === "case:2")!.pos;
-  assert.ok(Math.hypot(fresh.x - 300, fresh.y - 40) < 300, "near its client, not at the origin");
+test("a refresh with a new case: drawn nodes stay put; the newcomer lands beside its client", () => {
+  const drawn = new Map([["case:1", { x: 40, y: 40 }], ["client:c1", { x: 900, y: 40 }]]);
+  const g = graph(true);
+  const placed = placeNewNodes(g, drawn, layeredLayout(g));
+  assert.deepEqual(placed.get("case:1"), { x: 40, y: 40 });
+  assert.deepEqual(placed.get("client:c1"), { x: 900, y: 40 });
+  const fresh = placed.get("case:2")!;
+  assert.ok(Math.hypot(fresh.x - 900, fresh.y - 40) < 700, "near its client, not at the origin");
+  assert.ok(fresh.x < 900, "a case sits left of its client (the page reads right to left)");
+});
+
+test("a changed fact (a moved hearing) is a change", () => {
+  const a = graph();
+  const b: OfficeGraph = { ...a, nodes: a.nodes.map((n) => (n.id === "case:1" ? { ...n, facts: [{ label: "الجلسة القادمة", value: "٠١/١٢/٢٠٢٦" }] } : n)) };
+  assert.notEqual(officeGraphSignature(a), officeGraphSignature(b));
 });
 
 test("the map refreshes on focus, on visibility, on a saved case and on «تحديث», without timers", () => {

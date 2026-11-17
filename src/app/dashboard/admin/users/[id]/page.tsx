@@ -7,7 +7,7 @@ import {
   ArrowLeft, User, Robot, Ticket, Money, Star, Eye,
   LockSimple, Crown, ChatCircle, ShieldCheck, Clock,
   CheckCircle, Warning, Globe, DeviceMobile, Desktop,
-  SignIn, SignOut, CreditCard, ChartLine, Scales,
+  SignOut, CreditCard, ChartLine, Scales,
   ArrowSquareOut, Envelope, Prohibit, UserSwitch,
   Plus, Minus, SpinnerGap, CaretDown,
 } from "@phosphor-icons/react";
@@ -75,6 +75,8 @@ interface UserData {
   credit_transactions: CreditTransaction[];
   /** null when the balance read failed — shown as «—». */
   credit_balance: number | null;
+  /** S3 (20261125_50): absent before the migration runs. */
+  is_demo?: boolean;
 }
 
 /**
@@ -581,7 +583,10 @@ export default function UserProfilePage() {
   const userId = params.id as string;
 
   const [tab, setTab] = useState<Tab>("activity");
-  const [impersonating, setImpersonating] = useState(false);
+  // S2 / S12: the old «تصفح كمستخدم» toggled a fake banner and did nothing.
+  // «عرض كمستخدم» now opens the real read-only, audited view (./view-as).
+  // S3: the demo flag (profiles.is_demo, 20261125_50) — PATCH ./demo.
+  const [demoLoading, setDemoLoading] = useState(false);
 
   /* ── Data state ────────────────────────────────────────────────────────── */
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -669,6 +674,25 @@ export default function UserProfilePage() {
       alert(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDemoToggle = async () => {
+    const next = userData?.is_demo !== true;
+    if (next && !confirm("تحويل هذا الحساب إلى حساب تجريبي؟ لن يستطيع النشر في الأقسام العامة ولا الدفع ولا حجز مقعد المؤسس، وسيُخفى من دليل المحامين، وحدوده ٥ قضايا و٥ استشارات و١٠ موكلين.")) return;
+    setDemoLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${encodeURIComponent(userId)}/demo`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDemo: next }),
+      });
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "تعذّر تغيير وضع الحساب التجريبي"));
+      fetchUser();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setDemoLoading(false);
     }
   };
 
@@ -1013,19 +1037,6 @@ export default function UserProfilePage() {
   return (
     <div className="max-w-6xl mx-auto space-y-5" dir="rtl">
 
-      {/* Impersonation Banner */}
-      {impersonating && (
-        <motion.div initial={{y:-40,opacity:0}} animate={{y:0,opacity:1}}
-          className="fixed top-0 inset-x-0 z-50 bg-red-600 text-white flex items-center justify-center gap-3 py-2.5 text-[13px] font-bold shadow-lg">
-          <UserSwitch size={16} weight="bold"/>
-          أنت تتصفح المنصة كـ {U.full_name ?? U.email} — كل الإجراءات مسجلة
-          <button onClick={()=>setImpersonating(false)}
-            className="mr-4 px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-[11px] font-bold transition-colors">
-            إنهاء الانتحال
-          </button>
-        </motion.div>
-      )}
-
       {/* Back + Header */}
       <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -1040,6 +1051,7 @@ export default function UserProfilePage() {
                 {statusInfo.label}
               </span>
               <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400">{planLabel}</span>
+              {U.is_demo === true && <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400">حساب تجريبي</span>}
             </div>
             <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-400"}`}>
               {roleLabel(U.user_type)} · {U.email} · {U.id.slice(0,8)}
@@ -1053,9 +1065,15 @@ export default function UserProfilePage() {
             <SpinnerGap size={14} className="animate-spin text-zinc-400" />
           ) : (
             <>
-              <button onClick={()=>setImpersonating(true)}
+              <Link href={`/dashboard/admin/users/${encodeURIComponent(userId)}/view-as`}
+                title="عرض للقراءة فقط لما يراه هذا المستخدم، وتُسجَّل كل صفحة في سجل التدقيق"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors">
-                <SignIn size={13}/> تصفح كمستخدم
+                <UserSwitch size={13}/> عرض كمستخدم
+              </Link>
+              <button onClick={handleDemoToggle} disabled={demoLoading}
+                title="الحساب التجريبي: لا يكتب في الأقسام العامة، لا يدفع ولا يحجز مقعد المؤسس، وحدوده ٥ قضايا و٥ استشارات و١٠ موكلين"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50">
+                {U.is_demo === true ? "إلغاء وضع الحساب التجريبي" : "تحويل إلى حساب تجريبي"}
               </button>
               <button onClick={() => { setTab("subscription"); setChangingPlan(true); }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-colors">

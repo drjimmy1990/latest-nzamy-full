@@ -80,3 +80,29 @@ async function lookupActorEmail(admin: ServiceClient, actorId: string): Promise<
     return null;
   }
 }
+
+/**
+ * logAdminActionsStrict — the STRICT variant, for an action that may happen
+ * only once its trace has landed (S2 «عرض كمستخدم»: a user's data is shown to
+ * an admin only after the view is in the audit log). Inserts every row in one
+ * statement with the service role; true when they landed, false otherwise.
+ * Never throws. actor_email is not sent (optional since 20261019_30): no
+ * extra lookup, and the row fits a table without the column.
+ */
+export async function logAdminActionsStrict(inputs: AdminActionInput[]): Promise<boolean> {
+  if (inputs.length === 0) return true;
+  try {
+    const admin = await createServiceClient();
+    const { error } = await admin
+      .from("admin_audit_events")
+      .insert(inputs.map((input) => buildAdminAuditRow(input, null)));
+    if (error) {
+      console.error(`${LOG} strict insert failed for ${inputs[0].action}:`, error.code, error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`${LOG} strict insert threw for ${inputs[0].action}:`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}

@@ -30,8 +30,9 @@
  */
 
 import { validateQuickToolIds } from "../lawyerQuickTools.ts";
+import { validateAiInstructions, type AiInstructions } from "../aiInstructions.ts";
 
-export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools", "circuitFavorites"] as const;
+export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools", "circuitFavorites", "aiInstructions"] as const;
 
 /**
  * «المفضلة» in the circuits directory on /ai/procedures (owner note ١٥ §٥,
@@ -74,6 +75,8 @@ export interface UserPreferences {
   quickTools?: string[];
   /** circuits directory «المفضلة» — unique circuit ids, newest first, ≤ CIRCUIT_FAVORITES_MAX */
   circuitFavorites?: CircuitFavorite[];
+  /** /ai/settings «التعليمات الشخصية» (N06-24) — validated by src/lib/aiInstructions.ts */
+  aiInstructions?: AiInstructions;
 }
 
 const READING_ACTIVITY_NUMBER_KEYS = ["lawsThisWeek", "lawsThisMonth", "articles", "principles", "feqhPages"] as const;
@@ -235,6 +238,12 @@ export function validatePreferencesPatch(body: unknown): PreferencesValidation {
     const result = validateCircuitFavorites(body.circuitFavorites);
     if (typeof result === "string") return { ok: false, error: result };
     patch.circuitFavorites = result;
+  }
+
+  if ("aiInstructions" in body) {
+    const result = validateAiInstructions(body.aiInstructions);
+    if (typeof result === "string") return { ok: false, error: result };
+    patch.aiInstructions = result;
   }
 
   return { ok: true, patch };
