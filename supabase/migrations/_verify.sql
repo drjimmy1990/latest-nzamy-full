@@ -6741,3 +6741,24 @@ select 'Several contracts per case (run 20261123_40)' as check,
        and to_regclass('public.idx_contracts_request_id') is not null
        as ok;
 -- <<< verify:launch_2026_11_17
+-- >>> verify:l3_requests
+-- 2026-11-24 — open requests: city + server-written summary, no title (owner ١٠ + ١٩).
+-- 20261124_30 BEFORE the deploy of batch/2026-11-17-l3-requests.
+-- Docker: supabase/tests/rls/open_requests_city_summary.test.sql
+select 'Open requests: city + public_summary, server-only summary, no title (run 20261124_30)' as check,
+       exists (select 1 from pg_catalog.pg_attribute
+                where attrelid = 'public.service_requests'::regclass and attname = 'city' and not attisdropped)
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_public_summary_check')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_city_slug_check')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.service_requests'::regclass
+                      and tgname = 'trg_01_service_requests_public_summary_guard' and tgenabled <> 'D')
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      like '%public_summary%', false)
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      not like '%title%', false)
+       and not has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE')
+       as ok;
+-- <<< verify:l3_requests
