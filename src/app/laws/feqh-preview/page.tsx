@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, MagnifyingGlass, Lock, Sparkle,
   ArrowRight, Check, Copy, Scales, Gavel,
@@ -231,11 +230,6 @@ export default function FeqhPreviewPage() {
   const [fontSize, setFontSize] = useState<"normal" | "large" | "xlarge">("large");
   const [copiedText, setCopiedText] = useState(false);
 
-  // AI Assistant Mockup
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
-
   // Active block details
   const activeChapter = book.chapters[0];
   const activeBlock = activeChapter?.blocks.find(b => b.id === activeBlockId) || activeChapter?.blocks[0];
@@ -246,23 +240,6 @@ export default function FeqhPreviewPage() {
     navigator.clipboard.writeText(text);
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2000);
-  };
-
-  const handleAskAI = () => {
-    if (!aiPrompt) return;
-    setAiLoading(true);
-    setTimeout(() => {
-      setAiResponse(
-        isRTL
-          ? `بناءً على المذهب الحنبلي في "${book.title}" (ج ${activeBlock?.vol}، ص ${activeBlock?.page})، فإن الشرط يختلف عن الركن في أن الشرط يسبق العبادة ويستمر معها (كالوضوء واستقبال القبلة)، بينما الركن يقع في صلب العبادة (كالركوع والسجود). 
-
-وهذا يتناغم مع المفاهيم القانونية المعاصرة في نظام المعاملات المدنية السعودي (مثل المادة 48 و 244)، حيث يتم التمييز بين شروط نفاذ العقد (التي تماثل الشروط الفقهية في كونها خارجية عن التزامات العقد) وأركان العقد الأساسية كالرضا والمحل والسبب.`
-          : `Based on the Hanbali school in "${book.title}" (Vol ${activeBlock?.vol}, Page ${activeBlock?.page}), a condition (Shart) differs from a pillar (Rukn) in that a condition precedes and accompanies the worship (like Wudu), while a pillar is an integral part of it (like Ruku).
-
-This maps closely to the concepts of legal capacity (Article 48) and contract validity in the Saudi Civil Transactions Law.`
-      );
-      setAiLoading(false);
-    }, 1200);
   };
 
   // Font size classes
@@ -503,47 +480,27 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
               )}
             </div>
 
-            {/* AI assistant in the reader */}
+            {/* N05-L4 (owner package 13 Nov): this box used to print one fixed
+                answer (shart vs rukn, article 48) after a timer, whatever was
+                asked. No assistant is wired to this page, so it says so and
+                points to the real book reader (/book/[slug]). */}
             <div className={`rounded-2xl border p-6 ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white shadow-sm border-slate-200"}`}>
               <h3 className="text-sm font-black mb-3 flex items-center gap-2">
-                <Sparkle size={18} className="text-amber-500" weight="fill" />
-                {isRTL ? "مساعد الذكاء الاصطناعي للفقه" : "AI Feqh Assistant"}
+                <Info size={18} className="text-amber-500" />
+                {isRTL ? "مساعد الفقه — قريباً" : "Feqh assistant — coming soon"}
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed mb-4">
-                {isRTL 
-                  ? "اسأل المساعد عن تخريج الأحاديث أو مقارنة الأحكام الفقهية بالقوانين السعودية المعاصرة."
-                  : "Ask the AI assistant for comparative legal analyses."}
+                {isRTL
+                  ? "سؤال المساعد عن هذا الكتاب غير متاح بعد في هذه الصفحة. لقراءة الكتاب كاملاً بأجزائه وصفحاته افتحه في قارئ الكتب."
+                  : "Asking the assistant about this book is not available on this page yet. Open the book in the reader to read it in full."}
               </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder={isRTL ? "مثال: ما الفرق بين الشرط والركن وكيف يتفق مع نظام المعاملات؟" : "Ask something..."}
-                  value={aiPrompt}
-                  onChange={e => setAiPrompt(e.target.value)}
-                  className={`flex-1 px-4 py-2 text-xs rounded-xl border outline-none ${
-                    isDark ? "bg-zinc-800 border-white/10 text-white" : "bg-white border-slate-200"
-                  }`}
-                  onKeyDown={e => { if (e.key === "Enter") handleAskAI(); }}
-                />
-                <button
-                  onClick={handleAskAI}
-                  disabled={aiLoading}
-                  className="px-4 py-2 bg-[#0B3D2E] text-white text-xs font-bold rounded-xl hover:opacity-90 transition"
-                >
-                  {aiLoading ? (isRTL ? "جاري التحليل..." : "Analyzing...") : (isRTL ? "اسأل" : "Ask")}
-                </button>
-              </div>
-              <AnimatePresence>
-                {aiResponse && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mt-4 p-4 rounded-xl bg-amber-500/[0.03] border border-amber-500/10 text-xs leading-relaxed text-slate-700 dark:text-zinc-300 text-justify"
-                  >
-                    {aiResponse}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              <Link
+                href={loadedFromServer ? `/book/${book.id}` : "/laws"}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B3D2E] text-white text-xs font-bold rounded-xl hover:opacity-90 transition"
+              >
+                <BookOpen size={14} />
+                {isRTL ? "افتح الكتاب في قارئ الكتب" : "Open in the book reader"}
+              </Link>
             </div>
           </div>
 
@@ -607,24 +564,6 @@ This maps closely to the concepts of legal capacity (Article 48) and contract va
               )}
             </div>
 
-            {/* Custom OCR Feature Pitch */}
-            <div className={`p-4 rounded-2xl border ${isDark ? "bg-[#161b22] border-white/[0.07]" : "bg-amber-50 border-amber-200"}`}>
-              <div className="flex items-start gap-2.5">
-                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600">
-                  <Sparkle size={16} weight="fill" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-[#0B3D2E] dark:text-[#C8A762] mb-1">
-                    {isRTL ? "مهارة استخراج الكتب الفقهية" : "Feqh OCR Extractor"}
-                  </h4>
-                  <p className="text-[10px] text-slate-600 dark:text-zinc-400 leading-relaxed text-justify">
-                    {isRTL 
-                      ? "نسخة مخصصة من مهارة تفريغ الـ PDF تقوم بفصل المتن عن الشرح والحواشي تلقائياً، مع تتبع الجزء والصفحة بدقة وإلغاء التداخل البصري."
-                      : "A customized PDF OCR processor designed to extract Matn, Sharh, and footnotes separately, maintaining pages."}
-                  </p>
-                </div>
-              </div>
-            </div>
           </aside>
 
         </div>
