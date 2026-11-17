@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
 import Link from "next/link";
 import { FileText, Printer, Receipt, Warning } from "@phosphor-icons/react";
 import { formatDuration, type FeeStatement } from "@/lib/financeLedger/financeLedgerRules";
@@ -62,13 +63,14 @@ export default function FeeStatementView({
   const [caseId, setCaseId] = useState(initialCaseId ?? "");
   const [clientId, setClientId] = useState(initialClientId ?? "");
   const [from, setFrom] = useState("");
-  const [to, setTo] = useState(riyadhTodayIso());
+  const today = useRiyadhToday();
+  const [to, setTo] = useState("");
   const [read, setRead] = useState<FeeStatementRead | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const subjectId = mode === "case" ? caseId : clientId;
-  const build = async () => {
+  const build = async (toOverride?: string) => {
     if (!subjectId) { setError(mode === "case" ? "اختر القضية." : "اختر الموكل."); return; }
     setLoading(true); setError(null); setDone(null); setConfirming(false);
     try {
@@ -76,7 +78,7 @@ export default function FeeStatementView({
         caseId: mode === "case" ? caseId : undefined,
         clientId: mode === "client" ? clientId : undefined,
         from: from || undefined,
-        to: to || undefined,
+        to: (toOverride ?? to) || undefined,
       }));
     } catch (err) {
       setRead(null);
@@ -85,11 +87,16 @@ export default function FeeStatementView({
       setLoading(false);
     }
   };
-  // A link from a case page or a client opens the statement at once.
+  // «إلى» defaults to the browser's Riyadh day (never an SSR-cached one); a
+  // link from a case page or a client then opens the statement at once.
+  const [autoBuilt, setAutoBuilt] = useState(false);
   useEffect(() => {
-    if (initialCaseId || initialClientId) void build();
+    if (!today || autoBuilt) return;
+    setAutoBuilt(true);
+    if (!to) setTo(today);
+    if (initialCaseId || initialClientId) void build(today);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [today]);
 
   const [confirming, setConfirming] = useState(false);
   const [converting, setConverting] = useState(false);

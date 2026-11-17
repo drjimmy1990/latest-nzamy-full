@@ -11,12 +11,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
 import { Vault, Plus, ArrowClockwise, Warning } from "@phosphor-icons/react";
 import {
   TRUST_KIND_LABEL_AR, sarToHalalas, withRunningBalance, type TrustDto, type TrustKind,
 } from "@/lib/financeLedger/financeLedgerRules";
 import { TrustNegativeError, createTrustEntry, listTrust, voidTrustEntry } from "@/lib/services/financeLedgerService";
-import { TargetFields, VoidBox, riyadhTodayIso, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
+import { TargetFields, VoidBox, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
 
 export default function TrustPanel({ isDark, caseId }: { isDark: boolean; caseId?: string }) {
   const t = themeCls(isDark);
@@ -49,7 +50,10 @@ export default function TrustPanel({ isDark, caseId }: { isDark: boolean; caseId
   const [fCase, setFCase] = useState(caseId ?? "");
   const [fKind, setFKind] = useState<TrustKind>("deposit");
   const [fAmount, setFAmount] = useState("");
-  const [fDate, setFDate] = useState(riyadhTodayIso());
+  // The browser's Riyadh day, never one computed during SSR (the cached-date trap).
+  const today = useRiyadhToday();
+  const [fDate, setFDate] = useState("");
+  useEffect(() => { if (today && !fDate) setFDate(today); }, [today, fDate]);
   const [fDesc, setFDesc] = useState("");
   const [fRef, setFRef] = useState("");
   const [saving, setSaving] = useState(false);
@@ -155,7 +159,7 @@ export default function TrustPanel({ isDark, caseId }: { isDark: boolean; caseId
           </div>
           <div>
             <label className={t.label}>التاريخ</label>
-            <input type="date" className={t.input} value={fDate} max={riyadhTodayIso()} onChange={(e) => setFDate(e.target.value)} required />
+            <input type="date" className={t.input} value={fDate} max={today || undefined} onChange={(e) => setFDate(e.target.value)} required />
           </div>
           <div>
             <label className={t.label}>المرجع (رقم الحوالة أو السند — اختياري)</label>

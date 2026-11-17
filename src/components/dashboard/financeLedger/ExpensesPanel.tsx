@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
 import { Receipt, Plus, ArrowClockwise, Paperclip, Eye } from "@phosphor-icons/react";
 import {
   EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABEL_AR, sarToHalalas, type ExpenseCategory, type ExpenseDto,
@@ -15,7 +16,7 @@ import {
 import { LICENCE_ACCEPT } from "@/lib/services/licenceUpload";
 import { createExpense, listExpenses, patchExpense, receiptUrl, uploadExpenseReceipt } from "@/lib/services/financeLedgerService";
 import { openPendingTab } from "@/lib/ui/pendingTab";
-import { TargetFields, VoidBox, riyadhTodayIso, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
+import { TargetFields, VoidBox, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
 
 export default function ExpensesPanel({ isDark, caseId, compact = false }: { isDark: boolean; caseId?: string; compact?: boolean }) {
   const t = themeCls(isDark);
@@ -45,7 +46,10 @@ export default function ExpensesPanel({ isDark, caseId, compact = false }: { isD
 
   const [fCase, setFCase] = useState(caseId ?? "");
   const [fClient, setFClient] = useState("");
-  const [fDate, setFDate] = useState(riyadhTodayIso());
+  // The browser's Riyadh day, never one computed during SSR (the cached-date trap).
+  const today = useRiyadhToday();
+  const [fDate, setFDate] = useState("");
+  useEffect(() => { if (today && !fDate) setFDate(today); }, [today, fDate]);
   const [fCategory, setFCategory] = useState<ExpenseCategory>("court_fees");
   const [fDesc, setFDesc] = useState("");
   const [fAmount, setFAmount] = useState("");
@@ -163,7 +167,7 @@ export default function ExpensesPanel({ isDark, caseId, compact = false }: { isD
           </div>
           <div>
             <label className={t.label}>التاريخ</label>
-            <input type="date" className={t.input} value={fDate} max={riyadhTodayIso()} onChange={(e) => setFDate(e.target.value)} required />
+            <input type="date" className={t.input} value={fDate} max={today || undefined} onChange={(e) => setFDate(e.target.value)} required />
           </div>
           <div className="sm:col-span-2">
             <label className={t.label}>الوصف</label>

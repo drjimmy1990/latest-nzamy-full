@@ -13,12 +13,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRiyadhToday } from "@/hooks/useRiyadhToday";
 import { Clock, Plus, Timer, ArrowClockwise } from "@phosphor-icons/react";
 import { formatDuration, sarToHalalas, timeAmountHalalas, type TimeDto } from "@/lib/financeLedger/financeLedgerRules";
 import {
   createTimeEntry, listRecentFocusSessions, listTimeEntries, patchTimeEntry, type RecentSession,
 } from "@/lib/services/financeLedgerService";
-import { TargetFields, VoidBox, riyadhTodayIso, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
+import { TargetFields, VoidBox, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
 
 export default function TimeEntriesPanel({ isDark, caseId, compact = false }: { isDark: boolean; caseId?: string; compact?: boolean }) {
   const t = themeCls(isDark);
@@ -49,7 +50,10 @@ export default function TimeEntriesPanel({ isDark, caseId, compact = false }: { 
   // ── form ──
   const [fCase, setFCase] = useState(caseId ?? "");
   const [fClient, setFClient] = useState("");
-  const [fDate, setFDate] = useState(riyadhTodayIso());
+  // The browser's Riyadh day, never one computed during SSR (the cached-date trap).
+  const today = useRiyadhToday();
+  const [fDate, setFDate] = useState("");
+  useEffect(() => { if (today && !fDate) setFDate(today); }, [today, fDate]);
   const [fHours, setFHours] = useState("");
   const [fMinutes, setFMinutes] = useState("");
   const [fDesc, setFDesc] = useState("");
@@ -158,7 +162,7 @@ export default function TimeEntriesPanel({ isDark, caseId, compact = false }: { 
           <TargetFields isDark={isDark} pickers={pickers} caseId={fCase} clientId={fClient} onCase={setFCase} onClient={setFClient} fixedCase={!!caseId} />
           <div>
             <label className={t.label}>تاريخ العمل</label>
-            <input type="date" className={t.input} value={fDate} max={riyadhTodayIso()} onChange={(e) => setFDate(e.target.value)} required />
+            <input type="date" className={t.input} value={fDate} max={today || undefined} onChange={(e) => setFDate(e.target.value)} required />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
