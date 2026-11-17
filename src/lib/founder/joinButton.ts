@@ -34,7 +34,9 @@ export type JoinButton =
 
 export const JOIN_LABELS = Object.freeze({
   loading: "جارٍ التحميل…",
-  error: "تعذّر التحقق من حالة العرض الآن، أعد تحميل الصفحة بعد قليل",
+  // Owner rule (README, BACKEND-SPEC §12.8): no platform fault is shown to
+  // the customer — a failed read waits neutrally while the page retries (30 s).
+  error: "جارٍ التحقق من حالة العرض…",
   unconfigured: "لم يُعلَن موعد فتح التسجيل بعد",
   opening: "جارٍ فتح التسجيل…",
   ended: "انتهى العرض",
