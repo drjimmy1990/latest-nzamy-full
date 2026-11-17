@@ -7,6 +7,9 @@ import {
   Play, CheckCircle, Certificate, ArrowLeft,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
+import { isDemoMode } from '@/lib/runtimeMode';
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import AcademyComingSoon from '../_AcademyComingSoon';
 
 const MY_COURSES = [
   {
@@ -57,7 +60,7 @@ const STATS = [
   { icon: Clock,       label: 'ساعة تعلم',     value: '٢٤' },
 ];
 
-export default function MyCoursesPage() {
+function MyCoursesPageDemo() {
   const { isDark } = useTheme();
 
   const card    = isDark ? 'border-white/[0.08] bg-[#161b22]' : 'border-slate-200 bg-white shadow-sm';
@@ -170,5 +173,23 @@ export default function MyCoursesPage() {
       </div>
 
     </div>
+  );
+}
+
+/**
+ * N05-A3/4/5 (owner package 13 Nov): this page showed three invented enrolments with progress, shown even to a visitor.
+ * No academy store sits behind it, so it renders in demo mode only; production
+ * shows the honest «قريباً» notice inside the academy frame.
+ */
+export default function MyCoursesPage() {
+  if (isDemoMode) return <MyCoursesPageDemo />;
+  return (
+    <AcademyComingSoon signInFrom="/academy/my-courses">
+      <DashboardComingSoon
+        title="دوراتي — قريباً"
+        description="لا توجد دورات مسجلة في حسابك: الدورات تُطلق قريباً، وستظهر هنا الدورات التي تسجّل فيها."
+        backHref="/academy"
+      />
+    </AcademyComingSoon>
   );
 }

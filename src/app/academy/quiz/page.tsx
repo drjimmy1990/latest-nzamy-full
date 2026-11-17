@@ -16,6 +16,7 @@ import {
   Infinity as InfinityIcon
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
 import confetti from "canvas-confetti";
 import { ACADEMY_CATEGORIES } from "@/data/academy/categories";
 import { ACADEMY_QUESTIONS } from "@/data/academy/questions";
@@ -325,8 +326,10 @@ export default function QuizPage() {
   const [highestStreak, setHighestStreak] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
 
-  // Leaderboard State
-  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>(INITIAL_LEADERBOARD);
+  // Leaderboard State. N05-A4 (owner package 13 Nov): INITIAL_LEADERBOARD is
+  // invented names and points and no result is saved anywhere, so the board
+  // exists in demo mode only; production shows «قريباً» in its tab.
+  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>(isDemoMode ? INITIAL_LEADERBOARD : []);
   const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<"weekly" | "monthly" | "allTime">("weekly");
 
   // Play State
@@ -632,7 +635,7 @@ export default function QuizPage() {
                     : isDark ? "text-zinc-400 hover:text-white" : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <Crown size={16} weight="fill" className="text-amber-700" /> لوحة المتصدرين
+                <Crown size={16} weight="fill" className="text-amber-700" /> لوحة المتصدرين{!isDemoMode && " · قريباً"}
               </button>
             </div>
 
@@ -646,7 +649,16 @@ export default function QuizPage() {
         {/* ══════════════════════════════════════════════════════════════════════
             TAB 2: LEGAL LEADERBOARD
         ══════════════════════════════════════════════════════════════════════ */}
-        {activeTab === "leaderboard" && (
+        {activeTab === "leaderboard" && !isDemoMode && (
+          <div className={`${cardClass} p-8 text-center space-y-2`}>
+            <Crown size={32} weight="duotone" className="mx-auto text-[#C8A762]" />
+            <h2 className="text-lg font-black">لوحة المتصدرين — قريباً</h2>
+            <p className={`text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+              نتائج التحديات لا تُحفظ بعد، فلا يوجد ترتيب حقيقي لعرضه هنا. ستظهر اللوحة عند تفعيل حفظ النتائج.
+            </p>
+          </div>
+        )}
+        {activeTab === "leaderboard" && isDemoMode && (
           <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
 
             {/* Leaderboard Banner */}
@@ -1517,9 +1529,11 @@ export default function QuizPage() {
                     <button onClick={() => setStage("setup")} className={`px-6 py-3 rounded-xl text-xs font-bold border transition-colors ${isDark ? "border-white/10 hover:bg-white/5" : "border-zinc-200 hover:bg-zinc-50"}`}>
                       تحدي جديد
                     </button>
-                    <button onClick={() => setActiveTab("leaderboard")} className="bg-[#C8A762] text-zinc-950 px-6 py-3 rounded-xl text-xs font-bold hover:bg-[#d8b873] transition-colors flex items-center gap-2">
-                      <Crown size={16} weight="fill" /> لوحة المتصدرين
-                    </button>
+                    {isDemoMode && (
+                      <button onClick={() => setActiveTab("leaderboard")} className="bg-[#C8A762] text-zinc-950 px-6 py-3 rounded-xl text-xs font-bold hover:bg-[#d8b873] transition-colors flex items-center gap-2">
+                        <Crown size={16} weight="fill" /> لوحة المتصدرين
+                      </button>
+                    )}
                   </div>
                 </div>
               </motion.div>

@@ -8,6 +8,9 @@ import {
   CheckCircle, BookOpen, Lock, SealCheck, Lightning,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
+import { isDemoMode } from '@/lib/runtimeMode';
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import AcademyComingSoon from '../_AcademyComingSoon';
 
 const COURSES_MAP: Record<string, {
   title: string; subtitle: string; instructor: string; instructorTitle: string;
@@ -67,7 +70,7 @@ const COURSES_MAP: Record<string, {
   },
 };
 
-export default function CourseDetailPage() {
+function CourseDetailPageDemo() {
   const { slug } = useParams<{ slug: string }>();
   const { isDark } = useTheme();
 
@@ -206,5 +209,23 @@ export default function CourseDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * N05-A3/4/5 (owner package 13 Nov): this page showed two invented courses (every other slug fell back to one of them) and a «سجّل الآن» that enrolled for free past a 299 SAR price.
+ * No academy store sits behind it, so it renders in demo mode only; production
+ * shows the honest «قريباً» notice inside the academy frame.
+ */
+export default function CourseDetailPage() {
+  if (isDemoMode) return <CourseDetailPageDemo />;
+  return (
+    <AcademyComingSoon showQuizLink>
+      <DashboardComingSoon
+        title="الدورة — قريباً"
+        description="صفحات الدورات تُطلق مع الأكاديمية قريباً. لم تُفتح أي دورة للتسجيل بعد، ولا يُحصَّل أي رسم."
+        backHref="/academy"
+      />
+    </AcademyComingSoon>
   );
 }
