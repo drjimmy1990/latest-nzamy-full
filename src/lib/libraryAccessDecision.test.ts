@@ -121,7 +121,7 @@ test("checkLibraryAccess and getLibraryAccessForUser decide full access by the s
   const check = fnSource("checkLibraryAccess");
   assert.doesNotMatch(check, /TIER_RANK\.pro/);
   assert.match(check, /if \(await fullLibraryAccessForTier\(userId, currentTier\)\) \{\s*return \{\s*allowed: true,\s*isWhitelisted: false,\s*freeLimit: -1,\s*currentTier,/);
-  assert.match(check, /`المادة مقفلة — تتطلب اشتراك المكتبة أو باقة Pro فما فوق`/);
+  assert.match(check, /`المادة مقفلة — تتطلب اشتراك المكتبة القانونية أو الباقة الاحترافية فما فوق`/);
   assert.doesNotMatch(check, /يتطلب اشتراك Pro أو أعلى/);
 
   const forUser = fnSource("getLibraryAccessForUser");

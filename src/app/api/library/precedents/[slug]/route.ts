@@ -156,7 +156,7 @@ export async function GET(
     // Final review 2026-11-08 (3): the document is spent HERE, after the device
     // check — never in the proxy — so a read refused for its device spends
     // none of the account's quota and cannot open its lock.
-    const quotaRefusal = await spendLibraryDocument(request, userId);
+    const quotaRefusal = await spendLibraryDocument(request, userId, hasFullAccess);
     if (quotaRefusal) return quotaRefusal;
     const isWhitelisted = false;
 

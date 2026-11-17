@@ -55,6 +55,7 @@ import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun } from "../membership/founderPlan.ts";
+import { draftingRefusal, isDraftingRequest } from "./draftingRequest.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import {
   SECTION_EDIT_COPY,
@@ -427,6 +428,12 @@ export async function startRunWith(
 
   const checked = spec.validateInput(req.input);
   if (!checked.ok) return { status: 422, body: { error: checked.error, code: "invalid_input" } };
+  // Owner Q485: a request to draft a memo or a pleading is refused here, before
+  // the charge and the model; the drafter is offered to whoever may run it.
+  if (spec.draftingGuard && isDraftingRequest(String(checked.input[spec.draftingGuard.field] ?? ""))) {
+    const drafter = getAiTool("legal-drafter");
+    return { status: 422, body: draftingRefusal(drafter !== null && toolRoleRefusal(drafter, actor) === null) };
+  }
   if (typeof req.idempotencyKey !== "string" || !IDEMPOTENCY_KEY.test(req.idempotencyKey)) {
     return { status: 422, body: { error: AI_COPY.key, code: "invalid_key" } };
   }

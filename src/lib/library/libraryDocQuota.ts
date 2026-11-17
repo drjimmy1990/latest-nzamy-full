@@ -24,6 +24,11 @@
  * not counted twice), libraryReadQuotaHit() with its 60-second memo, and
  * quotaRefusal()'s 423 / 429 with `Cache-Control: private, no-store`.
  *
+ * Owner ٤٤٧ (N05-L6, 2026-11-17): the 220 / 400 daily cap counts FULL-TEXT
+ * opens only. `fullText` is the route's own entitled full-text flag (the one
+ * it passes to enforceLibraryDevice); a preview — the first articles / pages
+ * a non-subscriber may read — spends nothing.
+ *
  * FAILS OPEN, like everything it calls: a guest, a demo deploy, a missing
  * function, a timeout or a throw → null, and the read goes on.
  */
@@ -33,8 +38,12 @@ import { libraryQuotaTarget, quotaRefusal } from "./readQuota";
 import { libraryReadQuotaHit } from "./readQuotaServer";
 
 /** null = go on; a NextResponse = the 423 / 429 to return as it is. */
-export async function spendLibraryDocument(request: Request, userId: string | null): Promise<NextResponse | null> {
-  if (!userId || !isSupabaseMode) return null;
+export async function spendLibraryDocument(
+  request: Request,
+  userId: string | null,
+  fullText: boolean,
+): Promise<NextResponse | null> {
+  if (!userId || !fullText || !isSupabaseMode) return null;
   try {
     const target = libraryQuotaTarget(request.method, new URL(request.url).pathname);
     if (!target || target.kind !== "doc") return null;

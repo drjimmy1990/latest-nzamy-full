@@ -31,9 +31,12 @@ import {
   type MurshidSectorSummary,
 } from "./murshidData.ts";
 import { extractUserGuide, parseGuideBlocks, stripInternalNotes, type GuideBlock } from "./guideBlocks.ts";
+import type { NajizClassifications } from "./najizClassifications.ts";
 
 export const MURSHID_DATA_DIR = path.join(process.cwd(), "src", "data", "murshid");
 export const NAJIZ_GUIDE_FILE = "najiz-guide-2026-10-28.md";
+/** The guide as steps + courts → classes → types (scripts/murshid-najiz-classifications.mjs). */
+export const NAJIZ_CLASSIFICATIONS_FILE = "najiz-classifications.json";
 /** The date the owner's package states for every file in it. */
 export const MURSHID_SOURCE_DATE = "2026-10-28";
 
@@ -46,6 +49,7 @@ interface Loaded {
 let loaded: Loaded | null = null;
 let channels: MurshidChannel[] | null = null;
 let guide: GuideBlock[] | null = null;
+let classifications: NajizClassifications | null = null;
 
 function loadSectors(): Loaded {
   if (loaded) return loaded;
@@ -97,4 +101,16 @@ export function getNajizGuide(): GuideBlock[] {
     guide = parseGuideBlocks(stripInternalNotes(extractUserGuide(md)).md);
   }
   return guide;
+}
+
+/**
+ * «دليل ناجز» for the page (N06-4 / N06-5): the filing steps and the najiz
+ * tree, without the PDF's page references. The JSON is generated from the
+ * guide (najizClassifications.ts); a unit test keeps the two in step.
+ */
+export function getNajizClassifications(): NajizClassifications {
+  if (!classifications) {
+    classifications = JSON.parse(fs.readFileSync(path.join(MURSHID_DATA_DIR, NAJIZ_CLASSIFICATIONS_FILE), "utf8")) as NajizClassifications;
+  }
+  return classifications;
 }

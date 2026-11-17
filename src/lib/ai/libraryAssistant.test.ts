@@ -172,3 +172,39 @@ test("a tool without library retrieval never asks the library lock", async () =>
   assert.deepEqual(asked, []);
   assert.ok(log.some((q) => q.op === "rpc" && q.table === "ai_start_run"));
 });
+
+// Owner Q485 (N02-7 / N06-18): the library assistant never drafts. A request
+// for a memo / claim / appeal is refused right after the input check: no
+// charge, no library search, no n8n call. The drafter is offered only to a
+// caller who may run «الصائغ القانوني».
+test("a drafting request is refused before the charge, with the drafter for a lawyer only", async () => {
+  const cases: Array<[string, string, boolean]> = [
+    ["lawyer", "advocate", true],
+    ["firm", "advocate", true],
+    ["admin", "advocate", true],
+    ["lawyer", "consultant", false],
+    ["individual", "advocate", false],
+    ["corporate", "advocate", false],
+  ];
+  for (const [userType, practiceKind, drafter] of cases) {
+    const calls: string[] = [];
+    const pins: RetrievalPin[] = [];
+    const { client, log } = db();
+    const who: RunActor = { userId: "u-1", userType, practiceKind: practiceKind as RunActor["practiceKind"], displayName: null };
+    const r = await startRunWith(client as never, deps(queries(["مذكرة"]), pins, calls), who, body({ message: "اكتب لي مذكرة اعتراضية على الحكم" }));
+    assert.equal(r.status, 422, userType);
+    assert.equal(r.body.code, "drafting_refused", userType);
+    assert.match(String(r.body.error), /لا يكتب المذكرات/);
+    if (drafter) assert.deepEqual(r.body.action, { label: "افتح الصائغ القانوني", href: "/ai/draft" }, `${userType}/${practiceKind}`);
+    else assert.equal(r.body.action, undefined, `${userType}/${practiceKind}`);
+    assert.ok(!log.some((q) => q.op === "rpc"), "no ai_start_run: nothing was charged");
+    assert.deepEqual(calls, [], "no n8n call");
+    assert.deepEqual(pins, [], "no library search");
+  }
+});
+
+test("a question about a pleading still goes to the assistant", async () => {
+  const { client } = db();
+  const r = await startRunWith(client as never, deps(queries(["مدة الاستئناف"]), []), actor("lawyer"), body({ message: "ما هي مدة الاستئناف؟" }));
+  assert.equal(r.status, 200);
+});

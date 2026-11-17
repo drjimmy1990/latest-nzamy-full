@@ -1793,6 +1793,7 @@ function LawSystemPageContent() {
             isDark={isDark}
             isRTL={isRTL}
             lawName={law?.title}
+            articleRef={activeArticle?.num}
             onClose={() => setShowCommunity(false)}
           />
         )}

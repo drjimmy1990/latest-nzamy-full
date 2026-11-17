@@ -120,6 +120,12 @@ export interface AiToolSpec {
   /** Letter-type tools sign with the user's name (plan §2.2); every other tool gets null. */
   sendsDisplayName?: boolean;
   /**
+   * Owner Q485: the input field that must not ask for a memo / claim / appeal
+   * (draftingRequest.ts). Such a message is refused right after validateInput,
+   * before anything is charged or sent to n8n.
+   */
+  draftingGuard?: { field: string };
+  /**
    * Wave 2: the tool answers from library texts the app retrieves (retrieval.ts).
    * Such a tool passes the library gate and the assistant's tier rule before
    * the charge, is refunded when nothing in the library matches, and fails
@@ -1774,6 +1780,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     dailyLimit: 60,
     defaultMode: "off",
     retrieval: { from: "message", pinFrom: "article_id", scopeFrom: "law_slug", laws: 6, principles: 3 },
+    // Owner Q485: it explains texts; it never writes a memo or a pleading.
+    draftingGuard: { field: "message" },
     validateInput: libraryAssistantInput,
     validateOutput: libraryAssistantOutput,
   },
