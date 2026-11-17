@@ -40,7 +40,6 @@ const ALLOW: [string, string | null, string][] = [
   ["app/dashboard/firm/fees/page.tsx", "w-3 h-3 rounded-full bg-white shadow-sm transition-all", TOGGLE],
   ["app/dashboard/firm/team/roles/page.tsx", "rounded-full bg-white shadow transition-all", TOGGLE],
   ["app/dashboard/provider/profile/page.tsx", "h-5 w-5 rounded-full bg-white shadow", TOGGLE],
-  ["app/laws/[slug]/_ai-components.tsx", "w-4 h-4 rounded-full bg-white shadow-sm", TOGGLE],
   ["app/settings/components/tabs/_shared.tsx", "w-5 h-5 bg-white rounded-full shadow-sm", TOGGLE],
   ["components/calculators/CalcLaborRights.tsx", "w-4 h-4 rounded-full bg-white shadow-sm", TOGGLE],
   ["components/cases/NewCaseSteps.tsx", "w-4 h-4 bg-white rounded-full shadow transition-all", TOGGLE],
