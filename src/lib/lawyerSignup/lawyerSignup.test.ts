@@ -189,6 +189,7 @@ test("no pepper → no code channel at all", () => {
 // ── decision table ────────────────────────────────────────────────────────────
 const ALL_GOOD: DecisionInput = {
   alreadyVerified: false,
+  accountBlocked: false,
   practiceKind: "advocate",
   registryStatus: "valid",
   nameMatch: "exact",
@@ -228,6 +229,7 @@ test("the photo is asked first, even for an account that will be held", () => {
 
 test("every hard reason holds the account and never offers a code", () => {
   const cases: Array<[Partial<DecisionInput>, string]> = [
+    [{ accountBlocked: true }, "account_not_pending"],
     [{ practiceKind: "consultant" }, "consultant_not_in_registry"],
     [{ registryStatus: "expired" }, "registry_expired"],
     [{ registryStatus: "unverifiable" }, "registry_unverifiable"],

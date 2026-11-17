@@ -37,6 +37,8 @@ export type AiStatus = "pending" | "match" | "doubt" | "mismatch" | "skipped" | 
 
 export type DecisionInput = {
   alreadyVerified: boolean;
+  /** rejected / suspended by an admin: never approved automatically. */
+  accountBlocked: boolean;
   practiceKind: "advocate" | "consultant";
   registryStatus: RegistryStatus;
   nameMatch: NameMatch | null;
@@ -54,6 +56,7 @@ export type DecisionInput = {
 };
 
 export type ReasonCode =
+  | "account_not_pending"
   | "consultant_not_in_registry"
   | "registry_expired"
   | "registry_unverifiable"
@@ -84,6 +87,7 @@ export function decideLawyerSignup(i: DecisionInput): Decision {
   if (i.alreadyVerified) return { outcome: "verified", next: null, reasons: [] };
 
   const hard: ReasonCode[] = [];
+  if (i.accountBlocked) hard.push("account_not_pending");
   if (i.practiceKind === "consultant") hard.push("consultant_not_in_registry");
   else if (i.registryStatus !== "valid") hard.push(`registry_${i.registryStatus}` as ReasonCode);
   else {
@@ -116,6 +120,7 @@ export function decideLawyerSignup(i: DecisionInput): Decision {
 
 /** Arabic lines for the ADMIN queue (the lawyer only ever sees the hold message). */
 export const REASON_AR: Record<ReasonCode, string> = {
+  account_not_pending: "الحساب مرفوض أو موقوف من الإدارة",
   consultant_not_in_registry: "مستشار قانوني — ليس في سجل المحامين، يُراجع يدوياً",
   registry_expired: "الترخيص منتهٍ في السجل",
   registry_unverifiable: "تعذّر التحقق من السجل (مؤرشف أو بلا تاريخ انتهاء)",
