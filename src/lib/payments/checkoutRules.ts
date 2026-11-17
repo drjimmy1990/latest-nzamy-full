@@ -180,6 +180,18 @@ export interface CheckoutResponse {
     couponCode?: string;
     /** While a launch price runs (owner ٣٠٣): the book's listed net, shown struck through; `net` is the launch price. */
     launchListNet?: number;
+    /**
+     * l6-pay (F12): the active founder's 15 % off a top-up, in place of a
+     * coupon (never both); `listNet` is then present and listNet −
+     * founderDiscount = net.
+     */
+    founderDiscount?: number;
+    /**
+     * l6-pay (Q511): the pro-rata credit of the buyer's current plan on an
+     * upgrade («يُخصم المتبقي من باقتك الحالية»), computed by the server;
+     * `listNet` is then present and listNet − prorationCredit = net.
+     */
+    prorationCredit?: number;
   };
   /**
    * The intent's callback_url, `<NEXT_PUBLIC_SITE_URL>/payments/result?order=<orderId>`

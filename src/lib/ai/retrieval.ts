@@ -32,6 +32,7 @@ import { articleDisplayLabel } from "../../app/api/library/laws/[slug]/_article-
 import { apiSlug } from "../../utils/apiSlug.ts";
 import { stripArticleAuditNotes } from "../library/lawPreambleBlocks.ts";
 import { lawNamePattern, rankLaws } from "./citationCheck.ts";
+import { citedStatus, type CitedStatus } from "./citationStatus.ts";
 import { articleRefs, bareArticleNumbers, lawNames, stripFraming } from "./questionRefs.ts";
 
 /** The service-role client: the relevance functions and the article text are service-role only. */
@@ -132,6 +133,8 @@ export interface SourceRef {
   id: string;
   title: string;
   url: string;
+  /** An article's own status when it is active / amended / repealed (the citation's pill, citationStatus.ts). */
+  status?: CitedStatus;
 }
 
 export interface Retrieved {
@@ -227,7 +230,8 @@ export function buildSources(
       text: clip(text),
       ...(pinnedId !== null && id === pinnedId ? { pinned: true as const } : {}),
     });
-    map[sid] = { kind: "article", id, title, url: `/laws/${apiSlug(slug)}#${encodeURIComponent(id)}` };
+    const pill = citedStatus(a.status);
+    map[sid] = { kind: "article", id, title, url: `/laws/${apiSlug(slug)}#${encodeURIComponent(id)}`, ...(pill ? { status: pill } : {}) };
   }
   for (const p of principles) {
     const text = str(p.text);
@@ -650,7 +654,8 @@ export async function retrieveLibrary(
 
             const sid = `S${++n}`;
             sources.push({ sid, kind: h.kind, title: modelTitle, text: clip(cleanText) });
-            map[sid] = { kind: h.kind, id: h.id, title: plainTitle, url: h.url };
+            const pill = h.kind === "article" ? citedStatus(h.status) : undefined;
+            map[sid] = { kind: h.kind, id: h.id, title: plainTitle, url: h.url, ...(pill ? { status: pill } : {}) };
             added++;
           }
         };

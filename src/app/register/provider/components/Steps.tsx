@@ -164,6 +164,28 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
               <Buildings size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
               <input type="text" placeholder={isAr ? "مكتب / شركة..." : "Firm name..."} value={data.firmName || ""} onChange={e => onChange("firmName", e.target.value)} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
             </div>
+            {/* R9: the entity type. «مكتب استشارات مرخص (م١٨)» travels in the
+                signup metadata (firmKindMetadata); the default is a law firm. */}
+            <fieldset className="mt-3">
+              <legend className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{isAr ? "نوع المنشأة" : "Entity type"}</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { id: "law_firm", ar: "شركة / مكتب محاماة", en: "Law firm / office" },
+                  { id: "consulting_office", ar: "مكتب استشارات مرخص (م١٨)", en: "Licensed consulting office (Art. 18)" },
+                ] as const).map(k => {
+                  const active = (data.firmKind || "law_firm") === k.id;
+                  return (
+                    <button key={k.id} type="button" aria-pressed={active} onClick={() => onChange("firmKind", k.id)}
+                      className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${active ? "border-royal/30 bg-royal/5 text-royal dark:border-gold/30 dark:bg-royal/15 dark:text-gold" : "border-slate-200 bg-white text-ink-muted dark:border-white/10 dark:bg-dark-card dark:text-gray-400"}`}>
+                      {isAr ? k.ar : k.en}
+                    </button>
+                  );
+                })}
+              </div>
+              {data.firmKind === "consulting_office" && (
+                <p className="mt-1.5 text-xs text-ink-muted dark:text-gray-400">{isAr ? "مكتب الاستشارات لا يترافع أمام المحاكم (المادة ١٨)." : "A consulting office does not plead in court (Art. 18)."}</p>
+              )}
+            </fieldset>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">

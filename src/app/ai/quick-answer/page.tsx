@@ -22,6 +22,8 @@ import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import { libraryToolRefusal } from "@/lib/ai/libraryToolRefusal";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftText } from "@/lib/payments/topUpDraft";
 import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
 import {
   QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, QUICK_ANSWER_UNGROUNDED_LABEL,
@@ -75,6 +77,11 @@ function QuickAnswerTool() {
   const [question, setQuestion] = useState("");
   const user = useUser();
   const run = useAiRun();
+  // l6-pay: back from an in-place top-up, the refused question is still here
+  useToolDraft("quick-answer", (d) => {
+    const q = draftText(d, "question");
+    if (q) setQuestion((cur) => cur || q);
+  });
   // Owner ٤١٢: today's free question, as the server says; false until it answers.
   const [freeOpen, setFreeOpen] = useState(false);
   // Whether the question on screen was sent as the free one (its refund wording).

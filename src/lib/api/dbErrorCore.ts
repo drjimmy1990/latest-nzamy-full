@@ -108,3 +108,65 @@ export function demoRefusal(err: unknown): DemoRefusal | null {
       return null;
   }
 }
+
+/*
+ * S9 and the firm seat cap (20261126_50): the database refuses with a fixed
+ * token (`raise exception 'plan_limit:cases'` …). Same rule as the demo
+ * tokens: our own text, mapped to a fixed Arabic sentence (SAST-06), plus a
+ * link the screen renders as a real link (`linkHref` / `linkLabel`).
+ */
+export const PLAN_LIMIT_UPGRADE_HREF = "/pricing";
+export const FIRM_SEATS_CONTACT_HREF = "/contact?type=firm-seats";
+export const PLAN_LIMIT_AR: Readonly<Record<"cases" | "clients", string>> = Object.freeze({
+  cases: "بلغت الحد المجاني للمحامي الفرد: ٥ قضايا نشطة. أغلق قضية منتهية أو رقِّ باقتك لإضافة المزيد.",
+  clients: "بلغت الحد المجاني للمحامي الفرد: ١٠ موكلين. أرشف موكلاً سابقاً أو رقِّ باقتك لإضافة المزيد.",
+});
+export const PLAN_LIMIT_LINK_AR = "ترقية الباقة";
+export const FIRM_SEATS_FULL_AR = "اكتملت مقاعد المكتب. لزيادة المقاعد تواصل معنا.";
+export const FIRM_SEATS_LINK_AR = "لزيادة المقاعد تواصل معنا";
+
+export type LimitRefusal = {
+  status: 403;
+  message: string;
+  token: "plan_limit:cases" | "plan_limit:clients" | "firm_seats_full";
+  linkHref: string;
+  linkLabel: string;
+};
+
+/**
+ * The plan-limit / seat refusal carried by a database / PostgREST error, or
+ * null. Reads only `message` and accepts only the exact tokens 20261126_50
+ * raises.
+ */
+export function limitRefusal(err: unknown): LimitRefusal | null {
+  const message = describeDbError(err).message?.trim();
+  switch (message) {
+    case "plan_limit:cases":
+      return { status: 403, message: PLAN_LIMIT_AR.cases, token: message, linkHref: PLAN_LIMIT_UPGRADE_HREF, linkLabel: PLAN_LIMIT_LINK_AR };
+    case "plan_limit:clients":
+      return { status: 403, message: PLAN_LIMIT_AR.clients, token: message, linkHref: PLAN_LIMIT_UPGRADE_HREF, linkLabel: PLAN_LIMIT_LINK_AR };
+    case "firm_seats_full":
+      return { status: 403, message: FIRM_SEATS_FULL_AR, token: message, linkHref: FIRM_SEATS_CONTACT_HREF, linkLabel: FIRM_SEATS_LINK_AR };
+    default:
+      return null;
+  }
+}
+
+/** The JSON body of a limit refusal: the Arabic sentence, the token, the link. */
+export function limitRefusalBody(r: LimitRefusal, extra?: Record<string, unknown>): Record<string, unknown> {
+  return { ...(extra ?? {}), error: r.message, code: r.token, linkHref: r.linkHref, linkLabel: r.linkLabel };
+}
+
+/**
+ * The link to show beside an error message that a screen only has as text
+ * (apiMutate keeps `error` and drops the rest of the body): the upgrade link
+ * for a plan-limit sentence, the contact link for a full firm, else null.
+ */
+export function limitLinkForMessage(message: string | null | undefined): { href: string; label: string } | null {
+  if (!message) return null;
+  if (message.includes(PLAN_LIMIT_AR.cases) || message.includes(PLAN_LIMIT_AR.clients)) {
+    return { href: PLAN_LIMIT_UPGRADE_HREF, label: PLAN_LIMIT_LINK_AR };
+  }
+  if (message.includes(FIRM_SEATS_FULL_AR)) return { href: FIRM_SEATS_CONTACT_HREF, label: FIRM_SEATS_LINK_AR };
+  return null;
+}

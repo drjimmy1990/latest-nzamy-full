@@ -8,6 +8,7 @@ import {
   type AccountTypeClaimRefusal,
   type AccountTypeGrant,
 } from "@/lib/auth/accountTypeClaim";
+import { CLAIM_KIND_REFUSAL_AR, resolveClaimKinds } from "@/lib/auth/claimKinds";
 
 /**
  * POST /api/v1/onboarding/account-type — the one-time account-type claim.
@@ -190,22 +191,41 @@ async function provisionSectorRow(
   service: SupabaseClient,
   grant: AccountTypeGrant,
   userId: string,
+  // R9 (20261126_50): the kind the person answered — lawyer_profiles
+  // practice_kind + practice_kind_confirmed_at, or firm_profiles.firm_kind.
+  kindColumns: Record<string, string> = {},
 ): Promise<SectorOutcome> {
   const spec = sectorRowValuesFor(grant, userId);
   // `individual` has no sector table and the trigger has no branch for one.
   if (spec === null) return { ok: true, table: null, created: false };
+  const row = { ...spec.row, ...kindColumns };
+  const hasKind = Object.keys(kindColumns).length > 0;
+
+  // A retry finds the row an earlier, half-finished claim made — with an
+  // insert that is ignored. The answer given NOW is the one that counts
+  // (the account is still `individual`, so nothing has used the old one).
+  const writeKind = async (): Promise<SectorOutcome | null> => {
+    if (!hasKind) return null;
+    const { error } = await service.from(spec.table).update(kindColumns).eq(spec.ownerColumn, userId);
+    return error ? { ok: false, table: spec.table, detail: `${error.code ?? "?"} ${error.message}` } : null;
+  };
 
   if (spec.ownerColumnIsUnique) {
     const { data, error } = await service
       .from(spec.table)
-      .upsert(spec.row, { onConflict: spec.ownerColumn, ignoreDuplicates: true })
+      .upsert(row, { onConflict: spec.ownerColumn, ignoreDuplicates: true })
       .select(spec.ownerColumn);
     if (error) {
       return { ok: false, table: spec.table, detail: `${error.code ?? "?"} ${error.message}` };
     }
     // With `ignoreDuplicates`, PostgREST returns the rows it actually
     // inserted — so an empty array means the row was already there.
-    return { ok: true, table: spec.table, created: (data?.length ?? 0) > 0 };
+    const created = (data?.length ?? 0) > 0;
+    if (!created) {
+      const failed = await writeKind();
+      if (failed) return failed;
+    }
+    return { ok: true, table: spec.table, created };
   }
 
   const { data: existing, error: readError } = await service
@@ -217,10 +237,12 @@ async function provisionSectorRow(
     return { ok: false, table: spec.table, detail: `${readError.code ?? "?"} ${readError.message}` };
   }
   if ((existing?.length ?? 0) > 0) {
+    const failed = await writeKind();
+    if (failed) return failed;
     return { ok: true, table: spec.table, created: false };
   }
 
-  const { error: insertError } = await service.from(spec.table).insert(spec.row);
+  const { error: insertError } = await service.from(spec.table).insert(row);
   if (insertError) {
     return { ok: false, table: spec.table, detail: `${insertError.code ?? "?"} ${insertError.message}` };
   }
@@ -262,6 +284,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: AR.badBody }, { status: 400 });
     }
     const subRole = typeof rawSubRole === "string" ? rawSubRole : null;
+    // R9: «محامٍ مترافع أم مستشار قانوني؟» for a lawyer, the firm kind for a
+    // firm. Read raw; resolveClaimKinds validates them against the type.
+    const rawPracticeKind =
+      body !== null && typeof body === "object" && "practiceKind" in body
+        ? (body as { practiceKind: unknown }).practiceKind
+        : undefined;
+    const rawFirmKind =
+      body !== null && typeof body === "object" && "firmKind" in body
+        ? (body as { firmKind: unknown }).firmKind
+        : undefined;
 
     // ── Who is asking ────────────────────────────────────────────────────────
     const supabase = await createClient();
@@ -312,6 +344,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: AR_REFUSAL[decision.reason] }, { status: 403 });
     }
 
+    // ── R9: the kind that must come with a lawyer or a firm ──────────────────
+    const kinds = resolveClaimKinds(decision.userType, rawPracticeKind, rawFirmKind);
+    if (!kinds.ok) {
+      console.error(`${LOG} refused ${user.id}: ${kinds.reason} (${decision.userType})`);
+      return NextResponse.json({ error: CLAIM_KIND_REFUSAL_AR[kinds.reason] }, { status: 400 });
+    }
+    const kindColumns: Record<string, string> =
+      kinds.practiceKind !== null
+        ? { practice_kind: kinds.practiceKind, practice_kind_confirmed_at: new Date().toISOString() }
+        : kinds.firmKind !== null
+          ? { firm_kind: kinds.firmKind }
+          : {};
+
     const service = await createServiceClient();
 
     // ── The sector row FIRST, the type SECOND ────────────────────────────────
@@ -331,7 +376,7 @@ export async function POST(request: NextRequest) {
     // `user_type = 'lawyer'` AND `verification_status = 'verified'`
     // (src/app/api/v1/lawyers/route.ts:34-35). The retry then finds that row
     // and reuses it.
-    const sector = await provisionSectorRow(service, decision, user.id);
+    const sector = await provisionSectorRow(service, decision, user.id, kindColumns);
     if (!sector.ok) {
       console.error(
         `${LOG} sector provisioning failed for ${user.id} ` +
@@ -416,6 +461,9 @@ export async function POST(request: NextRequest) {
           // for the API, which returns `metadata` in full
           // (src/app/api/v1/admin/audit-log/route.ts:71-72).
           sub_role: decision.subRole,
+          // R9: what the person answered (null for the other types).
+          practice_kind: kinds.practiceKind,
+          firm_kind: kinds.firmKind,
           sector_table: sector.table,
           sector_row_created: sector.created,
         },
@@ -433,7 +481,13 @@ export async function POST(request: NextRequest) {
     // `onboarding_completed` is deliberately NOT written here. It is in the
     // self-editable allowlist of `PATCH /api/v1/profile`, which is where the
     // wizard sets it alongside the phone.
-    return NextResponse.json({ ok: true, userType: decision.userType, subRole: decision.subRole });
+    return NextResponse.json({
+      ok: true,
+      userType: decision.userType,
+      subRole: decision.subRole,
+      practiceKind: kinds.practiceKind,
+      firmKind: kinds.firmKind,
+    });
   } catch (err) {
     console.error(`${LOG} Unexpected error:`, err);
     return NextResponse.json({ error: AR.unexpected }, { status: 500 });

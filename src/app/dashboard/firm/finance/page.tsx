@@ -10,6 +10,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { isDemoMode } from "@/lib/runtimeMode";
 import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedModuleNote";
 import MemberPointsUsageCard from "./_components/MemberPointsUsageCard";
+import FinanceLedgerTabs from "@/components/dashboard/financeLedger/FinanceLedgerTabs";
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
 
@@ -345,6 +346,9 @@ function FirmFinancePageLive() {
       </div>
       <UnfinishedModuleNote href="/dashboard/firm/finance" />
       <MemberPointsUsageCard />
+      {/* l6-ledger (owner F3/F4): time, client trust, office expenses — RLS shows the
+          firm's rows to the owner / partners / finance manager, own rows to others. */}
+      <FinanceLedgerTabs isDark={isDark} statementHref="/dashboard/firm/finance/statement" />
     </div>
   );
 }

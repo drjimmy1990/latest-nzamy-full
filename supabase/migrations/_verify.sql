@@ -7053,3 +7053,157 @@ select 'Firm points counter: finance manager admitted + firm_points_overview (ru
        and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_member_points_usage(uuid)'))) > 0, false)
        as ok;
 -- <<< verify:l4_lawyer
+-- >>> verify:l6_reader
+-- Batch l6-reader (owner 13 Nov N06-40..43, the reader's law map): run 20261126_10 any time.
+select 'Reader law map: library_reader_law_links, service role only, security invoker (run 20261126_10)' as check,
+       to_regprocedure('public.library_reader_law_links(text, integer)') is not null
+       and not has_function_privilege('anon', 'public.library_reader_law_links(text, integer)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_reader_law_links(text, integer)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.library_reader_law_links(text, integer)', 'EXECUTE')
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p
+                          where p.oid = to_regprocedure('public.library_reader_law_links(text, integer)')), true)
+       as ok;
+-- <<< verify:l6_reader
+
+-- >>> verify:l6_invoice
+-- Batch l6-invoice (owner 17-Nov N01-11 / N01-14, Q484): run 20261126_30 BEFORE the deploy.
+select 'Invoice VAT (Q484): create_lawyer_invoice_v3 + invoice_issuer_vat, service role only (run 20261126_30)' as check,
+       to_regprocedure('public.create_lawyer_invoice_v3(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)') is not null
+       and to_regprocedure('public.invoice_issuer_vat(uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.create_lawyer_invoice_v3(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.invoice_issuer_vat(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.invoice_issuer_vat(uuid)', 'EXECUTE')
+       and coalesce(position('1500' in pg_catalog.pg_get_functiondef(to_regprocedure('public.create_lawyer_invoice_v3(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)'))) > 0, false)
+       as ok;
+select 'Lawyer VAT number: branding_vaults.vat_number, shape-checked, no session write (run 20261126_30)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'branding_vaults' and column_name = 'vat_number')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.branding_vaults'::regclass and conname = 'branding_vaults_vat_number_check')
+       and not has_column_privilege('authenticated', 'public.branding_vaults', 'vat_number', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.branding_vaults', 'vat_number', 'INSERT')
+       as ok;
+select 'Invoice void (N01-14): status void + reason/who/when CHECK + void_lawyer_invoice, service role only (run 20261126_30)' as check,
+       exists (select 1 from pg_catalog.pg_constraint
+                where conrelid = 'public.payments'::regclass and conname = 'payments_status_check'
+                  and pg_catalog.pg_get_constraintdef(oid) like '%''void''%')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.payments'::regclass and conname = 'payments_void_fields_check')
+       and to_regprocedure('public.void_lawyer_invoice(text,uuid,text)') is not null
+       and not has_function_privilege('authenticated', 'public.void_lawyer_invoice(text,uuid,text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.void_lawyer_invoice(text,uuid,text)', 'EXECUTE')
+       as ok;
+-- <<< verify:l6_invoice
+-- >>> verify:l6_ledger
+-- Batch l6-ledger (owner TODO F3/F4): run 20261126_40 BEFORE the deploy.
+select 'Time entries / expenses / client trust ledger: RLS, finance-role reads, restricted-case policy, void guard, no session DELETE (run 20261126_40)' as check,
+       to_regclass('public.time_entries') is not null
+       and to_regclass('public.lawyer_expenses') is not null
+       and to_regclass('public.client_trust_ledger') is not null
+       and (select pg_catalog.bool_and(c.relrowsecurity) from pg_catalog.pg_class c
+             where c.oid in ('public.time_entries'::regclass, 'public.lawyer_expenses'::regclass, 'public.client_trust_ledger'::regclass))
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polname = 'restricted case rows: case team only' and not polpermissive and polcmd = 'r'
+               and polrelid in ('public.time_entries'::regclass, 'public.lawyer_expenses'::regclass, 'public.client_trust_ledger'::regclass)) = 3
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid in ('public.time_entries'::regclass, 'public.lawyer_expenses'::regclass, 'public.client_trust_ledger'::regclass)
+                          and polcmd in ('d', '*'))
+       and not has_table_privilege('authenticated', 'public.time_entries', 'DELETE')
+       and not has_table_privilege('authenticated', 'public.lawyer_expenses', 'DELETE')
+       and not has_table_privilege('authenticated', 'public.client_trust_ledger', 'DELETE')
+       and not has_column_privilege('authenticated', 'public.client_trust_ledger', 'amount_halalas', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.time_entries', 'firm_id', 'UPDATE')
+       and not has_table_privilege('anon', 'public.time_entries', 'SELECT')
+       and not has_table_privilege('anon', 'public.client_trust_ledger', 'SELECT')
+       and (select pg_catalog.count(*) from pg_catalog.pg_trigger
+             where tgname in ('trg_00_time_entries_guard', 'trg_00_lawyer_expenses_guard', 'trg_00_client_trust_ledger_guard')
+               and not tgisinternal and tgenabled <> 'D') = 3
+       as ok;
+select 'Firm finance read rule + trust balance: definer, empty search_path, no guest EXECUTE (run 20261126_40)' as check,
+       to_regprocedure('public.can_read_firm_finance(uuid)') is not null
+       and to_regprocedure('public.client_trust_balance(uuid)') is not null
+       and coalesce((select pg_catalog.bool_and(p.prosecdef and p.proconfig @> array['search_path=""']) from pg_catalog.pg_proc p
+                       where p.oid in (to_regprocedure('public.can_read_firm_finance(uuid)'),
+                                       to_regprocedure('public.finance_target_ok(text, uuid, uuid)'),
+                                       to_regprocedure('public.trust_reader_ok(uuid, uuid)'),
+                                       to_regprocedure('public.trust_target_ok(uuid, text, uuid)'),
+                                       to_regprocedure('public.client_trust_balance(uuid)'))), false)
+       and not has_function_privilege('anon', 'public.client_trust_balance(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.can_read_firm_finance(uuid)', 'EXECUTE')
+       and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.can_read_firm_finance(uuid)'))) > 0, false)
+       as ok;
+select 'A voided invoice frees its billed time/expense lines (20261126_40 §4b)' as check,
+       exists (select 1 from pg_trigger where tgname = 'trg_release_billed_lines_on_void'
+               and tgrelid = 'public.payments'::regclass and not tgisinternal) as ok;
+-- <<< verify:l6_ledger
+-- >>> verify:l6_accounts
+-- 2026-11-26 — 20261126_50_accounts_limits.sql (owner TODO R9, S9, firm seat cap):
+-- run BEFORE the l6-accounts deploy (the onboarding claim writes the two new
+-- columns). Re-run it after any re-run of 20261030_12 (firm_court_rows_stay_with_member).
+-- Docker: supabase/tests/rls/accounts_limits_l6.test.sql
+select 'R9: lawyer_profiles.practice_kind_confirmed_at (no session privilege) + firm_profiles.firm_kind (run 20261126_50)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = 'practice_kind_confirmed_at')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.firm_profiles'::regclass and conname = 'firm_profiles_firm_kind_check')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.lawyer_profiles'::regclass and tgname = 'trg_lawyer_profiles_kind_confirmed' and not tgisinternal)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.firm_profiles'::regclass and tgname = 'trg_firm_profiles_kind_guard' and not tgisinternal)
+       and not has_column_privilege('authenticated', 'public.lawyer_profiles', 'practice_kind_confirmed_at', 'UPDATE')
+       and pg_catalog.pg_get_functiondef('public.firm_court_rows_stay_with_member(uuid)'::regprocedure) like '%consulting_office%'
+       as ok;
+select 'S9: free solo lawyer capped at 5 active cases / 10 clients (run 20261126_50)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.service_requests'::regclass and tgname = 'trg_solo_lawyer_case_cap' and not tgisinternal)
+       and (to_regclass('public.lawyer_clients') is null
+            or exists (select 1 from pg_catalog.pg_trigger
+                        where tgrelid = 'public.lawyer_clients'::regclass and tgname = 'trg_solo_lawyer_client_cap' and not tgisinternal))
+       and (select l.cases = 5 and l.clients = 10 from public.solo_lawyer_limits() l)
+       and not has_function_privilege('authenticated', 'public.solo_lawyer_is_capped(uuid)', 'EXECUTE')
+       as ok;
+select 'Firm seat cap: members + invitation links (basic 5 / enterprise 15 / max_seats override) (run 20261126_50)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.firm_members'::regclass and tgname = 'trg_firm_seat_cap' and not tgisinternal)
+       and (to_regclass('public.team_invitations') is null
+            or exists (select 1 from pg_catalog.pg_trigger
+                        where tgrelid = 'public.team_invitations'::regclass and tgname = 'trg_firm_invite_seat_cap' and not tgisinternal))
+       and public.firm_plan_seat_cap('firm-basic') = 5
+       and public.firm_plan_seat_cap('firm-enterprise') = 15
+       and not has_function_privilege('authenticated', 'public.firm_seat_cap(uuid)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.firm_seat_status(uuid)', 'EXECUTE')
+       as ok;
+-- <<< verify:l6_accounts
+-- >>> verify:l6_pay
+-- Batch l6-pay (Q511 pro-rata upgrade, coupon lock): run 20261126_60 BEFORE the deploy.
+select 'Limited coupons reserved at checkout: coupon_reservations + coupon_reserve, service role only (run 20261126_60)' as check,
+       case when to_regclass('public.coupon_reservations') is null
+              or to_regprocedure('public.coupon_reserve(uuid, uuid, uuid)') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.coupon_reservations')), false)
+       and not exists (select 1 from pg_catalog.pg_policy where polrelid = to_regclass('public.coupon_reservations'))
+       and not has_table_privilege('anon', 'public.coupon_reservations', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.coupon_reservations', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.coupon_reservations', 'INSERT')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                       where p.oid = to_regprocedure('public.coupon_reserve(uuid, uuid, uuid)')), false)
+       and not has_function_privilege('anon', 'public.coupon_reserve(uuid, uuid, uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.coupon_reserve(uuid, uuid, uuid)', 'EXECUTE')
+       end as ok;
+select 'One prorated upgrade order per credited plan set: payment_orders_proration_once_key (run 20261126_60)' as check,
+       to_regclass('public.payment_orders_proration_once_key') is not null
+       and pg_catalog.pg_get_indexdef(to_regclass('public.payment_orders_proration_once_key')) like 'CREATE UNIQUE INDEX%proration%key%'
+       as ok;
+-- <<< verify:l6_pay
+-- >>> verify:l6_tools
+select 'Named case boards: canvas_boards with RLS as case_graphs, no guest grant, 20-board cap (run 20261126_70)' as check,
+       to_regclass('public.canvas_boards') is not null
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.canvas_boards')), false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy where polrelid = to_regclass('public.canvas_boards')) = 7
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polrelid = to_regclass('public.canvas_boards') and polpermissive = false) = 3
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = to_regclass('public.canvas_boards') and tgname = 'trg_canvas_boards_cap' and not tgisinternal)
+       and not has_table_privilege('anon', 'public.canvas_boards', 'SELECT')
+       and has_table_privilege('authenticated', 'public.canvas_boards', 'SELECT')
+       as ok;
+-- <<< verify:l6_tools

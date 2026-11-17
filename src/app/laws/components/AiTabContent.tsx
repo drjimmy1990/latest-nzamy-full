@@ -41,6 +41,9 @@ import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
 import { askLibrary, LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
 import type { LibraryAiAction } from "../[slug]/_ai-reply";
+import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const ROYAL = "#0B3D2E";
@@ -147,6 +150,8 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationRef = useRef<string | null>(null);
+  // P1-27: when the running question was sent (the stage shows the real elapsed time).
+  const [startedAt, setStartedAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (turns.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -158,6 +163,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
     setInput("");
     const id = `t-${Date.now()}`;
     setTurns(prev => [...prev, { id, question: q, answer: null }]);
+    setStartedAt(Date.now());
     // The server's reply and citations, or the refusal it gave (askLibrary).
     // Owner Q458: a follow-up carries this tab's conversation (the server adds
     // its last six turns).
@@ -211,6 +217,13 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
       {turns.length > 0 && (
         <div className="max-h-[60vh] overflow-y-auto px-5 py-5 space-y-6">
           {turns.map(t => <TurnView key={t.id} turn={t} isDark={isDark} />)}
+          {running && (
+            <AiThinkingStage
+              run={{ phase: "running", step: null, events: [], startedAt, runId: null, code: null, stale: false }}
+              isDark={isDark}
+              toolLabel={aiToolLabelAr(TOOL)}
+            />
+          )}
           <div ref={bottomRef} />
         </div>
       )}
@@ -373,11 +386,13 @@ function TurnView({ turn, isDark }: { turn: Turn; isDark: boolean }) {
             : <div className="text-[13.5px] leading-[1.85]"><LiteMarkdown text={a.text} /></div>}
           {a.cites.length > 0 && (
             <div className="mt-4">
-              <p className={`text-[11.5px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المصادر — تُفتح في صفحة النص</p>
+              <p className={`text-[11.5px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المصادر — اضغط مصدراً لمعاينة نصه هنا</p>
               <SourceList cites={a.cites} isDark={isDark} compact />
             </div>
           )}
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex flex-wrap items-start justify-end gap-4">
+            {/* Q485 / P1-13: lawyers and firms only (the button decides). */}
+            <SendToDrafterNotesButton text={a.text} sourceLabel="باحث المكتبة" isDark={isDark} />
             <button
               onClick={() => {
                 void navigator.clipboard?.writeText(stripCitationMarkers(a.text)).then(() => {

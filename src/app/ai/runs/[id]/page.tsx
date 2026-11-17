@@ -3,7 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
-import { asCitations, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
+import { asCitations, CitedText, SourceList, stripCitationMarkers } from "@/components/ai/CitedAnswer";
 import { AI_TOOL_PAGES, aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { runPageView, runStatusLabelAr } from "@/lib/ai/runPageView";
 import SaveToCaseButton from "@/components/ai/SaveToCaseButton";
@@ -151,12 +151,12 @@ export default function AiRunPage({ params }: { params: Promise<{ id: string }> 
             <section key={i} className="space-y-1.5">
               {b.heading && <h2 className={`text-[13px] font-black ${heading}`}>{b.heading}</h2>}
               {b.paragraphs.map((p, j) => (
-                <p key={j} className={`whitespace-pre-wrap text-[13px] leading-relaxed ${body}`}>{stripCitationMarkers(p)}</p>
+                <CitedText key={j} text={p} cites={cites} isDark={isDark} className={`text-[13px] leading-relaxed ${body}`} />
               ))}
               {b.items.length > 0 && (
                 <ul className={`list-disc space-y-1 pr-5 text-[13px] leading-relaxed ${body}`}>
                   {b.items.map((it, j) => (
-                    <li key={j} className="whitespace-pre-wrap">{stripCitationMarkers(it)}</li>
+                    <li key={j}><CitedText text={it} cites={cites} isDark={isDark} /></li>
                   ))}
                 </ul>
               )}

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DB_ERROR_AR, dbErrorBody, demoRefusal, logDbError } from "@/lib/api/dbErrorCore";
+import { DB_ERROR_AR, dbErrorBody, demoRefusal, limitRefusal, limitRefusalBody, logDbError } from "@/lib/api/dbErrorCore";
 
 export { DB_ERROR_AR, logDbError } from "@/lib/api/dbErrorCore";
 
@@ -31,6 +31,15 @@ export function dbErrorJson(
   if (demo) {
     return NextResponse.json(dbErrorBody(demo.message, opts.extra), {
       status: demo.status,
+      ...(opts.headers ? { headers: opts.headers } : {}),
+    });
+  }
+  // S9 / seat cap (20261126_50): a plan limit or a full firm gets its own
+  // sentence, a 403 and the link to act on it.
+  const limit = limitRefusal(err);
+  if (limit) {
+    return NextResponse.json(limitRefusalBody(limit, opts.extra), {
+      status: limit.status,
       ...(opts.headers ? { headers: opts.headers } : {}),
     });
   }

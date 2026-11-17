@@ -79,7 +79,8 @@ test("MD colours every markdown line through highlightSafeHtml, never raw", () =
   const start = reader.indexOf("export function MD(");
   const body = reader.slice(start, reader.indexOf("import { type CartEntry }", start));
   assert.equal((body.match(/markdownBoldToSafeHtml\(/g) ?? []).length, 1, "one conversion, inside safeHtml");
-  assert.match(body, /const safeHtml = \(md: string\) => highlightSafeHtml\(markdownBoldToSafeHtml\(md\), hlTerms, hlFocus\);/);
+  // Batch l6-reader: citation chips go in between the sanitiser and the colours.
+  assert.match(body, /const safeHtml = \(md: string, chips = true\) => \{\s*const html = markdownBoldToSafeHtml\(md\);\s*let linked = html;\s*if \(chips && citeOn\) linked = cachedCitationsHtml\(html, [^\n]*\);\s*return highlightSafeHtml\(linked, hlTerms, hlFocus\);\s*\};/);
   assert.match(body, /renderMarkdownTableToHtml\(block\.content \|\| "", safeHtml\)/);
   assert.match(body, /const hlTerms = highlight && hlCtx \? hlCtx\.parsed\.terms : NO_TERMS;/);
 });

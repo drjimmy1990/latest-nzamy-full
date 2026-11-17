@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import TopUpReturnLink from "@/components/payments/TopUpReturnLink";
 import Footer from "@/components/Footer";
 import ResultAutoRefresh from "@/components/payments/ResultAutoRefresh";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -120,6 +121,8 @@ function ResultCard({ view, refreshHref }: { view: ResultView; refreshHref: stri
             عرض إيصال الدفع
           </Link>
         ) : null}
+        {/* l6-pay: started from a tool's in-place top-up → back to the tool, the input kept */}
+        {view.receiptHref ? <TopUpReturnLink className={SECONDARY} /> : null}
         {view.retryHref ? (
           <Link href={view.retryHref} className={PRIMARY}>
             حاول مرة أخرى

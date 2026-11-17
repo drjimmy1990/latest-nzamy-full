@@ -12,6 +12,7 @@ import type { UserType, UserTier } from "@/hooks/useUser";
 import { courtClassOf, resolveCourt } from "./courtTypes";
 import CourtPicker from "./CourtPicker";
 import { caseSavedStatusLine, cardNamed, isAddCaseDirty } from "./addCaseForm";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 
 interface Props {
   onClose: () => void;
@@ -292,6 +293,8 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
             {error && (
               <div role="alert" className={`rounded-xl px-3 py-2 text-[12px] font-semibold ${isDark ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-red-50 text-red-600 border border-red-200"}`}>
                 {error}
+                {/* S9: a free solo lawyer's limit names the upgrade, as a real link. */}
+                {" "}<LimitRefusalLink message={error} />
               </div>
             )}
             {step === 1 && (

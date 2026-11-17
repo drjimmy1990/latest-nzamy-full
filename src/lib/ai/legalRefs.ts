@@ -13,11 +13,17 @@
  *   رقم 4430123      — any «رقم» followed by a number: decisions, judgments,
  *   رقم م/51           principles, royal decrees (م/51), circulars (13/ت/1234)
  *
- * Only references written with digits are found; a spelled-out article
- * («المادة الخامسة والسبعون») is not, and the screens say so.
+ * A spelled-out article («المادة الخامسة والعشرون», «للمادة الحادية عشرة»,
+ * «المادة الأولى بعد المائة») reads as the same key as its digits, so a memo
+ * that writes «الخامسة والعشرون» and a shorter text that writes «25» keep the
+ * reference. The ordinal words are questionRefs.articleNumber's (1–100), plus
+ * «بعد المائة / المائتين / …» here for 101–999. An ordinal followed by «بعد»
+ * and a word that is not a hundred is NOT read (a wrong key is worse than none).
  *
- * Pure, no imports, so `node --test` runs it.
+ * Pure: its only import (questionRefs.ts) has none, so `node --test` runs it.
  */
+
+import { articleNumber } from "./questionRefs.ts";
 
 const DIGITS: Record<string, string> = {
   "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
@@ -38,6 +44,39 @@ const ARTICLE = /(?:^|[^\u0621-\u064A\u0671-\u06D3])(?:[وفبلك]{0,3})(?:ال
 // «رقم» then a number, optionally with letters between slashes: م/51, 13/ت/1234, 4430123.
 const NUMBERED = /رقم\s*[(\[]?\s*((?:[\u0600-\u06FF]{1,2}\s*\/\s*)?\d[\d]*(?:\s*[\/\-]\s*(?:[\u0600-\u06FF]{1,2}|\d+))*)/g;
 
+// «المادة» before a spelled-out number: the same forms as ARTICLE, then an optional «رقم» and bracket.
+const ARTICLE_WORDS = /(?:^|[^\u0621-\u064A\u0671-\u06D3])(?:[وفبلك]{0,3})(?:ال)?ماد(?:ة|تين|تان)\s*(?:رقم\s*)?[(\[«]?\s*(?=[\u0621-\u064A])/g;
+
+/** «أ إ آ» → «ا», «ى» → «ي», «ة» → «ه», «ئ» → «ي»: the shape HUNDREDS is keyed on. */
+const foldWord = (w: string) => w.replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/ئ/g, "ي");
+
+const HUNDREDS: Record<string, number> = {
+  المايه: 100, الميه: 100, المايتين: 200, الميتين: 200, المايتان: 200,
+  الثلاثمايه: 300, الثلثمايه: 300, الاربعمايه: 400, الخمسمايه: 500, الستمايه: 600,
+  السبعمايه: 700, الثمانمايه: 800, الثمانيمايه: 800, التسعمايه: 900,
+  الثلاثميه: 300, الاربعميه: 400, الخمسميه: 500, الستميه: 600, السبعميه: 700, الثمانميه: 800, التسعميه: 900,
+};
+
+/** The words after «المادة», without the punctuation around them. */
+function wordsAfter(text: string, from: number, n: number): string[] {
+  return text
+    .slice(from, from + 80)
+    .replace(/[()[\]{}«»"“”،,؛;:.!؟?]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, n);
+}
+
+/** A spelled-out article number starting at `from`, or null. */
+function spelledArticle(text: string, from: number): number | null {
+  const ws = wordsAfter(text, from, 5);
+  const num = articleNumber(ws.slice(0, 2));
+  if (!num || /^\d/.test(ws[0] ?? "")) return null; // digits are ARTICLE's
+  if (num.n >= 100 || foldWord(ws[num.used] ?? "") !== "بعد") return num.n;
+  const hundreds = HUNDREDS[foldWord(ws[num.used + 1] ?? "")];
+  return hundreds ? hundreds + num.n : null;
+}
+
 /** The references in `text`, normalised, unique, in order of first appearance. */
 export function extractLegalRefs(text: string): string[] {
   if (typeof text !== "string" || !text) return [];
@@ -50,7 +89,14 @@ export function extractLegalRefs(text: string): string[] {
       out.push(key);
     }
   };
-  for (const m of t.matchAll(ARTICLE)) add(`مادة ${m[1]}`);
+  // Digits and words in the order they appear, so the keys keep the text's order.
+  const articles: Array<{ at: number; n: string }> = [];
+  for (const m of t.matchAll(ARTICLE)) articles.push({ at: m.index ?? 0, n: m[1] });
+  for (const m of t.matchAll(ARTICLE_WORDS)) {
+    const n = spelledArticle(t, (m.index ?? 0) + m[0].length);
+    if (n !== null) articles.push({ at: m.index ?? 0, n: String(n) });
+  }
+  for (const a of articles.sort((x, y) => x.at - y.at)) add(`مادة ${a.n}`);
   for (const m of t.matchAll(NUMBERED)) add(`رقم ${m[1].replace(/\s+/g, "")}`);
   return out;
 }

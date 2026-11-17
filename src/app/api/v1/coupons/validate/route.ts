@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { TIER_RANK } from "@/lib/access-control";
 import { parseCheckoutBody } from "@/lib/payments/checkoutRules";
 import { validateCouponWith } from "@/lib/payments/couponServer";
 import { COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR, normalizeCouponCode } from "@/lib/payments/couponRules";
@@ -60,7 +61,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await validateCouponWith(
-      { admin },
+      // l6-pay (Q511): the tier ranking, so a plan's preview refuses exactly as checkout does
+      { admin, ranks: TIER_RANK },
       { userId: user.id, code, itemId: parsed.itemId, billing: parsed.billing },
     );
     return reply(result.body, result.status);

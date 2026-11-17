@@ -16,6 +16,7 @@ import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
 import LawyerOnlyToolNotice from "@/components/ai/LawyerOnlyToolNotice";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
+import TopUpModalHost from "@/components/payments/TopUpModalHost";
 
 /**
  * AI Layout — wraps /ai/* pages with the correct dashboard sidebar.
@@ -54,6 +55,8 @@ export default function AILayout({ children }: { children: React.ReactNode }) {
     <>
       <AIShell>{children}</AIShell>
       {!user.loading && user.isLoggedIn && <TermsReacceptGate />}
+      {/* l6-pay: an insufficient-points refusal opens the top-up in place (useAiRun → TopUpModalHost). */}
+      <TopUpModalHost />
     </>
   );
 }
