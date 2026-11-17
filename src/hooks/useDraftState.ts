@@ -35,7 +35,18 @@ function submitErrorMessageAr(err: unknown): string {
   return "تعذّر إرسال الطلب — حاول مجدداً";
 }
 
-export function useDraftState(initialMode = "") {
+/**
+ * Initial values from a link into the drafter (e.g. «دليل ناجز»'s
+ * «ابدأ صياغة هذه الدعوى»: src/lib/murshid/najizDraftLink.ts). Only fields
+ * the form already has; a ?mode= seed wins where both set one.
+ */
+export interface DraftPrefill {
+  memoType?: string;
+  legalBranch?: string;
+  notesText?: string;
+}
+
+export function useDraftState(initialMode = "", prefill?: DraftPrefill | null) {
   // Seed initial values from ?mode= query param
   function seedFromMode(mode: string): { memoType: string; legalBranch: string } {
     switch (mode) {
@@ -54,10 +65,10 @@ export function useDraftState(initialMode = "") {
 
   // Step 1 state
   const [clientRole, setClientRole]   = useState<"plaintiff" | "defendant" | "">("");
-  const [memoType, setMemoType]       = useState(seed.memoType);
+  const [memoType, setMemoType]       = useState(seed.memoType || prefill?.memoType || "");
   const [memoSubType, setMemoSubType] = useState("");
-  const [legalBranch, setLegalBranch] = useState(seed.legalBranch);
-  const [notesText, setNotesText]     = useState("");
+  const [legalBranch, setLegalBranch] = useState(seed.legalBranch || prefill?.legalBranch || "");
+  const [notesText, setNotesText]     = useState(prefill?.notesText ?? "");
   const [showPreFiling, setShowPreFiling] = useState(false);
   const [preFilingAnswers, setPreFilingAnswers] = useState<string[]>([]);
 

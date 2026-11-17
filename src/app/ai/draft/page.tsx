@@ -25,6 +25,7 @@ import { TranscriptHandoffNotice } from "@/components/draft/TranscriptHandoffNot
 import {
   TRANSCRIPT_FROM_PARAM, consumeTranscriptHandoff, discardTranscriptHandoff, sessionStorageOrNull,
 } from "@/lib/ai/transcriptHandoff";
+import { najizDraftSeed } from "@/lib/murshid/najizDraftLink";
 
 // Labels shown as badge in wizard header when ?mode= param is present
 const MODE_BADGE_LABELS: Record<string, string> = {
@@ -40,7 +41,13 @@ export default function AIDraftPage() {
   const searchParams = useSearchParams();
   const modeParam = searchParams.get("mode") ?? "";
 
-  const s = useDraftState(modeParam);
+  // ?from=najiz&court=…&class=…&type=… («ابدأ صياغة هذه الدعوى» on a «دليل
+  // ناجز» card, owner package 13 Nov N06-6..10): read at render and used as
+  // the form's initial values — the najiz path in «ملاحظات ومرئيات», «تحرير
+  // دعوى», and the branch where the court names one. Never the sub-type or
+  // the client's role. It opens the wizard; nothing is submitted.
+  const najizSeed = useMemo(() => najizDraftSeed((k) => searchParams.get(k)), [searchParams]);
+  const s = useDraftState(modeParam, najizSeed);
   const user = useUser();
 
   // L14 (owner LIVE-F02, NOTE-22): a pleading is written by the AI by
@@ -69,7 +76,7 @@ export default function AIDraftPage() {
   const aiPath = aiOpen && !aiOff && !consultantBlocked && kind !== null;
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
-  const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam ? "draft" : "pre");
+  const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam || najizSeed ? "draft" : "pre");
 
   // ?from=transcript (N1.8): a transcript handed over by SendToDrafterButton.
   // Consumed once in an effect (storage is browser-only; reading it during
@@ -138,6 +145,13 @@ export default function AIDraftPage() {
           <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>صياغة جديدة — ٣ خطوات</p>
         </div>
       </div>
+
+      {najizSeed && s.step === "identify" && (
+        <p role="status" className={`rounded-xl border px-4 py-3 text-[12px] leading-relaxed ${isDark ? "border-emerald-500/20 bg-emerald-500/5 text-zinc-300" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/5 text-zinc-700"}`}>
+          من دليل ناجز: <span className="font-semibold">{najizSeed.path}</span> — أُضيف المسار إلى «ملاحظات ومرئيات»
+          {najizSeed.memoType ? " واختير «تحرير دعوى»" : ""}{najizSeed.legalBranch ? ` والفرع «${najizSeed.legalBranch}»` : ""}. راجعها وأكمل الاختيارات.
+        </p>
+      )}
 
       {transcriptNotice && (
         <TranscriptHandoffNotice
