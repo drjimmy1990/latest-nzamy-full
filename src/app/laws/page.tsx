@@ -43,6 +43,7 @@ import SmartFolders from "./components/SmartFolders";
 import { MyNotesSection } from "./components/MyNotesSection";
 import { GamificationCard } from "./components/GamificationCard";
 import EnactmentCountdownWidget from "./components/EnactmentCountdownWidget";
+import LegislativeUpdates from "./components/LegislativeUpdates";
 
 import {
   type Cat,
@@ -2399,11 +2400,12 @@ export default function LegalLibraryPage() {
                     the results with the other tools, and «إخفاء الأدوات»
                     hides it with them. */}
                 <EnactmentCountdownWidget isDark={isDark} isRTL={isRTL} />
-                {/* «التحديثات التشريعية» (LegislativeUpdates) is not mounted: it
-                    rendered a hardcoded list of amendments that were never issued
-                    (owner test 2026-09-28, T28-01; re-mounted by mistake in 5beb71b,
-                    removed again 2026-10-15). It returns once an amendments feed
-                    exists in the library data. */}
+                {/* «أحدث التحديثات التشريعية» (owner TODO P1-12): real laws only —
+                    title, link and the «آخر تحديث تشريعي» date alone, from
+                    /api/library/legislative-updates. It used to render a
+                    hardcoded list of amendments that were never issued (T28-01,
+                    removed 2026-10-15); it renders nothing when the list is empty. */}
+                <LegislativeUpdates isDark={isDark} isRTL={isRTL} />
               </aside>
             )}
 
