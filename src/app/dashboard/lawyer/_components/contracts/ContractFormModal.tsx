@@ -123,6 +123,8 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
       });
       setClientCards((prev) => [card, ...prev.filter((c) => c.id !== card.id)]);
       setSelectedClientId(card.id);
+      // A new card has no cases yet: a case picked before cannot stay linked.
+      setSelectedRequestId("");
       if (!counterpartyName.trim()) setCounterpartyName(card.name);
       setQuickOpen(false);
       setQuickName("");
@@ -299,6 +301,9 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
                 onChange={(e) => {
                   const id = e.target.value;
                   setSelectedClientId(id);
+                  // The case list follows the client, so a case picked for
+                  // another client is cleared — never saved while hidden.
+                  if (id !== selectedClientId) setSelectedRequestId("");
                   // N01-5 (owner package 13 Nov): picking the client fills «الطرف الآخر»
                   // when it is still empty; a name the lawyer typed is never overwritten.
                   const picked = clientCards.find((c) => c.id === id);
