@@ -23,6 +23,7 @@ import {
   AUTH_UNAVAILABLE_AR,
   type AuthOutcome,
 } from "./resolveAuthOutcome.ts";
+import { firmLandingFor } from "./firmLanding.ts";
 
 /** What the handshake answers with: an HTTP status and a JSON body. */
 export interface SessionDecision {
@@ -38,7 +39,7 @@ export interface SessionProfileRow {
 /**
  * The whole contract of GET /api/v1/auth/session.
  *
- *   ok          → 200 { userId, userType }   userType is null when the profile
+ *   ok          → 200 { userId, userType[, defaultDashboardPath] }   userType is null when the profile
  *                 row is missing or has no type — never guessed as "individual",
  *                 which is the demotion WP-2 item 6 removes from useUser.
  *   anonymous   → 401 { error }   the server did NOT accept the cookies.
@@ -48,11 +49,18 @@ export interface SessionProfileRow {
  * @param outcome  from resolveAuthOutcome(user, error)
  * @param userId   the signed-in user's id; required for `ok`
  * @param profile  the `profiles` row read with the caller's own RLS client
+ * @param isActiveFirmMember  the caller holds an `active` firm_members row
+ *                 (own-row RLS read). N01-25/26/27: a lawyer/individual member
+ *                 then gets `defaultDashboardPath: "/dashboard/firm"`; the key
+ *                 is absent otherwise, and /login falls back to the type's own
+ *                 dashboard exactly as before. A failed read is passed as
+ *                 false — today's behaviour, never a guess.
  */
 export function sessionResponseFor(
   outcome: AuthOutcome,
   userId: string | null,
   profile: SessionProfileRow | null,
+  isActiveFirmMember: boolean = false,
 ): SessionDecision {
   if (outcome === "unavailable") {
     return { status: 503, body: { error: AUTH_UNAVAILABLE_AR } };
@@ -68,5 +76,9 @@ export function sessionResponseFor(
   const rawType = profile?.user_type;
   const userType = typeof rawType === "string" && rawType.length > 0 ? rawType : null;
 
-  return { status: 200, body: { userId, userType } };
+  const firmLanding = firmLandingFor(userType, isActiveFirmMember);
+  return {
+    status: 200,
+    body: firmLanding ? { userId, userType, defaultDashboardPath: firmLanding } : { userId, userType },
+  };
 }

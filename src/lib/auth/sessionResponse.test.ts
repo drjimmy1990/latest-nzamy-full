@@ -60,3 +60,19 @@ test('a missing profile row answers userType null, not "individual"', () => {
 test('ok without a user id degrades to 401 rather than reporting a session', () => {
   assert.equal(sessionResponseFor('ok', null, { user_type: 'lawyer' }).status, 401);
 });
+
+// ── N01-25/26/27: the firm member's landing ────────────────────────────────
+
+test('an active firm member who is a lawyer gets defaultDashboardPath /dashboard/firm', () => {
+  const decision = sessionResponseFor('ok', USER_ID, { user_type: 'lawyer' }, true);
+  assert.equal(decision.status, 200);
+  assert.deepEqual(decision.body, { userId: USER_ID, userType: 'lawyer', defaultDashboardPath: '/dashboard/firm' });
+});
+
+test('a solo lawyer, a failed read (false) and other types carry no defaultDashboardPath', () => {
+  assert.equal(sessionResponseFor('ok', USER_ID, { user_type: 'lawyer' }, false).body.defaultDashboardPath, undefined);
+  assert.equal(sessionResponseFor('ok', USER_ID, { user_type: 'admin' }, true).body.defaultDashboardPath, undefined);
+  assert.equal(sessionResponseFor('ok', USER_ID, { user_type: 'firm' }, true).body.defaultDashboardPath, undefined);
+  assert.equal(sessionResponseFor('ok', USER_ID, null, true).body.defaultDashboardPath, undefined);
+  assert.equal(sessionResponseFor('anonymous', USER_ID, { user_type: 'lawyer' }, true).body.defaultDashboardPath, undefined);
+});
