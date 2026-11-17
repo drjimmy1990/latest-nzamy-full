@@ -16,7 +16,7 @@ import {
 import { maskEmail, maskedMobile, mobileHint } from "./mask.ts";
 import { emailDomain, isThrowawayEmail, THROWAWAY_DOMAINS } from "./throwawayEmail.ts";
 import { cleanOtpInput, generateOtpCode, hashOtpCode, hashOtpTarget, otpPepper } from "./otpCode.ts";
-import { identityChannelAvailable, readSignupProviderConfig } from "./providerConfig.ts";
+import { identityChannelAvailable, readSignupProviderConfig, ZERNIO_ADAPTER_IMPLEMENTED, zernioConfigured } from "./providerConfig.ts";
 import { decideLawyerSignup, REASON_AR, type DecisionInput } from "./decision.ts";
 import { compareExtracted, parseModelAnswer } from "./aiLicenceCheck.ts";
 
@@ -134,9 +134,9 @@ test("otpPepper: 32 characters or none", () => {
 test("no provider is on with credentials alone — every one needs its =on switch", () => {
   const creds = {
     LAWYER_OTP_PEPPER: "x".repeat(40),
-    EVOLUTION_API_URL: "http://evolution.invalid",
-    EVOLUTION_API_KEY: "k",
-    EVOLUTION_INSTANCE_NAME: "i",
+    ZERNIO_API_KEY: "k",
+    ZERNIO_BASE_URL: "http://zernio.invalid",
+    ZERNIO_WHATSAPP_SENDER: "s",
     RESEND_API_KEY: "k",
     EMAIL_FROM: "a@b.test",
     GEMINI_API_KEY: "k",
@@ -155,18 +155,29 @@ test("no provider is on with credentials alone — every one needs its =on switc
     LAWYER_LICENCE_AI: "on",
     LAWYER_INSTANT_APPROVAL: "on",
   });
-  assert.equal(on.whatsapp, true);
+  assert.equal(zernioConfigured(creds), true);
+  assert.equal(on.whatsapp, ZERNIO_ADAPTER_IMPLEMENTED, "WhatsApp waits for the Zernio adapter to be written");
   assert.equal(on.sms, false, "no SMS adapter is implemented yet");
   assert.equal(on.email, true);
   assert.equal(on.ai, true);
   assert.equal(on.aiModel, "gemini-2.5-flash");
   assert.equal(on.instantApproval, true);
-  assert.equal(identityChannelAvailable(on), true);
+  assert.equal(identityChannelAvailable(on), ZERNIO_ADAPTER_IMPLEMENTED);
+  assert.equal(identityChannelAvailable({ whatsapp: true, sms: false }), true);
+  assert.equal(identityChannelAvailable({ whatsapp: false, sms: false }), false);
+});
+
+test("Evolution variables never turn the signup WhatsApp channel on", () => {
+  const c = readSignupProviderConfig({
+    LAWYER_OTP_PEPPER: "x".repeat(40), LAWYER_OTP_WHATSAPP: "on",
+    EVOLUTION_API_URL: "u", EVOLUTION_API_KEY: "k", EVOLUTION_INSTANCE_NAME: "i",
+  });
+  assert.equal(c.whatsapp, false);
 });
 
 test("no pepper → no code channel at all", () => {
   const c = readSignupProviderConfig({
-    EVOLUTION_API_URL: "u", EVOLUTION_API_KEY: "k", EVOLUTION_INSTANCE_NAME: "i", LAWYER_OTP_WHATSAPP: "on",
+    ZERNIO_API_KEY: "k", ZERNIO_BASE_URL: "u", ZERNIO_WHATSAPP_SENDER: "s", LAWYER_OTP_WHATSAPP: "on",
     RESEND_API_KEY: "k", EMAIL_FROM: "a@b.test", LAWYER_OTP_EMAIL: "on",
   });
   assert.equal(c.pepper, null);

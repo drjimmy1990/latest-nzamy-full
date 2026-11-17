@@ -4,14 +4,19 @@
  *
  * EVERY provider needs an explicit switch `=on` IN ADDITION to its
  * credentials. Credentials alone are not enough on purpose: GEMINI_API_KEY is
- * already the embeddings fallback (src/lib/ai/embeddingClient.ts) and the
- * Evolution variables may be shared with n8n, so keying on them alone would
+ * already the embeddings fallback (src/lib/ai/embeddingClient.ts) and a
+ * messaging key may be shared with other jobs, so keying on them alone would
  * start sending licence photos to a model, or codes to phones, the moment
  * this code is deployed — before the owner has approved the provider and its
  * terms (decision ٢١: an API that does not train on the data).
  *
  *   identity / e-mail codes need LAWYER_OTP_PEPPER (≥ 32 characters) first;
- *   WhatsApp:  LAWYER_OTP_WHATSAPP=on + EVOLUTION_API_URL + EVOLUTION_API_KEY + EVOLUTION_INSTANCE_NAME
+ *   WhatsApp:  LAWYER_OTP_WHATSAPP=on + ZERNIO_API_KEY + ZERNIO_BASE_URL +
+ *              ZERNIO_WHATSAPP_SENDER (+ ZERNIO_OTP_TEMPLATE_ID when Zernio
+ *              needs an approved template) AND the Zernio adapter implemented
+ *              (ZERNIO_ADAPTER_IMPLEMENTED below — false until the Zernio API
+ *              docs arrive; the HTTP call is a marked TODO in channels.ts).
+ *              Evolution is NOT used for the signup codes (user decision).
  *   SMS:       LAWYER_OTP_SMS=on + LAWYER_SMS_PROVIDER naming an IMPLEMENTED adapter
  *              (none yet — the owner has the provider quotes to decide; until
  *              then SMS is always unavailable)
@@ -26,6 +31,13 @@ export type Env = Record<string, string | undefined>;
 
 /** The SMS adapters that exist in code. Empty until the owner picks a provider. */
 export const IMPLEMENTED_SMS_PROVIDERS: readonly string[] = [];
+
+/**
+ * Flip to true in the same change that writes the Zernio HTTP call in
+ * src/lib/lawyerSignup/channels.ts. Until then WhatsApp is unavailable even
+ * with every variable set, and the flow falls back to review.
+ */
+export const ZERNIO_ADAPTER_IMPLEMENTED = false;
 
 export const DEFAULT_GEMINI_LICENCE_MODEL = "gemini-2.5-flash";
 
@@ -47,18 +59,18 @@ export function readSignupProviderConfig(env: Env): SignupProviderConfig {
   const smsProvider = (env.LAWYER_SMS_PROVIDER ?? "").trim().toLowerCase();
   return {
     pepper,
-    whatsapp:
-      pepper !== null &&
-      on(env.LAWYER_OTP_WHATSAPP) &&
-      has(env.EVOLUTION_API_URL) &&
-      has(env.EVOLUTION_API_KEY) &&
-      has(env.EVOLUTION_INSTANCE_NAME),
+    whatsapp: pepper !== null && on(env.LAWYER_OTP_WHATSAPP) && zernioConfigured(env) && ZERNIO_ADAPTER_IMPLEMENTED,
     sms: pepper !== null && on(env.LAWYER_OTP_SMS) && IMPLEMENTED_SMS_PROVIDERS.includes(smsProvider),
     email: pepper !== null && on(env.LAWYER_OTP_EMAIL) && has(env.RESEND_API_KEY) && has(env.EMAIL_FROM),
     ai: on(env.LAWYER_LICENCE_AI) && has(env.GEMINI_API_KEY),
     aiModel: (env.GEMINI_LICENCE_MODEL ?? "").trim() || DEFAULT_GEMINI_LICENCE_MODEL,
     instantApproval: on(env.LAWYER_INSTANT_APPROVAL),
   };
+}
+
+/** The Zernio variables are present (names only; never logged). */
+export function zernioConfigured(env: Env): boolean {
+  return has(env.ZERNIO_API_KEY) && has(env.ZERNIO_BASE_URL) && has(env.ZERNIO_WHATSAPP_SENDER);
 }
 
 /** At least one channel can carry the identity code to the registry mobile. */
