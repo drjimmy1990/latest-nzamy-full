@@ -379,7 +379,7 @@ export default function FounderCampaignPage() {
                   <h2 className="text-[14px] font-bold text-white">التحويل حسب مصدر الزيارة</h2>
                   <p className="mt-1 text-[11px] text-zinc-400">
                     بالمشترين لا بالطلبات، من أول رابط حملة (utm) فتحه المشتري خلال ٣٠ يومًا قبل الشراء. «{UNTRACKED_AR}»: طلبات بلا رابط حملة،
-                    ومنها كل طلب سبق إطلاق هذا التتبع. العمليات التجريبية مستبعدة.
+                    ومنها كل طلب سبق إطلاق هذا التتبع. تُستبعد المدفوعات التجريبية؛ أما طلبات حسابات الاختبار التي لم يُدفع عنها فتُعدّ ضمن «بدأوا الشراء».
                   </p>
                 </div>
                 <ConversionTable title="حسب المصدر (utm_source)" rows={data.sale.conversion.bySource} keyLabel="المصدر" />
