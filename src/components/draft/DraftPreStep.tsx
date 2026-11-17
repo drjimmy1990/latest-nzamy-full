@@ -34,7 +34,7 @@ export function DraftPreStep({ onStartDraft, initialMode = "" }: DraftPreStepPro
             <h1 className={`text-2xl font-bold tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
               الصائغ القانوني
             </h1>
-            <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-black text-[#C8A762] tracking-wider">PRO</span>
+            <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-black text-[#C8A762]">احترافية</span>
           </div>
           <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>اختر المسار المناسب لمهمتك</p>
         </div>
