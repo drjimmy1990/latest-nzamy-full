@@ -140,32 +140,16 @@ test("firstSentence stops at . ! ? ؟ ؛ and line breaks", () => {
 });
 
 // ── the fallback ─────────────────────────────────────────────────────────────
-test("fallbackPublicSummary: type label + first scrubbed sentence, safe, ≤ 100", () => {
+test("fallbackPublicSummary: the type label alone — never the client's text (third-party names cannot be scrubbed reliably)", () => {
   const s = fallbackPublicSummary({
     type: "consultation",
-    description: "اسمي فهد العتيبي وجوالي 0551234567. أريد معرفة حقوقي بعد الفصل من العمل وتأخر الرواتب لمدة ستة أشهر",
+    description: "اسمي فهد العتيبي وجوالي 0551234567. أريد معرفة حقوقي بعد الفصل من العمل",
     names: ["فهد العتيبي"],
   });
-  assert.ok(s);
-  assert.ok(isSafePublicSummary(s), s);
-  assert.equal(s, "استشارة: أريد معرفة حقوقي بعد الفصل من العمل وتأخر الرواتب لمدة ستة أشهر");
-  assert.doesNotMatch(s, /فهد|العتيبي/u);
-});
-
-test("fallbackPublicSummary: a sentence left with nothing useful gives the type label alone", () => {
-  assert.equal(fallbackPublicSummary({ type: "service", description: "0551234567" }), "خدمة");
-  assert.equal(fallbackPublicSummary({ type: "service", description: "" , title: "" }), "خدمة");
+  assert.equal(s, "استشارة");
+  assert.equal(fallbackPublicSummary({ type: "service", description: "نزاع مع خالد العتيبي على الإيجار" }), "خدمة");
+  assert.equal(fallbackPublicSummary({ type: "service", description: "", title: "مراجعة عقد شراكة تجارية" }), "خدمة");
   assert.equal(fallbackPublicSummary({ type: "unknown_type", description: "" }), "طلب");
-});
-
-test("fallbackPublicSummary uses the scrubbed title when there is no description", () => {
-  const s = fallbackPublicSummary({ type: "service", description: "", title: "مراجعة عقد شراكة تجارية" });
-  assert.equal(s, "خدمة: مراجعة عقد شراكة تجارية");
-});
-
-test("fallbackPublicSummary: a dot inside a removed e-mail does not cut the sentence", () => {
-  const s = fallbackPublicSummary({ type: "service", description: "راسلوني على a.b@x.sa بخصوص صياغة عقد عمل" });
-  assert.ok(s && /صياغة عقد عمل/u.test(s), String(s));
 });
 
 // ── model input and reply ────────────────────────────────────────────────────

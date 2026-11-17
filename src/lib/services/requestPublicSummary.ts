@@ -244,29 +244,15 @@ export interface SummarySource {
 }
 
 /**
- * The deterministic line: «<type label>: <first sentence of the scrubbed
- * description>» (or of the scrubbed title when the description is empty), cut
- * to PUBLIC_SUMMARY_MAX. The sentence is taken from the RAW text first, then
- * scrubbed, so a «.» inside a removed e-mail or URL cannot end it early. Null
- * only when nothing safe is left at all.
+ * The deterministic line when the model is off or fails: the request type
+ * label ALONE («استشارة», «خدمة»…). It never quotes the client's text: a scrubber
+ * cannot know every third party's name («نزاع مع خالد العتيبي…»), so only the
+ * model (told to drop names) may summarise the description. Null only when the
+ * label itself is not safe. `description`, `title` and `names` are accepted and
+ * ignored so callers need not change.
  */
 export function fallbackPublicSummary(src: SummarySource): string | null {
   const label = requestTypeLabelAr(src.type ?? null) ?? "طلب";
-  const opts = { names: src.names ?? [] };
-  const pick = (raw: string | null | undefined): string => {
-    if (typeof raw !== "string" || raw.trim().length === 0) return "";
-    const scrubbed = scrubPersonalData(raw, opts);
-    // the first sentence with at least two real words (a sentence the
-    // scrubber emptied — «اسمي … وجوالي …» — is skipped, not shown)
-    for (const piece of scrubbed.split(/[.!?؟؛]+/u)) {
-      const sentence = tidy(piece);
-      if (sentence.split(" ").filter((w) => w.length > 1).length >= 2) return sentence;
-    }
-    return "";
-  };
-  const sentence = pick(src.description) || pick(src.title);
-  const line = clampSummary(sentence ? `${label}: ${sentence}` : label);
-  if (isSafePublicSummary(line)) return line;
   return isSafePublicSummary(label) ? label : null;
 }
 
