@@ -29,7 +29,7 @@ function newKey(): string {
 }
 
 export async function askAssistant(
-  input: { message: string; context: string; conversationId: string | null; userType?: string | null },
+  input: { message: string; context: string; conversationId: string | null; userType?: string | null; mode?: "direct" | "grill" },
   fetchImpl: typeof fetch = fetch,
 ): Promise<AssistantAnswer> {
   let res: Response;
@@ -39,7 +39,8 @@ export async function askAssistant(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tool: "assistant",
-        input: { message: input.message, context: input.context },
+        // Q481: «استجوبني» is sent as mode "grill"; «مباشر» sends no mode (today's input).
+        input: { message: input.message, context: input.context, ...(input.mode === "grill" ? { mode: "grill" } : {}) },
         ...(input.conversationId ? { conversationId: input.conversationId } : {}),
         idempotencyKey: newKey(),
       }),

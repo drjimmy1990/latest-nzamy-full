@@ -42,6 +42,8 @@ import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation
 import { askLibrary, LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
 import type { LibraryAiAction } from "../[slug]/_ai-reply";
 import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const ROYAL = "#0B3D2E";
@@ -148,6 +150,8 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationRef = useRef<string | null>(null);
+  // P1-27: when the running question was sent (the stage shows the real elapsed time).
+  const [startedAt, setStartedAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (turns.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -159,6 +163,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
     setInput("");
     const id = `t-${Date.now()}`;
     setTurns(prev => [...prev, { id, question: q, answer: null }]);
+    setStartedAt(Date.now());
     // The server's reply and citations, or the refusal it gave (askLibrary).
     // Owner Q458: a follow-up carries this tab's conversation (the server adds
     // its last six turns).
@@ -212,6 +217,13 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
       {turns.length > 0 && (
         <div className="max-h-[60vh] overflow-y-auto px-5 py-5 space-y-6">
           {turns.map(t => <TurnView key={t.id} turn={t} isDark={isDark} />)}
+          {running && (
+            <AiThinkingStage
+              run={{ phase: "running", step: null, events: [], startedAt, runId: null, code: null, stale: false }}
+              isDark={isDark}
+              toolLabel={aiToolLabelAr(TOOL)}
+            />
+          )}
           <div ref={bottomRef} />
         </div>
       )}

@@ -83,8 +83,10 @@ test("R30: a legacy held run reads the one sentence, with no promise of a team r
   }
 });
 
-test("the three tools the section leaves out keep their own waiting UI: a stage there would show nothing real", () => {
-  for (const file of ["app/ai/communicate/page.tsx", "app/ai/najiz-optimizer/page.tsx", "app/dashboard/admin/ai-usage/page.tsx"]) {
+// P1-27 (owner package 17 Nov): communicate and najiz-optimizer now mount the
+// stage (real elapsed time, «no details yet»); see src/lib/ai/assistantModes.test.ts.
+test("the admin usage page keeps its own waiting UI: a stage there would show nothing real", () => {
+  for (const file of ["app/dashboard/admin/ai-usage/page.tsx"]) {
     assert.doesNotMatch(src(file), /<AiThinkingStage/, file);
   }
 });

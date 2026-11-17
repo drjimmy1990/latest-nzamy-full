@@ -13,6 +13,10 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useAiRun } from "@/hooks/useAiRun";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
+import { documentParagraphs } from "@/lib/docx/exportPolicy";
 import { aiToolPriceText, arabicPoints } from "@/lib/ai/toolPointsDisplay";
 import { NAJIZ_TARGET_CHARS } from "@/lib/ai/tools";
 import { markBlankFields } from "./_blankFields";
@@ -349,6 +353,8 @@ function NajizOptimizerPage() {
                         <Sparkle size={13} weight="fill" className="text-[#C8A762]" />
                         {ai.busy ? "جارٍ الاختصار…" : `اختصر بالذكاء الاصطناعي (${aiToolPriceText("najiz-optimizer", "ar")})`}
                       </button>
+                      {/* P1-27: the run's real progress and elapsed time while it works. */}
+                      <AiThinkingStage run={ai} isDark={isDark} toolLabel={aiToolLabelAr("najiz-optimizer")} />
                       {ai.phase === "error" && ai.error && (
                         <p role="alert" className={`text-[11px] ${isDark ? "text-red-400" : "text-red-600"}`}>{ai.error}</p>
                       )}
@@ -399,6 +405,9 @@ function NajizOptimizerPage() {
                   showVault
                   className="justify-start"
                 />
+
+                {/* N04-36: the memo on the lawyer's or the firm's letterhead (Word / print), lawyers and firms only. */}
+                <LetterheadExportBar title="مذكرة" blocks={documentParagraphs(result)} filename="najiz-memo" />
 
                 {/* Next actions */}
                 <div className={`rounded-xl border p-4 ${isDark ? "border-[#0B3D2E]/40 bg-[#0B3D2E]/10" : "border-emerald-100 bg-emerald-50"}`}>

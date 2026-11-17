@@ -3,12 +3,14 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import {
-  Envelope, PencilSimple, Sparkle, Copy,
+  Envelope, Sparkle, Copy,
   CheckCircle, CaretDown, WhatsappLogo, ArrowRight,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import { useAiRun } from "@/hooks/useAiRun";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { COMMUNICATE_TONES, type CommunicateType } from "@/lib/ai/tools";
 import ToolUsableGate from "@/components/ai/ToolUsableGate";
 
@@ -179,15 +181,8 @@ function AICommunicatePage() {
                   <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>اختر نوع الرسالة واشرح ما تريد قوله</p>
                 </div>
               ) : generating ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                    className="mb-4 h-12 w-12 rounded-2xl bg-gradient-to-br from-[#0B3D2E] to-[#1a6b50] flex items-center justify-center">
-                    <PencilSimple size={22} weight="duotone" className="text-[#C8A762]" />
-                  </motion.div>
-                  <p className={`text-[14px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-                    AI يكتب {selectedType.label} بأسلوب {tone}...
-                  </p>
-                </div>
+                // P1-27: the run's real progress and elapsed time, not a spinner.
+                <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("communicate")} />
               ) : (
                 <>
                   <div className={`rounded-2xl p-5 ${isDark ? "bg-zinc-800/40 border border-white/[0.05]" : "bg-zinc-50 border border-zinc-100"}`}>
