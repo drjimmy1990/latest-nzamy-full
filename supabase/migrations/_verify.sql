@@ -6958,3 +6958,36 @@ select 'Community votes own-row + recount trigger (20261016_06, checked by 20261
                     and cmd = 'DELETE' and qual ilike '%auth.uid()%')
        as ok;
 -- <<< verify:l5_community
+-- >>> verify:l5_demo
+-- Demo accounts (owner S3 / R11): run 20261125_50 after 20261124_10.
+select 'Demo accounts: profiles.is_demo + flag guard (run 20261125_50)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'profiles' and column_name = 'is_demo')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.profiles'::regclass and tgname = 'trg_profiles_is_demo_guard' and not tgisinternal)
+       and to_regprocedure('public.is_demo_user(uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.is_demo_user(uuid)', 'EXECUTE')
+       as ok;
+select 'Demo accounts: no payment, no founder seat (re-run 20261125_50 after any re-run of 20261124_10)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.payment_orders'::regclass and tgname = 'trg_demo_guard' and not tgisinternal)
+       and pg_catalog.pg_get_functiondef('public.founder_reserve_seat(uuid, uuid)'::regprocedure) like '%demo_account%'
+       and pg_catalog.pg_get_functiondef('public.founder_reserve_seat(uuid, uuid)'::regprocedure) like '%15 minutes%'
+       and not has_function_privilege('authenticated', 'public.founder_reserve_seat(uuid, uuid)', 'EXECUTE')
+       as ok;
+select 'Demo accounts: every guarded table that exists here carries trg_demo_guard (run 20261125_50)' as check,
+       not exists (
+         select 1
+           from (values ('community_posts', 'author_id'), ('community_answers', 'author_id'),
+                        ('community_votes', 'user_id'), ('community_reports', 'reporter_user_id'),
+                        ('reviews', 'reviewer_id'), ('library_issue_reports', 'user_id'),
+                        ('marketplace_listings', 'owner_id'), ('marketplace_offers', 'offeror_id'),
+                        ('service_requests', 'requester_user_id'), ('consultations', 'requester_user_id'),
+                        ('lawyer_clients', 'owner_user_id')) v(t, col)
+          where exists (select 1 from information_schema.columns c
+                         where c.table_schema = 'public' and c.table_name = v.t and c.column_name = v.col)
+            and not exists (select 1 from pg_catalog.pg_trigger tg
+                             where tg.tgrelid = to_regclass('public.' || v.t)
+                               and tg.tgname = 'trg_demo_guard' and not tg.tgisinternal))
+       as ok;
+-- <<< verify:l5_demo

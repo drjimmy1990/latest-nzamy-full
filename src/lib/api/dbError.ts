@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DB_ERROR_AR, dbErrorBody, logDbError } from "@/lib/api/dbErrorCore";
+import { DB_ERROR_AR, dbErrorBody, demoRefusal, logDbError } from "@/lib/api/dbErrorCore";
 
 export { DB_ERROR_AR, logDbError } from "@/lib/api/dbErrorCore";
 
@@ -25,6 +25,15 @@ export function dbErrorJson(
   opts: { message?: string; extra?: Record<string, unknown>; headers?: HeadersInit } = {},
 ): NextResponse {
   logDbError(tag, err);
+  // S3 / R11 (20261125_50): a demo account refused by the database gets its
+  // own fixed sentence and a 403, whatever the route passed.
+  const demo = demoRefusal(err);
+  if (demo) {
+    return NextResponse.json(dbErrorBody(demo.message, opts.extra), {
+      status: demo.status,
+      ...(opts.headers ? { headers: opts.headers } : {}),
+    });
+  }
   return NextResponse.json(dbErrorBody(opts.message ?? DB_ERROR_AR, opts.extra), {
     status,
     ...(opts.headers ? { headers: opts.headers } : {}),

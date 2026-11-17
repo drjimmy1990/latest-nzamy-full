@@ -110,6 +110,7 @@ import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { checkFounderConsent, type FounderConsent, type FounderTermsState } from "./founderConsent.ts";
 import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR } from "./checkoutCaptcha.ts";
 import type { Attribution } from "../attribution/utmAttribution.ts";
+import { DEMO_NO_PAYMENT_AR, demoRefusal } from "../api/dbErrorCore.ts";
 import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
@@ -140,6 +141,8 @@ export const FOUNDER_NOT_ADVOCATE_AR = "باقة المؤسس للمحامي ا�
 const SEAT_REFUSALS: Readonly<Record<string, { status: 403 | 409 | 410; error: string }>> = {
   not_verified: { status: 403, error: FOUNDER_NOT_VERIFIED_AR },
   not_advocate: { status: 403, error: FOUNDER_NOT_ADVOCATE_AR },
+  // 20261125_50 (S3): a demo account never reserves a founder seat
+  demo_account: { status: 403, error: DEMO_NO_PAYMENT_AR },
   already_member: { status: 409, error: FOUNDER_ALREADY_MEMBER_AR },
   full: { status: 409, error: FOUNDER_FULL_AR },
   closed: { status: 410, error: FOUNDER_CLOSED_AR },
@@ -418,6 +421,9 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       attempts.spend(user.id);
       return fail(400, COUPON_PENDING_AR);
     }
+    // 20261125_50 (S3): payment_orders refuses a demo account's order
+    const demo = demoRefusal(insertErr);
+    if (demo) return fail(demo.status, demo.message);
     if (insertErr && isMissingPaymentsObject(insertErr.code)) {
       logMissingOnce("order insert", insertErr.code);
       return fail(503, MOYASAR_DISABLED_MESSAGE_AR);

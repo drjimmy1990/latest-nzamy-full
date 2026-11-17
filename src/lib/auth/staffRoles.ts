@@ -19,6 +19,8 @@ export type StaffAction =
   | "users.delete"
   | "users.change_type"
   | "users.suspend"
+  /** S2 «عرض كمستخدم»: read one user's own data, audited (super_admin only). */
+  | "users.view_as"
   | "staff.manage"
   | "settings.write"
   | "library.delete"
@@ -43,6 +45,7 @@ const EVERY_ACTION: Readonly<Record<StaffAction, true>> = {
   "users.delete": true,
   "users.change_type": true,
   "users.suspend": true,
+  "users.view_as": true,
   "staff.manage": true,
   "settings.write": true,
   "library.delete": true,

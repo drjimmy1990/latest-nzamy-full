@@ -15,6 +15,7 @@ const EVERY_ACTION: Record<StaffAction, true> = {
   "users.delete": true,
   "users.change_type": true,
   "users.suspend": true,
+  "users.view_as": true,
   "staff.manage": true,
   "settings.write": true,
   "library.delete": true,
@@ -52,7 +53,10 @@ const ROLES: StaffRole[] = ["super_admin", "operations", "auditor"];
 const sorted = (row: Iterable<string>) => [...row].sort();
 
 test("the staff matrix includes the two payment actions", () => {
-  assert.equal(ACTIONS.length, 21);
+  // 22 since S2 added users.view_as (super_admin only)
+  assert.equal(ACTIONS.length, 22);
+  assert.equal(staffCan("operations", "users.view_as"), false);
+  assert.equal(staffCan("auditor", "users.view_as"), false);
 });
 test("only the super admin can refund; all staff roles may read payments", () => {
   for (const role of ROLES) {
