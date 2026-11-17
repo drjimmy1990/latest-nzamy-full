@@ -12,6 +12,12 @@ import type { LibraryAiAction } from "./_ai-reply";
 import { askLibrary } from "./_library-assistant";
 import { explainGreeting, explainSubtitle } from "./_explain-greeting";
 import { asCitations, CitedText, SourceList, type Citation } from "@/components/ai/CitedAnswer";
+import { useUser } from "@/hooks/useUser";
+import { createCommunityPost } from "@/lib/services/communityService";
+import {
+  canPostCommunityQuestion, communityLoginHref, communityQuestionHref, communityQuestionPrefill,
+  COMMUNITY_QUESTION_CATEGORIES, COMMUNITY_TITLE_MAX, type CommunityQuestionCategory,
+} from "./_community-question";
 
 
 const QUICK_PROMPTS = [
@@ -368,34 +374,46 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
 }
 
 // ─── Community Question Modal ─────────────────────────────────────────────────
-// ⚠️ BACKEND TODO: POST /api/community/questions { title, body, category, lawName }
-
-const COMMUNITY_CATEGORIES = [
-  "عمالي وتوظيف","عقود وتجاري","جنائي","مدني وشخصية",
-  "إداري","منافسة وملكية فكرية","عقاري وإنشاءات",
-  "أحوال شخصية وأسرة","مصرفي ومالي","أخرى",
-];
+// N05-L9 (owner F-22): posts a real question through POST /api/v1/community/posts
+// (createCommunityPost, as /community/ask), its details opening with the law and
+// the article. Signed-in readers only; a guest is sent to sign in and back.
 
 export function CommunityQuestionModal({
-  isDark, isRTL = true, lawName, onClose,
-}: { isDark: boolean; isRTL?: boolean; lawName?: string; onClose: () => void }) {
+  isDark, isRTL = true, lawName, articleRef, onClose,
+}: { isDark: boolean; isRTL?: boolean; lawName?: string; articleRef?: string; onClose: () => void }) {
+  const user = useUser();
   const [title, setTitle] = useState("");
-  const [body, setBody]   = useState("");
-  const [cat, setCat]     = useState(COMMUNITY_CATEGORIES[0]);
-  const [isAnon, setIsAnon] = useState(false);
-  const [sent, setSent]   = useState(false);
+  const [body, setBody]   = useState(() => communityQuestionPrefill(lawName, articleRef));
+  const [cat, setCat]     = useState<CommunityQuestionCategory | "">("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [postedHref, setPostedHref] = useState<string | null>(null);
 
   const base  = isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200";
   const inp   = isDark ? "bg-zinc-800/60 border-white/10 text-zinc-100 placeholder-zinc-600 focus:border-[#C8A762]/50" : "bg-slate-50 border-slate-200 text-gray-900 placeholder-slate-400 focus:border-amber-400";
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
   const lbl   = isDark ? "text-zinc-300" : "text-gray-700";
+  const canSend = !sending && cat !== "" && canPostCommunityQuestion(title, cat);
 
-  // Honest gate: posting to the legal community is not yet wired to the
-  // backend. Instead of storing to localStorage and pretending it was
-  // published to lawyers, show a clear "قريباً / coming soon" state.
-  const handleSubmit = () => {
-    if (!title.trim()) return;
-    setSent(true);
+  // Success only for a question the server saved; its own error text otherwise.
+  const handleSubmit = async () => {
+    if (!canSend || cat === "") return;
+    setSending(true);
+    setError(null);
+    try {
+      const saved = await createCommunityPost({
+        title: title.trim(),
+        body: body.trim(),
+        category: cat,
+        asker: user.name || "",
+        askerType: user.userType === "lawyer" ? "lawyer" : "user",
+      });
+      setPostedHref(communityQuestionHref(saved?.id));
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : (isRTL ? "تعذّر نشر السؤال — لم يُحفظ." : "The question was not posted."));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -414,79 +432,72 @@ export function CommunityQuestionModal({
             </div>
             <div>
               <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "اسأل في المجتمع القانوني" : "Ask the Legal Community"}</p>
-              <p className={`text-[10px] ${muted}`}>{isRTL ? "سؤالك سيُنشر للمحامين في منصة نظامي" : "Your question will reach Nezamy lawyers"}</p>
+              <p className={`text-[10px] ${muted}`}>{isRTL ? "يُنشر سؤالك في مجتمع نظامي القانوني" : "Your question is posted to the Nezamy community"}</p>
             </div>
           </div>
           <button onClick={onClose} className={`p-2 rounded-xl transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}><X size={16} /></button>
         </div>
 
         {/* Body */}
-        {sent ? (
+        {postedHref ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 px-6">
-            <div className={`w-14 h-14 rounded-full flex items-center justify-center ${isDark ? "bg-amber-900/30 text-amber-400" : "bg-amber-50 text-amber-600"}`}>
+            <div className={`w-14 h-14 rounded-full flex items-center justify-center ${isDark ? "bg-emerald-900/30 text-emerald-400" : "bg-emerald-50 text-emerald-600"}`}>
               <Sparkle size={28} weight="fill" />
             </div>
-            <p className={`text-[15px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "قريباً" : "Coming Soon"}</p>
-            <p className={`text-[12px] text-center ${muted}`}>
-              {isRTL
-                ? "نشر الأسئلة في المجتمع القانوني قيد التفعيل. لن يُرسل سؤالك حالياً — سيتوفر قريباً مع ربط المحامين والإشعارات."
-                : "Posting to the legal community is being activated. Your question was not submitted — it will be available soon with lawyer notifications."}
+            <p className={`text-[15px] font-black ${isDark ? "text-white" : "text-gray-900"}`}>{isRTL ? "تم نشر سؤالك" : "Your question was posted"}</p>
+            <p className={`text-[12px] text-center ${muted}`}>{isRTL ? "تظهر الإجابات في صفحة السؤال." : "Answers appear on the question's page."}</p>
+            <Link href={postedHref} className="px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
+              {isRTL ? "افتح صفحة السؤال" : "Open the question"}
+            </Link>
+          </div>
+        ) : user.loading ? (
+          <p className={`py-12 text-center text-[12px] ${muted}`}>{isRTL ? "جارٍ التحميل…" : "Loading…"}</p>
+        ) : !user.isLoggedIn ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12 px-6">
+            <p className={`text-[13px] font-bold text-center ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
+              {isRTL ? "سجّل الدخول لتنشر سؤالك في المجتمع." : "Sign in to post your question."}
             </p>
+            <Link href={communityLoginHref(typeof window === "undefined" ? "/" : window.location.pathname)}
+              className="px-4 py-2 rounded-xl text-[12px] font-bold bg-[#0B3D2E] text-white hover:opacity-90 transition">
+              {isRTL ? "تسجيل الدخول" : "Sign in"}
+            </Link>
           </div>
         ) : (
           <div className="p-5 flex flex-col gap-4">
             {lawName && (
               <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isDark ? "bg-white/[0.03] border border-white/[0.06]" : "bg-slate-50 border border-slate-200"}`}>
                 <span className={`text-[10px] font-bold ${muted}`}>{isRTL ? "السياق:" : "Context:"}</span>
-                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${isDark ? "bg-[#0B3D2E]/40 text-green-300" : "bg-green-50 text-green-800"}`}>{lawName}</span>
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg ${isDark ? "bg-[#0B3D2E]/40 text-green-300" : "bg-green-50 text-green-800"}`}>{[lawName, articleRef].filter(Boolean).join(" — ")}</span>
               </div>
             )}
             <div>
-              <label className={`text-[11px] font-bold block mb-1.5 ${lbl}`}>{isRTL ? "التصنيف" : "Category"}</label>
-              <select value={cat} onChange={e => setCat(e.target.value)}
+              <label className={`text-[11px] font-bold block mb-1.5 ${lbl}`}>{isRTL ? "التصنيف *" : "Category *"}</label>
+              <select value={cat} onChange={e => setCat(e.target.value as CommunityQuestionCategory | "")}
                 className={`w-full px-3 py-2 rounded-xl border text-[12px] outline-none transition ${inp}`}>
-                {COMMUNITY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value="">{isRTL ? "اختر التصنيف" : "Choose a category"}</option>
+                {COMMUNITY_QUESTION_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
             </div>
             <div>
               <label className={`text-[11px] font-bold block mb-1.5 ${lbl}`}>{isRTL ? "عنوان السؤال *" : "Question Title *"}</label>
-              <input value={title} onChange={e => setTitle(e.target.value)}
+              <input value={title} onChange={e => setTitle(e.target.value)} maxLength={COMMUNITY_TITLE_MAX}
                 placeholder={isRTL ? "مثال: ما مدة التقادم في عقود العمل؟" : "e.g. Statute of limitations for labor contracts?"}
                 className={`w-full px-3 py-2.5 rounded-xl border text-[12px] outline-none transition ${inp}`} />
+              <p className={`mt-1 text-[10px] ${muted}`}>{isRTL ? "أكثر من عشرة أحرف." : "More than ten characters."}</p>
             </div>
             <div>
               <label className={`text-[11px] font-bold block mb-1.5 ${lbl}`}>{isRTL ? "تفاصيل السؤال (اختياري)" : "Question Details (optional)"}</label>
-              <textarea value={body} onChange={e => setBody(e.target.value)} rows={3}
+              <textarea value={body} onChange={e => setBody(e.target.value)} rows={4}
                 placeholder={isRTL ? "اشرح وضعك القانوني أو تساؤلك..." : "Describe your legal question..."}
                 className={`w-full px-3 py-2.5 rounded-xl border text-[12px] outline-none resize-none transition leading-relaxed ${inp}`} />
             </div>
-
-            {/* Anonymous Toggle */}
-            <div className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50/60"}`}>
-              <div>
-                <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
-                  {isRTL ? "نشر كمجهول" : "Post Anonymously"}
-                </p>
-                <p className={`text-[10px] mt-0.5 ${muted}`}>
-                  {isRTL ? "سيظهر اسمك كـ \"مستخدم مجهول\" بدون رابط لبروفايلك" : "Your name appears as \"Anonymous\" without a profile link"}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAnon(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${isAnon ? "bg-[#0B3D2E]" : isDark ? "bg-zinc-700" : "bg-slate-200"}`}
-              >
-                <motion.span
-                  animate={{ x: isAnon ? (isRTL ? -20 : 20) : 4 }}
-                  initial={false}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="absolute top-1 start-1 w-4 h-4 rounded-full bg-white shadow-sm"
-                />
-              </button>
-            </div>
-            <button onClick={handleSubmit} disabled={!title.trim()}
+            <p className={`text-[10px] ${muted}`}>
+              {isRTL ? "يظهر سؤالك دون اسمك، باسم «عضو في المجتمع». لا تكتب فيه رقم جوال أو بريداً." : "Your question shows without your name. Do not include a phone number or email."}
+            </p>
+            {error && <p role="alert" className={`text-[11px] font-semibold ${isDark ? "text-red-400" : "text-red-600"}`}>{error}</p>}
+            <button onClick={handleSubmit} disabled={!canSend}
               className={`w-full py-3 rounded-xl text-[13px] font-black transition disabled:opacity-40 bg-[#0B3D2E] text-white hover:bg-[#0a3226]`}>
-              {isRTL ? "إرسال السؤال للمجتمع" : "Post to Community"}
+              {sending ? (isRTL ? "جارٍ النشر…" : "Posting…") : (isRTL ? "إرسال السؤال للمجتمع" : "Post to Community")}
             </button>
           </div>
         )}
