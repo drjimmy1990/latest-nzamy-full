@@ -60,7 +60,7 @@ import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun, FOUNDER_LIBRARY_TOOL } from "../membership/founderPlan.ts";
 import { contractDraftingRefusal, draftingRefusal, draftingRequestKind } from "./draftingRequest.ts";
 import { checkMinuteLimit, extractionRefusal, guardMessage, logFlagged, type PromptGuardState } from "./assistantGuard.ts";
-import { isExtractionRefusalReply, leaksPrompt } from "./extractionGuard.ts";
+import { detectExtraction, isExtractionRefusalReply, leaksPrompt } from "./extractionGuard.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import {
   SECTION_EDIT_COPY,
@@ -440,6 +440,41 @@ export interface DispatchContext {
   actor: RunActor;
 }
 
+/**
+ * A conversation's earlier turns, as `history` for n8n: this user's own
+ * succeeded runs (the caller read them), the last `historyPairs` of them, each
+ * text cut to `turnMax` when the tool sets one (owner Q458).
+ *
+ * `guarded` (a tool with promptGuard, owner ١٣): every stored turn goes
+ * through the same extraction guard again — a question the detector flags, or
+ * an answer that carries the prompt (leaksPrompt) or is the extraction
+ * refusal, drops its whole pair. Stored turns passed the guard when they were
+ * asked; this re-check keeps a turn stored before a rule was added out of the
+ * prompt. Dropping is silent: it counts no attempt and refuses nothing.
+ */
+export function historyFromRuns(
+  rows: ReadonlyArray<{ input: unknown; output: unknown; status: string }>,
+  conversation: { historyPairs: number; field: string; replyField: string; turnMax?: number },
+  guarded: boolean,
+): Array<{ role: "user" | "assistant"; text: string }> {
+  const { field, replyField, historyPairs, turnMax } = conversation;
+  const cut = (s: string) => (turnMax && turnMax > 0 && s.length > turnMax ? s.slice(0, turnMax) : s);
+  return rows
+    .filter((r) => r.status === "succeeded" && isPlainObject(r.input) && isPlainObject(r.output))
+    .flatMap((r) => {
+      const q = (r.input as Record<string, unknown>)[field];
+      const a = (r.output as Record<string, unknown>)[replyField];
+      if (typeof q !== "string" || typeof a !== "string") return [];
+      if (guarded && (detectExtraction(q).flagged || leaksPrompt(a) || isExtractionRefusalReply(a))) return [];
+      return [[q, a] as const];
+    })
+    .slice(-historyPairs)
+    .flatMap(([q, a]) => [
+      { role: "user" as const, text: cut(q) },
+      { role: "assistant" as const, text: cut(a) },
+    ]);
+}
+
 const chargedBody = (run: StartedRun, conversationId: string | null) => ({
   chargedPoints: run.charged_points,
   creditUsed: run.credit_used === true,
@@ -556,17 +591,7 @@ export async function startRunWith(
       if (turn >= spec.conversation.maxMessages) {
         return { status: 409, body: { error: AI_COPY.conversationFull, code: "conversation_full", conversationId } };
       }
-      const { field, replyField, historyPairs } = spec.conversation;
-      history = rows
-        .filter((r) => r.status === "succeeded" && isPlainObject(r.input) && isPlainObject(r.output))
-        .slice(-historyPairs)
-        .flatMap((r) => {
-          const q = (r.input as Record<string, unknown>)[field];
-          const a = (r.output as Record<string, unknown>)[replyField];
-          return typeof q === "string" && typeof a === "string"
-            ? [{ role: "user" as const, text: q }, { role: "assistant" as const, text: a }]
-            : [];
-        });
+      history = historyFromRuns(rows, spec.conversation, !!spec.promptGuard);
     }
   }
   // A tool whose turns are different steps refuses one out of order, uncharged.

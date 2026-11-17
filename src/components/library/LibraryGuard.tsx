@@ -5,6 +5,7 @@ import { useLibraryStatus } from "@/hooks/useLibraryStatus";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryClosedNotice from "./LibraryClosedNotice";
 import LibrarySecurityLockNotice, { LibraryDailyLimitBanner } from "./LibrarySecurityLockNotice";
+import { isLawReaderPath } from "./libraryGuardPaths";
 
 /**
  * LibraryGuard — renders library content only while the library is open.
@@ -32,8 +33,28 @@ import LibrarySecurityLockNotice, { LibraryDailyLimitBanner } from "./LibrarySec
  */
 const ALWAYS_OPEN_PATHS = ["/laws/subscribe"];
 
-export default function LibraryGuard({ children }: { children: React.ReactNode }) {
+/**
+ * `lawReaderGuardsItself` (only src/app/laws/layout.tsx passes it): a law's
+ * reader, /laws/[slug], is guarded by its own layout, which renders this guard
+ * around the reader and the public «عن هذا النظام» block and JSON-LD OUTSIDE
+ * it (owner TODO P1-10) — the guard SSRs only a spinner, so anything inside
+ * never reaches the first HTML. The section guard lets that path through
+ * without reading the status; every other /laws page is guarded here as before
+ * (libraryGuardPaths.ts lists the static siblings).
+ */
+export default function LibraryGuard({
+  children,
+  lawReaderGuardsItself = false,
+}: {
+  children: React.ReactNode;
+  lawReaderGuardsItself?: boolean;
+}) {
   const pathname = usePathname();
+  if (lawReaderGuardsItself && isLawReaderPath(pathname)) return <>{children}</>;
+  return <GuardedContent pathname={pathname}>{children}</GuardedContent>;
+}
+
+function GuardedContent({ children, pathname }: { children: React.ReactNode; pathname: string | null }) {
   const lib = useLibraryStatus();
   const { isDark } = useTheme();
 

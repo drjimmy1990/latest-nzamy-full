@@ -46,6 +46,23 @@ test("the book shell and JSON-LD sit OUTSIDE LibraryGuard (the guard SSRs only a
   assert.ok(src.indexOf("<LibraryDocumentShell") > guard);
 });
 
+test("P1-10: the law's shell and JSON-LD sit OUTSIDE its own LibraryGuard, and the section guard lets the reader through", () => {
+  const src = read("./laws/[slug]/layout.tsx");
+  const guard = src.indexOf("<LibraryGuard>{children}</LibraryGuard>");
+  assert.ok(guard > 0, "the law layout guards the reader itself");
+  assert.ok(src.indexOf("<LibraryJsonLd") < guard);
+  assert.ok(src.indexOf("<LibraryDocumentShell doc={load.doc} />") > guard);
+  // The guest-shaped loader only: never the preamble or an article's text.
+  assert.doesNotMatch(src.replace(/\/\*[\s\S]*?\*\//g, ""), /preamble|articles|createServiceClient|createClient/);
+  const section = read("./laws/layout.tsx");
+  assert.match(section, /<LibraryGuard lawReaderGuardsItself>/);
+  const guardSrc = read("../components/library/LibraryGuard.tsx");
+  assert.match(guardSrc, /if \(lawReaderGuardsItself && isLawReaderPath\(pathname\)\) return <>\{children\}<\/>;/);
+  // The shell prints the name and the موجز, never a preamble or article text.
+  const shell = read("../components/library/LibraryDocumentShell.tsx").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+  assert.doesNotMatch(shell, /preamble|\.text\b|articles/);
+});
+
 test("the loader reads as the service role, checks the library switch, and never uses the cookie client", () => {
   const src = read("../lib/library/libraryDocumentSeo.ts");
   assert.match(src, /const supabase = await createServiceClient\(\);/);

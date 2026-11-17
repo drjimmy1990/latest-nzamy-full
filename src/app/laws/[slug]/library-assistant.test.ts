@@ -6,7 +6,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { askLibrary, LIBRARY_AI_SOON, lawSlugFromPath } from "./_library-assistant.ts";
+import { askLibrary, LIBRARY_AI_SOON, lawSlugFromPath, loadLibraryHistory } from "./_library-assistant.ts";
 import { libraryLockMessageAr, LIBRARY_LOCK_SUPPORT_PATH } from "../../../lib/library/readQuota.ts";
 
 function reply(status: number, body: unknown) {
@@ -134,4 +134,51 @@ test("owner ٢٢: a refused contract request offers «محترف العقود» 
   const blocked = await askLibrary({ message: "س" }, "/laws/a", reply(429, { error: "أُوقف المساعد مؤقتاً", code: "assistant_blocked" }).fetchImpl);
   assert.equal(blocked.text, "أُوقف المساعد مؤقتاً");
   assert.equal(blocked.refused, true);
+});
+
+const CID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+test("Q458: the conversation id goes with a follow-up and comes back; no history text is ever sent", async () => {
+  const { fetchImpl, sent } = reply(200, { output: { reply: "ستون يوماً [S1]" }, citations: [], conversationId: CID });
+  const first = await askLibrary({ message: "ما مدة الإشعار؟" }, "/laws/labor-law", fetchImpl);
+  assert.equal(first.conversationId, CID);
+  assert.ok(!("conversationId" in sent[0]), "a first question starts a new conversation");
+  await askLibrary({ message: "وما أثره؟", conversationId: first.conversationId }, "/laws/labor-law", fetchImpl);
+  assert.equal(sent[1].conversationId, CID);
+  for (const s of sent) assert.ok(!("history" in s) && !("history" in (s.input as object)), "history is the server's, never the browser's");
+  // A malformed id is not sent.
+  await askLibrary({ message: "س", conversationId: "../x" }, "/laws/labor-law", fetchImpl);
+  assert.ok(!("conversationId" in sent[2]));
+});
+
+test("Q458: a full conversation (409 conversation_full) is asked again once in a new conversation", async () => {
+  const sent: Array<Record<string, unknown>> = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    const b = JSON.parse(String(init.body));
+    sent.push(b);
+    return b.conversationId
+      ? new Response(JSON.stringify({ error: "full", code: "conversation_full", conversationId: CID }), { status: 409 })
+      : new Response(JSON.stringify({ output: { reply: "جواب" }, citations: [], conversationId: "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const a = await askLibrary({ message: "س", conversationId: CID }, "/laws/labor-law", fetchImpl);
+  assert.equal(sent.length, 2);
+  assert.notEqual(sent[0].idempotencyKey, sent[1].idempotencyKey);
+  assert.equal(a.text, "جواب");
+  assert.equal(a.conversationId, "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+});
+
+test("L3: the saved conversations are read for the law page only; anything but a list hides the panel", async () => {
+  const urls: string[] = [];
+  const ok = (async (url: string) => {
+    urls.push(url);
+    return new Response(JSON.stringify({ conversations: [{ conversationId: CID, turns: [{ question: "س", answer: "ج", citations: [], createdAt: "t" }], updatedAt: "t" }, { turns: "x" }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const list = await loadLibraryHistory("/laws/%D9%86%D8%B8%D8%A7%D9%85?tab=1", ok);
+  assert.equal(urls[0], `/api/v1/ai/library-history?law=${encodeURIComponent("نظام")}`);
+  assert.equal(list?.length, 1, "a malformed entry is dropped");
+  assert.equal(await loadLibraryHistory("/laws", ok), null);
+  const signedOut = (async () => new Response(JSON.stringify({ error: "x" }), { status: 401 })) as unknown as typeof fetch;
+  assert.equal(await loadLibraryHistory("/laws/labor-law", signedOut), null);
+  const down = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+  assert.equal(await loadLibraryHistory("/laws/labor-law", down), null);
 });

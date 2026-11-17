@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -9,7 +9,7 @@ import {
 import type { LawArticle } from "../data";
 import { LiteMarkdown } from "../components/AiTabContent";
 import type { LibraryAiAction } from "./_ai-reply";
-import { askLibrary } from "./_library-assistant";
+import { askLibrary, loadLibraryHistory, type LibraryHistoryConversation } from "./_library-assistant";
 import { explainGreeting, explainSubtitle } from "./_explain-greeting";
 import { asCitations, CitedText, SourceList, type Citation } from "@/components/ai/CitedAnswer";
 import { useUser } from "@/hooks/useUser";
@@ -81,12 +81,56 @@ function readTranscript(event: SpeechRecognitionEventLike) {
   return event.results[0]?.[0]?.transcript ?? "";
 }
 
+/** A saved conversation's day, for the list (an unreadable time shows nothing). */
+function historyDate(iso: string, isRTL: boolean): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    return d.toLocaleDateString(isRTL ? "ar-SA" : "en-GB", { day: "numeric", month: "short" });
+  } catch {
+    return "";
+  }
+}
+
 export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: boolean }) {
   const [input, setInput]     = useState("");
   const [msgs, setMsgs]       = useState<AIMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen]       = useState(false);
   const bottomRef             = useRef<HTMLDivElement>(null);
+  // Owner Q458: the conversation this chat continues (the server adds its last
+  // six turns to a follow-up). L3: the user's saved conversations on this law,
+  // from the server, so another device lists them too; null = not loaded / none.
+  const conversationRef       = useRef<string | null>(null);
+  const user                  = useUser();
+  const [history, setHistory] = useState<LibraryHistoryConversation[] | null>(null);
+  const historyAsked          = useRef(false);
+
+  const refreshHistory = useCallback(async () => {
+    const list = await loadLibraryHistory(window.location.pathname);
+    setHistory(list && list.length > 0 ? list : null);
+  }, []);
+
+  useEffect(() => {
+    if (!open || user.loading || !user.isLoggedIn || historyAsked.current) return;
+    historyAsked.current = true;
+    void refreshHistory();
+  }, [open, user.loading, user.isLoggedIn, refreshHistory]);
+
+  const restoreConversation = (c: LibraryHistoryConversation) => {
+    conversationRef.current = c.conversationId;
+    setMsgs(c.turns.flatMap((t): AIMessage[] => [
+      { role: "user", text: t.question },
+      { role: "ai", text: t.answer, cites: asCitations(t.citations) },
+    ]));
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  };
+
+  const startNewConversation = () => {
+    conversationRef.current = null;
+    setMsgs([]);
+    if (user.isLoggedIn) void refreshHistory();
+  };
 
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -126,7 +170,11 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
 
     // The library assistant on the AI pipeline (plan §5 L5): the server's
     // reply with its citations, or the refusal it gave; never an invented answer.
-    const answer = await askLibrary({ message: query }, window.location.pathname + window.location.search);
+    const answer = await askLibrary(
+      { message: query, conversationId: conversationRef.current },
+      window.location.pathname + window.location.search,
+    );
+    if (answer.conversationId) conversationRef.current = answer.conversationId;
     const reply = answer.text;
     const action = answer.action;
     const cites = asCitations(answer.citations);
@@ -164,6 +212,38 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
                       </button>
                     ))}
                   </div>
+                  {history && history.length > 0 && (
+                    <div className="mt-3">
+                      <p className={`text-[10px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-400"}`}>{isRTL ? "محادثاتك السابقة في هذا النظام:" : "Your earlier conversations on this law:"}</p>
+                      <ul className="space-y-1">
+                        {history.map((c, i) => (
+                          <li key={c.conversationId ?? `single-${i}`}>
+                            <button
+                              onClick={() => restoreConversation(c)}
+                              className={`w-full ${textStart} flex items-center gap-2 text-[11px] px-2.5 py-1.5 rounded-lg border transition ${isDark ? "border-white/[0.07] text-zinc-300 hover:border-[#C8A762]/30" : "border-slate-200 text-slate-600 hover:border-amber-300"}`}
+                            >
+                              <span className="flex-1 truncate">{c.turns[0]?.question}</span>
+                              <span className={`flex-shrink-0 text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+                                {c.turns.length > 1 ? (isRTL ? `${c.turns.length} أسئلة · ` : `${c.turns.length} questions · `) : ""}
+                                {historyDate(c.updatedAt, isRTL)}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {msgs.length > 0 && (
+                <div className={`flex justify-end px-3 pt-2`}>
+                  <button
+                    onClick={startNewConversation}
+                    disabled={loading}
+                    className={`text-[10px] font-bold px-2 py-1 rounded-md transition disabled:opacity-40 ${isDark ? "text-zinc-400 hover:text-[#C8A762]" : "text-slate-500 hover:text-amber-700"}`}
+                  >
+                    {isRTL ? "محادثة جديدة" : "New conversation"}
+                  </button>
                 </div>
               )}
               {msgs.length > 0 && (
@@ -241,6 +321,7 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
   const subtitle = explainSubtitle(article.title, lawName);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const conversationRef = useRef<string | null>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -277,11 +358,14 @@ export function ArticleExplainModal({ article, isDark, onClose, isRTL = true, la
     setMsgs(m => [...m, { role: "user", text: query }]);
     setLoading(true);
     // «اشرح لي» on the AI pipeline (plan §5 L5): the open article is sent as
-    // the first source, whatever the library search finds around it.
+    // the first source, whatever the library search finds around it. Q458: a
+    // follow-up in this window carries its conversation (the server adds the
+    // last six turns).
     const answer = await askLibrary(
-      { message: query, articleId: article.id },
+      { message: query, articleId: article.id, conversationId: conversationRef.current },
       window.location.pathname + window.location.search,
     );
+    if (answer.conversationId) conversationRef.current = answer.conversationId;
     const reply = answer.text;
     const action = answer.action;
     const cites = asCitations(answer.citations);
