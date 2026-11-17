@@ -7053,3 +7053,42 @@ select 'Firm points counter: finance manager admitted + firm_points_overview (ru
        and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_member_points_usage(uuid)'))) > 0, false)
        as ok;
 -- <<< verify:l4_lawyer
+-- >>> verify:l6_ledger
+-- Batch l6-ledger (owner TODO F3/F4): run 20261126_40 BEFORE the deploy.
+select 'Time entries / expenses / client trust ledger: RLS, finance-role reads, restricted-case policy, void guard, no session DELETE (run 20261126_40)' as check,
+       to_regclass('public.time_entries') is not null
+       and to_regclass('public.lawyer_expenses') is not null
+       and to_regclass('public.client_trust_ledger') is not null
+       and (select pg_catalog.bool_and(c.relrowsecurity) from pg_catalog.pg_class c
+             where c.oid in ('public.time_entries'::regclass, 'public.lawyer_expenses'::regclass, 'public.client_trust_ledger'::regclass))
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polname = 'restricted case rows: case team only' and not polpermissive and polcmd = 'r'
+               and polrelid in ('public.time_entries'::regclass, 'public.lawyer_expenses'::regclass, 'public.client_trust_ledger'::regclass)) = 3
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid in ('public.time_entries'::regclass, 'public.lawyer_expenses'::regclass, 'public.client_trust_ledger'::regclass)
+                          and polcmd in ('d', '*'))
+       and not has_table_privilege('authenticated', 'public.time_entries', 'DELETE')
+       and not has_table_privilege('authenticated', 'public.lawyer_expenses', 'DELETE')
+       and not has_table_privilege('authenticated', 'public.client_trust_ledger', 'DELETE')
+       and not has_column_privilege('authenticated', 'public.client_trust_ledger', 'amount_halalas', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.time_entries', 'firm_id', 'UPDATE')
+       and not has_table_privilege('anon', 'public.time_entries', 'SELECT')
+       and not has_table_privilege('anon', 'public.client_trust_ledger', 'SELECT')
+       and (select pg_catalog.count(*) from pg_catalog.pg_trigger
+             where tgname in ('trg_00_time_entries_guard', 'trg_00_lawyer_expenses_guard', 'trg_00_client_trust_ledger_guard')
+               and not tgisinternal and tgenabled <> 'D') = 3
+       as ok;
+select 'Firm finance read rule + trust balance: definer, empty search_path, no guest EXECUTE (run 20261126_40)' as check,
+       to_regprocedure('public.can_read_firm_finance(uuid)') is not null
+       and to_regprocedure('public.client_trust_balance(uuid)') is not null
+       and coalesce((select pg_catalog.bool_and(p.prosecdef and p.proconfig @> array['search_path=""']) from pg_catalog.pg_proc p
+                       where p.oid in (to_regprocedure('public.can_read_firm_finance(uuid)'),
+                                       to_regprocedure('public.finance_target_ok(text, uuid, uuid)'),
+                                       to_regprocedure('public.trust_reader_ok(uuid, uuid)'),
+                                       to_regprocedure('public.trust_target_ok(uuid, text, uuid)'),
+                                       to_regprocedure('public.client_trust_balance(uuid)'))), false)
+       and not has_function_privilege('anon', 'public.client_trust_balance(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.can_read_firm_finance(uuid)', 'EXECUTE')
+       and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.can_read_firm_finance(uuid)'))) > 0, false)
+       as ok;
+-- <<< verify:l6_ledger
