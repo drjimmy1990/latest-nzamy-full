@@ -45,6 +45,9 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
 
   // Controlled inputs
   const [clientName, setClientName] = useState("");
+  // N07-48 (owner 13-Nov): the other side, saved as metadata.opponentName and
+  // read back by extractCaseParties (canvas import, office graph, conflict hints).
+  const [opponentName, setOpponentName] = useState("");
   const [title, setTitle] = useState("");
   // CODE-F30: no court until the lawyer picks one — it used to start on
   // «المحكمة التجارية», so an untouched field filed every case as commercial.
@@ -121,7 +124,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
   const savedCourtClass = courtResolved.ok && courtResolved.court ? courtClassOf(courtResolved.court, courtClass) : null;
   const matchingCard = selectedClientId ? null : cardNamed(clientCards, clientName);
   const dirty = !done && isAddCaseDirty({
-    selectedClientId, clientName, title, courtChoice, courtOther, priority, description,
+    selectedClientId, clientName, title, courtChoice, courtOther, priority, description, opponentName,
   });
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
@@ -235,6 +238,7 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
         metadata: {
           ...(courtResolved.court ? { court: courtResolved.court } : {}),
           ...(savedCourtClass ? { courtClass: savedCourtClass } : {}),
+          ...(opponentName.trim() ? { opponentName: opponentName.trim().slice(0, 200) } : {}),
           priority,
         },
         assignedTo: user.userId,
@@ -387,6 +391,18 @@ export default function AddCaseModal({ onClose, isDark, user }: Props) {
                     </p>
                   </div>
                 )}
+                <div>
+                  <label htmlFor={`${fieldId}-opponent`} className={labelCls}>الخصم (اختياري)</label>
+                  <input
+                    id={`${fieldId}-opponent`}
+                    type="text"
+                    value={opponentName}
+                    onChange={e => setOpponentName(e.target.value)}
+                    maxLength={200}
+                    placeholder="اسم الطرف الآخر في الدعوى — فرد أو جهة"
+                    className={inputCls}
+                  />
+                </div>
                 <div>
                   <label htmlFor={`${fieldId}-title`} className={labelCls}>عنوان القضية</label>
                   <input id={`${fieldId}-title`} type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="مثال: مطالبة مالية - مؤسسة العليان" className={inputCls} />
