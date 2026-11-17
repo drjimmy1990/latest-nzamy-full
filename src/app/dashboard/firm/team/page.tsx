@@ -54,6 +54,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Plus, MagnifyingGlass, Gavel, Star, Envelope, CheckCircle,
   Warning, Key, Student, X, UserPlus, CaretDown, Crown, PauseCircle, PlayCircle,
+  UserMinus, ClockCounterClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
@@ -254,17 +255,101 @@ function AddMemberModal({ isDark, onClose, onAdd }: AddMemberModalProps) {
   );
 }
 
+// ─── Remove-member confirmation (N03-34) ────────────────────────────────────
+
+/**
+ * «إزالة عضو» writes `status: 'removed'` through PATCH /api/v1/firm/members/[id]
+ * (the firm owner only). It never deletes the account. In the database the
+ * removal fires `firm_member_removed_transfer` (20261026_70 / 20261030_12):
+ * the firm rows he owns or wrote move to the firm owner, and every firm policy
+ * keys on an ACTIVE membership, so he stops seeing the office's data at once.
+ * The dialog says both before anything is written.
+ */
+function RemoveMemberDialog({ m, isDark, onClose, onConfirm }: {
+  m: FirmMember;
+  isDark: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const confirm = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await onConfirm();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذّرت إزالة العضو.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={() => { if (!busy) onClose(); }}
+      role="dialog" aria-modal="true" aria-labelledby="remove-member-title"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 30, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: 0.97 }}
+        onClick={e => e.stopPropagation()}
+        className={`w-full max-w-md rounded-3xl shadow-2xl p-6 space-y-4 ${isDark ? "bg-zinc-900 border border-white/[0.08]" : "bg-white border border-zinc-100"}`}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+            <UserMinus size={18} weight="duotone" className="text-red-500" />
+          </div>
+          <h2 id="remove-member-title" className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>
+            إزالة {m.displayName} من فريق المكتب؟
+          </h2>
+        </div>
+        <ul className={`text-[12px] leading-6 list-disc pr-5 space-y-1 ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+          <li>لن يرى بعد الآن أي شيء من بيانات المكتب: القضايا والجلسات والمهام والعملاء.</li>
+          <li>ما يملكه أو كتبه من ملفات المكتب ينتقل إلى صاحب المكتب، ولا يعود إليه هذا النقل لاحقاً.</li>
+          <li>لا يُحذف حسابه على المنصّة؛ يبقى حساباً مستقلاً بملفاته الشخصية.</li>
+        </ul>
+        {error && (
+          <p className="text-[12px] text-red-500 flex items-center gap-1"><Warning size={12} /> {error}</p>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={confirm}
+            disabled={busy}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600 text-white font-bold text-[13px] hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <UserMinus size={15} /> {busy ? "جارٍ الإزالة…" : "تأكيد الإزالة"}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            className={`px-4 py-2.5 rounded-xl font-bold text-[13px] cursor-pointer transition-colors ${isDark ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}
+          >
+            إلغاء
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ─── Member card ────────────────────────────────────────────────────────────
 
 interface MemberCardProps {
   m: FirmMember;
   isDark: boolean;
   card: string;
+  /** The firm owner (or an admin). Viewers (office_admin / hr_manager) get no controls — the API refuses them. */
+  canManage: boolean;
   onChangeRole: (memberId: string, role: FirmRole) => Promise<void>;
   onToggleStatus: (memberId: string, next: "active" | "suspended" | "removed") => Promise<void>;
+  onAskRemove: (m: FirmMember) => void;
 }
 
-function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCardProps) {
+function MemberCard({ m, isDark, card, canManage, onChangeRole, onToggleStatus, onAskRemove }: MemberCardProps) {
   const role = ROLE_CONFIG[m.role];
   const status = STATUS_STYLE[m.status];
   const RoleIcon = role?.icon ?? Users;
@@ -360,7 +445,7 @@ function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCar
       {/* An INVITED row is not a membership: the person has not answered, sees
           nothing of this office, and may still say no. The only control is
           withdrawing the invitation. */}
-      {!m.isOwner && m.status === "invited" && (
+      {canManage && !m.isOwner && m.status === "invited" && (
         <div className="space-y-2">
           <p className={`text-[11px] leading-5 ${isDark ? "text-amber-400/80" : "text-amber-600"}`}>
             بانتظار قبول الدعوة — لا يطّلع هذا الحساب على شيء من بيانات المكتب قبل أن يقبل.
@@ -376,7 +461,7 @@ function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCar
       )}
 
       {/* Actions — never on the owner's own row, never on an invitation */}
-      {!m.isOwner && m.status !== "invited" && (
+      {canManage && !m.isOwner && m.status !== "invited" && m.status !== "removed" && (
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <select
@@ -407,6 +492,15 @@ function MemberCard({ m, isDark, card, onChangeRole, onToggleStatus }: MemberCar
               {m.status === "suspended" ? "تفعيل" : "تعليق"}
             </button>
           )}
+          <button
+            onClick={() => onAskRemove(m)}
+            disabled={busy !== null}
+            title="إزالة العضو من فريق المكتب"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed bg-red-500/10 text-red-500 hover:bg-red-500/20"
+          >
+            <UserMinus size={13} />
+            إزالة عضو
+          </button>
         </div>
       )}
     </div>
@@ -425,6 +519,8 @@ export default function FirmTeamPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<FirmRole | "all">("all");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [removing, setRemoving] = useState<FirmMember | null>(null);
+  const [showFormer, setShowFormer] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [read, setRead] = useState<ListRead<FirmMember> | null>(null);
@@ -445,7 +541,12 @@ export default function FirmTeamPage() {
   }, [loadMembers, reloadKey]);
 
   const viewState = listViewState(loading, read);
-  const members = itemsOf(read);
+  const allRows = itemsOf(read);
+  // N03-34: a removed member leaves the roster for «أعضاء سابقون» (read-only).
+  // A withdrawn invitation is `removed` too, but it was never a membership
+  // (accepted_at null), so it is listed nowhere.
+  const members = useMemo(() => allRows.filter(m => m.status !== "removed"), [allRows]);
+  const formerMembers = useMemo(() => allRows.filter(m => m.status === "removed" && m.acceptedAt !== null), [allRows]);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -596,13 +697,56 @@ export default function FirmTeamPage() {
                 m={m}
                 isDark={isDark}
                 card={card}
+                canManage={canManage}
                 onChangeRole={handleChangeRole}
                 onToggleStatus={handleToggleStatus}
+                onAskRemove={setRemoving}
               />
             </motion.div>
           ))}
         </div>
       )}
+
+      {/* «أعضاء سابقون» — removed members, read-only (N03-34) */}
+      {viewState === "ready" && formerMembers.length > 0 && (
+        <div className={`${card} p-4`}>
+          <button
+            onClick={() => setShowFormer(v => !v)}
+            className={`w-full flex items-center justify-between text-[13px] font-bold cursor-pointer ${isDark ? "text-zinc-300" : "text-slate-700"}`}
+            aria-expanded={showFormer}
+          >
+            <span className="flex items-center gap-2">
+              <ClockCounterClockwise size={15} />
+              أعضاء سابقون ({toArabicDigits(formerMembers.length)})
+            </span>
+            <CaretDown size={13} className={`transition-transform ${showFormer ? "rotate-180" : ""}`} />
+          </button>
+          {showFormer && (
+            <ul className="mt-3 space-y-2">
+              {formerMembers.map(m => (
+                <li key={m.id} className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-[12px] ${isDark ? "bg-white/[0.03] text-zinc-400" : "bg-slate-50 text-slate-500"}`}>
+                  <span className="min-w-0 truncate">
+                    <span className={`font-semibold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{m.displayName}</span>
+                    {" · "}{ROLE_CONFIG[m.role]?.label ?? m.role}
+                  </span>
+                  <span dir="ltr" className="truncate text-[11px]">{m.email ?? "—"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <AnimatePresence>
+        {removing && canManage && (
+          <RemoveMemberDialog
+            m={removing}
+            isDark={isDark}
+            onClose={() => setRemoving(null)}
+            onConfirm={() => handleToggleStatus(removing.id, "removed")}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Add Member Modal */}
       <AnimatePresence>
