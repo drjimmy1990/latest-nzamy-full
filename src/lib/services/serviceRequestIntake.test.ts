@@ -125,3 +125,17 @@ test("the payloads the live callers send all pass", () => {
     metadata: { day: "", time: "", mode: "video", duration: 60 },
   });
 });
+// ── city (owner ١٩, 20261124_30): a pick-list slug or nothing ─────────────
+test("city: absent, null or empty → null; a known slug is kept", () => {
+  assert.equal(ok({ title: "ع" }).city, null);
+  assert.equal(ok({ title: "ع", city: null }).city, null);
+  assert.equal(ok({ title: "ع", city: "" }).city, null);
+  assert.equal(ok({ title: "ع", city: "riyadh" }).city, "riyadh");
+  assert.equal(ok({ title: "ع", city: "other" }).city, "other");
+});
+
+test("city: free text, an Arabic label or a non-string is refused, never stored", () => {
+  for (const city of ["الرياض", "Riyadh", "riyadh ", "0551234567", "x@y.com", 1, true, {}, []]) {
+    rejected({ title: "ع", city });
+  }
+});

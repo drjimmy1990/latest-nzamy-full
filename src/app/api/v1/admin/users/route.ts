@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { DB_USER_TYPES, isDbUserType, type DbUserType } from "@/lib/auth/userTypes";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { readAdminBalances } from "@/lib/payments/pointsAdmin";
+import { readSuspendedIds } from "@/lib/accountSuspension/suspensionServer";
 
 /**
  * The PostgREST `or=` clause for a free-text search over the three name/email
@@ -220,6 +221,9 @@ export async function GET(request: NextRequest) {
 
     // A failed balance read shows «—» (null) on each row; it never fails the page.
     const byUser = await readAdminBalances(adminClient, (data ?? []).map(row => row.id as string));
+    // TODO 3.5: which rows are banned now (20261124_60). Unknown (null: the
+    // migration not run, a failed read) shows no suspension, never a guess.
+    const suspendedIds = await readSuspendedIds(adminClient, (data ?? []).map(row => row.id as string));
     // ── Transform results ────────────────────────────────────────────────────
     const users = (data ?? []).map((row: Record<string, unknown>) => {
       // Pick the active subscription (first match) or null
@@ -248,6 +252,7 @@ export async function GET(request: NextRequest) {
             }
           : null,
         credit_balance: byUser ? byUser.get(row.id as string) ?? 0 : null,
+        suspended: suspendedIds ? suspendedIds.has(row.id as string) : null,
       };
     });
 

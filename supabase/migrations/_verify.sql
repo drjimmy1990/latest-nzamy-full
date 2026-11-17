@@ -6779,3 +6779,136 @@ select 'Every active founder seat has its library points (run 20261124_10)' as c
                                        where c.seat_id = s.id and c.kind = 'library_question'))
        as ok;
 -- <<< verify:l2_2026_11_17
+-- >>> verify:l3_auth
+-- 20261124_60 (TODO 3.5, real suspension): any time, before or after the deploy.
+-- Docker: supabase/tests/rls/account_suspension.test.sql
+-- (oid arguments: a missing function reads false here instead of raising.)
+select 'Account suspension: end sessions + banned list, service role only (run 20261124_60)' as check,
+       coalesce(
+         to_regprocedure('public.admin_revoke_user_sessions(uuid)') is not null
+         and to_regprocedure('public.admin_suspended_user_ids(uuid[])') is not null
+         and not has_function_privilege('anon', to_regprocedure('public.admin_revoke_user_sessions(uuid)'), 'EXECUTE')
+         and not has_function_privilege('authenticated', to_regprocedure('public.admin_revoke_user_sessions(uuid)'), 'EXECUTE')
+         and not has_function_privilege('anon', to_regprocedure('public.admin_suspended_user_ids(uuid[])'), 'EXECUTE')
+         and not has_function_privilege('authenticated', to_regprocedure('public.admin_suspended_user_ids(uuid[])'), 'EXECUTE'),
+         false) as ok;
+-- <<< verify:l3_auth
+-- >>> verify:l3_contracts — supabase/tests/rls/invoice_links.test.sql
+-- 2026-11-24 — 20261124_40_invoice_links.sql (owner package 13-Nov, N01-9 /
+-- N01-10). Read-only, safe to repeat. Before 20261124_40 runs it only
+-- reports; after, it raises when an invoice could not stand without a
+-- placeholder case, or a session could issue one.
+do $$
+declare fn constant text := 'public.create_lawyer_invoice_v2(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)'; role_name text;
+begin
+  if to_regprocedure(fn) is null then
+    raise notice '_verify: 20261124_40 is not applied yet — every new invoice answers 503 on the new code (run 20261124_40 before the deploy)'; return;
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'payments'
+              and column_name = 'request_id' and is_nullable = 'NO') then
+    raise exception '_verify: 20261124_40 — payments.request_id is still NOT NULL (re-run 20261124_40)';
+  end if;
+  if (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'payments'
+       and column_name in ('owner_user_id', 'lawyer_client_id', 'firm_id', 'contract_id')) <> 4 then
+    raise exception '_verify: 20261124_40 — a payments link column is missing (re-run 20261124_40)';
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261124_40 — % is not SECURITY DEFINER with search_path '''' (re-run 20261124_40)', fn;
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, fn, 'EXECUTE') then
+      raise exception '_verify: 20261124_40 — % can EXECUTE % (re-run 20261124_40)', role_name, fn;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: 20261124_40 — service_role cannot EXECUTE %: every new invoice answers 503 (re-run 20261124_40)', fn;
+  end if;
+  if pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.record_invoice_collection(text,uuid,bigint,text,bigint,text)')), 'pay.owner_user_id') = 0 then
+    raise exception '_verify: 20261124_40 — record_invoice_collection cannot collect on an invoice without a case (re-run 20261124_40)';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'payments' and policyname = 'invoice owner reads own invoices')
+     or not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'invoice_collections' and policyname = 'invoice_collections_select_owner') then
+    raise exception '_verify: 20261124_40 — an owner read policy is missing: invoices without a case vanish from the finance page (re-run 20261124_40)';
+  end if;
+  raise notice '_verify: 20261124_40 OK — invoices stand without a placeholder case; owner reads and collects; server only';
+end $$;
+-- <<< verify:l3_contracts
+-- >>> verify:l3_firm
+-- 2026-11-24 — 20261124_50_hearings_assignee.sql (owner N01-18): run BEFORE the
+-- l3-firm deploy. After it, 20261019_21 refuses to re-run (its hard-coded
+-- 2-pointer list no longer matches hearings' 3 SET NULL keys; it rolls back).
+-- Docker: supabase/tests/rls/hearings_assignee.test.sql
+select 'Hearings assignee: column (SET NULL to auth.users) + member check trigger (run 20261124_50)' as check,
+       exists (select 1 from pg_catalog.pg_constraint c
+                 join pg_catalog.pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+                where c.conrelid = 'public.hearings'::regclass and c.contype = 'f'
+                  and a.attname = 'assignee_user_id'
+                  and c.confrelid = 'auth.users'::regclass and c.confdeltype = 'n')
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = 'public.hearings'::regclass and t.tgname = 'trg_hearings_assignee_member'
+                      and t.tgenabled in ('O', 'A'))
+       and coalesce((select p.prosecdef from pg_catalog.pg_proc p
+                      where p.oid = to_regprocedure('public.hearing_assignee_member_check()')), false)
+       as ok;
+select 'Hearings: the Art. 18 guard names assignee_user_id among its SET NULL pointers (run 20261124_50)' as check,
+       to_regprocedure('public.refuse_consultant_court_rows()') is null
+       or coalesce((select position('assignee_user_id' in encode(t.tgargs, 'escape')) > 0
+                      from pg_catalog.pg_trigger t
+                     where t.tgrelid = 'public.hearings'::regclass
+                       and t.tgname = 'trg_00_refuse_consultant_court_rows'), false)
+       as ok;
+-- <<< verify:l3_firm
+-- >>> verify:l3_requests
+-- 2026-11-24 — open requests: city + server-written summary, no title (owner ١٠ + ١٩).
+-- 20261124_30 BEFORE the deploy of batch/2026-11-17-l3-requests.
+-- Docker: supabase/tests/rls/open_requests_city_summary.test.sql
+select 'Open requests: city + public_summary, server-only summary, no title (run 20261124_30)' as check,
+       exists (select 1 from pg_catalog.pg_attribute
+                where attrelid = 'public.service_requests'::regclass and attname = 'city' and not attisdropped)
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_public_summary_check')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_city_slug_check')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.service_requests'::regclass
+                      and tgname = 'trg_01_service_requests_public_summary_guard' and tgenabled <> 'D')
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      like '%public_summary%', false)
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      not like '%title%', false)
+       and not has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE')
+       as ok;
+-- <<< verify:l3_requests
+-- >>> verify:l3_signup
+-- Lawyer signup verification (owner ٢٠–٢١): run 20261124_70 after 20261122_40.
+select 'Lawyer signup verification server-only + own-row read (run 20261124_70)' as check,
+       to_regclass('public.lawyer_signup_verifications') is not null
+       and to_regclass('public.lawyer_otp_challenges') is not null
+       and to_regclass('public.lawyer_licence_images') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.lawyer_otp_challenges')), false)
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.lawyer_licence_images')), false)
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.lawyer_signup_verifications')), false)
+       and not has_table_privilege('authenticated', 'public.lawyer_otp_challenges', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.lawyer_licence_images', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.lawyer_signup_verifications', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.lawyer_signup_verifications', 'mobile_change_new_mobile', 'SELECT')
+       and not has_table_privilege('anon', 'public.lawyer_signup_verifications', 'SELECT')
+       as ok;
+select 'Lawyer signup RPCs service_role only (run 20261124_70)' as check,
+       to_regprocedure('public.lawyer_otp_verify(uuid, text, text)') is not null
+       and not has_function_privilege('authenticated', 'public.lawyer_signup_registry_mobile(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.lawyer_signup_registry_check(uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.lawyer_otp_issue(uuid, text, text, text, text, text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.lawyer_otp_verify(uuid, text, text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.lawyer_signup_registry_mobile(uuid)', 'EXECUTE')
+       as ok;
+select 'Private bucket lawyer-licences, own-folder insert only (run 20261124_70 as supabase_admin)' as check,
+       exists (select 1 from storage.buckets where id = 'lawyer-licences' and public = false)
+       and exists (select 1 from pg_catalog.pg_policy
+                    where polrelid = 'storage.objects'::regclass and polname = 'lawyer-licences insert own' and polcmd = 'a')
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid = 'storage.objects'::regclass and polcmd <> 'a'
+                          and (coalesce(pg_catalog.pg_get_expr(polqual, polrelid), '')
+                               || coalesce(pg_catalog.pg_get_expr(polwithcheck, polrelid), '')) like '%lawyer-licences%')
+       as ok;
+-- <<< verify:l3_signup

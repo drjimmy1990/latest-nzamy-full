@@ -48,8 +48,6 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/laws/companies-law", priority: 0.7, changeFrequency: "monthly" },
   { url: "/login", priority: 0.6, changeFrequency: "yearly" },
   { url: "/marketplace", priority: 0.8, changeFrequency: "weekly" },
-  { url: "/marketplace/collaborate", priority: 0.65, changeFrequency: "monthly" },
-  { url: "/marketplace/post", priority: 0.6, changeFrequency: "monthly" },
   { url: "/media", priority: 0.6, changeFrequency: "monthly" },
   { url: "/partners", priority: 0.6, changeFrequency: "monthly" },
   { url: "/precedents", priority: 0.8, changeFrequency: "monthly" },
@@ -88,13 +86,14 @@ const publicRoutes: SitemapRoute[] = [
   // 2026-11-08, item 8).
   // Nor an older login-only page (/ai/secretary, /ai/fee-calculator,
   // /ai/direction-support): a guest lands on /login (8 Nov 2026).
+  // Nor /ai/templates or the marketplace pages that act for an account
+  // (/marketplace/post, /marketplace/collaborate): PROTECTED since 17 Nov 2026.
   { url: "/ai/collector", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/draft", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/legal-opinion", priority: 0.8, changeFrequency: "monthly" },
   { url: "/ai/legal-translate", priority: 0.75, changeFrequency: "monthly" },
   { url: "/ai/monitor", priority: 0.7, changeFrequency: "monthly" },
   { url: "/ai/procedures", priority: 0.7, changeFrequency: "monthly" },
-  { url: "/ai/templates", priority: 0.75, changeFrequency: "monthly" },
 ];
 
 interface PublishedArticleRow {

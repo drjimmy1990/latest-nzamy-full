@@ -137,7 +137,20 @@ interface CalEvent {
   history?: HearingHistoryEntryDto[];
   /** CODE-F18 actions are offered only on rows from public.hearings (not demo rows). */
   actionable?: boolean;
+  /**
+   * N01-18 «جلساتي»: false for a hearing a colleague assigned to me — its
+   * owner's name is shown and only the outcome actions are offered (the PATCH
+   * route refuses the rest). `assigneeUserId` / `assigneeName` name the
+   * colleague I assigned one of mine to.
+   */
+  isOwn?: boolean;
+  ownerName?: string | null;
+  assigneeUserId?: string;
+  assigneeName?: string | null;
 }
+
+/** N01-18: what the assignee of a colleague's hearing may do (mirrors ASSIGNEE_ACTIONS in the PATCH route). */
+const ASSIGNEE_HEARING_ACTIONS: readonly HearingAction[] = ["complete", "postpone", "reopen"];
 
 // ─── Workflow → Hearing mapper (L8) ───────────────────────────────────────────
 // Derives a CalEvent from a WorkflowRequest using metadata fields stored by
@@ -254,6 +267,10 @@ function hearingDtoToCalEvent(row: HearingDto): CalEvent | null {
     status: row.status,
     history: row.history,
     actionable: true,
+    isOwn: row.isOwn !== false,
+    ownerName: row.ownerName ?? null,
+    assigneeUserId: row.assigneeUserId ?? undefined,
+    assigneeName: row.assigneeName ?? null,
   };
 }
 
@@ -566,7 +583,9 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
   // CODE-F18: the change being made (dialog open) and whether the log is shown.
   const [pendingAction, setPendingAction] = useState<HearingAction | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const actions = ev.actionable && ev.status ? allowedHearingActions(ev.status) : [];
+  const actions = ev.actionable && ev.status
+    ? allowedHearingActions(ev.status).filter(a => ev.isOwn !== false || ASSIGNEE_HEARING_ACTIONS.includes(a))
+    : [];
   const state = ev.displayState ?? "unknown";
   const history = ev.history ?? [];
   // ── Mutable local state so the workflow steps are interactive ────────────────
@@ -624,6 +643,17 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
                   Not on a deadline: a due date has no length. */}
               {!isDeadline&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><Hourglass size={11}/>{HEARING_DURATION_LABEL_AR}: {formatDurationAr(ev.durationMinutes)}</span>}
               {ev.client&&<span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-500":"text-slate-400"}`}><User size={11}/>{ev.client}</span>}
+              {/* N01-18: who attends / who assigned it. */}
+              {ev.isOwn===false&&(
+                <span className={`flex items-center gap-1 text-[11px] font-semibold ${isDark?"text-emerald-400":"text-emerald-700"}`}>
+                  <User size={11}/>مُسندة إليك{ev.ownerName?` من ${ev.ownerName}`:" من زميل في المكتب"}
+                </span>
+              )}
+              {ev.isOwn!==false&&ev.assigneeUserId&&(
+                <span className={`flex items-center gap-1 text-[11px] ${isDark?"text-zinc-400":"text-slate-500"}`}>
+                  <User size={11}/>المحامي المُكلَّف: {ev.assigneeName || "عضو في المكتب"}
+                </span>
+              )}
             </div>
             {/* Links Row */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -737,7 +767,7 @@ function EventCard({ev,isDark}:{ev:CalEvent;isDark:boolean}) {
         )}
         {pendingAction && (
           <HearingActionDialog
-            hearing={{ id: ev.id, title: ev.title, status: ev.status ?? "scheduled", date: ev.date, time: ev.time, location: ev.location, notes: ev.notes, caseId: ev.caseId, caseName: ev.caseName }}
+            hearing={{ id: ev.id, title: ev.title, status: ev.status ?? "scheduled", date: ev.date, time: ev.time, location: ev.location, notes: ev.notes, caseId: ev.caseId, caseName: ev.caseName, assigneeUserId: ev.assigneeUserId }}
             action={pendingAction}
             isDark={isDark}
             onClose={()=>setPendingAction(null)}

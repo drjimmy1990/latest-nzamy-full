@@ -57,6 +57,7 @@ type MessageId =
   | "otpExpired"
   | "emailSendFailed"
   | "invalidCredentials"
+  | "accountSuspended"
   | "server";
 
 const MIN_AR = toArabicDigits(MIN_PASSWORD_LENGTH);
@@ -115,6 +116,11 @@ const MESSAGES: Record<MessageId, { ar: string; en: string }> = {
     en: "The confirmation email could not be sent. Check the address or try again shortly.",
   },
   invalidCredentials: { ar: "بيانات الدخول غير صحيحة", en: "Invalid credentials" },
+  // TODO 3.5: GoTrue refuses a banned account («user_banned»).
+  accountSuspended: {
+    ar: "تم إيقاف هذا الحساب بقرار من الإدارة. للاستفسار تواصل مع الدعم.",
+    en: "This account has been suspended by the administration. Contact support.",
+  },
   server: {
     ar: "حدث خطأ في الخادم. حاول مرة أخرى بعد قليل.",
     en: "A server error occurred. Please try again shortly.",
@@ -149,6 +155,7 @@ const CODE_MESSAGES: Record<string, MessageId> = {
   over_sms_send_rate_limit: "rateLimit",
   email_address_not_authorized: "emailSendFailed",
   invalid_credentials: "invalidCredentials",
+  user_banned: "accountSuspended",
   unexpected_failure: "server",
 };
 
@@ -169,6 +176,7 @@ const MESSAGE_PATTERNS: Array<[RegExp, MessageId]> = [
   [/invalid.*phone|phone.*invalid/i, "invalidPhone"],
   [/error sending|sending (confirmation|magic link|recovery)/i, "emailSendFailed"],
   [/invalid login credentials|invalid credentials/i, "invalidCredentials"],
+  [/user is banned|is banned/i, "accountSuspended"],
   [/database error|internal server error/i, "server"],
   [/failed to fetch|fetch failed|networkerror|network|load failed/i, "network"],
 ];
@@ -233,7 +241,10 @@ export function translateAuthError(err: unknown, opts: { context: AuthErrorConte
 
   if (context === "login") {
     // CAP-06: only failures that say nothing about the account's existence.
-    if (id === "network" || id === "rateLimit" || id === "emailNotConfirmed" || id === "phoneNotConfirmed") {
+    // A suspension (TODO 3.5) is said plainly: the owner of a suspended
+    // account must learn why, and it reveals only that a suspended account
+    // exists, which an administrator decided.
+    if (id === "network" || id === "rateLimit" || id === "emailNotConfirmed" || id === "phoneNotConfirmed" || id === "accountSuspended") {
       return pick(MESSAGES[id], isAr);
     }
     return pick(MESSAGES.invalidCredentials, isAr);

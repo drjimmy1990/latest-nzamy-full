@@ -103,3 +103,23 @@ test("roles kept their non-AI rows: spot checks against the old label lists", ()
   assert.ok(firmSidebar("office_admin").includes("/dashboard/firm/vault?tab=branding"));
   assert.ok(firmSidebar("compliance_manager").includes("/dashboard/firm/governance?tab=matrix"));
 });
+
+test("N06-32: the four lawyer-and-firm tools are firm rows, the court ones for litigation roles only", () => {
+  for (const href of ["/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/analyze-strength"]) {
+    assert.ok(FIRM_HREFS.has(href), `FIRM_SIDEBAR has no ${href}`);
+    assert.ok(firmSidebar("managing_partner").includes(href), `managing_partner lacks ${href}`);
+  }
+  for (const role of ["partner", "senior_lawyer", "lawyer"] as AffiliationRole[]) {
+    assert.ok(firmSidebar(role).includes("/ai/brief-check"), `${role} lacks /ai/brief-check`);
+    assert.ok(firmSidebar(role).includes("/ai/contract-drafter"), `${role} lacks /ai/contract-drafter`);
+  }
+  // Art. 18: no court tool for a consultant, in-house or of-counsel member, nor for non-legal roles.
+  for (const role of ["legal_consultant", "in_house_counsel", "external_of_counsel", "legal_secretary",
+                      "office_admin", "finance_manager", "hr_manager", "compliance_manager", "trainee"] as AffiliationRole[]) {
+    for (const href of ["/ai/brief-check", "/ai/analyze-strength"]) {
+      assert.ok(!firmSidebar(role).includes(href), `${role} got ${href}`);
+    }
+  }
+  assert.ok(!FIRM_ROLE_ALLOWED_HREFS.default.includes("/ai/brief-check"));
+  assert.ok(!FIRM_ROLE_ALLOWED_HREFS.default.includes("/ai/analyze-strength"));
+});

@@ -28,9 +28,16 @@ test("task 6 review M1: no gate-only or «قريباً» tool route is advertise
 });
 
 test("the tools with a working path stay listed", () => {
-  for (const route of ["/ai/draft", "/ai/legal-opinion", "/ai/templates", "/ai/legal-translate"]) {
+  for (const route of ["/ai/draft", "/ai/legal-opinion", "/ai/legal-translate"]) {
     assert.ok(urls.includes(route), route);
   }
+});
+
+test("17 Nov 2026 (N05-V2 / N05-M6): the newly sign-in-only pages are not advertised; the public listing is", () => {
+  for (const route of ["/ai/templates", "/marketplace/post", "/marketplace/collaborate", "/marketplace/order", "/marketplace/workspace"]) {
+    assert.ok(!urls.some((u) => u === route || u.startsWith(`${route}/`)), route);
+  }
+  assert.ok(urls.includes("/marketplace"), "the public listing stays listed");
 });
 
 test("final review 2026-11-08 (8): no lawyer-only tool page is advertised — it sends a guest to /login", () => {

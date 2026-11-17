@@ -9,6 +9,7 @@ import {
 } from "../_shared";
 import { parseRequestIdInput } from "@/lib/services/contractCaseLink";
 import { assertLinkableAccount } from "../../clients/_link";
+import { parseCounterpartyContact, mergeCounterpartyMetadata } from "@/lib/services/contractCounterparty";
 
 /**
  * /api/v1/lawyer/contracts/[id] — Phase 3 (مدير العقود). See ../route.ts.
@@ -46,6 +47,9 @@ interface UpdateBody {
   contractType?: string;
   status?: string;
   counterpartyName?: string | null;
+  /** N01-5: «الطرف الآخر» contact; omitted keeps it, null/"" clears it. */
+  counterpartyPhone?: string | null;
+  counterpartyIdNo?: string | null;
   lawyerClientId?: string | null;
   clientUserId?: string | null;
   /** N01-6: link to one of the caller's own cases; null unlinks. */
@@ -157,6 +161,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         ? (typeof body.counterpartyName === "string" ? body.counterpartyName.trim() || null : null)
         : undefined;
 
+    const counterpartyContact = parseCounterpartyContact(body);
+    if (!counterpartyContact.ok) {
+      return NextResponse.json({ error: counterpartyContact.error }, { status: 400 });
+    }
+    const counterpartyMetadata = mergeCounterpartyMetadata(current.metadata ?? {}, counterpartyContact);
+
     let lawyerClientId: string | null | undefined;
     // Set only when this PATCH re-links to a client CARD that itself carries
     // a platform account — see the clientUserId fallback below. Left null
@@ -249,6 +259,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (signedOn !== undefined) patch.signed_on = signedOn;
     if (signedOnAutoSet !== undefined) patch.signed_on = signedOnAutoSet;
     if (notes !== undefined) patch.notes = notes;
+    if (counterpartyMetadata) patch.metadata = counterpartyMetadata;
 
     let updatedRow: ContractRow = current;
     if (Object.keys(patch).length > 0) {

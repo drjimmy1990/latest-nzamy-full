@@ -6,6 +6,8 @@ import type { WorkflowRequest } from "@/lib/workflowStore";
 
 type WorkflowRequestInput = Omit<WorkflowRequest, "createdAt" | "auditTrail"> & {
   auditEvent?: string;
+  /** Owner ١٩: a slug of src/constants/saudiCities.ts; the route refuses anything else. */
+  city?: string | null;
 };
 
 type WorkflowRequestPatch = Partial<Omit<WorkflowRequest, "id" | "createdAt" | "auditTrail">>;

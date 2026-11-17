@@ -55,9 +55,10 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import AssignCaseDialog from "./_AssignCaseDialog";
 import {
   Gavel, MagnifyingGlass, Plus, CalendarCheck, CaretLeft,
-  Clock, Archive, Warning, NotePencil,
+  Clock, Archive, Warning, NotePencil, UserSwitch,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -112,6 +113,10 @@ export default function FirmCasesPage() {
   // consultant, in-house or of-counsel member is refused there, Art. 18).
   const firmRole = user.affiliation?.entityType === "firm" ? user.affiliation.role : undefined;
   const canOpenHearings = user.userType === "admin" || getFirmRouteDecision("/dashboard/firm/hearings", firmRole).allowed;
+  // N03-40: «إسناد» for the roles on the «توزيع القضايا» rule; the server
+  // (/api/v1/firm/cases/[id]/assign) re-checks the role and the case's firm.
+  const canAssign = user.userType === "admin" || getFirmRouteDecision("/dashboard/firm/cases/assign", firmRole).allowed;
+  const [assigning, setAssigning] = useState<Case | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<CaseStatus | "all">("all");
@@ -365,14 +370,32 @@ export default function FirmCasesPage() {
               )
             ) : (
               filtered.map((c, i) => (
-                <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                  <CaseCard c={c} />
+                <motion.div key={c.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                  className="flex items-stretch gap-2">
+                  <div className="flex-1 min-w-0"><CaseCard c={c} /></div>
+                  {canAssign && (
+                    <button onClick={() => setAssigning(c)} title="إسناد القضية إلى محامٍ في المكتب"
+                      className={`flex-shrink-0 flex items-center gap-1.5 px-3 rounded-2xl border text-[11px] font-bold transition-colors cursor-pointer ${isDark ? "border-white/[0.06] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]" : "border-slate-100 text-slate-500 hover:text-royal hover:border-royal/20"}`}>
+                      <UserSwitch size={14} />إسناد
+                    </button>
+                  )}
                 </motion.div>
               ))
             )}
           </div>
         </>
       )}
+
+      <AnimatePresence>
+        {assigning && (
+          <AssignCaseDialog
+            caseId={assigning.id}
+            caseTitle={assigning.title}
+            isDark={isDark}
+            onClose={() => setAssigning(null)}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showAddCase && (

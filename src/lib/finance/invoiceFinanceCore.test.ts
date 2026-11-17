@@ -84,7 +84,7 @@ test("CODE-F01 + F22 + F21: one rpc carries the session's user, the key, and the
   assert.equal(reply.status, 200);
   assert.equal(log.length, 1);
   assert.equal(log[0].op, "rpc");
-  assert.equal(log[0].table, "create_lawyer_invoice");
+  assert.equal(log[0].table, "create_lawyer_invoice_v2");
   assert.deepEqual(log[0].payload, {
     p_actor: ME,
     p_idempotency_key: "create-form-key-0001",
@@ -97,6 +97,7 @@ test("CODE-F01 + F22 + F21: one rpc carries the session's user, the key, and the
     p_description: "أتعاب",
     p_fee_type: "partial",
     p_case_title: "قضية",
+    p_contract_id: null,
   });
 });
 
@@ -159,6 +160,30 @@ test("CODE-F22: before 20261030_20 runs, POST answers 503 and writes nothing —
     assert.equal("body" in reply && reply.body.error, CREATE_UNAVAILABLE_AR);
     assert.equal(log.length, 1);
   }
+});
+
+// ─── N01-9 / N01-10 (owner 13-Nov) — an invoice of a contract, no fake case ──
+
+test("N01-10: an invoice of a contract may name no client — the SQL takes the contract's card", async () => {
+  const body = invoiceBody({ client: undefined, clientType: undefined, contractId: "contract-1" });
+  const parsed = parseCreateBody(body);
+  assert.equal(parsed.ok, true);
+  const { client, log } = okCreate();
+  const reply = await createInvoiceWith({ admin: client }, { userId: ME, body });
+  assert.equal(reply.status, 200);
+  assert.equal(log[0].table, "create_lawyer_invoice_v2");
+  assert.equal((log[0].payload as Record<string, unknown>).p_contract_id, "contract-1");
+  assert.equal(parseCreateBody(invoiceBody({ contractId: 7 })).ok, false);
+  assert.equal(parseCreateBody(invoiceBody({ contractId: "x".repeat(101) })).ok, false);
+});
+
+test("N01-9: no fallback to v1 (the placeholder «فاتورة: …» case) — v2 missing is a 503", async () => {
+  const { client, log } = fakeDb((q) => (q.op === "rpc" ? { error: { code: "PGRST202", message: "missing" } } : undefined));
+  const reply = await createInvoiceWith({ admin: client }, { userId: ME, body: invoiceBody() });
+  assert.equal(reply.status, 503);
+  assert.deepEqual(log.map((q) => q.table), ["create_lawyer_invoice_v2"]);
+  const src = readFileSync(join(ROOT, "src", "lib", "finance", "invoiceFinanceCore.ts"), "utf8");
+  assert.doesNotMatch(src, /rpc\("create_lawyer_invoice"/);
 });
 
 // ─── CODE-F02 / LIVE-F36 — PATCH sends one payment, never a running total ───

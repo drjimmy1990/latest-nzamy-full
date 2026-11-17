@@ -88,6 +88,11 @@ interface PlatformUser {
   } | null;
   /** null when the balance read failed — shown as «—». */
   credit_balance: number | null;
+  /**
+   * TODO 3.5: banned now (GoTrue), from the API's admin_suspended_user_ids read.
+   * null when that could not be known (20261124_60 not run, a failed read).
+   */
+  suspended?: boolean | null;
 }
 
 interface UsersApiResponse {
@@ -137,7 +142,9 @@ function planKeyOf(user: PlatformUser): PlanTier | typeof NO_PLAN | null {
   return isPlanTier(tier) ? tier : null;
 }
 
-function mapStatus(subStatus?: string, verifiedAt?: string | null): UserStatus {
+function mapStatus(subStatus?: string, verifiedAt?: string | null, suspended?: boolean | null): UserStatus {
+  // TODO 3.5: a real suspension (the GoTrue ban) wins over every other state.
+  if (suspended === true) return "suspended";
   if (subStatus === "suspended") return "suspended";
   if (subStatus === "trialing" || subStatus === "trial") return "trial";
   if (!verifiedAt) return "pending";
@@ -298,7 +305,7 @@ function UserRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const uStatus = mapStatus(user.subscription?.status, user.verified_at);
+  const uStatus = mapStatus(user.subscription?.status, user.verified_at, user.suspended);
   const role    = roleCfgFor(user.user_type);
   const status  = STATUS_CFG[uStatus];
   const plan    = planBadgeFor(user);
@@ -324,7 +331,7 @@ function UserRow({
   };
 
   const handleSuspend = async () => {
-    if (!confirm("هل أنت متأكد من تعليق/إيقاف هذا الحساب؟ سيتم إلغاء أي اشتراك نشط.")) return;
+    if (!confirm("هل أنت متأكد من إيقاف هذا الحساب؟ سيُمنع من الدخول فوراً وتُنهى جلساته المفتوحة، ويُلغى أي اشتراك نشط (رفع الإيقاف لا يعيده).")) return;
     setActionLoading(true);
     try {
       const res = await fetch(`/api/v1/admin/users/${user.id}`, {
@@ -333,6 +340,25 @@ function UserRow({
         body: JSON.stringify({ status: "suspended" }),
       });
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل إيقاف المستخدم"));
+      onUpdate();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "حدث خطأ");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // TODO 3.5: «رفع الإيقاف» lifts the GoTrue ban (PATCH status "active").
+  const handleUnsuspend = async () => {
+    if (!confirm("رفع الإيقاف عن هذا الحساب؟ سيتمكن من الدخول من جديد.")) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/v1/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "active" }),
+      });
+      if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل رفع الإيقاف"));
       onUpdate();
     } catch (err) {
       alert(err instanceof Error ? err.message : "حدث خطأ");
@@ -442,16 +468,16 @@ function UserRow({
                 <Check size={11} weight="bold" /> تحقق
               </button>
             )}
-            {uStatus === "active" && (
+            {uStatus !== "suspended" && user.user_type !== "admin" && (
               <button onClick={handleSuspend}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-500 text-[11px] font-bold border border-red-500/20 hover:bg-red-500/20">
                 <LockSimple size={11} /> إيقاف
               </button>
             )}
             {uStatus === "suspended" && (
-              <button onClick={handleVerify}
+              <button onClick={handleUnsuspend}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 text-[11px] font-bold border border-emerald-500/20 hover:bg-emerald-500/20">
-                <CheckCircle size={11} /> تفعيل
+                <CheckCircle size={11} /> رفع الإيقاف
               </button>
             )}
           </>
@@ -660,9 +686,9 @@ export default function AdminUsersPage() {
 
   const stats = {
     total:     total,
-    active:    users.filter(u => mapStatus(u.subscription?.status, u.verified_at) === "active").length,
-    pending:   users.filter(u => mapStatus(u.subscription?.status, u.verified_at) === "pending").length,
-    suspended: users.filter(u => mapStatus(u.subscription?.status, u.verified_at) === "suspended").length,
+    active:    users.filter(u => mapStatus(u.subscription?.status, u.verified_at, u.suspended) === "active").length,
+    pending:   users.filter(u => mapStatus(u.subscription?.status, u.verified_at, u.suspended) === "pending").length,
+    suspended: users.filter(u => mapStatus(u.subscription?.status, u.verified_at, u.suspended) === "suspended").length,
   };
 
   /**
@@ -700,7 +726,7 @@ export default function AdminUsersPage() {
    * it is.
    */
   const visibleUsers = users.filter((u) => {
-    if (statusFilter !== "all" && mapStatus(u.subscription?.status, u.verified_at) !== statusFilter) {
+    if (statusFilter !== "all" && mapStatus(u.subscription?.status, u.verified_at, u.suspended) !== statusFilter) {
       return false;
     }
     if (planFilter !== "all" && planKeyOf(u) !== planFilter) return false;
@@ -936,7 +962,7 @@ export default function AdminUsersPage() {
                 button says exactly that instead of promising «الكل». */}
             <button onClick={() => {
               const pendingIds = users
-                .filter(u => mapStatus(u.subscription?.status, u.verified_at) === "pending")
+                .filter(u => mapStatus(u.subscription?.status, u.verified_at, u.suspended) === "pending")
                 .map(u => u.id);
               setSelected(new Set(pendingIds));
               setStatusFilter("pending");

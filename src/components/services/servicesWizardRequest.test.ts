@@ -61,3 +61,31 @@ test("the wizard builds its request with this function and posts it, outside dem
   assert.doesNotMatch(src, /import \{[^}]*saveWorkflowRequest/, "the browser-only store is not imported");
   assert.doesNotMatch(src, /saveWorkflowRequest\(\{/, "nor called");
 });
+test("owner ١٩: a region from the wizard's list is sent as the request's city; anything else sends none", () => {
+  assert.equal(payload.city, null, "the fixture's «الرياض» is a label, not a slug");
+  const input = {
+    id: "SRV-TEST-0002",
+    title: "صياغة عقد توريد",
+    serviceTitleAr: "صياغة عقد توريد",
+    description: "أحتاج إلى صياغة عقد توريد مواد بناء مع مورد محلي لمدة سنة كاملة.",
+    requester: { name: "عميل", role: "individual", tier: "free" },
+    serviceId: "srv-4",
+    userRole: "individual",
+    region: "riyadh",
+    deadline: "2026-11-01",
+    budgetMin: 500,
+    budgetMax: 3000,
+    confidential: false,
+    assignmentMethod: "open_bids",
+    barNumber: "",
+    courtName: "",
+    caseNumber: "",
+    serviceType: "",
+    attachments: [],
+  };
+  const withSlug = buildServicesWizardRequest(input);
+  assert.equal(withSlug.city, "riyadh");
+  const shape = validateServiceRequestCreate(withSlug);
+  assert.equal(shape.ok && shape.value.city, "riyadh");
+  assert.equal(buildServicesWizardRequest({ ...input, region: "" }).city, null);
+});

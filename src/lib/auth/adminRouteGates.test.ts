@@ -137,8 +137,10 @@ test("users PATCH: each field needs its own action; nothing recognised needs not
     usersPatchActions({ user_type: "firm", metadata: {}, status: "suspended", verified: true }),
     ["users.change_type", "users.suspend", "verifications.decide"],
   );
-  // status other than "suspended" is not a write the route performs
-  assert.deepEqual(usersPatchActions({ status: "active" }), []);
+  // TODO 3.5: lifting a suspension ("active") is the same staff action as
+  // suspending; any other status is not a write the route performs
+  assert.deepEqual(usersPatchActions({ status: "active" }), ["users.suspend"]);
+  assert.deepEqual(usersPatchActions({ status: "banned" }), []);
   assert.deepEqual(usersPatchActions({}), []);
   assert.deepEqual(usersPatchActions(null), []);
   assert.deepEqual(usersPatchActions("x"), []);
@@ -480,7 +482,7 @@ test("users PATCH: a suspension's audit row records what its writes really did",
   const msgAt = helper.indexOf('"تعذّر إكمال الإيقاف"');
   assert.ok(msgAt > -1 && helper.slice(msgAt, msgAt + 80).includes("status: 500"), "the failure answers 500 «تعذّر إكمال الإيقاف»");
   assert.ok(helper.indexOf("logAdminAction(") < msgAt, "the failed row is written, then the 500");
-  assert.equal(countOf(body, "return suspensionFailed("), 2, "both writes return through the failure path");
+  assert.equal(countOf(body, "return suspensionFailed("), 3, "the ban and both writes return through the failure path");
   assert.ok(body.indexOf("if (cancelError)") > cancelAt, "the cancel's error is checked");
   assert.ok(body.indexOf("if (tierError)") > body.indexOf("if (cancelError)"), "the tier error is checked");
 

@@ -16,6 +16,7 @@ import { VaultAttachPicker } from "@/components/documents/VaultAttachPicker";
 import { createWorkflowId, createWorkflowRequest } from "@/lib/clientWorkflowRepository";
 import { formatClientServicePrice } from "@/lib/pricingRepository";
 import { resolveClientService } from "@/lib/pricing/clientPricingAudience";
+import { SAUDI_CITIES, saudiCityLabelAr } from "@/constants/saudiCities";
 
 /**
  * NewRequestWizard — the client's «طلب خدمة جديدة» form.
@@ -74,6 +75,10 @@ export default function NewRequestWizard() {
   const [currentStep, setCurrentStep] = useState(0);
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
+  // Owner ١٩: the city, from the pick list only (a slug — see saudiCities.ts).
+  // A lawyer browsing open requests sees the city, the type and a scrubbed
+  // summary line; never this form's subject, description or the client's name.
+  const [city, setCity] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -144,6 +149,7 @@ export default function NewRequestWizard() {
         status: "pending_assignment",
         payment: { amount: 0, status: "not_required" },
         sourcePath: "/dashboard/client/requests/new",
+        city,
         ...(user.businessMembership ? { entityScope: "business" as const } : {}),
         // The cast is deliberate and narrow. `WorkflowRequest.metadata` is
         // still typed `Record<string, string | number | boolean | null>`, but
@@ -229,6 +235,20 @@ export default function NewRequestWizard() {
                 placeholder="مثال: مراجعة عقد شراكة تجارية"
                 className="w-full bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#0B3D2E] focus:ring-1 focus:ring-[#0B3D2E] outline-none transition-all dark:text-white"
               />
+            </div>
+            <div>
+              <label htmlFor="request-city" className="block text-sm font-bold text-gray-900 dark:text-white mb-2">المدينة</label>
+              <select
+                id="request-city"
+                value={city}
+                onChange={e => setCity(e.target.value)}
+                className="w-full bg-white dark:bg-[#161b22] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#0B3D2E] focus:ring-1 focus:ring-[#0B3D2E] outline-none transition-all dark:text-white"
+              >
+                <option value="">اختر المدينة</option>
+                {SAUDI_CITIES.map(c => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">وصف تفصيلي للطلب</label>
@@ -374,6 +394,10 @@ export default function NewRequestWizard() {
                 <p className="text-sm text-gray-800 dark:text-gray-300 break-words">{subject || "—"}</p>
               </div>
               <div className="space-y-1">
+                <p className="text-[11px] font-bold text-gray-500">المدينة</p>
+                <p className="text-sm text-gray-800 dark:text-gray-300">{saudiCityLabelAr(city) ?? "—"}</p>
+              </div>
+              <div className="space-y-1">
                 <p className="text-[11px] font-bold text-gray-500">الوصف</p>
                 <p className="text-sm text-gray-800 dark:text-gray-300 whitespace-pre-wrap break-words">{description || "—"}</p>
               </div>
@@ -499,7 +523,7 @@ export default function NewRequestWizard() {
           // upload is in flight would ship an `attachments` array missing that
           // file — a silently short attachment list, which is the same defect
           // as losing the files outright.
-          disabled={isSubmitting || uploading || (currentStep === 0 && (!subject || !description))}
+          disabled={isSubmitting || uploading || (currentStep === 0 && (!subject || !description || !city))}
           className="flex items-center gap-2 px-8 py-3.5 bg-[#0B3D2E] text-white rounded-2xl font-bold text-[13.5px] hover:bg-[#0a3328] transition-all shadow-[0_4px_14px_0_rgba(11,61,46,0.3)] disabled:opacity-50 active:scale-[0.98]"
         >
           {isSubmitting ? (

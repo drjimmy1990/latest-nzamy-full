@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
@@ -22,6 +22,9 @@ import { createStatusFor } from "@/lib/services/ownCaseStatus";
 import { requestPricingAudience } from "@/lib/pricing/clientPricingAudience";
 import { loadClientPricingCatalog } from "@/lib/pricing/clientPricingServer";
 import { carriesServiceEstimate, stampServiceEstimate } from "@/lib/pricing/serviceEstimate";
+import { fallbackPublicSummary, type SummarySource } from "@/lib/services/requestPublicSummary";
+import { modelPublicSummary, requestSummaryModelEnabled } from "@/lib/services/requestPublicSummaryModel";
+import { callN8n } from "@/lib/ai/n8nClient";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -280,6 +283,52 @@ export async function GET(request: NextRequest) {
     // rarer trigger (anything that throws outside the Supabase query itself).
     return NextResponse.json({ data: [], total: 0, degraded: true });
   }
+}
+
+/**
+ * Writes service_requests.public_summary with the service role (the column is
+ * server-only, 20261124_30): the deterministic line at once, then — after the
+ * response, only when the model switch is on — the model's line if it passes
+ * the post-check. Never throws.
+ */
+async function writeRequestPublicSummary(requestId: string, src: SummarySource): Promise<void> {
+  let admin: Awaited<ReturnType<typeof createServiceClient>>;
+  try {
+    admin = await createServiceClient();
+  } catch (err) {
+    console.error("[service-requests POST] summary: no service client:", (err as Error)?.message);
+    return;
+  }
+  const write = async (summary: string, source: string) => {
+    const { error } = await admin
+      .from("service_requests")
+      .update({ public_summary: summary })
+      .eq("id", requestId)
+      .is("assigned_to", null);
+    if (error) {
+      console.error(`[service-requests POST] summary (${source}) write failed:`, error.message, error.code);
+    }
+  };
+
+  try {
+    const fallback = fallbackPublicSummary(src);
+    if (fallback) await write(fallback, "fallback");
+  } catch (err) {
+    console.error("[service-requests POST] summary fallback failed:", (err as Error)?.message);
+  }
+
+  if (!requestSummaryModelEnabled({ REQUEST_SUMMARY_AI: process.env.REQUEST_SUMMARY_AI, N8N_AI_BASE_URL: process.env.N8N_AI_BASE_URL, NZAMY_AI_KEY: process.env.NZAMY_AI_KEY })) return;
+  after(async () => {
+    try {
+      const r = await modelPublicSummary(src, (call) =>
+        callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
+      );
+      if (r.source !== "fallback" && r.summary) await write(r.summary, r.source);
+      else if (r.detail) console.error(`[service-requests POST] summary model skipped: ${r.detail}`);
+    } catch (err) {
+      console.error("[service-requests POST] summary model failed:", (err as Error)?.message);
+    }
+  });
 }
 
 /**
@@ -574,6 +623,12 @@ export async function POST(request: NextRequest) {
         ...(firmId ? { firm_id: firmId } : {}),
         ...(businessId ? { business_id: businessId } : {}),
         ...(lawyerClientId ? { lawyer_client_id: lawyerClientId } : {}),
+        // Owner ١٩: the client's city pick (a slug, validated above). Sent
+        // only when picked, so a form without the picker inserts exactly the
+        // column set it did before 20261124_30. `public_summary` is never
+        // sent from here: the database drops it from a session write
+        // (trg_01 guard); it is written below with the service role.
+        ...(shape.value.city ? { city: shape.value.city } : {}),
       })
       .select()
       .single();
@@ -771,6 +826,24 @@ export async function POST(request: NextRequest) {
       } catch (payErr) {
         console.error("[service-requests POST] payment insert error:", payErr);
       }
+    }
+
+    // Owner ١٠/١٩ — the one summary line a verified lawyer sees for an open
+    // request (marketplace_open_requests): never the client's text or name.
+    // Only for a row nobody is assigned to (a lawyer's own case or hearing is
+    // never listed). The deterministic line is written now; the model's line,
+    // when REQUEST_SUMMARY_AI=on, replaces it after the response. Best-effort
+    // throughout: a failure here is logged and never fails the creation.
+    if (serviceRequest.assigned_to == null) {
+      await writeRequestPublicSummary(serviceRequest.id as string, {
+        type: shape.value.type,
+        description: shape.value.description,
+        title: shape.value.title,
+        names: [
+          typeof requestData.requester?.name === "string" ? requestData.requester.name : null,
+          actorProfile && typeof actorProfile.display_name === "string" ? actorProfile.display_name : null,
+        ],
+      });
     }
 
     return NextResponse.json(

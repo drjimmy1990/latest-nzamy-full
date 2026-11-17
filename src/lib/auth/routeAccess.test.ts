@@ -230,3 +230,43 @@ test("N05-V2: /ai/corp is for the corporate account only", () => {
     assert.equal(isRouteAllowedFor("/ai/corp/advisor", t), false, String(t));
   }
 });
+
+// ── PROTECTED (src/proxy.ts) and this table agree (17 Nov 2026) ───────────
+// proxy.ts imports next/server, so its list is read as source, as
+// lawyerOnlyTools.test.ts does. A rule here is read by the proxy ONLY for a
+// PROTECTED path, so every rule prefix must sit under one.
+import { readFileSync } from 'node:fs';
+
+const proxySource = readFileSync(new URL('../../proxy.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const protectedBlock = /const PROTECTED = \[([\s\S]*?)\];/.exec(proxySource);
+const PROTECTED_PAGES = protectedBlock
+  ? [...protectedBlock[1].replace(/\/\/.*$/gm, '').matchAll(/"([^"]+)"/g)].map((m) => m[1])
+  : [];
+const isProtectedPage = (path: string) => PROTECTED_PAGES.some((p) => path.startsWith(p));
+
+test('every ROUTE_ACCESS prefix is PROTECTED in the proxy, so its rule is actually read', () => {
+  assert.ok(PROTECTED_PAGES.length > 10, 'read the PROTECTED list');
+  for (const rule of ROUTE_ACCESS) {
+    assert.ok(isProtectedPage(rule.prefix), `${rule.prefix} has a rule but is not PROTECTED`);
+  }
+});
+
+test('N05-V2 / N05-M6: /ai/templates and the account marketplace pages need a session', () => {
+  for (const path of [
+    '/ai/templates',
+    '/marketplace/post',
+    '/marketplace/order/ORD-1',
+    '/marketplace/workspace/col-1',
+    '/marketplace/collaborate',
+  ]) {
+    assert.ok(isProtectedPage(path), path);
+    // Any signed-in type: no type rule.
+    assert.equal(routeAccessRuleFor(path), null, path);
+  }
+});
+
+test('the public marketplace listing and its detail page stay public', () => {
+  for (const path of ['/marketplace', '/marketplace/42', '/pro/marketplace', '/pro']) {
+    assert.equal(isProtectedPage(path), false, path);
+  }
+});

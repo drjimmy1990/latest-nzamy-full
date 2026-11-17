@@ -86,7 +86,8 @@ const findRow = (groups: SidebarGroup[], href: string) => {
 test("the rows backed by a registry tool are the ones the sidebar asks about", () => {
   assert.deepEqual(comingSoonToolIds(LAWYER_SIDEBAR), ["quick-answer"]);
   // N06-26: the firm's «مراجع العقود» row (contract-review) is gone — it 301'd onto /ai/contracts.
-  assert.deepEqual(comingSoonToolIds(FIRM_SIDEBAR), ["contract-negotiator", "quick-answer"]);
+  // N06-32: communicate and analyze-strength joined (tool-status gated pages).
+  assert.deepEqual(comingSoonToolIds(FIRM_SIDEBAR), ["analyze-strength", "communicate", "contract-negotiator", "quick-answer"]);
 });
 
 test("a confirmed-open tool loses «قريباً» and stays in its own group; nothing else changes", () => {

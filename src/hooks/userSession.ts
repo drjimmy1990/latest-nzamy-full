@@ -19,6 +19,8 @@ import type { ActiveEntityMemberships } from "../lib/auth/entityMembership.ts";
 import { normalizeGovernmentRole } from "./governmentRole.ts";
 import { toPracticeKind, type PracticeKind } from "../lib/auth/practiceKind.ts";
 import { toStaffRole, type StaffRole } from "../lib/auth/staffRoles.ts";
+import { effectiveTier } from "../lib/entitlementGrantRules.ts";
+import { TIER_RANK } from "./featureAccess.ts";
 import type {
   AffiliationRole,
   BusinessRole,
@@ -253,6 +255,87 @@ export async function readPracticeKind(
   }
 }
 
+// ─── Plan and provider sub-role from the server (TODO 3.4, ticket S4) ───────
+//
+// «اقرأ الخطة والأدوار من الخادم فقط (لا user_metadata)». user_metadata is
+// writable by the account holder with an ordinary supabase.auth.updateUser
+// call, so a tier, sub_role or active_roles read from it is the user's claim
+// about himself. The session now reads:
+//   tier     — the user's own `subscriptions` rows ("users read own
+//              subscriptions", 20260906 / 20260921_02), decided by the SAME
+//              effectiveTier() the server's getUserTier() uses (a row counts
+//              only while its period runs; the highest running tier wins);
+//   subRole  — `provider_profiles.sub_role` for a provider ("providers read own
+//              profile", 20261016_11); no other type has a server sub-role;
+//   active_roles — no table holds it, so it is no longer read at all.
+// A failed read is least privilege ("free", null) unless the same signed-in
+// user already had an answer on screen (userSessionStore carries it forward).
+
+export type ServerTierRead = { status: "found"; tier: UserTier } | { status: "unavailable" };
+export type ProviderSubRoleRead = { status: "found"; subRole: SubRole } | { status: "unavailable" };
+
+let serverTierFailureLogged = false;
+let providerSubRoleFailureLogged = false;
+
+/** The tier the server grants this user now, from his own subscription rows. */
+export async function readServerTier(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  nowMs: number = Date.now(),
+): Promise<ServerTierRead> {
+  try {
+    const { data, error } = await supabase
+      .from("subscriptions")
+      .select("tier, current_period_end")
+      .eq("user_id", userId)
+      .eq("status", "active");
+    if (error) {
+      if (!serverTierFailureLogged) {
+        serverTierFailureLogged = true;
+        console.warn("[useUser] subscriptions read failed; the plan shows as free (the server still decides):", error.message, error.code);
+      }
+      return { status: "unavailable" };
+    }
+    const rows = (data ?? []) as Array<{ tier: string; current_period_end: string | null }>;
+    return { status: "found", tier: effectiveTier(rows, nowMs, TIER_RANK) as UserTier };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
+const PROVIDER_SUB_ROLES: ReadonlySet<string> = new Set(["notary", "arbitrator", "bailiff"]);
+
+/** A provider's own `provider_profiles.sub_role`; anything outside the CHECK list is null. */
+export async function readProviderSubRole(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<ProviderSubRoleRead> {
+  try {
+    const { data, error } = await supabase
+      .from("provider_profiles")
+      .select("sub_role")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      if (!providerSubRoleFailureLogged) {
+        providerSubRoleFailureLogged = true;
+        console.warn("[useUser] provider_profiles.sub_role read failed; the default provider sidebar is shown:", error.message, error.code);
+      }
+      return { status: "unavailable" };
+    }
+    const raw = (data as { sub_role?: unknown } | null)?.sub_role;
+    return { status: "found", subRole: typeof raw === "string" && PROVIDER_SUB_ROLES.has(raw) ? (raw as SubRole) : null };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
+/** What the session takes from the server besides the type (TODO 3.4). */
+export interface ServerSessionFacts {
+  tier?: UserTier;
+  subRole?: SubRole;
+}
+
 /** The deploy-order rule: a missing function is logged once, not on every read. */
 let staffRoleFailureLogged = false;
 
@@ -287,8 +370,14 @@ export async function readStaffRole(supabase: ReturnType<typeof createClient>): 
  * resolved type when the read was `unavailable` for this same signed-in user,
  * and `null` when neither applies.
  *
- * Everything else below — tier, sub-role, credits, display mode, affiliation
- * and the sector fields — still comes from `user_metadata`, unchanged.
+ * `serverFacts` (TODO 3.4) carries the plan tier and a provider's sub-role,
+ * read from `subscriptions` / `provider_profiles` by the caller; absent means
+ * least privilege ("free", no sub-role). Neither is read from user_metadata
+ * any more, and `active_roles` is not read at all (no table holds it).
+ *
+ * What still comes from `user_metadata` is the display and preference fields
+ * (name, avatar, credits, display mode, country, the sector fields); no
+ * access decision in this file reads them.
  */
 export function mapSupabaseUser(
   user: User | null,
@@ -298,6 +387,7 @@ export function mapSupabaseUser(
   membershipState: MembershipState = "ok",
   practiceKind: PracticeKind = "advocate",
   staffRole: StaffRole | null = null,
+  serverFacts: ServerSessionFacts = {},
 ): UserSession {
   if (!user) return GUEST_SESSION;
 
@@ -326,8 +416,9 @@ export function mapSupabaseUser(
         ? resolvedUserType
         : "individual";
 
-  const tier = (meta.tier ?? "free") as UserTier;
-  const subRole = (meta.sub_role ?? meta.provider_sub_role ?? null) as SubRole;
+  // TODO 3.4 (S4): from the server only — never meta.tier / meta.sub_role.
+  const tier: UserTier = serverFacts.tier ?? "free";
+  const subRole: SubRole = userType === "provider" ? serverFacts.subRole ?? null : null;
 
   return {
     isLoggedIn:    true,
@@ -364,7 +455,9 @@ export function mapSupabaseUser(
     // signup sets that key (ticket S4).
     businessRole: memberships.business?.role as BusinessRole | undefined,
     businessMembership: memberships.business as UserSession["businessMembership"],
-    active_roles:       meta.active_roles,
+    // TODO 3.4 (S4): no server table holds extra roles; the user-writable
+    // metadata copy is no longer trusted. Demo sessions set it themselves.
+    active_roles:       [],
     country:       meta.country_code ?? "SA",
     // Only a lawyer can be a consultant (Art. 18).
     practiceKind:  userType === "lawyer" ? practiceKind : "advocate",

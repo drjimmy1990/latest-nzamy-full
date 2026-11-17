@@ -5,6 +5,7 @@ import BusinessDashboardLayout from "@/app/dashboard/business/layout";
 import ClientDashboardLayout from "@/app/dashboard/client/layout";
 import LawyerDashboardLayout from "@/app/dashboard/lawyer/layout";
 import AdminLayout from "@/app/dashboard/admin/layout";
+import FirmDashboardLayout from "@/app/dashboard/firm/layout";
 import { useUser } from "@/hooks/useUser";
 import { useAdminView } from "@/hooks/useAdminView";
 import { resolveNotificationsShell } from "@/lib/nav/shellContext";
@@ -31,10 +32,14 @@ export default function NotificationsLayout({ children }: { children: React.Reac
     try { lastDashboard = localStorage.getItem("nzamy_last_dashboard"); } catch { lastDashboard = null; }
   }
 
-  const shell = resolveNotificationsShell({ userType: user.userType, storedView, lastDashboard, pathname });
+  // N01-29: the firm account and an active firm member get the firm shell.
+  const shell = resolveNotificationsShell({
+    userType: user.userType, storedView, lastDashboard, pathname, isFirmMember: !!user.firmMembership,
+  });
 
   if (shell === "admin")  return <AdminLayout>{children}</AdminLayout>;
   if (shell === "client") return <ClientDashboardLayout>{children}</ClientDashboardLayout>;
   if (shell === "lawyer") return <LawyerDashboardLayout>{children}</LawyerDashboardLayout>;
+  if (shell === "firm")   return <FirmDashboardLayout>{children}</FirmDashboardLayout>;
   return <BusinessDashboardLayout>{children}</BusinessDashboardLayout>;
 }

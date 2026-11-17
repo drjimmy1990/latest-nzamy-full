@@ -6,6 +6,7 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { toPracticeKind } from "@/lib/auth/practiceKind";
 import { isOwnLicencePath } from "@/lib/storagePathOwnership";
 import { registryMatchesByUser, type RegistryMatch } from "@/lib/registry/registryMatch";
+import { readSignupViews } from "@/lib/lawyerSignup/adminViewServer";
 
 /**
  * GET /api/v1/admin/verifications — List verification requests
@@ -96,6 +97,16 @@ export async function GET(request: NextRequest) {
     lawyerRows.map((lp) => lp.user_id).filter((id): id is string => typeof id === "string"),
   );
 
+  // ── Signup verification (owner ٢٠–٢١, 20261124_70) ────────────────────────
+  // The licence photo from the signup (private bucket lawyer-licences, signed
+  // for 5 minutes), the AI pre-check, the registry-mobile code status, the
+  // e-mail code, «رقمي تغيّر» and the decision with its reasons. Never fails
+  // the queue: before the migration runs the map is empty.
+  const signupViews = await readSignupViews(
+    adminClient,
+    lawyerRows.map((lp) => lp.user_id).filter((id): id is string => typeof id === "string"),
+  );
+
   // ── Fetch provider verifications ───────────────────────────────────────────
   let providerQuery = adminClient
     .from("provider_profiles")
@@ -160,6 +171,7 @@ export async function GET(request: NextRequest) {
         licenceImageUrl: licenceImageUrls[i],
         practiceKind: toPracticeKind(lp.practice_kind),
         registryMatch: registryMatches.get(p.id) ?? null,
+        signupVerification: signupViews.get(p.id) ?? null,
       };
     }),
     // Provider profiles (notary, arbitrator, bailiff)
