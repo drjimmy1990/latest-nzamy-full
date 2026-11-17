@@ -290,7 +290,8 @@ function membership(id: string, labelAr: string, sar: number, buyers: readonly s
  *     5,000 / 12,500 / 30,000.
  * P3 (founder kit r7, 1 Nov 2026): the LAWYER founder membership
  * `lawyer-founder-2026` is in the book — 2,996 before VAT, one payment,
- * lawyers only. Its window (2026-11-01 → 2027-01-25) and its 1,096 seats are
+ * lawyers only (advocates only since 20261122_10). Its window (18 Nov → 17 Dec
+ * 2026, Riyadh days, 20261122_10) and its 1,096 seats are
  * enforced at checkout and in SQL (founder_reserve_seat), not by a launch
  * price here. There is no client or business founder plan.
  * Owner package of 1 Nov 2026 (§6.2.1, q329 — Wave 1 task 5): individuals
