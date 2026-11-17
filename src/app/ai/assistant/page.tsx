@@ -147,7 +147,7 @@ function WelcomeScreen({ onPrompt, isDark }: { onPrompt: (t: string) => void; is
         <Robot size={30} weight="duotone" className="text-[#C8A762]" />
       </motion.div>
       <div className="text-center">
-        <h2 className={`text-[18px] font-black mb-1 ${isDark ? "text-white" : "text-zinc-900"}`}>مرحباً، أنا نظامي أسيستنت</h2>
+        <h2 className={`text-[18px] font-black mb-1 ${isDark ? "text-white" : "text-zinc-900"}`}>مرحباً، أنا المساعد المتقدم</h2>
         <p className={`text-[13px] max-w-sm ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
           مساعدك القانوني الذكي — اسألني عن أي موضوع قانوني، استراتيجية، صياغة، أو بحث تشريعي
         </p>
@@ -210,7 +210,7 @@ export default function AssistantRoute() {
   return (
     <ToolUsableGate
       tool="assistant"
-      title="المستشار الذكي — قريباً"
+      title="المساعد المتقدم — قريباً"
       description="محادثة قانونية تجيب من نصوص الأنظمة ومبادئ القضاء في مكتبة نظامي، مع رابط كل نص. لم يُتح بعد لحسابك."
     >
       <AssistantPage />
@@ -332,7 +332,7 @@ function AssistantPage() {
           <Robot size={16} weight="duotone" className="text-[#C8A762]" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>نظامي أسيستنت</p>
+          <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>المساعد المتقدم</p>
           <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مساعدك القانوني الذكي</p>
         </div>
 
@@ -433,7 +433,7 @@ function AssistantPage() {
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={voice.listening ? "🎙️ جارٍ الاستماع..." : "اسأل نظامي أسيستنت... (Enter للإرسال، Shift+Enter لسطر جديد)"}
+            placeholder={voice.listening ? "🎙️ جارٍ الاستماع..." : "اسأل المساعد المتقدم... (Enter للإرسال، Shift+Enter لسطر جديد)"}
             rows={1}
             disabled={loading}
             className={`flex-1 bg-transparent text-[13px] resize-none outline-none leading-relaxed max-h-[120px] overflow-y-auto ${

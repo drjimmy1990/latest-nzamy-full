@@ -16,7 +16,7 @@ const ITEMS = [
 function FirmArchivePageDemo() {
   const { isDark } = useTheme();
   const [query, setQuery] = useState("");
-  const [toast, setToast] = useState("الأرشيف الموحد Backend-ready: الاستعادة والحذف النهائي محليان فقط حتى ربط Archive API.");
+  const [toast, setToast] = useState("الأرشيف الموحّد للعرض فقط حالياً: الاستعادة والحذف لا يُحفظان بعد. قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -29,7 +29,7 @@ function FirmArchivePageDemo() {
       <div>
         <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-[11px] font-bold text-blue-300">
           <Archive size={13} weight="duotone" />
-          Backend-ready
+          قريباً
         </div>
         <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>الأرشيف الموحد للمكتب</h1>
         <p className={`mt-1 text-sm ${muted}`}>قضايا وعملاء ومستندات مؤرشفة في مكان واحد، بدون حذف إنتاجي الآن.</p>
@@ -58,7 +58,7 @@ function FirmArchivePageDemo() {
               </div>
             </div>
             <button
-              onClick={() => setToast(`استعادة ${item.title} جاهزة للربط فقط. يلزم Archive API وسجل before/after.`)}
+              onClick={() => setToast(`استعادة ${item.title} غير متاحة بعد — قريباً.`)}
               className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
             >
               <ArrowCounterClockwise size={14} />

@@ -16,17 +16,17 @@ const SCOPES = [
   "الفريق",
   "الإعدادات",
   "التقارير",
-  "Chinese Walls",
+  "الجدران الصينية",
 ];
 
 const INITIAL = ROLES.reduce<Record<string, Record<string, boolean>>>((acc, role) => {
   acc[role] = {};
   SCOPES.forEach((scope) => {
     acc[role][scope] = role === "شريك مدير"
-      || (role === "شريك" && !["الإعدادات", "Chinese Walls"].includes(scope))
+      || (role === "شريك" && !["الإعدادات", "الجدران الصينية"].includes(scope))
       || (role === "مدير قسم" && ["القسم فقط", "القضايا المعينة", "النقاط", "الفريق", "التقارير"].includes(scope))
       || (role === "مالية" && ["المالية", "النقاط", "التقارير"].includes(scope))
-      || (role === "امتثال" && ["القسم فقط", "القضايا المعينة", "التقارير", "Chinese Walls"].includes(scope))
+      || (role === "امتثال" && ["القسم فقط", "القضايا المعينة", "التقارير", "الجدران الصينية"].includes(scope))
       || (role === "محام" && ["القضايا المعينة"].includes(scope))
       || (role === "سكرتير قانوني" && ["القضايا المعينة", "الفريق"].includes(scope))
       || (role === "امتثال" && ["التقارير"].includes(scope));
@@ -37,7 +37,7 @@ const INITIAL = ROLES.reduce<Record<string, Record<string, boolean>>>((acc, role
 export default function FirmDepartmentPermissionsPage() {
   const { isDark } = useTheme();
   const [matrix, setMatrix] = useState(INITIAL);
-  const [toast, setToast] = useState("إعدادات صلاحيات الأقسام Backend-ready: التغييرات محلية فقط حتى ربط Auth/RBAC API وسجل تدقيق.");
+  const [toast, setToast] = useState("صلاحيات الأقسام للعرض فقط حالياً: ما تغيّره هنا لا يُحفظ ولا يقيّد الوصول بعد. الحفظ قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -49,7 +49,7 @@ export default function FirmDepartmentPermissionsPage() {
       ...prev,
       [role]: { ...prev[role], [scope]: !prev[role][scope] },
     }));
-    setToast(`تم تعديل صلاحية ${role} على نطاق ${scope} محليا فقط. الحفظ الإنتاجي ينتظر RBAC policy API.`);
+    setToast(`تغيّرت صلاحية ${role} على نطاق ${scope} على هذه الشاشة فقط ولم تُحفظ — الحفظ قريباً.`);
   };
 
   return (
@@ -58,7 +58,7 @@ export default function FirmDepartmentPermissionsPage() {
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-[11px] font-bold text-blue-300">
             <Key size={13} weight="duotone" />
-            Backend-ready
+            قريباً
           </div>
           <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>صلاحيات الأقسام والنطاقات</h1>
           <p className={`mt-1 text-sm ${muted}`}>مصفوفة واضحة تفصل صلاحيات الشركة كلها عن القسم والقضايا والنقاط والمالية والتقارير.</p>
@@ -114,9 +114,9 @@ export default function FirmDepartmentPermissionsPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
-            { icon: LockOpen, title: "نطاق الشركة", text: "للشريك المدير فقط في الإنتاج، مع موافقات وسجل تدقيق." },
+            { icon: LockOpen, title: "نطاق الشركة", text: "للشريك المدير فقط، مع موافقات وسجل تدقيق." },
             { icon: Lock, title: "نطاق القسم", text: "مدير القسم يرى فريقه وصرف قسمه فقط، لا محفظة الشركة كلها." },
-            { icon: ShieldCheck, title: "Chinese Walls", text: "تحتاج policy engine خادمي قبل اعتبارها حماية إنتاجية." },
+            { icon: ShieldCheck, title: "الجدران الصينية", text: "لا تحجب الوصول فعلياً بعد — قريباً." },
           ].map((item) => (
             <div key={item.title} className={`${card} p-4`}>
               <item.icon size={20} className="text-[#C8A762]" weight="duotone" />

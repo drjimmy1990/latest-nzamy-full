@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { FIRM_ROUTE_RULES, getFirmRouteDecision } from "./entityRouteAccess.ts";
 import { readFileSync } from "node:fs";
+import { FIRM_ROLE_ALLOWED_HREFS } from "./navigation.sidebars.ts";
 
 const NON_LITIGATION = ["legal_consultant", "in_house_counsel", "external_of_counsel"] as const;
 const LITIGATION = ["managing_partner", "partner", "senior_lawyer", "lawyer"] as const;
@@ -54,13 +55,20 @@ test("N1.9: the other legal rules still admit the non-litigation legal roles", (
   assert.deepEqual([...rule("/dashboard/firm/procedures-expert").allowedRoles], [...LITIGATION]);
 });
 
+// The firm role lists name rows by href since N06-28/29 (13 Nov 2026), so these
+// tests read FIRM_ROLE_ALLOWED_HREFS itself (navigation.sidebars.ts has only
+// type imports through `@/`, which node strips). The old source-read matched
+// the first `  <role>: [` line in the file — for finance_manager and
+// hr_manager that was the corporate list, not the firm one.
+const HEARINGS = "/dashboard/firm/hearings";
+const firmList = (role: string): readonly string[] | undefined =>
+  FIRM_ROLE_ALLOWED_HREFS[role as keyof typeof FIRM_ROLE_ALLOWED_HREFS];
+
 test("N1.9: no non-litigation role is offered a Hearings link it cannot open", () => {
-  // Source-read: navigation.sidebars.ts imports through `@/`, which node --test cannot resolve.
-  const src = readFileSync(new URL("./navigation.sidebars.ts", import.meta.url), "utf8");
   for (const role of NON_LITIGATION) {
-    const line = new RegExp(`^  ${role}: \\[(.*)\\],\\r?$`, "m").exec(src);
-    assert.ok(line, `${role} has a sidebar list`);
-    assert.equal(line[1].includes('"Hearings"'), false, role);
+    const list = firmList(role);
+    assert.ok(list, `${role} has a sidebar list`);
+    assert.equal(list.includes(HEARINGS), false, role);
   }
 });
 
@@ -72,14 +80,16 @@ const FIRM_ROLES = [
 ] as const;
 
 test("N1.9: every firm role offered a Hearings sidebar link can open the page", () => {
-  const src = readFileSync(new URL("./navigation.sidebars.ts", import.meta.url), "utf8");
+  let offered = 0;
   for (const role of FIRM_ROLES) {
-    const line = new RegExp(`^  ${role}: \\[(.*)\\],\\r?$`, "m").exec(src);
-    assert.ok(line, `${role} has a sidebar list`);
-    if (line[1].includes('"Hearings"')) {
-      assert.equal(getFirmRouteDecision("/dashboard/firm/hearings", role).allowed, true, role);
+    const list = firmList(role);
+    assert.ok(list, `${role} has a sidebar list`);
+    if (list.includes(HEARINGS)) {
+      offered++;
+      assert.equal(getFirmRouteDecision(HEARINGS, role).allowed, true, role);
     }
   }
+  assert.ok(offered > 0, "no role is offered the hearings link — the lists changed shape");
 });
 
 test("N1.9: the floating shortcut to today's hearings is not offered to office_admin", () => {
@@ -98,7 +108,8 @@ test("N1.9: the firm cases page shows its «الجلسات» button only to role
 // ─── Owner ٢٥٦ (D4): the firm letterhead link, for exactly the roles that may open it ──
 
 test("D4: the firm Letterhead link is offered to exactly the roles the route and the vault API allow", () => {
-  const src = readFileSync(new URL("./navigation.sidebars.ts", import.meta.url), "utf8");
+  // The letterhead row («الخزنة», labelEn "Letterhead") is this href.
+  const LETTERHEAD = "/dashboard/firm/vault?tab=branding";
   // The vault API (brandingServer.ts): the firm owner, managing_partner and
   // office_admin (FIRM_BRANDING_ROLES). managing_partner gets the full
   // sidebar (getFirmSidebar), so no list names it.
@@ -107,10 +118,9 @@ test("D4: the firm Letterhead link is offered to exactly the roles the route and
     const allowed = getFirmRouteDecision("/dashboard/firm/letterhead", role).allowed;
     assert.equal(allowed, vaultRoles.has(role), `${role}: the route rule agrees with the vault API`);
     if (role === "managing_partner") continue;
-    const line = new RegExp(`^  ${role}: \\[(.*)\\],\\r?$`, "m").exec(src);
-    assert.ok(line, `${role} has a sidebar list`);
-    assert.equal(line[1].includes('"Letterhead"'), allowed, `${role}: offered the link ⇔ may open it`);
+    const list = firmList(role);
+    assert.ok(list, `${role} has a sidebar list`);
+    assert.equal(list.includes(LETTERHEAD), allowed, `${role}: offered the link ⇔ may open it`);
   }
-  const fallback = /^  default: \[(.*)\],\r?$/m.exec(src);
-  assert.ok(fallback && !fallback[1].includes('"Letterhead"'), "an unknown firm role is not offered it");
+  assert.ok(!FIRM_ROLE_ALLOWED_HREFS.default.includes(LETTERHEAD), "an unknown firm role is not offered it");
 });

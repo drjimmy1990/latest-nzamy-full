@@ -12,7 +12,7 @@ export default function FirmProfilePage() {
   const { currentFirmFeatures } = useAdminSettings();
   const [name, setName] = useState("شركة السند للمحاماة والاستشارات");
   const [headline, setHeadline] = useState("تقاضٍ تجاري، عقود، امتثال، وتحكيم للشركات المتوسطة والكبيرة");
-  const [toast, setToast] = useState("الملف المهني للمكتب Backend-ready: بيانات الهوية والاعتماد محلية فقط حتى Firm/Profile API.");
+  const [toast, setToast] = useState("الملف المهني للمكتب للعرض فقط حالياً: ما تعدّله هنا لا يُحفظ بعد. الحفظ قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -26,13 +26,13 @@ export default function FirmProfilePage() {
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-[11px] font-bold text-blue-300">
             <SealCheck size={13} weight="duotone" />
-            Backend-ready
+            قريباً
           </div>
           <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>الملف المهني للمكتب</h1>
-          <p className={`mt-1 text-sm ${muted}`}>هوية المكتب العامة واعتماده ومجالات ممارسته، كواجهة جاهزة للربط.</p>
+          <p className={`mt-1 text-sm ${muted}`}>هوية المكتب العامة واعتماده ومجالات ممارسته.</p>
         </div>
         <button
-          onClick={() => setToast("تم تجهيز حفظ الملف محليا فقط. الحفظ الإنتاجي ينتظر Firm/Profile API ومراجعة اعتماد الأدمن.")}
+          onClick={() => setToast("لم يُحفظ الملف — حفظ الملف المهني للمكتب قريباً.")}
           className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-sm font-black text-[#C8A762]"
         >
           <FloppyDisk size={15} />
@@ -69,7 +69,7 @@ export default function FirmProfilePage() {
               </span>
               <div>
                 <p className="text-lg font-black">{name}</p>
-                <p className="text-[11px] text-emerald-100">مزود قانوني Backend-ready</p>
+                <p className="text-[11px] text-emerald-100">مكتب محاماة</p>
               </div>
             </div>
             <p className="mt-5 text-sm leading-relaxed text-emerald-50">{headline}</p>

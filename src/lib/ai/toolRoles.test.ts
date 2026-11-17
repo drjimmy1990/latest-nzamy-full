@@ -179,7 +179,7 @@ test("each library tool's screen maps the gate's refusal to its own words", () =
   const library = Object.values(AI_TOOLS).filter((t) => t.retrieval).map((t) => t.id).sort();
   assert.deepEqual(library, ["assistant", "canvas-card", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
   assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType\)/);
-  assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المستشار الذكي", input\.userType \?\? null\)/);
+  assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المساعد المتقدم", input\.userType \?\? null\)/);
   assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType \}\)/);
   assert.match(src("app/dashboard/business/kanban/_graph-ai-card.ts"), /libraryToolRefusal\([^)]*"اقترح سنداً نظامياً", userType\)/);
   assert.match(src("app/dashboard/business/kanban/CaseGraphView.tsx"), /askCanvasCard\(chosen\.slice\(0, 8\), fetch, userType\)/);

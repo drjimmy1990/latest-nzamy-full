@@ -39,13 +39,11 @@ const MOVED: Record<string, string> = {
   "/ai/contract-reviewer": "/ai/contracts",
 };
 /**
- * The legal sidebars' «مراجع العقود» row keeps this URL and its «قريباً» until the
- * tool is live (the release notes' one-line follow-up, q296): a row on /ai/contracts
- * would be a second one with the same React key. The 301 carries the click.
+ * Files still allowed to name a retired URL. Empty since N06-26 (13 Nov 2026):
+ * the last row on /ai/contract-reviewer — the firm sidebar's «مراجع العقود»,
+ * a duplicate of «محترف العقود» — is gone, so nothing links it any more.
  */
-const STILL_LINKED: Record<string, readonly string[]> = {
-  "/ai/contract-reviewer": ["navigation.sidebars.legal.ts"],
-};
+const STILL_LINKED: Record<string, readonly string[]> = {};
 
 for (const [from, to] of Object.entries(MOVED)) {
   test(`${from} is a 301 to ${to}`, () => {

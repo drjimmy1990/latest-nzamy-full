@@ -163,7 +163,7 @@ export default function BetaReviewGate({
   const shouldGate = Boolean(isRoleGated || isLegalDataGated);
   const reviewReasonText = isLegalDataGated
     ? "مخرج قانوني يعتمد على مصادر أو بيانات نظامية"
-    : "مخرج محاماة ضمن مراجعة البيتا";
+    : "مخرج محاماة يُراجَع قبل إتاحته";
 
   // ── If beta mode is OFF, or user's role is NOT gated, or forceShow is ON, or demo bypass → render children ─
   if (!BETA_REVIEW_MODE || !shouldGate || forceShow || user.isDemoBypass) {
@@ -426,10 +426,10 @@ export default function BetaReviewGate({
       {/* Title + plain statement of fact */}
       <div>
         <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-          {toolName}: المخرج التلقائي غير متاح خلال البيتا
+          {toolName}: المخرج التلقائي غير متاح حالياً
         </h3>
         <p className={`text-sm mt-1.5 leading-relaxed ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-          هذا المخرج لا يُعرض تلقائيًا خلال الفترة الحالية من البيتا، ولم يُسجَّل أي طلب بشأنه.
+          هذا المخرج لا يُعرض تلقائيًا في الفترة الحالية، ولم يُسجَّل أي طلب بشأنه.
         </p>
       </div>
 

@@ -6,6 +6,7 @@ import { validateDraftIntake, representativeIdErrors, draftPartiesShown } from "
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
+import { valueLabelAr } from "@/lib/services/intakeValues";
 
 /**
  * Resolve a raw memoType id (e.g. "case") to its Arabic label ("تحرير دعوى")
@@ -107,7 +108,8 @@ export function useDraftState(initialMode = "") {
   function buildSummary(): { label: string; value: string }[] {
     return [
       { label: "صفة الموكل", value: clientRole === "plaintiff" ? "مدعٍ" : clientRole === "defendant" ? "مدعى عليه" : "" },
-      { label: "نوع المذكرة", value: memoType },
+      // N06-19: the Arabic name of the type («تحرير دعوى»), never the raw id ("case").
+      { label: "نوع المذكرة", value: valueLabelAr("memoType", memoType) },
       { label: "التصنيف", value: memoSubType },
       { label: "الفرع القانوني", value: legalBranch },
       { label: "الوقائع", value: caseText.slice(0, 120) + (caseText.length > 120 ? "…" : "") },

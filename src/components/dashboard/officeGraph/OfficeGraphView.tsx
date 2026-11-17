@@ -363,9 +363,6 @@ export default function OfficeGraphView({ base, isDark }: { base: "lawyer" | "fi
             </p>
             <p className={`mt-1 text-[11px] leading-relaxed ${muted}`}>
               اسم مسجّل موكّلاً في ملف وطرفاً آخر في ملف (أو الملف نفسه)، بعد توحيد الإملاء. تنبيه للتحقق، لا حكم بوجود تعارض، ويقتصر على ما في سجلاتك.
-              {base === "firm" && (
-                <> للفحص التفصيلي: <Link href="/dashboard/firm/compliance/conflict" className="font-bold text-[#C8A762] hover:underline">فحص تعارض المصالح</Link>.</>
-              )}
             </p>
             {graph.clashes.length === 0 ? (
               <p className={`mt-3 text-[12px] ${muted}`}>لا تشابه أسماء في سجلاتك.</p>

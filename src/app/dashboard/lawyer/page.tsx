@@ -74,6 +74,7 @@ import { toArabicDigits } from "@/lib/services/arabicCount";
 import { dashboardItemHref, moreCriticalHref, hiddenCount } from "@/lib/services/dashboardDateItems";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
+import { requestTypeLabelAr } from "@/lib/services/requestTypeLabels";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -464,7 +465,8 @@ export default function LawyerDashboardPage() {
       title: c.title || "—",
       status: CASE_STATUS_LABEL[c.status] ?? { label: c.status, tone: "waiting" as const },
       date: c.updated_at ? relativeTime(c.updated_at) : null,
-      type: c.type,
+      // N06-20: the Arabic name of service_requests.type («خدمة»), never the raw "service".
+      type: requestTypeLabelAr(c.type),
     }));
   }, [dashboardData]);
 

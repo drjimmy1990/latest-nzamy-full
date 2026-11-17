@@ -13,7 +13,7 @@ type TaskStatus = "todo" | "doing" | "done";
 const INITIAL_TASKS = [
   { id: "T-101", title: "مراجعة مذكرة الاستئناف", owner: "محام أول", department: "التقاضي", due: "اليوم", status: "doing" as TaskStatus },
   { id: "T-102", title: "تجهيز بنود عقد الشراكة", owner: "محام", department: "العقود والشركات", due: "غدا", status: "todo" as TaskStatus },
-  { id: "T-103", title: "فحص تعارض مصالح عميل جديد", owner: "امتثال", department: "الامتثال", due: "اليوم", status: "todo" as TaskStatus },
+  { id: "T-103", title: "اعتماد بيانات عميل جديد", owner: "امتثال", department: "الامتثال", due: "اليوم", status: "todo" as TaskStatus },
   { id: "T-104", title: "إغلاق تقرير جلسة التحكيم", owner: "شريك", department: "التحكيم", due: "أمس", status: "done" as TaskStatus },
 ];
 
@@ -23,7 +23,7 @@ function FirmTasksPageDemo() {
   const { isDark } = useTheme();
   const [tasks, setTasks] = useState(INITIAL_TASKS);
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState("مهام فريق شركة المحاماة Backend-ready: إدارة المهام هنا محلية فقط حتى ربط Task API وAuditEvent.");
+  const [toast, setToast] = useState("مهام الفريق للعرض فقط حالياً: ما تضيفه أو تغيّره هنا لا يُحفظ بعد. إدارة المهام قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -35,12 +35,12 @@ function FirmTasksPageDemo() {
   const addTask = () => {
     const next = { id: `T-${Date.now().toString().slice(-3)}`, title: "مهمة محلية جديدة للربط لاحقا", owner: "مدير قسم", department: "التقاضي", due: "هذا الأسبوع", status: "todo" as TaskStatus };
     setTasks((prev) => [next, ...prev]);
-    setToast("تمت إضافة مهمة محليا فقط. إنشاء المهمة الحقيقي ينتظر Task API وتنبيهات الفريق.");
+    setToast("أُضيفت المهمة على هذه الشاشة فقط ولم تُحفظ — قريباً.");
   };
 
   const moveTask = (id: string, status: TaskStatus) => {
     setTasks((prev) => prev.map((task) => task.id === id ? { ...task, status } : task));
-    setToast("تم تغيير حالة المهمة محليا فقط. الحفظ الحقيقي ينتظر Task API وسجل التدقيق.");
+    setToast("تغيّرت حالة المهمة على هذه الشاشة فقط ولم تُحفظ — قريباً.");
   };
 
   return (

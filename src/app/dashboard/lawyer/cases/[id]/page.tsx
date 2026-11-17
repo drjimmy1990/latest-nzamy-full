@@ -95,6 +95,7 @@ import {
 } from "@/lib/services/caseNotesService";
 import { getCaseTeam, addCaseTeamMember, removeCaseTeamMember } from "@/lib/services/caseTeamService";
 import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
+import { REQUEST_TYPE_LABELS_AR } from "@/lib/services/requestTypeLabels";
 import {
   NoteScopePicker,
   NoteScopeLine,
@@ -181,25 +182,8 @@ interface TimelineRow {
 /** The four stages of the file, in order. `stageIdx` indexes into this. */
 const CASE_STAGES = ["تقديم", "قيد التداول", "مراجعة", "إغلاق"] as const;
 
-/**
- * Arabic labels for `service_requests.type` — every value the
- * `service_requests_type_check` CHECK constraint allows
- * (supabase/migrations/20260814_service_orders_types.sql). The header badge
- * used to print this column raw, so a case a lawyer created themselves — its
- * type is the literal "service" (AddCaseModal.tsx) — showed the English word
- * "service" on an otherwise fully Arabic card. Same words the client sees for
- * the same type in dashboard/client/requests/page.tsx's TYPE_CFG.
- */
-const CASE_TYPE_LABELS: Record<string, string> = {
-  service: "خدمة",
-  consultation: "استشارة",
-  business_case: "قضية",
-  ngo_volunteer: "متطوع",
-  ai_draft: "صياغة مذكرة",
-  ai_contracts: "عقود",
-  ai_wargaming: "محاكاة",
-  ai_legal_opinion: "رأي قانوني",
-};
+// Arabic labels for `service_requests.type`: REQUEST_TYPE_LABELS_AR
+// (src/lib/services/requestTypeLabels.ts), shared with the lawyer dashboard.
 
 const STATUS_CONFIG: Record<CaseStatus, { label: string; color: string; dot: string }> = {
   active:    { label: "نشطة",   color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20", dot: "bg-emerald-400 animate-pulse" },
@@ -1290,7 +1274,7 @@ export default function CaseDetailPage() {
                     only metadata.service tells it from a drafting order. */}
                 {isBriefReviewOrder(caseData.metadata)
                   ? BRIEF_REVIEW_SHORT_LABEL_AR
-                  : CASE_TYPE_LABELS[caseData.type] ?? caseData.type}
+                  : REQUEST_TYPE_LABELS_AR[caseData.type] ?? caseData.type}
               </span>
               <span className={`text-[11px] font-mono ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                 {referenceNo}
