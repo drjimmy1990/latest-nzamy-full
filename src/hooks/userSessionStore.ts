@@ -30,10 +30,12 @@ import {
   mapSupabaseUser,
   readEntityMemberships,
   readPracticeKind,
+  readServerTier,
+  readProviderSubRole,
   readProfileUserType,
   readStaffRole,
 } from "./userSession.ts";
-import type { MembershipState, ProfileState, UserSession } from "./useUser.ts";
+import type { MembershipState, ProfileState, SubRole, UserSession, UserTier } from "./useUser.ts";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -120,7 +122,7 @@ export function createUserSessionStore(deps: UserSessionStoreDeps): UserSessionS
     // practice_kind is read for a lawyer only, so it waits for the profile
     // read — while still overlapping the four membership reads.
     const profileRead = readProfileUserType(supabase, authUser.id);
-    const [read, membershipRead, practiceRead, staffRead] = await Promise.all([
+    const [read, membershipRead, practiceRead, staffRead, tierRead, subRoleRead] = await Promise.all([
       profileRead,
       readEntityMemberships(supabase, authUser.id),
       profileRead.then((r) =>
@@ -129,6 +131,13 @@ export function createUserSessionStore(deps: UserSessionStoreDeps): UserSessionS
       // Owner ٢١٠: the staff role, for an admin only (undefined: not read).
       profileRead.then((r) =>
         r.status === "found" && r.userType === "admin" ? readStaffRole(supabase) : undefined,
+      ),
+      // TODO 3.4 (S4): the plan from the user's own subscription rows, never
+      // user_metadata; overlaps the reads above.
+      readServerTier(supabase, authUser.id),
+      // …and a provider's sub-role from provider_profiles (null: not read).
+      profileRead.then((r) =>
+        r.status === "found" && r.userType === "provider" ? readProviderSubRole(supabase, authUser.id) : null,
       ),
     ]);
     // Superseded: drop this result and leave `loading` alone — whichever event
@@ -204,6 +213,19 @@ export function createUserSessionStore(deps: UserSessionStoreDeps): UserSessionS
             ? (prev.staffRole ?? null)
             : null;
 
+      // TODO 3.4 (S4). A failed plan or sub-role read carries the previous
+      // answer forward for this same user (a token refresh on a bad network
+      // must not flip the plan); with nothing to carry it is least privilege.
+      const sameUser = prev.isLoggedIn && prev.userId === authUser.id;
+      const tier: UserTier =
+        tierRead.status === "found" ? tierRead.tier : sameUser ? prev.tier : "free";
+      const subRole: SubRole =
+        subRoleRead?.status === "found"
+          ? subRoleRead.subRole
+          : (subRoleRead?.status === "unavailable" || read.status === "unavailable") && sameUser
+            ? prev.subRole
+            : null;
+
       return mapSupabaseUser(
         authUser,
         read.status === "found" ? read.userType : carried,
@@ -212,6 +234,7 @@ export function createUserSessionStore(deps: UserSessionStoreDeps): UserSessionS
         membershipState,
         practiceKind,
         staffRole,
+        { tier, subRole },
       );
     });
 
