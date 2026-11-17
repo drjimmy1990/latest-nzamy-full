@@ -12,6 +12,7 @@ import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { AUDIENCE_REFUSED_AR, NOT_FOR_SALE_AR, UNKNOWN_ITEM_AR } from "@/lib/payments/checkoutCore";
 import { buyerAllowed, formatHalalas, quote, sellableItem } from "@/lib/payments/catalog";
 import { couponsAvailable } from "@/lib/payments/couponServer";
+import { FOUNDER_TERMS_VERSION } from "@/lib/founder/founderTerms";
 import {
   billingLabelAr,
   checkoutItemNotes,
@@ -38,7 +39,11 @@ import {
  *     the ind-litigation coverage — firm plans promise no seats), and
  *     MoyasarCheckout, which starts the payment and shows the server's quote;
  *   - the coupon field (P7) only once 20261026_20 has run (couponsAvailable,
- *     a service-role probe) and never for a point top-up.
+ *     a service-role probe) and never for a point top-up;
+ *   - the founder membership (owner ١٦): MoyasarCheckout gets the current
+ *     FOUNDER_TERMS_VERSION and shows the mandatory terms checkbox above
+ *     «متابعة الدفع» (the form, not this page, holds it: the consent rides
+ *     on the checkout POST).
  */
 
 export const dynamic = "force-dynamic";
@@ -178,6 +183,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
             itemId={parsed.itemId}
             billing={parsed.billing}
             couponsEnabled={couponFieldShown(item, couponsReady)}
+            founderTermsVersion={item.kind === "membership" ? FOUNDER_TERMS_VERSION : null}
           />
         </div>
 

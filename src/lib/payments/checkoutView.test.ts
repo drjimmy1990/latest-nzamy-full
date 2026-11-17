@@ -9,6 +9,7 @@ import { PAYABLE_ITEMS } from "./catalog.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import type { CheckoutResponse } from "./checkoutRules.ts";
 import {
+  checkoutRequestBody,
   buyButtonAction,
   checkoutBillingFor,
   checkoutHref,
@@ -435,4 +436,15 @@ test("couponFieldShown: only once the coupon columns exist, and never for a poin
   assert.equal(couponFieldShown({ kind: "plan" }, false), false);
   // P3: the founder price is already discounted and nothing stacks on it
   assert.equal(couponFieldShown({ kind: "membership" }, true), false);
+});
+
+test("checkoutRequestBody: {itemId, billing}, the coupon when applied, the founder consent when ticked (owner ١٦)", () => {
+  assert.deepEqual(checkoutRequestBody("lawyer-pro", "yearly", null, null), { itemId: "lawyer-pro", billing: "yearly" });
+  assert.deepEqual(checkoutRequestBody("ind-ai", "yearly", "PLAN50", null), { itemId: "ind-ai", billing: "yearly", couponCode: "PLAN50" });
+  assert.deepEqual(checkoutRequestBody("lawyer-founder-2026", "once", null, "2026-11-17"), {
+    itemId: "lawyer-founder-2026",
+    billing: "once",
+    acceptFounderTerms: true,
+    founderTermsVersion: "2026-11-17",
+  });
 });
