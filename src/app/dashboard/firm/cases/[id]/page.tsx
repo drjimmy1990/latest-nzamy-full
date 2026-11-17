@@ -110,6 +110,7 @@ import {
   CaseTeamPanel,
   type CaseTeamState,
 } from "@/components/dashboard/caseNotes/NoteScope";
+import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1338,6 +1339,7 @@ export default function FirmCaseDetailsPage() {
               </div>
 
               <CaseTeamPanel team={caseTeam} onAdd={addToCaseTeam} onRemove={removeFromCaseTeam} onRetry={loadCaseTeam} card={card} />
+              <CaseRestrictionToggle caseId={id} card={card} />
 
               <div className="space-y-3">
                 {caseNotesView === "loading" ? (
