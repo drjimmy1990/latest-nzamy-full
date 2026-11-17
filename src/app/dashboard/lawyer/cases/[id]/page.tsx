@@ -107,6 +107,7 @@ import {
 import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import { caseSummaryBlocks } from "../_caseSummaryBlocks";
+import InsertFromLibraryButton from "@/components/library/InsertFromLibraryButton";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -513,6 +514,8 @@ export default function CaseDetailPage() {
   const [caseNotesRead, setCaseNotesRead] = useState<ListRead<CaseNote> | null>(null);
   const [caseNotesLoading, setCaseNotesLoading] = useState(true);
   const [newNoteBody, setNewNoteBody] = useState("");
+  // N01-24: «إدراج من مسودة المكتبة / مجلداتي» inserts at this box's cursor.
+  const newNoteRef = useRef<HTMLTextAreaElement>(null);
   const [newNoteVisibility, setNewNoteVisibility] = useState<CaseNoteVisibility>("private");
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -2341,6 +2344,7 @@ export default function CaseDetailPage() {
               <div className={`${card} p-4`}>
                 <div className={`flex flex-col gap-2 p-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-slate-200 bg-slate-50"}`}>
                   <textarea
+                    ref={newNoteRef}
                     value={newNoteBody}
                     onChange={(e) => setNewNoteBody(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submitCaseNote(); }}
@@ -2351,6 +2355,7 @@ export default function CaseDetailPage() {
                   />
                   <div className="flex items-center justify-between gap-2">
                     <NoteScopePicker value={newNoteVisibility} onChange={setNewNoteVisibility} team={caseTeam} disabled={addingNote} />
+                    <InsertFromLibraryButton isDark={isDark} targetRef={newNoteRef} value={newNoteBody} onChange={setNewNoteBody} disabled={addingNote} />
                     <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
                       {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}
