@@ -69,7 +69,7 @@ export default function ProceduresPage() {
                   no count either. A subtitle is a promise about the page under
                   it; this one named a source of knowledge the page does not
                   have. */}
-              إجراءات · دوائر قضائية · جهات حكومية · تظلمات · دليل ناجز
+              دليل ناجز · إجراءات · دوائر قضائية · جهات حكومية · تظلمات
             </p>
           </div>
           {/* Owner note ٨٨ — «محدّث ٢٠٢٦» claimed currency for data that carries
@@ -84,26 +84,47 @@ export default function ProceduresPage() {
           the najiz guide. Six tabs no longer fit one row on a phone, so the
           bar is a 3×2 grid there and each tab carries its own short label
           (the first word of «إجراءات التظلم…» would read like «الإجراءات»). */}
-      <div className={`grid grid-cols-3 sm:grid-cols-6 gap-1 p-1 rounded-2xl ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-        {([
-          { key: "circuits" as Mode, label: "الدوائر القضائية", short: "الدوائر", icon: MapPin },
-          { key: "agencies" as Mode, label: "الجهات الحكومية", short: "الجهات", icon: Buildings },
-          { key: "procedures" as Mode, label: "الإجراءات", short: "الإجراءات", icon: ClipboardText },
-          { key: "grievances" as Mode, label: "التظلم حسب القطاع", short: "التظلمات", icon: Scales },
-          { key: "channels" as Mode, label: "القنوات الوطنية", short: "القنوات", icon: PhoneCall },
-          { key: "najiz" as Mode, label: "دليل ناجز", short: "ناجز", icon: BookOpen },
-        ] as const).map(tab => (
-          <button key={tab.key} onClick={() => setMode(tab.key)} aria-pressed={mode === tab.key}
-            className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-bold transition-all ${
-              mode === tab.key
-                ? isDark ? "bg-zinc-700 text-zinc-100 shadow-sm" : "bg-white text-slate-800 shadow-sm"
-                : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"
-            }`}>
-            <tab.icon size={13} weight={mode === tab.key ? "fill" : "regular"} />
-            <span className="hidden sm:block">{tab.label}</span>
-            <span className="sm:hidden">{tab.short}</span>
-          </button>
-        ))}
+      {/* Owner package 13 Nov (N06-6..10): «دليل ناجز» leads and stands
+          apart; the court e-mail directory (2,192), the agencies, the
+          grievance routes and the national channels are a secondary row of
+          supporting references below it. */}
+      <div className="space-y-1.5">
+        <div className={`grid grid-cols-2 gap-1 p-1 rounded-2xl ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
+          {([
+            { key: "najiz" as Mode, label: "دليل ناجز", icon: BookOpen },
+            { key: "procedures" as Mode, label: "الإجراءات", icon: ClipboardText },
+          ] as const).map(tab => (
+            <button key={tab.key} onClick={() => setMode(tab.key)} aria-pressed={mode === tab.key}
+              className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12px] font-bold transition-all ${
+                mode === tab.key
+                  ? isDark ? "bg-zinc-700 text-zinc-100 shadow-sm" : "bg-white text-slate-800 shadow-sm"
+                  : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"
+              }`}>
+              <tab.icon size={14} weight={mode === tab.key ? "fill" : "regular"} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <span className={`text-[10px] font-semibold me-1 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>مراجع مساندة:</span>
+          {([
+            { key: "circuits" as Mode, label: "إيميلات الدوائر القضائية", short: "الدوائر", icon: MapPin },
+            { key: "agencies" as Mode, label: "الجهات الحكومية", short: "الجهات", icon: Buildings },
+            { key: "grievances" as Mode, label: "التظلم حسب القطاع", short: "التظلمات", icon: Scales },
+            { key: "channels" as Mode, label: "القنوات الوطنية", short: "القنوات", icon: PhoneCall },
+          ] as const).map(tab => (
+            <button key={tab.key} onClick={() => setMode(tab.key)} aria-pressed={mode === tab.key}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all ${
+                mode === tab.key
+                  ? isDark ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-slate-300 bg-slate-100 text-slate-800"
+                  : isDark ? "border-white/[0.06] text-zinc-400 hover:text-zinc-200" : "border-slate-200 text-slate-500 hover:text-slate-700"
+              }`}>
+              <tab.icon size={12} weight={mode === tab.key ? "fill" : "regular"} />
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.short}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── MODE: CIRCUITS ── */}
