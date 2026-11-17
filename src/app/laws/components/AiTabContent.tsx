@@ -146,6 +146,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
   const running = turns.some(t => t.answer === null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const conversationRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (turns.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -158,7 +159,10 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
     const id = `t-${Date.now()}`;
     setTurns(prev => [...prev, { id, question: q, answer: null }]);
     // The server's reply and citations, or the refusal it gave (askLibrary).
-    const res = await askLibrary({ message: q }, window.location.pathname + window.location.search);
+    // Owner Q458: a follow-up carries this tab's conversation (the server adds
+    // its last six turns).
+    const res = await askLibrary({ message: q, conversationId: conversationRef.current }, window.location.pathname + window.location.search);
+    if (res.conversationId) conversationRef.current = res.conversationId;
     setTurns(prev => prev.map(t => t.id === id
       ? { ...t, answer: { text: res.text, cites: asCitations(res.citations), action: res.action, refused: res.refused === true } }
       : t));
@@ -192,7 +196,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
         </div>
         {turns.length > 0 && (
           <button
-            onClick={() => setTurns([])}
+            onClick={() => { conversationRef.current = null; setTurns([]); }}
             disabled={running}
             className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold border transition-colors disabled:opacity-40 ${
               isDark ? "border-white/10 text-zinc-300 hover:text-white" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E] hover:border-[#0B3D2E]"

@@ -24,7 +24,7 @@ import {
 const RUN = "11111111-2222-4333-8444-555555555555";
 const CONV = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const ON = { "library-assistant": { mode: "live" } };
-const USER: RunActor = { userId: "u-1", userType: "individual", practiceKind: null, displayName: null };
+const USER: RunActor = { userId: "u-1", userType: "individual", practiceKind: "advocate", displayName: null };
 
 const turn = (q: string, a: string, status = "succeeded") => ({
   input: { message: q, article_id: null, law_slug: "labor-law" },

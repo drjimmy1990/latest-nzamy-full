@@ -21,6 +21,19 @@ export interface LibraryAnswer {
   action?: LibraryAiAction;
   /** Set on every answer that is not the assistant's reply (a refusal, a closed tool, an error). */
   refused?: true;
+  /**
+   * Owner Q458 / L3: the conversation the server filed this question under.
+   * The page sends it with the next question, and the server reads that
+   * conversation's last six turns from its own records (never from here).
+   */
+  conversationId?: string;
+}
+
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The server's conversation id in a reply body, or undefined. */
+function conversationOf(json: Record<string, unknown>): string | undefined {
+  return typeof json.conversationId === "string" && CONVERSATION_ID.test(json.conversationId) ? json.conversationId : undefined;
 }
 
 export const LIBRARY_AI_SOON =
@@ -57,29 +70,42 @@ export function lawSlugFromPath(path: string): string | null {
 }
 
 export async function askLibrary(
-  input: { message: string; articleId?: string | null },
+  input: { message: string; articleId?: string | null; conversationId?: string | null },
   currentPath: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<LibraryAnswer> {
-  let res: Response;
-  try {
-    res = await fetchImpl("/api/v1/ai/runs", {
+  const conversationId =
+    typeof input.conversationId === "string" && CONVERSATION_ID.test(input.conversationId) ? input.conversationId : null;
+  const send = (cid: string | null) =>
+    fetchImpl("/api/v1/ai/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tool: "library-assistant",
         input: { message: input.message, article_id: input.articleId ?? null, law_slug: lawSlugFromPath(currentPath) },
+        ...(cid ? { conversationId: cid } : {}),
         idempotencyKey: newKey(),
       }),
     });
+  let res: Response;
+  let json: Record<string, unknown>;
+  try {
+    res = await send(conversationId);
+    json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    // A conversation holds thirty questions (refused before any charge): the
+    // question starts a new conversation instead, once.
+    if (conversationId && res.status === 409 && json.code === "conversation_full") {
+      res = await send(null);
+      json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    }
   } catch {
     return { text: FALLBACK, citations: [], refused: true };
   }
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   const output = (json.output ?? null) as Record<string, unknown> | null;
 
   if (res.ok && typeof output?.reply === "string" && output.reply.trim()) {
-    return { text: output.reply, citations: Array.isArray(json.citations) ? json.citations : [] };
+    const cid = conversationOf(json);
+    return { text: output.reply, citations: Array.isArray(json.citations) ? json.citations : [], ...(cid ? { conversationId: cid } : {}) };
   }
   // Owner Q485: a request to write a memo or a pleading (runCore, before any
   // charge): the server's polite refusal, and the drafter only when it offers it.
@@ -110,4 +136,37 @@ export async function askLibrary(
   if (typeof json.error === "string" && json.error) return { text: json.error, citations: [], refused: true };
   const refusal = libraryAiRefusal(res.status, currentPath);
   return { text: refusal?.text ?? FALLBACK, citations: [], action: refusal?.action, refused: true };
+}
+
+/** One saved conversation as the panel lists it (GET /api/v1/ai/library-history). */
+export interface LibraryHistoryConversation {
+  conversationId: string | null;
+  turns: Array<{ question: string; answer: string; citations: unknown[]; createdAt: string }>;
+  updatedAt: string;
+}
+
+/**
+ * Owner L3: the signed-in user's last conversations on this law, from the
+ * server (so a second device sees them too). null when there is nothing to
+ * show: signed out, no law page, or a failed read — the panel then stays hidden.
+ */
+export async function loadLibraryHistory(
+  currentPath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LibraryHistoryConversation[] | null> {
+  const slug = lawSlugFromPath(currentPath);
+  if (!slug) return null;
+  try {
+    const res = await fetchImpl(`/api/v1/ai/library-history?law=${encodeURIComponent(slug)}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as { conversations?: unknown } | null;
+    if (!json || !Array.isArray(json.conversations)) return null;
+    return json.conversations.filter(
+      (c): c is LibraryHistoryConversation =>
+        typeof c === "object" && c !== null && Array.isArray((c as LibraryHistoryConversation).turns) &&
+        (c as LibraryHistoryConversation).turns.every((t) => typeof t?.question === "string" && typeof t?.answer === "string"),
+    );
+  } catch {
+    return null;
+  }
 }
