@@ -213,7 +213,19 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
           {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
             <div>
               <label className={labelCls}>بطاقة الموكّل (اختياري)</label>
-              <select value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)} disabled={clientsLoading} className={inputCls}>
+              <select
+                value={selectedClientId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedClientId(id);
+                  // N01-5 (owner package 13 Nov): picking the client fills «الطرف الآخر»
+                  // when it is still empty; a name the lawyer typed is never overwritten.
+                  const picked = clientCards.find((c) => c.id === id);
+                  if (picked && !counterpartyName.trim()) setCounterpartyName(picked.name);
+                }}
+                disabled={clientsLoading}
+                className={inputCls}
+              >
                 <option value="">{clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون ربط —"}</option>
                 {clientCards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
