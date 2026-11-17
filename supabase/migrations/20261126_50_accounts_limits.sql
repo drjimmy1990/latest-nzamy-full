@@ -187,11 +187,11 @@ declare
   v_oauth   uuid[] := '{}';
 begin
   if to_regclass('public.admin_audit_events') is not null then
-    select coalesce(array_agg(distinct (e.target_id)::uuid), '{}') into v_claimed
+    select coalesce(array_agg(distinct (e.target_id::text)::uuid), '{}') into v_claimed
       from public.admin_audit_events e
      where e.action = 'account_type_claimed'
        and pg_catalog.to_jsonb(e) -> 'after_state' ->> 'user_type' = 'lawyer'
-       and e.target_id ~ '^[0-9a-fA-F-]{36}$';
+       and e.target_id::text ~ '^[0-9a-fA-F-]{36}$';
   end if;
   if to_regclass('auth.identities') is not null then
     execute $q$

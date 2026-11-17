@@ -27,30 +27,20 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const LOG = "[onboarding/practice-kind]";
 
-async function sessionLawyer() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (isAuthUnavailable(user, error)) return { response: authUnavailableResponse() };
-  if (!user) return { response: NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول." }, { status: 401 }) };
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("user_type")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (profileError) {
-    console.error(`${LOG} profile read failed:`, profileError.message, profileError.code);
-    return { response: NextResponse.json({ error: "تعذّر قراءة بيانات حسابك." }, { status: 500 }) };
-  }
-  return { user, isLawyer: profile?.user_type === "lawyer" };
+/** profiles.user_type of the session (its own row, RLS-scoped). */
+async function readIsLawyer(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const { data: profile, error } = await supabase.from("profiles").select("user_type").eq("id", userId).maybeSingle();
+  if (error) console.error(`${LOG} profile read failed:`, error.message, error.code);
+  return { failed: !!error, isLawyer: profile?.user_type === "lawyer" };
 }
 
 export async function GET() {
   try {
-    const s = await sessionLawyer();
-    if ("response" in s) return s.response;
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول." }, { status: 401 });
+    const s = { user, ...(await readIsLawyer(supabase, user.id)) };
     if (!s.isLawyer) return NextResponse.json({ needsChoice: false }, { headers: NO_STORE });
     const service = await createServiceClient();
     const { data, error } = await service
@@ -73,15 +63,19 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+    if (!user) return NextResponse.json({ error: "غير مصرح — يرجى تسجيل الدخول." }, { status: 401 });
+    const frozen = frozenAccountResponse(user);
+    if (frozen) return frozen;
     const body = (await request.json().catch(() => null)) as { practiceKind?: unknown } | null;
     const practiceKind = body?.practiceKind;
     if (!isPracticeKind(practiceKind)) {
       return NextResponse.json({ error: "اختر: محامٍ مترافع أو مستشار قانوني." }, { status: 400 });
     }
-    const s = await sessionLawyer();
-    if ("response" in s) return s.response;
-    const frozen = frozenAccountResponse(s.user);
-    if (frozen) return frozen;
+    const s = { user, ...(await readIsLawyer(supabase, user.id)) };
+    if (s.failed) return NextResponse.json({ error: "تعذّر قراءة بيانات حسابك." }, { status: 500 });
     if (!s.isLawyer) {
       return NextResponse.json({ error: "هذا السؤال لحسابات المحامين فقط." }, { status: 403 });
     }
