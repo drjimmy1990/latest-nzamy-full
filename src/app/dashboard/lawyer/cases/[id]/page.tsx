@@ -1906,7 +1906,10 @@ export default function CaseDetailPage() {
                   // was printed for a cancelled sitting as much as a held one.
                   const tone = HEARING_STATE_TONE[h.state];
                   const StateIcon = tone.icon;
-                  const actions = courtWritesAllowed ? allowedHearingActions(h.source.status) : [];
+                  // N01-18: a hearing a colleague assigned to me — outcome actions only (the PATCH rule).
+                  const actions = courtWritesAllowed
+                    ? allowedHearingActions(h.source.status).filter(a => h.source.isOwn !== false || a === "complete" || a === "postpone" || a === "reopen")
+                    : [];
                   const lastReason = [...(h.source.history ?? [])].reverse().find(e => e.reason)?.reason;
                   return (
                   <motion.div key={h.id}
@@ -2496,6 +2499,7 @@ export default function CaseDetailPage() {
             date: hearingAction.row.date, time: hearingAction.row.time ?? undefined,
             location: hearingAction.row.location, notes: hearingAction.row.notes,
             caseId: hearingAction.row.caseRequestId ?? undefined, caseName: hearingAction.row.caseName,
+            assigneeUserId: hearingAction.row.assigneeUserId ?? undefined,
           }}
           action={hearingAction.action}
           isDark={isDark}

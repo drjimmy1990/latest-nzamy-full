@@ -25,7 +25,7 @@ import {
   WarningCircle, CircleNotch, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { getSidebarByUserType, type SidebarItem } from "@/constants/navigation";
+import { getSidebarByUserType, withoutConsultantBlockedItems, type SidebarItem } from "@/constants/navigation";
 import { useUser } from "@/hooks/useUser";
 import { usePathname } from "next/navigation";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
@@ -97,7 +97,7 @@ function ContentTypeIcon({ type }: { type: PersonalContentKind }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function GlobalSearch() {
   const { isDark, lang } = useTheme();
-  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, country, practiceKind, staffRole, loading: userLoading } = useUser();
+  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, firmMembership, affiliation, isDemoBypass, country, practiceKind, staffRole, loading: userLoading } = useUser();
   const pathname = usePathname() ?? "/";
   const isAr = lang === "ar";
   const router = useRouter();
@@ -123,7 +123,7 @@ export function GlobalSearch() {
   const isBusinessIntake =
     isSharedClientIntakePath(pathname) &&
     (sessionUserType === "corporate" || !!businessMembership);
-  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake });
+  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake, isFirmMember: !!firmMembership });
   const shortcutModifier = useSyncExternalStore(noSubscribe, clientModifier, serverModifier);
 
   // Gather all tools for this user — the same list as the sidebar, so a
@@ -138,7 +138,11 @@ export function GlobalSearch() {
     simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
     simId ? simId.practiceKind : practiceKind, staffRole,
   );
-  const allTools = extractTools(groups, hasClientGroup);
+  // Art. 18: the same consultant filter SharedSidebar applies to a firm-drawn menu.
+  const shownGroups = userType === "firm" && sessionUserType === "lawyer" && practiceKind === "consultant"
+    ? withoutConsultantBlockedItems(groups)
+    : groups;
+  const allTools = extractTools(shownGroups, hasClientGroup);
 
   // ── The account's own content ─────────────────────────────────────────────
   // The vault page is taken from THIS user's own sidebar, so a document row

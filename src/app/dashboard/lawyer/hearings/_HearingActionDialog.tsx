@@ -17,7 +17,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ModalShell from "@/components/ui/ModalShell";
-import { HearingOverlapError, updateLawyerHearing, type HearingDto, type UpdateHearingInput } from "@/lib/services/lawyerHearingsService";
+import {
+  getHearingAssigneeOptions, HearingOverlapError, updateLawyerHearing,
+  type HearingAssigneeOption, type HearingDto, type UpdateHearingInput,
+} from "@/lib/services/lawyerHearingsService";
+import { assigneeOptionLabelAr } from "@/lib/services/item59Labels";
 import {
   actionNeedsReason, HEARING_ACTION_LABEL_AR, HEARING_REASON_MAX, type HearingAction,
 } from "@/lib/services/hearingChange";
@@ -34,6 +38,8 @@ export interface HearingForAction {
   notes?: string;
   caseId?: string;
   caseName?: string;
+  /** N01-18: the colleague who attends; "" / undefined = the owner. Edited by the owner only. */
+  assigneeUserId?: string;
 }
 
 const PROMPT_AR: Record<HearingAction, string> = {
@@ -69,6 +75,16 @@ export default function HearingActionDialog({
   const [casesState, setCasesState] = useState<"idle" | "loading" | "error" | "ready">(action === "edit" ? "loading" : "idle");
   const firstRef = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
 
+  // N01-18: the owner re-assigns in «تعديل» (the options are the server's).
+  const [assigneeId, setAssigneeId] = useState(hearing.assigneeUserId ?? "");
+  const [assigneeOptions, setAssigneeOptions] = useState<HearingAssigneeOption[] | null>(null);
+  useEffect(() => {
+    if (action !== "edit") return;
+    let live = true;
+    getHearingAssigneeOptions().then(options => { if (live) setAssigneeOptions(options); });
+    return () => { live = false; };
+  }, [action]);
+
   useEffect(() => {
     if (action !== "edit") return;
     let live = true;
@@ -91,6 +107,7 @@ export default function HearingActionDialog({
     if (location.trim() !== (hearing.location ?? "")) editChanges.location = location.trim();
     if (notes.trim() !== (hearing.notes ?? "")) editChanges.notes = notes.trim();
     if (caseId !== (hearing.caseId ?? "")) editChanges.caseRequestId = caseId || null;
+    if (assigneeOptions && assigneeId !== (hearing.assigneeUserId ?? "")) editChanges.assigneeUserId = assigneeId || null;
   }
   const dirty = !!reason.trim() || (action === "edit" ? Object.keys(editChanges).length > 0
     : showDate ? date !== (action === "postpone" ? hearing.date : "") || (time || "") !== (hearing.time ?? "") : false);
@@ -179,6 +196,21 @@ export default function HearingActionDialog({
               <label htmlFor="ha-notes" className={labelCls}>ملاحظات</label>
               <textarea id="ha-notes" rows={2} value={notes} onChange={e => setNotes(e.target.value)} className={inputCls} />
             </div>
+            {assigneeOptions && (
+              <div>
+                <label htmlFor="ha-assignee" className={labelCls}>المحامي المُكلَّف بالجلسة</label>
+                <select id="ha-assignee" value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className={inputCls}>
+                  <option value="">أنا (صاحب الموعد)</option>
+                  {assigneeOptions.filter(o => !o.isSelf).map(o => (
+                    <option key={o.userId} value={o.userId}>{assigneeOptionLabelAr(o)}</option>
+                  ))}
+                  {/* A former colleague still named on the row stays selectable as it is. */}
+                  {hearing.assigneeUserId && !assigneeOptions.some(o => o.userId === hearing.assigneeUserId) && (
+                    <option value={hearing.assigneeUserId}>عضو سابق في المكتب</option>
+                  )}
+                </select>
+              </div>
+            )}
           </>
         )}
         <div>

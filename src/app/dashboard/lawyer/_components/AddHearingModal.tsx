@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, LinkBreak, Scales } from "@phosphor-icons/react";
 import { createWorkflowRequest, getWorkflowRequestsByReceiver } from "@/lib/services/workflowService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
-import { createLawyerHearing, HearingOverlapError } from "@/lib/services/lawyerHearingsService";
+import { createLawyerHearing, getHearingAssigneeOptions, HearingOverlapError, type HearingAssigneeOption } from "@/lib/services/lawyerHearingsService";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import ModalShell from "@/components/ui/ModalShell";
 import { isLawyerCaseRow } from "../cases/_caseListRules";
@@ -14,7 +14,7 @@ import type { UserType, UserTier } from "@/hooks/useUser";
 import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import { getHearingLocationField } from "./hearingLocationField";
-import { formatDurationAr, HEARING_DURATION_LABEL_AR, HEARING_DURATION_OPTIONS } from "@/lib/services/item59Labels";
+import { assigneeOptionLabelAr, formatDurationAr, HEARING_DURATION_LABEL_AR, HEARING_DURATION_OPTIONS } from "@/lib/services/item59Labels";
 import { createLawyerTask } from "@/lib/services/lawyerTasksService";
 import { riyadhToday } from "@/lib/riyadhDay";
 import { prepTaskDueDate, prepTaskTitle, prepTaskPriority } from "./hearingPrepTask";
@@ -114,6 +114,19 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   // default, for a court sitting only. Created after the hearing is saved;
   // its own failure never undoes or hides the saved hearing.
   const [prepTask, setPrepTask] = useState(true);
+  // N01-18 «المحامي المُكلَّف بالجلسة»: "" = the caller attends. Options come
+  // from the server (the caller + his firm's active pleading members); a solo
+  // lawyer or a failed read gets null, and the picker is not shown. The route
+  // re-checks whatever is sent.
+  const [assigneeId, setAssigneeId] = useState("");
+  const [assigneeOptions, setAssigneeOptions] = useState<HearingAssigneeOption[] | null>(null);
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    getHearingAssigneeOptions().then(options => { if (!cancelled) setAssigneeOptions(options); });
+    return () => { cancelled = true; };
+  }, []);
+  const showAssignee = (assigneeOptions?.length ?? 0) > 1;
   const [prepTaskOutcome, setPrepTaskOutcome] = useState<
     { kind: "created"; dueDate: string } | { kind: "failed" } | null
   >(null);
@@ -154,7 +167,8 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   // what the dialog opened with.
   const dirty = !done && (
     type !== "" || caseName.trim() !== "" || linkedCaseId !== "" || date !== (initialDate ?? "") ||
-    time !== "" || notes.trim() !== "" || location.trim() !== "" || duration !== "" || urgency !== "normal"
+    time !== "" || notes.trim() !== "" || location.trim() !== "" || duration !== "" || urgency !== "normal" ||
+    assigneeId !== ""
   );
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
@@ -226,6 +240,7 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
           type, date, time, caseName: linkId ? undefined : caseName, caseRequestId: linkId, urgency,
           location: effectiveLocation, notes, title, durationMinutes: effectiveDuration,
           ...(confirmOverlap ? { confirmOverlap: true } : {}),
+          ...(showAssignee && assigneeId ? { assigneeUserId: assigneeId } : {}),
         });
         setSaved({ date: created.date, linked: !!created.caseRequestId, caseName: created.caseName });
 
@@ -239,6 +254,8 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                 priority: prepTaskPriority(urgency),
                 dueDate,
                 ...(created.caseRequestId ? { caseId: created.caseRequestId } : {}),
+                // N01-18: the colleague who attends prepares too.
+                ...(created.assigneeUserId ? { assigneeUserId: created.assigneeUserId } : {}),
                 notes: "أُنشئت تلقائياً عند إضافة الجلسة: مراجعة الملف والمستندات قبل الجلسة.",
               });
               setPrepTaskOutcome({ kind: "created", dueDate });
@@ -513,6 +530,18 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                         <option value="">—</option>
                         {HEARING_DURATION_OPTIONS.map(m => <option key={m} value={String(m)}>{formatDurationAr(m)}</option>)}
                       </select>
+                    </div>
+                  )}
+                  {showAssignee && assigneeOptions && (
+                    <div>
+                      <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>المحامي المُكلَّف بالجلسة</label>
+                      <select value={assigneeId} disabled={saving} onChange={e => setAssigneeId(e.target.value)} className={inputCls}>
+                        <option value="">أنا (صاحب الموعد)</option>
+                        {assigneeOptions.filter(o => !o.isSelf).map(o => (
+                          <option key={o.userId} value={o.userId}>{assigneeOptionLabelAr(o)}</option>
+                        ))}
+                      </select>
+                      <p className={`mt-1 text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>تظهر الجلسة في «جلساتي» لديه ويسجّل نتيجتها.</p>
                     </div>
                   )}
                   <div>

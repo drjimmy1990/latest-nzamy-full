@@ -4,7 +4,15 @@ import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
 import { recordActivity, RequestEvent } from "@/lib/events";
 import { appendHearingHistory, planHearingChange } from "@/lib/services/hearingChange";
 import { riyadhToday } from "@/lib/riyadhDay";
-import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "../_shared";
+import { recordNotification } from "@/lib/notify";
+import { HEARINGS_SELECT, hearingNamesFor, parseHearingAssignee, resolveOwnCase, toDto, type HearingRow } from "../_shared";
+
+/**
+ * N01-18: what the hearing's ASSIGNEE (a colleague the owner named) may do —
+ * record the outcome. Editing the appointment itself, cancelling it and
+ * re-assigning it stay with its owner.
+ */
+const ASSIGNEE_ACTIONS: ReadonlySet<string> = new Set(["complete", "postpone", "reopen"]);
 import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
 import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
 
@@ -27,7 +35,12 @@ import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_schedu
  * of either kind at delivery and the next queue run re-plans the moved one
  * (src/lib/hearingReminders.ts). Nothing to write to notification_outbox here.
  *
- * Own diary only, like GET: the row must carry owner_user_id = caller.
+ * Own diary, like GET: the row must carry owner_user_id = caller, or (N01-18)
+ * assignee_user_id = caller — then only the outcome actions (ASSIGNEE_ACTIONS)
+ * are allowed (403 otherwise). RLS admits the assignee only while he is an
+ * ACTIVE member of the row's firm. `assigneeUserId` (owner, action "edit"
+ * only): absent leaves it, null/"" or the owner clears it, a colleague must
+ * pass parseHearingAssignee (400).
  *
  * Owner q357: when the row will be a timed, scheduled hearing and its day,
  * hour or duration changes (edit, postpone, reopen), it is checked against
@@ -51,7 +64,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       .from("hearings")
       .select(HEARINGS_SELECT)
       .eq("id", id)
-      .eq("owner_user_id", user.id)
+      .or(`owner_user_id.eq.${user.id},assignee_user_id.eq.${user.id}`)
       .maybeSingle();
     if (readError) {
       console.error("[lawyer/hearings PATCH] read failed:", readError.message, readError.code);
@@ -59,10 +72,29 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
     if (!currentRow) return NextResponse.json({ error: "الموعد غير موجود." }, { status: 404 });
     const current = currentRow as HearingRow;
+    const isOwner = current.owner_user_id === user.id;
+    const action = (body as { action?: unknown } | null)?.action;
+    const assigneeField = (body as { assigneeUserId?: unknown } | null)?.assigneeUserId;
+    if (!isOwner && (typeof action !== "string" || !ASSIGNEE_ACTIONS.has(action) || assigneeField !== undefined)) {
+      return NextResponse.json(
+        { error: "يسجّل المحامي المُكلَّف نتيجة الجلسة فقط؛ تعديل الموعد أو إلغاؤه أو إسناده لصاحبه." },
+        { status: 403 },
+      );
+    }
 
     const planned = planHearingChange(body, current, riyadhToday());
     if (!planned.ok) return NextResponse.json({ error: planned.error }, { status: planned.status ?? 400 });
     const { change } = planned;
+
+    // N01-18: re-assigning is part of the owner's edit, bounded by the row's own firm.
+    let assigneeUpdate: { assignee_user_id: string | null } | null = null;
+    if (isOwner && action === "edit" && assigneeField !== undefined) {
+      const parsed = await parseHearingAssignee(supabase, {
+        assigneeId: assigneeField, ownerId: user.id, firmId: current.firm_id ?? null,
+      });
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+      if (parsed.value !== (current.assignee_user_id ?? null)) assigneeUpdate = { assignee_user_id: parsed.value };
+    }
 
     // q357: overlap check on the row as it will be after this change.
     {
@@ -110,9 +142,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // nothing, and the lawyer is told to reload rather than overwrite it.
     const { data: updated, error: updateError } = await supabase
       .from("hearings")
-      .update({ ...change.update, metadata })
+      .update({ ...change.update, ...(assigneeUpdate ?? {}), metadata })
       .eq("id", id)
-      .eq("owner_user_id", user.id)
+      .eq("owner_user_id", current.owner_user_id ?? user.id)
       .eq("updated_at", current.updated_at)
       .select(HEARINGS_SELECT)
       .maybeSingle();
@@ -128,7 +160,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     await recordActivity({
       supabase,
       kind: change.activity.kind === "updated" ? RequestEvent.HEARING_UPDATED : RequestEvent.HEARING_STATUS_CHANGED,
-      ownerUserId: user.id,
+      // The row's owner, so the event sits in his log; the actor is the caller
+      // (the "activity insertable by actor" policy admits either).
+      ownerUserId: current.owner_user_id ?? user.id,
       firmId: row.firm_id ?? null,
       actorUserId: user.id,
       caseRequestId: row.case_request_id ?? current.case_request_id,
@@ -142,7 +176,16 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       },
     });
 
-    return NextResponse.json({ data: toDto(row) });
+    if (assigneeUpdate?.assignee_user_id) {
+      await recordNotification({
+        userId: assigneeUpdate.assignee_user_id,
+        title: "أُسندت إليك جلسة",
+        body: `${row.title} — ${row.hearing_date}${row.hearing_time ? ` ${row.hearing_time.slice(0, 5)}` : ""}`,
+        href: "/dashboard/lawyer/hearings",
+      });
+    }
+    const names = await hearingNamesFor(supabase, user.id, [row]);
+    return NextResponse.json({ data: toDto(row, user.id, names) });
   } catch (err) {
     console.error("[lawyer/hearings PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

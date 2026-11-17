@@ -42,3 +42,19 @@ test("CODE-F18: cancelled / held rows are closed; actions go through PATCH with 
   assert.match(patch, /\.eq\("updated_at", current\.updated_at\)/);
   assert.match(patch, /HEARING_STATUS_CHANGED/);
 });
+
+test("N01-18: «جلساتي» lists owner OR assignee; an assignee records the outcome only; the forms carry the picker", () => {
+  const shared = read("src/app/api/v1/lawyer/hearings/_shared.ts");
+  assert.match(post, /\.or\(`owner_user_id\.eq\.\$\{user\.id\},assignee_user_id\.eq\.\$\{user\.id\}`\)/);
+  assert.match(post, /parseHearingAssignee\(supabase, \{ assigneeId: assigneeUserId, ownerId: user\.id, firmId \}\)/);
+  assert.match(patch, /\.or\(`owner_user_id\.eq\.\$\{user\.id\},assignee_user_id\.eq\.\$\{user\.id\}`\)/);
+  assert.match(patch, /const ASSIGNEE_ACTIONS: ReadonlySet<string> = new Set\(\["complete", "postpone", "reopen"\]\)/);
+  assert.match(patch, /\.eq\("owner_user_id", current\.owner_user_id \?\? user\.id\)/);
+  assert.match(shared, /HEARINGS_SELECT =\s*"[^"]*assignee_user_id/);
+  assert.match(shared, /namesVisibleTo\(/);
+  assert.match(modal, /getHearingAssigneeOptions\(\)/);
+  assert.match(modal, /assigneeUserId: assigneeId/);
+  assert.match(dialog, /editChanges\.assigneeUserId = assigneeId \|\| null/);
+  assert.match(diary, /ASSIGNEE_HEARING_ACTIONS/);
+  assert.match(diary, /مُسندة إليك/);
+});

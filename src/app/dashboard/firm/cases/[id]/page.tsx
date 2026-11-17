@@ -64,10 +64,15 @@ import { getLawyerHearings, type HearingDto } from "@/lib/services/lawyerHearing
 import {
   getLawyerTasks,
   createLawyerTask,
+  getTaskAssigneeOptions,
   updateLawyerTaskStatus,
   type LawyerTask,
   type LawyerTaskStatus,
+  type TaskAssigneeOption,
 } from "@/lib/services/lawyerTasksService";
+import { assigneeOptionLabelAr } from "@/lib/services/item59Labels";
+import { getFirmRouteDecision } from "@/constants/entityRouteAccess";
+import { CaseAssigneePanel } from "../_AssignCaseDialog";
 import { getCaseStages, autoDeadlineChanged, type CaseStage } from "@/lib/services/caseStagesService";
 import { mergeSavedStage } from "@/lib/services/stageDeadlineCopy";
 import {
@@ -312,6 +317,9 @@ export default function FirmCaseDetailsPage() {
   const params = useParams();
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string | undefined) ?? "";
   const user = useUser();
+  // N03-40: «إسناد» for the «توزيع القضايا» roles; the server re-checks.
+  const canAssignCase = user.userType === "admin"
+    || getFirmRouteDecision("/dashboard/firm/cases/assign", user.affiliation?.entityType === "firm" ? user.affiliation.role : undefined).allowed;
 
   const [request, setRequest] = useState<ServiceRequestDetail | null>(null);
   const [detailState, setDetailState] = useState<"loading" | "unreadable" | "notfound" | "ready">("loading");
@@ -322,6 +330,16 @@ export default function FirmCaseDetailsPage() {
   const [tasksRead, setTasksRead] = useState<ListRead<CaseTask> | null>(null);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  // N03-41: «المحامي المُكلَّف» on the inline task form — the same options and
+  // server check as the tasks page (GET /api/v1/lawyer/tasks/assignees; the
+  // POST re-validates). "" = nobody; a failed read hides the select.
+  const [newTaskAssignee, setNewTaskAssignee] = useState("");
+  const [taskAssigneeOptions, setTaskAssigneeOptions] = useState<TaskAssigneeOption[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    getTaskAssigneeOptions().then(o => { if (live) setTaskAssigneeOptions(o); });
+    return () => { live = false; };
+  }, []);
   const [addingTask, setAddingTask] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
 
@@ -469,10 +487,12 @@ export default function FirmCaseDetailsPage() {
         priority: "normal",
         caseId: id,
         caseRef: caseData?.title || undefined,
+        ...(newTaskAssignee ? { assigneeUserId: newTaskAssignee } : {}),
       });
       if (tasksRead?.ok) patchTasks(prev => [toCaseTask(created), ...prev]);
       else loadCaseTasks();
       setNewTaskTitle("");
+      setNewTaskAssignee("");
     } catch (e) {
       console.error("[firm case detail] addTask failed:", e);
       setTaskError(e instanceof Error && e.message ? e.message : "تعذّر إضافة المهمة.");
@@ -837,6 +857,9 @@ export default function FirmCaseDetailsPage() {
 
           {/* ── Overview ── */}
           {activeTab === "overview" && (
+            <CaseAssigneePanel caseId={id} caseTitle={caseData.title} isDark={isDark} card={card} canAssign={canAssignCase} />
+          )}
+          {activeTab === "overview" && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className={`lg:col-span-2 ${card} p-5`}>
                 <h2 className={`text-sm font-bold mb-2 flex items-center gap-2 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
@@ -889,6 +912,19 @@ export default function FirmCaseDetailsPage() {
                   placeholder="أضف مهمة لهذه القضية..."
                   className={`flex-1 rounded-xl border px-3 py-2 text-[12px] outline-none disabled:opacity-50 ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200 placeholder:text-zinc-600" : "border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400"}`}
                 />
+                {taskAssigneeOptions && taskAssigneeOptions.length > 0 && (
+                  <select
+                    value={newTaskAssignee}
+                    onChange={e => setNewTaskAssignee(e.target.value)}
+                    disabled={addingTask}
+                    aria-label="المحامي المُكلَّف"
+                    title="المحامي المُكلَّف"
+                    className={`max-w-[11rem] rounded-xl border px-2 py-2 text-[12px] outline-none disabled:opacity-50 ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-800"}`}
+                  >
+                    <option value="">المكلَّف: —</option>
+                    {taskAssigneeOptions.map(o => <option key={o.userId} value={o.userId}>{assigneeOptionLabelAr(o)}</option>)}
+                  </select>
+                )}
                 <button onClick={addCaseTask} disabled={addingTask || !newTaskTitle.trim()}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
                   {addingTask

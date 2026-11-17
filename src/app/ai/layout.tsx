@@ -77,6 +77,8 @@ function AIShell({ children: page }: { children: React.ReactNode }) {
     pathname,
     storedView,
     lastDashboard,
+    // N01-29: an active firm member works the tools in the firm shell.
+    isFirmMember: !!user.firmMembership,
   });
 
   // Owner ٤١٧ (8 Nov 2026): a lawyer tool's page shows a signed-in account other
