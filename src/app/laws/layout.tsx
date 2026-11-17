@@ -13,7 +13,8 @@ export const metadata = buildMetadata({
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <LibraryGuard>
+    // A law's reader (/laws/[slug]) carries its own guard: see that layout.
+    <LibraryGuard lawReaderGuardsItself>
       <LibraryDashboardBar />
       {children}
     </LibraryGuard>

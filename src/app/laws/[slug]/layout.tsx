@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import LibraryGuard from "@/components/library/LibraryGuard";
+import LibraryDocumentShell from "@/components/library/LibraryDocumentShell";
 import LibraryJsonLd from "@/components/library/LibraryJsonLd";
 import { libraryDocMetadata, loadLibraryDocSeo } from "@/lib/library/libraryDocumentSeo";
 
@@ -11,10 +13,13 @@ import { libraryDocMetadata, loadLibraryDocSeo } from "@/lib/library/libraryDocu
  * service role and print it as a GUEST sees it — no decree number or date, no
  * official link, whoever asked (owner answers ٣١٨ / ٣١٩).
  *
- * The JSON-LD sits inside the section's LibraryGuard (src/app/laws/layout.tsx), so it
- * reaches the DOM once the guard resolves, not the first HTML; see the S6
- * ledger (NOTE-14-C03) for the follow-up that lets the guard render on the
- * server.
+ * Owner TODO P1-10: the JSON-LD and the «عن هذا النظام» block (the cleaned
+ * name and موجز, nothing else) are rendered OUTSIDE LibraryGuard, so they are
+ * in the first HTML: the guard SSRs only a spinner. That is why this layout
+ * guards the reader itself and the section guard (src/app/laws/layout.tsx,
+ * `lawReaderGuardsItself`) lets this path through. Nothing is printed while
+ * the library is closed (the load answers "closed"); the ديباجة (a
+ * subscriber's, T28-22) and article texts (server-only) are never printed.
  */
 type Params = { params: Promise<{ slug: string }> };
 
@@ -29,7 +34,8 @@ export default async function Layout({ children, params }: Params & { children: 
   return (
     <>
       {load.status === "ok" && <LibraryJsonLd doc={load.doc} />}
-      {children}
+      <LibraryGuard>{children}</LibraryGuard>
+      {load.status === "ok" && <LibraryDocumentShell doc={load.doc} />}
     </>
   );
 }
