@@ -43,6 +43,8 @@ import { ANALYZE_STRENGTH_PRICE, CASE_SUMMARY_MAX, CASE_SUMMARY_MIN, WAVE4_FILES
 import { asStrengthReport, strengthReportText, LEVEL_LABEL, RISK_LABEL, STRENGTH_DISCLAIMER, type StrengthReport } from "./_report";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import Navbar from "@/components/Navbar";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftText } from "@/lib/payments/topUpDraft";
 
 type TabKey = "strength" | "opponent" | "risks" | "devil";
 const TABS: { key: TabKey; label: string; icon: typeof Gauge }[] = [
@@ -76,6 +78,18 @@ export default function AIStrengthPage() {
   const [evidence, setEvidence] = useState("");
   const [opponent, setOpponent] = useState("");
   const [fileError, setFileError] = useState("");
+  // l6-pay: back from an in-place top-up, the refused texts are still here
+  // (attached files are not kept: attach them again)
+  useToolDraft("analyze-strength", (d) => {
+    const r = draftText(d, "role");
+    const s = draftText(d, "case_summary");
+    const e = draftText(d, "evidence_notes");
+    const o = draftText(d, "opponent_points");
+    if (r) setRole((cur) => cur || r);
+    if (s) setSummary((cur) => cur || s);
+    if (e) setEvidence((cur) => cur || e);
+    if (o) setOpponent((cur) => cur || o);
+  });
   const [activeTab, setActiveTab] = useState<TabKey>("strength");
 
   const signedIn = !user.loading && user.isLoggedIn;

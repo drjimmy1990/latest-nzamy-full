@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatHalalas, type Billing } from "@/lib/payments/catalog";
 import { NOT_FOR_SALE_AR, type CheckoutResponse } from "@/lib/payments/checkoutRules";
 import { FOUNDER_CONSENT_LABEL_AR, FOUNDER_TERMS_HREF } from "@/lib/payments/founderConsent";
+import { FOUNDER_DISCOUNT_LABEL_AR } from "@/lib/payments/founderDiscount";
 import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR, CHECKOUT_TURNSTILE_ACTION } from "@/lib/payments/checkoutCaptcha";
 import { canSubmitWithCaptcha } from "@/lib/auth/captcha";
 import { useTheme } from "@/components/ThemeProvider";
@@ -513,6 +514,25 @@ export default function MoyasarCheckout({
               <dd className="font-semibold text-emerald-700 dark:text-emerald-400">− {formatHalalas(ready.quote.discount)}</dd>
             </div>
           </>
+        ) : null}
+        {/* l6-pay (F12 / Q511): the server's founder discount and upgrade credit, as it computed them. */}
+        {(ready.quote.founderDiscount || ready.quote.prorationCredit) && ready.quote.listNet !== undefined ? (
+          <div className="flex items-center justify-between gap-4 px-5 py-3">
+            <dt className="text-zinc-600 dark:text-zinc-400">السعر قبل الخصم</dt>
+            <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.listNet)}</dd>
+          </div>
+        ) : null}
+        {ready.quote.founderDiscount ? (
+          <div className="flex items-center justify-between gap-4 px-5 py-3">
+            <dt className="text-zinc-600 dark:text-zinc-400">{FOUNDER_DISCOUNT_LABEL_AR}</dt>
+            <dd className="font-semibold text-emerald-700 dark:text-emerald-400">− {formatHalalas(ready.quote.founderDiscount)}</dd>
+          </div>
+        ) : null}
+        {ready.quote.prorationCredit ? (
+          <div className="flex items-center justify-between gap-4 px-5 py-3">
+            <dt className="text-zinc-600 dark:text-zinc-400">يُخصم المتبقي من باقتك الحالية</dt>
+            <dd className="font-semibold text-emerald-700 dark:text-emerald-400">− {formatHalalas(ready.quote.prorationCredit)}</dd>
+          </div>
         ) : null}
         {/* Owner ٣٠٣: while a launch price runs, the server's quote names the listed price too. */}
         {ready.quote.launchListNet !== undefined ? (
