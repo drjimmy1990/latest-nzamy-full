@@ -6779,3 +6779,17 @@ select 'Every active founder seat has its library points (run 20261124_10)' as c
                                        where c.seat_id = s.id and c.kind = 'library_question'))
        as ok;
 -- <<< verify:l2_2026_11_17
+-- >>> verify:l3_auth
+-- 20261124_60 (TODO 3.5, real suspension): any time, before or after the deploy.
+-- Docker: supabase/tests/rls/account_suspension.test.sql
+-- (oid arguments: a missing function reads false here instead of raising.)
+select 'Account suspension: end sessions + banned list, service role only (run 20261124_60)' as check,
+       coalesce(
+         to_regprocedure('public.admin_revoke_user_sessions(uuid)') is not null
+         and to_regprocedure('public.admin_suspended_user_ids(uuid[])') is not null
+         and not has_function_privilege('anon', to_regprocedure('public.admin_revoke_user_sessions(uuid)'), 'EXECUTE')
+         and not has_function_privilege('authenticated', to_regprocedure('public.admin_revoke_user_sessions(uuid)'), 'EXECUTE')
+         and not has_function_privilege('anon', to_regprocedure('public.admin_suspended_user_ids(uuid[])'), 'EXECUTE')
+         and not has_function_privilege('authenticated', to_regprocedure('public.admin_suspended_user_ids(uuid[])'), 'EXECUTE'),
+         false) as ok;
+-- <<< verify:l3_auth

@@ -6,6 +6,7 @@ import {
   type AuthErrorLike,
 } from "@/lib/auth/resolveAuthOutcome";
 import { freezeStateFromUser, ACCOUNT_FROZEN_AR } from "@/lib/auth/accountFreeze";
+import { isSuspendedUser, ACCOUNT_SUSPENDED_AR, ACCOUNT_SUSPENDED_CODE } from "@/lib/auth/accountSuspension";
 
 /**
  * The API half of resolveAuthOutcome: one place that decides what an HTTP
@@ -69,6 +70,10 @@ export async function requireApiUser(
   if (outcome === "unavailable") return authUnavailableResponse();
   if (!user) return NextResponse.json(unauthorizedBody, { status: 401 });
 
+  // TODO 3.5: a suspended account is refused everywhere, allowFrozen or not.
+  const suspended = suspendedAccountResponse(user);
+  if (suspended) return suspended;
+
   // D6: a frozen account is refused unless the route is one of the few it
   // must still reach (its own deletion status and «استعادة الحساب»).
   if (!options.allowFrozen) {
@@ -93,9 +98,28 @@ export async function requireApiUser(
  * NOT frozen, so no ordinary account is ever locked out by it.
  */
 export function frozenAccountResponse(user: unknown): NextResponse | null {
+  // TODO 3.5: every route that asks this also refuses a suspended account.
+  const suspended = suspendedAccountResponse(user);
+  if (suspended) return suspended;
   if (!freezeStateFromUser(user).frozen) return null;
   return NextResponse.json(
     { error: ACCOUNT_FROZEN_AR, code: "account_frozen" },
+    { status: 403, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+/**
+ * TODO 3.5 (owner package 17 Nov, ticket S7): the 403 an account suspended by
+ * the administration gets, or null to go on. Reads only the user getUser()
+ * returned — GoTrue's banned_until and app_metadata.account_suspension (see
+ * src/lib/auth/accountSuspension.ts) — so it adds no query. Called by
+ * requireApiUser and frozenAccountResponse, and by assertRole and the proxy
+ * through isSuspendedUser.
+ */
+export function suspendedAccountResponse(user: unknown): NextResponse | null {
+  if (!isSuspendedUser(user)) return null;
+  return NextResponse.json(
+    { error: ACCOUNT_SUSPENDED_AR, code: ACCOUNT_SUSPENDED_CODE },
     { status: 403, headers: { "Cache-Control": "no-store" } },
   );
 }

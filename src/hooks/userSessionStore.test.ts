@@ -37,10 +37,14 @@ function fakeSupabase(opts: { types: Record<string, string>; signedIn: string | 
   let getUserFails = false;
   /** Set to hold getUser() until released. */
   let getUserGate: Promise<void> | null = null;
+  /** TODO 3.4: each user's active subscription rows (the server's plan). */
+  const plans: Record<string, Array<{ tier: string; current_period_end: string | null }>> = {};
+  /** TODO 3.4: each provider's provider_profiles.sub_role. */
+  const subRoles: Record<string, string> = {};
 
   const builder = (table: string) => {
     const filters: Record<string, unknown> = {};
-    const chain = {
+    const chain: Record<string, unknown> = {
       select: () => chain,
       eq: (column: string, value: unknown) => { filters[column] = value; return chain; },
       limit: () => chain,
@@ -51,9 +55,18 @@ function fakeSupabase(opts: { types: Record<string, string>; signedIn: string | 
           return { data: type ? { user_type: type } : null, error: null };
         }
         if (table === "lawyer_profiles") return { data: { practice_kind: "consultant" }, error: null };
+        if (table === "provider_profiles") {
+          const role = subRoles[String(filters.user_id)];
+          return { data: role ? { sub_role: role } : null, error: null };
+        }
         return { data: null, error: null }; // no firm / business membership
       },
     };
+    // The plan read awaits the filtered query itself (no maybeSingle).
+    if (table === "subscriptions") {
+      chain.then = (resolve: (v: unknown) => void) =>
+        resolve({ data: filters.status === "active" ? plans[String(filters.user_id)] ?? [] : [], error: null });
+    }
     return chain;
   };
 
@@ -96,6 +109,9 @@ function fakeSupabase(opts: { types: Record<string, string>; signedIn: string | 
     },
     /** The session goes away without an event reaching the store yet. */
     dropSession: () => { current = null; },
+    /** TODO 3.4: a server-side plan change (a subscription row), no auth event. */
+    setPlan: (id: string, tier: string | null) => { plans[id] = tier ? [{ tier, current_period_end: null }] : []; },
+    setProviderSubRole: (id: string, role: string) => { subRoles[id] = role; },
     /** A server-side write to user_metadata: no auth event reaches the tab. */
     setMetadata: (meta: Record<string, unknown>) => { if (current) current = { ...current, user_metadata: meta }; },
     failGetUser: (fails: boolean) => { getUserFails = fails; },
@@ -148,8 +164,9 @@ test("nested gates (each mounting after its parent resolved) cost one read in to
     await settle();
     assert.equal(store.getSnapshot().loading, false, `gate ${gate} released`);
   }
-  // auth getUser + profiles + 4 memberships + staff_role. Was 490 on prod.
-  assert.equal(sb.total(), 7);
+  // auth getUser + profiles + 4 memberships + staff_role + the plan
+  // (subscriptions, TODO 3.4). Was 490 on prod.
+  assert.equal(sb.total(), 8);
   store.dispose();
 });
 
@@ -281,7 +298,7 @@ test("refresh() picks up a server-side tier change that fired no auth event", as
   await settle();
   assert.equal(store.getSnapshot().session.tier, "free");
 
-  sb.setMetadata({ tier: "pro" }); // what a settled payment's updateUserById does
+  sb.setPlan("u1", "pro"); // what a settled payment's grant_plan_subscription writes
   const refreshing = store.refresh();
   assert.equal(store.getSnapshot().loading, false, "quiet: no spinner");
   await refreshing;
@@ -322,5 +339,42 @@ test("a sign-out during refresh() wins over the refresh's answer", async () => {
   await refreshing;
   await settle();
   assert.equal(store.getSnapshot().session.isLoggedIn, false, "the refresh did not restore the user");
+  store.dispose();
+});
+
+// ── TODO 3.4 (ticket S4): plan and roles from the server, never user_metadata ──
+
+test("S4: a tier, sub_role or active_roles the user wrote into his own metadata grants nothing", async () => {
+  const { sb, store } = harness({ types: { u1: "provider" } });
+  sb.setMetadata({ tier: "enterprise", sub_role: "arbitrator", provider_sub_role: "arbitrator", active_roles: ["notary", "bailiff"] });
+  store.subscribe(() => {});
+  await settle();
+  const { session } = store.getSnapshot();
+  assert.equal(session.tier, "free", "no subscription row: free, whatever the metadata says");
+  assert.equal(session.subRole, null, "no provider_profiles row: no sub-role");
+  assert.deepEqual(session.active_roles, []);
+  store.dispose();
+});
+
+test("S4: the plan is the server's running tier; a provider's sub-role is provider_profiles.sub_role", async () => {
+  const { sb, store } = harness({ types: { u1: "provider" } });
+  sb.setPlan("u1", "max");
+  sb.setProviderSubRole("u1", "bailiff");
+  store.subscribe(() => {});
+  await settle();
+  const { session } = store.getSnapshot();
+  assert.equal(session.tier, "max");
+  assert.equal(session.subRole, "bailiff");
+  assert.equal(sb.calls.from.provider_profiles, 1);
+  store.dispose();
+});
+
+test("S4: a sub-role is read for a provider only; a lawyer's metadata sub_role is ignored", async () => {
+  const { sb, store } = harness({ types: { u1: "lawyer" } });
+  sb.setMetadata({ sub_role: "partner" });
+  store.subscribe(() => {});
+  await settle();
+  assert.equal(store.getSnapshot().session.subRole, null);
+  assert.equal(sb.calls.from.provider_profiles ?? 0, 0);
   store.dispose();
 });

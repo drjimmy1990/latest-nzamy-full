@@ -80,6 +80,7 @@ export function isMissingStaffTable(code: string | undefined): boolean {
  *   user_type        → users.change_type
  *   metadata         → users.change_type (editing the account record)
  *   status suspended → users.suspend
+ *   status active    → users.suspend (lifting a suspension, TODO 3.5)
  *   verified         → verifications.decide
  * A body with none of them needs nothing — and the route writes nothing.
  */
@@ -88,7 +89,7 @@ export function usersPatchActions(body: unknown): StaffAction[] {
   const b = body as Record<string, unknown>;
   const actions: StaffAction[] = [];
   if (b.user_type !== undefined || b.metadata !== undefined) actions.push("users.change_type");
-  if (b.status === "suspended") actions.push("users.suspend");
+  if (b.status === "suspended" || b.status === "active") actions.push("users.suspend");
   if (b.verified !== undefined) actions.push("verifications.decide");
   return actions;
 }

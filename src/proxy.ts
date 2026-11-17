@@ -21,6 +21,9 @@ import { resolveAuthOutcome, AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthO
 // D6 (owner ٢٩٨): a frozen account opens nothing but /account-frozen. Pure; it
 // reads the user `getUser()` already returned (app_metadata), no query.
 import { freezeStateFromUser, ACCOUNT_FROZEN_PATH, ACCOUNT_FROZEN_AR } from "@/lib/auth/accountFreeze";
+// TODO 3.5: an account suspended by the administration. Pure; reads the user
+// getUser() returned (GoTrue's banned_until, app_metadata), no query.
+import { isSuspendedUser, ACCOUNT_SUSPENDED_PATH, ACCOUNT_SUSPENDED_AR, ACCOUNT_SUSPENDED_CODE } from "@/lib/auth/accountSuspension";
 import { isSupabaseMode, isDemoMode } from "@/lib/runtimeMode";
 import {
   RateLimiter,
@@ -42,6 +45,10 @@ import {
   isToolStatusRoute,
   isAiRunStartRoute,
   isLetterheadVerifyRoute,
+  isCheckoutStartRoute,
+  checkoutStartKey,
+  checkoutStartRefusalAr,
+  CHECKOUT_START_POLICY,
   libraryReadClientKey,
   libraryBudgetBuckets,
   type LibraryBudgetBucket,
@@ -304,6 +311,82 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
   }
 }
 
+// ─── Checkout start / founder seat reservation (S5, owner package 17 Nov) ────
+//
+// «الحجز 3 كل 10 دقائق لكل مستخدم». The seat is reserved inside POST
+// /api/v1/payments/checkout, a route this file must not change, so the limit
+// sits here, on that one path (src/lib/rateLimitRoutes.ts isCheckoutStartRoute;
+// it counts EVERY checkout start, since the proxy does not read the body to
+// tell a founder item from another).
+//
+// The key is the user a verified getUser() returns — never the cookie's JWT
+// decoded here: a forged `sub` would spend (and block) a real buyer's budget.
+// That is one GoTrue round trip, paid only by a POST to this path. No session,
+// or a session GoTrue cannot answer for, falls back to the proxy-resolved IP
+// (the route answers 401/503 to those anyway). A token refresh during
+// getUser() reaches both the route (request cookies) and the browser
+// (response), exactly as applyLibraryReadQuota does; for this path the rest
+// of proxy() would only have returned NextResponse.next().
+//
+// FAILS OPEN on any internal error. Per process, like every bucket above.
+async function applyCheckoutStartLimit(req: NextRequest, pathname: string): Promise<NextResponse | null> {
+  if (!isCheckoutStartRoute(req.method, pathname)) return null;
+  try {
+    const ip = resolveClientIp((name) => req.headers.get(name));
+    let userId: string | null = null;
+    let response: NextResponse | null = null;
+
+    // Not for a path the rest of proxy() treats specially (none today): such a
+    // path is counted per IP only, so no refreshed cookie can be lost.
+    const special = Boolean(REDIRECTS[pathname]) || isProtectedApiPath(pathname);
+    if (isSupabaseMode && !special) {
+      const authHeader = req.headers.get("authorization");
+      let bearerToken: string | null = null;
+      if (authHeader && authHeader.trim().toLowerCase().startsWith("bearer ")) {
+        const token = authHeader.trim().slice(7).trim();
+        if (token.length > 0) bearerToken = token;
+      }
+      if (bearerToken || hasSupabaseAuthCookie(req.cookies.getAll().map((c) => c.name))) {
+        const next = NextResponse.next({ request: req });
+        const supabase = createServerClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          {
+            cookies: {
+              getAll() {
+                return req.cookies.getAll();
+              },
+              setAll(cookiesToSet) {
+                cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+                cookiesToSet.forEach(({ name, value, options }) => next.cookies.set(name, value, options));
+              },
+            },
+          },
+        );
+        const { data: { user } } = await (bearerToken
+          ? supabase.auth.getUser(bearerToken)
+          : supabase.auth.getUser());
+        response = next;
+        userId = user?.id ?? null;
+      }
+    }
+
+    const decision = rateLimiter.check("checkout-start", checkoutStartKey(userId, ip), CHECKOUT_START_POLICY);
+    if (decision.allowed) return response;
+
+    const refused = NextResponse.json(
+      { error: checkoutStartRefusalAr(decision.retryAfterSeconds), code: "rate_limited" },
+      { status: 429 },
+    );
+    refused.headers.set("Retry-After", String(decision.retryAfterSeconds));
+    refused.headers.set("Cache-Control", "no-store");
+    response?.cookies.getAll().forEach((c) => refused.cookies.set(c));
+    return refused;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Library read quota + security lock (owner note ١٣ C07 / C09) ────────────
 //
 // The buckets above are per visitor and in memory: they reset with the
@@ -426,6 +509,16 @@ const PROTECTED = [
   // corporate account (routeAccess.ts rule), and the advisor is not a guest page.
   "/ai/corp",
   "/ai/consult",
+  // N05-V2 / N05-M6 (owner package 17 Nov, file 04): the template library
+  // needs an account, and so do the marketplace pages that act for one
+  // (post a request, an order, a shared workspace, the collaboration board).
+  // The public listing (/marketplace, /marketplace/<id>) and /pro/marketplace
+  // stay open on purpose. Any signed-in type is admitted (no routeAccess rule).
+  "/ai/templates",
+  "/marketplace/post",
+  "/marketplace/order",
+  "/marketplace/workspace",
+  "/marketplace/collaborate",
   "/settings",
   "/notifications",
   "/onboarding",
@@ -484,6 +577,11 @@ export default async function proxy(req: NextRequest) {
   //    existing behaviour beneath this point runs exactly as it did before.
   const rateLimited = applyRateLimit(req, pathname);
   if (rateLimited) return rateLimited;
+
+  // 0a. S5: checkout starts (the founder seat reservation), 3 per 10 minutes
+  //     per signed-in user. null for every other request.
+  const checkoutLimited = await applyCheckoutStartLimit(req, pathname);
+  if (checkoutLimited) return checkoutLimited;
 
   // 0b. Owner note ١٣: the durable per-user library quota and the library
   //     lock - only for the library document reads, search and library AI
@@ -561,6 +659,10 @@ export default async function proxy(req: NextRequest) {
     // D6: a frozen account (a pending deletion) is refused every gated API.
     if (freezeStateFromUser(user).frozen) {
       return NextResponse.json({ error: ACCOUNT_FROZEN_AR, code: "account_frozen" }, { status: 403 });
+    }
+    // TODO 3.5: a suspended account is refused every gated API.
+    if (isSuspendedUser(user)) {
+      return NextResponse.json({ error: ACCOUNT_SUSPENDED_AR, code: ACCOUNT_SUSPENDED_CODE }, { status: 403 });
     }
     return apiResponse;
   }
@@ -723,6 +825,19 @@ export default async function proxy(req: NextRequest) {
       const frozenRedirect = NextResponse.redirect(frozenUrl);
       supabaseResponse.cookies.getAll().forEach((cookie) => frozenRedirect.cookies.set(cookie));
       return frozenRedirect;
+    }
+
+    // ─── TODO 3.5: a suspended account sees only the suspended page ────────
+    // Normally its sessions were ended with the ban (20261124_60), so it never
+    // gets here; this holds when they could not be (the migration not run, a
+    // token not yet expired). /account-suspended is not PROTECTED: no loop.
+    if (isSuspendedUser(user)) {
+      const suspendedUrl = req.nextUrl.clone();
+      suspendedUrl.pathname = ACCOUNT_SUSPENDED_PATH;
+      suspendedUrl.search = "";
+      const suspendedRedirect = NextResponse.redirect(suspendedUrl);
+      supabaseResponse.cookies.getAll().forEach((cookie) => suspendedRedirect.cookies.set(cookie));
+      return suspendedRedirect;
     }
 
     // ─── One read of `profiles`, shared by both gates below ─────────────────
