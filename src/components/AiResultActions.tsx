@@ -18,6 +18,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { addToInbox, type InboxSource } from "@/lib/services/researchService";
 import { useUser } from "@/hooks/useUser";
+import SaveToCaseButton from "@/components/ai/SaveToCaseButton";
 
 
 interface AiResultActionsProps {
@@ -44,6 +45,12 @@ interface AiResultActionsProps {
   onHumanReview?: () => void;
   /** Extra className on the wrapper */
   className?: string;
+  /**
+   * N01-21/22: show «حفظ في مستندات القضية» (lawyer/firm accounts only;
+   * default true). `runId` links a stored ai_runs row to the picked case.
+   */
+  showSaveToCase?: boolean;
+  runId?: string | null;
 }
 
 export default function AiResultActions({
@@ -57,6 +64,8 @@ export default function AiResultActions({
   onAddToCollector,
   onHumanReview,
   className = "",
+  showSaveToCase = true,
+  runId = null,
 }: AiResultActionsProps) {
   // showVault is intentionally unused — absorbed by showCollector
   void showVault;
@@ -189,6 +198,11 @@ export default function AiResultActions({
             )}
           </AnimatePresence>
         </motion.button>
+      )}
+
+      {/* Save to a case's documents (N01-21/22) — lawyer/firm only, decided inside */}
+      {showSaveToCase && (
+        <SaveToCaseButton text={text} title={filename.replace(/-/g, " ")} runId={runId} />
       )}
 
       {/* Human Review — firm-only, hidden for lawyers */}
