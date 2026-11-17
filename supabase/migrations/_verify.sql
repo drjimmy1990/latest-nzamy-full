@@ -7191,3 +7191,16 @@ select 'One prorated upgrade order per credited plan set: payment_orders_prorati
        and pg_catalog.pg_get_indexdef(to_regclass('public.payment_orders_proration_once_key')) like 'CREATE UNIQUE INDEX%proration%key%'
        as ok;
 -- <<< verify:l6_pay
+-- >>> verify:l6_tools
+select 'Named case boards: canvas_boards with RLS as case_graphs, no guest grant, 20-board cap (run 20261126_70)' as check,
+       to_regclass('public.canvas_boards') is not null
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.canvas_boards')), false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy where polrelid = to_regclass('public.canvas_boards')) = 7
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polrelid = to_regclass('public.canvas_boards') and polpermissive = false) = 3
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = to_regclass('public.canvas_boards') and tgname = 'trg_canvas_boards_cap' and not tgisinternal)
+       and not has_table_privilege('anon', 'public.canvas_boards', 'SELECT')
+       and has_table_privilege('authenticated', 'public.canvas_boards', 'SELECT')
+       as ok;
+-- <<< verify:l6_tools

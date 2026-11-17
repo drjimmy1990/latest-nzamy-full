@@ -14,6 +14,8 @@ import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation
 import { ASSISTANT_CONVERSATION_PRICE, ASSISTANT_MESSAGES_PER_CONVERSATION, type AssistantContext } from "@/lib/ai/tools";
 import { messagesNounAr } from "@/lib/ai/toolPointsDisplay";
 import { askAssistant } from "./_assistant-client";
+import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
+import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import ToolUsableGate from "@/components/ai/ToolUsableGate";
 import { useUser } from "@/hooks/useUser";
 
@@ -225,6 +227,10 @@ function AssistantPage() {
   const [input,       setInput]       = useState("");
   const [loading,     setLoading]     = useState(false);
   const [context,     setContext]     = useState<Context>("general");
+  // Q481 / P1-26: «مباشر» answers at once; «استجوبني» asks clarifying questions first.
+  const [mode,        setMode]        = useState<"direct" | "grill">("direct");
+  // P1-27: the real time since the press, for «يفكّر…» (no invented steps).
+  const [startedAt,   setStartedAt]   = useState<number | null>(null);
   const [showCtxMenu, setShowCtxMenu] = useState(false);
   // D3: the server keeps the conversation; the page only carries its id and
   // counts the answered messages to show where the five end.
@@ -263,16 +269,16 @@ function AssistantPage() {
     if (!content || loading) return;
 
     const userMsg: Message = { id: Date.now().toString(), role: "user", content, timestamp: new Date() };
-    const thinkingMsg: Message = { id: "thinking", role: "assistant", content: "", timestamp: new Date(), thinking: true };
-
-    setMessages(prev => [...prev, userMsg, thinkingMsg]);
+    // P1-27: the waiting state is the AiThinkingStage below the thread, not a dots bubble.
+    setMessages(prev => [...prev, userMsg]);
     setInput("");
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
+    setStartedAt(Date.now());
 
     // The real assistant (plan §5 L4): the server searches the library for this
     // message, answers from what it found, and keeps the conversation.
-    const answer = await askAssistant({ message: content, context, conversationId, userType });
+    const answer = await askAssistant({ message: content, context, conversationId, userType, mode });
     if (answer.conversationId) setConversationId(answer.conversationId);
     if (answer.ok) {
       setAnswered(n => n + 1);
@@ -288,6 +294,7 @@ function AssistantPage() {
     };
     setMessages(prev => prev.filter(m => m.id !== "thinking").concat(aiMsg));
     setLoading(false);
+    setStartedAt(null);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -334,6 +341,19 @@ function AssistantPage() {
         <div className="flex-1 min-w-0">
           <p className={`text-[13px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>المساعد المتقدم</p>
           <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>مساعدك القانوني الذكي</p>
+        </div>
+
+        {/* Q481 / P1-26: answer mode, sent with every message */}
+        <div role="radiogroup" aria-label="طريقة الرد" className={`flex items-center p-0.5 rounded-xl border text-[11px] font-bold ${isDark ? "border-white/[0.08] bg-zinc-900" : "border-slate-200 bg-slate-50"}`}>
+          {([["direct", "مباشر", "يجيب مباشرة من نصوص المكتبة"], ["grill", "استجوبني", "يسألك أولاً أسئلة استيضاحية عن الوقائع ثم يجيب"]] as const).map(([k, label, hint]) => (
+            <button key={k} type="button" role="radio" aria-checked={mode === k} title={hint} disabled={loading}
+              onClick={() => setMode(k)}
+              className={`px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50 ${mode === k
+                ? isDark ? "bg-[#C8A762]/15 text-[#C8A762]" : "bg-white text-[#0B3D2E] shadow-sm"
+                : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"}`}>
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Context selector */}
@@ -401,6 +421,15 @@ function AssistantPage() {
           ? <WelcomeScreen onPrompt={t => { setInput(t); sendMessage(t); }} isDark={isDark} />
           : messages.map(msg => <MessageBubble key={msg.id} msg={msg} isDark={isDark} />)
         }
+        {/* P1-27 «يفكّر…»: this call reports no steps, so the stage shows the honest
+            "nothing reported yet" line and the real elapsed time. */}
+        {loading && (
+          <AiThinkingStage
+            run={{ phase: "running", step: null, events: [], startedAt, runId: null, code: null, stale: false }}
+            isDark={isDark}
+            toolLabel={aiToolLabelAr("assistant")}
+          />
+        )}
         <div ref={bottomRef} />
       </div>
 

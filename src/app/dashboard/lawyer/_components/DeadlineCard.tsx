@@ -6,6 +6,9 @@ import { Scales, SealWarning, Info } from "@phosphor-icons/react";
 
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import type { Deadline, DeadlineStatus } from "@/lib/services/deadlinesService";
+import { buildHearingIcs } from "@/lib/calendar/hearingIcs";
+import { deadlineIcsInput } from "@/lib/calendar/calendarFeed";
+import { deadlineIcsFilename, downloadIcsFile } from "@/lib/calendar/downloadIcs";
 import { deadlineActionRule, MAX_STATUS_REASON, type DeadlineAction } from "@/lib/services/deadlineStatusPolicy";
 
 /**
@@ -178,6 +181,21 @@ export default function DeadlineCard({
           {canReopen && !pending && (
             <button type="button" disabled={busy} onClick={() => ask("open")} className={actionBtn("grey")}>
               إعادة فتح
+            </button>
+          )}
+          {/* P1-37: this deadline as a calendar file (all-day, Asia/Riyadh, four
+              reminders); title and case title only (calendarFeed.ts). */}
+          {deadline.status === "open" && (
+            <button
+              type="button"
+              title="ملف تقويم لهذه المهلة (يوم كامل بتوقيت الرياض، مع أربعة تنبيهات) — لا يحمل ملاحظاتك"
+              onClick={() => {
+                const ics = buildHearingIcs(deadlineIcsInput({ id: deadline.id, title: deadline.title, dueDate: deadline.dueDate, status: deadline.status, caseTitle: deadline.caseTitle }));
+                if (ics) downloadIcsFile(ics, deadlineIcsFilename(deadline.dueDate));
+              }}
+              className={actionBtn("grey")}
+            >
+              تقويم (.ics)
             </button>
           )}
         </div>

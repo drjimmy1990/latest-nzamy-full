@@ -26,6 +26,9 @@ import {
   TRANSCRIPT_FROM_PARAM, consumeTranscriptHandoff, discardTranscriptHandoff, sessionStorageOrNull,
 } from "@/lib/ai/transcriptHandoff";
 import { najizDraftSeed } from "@/lib/murshid/najizDraftLink";
+import {
+  LIBRARY_FROM_PARAM, consumeLibraryHandoff, discardLibraryHandoff, notesWithLibraryText,
+} from "@/lib/ai/libraryDrafterHandoff";
 
 // Labels shown as badge in wizard header when ?mode= param is present
 const MODE_BADGE_LABELS: Record<string, string> = {
@@ -106,6 +109,26 @@ export default function AIDraftPage() {
     setTranscriptNotice({ sourceLabel: handoff.sourceLabel, truncated: handoff.truncated });
   }, [fromTranscript, setCaseText]);
 
+  // ?from=library (Q485 / P1-13): a library text handed over by
+  // SendToDrafterNotesButton goes to «ملاحظات ومرئيات» (step 1), appended
+  // under anything already there. Same one-shot rules as the transcript.
+  const fromLibrary = searchParams.get("from") === LIBRARY_FROM_PARAM;
+  const [libraryNotice, setLibraryNotice] = useState<{ sourceLabel: string; truncated: boolean } | null>(null);
+  const { setNotesText } = s;
+  useEffect(() => {
+    if (!fromLibrary) {
+      discardLibraryHandoff(sessionStorageOrNull());
+      return;
+    }
+    const handoff = consumeLibraryHandoff(sessionStorageOrNull());
+    if (!handoff) return;
+    setNotesText((prev) => notesWithLibraryText(prev, handoff));
+    // A one-time read of browser storage after mount (see the transcript effect).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPreMode("draft");
+    setLibraryNotice({ sourceLabel: handoff.sourceLabel, truncated: handoff.truncated });
+  }, [fromLibrary, setNotesText]);
+
   const card = isDark
     ? "bg-zinc-900 border border-white/[0.06] rounded-2xl"
     : "bg-white border border-zinc-200/70 rounded-2xl";
@@ -151,6 +174,16 @@ export default function AIDraftPage() {
           من دليل ناجز: <span className="font-semibold">{najizSeed.path}</span> — أُضيف المسار إلى «ملاحظات ومرئيات»
           {najizSeed.memoType ? " واختير «تحرير دعوى»" : ""}{najizSeed.legalBranch ? ` والفرع «${najizSeed.legalBranch}»` : ""}. راجعها وأكمل الاختيارات.
         </p>
+      )}
+
+      {libraryNotice && (
+        <div role="status" className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-[12px] leading-relaxed ${isDark ? "border-[#C8A762]/25 bg-[#C8A762]/5 text-zinc-300" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/5 text-zinc-700"}`}>
+          <p className="flex-1">
+            <span className="font-bold">نص من المكتبة{libraryNotice.sourceLabel ? ` (${libraryNotice.sourceLabel})` : ""}</span> — وُضع في «ملاحظات ومرئيات» في هذه الخطوة؛ راجعه وعدّله. لن يُرسَل شيء قبل أن تضغط الإرسال بنفسك.
+            {libraryNotice.truncated && <span className="block font-semibold text-amber-600">النص أطول من الحد المسموح، فنُقل جزؤه الأول فقط.</span>}
+          </p>
+          <button type="button" onClick={() => setLibraryNotice(null)} aria-label="إخفاء التنبيه" className="text-[11px] font-bold opacity-70 hover:opacity-100">إخفاء</button>
+        </div>
       )}
 
       {transcriptNotice && (

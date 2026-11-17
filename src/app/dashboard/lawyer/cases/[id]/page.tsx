@@ -106,6 +106,9 @@ import {
 } from "@/components/dashboard/caseNotes/NoteScope";
 import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
 import CaseTimeExpensesSection from "@/components/dashboard/financeLedger/CaseTimeExpensesSection";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
+import { caseSummaryBlocks } from "../_caseSummaryBlocks";
+import InsertFromLibraryButton from "@/components/library/InsertFromLibraryButton";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -512,6 +515,8 @@ export default function CaseDetailPage() {
   const [caseNotesRead, setCaseNotesRead] = useState<ListRead<CaseNote> | null>(null);
   const [caseNotesLoading, setCaseNotesLoading] = useState(true);
   const [newNoteBody, setNewNoteBody] = useState("");
+  // N01-24: «إدراج من مسودة المكتبة / مجلداتي» inserts at this box's cursor.
+  const newNoteRef = useRef<HTMLTextAreaElement>(null);
   const [newNoteVisibility, setNewNoteVisibility] = useState<CaseNoteVisibility>("private");
   const [addingNote, setAddingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -1324,6 +1329,25 @@ export default function CaseDetailPage() {
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
               <PencilSimple size={14} />صياغة مذكرة
             </Link>
+            {/* P1-37: the case summary on the lawyer's own letterhead (lawyers
+                and firms only — the bar shows nothing to anyone else). */}
+            <LetterheadExportBar
+              title={`ملخّص القضية — ${caseData.title || "بدون عنوان"}`}
+              filename="case-summary"
+              blocks={caseSummaryBlocks({
+                title: caseData.title,
+                typeLabel: isBriefReviewOrder(caseData.metadata) ? BRIEF_REVIEW_SHORT_LABEL_AR : REQUEST_TYPE_LABELS_AR[caseData.type] ?? caseData.type,
+                referenceNo,
+                clientName: caseData.requester?.name ?? null,
+                court,
+                assignee: assigneeName || null,
+                filedDate,
+                stage: status === "cancelled" ? "ملغاة" : CASE_STAGES[stageIdx] ?? null,
+                description: caseData.description,
+                hearings: hearingsRead?.ok === false ? null : hearings.map((h) => [h.date, h.result, h.court].filter((v) => v && v !== "—").join(" — ")),
+                deadlines: deadlinesRead?.ok === false ? null : caseDeadlines.filter((d) => d.status === "open").map((d) => `${d.dueDate} — ${d.title}`),
+              })}
+            />
             {courtWritesAllowed && (
             <Link href="/ai/wargaming"
               className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
@@ -2328,6 +2352,7 @@ export default function CaseDetailPage() {
               <div className={`${card} p-4`}>
                 <div className={`flex flex-col gap-2 p-3 rounded-xl border ${isDark ? "border-white/[0.07] bg-white/[0.02]" : "border-slate-200 bg-slate-50"}`}>
                   <textarea
+                    ref={newNoteRef}
                     value={newNoteBody}
                     onChange={(e) => setNewNoteBody(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) submitCaseNote(); }}
@@ -2338,6 +2363,8 @@ export default function CaseDetailPage() {
                   />
                   <div className="flex items-center justify-between gap-2">
                     <NoteScopePicker value={newNoteVisibility} onChange={setNewNoteVisibility} team={caseTeam} disabled={addingNote} />
+                    {/* 8000 = case_notes.body check (20260910_case_notes.sql). */}
+                    <InsertFromLibraryButton isDark={isDark} targetRef={newNoteRef} value={newNoteBody} onChange={setNewNoteBody} disabled={addingNote} maxLength={8000} />
                     <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
                       {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}

@@ -382,6 +382,14 @@ function libraryAssistantOutput(raw: unknown): Record<string, unknown> | null {
 
 export const ASSISTANT_CONTEXTS = ["general", "case", "contract", "research"] as const;
 export type AssistantContext = (typeof ASSISTANT_CONTEXTS)[number];
+/**
+ * Q481 / P1-26: «مباشر» answers at once (today's behaviour, and the default);
+ * «استجوبني» (Grill-Me) first asks the lawyer the clarifying questions the
+ * texts raise, then answers. Sent with every turn; `direct` is NOT written into
+ * the input, so a run without the field is exactly what it was before.
+ */
+export const ASSISTANT_MODES = ["direct", "grill"] as const;
+export type AssistantMode = (typeof ASSISTANT_MODES)[number];
 export const ASSISTANT_MESSAGE_MAX = 4000;
 export const ASSISTANT_REPLY_MAX = 8000;
 /**
@@ -419,7 +427,9 @@ function assistantInput(raw: unknown): InputCheck {
   if (!(ASSISTANT_CONTEXTS as readonly unknown[]).includes(context)) return { ok: false, error: "اختر نوع السياق" };
   const message = boundedText(raw.message, ASSISTANT_MESSAGE_MAX);
   if (!message || message.length < 2) return { ok: false, error: "اكتب رسالتك (حتى ٤٬٠٠٠ حرف)" };
-  return { ok: true, input: { context, message } };
+  const mode = raw.mode === undefined || raw.mode === null ? "direct" : raw.mode;
+  if (!(ASSISTANT_MODES as readonly unknown[]).includes(mode)) return { ok: false, error: "اختر طريقة الرد: مباشر أو استجوبني" };
+  return { ok: true, input: mode === "grill" ? { context, message, mode } : { context, message } };
 }
 
 function assistantOutput(raw: unknown): Record<string, unknown> | null {
