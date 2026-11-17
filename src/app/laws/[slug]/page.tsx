@@ -49,6 +49,10 @@ import { LibraryDeviceLimitNotice } from "@/components/library/LibraryDeviceLimi
 import { readerRefusalFrom, type ReaderRefusal } from "@/lib/library/readerRefusal";
 import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
+import { CitationProvider, type CitationReaderContext } from "./_citation-popover";
+import { articlesByNumber } from "./_cite-status";
+import { LawMapButton } from "./_law-map-button";
+import { isPageNumberedDocument } from "@/lib/library/pageLocator";
 
 /**
  * Owner note ٠٦: on arrival — from the library search with `?q=` and maybe an
@@ -732,6 +736,27 @@ function LawSystemPageContent() {
   const lawTitle = (isRTL ? law?.title : law?.titleEn) ?? "";
   const fontClass = { normal: "text-[13px]", large: "text-[15px]", xlarge: "text-[17px]" }[fontSize];
 
+  // Batch l6-reader (N02-14/15): citation chips resolve against this law's own
+  // articles, in the page — no request. Off for a page-numbered document (its
+  // «الصفحة n» locators are not articles).
+  const citationContext = useMemo<CitationReaderContext | null>(() => {
+    if (!law || allArticles.length === 0) return null;
+    if (isPageNumberedDocument(allArticles.map((a) => a.numberText ?? a.num))) return null;
+    return {
+      lawSlug: law.slug || decodeURIComponent(apiSlug(slug)),
+      lawTitle: law.title,
+      lawType: law.documentType,
+      parentSlug: law.parentLawLink?.slug ?? null,
+      byNumber: articlesByNumber(allArticles),
+      viewerHasFullAccess,
+      isDark,
+      isRTL,
+      isInCart: (id: string) => cart.some((e) => e.articleId === id && e.isArticleAdded),
+      onAddArticle: addArticle,
+      showPaywall: () => setShowPaywall(true),
+    };
+  }, [law, allArticles, slug, viewerHasFullAccess, isDark, isRTL, cart, addArticle]);
+
   // Copy DRAFT — HTML Clipboard (Bold في Word)
   const [copiedDraft, setCopiedDraft] = useState(false);
   const handleCopyDraft = async () => {
@@ -1140,6 +1165,13 @@ function LawSystemPageContent() {
 
             {/* N2.6: search inside this law with the library's operators; the
                 matching articles stack here in full (paywall applied by the route). */}
+            {/* N06-40..43: the law's links map — the map and its data load only when opened. */}
+            {viewMode !== "appendix" && citationContext && (
+              <div className="flex justify-end">
+                <LawMapButton slug={citationContext.lawSlug} lawTitle={law.title} lawStatus={law.law_status ?? null} isDark={isDark} isRTL={isRTL} />
+              </div>
+            )}
+
             {viewMode !== "appendix" && (
               <ScopedSearchPanel
                 key={`law:${law.slug || slug}`}
@@ -1155,6 +1187,7 @@ function LawSystemPageContent() {
             {/* Owner note ٠٦: search colours over the reader (preamble → articles →
                 regulation → amendment history). The ScopedSearchPanel above stays
                 outside: it has its own results and its own highlight. */}
+            <CitationProvider value={citationContext}>
             <HighlightProvider query={highlightQuery}>
             <div className="space-y-4">
             <SearchLegendBar
@@ -1594,6 +1627,7 @@ function LawSystemPageContent() {
             )}
             </div>
             </HighlightProvider>
+            </CitationProvider>
           </div>
 
           {/* LEFT COLUMN: AI Tools and related documents */}

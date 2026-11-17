@@ -29,6 +29,10 @@ import { Hl, useHighlight, useTextHasHighlight } from "@/components/search/Multi
 import type { HighlightTerm } from "@/lib/search/multiColorSearch";
 import { highlightSafeHtml, textHasHighlight } from "./_highlight-html";
 import { PreviousVersionText } from "./_word-diff";
+import { linkCitationsHtml } from "./_cite-links";
+import { useCitations } from "./_citation-popover";
+import { articleNumberOf } from "./_cite-status";
+import { ArticleLinksBar } from "./_article-links-bar";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
 
 const NO_TERMS: readonly HighlightTerm[] = [];
@@ -343,7 +347,15 @@ function renderMarkdownTableToHtml(tableMd: string, cellHtml: (md: string) => st
  * the legend's ↑ ↓ and the arrival scroll onto text the reader cannot read.
  * Outside a provider (موجز box, notices) nothing changes.
  */
-export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", highlight = true }: { text: string; isDark: boolean; isRTL?: boolean; fontClass?: string; highlight?: boolean }) {
+export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", highlight = true, cite }: {
+  text: string; isDark: boolean; isRTL?: boolean; fontClass?: string; highlight?: boolean;
+  /**
+   * Batch l6-reader (N02-14): turn the references in this text into chips,
+   * inside a <CitationProvider>. Set on an unlocked article body only — never
+   * on a locked preview, a regulation or a previous version.
+   */
+  cite?: { selfNumber: number | null };
+}) {
   const muted = isDark ? "text-zinc-300" : "text-zinc-700";
   const listIndent = isRTL ? "pr-4" : "pl-4";
 
@@ -351,11 +363,25 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
   const hlCtx = useHighlight();
   const hlTerms = highlight && hlCtx ? hlCtx.parsed.terms : NO_TERMS;
   const hlFocus = hlCtx?.focus ?? null;
+  const citeCtx = useCitations();
+  const citeOn = !!cite && !!citeCtx;
   // Every markdown → sanitised-HTML conversion below goes through this one.
-  const safeHtml = (md: string) => highlightSafeHtml(markdownBoldToSafeHtml(md), hlTerms, hlFocus);
+  // Chips go in before the search colours, so a match inside a chip is still coloured.
+  const safeHtml = (md: string) => {
+    const html = markdownBoldToSafeHtml(md);
+    const linked = citeOn ? linkCitationsHtml(html, { docTitle: citeCtx.lawTitle, selfNumber: cite.selfNumber, isDark }) : html;
+    return highlightSafeHtml(linked, hlTerms, hlFocus);
+  };
+  // One delegated handler: a click on a chip opens its popover.
+  const onCiteClick = citeOn
+    ? (e: React.MouseEvent<HTMLDivElement>) => {
+        const chip = (e.target as HTMLElement).closest?.("button[data-cite-kind]");
+        if (chip instanceof HTMLElement) citeCtx.open(chip);
+      }
+    : undefined;
 
   return (
-    <div className="space-y-1.5 w-full">
+    <div className="space-y-1.5 w-full" onClick={onCiteClick}>
       {blocks.map((block, index) => {
         if (block.type === "details") {
           // BUG-LIB-05: known current content (the موجز, an info card, a live
@@ -363,7 +389,7 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
           // The summary is plain text (no leftover tags or ** marks), rendered
           // as text.
           const summaryText = cleanDetailsSummary(block.summary);
-          const body = <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} />;
+          const body = <MD text={block.content || ""} isDark={isDark} isRTL={isRTL} fontClass={fontClass} highlight={highlight} cite={cite} />;
           // A match inside the folded text opens it. So does the source's own
           // `open`, but only on current text: superseded text stays folded.
           const open = textHasHighlight(block.content, hlTerms);
@@ -798,6 +824,9 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const historicRegHasHit = useTextHasHighlight(article.historicRegulationText);
   const inCart      = !!entry && entry.isArticleAdded;
   const regInCart   = !!entry && entry.isExecRegAdded;
+  // Batch l6-reader: chips in the body (inside a CitationProvider), «المادة (n)» of itself excluded.
+  const citations   = useCitations();
+  const citeSelf    = useMemo(() => ({ selfNumber: articleNumberOf(article) }), [article]);
 
   const handleCopy = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
@@ -1109,8 +1138,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                   </div>
                 </div>
               ) : (
-                <MD text={article.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} />
+                <MD text={article.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} cite={citeSelf} />
               )
+            )}
+            {/* N02-16: the articles and laws this one cites and that cite it (graph, on demand). */}
+            {viewMode !== "regulation" && citations && (
+              <ArticleLinksBar articleId={article.id} lawSlug={citations.lawSlug} isDark={isDark} isRTL={isRTL} />
             )}
 
             {/*
