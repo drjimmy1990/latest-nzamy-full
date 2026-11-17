@@ -152,13 +152,26 @@ function matchesRule(pathname: string, rule: Rule<string>): boolean {
   return pathname === rule.path || pathname.startsWith(`${rule.path}/`);
 }
 
+/**
+ * `role: null` = no role is known for this user in this entity (no membership,
+ * or the membership read failed). That is DENIED everywhere under the entity,
+ * including paths no rule names — least privilege (owner ticket S4). A real
+ * firm owner is not affected: his session carries `managing_partner` from the
+ * owned-firm read (userSession.ts readEntityMemberships).
+ */
 function getRouteDecision<T extends string>(
   pathname: string,
-  role: T,
+  role: T | null,
   rules: readonly Rule<T>[],
+  entityLabel: string,
 ): EntityRouteDecision<T> {
   const normalized = normalizePath(pathname);
   const rule = rules.find((candidate) => matchesRule(normalized, candidate));
+  if (role === null) {
+    return rule
+      ? { allowed: false, label: rule.label, allowedRoles: rule.allowedRoles }
+      : { allowed: false, label: entityLabel };
+  }
   if (!rule) return { allowed: true };
   return {
     allowed: rule.allowedRoles.includes(role),
@@ -168,9 +181,9 @@ function getRouteDecision<T extends string>(
 }
 
 export function getBusinessRouteDecision(pathname: string, role?: BusinessRole | null): EntityRouteDecision<BusinessRole> {
-  return getRouteDecision(pathname, role ?? "employee", BUSINESS_ROUTE_RULES);
+  return getRouteDecision(pathname, role ?? "employee", BUSINESS_ROUTE_RULES, "لوحة الشركة");
 }
 
 export function getFirmRouteDecision(pathname: string, role?: AffiliationRole | null): EntityRouteDecision<AffiliationRole> {
-  return getRouteDecision(pathname, role ?? "managing_partner", FIRM_ROUTE_RULES);
+  return getRouteDecision(pathname, role ?? null, FIRM_ROUTE_RULES, "لوحة المكتب");
 }

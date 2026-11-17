@@ -359,7 +359,10 @@ export function mapSupabaseUser(
     // dropped here so every consumer's `?? "gov_counsel"` default applies.
     governmentRole:     normalizeGovernmentRole(meta.government_role),
     officerSpecialty:    meta.officer_specialty,
-    businessRole: (memberships.business?.role ?? meta.business_role) as BusinessRole | undefined,
+    // From the membership reads only. user_metadata.business_role was a
+    // fallback here, but the account holder can write user_metadata and no
+    // signup sets that key (ticket S4).
+    businessRole: memberships.business?.role as BusinessRole | undefined,
     businessMembership: memberships.business as UserSession["businessMembership"],
     active_roles:       meta.active_roles,
     country:       meta.country_code ?? "SA",

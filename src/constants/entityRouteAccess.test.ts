@@ -4,7 +4,7 @@
  * plead or manage hearings. The firm's hearings and procedures-expert routes
  * admit the litigation roles only — the same line the database draws for
  * consultants (20261019_21_consultant_court_write_guard.sql). Every other
- * rule, and the null-role default, are unchanged.
+ * rule is unchanged; the null-role default is now a denial (ticket S4).
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -38,9 +38,22 @@ test("N1.9: litigation roles keep both; trainee and secretary keep hearings", ()
   assert.equal(getFirmRouteDecision("/dashboard/firm/procedures-expert", "trainee").allowed, false);
 });
 
-test("N1.9: the null-role default is unchanged (managing_partner)", () => {
-  assert.equal(getFirmRouteDecision("/dashboard/firm/hearings", null).allowed, true);
-  assert.equal(getFirmRouteDecision("/dashboard/firm/procedures-expert", undefined).allowed, true);
+test("S4: no firm role is denied by default (least privilege, no managing_partner fallback)", () => {
+  for (const role of [null, undefined]) {
+    for (const path of [
+      "/dashboard/firm", "/dashboard/firm/hearings", "/dashboard/firm/procedures-expert",
+      "/dashboard/firm/fees", "/dashboard/firm/team", "/dashboard/firm/settings",
+      // a path no rule names is denied too, and still carries a label for the guard's message
+      "/dashboard/firm/some-unlisted-page",
+    ]) {
+      const decision = getFirmRouteDecision(path, role);
+      assert.equal(decision.allowed, false, `${String(role)} ${path}`);
+      assert.ok(decision.label, `${path} has a label`);
+    }
+  }
+  // a real role keeps its unruled paths open, as before
+  assert.equal(getFirmRouteDecision("/dashboard/firm/some-unlisted-page", "trainee").allowed, true);
+  assert.equal(getFirmRouteDecision("/dashboard/firm/hearings", "managing_partner").allowed, true);
 });
 
 test("N1.9: the other legal rules still admit the non-litigation legal roles", () => {
