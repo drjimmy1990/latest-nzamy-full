@@ -6,7 +6,7 @@
  * Built here, not inline in ServiceRequestWizard.tsx, so a unit test can pass
  * the EXACT payload through the route's two pure gates —
  * `validateServiceRequestCreate` and `checkOrderIntake` — and prove a real
- * submit is accepted (servicesWizardRequest.test.ts). No imports.
+ * submit is accepted (servicesWizardRequest.test.ts). One pure import (the city list).
  *
  *   receiver "ai_workspace" — the نظامي team's queue, the one the admin console
  *     reads; the marketplace receivers this form used to name are closed while
@@ -16,6 +16,8 @@
  *   metadata.intake — what the team's brief renders; it carries no `service`
  *     key, so the AI-service intake validators do not apply to it.
  */
+
+import { isSaudiCityValue } from "../../constants/saudiCities.ts";
 
 export interface ServicesWizardRequestInput {
   id: string;
@@ -45,6 +47,11 @@ export interface ServicesWizardRequestInput {
   attachments: readonly unknown[];
 }
 
+/**
+ * Owner ١٩: the wizard's `region` select uses the same slugs as
+ * src/constants/saudiCities.ts, so a picked region is sent as the request's
+ * city; anything else («» or a value the list does not know) sends none.
+ */
 export function buildServicesWizardRequest(input: ServicesWizardRequestInput) {
   return {
     id: input.id,
@@ -56,6 +63,7 @@ export function buildServicesWizardRequest(input: ServicesWizardRequestInput) {
     status: "pending_assignment" as const,
     payment: { amount: 0, status: "not_required" as const },
     sourcePath: "/services",
+    city: isSaudiCityValue(input.region) ? input.region : null,
     metadata: {
       serviceTitleAr: input.serviceTitleAr,
       schemaVersion: 1,

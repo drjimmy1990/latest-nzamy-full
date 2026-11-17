@@ -57,6 +57,8 @@ export const MAX_TITLE_LENGTH = 200;
 /** Likewise `description` — the column is `text not null default ''`. */
 export const MAX_DESCRIPTION_LENGTH = 5000;
 
+import { isSaudiCityValue } from "../../constants/saudiCities.ts";
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The validated, normalised values the route should insert. */
@@ -71,6 +73,11 @@ export interface ServiceRequestCreateValue {
   requester: Record<string, unknown>;
   /** Trimmed uuid, or null when the caller linked no client card. */
   lawyerClientId: string | null;
+  /**
+   * A slug of src/constants/saudiCities.ts, or null when the form sent none
+   * (owner ١٩; the column and its slug CHECK are 20261124_30).
+   */
+  city: string | null;
 }
 
 export type ServiceRequestCreateCheck =
@@ -88,6 +95,7 @@ const AR = {
   lawyerClientId: "معرّف الموكّل غير صالح.",
   type: "نوع الطلب غير معروف.",
   receiver: "جهة استقبال الطلب غير معروفة.",
+  city: "المدينة المختارة غير معروفة.",
 } as const;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -162,5 +170,14 @@ export function validateServiceRequestCreate(body: unknown): ServiceRequestCreat
     receiver = body.receiver as ServiceRequestReceiver;
   }
 
-  return { ok: true, value: { title, description, type, receiver, requester, lawyerClientId } };
+  // ── city: optional, one of the pick-list slugs when present (owner ١٩) ──
+  // A slug, never free text: the lawyer browsing open requests sees it, so
+  // nothing a client types may travel through it (20261124_30 CHECK too).
+  let city: string | null = null;
+  if (body.city !== undefined && body.city !== null && body.city !== "") {
+    if (!isSaudiCityValue(body.city)) return fail(AR.city);
+    city = body.city;
+  }
+
+  return { ok: true, value: { title, description, type, receiver, requester, lawyerClientId, city } };
 }
