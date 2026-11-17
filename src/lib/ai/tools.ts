@@ -126,6 +126,13 @@ export interface AiToolSpec {
    */
   draftingGuard?: { field: string };
   /**
+   * Owner ١٣ / ٢٢ (MANDATORY before launch): the free-text field checked for a
+   * prompt-extraction attempt before anything is charged or sent to n8n, and
+   * the reply field checked for the prompt coming back before it is stored
+   * (extractionGuard.ts, assistantGuard.ts, runCore).
+   */
+  promptGuard?: { field: string; replyField: string };
+  /**
    * Wave 2: the tool answers from library texts the app retrieves (retrieval.ts).
    * Such a tool passes the library gate and the assistant's tier rule before
    * the charge, is refunded when nothing in the library matches, and fails
@@ -1765,6 +1772,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // Owner ٤١٣ option A: an answer that cites none of the texts is kept,
     // labelled and charged (runCore settleRunWith); the refusal sentence is not.
     retrieval: { from: "question", laws: 8, principles: 4, allowUngrounded: { field: "answer" } },
+    // Owner ١٣: every AI agent is hardened against instruction extraction.
+    promptGuard: { field: "question", replyField: "answer" },
     validateInput: quickAnswerInput,
     validateOutput: quickAnswerOutput,
   },
@@ -1781,7 +1790,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     retrieval: { from: "message", pinFrom: "article_id", scopeFrom: "law_slug", laws: 6, principles: 3 },
     // Owner Q485: it explains texts; it never writes a memo or a pleading.
+    // Owner ٢٢: nor a contract (referred to «محترف العقود»).
     draftingGuard: { field: "message" },
+    // Owner ١٣ / ٢٢: never hands out its instructions.
+    promptGuard: { field: "message", replyField: "reply" },
     validateInput: libraryAssistantInput,
     validateOutput: libraryAssistantOutput,
   },
@@ -1799,6 +1811,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     defaultMode: "off",
     retrieval: { from: "message", laws: 8, principles: 4 },
     conversation: { maxMessages: ASSISTANT_MESSAGES_PER_CONVERSATION, historyPairs: 3, field: "message", replyField: "reply" },
+    // Owner ١٣: every AI agent is hardened against instruction extraction.
+    promptGuard: { field: "message", replyField: "reply" },
     validateInput: assistantInput,
     validateOutput: assistantOutput,
   },

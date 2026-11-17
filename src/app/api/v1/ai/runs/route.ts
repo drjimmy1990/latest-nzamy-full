@@ -16,6 +16,7 @@ import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
 import { libraryRunAccess, libraryRunCreated } from "@/lib/ai/libraryRunAccess";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
+import { assistantGuardState } from "@/lib/ai/assistantGuard";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -180,6 +181,8 @@ export async function POST(request: NextRequest) {
         progress: progressSink(admin, (work) => after(work)),
         // A job run answers 202 before its searches; n8n is called after the reply.
         defer: (task) => after(task),
+        // Owner ١٣ / ٢٢: the anti-extraction block and per-minute counters (per process).
+        promptGuard: assistantGuardState,
       },
       actor,
       body,

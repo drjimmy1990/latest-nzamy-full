@@ -58,7 +58,9 @@ import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
 import { creditKindForRun, FOUNDER_LIBRARY_TOOL } from "../membership/founderPlan.ts";
-import { draftingRefusal, isDraftingRequest } from "./draftingRequest.ts";
+import { contractDraftingRefusal, draftingRefusal, draftingRequestKind } from "./draftingRequest.ts";
+import { checkMinuteLimit, extractionRefusal, guardMessage, logFlagged, type PromptGuardState } from "./assistantGuard.ts";
+import { isExtractionRefusalReply, leaksPrompt } from "./extractionGuard.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import {
   SECTION_EDIT_COPY,
@@ -181,6 +183,13 @@ export interface StartRunDeps {
    * throw is swallowed by `report`.
    */
   progress?: ProgressReporter;
+  /**
+   * Owner ١٣ / ٢٢: the anti-extraction counters (blocks after repeated
+   * attempts, the per-minute limit) for a tool with `promptGuard`. The route
+   * passes assistantGuard.assistantGuardState; without it the detector, the
+   * refusal and the output filter still run, only the counters are skipped.
+   */
+  promptGuard?: PromptGuardState;
 }
 
 export type ProgressReporter = (runId: string, userId: string, events: ProgressEvent[]) => void;
@@ -265,6 +274,9 @@ async function founderLibraryCreditSafe(read: (userId: string) => Promise<boolea
 /** Never the thrown value's message or body: it can carry a text, a token or a link. */
 const errorName = (err: unknown) => (err as { name?: unknown } | null)?.name?.toString() ?? "error";
 
+/** settleRunWith's failure code for an answer the output filter blocked (refunded). */
+const OUTPUT_BLOCKED = "output_blocked";
+
 async function failRun(admin: SupabaseClient, runId: string, code: string, message: string): Promise<void> {
   // The sweeper retries a run left `running` past its deadline, so a failed
   // refund here is logged, not lost.
@@ -343,6 +355,15 @@ export async function settleRunWith(
 
   const checked = ctx.spec.validateOutput(raw.output, ctx.input);
   if (!checked) return fail("schema_invalid", "the output does not match the tool's shape");
+  // Owner ١٣ / ٢٢: an answer that carries the prompt's canary or its own
+  // wording is never stored (GET /ai/runs would hand it out) and is refunded.
+  // The message names no text. The model's own refusal sentence is not an
+  // answer either: refunded and shown as the refusal.
+  if (ctx.spec.promptGuard) {
+    const reply = checked[ctx.spec.promptGuard.replyField];
+    if (leaksPrompt(reply)) return fail(OUTPUT_BLOCKED, "the answer quoted the hidden instructions");
+    if (isExtractionRefusalReply(reply)) return fail(OUTPUT_BLOCKED, "the model refused an extraction attempt");
+  }
   const enrich = OUTPUT_ENRICHERS[ctx.spec.id];
   let output = checked;
   if (enrich) {
@@ -453,11 +474,30 @@ export async function startRunWith(
 
   const checked = spec.validateInput(req.input);
   if (!checked.ok) return { status: 422, body: { error: checked.error, code: "invalid_input" } };
+  // Owner ١٣ / ٢٢ (assistantGuard.ts): a blocked user, or a message that asks
+  // for the hidden instructions, is refused here, before the charge and n8n.
+  if (spec.promptGuard) {
+    const message = String(checked.input[spec.promptGuard.field] ?? "");
+    const guarded = await guardMessage(spec.id, actor.userId, isAdmin, message, deps.promptGuard);
+    if (guarded) return guarded;
+  }
   // Owner Q485: a request to draft a memo or a pleading is refused here, before
   // the charge and the model; the drafter is offered to whoever may run it.
-  if (spec.draftingGuard && isDraftingRequest(String(checked.input[spec.draftingGuard.field] ?? ""))) {
-    const drafter = getAiTool("legal-drafter");
-    return { status: 422, body: draftingRefusal(drafter !== null && toolRoleRefusal(drafter, actor) === null) };
+  // Owner ٢٢: a contract likewise, with «محترف العقود» for whoever may run it.
+  if (spec.draftingGuard) {
+    const kind = draftingRequestKind(String(checked.input[spec.draftingGuard.field] ?? ""));
+    if (kind === "contract") {
+      const pro = getAiTool("contracts-pro");
+      return { status: 422, body: contractDraftingRefusal(pro !== null && toolRoleRefusal(pro, actor) === null) };
+    }
+    if (kind === "pleading") {
+      const drafter = getAiTool("legal-drafter");
+      return { status: 422, body: draftingRefusal(drafter !== null && toolRoleRefusal(drafter, actor) === null) };
+    }
+  }
+  if (spec.promptGuard) {
+    const limited = checkMinuteLimit(spec.id, actor.userId, isAdmin, deps.promptGuard);
+    if (limited) return limited;
   }
   if (typeof req.idempotencyKey !== "string" || !IDEMPOTENCY_KEY.test(req.idempotencyKey)) {
     return { status: 422, body: { error: AI_COPY.key, code: "invalid_key" } };
@@ -950,6 +990,12 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
   }
   if (settled.code === "ungrounded") {
     return { status: 422, body: { error: AI_COPY.ungrounded, code: "ungrounded", runId: run.run_id } };
+  }
+  if (settled.code === OUTPUT_BLOCKED && spec.promptGuard) {
+    // Counted like a flagged question; the log carries the question's hash, never a text.
+    const asked = String(checked.input[spec.promptGuard.field] ?? "");
+    await logFlagged("output", { toolId: spec.id, userId: actor.userId, rule: OUTPUT_BLOCKED, text: asked, runId: run.run_id }, deps.promptGuard, ctx.isAdmin);
+    return { status: 422, body: { ...extractionRefusal(), runId: run.run_id } };
   }
   return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
 }
