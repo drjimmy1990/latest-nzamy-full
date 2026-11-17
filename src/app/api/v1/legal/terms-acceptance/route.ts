@@ -34,8 +34,9 @@ import {
  * rate limiter (X-Real-IP first) and stored only as an HMAC-SHA256 keyed with
  * TERMS_IP_HASH_SALT — never the address itself.
  *
- * allowFrozen: a frozen account (pending deletion) may still read and record
- * its acceptance; neither changes anything else.
+ * A frozen account (pending deletion) is refused like every other session
+ * write (accountFreezeWrites.test.ts): the proxy sends it to /account-frozen,
+ * which the re-accept gate exempts, so it is never asked.
  */
 
 const AR = {
@@ -85,7 +86,7 @@ const noStore = { headers: { "Cache-Control": "no-store" } };
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const auth = await requireApiUser(supabase, { error: AR.unauthorized }, { allowFrozen: true });
+  const auth = await requireApiUser(supabase, { error: AR.unauthorized });
   if (auth instanceof NextResponse) return auth;
   const { user } = auth;
 
@@ -116,7 +117,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
-  const auth = await requireApiUser(supabase, { error: AR.unauthorized }, { allowFrozen: true });
+  const auth = await requireApiUser(supabase, { error: AR.unauthorized });
   if (auth instanceof NextResponse) return auth;
   const { user } = auth;
 
