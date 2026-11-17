@@ -29,8 +29,11 @@ test("the sign-in flow's own pages are refused (no redirect loop)", () => {
 test("/login reads ?next= through postLoginPath on every success path", () => {
   const src = readFileSync(new URL("../../app/login/page.tsx", import.meta.url), "utf8");
   assert.match(src, /import \{ postLoginPath \} from "@\/lib\/auth\/postLoginPath";/);
-  // Already signed in, password sign-in, demo sign-in.
-  assert.equal((src.match(/postLoginPath\(nextFromUrl\(\), getDashboardRoute\(/g) || []).length, 3);
+  // Already signed in and password sign-in. Demo mode has no password
+  // sign-in any more (ticket S13): it sends the user to /demo-login.
+  assert.equal((src.match(/postLoginPath\(nextFromUrl\(\), getDashboardRoute\(/g) || []).length, 2);
+  assert.match(src, /router\.push\("\/demo-login"\);/);
+  assert.doesNotMatch(src, /test-credentials|authenticateTest/);
   // A signed-in account with no usable type still goes to /onboarding.
   assert.match(src, /: "\/onboarding";/);
   // No useSearchParams: it would need a Suspense boundary for `next build`.

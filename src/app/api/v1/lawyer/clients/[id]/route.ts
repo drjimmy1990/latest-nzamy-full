@@ -13,6 +13,8 @@ import {
   type CardRow, type Stats,
 } from "../route";
 import { assertLinkableAccount, propagateLink } from "../_link";
+import { readCallerFirmRoles } from "../_feeVisibility";
+import { canSeeClientFees, withFeesVisibleTo } from "@/lib/services/clientFeeVisibility";
 
 /**
  * /api/v1/lawyer/clients/[id] — single-client read/update, Phase 2.
@@ -72,7 +74,9 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
 
     if (card) {
       const stats = await statsForCard(supabase, uid, card as CardRow);
-      return NextResponse.json({ data: cardToDto(card as CardRow, stats) });
+      // Ticket S3: fees only for the author, partners and the finance manager.
+      const feesVisible = canSeeClientFees(uid, card as CardRow, await readCallerFirmRoles(supabase, uid));
+      return NextResponse.json({ data: withFeesVisibleTo(cardToDto(card as CardRow, stats), feesVisible) });
     }
 
     // No card by this id — it may still be a "profile" client: a platform
@@ -178,6 +182,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: "الموكّل غير موجود." }, { status: 404 });
     }
     const existingCard = existing as CardRow;
+    // Ticket S3: a role that may not see this card's fees may not write them
+    // either. Its edit form received nulls, so fee keys it sends back are
+    // ignored rather than allowed to clear the real figures.
+    const feesVisible = canSeeClientFees(uid, existingCard, await readCallerFirmRoles(supabase, uid));
 
     const body = await request.json();
     const {
@@ -310,12 +318,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // patched value where one is sent, the row's current value otherwise —
     // so a PATCH touching only feePaidSar is still checked against the total
     // already on record, not against `undefined`.
-    const effectiveTotal = feeTotalSar !== undefined ? feeTotalSar : existingCard.fee_total_sar;
-    const effectivePaid = feePaidSar !== undefined ? feePaidSar : existingCard.fee_paid_sar;
-    const feeIssue = feePairIssue(effectiveTotal, effectivePaid);
-    if (feeIssue) return NextResponse.json({ error: feeIssue }, { status: 400 });
-    if (feeTotalSar !== undefined) patch.fee_total_sar = feeTotalSar;
-    if (feePaidSar !== undefined) patch.fee_paid_sar = feePaidSar;
+    if (feesVisible) {
+      const effectiveTotal = feeTotalSar !== undefined ? feeTotalSar : existingCard.fee_total_sar;
+      const effectivePaid = feePaidSar !== undefined ? feePaidSar : existingCard.fee_paid_sar;
+      const feeIssue = feePairIssue(effectiveTotal, effectivePaid);
+      if (feeIssue) return NextResponse.json({ error: feeIssue }, { status: 400 });
+      if (feeTotalSar !== undefined) patch.fee_total_sar = feeTotalSar;
+      if (feePaidSar !== undefined) patch.fee_paid_sar = feePaidSar;
+    }
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "لا توجد بيانات لتحديثها." }, { status: 400 });
@@ -337,7 +347,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const updatedCard = data as CardRow;
     const linked = linkTargetUserId ? await propagateLink(supabase, updatedCard.id, linkTargetUserId) : null;
     const stats = await statsForCard(supabase, uid, updatedCard);
-    return NextResponse.json({ data: cardToDto(updatedCard, stats), linked });
+    return NextResponse.json({ data: withFeesVisibleTo(cardToDto(updatedCard, stats), feesVisible), linked });
   } catch (err) {
     console.error("[lawyer/clients/[id] PATCH] Unexpected error:", err);
     return NextResponse.json({ error: "تعذّر حفظ التعديلات." }, { status: 500 });
