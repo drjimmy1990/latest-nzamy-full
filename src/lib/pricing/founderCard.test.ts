@@ -14,6 +14,7 @@ import {
   FOUNDER_GUEST_LOGIN_HREF,
   FOUNDER_PAUSED_TEXT,
   FOUNDER_PLAN_ANCHOR,
+  FOUNDER_PRE_TEXT,
   FOUNDER_REGISTER_HREF,
   FOUNDER_TERM_LINE,
   FOUNDER_VERIFY_HREF,
@@ -286,4 +287,14 @@ test("founderMemberFromReply: exactly true or false, anything else unknown", () 
   assert.equal(founderMemberFromReply({ error: "تعذّر" }), "unknown");
   assert.equal(founderMemberFromReply({ member: "true" }), "unknown");
   assert.equal(founderMemberFromReply(null), "unknown");
+});
+
+test("before the opening day the offer is «pre», never «انتهت» (founderWindow.state pre)", () => {
+  assert.deepEqual(founderOfferFromApi({ campaign: null, founderWindow: { state: "pre" } }), { state: "pre" });
+  assert.deepEqual(founderOfferFromApi({ campaign: null, founderWindow: { state: "ended" } }), { state: "closed" });
+  assert.deepEqual(founderOfferFromApi({ campaign: null, founderWindow: null }), { state: "closed" });
+  const base = { audience: "lawyers" as const, libraryMode: false, offer: { state: "pre" as const }, priced: true };
+  assert.equal(founderSectionView({ ...base, campaignParam: FOUNDER_CAMPAIGN_ID }), "pre");
+  assert.equal(founderSectionView({ ...base, campaignParam: null }), "hidden");
+  assert.ok(!FOUNDER_PRE_TEXT.includes("انتهت"));
 });

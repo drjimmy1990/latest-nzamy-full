@@ -54,6 +54,8 @@ export const FOUNDER_FINE_PRINT = "لا يُعدّ سعر السنة الأول�
 
 /** Shown instead of a dead anchor when the campaign link arrives after the sale closed. */
 export const FOUNDER_CLOSED_TEXT = "انتهت حملة المؤسس أو اكتملت مقاعدها";
+/** Before the opening day (founderWindow.state "pre"): not "ended". */
+export const FOUNDER_PRE_TEXT = "لم تُفتح حملة المحامي المؤسس بعد، وموعد افتتاحها في صفحة الحملة";
 
 /**
  * R31: shown instead of FOUNDER_CLOSED_TEXT when the admin paused the sale
@@ -153,6 +155,8 @@ export type FounderOffer =
   /** `endsOn`: the campaign's last day (the setting's ends_on), when the body carries a real one. */
   | { state: "open"; seatsLeft: number; capacity: number; endsOn?: string }
   | { state: "closed" }
+  /** The campaign's dates are set and its first day has not come yet. */
+  | { state: "pre" }
   /** R31: the admin paused the sale and seats are left. */
   | { state: "paused" }
   /** The route could not read the setting or the seats (or the fetch failed). */
@@ -160,6 +164,7 @@ export type FounderOffer =
 
 const UNAVAILABLE: FounderOffer = { state: "unavailable" };
 const CLOSED: FounderOffer = { state: "closed" };
+const PRE: FounderOffer = { state: "pre" };
 const PAUSED: FounderOffer = { state: "paused" };
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -177,7 +182,9 @@ const isPositiveInt = (n: unknown): n is number => typeof n === "number" && Numb
  */
 export function founderOfferFromApi(body: unknown): FounderOffer {
   if (!isObject(body) || body.founderUnavailable === true) return UNAVAILABLE;
-  if (body.campaign === null) return CLOSED;
+  if (body.campaign === null) {
+    return isObject(body.founderWindow) && body.founderWindow.state === "pre" ? PRE : CLOSED;
+  }
   const c = body.campaign;
   if (!isObject(c)) return UNAVAILABLE;
   if (c.onSale !== true) return c.salePaused === true && isPositiveInt(c.seatsLeft) ? PAUSED : CLOSED;
@@ -195,7 +202,7 @@ export function audienceFromParam(value: string | null | undefined): AudienceTab
   return typeof value === "string" && AUDIENCES.has(value) ? (value as AudienceTab) : null;
 }
 
-export type FounderSectionView = "hidden" | "card" | "closed" | "paused";
+export type FounderSectionView = "hidden" | "card" | "closed" | "paused" | "pre";
 
 /**
  * The lawyers tab (not library mode) shows the card while the sale is open
@@ -216,6 +223,7 @@ export function founderSectionView(input: {
   if (input.campaignParam !== FOUNDER_CAMPAIGN_ID) return "hidden";
   if (input.offer.state === "closed") return "closed";
   if (input.offer.state === "paused") return "paused";
+  if (input.offer.state === "pre") return "pre";
   return "hidden";
 }
 

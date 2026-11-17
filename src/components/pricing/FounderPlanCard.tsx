@@ -13,6 +13,7 @@ import {
   FOUNDER_FINE_PRINT,
   FOUNDER_PAUSED_TEXT,
   FOUNDER_PLAN_ANCHOR,
+  FOUNDER_PRE_TEXT,
   FOUNDER_TERM_LINE,
   founderCta,
   founderEndsLine,
@@ -86,6 +87,20 @@ export function FounderPlanSection({
   }, [view]);
 
   if (view === "hidden" || !offer) return null;
+
+  if (view === "pre") {
+    return (
+      <section id={FOUNDER_PLAN_ANCHOR} dir="rtl" className="mx-auto max-w-3xl scroll-mt-24 px-4 pt-8">
+        <p className="flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-gold/30 bg-gold/10 px-5 py-4 text-center text-sm font-bold text-[#0B3D2E] dark:text-[#C8A762]">
+          <Info size={18} weight="fill" aria-hidden />
+          {FOUNDER_PRE_TEXT}
+          <Link href="/founder" className="underline underline-offset-4">
+            صفحة الحملة
+          </Link>
+        </p>
+      </section>
+    );
+  }
 
   if (view === "closed" || view === "paused") {
     return (
