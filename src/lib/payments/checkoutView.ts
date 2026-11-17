@@ -464,17 +464,22 @@ export function couponFieldShown(item: Pick<PayableItem, "kind">, couponsReady: 
  * version of the terms the buyer was shown. Both the first checkout and the
  * near-expiry refresh send the same body, so a refresh never loses the
  * consent (the server refuses a founder order without it).
+ * S6b: the founder membership also sends this attempt's Cloudflare Turnstile
+ * token (`turnstileToken`) — a fresh one for every POST, the refresh
+ * included (a token is single-use; the server verifies it before the seat).
  */
 export function checkoutRequestBody(
   itemId: string,
   billing: Billing,
   couponCode: string | null,
   founderTermsVersion: string | null,
+  turnstileToken: string | null = null,
 ): Record<string, unknown> {
   return {
     itemId,
     billing,
     ...(couponCode ? { couponCode } : {}),
     ...(founderTermsVersion ? { acceptFounderTerms: true, founderTermsVersion } : {}),
+    ...(turnstileToken ? { turnstileToken } : {}),
   };
 }

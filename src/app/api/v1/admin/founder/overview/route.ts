@@ -17,6 +17,13 @@ import {
   type FounderSeatRow,
   type PersonRef,
 } from "@/lib/membership/founderAdmin";
+import {
+  founderSaleStats,
+  webhookProblems,
+  WEBHOOK_PROBLEM_FILTER,
+  type SaleOrderRow,
+  type WebhookEventRow,
+} from "@/lib/membership/founderSaleStats";
 
 /**
  * GET /api/v1/admin/founder/overview — «حملة المؤسس» (P3 Task 10). Any staff
@@ -32,6 +39,19 @@ import {
  * Self-hosted PostgREST caps a reply at 1000 rows and `.in()` breaks past
  * ~396 UUIDs, so counts use head counts, lists are read in pages and names
  * are looked up in chunks.
+ *
+ * F14 (owner package 17 Nov) adds:
+ *   - seatCounts: founder_seats released / revoked (head counts; the live
+ *     holds and the active seats are the summary's reserved / active);
+ *   - sale (staff with payments.read only — money and buyers' sources; null
+ *     and saleHidden: true for the other roles): founderSaleStats over every
+ *     membership order (live-only revenue with VAT apart, refunds / voids,
+ *     conversion by utm_source / utm_campaign from metadata.attribution —
+ *     only that key is selected, never the rest of metadata), and the latest
+ *     payment_webhook_events whose outcome is a problem (WEBHOOK_PROBLEM_FILTER;
+ *     platform-wide — deliveries refused before any write are not recorded).
+ *     A failed read here leaves the rest of the page working: sale is null
+ *     and saleError says why.
  */
 
 export const dynamic = "force-dynamic";
@@ -181,6 +201,55 @@ export async function GET() {
       FOUNDER_ORDER_STATUSES.map((s, i) => [s, statusCounts[i].count ?? 0]),
     );
 
+    // F14: released / revoked seats (head counts) — every staff role
+    const countSeats = (status: string) =>
+      service
+        .from("founder_seats")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", "founder-2026")
+        .eq("status", status);
+    const [released, revoked] = await Promise.all([countSeats("released"), countSeats("revoked")]);
+    const seatCounts =
+      released.error || revoked.error
+        ? null
+        : { released: released.count ?? 0, revoked: revoked.count ?? 0 };
+    if (!seatCounts) console.error("[admin/founder/overview] seat counts failed:", (released.error ?? revoked.error)?.code);
+
+    // F14: money, sources and webhook problems — payments.read only
+    const canSeeSales = staffMaySee(gate.role, "payments.read");
+    let sale: (ReturnType<typeof founderSaleStats> & { webhookProblems: ReturnType<typeof webhookProblems> }) | null = null;
+    let saleError: string | null = null;
+    if (canSeeSales) {
+      const [saleOrders, events] = await Promise.all([
+        allRows<SaleOrderRow>((from, to) =>
+          service
+            .from("payment_orders")
+            .select(
+              "id, user_id, status, live, net_halalas, vat_halalas, total_halalas, refunded_halalas, paid_at, attribution:metadata->attribution",
+            )
+            .eq("kind", "membership")
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+        service
+          .from("payment_webhook_events")
+          .select("event_id, type, payment_id, live, received_at, outcome")
+          .or(WEBHOOK_PROBLEM_FILTER)
+          .order("received_at", { ascending: false })
+          .limit(20),
+      ]);
+      if (saleOrders.error || events.error) {
+        console.error("[admin/founder/overview] sale figures failed:", (saleOrders.error ?? events.error)?.code);
+        saleError = "تعذّر تحميل أرقام المبيعات ومصادرها.";
+      } else {
+        sale = {
+          ...founderSaleStats(saleOrders.rows, saleOrders.rows.length >= MAX_ROWS),
+          webhookProblems: webhookProblems((events.data ?? []) as WebhookEventRow[]),
+        };
+      }
+    }
+
     return NextResponse.json(
       {
         migrationMissing: false,
@@ -192,6 +261,10 @@ export async function GET() {
         membersTruncated: seats.rows.length >= MAX_ROWS,
         refundOrders: founderRefundOrders(orders, people),
         canManage,
+        seatCounts,
+        sale,
+        saleHidden: !canSeeSales,
+        saleError,
       },
       { headers: { "Cache-Control": "private, no-store" } },
     );
