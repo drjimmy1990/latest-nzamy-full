@@ -158,13 +158,34 @@ export function resolveNavUserType(input: {
   sessionUserType: UserType;
   storedView: AdminView | null;
   isBusinessIntake?: boolean;
+  /** N01-29: the session has an ACTIVE firm membership (useUser().firmMembership). */
+  isFirmMember?: boolean;
 }): UserType {
-  const { pathname, sessionUserType, storedView, isBusinessIntake = false } = input;
+  const { pathname, sessionUserType, storedView, isBusinessIntake = false, isFirmMember = false } = input;
   if (isBusinessIntake) return "corporate";
   const pathType = inferUserTypeFromPath(pathname);
   if (pathType) return pathType;
   if (sessionUserType === "admin") return resolveAdminView(pathname, storedView);
+  if (isFirmMemberSession(sessionUserType, isFirmMember) && isFirmShellPath(pathname)) return "firm";
   return sessionUserType;
+}
+
+/**
+ * N01-29 (owner package 13 Nov): an ACTIVE firm member (a lawyer, or an
+ * individual on a firm's roster) lands on /dashboard/firm (firmLanding.ts), so
+ * the AI tools and the notifications he opens from there are drawn in the
+ * FIRM shell and menu, not his own type's. Only those two places: every other
+ * shared page keeps today's answer, and his own /dashboard/lawyer/* pages keep
+ * the lawyer menu (the path decides there). A menu only — every guard and the
+ * server keep reading the real role and the membership.
+ */
+export function isFirmMemberSession(sessionUserType: UserType, isFirmMember: boolean): boolean {
+  return isFirmMember && (sessionUserType === "lawyer" || sessionUserType === "individual");
+}
+
+/** /ai/* and /notifications — the shared pages a firm member gets the firm shell on (N01-29). */
+export function isFirmShellPath(pathname: string): boolean {
+  return isSharedToolPath(pathname) || pathname === "/notifications" || pathname.startsWith("/notifications/");
 }
 
 /**
@@ -242,8 +263,10 @@ export function resolveAiShell(input: {
   pathname: string;
   storedView: AdminView | null;
   lastDashboard: string | null;
+  /** N01-29: the session has an ACTIVE firm membership — see isFirmMemberSession. */
+  isFirmMember?: boolean;
 }): AiShell {
-  const { loading, isLoggedIn, userType, pathname, storedView, lastDashboard } = input;
+  const { loading, isLoggedIn, userType, pathname, storedView, lastDashboard, isFirmMember = false } = input;
 
   // 0. Session gate — never guess a sidebar before the session resolves.
   if (loading) return "loading";
@@ -257,6 +280,8 @@ export function resolveAiShell(input: {
     // already admits "admin" — no access change.
     return ADMIN_VIEW_SHELLS[resolveAdminView(pathname, storedView)];
   }
+  // N01-29: an active firm member works the tools in the firm workspace.
+  if (isFirmMemberSession(userType, isFirmMember)) return "firm";
   const sessionShell = userType ? SESSION_SHELLS[userType] : undefined;
   if (sessionShell) return sessionShell;
 
@@ -280,7 +305,7 @@ export function resolveAiShell(input: {
 
 // ─── /notifications shell ────────────────────────────────────────────────────
 
-export type NotificationsShell = "business" | "client" | "lawyer" | "admin";
+export type NotificationsShell = "business" | "client" | "lawyer" | "firm" | "admin";
 
 /**
  * The layout /notifications is wrapped in. Non-admin order unchanged. An
@@ -294,12 +319,17 @@ export function resolveNotificationsShell(input: {
   storedView: AdminView | null;
   lastDashboard: string | null;
   pathname?: string;
+  /** N01-29: the session has an ACTIVE firm membership — see isFirmMemberSession. */
+  isFirmMember?: boolean;
 }): NotificationsShell {
-  const { userType, storedView, lastDashboard, pathname = "/notifications" } = input;
+  const { userType, storedView, lastDashboard, pathname = "/notifications", isFirmMember = false } = input;
   if (userType === "admin") return resolveAdminView(pathname, storedView) === "lawyer" ? "lawyer" : "admin";
+  // N01-29: the firm account and an active firm member read their
+  // notifications in the firm shell (the firm account used to get the lawyer one).
+  if (userType === "firm" || isFirmMemberSession(userType, isFirmMember)) return "firm";
   if (userType === "corporate") return "business";
   if (userType === "individual") return "client";
-  if (userType === "lawyer" || userType === "firm" || userType === "provider") return "lawyer";
+  if (userType === "lawyer" || userType === "provider") return "lawyer";
   if (lastDashboard === "business") return "business";
   if (lastDashboard === "client") return "client";
   if (lastDashboard === "lawyer") return "lawyer";

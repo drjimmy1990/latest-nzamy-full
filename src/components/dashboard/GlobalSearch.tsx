@@ -97,7 +97,7 @@ function ContentTypeIcon({ type }: { type: PersonalContentKind }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function GlobalSearch() {
   const { isDark, lang } = useTheme();
-  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, affiliation, isDemoBypass, country, practiceKind, staffRole, loading: userLoading } = useUser();
+  const { userType: sessionUserType, subRole, active_roles, governmentRole, businessRole, businessMembership, firmMembership, affiliation, isDemoBypass, country, practiceKind, staffRole, loading: userLoading } = useUser();
   const pathname = usePathname() ?? "/";
   const isAr = lang === "ar";
   const router = useRouter();
@@ -123,7 +123,7 @@ export function GlobalSearch() {
   const isBusinessIntake =
     isSharedClientIntakePath(pathname) &&
     (sessionUserType === "corporate" || !!businessMembership);
-  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake });
+  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake, isFirmMember: !!firmMembership });
   const shortcutModifier = useSyncExternalStore(noSubscribe, clientModifier, serverModifier);
 
   // Gather all tools for this user — the same list as the sidebar, so a

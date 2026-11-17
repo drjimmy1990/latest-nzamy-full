@@ -115,7 +115,10 @@ function legacyAiShell(i: {
 function legacyNotificationsShell(userType: UserType, lastDashboard: string | null): string {
   if (userType === "corporate") return "business";
   if (userType === "individual") return "client";
-  if (userType === "lawyer" || userType === "firm" || userType === "provider") return "lawyer";
+  // N01-29 changed this row on purpose: the firm account reads its
+  // notifications in the firm shell (it was the lawyer one).
+  if (userType === "firm") return "firm";
+  if (userType === "lawyer" || userType === "provider") return "lawyer";
   if (lastDashboard === "business") return "business";
   if (lastDashboard === "client") return "client";
   if (lastDashboard === "lawyer") return "lawyer";
@@ -377,11 +380,11 @@ const read = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.u
 
 test("every shell goes through the one resolver", () => {
   const shared = read("components/dashboard/SharedSidebar.tsx");
-  assert.match(shared, /resolveNavUserType\(\{ pathname, sessionUserType, storedView, isBusinessIntake \}\)/);
+  assert.match(shared, /resolveNavUserType\(\{ pathname, sessionUserType, storedView, isBusinessIntake, isFirmMember: !!firmMembership \}\)/);
   assert.doesNotMatch(shared, /pathUserType \?\? sessionUserType/);
 
   const search = read("components/dashboard/GlobalSearch.tsx");
-  assert.match(search, /resolveNavUserType\(\{ pathname, sessionUserType, storedView, isBusinessIntake \}\)/);
+  assert.match(search, /resolveNavUserType\(\{ pathname, sessionUserType, storedView, isBusinessIntake, isFirmMember: !!firmMembership \}\)/);
   assert.doesNotMatch(search, /function inferUserTypeFromPath/, "the private copy is gone");
 
   const ai = read("app/ai/layout.tsx");
@@ -419,4 +422,38 @@ test("access is untouched: the guards and the proxy rule still read the real rol
     const src = read(rel);
     assert.doesNotMatch(src, /nzamy_admin_view_as|useAdminView|shellContext/, rel);
   }
+});
+
+// ─── N01-29: a firm member's /ai/* and /notifications are drawn in the firm shell ──
+
+test("N01-29: an active firm member (lawyer or individual) gets the firm shell and menu on /ai/* and /notifications", () => {
+  for (const sessionUserType of ["lawyer", "individual"] as const) {
+    for (const pathname of ["/ai/draft", "/ai", "/ai/brief-check", "/notifications"]) {
+      assert.equal(resolveNavUserType({ pathname, sessionUserType, storedView: null, isFirmMember: true }), "firm", `${sessionUserType} ${pathname}`);
+    }
+    assert.equal(
+      resolveAiShell({ loading: false, isLoggedIn: true, userType: sessionUserType, pathname: "/ai/draft", storedView: null, lastDashboard: null, isFirmMember: true }),
+      "firm",
+    );
+    assert.equal(resolveNotificationsShell({ userType: sessionUserType, storedView: null, lastDashboard: null, isFirmMember: true }), "firm");
+    // His own dashboard pages keep their menu; other shared pages keep today's answer.
+    assert.equal(resolveNavUserType({ pathname: "/dashboard/lawyer/cases", sessionUserType, storedView: null, isFirmMember: true }), "lawyer");
+    assert.equal(resolveNavUserType({ pathname: "/settings", sessionUserType, storedView: null, isFirmMember: true }), sessionUserType);
+  }
+  // No membership: unchanged.
+  assert.equal(resolveNavUserType({ pathname: "/ai/draft", sessionUserType: "lawyer", storedView: null }), "lawyer");
+  assert.equal(resolveAiShell({ loading: false, isLoggedIn: true, userType: "lawyer", pathname: "/ai/draft", storedView: null, lastDashboard: "firm" }), "lawyer");
+  // The flag never widens another type (a firm owner, a corporate member) or the admin's view.
+  assert.equal(resolveNavUserType({ pathname: "/ai/draft", sessionUserType: "corporate", storedView: null, isFirmMember: true }), "corporate");
+  assert.equal(resolveNavUserType({ pathname: "/ai/draft", sessionUserType: "admin", storedView: "lawyer", isFirmMember: true }), "lawyer");
+  // The firm account itself: firm shell on /notifications too.
+  assert.equal(resolveNotificationsShell({ userType: "firm", storedView: null, lastDashboard: null }), "firm");
+});
+
+test("N01-29: the layouts pass the membership and the firm header names the firm", () => {
+  assert.match(read("app/ai/layout.tsx"), /isFirmMember: !!user\.firmMembership/);
+  const notifications = read("app/notifications/layout.tsx");
+  assert.match(notifications, /isFirmMember: !!user\.firmMembership/);
+  assert.match(notifications, /shell === "firm"\)\s+return <FirmDashboardLayout>/);
+  assert.match(read("components/dashboard/SharedSidebar.tsx"), /const headerLabel = firmName \? `\$\{roleLabel\} · \$\{firmName\}` : roleLabel;/);
 });

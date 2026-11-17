@@ -44,7 +44,7 @@ export default function SharedSidebar() {
   const {
     userType: sessionUserType, subRole, name, credits, creditsMax,
     active_roles, governmentRole, businessRole,
-    affiliation, businessMembership, isDemoBypass, country, loading, isLoggedIn,
+    affiliation, businessMembership, firmMembership, isDemoBypass, country, loading, isLoggedIn,
     practiceKind, staffRole,
   } = useUser();
 
@@ -87,14 +87,19 @@ export default function SharedSidebar() {
   const isBusinessIntake =
     isSharedClientIntakePath(pathname) &&
     (sessionUserType === "corporate" || !!businessMembership);
-  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake });
+  // N01-29: an active firm member gets the firm menu on /ai/* and /notifications.
+  const userType = resolveNavUserType({ pathname, sessionUserType, storedView, isBusinessIntake, isFirmMember: !!firmMembership });
   // S6-T14: an admin can be drawn any dashboard now; the header still names
   // a view, never a bare role («مدير النظام · شركة», not «شركة»).
   const viewSuffix = adminViewSuffix(sessionUserType, userType, isAr)
     ?? (sessionUserType === "admin" && userType && userType !== "admin" ? getRoleLabel(userType, isAr) : null);
+  // N01-29: in the firm menu the header names the firm the session belongs to
+  // (the membership read; absent for an admin's view or a firm with no row).
+  const firmName = userType === "firm" && affiliation?.entityType === "firm" ? affiliation.entityName?.trim() || null : null;
   const roleLabel = viewSuffix
     ? `${getRoleLabel("admin", isAr)} · ${viewSuffix}`
     : userType ? getRoleLabel(userType, isAr) : "";
+  const headerLabel = firmName ? `${roleLabel} · ${firmName}` : roleLabel;
 
   // S6-T17: an admin's «عرض كـ» sub-role (a judge, a consultant, a firm
   // member) picks the MENU's sub-role values — null unless the real role is
@@ -155,9 +160,9 @@ export default function SharedSidebar() {
                         r === "arbitrator" ? "محكّم" : r
                       ).join(" + ")}
                       {" • "}
-                      {roleLabel}
+                      {headerLabel}
                     </span>)
-                  : roleLabel
+                  : headerLabel
                 }
               </p>
             </div>
