@@ -67,6 +67,7 @@ import {
 } from "@/lib/services/firmMembersService";
 import { type ListRead, listViewState, itemsOf } from "@/lib/services/listRead";
 import { toArabicDigits, countPhraseAr } from "@/lib/services/arabicCount";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 
 // ─── Role & status presentation ────────────────────────────────────────────
 
@@ -228,8 +229,8 @@ function AddMemberModal({ isDark, onClose, onAdd }: AddMemberModalProps) {
             </div>
 
             {error && (
-              <p className="text-[12px] text-red-400 flex items-center gap-1">
-                <Warning size={12} /> {error}
+              <p className="text-[12px] text-red-400 flex items-center gap-1 flex-wrap">
+                <Warning size={12} /> {error} <LimitRefusalLink message={error} />
               </p>
             )}
 

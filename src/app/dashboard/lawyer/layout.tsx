@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import SharedSidebar from "@/components/dashboard/SharedSidebar";
 import { UserTypeGuard } from "@/components/dashboard/UserTypeGuard";
 import { QuickAddProvider } from "@/components/dashboard/quickAdd/QuickAdd";
+import PracticeKindGate from "@/components/dashboard/PracticeKindGate";
 
 /**
  * Lawyer Dashboard Layout
@@ -30,6 +31,8 @@ export default function LawyerDashboardLayout({
 
   return (
     <UserTypeGuard allowedTypes={["lawyer", "firm", "provider", "admin"]}>
+      {/* R9: a lawyer never asked advocate / consultant answers first. */}
+      <PracticeKindGate />
       {/* «+ إضافة سريعة» (N3.3): the floating button, the sidebar item and
           Alt+N. Signed-in lawyer and firm sessions only — the provider's
           /notifications reuse of this layout gets none of it. */}

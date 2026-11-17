@@ -6,6 +6,7 @@ import { escapeLikePattern } from "@/lib/services/likePattern";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { recordNotification } from "@/lib/notify";
+import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 import { firmInviteErrorResponse, firmInvitePath, isFirmInviteRole, normaliseInviteEmail } from "./_invitations";
 
 /**
@@ -100,6 +101,9 @@ export async function POST(request: NextRequest) {
       p_role: role,
     });
     if (error) {
+      // Seat cap (20261126_50): no new link while every seat is taken.
+      const full = limitRefusal(error);
+      if (full) return NextResponse.json(limitRefusalBody(full), { status: full.status });
       const mapped = firmInviteErrorResponse(error.code);
       if (mapped.status === 500) console.error("[firm/invitations POST] rpc failed:", error.message, error.code);
       return NextResponse.json({ error: mapped.message }, { status: mapped.status });

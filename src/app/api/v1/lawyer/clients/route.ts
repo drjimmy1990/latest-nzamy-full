@@ -12,6 +12,7 @@ import { checkContactPair } from "@/lib/services/contactFieldRules";
 import { assertLinkableAccount, propagateLink } from "./_link";
 import { canSeeClientFees, withFeesVisibleTo } from "@/lib/services/clientFeeVisibility";
 import { readCallerFirmRoles } from "./_feeVisibility";
+import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 
 /**
  * /api/v1/lawyer/clients — Phase 2 (خطة_البناء_الكاملة_٢٠٢٦-٠٩-٠٢.md §6).
@@ -343,6 +344,9 @@ function validateIdentityFields(input: {
  */
 function dbErrorResponse(error: { code?: string; message?: string } | null | undefined) {
   const code = error?.code;
+  // S9 (20261126_50): the free solo lawyer's 11th client (insert or un-archive).
+  const limit = limitRefusal(error);
+  if (limit) return { status: limit.status, message: limit.message };
   if (code === "23505") {
     return { status: 409, message: "هذا الموكّل مسجَّل مسبقاً بنفس رقم الهوية أو السجل التجاري." };
   }
@@ -449,8 +453,10 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error || !data) {
-      const { status, message } = dbErrorResponse(error);
       console.error("[lawyer/clients POST] insert error:", error?.message, error?.details, error?.code);
+      const limit = limitRefusal(error);
+      if (limit) return NextResponse.json(limitRefusalBody(limit), { status: limit.status });
+      const { status, message } = dbErrorResponse(error);
       return NextResponse.json({ error: message }, { status });
     }
 

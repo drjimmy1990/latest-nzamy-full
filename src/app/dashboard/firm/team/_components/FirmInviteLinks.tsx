@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Copy, CheckCircle, LinkSimple, Spinner, Trash } from "@phosphor-icons/react";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 
 interface Pending { id: string; email: string; role: string; path: string; expiresAt: string }
 
@@ -135,7 +136,7 @@ export default function FirmInviteLinks({ isDark, card }: { isDark: boolean; car
           </div>
         </div>
       )}
-      {error && <p role="alert" className="text-xs font-semibold text-red-500">{error}</p>}
+      {error && <p role="alert" className="text-xs font-semibold text-red-500">{error} <LimitRefusalLink message={error} /></p>}
 
       {list.kind === "loading" ? (
         <p className={`flex items-center gap-2 text-xs ${muted}`}><Spinner size={13} className="animate-spin" /> جارٍ تحميل الدعوات…</p>

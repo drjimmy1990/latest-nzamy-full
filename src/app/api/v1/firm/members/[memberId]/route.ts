@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { FirmRole } from "@/types/firmBackendReady";
+import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 
 /**
  * /api/v1/firm/members/[memberId] — Phase 2, sibling of `../route.ts`. See
@@ -138,6 +139,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
       .single();
 
     if (error || !data) {
+      // Seat cap (20261126_50): re-activating a removed member into a full firm.
+      const full = limitRefusal(error);
+      if (full) return NextResponse.json(limitRefusalBody(full), { status: full.status });
       if (error?.code === "23514") {
         return NextResponse.json(
           { error: `الدور يجب أن يكون واحدًا من: ${FIRM_ROLE_VALUES.join(", ")}` },

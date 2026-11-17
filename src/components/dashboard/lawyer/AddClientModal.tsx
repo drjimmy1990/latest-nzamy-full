@@ -11,6 +11,7 @@ import {
 } from "@/lib/services/clientIdentityRules";
 import { checkSaudiPhone, checkOptionalEmail, FORMAT_ONLY_NOTE } from "@/lib/services/contactFieldRules";
 import { FLAG_CONFIG } from "@/constants/lawyerClientsData";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
   type LawyerClient, type CreateLawyerClientInput,
@@ -528,7 +529,7 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
               aria-live="assertive"
               className={`mx-5 mb-3 p-3 rounded-xl flex items-center gap-2 text-[11px] font-semibold ${isDark ? "bg-red-500/10 border border-red-500/20 text-red-400" : "bg-red-50 border border-red-200 text-red-700"}`}>
               <Warning size={14} weight="fill" className="flex-shrink-0" />
-              <span>{error}</span>
+              <span>{error} <LimitRefusalLink message={error} /></span>
             </div>
           )}
 

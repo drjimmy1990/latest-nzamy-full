@@ -1,5 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
+import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus } from "@/lib/access-control";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
@@ -654,6 +655,10 @@ export async function POST(request: NextRequest) {
 
     if (reqError) {
       console.error("[service-requests POST] Supabase error:", reqError.message, reqError.details, reqError.hint, reqError.code);
+      // S9 (20261126_50): a free solo lawyer's 6th active case — its own
+      // sentence, a 403 and the upgrade link.
+      const limit = limitRefusal(reqError);
+      if (limit) return NextResponse.json(limitRefusalBody(limit), { status: limit.status });
       return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
 

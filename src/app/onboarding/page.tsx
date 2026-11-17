@@ -54,6 +54,13 @@ import {
   type DbUserType,
 } from "@/lib/auth/userTypes";
 import PlanRequestCard from "@/components/pricing/PlanRequestCard";
+import {
+  FIRM_KIND_OPTIONS_AR,
+  PRACTICE_KIND_OPTIONS_AR,
+  PRACTICE_KIND_QUESTION_AR,
+  type FirmKind,
+  type PracticeKind,
+} from "@/lib/auth/claimKinds";
 import { getPlanList } from "@/constants/pricingData";
 import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
 import {
@@ -299,11 +306,21 @@ function S1({
   isAr,
   selected,
   onSelect,
+  practiceKind,
+  onPracticeKind,
+  firmKind,
+  onFirmKind,
 }: {
   isAr: boolean;
   /** The selected PICKER id (`company`, not `corporate`), or null. */
   selected: string | null;
   onSelect: (pickerId: string) => void;
+  /** R9: the lawyer's answer to «محامٍ مترافع أم مستشار قانوني؟», or null. */
+  practiceKind: PracticeKind | null;
+  onPracticeKind: (k: PracticeKind) => void;
+  /** R9: the firm's entity type, or null. */
+  firmKind: FirmKind | null;
+  onFirmKind: (k: FirmKind) => void;
 }) {
   const opts = isAr ? userTypeOptions.ar : userTypeOptions.en;
   return (
@@ -346,6 +363,34 @@ function S1({
           );
         })}
       </div>
+      {/* R9 (owner TODO 17 Nov 2026): a lawyer says advocate or consultant
+          (Art. 18) and a firm says law firm or licensed consulting office —
+          the same choice the e-mail form's cards make. Required: the claim
+          route refuses a lawyer or a firm without it (claimKinds.ts). */}
+      {selected === "lawyer" && (
+        <KindChoice
+          title={isAr ? PRACTICE_KIND_QUESTION_AR : "Advocate or legal consultant?"}
+          options={(["advocate", "consultant"] as const).map((id) => ({
+            id,
+            label: isAr ? PRACTICE_KIND_OPTIONS_AR[id].label : id === "advocate" ? "Advocate (pleads in court)" : "Legal consultant",
+            desc: isAr ? PRACTICE_KIND_OPTIONS_AR[id].desc : id === "advocate" ? "Licensed to plead before the courts" : "Consultations, contracts and studies — no pleading (Art. 18)",
+          }))}
+          value={practiceKind}
+          onChange={onPracticeKind}
+        />
+      )}
+      {selected === "firm" && (
+        <KindChoice
+          title={isAr ? "نوع المنشأة" : "Entity type"}
+          options={(["law_firm", "consulting_office"] as const).map((id) => ({
+            id,
+            label: isAr ? FIRM_KIND_OPTIONS_AR[id].label : id === "law_firm" ? "Law firm / office" : "Licensed consulting office (Art. 18)",
+            desc: isAr ? FIRM_KIND_OPTIONS_AR[id].desc : id === "law_firm" ? "A law office or firm" : "Consultations and contracts — no pleading (Art. 18)",
+          }))}
+          value={firmKind}
+          onChange={onFirmKind}
+        />
+      )}
       {/* True as written: the account type is claimed once, and only an admin
           can change it afterwards (the database refuses a self-change —
           trg_lock_user_type). No promise is made about self-service. */}
@@ -381,6 +426,47 @@ function S1({
           : "If you choose “Notary”, “Gov. Agent” or “Arbitrator”, your specialty is recorded with your account, and your professional file does not appear in search results until the platform administrators review it."}
       </p>
     </motion.div>
+  );
+}
+
+/** R9: a two-option question under the picker (lawyer kind / firm kind). */
+function KindChoice<K extends string>({
+  title,
+  options,
+  value,
+  onChange,
+}: {
+  title: string;
+  options: Array<{ id: K; label: string; desc: string }>;
+  value: K | null;
+  onChange: (k: K) => void;
+}) {
+  return (
+    <div className="mt-5 rounded-2xl border border-gold/20 bg-gold/5 p-4 dark:border-gold/15 dark:bg-gold/5" role="radiogroup" aria-label={title}>
+      <div className="mb-3 text-sm font-semibold text-ink">{title}</div>
+      <div className="grid grid-cols-2 gap-3">
+        {options.map((o) => {
+          const active = value === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(o.id)}
+              className={`rounded-xl border p-3 text-start transition-all ${
+                active
+                  ? "border-royal/30 bg-royal/5 dark:border-gold/30 dark:bg-royal/15"
+                  : "border-slate-200 bg-white dark:border-white/10 dark:bg-dark-card"
+              }`}
+            >
+              <div className={`text-sm font-semibold ${active ? "text-royal dark:text-gold" : "text-ink"}`}>{o.label}</div>
+              <div className="mt-0.5 text-xs text-ink-muted dark:text-gray-400">{o.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -739,6 +825,17 @@ function S5({
             : "Your account type was not changed — it is set once. Changing it requires the platform administrators."}
         </p>
       )}
+      {/* R9 / batch 3: a Google lawyer's licence is verified like an e-mail
+          signup's — the photo and the registry check on /register/provider/verify.
+          Until then the account stays under review (verification_status pending). */}
+      {userType === "lawyer" && !typeWasNotChanged && (
+        <a
+          href="/register/provider/verify"
+          className="mx-auto mb-6 block max-w-[320px] rounded-xl border border-royal/20 bg-royal/5 px-4 py-3 text-xs font-semibold text-royal dark:border-gold/25 dark:bg-gold/10 dark:text-gold"
+        >
+          {isAr ? "وثّق ترخيصك الآن: صورة الترخيص والتحقق من السجل ←" : "Verify your licence now: licence photo and registry check →"}
+        </a>
+      )}
       {/* Signed in through OAuth, so the request can be sent right away. */}
       {requestedPlan && (
         <div className="mb-3 text-start">
@@ -818,6 +915,9 @@ export default function OnboardingPage() {
   /** عروض وخصومات — `user_settings.marketing_emails`, off by default. */
   const [marketing, setMarketing] = useState(false);
   const [hasLawyer, setHasLawyer] = useState<boolean | null>(null);
+  /** R9: asked under the picker for `lawyer` / `firm`; sent with the claim. */
+  const [practiceKind, setPracticeKind] = useState<PracticeKind | null>(null);
+  const [firmKind, setFirmKind] = useState<FirmKind | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   /**
@@ -914,7 +1014,13 @@ export default function OnboardingPage() {
 
   const canNext = () => {
     if (saving) return false;
-    if (step === 1) return userType !== null;
+    if (step === 1) {
+      if (userType === null) return false;
+      // R9: a lawyer or a firm answers its kind before going on.
+      if (pickerId === "lawyer" && practiceKind === null) return false;
+      if (pickerId === "firm" && firmKind === null) return false;
+      return true;
+    }
     if (step === 2) return services.length > 0;
     // The phone is required, and required means the step does not advance
     // without it: profiles.phone is the only number the outbound notification
@@ -1005,7 +1111,13 @@ export default function OnboardingPage() {
         const claim = await apiMutate<AccountTypeClaimResult>(
           "/api/v1/onboarding/account-type",
           "POST",
-          subRole === null ? { pickerId } : { pickerId, subRole },
+          {
+            pickerId,
+            ...(subRole === null ? {} : { subRole }),
+            // R9: required by the route for these two, refused for the others.
+            ...(pickerId === "lawyer" && practiceKind ? { practiceKind } : {}),
+            ...(pickerId === "firm" && firmKind ? { firmKind } : {}),
+          },
         );
         // Trust the server's answer over the local pick; fall back to the pick
         // only if the response does not name a type this app knows.
@@ -1211,7 +1323,7 @@ export default function OnboardingPage() {
               )}
 
               <AnimatePresence mode="wait">
-                {step === 1 && <S1 key="1" isAr={isAr} selected={pickerId} onSelect={(id) => { setPickerId(id); }} />}
+                {step === 1 && <S1 key="1" isAr={isAr} selected={pickerId} onSelect={(id) => { setPickerId(id); }} practiceKind={practiceKind} onPracticeKind={setPracticeKind} firmKind={firmKind} onFirmKind={setFirmKind} />}
                 {step === 2 && <S2 key="2" isAr={isAr} selected={services} onToggle={toggleService} userType={userType} hasLawyer={hasLawyer} onSetHasLawyer={setHasLawyer} />}
                 {step === 3 && <S3 key="3" isAr={isAr} userType={userType} phone={phone} setPhone={setPhone} city={city} setCity={setCity} specialties={specialties} onToggleSpec={toggleSpec} />}
                 {step === 4 && <S4 key="4" isAr={isAr} userType={userType} states={notifs} onToggle={toggleNotif} marketing={marketing} onToggleMarketing={() => setMarketing((m) => !m)} />}

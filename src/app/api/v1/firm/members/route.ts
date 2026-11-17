@@ -7,6 +7,7 @@ import { FIRM_TEAM_VIEW_ROLES, resolveCallerFirm } from "@/lib/auth/firmMembersh
 import { escapeLikePattern } from "@/lib/services/likePattern";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
 import { recordNotification } from "@/lib/notify";
+import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 
 /**
  * /api/v1/firm/members — Phase 2 (خطة_البناء_الكاملة §6, migration
@@ -284,6 +285,9 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       if (reinvite.error) {
         console.error("[firm/members POST] re-invite failed:", reinvite.error.message, reinvite.error.code);
+        // Seat cap (20261126_50): bringing a removed member back into a full firm.
+        const full = limitRefusal(reinvite.error);
+        if (full) return NextResponse.json(limitRefusalBody(full), { status: full.status });
         return reinvite.error.code === "42501"
           ? NextResponse.json({ error: "غير مصرح — صلاحيات غير كافية" }, { status: 403 })
           : NextResponse.json({ error: "تعذّر إضافة العضو." }, { status: 500 });
@@ -300,6 +304,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (error || !data) {
+      // Seat cap (20261126_50): «اكتملت مقاعد المكتب» + «لزيادة المقاعد تواصل معنا».
+      const full = limitRefusal(error);
+      if (full) return NextResponse.json(limitRefusalBody(full), { status: full.status });
       if (error?.code === "23514") {
         return NextResponse.json(
           { error: `الدور يجب أن يكون واحدًا من: ${FIRM_ROLE_VALUES.join(", ")}` },
