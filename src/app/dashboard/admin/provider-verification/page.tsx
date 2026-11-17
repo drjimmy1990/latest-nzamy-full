@@ -61,8 +61,8 @@ function RegistryLine({ match, isDark }: { match: RegistryMatch; isDark: boolean
  */
 const SIGNUP_LINK_FRESH_MS = 4 * 60 * 1000;
 
-function SignupLine({ view, isDark, readAt, onStale }: { view: SignupVerificationView; isDark: boolean; readAt: { current: number }; onStale: () => void }) {
-  const { headline, tone, lines } = describeSignupView(view);
+function SignupLine({ view, accountStatus, isDark, readAt, onStale }: { view: SignupVerificationView; accountStatus: string; isDark: boolean; readAt: { current: number }; onStale: () => void }) {
+  const { headline, tone, lines } = describeSignupView(view, accountStatus);
   const cls = isDark ? REGISTRY_TONE[tone].dark : REGISTRY_TONE[tone].light;
   return (
     <div className="mt-2 text-[11px] leading-relaxed">
@@ -524,6 +524,7 @@ export default function ProviderVerificationPage() {
                   {r.type === "lawyer" && r.signupVerification && (
                     <SignupLine
                       view={r.signupVerification}
+                      accountStatus={r.status}
                       isDark={isDark}
                       readAt={readAt}
                       onStale={() => {

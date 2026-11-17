@@ -314,3 +314,41 @@ test("compareExtracted: doubt when something is unread or only differs", () => {
   assert.equal(compareExtracted({ ...READ, name: "اسم آخر تماماً مختلف" }, REF).verdict, "doubt");
   assert.equal(compareExtracted({ ...READ, expiry: "2098-01-01" }, REF).verdict, "doubt");
 });
+
+// ── admin queue line ──────────────────────────────────────────────────────────
+import { describeSignupView, shapeSignupView } from "./adminView.ts";
+
+test("shapeSignupView keeps the known fields; describeSignupView never shows a full registry mobile", () => {
+  const v = shapeSignupView(
+    {
+      decision: "review",
+      decision_reasons: ["otp_unavailable", 7],
+      registry_status: "valid",
+      name_match: "exact",
+      full_name_input: "سالم أحمد إبراهيم الاختباري",
+      mobile_hint: "11",
+      email_throwaway: false,
+      mobile_change_new_mobile: "+966500000099",
+      mobile_change_requested_at: "2026-11-17T10:00:00Z",
+    },
+    { purpose: "signup", ai_status: "skipped", ai_result: { skipped: true }, created_at: "2026-11-17T09:00:00Z" },
+    "https://storage.invalid/signed",
+    { created_at: "2026-11-17T09:30:00Z", delivery: "failed" },
+  );
+  assert.deepEqual(v.reasons, ["otp_unavailable"]);
+  assert.equal(v.image?.url, "https://storage.invalid/signed");
+  const d = describeSignupView(v);
+  assert.equal(d.headline, "محجوز للمراجعة البشرية");
+  assert.ok(d.lines.some((l) => l.includes("لا توجد قناة إرسال")));
+  assert.ok(d.lines.some((l) => l.includes("تعذّر التسليم")));
+  assert.ok(d.lines.some((l) => l.includes("+966500000099")), "the admin sees the new mobile of «رقمي تغيّر»");
+  assert.ok(d.lines.some((l) => l.includes("ينتهي بـ 11")));
+});
+
+test("an admin decision on the account wins over a stale signup headline", () => {
+  const v = shapeSignupView({ decision: "review" }, null, null, null);
+  assert.equal(describeSignupView(v, "verified").headline, "اعتمدته الإدارة");
+  assert.equal(describeSignupView(v, "verified").tone, "good");
+  assert.equal(describeSignupView(v, "rejected").tone, "bad");
+  assert.equal(describeSignupView(shapeSignupView({ decision: "approved", decided_by: "system" }, null, null, null), "verified").headline, "اعتُمد فورياً بعد التحقق");
+});

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { evaluate, storeLicenceImage } from "@/lib/lawyerSignup/service";
 import { MULTIPART_ALLOWANCE, NO_STORE, signupFailure, signupGate } from "@/lib/lawyerSignup/routeGate";
 import { LICENCE_ERRORS, LICENCE_MAX_BYTES } from "@/lib/services/licenceUpload";
-import { isFourPartName } from "@/lib/lawyerSignup/nameLicence";
 
 /**
  * POST /api/v1/lawyer/signup-verification/licence — the licence photo
@@ -40,9 +39,9 @@ export async function POST(request: NextRequest) {
     }
     const rawName = form.get("fullName");
     const fullName = typeof rawName === "string" && rawName.trim() !== "" ? rawName.trim().slice(0, 160) : null;
-    if (fullName !== null && !isFourPartName(fullName)) {
-      return NextResponse.json({ error: "اكتب اسمك الرباعي كما في الترخيص." }, { status: 400, headers: NO_STORE });
-    }
+    // No shape check here: the form asks for four Arabic words (or the
+    // registry's own spelling), and the database compares the name with the
+    // registry — a name that does not match only holds the account.
     const stored = await storeLicenceImage(gate.svc, gate.user, file, "signup", fullName);
     if (!stored.ok) return NextResponse.json({ error: stored.error }, { status: stored.status, headers: NO_STORE });
     return NextResponse.json(await evaluate(gate.svc, gate.user, { fullName }), { headers: NO_STORE });

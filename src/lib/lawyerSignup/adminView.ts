@@ -87,12 +87,27 @@ const CHANNEL_AR: Record<string, string> = { whatsapp: "واتساب", sms: "ر�
 
 export type Tone = "good" | "warn" | "bad";
 
-export function describeSignupView(v: SignupVerificationView): { headline: string; tone: Tone; lines: string[] } {
-  const headline =
+/**
+ * `accountStatus` is lawyer_profiles.verification_status as the queue read it:
+ * an admin's decision (PATCH /api/v1/admin/verifications/[id]) does not touch
+ * the signup row, so it wins over a stale «محجوز للمراجعة».
+ */
+export function describeSignupView(
+  v: SignupVerificationView,
+  accountStatus?: string | null,
+): { headline: string; tone: Tone; lines: string[] } {
+  let headline =
     v.decision === "approved"
       ? v.decidedBy === "system" ? "اعتُمد فورياً بعد التحقق" : "معتمد"
       : v.decision === "review" ? "محجوز للمراجعة البشرية" : "التوثيق لم يكتمل بعد";
-  const tone: Tone = v.decision === "approved" ? "good" : v.decision === "review" ? "warn" : "warn";
+  let tone: Tone = v.decision === "approved" ? "good" : "warn";
+  if (accountStatus === "verified" && v.decision !== "approved") {
+    headline = "اعتمدته الإدارة";
+    tone = "good";
+  } else if (accountStatus === "rejected" || accountStatus === "suspended") {
+    headline = accountStatus === "rejected" ? "رفضته الإدارة" : "موقوف من الإدارة";
+    tone = "bad";
+  }
   const lines: string[] = [];
   for (const r of v.reasons) lines.push(REASON_AR[r as ReasonCode] ?? r);
   if (v.fullNameInput) lines.push(`الاسم المُدخل: ${v.fullNameInput}`);

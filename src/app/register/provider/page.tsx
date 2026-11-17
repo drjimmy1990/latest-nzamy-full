@@ -28,9 +28,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 
 import { ProviderType, Step } from "./types";
-import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor } from "./components/Steps";
+import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor, signupNameOk } from "./components/Steps";
 import { LawyerVerificationPanel } from "@/components/lawyerSignup/LawyerVerificationPanel";
-import { isFourPartName } from "@/lib/lawyerSignup/nameLicence";
 import { isThrowawayEmail } from "@/lib/lawyerSignup/throwawayEmail";
 import {
   CONSULTANT_COUNTRY,
@@ -284,7 +283,7 @@ export default function RegisterProviderPage() {
     // A licence of spaces only is not a licence (BUG-09). Its format waits on
     // the owner (what a valid licence number looks like).
     if (step === 2) {
-      const proofOk = !needsLicenceProofFor(providerType) || (isFourPartName(formData.registryFullName) && licenceFile !== null);
+      const proofOk = !needsLicenceProofFor(providerType) || (signupNameOk(formData) && licenceFile !== null);
       return !!(formData.licenseNumber?.trim() && formData.experience && formData.city) && proofOk;
     }
     if (step === 3) {
@@ -426,7 +425,7 @@ export default function RegisterProviderPage() {
                 {step === 2 && <Step2 key="s2" isAr={isAr} providerType={providerType} data={formData} onChange={handleChange} selectedSpecs={selectedSpecs} setSelectedSpecs={setSelectedSpecs} licenceFile={licenceFile} onLicenceFile={setLicenceFile} />}
                 {step === 3 && <Step3 key="s3" isAr={isAr} data={formData} onChange={handleChange} providerType={providerType} />}
                 {step === 4 && <Step4 key="s4" isAr={isAr} selectedPlan={selectedPlan} onSelect={setSelectedPlan} />}
-                {step === 5 && <Step5 key="s5" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} />}
+                {step === 5 && <Step5 key="s5" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} verificationOwnsStatus={needsLicenceProofFor(providerType) && signupHasSession} />}
               </AnimatePresence>
 
               {/* Owner decisions ٢٠–٢١: licence photo + the code to the

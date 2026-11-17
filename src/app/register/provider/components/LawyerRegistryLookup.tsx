@@ -91,6 +91,9 @@ export function LawyerRegistryLookup({
         const { firstName, lastName } = splitRegistryName(body.name);
         onChange("licenseNumber", body.licence);
         onChange("registryFullName", body.name);
+        // The registry's own spelling is accepted as the name even when it
+        // is not four Arabic words (2 of 28,467 rows on 17 Nov).
+        onChange("registryNameFromLookup", body.name);
         if (firstName) onChange("firstName", firstName);
         if (lastName) onChange("lastName", lastName);
         setCheckedLicence(body.licence);

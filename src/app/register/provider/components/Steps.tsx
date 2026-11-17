@@ -107,6 +107,12 @@ export function needsLicenceProofFor(providerType: ProviderType): boolean {
   return BACKEND_MODE === "supabase" && (providerType === "lawyer" || providerType === "consultant");
 }
 
+/** Four Arabic words, or exactly the name the registry lookup filled in. */
+export function signupNameOk(data: Record<string, string>): boolean {
+  const n = (data.registryFullName ?? "").trim();
+  return isFourPartName(n) || (n !== "" && n === (data.registryNameFromLookup ?? "").trim());
+}
+
 export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSelectedSpecs, licenceFile = null, onLicenceFile }: { isAr: boolean; providerType: ProviderType; data: Record<string, string>; onChange: (k: string, v: string) => void; selectedSpecs: string[]; setSelectedSpecs: React.Dispatch<React.SetStateAction<string[]>>; licenceFile?: File | null; onLicenceFile?: (f: File | null) => void }) {
   const isFirm = providerType === "firm";
   // A consultant registers in Saudi Arabia only (owner answer ٢١٩): the
@@ -139,7 +145,7 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
   const activeSpecs = providerType === "notary" ? notarySpecs : providerType === "tracker" ? trackerSpecs : providerType === "arbitrator" ? arbitratorSpecs : specs;
   const needsLicenceProof = needsLicenceProofFor(providerType);
   const nameTouched = Boolean(data.registryFullName);
-  const nameOk = isFourPartName(data.registryFullName);
+  const nameOk = signupNameOk(data);
   const [fileError, setFileError] = useState<string | null>(null);
 
   return (
@@ -535,7 +541,7 @@ export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selecte
 }
 
 // ─── Step 5: Success ──────────────────────────────────────────────────────────
-export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; providerType: ProviderType; selectedPlan: string }) {
+export function Step5({ isAr, providerType, selectedPlan, verificationOwnsStatus = false }: { isAr: boolean; providerType: ProviderType; selectedPlan: string; verificationOwnsStatus?: boolean }) {
   const typeLabel = {
     lawyer: isAr ? "محامي" : "Lawyer",
     firm: isAr ? "شركة محاماة" : "Law Firm",
@@ -576,15 +582,23 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
       </motion.div>
 
       <h2 className="font-brand text-2xl font-bold text-ink">
-        {isAr ? "طلبك قيد المراجعة!" : "Your Application Is Under Review!"}
+        {verificationOwnsStatus
+          ? (isAr ? "تم إنشاء حسابك" : "Your account is created")
+          : (isAr ? "طلبك قيد المراجعة!" : "Your Application Is Under Review!")}
       </h2>
       <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">
-        {isAr
-          ? `تم استلام طلبك كـ${typeLabel} بباقة ${planLabel}. سيتم مراجعة وثائقك خلال ٢٤ ساعة وإشعارك على بريدك.`
-          : `Your application as ${typeLabel} with the ${planLabel} plan has been received. Your documents will be reviewed within 24 hours.`}
+        {verificationOwnsStatus
+          ? (isAr
+              ? `سجّلنا حسابك كـ${typeLabel} بباقة ${planLabel}. أكمل توثيق ترخيصك أدناه.`
+              : `Your ${typeLabel} account with the ${planLabel} plan is created. Finish verifying your licence below.`)
+          : (isAr
+              ? `تم استلام طلبك كـ${typeLabel} بباقة ${planLabel}. سيتم مراجعة وثائقك خلال ٢٤ ساعة وإشعارك على بريدك.`
+              : `Your application as ${typeLabel} with the ${planLabel} plan has been received. Your documents will be reviewed within 24 hours.`)}
       </p>
 
-      {/* Review steps */}
+      {/* Review steps — the verification panel below owns the status for a
+          lawyer with a session (owner ٢٠–٢١), so they are not shown then. */}
+      {!verificationOwnsStatus && (
       <div className="my-8 space-y-3 text-start">
         {[
           { icon: IdentificationCard, labelAr: "مراجعة الوثائق — ٢٤ ساعة", labelEn: "Document review — 24 hours", done: false },
@@ -606,6 +620,7 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
           );
         })}
       </div>
+      )}
 
       <motion.a href={href} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}
