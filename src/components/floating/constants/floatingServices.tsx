@@ -356,7 +356,6 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
 
   if (role === "compliance_manager") {
     return addSupport([
-      { key: "firm-compliance-conflict", icon: <ShieldCheck {...iconProps} />, label: "تعارض المصالح", sub: "Conflict • KYC • قيود", href: "/dashboard/firm/compliance/conflict" },
       { key: "firm-compliance-walls", icon: <Vault {...iconProps} />, label: "الجدران الصينية", sub: "فصل الملفات الحساسة", href: "/dashboard/firm/compliance/walls" },
       { key: "firm-compliance-governance", icon: <Gavel {...iconProps} />, label: "الحوكمة", sub: "سياسات ومصفوفة صلاحيات", href: "/dashboard/firm/governance" },
       { key: "firm-compliance-monitor", icon: <Warning {...iconProps} />, label: "راصد التشريعات", sub: "قيد النفاذ وأحدث الإصدارات", href: "/ai/monitor" },
@@ -379,7 +378,6 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
       { key: "firm-lawyer-cases", icon: <Gavel {...iconProps} />, label: "قضاياي ومهامي", sub: "ملفات مصرح بها حسب دورك", href: "/dashboard/firm/cases" },
       { key: "firm-lawyer-docs", icon: <FileText {...iconProps} />, label: "مستندات القضية", sub: "رفع ومراجعة وصياغة", href: "/dashboard/firm/documents" },
       { key: "firm-lawyer-draft", icon: <PencilSimple {...iconProps} />, label: "صياغة قانونية", sub: "لوائح ومذكرات وعقود", href: "/ai/draft" },
-      { key: "firm-lawyer-conflict", icon: <ShieldCheck {...iconProps} />, label: "فحص تعارض", sub: "قبل قبول ملف أو عميل", href: "/dashboard/firm/compliance/conflict" },
       { key: "firm-lawyer-shared", icon: <UsersFour {...iconProps} />, label: "غرف مشتركة", sub: "تعاون داخلي أو خارجي", href: "/dashboard/firm/shared-rooms" },
       quick,
     ], "دعم محامي المكتب");
@@ -387,7 +385,6 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
 
   return addSupport([
     { key: "firm-assign", icon: <UsersThree {...iconProps} />, label: "توزيع قضية", sub: "اختيار الفريق وحِمل العمل", href: "/dashboard/firm/cases/assign" },
-    { key: "firm-conflict", icon: <ShieldCheck {...iconProps} />, label: "فحص تعارض مصالح", sub: "Conflict • KYC • جدران صينية", href: "/dashboard/firm/compliance/conflict" },
     { key: "firm-workload", icon: <ChartBar {...iconProps} />, label: "عبء الفريق", sub: "الشركاء والمتدربون والسكرتارية", href: "/dashboard/firm/team/workload" },
     { key: "firm-contract-review", icon: <FileText {...iconProps} />, label: "مراجع عقود المكتب", sub: "تقرير مخاطر لعقود العملاء", href: "/ai/contracts", badge: "قريباً" },
     { key: "firm-market", icon: <Storefront {...iconProps} />, label: "طلبات السوق", sub: "فرص وإحالات للمكتب", href: "/dashboard/firm/marketplace" },

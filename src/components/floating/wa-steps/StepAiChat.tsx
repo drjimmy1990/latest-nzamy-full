@@ -86,8 +86,8 @@ function getEscalationActions(userCategory: UserCategory, category: string) {
       return {
         primaryHref: "/dashboard/firm/cases/assign",
         primaryLabel: "توزيع على الفريق",
-        secondaryHref: "/dashboard/firm/compliance/conflict",
-        secondaryLabel: "فحص التعارض",
+        secondaryHref: "/dashboard/firm/clients",
+        secondaryLabel: "دليل العملاء",
       };
     case "corporate":
     case "business":

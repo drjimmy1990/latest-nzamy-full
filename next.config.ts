@@ -286,6 +286,14 @@ const nextConfig: NextConfig = {
       // this path, so the rule shadows nothing.
       { source: "/dashboard/corporate", destination: "/dashboard/business", permanent: true },
       { source: "/dashboard/corporate/:path*", destination: "/dashboard/business/:path*", permanent: true },
+
+      // ── Owner 2026-11-12 #1 — فحص تعارض المصالح (حذف نهائي) ──────────────
+      // The owner dropped the feature: it is neither built nor mentioned. The
+      // page, its API route and its client service are deleted; an old bookmark
+      // lands on the firm dashboard instead of a 404. No page lives at this
+      // path any more, so the rule shadows nothing.
+      { source: "/dashboard/firm/compliance/conflict", destination: "/dashboard/firm", permanent: true },
+      { source: "/dashboard/firm/compliance/conflict/:path*", destination: "/dashboard/firm", permanent: true },
     ];
   },
 };
