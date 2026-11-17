@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
 import type { FirmRole } from "@/types/firmBackendReady";
 import { isInviteToken, redeemErrorMessage } from "../../../firm/invitations/_invitations";
+import { limitRefusal } from "@/lib/api/dbErrorCore";
 
 /**
  * /api/v1/invite/team/[token] — F7, the invitee's side of a firm invitation
@@ -71,6 +72,14 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ t
     }
     const { data, error } = await auth.supabase.rpc("redeem_firm_team_invitation", { p_token: token });
     if (error) {
+      // Seat cap (20261126_50): the firm filled up after the link was sent.
+      // Worded for the invitee — the contact link is for the firm, not for him.
+      if (limitRefusal(error)?.token === "firm_seats_full") {
+        return NextResponse.json(
+          { error: "اكتملت مقاعد المكتب، فلا يمكن قبول الدعوة الآن. تواصل مع المكتب.", code: "firm_seats_full" },
+          { status: 409 },
+        );
+      }
       const mapped = redeemErrorMessage(error.code);
       if (mapped.status === 500) console.error("[invite/team POST] rpc failed:", error.message, error.code);
       return NextResponse.json({ error: mapped.message }, { status: mapped.status });

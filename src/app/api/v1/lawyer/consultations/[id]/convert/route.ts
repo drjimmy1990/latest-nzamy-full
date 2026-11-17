@@ -13,6 +13,7 @@ import {
 import { propagateLink } from "../../../clients/_link";
 import { checkSaudiPhone, checkOptionalEmail } from "@/lib/services/contactFieldRules";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { limitRefusal, limitRefusalBody, type LimitRefusal } from "@/lib/api/dbErrorCore";
 
 /**
  * POST /api/v1/lawyer/consultations/[id]/convert — turn a consultation into
@@ -196,6 +197,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     // source_consultation_id stays the guard against a second case.
     const service = await createServiceClient();
     const nowIso = new Date().toISOString();
+    // S9 (20261126_50): the database refuses a free solo lawyer's 6th active
+    // case even through the service client; kept here to answer it in words.
+    const caseLimit: { hit: LimitRefusal | null } = { hit: null };
     const outcome = await convertConsultation(
       { linkedCaseId: row.converted_case_request_id ?? null, newCaseId: newId },
       {
@@ -236,6 +240,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
             });
           if (!insertError) return { ok: true as const };
           console.error("[lawyer/consultations/[id]/convert POST] case insert failed:", insertError.message, insertError.code);
+          caseLimit.hit = limitRefusal(insertError);
           return { ok: false as const, code: insertError.code };
         },
         // The link must come back with a row: an RLS-filtered update returns
@@ -266,6 +271,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: "تعذّر التحقق من تحويل سابق لهذه الاستشارة. أعد المحاولة." }, { status: 500 });
     }
     if (outcome.kind === "insert_failed") {
+      if (caseLimit.hit) return NextResponse.json(limitRefusalBody(caseLimit.hit), { status: caseLimit.hit.status });
       const { status, message } = consultationDbErrorResponse({ code: outcome.code });
       return NextResponse.json({ error: message }, { status });
     }
