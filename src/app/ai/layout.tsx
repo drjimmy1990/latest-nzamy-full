@@ -15,6 +15,7 @@ import MicroDashboardLayout from "@/app/dashboard/micro/layout";
 import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
 import LawyerOnlyToolNotice from "@/components/ai/LawyerOnlyToolNotice";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
+import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
 
 /**
  * AI Layout — wraps /ai/* pages with the correct dashboard sidebar.
@@ -45,7 +46,19 @@ import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools"
  * loading gate; UAT-LIVE-AI-001 logged-out escape moved above the lawyer
  * prefixes (a guest is not a permissions problem).
  */
-export default function AILayout({ children: page }: { children: React.ReactNode }) {
+// R7: the terms re-ask modal rides beside every signed-in /ai shell (it renders
+// nothing unless the account has not accepted the current terms version).
+export default function AILayout({ children }: { children: React.ReactNode }) {
+  const user = useUser();
+  return (
+    <>
+      <AIShell>{children}</AIShell>
+      {!user.loading && user.isLoggedIn && <TermsReacceptGate />}
+    </>
+  );
+}
+
+function AIShell({ children: page }: { children: React.ReactNode }) {
   const user = useUser();
   const pathname = usePathname() ?? "/ai";
   const { storedView } = useAdminView(pathname, !user.loading && user.userType === "admin");
