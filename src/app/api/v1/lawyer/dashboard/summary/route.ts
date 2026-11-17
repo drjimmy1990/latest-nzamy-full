@@ -600,8 +600,8 @@ export async function GET() {
         }));
 
       // ── Round 2: revenue, scoped through the ids we just read ─────────────
-      // Same scoping as /api/v1/lawyer/finance. No ids ⇒ no payments can
-      // reference this lawyer's work, so 0 here is a fact, not a fallback.
+      // Same scoping as /api/v1/lawyer/finance: the payments on these
+      // requests, plus this lawyer's own invoices that hang on no request.
       const requestIds = workspace.map((r) => r.id);
       //
       // CODE-F15 / LAW-DETAIL-010: revenue is money COLLECTED in Riyadh's
@@ -610,20 +610,34 @@ export async function GET() {
       // outstanding travel beside it. See monthRevenue.ts for the rules.
       // «هذا الشهر» is the Saudi month (+03:00, no DST), not the server's.
       const month = riyadhMonthBounds(today)!;
-      if (requestIds.length === 0) {
-        revenueThisMonth = 0;
-        revenueIssuedThisMonth = 0;
-        revenueOutstanding = 0;
-      } else {
-        const { data: payRows, error: payError } = await supabase
-          .from("payments")
-          .select("id, amount, status, metadata, created_at")
-          .in("request_id", requestIds);
+      {
+        // N01-9 (20261124_40): an invoice issued without a case hangs on no
+        // request — it is read by its own owner_user_id. Before that migration
+        // the column is missing (42703) and no such invoice can exist: 0 rows.
+        const [byRequest, ownRead] = await Promise.all([
+          requestIds.length === 0
+            ? Promise.resolve({ data: [] as Record<string, unknown>[], error: null })
+            : supabase
+                .from("payments")
+                .select("id, amount, status, metadata, created_at")
+                .in("request_id", requestIds),
+          supabase
+            .from("payments")
+            .select("id, amount, status, metadata, created_at")
+            .is("request_id", null)
+            .eq("owner_user_id", uid),
+        ]);
+        const ownMissing = ownRead.error?.code === "42703";
+        const payError = byRequest.error ?? (ownMissing ? null : ownRead.error);
+        const payRows = [
+          ...((byRequest.data ?? []) as Record<string, unknown>[]),
+          ...(ownMissing ? [] : ((ownRead.data ?? []) as Record<string, unknown>[])),
+        ];
         if (payError) {
           console.error("[lawyer/dashboard/summary] payments read failed:", payError.message);
           degraded.push("revenue");
         } else {
-          const invoices = ((payRows ?? []) as InvoicePaymentRow[]).filter(isOfficeInvoice);
+          const invoices = (payRows as unknown as InvoicePaymentRow[]).filter(isOfficeInvoice);
           let collections: CollectionRow[] | null = [];
           let collectionsFailed = false;
           if (invoices.length > 0) {
