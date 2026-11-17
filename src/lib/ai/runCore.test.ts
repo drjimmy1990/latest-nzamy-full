@@ -589,7 +589,7 @@ test("founder: useCredit with an ineligible tool falls back to the points path; 
     const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "appeal" }), { useCredit: undefined }));
     assert.equal(r.status, 202);
     assert.deepEqual(rpcs(log), ["ai_start_run"]);
-    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 1000);
+    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 800, "an appeal is 800 points (owner ٩, 17 Nov 2026)");
   }
 });
 
