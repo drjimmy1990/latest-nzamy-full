@@ -75,21 +75,23 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
   const query = useDeferredValue(q.trim());
   const [view, setView] = useState<View>({ court: null, klass: null });
 
-  // Focus follows the drill-down (not on first render): the new view's heading.
+  const rows = useMemo(() => najizRows(data?.courts ?? []), [data]);
+  const result = useMemo(() => (query ? searchNajiz(rows, query, NAJIZ_SYNONYMS) : null), [rows, query]);
+
+  // Focus follows the drill-down (not on first render): the new view's
+  // heading. From a search result the heading mounts one render later (the
+  // query is deferred), so the flag waits until it exists.
   const headingRef = useRef<HTMLHeadingElement>(null);
   const navigated = useRef(false);
   useEffect(() => {
-    if (!navigated.current) return;
+    if (!navigated.current || !headingRef.current) return;
     navigated.current = false;
-    headingRef.current?.focus();
-  }, [view]);
+    headingRef.current.focus();
+  }, [view, result]);
   const go = (next: View) => {
     navigated.current = true;
     setView(next);
   };
-
-  const rows = useMemo(() => najizRows(data?.courts ?? []), [data]);
-  const result = useMemo(() => (query ? searchNajiz(rows, query, NAJIZ_SYNONYMS) : null), [rows, query]);
 
   if (failed) return <p className={`text-[12px] ${t.muted}`}>تعذّر تحميل دليل ناجز — أعد تحميل الصفحة.</p>;
   if (!data) return <p className={`text-[12px] ${t.muted}`}>جارٍ تحميل دليل ناجز…</p>;
@@ -176,8 +178,8 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
   );
 
   const searchResults = result && (
-    <div className="space-y-3" aria-live="polite">
-      <p className={`text-[11px] ${t.muted}`}>
+    <div className="space-y-3">
+      <p aria-live="polite" className={`text-[11px] ${t.muted}`}>
         {result.hits.length === 0 ? "لا توجد نتائج مطابقة." : `${toArabicDigits(result.hits.length)} نوعاً مطابقاً`}
         {result.widened.map((w) => (
           <span key={w.label} className="ms-1">· «{w.label}» يشمل: {w.synonyms.join("، ")}</span>

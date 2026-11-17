@@ -27,7 +27,17 @@ import {
 import { normalizeSearch, splitArticlePrefix, stripTashkeel } from "../../utils/normalizeArabic.ts";
 import type { NajizClass, NajizCourt, NajizNote, NajizType } from "./najizClassifications.ts";
 
-export type NajizSynonymGroups = readonly (readonly string[])[];
+/**
+ * One synonym group: `words` are searched for each other; a `triggers` word
+ * opens the group when typed but is not itself searched for the others — for
+ * a word too broad to add to every member's search («عمل» is in «يعمل»,
+ * «عملية»…), while typing it should still find the group.
+ */
+export interface NajizSynonymGroup {
+  words: readonly string[];
+  triggers?: readonly string[];
+}
+export type NajizSynonymGroups = readonly NajizSynonymGroup[];
 
 const MARKS = /[ً-ْٰـ]/g;
 
@@ -47,10 +57,10 @@ export function najizKey(text: string): string {
 }
 
 /** The synonym group `label` belongs to (by key), or null. */
-export function synonymGroupOf(label: string, groups: NajizSynonymGroups): readonly string[] | null {
+export function synonymGroupOf(label: string, groups: NajizSynonymGroups): NajizSynonymGroup | null {
   const key = najizKey(label);
   if (!key) return null;
-  return groups.find((g) => g.some((w) => najizKey(w) === key)) ?? null;
+  return groups.find((g) => [...g.words, ...(g.triggers ?? [])].some((w) => najizKey(w) === key)) ?? null;
 }
 
 export interface ExpandedNajizQuery {
@@ -70,7 +80,7 @@ export function expandNajizQuery(query: string, groups: NajizSynonymGroups): Exp
     const group = synonymGroupOf(term.label, groups);
     if (!group) return [term];
     const ownKey = najizKey(term.label);
-    const others = group.filter((w) => najizKey(w) !== ownKey);
+    const others = group.words.filter((w) => najizKey(w) !== ownKey);
     widened.push({ label: term.label, synonyms: [...others] });
     // The typed word is searched without its article too («الإيجار» finds «عقد إيجار»).
     const own = splitArticlePrefix(term.label.trim())?.base ?? term.label;

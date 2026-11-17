@@ -55,17 +55,17 @@ test("folding reaches the rows: hamza, taa marbuta and Arabic digits match the d
 });
 
 test("synonym groups: membership by key, with or without the article", () => {
-  assert.ok(synonymGroupOf("الطلاق", NAJIZ_SYNONYMS)?.includes("خلع"));
-  assert.ok(synonymGroupOf("تأجير", NAJIZ_SYNONYMS)?.includes("إيجار"));
-  assert.ok(synonymGroupOf("عمل", NAJIZ_SYNONYMS)?.includes("عمالية"));
+  assert.ok(synonymGroupOf("الطلاق", NAJIZ_SYNONYMS)?.words.includes("خلع"));
+  assert.ok(synonymGroupOf("تأجير", NAJIZ_SYNONYMS)?.words.includes("إيجار"));
+  assert.ok(synonymGroupOf("عمل", NAJIZ_SYNONYMS)?.words.includes("عمالية"), "a trigger opens its group");
   assert.equal(synonymGroupOf("فسخ", NAJIZ_SYNONYMS), null, "bare «فسخ» is not a synonym of طلاق (it is also فسخ ولاية)");
   assert.equal(synonymGroupOf("نفقة", NAJIZ_SYNONYMS), null);
 });
 
 test("every synonym group finds at least one of the 243 types (no dead group)", () => {
-  for (const group of NAJIZ_SYNONYMS) {
-    assert.ok(group.length >= 2, `${group.join("/")}: a group needs two words`);
-    assert.ok(names(group[0]).length > 0, `${group.join("/")} finds nothing`);
+  for (const { words } of NAJIZ_SYNONYMS) {
+    assert.ok(words.length >= 2, `${words.join("/")}: a group needs two words`);
+    assert.ok(names(words[0]).length > 0, `${words.join("/")} finds nothing`);
   }
 });
 
@@ -82,9 +82,18 @@ test("«إيجار» / «تأجير» find إجارة and عقد إيجار", ()
   }
 });
 
-test("«عمل» finds the labour court through «عمالية»", () => {
+test("«عمل» finds the labour court through «عمالية»; «عمالية» does not widen to bare «عمل»", () => {
   const hits = searchNajiz(rows, "عمل", NAJIZ_SYNONYMS).hits;
   assert.ok(hits.some((r) => r.court.title === "دعاوى المحاكم العمالية" && r.type.name === "اعتراض على قرارات لجان الخدمة المنزلية"));
+  const labour = searchNajiz(rows, "عمالية", NAJIZ_SYNONYMS).hits;
+  assert.equal(labour.filter((r) => r.court.title === "دعاوى المحاكم العمالية").length, 22, "every labour-court type");
+  assert.ok(!labour.some((r) => r.court.title === "دعاوى المحاكم التجارية"), "no commercial type through «عمل» or «أعمالهم»");
+});
+
+test("no synonym crosses into another meaning: «أوقاف» does not find «وقف تنفيذ»", () => {
+  const hits = names("أوقاف");
+  assert.ok(!hits.includes("وقف تنفيذ") && !hits.includes("وقف الأعمال الجديدة"));
+  assert.ok(!names("طلاق").includes("فسخ ولاية بطلب من الولي"));
 });
 
 test("synonyms widen one term only: «طلاق نفقة» is (طلاق or …) AND نفقة", () => {

@@ -10,15 +10,21 @@
  *
  * Words are written without the article («إيجار» not «الإيجار»): the search
  * matches them with or without it. A multi-word entry is matched as a phrase.
+ * Left out on purpose: «وقف/أوقاف» (bare «وقف» is also «وقف تنفيذ»،
+ * «وقف الأعمال الجديدة»).
  */
-export const NAJIZ_SYNONYMS: readonly (readonly string[])[] = [
-  ["طلاق", "خلع", "فرقة", "فسخ عقد الزواج", "فسخ نكاح"],
-  ["إيجار", "تأجير", "إجارة", "استئجار"],
-  ["عمالية", "عمالي", "عمالة", "عمل"],
-  ["تركة", "ورثة", "ميراث", "مواريث"],
-  ["مقاولة", "مقاولات", "مقاول"],
-  ["وصية", "وصايا"],
-  ["وقف", "أوقاف"],
-  ["ولاية", "ولايات"],
-  ["شركة", "شركات"],
+import type { NajizSynonymGroup } from "./najizSearch.ts";
+
+export const NAJIZ_SYNONYMS: readonly NajizSynonymGroup[] = [
+  { words: ["طلاق", "خلع", "فرقة", "فسخ عقد الزواج", "فسخ نكاح"] },
+  { words: ["إيجار", "تأجير", "إجارة", "استئجار"] },
+  // «عمل» and «عمالة» open the labour group but are not searched for it:
+  // bare «عمل» is also in «يعمل»، «الأعمال التجارية», and «عمالة» (ة = ه)
+  // matches inside «أعمالهم» — both would pull in commercial contracts.
+  { words: ["عمالية", "عمالي", "صاحب العمل"], triggers: ["عمل", "عمالة"] },
+  { words: ["تركة", "ورثة", "ميراث", "مواريث"] },
+  { words: ["مقاولة", "مقاولات", "مقاول"] },
+  { words: ["وصية", "وصايا"] },
+  { words: ["ولاية", "ولايات"] },
+  { words: ["شركة", "شركات"] },
 ];
