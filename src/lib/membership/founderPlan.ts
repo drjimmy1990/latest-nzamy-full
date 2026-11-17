@@ -36,6 +36,42 @@ export const FOUNDER_CREDITS: Readonly<Record<FounderCreditKind, number>> = Obje
   independent_output: 1,
 });
 
+// ── the founder's library points (owner ٨ / ١٥ / ١٨, 17 Nov 2026) ───────────
+//
+// 100 founder points for the library AI assistant ONLY, at 5 points a
+// question = 20 questions. Stored as a third membership credit,
+// 'library_question' 20 (SQL 20261124_10: founder_activate writes it with the
+// seat; ai_start_run_with_credit spends it on 'library-assistant' only). It is
+// NOT one of the opt-in choices above (FounderCreditKind): the run route
+// spends it on its own, from the first question, and charges points once it
+// is gone (src/lib/ai/runCore.ts). Shown to the founder as points
+// (questions × 5) under FOUNDER_LIBRARY_POINTS_LABEL.
+
+/** Every credit row kind a founder seat carries (membership_credits_kind_check). */
+export type FounderMembershipCreditKind = FounderCreditKind | "library_question";
+
+/** The one tool the library points pay for (src/lib/ai/tools.ts "library-assistant"). */
+export const FOUNDER_LIBRARY_TOOL = "library-assistant";
+
+/** Points one library-assistant question costs (tools.ts price: 5, owner ٢٥٧ / ١٥). */
+export const FOUNDER_LIBRARY_POINTS_PER_QUESTION = 5;
+
+/** Library questions one activation writes (founder_activate: library_question 20). */
+export const FOUNDER_LIBRARY_QUESTIONS = 20;
+
+/** The founder points for the library assistant: 100. */
+export const FOUNDER_LIBRARY_POINTS = FOUNDER_LIBRARY_QUESTIONS * FOUNDER_LIBRARY_POINTS_PER_QUESTION;
+
+/** The label the founder's library balance is shown under. */
+export const FOUNDER_LIBRARY_POINTS_LABEL = "نقاط مساعد المكتبة الذكي";
+
+/** Library questions → points (×5); anything that is not a whole count → 0. */
+export function libraryQuestionsToPoints(questions: unknown): number {
+  return typeof questions === "number" && Number.isInteger(questions) && questions > 0
+    ? questions * FOUNDER_LIBRARY_POINTS_PER_QUESTION
+    : 0;
+}
+
 /** The tool a drafting work is spent on, at its first turn only. */
 export const FOUNDER_DRAFTER_TOOL = "legal-drafter";
 
