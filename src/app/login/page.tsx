@@ -26,8 +26,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { LIBRARY_STAT_LABELS, formatLibraryCount } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
-import { authenticateTest, TEST_ACCOUNTS, TEST_PASSWORD } from "@/lib/test-credentials";
-import { setDemoSession, useUser } from "@/hooks/useUser";
+import { useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { isDbUserType } from "@/lib/auth/userTypes";
 import { postLoginPath } from "@/lib/auth/postLoginPath";
@@ -318,16 +317,10 @@ export default function LoginPage() {
         return;
       }
 
-      // ── Demo Mode: Test credentials ─────────────────────────────────────────
-      await new Promise((r) => setTimeout(r, 400));
-      const session = authenticateTest(identifier.trim(), password.trim());
-      if (!session) {
-        setError(isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
-        return;
-      }
-      setDemoSession(session);
-      const dest = postLoginPath(nextFromUrl(), getDashboardRoute(session.userType));
-      router.push(dest);
+      // ── Demo mode (development builds only) ─────────────────────────────────
+      // There is no password sign-in outside Supabase: no shared test password
+      // ships in the bundle. /demo-login picks a demo role without one.
+      router.push("/demo-login");
     } catch {
       setError(isAr ? "حدث خطأ في الاتصال" : "Connection error");
     } finally {

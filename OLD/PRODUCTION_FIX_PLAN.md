@@ -2248,7 +2248,7 @@ The adversarial pass flagged these as real production concerns that **no §7 spe
 - [ ] `deploy.sh` runs `npx supabase db push` (§7.7).
 - [ ] Beta directory pages confirmed unreachable (or gated) per §7.7; monopoly mode verified on staging.
 - [ ] `payments_gateway` confirmed `disabled`; all 3 client payment call-sites block; wallet/finance show the "being activated" banner.
-- [ ] `demo-accounts.ts` / `test-credentials.ts` are dead in supabase mode (verified) — leave for the Phase-7 teardown, but confirm no build-time leak of `Nzamy@2026` matters (accounts must not exist in the real Supabase Auth DB).
+- [ ] `demo-accounts.ts` / `test-credentials.ts` are dead in supabase mode (verified) — leave for the Phase-7 teardown, but confirm no build-time leak of `<test password>` matters (accounts must not exist in the real Supabase Auth DB).
 - [ ] `tsc --noEmit` = 0, `next build` = exit 0, `eslint .` passes (after §7.7).
 - [ ] Supabase automated backups / PITR enabled.
 
