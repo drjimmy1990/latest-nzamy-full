@@ -15,6 +15,7 @@ export const LAWS_STATIC_SEGMENTS: ReadonlySet<string> = new Set([
   "civil-procedure",
   "components",
   "feqh-preview",
+  "my",
   "orders",
   "subscribe",
 ]);
