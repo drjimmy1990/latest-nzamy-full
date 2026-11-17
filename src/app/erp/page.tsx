@@ -35,7 +35,7 @@ const modules = {
     { icon: Users, title: "إدارة الموارد البشرية", desc: "إدارة المحامين والمساعدين والإداريين مع تتبع الأداء وتوزيع العمل وإدارة الإجازات.", color: "bg-blue-500/10 text-blue-600" },
     { icon: ChartBar, title: "المالية والفوترة", desc: "نظام محاسبي متكامل لإدارة الأتعاب، الفواتير، المصروفات، والتقارير المالية.", color: "bg-emerald-500/10 text-emerald-600" },
     { icon: Brain, title: "ذكاء اصطناعي مؤسسي", desc: "أدوات الذكاء الاصطناعي في نظامي متاحة لفريقكم. نموذج خاص مدرَّب على قضاياكم وعقودكم: قريباً.", color: "bg-violet-500/10 text-violet-600" },
-    { icon: Database, title: "إدارة المستندات", desc: "مستودع ذكي للمستندات مع بحث AI وتصنيف تلقائي وإدارة الإصدارات.", color: "bg-orange-500/10 text-orange-600" },
+    { icon: Database, title: "إدارة المستندات", desc: "مستودع ذكي للمستندات مع بحث بالذكاء الاصطناعي وتصنيف تلقائي وإدارة الإصدارات.", color: "bg-orange-500/10 text-orange-600" },
     { icon: ChartLineUp, title: "التقارير والتحليلات", desc: "لوحات بيانات تفاعلية وتقارير تفصيلية عن أداء المكتب والإيرادات والقضايا.", color: "bg-pink-500/10 text-pink-600" },
     { icon: Globe, title: "البوابة الرقمية للموكلين", desc: "منصة مخصصة لموكليك لتتابع قضاياهم ومستنداتهم والتواصل مع فريقكم.", color: "bg-cyan-500/10 text-cyan-600" },
     { icon: Gear, title: "التكاملات والربط مع الأنظمة", desc: "قيد التطوير: تكاملات مخطط لها مع منظومة وزارة العدل (ناجز) وهيئة المحامين وأنظمتكم الداخلية، ولم يُفعَّل أيٌّ منها بعد.", color: "bg-amber-500/10 text-amber-600" },
@@ -56,7 +56,7 @@ const faqs = [
   // Owner answer ١٩٦ (2026-10-16): no estimated duration and no on-premise /
   // hybrid option — Nezamy is a cloud platform (Enterprise SaaS).
   { q: { ar: "كم من الوقت يستغرق التطبيق؟", en: "How long does implementation take?" }, a: { ar: "يعتمد على حجم المؤسسة واحتياجاتها؛ نتفق معكم على خطة الإعداد وجدولها بعد التعرّف على متطلباتكم.", en: "It depends on the firm's size and needs; we agree the setup plan and its schedule with you once we know your requirements." } },
-  { q: { ar: "هل يمكن الاستضافة داخل المؤسسة (On-Premise)؟", en: "Is on-premise hosting available?" }, a: { ar: "لا. نظامي منصة سحابية، ولا يُثبَّت داخل بنية المنشأة ولا بنموذج هجين.", en: "No. Nezamy is a cloud platform; it is not installed in your infrastructure or in a hybrid model." } },
+  { q: { ar: "هل يمكن استضافة النظام داخل المنشأة نفسها؟", en: "Is on-premise hosting available?" }, a: { ar: "لا. نظامي منصة سحابية، ولا يُثبَّت داخل بنية المنشأة ولا بنموذج هجين.", en: "No. Nezamy is a cloud platform; it is not installed in your infrastructure or in a hybrid model." } },
   { q: { ar: "هل يلتزم نظامي ERP بأنظمة هيئة الزكاة والضريبة؟", en: "Is Nezamy ERP compliant with ZATCA regulations?" }, a: { ar: "ليس بعد. الفوترة الإلكترونية وفق متطلبات هيئة الزكاة والضريبة والجمارك (المرحلة الثانية) قيد التطوير، ولا يُصدر النظام حالياً فواتير إلكترونية بصيغتها.", en: "Not yet. E-invoicing to ZATCA Phase 2 requirements is in development; the system does not issue ZATCA e-invoices today." } },
   // Same 24/7 claim as the removed hero badge — and a «SLA مضمون» on top of it.
   // Support hours are أحد–خميس ٨ص–١٠م / الجمعة–السبت ٩ص–٥م (contact page), and
