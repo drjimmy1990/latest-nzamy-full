@@ -40,7 +40,7 @@ function jsonCalls(src: string): string[] {
   return out;
 }
 
-test("the routes that call enforceLibraryDevice are exactly these five", () => {
+test("the routes that call enforceLibraryDevice are exactly these six", () => {
   const found: string[] = [];
   const walk = (dir: string) => {
     for (const name of fs.readdirSync(dir)) {
@@ -52,7 +52,7 @@ test("the routes that call enforceLibraryDevice are exactly these five", () => {
     }
   };
   walk(path.join(SRC, "app"));
-  assert.deepEqual(found.sort(), [...ROUTES].sort());
+  assert.deepEqual(found.sort(), [...ROUTES, ...NO_STORE_ROUTES].sort());
 });
 
 const ROUTES = [
@@ -62,6 +62,19 @@ const ROUTES = [
   "app/api/library/precedents/[slug]/route.ts",
   "app/api/library/scoped-search/route.ts",
 ] as const;
+
+/** Batch l6 (N06-34): the AI citation sheet reads one cited text; its responses all use its own NO_STORE. */
+const NO_STORE_ROUTES = ["app/api/v1/ai/source-preview/route.ts"] as const;
+
+for (const rel of NO_STORE_ROUTES) {
+  test(`${rel}: every response is private, no-store`, () => {
+    const src = read(rel);
+    assert.match(src, /const NO_STORE = \{ "Cache-Control": "private, no-store" \};/);
+    const calls = jsonCalls(src);
+    assert.ok(calls.length >= 3, "the route's responses were found");
+    for (const call of calls) assert.match(call, /headers: NO_STORE \},?\s*\)$/, `${rel}: ${call.slice(0, 120)}…`);
+  });
+}
 
 for (const rel of ROUTES) {
   test(`${rel}: every response is private, no-store`, () => {

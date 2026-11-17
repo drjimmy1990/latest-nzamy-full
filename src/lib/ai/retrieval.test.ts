@@ -44,6 +44,8 @@ test("buildSources numbers articles then principles, titles them, links them and
   assert.equal(out.sources[1].text.length, SOURCE_TEXT_MAX + 1, "clipped, with an ellipsis");
   assert.equal(out.map.S1.url, "/laws/labor-law#labor-law__art-80");
   assert.equal(out.map.S2.url, "/laws/old%20law#old__art-1");
+  assert.equal(out.map.S1.status, "active", "the citation pill comes from the library row");
+  assert.equal(out.map.S2.status, "repealed");
   assert.deepEqual(out.map.S3, {
     kind: "principle",
     id: "LAW-98-1253__pr-35",
@@ -484,6 +486,7 @@ test("GraphRAG: decrees and fiqh blocks stay out unless the caller asks for them
   const out = await retrieveLibrary(admin as never, ["فصل العامل"], { laws: 4, principles: 2 }, {}, 6000, { useGraph: true });
   assert.deepEqual(out.sources.map((s) => s.kind), ["article"]);
   assert.equal(out.map.S1.id, "labor__art-80");
+  assert.equal(out.map.S1.status, "active", "a graph hit keeps its library status for the pill");
 });
 
 // ── Seeds (20261117_10): the articles a question names lead the graph answer ──

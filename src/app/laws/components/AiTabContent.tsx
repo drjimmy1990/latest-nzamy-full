@@ -373,7 +373,7 @@ function TurnView({ turn, isDark }: { turn: Turn; isDark: boolean }) {
             : <div className="text-[13.5px] leading-[1.85]"><LiteMarkdown text={a.text} /></div>}
           {a.cites.length > 0 && (
             <div className="mt-4">
-              <p className={`text-[11.5px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المصادر — تُفتح في صفحة النص</p>
+              <p className={`text-[11.5px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المصادر — اضغط مصدراً لمعاينة نصه هنا</p>
               <SourceList cites={a.cites} isDark={isDark} compact />
             </div>
           )}

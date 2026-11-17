@@ -342,7 +342,7 @@ function NajizOptimizerPage() {
                     <div className={`rounded-xl border p-3 space-y-2 ${isDark ? "border-[#C8A762]/25 bg-[#C8A762]/5" : "border-amber-200 bg-amber-50/60"}`}>
                       <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ما زال النص فوق {MAX_CHARS_AR} حرف</p>
                       <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
-                        R5: يختصره الذكاء الاصطناعي إلى {MAX_CHARS_AR} حرف أو أقل، ويُرفض الناتج وتُعاد نقاطك إن سقطت منه مادة أو رقم حكم أو قرار مكتوب بالأرقام. يُرسَل النص إلى مزوّد ذكاء اصطناعي خارج المملكة.
+                        R5: يختصره الذكاء الاصطناعي إلى {MAX_CHARS_AR} حرف أو أقل، ويُرفض الناتج وتُعاد نقاطك إن سقطت منه مادة (بالأرقام أو بالحروف) أو رقم حكم أو قرار. يُرسَل النص إلى مزوّد ذكاء اصطناعي خارج المملكة.
                       </p>
                       <button onClick={handleShorten} disabled={ai.busy}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-sm disabled:opacity-50">
@@ -357,7 +357,7 @@ function NajizOptimizerPage() {
                   {aiShortened && (
                     <div className={`flex items-start gap-2 rounded-xl p-2.5 border text-[11px] ${isDark ? "border-emerald-700/25 bg-emerald-900/10 text-emerald-400" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
                       <CheckCircle size={13} weight="fill" className="flex-shrink-0 mt-0.5" />
-                      اختُصر النص بالذكاء الاصطناعي (R5)، وتحقق النظام من بقاء المراجع المكتوبة بالأرقام
+                      اختُصر النص بالذكاء الاصطناعي (R5)، وتحقق النظام من بقاء المواد (بالأرقام أو بالحروف) وأرقام الأحكام والقرارات
                       {Array.isArray(ai.output?.kept_refs) ? ` (${ai.output.kept_refs.length})` : ""}. راجعه قبل رفعه.
                     </div>
                   )}
