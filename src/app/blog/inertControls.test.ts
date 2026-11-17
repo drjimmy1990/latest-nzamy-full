@@ -17,11 +17,19 @@ const code = ["./page.tsx", "./BlogList.tsx"]
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
 
-test("the blog has no RSS button while the site serves no feed", () => {
-  assert.doesNotMatch(code, /<Rss\b|RSS/);
+// P1-39 (2026-11-18): the site now serves /blog/rss.xml. The feed is advertised
+// in the <head> (./layout.tsx metadata), not as a button in the list.
+test("the blog feed exists and the layout advertises it in the head", () => {
+  assert.equal(existsSync(new URL("./rss.xml/route.ts", import.meta.url)), true);
+  const layout = readFileSync(new URL("./layout.tsx", import.meta.url), "utf8");
+  assert.ok(layout.includes('"application/rss+xml": [{ url: `${BASE_URL}/blog/rss.xml`'), "layout metadata alternates.types");
   for (const feed of ["rss.xml", "feed.xml", "feed"]) {
-    assert.equal(existsSync(new URL(`../${feed}/route.ts`, import.meta.url)), false, `a /${feed} route now exists: link it instead`);
+    assert.equal(existsSync(new URL(`../${feed}/route.ts`, import.meta.url)), false, `a second feed at /${feed}`);
   }
+});
+
+test("the blog list still has no RSS button (the feed is in the head)", () => {
+  assert.doesNotMatch(code, /<Rss\b/);
 });
 
 test("the blog has no newsletter sign-up that stores nothing", () => {

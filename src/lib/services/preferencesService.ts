@@ -15,6 +15,7 @@
 "use client";
 
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import type { AiInstructions } from "@/lib/aiInstructions";
 
 export interface ReadingActivity {
   lawsThisWeek: number;
@@ -53,6 +54,12 @@ export interface UserPreferences {
    * note of up to 300 characters; at most 200.
    */
   circuitFavorites?: CircuitFavorite[];
+  /**
+   * /ai/settings «التعليمات الشخصية» (N06-24): style, specialisation, free
+   * instructions and favourite templates — shape and limits in
+   * src/lib/aiInstructions.ts. The page keeps a localStorage copy as a cache.
+   */
+  aiInstructions?: AiInstructions;
 }
 
 export interface CircuitFavorite {
@@ -61,7 +68,7 @@ export interface CircuitFavorite {
 }
 
 // Mirrored in preferencesMerge.ts (the route's validator) — change both.
-export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools", "circuitFavorites"] as const;
+export const PREFERENCE_KEYS = ["readingActivity", "recentSessions", "dashboardMode", "quickTools", "circuitFavorites", "aiInstructions"] as const;
 
 export async function getPreferences(): Promise<UserPreferences | null> {
   if (!isSupabaseMode) return null;
