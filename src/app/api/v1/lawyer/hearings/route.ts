@@ -8,7 +8,10 @@ import {
   VALID_UI_TYPES, VALID_UI_URGENCIES,
   typeToKind, urgencyToDb,
 } from "@/lib/services/hearingVocabulary";
-import { HEARINGS_SELECT, resolveOwnCase, toDto, type HearingRow } from "./_shared";
+import { recordNotification } from "@/lib/notify";
+import {
+  HEARINGS_SELECT, hearingNamesFor, parseHearingAssignee, readCallerHearingFirmId, resolveOwnCase, toDto, type HearingRow,
+} from "./_shared";
 import { validateHearingDuration } from "@/lib/services/item59Labels";
 import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
 import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_scheduleGuard";
@@ -43,6 +46,11 @@ import { hearingOverlapRefusal } from "@/app/api/v1/lawyer/consultations/_schedu
  * filters explicitly to `owner_user_id = uid` on top of RLS rather than
  * relying on the wider grant. A firm-wide calendar is a different query
  * (`?scope=firm`), not a relaxation of this one.
+ *
+ * N01-18 («جلساتي»): the diary is the caller's own hearings AND the ones a
+ * colleague assigned to him (`assignee_user_id`, 20261124_50) — owner OR
+ * assignee, the same rule «مهامي» follows. RLS only returns an assigned row
+ * while the caller is an ACTIVE member of its firm.
  */
 
 const VALID_TYPES = new Set<string>(VALID_UI_TYPES);
@@ -73,10 +81,12 @@ export async function GET(request: NextRequest) {
     const limitParam = Number(searchParams.get("limit"));
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 200;
 
+    // N01-18: owner OR assignee. `user.id` is the session's own uuid, never
+    // request input, so it is safe inside the PostgREST `or` string.
     let query = supabase
       .from("hearings")
       .select(HEARINGS_SELECT, { count: "exact" })
-      .eq("owner_user_id", user.id);
+      .or(`owner_user_id.eq.${user.id},assignee_user_id.eq.${user.id}`);
 
     if (caseId) query = query.eq("case_request_id", caseId);
 
@@ -91,7 +101,8 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = (data ?? []) as HearingRow[];
-    return NextResponse.json({ data: rows.map(toDto), total: count ?? rows.length });
+    const names = await hearingNamesFor(supabase, user.id, rows);
+    return NextResponse.json({ data: rows.map((row) => toDto(row, user.id, names)), total: count ?? rows.length });
   } catch (err) {
     console.error("[lawyer/hearings GET] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -100,7 +111,13 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/v1/lawyer/hearings
- * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title, durationMinutes?, confirmOverlap? }
+ * Body: { type, date, time?, caseName?, caseRequestId?, urgency?, location?, notes?, title, durationMinutes?, confirmOverlap?, assigneeUserId? }
+ *
+ * `assigneeUserId` (N01-18, «المحامي المُكلَّف بالجلسة»): null / absent / the
+ * caller = the caller attends. Anyone else must be an ACTIVE member of the
+ * caller's firm in a pleading role (parseHearingAssignee) — 400 otherwise,
+ * and a solo lawyer can name nobody else. The database checks the same
+ * (trg_hearings_assignee_member). The assignee gets a notification.
  *
  * Owner q357: a hearing with an hour is checked against the lawyer's
  * scheduled consultations and other timed hearings — 409 `hearing_overlap`
@@ -127,10 +144,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       type, date, time, caseName, caseRequestId, urgency, location, notes, title, durationMinutes, confirmOverlap,
+      assigneeUserId,
     } = body as {
       type?: string; date?: string; time?: string; caseName?: string;
       caseRequestId?: string; urgency?: string; location?: string; notes?: string; title?: string;
-      durationMinutes?: unknown; confirmOverlap?: unknown;
+      durationMinutes?: unknown; confirmOverlap?: unknown; assigneeUserId?: unknown;
     };
 
     if (!type || !(VALID_TYPES as Set<string>).has(type)) {
@@ -169,16 +187,12 @@ export async function POST(request: NextRequest) {
     // can_access_case_row's owner arm is for. A lawyer with more than one
     // active membership gets the first; nothing in this product distinguishes
     // between two firms for one lawyer today.
-    const { data: membership, error: membershipError } = await supabase
-      .from("firm_members")
-      .select("firm_id")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .limit(1)
-      .maybeSingle();
-    if (membershipError) {
-      console.error("[lawyer/hearings] firm_members lookup failed:", membershipError.message, membershipError.code);
-    }
+    const firmId = await readCallerHearingFirmId(supabase, user.id);
+    const membership = firmId ? { firm_id: firmId } : null;
+
+    // N01-18: the assignee, bounded by THIS hearing's firm.
+    const parsedAssignee = await parseHearingAssignee(supabase, { assigneeId: assigneeUserId, ownerId: user.id, firmId });
+    if (!parsedAssignee.ok) return NextResponse.json({ error: parsedAssignee.error }, { status: 400 });
 
     // CODE-F17 / LIVE-F28: the link is the case ID, checked against the
     // caller's own cases — never the free text. An id that does not resolve is
@@ -211,6 +225,8 @@ export async function POST(request: NextRequest) {
         notes: notes?.trim() || "",
         // Sent only when set, so an unset duration leaves the column to its default.
         ...(parsedDuration.value !== null ? { duration_minutes: parsedDuration.value } : {}),
+        // Sent only when set, like the duration.
+        ...(parsedAssignee.value !== null ? { assignee_user_id: parsedAssignee.value } : {}),
         metadata,
       })
       .select(HEARINGS_SELECT)
@@ -233,7 +249,17 @@ export async function POST(request: NextRequest) {
       payload: { title: title.trim() },
     });
 
-    return NextResponse.json({ data: toDto(data as HearingRow) });
+    const created = data as HearingRow;
+    if (parsedAssignee.value) {
+      await recordNotification({
+        userId: parsedAssignee.value,
+        title: "أُسندت إليك جلسة",
+        body: `${title.trim()} — ${date}${time ? ` ${time}` : ""}`,
+        href: "/dashboard/lawyer/hearings",
+      });
+    }
+    const names = await hearingNamesFor(supabase, user.id, [created]);
+    return NextResponse.json({ data: toDto(created, user.id, names) });
   } catch (err) {
     console.error("[lawyer/hearings POST] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

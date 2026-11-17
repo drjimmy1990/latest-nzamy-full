@@ -478,7 +478,8 @@ function MemberCard({ m, isDark, card, canManage, onChangeRole, onToggleStatus, 
             </select>
             <CaretDown size={11} className="absolute top-1/2 left-2 -translate-y-1/2 pointer-events-none text-zinc-400" />
           </div>
-          {m.status !== "removed" && (
+          {/* `removed` rows never reach this block (see the condition above). */}
+          {(
             <button
               onClick={handleToggleStatus}
               disabled={busy !== null}

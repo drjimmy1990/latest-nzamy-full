@@ -49,6 +49,14 @@ export interface HearingDto {
   durationMinutes?: number | null;
   /** CODE-F18: the row's change log (metadata.history), oldest first. */
   history?: HearingHistoryEntryDto[];
+  /** N01-18: the colleague who attends for the firm; null = the owner. */
+  assigneeUserId?: string | null;
+  /** His display name, when the server could show it (the caller's firm only). */
+  assigneeName?: string | null;
+  /** False for a hearing a colleague assigned to the caller: outcome actions only. */
+  isOwn?: boolean;
+  /** For a hearing assigned to the caller: who scheduled it. */
+  ownerName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -87,6 +95,8 @@ export interface CreateHearingInput {
   durationMinutes?: number | null;
   /** Save even though the slot overlaps a consultation or another hearing (q357). */
   confirmOverlap?: boolean;
+  /** N01-18: a colleague (active firm member) who attends; absent/null = the caller. */
+  assigneeUserId?: string | null;
 }
 
 /**
@@ -139,9 +149,34 @@ export interface UpdateHearingInput {
   caseRequestId?: string | null;
   /** Save even though the new slot overlaps (q357); see HearingOverlapError. */
   confirmOverlap?: boolean;
+  /** N01-18 (owner, action "edit"): re-assign; null/"" = the owner attends. */
+  assigneeUserId?: string | null;
 }
 
 export async function updateLawyerHearing(id: string, input: UpdateHearingInput): Promise<HearingDto> {
   const res = await mutateHearing<{ data: HearingDto }>(`/api/v1/lawyer/hearings/${encodeURIComponent(id)}`, "PATCH", input);
   return res.data;
+}
+
+/** N01-18: one option of the «المحامي المُكلَّف بالجلسة» picker. */
+export interface HearingAssigneeOption {
+  userId: string;
+  name: string | null;
+  isSelf: boolean;
+}
+
+/**
+ * The picker's options: the caller first, then the active pleading members of
+ * his firm. `null` for a solo lawyer (no firm — nobody else to name) and on a
+ * failed read, so the form hides the picker and the hearing stays the caller's.
+ */
+export async function getHearingAssigneeOptions(): Promise<HearingAssigneeOption[] | null> {
+  if (isDemoMode) return null;
+  try {
+    const res = await apiGet<{ data?: HearingAssigneeOption[]; firm?: boolean }>("/api/v1/lawyer/hearings/assignees");
+    const options = Array.isArray(res.data) ? res.data : [];
+    return res.firm === true && options.length > 1 ? options : null;
+  } catch {
+    return null;
+  }
 }

@@ -143,6 +143,8 @@ test("the court route set is the one the ruling names", () => {
     "lawyer/deadlines/[id]/route.ts",
     "lawyer/deadlines/route.ts",
     "lawyer/hearings/[id]/route.ts",
+    // N01-18: the assignee picker's options — a read, no write handler.
+    "lawyer/hearings/assignees/route.ts",
     "lawyer/hearings/route.ts",
   ]);
 });
@@ -160,6 +162,7 @@ test("the expected write handlers exist (so the pins below are not vacuous)", ()
     "lawyer/deadlines/[id]/route.ts": ["PATCH"],
     "lawyer/deadlines/route.ts": ["POST"],
     "lawyer/hearings/[id]/route.ts": ["PATCH"],
+    "lawyer/hearings/assignees/route.ts": [],
     "lawyer/hearings/route.ts": ["POST"],
   });
 });
