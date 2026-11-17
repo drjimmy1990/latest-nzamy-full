@@ -22,6 +22,7 @@ import type { Document } from "@/lib/services/documentService";
 import { partitionUploadFiles } from "@/lib/services/fileValidation";
 import { openPendingTab } from "@/lib/ui/pendingTab";
 import { isSupabaseMode } from "@/lib/services/api";
+import { isDemoMode } from "@/lib/runtimeMode";
 import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
 import ShareDocumentModal from "@/components/documents/ShareDocumentModal";
 import {
@@ -516,7 +517,12 @@ export default function DocumentsPage() {
           // opened, same convention "—" already carries for `docs` before its
           // own read settles.
           { key: "trash",     label: "سلة المحذوفات",   count: "—" },
-        ] as const).map(tab => (
+        ] as const)
+          // N07-59 (owner package 13 Nov): «النماذج» lists TEMPLATES, a fixed
+          // catalogue in _taxonomy.ts with no route or table behind it, so the
+          // tab exists in demo mode only. «مستنداتي» and the trash are untouched.
+          .filter(tab => tab.key !== "templates" || isDemoMode)
+          .map(tab => (
           <button key={tab.key} onClick={() => setMainTab(tab.key)}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-bold transition-all ${
               mainTab === tab.key
@@ -641,7 +647,7 @@ export default function DocumentsPage() {
       )}
 
       {/* ──────────────────── TEMPLATES TAB ──────────────────── */}
-      {mainTab === "templates" && (
+      {isDemoMode && mainTab === "templates" && (
         <>
           {/*
             What this tab is now, and why.
