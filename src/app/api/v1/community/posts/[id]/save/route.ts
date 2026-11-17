@@ -14,28 +14,20 @@ import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } fro
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function signedIn() {
+export async function POST(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
   const supabase = await createClient();
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
-  if (isAuthUnavailable(user, authError)) return { refusal: authUnavailableResponse() } as const;
-  if (!user) {
-    return { refusal: NextResponse.json({ error: "سجّل الدخول لحفظ الأسئلة." }, { status: 401 }) } as const;
-  }
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) return NextResponse.json({ error: "سجّل الدخول لحفظ الأسئلة." }, { status: 401 });
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
   const frozen = frozenAccountResponse(user);
-  if (frozen) return { refusal: frozen } as const;
-  return { supabase, user } as const;
-}
-
-export async function POST(
-  _request: NextRequest,
-  context: { params: Promise<{ id: string }> },
-) {
-  const session = await signedIn();
-  if ("refusal" in session) return session.refusal;
-  const { supabase, user } = session;
+  if (frozen) return frozen;
 
   const { id: postId } = await context.params;
   if (!UUID.test(postId)) return NextResponse.json({ error: "هذا السؤال غير موجود" }, { status: 404 });
@@ -58,9 +50,16 @@ export async function DELETE(
   _request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
-  const session = await signedIn();
-  if ("refusal" in session) return session.refusal;
-  const { supabase, user } = session;
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
+  if (!user) return NextResponse.json({ error: "سجّل الدخول لحفظ الأسئلة." }, { status: 401 });
+  // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
+  const frozen = frozenAccountResponse(user);
+  if (frozen) return frozen;
 
   const { id: postId } = await context.params;
   if (!UUID.test(postId)) return NextResponse.json({ error: "هذا السؤال غير موجود" }, { status: 404 });
