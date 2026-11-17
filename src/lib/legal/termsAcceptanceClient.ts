@@ -17,7 +17,10 @@ export async function fetchTermsStatus(): Promise<TermsStatus> {
       cache: "no-store",
     });
     if (!res.ok) return { kind: "unknown" };
-    const body = (await res.json()) as { acceptedCurrent?: unknown };
+    const body = (await res.json()) as { acceptedCurrent?: unknown; available?: unknown };
+    // The table is not there yet (migration not run): the modal stays closed,
+    // and onboarding still shows its consent box — "accepted" would hide it.
+    if (body.available === false) return { kind: "unknown" };
     if (body.acceptedCurrent === true) return { kind: "accepted" };
     if (body.acceptedCurrent === false) return { kind: "needs_acceptance" };
     return { kind: "unknown" };

@@ -5,7 +5,9 @@
  * Bump CURRENT_TERMS_VERSION — and the two «آخر تحديث» strings below, which
  * /terms shows — whenever /terms changes in substance. Every account whose
  * newest row in public.terms_acceptances is for an older version is then asked
- * again, once, on its next signed-in visit (TermsReacceptGate).
+ * again, once, on its next signed-in visit (TermsReacceptGate). Update the
+ * modal's text in src/components/legal/TermsReacceptGate.tsx at the same
+ * time: it names what changed in THIS version (the protection clause).
  *
  * Format: YYYY-MM-DD (the migration's CHECK refuses anything else).
  *
