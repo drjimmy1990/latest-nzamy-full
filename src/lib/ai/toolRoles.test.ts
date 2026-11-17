@@ -180,7 +180,7 @@ test("each library tool's screen maps the gate's refusal to its own words", () =
   assert.deepEqual(library, ["assistant", "canvas-card", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
   assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType\)/);
   assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المساعد المتقدم", input\.userType \?\? null\)/);
-  assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType \}\)/);
+  assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType, mode \}\)/);
   assert.match(src("app/dashboard/business/kanban/_graph-ai-card.ts"), /libraryToolRefusal\([^)]*"اقترح سنداً نظامياً", userType\)/);
   assert.match(src("app/dashboard/business/kanban/CaseGraphView.tsx"), /askCanvasCard\(chosen\.slice\(0, 8\), fetch, userType\)/);
   // /ai/legal-opinion already had its own (aiOpinion.ts), and the law reader its own (_ai-reply.ts).
