@@ -109,9 +109,12 @@
 --   do $$ declare r record; begin for r in select polrelid::regclass t, polname from pg_policy
 --     where polname in ('restricted case: case team only', 'restricted case rows: case team only')
 --     loop execute format('drop policy %I on %s', r.polname, r.t); end loop; end $$;
---   drop function if exists public.set_case_restricted(text, boolean), public.case_visible(text),
+--   drop policy if exists "firm managers read their firm invitations" on public.team_invitations;
+--   drop function if exists public.set_case_restricted(text, boolean), public.can_restrict_case(text),
+--     public.case_visible(text),
 --     public.create_firm_team_invitation(uuid, text, text), public.redeem_firm_team_invitation(text),
---     public.cancel_firm_team_invitation(uuid), public.leave_firm(uuid), public.firm_points_overview(uuid);
+--     public.cancel_firm_team_invitation(uuid), public.leave_firm(uuid), public.firm_points_overview(uuid),
+--     public.is_firm_manager(uuid), public.is_firm_manager(uuid, uuid);
 --   alter table public.service_requests drop column if exists is_restricted;
 --   alter table public.ai_runs drop column if exists case_request_id;
 --   grant insert, update, delete on public.team_invitations to authenticated;
@@ -385,13 +388,27 @@ as $$
 $$;
 
 comment on function public.is_firm_manager(uuid, uuid) is
-  'F7 (20261125_40): p_user owns firm p_firm or is its active managing partner.';
+  'F7 (20261125_40): p_user owns firm p_firm or is its active managing partner. Internal to the definer functions of 20261125_40 — no session EXECUTE (it would let anyone probe who manages which firm).';
+
+-- The caller-only form, for the policy below (a policy runs as the session).
+create or replace function public.is_firm_manager(p_firm uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.is_firm_manager(p_firm, auth.uid());
+$$;
+
+comment on function public.is_firm_manager(uuid) is
+  'F7 (20261125_40): the CALLER owns firm p_firm or is its active managing partner (auth.uid() only).';
 
 -- The owner also sees the invitations a managing partner sent (and vice versa).
 drop policy if exists "firm managers read their firm invitations" on public.team_invitations;
 create policy "firm managers read their firm invitations" on public.team_invitations
   for select
-  using (entity_type = 'firm' and public.is_firm_manager(entity_id, auth.uid()));
+  using (entity_type = 'firm' and public.is_firm_manager(entity_id));
 
 create or replace function public.create_firm_team_invitation(p_firm uuid, p_email text, p_role text)
 returns table (id uuid, token text, expires_at timestamptz)
@@ -710,7 +727,7 @@ begin
     'public.case_visible(text)',
     'public.can_restrict_case(text)',
     'public.set_case_restricted(text, boolean)',
-    'public.is_firm_manager(uuid, uuid)',
+    'public.is_firm_manager(uuid)',
     'public.create_firm_team_invitation(uuid, text, text)',
     'public.cancel_firm_team_invitation(uuid)',
     'public.redeem_firm_team_invitation(text)',
@@ -728,6 +745,14 @@ begin
       execute pg_catalog.format('grant execute on function %s to service_role', f);
     end if;
   end loop;
+  -- the two-argument form is internal only
+  execute 'revoke all on function public.is_firm_manager(uuid, uuid) from public';
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    execute 'revoke all on function public.is_firm_manager(uuid, uuid) from anon';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    execute 'revoke all on function public.is_firm_manager(uuid, uuid) from authenticated';
+  end if;
 end
 $grants$;
 
@@ -775,6 +800,10 @@ begin
      and (has_table_privilege('authenticated', 'public.team_invitations', 'INSERT')
           or has_table_privilege('authenticated', 'public.team_invitations', 'UPDATE')) then
     missing := missing || ' authenticated can still write team_invitations;';
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated')
+     and has_function_privilege('authenticated', 'public.is_firm_manager(uuid, uuid)', 'EXECUTE') then
+    missing := missing || ' sessions can EXECUTE is_firm_manager(uuid, uuid) (probe who manages any firm);';
   end if;
   if to_regclass('public.ai_runs') is not null and not exists (
        select 1 from information_schema.columns

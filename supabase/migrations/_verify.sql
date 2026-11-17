@@ -6958,6 +6958,7 @@ select 'Firm invitation links: team_invitations written only by the definer func
        and to_regprocedure('public.redeem_firm_team_invitation(text)') is not null
        and to_regprocedure('public.cancel_firm_team_invitation(uuid)') is not null
        and not has_function_privilege('anon', 'public.redeem_firm_team_invitation(text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.is_firm_manager(uuid, uuid)', 'EXECUTE')
        as ok;
 select 'Leaving a firm: leave_firm + the removed-member transfer trigger (run 20261125_40; 20261026_70)' as check,
        to_regprocedure('public.leave_firm(uuid)') is not null
