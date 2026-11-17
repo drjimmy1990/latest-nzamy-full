@@ -42,8 +42,11 @@ import {
  *       given-up orders are filtered out in code from a window of
  *       4 × SWEEP_BATCH, oldest first;
  *   (d) P3: founder_release_expired (20261101_10) frees every reserved
- *       founder seat past its 2-hour reserved_until whose order is not paid
- *       (releaseExpiredFounderSeats). LAST, after (a) and (b): those may claim
+ *       founder seat past its 15-minute reserved_until (owner ٣, 20261124_10;
+ *       2 hours before it) whose order is not paid
+ *       (releaseExpiredFounderSeats). With this job every 10 minutes an
+ *       abandoned hold is freed 15–25 minutes after the reservation; a FAILED
+ *       payment frees its seat at once in fulfillOrder, not here. LAST, after (a) and (b): those may claim
  *       an initiated membership order whose payment is just landing, and
  *       freeing its seat first could turn a good purchase into
  *       seat_unavailable near capacity. Best-effort; the count is

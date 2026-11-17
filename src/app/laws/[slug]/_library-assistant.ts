@@ -30,8 +30,10 @@ const FALLBACK = "تعذّر الاتصال بالخادم — حاول مرة �
 const LOCK_SUPPORT = "/contact";
 /** Point top-ups and plans are on /pricing (PaywallGate's CreditsBanner links there too). */
 const TOP_UP = { label: "شحن النقاط", href: "/pricing" } as const;
-/** draftingRequest.DRAFTER_HREF: the one link a drafting refusal may carry. */
+/** draftingRequest.DRAFTER_HREF / CONTRACTS_HREF: the only links a drafting refusal may carry. */
 const DRAFTER_HREF = "/ai/draft";
+const CONTRACTS_HREF = "/ai/contracts";
+const REFUSAL_LINKS: ReadonlySet<string> = new Set([DRAFTER_HREF, CONTRACTS_HREF]);
 
 function newKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -81,9 +83,11 @@ export async function askLibrary(
   }
   // Owner Q485: a request to write a memo or a pleading (runCore, before any
   // charge): the server's polite refusal, and the drafter only when it offers it.
+  // Owner ٢٢: a contract's refusal offers «محترف العقود» the same way.
   if (json.code === "drafting_refused" && typeof json.error === "string" && json.error) {
     const a = json.action as Record<string, unknown> | null | undefined;
-    const action = a && a.href === DRAFTER_HREF && typeof a.label === "string" && a.label ? { label: a.label, href: DRAFTER_HREF } : undefined;
+    const href = a && typeof a.href === "string" && REFUSAL_LINKS.has(a.href) ? a.href : null;
+    const action = a && href && typeof a.label === "string" && a.label ? { label: a.label, href } : undefined;
     return { text: json.error, citations: [], ...(action ? { action } : {}), refused: true };
   }
   // Signed out, or a tier below Pro: say what to do (the assistant's own wording).

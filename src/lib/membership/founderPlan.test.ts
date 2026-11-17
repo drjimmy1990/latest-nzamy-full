@@ -17,10 +17,17 @@ import {
   FOUNDER_CREDITS,
   FOUNDER_DRAFT_KINDS,
   FOUNDER_LIBRARY_DAYS,
+  FOUNDER_LIBRARY_POINTS,
+  FOUNDER_LIBRARY_POINTS_LABEL,
+  FOUNDER_LIBRARY_POINTS_PER_QUESTION,
+  FOUNDER_LIBRARY_QUESTIONS,
+  FOUNDER_LIBRARY_TOOL,
   FOUNDER_MEMBERSHIP_MONTHS,
   FOUNDER_OUTPUT_TOOLS,
   FOUNDER_PLAN_ID,
+  libraryQuestionsToPoints,
 } from "./founderPlan.ts";
+import { readFileSync } from "node:fs";
 import { DRAFT_KIND_IDS } from "../ai/draftKinds.ts";
 import { PRICE_BOOK } from "../pricing/priceBook.ts";
 
@@ -40,6 +47,26 @@ test("what activation grants mirrors 20261101_10: 12 months, 6 works + 1 output,
   assert.deepEqual({ ...FOUNDER_CREDITS }, { drafting_work: 6, independent_output: 1 });
   assert.equal(FOUNDER_LIBRARY_DAYS, 365);
   assert.ok(Object.isFrozen(FOUNDER_CREDITS));
+});
+
+test("owner ٨ / ١٥ / ١٨: 100 library points = 20 library-assistant questions at the tool's own price, never an opt-in choice", async () => {
+  const { getAiTool } = await import("../ai/tools.ts");
+  const spec = getAiTool(FOUNDER_LIBRARY_TOOL);
+  assert.ok(spec, "the library assistant exists");
+  assert.equal(spec.price({} as never, { pages: null }), FOUNDER_LIBRARY_POINTS_PER_QUESTION);
+  assert.equal(FOUNDER_LIBRARY_POINTS_PER_QUESTION, 5);
+  assert.equal(FOUNDER_LIBRARY_QUESTIONS, 20);
+  assert.equal(FOUNDER_LIBRARY_POINTS, 100);
+  assert.equal(FOUNDER_LIBRARY_POINTS_LABEL, "نقاط مساعد المكتبة الذكي");
+  assert.equal(libraryQuestionsToPoints(19), 95);
+  for (const bad of [0, -1, 1.5, "4", null, undefined, Number.NaN]) assert.equal(libraryQuestionsToPoints(bad), 0, String(bad));
+  // the SQL writes 20 (20261124_10)
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261124_10_founder_hold_15min_and_library_points.sql", import.meta.url), "utf8");
+  assert.match(sql, /'library_question', 20, 20, v_ends/);
+  assert.match(sql, /p_credit_kind = 'library_question'\s+and p_tool = 'library-assistant'/);
+  // the library question is spent by the route on its own, not through useCredit
+  assert.equal(creditKindForRun(FOUNDER_LIBRARY_TOOL, { message: "س" }, 0), null);
+  assert.equal("library_question" in FOUNDER_CREDITS, false);
 });
 
 test("the 8 eligible drafter kinds: every draft kind, the rejoinder included (owner ٤١٠)", () => {

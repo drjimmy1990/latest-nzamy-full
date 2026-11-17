@@ -510,13 +510,13 @@ test("founder: the payer refreshing a seat_unavailable order sees the refund rev
   assert.equal(f.activations.length, 0);
 });
 
-test("founder (R17): a DECLINED membership card keeps its seat — the failure is recorded, nothing released; a failed top-up neither", async () => {
+test("founder (owner ٣, R17 withdrawn): a DECLINED membership card frees its seat at once, after the failure is recorded; a failed top-up releases nothing", async () => {
   const { client, log } = memberDb();
   const f = founderDeps(client, gateway(MEMBER_PAY({ status: "failed", source: { type: "creditcard", message: "DECLINED" } })));
   const r = await fulfillOrderWith(f.d, INPUT);
   assert.deepEqual(r, { outcome: "failed", reason: "DECLINED" });
   assert.ok(log.some((q) => q.table === "payment_orders" && q.op === "update" && (q.payload as { status?: string }).status === "failed"));
-  assert.equal(f.releases.length, 0, "the 2-hour reservation holds the seat for the retry");
+  assert.deepEqual(f.releases, [ORDER], "a failed payment releases the reserved seat at once (owner ٣)");
   assert.equal(f.activations.length, 0);
 
   const { client: topupClient } = happyDb();
@@ -525,18 +525,41 @@ test("founder (R17): a DECLINED membership card keeps its seat — the failure i
   assert.equal(t.releases.length, 0);
 });
 
-test("founder (R17): a membership order seen again — voided or cancelled frees its seat exactly once, failed never; a dead top-up never", async () => {
-  for (const [status, expected] of [["voided", 1], ["cancelled", 1], ["failed", 0]] as const) {
+test("founder (owner ٣): a membership order seen again — voided, cancelled or failed frees its seat exactly once; a dead top-up never", async () => {
+  for (const [status, expected] of [["voided", 1], ["cancelled", 1], ["failed", 1]] as const) {
     const { client } = memberDb(MEMBER_ROW({ status, failure_message: "DECLINED" }));
     const f = founderDeps(client, gateway(MEMBER_PAY({ status: "failed" })));
     await fulfillOrderWith(f.d, INPUT);
     assert.deepEqual(f.releases, expected ? [ORDER] : [], status);
   }
-  for (const status of ["voided", "cancelled"]) {
+  for (const status of ["voided", "cancelled", "failed"]) {
     const { client } = happyDb(orderRow({ status }));
     const t = founderDeps(client, gateway(paymentOf({ status: "failed" })));
     await fulfillOrderWith(t.d, INPUT);
     assert.equal(t.releases.length, 0, status);
+  }
+});
+
+test("founder (owner ٣): a failed membership payment whose release throws still answers failed with Moyasar's message", async () => {
+  const { client } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY({ status: "failed", source: { type: "creditcard", message: "DECLINED" } })));
+  f.d.releaseFounderSeat = async () => {
+    throw new Error("rpc down");
+  };
+  assert.deepEqual(await fulfillOrderWith(f.d, INPUT), { outcome: "failed", reason: "DECLINED" });
+});
+
+test("founder (owner ٣): no release when the failure was not recorded (a DB error, or the payment sits on another order)", async () => {
+  for (const [error, outcome] of [
+    [{ code: "57014", message: "timeout" }, "pending"],
+    [{ code: "23505", message: "dup" }, "rejected"],
+  ] as const) {
+    const { client } = memberDb(MEMBER_ROW(), (q) =>
+      q.table === "payment_orders" && q.op === "update" && (q.payload as { status?: string }).status === "failed" ? { error } : undefined,
+    );
+    const f = founderDeps(client, gateway(MEMBER_PAY({ status: "failed", source: { type: "creditcard", message: "DECLINED" } })));
+    assert.equal((await fulfillOrderWith(f.d, INPUT)).outcome, outcome, error.code);
+    assert.equal(f.releases.length, 0, error.code);
   }
 });
 

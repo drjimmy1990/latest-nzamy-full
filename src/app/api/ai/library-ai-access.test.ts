@@ -9,9 +9,12 @@
  * tool, before the charge. (The old free routes /api/ai/library-chat and
  * /api/ai/explain-article, which this gate first guarded, are deleted.)
  *
- * Who passes (owner answers ٢٠٦ / ٢٠٧ / ٢٠٩, decisions of 2026-10-18): a tier
- * of pro or above, or a platform admin. A library subscription
- * (library_access_grants) opens the library's texts, not the assistant.
+ * Who passes (owner answers ٢٠٦ / ٢٠٩, decisions of 2026-10-18): a tier of pro
+ * or above, or a platform admin. Owner ٥ as amended by ١٥ (17 Nov 2026,
+ * replacing ٢٠٧): the library ASSISTANT (library-assistant) also opens to an
+ * active library grant holder and an active founder member — every question
+ * still paid in points. The other library tools keep the Pro rule (the
+ * founder also passes for his plan's own tools, 0.5).
  *
  * Two halves, as in src/lib/libraryAccessDecision.test.ts:
  *   1. the rule, through the pure ./libraryAiDecision.ts, against the real tier
@@ -25,7 +28,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { libraryAiDecision } from "./libraryAiDecision.ts";
+import { libraryAiDecision, libraryAiReads } from "./libraryAiDecision.ts";
 
 const gateSource = readFileSync(new URL("./_libraryAiAccess.ts", import.meta.url), "utf8");
 const decisionSource = readFileSync(new URL("./libraryAiDecision.ts", import.meta.url), "utf8");
@@ -76,11 +79,26 @@ test("pro and every tier above it may use the assistant", () => {
   }
 });
 
-test("a free user with a library grant is asked to upgrade: the grant is ignored (٢٠٧)", () => {
-  // The rule takes no grant field at all; one passed anyway changes nothing.
-  const withGrant = { signedIn: true, tier: "free", isAdmin: false, hasLibraryGrant: true };
-  assert.equal(libraryAiDecision(withGrant, RANKS), "upgrade");
+test("owner ٥ / ١٥: a free user with an active library grant is allowed when the caller sets libraryGrant (the library assistant only)", () => {
+  assert.equal(libraryAiDecision({ signedIn: true, tier: "free", isAdmin: false, libraryGrant: true }, RANKS), "allow");
+  assert.equal(libraryAiDecision({ signedIn: true, tier: "free", isAdmin: false, libraryGrant: false }, RANKS), "upgrade");
+  assert.equal(libraryAiDecision({ signedIn: false, tier: "free", isAdmin: false, libraryGrant: true }, RANKS), "sign_in");
+  // only a literal true, and only under its own name
+  const loose = { signedIn: true, tier: "free", isAdmin: false, libraryGrant: "yes" as unknown as boolean };
+  assert.equal(libraryAiDecision(loose, RANKS), "upgrade");
+  const otherName = { signedIn: true, tier: "free", isAdmin: false, hasLibraryGrant: true };
+  assert.equal(libraryAiDecision(otherName, RANKS), "upgrade");
   assert.equal(libraryAiDecision({ tier: "free", ...member }, RANKS), "upgrade");
+});
+
+test("libraryAiReads: the grant is read for library-assistant only; the founder seat for it and the founder plan's tools", () => {
+  assert.deepEqual(libraryAiReads("library-assistant"), { founderSeat: true, libraryGrant: true });
+  for (const t of ["legal-drafter", "contracts-pro", "legal-opinion-consult", "legal-opinion-letter", "wargaming"]) {
+    assert.deepEqual(libraryAiReads(t), { founderSeat: true, libraryGrant: false }, t);
+  }
+  for (const t of ["quick-answer", "assistant", "canvas-card", "case-brief", "", undefined, null, 5]) {
+    assert.deepEqual(libraryAiReads(t), { founderSeat: false, libraryGrant: false }, String(t));
+  }
 });
 
 test("ai and shield are below pro, so they are asked to upgrade", () => {
@@ -150,16 +168,16 @@ test("a signed-in user below pro who is not an admin is a 403, decided after the
     gateSource,
     /import \{ getUserTier, isPlatformAdmin, TIER_RANK \} from '@\/lib\/access-control';/,
   );
-  assert.match(gateSource, /import \{ libraryAiDecision \} from '\.\/libraryAiDecision';/);
+  assert.match(gateSource, /import \{ libraryAiDecision, libraryAiReads \} from '\.\/libraryAiDecision';/);
   const guest = at(gateSource, "if (!user) {", "gate");
   const reads = at(
     gateSource,
-    "const [tier, isAdmin, founderMember] = await Promise.all([",
+    "const [tier, isAdmin, founderMember, libraryGrant] = await Promise.all([",
     "gate",
   );
   const decided = at(
     gateSource,
-    "const decision = libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember }, TIER_RANK);",
+    "const decision = libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember, libraryGrant }, TIER_RANK);",
     "gate",
   );
   const allowed = at(gateSource, "if (decision === 'allow') return null;", "gate");
@@ -168,25 +186,26 @@ test("a signed-in user below pro who is not an admin is a 403, decided after the
   // every other answer falls through to the 403, so an outcome added to the
   // rule later cannot open the assistant by accident.
   assert.ok(guest < reads && reads < decided && decided < allowed && allowed < denied);
-  assert.match(
-    gateSource,
-    /if \(decision === 'allow'\) return null;(?:\s*\/\/[^\n]*)*\s*return NextResponse\.json\(\s*\{ error: 'المساعد الذكي للمكتبة يتطلب اشتراك Pro أو أعلى', requiredTier: 'pro' \},\s*\{ status: 403 \},\s*\);\s*\}\s*$/,
-  );
+  const tail = gateSource.slice(allowed);
+  assert.match(tail, /^if \(decision === 'allow'\) return null;(?:\s*\/\/[^\n]*)*\s*return NextResponse\.json\(/);
+  assert.match(tail, /requiredTier: 'pro',\s*\},\s*\{ status: 403 \},\s*\);\s*\}\s*$/);
   assert.equal(gateSource.match(/return null;/g)?.length, 1);
 });
 
-test("the gate ignores the library subscription: Pro+ or admin only (٢٠٧)", () => {
-  // getLibraryAccessForUser().hasFullAccess is the full LIBRARY rule since
-  // owner ٢٠٥/٢٠٩: a Pro+ tier, an active library grant, or an admin. The
-  // assistant is not part of the library subscription, so the gate reads none
-  // of that: not the flag, not the grant, not the library rule. (Comments may
-  // name them to say why; the code may not.)
+test("owner ٥ / ١٥: the gate reads the library grant and the founder seat only for the tools libraryAiReads names", () => {
+  // The library grant opens the library ASSISTANT only: the read is guarded by
+  // libraryAiReads(toolId).libraryGrant, so quick-answer, the deep assistant
+  // and the other library tools never see it. The library's full-access flag
+  // is still not used (it also counts a Pro tier and an admin, read here
+  // separately). (Comments may name them; the code is what is checked.)
   const gateCode = gateSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  assert.doesNotMatch(
-    gateCode,
-    /getLibraryAccessForUser|hasFullAccess|hasActiveLibraryGrant|hasFullLibraryAccess|fullLibraryAccess|libraryAccessServer|library_access_grants/,
-  );
-  // "pro" in the 403 is this rule; if the rule moves, the message moves with it.
+  assert.match(gateCode, /import \{ hasActiveLibraryGrant \} from '@\/lib\/libraryAccessServer';/);
+  assert.match(gateCode, /const reads = libraryAiReads\(toolId\);/);
+  assert.match(gateCode, /reads\.libraryGrant \? hasActiveLibraryGrant\(user\.id\) : Promise\.resolve\(false\),/);
+  assert.match(gateCode, /reads\.founderSeat \? isFounderMemberForTool\(user\.id, toolId\) : Promise\.resolve\(false\),/);
+  assert.equal(gateCode.match(/hasActiveLibraryGrant\(/g)?.length, 1);
+  assert.doesNotMatch(gateCode, /getLibraryAccessForUser|hasFullAccess|hasFullLibraryAccess|fullLibraryAccess|library_access_grants/);
+  // "pro" in the 403 is the rule for every other library tool.
   assert.match(gateSource, /requiredTier: 'pro'/);
 });
 
@@ -197,10 +216,12 @@ test("the gate is all or nothing, not a per-item free check", () => {
 });
 
 test("the gate's own error bodies are Arabic", () => {
-  const bodies = [...gateSource.matchAll(/\{ error: '([^']+)'/g)].map((m) => m[1]);
-  assert.equal(bodies.length, 2, "the 401 and the 403");
+  // The 401 body, and the 403's two messages (the library assistant names the
+  // library subscription too; the other library tools need Pro).
+  const code = gateSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const bodies = [...code.matchAll(/'([^'\n]*[؀-ۿ][^'\n]*)'/g)].map((m) => m[1]);
+  assert.equal(bodies.length, 3, "the 401 and the two 403 messages");
   for (const text of bodies) {
-    assert.match(text, /[؀-ۿ]/, text);
     // "Pro" is the plan's name, as in checkLibraryAccess's own message.
     assert.doesNotMatch(text.replace(/\bPro\b/g, ""), /[A-Za-z]/, text);
   }

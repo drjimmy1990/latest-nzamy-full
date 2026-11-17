@@ -108,12 +108,14 @@ const nounAr = (n: number): string => (n >= 3 && n <= 10 ? "نقاط" : "نقط�
 
 /**
  * Today's server prices, [lowest, highest] per run. A repricing edits this on
- * purpose. Owner ٤٠٩–٤١٢ / ٤١٦ (7 Nov 2026): claim 200, simulator 75/150
+ * purpose. Owner ٤٠٩–٤١٢ / ٤١٦ (7 Nov 2026): simulator 75/150
  * (R1), strength 75, consultation 100, letter 50, assistant 30 per 15
- * messages, quick answer 10, Najiz condense 15.
+ * messages, quick answer 10, Najiz condense 15. Owner ٩ (17 Nov 2026): the
+ * drafter's claim 500 (and the first-instance memos), appeal 800, cassation
+ * and petition 1,500.
  */
 const TODAY: Record<string, [number, number]> = {
-  "legal-drafter": [200, 1500],
+  "legal-drafter": [500, 1500],
   "contracts-pro": [1000, 1000],
   "contract-drafter": [500, 500],
   wargaming: [75, 150],
@@ -156,8 +158,8 @@ test("task 4: the registry charges today's prices, and the display helper reads 
   assert.equal(display.aiToolPriceText("assistant", "ar"), "٣٠ نقطة لكل محادثة من ١٥ رسالة");
   assert.equal(display.messagesNounAr(5), "رسائل");
   assert.equal(display.messagesNounAr(15), "رسالة");
-  assert.equal(display.aiToolPriceText("legal-drafter", "ar"), `من ${(200).toLocaleString("ar-SA")} إلى ${(1500).toLocaleString("ar-SA")} نقطة`);
-  assert.equal(display.aiToolPriceText("legal-drafter", "en"), "200 to 1,500 points");
+  assert.equal(display.aiToolPriceText("legal-drafter", "ar"), `من ${(500).toLocaleString("ar-SA")} إلى ${(1500).toLocaleString("ar-SA")} نقطة`);
+  assert.equal(display.aiToolPriceText("legal-drafter", "en"), "500 to 1,500 points");
   assert.equal(display.aiToolPriceText("najiz-optimizer", "ar"), "١٥ نقطة");
   assert.equal(display.aiToolPriceText("wargaming", "ar"), "من ٧٥ إلى ١٥٠ نقطة");
   assert.equal(display.aiToolPriceText("analyze-strength", "ar"), "٧٥ نقطة");

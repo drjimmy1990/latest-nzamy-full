@@ -4,7 +4,7 @@
  * the library grant, the tier ranking and the notifier into ./fulfillCore.ts,
  * where the logic lives (and is tested with fakes). P3 adds the founder
  * membership RPCs (20261101_10): founder_activate (the grant),
- * founder_release_order (a dead payment's seat) and the admin bell
+ * founder_release_order (a failed / voided / cancelled payment's seat) and the admin bell
  * (library_monitor_notify_admins, 20261031_10 — the one helper that writes a
  * notification to every admin).
  *

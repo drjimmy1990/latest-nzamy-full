@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getUserTier, isPlatformAdmin, TIER_RANK } from '@/lib/access-control';
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from '@/lib/auth/apiAuth';
-import { libraryAiDecision } from './libraryAiDecision';
+import { hasActiveLibraryGrant } from '@/lib/libraryAccessServer';
+import { libraryAiDecision, libraryAiReads } from './libraryAiDecision';
 import { isFounderMemberForTool } from './_founderToolMember';
 
 /**
@@ -15,31 +16,34 @@ import { isFounderMemberForTool } from './_founderToolMember';
  * precedent text in that corpus is server-only and paywalled (migrations
  * 20260929_01 and 20261016_01), and the agent answers from it and quotes it.
  *
- * The rule is the assistant's own (owner answers ٢٠٦ / ٢٠٧ / ٢٠٩, decisions of
- * 2026-10-18): a signed-in user whose tier is pro or higher, or a platform
- * admin. It is libraryAiDecision() in ./libraryAiDecision.ts. It is NOT the
- * library's full-access flag (getLibraryAccessForUser().hasFullAccess), which
- * also counts a library subscription: library-only subscribers get the
- * library's texts, not the assistant, so a free user with a library grant is a
- * 403 here.
+ * The rule is libraryAiDecision() in ./libraryAiDecision.ts: a signed-in user
+ * whose tier is pro or higher, or a platform admin (owner answers ٢٠٦ / ٢٠٩);
+ * plus, for named tools only (libraryAiReads):
+ *   - an active founder member, for the founder plan's own tools (0.5, owner
+ *     package 17 Nov: the drafter and the four independent-output tools —
+ *     founder activation writes no subscriptions row, so the Pro rule alone
+ *     refused what he paid for) and for the library assistant (owner ٥ / ١٥);
+ *   - an active library grant holder (a library subscriber), for the library
+ *     assistant ONLY (owner ٥ / ١٥, 17 Nov 2026, replacing ٢٠٧). Every other
+ *     library tool keeps the Pro rule; the grant is not even read for them.
+ * Opening the assistant is not free: every question is charged its points
+ * (runCore.ts); only the founder's 20 library questions are paid from his
+ * membership credit.
  *
  * The check is all or nothing, not per item. An answer can draw on any law
  * and quote other laws' text, so a free law or a free first-N article cannot
  * contain what comes back.
  *
  * Returns the response to send, or null when the caller may go on. Call it after
- * the rate limit (it costs a getUser round-trip and, for a signed-in user, two
- * service-role reads run together: subscriptions for the tier and profiles for
- * the admin flag) and after the route's "not configured" 503. The client turns
- * 401/403 into "sign in" / "subscribe" (src/app/laws/[slug]/_ai-reply.ts), which
- * must not be offered while the assistant is offline. Call it before the body is
- * read and before any n8n call.
- *
- * `toolId` (0.5, owner package 17 Nov): an active founder member running one
- * of the founder plan's tools (founderPlanTool.ts: the drafter and the four
- * independent-output tools) passes as well — founder activation writes no
- * subscriptions row, so the Pro rule alone refused what he paid for. The
- * seat is read only for those tools (_founderToolMember.ts).
+ * the rate limit (it costs a getUser round-trip and, for a signed-in user,
+ * service-role reads run together: subscriptions for the tier, profiles for
+ * the admin flag, and — only for the tools that need them — the founder seat
+ * and the library grant) and after the route's "not configured" 503. The
+ * client turns 401/403 into "sign in" / "subscribe"
+ * (src/app/laws/[slug]/_ai-reply.ts), which must not be offered while the
+ * assistant is offline. Call it before the body is read and before any n8n
+ * call. A failed founder or grant read answers false: it never opens the
+ * assistant.
  */
 export async function libraryAiAccess(toolId?: string): Promise<NextResponse | null> {
   const supabase = await createClient();
@@ -56,18 +60,26 @@ export async function libraryAiAccess(toolId?: string): Promise<NextResponse | n
   const frozen = frozenAccountResponse(user);
   if (frozen) return frozen;
 
-  const [tier, isAdmin, founderMember] = await Promise.all([
+  const reads = libraryAiReads(toolId);
+  const [tier, isAdmin, founderMember, libraryGrant] = await Promise.all([
     getUserTier(user.id),
     isPlatformAdmin(user.id),
-    isFounderMemberForTool(user.id, toolId),
+    reads.founderSeat ? isFounderMemberForTool(user.id, toolId) : Promise.resolve(false),
+    reads.libraryGrant ? hasActiveLibraryGrant(user.id) : Promise.resolve(false),
   ]);
-  const decision = libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember }, TIER_RANK);
+  const decision = libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember, libraryGrant }, TIER_RANK);
   if (decision === 'allow') return null;
 
-  // `upgrade`, and anything else the rule may answer: closed. A library
-  // subscription does not open the assistant, so the message names Pro.
+  // `upgrade`, and anything else the rule may answer: closed. The library
+  // assistant also opens with a library subscription; the other library
+  // tools need Pro.
   return NextResponse.json(
-    { error: 'المساعد الذكي للمكتبة يتطلب اشتراك Pro أو أعلى', requiredTier: 'pro' },
+    {
+      error: reads.libraryGrant
+        ? 'المساعد الذكي للمكتبة يتطلب اشتراك المكتبة أو اشتراك Pro أو أعلى'
+        : 'المساعد الذكي للمكتبة يتطلب اشتراك Pro أو أعلى',
+      requiredTier: 'pro',
+    },
     { status: 403 },
   );
 }

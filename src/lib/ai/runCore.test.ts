@@ -589,7 +589,7 @@ test("founder: useCredit with an ineligible tool falls back to the points path; 
     const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "appeal" }), { useCredit: undefined }));
     assert.equal(r.status, 202);
     assert.deepEqual(rpcs(log), ["ai_start_run"]);
-    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 1000);
+    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 800, "an appeal is 800 points (owner ٩, 17 Nov 2026)");
   }
 });
 
@@ -620,6 +620,123 @@ test("founder: no credit left → 402 with the Arabic message; not eligible → 
   const r = await startRunWith(client as never, drafterDeps(), LAWYER, drafterBody(issuesInput({ kind: "appeal" })));
   assert.equal(r.body.error, "لا يتبقى لك رصيد من باقة المؤسس لهذه الأداة");
   assert.equal(r.body.error, AI_COPY.noCredit);
+});
+
+// ── owner ٨ / ١٥ / ١٨: the founder's library points (20 × 5) on library-assistant ─
+
+/** Both start functions; library-assistant live. `credit` overrides the credit function's answer. */
+function founderLibDb(credit?: { data?: unknown; error?: { code?: string; message?: string } }) {
+  return fakeDb((q: FakeQuery) => {
+    if (q.table === "platform_settings") return { data: { value: { "library-assistant": { mode: "live" } } } };
+    if (q.op === "rpc" && q.table === "ai_start_run") {
+      const price = (q.payload as Record<string, unknown>).p_price as number;
+      return { data: [{ run_id: RUN, created: true, status: "running", charged: price > 0, charged_points: price }] };
+    }
+    if (q.op === "rpc" && q.table === "ai_start_run_with_credit") {
+      return credit ?? { data: [{ run_id: RUN, created: true, status: "running", charged: false, charged_points: 0, credit_used: true }] };
+    }
+    if (q.op === "rpc" && q.table === "ai_fail_run") return { data: true };
+    if (q.table === "ai_runs" && q.op === "update") return { data: [{ id: RUN }] };
+    return {};
+  });
+}
+
+function founderLibDeps(hasCredit: boolean | "throws" | undefined, asked: string[] = []): StartRunDeps {
+  return {
+    callbackUrl: "https://app.test/api/v1/ai/callback",
+    n8n: async (call) =>
+      call.path === LIB_QUERIES_PATH
+        ? { kind: "result", result: { run_id: RUN, status: "succeeded", output: { queries: ["فصل العامل"] } } }
+        : { kind: "result", result: { run_id: RUN, status: "succeeded", output: { reply: "ج [S1]" }, citations: ["S1"] } },
+    libraryAccess: async () => null,
+    retrieve: async () => FOUND,
+    ...(hasCredit === undefined
+      ? {}
+      : {
+          founderLibraryCredit: async (userId: string) => {
+            asked.push(userId);
+            if (hasCredit === "throws") throw new Error("down");
+            return hasCredit;
+          },
+        }),
+  };
+}
+
+const founderLibBody = (over: Record<string, unknown> = {}) => ({
+  tool: "library-assistant", input: { message: "ما مدة الإشعار في نظام العمل؟" }, idempotencyKey: "key-libq0001", ...over,
+});
+
+test("founder library points: a founder with questions left starts library-assistant through ai_start_run_with_credit('library_question') at no points", async () => {
+  const { client, log } = founderLibDb();
+  const asked: string[] = [];
+  const r = await startRunWith(client as never, founderLibDeps(true, asked), LAWYER, founderLibBody());
+  assert.equal(r.status, 200);
+  assert.deepEqual(asked, ["u-1"]);
+  assert.deepEqual(rpcs(log).filter((f) => f.startsWith("ai_start")), ["ai_start_run_with_credit"]);
+  const p = payloadOf(log, "ai_start_run_with_credit")!;
+  assert.equal(p.p_credit_kind, "library_question");
+  assert.equal(p.p_tool, "library-assistant");
+  assert.equal(p.p_price, 5);
+  assert.equal(r.body.creditUsed, true);
+  assert.equal(r.body.chargedPoints, 0);
+});
+
+test("founder library points: none left, no dep, or a failed read → the ordinary 5-point ai_start_run", async () => {
+  for (const has of [false, undefined, "throws"] as const) {
+    const { client, log } = founderLibDb();
+    const r = await startRunWith(client as never, founderLibDeps(has), LAWYER, founderLibBody());
+    assert.equal(r.status, 200, String(has));
+    assert.deepEqual(rpcs(log).filter((f) => f.startsWith("ai_start")), ["ai_start_run"], String(has));
+    assert.equal(payloadOf(log, "ai_start_run")!.p_price, 5);
+    assert.ok(!("p_credit_kind" in payloadOf(log, "ai_start_run")!));
+    assert.equal(r.body.creditUsed, false);
+  }
+});
+
+test("founder library points: no_credit (a race), credit_not_eligible (20261124_10 not run) or a missing function fall back to 5 points, same key", async () => {
+  for (const error of [
+    { code: "P0001", message: "no_credit" },
+    { code: "P0001", message: "credit_not_eligible" },
+    { code: "PGRST202", message: "missing" },
+  ]) {
+    const { client, log } = founderLibDb({ error });
+    const r = await startRunWith(client as never, founderLibDeps(true), LAWYER, founderLibBody());
+    assert.equal(r.status, 200, error.message);
+    assert.deepEqual(rpcs(log).filter((f) => f.startsWith("ai_start")), ["ai_start_run_with_credit", "ai_start_run"], error.message);
+    const plain = payloadOf(log, "ai_start_run")!;
+    assert.equal(plain.p_price, 5);
+    assert.equal(plain.p_idempotency_key, "key-libq0001");
+    assert.ok(!("p_credit_kind" in plain));
+    assert.equal(r.body.chargedPoints, 5);
+  }
+  // Points short after the fallback: the normal insufficient-points answer.
+  const short = fakeDb((q: FakeQuery) => {
+    if (q.table === "platform_settings") return { data: { value: { "library-assistant": { mode: "live" } } } };
+    if (q.op === "rpc" && q.table === "ai_start_run_with_credit") return { error: { code: "P0001", message: "no_credit" } };
+    if (q.op === "rpc" && q.table === "ai_start_run") return { error: { code: "P0001", message: "insufficient_points" } };
+    return {};
+  });
+  const r = await startRunWith(short.client as never, founderLibDeps(true), LAWYER, founderLibBody());
+  assert.deepEqual([r.status, r.body.code], [402, "insufficient_points"]);
+});
+
+test("founder library points: an admin, another tool, or the drafter's useCredit never touch the library credit", async () => {
+  {
+    const { client, log } = founderLibDb();
+    const asked: string[] = [];
+    const r = await startRunWith(client as never, founderLibDeps(true, asked), { ...LAWYER, userType: "admin" }, founderLibBody());
+    assert.equal(r.status, 200);
+    assert.deepEqual(asked, [], "an admin is exempt: not even asked");
+    assert.deepEqual(rpcs(log).filter((f) => f.startsWith("ai_start")), ["ai_start_run"]);
+  }
+  {
+    const { client, log } = creditDb();
+    const asked: string[] = [];
+    const r = await startRunWith(client as never, { ...drafterDeps(), founderLibraryCredit: async (u) => (asked.push(u), true) }, LAWYER, drafterBody(issuesInput({ kind: "appeal" })));
+    assert.equal(r.status, 202);
+    assert.deepEqual(asked, []);
+    assert.equal(payloadOf(log, "ai_start_run_with_credit")!.p_credit_kind, "drafting_work");
+  }
 });
 
 // ── B4: pasted text travels as one virtual text file ─────────────────────────

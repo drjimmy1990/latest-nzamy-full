@@ -136,6 +136,8 @@ test("F16: a founder success renders the gold welcome; anything else the ordinar
   assert.match(code, /from-\[#C8A762\]/, "the gold frame");
   assert.match(code, /<Link href=\{welcome\.toolsHref\}[^>]*>\s*\{FOUNDER_WELCOME_TOOLS_LABEL\}/);
   assert.match(code, /<Link href=\{welcome\.receiptHref\}[^>]*>\s*\{FOUNDER_WELCOME_RECEIPT_LABEL\}/);
+  // owner ١٥ / ١٨: the 100 founding points line
+  assert.match(code, /\{welcome\.pointsLine\}/);
   // still a server component: no framer-motion, no client hooks
   assert.doesNotMatch(code, /framer-motion|useState|useEffect/);
   const css = readFileSync(join(import.meta.dirname, "../../globals.css"), "utf8").replace(/\r\n/g, "\n");

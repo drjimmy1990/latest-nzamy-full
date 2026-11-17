@@ -1,13 +1,14 @@
 import { createServiceClient } from '@/lib/supabase/server';
 import { FOUNDER_CAMPAIGN_ID } from '@/lib/membership/founderPlan';
-import { isFounderPlanTool } from './founderPlanTool';
+import { libraryAiReads } from './libraryAiDecision';
 
 /**
  * 0.5 (owner package 17 Nov): is `userId` an ACTIVE founder member asking for
- * one of the founder plan's own tools (founderPlanTool.ts)? The library AI
- * gate (_libraryAiAccess.ts) lets such a run through: founder activation
- * writes no `subscriptions` row, so the Pro rule alone refused the drafter
- * and the legal opinion he paid for.
+ * one of the founder plan's own tools (founderPlanTool.ts) or for the
+ * library's AI assistant (owner ٥ / ١٥, 17 Nov 2026) — libraryAiReads(toolId)
+ * .founderSeat? The library AI gate (_libraryAiAccess.ts) lets such a run
+ * through: founder activation writes no `subscriptions` row, so the Pro rule
+ * alone refused the drafter and the legal opinion he paid for.
  *
  * Active = a founder_seats row of this campaign with status 'active' and an
  * end in the future (founder_activate, 20261101_10). Any read error answers
@@ -15,7 +16,7 @@ import { isFounderPlanTool } from './founderPlanTool';
  * the assistant.
  */
 export async function isFounderMemberForTool(userId: string, toolId: string | undefined): Promise<boolean> {
-  if (!isFounderPlanTool(toolId)) return false;
+  if (!libraryAiReads(toolId).founderSeat) return false;
   try {
     const admin = await createServiceClient();
     const { data, error } = await admin

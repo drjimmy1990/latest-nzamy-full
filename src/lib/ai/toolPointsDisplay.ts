@@ -113,9 +113,9 @@ export function aiToolPriceUnit(ref: PricedAiToolRef, lang: "ar" | "en"): string
 }
 
 /**
- * The price as a phrase, for a plan card's bullet: «٧٥ نقطة», «من ٢٠٠ إلى
+ * The price as a phrase, for a plan card's bullet: «٧٥ نقطة», «من ٥٠٠ إلى
  * ١٬٥٠٠ نقطة», «٣٠ نقطة لكل محادثة من ١٥ رسالة» / "75 points",
- * "200 to 1,500 points".
+ * "500 to 1,500 points".
  */
 export function aiToolPriceText(ref: PricedAiToolRef, lang: "ar" | "en"): string {
   const [min, max] = aiToolPointRange(ref);

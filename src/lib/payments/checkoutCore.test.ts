@@ -23,6 +23,8 @@ import { buildCatalog, quote } from "./catalog.ts";
 import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
+import { FOUNDER_TERMS_REQUIRED_AR, FOUNDER_TERMS_STALE_AR } from "./founderConsent.ts";
+import { FOUNDER_TERMS_VERSION } from "../founder/founderTerms.ts";
 
 /** A book entry with none of its cycles retired: what it was before it was retired. */
 function asSold(entry: BookEntry): BookEntry {
@@ -1050,7 +1052,12 @@ test("coupon: an abandoned 3-D Secure order (a payment reached it) blocks for th
 
 // ── P3: the founder membership (lawyer-founder-2026) — sale switch, no coupons, a reserved seat ──
 
-const FOUNDER = { itemId: "lawyer-founder-2026", billing: "once" as const };
+/** A founder checkout that ticked the terms checkbox (owner ١٦) — the body every founder order needs. */
+const FOUNDER = {
+  itemId: "lawyer-founder-2026",
+  billing: "once" as const,
+  founderConsent: { accepted: true, version: FOUNDER_TERMS_VERSION },
+};
 
 /** A reserveFounderSeat spy: answers `answer` (or throws it when it is an Error), recording each call and the log length at the call. */
 function seatSpy(answer: string | Error, log?: FakeQuery[]) {
@@ -1303,5 +1310,88 @@ test("founder (R13): a plan, a library pass or a top-up never calls releaseFound
       assert.equal(r.status, 503, `${JSON.stringify(over)} ${mode}`);
       assert.equal(rel.calls.length, 0, `${JSON.stringify(over)} ${mode}`);
     }
+  }
+});
+
+// ── owner ١٦ (17 Nov 2026): the founder terms consent, recorded on the order ──
+
+test("founder terms: no consent (missing, false, a string) is 400 before anything is read or written — no order, no seat", async () => {
+  for (const founderConsent of [undefined, null, { accepted: false, version: FOUNDER_TERMS_VERSION }, { accepted: false, version: null }]) {
+    const { client: admin, log } = db("lawyer");
+    const m = moyasar();
+    const seat = seatSpy("reserved", log);
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat },
+      input({ ...FOUNDER, founderConsent }),
+    );
+    assert.equal(r.status, 400, JSON.stringify(founderConsent));
+    assert.deepEqual(r.body, { error: FOUNDER_TERMS_REQUIRED_AR });
+    assert.equal(log.length, 0, "nothing read or written");
+    assert.equal(seat.calls.length, 0);
+    assert.equal(m.intents.length, 0);
+  }
+});
+
+test("founder terms: a stale or missing version is 400 «حدّث الصفحة…» — the buyer accepted another text", async () => {
+  for (const version of ["2026-11-01", null, ""]) {
+    const { client: admin, log } = db("lawyer");
+    const seat = seatSpy("reserved", log);
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat },
+      input({ ...FOUNDER, founderConsent: { accepted: true, version } }),
+    );
+    assert.equal(r.status, 400, String(version));
+    assert.deepEqual(r.body, { error: FOUNDER_TERMS_STALE_AR });
+    assert.equal(log.length, 0);
+  }
+});
+
+test("founder terms: unpublished terms close the sale (410), whatever the body says", async () => {
+  const { client: admin, log } = db("lawyer");
+  const seat = seatSpy("reserved", log);
+  const r = await startCheckoutWith(
+    {
+      admin,
+      client: moyasar().client,
+      now: () => NOW,
+      onSale: true,
+      reserveFounderSeat: seat.reserveFounderSeat,
+      founderTerms: { published: false, version: FOUNDER_TERMS_VERSION },
+    },
+    input(FOUNDER),
+  );
+  assert.equal(r.status, 410);
+  assert.deepEqual(r.body, { error: "باب الاشتراك مغلق حاليًا" });
+  assert.equal(log.length, 0);
+});
+
+test("founder terms: the order's metadata records the version and the SERVER time of the consent", async () => {
+  const { client: admin, log } = db("lawyer");
+  const seat = seatSpy("reserved", log);
+  const r = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat },
+    input(FOUNDER),
+  );
+  assert.equal(r.status, 200);
+  const [ins] = inserts(log);
+  const meta = (ins.payload as { metadata?: Record<string, unknown> }).metadata ?? {};
+  assert.equal(meta.founder_terms_version, FOUNDER_TERMS_VERSION);
+  assert.equal(meta.founder_terms_accepted_at, NOW.toISOString());
+  assert.equal(meta.user_email, "buyer@example.test", "the other metadata stays");
+});
+
+test("founder terms: every other item ignores the consent fields and records none", async () => {
+  const cases: Array<[Partial<CheckoutInput>, string]> = [
+    [{}, "lawyer"],
+    [{ founderConsent: { accepted: true, version: FOUNDER_TERMS_VERSION } }, "lawyer"],
+    [{ itemId: "lib-q1", billing: "once" }, "lawyer"],
+    [{ itemId: "topup-250", billing: "once" }, "individual"],
+  ];
+  for (const [over, userType] of cases) {
+    const { client: admin, log } = db(userType);
+    const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input(over));
+    assert.equal(r.status, 200, JSON.stringify(over));
+    const meta = (inserts(log)[0].payload as { metadata?: Record<string, unknown> }).metadata ?? {};
+    assert.ok(!("founder_terms_version" in meta) && !("founder_terms_accepted_at" in meta), JSON.stringify(over));
   }
 });

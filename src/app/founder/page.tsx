@@ -24,7 +24,10 @@ import { WindowLine } from "./_components/WindowLine";
  *   - the hero's eight-station race track with its «٩ من ١٠» trophy: the
  *     owner's conflict ruling ٣ allows the page to describe the live
  *     drafter's stages only, never the unpublished eight;
- *   - the video placeholder (no video file exists yet);
+ *   - the prototype's video placeholder: the real promo (V16, the owner's
+ *     WhatsApp 720p cut, public/media/founder/) sits right after the hero
+ *     instead — controls, no autoplay, preload="none" so nothing but the
+ *     poster loads before the visitor presses play;
  *   - the site-wide Navbar/Footer: they name products the campaign must not
  *     mention, so the page carries its own small header and footer.
  * Numbers: the price from quote() (landingCopy.ts, pinned to the manifest),
@@ -42,6 +45,9 @@ export const metadata = buildMetadata({
 });
 
 const JOIN_ID = "join";
+/** V16 promo (owner package 17 Nov 2026, 08_المواد_التسويقية/video): 1280×720, 122.7 s, 7.5 MB. */
+const PROMO_VIDEO_SRC = "/media/founder/promo-whatsapp-720p.mp4";
+const PROMO_POSTER_SRC = "/media/founder/video-poster.jpg";
 const PRICE = founderLandingPrice();
 
 const wrap = "mx-auto max-w-[1180px] px-4 sm:px-6";
@@ -75,7 +81,7 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
   { q: "هل التنقيح يخصم عملاً آخر؟", a: "لا. جولة التنقيح الثانية داخل الجلسة نفسها لا تخصم من رصيد أعمالك." },
   {
     q: "ماذا يشمل السعر؟",
-    a: "يشمل ٦ أعمال قانونية. والمكتبة القانونية مفتوحة لك ما دام في رصيدك نقاط، فإذا نفدت النقاط لزم الشحن بأي قيمة تختارها لتُفتح المكتبة من جديد. والسؤال الواحد على المكتبة يخصم ٥ نقاط.",
+    a: "يشمل ٦ أعمال قانونية. والمكتبة القانونية مفتوحة لك سنة كاملة من تفعيل الباقة، والشحن لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم ٥ نقاط، فإذا نفدت أُغلق المساعد الذكي وحده حتى تشحن بأي قيمة تختارها، وتبقى المكتبة مفتوحة طوال السنة.",
   },
   { q: "هل السعر هو سعر كل مذكرة؟", a: "لا. ٢٬٩٩٦ ر.س قيمة الباقة كلها، وليست سعراً لعمل منفرد." },
   { q: "متى تبدأ مدة العضوية؟", a: "من لحظة تفعيل العضوية بعد توثيق الرخصة وإتمام السداد." },
@@ -84,19 +90,13 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     a: "تحتفظ نظامي بحق تحديث عروضها وباقاتها في أي وقت بما يحفظ استمرارية الخدمة وجودتها، دون المساس بحقوق المشتركين المكتسبة في باقتهم. ويبقى ما اشتريته لك كاملاً طوال مدة عضويتك.",
   },
   {
-    // The prototype promised «استرداد كامل قبل أي استخدام»; that clause still
-    // waits on the owner (README «مفتوح»), so the page points to the
-    // published policy instead of promising it.
+    // Owner ١١ / ١٦ (17 Nov 2026): 14 days from purchase, if no service of the plan was used — item ٧ of /founder-terms.
     q: "هل أستطيع الاسترداد؟",
     a: (
       <>
-        يخضع الاسترداد لـ
-        <Link href="/refund-policy" className="font-bold text-[#0B3D2E] underline dark:text-[#E6CD8E]">
-          سياسة الاسترداد
-        </Link>{" "}
-        المعتمدة في المنصة، وتُفصَّل شروط الباقة في{" "}
+        نعم، خلال ١٤ يوماً من الشراء بشرط عدم استخدام أي من خدمات الباقة، وفق{" "}
         <Link href={FOUNDER_TERMS_PATH} className="font-bold text-[#0B3D2E] underline dark:text-[#E6CD8E]">
-          صفحة شروطها
+          صفحة الشروط
         </Link>
         .
       </>
@@ -172,6 +172,29 @@ export default function FounderPage() {
               </div>
             )}
           </div>
+
+          {/* ── V16 promo video: inside the hero's dark band (dark in both themes) ── */}
+          <figure className={`${wrap} mt-11`}>
+            <video
+              controls
+              preload="none"
+              playsInline
+              poster={PROMO_POSTER_SRC}
+              width={1280}
+              height={720}
+              aria-label="الفيديو التعريفي لباقة المحامي المؤسس"
+              className="block aspect-video h-auto w-full rounded-[22px] border border-white/15 bg-black"
+            >
+              <source src={PROMO_VIDEO_SRC} type="video/mp4" />
+              متصفحك لا يدعم تشغيل الفيديو.{" "}
+              <a href={PROMO_VIDEO_SRC} className="underline">
+                افتح الفيديو
+              </a>
+            </video>
+            <figcaption className="mt-3 text-sm text-[#BFD3C9]">
+              باقة المحامي المؤسس في دقيقتين — اضغط للتشغيل
+            </figcaption>
+          </figure>
         </section>
 
         {/* ── samples ── */}
@@ -237,7 +260,7 @@ export default function FounderPage() {
         <section aria-labelledby="founder-h2c" className={lightSection}>
           <div className={wrap}>
             <h2 id="founder-h2c" className={h2Light}>
-              مكتبة قانونية ضخمة لمدة ٣٦٥ يوماً، تغذّي الصائغ بالنص ولائحته
+              مكتبة قانونية ضخمة لسنة كاملة من تفعيلك، تغذّي الصائغ بالنص ولائحته
             </h2>
             <p className={subLight}>ابحث، ثم افتح المادة، وستجد لائحتها التنفيذية تحتها مباشرة مع حالة السريان.</p>
             <LibraryGifs />
@@ -313,6 +336,7 @@ export default function FounderPage() {
                     خصم المؤسس ١٥٪ على شحنات النقاط ورسوم نظامي المؤهلة، وإذا وُجد عرض عام أقل سعراً يُطبَّق عليك الأفضل
                     فقط دون جمع الخصمين.
                   </li>
+                  <li>١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي.</li>
                   <li>٣ دعوات تتجدد شهرياً لمحامين مرخصين جدد لم يسبق لهم التسجيل.</li>
                 </ul>
                 {PRICE && (
@@ -334,9 +358,10 @@ export default function FounderPage() {
                   </table>
                 )}
                 <p className="text-sm leading-relaxed text-[#4B6158]">
-                  يشمل السعر ٦ أعمال قانونية. المكتبة مفتوحة ما دامت لديك نقاط، وعند نفادها يلزم الشحن بأي قيمة لإعادة
-                  فتحها، والسؤال على المكتبة بـ٥ نقاط. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم
-                  التفعيل بعد توثيق الرخصة وإتمام السداد وحجز مقعدك.
+                  يشمل السعر ٦ أعمال قانونية. المكتبة مفتوحة سنة كاملة من تفعيل الباقة، والشحن
+                  لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال عليه بـ٥ نقاط، وعند نفادها
+                  يُغلق المساعد وحده حتى الشحن بأي قيمة، وتبقى المكتبة مفتوحة طوال السنة. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم التفعيل بعد
+                  توثيق الرخصة وإتمام السداد وحجز مقعدك.
                 </p>
                 <p className="mt-3.5 rounded-xl border border-[#E8CF8A] bg-[#FFF3D6] px-3.5 py-2.5 text-[15px] font-bold text-[#5C4200]">
                   {FOUNDER_ADVOCATE_ONLY_LINE}

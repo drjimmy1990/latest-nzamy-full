@@ -11,7 +11,10 @@
  *                      → ai_start_run (daily limit + balance + debit, one
  *                        transaction) — or, when the body asks `useCredit`
  *                        and the run qualifies, ai_start_run_with_credit
- *                        (a founder credit instead of points, P3) — or, for a
+ *                        (a founder credit instead of points, P3; a
+ *                        founder's library-assistant question spends his
+ *                        library points the same way with no opt-in, and
+ *                        falls back to points when none are left) — or, for a
  *                        drafter section edit (owner ٤١٠), ai_start_section_edit
  *                        (the memo's free edits counted again under the lock) —
  *                        or, for the day's free quick question (owner ٤١٢),
@@ -54,8 +57,10 @@ import {
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
-import { creditKindForRun } from "../membership/founderPlan.ts";
-import { draftingRefusal, isDraftingRequest } from "./draftingRequest.ts";
+import { creditKindForRun, FOUNDER_LIBRARY_TOOL } from "../membership/founderPlan.ts";
+import { contractDraftingRefusal, draftingRefusal, draftingRequestKind } from "./draftingRequest.ts";
+import { checkMinuteLimit, extractionRefusal, guardMessage, logFlagged, type PromptGuardState } from "./assistantGuard.ts";
+import { isExtractionRefusalReply, leaksPrompt } from "./extractionGuard.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import {
   SECTION_EDIT_COPY,
@@ -135,6 +140,15 @@ export interface StartRunDeps {
    * (libraryRunAccess.libraryRunCreated). `toolId` is the registry id.
    */
   onRunCreated?: (toolId: string) => void;
+  /**
+   * The founder's library points (owner ٨ / ١٥ / ١٨, SQL 20261124_10): true
+   * when `userId` holds a 'library_question' membership credit with questions
+   * left. Asked only for a non-admin, priced library-assistant run; a run it
+   * says yes to starts through ai_start_run_with_credit (price 0, one
+   * question spent, given back by ai_fail_run on a failure). No dep, false or
+   * a throw → the ordinary 5-point charge.
+   */
+  founderLibraryCredit?: (userId: string) => Promise<boolean>;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (
     queries: string[],
@@ -169,6 +183,13 @@ export interface StartRunDeps {
    * throw is swallowed by `report`.
    */
   progress?: ProgressReporter;
+  /**
+   * Owner ١٣ / ٢٢: the anti-extraction counters (blocks after repeated
+   * attempts, the per-minute limit) for a tool with `promptGuard`. The route
+   * passes assistantGuard.assistantGuardState; without it the detector, the
+   * refusal and the output filter still run, only the counters are skipped.
+   */
+  promptGuard?: PromptGuardState;
 }
 
 export type ProgressReporter = (runId: string, userId: string, events: ProgressEvent[]) => void;
@@ -237,8 +258,24 @@ export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown
   return (data as { value?: unknown } | null)?.value ?? null;
 }
 
+/** The membership credit kind the founder's library points are stored as (20261124_10). */
+const FOUNDER_LIBRARY_CREDIT_KIND = "library_question";
+
+/** deps.founderLibraryCredit, never throwing: a failed read charges points as usual. */
+async function founderLibraryCreditSafe(read: (userId: string) => Promise<boolean>, userId: string): Promise<boolean> {
+  try {
+    return (await read(userId)) === true;
+  } catch (err) {
+    console.error("[ai] founder library credit read threw:", errorName(err));
+    return false;
+  }
+}
+
 /** Never the thrown value's message or body: it can carry a text, a token or a link. */
 const errorName = (err: unknown) => (err as { name?: unknown } | null)?.name?.toString() ?? "error";
+
+/** settleRunWith's failure code for an answer the output filter blocked (refunded). */
+const OUTPUT_BLOCKED = "output_blocked";
 
 async function failRun(admin: SupabaseClient, runId: string, code: string, message: string): Promise<void> {
   // The sweeper retries a run left `running` past its deadline, so a failed
@@ -318,6 +355,15 @@ export async function settleRunWith(
 
   const checked = ctx.spec.validateOutput(raw.output, ctx.input);
   if (!checked) return fail("schema_invalid", "the output does not match the tool's shape");
+  // Owner ١٣ / ٢٢: an answer that carries the prompt's canary or its own
+  // wording is never stored (GET /ai/runs would hand it out) and is refunded.
+  // The message names no text. The model's own refusal sentence is not an
+  // answer either: refunded and shown as the refusal.
+  if (ctx.spec.promptGuard) {
+    const reply = checked[ctx.spec.promptGuard.replyField];
+    if (leaksPrompt(reply)) return fail(OUTPUT_BLOCKED, "the answer quoted the hidden instructions");
+    if (isExtractionRefusalReply(reply)) return fail(OUTPUT_BLOCKED, "the model refused an extraction attempt");
+  }
   const enrich = OUTPUT_ENRICHERS[ctx.spec.id];
   let output = checked;
   if (enrich) {
@@ -428,11 +474,30 @@ export async function startRunWith(
 
   const checked = spec.validateInput(req.input);
   if (!checked.ok) return { status: 422, body: { error: checked.error, code: "invalid_input" } };
+  // Owner ١٣ / ٢٢ (assistantGuard.ts): a blocked user, or a message that asks
+  // for the hidden instructions, is refused here, before the charge and n8n.
+  if (spec.promptGuard) {
+    const message = String(checked.input[spec.promptGuard.field] ?? "");
+    const guarded = await guardMessage(spec.id, actor.userId, isAdmin, message, deps.promptGuard);
+    if (guarded) return guarded;
+  }
   // Owner Q485: a request to draft a memo or a pleading is refused here, before
   // the charge and the model; the drafter is offered to whoever may run it.
-  if (spec.draftingGuard && isDraftingRequest(String(checked.input[spec.draftingGuard.field] ?? ""))) {
-    const drafter = getAiTool("legal-drafter");
-    return { status: 422, body: draftingRefusal(drafter !== null && toolRoleRefusal(drafter, actor) === null) };
+  // Owner ٢٢: a contract likewise, with «محترف العقود» for whoever may run it.
+  if (spec.draftingGuard) {
+    const kind = draftingRequestKind(String(checked.input[spec.draftingGuard.field] ?? ""));
+    if (kind === "contract") {
+      const pro = getAiTool("contracts-pro");
+      return { status: 422, body: contractDraftingRefusal(pro !== null && toolRoleRefusal(pro, actor) === null) };
+    }
+    if (kind === "pleading") {
+      const drafter = getAiTool("legal-drafter");
+      return { status: 422, body: draftingRefusal(drafter !== null && toolRoleRefusal(drafter, actor) === null) };
+    }
+  }
+  if (spec.promptGuard) {
+    const limited = checkMinuteLimit(spec.id, actor.userId, isAdmin, deps.promptGuard);
+    if (limited) return limited;
   }
   if (typeof req.idempotencyKey !== "string" || !IDEMPOTENCY_KEY.test(req.idempotencyKey)) {
     return { status: 422, body: { error: AI_COPY.key, code: "invalid_key" } };
@@ -586,14 +651,21 @@ export async function startRunWith(
   // never spends a credit. Anything else that asks falls back to points.
   // A section edit (owner ٤١٠) never spends a credit: it is not a drafting work.
   const creditKind = !isAdmin && !sectionEdit && !freeQuestion && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  // Owner ٨ / ١٥ / ١٨: a founder's library-assistant question is paid from his
+  // 100 library points (20 'library_question' credits) from the first
+  // question, with no opt-in; once they are gone (or before 20261124_10 runs:
+  // credit_not_eligible) the same request is charged the normal points below.
+  const libraryCredit =
+    !creditKind && !isAdmin && !sectionEdit && !freeQuestion && price > 0 && spec.id === FOUNDER_LIBRARY_TOOL &&
+    !!deps.founderLibraryCredit && (await founderLibraryCreditSafe(deps.founderLibraryCredit, actor.userId));
   // A section edit starts through ai_start_section_edit (20261108_40): it takes
   // ai_start_run's lock, counts the memo's edits again and refuses a price that
   // is no longer right, so two edits at once cannot both take the last free one.
-  const startFn = freeQuestion
+  let startFn = freeQuestion
     ? "ai_start_free_question"
-    : sectionEdit ? "ai_start_section_edit" : creditKind ? "ai_start_run_with_credit" : "ai_start_run";
+    : sectionEdit ? "ai_start_section_edit" : creditKind || libraryCredit ? "ai_start_run_with_credit" : "ai_start_run";
 
-  const { data, error } = await admin.rpc(startFn, {
+  const startArgs = {
     p_user: actor.userId,
     p_tool: spec.id,
     p_variant: null,
@@ -608,7 +680,10 @@ export async function startRunWith(
     p_pages: pages,
     p_conversation: conversationId,
     p_source_ids: {},
-    ...(creditKind ? { p_credit_kind: creditKind } : {}),
+  };
+  let { data, error } = await admin.rpc(startFn, {
+    ...startArgs,
+    ...(creditKind ? { p_credit_kind: creditKind } : libraryCredit ? { p_credit_kind: FOUNDER_LIBRARY_CREDIT_KIND } : {}),
     ...(sectionEdit
       ? {
           p_section_index: checked.input.section_index,
@@ -619,6 +694,16 @@ export async function startRunWith(
         }
       : {}),
   });
+  // The library points ran out between the check and the start (another
+  // question took the last one), or 20261124_10 has not run yet: the credit
+  // function wrote nothing, so the same request is charged the normal points.
+  if (
+    error && libraryCredit &&
+    (error.message === "no_credit" || error.message === "credit_not_eligible" || isMissingFunction(error.code))
+  ) {
+    startFn = "ai_start_run";
+    ({ data, error } = await admin.rpc(startFn, startArgs));
+  }
   if (error) {
     // A credit request never falls back to points on these: the user asked to
     // spend a credit, so he is told why it was not.
@@ -905,6 +990,12 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
   }
   if (settled.code === "ungrounded") {
     return { status: 422, body: { error: AI_COPY.ungrounded, code: "ungrounded", runId: run.run_id } };
+  }
+  if (settled.code === OUTPUT_BLOCKED && spec.promptGuard) {
+    // Counted like a flagged question; the log carries the question's hash, never a text.
+    const asked = String(checked.input[spec.promptGuard.field] ?? "");
+    await logFlagged("output", { toolId: spec.id, userId: actor.userId, rule: OUTPUT_BLOCKED, text: asked, runId: run.run_id }, deps.promptGuard, ctx.isAdmin);
+    return { status: 422, body: { ...extractionRefusal(), runId: run.run_id } };
   }
   return { status: 502, body: { error: AI_COPY.failed, code: "tool_failed", runId: run.run_id } };
 }

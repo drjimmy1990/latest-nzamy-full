@@ -16,6 +16,7 @@ import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
 import { libraryRunAccess, libraryRunCreated } from "@/lib/ai/libraryRunAccess";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
+import { assistantGuardState } from "@/lib/ai/assistantGuard";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -45,9 +46,11 @@ const SIGN_IN = { error: "سجّل الدخول لاستخدام أدوات ال
 
 /**
  * A library tool's gate: the library's closed switch (admins pass), then the
- * assistant's rule, Pro or higher or a platform admin (owner ٢٠٦ / ٢٠٧ / ٢٠٩),
- * the same two checks the deleted free route /api/ai/library-chat made. An
- * active founder member passes for the founder plan's own tools (0.5).
+ * assistant's rule, Pro or higher or a platform admin (owner ٢٠٦ / ٢٠٩), the
+ * same two checks the deleted free route /api/ai/library-chat made. An active
+ * founder member passes for the founder plan's own tools (0.5) and the
+ * library assistant; an active library subscriber for the library assistant
+ * only (owner ٥ / ١٥, 17 Nov 2026). Every run is still charged.
  */
 async function libraryAccess(toolId: string): Promise<RouteReply | null> {
   const refused = (await libraryGate()) ?? (await libraryAiAccess(toolId));
@@ -69,6 +72,31 @@ function libraryAccessFor(userId: string) {
     lockRow: () => libraryReadQuotaHit(userId, null, { memoLockCheck: true }),
     now: () => Date.now(),
   });
+}
+
+/**
+ * Owner ٨ / ١٥ / ١٨ (SQL 20261124_10): does the user hold founder library
+ * points — a 'library_question' credit with questions left, not past its end?
+ * The seat being active is checked again by ai_start_run_with_credit (a
+ * revoked seat answers no_credit and the run is charged points). Any read
+ * error, the table or kind missing, answers false: points as usual.
+ */
+async function founderLibraryCredit(admin: Awaited<ReturnType<typeof createServiceClient>>, userId: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from("membership_credits")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("kind", "library_question")
+    .gt("remaining", 0)
+    .gt("ends_at", new Date().toISOString())
+    .limit(1);
+  if (error) {
+    if (error.code !== "42P01" && error.code !== "PGRST205") {
+      console.error("[ai/runs] founder library credit read failed:", error.code);
+    }
+    return false;
+  }
+  return Array.isArray(data) && data.length > 0;
 }
 
 /** «نشاط المكتبة»: a library-AI call is tallied once its run is created (task 2 review M1). */
@@ -132,6 +160,8 @@ export async function POST(request: NextRequest) {
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
         libraryAccess: libraryAccessFor(user.id),
         onRunCreated: libraryRunCreatedFor(user.id),
+        // The founder's 100 library points (20 questions) pay for library-assistant first.
+        founderLibraryCredit: (userId) => founderLibraryCredit(admin, userId),
         // GraphRAG only behind NZAMY_GRAPH_RAG=on (graphRagSwitch): off, the
         // run never embeds the question and never calls the graph.
         ...(graphOn ? { embedQuery: (text: string) => embedQueryWithin(text) } : {}),
@@ -151,6 +181,8 @@ export async function POST(request: NextRequest) {
         progress: progressSink(admin, (work) => after(work)),
         // A job run answers 202 before its searches; n8n is called after the reply.
         defer: (task) => after(task),
+        // Owner ١٣ / ٢٢: the anti-extraction block and per-minute counters (per process).
+        promptGuard: assistantGuardState,
       },
       actor,
       body,

@@ -18,6 +18,7 @@
  * Relative imports only: `node --test` loads it (./founderAdmin.test.ts).
  */
 import { FOUNDER_CAPACITY_MAX, riyadhDay } from "../pricing/campaigns.ts";
+import { libraryQuestionsToPoints } from "./founderPlan.ts";
 
 export const FOUNDER_REFUND_REASONS = ["seat_unavailable", "not_verified", "already_member"] as const;
 export type FounderRefundCase = (typeof FOUNDER_REFUND_REASONS)[number];
@@ -189,7 +190,12 @@ export interface FounderMemberDto {
   email: string | null;
   activatedAt: string | null;
   endsAt: string | null;
-  credits: { draftingWork: CreditDto; independentOutput: CreditDto };
+  /**
+   * libraryPoints: the library assistant's founder points, the seat's
+   * library_question credit × 5 (owner ٨ / ١٥ / ١٨, SQL 20261124_10); null
+   * while the seat has no such row.
+   */
+  credits: { draftingWork: CreditDto; independentOutput: CreditDto; libraryPoints: CreditDto };
   /**
    * R32: false only when the seat's order is a test-mode payment
    * (payment_orders.live = false) — the panel tags it «تجريبي». A seat with
@@ -213,14 +219,17 @@ export function founderMembers(
   liveByOrder: ReadonlyMap<string, boolean | null>,
 ): FounderMemberDto[] {
   const active = seats.filter((s) => s.status === "active");
-  const bySeat = new Map<string, { draftingWork: CreditDto; independentOutput: CreditDto }>();
-  for (const s of active) bySeat.set(s.id, { draftingWork: null, independentOutput: null });
+  const bySeat = new Map<string, { draftingWork: CreditDto; independentOutput: CreditDto; libraryPoints: CreditDto }>();
+  for (const s of active) bySeat.set(s.id, { draftingWork: null, independentOutput: null, libraryPoints: null });
   for (const c of credits) {
     const slot = bySeat.get(c.seat_id);
     if (!slot) continue; // a revoked / released seat's credits never show
     const dto = { remaining: c.remaining, total: c.total };
     if (c.kind === "drafting_work") slot.draftingWork = dto;
     else if (c.kind === "independent_output") slot.independentOutput = dto;
+    else if (c.kind === "library_question") {
+      slot.libraryPoints = { remaining: libraryQuestionsToPoints(c.remaining), total: libraryQuestionsToPoints(c.total) };
+    }
   }
   return active
     .map((s) => {

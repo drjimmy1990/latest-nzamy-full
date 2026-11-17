@@ -99,11 +99,11 @@ const startPayload = (log: FakeQuery[]) => log.find((q) => q.table === "ai_start
 
 // ── kinds ────────────────────────────────────────────────────────────────────
 
-test("kinds: 200 for a claim (owner ٤٠٩), 500 the first-instance memos, 1,000 an appeal, 1,500 cassation and a petition", () => {
+test("kinds (owner ٩, 17 Nov 2026): 500 for a claim and the first-instance memos, 800 an appeal, 1,500 cassation and a petition", () => {
   assert.deepEqual(DRAFT_KIND_IDS, ["claim", "reply", "rejoinder", "supplementary", "closing", "appeal", "cassation", "petition"]);
-  assert.equal(draftKindPrice("claim"), 200);
+  assert.equal(draftKindPrice("claim"), 500);
   for (const k of ["reply", "rejoinder", "supplementary", "closing"]) assert.equal(draftKindPrice(k), 500, k);
-  assert.equal(draftKindPrice("appeal"), 1000);
+  assert.equal(draftKindPrice("appeal"), 800);
   assert.equal(draftKindPrice("cassation"), 1500);
   assert.equal(draftKindPrice("petition"), 1500);
   assert.equal(draftKindPrice("notary"), 0);
@@ -201,7 +201,7 @@ test("the analysis: a new conversation, charged the kind's price, the library se
   const calls: Call[] = [];
   const r = await startRunWith(client as never, deps(calls), LAWYER, body(issuesInput({ kind: "appeal" })));
   assert.equal(r.status, 202);
-  assert.equal(startPayload(log)?.p_price, 1000);
+  assert.equal(startPayload(log)?.p_price, 800);
   assert.match(String(r.body.conversationId), /^[0-9a-f-]{36}$/);
   assert.equal((calls[0].body.input as Record<string, unknown>).text, FACTS);
   const pkg = calls[1].body;

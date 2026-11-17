@@ -52,14 +52,16 @@
  *     already_entitled, the payer told the administration will review a
  *     refund — and every admin alerted ONCE (deps.notifyAdmins), by the call
  *     that stamped, so a retry or a second caller never alerts again;
- *   - a DECLINED card keeps its seat (ruling R17): the 2-hour reservation
- *     holds it for the buyer's retry (founder_reserve_seat moves the same
- *     seat to the new order) and the sweep's founder_release_expired frees an
- *     abandoned one (releaseExpiredFounderSeats below). Only a voided or
- *     cancelled membership order frees its reserved seat at once
- *     (deps.releaseFounderSeat → founder_release_order) whenever it is seen —
- *     the webhook, the result page and the sweep all reach it through here.
- *     Best-effort: a release that fails changes no answer;
+ *   - a FAILED (declined), voided or cancelled membership order frees its
+ *     reserved seat at once (deps.releaseFounderSeat → founder_release_order)
+ *     — owner ٣, 17 Nov 2026, which withdraws ruling R17 (a declined card
+ *     used to keep its seat for the retry): when the failure is recorded and
+ *     whenever such an order is seen again — the webhook, the result page and
+ *     the sweep all reach it through here. A retry reserves a seat again
+ *     (founder_reserve_seat). The reservation is 15 minutes (20261124_10);
+ *     the sweep's founder_release_expired frees an abandoned one
+ *     (releaseExpiredFounderSeats below). Best-effort: a release that fails
+ *     changes no answer;
  *   - a refund case later activated (a resume after a failed stamp, ruling
  *     R18) clears metadata.already_entitled before the stamp, so neither the
  *     payer nor the admin list keeps showing a refund review.
@@ -126,7 +128,7 @@ export interface FulfilDeps extends GrantPurchaseDeps {
   notify: (input: { userId: string; title: string; body: string; href: string }) => Promise<void>;
   /** The clock (tests pin it). */
   now?: () => Date;
-  /** P3: founder_release_order — frees a dead membership order's reserved seat. Best-effort. */
+  /** P3: founder_release_order — frees a dead (failed / voided / cancelled) membership order's reserved seat. Best-effort. */
   releaseFounderSeat?: (orderId: string) => Promise<void>;
   /** P3: the in-site bell of every admin (library_monitor_notify_admins, 20261031_10). Best-effort. */
   notifyAdmins?: (input: { title: string; body: string; href: string }) => Promise<void>;
@@ -160,9 +162,11 @@ const OPEN_STATUSES = ["created", "initiated"];
 
 /**
  * A membership order in one of these is dead: its reserved seat is freed at
- * once. NOT 'failed' (R17): a declined card keeps the seat for its retry.
+ * once. 'failed' joined with owner ٣ (17 Nov 2026, SQL 20261124_10): the seat
+ * is released AT ONCE when the payment fails — ruling R17 (a declined card
+ * kept its seat for the retry) is withdrawn. A retry reserves a seat again.
  */
-const DEAD_STATUSES = new Set(["voided", "cancelled"]);
+const DEAD_STATUSES = new Set(["voided", "cancelled", "failed"]);
 
 /** Where an admin refunds a paid order. */
 export const ADMIN_ORDERS_HREF = "/dashboard/admin/subscriptions/orders";
@@ -556,7 +560,11 @@ async function run(deps: FulfilDeps, input: FulfillOrderInput): Promise<FulfillR
       return { outcome: "rejected", reason: "order_mismatch" };
     }
     if (failErr) return pendingForDbError("failure record", failErr);
-    // R17: a declined membership card keeps its reserved seat for the retry
+    // Owner ٣ (17 Nov 2026): a failed membership payment frees its reserved
+    // seat at once (founder_release_order never frees a paid order's seat).
+    // Best-effort, only after the failure is recorded; the payer's answer is
+    // the same whatever the release does.
+    if (order.kind === "membership") await releaseFounderSeatOf(deps, order.id);
     return { outcome: "failed", reason: message ?? "payment_failed" };
   }
 
