@@ -18,6 +18,9 @@ import {
   najizRows,
   searchNajiz,
   synonymGroupOf,
+  typeNotes,
+  classWideNotes,
+  noteRows,
   NAJIZ_BREADCRUMB_SEPARATOR,
 } from "./najizSearch.ts";
 import { NAJIZ_SYNONYMS } from "./najizSynonyms.ts";
@@ -171,4 +174,20 @@ test("the draft seed cleans URL input: control characters, bidi marks, length", 
   assert.equal(seed.court, "أ ب");
   assert.equal(seed.klass, "ج د");
   assert.equal(Array.from(seed.type).length, NAJIZ_PARAM_MAX);
+});
+
+test("a class note that cites «الصف N» belongs to that type's card; the rest stay on the class", () => {
+  const all = data.courts.flatMap((c) => c.classes);
+  const k23 = all.find((k) => k.no === "2.3")!;
+  const mudaraba = k23.types.find((t) => t.no === 57)!;
+  assert.equal(typeNotes(k23, mudaraba).length, 1);
+  assert.equal(classWideNotes(k23).length, 0);
+  assert.deepEqual(noteRows({ lines: ["انظر الصف ١٤٦ والصف 7"] }), [146, 7]);
+  // Every class note is shown somewhere: on the class, or on a type of that class.
+  for (const k of all) {
+    for (const n of k.notes) {
+      const cited = noteRows(n);
+      assert.ok(cited.length === 0 || k.types.some((t) => cited.includes(t.no)), `${k.no}: a note citing a row outside its class`);
+    }
+  }
 });

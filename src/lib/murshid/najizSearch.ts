@@ -25,7 +25,7 @@ import {
   type ParsedHighlightQuery,
 } from "../search/multiColorSearch.ts";
 import { normalizeSearch, splitArticlePrefix, stripTashkeel } from "../../utils/normalizeArabic.ts";
-import type { NajizClass, NajizCourt, NajizType } from "./najizClassifications.ts";
+import type { NajizClass, NajizCourt, NajizNote, NajizType } from "./najizClassifications.ts";
 
 export type NajizSynonymGroups = readonly (readonly string[])[];
 
@@ -155,3 +155,17 @@ export function najizBreadcrumb(
   const parts: [string, string, string] = [tidy(court.title), tidy(klass.title), tidy(type.name)];
   return { parts, text: parts.filter(Boolean).join(NAJIZ_BREADCRUMB_SEPARATOR) };
 }
+
+/** The type numbers a note cites as «الصف 57» (the guide's running numbers). */
+export function noteRows(note: Pick<NajizNote, "lines">): number[] {
+  const text = note.lines.join(" ").replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+  return [...text.matchAll(/الصف\s*(\d+)/g)].map((m) => Number(m[1]));
+}
+
+/** A class's notes that cite this type's row — shown on the type's card. */
+export const typeNotes = (klass: Pick<NajizClass, "notes">, type: Pick<NajizType, "no">): NajizNote[] =>
+  klass.notes.filter((n) => noteRows(n).includes(type.no));
+
+/** A class's notes that cite no row — shown above all its types. */
+export const classWideNotes = (klass: Pick<NajizClass, "notes">): NajizNote[] =>
+  klass.notes.filter((n) => noteRows(n).length === 0);
