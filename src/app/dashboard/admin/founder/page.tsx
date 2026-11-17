@@ -327,7 +327,7 @@ export default function FounderCampaignPage() {
               <table className="w-full min-w-[820px]">
                 <thead>
                   <tr className="border-b border-white/[0.06]">
-                    {["العضو", "التفعيل", "الانتهاء", "أعمال الصياغة المتبقية", "المخرج المستقل المتبقي"].map((h) => (
+                    {["العضو", "التفعيل", "الانتهاء", "أعمال الصياغة المتبقية", "المخرج المستقل المتبقي", "نقاط مساعد المكتبة الذكي"].map((h) => (
                       <th key={h} className={th}>{h}</th>
                     ))}
                   </tr>
@@ -350,6 +350,7 @@ export default function FounderCampaignPage() {
                       <td className={td}>{day(m.endsAt)}</td>
                       <td className={td} dir="ltr">{credit(m.credits.draftingWork)}</td>
                       <td className={td} dir="ltr">{credit(m.credits.independentOutput)}</td>
+                      <td className={td} dir="ltr">{credit(m.credits.libraryPoints ?? null)}</td>
                     </tr>
                   ))}
                 </tbody>

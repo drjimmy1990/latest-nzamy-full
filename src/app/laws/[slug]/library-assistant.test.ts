@@ -43,11 +43,11 @@ test("the law page's slug: from /laws/<slug> only, decoded once, query and hash 
   assert.equal(lawSlugFromPath("/laws/%zz"), null);
 });
 
-test("signed out and below Pro are told what to do, with a link", async () => {
+test("signed out and without access are told what to do, with a link (403 → the library subscription, owner ٥ / ١٥)", async () => {
   const out = await askLibrary({ message: "س" }, "/laws/a?x=1", reply(401, { error: "سجّل الدخول" }).fetchImpl);
   assert.equal(out.action?.href, "/login?next=%2Flaws%2Fa%3Fx%3D1");
   const tier = await askLibrary({ message: "س" }, "/laws/a", reply(403, { error: "يتطلب Pro", code: "library_tier" }).fetchImpl);
-  assert.equal(tier.action?.href, "/pricing");
+  assert.equal(tier.action?.href, "/laws/subscribe");
 });
 
 test("a tool that is off reads «قيد التفعيل»; the server's own refusal is shown as it is", async () => {

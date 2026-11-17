@@ -231,7 +231,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
             isDark ? "border-white/10 bg-white/[0.03]" : "border-slate-200 bg-slate-50"
           }`}>
             <p className={`text-[13px] leading-relaxed ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
-              سجّل الدخول لتستخدم باحث المكتبة الذكي. اشتراك المكتبة يشمل النصوص دون المساعد.
+              سجّل الدخول لتستخدم باحث المكتبة الذكي. يفتحه اشتراك المكتبة، وكل سؤال بنقاط.
             </p>
             <Link
               href="/login?next=%2Flaws"

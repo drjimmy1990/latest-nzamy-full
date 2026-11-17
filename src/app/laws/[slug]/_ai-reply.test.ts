@@ -31,28 +31,24 @@ test("a guest (401) is sent to sign in and brought back to the page they asked f
   // The query string survives as one `next` value, not as extra /login params.
   assert.equal(new URL(refusal.action.href, "https://x.test").searchParams.get("next"), "/laws/نظام-الشركات?tab=ai");
   assert.match(refusal.text, /سجّل الدخول/);
-  // The assistant is not part of the library subscription (owner ٢٠٧); the
-  // guest is told that, and is not told which plan to buy.
-  assert.equal(refusal.text, "سجّل الدخول لتستخدم مساعد المكتبة.\nاشتراك المكتبة يشمل النصوص دون المساعد.");
+  // The library subscription opens the assistant (owner ٥ / ١٥, replacing ٢٠٧);
+  // every question is paid in points. No plan is named.
+  assert.equal(refusal.text, "سجّل الدخول لتستخدم مساعد المكتبة.\nيفتحه اشتراك المكتبة، وكل سؤال بنقاط.");
 });
 
-test("a signed-in user below pro (403) is told the plan does not include it and shown the plans", () => {
+test("a signed-in user without access (403) is told the library subscription opens it and linked to it", () => {
   const refusal = libraryAiRefusal(403, "/precedents/x");
   assert.ok(refusal);
-  // A library-only subscriber gets this 403 too (owner ٢٠٧): the text says the
-  // library subscription covers the texts, not the assistant, and the link goes
-  // to the plans page, not back to the library subscription they already have.
-  // It names no plan: /pricing shows lawyers «المحامي المحترف» and everyone
-  // else the individuals tab, so no plan there reads "Pro".
+  // Owner ٥ / ١٥ (17 Nov 2026, replacing ٢٠٧): an active library subscription
+  // opens the assistant, so a 403 means the caller has none; the link goes to
+  // the library subscription page. It names no plan.
   assert.equal(
     refusal.text,
-    "المساعد الذكي للمكتبة غير مشمول في اشتراكك الحالي؛ اشتراك المكتبة يشمل النصوص دون المساعد.",
+    "المساعد الذكي للمكتبة غير مشمول في اشتراكك الحالي؛ يفتحه اشتراك المكتبة، وكل سؤال بنقاط.",
   );
-  assert.deepEqual(refusal.action, { label: "عرض الباقات", href: "/pricing" });
+  assert.deepEqual(refusal.action, { label: "اشترك في المكتبة", href: "/laws/subscribe" });
   assert.doesNotMatch(refusal.text, /مشتركي المكتبة|قيد التفعيل/);
-  // /pricing is the plans page (src/app/pricing/page.tsx). It reads no query
-  // parameter, so the link carries none.
-  assert.ok(existsSync(new URL("../../pricing/page.tsx", import.meta.url)), "src/app/pricing/page.tsx");
+  assert.ok(existsSync(new URL("../subscribe/page.tsx", import.meta.url)), "src/app/laws/subscribe/page.tsx");
 });
 
 test("no refusal names a plan or calls the assistant a library-subscriber feature", () => {

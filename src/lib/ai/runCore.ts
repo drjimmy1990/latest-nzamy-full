@@ -11,7 +11,10 @@
  *                      → ai_start_run (daily limit + balance + debit, one
  *                        transaction) — or, when the body asks `useCredit`
  *                        and the run qualifies, ai_start_run_with_credit
- *                        (a founder credit instead of points, P3) — or, for a
+ *                        (a founder credit instead of points, P3; a
+ *                        founder's library-assistant question spends his
+ *                        library points the same way with no opt-in, and
+ *                        falls back to points when none are left) — or, for a
  *                        drafter section edit (owner ٤١٠), ai_start_section_edit
  *                        (the memo's free edits counted again under the lock) —
  *                        or, for the day's free quick question (owner ٤١٢),
@@ -54,7 +57,7 @@ import {
 import type { AiFile, FileRules, FilesCheck } from "./aiFiles.ts";
 import { enrichBriefCheck } from "./citationCheck.ts";
 import { articleRefs, bareArticleNumbers } from "./questionRefs.ts";
-import { creditKindForRun } from "../membership/founderPlan.ts";
+import { creditKindForRun, FOUNDER_LIBRARY_TOOL } from "../membership/founderPlan.ts";
 import { draftingRefusal, isDraftingRequest } from "./draftingRequest.ts";
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import {
@@ -135,6 +138,15 @@ export interface StartRunDeps {
    * (libraryRunAccess.libraryRunCreated). `toolId` is the registry id.
    */
   onRunCreated?: (toolId: string) => void;
+  /**
+   * The founder's library points (owner ٨ / ١٥ / ١٨, SQL 20261124_10): true
+   * when `userId` holds a 'library_question' membership credit with questions
+   * left. Asked only for a non-admin, priced library-assistant run; a run it
+   * says yes to starts through ai_start_run_with_credit (price 0, one
+   * question spent, given back by ai_fail_run on a failure). No dep, false or
+   * a throw → the ordinary 5-point charge.
+   */
+  founderLibraryCredit?: (userId: string) => Promise<boolean>;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (
     queries: string[],
@@ -235,6 +247,19 @@ export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown
     return null;
   }
   return (data as { value?: unknown } | null)?.value ?? null;
+}
+
+/** The membership credit kind the founder's library points are stored as (20261124_10). */
+const FOUNDER_LIBRARY_CREDIT_KIND = "library_question";
+
+/** deps.founderLibraryCredit, never throwing: a failed read charges points as usual. */
+async function founderLibraryCreditSafe(read: (userId: string) => Promise<boolean>, userId: string): Promise<boolean> {
+  try {
+    return (await read(userId)) === true;
+  } catch (err) {
+    console.error("[ai] founder library credit read threw:", errorName(err));
+    return false;
+  }
 }
 
 /** Never the thrown value's message or body: it can carry a text, a token or a link. */
@@ -586,14 +611,21 @@ export async function startRunWith(
   // never spends a credit. Anything else that asks falls back to points.
   // A section edit (owner ٤١٠) never spends a credit: it is not a drafting work.
   const creditKind = !isAdmin && !sectionEdit && !freeQuestion && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  // Owner ٨ / ١٥ / ١٨: a founder's library-assistant question is paid from his
+  // 100 library points (20 'library_question' credits) from the first
+  // question, with no opt-in; once they are gone (or before 20261124_10 runs:
+  // credit_not_eligible) the same request is charged the normal points below.
+  const libraryCredit =
+    !creditKind && !isAdmin && !sectionEdit && !freeQuestion && price > 0 && spec.id === FOUNDER_LIBRARY_TOOL &&
+    !!deps.founderLibraryCredit && (await founderLibraryCreditSafe(deps.founderLibraryCredit, actor.userId));
   // A section edit starts through ai_start_section_edit (20261108_40): it takes
   // ai_start_run's lock, counts the memo's edits again and refuses a price that
   // is no longer right, so two edits at once cannot both take the last free one.
-  const startFn = freeQuestion
+  let startFn = freeQuestion
     ? "ai_start_free_question"
-    : sectionEdit ? "ai_start_section_edit" : creditKind ? "ai_start_run_with_credit" : "ai_start_run";
+    : sectionEdit ? "ai_start_section_edit" : creditKind || libraryCredit ? "ai_start_run_with_credit" : "ai_start_run";
 
-  const { data, error } = await admin.rpc(startFn, {
+  const startArgs = {
     p_user: actor.userId,
     p_tool: spec.id,
     p_variant: null,
@@ -608,7 +640,10 @@ export async function startRunWith(
     p_pages: pages,
     p_conversation: conversationId,
     p_source_ids: {},
-    ...(creditKind ? { p_credit_kind: creditKind } : {}),
+  };
+  let { data, error } = await admin.rpc(startFn, {
+    ...startArgs,
+    ...(creditKind ? { p_credit_kind: creditKind } : libraryCredit ? { p_credit_kind: FOUNDER_LIBRARY_CREDIT_KIND } : {}),
     ...(sectionEdit
       ? {
           p_section_index: checked.input.section_index,
@@ -619,6 +654,16 @@ export async function startRunWith(
         }
       : {}),
   });
+  // The library points ran out between the check and the start (another
+  // question took the last one), or 20261124_10 has not run yet: the credit
+  // function wrote nothing, so the same request is charged the normal points.
+  if (
+    error && libraryCredit &&
+    (error.message === "no_credit" || error.message === "credit_not_eligible" || isMissingFunction(error.code))
+  ) {
+    startFn = "ai_start_run";
+    ({ data, error } = await admin.rpc(startFn, startArgs));
+  }
   if (error) {
     // A credit request never falls back to points on these: the user asked to
     // spend a credit, so he is told why it was not.

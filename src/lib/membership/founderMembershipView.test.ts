@@ -23,6 +23,7 @@ test("an active founder: end date, both credits with what is left, the library's
     member: true,
     endsAt: END,
     credits: { drafting_work: { total: 6, remaining: 4 }, independent_output: { total: 1, remaining: 1 } },
+    libraryPoints: { total: 0, remaining: 0 },
     libraryUntil: "2027-11-10T08:00:00.000Z",
   });
 });
@@ -36,6 +37,7 @@ test("no seat, a seat not active, or a seat past its end: not a member, zeros an
     member: false,
     endsAt: null,
     credits: { drafting_work: { total: 0, remaining: 0 }, independent_output: { total: 0, remaining: 0 } },
+    libraryPoints: { total: 0, remaining: 0 },
     libraryUntil: null,
   });
 });
@@ -53,4 +55,22 @@ test("libraryUntil follows a stacked grant chain and ignores a grant that has no
   const later = { ...GRANT, id: "g-2", plan_ref: "lib-annual", source: "request", starts_at: "2027-11-10T08:00:00Z", ends_at: "2028-11-10T08:00:00Z" };
   assert.equal(founderMembershipView({ seat: SEAT, credits: [], grants: [GRANT, later], now: NOW }).libraryUntil, "2028-11-10T08:00:00.000Z");
   assert.equal(founderMembershipView({ seat: SEAT, credits: [], grants: [later], now: NOW }).libraryUntil, null);
+});
+
+test("owner ٨ / ١٥ / ١٨: the library_question row is shown as points (×5), not as a credit; another seat's or an expired row adds nothing", () => {
+  const q = (remaining: number, over: Record<string, unknown> = {}) =>
+    ({ seat_id: "seat-1", kind: "library_question", total: 20, remaining, ends_at: END, ...over });
+  const v = founderMembershipView({ seat: SEAT, credits: [...credits(6, 1), q(17)], grants: [], now: NOW });
+  assert.deepEqual(v.libraryPoints, { total: 100, remaining: 85 });
+  assert.deepEqual(v.credits, { drafting_work: { total: 6, remaining: 6 }, independent_output: { total: 1, remaining: 1 } });
+  const other = founderMembershipView({ seat: SEAT, credits: [q(20, { seat_id: "seat-0" })], grants: [], now: NOW });
+  assert.deepEqual(other.libraryPoints, { total: 0, remaining: 0 });
+  const expired = founderMembershipView({ seat: SEAT, credits: [q(20, { ends_at: "2026-11-09T00:00:00Z" })], grants: [], now: NOW });
+  assert.deepEqual(expired.libraryPoints, { total: 100, remaining: 0 });
+  const revoked = founderMembershipView({ seat: { ...SEAT, status: "revoked" }, credits: [q(20)], grants: [], now: NOW });
+  assert.deepEqual(revoked.libraryPoints, { total: 0, remaining: 0 });
+  // an unknown kind is skipped, never counted as a credit
+  const odd = founderMembershipView({ seat: SEAT, credits: [{ seat_id: "seat-1", kind: "bonus", total: 9, remaining: 9, ends_at: END }], grants: [], now: NOW });
+  assert.deepEqual(odd.credits, { drafting_work: { total: 0, remaining: 0 }, independent_output: { total: 0, remaining: 0 } });
+  assert.deepEqual(odd.libraryPoints, { total: 0, remaining: 0 });
 });
