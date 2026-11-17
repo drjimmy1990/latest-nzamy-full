@@ -348,3 +348,84 @@ test("coupon lock: an unlimited code (max_uses null / 0) never calls coupon_rese
     assert.equal(log.some((q) => q.table === "coupon_reserve"), false);
   }
 });
+
+// ── Q511: an abandoned upgrade attempt never locks the upgrade for good ─────
+
+const CONFLICT = { code: "23505", message: 'duplicate key value violates unique constraint "payment_orders_proration_once_key"' };
+
+function staleDb(opts: { openRows: unknown[]; openErr?: boolean }) {
+  let inserts = 0;
+  const h = db("firm", { subs: [HELD], orders: [HELD_ORDER] }, (q) => {
+    if (q.table === "payment_orders" && q.op === "insert") {
+      inserts++;
+      return inserts === 1 ? { error: CONFLICT } : { data: { id: NEW_ORDER } };
+    }
+    if (q.table === "payment_orders" && q.op === "select" && has(q, "eq", "metadata->proration->>key")) {
+      return opts.openErr ? { error: { code: "XX000" } } : { data: opts.openRows };
+    }
+    return undefined;
+  });
+  return { ...h, inserts: () => inserts };
+}
+
+function listing(statuses: string[] | false) {
+  const m = moyasar();
+  const listed: string[] = [];
+  (m.client as unknown as { listPaymentsByOrder: (id: string) => Promise<unknown> }).listPaymentsByOrder = async (id: string) => {
+    listed.push(id);
+    return statuses === false
+      ? { ok: false as const, status: 502, type: "network", message: "x" }
+      : { ok: true as const, data: statuses.map((status, i) => ({ id: `p${i}`, status })) };
+  };
+  return { ...m, listed };
+}
+
+const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3600_000).toISOString();
+const openUpgrade = (over: Record<string, unknown> = {}) => ({
+  id: "ord-abandoned",
+  item_id: "firm-enterprise",
+  status: "initiated",
+  created_at: hoursAgo(26),
+  moyasar_intent_id: "pi_old",
+  moyasar_payment_id: null,
+  ...over,
+});
+
+test("Q511: an expired upgrade order no payment reached is closed and the new checkout goes on", async () => {
+  const h = staleDb({ openRows: [openUpgrade()] });
+  const m = listing(["failed"]);
+  const r = await startCheckoutWith({ admin: h.client, client: m.client, now: () => NOW, ranks: RANKS }, input());
+  assert.equal(r.status, 200);
+  assert.deepEqual(m.listed, ["ord-abandoned"]);
+  const close = h.log.find(
+    (q) => q.table === "payment_orders" && q.op === "update" && has(q, "eq", "id", "ord-abandoned") && (q.payload as { status?: string }).status === "cancelled",
+  );
+  assert.ok(close, "the abandoned order is closed");
+  assert.equal(h.inserts(), 2, "the insert is tried once more");
+});
+
+test("Q511: a FRESH open upgrade order, or one a payment reached, still answers 409 — nothing closed", async () => {
+  for (const row of [openUpgrade({ created_at: hoursAgo(0.2) }), openUpgrade({ moyasar_payment_id: "pay_3ds", created_at: hoursAgo(5) })]) {
+    const h = staleDb({ openRows: [row] });
+    const m = listing([]);
+    const r = await startCheckoutWith({ admin: h.client, client: m.client, now: () => NOW, ranks: RANKS }, input());
+    assert.deepEqual(r, { status: 409, body: { error: UPGRADE_PENDING_AR } });
+    assert.equal(cancelled(h.log).length, 0);
+    assert.equal(h.inserts(), 1);
+  }
+  // a stale order Moyasar lists a PAID payment for is kept too
+  const h = staleDb({ openRows: [openUpgrade()] });
+  const r = await startCheckoutWith({ admin: h.client, client: listing(["paid"]).client, now: () => NOW, ranks: RANKS }, input());
+  assert.deepEqual(r, { status: 409, body: { error: UPGRADE_PENDING_AR } });
+  assert.equal(cancelled(h.log).length, 0);
+});
+
+test("Q511: a failed Moyasar listing or a failed read is 503 — never a guess", async () => {
+  const a = staleDb({ openRows: [openUpgrade()] });
+  const r1 = await startCheckoutWith({ admin: a.client, client: listing(false).client, now: () => NOW, ranks: RANKS }, input());
+  assert.equal(r1.status, 503);
+  assert.equal(cancelled(a.log).length, 0);
+  const b = staleDb({ openRows: [], openErr: true });
+  const r2 = await startCheckoutWith({ admin: b.client, client: listing([]).client, now: () => NOW, ranks: RANKS }, input());
+  assert.equal(r2.status, 503);
+});

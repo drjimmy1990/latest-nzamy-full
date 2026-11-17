@@ -123,7 +123,14 @@ import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
-import { COUPON_PENDING_AR, isCouponOrderConflict, priceWithCoupon } from "./couponServer.ts";
+import {
+  COUPON_PENDING_AR,
+  isCouponOrderConflict,
+  priceWithCoupon,
+  sortOpenCouponOrders,
+  staleOrderClosable,
+  type OpenCouponOrderRow,
+} from "./couponServer.ts";
 import { applyDiscount, COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR } from "./couponRules.ts";
 import {
   isProrationOrderConflict,
@@ -308,6 +315,55 @@ async function releaseSeat(deps: CheckoutDeps, orderId: string): Promise<void> {
   } catch (err) {
     console.warn("[payments/checkout] freeing the founder seat failed (the sweep frees it):", orderId, err instanceof Error ? err.message : "unknown");
   }
+}
+
+/**
+ * Step 5 (l6-pay) — the buyer's OPEN orders carrying this proration key:
+ * "pending" while one may still be paid (younger than the intent lifetime,
+ * or a payment reached it within the sweep's lookback), "cleared" once every
+ * stale one is closed (couponServer.staleOrderClosable: Moyasar lists nothing
+ * for it but failed payments), "unknown" on a failed read / listing / close.
+ * No open order (the conflict is a PAID one) → "pending".
+ */
+async function closeStaleProrationOrders(
+  deps: CheckoutDeps,
+  userId: string,
+  key: string,
+  now: Date,
+): Promise<"cleared" | "pending" | "unknown"> {
+  const { admin, client } = deps;
+  const { data, error } = await admin
+    .from("payment_orders")
+    .select("id, item_id, status, created_at, moyasar_intent_id, moyasar_payment_id")
+    .eq("user_id", userId)
+    .in("status", OPEN)
+    .eq("metadata->proration->>key", key)
+    .limit(10);
+  if (error) {
+    console.error("[payments/checkout] reading the open upgrade orders failed:", error.code);
+    return "unknown";
+  }
+  const rows = (data as OpenCouponOrderRow[] | null) ?? [];
+  if (rows.length === 0) return "pending";
+  // no item matches: every fresh open order blocks
+  const { blocking, stale } = sortOpenCouponOrders(rows, "(no item)", now.getTime());
+  if (blocking.length > 0 || stale.length === 0) return "pending";
+  for (const row of stale) {
+    let listed: Array<{ status: string }> | null = null;
+    if (!(row.status === "created" && !row.moyasar_intent_id && !row.moyasar_payment_id)) {
+      const r = await client.listPaymentsByOrder(row.id);
+      if (!r.ok) return "unknown";
+      listed = r.data;
+    }
+    if (!staleOrderClosable(row, listed, now.getTime())) return "pending";
+    const close = admin.from("payment_orders").update({ status: "cancelled" }).eq("id", row.id).eq("user_id", userId).in("status", OPEN);
+    const { error: closeErr } = row.moyasar_payment_id
+      ? await close.eq("moyasar_payment_id", row.moyasar_payment_id)
+      : await close.is("moyasar_payment_id", null);
+    if (closeErr) return "unknown";
+    console.info("[payments/checkout] closed an abandoned upgrade order:", row.id);
+  }
+  return "cleared";
 }
 
 /** The coupon_reserve RPC's name (20261126_60). */
@@ -510,35 +566,42 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   if (superseded.code) console.warn("[payments/checkout] reading earlier open orders failed:", superseded.code);
 
   // 5. the order
-  const { data: inserted, error: insertErr } = await admin
-    .from("payment_orders")
-    .insert({
-      user_id: user.id,
-      merchant: "platform",
-      kind: q.item.kind,
-      item_id: q.item.id,
-      billing: input.billing,
-      net_halalas: net,
-      vat_halalas: vat,
-      total_halalas: total,
-      vat_mode: q.vatMode,
-      currency: "SAR",
-      status: "created",
-      source: "checkout",
-      metadata: {
-        user_email: user.email ?? null,
-        ...(couponMeta ? { coupon: couponMeta } : {}),
-        ...(founderMeta ? { founder_discount: founderMeta } : {}),
-        ...(prorationMeta ? { proration: prorationMeta } : {}),
-        ...(consentMeta ?? {}),
-        ...(input.attribution ? { attribution: input.attribution } : {}),
-        ...(q.launch
-          ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
-          : {}),
-      },
-    })
-    .select("id")
-    .single();
+  const orderRow = {
+    user_id: user.id,
+    merchant: "platform",
+    kind: q.item.kind,
+    item_id: q.item.id,
+    billing: input.billing,
+    net_halalas: net,
+    vat_halalas: vat,
+    total_halalas: total,
+    vat_mode: q.vatMode,
+    currency: "SAR",
+    status: "created",
+    source: "checkout",
+    metadata: {
+      user_email: user.email ?? null,
+      ...(couponMeta ? { coupon: couponMeta } : {}),
+      ...(founderMeta ? { founder_discount: founderMeta } : {}),
+      ...(prorationMeta ? { proration: prorationMeta } : {}),
+      ...(consentMeta ?? {}),
+      ...(input.attribution ? { attribution: input.attribution } : {}),
+      ...(q.launch
+        ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
+        : {}),
+    },
+  };
+  const insertOrder = () => admin.from("payment_orders").insert(orderRow).select("id").single();
+  let { data: inserted, error: insertErr } = await insertOrder();
+  // l6-pay: an ABANDONED earlier upgrade attempt (its intent expired, no
+  // payment) must not lock the upgrade for good — nothing else closes it.
+  // Closed after the same checks as an expired couponed order, then the
+  // insert is tried once more; a fresh or reached order still answers 409.
+  if (insertErr && upgrade && isProrationOrderConflict(insertErr)) {
+    const cleared = await closeStaleProrationOrders(deps, user.id, upgrade.key, now);
+    if (cleared === "unknown") return fail(503, CHECKOUT_FAILED_AR);
+    if (cleared === "cleared") ({ data: inserted, error: insertErr } = await insertOrder());
+  }
   const orderId = (inserted as { id?: unknown } | null)?.id;
   if (insertErr || typeof orderId !== "string" || !orderId) {
     if (couponMeta && isCouponOrderConflict(insertErr)) {
