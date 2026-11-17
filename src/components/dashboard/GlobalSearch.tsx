@@ -25,7 +25,7 @@ import {
   WarningCircle, CircleNotch, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { getSidebarByUserType, type SidebarItem } from "@/constants/navigation";
+import { getSidebarByUserType, withoutConsultantBlockedItems, type SidebarItem } from "@/constants/navigation";
 import { useUser } from "@/hooks/useUser";
 import { usePathname } from "next/navigation";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
@@ -138,7 +138,11 @@ export function GlobalSearch() {
     simId ? simId.affiliationRole : affiliation?.role, isDemoBypass, country,
     simId ? simId.practiceKind : practiceKind, staffRole,
   );
-  const allTools = extractTools(groups, hasClientGroup);
+  // Art. 18: the same consultant filter SharedSidebar applies to a firm-drawn menu.
+  const shownGroups = userType === "firm" && sessionUserType === "lawyer" && practiceKind === "consultant"
+    ? withoutConsultantBlockedItems(groups)
+    : groups;
+  const allTools = extractTools(shownGroups, hasClientGroup);
 
   // ── The account's own content ─────────────────────────────────────────────
   // The vault page is taken from THIS user's own sidebar, so a document row

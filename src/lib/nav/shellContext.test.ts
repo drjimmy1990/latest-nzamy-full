@@ -456,4 +456,8 @@ test("N01-29: the layouts pass the membership and the firm header names the firm
   assert.match(notifications, /isFirmMember: !!user\.firmMembership/);
   assert.match(notifications, /shell === "firm"\)\s+return <FirmDashboardLayout>/);
   assert.match(read("components/dashboard/SharedSidebar.tsx"), /const headerLabel = firmName \? `\$\{roleLabel\} · \$\{firmName\}` : roleLabel;/);
+  // Art. 18: a consultant lawyer drawn the firm menu loses the court tools (sidebar and search).
+  for (const rel of ["components/dashboard/SharedSidebar.tsx", "components/dashboard/GlobalSearch.tsx"]) {
+    assert.match(read(rel), /userType === "firm" && sessionUserType === "lawyer" && practiceKind === "consultant"\s*\? withoutConsultantBlockedItems\(/, rel);
+  }
 });

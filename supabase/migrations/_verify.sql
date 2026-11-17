@@ -6744,8 +6744,8 @@ select 'Several contracts per case (run 20261123_40)' as check,
 
 -- >>> verify:l3_firm
 -- 2026-11-24 — 20261124_50_hearings_assignee.sql (owner N01-18): run BEFORE the
--- l3-firm deploy. Re-running 20261019_21 resets the Art. 18 guard's arguments
--- on hearings to two — re-run 20261124_50 after it.
+-- l3-firm deploy. After it, 20261019_21 refuses to re-run (its hard-coded
+-- 2-pointer list no longer matches hearings' 3 SET NULL keys; it rolls back).
 -- Docker: supabase/tests/rls/hearings_assignee.test.sql
 select 'Hearings assignee: column (SET NULL to auth.users) + member check trigger (run 20261124_50)' as check,
        exists (select 1 from pg_catalog.pg_constraint c
@@ -6759,7 +6759,7 @@ select 'Hearings assignee: column (SET NULL to auth.users) + member check trigge
        and coalesce((select p.prosecdef from pg_catalog.pg_proc p
                       where p.oid = to_regprocedure('public.hearing_assignee_member_check()')), false)
        as ok;
-select 'Hearings: the Art. 18 guard names assignee_user_id among its SET NULL pointers (re-run 20261124_50 after 20261019_21)' as check,
+select 'Hearings: the Art. 18 guard names assignee_user_id among its SET NULL pointers (run 20261124_50)' as check,
        to_regprocedure('public.refuse_consultant_court_rows()') is null
        or coalesce((select position('assignee_user_id' in encode(t.tgargs, 'escape')) > 0
                       from pg_catalog.pg_trigger t

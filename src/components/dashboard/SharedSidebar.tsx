@@ -18,7 +18,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser, logout } from "@/hooks/useUser";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
 import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
-import { getSidebarByUserType, getRoleLabel } from "@/constants/navigation";
+import { getSidebarByUserType, getRoleLabel, withoutConsultantBlockedItems } from "@/constants/navigation";
 import { comingSoonToolIds } from "@/constants/navigation.comingSoon";
 import { useLiveTools } from "@/hooks/useLiveTools";
 import { isSupabaseMode } from "@/lib/services/api";
@@ -122,7 +122,13 @@ export default function SharedSidebar() {
   // loses the badge (and stays in its own group). Only rows with a
   // `liveToolId` are asked about; the badge stays on any doubt.
   const liveTools = useLiveTools(comingSoonToolIds(writtenGroups), isSupabaseMode && !loading && isLoggedIn);
-  const groups = liveTools.size > 0 ? getSidebarByUserType(...menuArgs, liveTools) : writtenGroups;
+  const menuGroups = liveTools.size > 0 ? getSidebarByUserType(...menuArgs, liveTools) : writtenGroups;
+  // Art. 18: a consultant LAWYER drawn the firm menu (a firm member, N01-29)
+  // loses the court tools there too — getSidebarByUserType reads practiceKind
+  // for the lawyer menu only. The pages lock him either way; this is the menu.
+  const groups = userType === "firm" && sessionUserType === "lawyer" && practiceKind === "consultant"
+    ? withoutConsultantBlockedItems(menuGroups)
+    : menuGroups;
   
   const showCredits = false; // user requested to remove any mention of credits
 

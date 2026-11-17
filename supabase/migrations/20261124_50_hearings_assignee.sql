@@ -57,9 +57,12 @@
 --   Needs 20260903_phase1_case_tables, 20260903_phase2_clients_and_firm_membership
 --   (refused below otherwise). Idempotent: safe to run twice.
 --
--- RE-RUN ORDER: re-running 20261019_21_consultant_court_write_guard.sql puts
---   back its 2-argument trigger on hearings — re-run THIS file after it
---   (_verify block l3_firm and the 20261019_21 block both say so).
+-- RE-RUN NOTE: after this file, 20261019_21_consultant_court_write_guard.sql
+--   REFUSES to re-run: its trigger list is hard-coded ('stage_id','firm_id')
+--   and its own verify now sees three SET NULL keys on hearings, raises, and
+--   the whole file rolls back (harmless — the 3-pointer trigger made here
+--   stays). Docker-checked. Whoever owns 20261019_21 should read the pointer
+--   list from the catalog (as section 3 below does) before it is replayed.
 --
 -- Docker: supabase/tests/rls/hearings_assignee.test.sql (chain in its header).
 --
@@ -67,7 +70,8 @@
 --   drop trigger if exists trg_hearings_assignee_member on public.hearings;
 --   drop function if exists public.hearing_assignee_member_check();
 --   alter table public.hearings drop column if exists assignee_user_id;
---   then re-run 20261019_21_consultant_court_write_guard.sql (its 2-arg trigger).
+--   then re-run 20261019_21_consultant_court_write_guard.sql (its 2-arg trigger
+--   matches the table again once the column is gone).
 -- =============================================================================
 
 begin;
