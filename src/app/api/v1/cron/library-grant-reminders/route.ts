@@ -6,7 +6,16 @@ import {
   libraryReminderNotice,
   planLibraryReminders,
   type LibraryGrantRowWithUser,
+  type PlannedLibraryReminder,
 } from "@/lib/libraryAccessReminders";
+import { emailConfigured } from "@/lib/email/sendEmail";
+import {
+  emptyEmailReport,
+  loadEmailRecipients,
+  sendReminderOnce,
+  type EmailStepReport,
+} from "@/lib/email/reminderDelivery";
+import { libraryEmailKey, libraryEmailMessage } from "@/lib/email/libraryEmailReminders";
 
 /**
  * POST /api/v1/cron/library-grant-reminders — the 7- and 3-day reminders of
@@ -23,8 +32,12 @@ import {
  *      row. A retry, an overlapping run, or a second run the same day sends
  *      nothing twice.
  *
- * In-app only (recordNotification), with a link to /laws/subscribe. Email is
- * a follow-up.
+ * In-app (recordNotification), with a link to /laws/subscribe, AND by e-mail
+ * (step 4, owner TODO F1): the same due reminders, each once per chain end
+ * and recipient in public.email_reminder_log (20261125_20), skipped for an
+ * account that turned e-mail or the «renewal» category off. Without
+ * RESEND_API_KEY + EMAIL_FROM the e-mail step reports
+ * {skipped: "email_unavailable"} and writes nothing.
  *
  * ── AUTH — fails CLOSED ─────────────────────────────────────────────────────
  * Header `x-cron-secret` must equal CRON_SECRET (cronSecretMatches: SHA-256
@@ -123,5 +136,48 @@ export async function POST(request: NextRequest) {
     sent += 1;
   }
 
-  return NextResponse.json({ ok: true, candidates: userIds.length, due: due.length, sent, already, errors });
+  // 4. the same reminders by e-mail — their own once-only rows, so a failed
+  //    or not-yet-configured e-mail never uses up the in-app notice (or back).
+  const email = await sendLibraryReminderEmails(admin, due, now);
+
+  return NextResponse.json({ ok: true, candidates: userIds.length, due: due.length, sent, already, errors, email });
+}
+
+/**
+ * Step 4. Never throws, never stops the in-app step's answer: a missing
+ * email_reminder_log (20261125_20 not run) or no Resend key is reported in
+ * `email.skipped` and nothing is sent.
+ */
+async function sendLibraryReminderEmails(
+  admin: Awaited<ReturnType<typeof createServiceClient>>,
+  due: PlannedLibraryReminder[],
+  now: Date,
+): Promise<EmailStepReport> {
+  const report = emptyEmailReport();
+  if (!emailConfigured(process.env)) return { ...report, skipped: "email_unavailable" };
+  if (due.length === 0) return report;
+  try {
+    report.due = due.length;
+    const lookup = await loadEmailRecipients(admin, due.map((r) => r.userId), ["renewal"]);
+    if (lookup.error) {
+      console.error("[cron/library-grant-reminders] email recipients:", lookup.error);
+      return { ...report, ok: false, error: "recipients_failed" };
+    }
+    report.muted = lookup.muted;
+    report.noAddress = lookup.noAddress;
+    for (const r of due) {
+      const to = lookup.addresses.get(r.userId);
+      const key = libraryEmailKey(r);
+      if (!to || !key) continue;
+      const outcome = await sendReminderOnce(admin, key, { to, ...libraryEmailMessage(r, now) });
+      if (outcome === "schema_missing") return { ...report, skipped: "schema_missing" };
+      if (outcome === "sent") report.sent++;
+      else if (outcome === "already") report.already++;
+      else report.failed++;
+    }
+    return report;
+  } catch (err) {
+    console.error("[cron/library-grant-reminders] email step threw:", err instanceof Error ? err.name : "error");
+    return { ...report, ok: false, error: "email_step_threw" };
+  }
 }
