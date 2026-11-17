@@ -7053,3 +7053,14 @@ select 'Firm points counter: finance manager admitted + firm_points_overview (ru
        and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_member_points_usage(uuid)'))) > 0, false)
        as ok;
 -- <<< verify:l4_lawyer
+-- >>> verify:l6_reader
+-- Batch l6-reader (owner 13 Nov N06-40..43, the reader's law map): run 20261126_10 any time.
+select 'Reader law map: library_reader_law_links, service role only, security invoker (run 20261126_10)' as check,
+       to_regprocedure('public.library_reader_law_links(text, integer)') is not null
+       and not has_function_privilege('anon', 'public.library_reader_law_links(text, integer)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_reader_law_links(text, integer)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.library_reader_law_links(text, integer)', 'EXECUTE')
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p
+                          where p.oid = to_regprocedure('public.library_reader_law_links(text, integer)')), true)
+       as ok;
+-- <<< verify:l6_reader
