@@ -6927,3 +6927,34 @@ select 'Reminder e-mail log, service role only (run 20261125_20)' as check,
        and coalesce(has_table_privilege('service_role', to_regclass('public.email_reminder_log'), 'INSERT'), false)
        as ok;
 -- <<< verify:l4_email
+-- >>> verify:l5_community
+select 'Community search column + Arabic fold (run 20261125_53)' as check,
+       exists (select 1 from pg_catalog.pg_attribute
+                where attrelid = 'public.community_posts'::regclass and attname = 'search_fts'
+                  and attgenerated = 's' and not attisdropped)
+       and to_regclass('public.idx_community_posts_search_fts') is not null
+       and to_regprocedure('public.community_fold(text)') is not null
+       and has_function_privilege('authenticated', 'public.community_fold(text)', 'EXECUTE')
+       as ok;
+select 'Community saves own-row only, no guest (run 20261125_53)' as check,
+       to_regclass('public.community_saves') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.community_saves')), false)
+       and not has_table_privilege('anon', 'public.community_saves', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.community_saves', 'UPDATE')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_saves'
+                    and policyname = 'users save readable community posts' and with_check ilike '%community_post_readable%')
+       as ok;
+select 'Community best answer by the author only (run 20261125_53)' as check,
+       to_regprocedure('public.community_set_best_answer(uuid, uuid)') is not null
+       and not has_function_privilege('anon', 'public.community_set_best_answer(uuid, uuid)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.community_set_best_answer(uuid, uuid)', 'EXECUTE')
+       and not has_column_privilege('authenticated', 'public.community_posts', 'accepted_answer_id', 'UPDATE')
+       as ok;
+select 'Community votes own-row + recount trigger (20261016_06, checked by 20261125_53)' as check,
+       exists (select 1 from pg_catalog.pg_trigger where tgname = 'trg_community_votes_recount')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_votes'
+                    and cmd = 'INSERT' and with_check ilike '%community_post_readable%')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_votes'
+                    and cmd = 'DELETE' and qual ilike '%auth.uid()%')
+       as ok;
+-- <<< verify:l5_community

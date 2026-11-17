@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowUp, ArrowDown, CheckCircle, ChatCircle, SealCheck,
-  ArrowRight, Clock, Eye, BookOpen, Share, BookmarkSimple,
-  PencilSimple, Crown, Warning, ThumbsUp, Scales, Plus, SpinnerGap, ArrowClockwise,
+  ArrowRight, Eye, Share, BookmarkSimple,
+  PencilSimple, Crown, Warning, Scales, Plus, SpinnerGap, ArrowClockwise, PushPin,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -15,6 +15,9 @@ import {
   type StoredCommunityQuestion,
   getCommunityPost,
   addCommunityAnswer,
+  voteCommunityPost,
+  setCommunityPostSaved,
+  setCommunityBestAnswer,
 } from "@/lib/services/communityService";
 import { mapCommunityAnswer, type CommunityAnswerLike } from "@/lib/services/communityAnswerMap";
 import { mapCommunityPost, type CommunityPostLike } from "@/lib/services/communityPostMap";
@@ -22,6 +25,8 @@ import { displayWhen } from "../_feedView";
 import ReportContentButton from "@/components/community/ReportContentButton";
 import Link from "next/link";
 import { isDemoMode } from "@/lib/runtimeMode";
+import { isSupabaseMode } from "@/lib/services/api";
+import { shareOrCopyLink } from "@/lib/community/shareLink";
 import { useParams } from "next/navigation";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -35,7 +40,19 @@ interface Reply {
   date: string; dateEn: string;
   likes: number; isVerified?: boolean;
   isBest?: boolean;
+  /** The reader's own vote on this answer, from the server (0 = none). */
+  myVote: -1 | 0 | 1;
 }
+
+/** Reader state the detail route adds to the post (posts/[id]/route.ts). */
+interface ViewerFields {
+  myVote?: number;
+  saved?: boolean;
+  isMine?: boolean;
+  accepted_answer_id?: string | null;
+}
+
+const asVote = (v: unknown): -1 | 0 | 1 => (v === 1 ? 1 : v === -1 ? -1 : 0);
 
 // No mock question or replies here any more. A 404 or a failed read used to
 // render a hardcoded labour question with four invented answers (two named
@@ -112,6 +129,7 @@ function mapStoredReply(
     isVerified: mapped.isVerified,
     isBest: mapped.isBest,
     rating: mapped.rating,
+    myVote: asVote((answer as unknown as { myVote?: unknown }).myVote),
   };
 }
 
@@ -123,10 +141,19 @@ export default function QuestionDetailPage() {
   const [votes, setVotes] = useState(0);
   const [userVote, setUserVote] = useState<"up" | "down" | null>(null);
   const [saved, setSaved] = useState(false);
+  const [isMine, setIsMine] = useState(false);
+  // The question's best answer (accepted_answer_id). `undefined` in demo mode,
+  // where each demo answer carries its own `isAccepted`.
+  const [bestId, setBestId] = useState<string | null | undefined>(undefined);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; login?: boolean } | null>(null);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareDone, setShareDone] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [isAnon, setIsAnon] = useState(false);
   const [replies, setReplies] = useState<Reply[]>([]);
-  const [replyLikes, setReplyLikes] = useState<Record<string, number>>({});
+  // The server's answer to this reader's last vote on an answer.
+  const [replyVotes, setReplyVotes] = useState<Record<string, { myVote: -1 | 0 | 1; votes: number }>>({});
   const [storedQuestion, setStoredQuestion] = useState<StoredCommunityQuestion | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [loadSeq, setLoadSeq] = useState(0);
@@ -160,6 +187,14 @@ export default function QuestionDetailPage() {
           // `handleVote`'s arithmetic don't seed themselves from `undefined`.
           setVotes(mapCommunityPost(savedQuestion as unknown as CommunityPostLike).votes);
           setReplies((savedQuestion.answers ?? []).map((a) => mapStoredReply(a, acceptedAnswerId)));
+          // Reader state (supabase mode): own vote, saved, «am I the asker».
+          const viewer = savedQuestion as unknown as ViewerFields;
+          const mine = asVote(viewer.myVote);
+          setUserVote(mine === 1 ? "up" : mine === -1 ? "down" : null);
+          setSaved(viewer.saved === true);
+          setIsMine(isSupabaseMode && viewer.isMine === true);
+          setBestId(isSupabaseMode ? (typeof acceptedAnswerId === "string" ? acceptedAnswerId : null) : undefined);
+          setReplyVotes({});
           setLoadState("ready");
         } else {
           // The server said 404 — the question is not there (or not visible to
@@ -230,24 +265,110 @@ export default function QuestionDetailPage() {
   }
 
   const question = mapStoredQuestion(storedQuestion);
+  const postId = String(params?.id ?? question.id);
 
-  // Split: محامون أولاً ثم أفراد
-  const lawyerReplies = replies.filter(r => r.type === "lawyer").sort((a, b) => {
-    if (a.isBest && !b.isBest) return -1;
-    if (!a.isBest && b.isBest) return 1;
-    return b.likes - a.likes;
-  });
-  const userReplies = replies.filter(r => r.type !== "lawyer");
+  // «أفضل إجابة» (N05-C7): in supabase mode the post's accepted_answer_id
+  // decides; demo answers carry their own flag.
+  const isBestReply = (r: Reply) => (bestId === undefined ? r.isBest === true : bestId !== null && String(r.id) === bestId);
+  const replyVoteCount = (r: Reply) => replyVotes[String(r.id)]?.votes ?? r.likes;
+  const replyMyVote = (r: Reply) => replyVotes[String(r.id)]?.myVote ?? r.myVote;
 
-  const handleVote = (dir: "up" | "down") => {
-    if (userVote === dir) { setVotes(question.votes); setUserVote(null); return; }
-    setVotes(question.votes + (dir === "up" ? 1 : -1));
-    setUserVote(dir);
+  // The best answer is pinned above both sections; the rest split: محامون أولاً ثم أفراد
+  const bestReply = replies.find(isBestReply) ?? null;
+  const lawyerReplies = replies
+    .filter(r => r.type === "lawyer" && r !== bestReply)
+    .sort((a, b) => replyVoteCount(b) - replyVoteCount(a));
+  const userReplies = replies.filter(r => r.type !== "lawyer" && r !== bestReply);
+  const lawyerAnswerCount = replies.filter(r => r.type === "lawyer").length;
+
+  const signInNotice = (text: string) => setNotice({ text, login: true });
+  const loginHref = `/login?from=${encodeURIComponent(`/community/${postId}`)}`;
+
+  /**
+   * Votes are saved on the server (N05-C4): one per member per question or
+   * answer; the same arrow again takes it back. The number shown is the one
+   * the server returns. Demo mode keeps its local toggle (no persistence).
+   */
+  const handleVote = async (dir: "up" | "down") => {
+    if (!isSupabaseMode) {
+      if (userVote === dir) { setVotes(question.votes); setUserVote(null); return; }
+      setVotes(question.votes + (dir === "up" ? 1 : -1));
+      setUserVote(dir);
+      return;
+    }
+    if (isGuest) { signInNotice("سجّل الدخول للتصويت — يُحفظ صوت واحد لكل عضو."); return; }
+    if (busy) return;
+    setBusy("vote:post");
+    setNotice(null);
+    try {
+      const result = await voteCommunityPost(postId, "post", postId, userVote === dir ? 0 : dir === "up" ? 1 : -1);
+      if (result) {
+        setVotes(result.votes);
+        setUserVote(result.myVote === 1 ? "up" : result.myVote === -1 ? "down" : null);
+      }
+    } catch (err) {
+      setNotice({ text: err instanceof Error && err.message ? err.message : "تعذّر حفظ تصويتك — لم يُحتسب." });
+    } finally {
+      setBusy(null);
+    }
   };
 
-  const handleLike = (id: number | string, base: number) => {
-    const k = String(id);
-    setReplyLikes(prev => ({ ...prev, [k]: (prev[k] ?? base) + (prev[k] !== undefined ? 0 : 1) }));
+  const handleReplyVote = async (reply: Reply, dir: "up" | "down") => {
+    if (!isSupabaseMode) return;
+    if (isGuest) { signInNotice("سجّل الدخول للتصويت على الإجابات."); return; }
+    if (busy) return;
+    const current = replyMyVote(reply);
+    const next: 1 | -1 | 0 = (dir === "up" && current === 1) || (dir === "down" && current === -1) ? 0 : dir === "up" ? 1 : -1;
+    setBusy(`vote:${reply.id}`);
+    setNotice(null);
+    try {
+      const result = await voteCommunityPost(postId, "answer", String(reply.id), next);
+      if (result) setReplyVotes(prev => ({ ...prev, [String(reply.id)]: result }));
+    } catch (err) {
+      setNotice({ text: err instanceof Error && err.message ? err.message : "تعذّر حفظ تصويتك — لم يُحتسب." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** «حفظ» (N05-C5): saved on the server, listed at /community/me. */
+  const handleSave = async () => {
+    if (!isSupabaseMode) { setNotice({ text: "الحفظ غير متاح في وضع العرض التجريبي." }); return; }
+    if (isGuest) { signInNotice("سجّل الدخول لحفظ السؤال والرجوع إليه لاحقاً."); return; }
+    if (busy) return;
+    setBusy("save");
+    setNotice(null);
+    try {
+      setSaved(await setCommunityPostSaved(postId, !saved));
+    } catch (err) {
+      setNotice({ text: err instanceof Error && err.message ? err.message : "تعذّر الحفظ — لم يتغيّر شيء." });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** «مشاركة» (N05-C6): the system share sheet when there is one, else copy the link. */
+  const handleShare = async () => {
+    setShareDone(false);
+    setShareLink(null);
+    const url = `${window.location.origin}/community/${encodeURIComponent(postId)}`;
+    const outcome = await shareOrCopyLink(url, question.title);
+    if (outcome === "copied") setShareDone(true);
+    else if (outcome === "manual") setShareLink(url);
+  };
+
+  /** «أفضل إجابة» (N05-C7): the asker only — the database checks it again. */
+  const handleBest = async (reply: Reply | null) => {
+    if (!isMine || busy) return;
+    setBusy("best");
+    setNotice(null);
+    try {
+      setBestId(await setCommunityBestAnswer(postId, reply ? String(reply.id) : null));
+    } catch (err) {
+      setNotice({ text: err instanceof Error && err.message ? err.message : "تعذّر حفظ أفضل إجابة." });
+    } finally {
+      setBusy(null);
+    }
   };
 
   /**
@@ -279,25 +400,27 @@ export default function QuestionDetailPage() {
   // ── Reply Card (shared renderer) ──
   const ReplyCard = ({ reply }: { reply: Reply }) => {
     const isLawyer = reply.type === "lawyer";
-    const likes = replyLikes[String(reply.id)] ?? reply.likes;
+    const isBest = isBestReply(reply);
+    const voteCount = replyVoteCount(reply);
+    const myVote = replyMyVote(reply);
 
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className={`rounded-2xl border p-5 ${
-          isLawyer
-            ? reply.isBest
-              ? isDark ? "bg-[#0B3D2E]/20 border-[#0B3D2E]/50" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/30"
-              : isDark ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30" : "bg-emerald-50/60 border-emerald-200/80"
+          isBest
+            ? isDark ? "bg-emerald-900/15 border-emerald-700/40" : "bg-emerald-50/80 border-emerald-300/70"
+            : isLawyer
+            ? isDark ? "bg-[#0B3D2E]/20 border-[#0B3D2E]/50" : "bg-[#0B3D2E]/5 border-[#0B3D2E]/30"
             : isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"
         }`}
       >
         {/* Best Answer badge */}
-        {reply.isBest && (
+        {isBest && (
           <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-3">
             <CheckCircle size={14} weight="fill" />
-            {isRTL ? "أفضل إجابة ✓" : "Best Answer ✓"}
+            {isRTL ? "أفضل إجابة — اختارها صاحب السؤال" : "Best Answer — chosen by the asker"}
           </div>
         )}
 
@@ -360,19 +483,29 @@ export default function QuestionDetailPage() {
             </div>
           </div>
 
-          {/* Like + Report */}
+          {/* Votes (saved on the server) + Report */}
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => handleLike(reply.id, reply.likes)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition ${
-                replyLikes[String(reply.id)] !== undefined
-                  ? "bg-[#0B3D2E]/10 border-[#0B3D2E]/30 text-[#0B3D2E] dark:text-[#C8A762]"
-                  : isDark ? "border-[#2d3748] text-gray-400 hover:bg-white/5" : "border-gray-200 text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              <ThumbsUp size={12} weight={replyLikes[String(reply.id)] !== undefined ? "fill" : "regular"} />
-              {likes}
-            </button>
+            <div className={`flex items-center gap-0.5 rounded-xl border px-1 py-0.5 ${isDark ? "border-[#2d3748]" : "border-gray-200"}`}>
+              <button
+                onClick={() => { void handleReplyVote(reply, "up"); }}
+                disabled={!isSupabaseMode || busy === `vote:${reply.id}`}
+                aria-label={isRTL ? "تصويت مؤيد للإجابة" : "Upvote answer"}
+                aria-pressed={myVote === 1}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition disabled:opacity-50 ${myVote === 1 ? "bg-[#0B3D2E] text-white" : isDark ? "text-gray-400 hover:bg-white/5" : "text-gray-500 hover:bg-gray-50"}`}
+              >
+                <ArrowUp size={12} weight={myVote === 1 ? "bold" : "regular"} />
+              </button>
+              <span className={`min-w-[1.5rem] text-center text-xs font-bold font-mono ${isDark ? "text-gray-300" : "text-gray-600"}`}>{voteCount}</span>
+              <button
+                onClick={() => { void handleReplyVote(reply, "down"); }}
+                disabled={!isSupabaseMode || busy === `vote:${reply.id}`}
+                aria-label={isRTL ? "تصويت معارض للإجابة" : "Downvote answer"}
+                aria-pressed={myVote === -1}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition disabled:opacity-50 ${myVote === -1 ? "bg-red-500/15 text-red-500" : isDark ? "text-gray-400 hover:bg-white/5" : "text-gray-500 hover:bg-gray-50"}`}
+              >
+                <ArrowDown size={12} weight={myVote === -1 ? "bold" : "regular"} />
+              </button>
+            </div>
             <ReportContentButton
               targetType="answer"
               targetId={String(reply.id)}
@@ -387,6 +520,21 @@ export default function QuestionDetailPage() {
         <p className={`text-sm leading-relaxed ${isLawyer ? isDark ? "text-zinc-200" : "text-gray-700" : muted}`}>
           {(isRTL ? reply.text : reply.textEn).replace(/\*\*(.+?)\*\*/g, "«$1»")}
         </p>
+
+        {/* «أفضل إجابة» — only the question's author sees this (isMine is computed on the server). */}
+        {isMine && (
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => { void handleBest(isBest ? null : reply); }}
+              disabled={busy === "best"}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition disabled:opacity-50 ${isBest ? isDark ? "border-emerald-700/50 text-emerald-400 hover:bg-white/5" : "border-emerald-300 text-emerald-700 hover:bg-emerald-50" : isDark ? "border-[#2d3748] text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+            >
+              <CheckCircle size={13} weight={isBest ? "fill" : "regular"} />
+              {isBest ? (isRTL ? "إلغاء اختيار أفضل إجابة" : "Unmark best answer") : (isRTL ? "اختر كأفضل إجابة" : "Mark as best answer")}
+            </button>
+          </div>
+        )}
 
         {/* Lawyer: book CTA — item 147: only when a real slug exists, and no
             dead #consult anchor (retired on the lawyer surfaces already). */}
@@ -436,11 +584,11 @@ export default function QuestionDetailPage() {
               <div className="flex gap-4">
                 {/* Vote column */}
                 <div className="flex flex-col items-center gap-1.5 pt-1 flex-shrink-0">
-                  <button onClick={() => handleVote("up")} className={`w-8 h-8 rounded-xl flex items-center justify-center transition ${userVote === "up" ? "bg-[#0B3D2E] text-white" : isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>
+                  <button onClick={() => { void handleVote("up"); }} disabled={busy === "vote:post"} aria-label={isRTL ? "تصويت مؤيد" : "Upvote"} aria-pressed={userVote === "up"} className={`w-8 h-8 rounded-xl disabled:opacity-50 flex items-center justify-center transition ${userVote === "up" ? "bg-[#0B3D2E] text-white" : isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>
                     <ArrowUp size={16} weight={userVote === "up" ? "fill" : "regular"} />
                   </button>
                   <span className={`text-base font-black ${isDark ? "text-white" : "text-gray-800"}`}>{votes}</span>
-                  <button onClick={() => handleVote("down")} className={`w-8 h-8 rounded-xl flex items-center justify-center transition ${userVote === "down" ? "bg-red-500/20 text-red-500" : isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>
+                  <button onClick={() => { void handleVote("down"); }} disabled={busy === "vote:post"} aria-label={isRTL ? "تصويت معارض" : "Downvote"} aria-pressed={userVote === "down"} className={`w-8 h-8 rounded-xl disabled:opacity-50 flex items-center justify-center transition ${userVote === "down" ? "bg-red-500/20 text-red-500" : isDark ? "hover:bg-white/10 text-gray-400" : "hover:bg-gray-100 text-gray-500"}`}>
                     <ArrowDown size={16} weight={userVote === "down" ? "fill" : "regular"} />
                   </button>
                 </div>
@@ -464,20 +612,52 @@ export default function QuestionDetailPage() {
                     <span className="flex items-center gap-1"><Eye size={11} />{question.views}</span>
                     <span className="flex items-center gap-1"><ChatCircle size={11} />{replies.length} {isRTL ? "رد" : "replies"}</span>
 
-                    <button onClick={() => setSaved(v => !v)} className={`ms-auto flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs transition ${saved ? "border-amber-400/30 bg-amber-400/10 text-amber-600 dark:text-amber-400" : isDark ? "border-[#2d3748] text-gray-400" : "border-gray-200 text-gray-500"}`}>
+                    <button onClick={() => { void handleSave(); }} disabled={busy === "save"} aria-pressed={saved} className={`ms-auto flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs transition disabled:opacity-50 ${saved ? "border-amber-400/30 bg-amber-400/10 text-amber-600 dark:text-amber-400" : isDark ? "border-[#2d3748] text-gray-400" : "border-gray-200 text-gray-500"}`}>
                       <BookmarkSimple size={12} weight={saved ? "fill" : "regular"} />
                       {isRTL ? (saved ? "محفوظ" : "حفظ") : (saved ? "Saved" : "Save")}
                     </button>
-                    <button className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${isDark ? "border-[#2d3748] text-gray-400" : "border-gray-200 text-gray-500"}`}>
-                      <Share size={12} /> {isRTL ? "شارك" : "Share"}
+                    <button type="button" onClick={() => { void handleShare(); }} className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${isDark ? "border-[#2d3748] text-gray-400" : "border-gray-200 text-gray-500"}`}>
+                      <Share size={12} /> {shareDone ? (isRTL ? "نُسخ الرابط" : "Link copied") : (isRTL ? "مشاركة" : "Share")}
                     </button>
                     {/* `params.id` is the real community_posts.id (uuid) this
                         page was navigated to. */}
                     <ReportContentButton targetType="post" targetId={String(params?.id ?? question.id)} isGuest={isGuest} />
                   </div>
+                  {shareLink && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                      <span className={muted}>{isRTL ? "انسخ الرابط:" : "Copy the link:"}</span>
+                      <input
+                        readOnly
+                        value={shareLink}
+                        onFocus={(e) => e.currentTarget.select()}
+                        dir="ltr"
+                        className={`flex-1 min-w-0 rounded-lg border px-2 py-1 font-mono ${isDark ? "bg-[#0c0f12] border-[#2d3748] text-gray-300" : "bg-white border-gray-200 text-gray-700"}`}
+                      />
+                    </div>
+                  )}
+                  {notice && (
+                    <p role="status" className="mt-3 text-xs font-semibold text-amber-700 dark:text-amber-400 flex flex-wrap items-center gap-1.5">
+                      <Warning size={13} weight="fill" className="shrink-0" /> {notice.text}
+                      {notice.login && <Link href={loginHref} className="underline font-bold">{isRTL ? "تسجيل الدخول" : "Sign in"}</Link>}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
+
+            {/* ─── BEST ANSWER (pinned on top) ────────────── */}
+            {bestReply && (
+              <section>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-600 text-white text-xs font-bold">
+                    <PushPin size={13} weight="fill" />
+                    {isRTL ? "أفضل إجابة" : "Best Answer"}
+                  </div>
+                  <div className={`h-px flex-1 ${isDark ? "bg-white/10" : "bg-gray-200"}`} />
+                </div>
+                <ReplyCard key={bestReply.id} reply={bestReply} />
+              </section>
+            )}
 
             {/* ─── LAWYER ANSWERS ─────────────────────────── */}
             {lawyerReplies.length > 0 && (
@@ -590,7 +770,7 @@ export default function QuestionDetailPage() {
                 { icon: Eye, label: isRTL ? "مشاهدة" : "Views", value: question.views },
                 { icon: ArrowUp, label: isRTL ? "تصويت" : "Votes", value: votes },
                 { icon: ChatCircle, label: isRTL ? "رد" : "Replies", value: replies.length },
-                { icon: SealCheck, label: isRTL ? "إجابة محامٍ" : "Lawyer Answers", value: lawyerReplies.length },
+                { icon: SealCheck, label: isRTL ? "إجابة محامٍ" : "Lawyer Answers", value: lawyerAnswerCount },
               ].map((s, i) => {
                 const Icon = s.icon;
                 return (

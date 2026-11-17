@@ -48,6 +48,10 @@ export interface FeedQuestion {
   createdAtMs: number | null;
   /** Printed date: the demo's own `ago`, else the formatted `createdAt`. */
   when: string;
+  /** The signed-in reader's own vote, from the server (0 for a guest / demo). */
+  myVote: -1 | 0 | 1;
+  /** The signed-in reader saved this question (server; false in demo). */
+  saved: boolean;
 }
 
 type Loose = Record<string, unknown>;
@@ -106,20 +110,40 @@ export function toFeedQuestion(raw: unknown): FeedQuestion {
     isAnswered: q.isAnswered === true,
     createdAtMs,
     when: str(q.ago) || formatPostedDate(createdAt),
+    myVote: q.myVote === 1 ? 1 : q.myVote === -1 ? -1 : 0,
+    saved: q.saved === true,
   };
 }
 
 export type FeedSort = "hot" | "new" | "top";
 
+/**
+ * `serverOrdered` (supabase mode): the route already searched (Arabic-folded,
+ * every post, not just this page — api/v1/community/posts/_search.ts) and
+ * ordered the rows, and «تحميل المزيد» appends the next page of that order.
+ * Searching again here with a plain `includes` would DROP rows the server's
+ * folding matched (أ/ا, ة/ه), and re-sorting would reshuffle pages — so with
+ * it set only the tab/category guards run. Demo mode keeps the local search
+ * and sort: its store is the whole forum.
+ */
 export function filterAndSortFeed(
   items: FeedQuestion[],
-  opts: { tab: FeedTab; category: string; search: string; sort: FeedSort; voteOf?: (q: FeedQuestion) => number },
+  opts: {
+    tab: FeedTab;
+    category: string;
+    search: string;
+    sort: FeedSort;
+    voteOf?: (q: FeedQuestion) => number;
+    serverOrdered?: boolean;
+  },
 ): FeedQuestion[] {
   const needle = opts.search.trim().toLowerCase();
   const voteOf = opts.voteOf ?? ((q: FeedQuestion) => q.votes);
-  return items
+  const guarded = items
     .filter((q) => q.tab === opts.tab)
-    .filter((q) => opts.category === "all" || q.category === opts.category)
+    .filter((q) => opts.category === "all" || q.category === opts.category);
+  if (opts.serverOrdered) return guarded;
+  return guarded
     .filter(
       (q) =>
         needle === "" ||

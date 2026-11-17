@@ -26,7 +26,6 @@ const publicRoutes: SitemapRoute[] = [
   // advertising a 404 after the corpus was cleared. Emit them from the DB instead
   // — see REMAINING_WORK / خطة_المقالات for the pending dynamic-sitemap item.
   { url: "/community", priority: 0.75, changeFrequency: "weekly" },
-  { url: "/community/ask", priority: 0.7, changeFrequency: "weekly" },
   { url: "/community/public", priority: 0.7, changeFrequency: "weekly" },
   { url: "/contact", priority: 0.7, changeFrequency: "monthly" },
   { url: "/faq", priority: 0.7, changeFrequency: "monthly" },

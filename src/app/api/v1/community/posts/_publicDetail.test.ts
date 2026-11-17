@@ -17,3 +17,13 @@ test("the detail route answers 404 only for a missing row, 500 for a failed read
   assert.match(src, /return NextResponse\.json\(\{ error: "تعذّر تحميل السؤال" \}, \{ status: 500 \}\);/);
   assert.match(src, /data: publicDetail\(cleanDetail\(/);
 });
+
+test("the question page never carries search_fts — the index of the UNREDACTED text", () => {
+  const out = publicDetail({
+    id: "p1", search_fts: "'0501234567':5 'اتصل':4", isMine: false,
+    answers: [{ id: "a1", body: "b", search_fts: "x" }],
+  });
+  assert.equal("search_fts" in out, false);
+  assert.equal("search_fts" in (out.answers as Record<string, unknown>[])[0], false);
+  assert.equal(out.isMine, false, "reader state passes through");
+});

@@ -37,6 +37,7 @@ import { useUser } from "@/hooks/useUser";
 import Link from "next/link";
 import { CATEGORIES, type Category, type SortMode } from "@/constants/communityData";
 import { getCommunityPosts, type StoredCommunityQuestion } from "@/lib/services/communityService";
+import { isSupabaseMode } from "@/lib/services/api";
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { toFeedQuestion, filterAndSortFeed } from "../_feedView";
 
@@ -51,15 +52,30 @@ export default function LawyersCommunityPage() {
   const [category, setCategory] = useState<Category>("all");
   const [sort, setSort] = useState<SortMode>("new");
   const [search, setSearch] = useState("");
+  // Server search (N05-C8): `search` once typing pauses, sent with the
+  // category and the sort, so the server searches every topic and orders them.
+  const [query, setQuery] = useState("");
   const [read, setRead] = useState<ListRead<StoredCommunityQuestion> | null>(null);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    const t = setTimeout(() => setQuery(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const result = await getCommunityPosts({ tab: "lawyers", limit: PAGE_SIZE });
+    const result = await getCommunityPosts({
+      tab: "lawyers",
+      limit: PAGE_SIZE,
+      category: isSupabaseMode && category !== "all" ? category : undefined,
+      q: isSupabaseMode ? query : undefined,
+      sort: isSupabaseMode ? sort : undefined,
+    });
     setRead(result);
     setLoading(false);
-  }, []);
+  }, [category, query, sort]);
 
   useEffect(() => {
     if (user.loading || !isLawyer) return;
@@ -76,6 +92,7 @@ export default function LawyersCommunityPage() {
     category,
     search,
     sort,
+    serverOrdered: isSupabaseMode,
   });
   const truncated = feedState === "ready" && read?.ok && read.truncated && read.total !== null
     ? `يُعرض ${arNum(read.items.length)} من ${arNum(read.total)} موضوعاً.`

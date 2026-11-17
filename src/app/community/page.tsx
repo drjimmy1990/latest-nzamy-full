@@ -23,7 +23,7 @@ import {
   MagnifyingGlass, ArrowUp, ArrowDown, CheckCircle, ChatCircle,
   Fire, Clock, BookOpen, Scales, Briefcase, House, Users,
   X, SealCheck, PencilSimple, Gavel, ShieldCheck, Warning,
-  Star, CaretLeft, Plus, ChartBar, ArrowClockwise, SpinnerGap
+  Star, CaretLeft, Plus, ChartBar, ArrowClockwise, SpinnerGap, BookmarkSimple
 } from "@phosphor-icons/react";
 import {
   type CommunityTab,
@@ -42,6 +42,7 @@ import Link from "next/link";
 import {
   type StoredCommunityQuestion,
   getCommunityPosts,
+  voteCommunityPost,
   COMMUNITY_UPDATED_EVENT,
 } from "@/lib/services/communityService";
 import { isSupabaseMode } from "@/lib/services/api";
@@ -69,6 +70,8 @@ export default function CommunityPage() {
   const [category, setCategory] = useState<Category>("all");
   const [sort, setSort]         = useState<SortMode>("hot");
   const [search, setSearch]     = useState("");
+  // What the server is asked for: `search` once typing pauses (supabase mode).
+  const [query, setQuery]       = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [mounted, setMounted]   = useState(false);
   const [read, setRead] = useState<ListRead<StoredCommunityQuestion> | null>(null);
@@ -78,7 +81,12 @@ export default function CommunityPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
-  const [questionVotes, setQuestionVotes] = useState<Record<string, "up" | "down" | null>>({});
+  // Supabase mode: the server's answer to this reader's last vote on a card
+  // ({ myVote, votes } from the vote route). Demo mode: a local up/down toggle.
+  const [voteState, setVoteState] = useState<Record<string, { myVote: -1 | 0 | 1; votes: number }>>({});
+  const [demoVotes, setDemoVotes] = useState<Record<string, "up" | "down" | null>>({});
+  const [voteBusy, setVoteBusy] = useState<string | null>(null);
+  const [voteNotice, setVoteNotice] = useState<{ key: string; text: string; login?: boolean } | null>(null);
   // True once the visitor has clicked a tab themselves — stops the
   // land-on-lawyers effect below from overriding a deliberate choice
   // (e.g. a lawyer who switches to "public" should not get bounced back).
@@ -108,12 +116,23 @@ export default function CommunityPage() {
           tab,
           category: category !== "all" ? category : undefined,
           limit: PAGE_SIZE,
+          q: query,
+          sort,
         })
       : listOk(readCommunityQuestionsLocal());
-    if (seq !== loadSeqRef.current) return; // superseded by a newer tab/category change — discard
+    if (seq !== loadSeqRef.current) return; // superseded by a newer tab/category/search change — discard
     setRead(result);
+    setVoteState({});
     setLoading(false);
-  }, [tab, category]);
+  }, [tab, category, query, sort]);
+
+  // Server search (N05-C8): the box asks the server once typing pauses. Demo
+  // mode never sets `query` — it searches its local store in the browser.
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    const t = setTimeout(() => setQuery(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -176,13 +195,15 @@ export default function CommunityPage() {
       category: category !== "all" ? category : undefined,
       limit: PAGE_SIZE,
       offset: read.items.length,
+      q: query,
+      sort,
     });
     // A failed page is NOT the end of the list. Keep what we have, say the
     // extra page did not arrive, and leave the button there to try again.
     if (!next.ok) setMoreFailed(true);
     else setRead(listOk([...read.items, ...next.items], next.total ?? read.total));
     setLoadingMore(false);
-  }, [read, tab, category]);
+  }, [read, tab, category, query, sort]);
 
   const bg   = isDark ? "bg-[#0c0f12] text-white"   : "bg-[#f9fafb] text-zinc-900";
   const card = `rounded-[2rem] border ${isDark ? "bg-[#161b22]/80 border-white/[0.06] backdrop-blur-xl" : "bg-white/80 border-slate-200/50 backdrop-blur-xl shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)]"}`;
@@ -205,35 +226,68 @@ export default function CommunityPage() {
     : mergeDemoFeed<(typeof savedQuestions)[number] | (typeof ALL_QUESTIONS)[number]>(savedQuestions, ALL_QUESTIONS))
     .map(toFeedQuestion);
 
-  // «يُعرض ٢٠ من ٤٧». truncationNoticeAr() is deliberately not used: its
-  // sentence ends «استخدم البحث للوصول إلى الباقي», and the search box on this
-  // page filters the questions already in memory — it cannot reach question 21.
-  // «تحميل المزيد» can, so the sentence points there instead.
+  // «يُعرض ٢٠ من ٤٧». The search box asks the server now (every post, not just
+  // this page), and «تحميل المزيد» brings the next page of the same order.
   //
   // Suppressed while loading: on a tab switch `read` still holds the PREVIOUS
   // tab's numbers, and printing them over the spinner describes a list that is
   // no longer on screen.
   const truncation =
     feedState === "ready" && read && read.ok && read.truncated && read.total !== null
-      ? `يُعرض ${arNum(read.items.length)} من ${arNum(read.total)} سؤالاً — حمّل المزيد للبحث في بقيتها.`
+      ? `يُعرض ${arNum(read.items.length)} من ${arNum(read.total)} سؤالاً — حمّل المزيد لعرض البقية.`
       : null;
 
+  /** The reader's own vote on a card: the server's (supabase) or the local toggle (demo). */
+  const myVoteOf = (question: FeedQuestion): "up" | "down" | null => {
+    if (!isSupabaseMode) return demoVotes[question.key] ?? null;
+    const v = voteState[question.key]?.myVote ?? question.myVote;
+    return v === 1 ? "up" : v === -1 ? "down" : null;
+  };
+
+  /** Supabase mode: the count the server returned, never one added up here. */
   const getVoteCount = (question: FeedQuestion) => {
-    const vote = questionVotes[question.key];
+    if (isSupabaseMode) return voteState[question.key]?.votes ?? question.votes;
+    const vote = demoVotes[question.key];
     if (vote === "up") return question.votes + 1;
     if (vote === "down") return question.votes - 1;
     return question.votes;
   };
 
-  const handleQuestionVote = (question: FeedQuestion, direction: "up" | "down") => {
-    setQuestionVotes((prev) => ({
-      ...prev,
-      [question.key]: prev[question.key] === direction ? null : direction,
-    }));
+  /**
+   * Votes are saved on the server (N05-C4): one per member per question;
+   * clicking the same arrow again takes it back. A guest is asked to sign in;
+   * a refused or failed vote says so, and the number stays the server's.
+   */
+  const handleQuestionVote = async (question: FeedQuestion, direction: "up" | "down") => {
+    if (!isSupabaseMode) {
+      setDemoVotes((prev) => ({ ...prev, [question.key]: prev[question.key] === direction ? null : direction }));
+      return;
+    }
+    if (!user.isLoggedIn) {
+      setVoteNotice({ key: question.key, text: "سجّل الدخول للتصويت — يُحفظ صوت واحد لكل عضو.", login: true });
+      return;
+    }
+    if (voteBusy) return;
+    const next: 1 | -1 | 0 = myVoteOf(question) === direction ? 0 : direction === "up" ? 1 : -1;
+    setVoteBusy(question.key);
+    setVoteNotice(null);
+    try {
+      const result = await voteCommunityPost(question.key, "post", question.key, next);
+      if (result) setVoteState((prev) => ({ ...prev, [question.key]: result }));
+    } catch (err) {
+      setVoteNotice({
+        key: question.key,
+        text: err instanceof Error && err.message ? err.message : "تعذّر حفظ تصويتك — لم يُحتسب.",
+      });
+    } finally {
+      setVoteBusy(null);
+    }
   };
 
-  // Filter questions by tab, category, search
-  const filtered = filterAndSortFeed(questions, { tab, category, search, sort, voteOf: getVoteCount });
+  // Tab/category guard; in supabase mode the server already searched and ordered.
+  const filtered = filterAndSortFeed(questions, {
+    tab, category, search, sort, voteOf: getVoteCount, serverOrdered: isSupabaseMode,
+  });
 
   if (!mounted) return null;
 
@@ -252,13 +306,24 @@ export default function CommunityPage() {
               اسأل سؤالاً قانونياً — يجيب المحامون أولاً، مرتبون حسب التقييم
             </p>
           </div>
-          <Link
-            href="/community/ask"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition"
-          >
-            <PencilSimple size={16} weight="bold" />
-            اطرح سؤالاً
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {isSupabaseMode && user.isLoggedIn && (
+              <Link
+                href="/community/me"
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold rounded-xl border transition ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+              >
+                <BookmarkSimple size={16} weight="bold" />
+                أسئلتي والمحفوظة
+              </Link>
+            )}
+            <Link
+              href="/community/ask"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B3D2E] text-white text-sm font-bold rounded-xl hover:bg-[#0a3328] transition"
+            >
+              <PencilSimple size={16} weight="bold" />
+              اطرح سؤالاً
+            </Link>
+          </div>
         </div>
 
         {/* ── Tabs ── */}
@@ -576,25 +641,31 @@ export default function CommunityPage() {
                           {/* Vote column */}
                           <div className="flex flex-col items-center gap-1 pt-0.5 flex-shrink-0">
                             <button
-                              onClick={() => handleQuestionVote(q, "up")}
-                              className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                                questionVotes[q.key] === "up"
+                              onClick={() => { void handleQuestionVote(q, "up"); }}
+                              disabled={voteBusy === q.key}
+                              aria-label="تصويت مؤيد"
+                              aria-pressed={myVoteOf(q) === "up"}
+                              className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer disabled:opacity-50 ${
+                                myVoteOf(q) === "up"
                                   ? "bg-[#0B3D2E] text-white"
                                   : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
                               }`}
                             >
-                              <ArrowUp size={16} className="text-[#0B3D2E] dark:text-emerald-400" />
+                              <ArrowUp size={16} className={myVoteOf(q) === "up" ? "text-white" : "text-[#0B3D2E] dark:text-emerald-400"} />
                             </button>
                             <span className={`text-sm font-bold font-mono ${isDark ? "text-zinc-200" : "text-gray-700"}`}>{getVoteCount(q)}</span>
                             <button
-                              onClick={() => handleQuestionVote(q, "down")}
-                              className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
-                                questionVotes[q.key] === "down"
+                              onClick={() => { void handleQuestionVote(q, "down"); }}
+                              disabled={voteBusy === q.key}
+                              aria-label="تصويت معارض"
+                              aria-pressed={myVoteOf(q) === "down"}
+                              className={`w-11 h-11 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center transition cursor-pointer disabled:opacity-50 ${
+                                myVoteOf(q) === "down"
                                   ? "bg-red-500/10 text-red-500"
                                   : isDark ? "hover:bg-white/10" : "hover:bg-gray-100"
                               }`}
                             >
-                              <ArrowDown size={16} className={muted} />
+                              <ArrowDown size={16} className={myVoteOf(q) === "down" ? "text-red-500" : muted} />
                             </button>
                           </div>
 
@@ -627,6 +698,15 @@ export default function CommunityPage() {
                             {q.body && (
                               <p className={`line-clamp-2 text-[13px] leading-relaxed mb-3 ${muted}`}>
                                 {q.body}
+                              </p>
+                            )}
+
+                            {voteNotice?.key === q.key && (
+                              <p role="status" className="mb-2 text-xs font-semibold text-amber-700 dark:text-amber-400 flex flex-wrap items-center gap-1.5">
+                                <Warning size={12} weight="fill" className="shrink-0" /> {voteNotice.text}
+                                {voteNotice.login && (
+                                  <Link href="/login?from=%2Fcommunity" className="underline font-bold">تسجيل الدخول</Link>
+                                )}
                               </p>
                             )}
 
