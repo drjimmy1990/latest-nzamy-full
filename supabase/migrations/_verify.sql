@@ -6912,3 +6912,29 @@ select 'Private bucket lawyer-licences, own-folder insert only (run 20261124_70 
                                || coalesce(pg_catalog.pg_get_expr(polwithcheck, polrelid), '')) like '%lawyer-licences%')
        as ok;
 -- <<< verify:l3_signup
+-- >>> verify:l5_demo
+-- Demo accounts (owner S3 / R11): run 20261125_50 after 20261124_10.
+select 'Demo accounts: profiles.is_demo + flag guard (run 20261125_50)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'profiles' and column_name = 'is_demo')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.profiles'::regclass and tgname = 'trg_profiles_is_demo_guard' and not tgisinternal)
+       and to_regprocedure('public.is_demo_user(uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.is_demo_user(uuid)', 'EXECUTE')
+       as ok;
+select 'Demo accounts: no payment, no founder seat (re-run 20261125_50 after any re-run of 20261124_10)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.payment_orders'::regclass and tgname = 'trg_demo_guard' and not tgisinternal)
+       and pg_catalog.pg_get_functiondef('public.founder_reserve_seat(uuid, uuid)'::regprocedure) like '%demo_account%'
+       and pg_catalog.pg_get_functiondef('public.founder_reserve_seat(uuid, uuid)'::regprocedure) like '%15 minutes%'
+       and not has_function_privilege('authenticated', 'public.founder_reserve_seat(uuid, uuid)', 'EXECUTE')
+       as ok;
+select 'Demo accounts: shared-table + sandbox guards on 11 tables (run 20261125_50)' as check,
+       (select count(*) from pg_catalog.pg_trigger t
+         where t.tgname = 'trg_demo_guard' and not t.tgisinternal
+           and t.tgrelid in (select to_regclass('public.' || x) from unnest(array[
+                 'community_posts', 'community_answers', 'community_votes', 'community_reports', 'reviews',
+                 'library_issue_reports', 'marketplace_listings', 'marketplace_offers',
+                 'service_requests', 'consultations', 'lawyer_clients']) x)) = 11
+       as ok;
+-- <<< verify:l5_demo
