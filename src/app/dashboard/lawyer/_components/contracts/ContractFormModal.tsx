@@ -11,7 +11,10 @@ import {
   CONTRACT_TYPES, CONTRACT_TYPE_AR, CONTRACT_STATUSES, CONTRACT_STATUS_AR,
   canTransitionContract, type ContractType, type ContractStatus,
 } from "@/lib/services/contractVocabulary";
-import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import {
+  getLawyerClients, createLawyerClient, type LawyerClient, type ClientType,
+} from "@/lib/services/lawyerClientsService";
+import { isSupabaseMode } from "@/lib/runtimeMode";
 
 /**
  * ContractFormModal.tsx
@@ -55,6 +58,39 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
   const [clientsLoading, setClientsLoading] = useState(true);
   const [clientsUnreadable, setClientsUnreadable] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(initial?.lawyerClientId ?? "");
+
+  // N01-4 (owner 13-Nov): a quick client card from inside the contract — the
+  // same POST /api/v1/lawyer/clients AddCaseModal uses — selected on save.
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickName, setQuickName] = useState("");
+  const [quickType, setQuickType] = useState<ClientType>("individual");
+  const [quickPhone, setQuickPhone] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+
+  async function handleQuickClient() {
+    const name = quickName.trim();
+    if (!name) { setQuickError("اكتب اسم الموكّل."); return; }
+    setQuickSaving(true);
+    setQuickError(null);
+    try {
+      const card = await createLawyerClient({
+        name,
+        clientType: quickType,
+        ...(quickPhone.trim() ? { phone: quickPhone.trim() } : {}),
+      });
+      setClientCards((prev) => [card, ...prev.filter((c) => c.id !== card.id)]);
+      setSelectedClientId(card.id);
+      if (!counterpartyName.trim()) setCounterpartyName(card.name);
+      setQuickOpen(false);
+      setQuickName("");
+      setQuickPhone("");
+    } catch (err) {
+      setQuickError(err instanceof Error && err.message ? err.message : "تعذّر حفظ الموكّل.");
+    } finally {
+      setQuickSaving(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -210,7 +246,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
             <input type="text" value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder="اسم الطرف الآخر أو الجهة" className={inputCls} />
           </div>
 
-          {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
+          {!clientsUnreadable && (clientsLoading || clientCards.length > 0 || isSupabaseMode) && (
             <div>
               <label className={labelCls}>بطاقة الموكّل (اختياري)</label>
               <select
@@ -229,6 +265,59 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
                 <option value="">{clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون ربط —"}</option>
                 {clientCards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {isSupabaseMode && !clientsLoading && !quickOpen && (
+                <button
+                  type="button"
+                  onClick={() => { setQuickOpen(true); setQuickError(null); }}
+                  className={`mt-1.5 text-[11.5px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"} hover:underline`}
+                >
+                  + إضافة موكّل جديد
+                </button>
+              )}
+              {quickOpen && (
+                <div className={`mt-2 space-y-2 rounded-xl border p-3 ${isDark ? "border-white/[0.08] bg-zinc-900" : "border-zinc-200 bg-white"}`}>
+                  <input
+                    type="text"
+                    value={quickName}
+                    onChange={(e) => setQuickName(e.target.value)}
+                    placeholder="اسم الموكّل"
+                    className={inputCls}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={quickType} onChange={(e) => setQuickType(e.target.value as ClientType)} className={inputCls}>
+                      <option value="individual">فرد</option>
+                      <option value="company">شركة</option>
+                    </select>
+                    <input
+                      type="tel"
+                      dir="ltr"
+                      value={quickPhone}
+                      onChange={(e) => setQuickPhone(e.target.value)}
+                      placeholder="05xxxxxxxx (اختياري)"
+                      className={inputCls}
+                    />
+                  </div>
+                  {quickError && <p className="text-[11px] font-semibold text-red-500">{quickError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleQuickClient}
+                      disabled={quickSaving}
+                      className="flex-1 rounded-xl bg-[#0B3D2E] py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] disabled:opacity-60"
+                    >
+                      {quickSaving ? "جارٍ الحفظ..." : "حفظ الموكّل واختياره"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setQuickOpen(false); setQuickError(null); }}
+                      disabled={quickSaving}
+                      className={`rounded-xl border px-3 py-2 text-[12px] font-bold ${isDark ? "border-white/[0.08] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildConsultationLinkPatch, convertConsultation, type ConvertDeps } from "./convertConsultationCore.ts";
+import {
+  buildConsultationLinkPatch, convertConsultation, planClientCard, cardNameFrom, GENERIC_CLIENT_NAME,
+  type ConvertDeps,
+} from "./convertConsultationCore.ts";
 
 /**
  * A fake database with the two facts that matter: the cases carrying
@@ -137,4 +140,53 @@ test("CODE-F13 wiring: the route confirms the link with a row back and runs thro
   // the link write must come back with a row — an RLS 0-row update is a failure
   assert.match(src, /\.update\(buildConsultationLinkPatch\([\s\S]*?\.select\("id"\)[\s\S]*?\.maybeSingle\(\)/);
   assert.match(src, /link_failed/);
+});
+
+// ── N01-1: the client card a converted case belongs to ──────────────────────
+
+test("N01-1 plan: a consultation that names its card keeps it, whatever else is true", () => {
+  assert.deepEqual(
+    planClientCard({ lawyerClientId: "card-1", requesterUserId: "client-1", callerId: "lawyer-1" }),
+    { kind: "keep", lawyerClientId: "card-1" },
+  );
+});
+
+test("N01-1 plan: a platform requester with no card is found-or-created", () => {
+  assert.deepEqual(
+    planClientCard({ lawyerClientId: null, requesterUserId: "client-1", callerId: "lawyer-1" }),
+    { kind: "find_or_create", clientUserId: "client-1" },
+  );
+});
+
+test("N01-1 plan: no requester, or the caller's own account, files no card", () => {
+  assert.deepEqual(planClientCard({ lawyerClientId: null, requesterUserId: null, callerId: "lawyer-1" }), { kind: "none" });
+  assert.deepEqual(planClientCard({ lawyerClientId: null, requesterUserId: "lawyer-1", callerId: "lawyer-1" }), { kind: "none" });
+});
+
+test("N01-1 card name: a real name only — never blank, never the generic placeholder", () => {
+  assert.equal(cardNameFrom("  أحمد العتيبي "), "أحمد العتيبي");
+  assert.equal(cardNameFrom(GENERIC_CLIENT_NAME), null);
+  assert.equal(cardNameFrom("   "), null);
+  assert.equal(cardNameFrom(undefined), null);
+  assert.equal(cardNameFrom(null), null);
+});
+
+test("N01-1 link patch: carries lawyer_client_id only when one is given", () => {
+  const now = "2026-11-17T10:00:00.000Z";
+  assert.equal(buildConsultationLinkPatch({ status: "scheduled", ended_at: null }, "c1", now, "card-9").lawyer_client_id, "card-9");
+  assert.equal("lawyer_client_id" in buildConsultationLinkPatch({ status: "scheduled", ended_at: null }, "c1", now, null), false);
+  assert.equal("lawyer_client_id" in buildConsultationLinkPatch({ status: "scheduled", ended_at: null }, "c1", now), false);
+});
+
+test("N01-1 wiring: the card is resolved before the case insert, which carries it", () => {
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const resolveAt = src.indexOf("await resolveClientCard(");
+  const insertAt = src.indexOf("insertCase: async () =>");
+  assert.ok(resolveAt > 0 && insertAt > resolveAt, "resolveClientCard must run before insertCase");
+  assert.match(src, /\.\.\.\(cardId \? \{ lawyer_client_id: cardId \} : \{\}\),/);
+  // the card is written on the caller's RLS client, never the service client
+  assert.match(src, /await supabase\s*\.from\("lawyer_clients"\)\s*\.insert\(/);
+  assert.doesNotMatch(src, /service\s*\.from\("lawyer_clients"\)/);
+  // its firm is the caller's own active membership
+  assert.match(src, /\.from\("firm_members"\)\s*\.select\("firm_id"\)\s*\.eq\("user_id", callerId\)\s*\.eq\("status", "active"\)/);
 });

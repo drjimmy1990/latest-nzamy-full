@@ -85,6 +85,8 @@ export function buildConsultationLinkPatch(
   row: { status: string; ended_at: string | null },
   caseRequestId: string,
   nowIso: string,
+  /** N01-1: the client card the conversion resolved, when the consultation had none. */
+  lawyerClientId?: string | null,
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {
     converted_case_request_id: caseRequestId,
@@ -92,5 +94,40 @@ export function buildConsultationLinkPatch(
     status: ["requested", "scheduled", "no_show"].includes(row.status) ? "completed" : row.status,
   };
   if (!row.ended_at) patch.ended_at = nowIso;
+  if (lawyerClientId) patch.lawyer_client_id = lawyerClientId;
   return patch;
+}
+
+// ─── N01-1 (owner 13-Nov, spec 01 «الجسر 1») ────────────────────────────────
+// A consultation from a platform account that has no `lawyer_clients` card
+// used to become a case with `lawyer_client_id = null`, so the client never
+// appeared under «الموكلون». The route now finds or creates the card BEFORE
+// the case is inserted and links it to both rows. What to do is decided here.
+
+export type ClientCardPlan =
+  /** The consultation already names its card — use it, create nothing. */
+  | { kind: "keep"; lawyerClientId: string }
+  /** No platform account to file a card for (or it is the caller's own). */
+  | { kind: "none" }
+  /** Look for a visible card of this account; create one when none exists. */
+  | { kind: "find_or_create"; clientUserId: string };
+
+export function planClientCard(input: {
+  lawyerClientId: string | null;
+  requesterUserId: string | null;
+  callerId: string;
+}): ClientCardPlan {
+  if (input.lawyerClientId) return { kind: "keep", lawyerClientId: input.lawyerClientId };
+  if (!input.requesterUserId || input.requesterUserId === input.callerId) return { kind: "none" };
+  return { kind: "find_or_create", clientUserId: input.requesterUserId };
+}
+
+/** What hydrateConsultations shows when it knows no name — never a card name. */
+export const GENERIC_CLIENT_NAME = "عميل نظامي";
+
+/** A card needs a real name (lawyer_clients.name is NOT NULL, non-blank). */
+export function cardNameFrom(name: string | null | undefined): string | null {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed || trimmed === GENERIC_CLIENT_NAME) return null;
+  return trimmed;
 }

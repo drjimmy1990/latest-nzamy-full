@@ -7,7 +7,12 @@ import {
   CONSULTATION_SELECT, CONSULTATION_FORBIDDEN, hydrateConsultations, toConsultationDto,
   consultationDbErrorResponse, type ConsultationRow,
 } from "../../_shared";
-import { buildConsultationLinkPatch, convertConsultation } from "./convertConsultationCore";
+import {
+  buildConsultationLinkPatch, convertConsultation, planClientCard, cardNameFrom,
+} from "./convertConsultationCore";
+import { propagateLink } from "../../../clients/_link";
+import { checkSaudiPhone, checkOptionalEmail } from "@/lib/services/contactFieldRules";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * POST /api/v1/lawyer/consultations/[id]/convert — turn a consultation into
@@ -28,6 +33,100 @@ import { buildConsultationLinkPatch, convertConsultation } from "./convertConsul
  * link, answering 200 with the SAME caseRequestId (plus `repaired: true`). A
  * link that cannot be confirmed answers 500, never 200.
  */
+/**
+ * N01-1 (owner 13-Nov): the client card a converted case belongs to.
+ *
+ * Runs BEFORE the case insert, so the case is born carrying it. Every write is
+ * on the caller's RLS client: the card is the caller's own
+ * ("lawyer clients insertable by owner"), its firm_id is the caller's OWN
+ * active firm — the restrictive `can_write_firm_row` policy (20261122_31)
+ * refuses any other — and the lookup only sees cards RLS already shows this
+ * caller (own, or a firm colleague's). The account link needs no
+ * assertLinkableAccount: the consultation the caller just proved write access
+ * to IS the prior relationship that guard looks for.
+ *
+ * Best effort: any failure is logged and answers null — the conversion goes
+ * on exactly as before, with no card. A retry is safe: the lookup finds the
+ * card a previous attempt created, and propagateLink has already pointed this
+ * consultation at it.
+ */
+async function resolveClientCard(
+  supabase: SupabaseClient,
+  callerId: string,
+  row: ConsultationRow,
+  clientName: string | undefined,
+  clientPhone: string | null | undefined,
+  clientEmail: string | null | undefined,
+): Promise<{ id: string | null; created: boolean }> {
+  const plan = planClientCard({
+    lawyerClientId: row.lawyer_client_id,
+    requesterUserId: row.requester_user_id,
+    callerId,
+  });
+  if (plan.kind === "keep") return { id: plan.lawyerClientId, created: false };
+  if (plan.kind === "none") return { id: null, created: false };
+
+  try {
+    const { data: found, error: findError } = await supabase
+      .from("lawyer_clients")
+      .select("id")
+      .eq("client_user_id", plan.clientUserId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (findError) {
+      console.error("[lawyer/consultations/[id]/convert POST] card lookup failed:", findError.message, findError.code);
+      return { id: null, created: false };
+    }
+    if (found?.id) return { id: found.id as string, created: false };
+
+    const name = cardNameFrom(clientName);
+    if (!name) return { id: null, created: false };
+
+    const { data: membership, error: membershipError } = await supabase
+      .from("firm_members")
+      .select("firm_id")
+      .eq("user_id", callerId)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+    if (membershipError) {
+      // Same choice as POST /api/v1/lawyer/clients: an unreadable membership
+      // files the card as personal rather than guessing a firm.
+      console.error("[lawyer/consultations/[id]/convert POST] membership lookup failed:", membershipError.message, membershipError.code);
+    }
+
+    // A profile number in a shape the card rules refuse is dropped, not stored.
+    const phone = checkSaudiPhone(clientPhone ?? null);
+    const email = checkOptionalEmail(clientEmail ?? null);
+
+    const { data: card, error: insertError } = await supabase
+      .from("lawyer_clients")
+      .insert({
+        owner_user_id: callerId,
+        firm_id: (membership?.firm_id as string | undefined) ?? null,
+        client_user_id: plan.clientUserId,
+        client_type: "individual",
+        name,
+        phone: phone.ok ? phone.value : null,
+        email: email.ok ? email.value : null,
+      })
+      .select("id")
+      .single();
+    if (insertError || !card) {
+      console.error("[lawyer/consultations/[id]/convert POST] card insert failed:", insertError?.message, insertError?.code);
+      return { id: null, created: false };
+    }
+    // Backfill the account's other rows this caller may update (the same call
+    // POST /api/v1/lawyer/clients makes when it links a card).
+    await propagateLink(supabase, card.id as string, plan.clientUserId);
+    return { id: card.id as string, created: true };
+  } catch (err) {
+    console.error("[lawyer/consultations/[id]/convert POST] card resolution threw:", err);
+    return { id: null, created: false };
+  }
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await assertRole(["lawyer", "firm"]);
@@ -74,6 +173,19 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const requestDescription = (requestRow?.description as string | null) || "";
     const requesterJson = (requestRow?.requester as Record<string, unknown> | null) ?? {};
 
+    // N01-1: find or create the client's card before the case is born. Skipped
+    // for a consultation that already names its case (the 409 below).
+    let cardId: string | null = row.lawyer_client_id;
+    let cardCreated = false;
+    if (!row.converted_case_request_id) {
+      const hydrated = (await hydrateConsultations(supabase, [row])).get(row.id);
+      const resolved = await resolveClientCard(
+        supabase, user.id, row, hydrated?.clientName, hydrated?.clientPhone, hydrated?.clientEmail,
+      );
+      cardId = resolved.id;
+      cardCreated = resolved.created;
+    }
+
     const newId = crypto.randomUUID();
     const newTitle = (typeof body.title === "string" && body.title.trim()) || `قضية من استشارة: ${requestTitle}`;
 
@@ -119,7 +231,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
               source_path: `/dashboard/lawyer/consultations/${id}`,
               metadata: { convertedFromConsultationId: id, convertedFromRequestId: row.request_id },
               ...(row.firm_id ? { firm_id: row.firm_id } : {}),
-              ...(row.lawyer_client_id ? { lawyer_client_id: row.lawyer_client_id } : {}),
+              ...(cardId ? { lawyer_client_id: cardId } : {}),
               source_consultation_id: id,
             });
           if (!insertError) return { ok: true as const };
@@ -131,7 +243,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         linkConsultation: async (caseRequestId) => {
           const { data, error } = await supabase
             .from("consultations")
-            .update(buildConsultationLinkPatch(row, caseRequestId, nowIso))
+            .update(buildConsultationLinkPatch(row, caseRequestId, nowIso, row.lawyer_client_id ? null : cardId))
             .eq("id", id)
             .select("id")
             .maybeSingle();
@@ -170,6 +282,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     }
     const caseId = outcome.caseRequestId;
     const repaired = outcome.kind === "repaired";
+
+    // N01-1: a case from an earlier, half-finished call may have been born
+    // before its card existed. Fill the link only where none is set — service
+    // client for the same reason as the insert (the case's requester is the
+    // client), on the one case id convertConsultation matched to this
+    // consultation.
+    if (repaired && cardId) {
+      const { error: cardLinkError } = await service
+        .from("service_requests")
+        .update({ lawyer_client_id: cardId })
+        .eq("id", caseId)
+        .is("lawyer_client_id", null);
+      if (cardLinkError) {
+        console.error("[lawyer/consultations/[id]/convert POST] case card link failed:", cardLinkError.message, cardLinkError.code);
+      }
+    }
 
     const { data: finalRow, error: reReadError } = await supabase
       .from("consultations")
@@ -222,7 +350,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       }
     }
 
-    return NextResponse.json({ data: toConsultationDto(updatedRow, extraInfo), caseRequestId: caseId, ...(repaired ? { repaired: true } : {}) });
+    return NextResponse.json({
+      data: toConsultationDto(updatedRow, extraInfo),
+      caseRequestId: caseId,
+      ...(repaired ? { repaired: true } : {}),
+      ...(cardId ? { lawyerClientId: cardId } : {}),
+      ...(cardCreated ? { clientCardCreated: true } : {}),
+    });
   } catch (err) {
     console.error("[lawyer/consultations/[id]/convert POST] Unexpected error:", err);
     return NextResponse.json({ error: "خطأ غير متوقع" }, { status: 500 });
