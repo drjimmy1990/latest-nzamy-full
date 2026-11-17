@@ -15,7 +15,7 @@ import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 export default function CorpMindPage() {
   return (
     <DashboardComingSoon
-      title="CorpMind — وكيل الشركة"
+      title="وكيل الشركة الذكي"
       description="وكيل الشركة غير متاح حالياً وسيُفعَّل قريباً. محفظة العقود ونتيجة التحليل والمخاطر التي كانت تظهر هنا كانت أمثلة ثابتة لا تحليلاً لعقودك."
       backHref="/ai"
     />

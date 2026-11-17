@@ -1,5 +1,7 @@
 "use client";
 import GatedToolScreen from "@/components/GatedToolScreen";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -106,9 +108,9 @@ function PDPLGenerator({ isDark, onGenerate }: { isDark: boolean; onGenerate: ()
 
 function formatComplianceMonitorReport(results: SectionResult[], overallScore: number, pdplGenerated: boolean) {
   return [
-    "Corporate Compliance Monitor Report",
-    `Overall score: ${overallScore}%`,
-    `PDPL documents generated: ${pdplGenerated ? "yes" : "no"}`,
+    "تقرير الامتثال التنظيمي للشركة",
+    `الدرجة الإجمالية: ${overallScore}%`,
+    `وثائق حماية البيانات الشخصية: ${pdplGenerated ? "أُعدّت" : "لم تُعدّ"}`,
     "",
     ...results.map((res) => [
       `${res.title}: ${res.status} (${res.score}/${res.maxScore})`,
@@ -117,7 +119,7 @@ function formatComplianceMonitorReport(results: SectionResult[], overallScore: n
   ].join("\n\n");
 }
 
-function ComplianceMonitorInner() {
+function ComplianceMonitorInnerDemo() {
   const { isDark } = useTheme();
   const [step, setStep] = useState(1);
   const [answers, setAnswers] = useState<Record<string, boolean>>({});
@@ -406,6 +408,23 @@ function ComplianceMonitorInner() {
       </AnimatePresence>
     </div>
   );
+}
+
+// N05-V3 (owner package 13 Nov): the body under the gate is a canned result
+// (fixed text, a timer, no AI run), so it renders in demo mode only. In
+// production the gate card shows while the review gate is on, and the honest
+// «قريباً» screen when it is off: never the canned result.
+function ComplianceMonitorInner() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="تقرير الامتثال التنظيمي — قريباً"
+        description="تقرير الامتثال التنظيمي غير متاح حالياً وسيُفعَّل قريباً. لا تُعرض هنا نتائج أو نسب جاهزة مكان فحص حقيقي."
+        backHref="/ai"
+      />
+    );
+  }
+  return <ComplianceMonitorInnerDemo />;
 }
 
 // Wave 1 task 6: the beta gate first — no form or timer before it.
