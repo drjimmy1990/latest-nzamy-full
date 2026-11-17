@@ -48,6 +48,12 @@ On n8n.asra3.com (all created **inactive**):
 | L13 محترف العقود (job, clause by clause) | `NZAMY · AI · contracts-pro (L13 محترف العقود)` | `mMekAog89HsgLz3o` | `nzamy-ai/contracts-pro` |
 | مراجع العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-review (مراجع العقود)` | (none yet) | `nzamy-ai/contract-review` |
 | مفاوض العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-negotiator (مفاوض العقود)` | (none yet) | `nzamy-ai/contract-negotiator` |
+| ملخص الطلب المفتوح (app-internal, no points), NOT on the live n8n yet | `NZAMY · AI · request-summary (ملخص الطلب المفتوح)` | (none yet) | `nzamy-ai/request-summary` |
+
+**request-summary (owner ١٩).** The app calls it after a client creates an open request, and only when `REQUEST_SUMMARY_AI=on` is set with `N8N_AI_BASE_URL` and `NZAMY_AI_KEY` (src/lib/services/requestPublicSummaryModel.ts). It gets `{ tool, input: { type_label, text }, max_chars }`, where the text is already scrubbed of names, numbers and contacts, and it answers `200 { summary }`: one Arabic line. The app checks that line again and keeps its own fallback line on any failure. To switch it on:
+1. Workflows → Import from File, then pick `n8n/ai/request-summary.json`.
+2. On the **Webhook** node, select `NZAMY AI · inbound`. On the **Model** node, select the Gemini credential.
+3. Save and switch it on. Then set `REQUEST_SUMMARY_AI=on` on the server and restart.
 
 **Wave 3: document jobs.** The page uploads each file to the user's vault (an `attachments` row), then sends the ids. Before anything is charged, `src/lib/ai/aiFiles.ts`:
 1. keeps only the user's own files, not in the bin;
