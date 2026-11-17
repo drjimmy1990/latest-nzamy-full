@@ -45,12 +45,10 @@ export function LawyerRegistryLookup({
   isAr,
   data,
   onChange,
-  inputClassName,
 }: {
   isAr: boolean;
   data: Record<string, string>;
   onChange: (k: string, v: string) => void;
-  inputClassName: string;
 }) {
   const { theme } = useTheme();
   const captcha = useTurnstile({ isAr, theme, action: "registry_lookup" });
@@ -119,19 +117,9 @@ export function LawyerRegistryLookup({
       </p>
       <p className="mt-1 text-xs leading-relaxed text-ink-muted dark:text-gray-400">
         {isAr
-          ? "اكتب رقم ترخيصك في الحقل السابق، أو اسمك الكامل كما يظهر في الترخيص هنا، ثم اضغط «تحقّق» لنملأ بقية البيانات من سجل المحامين المرخّصين."
-          : "Enter your licence number above, or your full name exactly as on your licence here, then press “Check” to fill in the rest from the licensed lawyers' register."}
+          ? "اضغط «تحقّق» لنبحث عن رقم ترخيصك (أو اسمك الرباعي إن لم تكتب الرقم) في سجل المحامين المرخّصين ونملأ بقية البيانات."
+          : "Press “Check” to look up your licence number (or your four-part name if no number is given) in the licensed lawyers' register and fill in the rest."}
       </p>
-      <input
-        type="text"
-        value={data.registryFullName || ""}
-        onChange={(e) => onChange("registryFullName", e.target.value)}
-        placeholder={isAr ? "الاسم الكامل كما في الترخيص" : "Full name as on the licence"}
-        aria-label={isAr ? "الاسم الكامل كما في الترخيص" : "Full name as on the licence"}
-        className={`${inputClassName} mt-3`}
-        maxLength={120}
-      />
-
       <div className="mt-3">
         <TurnstileWidget control={captcha} isAr={isAr} />
       </div>
@@ -166,8 +154,8 @@ export function LawyerRegistryLookup({
             )}
             <p className="mt-1 text-xs">
               {isAr
-                ? "أكمل التسجيل، وتراجع إدارة المنصّة طلبك قبل توثيق الحساب."
-                : "Complete your registration; the platform team reviews it before the account is verified."}
+                ? "أكمل التسجيل، ثم وثّق حسابك برمز يصل إلى هذا الجوال، أو يراجع فريق المنصّة طلبك."
+                : "Complete your registration, then verify with a code sent to this mobile, or the platform team reviews your request."}
             </p>
           </div>
         )}

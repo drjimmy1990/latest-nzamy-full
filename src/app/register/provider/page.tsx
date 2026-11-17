@@ -28,7 +28,10 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 
 import { ProviderType, Step } from "./types";
-import { StepIndicator, Step1, Step2, Step3, Step4, Step5 } from "./components/Steps";
+import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor } from "./components/Steps";
+import { LawyerVerificationPanel } from "@/components/lawyerSignup/LawyerVerificationPanel";
+import { isFourPartName } from "@/lib/lawyerSignup/nameLicence";
+import { isThrowawayEmail } from "@/lib/lawyerSignup/throwawayEmail";
 import {
   CONSULTANT_COUNTRY,
   parseProviderTypeParam,
@@ -79,6 +82,11 @@ export default function RegisterProviderPage() {
   const [selectedPlan, setSelectedPlan] = useState("ai"); // default AI plan
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]); // lifted state
   const [formData, setFormData] = useState<Record<string, string>>({});
+  // Owner decisions ٢٠–٢١: the licence photo (kept in memory until the
+  // account exists) and whether signUp gave a session (e-mail confirmation
+  // off) — with one, the verification panel runs right on the last step.
+  const [licenceFile, setLicenceFile] = useState<File | null>(null);
+  const [signupHasSession, setSignupHasSession] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   // OWNER-SEC-01: GoTrue's captcha check covers /signup too, so signUp sends
@@ -275,10 +283,13 @@ export default function RegisterProviderPage() {
     if (step === 1) return providerType !== null && (BACKEND_MODE !== "supabase" || emailSignUpWorks);
     // A licence of spaces only is not a licence (BUG-09). Its format waits on
     // the owner (what a valid licence number looks like).
-    if (step === 2) return !!(formData.licenseNumber?.trim() && formData.experience && formData.city);
+    if (step === 2) {
+      const proofOk = !needsLicenceProofFor(providerType) || (isFourPartName(formData.registryFullName) && licenceFile !== null);
+      return !!(formData.licenseNumber?.trim() && formData.experience && formData.city) && proofOk;
+    }
     if (step === 3) {
       const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email || "");
-      return emailValid && normalizeSaudiMobile(formData.phone).ok && (formData.password?.length ?? 0) >= 8;
+      return emailValid && !isThrowawayEmail(formData.email) && normalizeSaudiMobile(formData.phone).ok && (formData.password?.length ?? 0) >= 8;
     }
     if (step === 4) return !!selectedPlan && termsAccepted;
     return true;
@@ -412,11 +423,33 @@ export default function RegisterProviderPage() {
               {/* Step content */}
               <AnimatePresence mode="wait">
                 {step === 1 && <Step1 key="s1" isAr={isAr} selected={providerType} onSelect={selectProviderType} />}
-                {step === 2 && <Step2 key="s2" isAr={isAr} providerType={providerType} data={formData} onChange={handleChange} selectedSpecs={selectedSpecs} setSelectedSpecs={setSelectedSpecs} />}
-                {step === 3 && <Step3 key="s3" isAr={isAr} data={formData} onChange={handleChange} />}
+                {step === 2 && <Step2 key="s2" isAr={isAr} providerType={providerType} data={formData} onChange={handleChange} selectedSpecs={selectedSpecs} setSelectedSpecs={setSelectedSpecs} licenceFile={licenceFile} onLicenceFile={setLicenceFile} />}
+                {step === 3 && <Step3 key="s3" isAr={isAr} data={formData} onChange={handleChange} providerType={providerType} />}
                 {step === 4 && <Step4 key="s4" isAr={isAr} selectedPlan={selectedPlan} onSelect={setSelectedPlan} />}
                 {step === 5 && <Step5 key="s5" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} />}
               </AnimatePresence>
+
+              {/* Owner decisions ٢٠–٢١: licence photo + the code to the
+                  registry mobile, right here when signUp gave a session;
+                  otherwise after e-mail confirmation and sign-in. */}
+              {step === 5 && needsLicenceProofFor(providerType) && (
+                <div className="mt-8">
+                  {signupHasSession ? (
+                    <LawyerVerificationPanel isAr={isAr} initialFile={licenceFile} fullName={formData.registryFullName?.trim() || null} />
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 text-start text-sm text-ink dark:border-white/10 dark:bg-dark-card dark:text-gray-300">
+                      <p>
+                        {isAr
+                          ? "أكّد بريدك الإلكتروني من الرسالة التي وصلتك، ثم سجّل الدخول وأكمل توثيق ترخيصك (سنطلب صورة الترخيص مرة أخرى هناك)."
+                          : "Confirm your e-mail from the message we sent, then sign in and finish verifying your licence (we will ask for the licence photo again there)."}
+                      </p>
+                      <a href="/register/provider/verify" className="mt-3 inline-block font-semibold text-royal underline-offset-2 hover:underline dark:text-gold">
+                        {isAr ? "إكمال توثيق الترخيص" : "Finish licence verification"}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* R7 consent — on the step that creates the account. */}
               {step === 4 && (
@@ -507,6 +540,12 @@ export default function RegisterProviderPage() {
                                     ? formData.verification_docs.split(", ")
                                     : [],
                                   license_number: formData.licenseNumber?.trim(),
+                                  // Owner ٢٠: the four-part name as on the
+                                  // licence; the verification compares it with
+                                  // the registry (no trigger reads it).
+                                  ...(needsLicenceProofFor(providerType) && formData.registryFullName?.trim()
+                                    ? { registry_full_name: formData.registryFullName.trim().slice(0, 160) }
+                                    : {}),
                                   experience_years: formData.experience,
                                   selected_plan: selectedPlan,
                                   // R7: the version the box above accepted.
@@ -539,6 +578,7 @@ export default function RegisterProviderPage() {
                             // session. Best-effort — a failure is healed by the
                             // metadata path above on the next signed-in visit.
                             if (signUpData.session) await recordTermsAcceptance("signup");
+                            setSignupHasSession(Boolean(signUpData.session));
 
                             setStep(5);
                           } catch {
