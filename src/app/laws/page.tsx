@@ -1925,6 +1925,20 @@ export default function LegalLibraryPage() {
             {/* Right Column: Sessions, Folders & Notes (Desktop Col 3, Mobile stacks below results) */}
             {showSidebars && (
               <aside className="lg:col-span-3 space-y-6 order-2 lg:order-1">
+                {isLoggedIn && (
+                  // N02-9 / P1-11: the way into «مكتبتي» (/laws/my) from the library home.
+                  <Link
+                    href="/laws/my"
+                    className={`flex items-center justify-between gap-2 rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+                      isDark
+                        ? "border-[#2d3748] bg-[#161b22]/60 text-[#C8A762] hover:border-[#C8A762]/30"
+                        : "border-gray-200/70 bg-white/70 text-[#0B3D2E] hover:border-[#0B3D2E]/30"
+                    }`}
+                  >
+                    <span>مكتبتي</span>
+                    <span className={`text-[11px] font-medium ${isDark ? "text-gray-400" : "text-gray-500"}`}>مجلداتك وملاحظاتك واشتراكك وأجهزتك</span>
+                  </Link>
+                )}
                 <RecentSessions isDark={isDark} isRTL={isRTL} />
                 <SmartFolders isDark={isDark} isRTL={isRTL} />
                 <MyNotesSection isDark={isDark} isRTL={isRTL} />

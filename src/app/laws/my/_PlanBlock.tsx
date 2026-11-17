@@ -7,13 +7,22 @@ import { Shimmer } from "@/components/ui/Skeleton";
 import { LibraryGrantStatusCard, useMyLibraryGrant } from "@/components/library/LibraryGrantStatusCard";
 import { PointsBalanceCard } from "@/components/payments/PointsBalanceCard";
 import { useBillingData } from "@/components/payments/useBillingData";
+import { useUser } from "@/hooks/useUser";
 import { BlockNote, BlockShell } from "./_BlockShell";
 import { arDigits, founderPointsView, subscriptionView } from "./myLibraryView";
 
-/** GET /api/v1/membership/founder: undefined while it runs, null when it failed. */
+/**
+ * GET /api/v1/membership/founder: undefined while it runs, null when it failed.
+ * Read only for a lawyer or a firm (the founder seat is theirs): anyone else
+ * is answered «not a member» without a call, so a failed read never shows
+ * him a line about a membership he cannot hold.
+ */
 function useFounderReply(): unknown {
+  const { userType, loading } = useUser();
+  const eligible = userType === "lawyer" || userType === "firm";
   const [reply, setReply] = useState<unknown>(undefined);
   useEffect(() => {
+    if (loading || !eligible) return;
     const controller = new AbortController();
     fetch("/api/v1/membership/founder", { cache: "no-store", signal: controller.signal })
       .then(async (res) => (res.ok ? ((await res.json()) as unknown) : null))
@@ -22,7 +31,8 @@ function useFounderReply(): unknown {
         if (!controller.signal.aborted) setReply(body);
       });
     return () => controller.abort();
-  }, []);
+  }, [loading, eligible]);
+  if (!loading && !eligible) return { member: false };
   return reply;
 }
 
