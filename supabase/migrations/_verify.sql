@@ -6741,3 +6741,43 @@ select 'Several contracts per case (run 20261123_40)' as check,
        and to_regclass('public.idx_contracts_request_id') is not null
        as ok;
 -- <<< verify:launch_2026_11_17
+-- >>> verify:l3_contracts — supabase/tests/rls/invoice_links.test.sql
+-- 2026-11-24 — 20261124_40_invoice_links.sql (owner package 13-Nov, N01-9 /
+-- N01-10). Read-only, safe to repeat. Before 20261124_40 runs it only
+-- reports; after, it raises when an invoice could not stand without a
+-- placeholder case, or a session could issue one.
+do $$
+declare fn constant text := 'public.create_lawyer_invoice_v2(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)'; role_name text;
+begin
+  if to_regprocedure(fn) is null then
+    raise notice '_verify: 20261124_40 is not applied yet — every new invoice answers 503 on the new code (run 20261124_40 before the deploy)'; return;
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'payments'
+              and column_name = 'request_id' and is_nullable = 'NO') then
+    raise exception '_verify: 20261124_40 — payments.request_id is still NOT NULL (re-run 20261124_40)';
+  end if;
+  if (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'payments'
+       and column_name in ('owner_user_id', 'lawyer_client_id', 'firm_id', 'contract_id')) <> 4 then
+    raise exception '_verify: 20261124_40 — a payments link column is missing (re-run 20261124_40)';
+  end if;
+  if not exists (select 1 from pg_proc where oid = to_regprocedure(fn) and prosecdef and proconfig @> array['search_path=""']) then
+    raise exception '_verify: 20261124_40 — % is not SECURITY DEFINER with search_path '''' (re-run 20261124_40)', fn;
+  end if;
+  foreach role_name in array array['anon','authenticated'] loop
+    if exists (select 1 from pg_roles where rolname = role_name) and has_function_privilege(role_name, fn, 'EXECUTE') then
+      raise exception '_verify: 20261124_40 — % can EXECUTE % (re-run 20261124_40)', role_name, fn;
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'service_role') and not has_function_privilege('service_role', fn, 'EXECUTE') then
+    raise exception '_verify: 20261124_40 — service_role cannot EXECUTE %: every new invoice answers 503 (re-run 20261124_40)', fn;
+  end if;
+  if pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.record_invoice_collection(text,uuid,bigint,text,bigint,text)')), 'pay.owner_user_id') = 0 then
+    raise exception '_verify: 20261124_40 — record_invoice_collection cannot collect on an invoice without a case (re-run 20261124_40)';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'payments' and policyname = 'invoice owner reads own invoices')
+     or not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'invoice_collections' and policyname = 'invoice_collections_select_owner') then
+    raise exception '_verify: 20261124_40 — an owner read policy is missing: invoices without a case vanish from the finance page (re-run 20261124_40)';
+  end if;
+  raise notice '_verify: 20261124_40 OK — invoices stand without a placeholder case; owner reads and collects; server only';
+end $$;
+-- <<< verify:l3_contracts
