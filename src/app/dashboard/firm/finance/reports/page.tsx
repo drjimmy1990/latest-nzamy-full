@@ -9,6 +9,8 @@ import {
   ArrowSquareOut, Info, Buildings, Users,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Types & Mock Data ──────────────────────────────────────────────────────
 
@@ -404,7 +406,7 @@ function ProjectionsReport({ isDark, card }: { isDark: boolean; card: string }) 
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
-export default function FirmFinanceReportsPage() {
+function FirmFinanceReportsPageDemo() {
   const { isDark } = useTheme();
   const [activeTab, setActiveTab] = useState<ReportTab>("pnl");
 
@@ -468,4 +470,22 @@ export default function FirmFinanceReportsPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+/**
+ * N03-38 (owner package 13 Nov): every figure on this screen (profit and loss,
+ * fees, VAT quarters) is a fixture — no API backs it — so it renders in demo
+ * mode only (owner decision ١١٥). A production firm sees the honest gate.
+ */
+export default function FirmFinanceReportsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="التقارير المالية"
+        description="تُبنى التقارير المالية من فواتير المكتب ومدفوعاته الفعلية، وتُضاف قريبًا. فواتيرك ومدفوعاتك في صفحة «المالية»."
+        backHref="/dashboard/firm/finance"
+      />
+    );
+  }
+  return <FirmFinanceReportsPageDemo />;
 }
