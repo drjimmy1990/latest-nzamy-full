@@ -108,6 +108,11 @@ export const CREATE_KEY_REUSED_AR =
   "لم يُصدَر شيء: هذا الطلب يكرّر طلب إصدار سابقاً ببيانات مختلفة (غالباً عُدِّل النموذج بعد انقطاع الرد). راجع قائمة بيانات الأتعاب أولاً — إن ظهر البيان السابق فلا حاجة لغيره، وإلا فاضغط «حفظ» مرة أخرى لإصدارها بالبيانات الحالية.";
 export const CREATE_INVALID_AR =
   "تفاصيل بيان الأتعاب غير مكتملة: اختر الموكّل من دليلك أو اكتب اسمه وحدّد نوعه (فرد أو شركة)، وأدخل أتعاباً أكبر من صفر.";
+/** Q484: a stored VAT number of the wrong shape — never issued at 0% silently. */
+export const VAT_NUMBER_INVALID_FIRM_AR =
+  "لم يصدر بيان الأتعاب: الرقم الضريبي المسجّل لمكتبك في الإعدادات غير صحيح (يجب أن يكون ١٥ رقماً يبدأ وينتهي بالرقم ٣). صحّحه من الإعدادات ← «إعدادات الكيان» ثم أصدر البيان.";
+export const VAT_NUMBER_INVALID_LAWYER_AR =
+  "لم يصدر بيان الأتعاب: رقمك الضريبي المسجّل غير صحيح (يجب أن يكون ١٥ رقماً يبدأ وينتهي بالرقم ٣). صحّحه في بطاقة «الرقم الضريبي» في هذه الصفحة ثم أصدر البيان.";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -209,10 +214,17 @@ export interface CreateInvoiceInput {
 }
 
 /**
- * CODE-F01 / CODE-F22: one call to public.create_lawyer_invoice_v2
- * (20261124_40), which checks ownership (request, case, card, contract) and
- * writes ONE payments row, once per idempotency key. A refused call writes
- * nothing; a repeated form gets the same invoice back.
+ * CODE-F01 / CODE-F22: one call to public.create_lawyer_invoice_v3
+ * (20261126_30 — v2 of 20261124_40 plus VAT, Q484), which checks ownership
+ * (request, case, card, contract) and writes ONE payments row, once per
+ * idempotency key. A refused call writes nothing; a repeated form gets the
+ * same invoice back.
+ *
+ * N01-11 (Q484): `amountHalalas` is the fee BEFORE VAT. The SQL adds 15%
+ * (half-up per halala) only when the issuer has a VAT number, stores
+ * amount = fee + VAT and snapshots the three amounts in metadata.vat
+ * (src/lib/finance/invoiceVat.ts reads it). A malformed stored VAT number
+ * answers 400 and writes nothing.
  *
  * N01-9 (owner 13-Nov): v1 (20261030_20) also wrote a placeholder
  * service_requests row «فاتورة: …» that showed up as a fake case. v2 writes
@@ -228,7 +240,7 @@ export async function createInvoiceWith(
   if (!parsed.ok) return fail(400, parsed.error);
   const c = parsed.value;
 
-  const { data, error } = await deps.admin.rpc("create_lawyer_invoice_v2", {
+  const { data, error } = await deps.admin.rpc("create_lawyer_invoice_v3", {
     p_actor: input.userId,
     p_idempotency_key: c.idempotencyKey,
     p_amount_halalas: c.amountHalalas,
@@ -247,15 +259,15 @@ export async function createInvoiceWith(
     // Never fall back to the old two-step write: that is CODE-F22.
     if (MISSING_FUNCTION.has(String(error.code ?? ""))) {
       console.error(
-        "[lawyer/finance POST] create_lawyer_invoice_v2 is missing — run 20261124_40_invoice_links.sql",
+        "[lawyer/finance POST] create_lawyer_invoice_v3 is missing — run 20261126_30_invoice_vat_void.sql",
       );
       return fail(503, CREATE_UNAVAILABLE_AR);
     }
-    console.error("[lawyer/finance POST] create_lawyer_invoice_v2 failed:", error.message);
+    console.error("[lawyer/finance POST] create_lawyer_invoice_v3 failed:", error.message);
     return fail(500, "Failed to create invoice");
   }
 
-  const r = (data ?? {}) as { code?: string; replay?: boolean; payment?: Record<string, unknown> };
+  const r = (data ?? {}) as { code?: string; replay?: boolean; scope?: string; payment?: Record<string, unknown> };
   switch (r.code) {
     case "ok":
       if (!r.payment) return fail(500, "Failed to create invoice");
@@ -267,6 +279,8 @@ export async function createInvoiceWith(
       return fail(409, CREATE_KEY_REUSED_AR);
     case "invalid":
       return fail(400, CREATE_INVALID_AR);
+    case "vat_number_invalid":
+      return fail(400, r.scope === "firm" ? VAT_NUMBER_INVALID_FIRM_AR : VAT_NUMBER_INVALID_LAWYER_AR);
     default:
       console.error("[lawyer/finance POST] unexpected result:", r.code);
       return fail(500, "Failed to create invoice");
@@ -402,4 +416,119 @@ export async function recordCollectionWith(
       console.error("[lawyer/finance PATCH] unexpected result:", r.code);
       return fail(500, "Failed to update payment");
   }
+}
+
+// ─── N01-14 — void an unpaid invoice, keeping the row ──────────────────────
+
+export const VOID_REASON_MIN = 3;
+export const VOID_REASON_MAX = 500;
+export const VOID_REASON_AR = `اكتب سبب الإلغاء (من ${VOID_REASON_MIN} إلى ${VOID_REASON_MAX} حرف).`;
+export const VOID_UNAVAILABLE_AR = "إلغاء بيانات الأتعاب غير متاح مؤقتاً. لم يُلغَ أي بيان — حاول بعد قليل.";
+export const VOID_HAS_COLLECTIONS_AR =
+  "لا يمكن إلغاء بيان أتعاب سُجّل عليه تحصيل. الإلغاء متاح فقط لبيان لم يُحصَّل منه أي مبلغ.";
+export const VOID_NOT_VOIDABLE_AR =
+  "لا يمكن إلغاء هذا البيان: الإلغاء متاح فقط لبيان أتعاب صادر من مكتبك ولم يُحصَّل بعد.";
+export const VOID_ALREADY_AR = "أُلغي هذا البيان من قبل بسبب آخر. حدّث الصفحة لترى سبب الإلغاء المسجّل.";
+
+/** The reason, whitespace collapsed and trimmed, or an Arabic refusal. */
+export function parseVoidBody(body: unknown): { ok: true; reason: string } | { ok: false; error: string } {
+  const b = (body ?? {}) as Record<string, unknown>;
+  if (typeof b.reason !== "string") return { ok: false, error: VOID_REASON_AR };
+  const reason = b.reason.replace(/\s+/g, " ").trim();
+  if (reason.length < VOID_REASON_MIN || reason.length > VOID_REASON_MAX) return { ok: false, error: VOID_REASON_AR };
+  return { ok: true, reason };
+}
+
+export interface VoidInput {
+  userId: string;
+  paymentId: string;
+  body: unknown;
+}
+
+/**
+ * N01-14: one call to public.void_lawyer_invoice (20261126_30) — row lock,
+ * the ownership rule of record_invoice_collection, an office invoice that is
+ * still open with nothing collected. The row stays (status void + reason +
+ * who/when) and drops out of every total.
+ */
+export async function voidInvoiceWith(deps: FinanceDeps, input: VoidInput): Promise<FinanceReply> {
+  if (typeof input.paymentId !== "string" || !input.paymentId || input.paymentId.length > 100) {
+    return fail(400, "paymentId required");
+  }
+  const parsed = parseVoidBody(input.body);
+  if (!parsed.ok) return fail(400, parsed.error);
+
+  const { data, error } = await deps.admin.rpc("void_lawyer_invoice", {
+    p_payment_id: input.paymentId,
+    p_actor: input.userId,
+    p_reason: parsed.reason,
+  });
+  if (error) {
+    if (MISSING_FUNCTION.has(String(error.code ?? ""))) {
+      console.error("[lawyer/finance void] void_lawyer_invoice is missing — run 20261126_30_invoice_vat_void.sql");
+      return fail(503, VOID_UNAVAILABLE_AR);
+    }
+    console.error("[lawyer/finance void] void_lawyer_invoice failed:", error.message);
+    return fail(500, "Failed to void invoice");
+  }
+  const r = (data ?? {}) as { code?: string; replay?: boolean; payment?: Record<string, unknown> };
+  switch (r.code) {
+    case "ok":
+      if (!r.payment) return fail(500, "Failed to void invoice");
+      return { status: 200, row: r.payment, replay: r.replay === true };
+    case "not_found":
+      return fail(404, "Invoice not found");
+    case "forbidden":
+      return fail(403, "Forbidden");
+    case "has_collections":
+      return fail(409, VOID_HAS_COLLECTIONS_AR);
+    case "not_voidable":
+      return fail(409, VOID_NOT_VOIDABLE_AR);
+    case "already_void":
+      return fail(409, VOID_ALREADY_AR);
+    case "invalid":
+      return fail(400, VOID_REASON_AR);
+    default:
+      console.error("[lawyer/finance void] unexpected result:", r.code);
+      return fail(500, "Failed to void invoice");
+  }
+}
+
+// ─── N01-11 — who issues, and does it charge VAT? ──────────────────────────
+
+export interface IssuerVat {
+  scope: "lawyer" | "firm";
+  firmId: string | null;
+  name: string;
+  state: "registered" | "not_registered" | "invalid";
+  vatNumber: string | null;
+}
+
+/**
+ * public.invoice_issuer_vat(p_actor) (20261126_30) — the very answer
+ * create_lawyer_invoice_v3 acts on, so the form's preview cannot disagree
+ * with what is issued.
+ */
+export async function readIssuerVat(
+  deps: FinanceDeps,
+  userId: string,
+): Promise<{ ok: true; issuer: IssuerVat } | { ok: false; status: 500 | 503 }> {
+  const { data, error } = await deps.admin.rpc("invoice_issuer_vat", { p_actor: userId });
+  if (error) {
+    if (MISSING_FUNCTION.has(String(error.code ?? ""))) return { ok: false, status: 503 };
+    console.error("[lawyer/finance issuer] invoice_issuer_vat failed:", error.message);
+    return { ok: false, status: 500 };
+  }
+  const r = (data ?? {}) as Record<string, unknown>;
+  const state = r.state === "registered" || r.state === "invalid" ? r.state : "not_registered";
+  return {
+    ok: true,
+    issuer: {
+      scope: r.scope === "firm" ? "firm" : "lawyer",
+      firmId: typeof r.firm_id === "string" ? r.firm_id : null,
+      name: typeof r.name === "string" ? r.name : "",
+      state,
+      vatNumber: state === "registered" && typeof r.vat_number === "string" ? r.vat_number : null,
+    },
+  };
 }

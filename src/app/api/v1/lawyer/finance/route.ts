@@ -8,6 +8,7 @@ import {
   recordCollectionWith,
   type FinanceReply,
 } from "@/lib/finance/invoiceFinanceCore";
+import { readInvoiceVat } from "@/lib/finance/invoiceVat";
 
 // ─── Shape mappers ──────────────────────────────────────────────────────────
 // payments.status CHECK: not_required | requires_payment | paid | failed | refunded
@@ -89,6 +90,11 @@ function mapPaymentToInvoice(p: Record<string, unknown>) {
     contractId: typeof p.contract_id === "string" ? p.contract_id
       : typeof meta.contractId === "string" ? meta.contractId : null,
     contractTitle: typeof meta.contractTitle === "string" ? meta.contractTitle : null,
+    // N01-11 (Q484, 20261126_30): the VAT snapshot taken at issue time —
+    // subtotal / VAT / total in halalas, the rate and the issuer's number.
+    // null for a statement issued before VAT was computed: the screens print
+    // no VAT line for it (totalFee is still what the client owes).
+    vat: readInvoiceVat(meta),
     desc: typeof meta.description === "string" ? meta.description : "أتعاب قانونية",
     totalFee: amount,
     paidAmount,
@@ -100,6 +106,21 @@ function mapPaymentToInvoice(p: Record<string, unknown>) {
     year: created.getFullYear(),
     provider: p.provider,
     createdAt: p.created_at,
+  };
+}
+
+/**
+ * A voided statement (N01-14): the invoice shape plus why and when. Its
+ * `status` is "void" — a value the page's InvoiceStatus does not have, which
+ * is why these rows travel in their own list and never reach a total.
+ */
+function mapVoidedInvoice(p: Record<string, unknown>) {
+  return {
+    ...mapPaymentToInvoice(p),
+    status: "void" as const,
+    voidReason: typeof p.void_reason === "string" ? p.void_reason : "",
+    voidedAt: typeof p.voided_at === "string" ? p.voided_at : null,
+    voidedDate: typeof p.voided_at === "string" ? formatDateAr(p.voided_at) : "",
   };
 }
 
@@ -205,7 +226,20 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .limit(MAX_ROWS);
 
-    const [paymentResults, walletResult, ownInvoicesRaw] = await Promise.all([
+    // N01-14 (20261126_30): voided statements are KEPT, but never in
+    // `invoices` — every total on the page is summed from that array, and its
+    // STATUS_CFG has no «void». They come back as their own list, read by
+    // owner_user_id (stamped on every statement v2/v3 issue). Before
+    // 20261126_30 runs the void columns do not exist (42703): an honest [].
+    const voidedQuery = supabase
+      .from("payments")
+      .select(`${PAYMENT_LINK_COLUMNS}, voided_at, void_reason`, { count: "exact" })
+      .eq("owner_user_id", uid)
+      .eq("status", "void")
+      .order("created_at", { ascending: false })
+      .limit(MAX_ROWS);
+
+    const [paymentResults, walletResult, ownInvoicesRaw, voidedRaw] = await Promise.all([
       Promise.all(
         chunks.map((chunk) =>
           supabase
@@ -224,7 +258,17 @@ export async function GET() {
         .order("created_at", { ascending: false })
         .limit(MAX_ROWS),
       ownInvoicesQuery,
+      voidedQuery,
     ]);
+
+    const voidedMissing = voidedRaw.error?.code === "42703";
+    if (voidedRaw.error && !voidedMissing) {
+      return readFailed("payments (voided)", voidedRaw.error.message);
+    }
+    const voidedInvoices = voidedMissing
+      ? []
+      : ((voidedRaw.data ?? []) as unknown as Record<string, unknown>[]).map(mapVoidedInvoice);
+    const voidedInvoicesTotal = voidedMissing ? 0 : typeof voidedRaw.count === "number" ? voidedRaw.count : null;
 
     // Before 20261124_40 runs the column does not exist (42703): no invoice
     // can be request-less yet, so that read is an honest 0, not a failure.
@@ -316,6 +360,8 @@ export async function GET() {
     return NextResponse.json({
       invoices,
       invoicesTotal,
+      voidedInvoices,
+      voidedInvoicesTotal,
       walletTransactions,
       walletTransactionsTotal:
         typeof walletResult.count === "number" ? walletResult.count : null,

@@ -22,6 +22,11 @@ import {
 } from "@/lib/services/clientPickOptions";
 import { getContracts, getContract } from "@/lib/services/contractsService";
 import { readInvoiceIntent, initialInvoiceAmount, INVOICE_PAGE } from "@/lib/services/invoiceFromContract";
+// N01-11..14 (owner 17-Nov, Q484): VAT, print on the letterhead, send, void.
+import {
+  useIssuerVat, IssuerVatCard, VatPreview, InvoiceVatLine, InvoiceRowActions,
+  InvoicePrintDocument, VoidedInvoicesList, type FinanceInvoice,
+} from "./_components/invoiceTools";
 
 /** Owner ٤٣٠: the label every fee statement carries (not a ZATCA e-invoice). DB/API names stay «invoice». */
 const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";
@@ -116,6 +121,9 @@ type CaseRow = { id?: unknown; title?: unknown; type?: string; metadata?: Record
 type FinanceRead = {
   invoices?: any[];
   invoicesTotal?: number | null;
+  /** N01-14: voided statements — their own list, never in `invoices` or a total. */
+  voidedInvoices?: FinanceInvoice[];
+  voidedInvoicesTotal?: number | null;
   walletTransactions?: any[];
   walletTransactionsTotal?: number | null;
 };
@@ -140,6 +148,12 @@ export default function FinancePage() {
    */
   const [invoicesTotal, setInvoicesTotal] = useState<number | null>(null);
   const [walletTotal, setWalletTotal] = useState<number | null>(null);
+  // N01-14: voided statements, kept apart from `invoices` (every total sums that array).
+  const [voidedInvoices, setVoidedInvoices] = useState<FinanceInvoice[]>([]);
+  const [voidedTotal, setVoidedTotal] = useState<number | null>(null);
+  // N01-11: the issuer and its VAT state (the SQL's answer); N01-12: the statement being printed.
+  const { issuer, reload: reloadIssuer } = useIssuerVat();
+  const [printTarget, setPrintTarget] = useState<FinanceInvoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -168,6 +182,8 @@ export default function FinancePage() {
         setWalletTotal(
           typeof data?.walletTransactionsTotal === "number" ? data.walletTransactionsTotal : null,
         );
+        setVoidedInvoices(Array.isArray(data?.voidedInvoices) ? data.voidedInvoices : []);
+        setVoidedTotal(typeof data?.voidedInvoicesTotal === "number" ? data.voidedInvoicesTotal : null);
         setLoading(false);
       })
       .catch((err: any) => {
@@ -197,6 +213,8 @@ export default function FinancePage() {
       setWalletTotal(
         typeof data?.walletTransactionsTotal === "number" ? data.walletTransactionsTotal : null,
       );
+      setVoidedInvoices(Array.isArray(data?.voidedInvoices) ? data.voidedInvoices : []);
+      setVoidedTotal(typeof data?.voidedInvoicesTotal === "number" ? data.voidedInvoicesTotal : null);
       return true;
     } catch (err) {
       console.error("[finance] silent refresh failed:", err);
@@ -1126,6 +1144,9 @@ export default function FinancePage() {
                 exit={{ opacity: 0 }}
                 className="space-y-6"
               >
+                {/* N01-11 (Q484): جهة الإصدار ورقمها الضريبي — ١٥٪ معه، «غير خاضع» بدونه */}
+                <IssuerVatCard issuer={issuer} isDark={isDark} onSaved={() => { void reloadIssuer(); }} />
+
                 {/* الفلاتر والبحث الجمالي */}
                 <div className="flex flex-col xl:flex-row gap-4">
 
@@ -1218,6 +1239,7 @@ export default function FinancePage() {
                                       </span>
                                     </div>
                                     <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{inv.desc}</p>
+                                    <InvoiceVatLine inv={inv} />
                                     <div className={`flex items-center gap-2 text-[10px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
                                       {inv.caseTitle !== "—" && (
                                         <>
@@ -1265,6 +1287,8 @@ export default function FinancePage() {
                                   )}
                                 </div>
                               </div>
+                              {/* N01-12 / N01-13 / N01-14: طباعة · إرسال للموكّل · إلغاء بسبب */}
+                              <InvoiceRowActions inv={inv} isDark={isDark} onPrint={setPrintTarget} onVoided={() => { void refreshSilently(); }} />
                             </div>
                           </motion.div>
                         );
@@ -1272,6 +1296,9 @@ export default function FinancePage() {
                     )}
                   </AnimatePresence>
                 </div>
+
+                {/* N01-14: البيانات الملغاة محفوظة للسجل، منفصلة عن كل المجاميع */}
+                <VoidedInvoicesList items={voidedInvoices} total={voidedTotal} onPrint={setPrintTarget} cardCls={cardCls} />
               </motion.div>
             )}
 
@@ -1641,7 +1668,7 @@ export default function FinancePage() {
                     {/* حقل الوصف وقيمة الأتعاب في سطر واحد */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label htmlFor="inv-fee" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">قيمة الأتعاب المقررة (ر.س):</label>
+                        <label htmlFor="inv-fee" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">قيمة الأتعاب المقررة قبل الضريبة (ر.س):</label>
                         <input
                           id="inv-fee"
                           required
@@ -1671,6 +1698,9 @@ export default function FinancePage() {
                         </select>
                       </div>
                     </div>
+
+                    {/* N01-11 (Q484): الضريبة ١٥٪ فقط مع رقم ضريبي، وإلا «غير خاضع» — من جواب الخادم نفسه */}
+                    <VatPreview feeText={newInvFee} issuer={issuer} />
 
                     {/* حقل تفاصيل الفاتورة */}
                     <div className="space-y-1.5">
@@ -1918,6 +1948,16 @@ export default function FinancePage() {
           );
         })()}
       </AnimatePresence>
+
+      {/* N01-12: بيان الأتعاب على الورق المروّس لجهة الإصدار — «طباعة / حفظ PDF» من المتصفح */}
+      {printTarget && (
+        <InvoicePrintDocument
+          inv={printTarget}
+          scope={printTarget.vat?.scope ?? (issuer.status === "ready" ? issuer.scope : "lawyer")}
+          issuerName={issuer.status === "ready" ? issuer.name : ""}
+          onDone={() => setPrintTarget(null)}
+        />
+      )}
     </div>
   );
 }

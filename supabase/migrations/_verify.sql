@@ -7064,3 +7064,33 @@ select 'Reader law map: library_reader_law_links, service role only, security in
                           where p.oid = to_regprocedure('public.library_reader_law_links(text, integer)')), true)
        as ok;
 -- <<< verify:l6_reader
+
+-- >>> verify:l6_invoice
+-- Batch l6-invoice (owner 17-Nov N01-11 / N01-14, Q484): run 20261126_30 BEFORE the deploy.
+select 'Invoice VAT (Q484): create_lawyer_invoice_v3 + invoice_issuer_vat, service role only (run 20261126_30)' as check,
+       to_regprocedure('public.create_lawyer_invoice_v3(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)') is not null
+       and to_regprocedure('public.invoice_issuer_vat(uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.create_lawyer_invoice_v3(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.invoice_issuer_vat(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.invoice_issuer_vat(uuid)', 'EXECUTE')
+       and coalesce(position('1500' in pg_catalog.pg_get_functiondef(to_regprocedure('public.create_lawyer_invoice_v3(uuid,text,bigint,text,text,uuid,text,text,text,text,text,text)'))) > 0, false)
+       as ok;
+select 'Lawyer VAT number: branding_vaults.vat_number, shape-checked, no session write (run 20261126_30)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'branding_vaults' and column_name = 'vat_number')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.branding_vaults'::regclass and conname = 'branding_vaults_vat_number_check')
+       and not has_column_privilege('authenticated', 'public.branding_vaults', 'vat_number', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.branding_vaults', 'vat_number', 'INSERT')
+       as ok;
+select 'Invoice void (N01-14): status void + reason/who/when CHECK + void_lawyer_invoice, service role only (run 20261126_30)' as check,
+       exists (select 1 from pg_catalog.pg_constraint
+                where conrelid = 'public.payments'::regclass and conname = 'payments_status_check'
+                  and pg_catalog.pg_get_constraintdef(oid) like '%''void''%')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.payments'::regclass and conname = 'payments_void_fields_check')
+       and to_regprocedure('public.void_lawyer_invoice(text,uuid,text)') is not null
+       and not has_function_privilege('authenticated', 'public.void_lawyer_invoice(text,uuid,text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.void_lawyer_invoice(text,uuid,text)', 'EXECUTE')
+       as ok;
+-- <<< verify:l6_invoice

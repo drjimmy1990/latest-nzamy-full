@@ -18,6 +18,16 @@ import { join } from "node:path";
 import { fakeDb } from "../payments/fakeDb.test-helper.ts";
 import {
   createInvoiceWith,
+  parseVoidBody,
+  readIssuerVat,
+  VAT_NUMBER_INVALID_FIRM_AR,
+  VAT_NUMBER_INVALID_LAWYER_AR,
+  VOID_ALREADY_AR,
+  VOID_HAS_COLLECTIONS_AR,
+  VOID_NOT_VOIDABLE_AR,
+  VOID_REASON_AR,
+  VOID_UNAVAILABLE_AR,
+  voidInvoiceWith,
   CREATE_INVALID_AR,
   CREATE_KEY_REUSED_AR,
   CREATE_UNAVAILABLE_AR,
@@ -84,7 +94,7 @@ test("CODE-F01 + F22 + F21: one rpc carries the session's user, the key, and the
   assert.equal(reply.status, 200);
   assert.equal(log.length, 1);
   assert.equal(log[0].op, "rpc");
-  assert.equal(log[0].table, "create_lawyer_invoice_v2");
+  assert.equal(log[0].table, "create_lawyer_invoice_v3");
   assert.deepEqual(log[0].payload, {
     p_actor: ME,
     p_idempotency_key: "create-form-key-0001",
@@ -171,19 +181,20 @@ test("N01-10: an invoice of a contract may name no client — the SQL takes the 
   const { client, log } = okCreate();
   const reply = await createInvoiceWith({ admin: client }, { userId: ME, body });
   assert.equal(reply.status, 200);
-  assert.equal(log[0].table, "create_lawyer_invoice_v2");
+  assert.equal(log[0].table, "create_lawyer_invoice_v3");
   assert.equal((log[0].payload as Record<string, unknown>).p_contract_id, "contract-1");
   assert.equal(parseCreateBody(invoiceBody({ contractId: 7 })).ok, false);
   assert.equal(parseCreateBody(invoiceBody({ contractId: "x".repeat(101) })).ok, false);
 });
 
-test("N01-9: no fallback to v1 (the placeholder «فاتورة: …» case) — v2 missing is a 503", async () => {
+test("N01-9 + N01-11: no fallback to v1 (the placeholder case) or v2 (no VAT) — v3 missing is a 503", async () => {
   const { client, log } = fakeDb((q) => (q.op === "rpc" ? { error: { code: "PGRST202", message: "missing" } } : undefined));
   const reply = await createInvoiceWith({ admin: client }, { userId: ME, body: invoiceBody() });
   assert.equal(reply.status, 503);
-  assert.deepEqual(log.map((q) => q.table), ["create_lawyer_invoice_v2"]);
+  assert.deepEqual(log.map((q) => q.table), ["create_lawyer_invoice_v3"]);
   const src = readFileSync(join(ROOT, "src", "lib", "finance", "invoiceFinanceCore.ts"), "utf8");
   assert.doesNotMatch(src, /rpc\("create_lawyer_invoice"/);
+  assert.doesNotMatch(src, /rpc\("create_lawyer_invoice_v2"/);
 });
 
 // ─── CODE-F02 / LIVE-F36 — PATCH sends one payment, never a running total ───
@@ -362,4 +373,68 @@ test("UX03: manual collection is not tied to the gateway's state", () => {
 test("CODE-F23: a timed-out write is shown as uncertain, not as a failure", () => {
   const page = readFileSync(join(ROOT, "src", "app", "dashboard", "lawyer", "finance", "page.tsx"), "utf8");
   assert.ok((page.match(/instanceof ApiTimeoutError/g) ?? []).length >= 2, "both writes handle the uncertain case");
+});
+
+// ─── N01-11 (Q484) — VAT is decided in SQL; a bad stored number refuses ────
+
+test("N01-11: a malformed stored VAT number refuses the statement with an Arabic reason per scope", async () => {
+  for (const [scope, msg] of [["firm", VAT_NUMBER_INVALID_FIRM_AR], ["lawyer", VAT_NUMBER_INVALID_LAWYER_AR]] as const) {
+    const { client } = fakeDb((q) => (q.op === "rpc" ? { data: { code: "vat_number_invalid", scope } } : undefined));
+    const reply = await createInvoiceWith({ admin: client }, { userId: ME, body: invoiceBody() });
+    assert.equal(reply.status, 400);
+    assert.equal("body" in reply && reply.body.error, msg);
+  }
+});
+
+test("N01-11: the issuer read is the SQL's own answer; a number is passed on only when registered", async () => {
+  const reg = fakeDb((q) => (q.op === "rpc" ? { data: { scope: "firm", firm_id: "f1", name: "مكتب", state: "registered", vat_number: "300000000000003" } } : undefined));
+  const a = await readIssuerVat({ admin: reg.client }, ME);
+  assert.deepEqual(a, { ok: true, issuer: { scope: "firm", firmId: "f1", name: "مكتب", state: "registered", vatNumber: "300000000000003" } });
+  assert.equal(reg.log[0].table, "invoice_issuer_vat");
+  assert.deepEqual(reg.log[0].payload, { p_actor: ME });
+  const bad = fakeDb((q) => (q.op === "rpc" ? { data: { scope: "lawyer", state: "invalid", vat_number: "123" } } : undefined));
+  const b = await readIssuerVat({ admin: bad.client }, ME);
+  assert.equal(b.ok && b.issuer.vatNumber, null);
+  assert.equal(b.ok && b.issuer.state, "invalid");
+  const missing = fakeDb((q) => (q.op === "rpc" ? { error: { code: "PGRST202", message: "missing" } } : undefined));
+  assert.deepEqual(await readIssuerVat({ admin: missing.client }, ME), { ok: false, status: 503 });
+});
+
+// ─── N01-14 — void with a reason, unpaid only ──────────────────────────────
+
+test("N01-14: a reason is required (3–500 characters, whitespace collapsed) before the database", async () => {
+  assert.deepEqual(parseVoidBody({ reason: "  خطأ   في المبلغ " }), { ok: true, reason: "خطأ في المبلغ" });
+  for (const body of [{}, { reason: "" }, { reason: " ab " }, { reason: 5 }, { reason: "x".repeat(501) }, null]) {
+    const { client, log } = fakeDb(() => undefined);
+    const reply = await voidInvoiceWith({ admin: client }, { userId: ME, paymentId: "p1", body });
+    assert.equal(reply.status, 400);
+    assert.equal("body" in reply && reply.body.error, VOID_REASON_AR);
+    assert.equal(log.length, 0);
+  }
+});
+
+test("N01-14: one rpc with the session's user; every refusal has its answer", async () => {
+  const ok = fakeDb((q) => (q.op === "rpc" ? { data: { code: "ok", replay: false, payment: { id: "p1", status: "void" } } } : undefined));
+  const reply = await voidInvoiceWith({ admin: ok.client }, { userId: ME, paymentId: "p1", body: { reason: "خطأ في المبلغ", userId: OTHER } });
+  assert.equal(reply.status, 200);
+  assert.equal(ok.log.length, 1);
+  assert.equal(ok.log[0].table, "void_lawyer_invoice");
+  assert.deepEqual(ok.log[0].payload, { p_payment_id: "p1", p_actor: ME, p_reason: "خطأ في المبلغ" });
+  const cases: Array<[string, number, string]> = [
+    ["not_found", 404, "Invoice not found"],
+    ["forbidden", 403, "Forbidden"],
+    ["has_collections", 409, VOID_HAS_COLLECTIONS_AR],
+    ["not_voidable", 409, VOID_NOT_VOIDABLE_AR],
+    ["already_void", 409, VOID_ALREADY_AR],
+  ];
+  for (const [code, status, error] of cases) {
+    const { client } = fakeDb((q) => (q.op === "rpc" ? { data: { code } } : undefined));
+    const r = await voidInvoiceWith({ admin: client }, { userId: ME, paymentId: "p1", body: { reason: "سبب كافٍ" } });
+    assert.equal(r.status, status, code);
+    assert.equal("body" in r && r.body.error, error, code);
+  }
+  const missing = fakeDb((q) => (q.op === "rpc" ? { error: { code: "42883", message: "missing" } } : undefined));
+  const m = await voidInvoiceWith({ admin: missing.client }, { userId: ME, paymentId: "p1", body: { reason: "سبب كافٍ" } });
+  assert.equal(m.status, 503);
+  assert.equal("body" in m && m.body.error, VOID_UNAVAILABLE_AR);
 });
