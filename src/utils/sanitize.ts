@@ -61,6 +61,12 @@ function sanitizeWith(html: string, render: TagRenderer): string {
 /* ── <a href> ──────────────────────────────────────────────────────────── */
 
 const LINK_STYLE = "color:#C8A762;text-decoration:underline";
+/**
+ * An external link (`https://…`) opens in a new tab and hands the new page no
+ * handle on this one (`noopener`) and no referrer (`noreferrer`). Same-site
+ * paths and `#` anchors stay in the tab. Ticket P1-04.
+ */
+const EXTERNAL_LINK_ATTRS = 'target="_blank" rel="noopener noreferrer"';
 const HREF_ATTR = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
 const NAMED_REFS: Readonly<Record<string, string>> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
 
@@ -104,7 +110,9 @@ function renderInlineTag(name: string, closing: boolean, attrs: string): string 
       if (closing) return "</a>";
       const m = attrs.match(HREF_ATTR);
       const href = m ? safeHref(m[1] ?? m[2] ?? "") : null;
-      return href === null ? "<a>" : `<a href="${escapeAttr(href)}" style="${LINK_STYLE}">`;
+      if (href === null) return "<a>";
+      const external = href.startsWith("https://") ? ` ${EXTERNAL_LINK_ATTRS}` : "";
+      return `<a href="${escapeAttr(href)}" style="${LINK_STYLE}"${external}>`;
     }
     default:
       return null;
@@ -113,7 +121,8 @@ function renderInlineTag(name: string, closing: boolean, attrs: string): string 
 
 /**
  * Inline sanitiser. Allowlist: <strong>, <em>, <br>, and <a> with a safe
- * href (see safeHref) and the brand link style. Every other attribute is
+ * href (see safeHref) and the brand link style; an external href also gets
+ * target="_blank" rel="noopener noreferrer". Every other attribute is
  * dropped; every other tag is removed.
  */
 export function sanitizeHtml(html: string): string {

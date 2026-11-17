@@ -23,7 +23,7 @@ const OPERATIONS_DEPARTMENTS = [
 export default function FirmDepartmentsPage() {
   const { isDark } = useTheme();
   const { currentFirmFeatures } = useAdminSettings();
-  const [toast, setToast] = useState("الأقسام Backend-ready: التقسيم والصلاحيات وتوزيع النقاط محلية فقط حتى ربط Org/RBAC/Wallet APIs.");
+  const [toast, setToast] = useState("الأقسام للعرض فقط حالياً: البيانات أدناه أمثلة ولا يُحفظ ما تغيّره بعد. إدارة الأقسام قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -40,7 +40,7 @@ export default function FirmDepartmentsPage() {
             <p className={`mt-1 text-sm ${muted}`}>نفرق بين أقسام ممارسة قانونية وإدارات تشغيل داخلية حتى لا تختلط شركة المحاماة بالشركة التجارية.</p>
           </div>
           <button
-            onClick={() => setToast("إنشاء قسم جديد جاهز للربط فقط. يلزم لاحقا org_units API وتدقيق before/after.")}
+            onClick={() => setToast("إنشاء قسم جديد غير متاح بعد — قريباً.")}
             className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-sm font-black text-[#C8A762]"
           >
             <Plus size={15} weight="bold" />

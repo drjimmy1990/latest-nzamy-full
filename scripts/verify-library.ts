@@ -172,7 +172,6 @@ async function main() {
   await checkAPI('/api/library/decrees/test-id');
   await checkAPI('/api/library/books/rawd-al-murbi');
   await checkAPI('/api/library/folders');
-  await checkAPI('/api/library/reports', 'POST', { entityType: 'article', entityId: 'test', reportType: 'error', description: 'test' });
 
   // 4. Arabic FTS test
   console.log('\n🔤 Arabic Search Tests:');

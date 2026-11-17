@@ -220,7 +220,7 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
     title: "فريق نظامي", titleEn: "Nezamy Team",
     items: [
       { label: "إدارة الفريق",       labelEn: "Team",            href: "/dashboard/admin/team",                    icon: "UsersFour" },
-      { label: "الميزات (Flags)",    labelEn: "Feature Flags",   href: "/dashboard/admin/features",                icon: "ToggleRight" },
+      { label: "مفاتيح الميزات",     labelEn: "Feature Flags",   href: "/dashboard/admin/features",                icon: "ToggleRight" },
     ],
   },
   {

@@ -7,6 +7,9 @@ import {
   GraduationCap, ArrowLeft, Share,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
+import { isDemoMode } from '@/lib/runtimeMode';
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import AcademyComingSoon from '../_AcademyComingSoon';
 
 const MY_CERTS = [
   {
@@ -21,7 +24,7 @@ const MY_CERTS = [
   },
 ];
 
-export default function CertificatesPage() {
+function CertificatesPageDemo() {
   const { isDark } = useTheme();
 
   const card    = isDark ? 'border-white/[0.08] bg-[#161b22]' : 'border-slate-200 bg-white shadow-sm';
@@ -139,5 +142,23 @@ export default function CertificatesPage() {
       </div>
 
     </div>
+  );
+}
+
+/**
+ * N05-A3/4/5 (owner package 13 Nov): this page showed an invented certificate (NZM-2026-CRT-8821) with three dead buttons, shown even to a visitor.
+ * No academy store sits behind it, so it renders in demo mode only; production
+ * shows the honest «قريباً» notice inside the academy frame.
+ */
+export default function CertificatesPage() {
+  if (isDemoMode) return <CertificatesPageDemo />;
+  return (
+    <AcademyComingSoon signInFrom="/academy/certificates">
+      <DashboardComingSoon
+        title="شهاداتي — قريباً"
+        description="لا توجد شهادات صادرة لحسابك. ستظهر هنا شهاداتك عند إتمام دورة بعد إطلاق الدورات."
+        backHref="/academy"
+      />
+    </AcademyComingSoon>
   );
 }

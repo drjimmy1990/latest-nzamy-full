@@ -52,7 +52,7 @@ const partnerTypes = [
     icon: Code,
     titleAr: "شركاء التقنية والتكامل",
     titleEn: "Technology & Integration Partners",
-    descAr: "ادمج API نظامي في منتجاتك وابنِ تجارب قانونية رائدة لعملائك.",
+    descAr: "اربط خدمات نظامي بمنتجاتك برمجياً وابنِ تجارب قانونية رائدة لعملائك.",
     descEn: "Integrate Nezamy's API into your products and build leading legal experiences for your clients.",
     badge: "⚡",
     color: "from-violet-50 to-violet-50/30",

@@ -1111,34 +1111,18 @@ export function LawsTabContent({
                     : `${isDark ? "bg-[#161b22]/60 border-[#2d3748]/60" : "bg-gray-50 border-gray-200/80"}`
                 }`}
               >
-                {!book.free && (
-                  <div
-                    className={`absolute inset-0 rounded-2xl ${isDark ? "bg-[#0c0f12]/30" : "bg-white/30"} backdrop-blur-[1px] z-10 flex items-center justify-center cursor-pointer`}
-                    onClick={() => setShowPaywall(true)}
-                  >
-                    <div className={`rounded-2xl border px-4 py-2 flex items-center gap-2 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"} shadow-lg`}>
-                      <Lock size={16} color="#C8A762" weight="fill" />
-                      <span className={`text-xs font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-                        {isRTL ? "يتطلب اشتراكاً" : "Requires Subscription"}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                {/* N05-L7 (owner package 13 Nov, owner ١٨٣ / س ٤٤٩): the card opens
+                    the reader; the books route serves the first two pages and
+                    locks the rest itself, so no overlay hides the book. */}
 
                 <SaveToFolderButton doc={bookSaveDoc(book)} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
-                  href={book.free ? resultHref(`/book/${book.slug}`, searchQ) : "#"}
-                  onClick={(e) => {
-                    if (!book.free) {
-                      e.preventDefault();
-                      setShowPaywall(true);
-                    }
-                  }}
+                  href={resultHref(`/book/${book.slug}`, searchQ)}
                   className={layoutMode === "grid" ? "flex flex-col flex-1 justify-between" : "w-full"}
                 >
                   {layoutMode === "grid" ? (
                     <div className="flex flex-col flex-1 justify-between">
-                      <div className={!book.free ? "opacity-40 filter blur-[2px]" : ""}>
+                      <div>
                         <div className="flex items-center justify-between mb-4">
                           {book.categoryLabel && (
                           <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg ${
@@ -1163,6 +1147,12 @@ export function LawsTabContent({
                               {isRTL ? "متاح" : "FREE"}
                             </span>
                           )}
+                          {!book.free && (
+                            <span className="px-2 py-1 text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-lg flex items-center gap-1">
+                              <Lock size={10} weight="fill" />
+                              {isRTL ? "أول صفحتين مجاناً" : "First 2 pages free"}
+                            </span>
+                          )}
                         </div>
 
                         <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
@@ -1174,7 +1164,7 @@ export function LawsTabContent({
                         <p className={`text-xs mb-5 line-clamp-2 leading-relaxed ${muted}`}>{book.desc}</p>
                       </div>
 
-                      <div className={`grid ${book.type ? "grid-cols-2" : "grid-cols-1"} gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"} ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
+                      <div className={`grid ${book.type ? "grid-cols-2" : "grid-cols-1"} gap-3 mb-4 p-2.5 rounded-xl border ${isDark ? "border-[#2d3748] bg-white/5" : "border-gray-100 bg-gray-50/50"}`}>
                         <div className="flex flex-col">
                           <span className={`text-[9px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلدات" : "Volumes"}</span>
                           <span className={`text-sm font-bold ${isDark ? "text-gray-300" : "text-gray-800"}`}>{book.volCount}</span>
@@ -1189,7 +1179,7 @@ export function LawsTabContent({
                         )}
                       </div>
 
-                      <div className={`flex items-center justify-between mt-auto ${!book.free ? "opacity-40 filter blur-[2px]" : ""}`}>
+                      <div className="flex items-center justify-between mt-auto">
                         <span className={`text-xs flex items-center gap-1 font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
                           {isRTL ? "تصفح المرجع" : "Browse Reference"}
                           <ArrowRight size={14} className={isRTL ? "rotate-180 transition-transform group-hover:-translate-x-1" : "transition-transform group-hover:translate-x-1"} />
@@ -1198,7 +1188,7 @@ export function LawsTabContent({
                       </div>
                     </div>
                   ) : (
-                    <div className={`${!book.free ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           {book.categoryLabel && (
@@ -1222,6 +1212,12 @@ export function LawsTabContent({
                             <span className="px-2 py-1 text-[10px] font-bold tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center gap-1">
                               <Sparkle size={10} weight="fill" />
                               {isRTL ? "متاح" : "FREE"}
+                            </span>
+                          )}
+                          {!book.free && (
+                            <span className="px-2 py-1 text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-lg flex items-center gap-1">
+                              <Lock size={10} weight="fill" />
+                              {isRTL ? "أول صفحتين مجاناً" : "First 2 pages free"}
                             </span>
                           )}
                         </div>

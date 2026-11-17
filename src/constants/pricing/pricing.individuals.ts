@@ -69,7 +69,8 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
           "تمثيل قضائي وترافع مخصص من محامٍ مرخّص",
           // No Escrow line (owner Q3/Q28): fees are paid outside the
           // platform and nothing is held on the client's behalf.
-          "فحص تعارض المصالح والتدقيق المكتبي قبل التسليم",
+          // The conflict-of-interest check was cancelled (owner package 13 Nov, N04-31).
+          "التدقيق المكتبي قبل التسليم",
           "لا يوجد أي اشتراك دوري أو رسوم خفية",
         ],
         support: ["متابعة مسار الطلب عبر المنصة", "تحديثات دورية حتى اكتمال الخدمة"],

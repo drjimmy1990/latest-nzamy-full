@@ -1,5 +1,7 @@
 "use client";
 import GatedToolScreen from "@/components/GatedToolScreen";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
@@ -30,7 +32,7 @@ const MOCK_RESPONSE = `بناءً على استفسارك حول متطلبات 
 
 **أولاً: أنواع التراخيص المطلوبة**
 • **السجل التجاري:** من وزارة التجارة — يُستخرج إلكترونياً عبر منصة "بلدي"
-• **ترخيص النشاط التقني:** من هيئة الاتصالات وتقنية المعلومات (CITC) للأنشطة المرخصة
+• **ترخيص النشاط التقني:** من هيئة الاتصالات والفضاء والتقنية للأنشطة المرخصة
 • **الحساب البنكي التجاري:** شرط مسبق لاستكمال الإجراءات
 
 **ثانياً: رأس المال الأدنى**
@@ -55,7 +57,7 @@ function StreamingText({ text }: { text: string }) {
   return <pre className="whitespace-pre-wrap font-sans text-[13px] leading-[1.9]">{shown}</pre>;
 }
 
-function CorpAdvisorInner() {
+function CorpAdvisorInnerDemo() {
   const { isDark } = useTheme();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -80,7 +82,7 @@ function CorpAdvisorInner() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className={`text-xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>المستشار التجاري</h1>
-            <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">PRO</span>
+            <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">احترافية</span>
             <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">جديد</span>
           </div>
           <p className={`text-[13px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
@@ -182,6 +184,23 @@ function CorpAdvisorInner() {
       )}
     </div>
   );
+}
+
+// N05-V3 (owner package 13 Nov): the body under the gate is a canned result
+// (fixed text, a timer, no AI run), so it renders in demo mode only. In
+// production the gate card shows while the review gate is on, and the honest
+// «قريباً» screen when it is off: never the canned result.
+function CorpAdvisorInner() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="المستشار التجاري — قريباً"
+        description="رأي المستشار التجاري للشركات غير متاح حالياً وسيُفعَّل قريباً. لا تُعرض هنا إجابات جاهزة مكان رأي حقيقي."
+        backHref="/ai"
+      />
+    );
+  }
+  return <CorpAdvisorInnerDemo />;
 }
 
 // Wave 1 task 6: the beta gate first — no form or timer before it.

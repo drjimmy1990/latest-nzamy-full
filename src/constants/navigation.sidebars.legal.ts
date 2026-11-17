@@ -169,7 +169,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       // file cannot reach.
       { label: "المجتمع القانوني",  labelEn: "Community",    href: "/community", icon: "ChatCircle", divider: true },
       { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",              icon: "BookOpen" },
-      { label: "أكاديمية نظامي",   labelEn: "Academy",       href: "/academy",           icon: "GraduationCap", badge: "جديد" },
+      { label: "أكاديمية نظامي",   labelEn: "Academy",       href: "/academy",           icon: "GraduationCap", badge: "قريباً" },
       { label: "الإشعارات",         labelEn: "Notifications", href: "/notifications",     icon: "Bell" },
       { label: "الإعدادات",          labelEn: "Settings",      href: "/settings",          icon: "GearSix" },
     ],
@@ -210,7 +210,6 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "دليل العملاء",   labelEn: "Clients",       href: "/dashboard/firm/clients",       icon: "AddressBook" },
       { label: "الاستشارات",     labelEn: "Consultations", href: "/dashboard/firm/consultations", icon: "ChatDots" },
       { label: "بوابة العميل",   labelEn: "Client Portal", href: "/dashboard/firm/client-portal", icon: "Globe", gateKey: "firm-client-portal" },
-      { label: "تخصيص البوابة",  labelEn: "Branding",      href: "/dashboard/firm/branding",      icon: "Palette", gateKey: "firm-branding" },
     ],
   },
   {
@@ -237,7 +236,6 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "فحص تعارض المصالح", labelEn: "Conflict Check", href: "/dashboard/firm/compliance/conflict",   icon: "WarningCircle", badge: "حرج" },
       { label: "اعتماد العملاء (KYC)",labelEn: "Client KYC",     href: "/dashboard/firm/compliance/kyc", badge: "قريباً",        icon: "ShieldCheck" },
       { label: "الجدران الصينية",    labelEn: "Chinese Walls",  href: "/dashboard/firm/compliance/walls", badge: "قريباً",      icon: "Wall", gateKey: "firm-chinese-walls" },
       { label: "الفحص الشامل ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/firm/health-check",     icon: "MagnifyingGlass", badge: "جديد", gateKey: "firm-health-check" },
@@ -250,7 +248,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance", badge: "قريباً",           icon: "Money", gateKey: "firm-finance" },
       { label: "الأتعاب",          labelEn: "Fees",       href: "/dashboard/firm/fees",              icon: "Receipt", gateKey: "firm-finance" },
-      { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance" },
+      { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance", badge: "قريباً" },
       { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics" },
     ],
   },
@@ -266,10 +264,11 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",        labelEn: "Research Collector", href: "/ai/collector",      icon: "Tray",         badge: "جديد" },
       { label: "محترف العقود",           labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
-      // BUG-12: both pages read tool-status themselves (useToolUsable; /ai/contract-reviewer
-      // redirects to /ai/contracts' review mode), so the badge follows the same answer.
+      // BUG-12: the page reads tool-status itself (useToolUsable), so the badge follows the same answer.
+      // N06-26: no firm «مراجع العقود» row — /ai/contract-reviewer is a 301 to /ai/contracts, the
+      // «محترف العقود» row just above (its review mode). N06-30: the corporate-only /ai/corp/* tools
+      // («أدوات المكتب المؤسسية») are not a law firm's tools and are gone from this sidebar.
       { label: "مفاوض العقود",           labelEn: "Contract Negotiator", href: "/ai/contract-negotiator",  icon: "Handshake", badge: "قريباً", liveToolId: "contract-negotiator" },
-      { label: "مراجع العقود",           labelEn: "Contract Reviewer",   href: "/ai/contract-reviewer",    icon: "MagnifyingGlass", badge: "قريباً", liveToolId: "contract-review" },
       { label: "الرأي الفصل",           labelEn: "Al-Ra'y Al-Fasl", href: "/ai/legal-opinion",    icon: "Lightbulb" },
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
@@ -281,18 +280,6 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "السكرتير الذكي",        labelEn: "AI Secretary",     href: "/ai/secretary",        icon: "Robot",        divider: true, badge: "قريباً" },
       { label: "الحاسبة القانونية",     labelEn: "Legal Calculator", href: "/ai/fee-calculator",   icon: "Calculator" },
       { label: "مولّد التقارير",        labelEn: "Report Generator", href: "/ai/report-generator", icon: "FileArrowUp",  badge: "قريباً" },
-    ],
-  },
-  // ── أدوات المكتب المؤسسية (الفيرم ككيان تجاري يحتاج أدوات الشركات) ──────
-  {
-    title: "أدوات المكتب المؤسسية", titleEn: "Firm Corporate Tools",
-    collapsible: true,
-    defaultOpen: false,
-    items: [
-      { label: "المستشار التجاري",    labelEn: "Business Advisor",       href: "/ai/corp/advisor",            icon: "Briefcase", badge: "قريباً" },
-      { label: "مدير العقود CLM",      labelEn: "Contract Lifecycle",     href: "/ai/corp/clm",                icon: "ArrowsClockwise", badge: "قريباً" },
-      { label: "مراقب الامتثال",       labelEn: "Compliance Monitor",     href: "/ai/corp/compliance-monitor",  icon: "ShieldCheck", badge: "قريباً" },
-      { label: "مستشار الموارد البشرية", labelEn: "HR Advisor",           href: "/ai/corp/hr",                 icon: "UserCirclePlus", badge: "قريباً" },
     ],
   },
   // ── أدوات قانونية إضافية (موروثة من المحامي الفرد) ───────────────────────
@@ -352,7 +339,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "المجتمع القانوني",  labelEn: "Legal Community", href: "/community",   icon: "ChatCircle", divider: true },
       { label: "المدونة القانونية", labelEn: "Legal Blog",      href: "/blog",                icon: "Article" },
       { label: "المكتبة القانونية", labelEn: "Legal Library", href: "/laws",          icon: "BookOpen" },
-      { label: "أكاديمية نظامي",   labelEn: "Nezamy Academy",  href: "/academy",       icon: "GraduationCap", badge: "جديد" },
+      { label: "أكاديمية نظامي",   labelEn: "Nezamy Academy",  href: "/academy",       icon: "GraduationCap", badge: "قريباً" },
       { label: "الإشعارات",         labelEn: "Notifications", href: "/notifications", icon: "Bell" },
       { label: "الإعدادات",          labelEn: "Settings",      href: "/settings",      icon: "GearSix" },
     ],

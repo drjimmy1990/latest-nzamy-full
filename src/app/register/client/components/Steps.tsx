@@ -558,17 +558,9 @@ export function Step3({
           )}
         </div>
 
-        {/* Terms */}
-        <label className="flex cursor-pointer items-start gap-3 pt-2">
-          <input type="checkbox" className="mt-0.5 h-4 w-4 cursor-pointer rounded accent-royal" />
-          <span className="text-xs text-ink-muted dark:text-gray-400">
-            {isAr ? (
-              <>أوافق على <a href="/terms" className="text-royal dark:text-gold hover:underline">الشروط والأحكام</a> و<a href="/privacy" className="text-royal dark:text-gold hover:underline">سياسة الخصوصية</a> لمنصة نظامي</>
-            ) : (
-              <>I agree to the <a href="/terms" className="text-royal dark:text-gold hover:underline">Terms & Conditions</a> and <a href="/privacy" className="text-royal dark:text-gold hover:underline">Privacy Policy</a> of Nezamy</>
-            )}
-          </span>
-        </label>
+        {/* The consent box lives on the page itself (register/client/page.tsx,
+            TermsConsentCheckbox): it gates «إنشاء الحساب» and is recorded.
+            The unwired checkbox that stood here did neither. */}
       </div>
     </motion.div>
   );

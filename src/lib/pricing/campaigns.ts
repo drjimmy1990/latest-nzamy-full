@@ -75,15 +75,14 @@ export const FOUNDER_MEMBERSHIP_ON_SALE: boolean = true;
 /**
  * The paid-membership copy. It never promises a gift for registering (owner,
  * 25 Oct: no badge, seat or library days on a free signup). The CTA is the
- * link the owner's campaign uses: /pricing reads `audience` (opens the
- * lawyers tab) and `campaign` (compared with FOUNDER_CAMPAIGN_ID) and scrolls
- * to the #founder-plan card (P3 Task 8).
+ * campaign landing page /founder (owner package 17 Nov, F6); /pricing still
+ * opens the founder card from `?audience=lawyers&campaign=founder-2026#founder-plan`.
  */
 export const FOUNDER_CAMPAIGN_COPY = {
   badgeAr: "عضوية المحامي المؤسس",
   messageAr: "عضوية المحامي المؤسس السنوية — مقاعد محدودة لمن يوثّق رخصته ويُتم السداد",
   ctaAr: "اعرف التفاصيل",
-  ctaHref: "/pricing?audience=lawyers&campaign=founder-2026#founder-plan",
+  ctaHref: "/founder",
 } as const;
 
 const DAY_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
@@ -279,4 +278,71 @@ export function campaignFromApi(body: unknown): Campaign | null {
   // Same-site only: "//host" and "/\host" are both read as another host.
   if (!/^\/(?![/\\])/.test(campaign.ctaHref)) return null;
   return campaign;
+}
+
+// ── the founder window for the countdown (owner package 17 Nov, 0.2 / F2) ───
+
+export type FounderWindowState = "pre" | "live" | "sold_out" | "paused" | "ended";
+
+/**
+ * What /founder, the pricing card and the post-signup card need to count down
+ * from the SERVER's clock, answered even before the campaign opens. Riyadh has
+ * no daylight saving, so a Riyadh day D starts at `D T00:00:00+03:00`; the
+ * window ends at the start of the day after `ends_on` (exclusive), the same
+ * instants founder_campaign_active() uses.
+ */
+export interface FounderWindow {
+  state: FounderWindowState;
+  /** ISO, e.g. "2026-11-18T00:00:00+03:00". */
+  startsAt: string;
+  /** ISO, the first instant the campaign is over, e.g. "2026-12-18T00:00:00+03:00". */
+  endsAtExclusive: string;
+  /** ISO of the server's clock when the answer was built. */
+  serverNow: string;
+  seatsTotal: number | null;
+  seatsLeft: number | null;
+  planId: string;
+}
+
+/** The Riyadh day after `day` (`YYYY-MM-DD`). */
+function nextDay(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + 1));
+  return t.toISOString().slice(0, 10);
+}
+
+/**
+ * The founder window from the `founder_campaign` setting, the seat summary
+ * (null when it could not be read) and the code sale switch, at `now`.
+ * Null when the setting has no usable dates (no campaign configured) or the
+ * code switch is off. Inside the dates an unknown seat count reads as
+ * `paused`: the buy button must never open on a guess.
+ */
+export function founderWindow(
+  value: unknown,
+  summary: FounderSeatSummary | null,
+  now: Date,
+  flag: boolean,
+): FounderWindow | null {
+  if (!flag || !isPlainObject(value)) return null;
+  const { starts_on: startsOn, ends_on: endsOn } = value;
+  if (!isCalendarDay(startsOn) || !isCalendarDay(endsOn) || startsOn > endsOn) return null;
+  const startsAt = `${startsOn}T00:00:00+03:00`;
+  const endsAtExclusive = `${nextDay(endsOn)}T00:00:00+03:00`;
+  const t = now.getTime();
+  let state: FounderWindowState;
+  if (t < Date.parse(startsAt)) state = "pre";
+  else if (t >= Date.parse(endsAtExclusive)) state = "ended";
+  else if (!summary || summary.salePaused) state = "paused";
+  else if (summary.seatsLeft <= 0) state = "sold_out";
+  else state = "live";
+  return {
+    state,
+    startsAt,
+    endsAtExclusive,
+    serverNow: now.toISOString(),
+    seatsTotal: summary ? summary.capacity : null,
+    seatsLeft: summary ? summary.seatsLeft : null,
+    planId: FOUNDER_PLAN_ID,
+  };
 }

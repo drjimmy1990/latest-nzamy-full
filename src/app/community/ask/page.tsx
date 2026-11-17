@@ -12,6 +12,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { createCommunityPost } from "@/lib/services/communityService";
 import Link from "next/link";
+import { isDemoMode } from "@/lib/runtimeMode";
 import { useRouter } from "next/navigation";
 
 type Category = "labor" | "commercial" | "civil" | "criminal" | "family" | "real-estate" | "";
@@ -229,7 +230,14 @@ export default function AskQuestionPage() {
             <div className={`flex justify-end mt-1 text-xs ${muted}`}>{body.length}/2000</div>
           </div>
 
-          {/* Anonymous toggle */}
+          {/* Anonymous toggle — N05-C3 (owner package 13 Nov): real posts never
+              carry the author's name (the feed shows «عضو في المجتمع» for all),
+              so outside demo mode the toggle would change nothing; say so instead. */}
+          {!isDemoMode ? (
+            <p className={`${card} text-xs ${muted}`}>
+              {isRTL ? "يُنشر سؤالك دون اسمك ودون رابط لملفك." : "Your question is published without your name or a profile link."}
+            </p>
+          ) : (
           <div className={`${card} flex items-center justify-between gap-4`}>
             <div>
               <p className={`text-sm font-bold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
@@ -243,6 +251,7 @@ export default function AskQuestionPage() {
               <motion.span animate={{ x: isAnon ? (isRTL ? -24 : 24) : 4 }} initial={false} transition={{ type: "spring", stiffness: 500, damping: 30 }} className="absolute top-1 start-1 w-4 h-4 rounded-full bg-white shadow-sm" />
             </button>
           </div>
+          )}
 
           {/* Guest note */}
           {isGuest && (

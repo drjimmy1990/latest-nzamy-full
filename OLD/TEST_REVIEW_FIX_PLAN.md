@@ -107,7 +107,7 @@ _Effort: 5h · Fix-risk: MED_
   ))}
 </select>
 ```
-2. `src/app/login/page.tsx:637-647` — a permanent `<a href="/demo-login">` "Test Accounts (Dev)" link in the login form, plus `handleLogin` (line 195-205) falls through to `authenticateTest(identifier, "Nzamy@2026")` whenever `BACKEND_MODE !== "supabase"`. The `/login` password box accepts the shared test password.
+2. `src/app/login/page.tsx:637-647` — a permanent `<a href="/demo-login">` "Test Accounts (Dev)" link in the login form, plus `handleLogin` (line 195-205) falls through to `authenticateTest(identifier, "<test password>")` whenever `BACKEND_MODE !== "supabase"`. The `/login` password box accepts the shared test password.
 3. `src/app/demo-login/page.tsx` — the whole page (`export default function DemoLoginPage`) renders `DEMO_ACCOUNTS` group buttons and is reachable at `/demo-login`; it is only "internal by convention" (`betaConfig.ts:60`). No route guard, no env gate → ships and is crawlable in prod.
 4. `src/app/dashboard/firm/layout.tsx:270-388` — `canDemoSwitchRole = user.userType === "admin" || !user.affiliation || ...` gates the firm role switcher on affiliation, not on backend mode → a real supabase firm user with no affiliation sees a "Switch Role (Demo)" dropdown that calls `setDemoSession` (line 360).
 
@@ -219,17 +219,17 @@ No migration required — this is a build/config gate only. No SQL.
 **Acceptance criteria**
 - [ ] With `NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase`, a production build renders `/settings` ProfileTab with NO "منطقة ديمو التطوير" console.
 - [ ] `/demo-login` returns HTTP 404 in a supabase build.
-- [ ] `/login` shows no "حسابات تجريبية للاختبار / Test Accounts (Dev)" link, and `Nzamy@2026` does not authenticate.
+- [ ] `/login` shows no "حسابات تجريبية للاختبار / Test Accounts (Dev)" link, and `<test password>` does not authenticate.
 - [ ] A supabase firm user (no affiliation) sees no "Switch Role (Demo)" dropdown in the firm dashboard header.
 - [ ] `setDemoSession` writes nothing (no localStorage, no `nzamy_demo_role` cookie) when `isSupabaseMode`.
 - [ ] `next build` succeeds — no unresolved imports from removed symbols (nothing was deleted).
 - [ ] With `NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND` unset/`demo`, all demo surfaces still work (dev workflow preserved).
 
 **Verification steps**
-1. `NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase npm run build` then grep the emitted client chunks for demo strings: `grep -rl "منطقة ديمو التطوير\|Test Accounts (Dev)\|Nzamy@2026\|DEMO_ACCOUNTS" .next/static` → expect zero hits (dead-code eliminated by the build-time constant).
+1. `NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase npm run build` then grep the emitted client chunks for demo strings: `grep -rl "منطقة ديمو التطوير\|Test Accounts (Dev)\|<test password>\|DEMO_ACCOUNTS" .next/static` → expect zero hits (dead-code eliminated by the build-time constant).
 2. `NEXT_PUBLIC_NZAMY_WORKFLOW_BACKEND=supabase npm start`, then `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/demo-login` → `404`.
 3. Load `/settings` as a supabase user → confirm the amber console is absent (DOM has no `select` bound to `handleSwitchAccount`).
-4. On `/login` submit `admin@nzamy.test` / `Nzamy@2026` in supabase mode → "Invalid credentials" (goes through `supabase.auth.signInWithPassword`, not `authenticateTest`).
+4. On `/login` submit `admin@nzamy.test` / `<test password>` in supabase mode → "Invalid credentials" (goes through `supabase.auth.signInWithPassword`, not `authenticateTest`).
 5. Re-run steps 1-4 with the flag unset → all demo surfaces reappear (regression guard for dev).
 6. Confirm cookie: DevTools → Application → Cookies after any settings save in supabase mode → no `nzamy_demo_role`.
 

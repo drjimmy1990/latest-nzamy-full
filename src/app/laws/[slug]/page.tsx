@@ -1779,6 +1779,7 @@ function LawSystemPageContent() {
         {explainArticle && (
           <ArticleExplainModal
             article={explainArticle}
+            lawName={law?.title}
             isDark={isDark}
             onClose={() => setExplainArticle(null)}
             isRTL={isRTL}
@@ -1792,6 +1793,7 @@ function LawSystemPageContent() {
             isDark={isDark}
             isRTL={isRTL}
             lawName={law?.title}
+            articleRef={activeArticle?.num}
             onClose={() => setShowCommunity(false)}
           />
         )}

@@ -15,6 +15,9 @@ import { describeDateAr, toArabicDigits } from "@/lib/services/hijri";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import { getHearingLocationField } from "./hearingLocationField";
 import { formatDurationAr, HEARING_DURATION_LABEL_AR, HEARING_DURATION_OPTIONS } from "@/lib/services/item59Labels";
+import { createLawyerTask } from "@/lib/services/lawyerTasksService";
+import { riyadhToday } from "@/lib/riyadhDay";
+import { prepTaskDueDate, prepTaskTitle, prepTaskPriority } from "./hearingPrepTask";
 
 interface Props {
   onClose: () => void;
@@ -107,6 +110,13 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
   // «مدة الجلسة» (owner item 59), in minutes as the select's string value;
   // "" = not set.
   const [duration, setDuration] = useState("");
+  // N01-15 (owner 13-Nov): «إنشاء مهمة تحضير قبل الجلسة بـ 48 ساعة», on by
+  // default, for a court sitting only. Created after the hearing is saved;
+  // its own failure never undoes or hides the saved hearing.
+  const [prepTask, setPrepTask] = useState(true);
+  const [prepTaskOutcome, setPrepTaskOutcome] = useState<
+    { kind: "created"; dueDate: string } | { kind: "failed" } | null
+  >(null);
 
   // Row 70: step 2 no longer shows the same flat "الموقع" field for every
   // type. `null` here means the field is hidden for this type (a deadline
@@ -218,6 +228,26 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
           ...(confirmOverlap ? { confirmOverlap: true } : {}),
         });
         setSaved({ date: created.date, linked: !!created.caseRequestId, caseName: created.caseName });
+
+        if (prepTask && type === "hearing") {
+          const dueDate = prepTaskDueDate(created.date, riyadhToday());
+          if (dueDate) {
+            try {
+              await createLawyerTask({
+                title: prepTaskTitle(created.caseName || shownName),
+                category: "case",
+                priority: prepTaskPriority(urgency),
+                dueDate,
+                ...(created.caseRequestId ? { caseId: created.caseRequestId } : {}),
+                notes: "أُنشئت تلقائياً عند إضافة الجلسة: مراجعة الملف والمستندات قبل الجلسة.",
+              });
+              setPrepTaskOutcome({ kind: "created", dueDate });
+            } catch (taskErr) {
+              console.error("[AddHearingModal] prep task failed:", taskErr);
+              setPrepTaskOutcome({ kind: "failed" });
+            }
+          }
+        }
       } else {
         const id = createWorkflowId();
         await createWorkflowRequest({
@@ -290,6 +320,16 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                 ? `مرتبط بالقضية «${saved.caseName ?? ""}» — يظهر في ملفها.`
                 : "غير مرتبط بأي قضية — يظهر في جدول المواعيد فقط."}
             </p>
+            {prepTaskOutcome?.kind === "created" && (
+              <p className={`text-[12px] -mt-2 mb-4 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+                وأُنشئت مهمة تحضير مستحقة يوم {describeDateAr(prepTaskOutcome.dueDate) || prepTaskOutcome.dueDate}.
+              </p>
+            )}
+            {prepTaskOutcome?.kind === "failed" && (
+              <p className={`text-[12px] -mt-2 mb-4 font-semibold ${isDark ? "text-amber-400" : "text-amber-700"}`}>
+                تعذّر إنشاء مهمة التحضير — الموعد نفسه محفوظ. أضف المهمة من «المهام».
+              </p>
+            )}
             <button onClick={onClose} className="rounded-xl px-5 py-2.5 w-full text-[13px] font-bold bg-[#0B3D2E] text-white hover:bg-[#0B3D2E]/90 transition">
               إغلاق
             </button>
@@ -479,6 +519,17 @@ export default function AddHearingModal({ onClose, isDark, user, caseRequestId, 
                     <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>ملاحظات والتزامات</label>
                     <textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="أي مستندات مطلوبة للصياغة؟" className={`${inputCls} resize-none`} />
                   </div>
+                  {isSupabaseMode && type === "hearing" && (
+                    <label className={`flex items-center gap-2 text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                      <input
+                        type="checkbox"
+                        checked={prepTask}
+                        onChange={e => setPrepTask(e.target.checked)}
+                        className="accent-[#0B3D2E]"
+                      />
+                      إنشاء مهمة تحضير قبل الجلسة بـ 48 ساعة
+                    </label>
+                  )}
                   <div>
                     <label className={`block text-[12px] font-semibold mb-1.5 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>مستوى الأهمية / الاستعجال</label>
                     <div className="grid grid-cols-3 gap-2">

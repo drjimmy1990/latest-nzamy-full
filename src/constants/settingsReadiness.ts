@@ -173,7 +173,7 @@ function isFirmBillingManager(role?: string): boolean {
 //
 // All three used to read `role ?? "owner"`, so a corporate account whose
 // `businessRole` was unknown was treated as the company OWNER and shown
-// «إعدادات الكيان», «الفريق», billing and compliance. `businessRole` is
+// «إعدادات الكيان», «الفريق», billing and compliance. `businessRole` was
 // `memberships.business?.role ?? meta.business_role` (useUser.ts) and NO
 // signup writes that metadata key, so "unknown" was not an edge case: it was
 // every corporate account whose membership read had failed — precisely the

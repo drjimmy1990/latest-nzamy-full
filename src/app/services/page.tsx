@@ -123,19 +123,6 @@ const ALL_SERVICES = [
   },
 ];
 
-const INCOMING_REQUESTS = [
-  { id: "req-1", from: "individual", fromLabel: "فرد", title: "احتاج محامي لقضية عمالية فصل تعسفي", budget: "١,٢٠٠ - ٢,٠٠٠ ر.س", date: "منذ ٣ ساعات", region: "الرياض" },
-  { id: "req-2", from: "corporate", fromLabel: "شركة", title: "مراجعة عقود موردين لشركة مقاولات", budget: "٣,٠٠٠ ر.س", date: "منذ ٦ ساعات", region: "جدة" },
-  { id: "req-3", from: "lawyer", fromLabel: "محامٍ", title: "حضور جلسة بالنيابة بمحكمة الاستئناف بالدمام", budget: "٤٠٠ ر.س", date: "منذ يوم", region: "الدمام" },
-  { id: "req-4", from: "individual", fromLabel: "فرد", title: "استشارة في قضية تركة وميراث", budget: "٨٠٠ ر.س", date: "منذ يومين", region: "مكة المكرمة" },
-];
-
-const fromBadgeColors: Record<string, string> = {
-  individual: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  corporate: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-  lawyer: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-};
-
 const FEATURED_LAWYERS = [
   {
     id: "lawyer-1", name: "د. طارق الحارثي", nameEn: "Dr. Tariq Al-Harthi",
@@ -286,34 +273,17 @@ export default function ServicesMarketplacePage() {
                         {isRTL ? "طلبات من الأفراد والشركات وزملاء المهنة — قبّل ما يناسب تخصصك" : "Requests from individuals, businesses & fellow lawyers"}
                       </p>
                     </div>
-                    <div className="relative hidden sm:block w-64">
-                      <input type="text" placeholder={isRTL ? "بحث في الطلبات..." : "Search requests..."}
-                        className={`w-full py-2.5 px-10 rounded-xl border text-sm outline-none ${isDark ? "bg-[#161b22] border-[#2d3748] text-white" : "bg-white border-gray-200 shadow-sm"}`} />
-                      <MagnifyingGlass size={16} className={`absolute top-1/2 -translate-y-1/2 ${isRTL ? "right-3" : "left-3"} ${muted}`} />
-                    </div>
                   </div>
 
-                  <div className="space-y-4">
-                    {INCOMING_REQUESTS.map((req, idx) => (
-                      <motion.div key={req.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.07 }}
-                        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border ${card} hover:shadow-md transition`}>
-                        <div className="flex items-start gap-4">
-                          <div className={`shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-bold ${fromBadgeColors[req.from]}`}>
-                            {req.fromLabel}
-                          </div>
-                          <div>
-                            <p className={`font-bold text-sm ${heading}`}>{req.title}</p>
-                            <p className={`text-xs mt-1 ${muted}`}>{req.region} · {req.date}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className={`text-sm font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{req.budget}</span>
-                          <button className="px-5 py-2.5 min-h-[44px] bg-[#0B3D2E] hover:bg-[#0a3328] text-white text-xs font-bold rounded-xl transition">
-                            {isRTL ? "تقديم عرض" : "Submit Offer"}
-                          </button>
-                        </div>
-                      </motion.div>
-                    ))}
+                  <div className={`p-8 rounded-2xl border text-center ${card}`}>
+                    <p className={`font-bold text-sm mb-2 ${heading}`}>
+                      {isRTL ? "لوحة الطلبات الواردة قريبًا" : "The request board is coming soon"}
+                    </p>
+                    <p className={`text-xs leading-relaxed ${muted}`}>
+                      {isRTL
+                        ? "حين يُفتح سوق الخدمات تظهر هنا طلبات الأفراد والشركات وزملاء المهنة، وتقدّم عروضك عليها من المنصة."
+                        : "When the services marketplace opens, requests from individuals, businesses and fellow lawyers appear here."}
+                    </p>
                   </div>
                 </>
               ) : (

@@ -286,6 +286,25 @@ const nextConfig: NextConfig = {
       // this path, so the rule shadows nothing.
       { source: "/dashboard/corporate", destination: "/dashboard/business", permanent: true },
       { source: "/dashboard/corporate/:path*", destination: "/dashboard/business/:path*", permanent: true },
+
+      // ── Owner 2026-11-12 #1 — فحص تعارض المصالح (حذف نهائي) ──────────────
+      // The owner dropped the feature: it is neither built nor mentioned. The
+      // page, its API route and its client service are deleted; an old bookmark
+      // lands on the firm dashboard instead of a 404. No page lives at this
+      // path any more, so the rule shadows nothing.
+      { source: "/dashboard/firm/compliance/conflict", destination: "/dashboard/firm", permanent: true },
+      { source: "/dashboard/firm/compliance/conflict/:path*", destination: "/dashboard/firm", permanent: true },
+      // ── N02-2 (owner, 13-Nov package) — the legal library lives at /laws ──
+      // /erp/library was a static mock (template cards whose preview, download
+      // and copy buttons did nothing), linked only from the footer and the
+      // floating services menu — both now point at /laws. This rule shadows
+      // src/app/erp/library/page.tsx, which can be deleted. /library never
+      // existed as a page; it is the URL people guess. Every sub-path lands
+      // on the library home: the old paths carry no slug /laws could read.
+      { source: "/erp/library", destination: "/laws", permanent: true },
+      { source: "/erp/library/:path*", destination: "/laws", permanent: true },
+      { source: "/library", destination: "/laws", permanent: true },
+      { source: "/library/:path*", destination: "/laws", permanent: true },
     ];
   },
 };

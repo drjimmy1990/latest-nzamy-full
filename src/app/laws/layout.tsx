@@ -1,5 +1,6 @@
 import { buildMetadata } from "@/lib/seo";
 import LibraryGuard from "@/components/library/LibraryGuard";
+import LibraryDashboardBar from "@/components/library/LibraryDashboardBar";
 
 export const metadata = buildMetadata({
   titleAr: "مكتبة الأنظمة والتشريعات السعودية",
@@ -11,5 +12,10 @@ export const metadata = buildMetadata({
 });
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <LibraryGuard>{children}</LibraryGuard>;
+  return (
+    <LibraryGuard>
+      <LibraryDashboardBar />
+      {children}
+    </LibraryGuard>
+  );
 }

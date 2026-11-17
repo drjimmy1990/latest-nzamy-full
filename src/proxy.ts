@@ -15,6 +15,8 @@ import { routeAccessRuleFor, isProtectedApiPath } from "@/lib/auth/routeAccess";
 // edge bundle, and it is the SAME function the browser guard's membership
 // arms read, which is what keeps the two gates from drifting apart.
 import { entityMembershipKindForPath } from "@/lib/auth/entityMembership";
+// N01-25/26/27: a firm member's landing. Pure, edge-safe (imports userTypes only).
+import { isFirmLandingCheckPath, FIRM_DASHBOARD_PATH } from "@/lib/auth/firmLanding";
 import { resolveAuthOutcome, AUTH_UNAVAILABLE_AR } from "@/lib/auth/resolveAuthOutcome";
 // D6 (owner ٢٩٨): a frozen account opens nothing but /account-frozen. Pure; it
 // reads the user `getUser()` already returned (app_metadata), no query.
@@ -420,9 +422,16 @@ const PROTECTED = [
   "/ai/brief-check",
   "/ai/communicate",
   "/ai/assistant",
+  // N05-V2 (owner package 13 Nov): the company tools are for a signed-in
+  // corporate account (routeAccess.ts rule), and the advisor is not a guest page.
+  "/ai/corp",
+  "/ai/consult",
   "/settings",
   "/notifications",
   "/onboarding",
+  // N05-A4 (owner package 13 Nov): personal academy pages — sign-in at the edge, not only client-side.
+  "/academy/my-courses",
+  "/academy/certificates",
 ];
 
 // ─── Deprecated route redirects ────────────────────────────────────────────────
@@ -887,18 +896,40 @@ export default async function proxy(req: NextRequest) {
     // not a claim a user can make about themselves.
     const isAdmin = knownType === "admin";
 
-    if (
-      rbacRule &&
+    const typeRefused =
+      !!rbacRule &&
       !isAdmin &&
-      (knownType === null || !(rbacRule.allowedTypes as readonly string[]).includes(knownType))
-    ) {
+      (knownType === null || !(rbacRule.allowedTypes as readonly string[]).includes(knownType));
+
+    // ─── The firm member's landing (owner 13-Nov, N01-25/26/27) ─────────────
+    // A lawyer who is an ACTIVE member of a firm keeps user_type `lawyer`, so
+    // every type-based "my dashboard" link — getDashboardRoute, the Google
+    // callback's dashboardPathFor, HomeRedirectGuard — lands them on
+    // /dashboard/lawyer. The owner's rule (spec 01 §3) is that a firm's
+    // sub-account opens on /dashboard/firm. `isFirmLandingCheckPath` is true
+    // ONLY for a `lawyer` on the exact /dashboard/lawyer root, so:
+    //   - a lawyer passing the type check anywhere else pays nothing extra;
+    //   - every /dashboard/lawyer/* sub-page stays reachable to the member
+    //     (their own cases, clients and contracts live there);
+    //   - this reuses the ONE membership read below rather than adding a
+    //     second: the two conditions are exclusive (a lawyer on
+    //     /dashboard/lawyer is never type-refused), so a request makes at
+    //     most one membership round trip either way.
+    // No loop: /dashboard/firm is not a landing-check path, refuses `lawyer`
+    // by type, and is a firm-membership path, so the redirected request is
+    // admitted by the branch below (pinned in src/lib/auth/firmLanding.test.ts).
+    const firmLandingCheck = !typeRefused && isFirmLandingCheckPath(pathname, knownType);
+
+    if (typeRefused || firmLandingCheck) {
       // ─── The second key: an ACCEPTED membership ──────────────────────────
       // Review 2026-09-21 B3 / F08.
       //
-      // Reached ONLY after the allowedTypes comparison above has already
-      // failed, so nobody who belongs here by type pays a round trip for it:
-      // an `individual` on /dashboard/client, a `lawyer` on /dashboard/lawyer,
-      // a `corporate` on /dashboard/business never enter this branch at all.
+      // Reached only after the allowedTypes comparison above has already
+      // failed — or, for the firm-landing check above, by a `lawyer` on the
+      // exact /dashboard/lawyer root — so nobody else who belongs here by type
+      // pays a round trip for it: an `individual` on /dashboard/client, a
+      // `lawyer` on any /dashboard/lawyer/* sub-page, a `corporate` on
+      // /dashboard/business never enter this branch at all.
       //
       // That includes every ENTITY OWNER, and it is worth deriving rather than
       // trusting, because an owner lookup here would otherwise be the obvious
@@ -962,7 +993,10 @@ export default async function proxy(req: NextRequest) {
       // This adds no redirect target, so the no-loop derivation below is
       // untouched: the block either passes the request through or falls into
       // exactly the redirect that was already there.
-      const membershipKind = entityMembershipKindForPath(pathname);
+      //
+      // On the landing check (above) the kind is always "firm": the question
+      // is only whether this lawyer belongs to a firm.
+      const membershipKind = typeRefused ? entityMembershipKindForPath(pathname) : "firm";
       if (membershipKind) {
         const { data: membership, error: membershipError } = await supabase
           .from(membershipKind === "firm" ? "firm_members" : "business_members")
@@ -1000,6 +1034,18 @@ export default async function proxy(req: NextRequest) {
             message: membershipError.message,
           });
           return supabaseResponse;
+        }
+
+        // The landing check: a member goes to the firm dashboard, everyone
+        // else (a solo lawyer) stays exactly where they asked to be. The
+        // refreshed sb-* cookies ride on the redirect, as on the frozen one.
+        if (firmLandingCheck) {
+          if (!membership) return supabaseResponse;
+          const firmUrl = req.nextUrl.clone();
+          firmUrl.pathname = FIRM_DASHBOARD_PATH;
+          const firmRedirect = NextResponse.redirect(firmUrl);
+          supabaseResponse.cookies.getAll().forEach((cookie) => firmRedirect.cookies.set(cookie));
+          return firmRedirect;
         }
 
         // An accepted membership. Additive: it opens the entity dashboard the

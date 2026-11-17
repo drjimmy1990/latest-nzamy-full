@@ -14,8 +14,12 @@ import { FIRM_ROLES, FirmRoleContext } from "./firmRoleContext";
 import { useAdminSimulation } from "@/hooks/useAdminSimulation";
 import { simulatedFirmRole } from "@/lib/nav/adminSimulation";
 
-function getSessionFirmRole(role?: string | null): FirmRole {
-  return FIRM_ROLES.some((r) => r.role === role) ? (role as FirmRole) : "managing_partner";
+// No firm role known (no membership, or the read failed): the least-privileged
+// view, not the managing partner's (ticket S4). An admin keeps the full view;
+// EntityRouteGuard lets an admin through every firm page anyway.
+function getSessionFirmRole(role: string | null | undefined, isAdmin: boolean): FirmRole {
+  if (FIRM_ROLES.some((r) => r.role === role)) return role as FirmRole;
+  return isAdmin ? "managing_partner" : "trainee";
 }
 
 /**
@@ -30,7 +34,10 @@ export default function FirmDashboardLayout({
   children: React.ReactNode;
 }) {
   const user = useUser();
-  const sessionRole = getSessionFirmRole(user.affiliation?.entityType === "firm" ? user.affiliation.role : null);
+  const sessionRole = getSessionFirmRole(
+    user.affiliation?.entityType === "firm" ? user.affiliation.role : null,
+    user.userType === "admin",
+  );
   const [activeRole, setActiveRole] = useState<FirmRole>(sessionRole);
   const [open, setOpen] = useState(false);
   const { isDark, lang } = useTheme();

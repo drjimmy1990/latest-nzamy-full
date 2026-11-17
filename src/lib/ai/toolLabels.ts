@@ -17,7 +17,7 @@ export const AI_TOOL_LABELS_AR: Readonly<Record<string, string>> = {
   "najiz-optimizer": "منقح ناجز",
   "quick-answer": "سؤال قانوني سريع",
   "library-assistant": "مساعد المكتبة",
-  assistant: "المستشار الذكي",
+  assistant: "المساعد المتقدم",
   "canvas-card": "بطاقة الكانفاس الذكية",
   "case-brief": "عصارة المرفقات",
   "brief-check": "مراجعة وتدقيق مذكرة",

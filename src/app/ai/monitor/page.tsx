@@ -28,7 +28,7 @@ export default function AIMonitorPage() {
             <AppWindow className="text-[#C8A762]" weight="duotone" />
             راصد التشريعات
           </h1>
-          <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">PRO</span>
+          <span className="rounded-full bg-[#C8A762]/15 border border-[#C8A762]/30 px-2.5 py-0.5 text-[10px] font-bold text-[#C8A762]">احترافية</span>
         </div>
         <p className={`text-[13px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
           من مكتبة نظامي مباشرة: ما صدر ولم يبدأ نفاذه بعد، وما نفذ حديثاً، وأحدث الأنظمة والأوامر والتعاميم

@@ -37,6 +37,16 @@ import type {
   BusinessServiceKey,
   BusinessServiceModel,
 } from "@/types/businessBackendReady";
+import type { AdminReadinessStatus } from "@/types/adminBackendReady";
+
+// Owner rule: no engineering words on screen. The readiness values stay the
+// typed keys they are; only what the badge prints is Arabic.
+const READINESS_AR: Record<AdminReadinessStatus, string> = {
+  "UI Working": "يعمل",
+  "Backend-ready": "واجهة دون حفظ",
+  "Missing UI": "بلا واجهة",
+  Risk: "خطر",
+};
 
 type BooleanFeatureKey = {
   [Key in keyof CompanyFeatures]: CompanyFeatures[Key] extends boolean ? Key : never;
@@ -328,8 +338,7 @@ export default function AdminBusinessProfilesPage() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className={`text-xl font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{selectedCompany.name || "شركة بلا اسم"}</h2>
-                    <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-bold text-blue-300">Backend-ready</span>
-                    <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300">Beta local</span>
+                    <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-[11px] font-bold text-blue-300">قريباً</span>
                   </div>
                   <p className={`mt-2 text-sm leading-relaxed ${muted}`}>{scenario.description}</p>
                 </div>
@@ -426,7 +435,7 @@ export default function AdminBusinessProfilesPage() {
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-sm font-black ${enabled ? "text-emerald-400" : isDark ? "text-zinc-200" : "text-zinc-800"}`}>{service.label}</p>
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${service.readiness === "UI Working" ? "border-emerald-500/25 text-emerald-400" : "border-blue-500/25 text-blue-300"}`}>
-                          {service.readiness}
+                          {READINESS_AR[service.readiness] ?? service.readiness}
                         </span>
                       </div>
                       <p className={`mt-2 text-xs leading-relaxed ${muted}`}>{service.description}</p>
@@ -439,7 +448,7 @@ export default function AdminBusinessProfilesPage() {
 
             <div className={`rounded-2xl border overflow-hidden ${card}`}>
               <div className={`px-5 py-4 border-b ${isDark ? "border-white/[0.07]" : "border-zinc-100"}`}>
-                <h3 className={`font-black ${isDark ? "text-white" : "text-zinc-900"}`}>ربط الأدمن بالعقود المطلوبة للباك إند</h3>
+                <h3 className={`font-black ${isDark ? "text-white" : "text-zinc-900"}`}>ما ينقص لوحة الإدارة قبل التفعيل</h3>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
                 {BUSINESS_ADMIN_CONTROLS.map((control) => (
@@ -447,7 +456,7 @@ export default function AdminBusinessProfilesPage() {
                     <div className="flex items-center justify-between gap-2">
                       <Link href={control.route} className={`text-sm font-black hover:underline ${isDark ? "text-white" : "text-zinc-900"}`}>{control.title}</Link>
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${control.readiness === "Risk" ? "border-amber-500/25 text-amber-300" : "border-blue-500/25 text-blue-300"}`}>
-                        {control.readiness}
+                        {READINESS_AR[control.readiness] ?? control.readiness}
                       </span>
                     </div>
                     <p className={`mt-2 text-xs leading-relaxed ${muted}`}>{control.note}</p>

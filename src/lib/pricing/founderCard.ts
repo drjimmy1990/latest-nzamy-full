@@ -54,6 +54,8 @@ export const FOUNDER_FINE_PRINT = "لا يُعدّ سعر السنة الأول�
 
 /** Shown instead of a dead anchor when the campaign link arrives after the sale closed. */
 export const FOUNDER_CLOSED_TEXT = "انتهت حملة المؤسس أو اكتملت مقاعدها";
+/** Before the opening day (founderWindow.state "pre"): not "ended". */
+export const FOUNDER_PRE_TEXT = "لم تُفتح حملة المحامي المؤسس بعد، وموعد افتتاحها في صفحة الحملة";
 
 /**
  * R31: shown instead of FOUNDER_CLOSED_TEXT when the admin paused the sale
@@ -67,6 +69,13 @@ export const FOUNDER_PAUSED_TEXT = "البيع متوقف مؤقتًا — تا�
  * the owner answers ٤٠٧.
  */
 export const FOUNDER_CONSULTANT_NOTE = "حساب المستشار: لا يشمل الصائغ القانوني والمحاكي الشامل";
+
+/**
+ * Owner, 17 Nov (20261122_10): the founder plan is for a licensed advocate
+ * only. A consultant who is not already a member gets this instead of a buy
+ * button; the checkout refuses him too (founder_reserve_seat → not_advocate).
+ */
+export const FOUNDER_ADVOCATE_ONLY_TEXT = "باقة المؤسس للمحامي المرخّص للترافع فقط، ولا تُتاح لحساب المستشار";
 
 const CHECKOUT_PATH = `/checkout?item=${FOUNDER_PLAN_ID}&billing=once`;
 
@@ -146,6 +155,8 @@ export type FounderOffer =
   /** `endsOn`: the campaign's last day (the setting's ends_on), when the body carries a real one. */
   | { state: "open"; seatsLeft: number; capacity: number; endsOn?: string }
   | { state: "closed" }
+  /** The campaign's dates are set and its first day has not come yet. */
+  | { state: "pre" }
   /** R31: the admin paused the sale and seats are left. */
   | { state: "paused" }
   /** The route could not read the setting or the seats (or the fetch failed). */
@@ -153,6 +164,7 @@ export type FounderOffer =
 
 const UNAVAILABLE: FounderOffer = { state: "unavailable" };
 const CLOSED: FounderOffer = { state: "closed" };
+const PRE: FounderOffer = { state: "pre" };
 const PAUSED: FounderOffer = { state: "paused" };
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -170,7 +182,9 @@ const isPositiveInt = (n: unknown): n is number => typeof n === "number" && Numb
  */
 export function founderOfferFromApi(body: unknown): FounderOffer {
   if (!isObject(body) || body.founderUnavailable === true) return UNAVAILABLE;
-  if (body.campaign === null) return CLOSED;
+  if (body.campaign === null) {
+    return isObject(body.founderWindow) && body.founderWindow.state === "pre" ? PRE : CLOSED;
+  }
   const c = body.campaign;
   if (!isObject(c)) return UNAVAILABLE;
   if (c.onSale !== true) return c.salePaused === true && isPositiveInt(c.seatsLeft) ? PAUSED : CLOSED;
@@ -188,7 +202,7 @@ export function audienceFromParam(value: string | null | undefined): AudienceTab
   return typeof value === "string" && AUDIENCES.has(value) ? (value as AudienceTab) : null;
 }
 
-export type FounderSectionView = "hidden" | "card" | "closed" | "paused";
+export type FounderSectionView = "hidden" | "card" | "closed" | "paused" | "pre";
 
 /**
  * The lawyers tab (not library mode) shows the card while the sale is open
@@ -209,6 +223,7 @@ export function founderSectionView(input: {
   if (input.campaignParam !== FOUNDER_CAMPAIGN_ID) return "hidden";
   if (input.offer.state === "closed") return "closed";
   if (input.offer.state === "paused") return "paused";
+  if (input.offer.state === "pre") return "pre";
   return "hidden";
 }
 
@@ -254,7 +269,8 @@ export type FounderCta = { note: string | null } & (
  *      «الدفع الإلكتروني غير متاح حاليًا»; else /checkout.
  * An unreadable profile or membership ("unknown") never blocks: the checkout
  * gate (founder_reserve_seat) decides. A consultant gets FOUNDER_CONSULTANT_NOTE
- * on every lawyer state (R19).
+ * on every lawyer state (R19), and since 17 Nov a consultant who is not a
+ * member gets FOUNDER_ADVOCATE_ONLY_TEXT instead of any buy step.
  */
 export function founderCta(s: FounderCtaState): FounderCta {
   if (s.sessionLoading) return { kind: "loading", label: "جارٍ التحميل…", note: null };
@@ -274,6 +290,7 @@ export function founderCta(s: FounderCtaState): FounderCta {
   const note = s.practiceKind === "consultant" ? FOUNDER_CONSULTANT_NOTE : null;
   if (s.member === "loading") return { kind: "loading", label: "جارٍ التحميل…", note };
   if (s.member === true) return { kind: "member", label: "أنت عضو مؤسس", note };
+  if (s.practiceKind === "consultant") return { kind: "lawyers_only", label: FOUNDER_ADVOCATE_ONLY_TEXT, note };
   if (s.verification === "loading") return { kind: "loading", label: "جارٍ التحميل…", note };
   if (s.verification === "unverified") {
     return { kind: "verify", label: "وثّق رخصتك أولاً", href: FOUNDER_VERIFY_HREF, note };

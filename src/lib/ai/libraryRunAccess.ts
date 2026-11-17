@@ -22,7 +22,7 @@ import { isLibraryAiTool, quotaRefusal, type QuotaRow } from "../library/readQuo
 
 export interface LibraryRunAccessDeps {
   /** The library gate and the assistant's tier rule; a reply refuses the run. */
-  gate: () => Promise<RouteReply | null>;
+  gate: (toolId: string) => Promise<RouteReply | null>;
   /** The reader's lock and today's counts (readQuotaServer, docKey null); null = no decision. */
   lockRow: () => Promise<QuotaRow | null>;
   now: () => number;
@@ -30,7 +30,7 @@ export interface LibraryRunAccessDeps {
 
 export function libraryRunAccess(deps: LibraryRunAccessDeps): (toolId: string) => Promise<RouteReply | null> {
   return async (toolId) => {
-    const denied = await deps.gate();
+    const denied = await deps.gate(toolId);
     if (denied) return denied;
     if (!isLibraryAiTool(toolId)) return null;
     const refusal = quotaRefusal(await deps.lockRow(), deps.now());

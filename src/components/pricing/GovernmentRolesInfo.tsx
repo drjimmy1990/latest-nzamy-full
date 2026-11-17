@@ -45,7 +45,7 @@ export function GovernmentRolesInfo({ isAr }: { isAr: boolean }) {
           </h2>
           <p className="text-ink-muted dark:text-gray-400 max-w-2xl mx-auto text-sm">
             {isAr 
-              ? "تحصل الجهة الحكومية على لوحة تحكم موحدة، ويُمنح كل مستخدم صلاحيات وأدوات ذكاء اصطناعي مخصصة لمهامه اليومية بناءً على دوره (RBAC)."
+              ? "تحصل الجهة الحكومية على لوحة تحكم موحدة، ويُمنح كل مستخدم صلاحيات وأدوات ذكاء اصطناعي مخصصة لمهامه اليومية بناءً على دوره."
               : "The government entity gets a unified dashboard, and each user receives specialized AI tools tailored to their daily tasks based on their role (RBAC)."}
           </p>
         </div>

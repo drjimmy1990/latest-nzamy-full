@@ -109,6 +109,10 @@ export const ROUTE_ACCESS: readonly RouteAccessRule[] = [
     prefix,
     allowedTypes: ["lawyer", "firm"] as const,
   })),
+
+  // N05-V2 (owner package 13 Nov): the company tools (/ai/corp/*) are for the
+  // corporate account only; the proxy's PROTECTED list carries "/ai/corp".
+  { prefix: "/ai/corp", allowedTypes: ["corporate"] },
 ];
 
 /**

@@ -32,10 +32,20 @@ test('the route never caches its answer', () => {
 
 test('the route routes its decision through resolveAuthOutcome and sessionResponseFor', () => {
   assert.match(routeSource, /resolveAuthOutcome\(user, authError\)/);
-  assert.match(routeSource, /sessionResponseFor\(outcome, user\?\.id \?\? null, profile\)/);
+  assert.match(routeSource, /sessionResponseFor\(outcome, user\?\.id \?\? null, profile, isActiveFirmMember\)/);
 });
 
 test('the profile read is skipped unless there is a user to read it for', () => {
   assert.match(routeSource, /if \(outcome === "ok" && user\) \{/);
   assert.match(routeSource, /\.from\("profiles"\)[\s\S]{0,120}\.eq\("id", user\.id\)/);
+});
+
+test('the firm-membership read is the own ACTIVE row and fails to "not a member"', () => {
+  // N01-25/26/27. Own row, accepted only, one row; an error never sets the flag.
+  assert.match(
+    routeSource,
+    /\.from\("firm_members"\)\s*\.select\("id"\)\s*\.eq\("user_id", user\.id\)\s*\.eq\("status", "active"\)\s*\.limit\(1\)\s*\.maybeSingle\(\)/,
+  );
+  assert.match(routeSource, /let isActiveFirmMember = false;/);
+  assert.match(routeSource, /if \(membershipRead\.error\) \{[\s\S]*?\} else \{\s*isActiveFirmMember = !!membershipRead\.data;\s*\}/);
 });

@@ -559,7 +559,7 @@ const LEGACY_AI_TOOLS: AiToolCard[] = [
   // Wave 1 task 6: the client analyzer ends at the beta gate's "not
   // available" card (betaGatedRoutes.ts), so its card promises nothing live.
   { id: "ai:analyze", href: "/ai/analyze", titleAr: "فاحص المستندات والقضايا", titleEn: "Case & Doc Analyzer", icon: MagnifyingGlass, descAr: "غير متاحة حالياً — قيد الإعداد.", descEn: "Not available yet — in preparation.", badgeAr: "قريباً", badgeEn: "Soon" },
-  { id: "ai:legal-opinion", href: "/ai/legal-opinion", titleAr: "الرأي الفصل", titleEn: "Al-Ra'y Al-Fasl", icon: Brain, descAr: "رأي · دراسة · بحث قانوني · عناية واجبة — متعدد الوكلاء", descEn: "Opinion · Study · Research · Due Diligence — Multi-Agent", badge: "PRO" },
+  { id: "ai:legal-opinion", href: "/ai/legal-opinion", titleAr: "الرأي الفصل", titleEn: "Al-Ra'y Al-Fasl", icon: Brain, descAr: "رأي · دراسة · بحث قانوني · عناية واجبة — متعدد الوكلاء", descEn: "Opinion · Study · Research · Due Diligence — Multi-Agent", badge: "PRO", badgeAr: "احترافية" },
   { id: "ai:brief-check", href: "/ai/brief-check", titleAr: "مراجعة وتدقيق مذكرة", titleEn: "Brief Review", icon: FileMagnifyingGlass, descAr: "ارفع مذكرتك ويراجعها فريق نظامي: تقرير بالثغرات أو تنقيح كامل", descEn: "Upload your brief for review by the Nezamy team: a gaps report or a full revision" },
   { id: "ai:procedures", href: "/ai/procedures", titleAr: "المرشد القضائي", titleEn: "Court Guide", icon: UserCheck, descAr: "توجيهك للإجراءات الصحيحة أمام المحاكم", descEn: "Guide to court procedures" },
   { id: "ai:communicate", href: "/ai/communicate", titleAr: "المتحدث الذكي", titleEn: "Smart Communicator", icon: Envelope, descAr: "AI يكتب رسائلك وإيميلاتك بالأسلوب المناسب", descEn: "AI writes your messages and emails in the right tone" },

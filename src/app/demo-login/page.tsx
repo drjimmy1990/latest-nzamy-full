@@ -16,7 +16,6 @@ import {
 import { DEMO_ACCOUNTS } from "@/lib/demo-accounts";
 import { setDemoSession } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
-import { TEST_PASSWORD } from "@/lib/test-credentials";
 import type { UserSession } from "@/hooks/useUser";
 
 // ── Safe import of bypass keys ────────────────────────────────────────────────
@@ -116,10 +115,6 @@ export default function DemoLoginPage() {
         <p className="text-sm text-zinc-500 max-w-sm mx-auto">
           اختر أي دور لمعاينة تجربة المستخدم بدون بيانات حقيقية
         </p>
-        <div className="mt-4 inline-flex items-center gap-2 rounded-xl bg-white/[0.04] border border-white/[0.08] px-4 py-2 text-[11px] text-zinc-400">
-          <span className="text-zinc-600">كلمة المرور الموحدة:</span>
-          <span dir="ltr" className="font-mono font-bold text-amber-400">{TEST_PASSWORD}</span>
-        </div>
       </motion.div>
 
       {/* ── Legend ── */}

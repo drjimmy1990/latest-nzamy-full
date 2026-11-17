@@ -9,13 +9,14 @@ import {
   Medal, Star, Sparkle, Scales, MagnifyingGlass,
   TreeStructure, HourglassHigh, Compass, Check,
   WarningCircle, ArrowCounterClockwise,
-  Gavel, Fire, Eye, BookOpen, Funnel, ListChecks,
+  Gavel, Fire,
   Stack, ShieldCheck, GameController, Crown, Users,
   Lightning, TrendUp, ArrowsIn, ArrowsOut, Lightbulb,
   FileText, Stamp, LinkedinLogo, TwitterLogo, Copy,
   Infinity as InfinityIcon
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
 import confetti from "canvas-confetti";
 import { ACADEMY_CATEGORIES } from "@/data/academy/categories";
 import { ACADEMY_QUESTIONS } from "@/data/academy/questions";
@@ -304,8 +305,8 @@ const playSound = (type: "correct" | "wrong" | "finish" | "gameover") => {
 export default function QuizPage() {
   const { isDark } = useTheme();
 
-  // Master Active Tab (Challenges vs. Leaderboard vs. Vault Explorer)
-  const [activeTab, setActiveTab] = useState<"quiz" | "leaderboard" | "vault_explorer">("quiz");
+  // Master Active Tab (Challenges vs. Leaderboard)
+  const [activeTab, setActiveTab] = useState<"quiz" | "leaderboard">("quiz");
 
   // Zen Courtroom Focus Mode
   const [isZenMode, setIsZenMode] = useState(false);
@@ -325,8 +326,10 @@ export default function QuizPage() {
   const [highestStreak, setHighestStreak] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
 
-  // Leaderboard State
-  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>(INITIAL_LEADERBOARD);
+  // Leaderboard State. N05-A4 (owner package 13 Nov): INITIAL_LEADERBOARD is
+  // invented names and points and no result is saved anywhere, so the board
+  // exists in demo mode only; production shows «قريباً» in its tab.
+  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>(isDemoMode ? INITIAL_LEADERBOARD : []);
   const [leaderboardTimeframe, setLeaderboardTimeframe] = useState<"weekly" | "monthly" | "allTime">("weekly");
 
   // Play State
@@ -344,15 +347,6 @@ export default function QuizPage() {
   const [timelineItems, setTimelineItems] = useState<string[]>([]);
   const [jurisdictionMap, setJurisdictionMap] = useState<Record<string, string>>({});
 
-  // Vault Explorer State
-  const [vaultTree, setVaultTree] = useState<any[]>([]);
-  const [selectedVaultSection, setSelectedVaultSection] = useState<string>("00");
-  const [sectionLaws, setSectionLaws] = useState<any[]>([]);
-  const [selectedLaw, setSelectedLaw] = useState<string>("");
-  const [lawQuestions, setLawQuestions] = useState<any[]>([]);
-  const [isLoadingVault, setIsLoadingVault] = useState(false);
-  const [vaultSearchQuery, setVaultSearchQuery] = useState("");
-
   // Timer
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -362,48 +356,6 @@ export default function QuizPage() {
     return () => clearInterval(interval);
   }, [stage, isGameOver]);
 
-  // Load Vault Explorer Tree
-  useEffect(() => {
-    if (activeTab === "vault_explorer" && vaultTree.length === 0) {
-      fetch("/api/v1/academy/vault-explorer")
-        .then(res => res.json())
-        .then(data => {
-          if (data.sections) {
-            setVaultTree(data.sections);
-            loadVaultSection("00");
-          }
-        })
-        .catch(() => {});
-    }
-  }, [activeTab]);
-
-  const loadVaultSection = async (secId: string) => {
-    setSelectedVaultSection(secId);
-    setSelectedLaw("");
-    setLawQuestions([]);
-    setIsLoadingVault(true);
-    try {
-      const res = await fetch(`/api/v1/academy/vault-explorer?section=${secId}`);
-      const data = await res.json();
-      setSectionLaws(data.lawsSummary || []);
-      if (data.sampleQuestions) {
-        setLawQuestions(data.sampleQuestions);
-      }
-    } catch {}
-    setIsLoadingVault(false);
-  };
-
-  const loadSpecificLaw = async (secId: string, lawSlug: string) => {
-    setSelectedLaw(lawSlug);
-    setIsLoadingVault(true);
-    try {
-      const res = await fetch(`/api/v1/academy/vault-explorer?section=${secId}&law=${encodeURIComponent(lawSlug)}`);
-      const data = await res.json();
-      setLawQuestions(data.questions || []);
-    } catch {}
-    setIsLoadingVault(false);
-  };
-
   // Start Quiz (True Survival with NO question ceiling)
   const startQuiz = async () => {
     setIsGameOver(false);
@@ -412,38 +364,7 @@ export default function QuizPage() {
     setHighestStreak(0);
 
     const isAll = selectedCategories.includes("all");
-    let fetchedFromVault: UnifiedQuizItem[] = [];
-
-    if (!isAll && selectedCategories.length === 1) {
-      const targetCatId = selectedCategories[0];
-      const catMeta = ACADEMY_CATEGORIES.find(c => c.id === targetCatId);
-      if (catMeta && catMeta.categoryNumber !== "ALL") {
-        try {
-          const res = await fetch(`/api/v1/academy/vault-explorer?section=${catMeta.categoryNumber}`);
-          const data = await res.json();
-          if (data.sampleQuestions && Array.isArray(data.sampleQuestions)) {
-            fetchedFromVault = data.sampleQuestions.map((q: any) => ({
-              type: "mcq" as const,
-              id: q.id,
-              categoryNumber: q.categoryNumber || catMeta.categoryNumber,
-              categoryName: q.categoryName || catMeta.label,
-              lawName: q.lawName || "نظام معتمد",
-              articleNumber: q.articleNumber || "المادة النظامية",
-              question: q.question,
-              options: q.options || ["صحيح", "خطأ"],
-              correctAnswer: q.correctAnswer ?? 0,
-              explanation: q.explanation || "",
-              statutoryCitation: q.statutoryCitation || { instrument: q.lawName, article: q.articleNumber, textSnippet: "" },
-              trapInsight: "عدم التمييز بين القواعد الآمرة والقواعد المكملة يوقع المتدرب في التكييف غير السليم.",
-              practicalTip: "استحضر دائماً نطاق سريان النظام وتاريخ نفاذ لائحته التنفيذية لتجنب الدفع بالبطلان."
-            }));
-          }
-        } catch {}
-      }
-    }
-
     let mcqPool: UnifiedQuizItem[] = [
-      ...fetchedFromVault,
       ...ACADEMY_QUESTIONS.map(q => ({
         type: "mcq" as const,
         id: q.id,
@@ -677,16 +598,6 @@ export default function QuizPage() {
 
   const currentQ = quizQuestions[currentIndex];
 
-  const filteredLawQuestions = lawQuestions.filter(q => {
-    if (!vaultSearchQuery) return true;
-    const term = vaultSearchQuery.toLowerCase();
-    return (
-      (q.question && q.question.toLowerCase().includes(term)) ||
-      (q.articleNumber && q.articleNumber.toLowerCase().includes(term)) ||
-      (q.lawName && q.lawName.toLowerCase().includes(term)) ||
-      (q.explanation && q.explanation.toLowerCase().includes(term))
-    );
-  });
 
   const accuracyScore = Math.round((score / Math.max(1, currentIndex + 1)) * 100);
   const speedScore = Math.min(100, Math.max(40, Math.round(100 - (timer / Math.max(1, currentIndex + 1)) * 3)));
@@ -724,17 +635,7 @@ export default function QuizPage() {
                     : isDark ? "text-zinc-400 hover:text-white" : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <Crown size={16} weight="fill" className="text-amber-700" /> لوحة المتصدرين
-              </button>
-              <button
-                onClick={() => setActiveTab("vault_explorer")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  activeTab === "vault_explorer"
-                    ? "bg-emerald-800 text-white font-black shadow-md"
-                    : isDark ? "text-zinc-400 hover:text-white" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Eye size={16} weight="bold" /> مستعرض بنك الأسئلة (16k)
+                <Crown size={16} weight="fill" className="text-amber-700" /> لوحة المتصدرين{!isDemoMode && " · قريباً"}
               </button>
             </div>
 
@@ -748,7 +649,16 @@ export default function QuizPage() {
         {/* ══════════════════════════════════════════════════════════════════════
             TAB 2: LEGAL LEADERBOARD
         ══════════════════════════════════════════════════════════════════════ */}
-        {activeTab === "leaderboard" && (
+        {activeTab === "leaderboard" && !isDemoMode && (
+          <div className={`${cardClass} p-8 text-center space-y-2`}>
+            <Crown size={32} weight="duotone" className="mx-auto text-[#C8A762]" />
+            <h2 className="text-lg font-black">لوحة المتصدرين — قريباً</h2>
+            <p className={`text-xs leading-relaxed ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
+              نتائج التحديات لا تُحفظ بعد، فلا يوجد ترتيب حقيقي لعرضه هنا. ستظهر اللوحة عند تفعيل حفظ النتائج.
+            </p>
+          </div>
+        )}
+        {activeTab === "leaderboard" && isDemoMode && (
           <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
 
             {/* Leaderboard Banner */}
@@ -900,191 +810,6 @@ export default function QuizPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
-
-          </motion.div>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════════
-            TAB 3: RAW SCRIPT VAULT EXPLORER
-        ══════════════════════════════════════════════════════════════════════ */}
-        {activeTab === "vault_explorer" && (
-          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-
-            <div className={`${cardClass} p-6 border-r-4 border-r-[#C8A762]`}>
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div>
-                  <h2 className="text-xl font-black mb-1 flex items-center gap-2">
-                    <BookOpen size={24} className="text-[#C8A762]" /> مستعرض وفاحص مخرجات السكربت للمكتبة القانونية
-                  </h2>
-                  <p className={`text-xs ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
-                    تصفح وفحص كافة الأسئلة المستخرجة (16,585 سؤالاً) نظاماً بنظام ومادة بمادة والتأكد من السند النظامي.
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#0B3D2E]/20 text-[#C8A762] border border-[#C8A762]/30">
-                    ٣٠ قسماً نظامياً مفروزاً
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 1: Pick Section */}
-            <div className={`${cardClass} p-6`}>
-              <label className={`block text-xs font-bold uppercase tracking-wider mb-3 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                1. اختر القسم النظامي لفحص أنظمته:
-              </label>
-              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
-                {ACADEMY_CATEGORIES.filter(c => c.categoryNumber !== "ALL").map(cat => {
-                  const isSelected = selectedVaultSection === cat.categoryNumber;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => loadVaultSection(cat.categoryNumber)}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                        isSelected
-                          ? "bg-[#0B3D2E] text-white border-[#0B3D2E] shadow-sm"
-                          : isDark ? "bg-white/[0.03] border-white/5 text-zinc-400 hover:text-white" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
-                      }`}
-                    >
-                      <span className="opacity-60 text-[10px] font-mono ml-1">[{cat.categoryNumber}]</span>
-                      {cat.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Step 2: Pick Specific Law */}
-            {sectionLaws.length > 0 && (
-              <div className={`${cardClass} p-6`}>
-                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                  <label className={`text-xs font-bold uppercase tracking-wider ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-                    2. اختر النظام/اللائحة المراد فحص أسئلته ({sectionLaws.length} وثيقة متوفرة):
-                  </label>
-                  <button
-                    onClick={() => { setSelectedLaw(""); loadVaultSection(selectedVaultSection); }}
-                    className={`text-xs font-bold ${!selectedLaw ? "text-[#C8A762]" : "text-zinc-400 hover:underline"}`}
-                  >
-                    عرض عينة من كافة أنظمة القسم
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1">
-                  {sectionLaws.map((law, idx) => {
-                    const isSelected = selectedLaw === law.lawSlug;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => loadSpecificLaw(selectedVaultSection, law.lawSlug)}
-                        className={`p-3 rounded-xl border text-right transition-all flex items-center justify-between ${
-                          isSelected
-                            ? "bg-[#C8A762]/10 border-[#C8A762] text-[#C8A762]"
-                            : isDark ? "bg-white/[0.02] border-white/5 text-zinc-300 hover:bg-white/5" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        <span className="text-xs font-bold truncate max-w-[200px]" title={law.lawSlug}>
-                          {law.lawSlug.replace(/_/g, " ")}
-                        </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-black/20 shrink-0">
-                          {law.count} سؤال
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Questions Viewer */}
-            <div className={`${cardClass} p-6`}>
-              <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-                <div className="flex items-center gap-2">
-                  <ListChecks size={22} className="text-[#C8A762]" />
-                  <h3 className="font-bold text-base">
-                    الأسئلة المستخرجة على الشاشة ({filteredLawQuestions.length} سؤال)
-                  </h3>
-                </div>
-
-                <div className="relative w-full sm:w-72">
-                  <MagnifyingGlass size={16} className="absolute right-3 top-3 text-zinc-400" />
-                  <input
-                    type="text"
-                    value={vaultSearchQuery}
-                    onChange={e => setVaultSearchQuery(e.target.value)}
-                    placeholder="ابحث في نص المادة أو السؤال..."
-                    className={`w-full pr-9 pl-4 py-2 rounded-xl text-xs border focus:outline-none ${
-                      isDark ? "bg-white/[0.04] border-white/10 text-white focus:border-[#C8A762]" : "bg-slate-50 border-slate-200 text-slate-900 focus:border-[#0B3D2E]"
-                    }`}
-                  />
-                </div>
-              </div>
-
-              {isLoadingVault ? (
-                <div className="py-16 text-center text-zinc-400">
-                  <div className="w-8 h-8 border-2 border-[#C8A762] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <p className="text-xs">جاري سحب وفهرسة الأسئلة من بنك الأكاديمية...</p>
-                </div>
-              ) : filteredLawQuestions.length === 0 ? (
-                <div className="py-12 text-center text-zinc-400 text-xs">
-                  لا توجد أسئلة تطابق معايير البحث الحالية.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredLawQuestions.map((q, idx) => (
-                    <div key={idx} className={`p-5 rounded-2xl border ${isDark ? "bg-white/[0.02] border-white/[0.06]" : "bg-slate-50/70 border-slate-200"}`}>
-                      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-[#0B3D2E] text-white">
-                            #{idx + 1}
-                          </span>
-                          <span className="text-xs font-bold text-[#C8A762]">
-                            {q.lawName || q.statutoryCitation?.instrument}
-                          </span>
-                        </div>
-                        <span className="text-xs font-mono text-emerald-500 font-bold">
-                          {q.articleNumber || q.statutoryCitation?.article}
-                        </span>
-                      </div>
-
-                      <p className="font-bold text-sm leading-relaxed mb-4">{q.question}</p>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-                        {q.options?.map((opt: string, optIdx: number) => {
-                          const isCorrect = optIdx === q.correctAnswer;
-                          return (
-                            <div
-                              key={optIdx}
-                              className={`p-3 rounded-xl text-xs flex items-start justify-between gap-2 border ${
-                                isCorrect
-                                  ? "bg-emerald-500/15 border-emerald-500 text-emerald-300 font-bold"
-                                  : isDark ? "bg-white/[0.02] border-white/5 text-zinc-400" : "bg-white border-slate-200 text-slate-600"
-                              }`}
-                            >
-                              <span>{opt}</span>
-                              {isCorrect && <CheckCircle size={16} weight="fill" className="text-emerald-500 shrink-0 mt-0.5" />}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {q.statutoryCitation && (
-                        <div className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${isDark ? "bg-black/30 border-white/5 text-zinc-300" : "bg-white border-slate-200 text-slate-700"}`}>
-                          <Scales size={18} className="text-[#C8A762] shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-bold text-[#C8A762] block mb-0.5">
-                              السند من المادة: {q.statutoryCitation.article}
-                            </span>
-                            <p className="italic text-[11px] opacity-80 leading-relaxed">
-                              &ldquo;{q.statutoryCitation.textSnippet}&rdquo;
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
           </motion.div>
@@ -1804,12 +1529,11 @@ export default function QuizPage() {
                     <button onClick={() => setStage("setup")} className={`px-6 py-3 rounded-xl text-xs font-bold border transition-colors ${isDark ? "border-white/10 hover:bg-white/5" : "border-zinc-200 hover:bg-zinc-50"}`}>
                       تحدي جديد
                     </button>
-                    <button onClick={() => setActiveTab("leaderboard")} className="bg-[#C8A762] text-zinc-950 px-6 py-3 rounded-xl text-xs font-bold hover:bg-[#d8b873] transition-colors flex items-center gap-2">
-                      <Crown size={16} weight="fill" /> لوحة المتصدرين
-                    </button>
-                    <button onClick={() => setActiveTab("vault_explorer")} className="bg-emerald-800 text-white px-6 py-3 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors flex items-center gap-2">
-                      <BookOpen size={16} /> فحص بنك المواد (16k)
-                    </button>
+                    {isDemoMode && (
+                      <button onClick={() => setActiveTab("leaderboard")} className="bg-[#C8A762] text-zinc-950 px-6 py-3 rounded-xl text-xs font-bold hover:bg-[#d8b873] transition-colors flex items-center gap-2">
+                        <Crown size={16} weight="fill" /> لوحة المتصدرين
+                      </button>
+                    )}
                   </div>
                 </div>
               </motion.div>

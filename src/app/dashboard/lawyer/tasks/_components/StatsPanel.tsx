@@ -129,13 +129,13 @@ export function StatsPanel({ isDark, sessions }: StatsPanelProps) {
                 <circle cx={CX} cy={CY} r={R} fill="none" strokeWidth={16} stroke={isDark ? "#27272a" : "#f1f5f9"} />
                 <motion.circle cx={CX} cy={CY} r={R} fill="none" strokeWidth={16}
                   stroke="#0B3D2E" strokeDasharray={circ} strokeDashoffset={doneOffset}
-                  strokeLinecap="round" transform={`rotate(-90 ${CX} ${CY})`} 
+                  strokeLinecap="butt" transform={`rotate(-90 ${CX} ${CY})`} 
                   initial={{ strokeDashoffset: circ }} animate={{ strokeDashoffset: doneOffset }} transition={{ duration: 1, ease: "easeOut" }}
                 />
                 <motion.circle cx={CX} cy={CY} r={R} fill="none" strokeWidth={16}
                   stroke="#C8A762" strokeDasharray={circ}
                   strokeDashoffset={circ - (circ - partialOffset) - (circ - doneOffset)}
-                  strokeLinecap="round" transform={`rotate(-90 ${CX} ${CY})`} 
+                  strokeLinecap="butt" transform={`rotate(-90 ${CX} ${CY})`} 
                   initial={{ strokeDashoffset: circ }} animate={{ strokeDashoffset: circ - (circ - partialOffset) - (circ - doneOffset) }} transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
                 />
               </svg>
@@ -169,9 +169,15 @@ export function StatsPanel({ isDark, sessions }: StatsPanelProps) {
                       <stop offset="100%" stopColor="#0B3D2E" stopOpacity="0" />
                     </linearGradient>
                   </defs>
+                  {/* N07-67: the SVG stretches to the card (preserveAspectRatio="none"),
+                      which used to stretch the line's thickness with it. A
+                      non-scaling stroke keeps it 2.5px. It fades in rather than
+                      drawing in: a pathLength dash animation is not reliable on
+                      a non-scaling stroke. */}
                   <motion.polyline 
-                    initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 1.5, ease: "easeInOut" }}
-                    points={sparkPoints} fill="none" stroke="#0B3D2E" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" 
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.8, ease: "easeOut" }}
+                    points={sparkPoints} fill="none" stroke="#0B3D2E" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
                   />
                   <motion.polygon 
                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 0.5 }}

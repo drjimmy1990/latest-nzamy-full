@@ -405,7 +405,7 @@ export async function checkLibraryAccess(
     freeLimit,
     freeLimitSource: hasOverride ? "override" : "default",
     currentTier,
-    message: allowed ? undefined : `المادة مقفلة — تتطلب اشتراك المكتبة أو باقة Pro فما فوق`,
+    message: allowed ? undefined : `المادة مقفلة — تتطلب اشتراك المكتبة القانونية أو الباقة الاحترافية فما فوق`,
   };
 }
 

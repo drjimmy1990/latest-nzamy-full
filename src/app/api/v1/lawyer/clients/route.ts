@@ -10,6 +10,8 @@ import {
 import { hashNationalId, normalizedCommercialRegister } from "@/lib/services/clientIdentityHash";
 import { checkContactPair } from "@/lib/services/contactFieldRules";
 import { assertLinkableAccount, propagateLink } from "./_link";
+import { canSeeClientFees, withFeesVisibleTo } from "@/lib/services/clientFeeVisibility";
+import { readCallerFirmRoles } from "./_feeVisibility";
 
 /**
  * /api/v1/lawyer/clients — Phase 2 (خطة_البناء_الكاملة_٢٠٢٦-٠٩-٠٢.md §6).
@@ -252,8 +254,13 @@ export async function GET() {
       profileRows = (profiles ?? []) as ProfileRow[];
     }
 
+    // Ticket S3: a colleague's card shows its fees only to the firm's
+    // partners and finance manager (clientFeeVisibility.ts).
+    const firmRoles = await readCallerFirmRoles(supabase, uid);
     const rows = [
-      ...cardRows.map((c) => cardToDto(c, cardStats.get(c.id) ?? zeroStats())),
+      ...cardRows.map((c) =>
+        withFeesVisibleTo(cardToDto(c, cardStats.get(c.id) ?? zeroStats()), canSeeClientFees(uid, c, firmRoles)),
+      ),
       ...profileRows.map((p) => profileToDto(p, profileStats.get(p.id) ?? zeroStats())),
     ];
 

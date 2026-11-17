@@ -112,10 +112,13 @@ export async function GET(request: NextRequest) {
     const limitParam = Number(searchParams.get("limit"));
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 1000) : 200;
 
+    // N01-18 (owner package 13 Nov): a task handed to me is mine too. RLS
+    // already lets the assignee read it ("tasks readable by owner firm or
+    // assignee", 20260903); the list used to filter it out.
     let query = supabase
       .from("tasks")
       .select(TASK_SELECT, { count: "exact" })
-      .eq("owner_user_id", user.id);
+      .or(`owner_user_id.eq.${user.id},assignee_user_id.eq.${user.id}`);
 
     if (caseId) query = query.eq("case_request_id", caseId);
 

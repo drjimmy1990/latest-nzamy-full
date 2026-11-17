@@ -23,6 +23,8 @@ import {
 import { ProviderType, Step } from "../types";
 import { providerTypes, specializations, plans } from "../data";
 import { signupCountry } from "../signupMetadata";
+import { BACKEND_MODE } from "@/lib/runtimeMode";
+import { LawyerRegistryLookup } from "./LawyerRegistryLookup";
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
   return (
@@ -107,7 +109,7 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
 
   // Type-specific license label/placeholder/hint
   const licenseMap: Record<string, { label: string; ph: string; hint: string }> = {
-    lawyer:     { label: isAr ? "رقم الترخيص (وزارة العدل)" : "MOJ License No.",            ph: "MOJ-XXXXXXXX", hint: isAr ? "رقم القيد في هيئة المحامين السعوديين"      : "Saudi Bar Association membership" },
+    lawyer:     { label: isAr ? "رقم الترخيص (وزارة العدل)" : "MOJ License No.",            ph: "12345",        hint: isAr ? "رقم القيد في هيئة المحامين السعوديين"      : "Saudi Bar Association membership" },
     firm:       { label: isAr ? "السجل التجاري للمكتب"        : "Commercial Reg. No.",        ph: "XXXXXXXXXXX",  hint: isAr ? "رقم السجل التجاري من وزارة التجارة"          : "MCI Commercial Registration" },
     notary:     { label: isAr ? "رقم ترخيص التوثيق (وزارة العدل)" : "Notary License No.",   ph: "NOT-XXXXXXXX", hint: isAr ? "رقم القيد في سجل الموثقين"                : "MOJ Notaries Register" },
     tracker:    { label: isAr ? "رقم هوية المعقّب الرسمي"    : "Gov. Agent ID",              ph: "AGT-XXXXXXXX", hint: isAr ? "الرقم الصادر عن الجهة المرخّصة للتعقيب" : "Issued by licensed bailiff authority" },
@@ -163,6 +165,13 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
           </div>
           <p className="mt-1 text-xs text-ink-faint dark:text-gray-500">{lc.hint}</p>
         </div>
+
+        {/* Launch batch R2/R3/R5: fill the licence and the name from the
+            lawyers' register. Advocates only (the register lists advocates,
+            not consultants). A hint for the form, never a verification. */}
+        {providerType === "lawyer" && BACKEND_MODE === "supabase" && (
+          <LawyerRegistryLookup isAr={isAr} data={data} onChange={onChange} inputClassName={inputBase} />
+        )}
 
         {/* Arbitrator: affiliated centre */}
         {providerType === "arbitrator" && (

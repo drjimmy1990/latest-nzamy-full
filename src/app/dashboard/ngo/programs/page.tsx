@@ -14,7 +14,7 @@ const PROGRAMS = [
 
 export default function NgoProgramsPage() {
   const { isDark } = useTheme();
-  const [notice, setNotice] = useState("إدارة البرامج Backend-ready: كل إضافة أو اعتماد محلي فقط حتى ربط Programs/Reports APIs.");
+  const [notice, setNotice] = useState("إدارة البرامج للعرض فقط حالياً: ما تضيفه أو تعتمده هنا لا يُحفظ بعد. قريباً.");
   const card = isDark ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60" : "rounded-2xl border border-slate-100 bg-white shadow-sm";
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
 
@@ -27,14 +27,13 @@ export default function NgoProgramsPage() {
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#0B3D2E]/25 text-[#C8A762]">
               <Target size={21} weight="duotone" />
             </span>
-            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">Backend-ready</span>
-            <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[10px] font-black text-amber-300">Beta local</span>
+            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">قريباً</span>
           </div>
           <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>البرامج والحملات</h1>
           <p className={`mt-1 text-sm ${muted}`}>برامج خيرية، مستفيدون، ميزانية، تقارير أثر، وحالة اعتماد محلية.</p>
         </div>
         <button
-          onClick={() => setNotice("تم تجهيز نموذج إضافة برنامج محلياً. الحفظ الحقيقي ينتظر Program API وسجل تدقيق.")}
+          onClick={() => setNotice("إضافة برنامج غير متاحة بعد — قريباً.")}
           className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-sm font-black text-[#C8A762]"
         >
           <Plus size={16} />
@@ -86,13 +85,13 @@ export default function NgoProgramsPage() {
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
-                onClick={() => setNotice(`تم تجهيز اعتماد ${program.name} محلياً. الاعتماد الإنتاجي ينتظر Workflow API.`)}
+                onClick={() => setNotice(`اعتماد ${program.name} غير متاح بعد — قريباً.`)}
                 className="rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-400 border border-emerald-500/20"
               >
                 اعتماد محلي
               </button>
               <button
-                onClick={() => setNotice(`تصدير تقرير ${program.name} محلي فقط. التصدير الحقيقي ينتظر Reporting API.`)}
+                onClick={() => setNotice(`تصدير تقرير ${program.name} غير متاح بعد — قريباً.`)}
                 className={`rounded-xl border px-3 py-2 text-xs font-bold ${isDark ? "border-white/10 text-zinc-300" : "border-slate-200 text-slate-700"}`}
               >
                 تقرير أثر

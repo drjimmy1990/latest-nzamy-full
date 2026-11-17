@@ -101,7 +101,7 @@ export default function DisputesPage() {
                   const dash = (r.pct/100)*c;
                   return <circle key={i} cx="60" cy="60" r="45" fill="none" stroke={r.color} strokeWidth="12"
                     strokeDasharray={`${dash} ${c-dash}`} strokeDashoffset={-(r.offset/100)*c}
-                    strokeLinecap="round" className="transition-all duration-700"/>;
+                    strokeLinecap="butt" className="transition-all duration-700"/>;
                 })}
               <text x="60" y="60" textAnchor="middle" dominantBaseline="central"
                 className={`text-[18px] font-bold ${isDark?"fill-white":"fill-slate-800"}`}>
@@ -124,9 +124,10 @@ export default function DisputesPage() {
         <div className={`${card} p-5`}>
           <p className={`text-[12px] font-bold mb-3 ${isDark?"text-white":"text-slate-800"}`}>معدل النزاعات الشهري</p>
           <svg viewBox="0 0 200 60" className="w-full h-14" preserveAspectRatio="none">
-            <path d="M0,50 L33,45 L66,42 L100,38 L133,32 L166,35 L200,28" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"/>
+            {/* N07-68: this SVG stretches to the card (preserveAspectRatio="none"); a non-scaling stroke keeps the line's thickness, and the dots are zero-length round-capped strokes so they stay round instead of stretching into ellipses. */}
+            <path d="M0,50 L33,45 L66,42 L100,38 L133,32 L166,35 L200,28" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
             {[[0,50],[33,45],[66,42],[100,38],[133,32],[166,35],[200,28]].map(([x,y],i)=>(
-              <circle key={i} cx={x} cy={y} r="3" fill="#ef4444"/>
+              <path key={i} d={`M${x},${y} h0`} stroke="#ef4444" strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
             ))}
           </svg>
           <p className={`text-[10px] mt-2 ${isDark?"text-zinc-500":"text-slate-400"}`}>

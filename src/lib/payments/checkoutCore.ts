@@ -65,7 +65,7 @@
  *   5b. After the order row, the seat: deps.reserveFounderSeat (the route's
  *       founder_reserve_seat RPC, 20261101_10). Anything but 'reserved'
  *       cancels the order (still 'created', no intent yet) and answers:
- *       not_verified 403, already_member / full 409, closed / paused 410; an
+ *       not_verified / not_advocate 403, already_member / full 409, closed / paused 410; an
  *       RPC error (22023: the order already holds a seat), a throw, an
  *       unknown answer or a missing dependency → 503 CHECKOUT_FAILED_AR.
  *       Never a 500, never an intent without a reserved seat.
@@ -115,10 +115,13 @@ export const FOUNDER_NO_COUPON_AR = "لا تُطبَّق القسائم على �
 export const FOUNDER_NOT_VERIFIED_AR = "يُتاح اشتراك المؤسس بعد توثيق رخصتك المهنية";
 export const FOUNDER_ALREADY_MEMBER_AR = "أنت عضو مؤسس بالفعل";
 export const FOUNDER_FULL_AR = "اكتملت مقاعد المؤسسين";
+/** 20261122_10 (owner, 17 Nov): the founder plan is for a licensed advocate only. */
+export const FOUNDER_NOT_ADVOCATE_AR = "باقة المؤسس للمحامي المرخّص للترافع فقط، ولا تُتاح لحساب المستشار";
 
 /** founder_reserve_seat's refusals (20261101_10) → the checkout's reply. 'reserved' goes on; any other answer is a 503. */
 const SEAT_REFUSALS: Readonly<Record<string, { status: 403 | 409 | 410; error: string }>> = {
   not_verified: { status: 403, error: FOUNDER_NOT_VERIFIED_AR },
+  not_advocate: { status: 403, error: FOUNDER_NOT_ADVOCATE_AR },
   already_member: { status: 409, error: FOUNDER_ALREADY_MEMBER_AR },
   full: { status: 409, error: FOUNDER_FULL_AR },
   closed: { status: 410, error: FOUNDER_CLOSED_AR },
@@ -141,7 +144,7 @@ export interface CheckoutDeps {
   /**
    * P3: reserves a founder seat for this membership order — the route's
    * founder_reserve_seat RPC. Answers reserved | already_member | full |
-   * closed | paused | not_verified; throws on an RPC error. Missing → a
+   * closed | paused | not_verified | not_advocate; throws on an RPC error. Missing → a
    * membership checkout fails closed (503).
    */
   reserveFounderSeat?: (userId: string, orderId: string) => Promise<string>;

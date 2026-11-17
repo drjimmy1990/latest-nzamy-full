@@ -14,6 +14,14 @@ import { buildMonthlyBuckets, type LedgerRow } from "@/lib/services/revenueMath"
  * 20260826_receipts.sql). Both are "money the office has actually received",
  * which is the only honest definition of revenue this platform can print.
  *
+ * Since the Moyasar gateway (20261022_10) the main source is
+ * `public.payment_orders` (ticket 8 A4, owner package 13 Nov): the platform's
+ * own orders (`merchant = 'platform'`) paid in LIVE mode (`live = true`, so
+ * test payments never count), at their total with VAT, on `paid_at`; their
+ * refunds (`refunded_halalas`, on `refunded_at`) go to the refunds figures.
+ * An office's own client payments (`merchant = 'office'`) are the office's
+ * money, not the platform's, and are left out.
+ *
  * `public.subscriptions` is read too, but NOT folded into the revenue sum —
  * a subscription can be admin-granted with no payment behind it (see the
  * entitlements build), so counting `subscription_plans.price_monthly` as
@@ -51,7 +59,7 @@ export async function GET() {
       Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() - (MONTHS - 1), 1),
     ).toISOString();
 
-    const [paymentsRes, receiptsRes, subscriptionsRes, refundsRes] = await Promise.all([
+    const [paymentsRes, receiptsRes, subscriptionsRes, refundsRes, ordersRes, orderRefundsRes] = await Promise.all([
       admin
         .from("payments")
         .select("amount, created_at")
@@ -71,6 +79,20 @@ export async function GET() {
         .select("amount")
         .eq("status", "refunded")
         .gte("created_at", windowStart),
+      admin
+        .from("payment_orders")
+        .select("total_halalas, paid_at")
+        .eq("merchant", "platform")
+        .eq("live", true)
+        .eq("status", "paid")
+        .gte("paid_at", windowStart),
+      admin
+        .from("payment_orders")
+        .select("refunded_halalas")
+        .eq("merchant", "platform")
+        .eq("live", true)
+        .gt("refunded_halalas", 0)
+        .gte("refunded_at", windowStart),
     ]);
 
     if (paymentsRes.error) {
@@ -90,20 +112,30 @@ export async function GET() {
       return NextResponse.json({ error: "تعذّرت قراءة المسترجعات." }, { status: 500 });
     }
 
+    if (ordersRes.error || orderRefundsRes.error) {
+      const e = ordersRes.error ?? orderRefundsRes.error;
+      console.error("[admin/revenue] payment_orders read failed:", e?.code, e?.message);
+      return NextResponse.json({ error: "تعذّرت قراءة طلبات الدفع." }, { status: 500 });
+    }
+
     const ledgerRows: LedgerRow[] = [
+      ...(ordersRes.data ?? []).map((r) => ({ amount: Number(r.total_halalas) / 100, occurredAt: r.paid_at as string })),
       ...(paymentsRes.data ?? []).map((r) => ({ amount: Number(r.amount), occurredAt: r.created_at as string })),
       ...(receiptsRes.data ?? []).map((r) => ({ amount: Number(r.amount), occurredAt: r.issued_at as string })),
     ];
 
     const months = buildMonthlyBuckets(ledgerRows, reference, MONTHS);
-    const refundsTotal = (refundsRes.data ?? []).reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
+    const orderRefunds = orderRefundsRes.data ?? [];
+    const refundsTotal =
+      (refundsRes.data ?? []).reduce((acc, r) => acc + Number(r.amount ?? 0), 0) +
+      orderRefunds.reduce((acc, r) => acc + Number(r.refunded_halalas ?? 0) / 100, 0);
 
     return NextResponse.json({
       data: months,
       total: months.length,
       activePaidSubscriptions: subscriptionsRes.count ?? subscriptionsRes.data?.length ?? 0,
       refundsTotal,
-      refundsCount: (refundsRes.data ?? []).length,
+      refundsCount: (refundsRes.data ?? []).length + orderRefunds.length,
     });
   } catch (err) {
     console.error("[admin/revenue] Unexpected error:", err);

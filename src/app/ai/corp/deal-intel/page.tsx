@@ -1,5 +1,7 @@
 "use client";
 import GatedToolScreen from "@/components/GatedToolScreen";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 import { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,25 +27,25 @@ import {
 
 function formatDealIntelReport(dealType: string | null, sector: string | null, partyName: string, dimensions: string[]) {
   return [
-    "Deal Intelligence Report",
-    `Deal type: ${dealType ?? "-"}`,
-    `Sector: ${sector ?? "-"}`,
-    `Counterparty: ${partyName || "-"}`,
-    `Dimensions: ${dimensions.join(", ")}`,
+    "تقرير تحليل الصفقة",
+    `نوع الصفقة: ${dealType ?? "-"}`,
+    `القطاع: ${sector ?? "-"}`,
+    `الطرف المقابل: ${partyName || "-"}`,
+    `محاور التحليل: ${dimensions.join("، ")}`,
     "",
     `${MOCK_REPORT.legal.title}: ${MOCK_REPORT.legal.opinion}`,
     `${MOCK_REPORT.commercial.title}: ${MOCK_REPORT.commercial.note}`,
     `${MOCK_REPORT.risk.title}:`,
-    ...MOCK_REPORT.risk.risks.map((risk) => `- [${risk.level}] ${risk.label}: ${risk.desc} | Fix: ${risk.fix}`),
+    ...MOCK_REPORT.risk.risks.map((risk) => `- [${risk.level}] ${risk.label}: ${risk.desc} | المعالجة: ${risk.fix}`),
     `${MOCK_REPORT.regulatory.title}:`,
     ...MOCK_REPORT.regulatory.requirements.map((req) => `- ${req.agency}: ${req.action} (${req.timeline})`),
     `${MOCK_REPORT.verdict.title}: ${MOCK_REPORT.verdict.summary}`,
-    "Next steps:",
+    "الخطوات التالية:",
     ...MOCK_REPORT.verdict.nextSteps.map((step) => `- ${step}`),
   ].join("\n");
 }
 
-function DealIntelInner() {
+function DealIntelInnerDemo() {
   const { isDark } = useTheme();
   const [stage,       setStage]      = useState<Stage>("form");
   const [dealType,    setDealType]   = useState<string | null>(null);
@@ -555,6 +557,23 @@ function DealIntelInner() {
       </AnimatePresence>
     </div>
   );
+}
+
+// N05-V3 (owner package 13 Nov): the body under the gate is a canned result
+// (fixed text, a timer, no AI run), so it renders in demo mode only. In
+// production the gate card shows while the review gate is on, and the honest
+// «قريباً» screen when it is off: never the canned result.
+function DealIntelInner() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="تحليل الصفقات — قريباً"
+        description="تقرير تحليل الصفقة غير متاح حالياً وسيُفعَّل قريباً. لا يُعرض هنا تقرير جاهز مكان تحليل حقيقي لصفقتك."
+        backHref="/ai"
+      />
+    );
+  }
+  return <DealIntelInnerDemo />;
 }
 
 // Wave 1 task 6: the beta gate first — no form or timer before it.

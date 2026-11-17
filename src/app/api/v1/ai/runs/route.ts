@@ -46,10 +46,11 @@ const SIGN_IN = { error: "سجّل الدخول لاستخدام أدوات ال
 /**
  * A library tool's gate: the library's closed switch (admins pass), then the
  * assistant's rule, Pro or higher or a platform admin (owner ٢٠٦ / ٢٠٧ / ٢٠٩),
- * the same two checks the deleted free route /api/ai/library-chat made.
+ * the same two checks the deleted free route /api/ai/library-chat made. An
+ * active founder member passes for the founder plan's own tools (0.5).
  */
-async function libraryAccess(): Promise<RouteReply | null> {
-  const refused = (await libraryGate()) ?? (await libraryAiAccess());
+async function libraryAccess(toolId: string): Promise<RouteReply | null> {
+  const refused = (await libraryGate()) ?? (await libraryAiAccess(toolId));
   if (!refused) return null;
   const body = (await refused.json().catch(() => ({}))) as Record<string, unknown>;
   return { status: refused.status, body: { ...body, code: body.libraryClosed ? "library_closed" : "library_tier" } };

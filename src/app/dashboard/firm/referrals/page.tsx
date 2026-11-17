@@ -12,6 +12,9 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+
 // ─── Types & Mock Data ────────────────────────────────────────────────────────
 
 type ReferralStatus = "مقبول" | "قيد الانتظار" | "مرفوض" | "مكتمل";
@@ -42,7 +45,7 @@ const STATUS_COLORS: Record<ReferralStatus, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function FirmReferralsPage() {
+function FirmReferralsPageDemo() {
   const { isDark } = useTheme();
   const user = useUser();
   const [search, setSearch] = useState("");
@@ -235,4 +238,22 @@ export default function FirmReferralsPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * N04-35 (owner package 13 Nov): the referrals, partners and commissions on
+ * this screen are fixtures — no API backs them — so they render in demo mode
+ * only (owner decision ١١٥). A production firm sees the honest gate.
+ */
+export default function FirmReferralsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الإحالات والشراكات"
+        description="تتبّع الإحالات بين المكاتب وعمولاتها يُضاف قريبًا."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmReferralsPageDemo />;
 }

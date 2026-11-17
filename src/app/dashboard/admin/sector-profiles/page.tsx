@@ -130,7 +130,7 @@ export default function AdminSectorProfilesPage() {
   const [selectedGovernmentId, setSelectedGovernmentId] = useState(MOCK_CURRENT_GOVERNMENT_ID);
   const [selectedNgoId, setSelectedNgoId] = useState(MOCK_CURRENT_NGO_ID);
   const [selectedMicroId, setSelectedMicroId] = useState(MOCK_CURRENT_MICRO_ID);
-  const [toast, setToast] = useState("بروفيلات القطاعات Backend-ready: كل تعديل هنا محلي فقط حتى ربط APIs.");
+  const [toast, setToast] = useState("بروفيلات القطاعات للعرض فقط حالياً: لا يُحفظ أي تعديل هنا بعد.");
 
   const governmentProfiles = useMemo(() => Object.values(sectorProfiles.government), [sectorProfiles.government]);
   const ngoProfiles = useMemo(() => Object.values(sectorProfiles.ngo), [sectorProfiles.ngo]);
@@ -175,8 +175,7 @@ export default function AdminSectorProfilesPage() {
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#0B3D2E]/30 text-[#C8A762]">
               <Buildings size={21} weight="duotone" />
             </span>
-            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">Backend-ready</span>
-            <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[10px] font-black text-amber-300">Beta local</span>
+            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">قريباً</span>
           </div>
           <h1 className={`text-2xl font-black mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>بروفيلات القطاعات</h1>
           <p className={`max-w-3xl text-sm leading-relaxed ${muted}`}>
@@ -552,7 +551,7 @@ function PanelShell({
               <p className="text-lg font-black">{title}</p>
               <p className={`mt-1 text-xs leading-relaxed ${muted}`}>{subtitle}</p>
             </div>
-            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">Backend-ready</span>
+            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">قريباً</span>
           </div>
           {children}
         </div>

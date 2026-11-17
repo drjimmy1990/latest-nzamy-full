@@ -1,4 +1,5 @@
 import ServerSessionGate from "@/components/auth/ServerSessionGate";
+import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
 
 /**
  * Settings Layout — pass-through, plus the server-side session gate.
@@ -21,5 +22,12 @@ export default async function SettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <ServerSessionGate fallbackPath="/settings">{children}</ServerSessionGate>;
+  // R7: the terms re-ask modal (renders nothing unless the account has not
+  // accepted the current terms version).
+  return (
+    <ServerSessionGate fallbackPath="/settings">
+      {children}
+      <TermsReacceptGate />
+    </ServerSessionGate>
+  );
 }

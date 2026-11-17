@@ -307,6 +307,18 @@ html[dir="rtl"] .text-left {
   color: #1a1a1a;
 }
 
+/* F17 (owner, 13-Nov): card number, expiry and CVC are numbers in a left-to-right
+   order whatever the page direction. moyasar-payment-form 2.3.0 already sets
+   dir="ltr" on them; this pins it against any inherited rule, isolates the
+   digits from the surrounding RTL text, and keeps them left-aligned. */
+.nz-moyasar-surface input[name="mysr-cc-number"],
+.nz-moyasar-surface input[name="mysr-cc-exp"],
+.nz-moyasar-surface input[name="mysr-cc-csc"] {
+  direction: ltr !important;
+  unicode-bidi: isolate;
+  text-align: left !important;
+}
+
 /* ── Reliable dark-mode card/surface overrides ────────────────────────────
    Tailwind v4 pre-computes opacity-modified color values (e.g. bg-white/80)
    at build time using oklab(), so CSS variable overrides alone don't cover
@@ -863,4 +875,28 @@ input:is([type="submit"], [type="button"], [type="reset"]):disabled {
 button:disabled[class*="disabled:opacity-"],
 input:is([type="submit"], [type="button"], [type="reset"]):disabled[class*="disabled:opacity-"] {
   opacity: 0.5;
+}
+
+/* F16 — the founder welcome on /payments/result: the card rises in once and
+   three sparkles twinkle a few times. Nothing moves under reduced motion. */
+@keyframes nz-founder-rise {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes nz-founder-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.7) rotate(0deg); }
+  50%      { opacity: 1;    transform: scale(1.15) rotate(20deg); }
+}
+.nz-founder-rise {
+  animation: nz-founder-rise 0.6s ease-out both;
+}
+.nz-founder-sparkle {
+  opacity: 0.6;
+  animation: nz-founder-twinkle 1.8s ease-in-out 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nz-founder-rise,
+  .nz-founder-sparkle {
+    animation: none;
+  }
 }

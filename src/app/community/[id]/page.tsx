@@ -21,6 +21,7 @@ import { mapCommunityPost, type CommunityPostLike } from "@/lib/services/communi
 import { displayWhen } from "../_feedView";
 import ReportContentButton from "@/components/community/ReportContentButton";
 import Link from "next/link";
+import { isDemoMode } from "@/lib/runtimeMode";
 import { useParams } from "next/navigation";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -542,13 +543,15 @@ export default function QuestionDetailPage() {
               />
 
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                {/* Anon toggle */}
+                {/* Anon toggle — demo only (N05-C3): real answers never carry a name. */}
+                {isDemoMode && (
                 <div className="flex items-center gap-2">
                   <button onClick={() => setIsAnon(v => !v)} className={`relative w-10 h-5 rounded-full transition-colors ${isAnon ? "bg-[#0B3D2E]" : isDark ? "bg-[#2d3748]" : "bg-gray-300"}`}>
                     <motion.span animate={{ x: isAnon ? (isRTL ? -20 : 20) : 2 }} initial={false} transition={{ type: "spring", stiffness: 600, damping: 35 }} className="absolute top-0.5 start-0.5 w-4 h-4 rounded-full bg-white shadow" />
                   </button>
                   <span className={`text-xs ${muted}`}>{isRTL ? "نشر كمجهول" : "Post anonymously"}</span>
                 </div>
+                )}
 
                 {isGuest && (
                   <p className={`text-xs ${muted}`}>

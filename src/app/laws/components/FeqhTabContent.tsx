@@ -22,6 +22,16 @@ function hasText(value: unknown): value is string {
 /** The catalogue writes «—» for a book with no known author; the card then leaves the line out. */
 const hasAuthor = hasText;
 
+/** A book a non-subscriber can open but not read in full: the reader serves its first two pages (FREE_PAGES). */
+function FreePagesChip({ isRTL }: { isRTL: boolean }) {
+  return (
+    <span className="px-2 py-0.5 text-[9px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-md flex items-center gap-1 shrink-0">
+      <Lock size={9} weight="fill" />
+      {isRTL ? "أول صفحتين مجاناً" : "First 2 pages free"}
+    </span>
+  );
+}
+
 interface FeqhTabContentProps {
   isDark: boolean;
   isRTL: boolean;
@@ -246,35 +256,18 @@ export function FeqhTabContent({
                     : "bg-white border-slate-200/60 hover:border-slate-300"
                 }`}
               >
-                {/* Paywall Overlay */}
-                {!isBookFree && (
-                  <div className="absolute inset-0 z-10 rounded-2xl bg-black/40 backdrop-blur-[1.5px] flex flex-col items-center justify-center p-4">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center mb-2">
-                      <Lock size={20} className="text-amber-500" weight="fill" />
-                    </div>
-                    <p className="text-white text-xs font-bold mb-3">{isRTL ? "يتطلب اشتراك الباقة الكاملة" : "Full Plan Required"}</p>
-                    <button
-                      onClick={() => setShowPaywall(true)}
-                      className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-[#0B3D2E] text-[10.5px] font-black rounded-lg transition"
-                    >
-                      {isRTL ? "ترقية الاشتراك" : "Upgrade Plan"}
-                    </button>
-                  </div>
-                )}
-
+                {/* N05-L7 (owner package 13 Nov, owner ١٨٣ / س ٤٤٩): every book
+                    card opens the reader. The books route serves the first two
+                    printed pages to everyone and locks the rest itself, so a
+                    card no longer hides the book behind an overlay; it says
+                    what a non-subscriber gets. */}
                 <SaveToFolderButton doc={bookSaveDoc({ slug: book.slug, title: cardTitle || book.title })} onSave={onSaveToFolder} isDark={isDark} className="absolute bottom-4 left-4 z-20" />
                 <Link
-                  href={isBookFree ? resultHref(`/book/${book.slug}`, q) : "#"}
-                  onClick={(e) => {
-                    if (!isBookFree) {
-                      e.preventDefault();
-                      setShowPaywall(true);
-                    }
-                  }}
+                  href={resultHref(`/book/${book.slug}`, q)}
                   className="block"
                 >
                   {layoutMode === "grid" ? (
-                    <div className={!isBookFree ? "opacity-40 filter blur-[2px]" : ""}>
+                    <div>
                       <div className="flex justify-between items-start gap-4 mb-4">
                       <div className="flex-1">
                         {book.categoryLabel && (
@@ -307,6 +300,7 @@ export function FeqhTabContent({
                           {isRTL ? "متاح" : "FREE"}
                         </span>
                       )}
+                      {!isBookFree && <FreePagesChip isRTL={isRTL} />}
                     </div>
                     <p className={`text-xs line-clamp-3 leading-relaxed mb-5 ${muted}`}>{book.desc}</p>
                     <div className="pt-4 border-t border-dashed dark:border-white/5 border-slate-100 flex flex-col gap-3">
@@ -352,7 +346,7 @@ export function FeqhTabContent({
                     </div>
                   </div>
                 ) : (
-                  <div className={`${!isBookFree ? "opacity-40 filter blur-[2px]" : ""} flex flex-col md:flex-row md:items-center justify-between gap-5`}>
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
                         {book.categoryLabel && (
@@ -378,6 +372,7 @@ export function FeqhTabContent({
                             {isRTL ? "متاح" : "FREE"}
                           </span>
                         )}
+                        {!isBookFree && <FreePagesChip isRTL={isRTL} />}
                       </div>
                       <h3 className={`text-base font-black mb-1 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition-colors leading-snug ${isDark ? "text-white" : "text-gray-900"}`}>
                         {cardTitle}

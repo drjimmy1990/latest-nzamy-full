@@ -32,7 +32,7 @@ export async function GET() {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'سجّل الدخول أولاً' }, { status: 401 });
     }
 
     const serverOnly = await createServiceClient();
@@ -49,13 +49,13 @@ export async function GET() {
 
     if (error) {
       console.error('[Folders GET] Error:', error);
-      return NextResponse.json({ error: 'Failed to fetch folders' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحميل المجلدات' }, { status: 500 });
     }
 
     return NextResponse.json({ folders: folders || [] });
   } catch (error) {
     console.error('[Folders GET] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع، حاول مرة أخرى' }, { status: 500 });
   }
 }
 
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'سجّل الدخول أولاً' }, { status: 401 });
     }
     // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
     const frozen = frozenAccountResponse(user);
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
 
     const body = await readJsonObject(request);
     if (!body) {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+      return NextResponse.json({ error: 'تعذّرت قراءة الطلب' }, { status: 400 });
     }
     const name = checkFolderName(body.name);
     if (!name.ok) {
@@ -97,13 +97,13 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('[Folders POST] Error:', error);
-      return NextResponse.json({ error: 'Failed to create folder' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر إنشاء المجلد' }, { status: 500 });
     }
 
     return NextResponse.json({ folder }, { status: 201 });
   } catch (error) {
     console.error('[Folders POST] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع، حاول مرة أخرى' }, { status: 500 });
   }
 }
 
@@ -114,7 +114,7 @@ export async function PATCH(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'سجّل الدخول أولاً' }, { status: 401 });
     }
     // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
     const frozen = frozenAccountResponse(user);
@@ -122,7 +122,7 @@ export async function PATCH(request: Request) {
 
     const body = await readJsonObject(request);
     if (!body) {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+      return NextResponse.json({ error: 'تعذّرت قراءة الطلب' }, { status: 400 });
     }
     const patch = checkFolderPatch(body);
     if (!patch.ok) {
@@ -143,17 +143,17 @@ export async function PATCH(request: Request) {
 
     if (error) {
       console.error('[Folders PATCH] Error:', error);
-      return NextResponse.json({ error: 'Failed to update folder' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّر تحديث المجلد' }, { status: 500 });
     }
     if (!folder) {
       // Not this user's folder (or gone) — same answer either way.
-      return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
+      return NextResponse.json({ error: 'لم يُعثر على المجلد' }, { status: 404 });
     }
 
     return NextResponse.json({ folder });
   } catch (error) {
     console.error('[Folders PATCH] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع، حاول مرة أخرى' }, { status: 500 });
   }
 }
 
@@ -164,7 +164,7 @@ export async function DELETE(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'سجّل الدخول أولاً' }, { status: 401 });
     }
     // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
     const frozen = frozenAccountResponse(user);
@@ -174,7 +174,7 @@ export async function DELETE(request: Request) {
     const folderId = searchParams.get('folderId');
     const itemId = searchParams.get('itemId');
     if ((itemId !== null && !isUuid(itemId)) || (itemId === null && folderId !== null && !isUuid(folderId))) {
-      return NextResponse.json({ error: 'folderId / itemId must be an id' }, { status: 400 });
+      return NextResponse.json({ error: 'معرّف المجلد أو العنصر غير صالح' }, { status: 400 });
     }
 
     const serverOnly = await createServiceClient();
@@ -190,10 +190,10 @@ export async function DELETE(request: Request) {
 
       if (lookupError) {
         console.error('[Folders DELETE] Item lookup error:', lookupError);
-        return NextResponse.json({ error: 'Failed to remove item' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّرت إزالة العنصر' }, { status: 500 });
       }
       if (!item) {
-        return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+        return NextResponse.json({ error: 'لم يُعثر على العنصر' }, { status: 404 });
       }
 
       const { data: ownerFolder, error: folderError } = await serverOnly
@@ -206,12 +206,12 @@ export async function DELETE(request: Request) {
 
       if (folderError) {
         console.error('[Folders DELETE] Folder ownership check error:', folderError);
-        return NextResponse.json({ error: 'Failed to remove item' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّرت إزالة العنصر' }, { status: 500 });
       }
       if (!ownerFolder) {
         // Same answer as a missing item: a caller cannot tell another
         // user's item id from one that does not exist (audit SAST-07).
-        return NextResponse.json({ error: 'Item not found' }, { status: 404 });
+        return NextResponse.json({ error: 'لم يُعثر على العنصر' }, { status: 404 });
       }
 
       const { error } = await serverOnly
@@ -221,7 +221,7 @@ export async function DELETE(request: Request) {
         .eq('id', itemId);
 
       if (error) {
-        return NextResponse.json({ error: 'Failed to remove item' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّرت إزالة العنصر' }, { status: 500 });
       }
       return NextResponse.json({ success: true });
     }
@@ -235,14 +235,14 @@ export async function DELETE(request: Request) {
         .eq('user_id', user.id);
 
       if (error) {
-        return NextResponse.json({ error: 'Failed to delete folder' }, { status: 500 });
+        return NextResponse.json({ error: 'تعذّر حذف المجلد' }, { status: 500 });
       }
       return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ error: 'folderId or itemId required' }, { status: 400 });
+    return NextResponse.json({ error: 'حدّد المجلد أو العنصر' }, { status: 400 });
   } catch (error) {
     console.error('[Folders DELETE] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع، حاول مرة أخرى' }, { status: 500 });
   }
 }

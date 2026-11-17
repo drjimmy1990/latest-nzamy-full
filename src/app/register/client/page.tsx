@@ -44,6 +44,9 @@ import {
 import { translateAuthError } from "@/lib/auth/translateAuthError";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
+import TermsConsentCheckbox from "@/components/legal/TermsConsentCheckbox";
+import { CURRENT_TERMS_VERSION } from "@/lib/legal/termsVersion";
+import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 import { getPlanList, type AudienceTab } from "@/constants/pricingData";
 import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
 import { savePendingPlan, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
@@ -80,6 +83,9 @@ export default function RegisterClientPage() {
   // does not, and an entitlement request would be refused (401) — Step4 then
   // says how to finish instead of offering a button that cannot work.
   const [signupHasSession, setSignupHasSession] = useState(false);
+  // R7 (owner package 2026-11-17): the consent box, unticked by default;
+  // «إنشاء الحساب» stays disabled until it is ticked.
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   // Pre-select type from URL query param (e.g. ?type=individual)
   useEffect(() => {
@@ -131,7 +137,7 @@ export default function RegisterClientPage() {
       if (clientType === "micro" && !(formData.companyName || "").trim()) return false;
       return true;
     }
-    if (step === 3) return !!(formData.password && formData.password === formData.confirmPassword && formData.password.length >= 8);
+    if (step === 3) return !!(formData.password && formData.password === formData.confirmPassword && formData.password.length >= 8) && termsAccepted;
     return true;
   };
 
@@ -270,6 +276,13 @@ export default function RegisterClientPage() {
                 )}
               </AnimatePresence>
 
+              {/* R7 consent — on the step that creates the account. */}
+              {step === 3 && (
+                <div className="mt-6">
+                  <TermsConsentCheckbox checked={termsAccepted} onChange={setTermsAccepted} isAr={isAr} disabled={authLoading} />
+                </div>
+              )}
+
               {/* Security check (Turnstile) on the step that calls signUp. */}
               {step === 3 && BACKEND_MODE === "supabase" && (
                 <div className="mt-6">
@@ -359,6 +372,12 @@ export default function RegisterClientPage() {
                                   credits_max: 0,
                                   display_mode: "full",
                                   onboarding_completed: true,
+                                  // R7: the version the consent box accepted.
+                                  // Without a session (email confirmation on)
+                                  // the server records it as 'signup' on the
+                                  // first signed-in request, and only for an
+                                  // account with no acceptance row yet.
+                                  terms_version: CURRENT_TERMS_VERSION,
                                   // Type-specific metadata.
                                   //
                                   // The individual branch used to send
@@ -429,6 +448,11 @@ export default function RegisterClientPage() {
                               setAuthLoading(false);
                               return;
                             }
+
+                            // R7: record the acceptance now when signUp gave a
+                            // session. Best-effort — a failure is healed on the
+                            // next signed-in visit (see terms_version above).
+                            if (signUpData.session) await recordTermsAcceptance("signup");
 
                             setSignupHasSession(Boolean(signUpData.session));
                             setStep(4);

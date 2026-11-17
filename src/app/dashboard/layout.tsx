@@ -1,4 +1,5 @@
 import ServerSessionGate from "@/components/auth/ServerSessionGate";
+import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
 
 /**
  * The first server-side gate any /dashboard/* route has ever had.
@@ -20,5 +21,12 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <ServerSessionGate fallbackPath="/dashboard">{children}</ServerSessionGate>;
+  // R7: the terms re-ask modal (renders nothing unless the account has not
+  // accepted the current terms version).
+  return (
+    <ServerSessionGate fallbackPath="/dashboard">
+      {children}
+      <TermsReacceptGate />
+    </ServerSessionGate>
+  );
 }

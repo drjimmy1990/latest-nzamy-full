@@ -78,7 +78,7 @@ export default function AdminFirmProviderProfilesPage() {
   const { isDark } = useTheme();
   const { firmFeatures, currentFirmFeatures, updateFirmFeatures } = useAdminSettings();
   const [selectedFirmId, setSelectedFirmId] = useState(MOCK_CURRENT_FIRM_ID);
-  const [toast, setToast] = useState("إدارة شركات المحاماة Backend-ready: كل تعديل هنا محلي فقط حتى ربط Firm/Profile + Billing + Wallet APIs.");
+  const [toast, setToast] = useState("إدارة شركات المحاماة للعرض فقط حالياً: لا يُحفظ أي تعديل هنا بعد.");
 
   const firms = useMemo(() => {
     const list = Object.values(firmFeatures);
@@ -132,8 +132,7 @@ export default function AdminFirmProviderProfilesPage() {
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#0B3D2E]/30 text-[#C8A762]">
               <SealCheck size={21} weight="duotone" />
             </span>
-            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">Backend-ready</span>
-            <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[10px] font-black text-amber-300">Beta locked</span>
+            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-1 text-[10px] font-black text-blue-300">قريباً</span>
           </div>
           <h1 className={`text-2xl font-black mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>إدارة شركات المحاماة داخل المزودين</h1>
           <p className={`text-sm ${muted}`}>اعتماد الشركة، حجمها، باقتها السنوية، المقاعد، محفظة النقاط، والصلاحيات. لا يوجد حفظ خادمي الآن.</p>

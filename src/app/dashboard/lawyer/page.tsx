@@ -66,6 +66,7 @@ import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
 import ShareProfileModal from "./_components/ShareProfileModal";
 import FounderMembershipCard from "./_components/FounderMembershipCard";
+import FounderCampaignNotice from "./_components/FounderCampaignNotice";
 import StickyNotesWall from "@/components/dashboard/notes/StickyNotesWall";
 import { formatTimeOfDayAr } from "./hearings/_timeOfDay";
 import { useRiyadhToday } from "@/hooks/useRiyadhToday";
@@ -74,6 +75,7 @@ import { toArabicDigits } from "@/lib/services/arabicCount";
 import { dashboardItemHref, moreCriticalHref, hiddenCount } from "@/lib/services/dashboardDateItems";
 import { describeRequestEvent, type ActivityBadge } from "@/lib/events";
 import { orderReference } from "@/lib/services/orderReference";
+import { requestTypeLabelAr } from "@/lib/services/requestTypeLabels";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -464,7 +466,8 @@ export default function LawyerDashboardPage() {
       title: c.title || "—",
       status: CASE_STATUS_LABEL[c.status] ?? { label: c.status, tone: "waiting" as const },
       date: c.updated_at ? relativeTime(c.updated_at) : null,
-      type: c.type,
+      // N06-20: the Arabic name of service_requests.type («خدمة»), never the raw "service".
+      type: requestTypeLabelAr(c.type),
     }));
   }, [dashboardData]);
 
@@ -832,6 +835,18 @@ export default function LawyerDashboardPage() {
           </Link>
         </motion.div>
       )}
+
+      {/* ── Founder campaign notice (owner item 0.4, 17 Nov package) ──
+          Before the opening a countdown, during the campaign a join card
+          linking to /founder (unless the invite below already shows),
+          nothing after it or for anyone but a non-member advocate lawyer.
+          Dismissible; the dismissal is remembered per phase. */}
+      <FounderCampaignNotice
+        isDark={isDark}
+        userLoading={userLoading}
+        userType={userType ?? null}
+        practiceKind={practiceKind ?? null}
+      />
 
       {/* ── «عضويتي المؤسسة» (P3 Task 9) ──
           A paid founder sees his membership; a verified lawyer who is not

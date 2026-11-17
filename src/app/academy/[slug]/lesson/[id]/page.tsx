@@ -9,6 +9,9 @@ import {
   Headphones, Lightning, Check, X,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import AcademyComingSoon from "../../../_AcademyComingSoon";
 
 // ─── Quiz Types ───────────────────────────────────────────────────────────────
 
@@ -288,7 +291,7 @@ function QuizSection({ questions, isDark }: { questions: QuizQuestion[]; isDark:
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
-export default function LessonPage() {
+function LessonPageDemo() {
   const { slug, id } = useParams<{ slug: string; id: string }>();
   const { isDark } = useTheme();
   const [tab, setTab] = useState<"video" | "audio" | "quiz">("video");
@@ -387,5 +390,23 @@ export default function LessonPage() {
         </Link>
       </div>
     </div>
+  );
+}
+
+/**
+ * N05-A3/4/5 (owner package 13 Nov): this page showed one fixed lesson for every address, a video player with no video and notes that were never saved.
+ * No academy store sits behind it, so it renders in demo mode only; production
+ * shows the honest «قريباً» notice inside the academy frame.
+ */
+export default function LessonPage() {
+  if (isDemoMode) return <LessonPageDemo />;
+  return (
+    <AcademyComingSoon>
+      <DashboardComingSoon
+        title="الدرس — قريباً"
+        description="الدروس تُطلق مع الدورات قريباً. لا يوجد درس منشور بعد."
+        backHref="/academy"
+      />
+    </AcademyComingSoon>
   );
 }

@@ -3,6 +3,7 @@ import test from "node:test";
 import { markdownBoldToSafeHtml, safeHref, sanitizeHtml, sanitizeRichHtml } from "./sanitize.ts";
 
 const LINK_STYLE = ' style="color:#C8A762;text-decoration:underline"';
+const EXTERNAL = ' target="_blank" rel="noopener noreferrer"';
 
 /** Every `<` in `html` must open one of the allowed tag shapes. */
 function assertOnlyTags(html: string, allowed: readonly RegExp[]): void {
@@ -20,7 +21,8 @@ const INLINE_TAGS: readonly RegExp[] = [
   /^<br>/,
   /^<\/a>/,
   /^<a>/,
-  new RegExp(`^<a href="(?:#|https://|/(?![/\\\\&]))[^"<>]*"${LINK_STYLE}>`),
+  new RegExp(`^<a href="(?:#|/(?![/\\\\&]))[^"<>]*"${LINK_STYLE}>`),
+  new RegExp(`^<a href="https://[^"<>]*"${LINK_STYLE}${EXTERNAL}>`),
 ];
 const RICH_TAGS: readonly RegExp[] = [
   /^<\/(?:h2|h3|p|ul|ol|li|strong|em)>/,
@@ -40,16 +42,26 @@ test("inline: allowed tags pass, other tags are removed", () => {
 });
 
 test("inline: links keep their href and get the brand style", () => {
-  assert.equal(sanitizeHtml('<a href="https://example.sa/x">r</a>'), `<a href="https://example.sa/x"${LINK_STYLE}>r</a>`);
+  assert.equal(sanitizeHtml('<a href="https://example.sa/x">r</a>'), `<a href="https://example.sa/x"${LINK_STYLE}${EXTERNAL}>r</a>`);
   assert.equal(sanitizeHtml("<a href='/laws/abc'>r</a>"), `<a href="/laws/abc"${LINK_STYLE}>r</a>`);
   assert.equal(sanitizeHtml('<a href="#المادة-1">r</a>'), `<a href="#المادة-1"${LINK_STYLE}>r</a>`);
   assert.equal(sanitizeHtml("<a>bare</a>"), "<a>bare</a>");
   assert.equal(sanitizeHtml('<a title="t">no href</a>'), "<a>no href</a>");
 });
 
+test("P1-04: external links open in a new tab with noopener noreferrer; site links do not", () => {
+  const ext = sanitizeHtml('<a href="https://example.sa/x" target="_self" rel="opener">r</a>');
+  assert.equal(ext, `<a href="https://example.sa/x"${LINK_STYLE}${EXTERNAL}>r</a>`);
+  assert.match(markdownBoldToSafeHtml("[r](https://example.sa)"), /rel="noopener noreferrer"/);
+  for (const href of ["/laws/abc", "#المادة-1"]) {
+    const out = sanitizeHtml(`<a href="${href}" target="_blank">r</a>`);
+    assert.doesNotMatch(out, /target=|rel=/, href);
+  }
+});
+
 test("inline: an ampersand in an href is written as an entity (same URL)", () => {
-  assert.equal(sanitizeHtml('<a href="https://x.sa/?a=1&b=2">r</a>'), `<a href="https://x.sa/?a=1&amp;b=2"${LINK_STYLE}>r</a>`);
-  assert.equal(sanitizeHtml('<a href="https://x.sa/?a=1&amp;b=2">r</a>'), `<a href="https://x.sa/?a=1&amp;b=2"${LINK_STYLE}>r</a>`);
+  assert.equal(sanitizeHtml('<a href="https://x.sa/?a=1&b=2">r</a>'), `<a href="https://x.sa/?a=1&amp;b=2"${LINK_STYLE}${EXTERNAL}>r</a>`);
+  assert.equal(sanitizeHtml('<a href="https://x.sa/?a=1&amp;b=2">r</a>'), `<a href="https://x.sa/?a=1&amp;b=2"${LINK_STYLE}${EXTERNAL}>r</a>`);
 });
 
 test("text: entities and quotes are kept, stray angle brackets are escaped", () => {
@@ -65,7 +77,7 @@ test("markdown: bold, italic, inline code and links on Arabic text", () => {
   assert.equal(markdownBoldToSafeHtml("الحالة `[ملغاة]`"), "الحالة [ملغاة]");
   assert.equal(
     markdownBoldToSafeHtml("انظر [الرابط](https://example.sa/عزل)"),
-    `انظر <a href="https://example.sa/عزل"${LINK_STYLE}>الرابط</a>`,
+    `انظر <a href="https://example.sa/عزل"${LINK_STYLE}${EXTERNAL}>الرابط</a>`,
   );
   assert.equal(markdownBoldToSafeHtml("[قسم](#قسم-٢)"), `<a href="#قسم-٢"${LINK_STYLE}>قسم</a>`);
   assert.equal(markdownBoldToSafeHtml(""), "");

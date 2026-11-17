@@ -61,9 +61,9 @@ export async function askAssistant(
       chargedPoints: typeof json.chargedPoints === "number" ? json.chargedPoints : 0,
     };
   }
-  if (res.status === 401) return { ok: false, text: "سجّل الدخول لاستخدام المستشار الذكي", citations: [], code };
+  if (res.status === 401) return { ok: false, text: "سجّل الدخول لاستخدام المساعد المتقدم", citations: [], code };
   // Lawyers and firms (owner ٤١٧, 8 Nov); the library's AI tier still gates it, in this tool's name.
-  const library = libraryToolRefusal(code, "المستشار الذكي", input.userType ?? null);
+  const library = libraryToolRefusal(code, "المساعد المتقدم", input.userType ?? null);
   if (library) return { ok: false, text: library.text, citations: [], conversationId, code };
   return { ok: false, text: typeof json.error === "string" && json.error ? json.error : FALLBACK, citations: [], conversationId, code };
 }

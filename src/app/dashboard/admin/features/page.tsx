@@ -103,7 +103,7 @@ export default function AdminFeatureFlagsPage() {
   const [search, setSearch] = useState("");
   const [flags, setFlags] = useState(INITIAL_FLAGS);
   const [draft, setDraft] = useState<AdminFeatureFlag | null>(null);
-  const [toast, setToast] = useState("Feature Flags هنا واجهة Backend-ready فقط. لا تغيّر betaConfig أو production runtime فعلياً.");
+  const [toast, setToast] = useState("مفاتيح الميزات هنا للعرض فقط: تغييرها لا يغيّر سلوك المنصة الفعلي بعد.");
 
   const filteredFlags = flags.filter((flag) =>
     [flag.name, flag.key, flag.description, flag.category].some((value) => value.toLowerCase().includes(search.toLowerCase())),
@@ -194,8 +194,8 @@ export default function AdminFeatureFlagsPage() {
       {draft && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 space-y-4`}>
           <div className="flex items-center justify-between">
-            <h2 className={`font-black ${isDark ? "text-white" : "text-gray-900"}`}>تجهيز Feature Flag</h2>
-            <span className="text-[11px] px-2 py-1 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold">Backend-ready</span>
+            <h2 className={`font-black ${isDark ? "text-white" : "text-gray-900"}`}>تجهيز مفتاح ميزة</h2>
+            <span className="text-[11px] px-2 py-1 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold">قريباً</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Field label="الاسم"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className={inputClass(isDark)} /></Field>

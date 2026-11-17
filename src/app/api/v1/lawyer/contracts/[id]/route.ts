@@ -5,8 +5,9 @@ import { isContractStatus, isContractType, contractTransitionIssue, type Contrac
 import { ensureRenewalObligation } from "../_obligations";
 import {
   CONTRACT_SELECT, ISO_DATE_RE, dbErrorResponse, toContractDto, profileNames, contractListExtras,
-  loadContractDetail, type ContractRow,
+  loadContractDetail, resolveCaseLink, type ContractRow,
 } from "../_shared";
+import { parseRequestIdInput } from "@/lib/services/contractCaseLink";
 import { assertLinkableAccount } from "../../clients/_link";
 
 /**
@@ -47,6 +48,8 @@ interface UpdateBody {
   counterpartyName?: string | null;
   lawyerClientId?: string | null;
   clientUserId?: string | null;
+  /** N01-6: link to one of the caller's own cases; null unlinks. */
+  requestId?: string | null;
   valueSar?: number | null;
   currency?: string;
   startsOn?: string | null;
@@ -207,6 +210,19 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       }
     }
 
+    // N01-6 «ربط بقضية قائمة»: absent leaves the link, null/"" removes it, an
+    // id must be one of the caller's own cases of the contract's client card
+    // (the card this PATCH sets, else the one the contract already has).
+    const requestIdInput = parseRequestIdInput(body.requestId);
+    if (requestIdInput.kind === "invalid") {
+      return NextResponse.json({ error: "معرّف القضية غير صالح." }, { status: 400 });
+    }
+    if (requestIdInput.kind === "set" && requestIdInput.requestId !== current.request_id) {
+      const effectiveClientId = lawyerClientId !== undefined ? lawyerClientId : current.lawyer_client_id;
+      const caseLink = await resolveCaseLink(supabase, user.id, requestIdInput.requestId, effectiveClientId);
+      if (!caseLink.ok) return NextResponse.json({ error: caseLink.error }, { status: caseLink.status });
+    }
+
     // status BECOMES active in this PATCH (not merely "is already active" —
     // that must not stamp a signature date on an unrelated field edit), no
     // signed_on yet, and none given in this PATCH: stamp today.
@@ -222,6 +238,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (counterpartyName !== undefined) patch.counterparty_name = counterpartyName;
     if (lawyerClientId !== undefined) patch.lawyer_client_id = lawyerClientId;
     if (clientUserId !== undefined) patch.client_user_id = clientUserId;
+    if (requestIdInput.kind === "set") patch.request_id = requestIdInput.requestId;
+    if (requestIdInput.kind === "clear") patch.request_id = null;
     if (valueSar !== undefined) patch.value_sar = valueSar;
     if (currency !== undefined) patch.currency = currency;
     if (startsOn !== undefined) patch.starts_on = startsOn;
@@ -246,6 +264,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           return NextResponse.json({ error: "غير مصرح لك بتعديل هذا العقد" }, { status: 403 });
         }
         console.error("[lawyer/contracts PATCH] update failed:", updateError.message, updateError.code);
+        // Until 20261123_40 runs, contracts.request_id is still UNIQUE.
+        if (updateError.code === "23505" && requestIdInput.kind === "set") {
+          return NextResponse.json({ error: "هذه القضية مربوطة بعقد آخر — لا يمكن ربط عقد ثانٍ بها حالياً." }, { status: 409 });
+        }
         const { status: httpStatus, message } = dbErrorResponse(updateError);
         return NextResponse.json({ error: message }, { status: httpStatus });
       }

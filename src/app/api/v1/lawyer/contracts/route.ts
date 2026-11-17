@@ -9,8 +9,9 @@ import {
 import { ensureRenewalObligation } from "./_obligations";
 import {
   CONTRACT_SELECT, ISO_DATE_RE, dbErrorResponse, toContractDto, profileNames, contractListExtras,
-  type ContractRow,
+  resolveCaseLink, type ContractRow,
 } from "./_shared";
+import { parseRequestIdInput } from "@/lib/services/contractCaseLink";
 import { assertLinkableAccount } from "../clients/_link";
 
 /**
@@ -26,8 +27,11 @@ import { assertLinkableAccount } from "../clients/_link";
 const COMMERCIAL_REGISTER_RE = /^[0-9]{10}$/;
 
 /**
- * GET /api/v1/lawyer/contracts?status=<ContractStatus>|all&limit
+ * GET /api/v1/lawyer/contracts?status=<ContractStatus>|all&limit[&requestId][&lawyerClientId]
  * RLS-scoped, ordered updated_at desc. Response: { data: Contract[], total }.
+ * N01-7: `requestId` lists one case's contracts (cases/[id]), `lawyerClientId`
+ * one client card's (clients/[id]) — both are plain equality filters on rows
+ * RLS already returns.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -48,6 +52,10 @@ export async function GET(request: NextRequest) {
 
     let query = supabase.from("contracts").select(CONTRACT_SELECT, { count: "exact" });
     if (statusParam !== "all") query = query.eq("status", statusParam);
+    const requestIdParam = searchParams.get("requestId");
+    if (requestIdParam) query = query.eq("request_id", requestIdParam);
+    const lawyerClientIdParam = searchParams.get("lawyerClientId");
+    if (lawyerClientIdParam) query = query.eq("lawyer_client_id", lawyerClientIdParam);
 
     const { data, error, count } = await query.order("updated_at", { ascending: false }).limit(limit);
     if (error) {
@@ -95,6 +103,8 @@ interface CreateBody {
   counterpartyName?: string | null;
   lawyerClientId?: string | null;
   clientUserId?: string | null;
+  /** N01-6: one of the caller's own cases (service_requests.id). */
+  requestId?: string | null;
   valueSar?: number | null;
   currency?: string;
   startsOn?: string | null;
@@ -301,6 +311,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // N01-6 «ربط بقضية قائمة»: an own case only, of the same client card.
+    const requestIdInput = parseRequestIdInput(body.requestId);
+    if (requestIdInput.kind === "invalid") {
+      return NextResponse.json({ error: "معرّف القضية غير صالح." }, { status: 400 });
+    }
+    const requestId = requestIdInput.kind === "set" ? requestIdInput.requestId : null;
+    if (requestId) {
+      const caseLink = await resolveCaseLink(supabase, user.id, requestId, lawyerClientId);
+      if (!caseLink.ok) return NextResponse.json({ error: caseLink.error }, { status: caseLink.status });
+    }
+
     // firm_id — ALWAYS resolved server-side from the creator's own active
     // firm_members row (same lookup as service-requests POST), never trusted
     // from the body; sent only when non-null.
@@ -323,6 +344,7 @@ export async function POST(request: NextRequest) {
         ...(firmId ? { firm_id: firmId } : {}),
         lawyer_client_id: lawyerClientId,
         client_user_id: clientUserId,
+        request_id: requestId,
         title,
         contract_type: contractType,
         status,
@@ -341,6 +363,10 @@ export async function POST(request: NextRequest) {
 
     if (error || !data) {
       console.error("[lawyer/contracts POST] insert failed:", error?.message, error?.code);
+      // Until 20261123_40 runs, contracts.request_id is still UNIQUE.
+      if (error?.code === "23505" && requestId) {
+        return NextResponse.json({ error: "هذه القضية مربوطة بعقد آخر — لا يمكن ربط عقد ثانٍ بها حالياً." }, { status: 409 });
+      }
       const { status: httpStatus, message } = dbErrorResponse(error);
       return NextResponse.json({ error: message }, { status: httpStatus });
     }

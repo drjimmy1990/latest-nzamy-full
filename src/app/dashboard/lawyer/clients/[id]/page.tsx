@@ -27,6 +27,7 @@ import { CLIENT_FLAGS, feePairIssue, isMoneyFigure } from "@/lib/services/client
 import { checkSaudiPhone, checkOptionalEmail } from "@/lib/services/contactFieldRules";
 import { countPhraseAr, type ArabicCountForms } from "@/lib/services/arabicCount";
 import { isLawyerCaseRow } from "../../cases/_caseListRules";
+import LinkedContractsList from "../../_components/contracts/LinkedContractsList";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -1043,6 +1044,9 @@ export default function ClientDetailPage() {
               </div>
             )}
           </motion.div>
+
+          {/* N01-7: عقود هذا الموكّل (contracts.lawyer_client_id) — read-only */}
+          <LinkedContractsList lawyerClientId={clientId} isDark={isDark} />
         </div>
 
         {/* Right column: Financial position + Notes */}

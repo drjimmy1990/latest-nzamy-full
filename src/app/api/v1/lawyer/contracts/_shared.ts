@@ -14,6 +14,7 @@ import type {
   ContractStatus, ContractType, VersionLabel, PartyRole, PartyKind, EntityType,
   ObligationKind, ObligationStatus, PaymentStage, PaymentStatus,
 } from "@/lib/services/contractsService";
+import { caseRelationshipFilter, caseLinkIssue } from "@/lib/services/contractCaseLink";
 
 // ─── selects (column lists the tables actually have — 20260905_phase3) ───────
 
@@ -199,6 +200,49 @@ export function dbErrorResponse(error: { code?: string; message?: string } | nul
 }
 
 export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * N01-6 «ربط بقضية قائمة»: may this caller link a contract to `requestId`?
+ * Only one of the caller's OWN cases — assigned to them, or filed under their
+ * active firm (caseRelationshipFilter; RLS alone would also admit unassigned
+ * marketplace requests) — and, when the contract names a client card, a case
+ * of that same client (caseLinkIssue). RLS-scoped client only.
+ */
+export async function resolveCaseLink(
+  supabase: SupabaseClient,
+  userId: string,
+  requestId: string,
+  contractLawyerClientId: string | null,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const { data: membership, error: membershipError } = await supabase
+    .from("firm_members")
+    .select("firm_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  if (membershipError) {
+    // Unreadable membership: only the caller's own assigned cases qualify.
+    console.error("[contracts/_shared] case-link membership lookup failed:", membershipError.message, membershipError.code);
+  }
+  const firmId = (membership as { firm_id?: string } | null)?.firm_id ?? null;
+
+  const { data: caseRow, error } = await supabase
+    .from("service_requests")
+    .select("id, lawyer_client_id")
+    .eq("id", requestId)
+    .or(caseRelationshipFilter(userId, firmId))
+    .maybeSingle();
+  if (error) {
+    console.error("[contracts/_shared] case-link lookup failed:", error.message, error.code);
+    return { ok: false, status: 500, error: "تعذّر التحقق من القضية المختارة." };
+  }
+  const issue = caseLinkIssue(
+    caseRow ? { lawyer_client_id: (caseRow as { lawyer_client_id: string | null }).lawyer_client_id ?? null } : null,
+    contractLawyerClientId,
+  );
+  return issue ? { ok: false, status: 400, error: issue } : { ok: true };
+}
 
 /**
  * Display names for a set of user ids — through the service client, and ONLY

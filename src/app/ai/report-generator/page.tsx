@@ -215,7 +215,7 @@ function ReportGeneratorInner() {
                       : isDark ? "border-white/[0.06] text-zinc-500 hover:text-zinc-300" : "border-slate-100 text-slate-500 hover:text-royal"
                     }`}
                   >
-                    {f === "word" ? "Word" : f === "pdf" ? "PDF" : "Markdown"}
+                    {f === "word" ? "Word" : f === "pdf" ? "PDF" : "نص"}
                   </button>
                 ))}
               </div>

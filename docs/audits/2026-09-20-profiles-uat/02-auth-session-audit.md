@@ -43,7 +43,7 @@ Protected page prefixes `:102-118`: `/dashboard`, `/ai/settings`, `/ai/vault`, `
 
 Session refresh: `supabase.auth.getUser()` at `:272` (page) and `:172-174` (API). Cookie forwarding is the canonical `@supabase/ssr` double-write (`:252-264`, `:163-168`) — correct. Redirect decision `:274-280`: `if (!user) → /login?from=`. `:306-310` one `profiles` read per protected page request; `:392` **fails open** on a read error (40-line comment `:312-391`). Edge-level API 401 (`:175`) applies only to `PROTECTED_API_PREFIXES = ["/api/v1/lawyer/", "/api/v1/admin/", "/api/v1/firm/"]` (`src/lib/auth/routeAccess.ts:139-143`) — **`/api/v1/service-requests` is not in that list**, so the UAT's `Unauthorized` came from the handler (§3).
 
-Demo/beta gates: `src/proxy.ts:488`; `src/lib/runtimeMode.ts:13-19`; `src/hooks/useUser.ts:414-415` (`nzamy_demo_role`, `nzamy_demo_key`); `src/lib/betaConfig.ts:40-80`; `src/lib/test-credentials.ts:18` (`TEST_PASSWORD = "Nzamy@2026"`); `src/lib/demo-accounts.ts`; `src/app/demo-login/page.tsx`.
+Demo/beta gates: `src/proxy.ts:488`; `src/lib/runtimeMode.ts:13-19`; `src/hooks/useUser.ts:414-415` (`nzamy_demo_role`, `nzamy_demo_key`); `src/lib/betaConfig.ts:40-80`; `src/lib/test-credentials.ts:18` (`TEST_PASSWORD = "<test password>"`); `src/lib/demo-accounts.ts`; `src/app/demo-login/page.tsx`.
 
 Startup assertion `src/instrumentation.ts:9-24` throws if backend ≠ `"supabase"` — but `:12` `if (process.env.NEXT_RUNTIME !== 'nodejs') return;` and `:16` `if (NODE_ENV !== 'production') return;` ⇒ **edge/proxy runtime and every dev server are exempt**.
 

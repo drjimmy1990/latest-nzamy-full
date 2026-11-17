@@ -17,11 +17,16 @@ import { fileURLToPath } from "node:url";
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8").replace(/\r\n/g, "\n");
 
-const DOC_ROUTES: ReadonlyArray<{ file: string; request: string; before: RegExp }> = [
-  { file: "app/api/library/laws/[slug]/route.ts", request: "_request", before: /formatArticleWithPaywall\(a, hasFullAccess/ },
-  { file: "app/api/library/decrees/[id]/route.ts", request: "_request", before: /const response = \{/ },
-  { file: "app/api/library/precedents/[slug]/route.ts", request: "request", before: /hasAccess: hasFullAccess/ },
-  { file: "app/api/library/books/[slug]/route.ts", request: "request", before: /hasAccess: hasFullAccess/ },
+/**
+ * `fullText`: owner ٤٤٧ (N05-L6) — only an entitled full-text open spends the
+ * 220 / 400 daily cap, never a preview. Each route passes the same flag it
+ * gives enforceLibraryDevice, so the quota and the device rule agree.
+ */
+const DOC_ROUTES: ReadonlyArray<{ file: string; request: string; fullText: string; before: RegExp }> = [
+  { file: "app/api/library/laws/[slug]/route.ts", request: "_request", fullText: "isSubscriber", before: /formatArticleWithPaywall\(a, hasFullAccess/ },
+  { file: "app/api/library/decrees/[id]/route.ts", request: "_request", fullText: "isSubscriber", before: /const response = \{/ },
+  { file: "app/api/library/precedents/[slug]/route.ts", request: "request", fullText: "hasFullAccess", before: /hasAccess: hasFullAccess/ },
+  { file: "app/api/library/books/[slug]/route.ts", request: "request", fullText: "freeLimit === -1 && !isWhitelisted", before: /hasAccess: hasFullAccess/ },
 ];
 
 for (const r of DOC_ROUTES) {
@@ -30,12 +35,14 @@ for (const r of DOC_ROUTES) {
     assert.match(src, /import \{ spendLibraryDocument \} from '@\/lib\/library\/libraryDocQuota';/);
     assert.equal(src.match(/spendLibraryDocument\(/g)?.length, 1, "called once");
     const device = src.indexOf("if (deviceRefusal) return deviceRefusal;");
-    const spend = src.indexOf(`const quotaRefusal = await spendLibraryDocument(${r.request}, userId);`);
+    const spend = src.indexOf(`const quotaRefusal = await spendLibraryDocument(${r.request}, userId, ${r.fullText});`);
     const text = src.search(r.before);
     assert.ok(device > 0, "the device check is there");
     assert.ok(spend > device, "spent AFTER the device check (a refused device spends nothing)");
     assert.ok(text > spend, "spent BEFORE the text is built");
     assert.match(src.slice(spend, spend + 200), /if \(quotaRefusal\) return quotaRefusal;/);
+    // The quota follows the device rule: the same full-text flag goes to both.
+    assert.ok(src.includes(`await enforceLibraryDevice(userId, ${r.fullText});`), "the device check uses the same flag");
   });
 }
 
@@ -67,7 +74,7 @@ test("the helper keys the document exactly as the proxy did, and fails open", ()
   assert.match(src, /libraryQuotaTarget\(request\.method, new URL\(request\.url\)\.pathname\)/);
   assert.match(src, /if \(!target \|\| target\.kind !== "doc"\) return null;/);
   assert.match(src, /quotaRefusal\(await libraryReadQuotaHit\(userId, target\.docKey\), Date\.now\(\)\)/);
-  assert.match(src, /if \(!userId \|\| !isSupabaseMode\) return null;/);
+  assert.match(src, /if \(!userId \|\| !fullText \|\| !isSupabaseMode\) return null;/, "a preview spends nothing (owner ٤٤٧)");
   assert.match(src, /"Cache-Control": "private, no-store"/);
   assert.match(src, /\} catch \{\n    return null;\n  \}/);
 });

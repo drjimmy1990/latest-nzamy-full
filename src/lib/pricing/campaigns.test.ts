@@ -11,6 +11,7 @@ import {
   founderCapacityLiteralIssue,
   founderOfferCampaign,
   founderSummaryFromRpc,
+  founderWindow,
   mergeFounderCampaignSetting,
   riyadhDay,
   type Campaign,
@@ -62,7 +63,7 @@ test("founder campaign: shows on the first and the last day, both included, with
     assert.equal(c.badgeAr, "عضوية المحامي المؤسس");
     assert.equal(c.messageAr, "عضوية المحامي المؤسس السنوية — مقاعد محدودة لمن يوثّق رخصته ويُتم السداد");
     assert.equal(c.ctaAr, "اعرف التفاصيل");
-    assert.equal(c.ctaHref, "/pricing?audience=lawyers&campaign=founder-2026#founder-plan");
+    assert.equal(c.ctaHref, "/founder");
     assert.equal(c.id, "founder-2026-10-25");
   }
 });
@@ -85,7 +86,7 @@ test("the founder copy promises no signup gift — no free library days, no badg
   assert.doesNotMatch(all, /سجّل|سجل الآن|مجان|٣ أشهر|3 أشهر|ثلاثة أشهر|شارة المؤسس/);
   assert.match(FOUNDER_CAMPAIGN_COPY.messageAr, /يوثّق رخصته ويُتم السداد/);
   // P3 Task 8: /pricing reads ?audience= and ?campaign= and has the #founder-plan card.
-  assert.equal(FOUNDER_CAMPAIGN_COPY.ctaHref, "/pricing?audience=lawyers&campaign=founder-2026#founder-plan");
+  assert.equal(FOUNDER_CAMPAIGN_COPY.ctaHref, "/founder");
 });
 
 test("GET /api/v1/campaigns/active returns null before reading the setting while the membership is not on sale", async () => {
@@ -306,4 +307,51 @@ test("GET /api/v1/campaigns/active reads founder_seat_summary() and tells a fail
   assert.match(route, /\.rpc\("founder_seat_summary"\)/);
   assert.match(route, /founderOfferCampaign\(campaign, summary, FOUNDER_MEMBERSHIP_ON_SALE\)/);
   assert.match(route, /founderUnavailable: true/);
+});
+
+// ── founderWindow (owner package 17 Nov: 18 Nov 00:00 → 18 Dec 00:00 Riyadh) ──
+
+const NOV18 = { starts_on: "2026-11-18", ends_on: "2026-12-17", library_days: 90, capacity: 1096 };
+const seats = (seatsLeft: number, salePaused = false) => ({ capacity: 1096, seatsLeft, onSale: seatsLeft > 0, salePaused });
+
+test("founderWindow: pre before 18 Nov 00:00 Riyadh, with the exact instants", () => {
+  const w = founderWindow(NOV18, seats(1096), new Date("2026-11-17T20:59:59Z"), true);
+  assert.ok(w);
+  assert.equal(w.state, "pre");
+  assert.equal(w.startsAt, "2026-11-18T00:00:00+03:00");
+  assert.equal(w.endsAtExclusive, "2026-12-18T00:00:00+03:00");
+  assert.equal(w.serverNow, "2026-11-17T20:59:59.000Z");
+  assert.equal(w.seatsTotal, 1096);
+  assert.equal(w.seatsLeft, 1096);
+  assert.equal(w.planId, "lawyer-founder-2026");
+});
+
+test("founderWindow: live from the opening second to the last second of 17 Dec", () => {
+  assert.equal(founderWindow(NOV18, seats(10), new Date("2026-11-17T21:00:00Z"), true)?.state, "live");
+  assert.equal(founderWindow(NOV18, seats(10), new Date("2026-12-17T20:59:59Z"), true)?.state, "live");
+  assert.equal(founderWindow(NOV18, seats(10), new Date("2026-12-17T21:00:00Z"), true)?.state, "ended");
+});
+
+test("founderWindow: sold out, paused, and an unknown seat count never reads as live", () => {
+  const t = new Date("2026-11-20T09:00:00Z");
+  assert.equal(founderWindow(NOV18, seats(0), t, true)?.state, "sold_out");
+  assert.equal(founderWindow(NOV18, seats(5, true), t, true)?.state, "paused");
+  const unknown = founderWindow(NOV18, null, t, true);
+  assert.equal(unknown?.state, "paused");
+  assert.equal(unknown?.seatsLeft, null);
+  // before the opening an unknown seat count is still "pre"
+  assert.equal(founderWindow(NOV18, null, new Date("2026-11-10T00:00:00Z"), true)?.state, "pre");
+});
+
+test("founderWindow: null without usable dates or with the code switch off", () => {
+  const t = new Date("2026-11-20T09:00:00Z");
+  assert.equal(founderWindow(NOV18, seats(5), t, false), null);
+  assert.equal(founderWindow({ starts_on: null, ends_on: null }, seats(5), t, true), null);
+  assert.equal(founderWindow({ starts_on: "2026-12-17", ends_on: "2026-11-18" }, seats(5), t, true), null);
+  assert.equal(founderWindow("x", seats(5), t, true), null);
+  // the month boundary: ends_on 31 Dec → exclusive end 1 Jan
+  assert.equal(
+    founderWindow({ starts_on: "2026-12-01", ends_on: "2026-12-31" }, seats(5), t, true)?.endsAtExclusive,
+    "2027-01-01T00:00:00+03:00",
+  );
 });

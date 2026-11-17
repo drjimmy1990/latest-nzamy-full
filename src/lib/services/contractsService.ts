@@ -147,6 +147,8 @@ export interface CreateContractInput {
   lawyerClientId?: string | null;
   /** Share with the client's platform account (they then see it under «عقودي»). */
   clientUserId?: string | null;
+  /** N01-6 «ربط بقضية قائمة»: one of the caller's own cases; null unlinks (PATCH). */
+  requestId?: string | null;
   valueSar?: number | null;
   currency?: string;
   startsOn?: string | null;
@@ -187,10 +189,22 @@ const DEMO = "مدير العقود غير متاح في وضع العرض ال�
 
 // ─── lawyer / firm ───────────────────────────────────────────────────────────
 
-export async function getContracts(opts?: { status?: ContractStatus | "all"; limit?: number }): Promise<ListRead<Contract>> {
+export async function getContracts(opts?: {
+  status?: ContractStatus | "all";
+  limit?: number;
+  /** N01-7: one case's contracts. */
+  requestId?: string;
+  /** N01-7: one client card's contracts. */
+  lawyerClientId?: string;
+}): Promise<ListRead<Contract>> {
   if (!isSupabaseMode) return listOk([]);
   try {
-    const body = await apiGet<{ data: Contract[]; total?: number }>(BASE, { status: opts?.status, limit: opts?.limit });
+    const body = await apiGet<{ data: Contract[]; total?: number }>(BASE, {
+      status: opts?.status,
+      limit: opts?.limit,
+      requestId: opts?.requestId,
+      lawyerClientId: opts?.lawyerClientId,
+    });
     return listFromApi(body);
   } catch (error) {
     console.error("[contractsService] getContracts failed:", error);

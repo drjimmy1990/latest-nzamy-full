@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle, Crown, Info, SealCheck } from "@phosphor-icons/react";
+import { ArrowLeft, CheckCircle, Crown, Info, SealCheck } from "@phosphor-icons/react";
+import { FOUNDER_FALLBACK_ENDS_AT_EXCLUSIVE, FOUNDER_PAGE_PATH } from "@/lib/founder/landingCopy";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import type { AudienceTab } from "@/constants/pricingData";
@@ -13,6 +14,7 @@ import {
   FOUNDER_FINE_PRINT,
   FOUNDER_PAUSED_TEXT,
   FOUNDER_PLAN_ANCHOR,
+  FOUNDER_PRE_TEXT,
   FOUNDER_TERM_LINE,
   founderCta,
   founderEndsLine,
@@ -58,6 +60,8 @@ export function FounderPlanSection({
   campaignParam: string | null;
 }) {
   const [offer, setOffer] = useState<FounderOffer | null>(null);
+  // Whether the campaign page is still worth a link (before the manifest's end), read with the offer.
+  const [campaignAhead, setCampaignAhead] = useState(false);
   const scrolled = useRef(false);
 
   useEffect(() => {
@@ -65,7 +69,9 @@ export function FounderPlanSection({
     fetch("/api/v1/campaigns/active")
       .then((res) => (res.ok ? res.json() : null))
       .then((body: unknown) => {
-        if (!cancelled) setOffer(founderOfferFromApi(body));
+        if (cancelled) return;
+        setCampaignAhead(Date.now() < Date.parse(FOUNDER_FALLBACK_ENDS_AT_EXCLUSIVE));
+        setOffer(founderOfferFromApi(body));
       })
       .catch(() => {
         if (!cancelled) setOffer({ state: "unavailable" });
@@ -85,7 +91,37 @@ export function FounderPlanSection({
     document.getElementById(FOUNDER_PLAN_ANCHOR)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [view]);
 
+  // F6: before the sale opens (and whenever the card is hidden on the lawyers
+  // tab) a lawyer still finds the campaign page. Not while loading (no flash).
+  if (view === "hidden" && offer && campaignAhead && audience === "lawyers" && !libraryMode) {
+    return (
+      <section dir="rtl" className="mx-auto max-w-3xl px-4 pt-8">
+        <Link
+          href={FOUNDER_PAGE_PATH}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-gold/40 bg-gold/10 px-5 py-4 text-center text-sm font-bold text-[#0B3D2E] transition hover:bg-gold/20 dark:text-[#C8A762]"
+        >
+          <Crown size={18} weight="fill" aria-hidden />
+          {FOUNDER_CARD_TITLE} — تفاصيل العرض
+          <ArrowLeft size={16} weight="bold" aria-hidden />
+        </Link>
+      </section>
+    );
+  }
   if (view === "hidden" || !offer) return null;
+
+  if (view === "pre") {
+    return (
+      <section id={FOUNDER_PLAN_ANCHOR} dir="rtl" className="mx-auto max-w-3xl scroll-mt-24 px-4 pt-8">
+        <p className="flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-gold/30 bg-gold/10 px-5 py-4 text-center text-sm font-bold text-[#0B3D2E] dark:text-[#C8A762]">
+          <Info size={18} weight="fill" aria-hidden />
+          {FOUNDER_PRE_TEXT}
+          <Link href="/founder" className="underline underline-offset-4">
+            صفحة الحملة
+          </Link>
+        </p>
+      </section>
+    );
+  }
 
   if (view === "closed" || view === "paused") {
     return (
@@ -211,6 +247,15 @@ export function FounderPlanCard({
             <p className={quiet} role="status" aria-live="polite">{cta.label}</p>
           )}
         </div>
+
+        {/* F6 (owner package 17 Nov): the campaign's own page, with the samples, the clock and the seats. */}
+        <Link
+          href={FOUNDER_PAGE_PATH}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/50 px-5 py-3 text-sm font-bold text-[#0B3D2E] transition hover:bg-gold/10 dark:border-[#C8A762]/40 dark:text-[#C8A762]"
+        >
+          تفاصيل الباقة كاملة
+          <ArrowLeft size={16} weight="bold" aria-hidden />
+        </Link>
 
         <p className="mt-4 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{FOUNDER_FINE_PRINT}</p>
       </div>

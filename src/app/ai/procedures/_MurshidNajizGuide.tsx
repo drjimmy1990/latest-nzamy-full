@@ -1,131 +1,83 @@
 "use client";
 
-import { Fragment, useDeferredValue, useMemo, useState, type ReactNode } from "react";
-import { Info, MagnifyingGlass, Warning } from "@phosphor-icons/react";
+import { useDeferredValue, useMemo, useState } from "react";
+import { CaretDown, Info, MagnifyingGlass, Warning } from "@phosphor-icons/react";
 import { HighlightProvider, Hl } from "@/components/search/MultiColorHighlight";
 import { toArabicDigits } from "@/lib/services/arabicCount";
-import { parseInline, plainText, type GuideBlock } from "@/lib/murshid/guideBlocks";
+import type { NajizClass, NajizClassifications, NajizCourt, NajizNote, NajizType } from "@/lib/murshid/najizClassifications";
 import { searchRows, SEARCH_SYNTAX_HINT } from "./_circuitsSearch";
 import { arabicDate, tone, useMurshidJson } from "./_murshidShared";
 
 /**
  * «دليل ناجز» — the owner's corrected najiz guide (2026-10-28): the six filing
  * steps on najiz and all 243 claim/request types in 7 main and 43 sub
- * classifications. GET /api/v1/murshid/najiz-guide returns it as plain blocks
- * (src/lib/murshid/guideBlocks.ts); this renders them as React elements that
- * hold text — no HTML from the file is ever injected.
+ * classifications. GET /api/v1/murshid/najiz-guide returns them as data
+ * (src/lib/murshid/najizClassifications.ts), without the PDF's tables or its
+ * «ص N» page references (owner package 13 Nov, N06-4 / N06-5): each court
+ * opens to its classes, each class to its types. Text only — no HTML from the
+ * file is ever injected.
  *
- * The filter keeps only the table rows that match (with the heading they sit
- * under), using the page's search grammar.
+ * The search keeps only the types that match (with their court and class),
+ * using the page's search grammar.
  */
 
-interface GuideResponse { sourceDate: string; blocks: GuideBlock[] }
-type Table = Extract<GuideBlock, { type: "table" }>;
+interface GuideResponse extends Partial<NajizClassifications> { sourceDate: string }
 
-function Inline({ text }: { text: string }) {
-  return (
-    <>
-      {parseInline(text).map((s, i) => {
-        if (s.t === "strong") return <strong key={i} className="font-bold"><Hl text={s.v} /></strong>;
-        if (s.t === "em") return <em key={i}><Hl text={s.v} /></em>;
-        if (s.t === "code") return <span key={i} className="font-semibold"><Hl text={s.v} /></span>;
-        return <Fragment key={i}><Hl text={s.v} /></Fragment>;
-      })}
-    </>
-  );
-}
+/**
+ * `?v=2`: the route's body changed from `{ blocks }` to `{ steps, courts }`, and
+ * murshid responses are publicly cached (an hour, stale for a day), so the new
+ * page asks a new URL instead of reading an old cached body.
+ */
+const NAJIZ_GUIDE_URL = "/api/v1/murshid/najiz-guide?v=2";
+interface TypeRow { court: NajizCourt; klass: NajizClass; type: NajizType }
 
-function Lines({ lines }: { lines: string[] }) {
-  return (
-    <>
-      {lines.map((l, i) => (
-        <span key={i} className="block"><Inline text={l} /></span>
-      ))}
-    </>
-  );
-}
-
-const rowText = (row: string[][]) => row.flat().map(plainText);
+const typesCount = (court: NajizCourt) => court.classes.reduce((n, k) => n + k.types.length, 0);
+const rowFields = (r: TypeRow) => [r.type.name, r.type.description, r.klass.title, r.court.title];
 
 export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
   const t = tone(isDark);
-  const { data, failed } = useMurshidJson<GuideResponse>("/api/v1/murshid/najiz-guide");
+  const { data, failed } = useMurshidJson<GuideResponse>(NAJIZ_GUIDE_URL);
   const [q, setQ] = useState("");
   const query = useDeferredValue(q.trim());
 
-  const filtered = useMemo(() => {
-    if (!data || !query) return null;
-    const out: { heading: string; table: Table }[] = [];
-    let heading = "";
-    let total = 0;
-    for (const b of data.blocks) {
-      if (b.type === "heading" && b.level <= 4) heading = b.text;
-      if (b.type !== "table") continue;
-      const rows = searchRows(b.rows, query, rowText).matches;
-      if (rows.length) {
-        out.push({ heading, table: { ...b, rows } });
-        total += rows.length;
-      }
-    }
-    return { groups: out, total };
-  }, [data, query]);
+  const rows = useMemo<TypeRow[]>(
+    () => (data?.courts ?? []).flatMap((court) => court.classes.flatMap((klass) => klass.types.map((type) => ({ court, klass, type })))),
+    [data],
+  );
+  const matches = useMemo(() => (query ? searchRows(rows, query, rowFields).matches : null), [rows, query]);
 
   if (failed) return <p className={`text-[12px] ${t.muted}`}>تعذّر تحميل دليل ناجز — أعد تحميل الصفحة.</p>;
   if (!data) return <p className={`text-[12px] ${t.muted}`}>جارٍ تحميل دليل ناجز…</p>;
+  const steps = data.steps ?? [];
+  const courts = data.courts ?? [];
 
-  const renderTable = (b: Table, key: string | number) => (
-    <div key={key} className={`overflow-x-auto rounded-xl border ${isDark ? "border-white/[0.06]" : "border-slate-200"}`}>
-      <table className="w-full min-w-[560px] text-[11px] leading-relaxed border-collapse">
-        {b.header.length > 0 && (
-          <thead className={isDark ? "bg-zinc-800 text-zinc-300" : "bg-slate-100 text-slate-700"}>
-            <tr>{b.header.map((c, i) => <th key={i} scope="col" className="px-2 py-1.5 text-start font-bold align-bottom"><Lines lines={c} /></th>)}</tr>
-          </thead>
-        )}
-        <tbody>
-          {b.rows.map((r, i) => (
-            <tr key={i} className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-              {r.map((c, j) => <td key={j} className={`px-2 py-1.5 align-top ${t.body}`}><Lines lines={c} /></td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  const line = isDark ? "border-white/[0.06]" : "border-slate-100";
+  const summary = `flex items-center justify-between gap-2 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden`;
+  const caret = `flex-shrink-0 transition-transform group-open:rotate-180 ${t.muted}`;
 
-  const renderBlock = (b: GuideBlock, i: number): ReactNode => {
-    switch (b.type) {
-      case "heading": {
-        const size = b.level <= 2 ? "text-[14px]" : b.level === 3 ? "text-[13px]" : "text-[12px]";
-        return <p key={i} role="heading" aria-level={Math.min(6, b.level + 1)} className={`${size} font-bold pt-2 ${t.strong}`}><Inline text={b.text} /></p>;
-      }
-      case "paragraph":
-        return <p key={i} className={`text-[12px] leading-relaxed ${t.body}`}><Inline text={b.text} /></p>;
-      case "item":
-        return (
-          <p key={i} className={`text-[12px] leading-relaxed flex gap-1.5 ${t.body}`} style={{ paddingInlineStart: `${b.depth * 1}rem` }}>
-            <span className={`flex-shrink-0 ${t.muted}`}>{b.marker}</span>
-            <span><Inline text={b.text} /></span>
-          </p>
-        );
-      case "callout": {
-        const warn = b.kind === "warning" || b.kind === "important" || b.kind === "caution";
-        return (
-          <div key={i} className={`rounded-xl border px-3 py-2 flex gap-2 text-[11px] leading-relaxed ${
-            warn
-              ? isDark ? "border-amber-500/20 bg-amber-500/5 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-900"
-              : isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-300" : "border-slate-200 bg-slate-50 text-slate-700"
-          }`}>
-            {warn ? <Warning size={13} className="flex-shrink-0 mt-0.5 text-amber-500" /> : <Info size={13} className="flex-shrink-0 mt-0.5" />}
-            <div className="space-y-1"><Lines lines={b.lines} /></div>
-          </div>
-        );
-      }
-      case "table":
-        return renderTable(b, i);
-      case "code":
-        return <p key={i} className={`text-[11px] whitespace-pre-wrap ${t.muted}`}>{b.text}</p>;
-    }
+  const renderNote = (n: NajizNote, key: number) => {
+    const warn = n.kind === "warning" || n.kind === "important" || n.kind === "caution";
+    return (
+      <div key={key} className={`rounded-xl border px-3 py-2 flex gap-2 text-[11px] leading-relaxed ${
+        warn
+          ? isDark ? "border-amber-500/20 bg-amber-500/5 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-900"
+          : isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-300" : "border-slate-200 bg-slate-50 text-slate-700"
+      }`}>
+        {warn ? <Warning size={13} className="flex-shrink-0 mt-0.5 text-amber-500" /> : <Info size={13} className="flex-shrink-0 mt-0.5" />}
+        <div className="space-y-1">{n.lines.map((l, i) => <p key={i}><Hl text={l} /></p>)}</div>
+      </div>
+    );
   };
+
+  const renderType = (type: NajizType) => (
+    <li key={type.no} className={`py-2 border-t first:border-t-0 ${line}`}>
+      <p className={`text-[12px] font-bold ${t.strong}`}>
+        <span className={`me-1.5 text-[10px] font-semibold ${t.muted}`}>{toArabicDigits(type.no)}</span>
+        <Hl text={type.name} />
+      </p>
+      {type.description && <p className={`mt-0.5 text-[11px] leading-relaxed ${t.body}`}><Hl text={type.description} /></p>}
+    </li>
+  );
 
   return (
     <div className="space-y-3">
@@ -136,6 +88,26 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
           من دليل ناجز المنقح ({arabicDate(data.sourceDate)}). تصنيفات ناجز تتغير بقرارات وزارة العدل؛ تأكّد منها في البوابة قبل القيد.
         </p>
       </div>
+
+      {steps.length > 0 && (
+        <details className={`group ${t.card} px-4 py-3`}>
+          <summary className={summary}>
+            <span className={`text-[13px] font-bold ${t.strong}`}>خطوات رفع صحيفة الدعوى في ناجز ({toArabicDigits(steps.length)})</span>
+            <CaretDown size={14} className={caret} />
+          </summary>
+          <ol className="mt-3 space-y-2.5">
+            {steps.map((s) => (
+              <li key={s.no} className="flex gap-2.5">
+                <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${t.chip}`}>{toArabicDigits(s.no)}</span>
+                <div className="min-w-0">
+                  <p className={`text-[12px] font-bold ${t.strong}`}>{s.title}</p>
+                  {s.lines.map((l, i) => <p key={i} className={`text-[11px] leading-relaxed ${t.body}`}>{l}</p>)}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
 
       <label className="relative block">
         <MagnifyingGlass size={14} className={`absolute top-1/2 -translate-y-1/2 start-3 ${t.muted}`} />
@@ -151,18 +123,66 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
       <p id="najiz-search-syntax" className={`text-[11px] ${t.muted}`}>{SEARCH_SYNTAX_HINT}</p>
 
       <HighlightProvider query={query}>
-        {filtered ? (
-          <div className="space-y-3" aria-live="polite">
-            <p className={`text-[11px] ${t.muted}`}>{filtered.total === 0 ? "لا توجد نتائج مطابقة." : `${toArabicDigits(filtered.total)} نتيجة`}</p>
-            {filtered.groups.map((g, i) => (
-              <section key={i} className="space-y-1.5">
-                {g.heading && <p className={`text-[12px] font-bold ${t.strong}`}><Inline text={g.heading} /></p>}
-                {renderTable(g.table, `f${i}`)}
-              </section>
-            ))}
+        {matches ? (
+          <div className="space-y-2" aria-live="polite">
+            <p className={`text-[11px] ${t.muted}`}>{matches.length === 0 ? "لا توجد نتائج مطابقة." : `${toArabicDigits(matches.length)} نتيجة`}</p>
+            {matches.length > 0 && (
+              <ul className={`${t.card} px-4 py-1`}>
+                {matches.map((r) => (
+                  <li key={r.type.no} className={`py-2 border-t first:border-t-0 ${line}`}>
+                    <p className={`text-[10px] ${t.muted}`}>
+                      <Hl text={r.court.title} /> ◂ <Hl text={r.klass.title} />
+                    </p>
+                    <p className={`mt-0.5 text-[12px] font-bold ${t.strong}`}><Hl text={r.type.name} /></p>
+                    {r.type.description && <p className={`mt-0.5 text-[11px] leading-relaxed ${t.body}`}><Hl text={r.type.description} /></p>}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         ) : (
-          <div className="space-y-2">{data.blocks.map(renderBlock)}</div>
+          <div className="space-y-2">
+            {courts.map((court) => (
+              <details key={court.no} className={`group ${t.card} px-4 py-3`}>
+                <summary className={summary}>
+                  <span className="min-w-0">
+                    <span className={`block text-[13px] font-bold ${t.strong}`}>{court.title}</span>
+                    <span className={`block text-[11px] ${t.muted}`}>
+                      {toArabicDigits(court.classes.length)} تصنيفات فرعية · {toArabicDigits(typesCount(court))} نوعاً
+                    </span>
+                  </span>
+                  <CaretDown size={14} className={caret} />
+                </summary>
+                <div className="mt-3 space-y-2">
+                  {(court.scopeIntro || court.scope.length > 0) && (
+                    <div className={`text-[11px] leading-relaxed ${t.body}`}>
+                      {court.scopeIntro && <p className="font-semibold">{court.scopeIntro}</p>}
+                      {court.scope.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 list-disc ps-5">
+                          {court.scope.map((s, i) => <li key={i}>{s}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                  {court.notes.map(renderNote)}
+                  {court.classes.map((klass) => (
+                    <details key={klass.no} className={`group/klass rounded-xl border px-3 py-2 ${line}`}>
+                      <summary className={summary}>
+                        <span className={`text-[12px] font-bold ${t.strong}`}>
+                          {klass.title} <span className={`font-normal ${t.muted}`}>({toArabicDigits(klass.types.length)})</span>
+                        </span>
+                        <CaretDown size={12} className={`flex-shrink-0 transition-transform group-open/klass:rotate-180 ${t.muted}`} />
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {klass.notes.map(renderNote)}
+                        <ul>{klass.types.map(renderType)}</ul>
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
         )}
       </HighlightProvider>
     </div>

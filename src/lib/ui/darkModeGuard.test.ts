@@ -40,7 +40,6 @@ const ALLOW: [string, string | null, string][] = [
   ["app/dashboard/firm/fees/page.tsx", "w-3 h-3 rounded-full bg-white shadow-sm transition-all", TOGGLE],
   ["app/dashboard/firm/team/roles/page.tsx", "rounded-full bg-white shadow transition-all", TOGGLE],
   ["app/dashboard/provider/profile/page.tsx", "h-5 w-5 rounded-full bg-white shadow", TOGGLE],
-  ["app/laws/[slug]/_ai-components.tsx", "w-4 h-4 rounded-full bg-white shadow-sm", TOGGLE],
   ["app/settings/components/tabs/_shared.tsx", "w-5 h-5 bg-white rounded-full shadow-sm", TOGGLE],
   ["components/calculators/CalcLaborRights.tsx", "w-4 h-4 rounded-full bg-white shadow-sm", TOGGLE],
   ["components/cases/NewCaseSteps.tsx", "w-4 h-4 bg-white rounded-full shadow transition-all", TOGGLE],
@@ -65,6 +64,12 @@ const ALLOW: [string, string | null, string][] = [
   ["app/onboarding/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
   ["app/register/client/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
   ["app/register/provider/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
+  // /founder (owner package 17 Nov): paper cards inside the dark green sections
+  ["app/founder/page.tsx", "rounded-[23px] bg-white p-6 text-[#14261F]", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text`],
+  ["app/founder/_components/LibraryGifs.tsx", "border border-[#D9E3DD] bg-white shadow-", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the GIF's browser frame"],
+  ["app/founder/_components/LibraryGifs.tsx", "flex items-center gap-1.5 bg-[#EEF3F0] px-3 py-2", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the GIF frame's address bar"],
+  ["app/founder/_components/ToolsShowcase.tsx", "border-[#F0B8B2] bg-[#FBE9E7]", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the risky clause"],
+  ["app/founder/_components/ToolsShowcase.tsx", "border-[#A8D5B5] bg-[#E3F3E8]", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the proposed clause"],
   // inverted primary buttons
   ["app/dashboard/government/page.tsx", "bg-white text-zinc-950 hover:bg-slate-200", INVERTED],
   ["app/dashboard/ngo/page.tsx", "bg-white text-zinc-950 hover:bg-slate-200", INVERTED],

@@ -46,6 +46,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { canSeeLawyerTools } from "@/lib/ai/lawyerOnlyTools";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import {
   createServiceOrder, ORDER_STATUS_AR, type ServiceOrder,
@@ -163,7 +164,7 @@ export default function BetaReviewGate({
   const shouldGate = Boolean(isRoleGated || isLegalDataGated);
   const reviewReasonText = isLegalDataGated
     ? "مخرج قانوني يعتمد على مصادر أو بيانات نظامية"
-    : "مخرج محاماة ضمن مراجعة البيتا";
+    : "مخرج محاماة يُراجَع قبل إتاحته";
 
   // ── If beta mode is OFF, or user's role is NOT gated, or forceShow is ON, or demo bypass → render children ─
   if (!BETA_REVIEW_MODE || !shouldGate || forceShow || user.isDemoBypass) {
@@ -400,6 +401,12 @@ export default function BetaReviewGate({
   //    every live call site takes today. Say so plainly: no request exists,
   //    no review is running. No button — a disabled "send" still implies
   //    sending is the intended outcome. ──────────────────────────────────
+  // N05-V3 (owner package 13 Nov): the drafter is a lawyer tool (owner ٤١٧),
+  // so the «available now» link opens it only for lawyer, firm and admin; any
+  // other account gets the quick legal answer, which every account type can use.
+  const alternative = canSeeLawyerTools(user.userType)
+    ? { href: "/ai/draft", label: "الصائغ القانوني — صياغة المذكرات" }
+    : { href: "/ai/quick-answer", label: "المجيب القانوني السريع — سؤال وإجابة" };
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -426,10 +433,10 @@ export default function BetaReviewGate({
       {/* Title + plain statement of fact */}
       <div>
         <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-gray-900"}`}>
-          {toolName}: المخرج التلقائي غير متاح خلال البيتا
+          {toolName}: المخرج التلقائي غير متاح حالياً
         </h3>
         <p className={`text-sm mt-1.5 leading-relaxed ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-          هذا المخرج لا يُعرض تلقائيًا خلال الفترة الحالية من البيتا، ولم يُسجَّل أي طلب بشأنه.
+          هذا المخرج لا يُعرض تلقائيًا في الفترة الحالية، ولم يُسجَّل أي طلب بشأنه.
         </p>
       </div>
 
@@ -441,11 +448,11 @@ export default function BetaReviewGate({
           الخدمة المتاحة حاليًا
         </p>
         <Link
-          href="/ai/draft"
+          href={alternative.href}
           className={`flex items-center justify-between gap-2 text-sm font-bold
             ${isDark ? "text-[#C8A762] hover:text-[#C8A762]/80" : "text-[#0B3D2E] hover:text-[#0B3D2E]/80"}`}
         >
-          <span>الصائغ القانوني — صياغة المذكرات</span>
+          <span>{alternative.label}</span>
           <ArrowLeft size={16} weight="bold" />
         </Link>
       </div>

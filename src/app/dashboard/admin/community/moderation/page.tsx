@@ -179,9 +179,9 @@ export default function AdminCommunityModerationPage() {
             </div>
             <h1 className={`text-3xl font-black ${isDark ? "text-white" : "text-gray-900"}`}>إشراف المجتمع</h1>
           </div>
-          <p className={`text-sm ${muted}`}>طابور بلاغات ومراجعة محتوى جاهز للربط، بدون حفظ خادمي.</p>
+          <p className={`text-sm ${muted}`}>طابور بلاغات ومراجعة محتوى.</p>
         </div>
-        <span className="text-[11px] px-3 py-2 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold w-fit">Backend-ready moderation</span>
+        <span className="text-[11px] px-3 py-2 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold w-fit">قريباً</span>
       </div>
 
       <div className={`flex items-start gap-2 text-sm p-4 rounded-2xl border ${isDark ? "border-blue-500/20 bg-blue-500/10 text-blue-100" : "border-blue-100 bg-blue-50 text-blue-800"}`}>

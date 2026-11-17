@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   if (gate) return gate;
 
   const body = await readJsonObject(request);
-  if (!body) return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  if (!body) return NextResponse.json({ error: 'تعذّرت قراءة الطلب' }, { status: 400 });
   const checked = checkTitleLookup(body);
   if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
 
@@ -76,6 +76,6 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     console.error('[Folder titles] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع، حاول مرة أخرى' }, { status: 500 });
   }
 }

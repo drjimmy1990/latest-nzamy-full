@@ -47,8 +47,8 @@ const solutions = [
   {
     icon: HandCoins,
     title: 'الاستحواذ والاندماج',
-    desc: 'Due Diligence قانوني كامل + توثيق الصفقات',
-    badge: 'M&A',
+    desc: 'فحص قانوني نافٍ للجهالة + توثيق الصفقات',
+    badge: 'اندماج واستحواذ',
   },
   {
     icon: ShieldCheck,

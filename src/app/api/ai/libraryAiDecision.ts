@@ -25,18 +25,22 @@
 export type LibraryAiDecision = 'allow' | 'sign_in' | 'upgrade';
 
 /**
- * `sign_in` unless the caller is signed in; then `allow` for an admin or a tier
- * ranked at or above pro, `upgrade` for everyone else. A tier the ranking does
+ * `sign_in` unless the caller is signed in; then `allow` for an admin, for an
+ * active founder member running one of the founder plan's tools
+ * (`founderMember`, 0.5 of the 17-Nov package: the caller sets it only for
+ * those tools), or for a tier ranked at or above pro; `upgrade` for everyone
+ * else. A tier the ranking does
  * not know (own keys only, so "constructor" is not a tier) ranks -1, and a
  * ranking without pro opens nothing by tier. Only a literal `true` counts for
  * the two flags.
  */
 export function libraryAiDecision(
-  input: { signedIn: boolean; tier: string; isAdmin: boolean },
+  input: { signedIn: boolean; tier: string; isAdmin: boolean; founderMember?: boolean },
   ranks: Record<string, number>,
 ): LibraryAiDecision {
   if (input.signedIn !== true) return 'sign_in';
   if (input.isAdmin === true) return 'allow';
+  if (input.founderMember === true) return 'allow';
   const proRank = rankOf('pro', ranks);
   if (proRank < 0) return 'upgrade';
   return rankOf(input.tier, ranks) >= proRank ? 'allow' : 'upgrade';

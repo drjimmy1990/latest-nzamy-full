@@ -15,12 +15,13 @@ export async function GET(request: NextRequest) {
   const adminClient = await createServiceClient();
 
   try {
-    // 2. Fetch tables in parallel to avoid complex/flaky joins
+    // 2. Fetch tables in parallel to avoid complex/flaky joins. N05-E2 (owner
+    // package 13 Nov): only the columns the mapping below reads.
     const [listingsRes, profilesRes, offersRes, workspacesRes] = await Promise.all([
-      adminClient.from("marketplace_listings").select("*").order("created_at", { ascending: false }),
+      adminClient.from("marketplace_listings").select("id, owner_id, owner_type, title, status, created_at").order("created_at", { ascending: false }),
       adminClient.from("profiles").select("id, display_name"),
-      adminClient.from("marketplace_offers").select("*"),
-      adminClient.from("marketplace_workspaces").select("*")
+      adminClient.from("marketplace_offers").select("id, listing_id, offeror_id, amount, commission_pct, status"),
+      adminClient.from("marketplace_workspaces").select("listing_id, offer_id, status")
     ]);
 
     if (listingsRes.error) throw listingsRes.error;
