@@ -105,6 +105,8 @@ import {
   type CaseTeamState,
 } from "@/components/dashboard/caseNotes/NoteScope";
 import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
+import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
+import { caseSummaryBlocks } from "../_caseSummaryBlocks";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -1323,6 +1325,25 @@ export default function CaseDetailPage() {
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors">
               <PencilSimple size={14} />صياغة مذكرة
             </Link>
+            {/* P1-37: the case summary on the lawyer's own letterhead (lawyers
+                and firms only — the bar shows nothing to anyone else). */}
+            <LetterheadExportBar
+              title={`ملخّص القضية — ${caseData.title || "بدون عنوان"}`}
+              filename="case-summary"
+              blocks={caseSummaryBlocks({
+                title: caseData.title,
+                typeLabel: isBriefReviewOrder(caseData.metadata) ? BRIEF_REVIEW_SHORT_LABEL_AR : REQUEST_TYPE_LABELS_AR[caseData.type] ?? caseData.type,
+                referenceNo,
+                clientName: caseData.requester?.name ?? null,
+                court,
+                assignee: assigneeName || null,
+                filedDate,
+                stage: status === "cancelled" ? "ملغاة" : CASE_STAGES[stageIdx] ?? null,
+                description: caseData.description,
+                hearings: hearingsRead?.ok === false ? null : hearings.map((h) => [h.date, h.result, h.court].filter((v) => v && v !== "—").join(" — ")),
+                deadlines: deadlinesRead?.ok === false ? null : caseDeadlines.filter((d) => d.status === "open").map((d) => `${d.dueDate} — ${d.title}`),
+              })}
+            />
             {courtWritesAllowed && (
             <Link href="/ai/wargaming"
               className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>

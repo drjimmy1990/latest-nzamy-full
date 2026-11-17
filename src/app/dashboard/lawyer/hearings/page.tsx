@@ -96,6 +96,8 @@ import AddHearingModal from "../_components/AddHearingModal";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { formatTimeOfDayAr } from "./_timeOfDay";
 import { buildHearingIcs, hearingIcsFilename } from "@/lib/calendar/hearingIcs";
+import { hearingIcsInput, type FeedHearing } from "@/lib/calendar/calendarFeed";
+import HearingsExportBar from "./_HearingsExportBar";
 import { googleCalendarUrl } from "@/lib/calendar/googleCalendarLink";
 import { formatDurationAr, HEARING_DURATION_LABEL_AR } from "@/lib/services/item59Labels";
 
@@ -433,7 +435,9 @@ function googleCalUrl(ev: CalEvent): string | null {
   // own calendar zone — wrong for any lawyer whose calendar is set elsewhere.
   // The stamps, the one-hour default block and the all-day fallback live in
   // src/lib/calendar/googleCalendarLink.ts (pure, tested).
-  const details = [ev.notes||"", ev.client?`الموكل: ${ev.client}`:"", ev.caseName?`القضية: ${ev.caseName}`:"", "منصة نظامي القانونية"].filter(Boolean).join("\n");
+  // P1-37: what leaves the platform is the case title only — no notes, no
+  // client name, no platform line (calendarFeed.ts states the rule).
+  const details = hearingIcsInput(feedHearingOf(ev)).description ?? "";
   return googleCalendarUrl({
     title: ev.title,
     date: ev.date,
@@ -452,17 +456,18 @@ function googleCalUrl(ev: CalEvent): string | null {
  * Built in the browser from the row already on screen: nothing is fetched and
  * nothing is stored. A day that does not parse yields no file.
  */
+/** A card's row in the shape the calendar files read (calendarFeed.ts). */
+function feedHearingOf(ev: CalEvent): FeedHearing {
+  return {
+    id: ev.id, title: ev.title, date: ev.date, time: ev.time ?? null,
+    durationMinutes: ev.durationMinutes ?? null, location: ev.location ?? null,
+    type: ev.type, status: ev.status ?? null, caseName: ev.caseName ?? null,
+  };
+}
+
 function downloadHearingIcs(ev: CalEvent): boolean {
-  const description = [ev.notes||"", ev.client?`الموكل: ${ev.client}`:"", ev.caseName?`القضية: ${ev.caseName}`:"", "منصة نظامي القانونية"].filter(Boolean).join("\n");
-  const ics = buildHearingIcs({
-    uid: `hearing-${ev.id}`,
-    title: ev.title,
-    date: ev.date,
-    time: ev.time ?? null,
-    durationMinutes: ev.durationMinutes ?? null,
-    location: ev.location ?? "",
-    description,
-  });
+  // P1-37: the same privacy rule as «كل جلساتي» (calendarFeed.ts).
+  const ics = buildHearingIcs(hearingIcsInput(feedHearingOf(ev)));
   if (!ics) return false;
   const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
   const a = document.createElement("a");
@@ -1196,6 +1201,16 @@ function LawyerHearingsPage() {
   const todayCount    = events.filter(e=>e.dateSort===0&&!e.done).length;
   const scheduledCount= events.filter(e=>!e.done&&e.dateSort>=0).length;
   const groups = groupByDate(filtered);
+  // P1-37: the printout is the list as filtered on screen. Each line carries
+  // its own date; a client meeting's place is left off (it can be a home).
+  const printGroups = groups.map(([heading, evs]) => ({
+    heading,
+    lines: evs.map((ev) => [
+      `${formatEventDateAr(ev.date)}${ev.time ? ` — ${formatTimeOfDayAr(ev.time)}` : ""}`,
+      ev.title,
+      ev.type === "client_meet" ? "" : ev.location ?? "",
+    ].filter(Boolean).join(" — ")),
+  }));
   const typeCounts = Object.entries(EVENT_CONFIG).map(([k,v])=>({key:k as EventType,label:v.label,count:events.filter(e=>e.type===k&&!e.done&&e.dateSort>=0).length})).filter(t=>t.count>0);
 
   // The two option lists bake their counts into the LABEL string, so they are
@@ -1356,6 +1371,13 @@ function LawyerHearingsPage() {
             </div>
           </div>
         </div>
+
+        <HearingsExportBar
+          isDark={isDark}
+          ready={loadState === "ready" && events.length > 0}
+          hearings={events.map(feedHearingOf)}
+          printGroups={printGroups}
+        />
 
         {/* Search and sort appear only when there is something to search.
             Finding 157: this bar rendered over a diary of ZERO rows, so a

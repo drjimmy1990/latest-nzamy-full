@@ -140,19 +140,49 @@ export function hearingIcsFilename(date: string): string {
   return `hearing-${date}.ics`;
 }
 
+const CALENDAR_HEAD: readonly string[] = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "PRODID:-//Nezamy//Hearings//AR",
+  "CALSCALE:GREGORIAN",
+  "METHOD:PUBLISH",
+];
+
 /** The whole VCALENDAR, or null when the date is not a real day. */
 export function buildHearingIcs(input: HearingIcsInput): string | null {
+  const event = hearingVeventLines(input);
+  if (!event) return null;
+  return [...CALENDAR_HEAD, ...RIYADH_VTIMEZONE, ...event, "END:VCALENDAR"].map(foldIcsLine).join(CRLF) + CRLF;
+}
+
+/**
+ * P1-37 «كل جلساتي»: many events in ONE calendar file (one VTIMEZONE, one
+ * VEVENT each). A row whose day does not parse is skipped, not guessed; the
+ * answer says how many went in. `calendarName` is shown by Apple Calendar and
+ * Outlook as the imported calendar's name (X-WR-CALNAME, a de-facto extension).
+ */
+export function buildCalendarIcs(inputs: readonly HearingIcsInput[], calendarName?: string): { ics: string; count: number } {
+  const events: string[] = [];
+  let count = 0;
+  for (const input of inputs) {
+    const event = hearingVeventLines(input);
+    if (!event) continue;
+    events.push(...event);
+    count += 1;
+  }
+  const head = [...CALENDAR_HEAD, `X-WR-TIMEZONE:${HEARING_TZID}`];
+  if (calendarName) head.push(`X-WR-CALNAME:${escapeIcsText(calendarName)}`);
+  const ics = [...head, ...RIYADH_VTIMEZONE, ...events, "END:VCALENDAR"].map(foldIcsLine).join(CRLF) + CRLF;
+  return { ics, count };
+}
+
+/** One VEVENT (with its alarms), unfolded, or null when the date is not a real day. */
+function hearingVeventLines(input: HearingIcsInput): string[] | null {
   const day0 = parseHearingDate(input.date);
   if (day0 === null) return null;
   const t = parseHearingTime(input.time);
 
   const out: string[] = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//Nezamy//Hearings//AR",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    ...RIYADH_VTIMEZONE,
     "BEGIN:VEVENT",
     `UID:${input.uid}@nezamy.sa`,
     `DTSTAMP:${utcStamp(input.now ?? new Date())}`,
@@ -190,6 +220,6 @@ export function buildHearingIcs(input: HearingIcsInput): string | null {
     );
   }
 
-  out.push("END:VEVENT", "END:VCALENDAR");
-  return out.map(foldIcsLine).join(CRLF) + CRLF;
+  out.push("END:VEVENT");
+  return out;
 }
