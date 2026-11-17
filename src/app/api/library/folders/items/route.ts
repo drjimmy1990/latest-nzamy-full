@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
     if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'سجّل الدخول أولاً' }, { status: 401 });
     }
     // D6 (owner ٢٩٨): a frozen account (a pending deletion) changes nothing.
     const frozen = frozenAccountResponse(user);
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     const body = await readJsonObject(request);
     if (!body) {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+      return NextResponse.json({ error: 'تعذّرت قراءة الطلب' }, { status: 400 });
     }
     const checked = checkFolderItem(body);
     if (!checked.ok) {
@@ -53,10 +53,10 @@ export async function POST(request: Request) {
 
     if (folderError) {
       console.error('[Folder Items POST] Ownership check error:', folderError);
-      return NextResponse.json({ error: 'Failed to add item' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّرت إضافة العنصر' }, { status: 500 });
     }
     if (!ownerFolder) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'هذا المجلد ليس من مجلداتك' }, { status: 403 });
     }
 
     const { data: item, error } = await serverOnly
@@ -78,12 +78,12 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('[Folder Items POST] Error:', error);
-      return NextResponse.json({ error: 'Failed to add item' }, { status: 500 });
+      return NextResponse.json({ error: 'تعذّرت إضافة العنصر' }, { status: 500 });
     }
 
     return NextResponse.json({ item }, { status: 201 });
   } catch (error) {
     console.error('[Folder Items POST] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'حدث خطأ غير متوقع، حاول مرة أخرى' }, { status: 500 });
   }
 }
