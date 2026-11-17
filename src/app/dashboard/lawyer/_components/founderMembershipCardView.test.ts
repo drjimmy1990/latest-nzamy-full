@@ -150,7 +150,7 @@ test("a verified non-member lawyer, sale open: a one-line invite to the founder 
   assert.equal(v.kind, "invite");
   if (v.kind !== "invite") return;
   assert.equal(v.href, FOUNDER_CAMPAIGN_COPY.ctaHref);
-  assert.equal(v.href, "/pricing?audience=lawyers&campaign=founder-2026#founder-plan");
+  assert.equal(v.href, "/founder");
   assert.equal(v.linkLabel, FOUNDER_CAMPAIGN_COPY.ctaAr);
   assert.equal(v.text, "باقة المحامي المؤسس متاحة لحسابك الموثّق — المقاعد المتبقية: ٩٠٠ من ١٬٠٩٦");
   assert.ok(!v.text.includes("\n"));

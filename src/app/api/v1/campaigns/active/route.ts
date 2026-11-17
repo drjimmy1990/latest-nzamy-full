@@ -5,8 +5,11 @@ import {
   founderCampaignFromSetting,
   founderOfferCampaign,
   founderSummaryFromRpc,
+  founderWindow,
   riyadhDay,
   type FounderOfferCampaign,
+  type FounderSeatSummary,
+  type FounderWindow,
 } from "@/lib/pricing/campaigns";
 
 /**
@@ -38,18 +41,26 @@ import {
  * platform_settings has no public read, so the service client reads the one
  * key; only the derived banner copy, dates and seat numbers leave this route.
  *
+ * Since the 17-Nov launch package (0.2 / F2) every answer also carries
+ * `founderWindow` (founderWindow() in campaigns.ts): state pre | live |
+ * sold_out | paused | ended, startsAt / endsAtExclusive as Riyadh instants,
+ * serverNow, seatsTotal / seatsLeft and planId — answered BEFORE the
+ * campaign opens too, so /founder can count down to the opening from the
+ * server's clock. Null when no founder campaign is configured or the code
+ * switch is off. The public cache is 10 s (owner spec: at most 10 s).
+ *
  * Never an error status: a missing table/key (42P01), any read error or a
  * throw all answer `{ campaign: null, founderUnavailable: true }` with 200 —
  * a banner is never worth a 500, and the card must not call a failed read an
  * ended campaign. `force-dynamic` so the day is computed per request, never
- * baked in at build time (the SSR cached-date trap); the 1-minute public
+ * baked in at build time (the SSR cached-date trap); the 10-second public
  * cache bounds the drift at midnight and the staleness of the seat count (the
  * checkout gate is the authority on seats), and the banner re-checks the
  * dates on the client.
  */
 export const dynamic = "force-dynamic";
 
-const HEADERS = { "Cache-Control": "public, max-age=60" };
+const HEADERS = { "Cache-Control": "public, max-age=10" };
 
 // Logged once per server process: a failing banner read is worth one line,
 // not one per visitor.
@@ -61,12 +72,15 @@ function logOnce(...args: unknown[]): void {
   console.error(...args);
 }
 
-function answer(campaign: FounderOfferCampaign | null) {
-  return NextResponse.json({ campaign }, { status: 200, headers: HEADERS });
+function answer(campaign: FounderOfferCampaign | null, window: FounderWindow | null = null) {
+  return NextResponse.json({ campaign, founderWindow: window }, { status: 200, headers: HEADERS });
 }
 
-function unavailable() {
-  return NextResponse.json({ campaign: null, founderUnavailable: true }, { status: 200, headers: HEADERS });
+function unavailable(window: FounderWindow | null = null) {
+  return NextResponse.json(
+    { campaign: null, founderUnavailable: true, founderWindow: window },
+    { status: 200, headers: HEADERS },
+  );
 }
 
 export async function GET() {
@@ -86,21 +100,32 @@ export async function GET() {
       return unavailable();
     }
 
-    const campaign = founderCampaignFromSetting(data?.value ?? null, riyadhDay(new Date()));
-    if (!campaign) return answer(null);
+    const value = data?.value ?? null;
+    const now = new Date();
+    const campaign = founderCampaignFromSetting(value, riyadhDay(now));
 
-    const { data: rows, error: rpcError } = await supabase.rpc("founder_seat_summary");
-    if (rpcError) {
-      logOnce("[campaigns/active GET] founder_seat_summary failed:", rpcError.code, rpcError.message);
-      return unavailable();
+    // The seat count is read whenever dates are configured: the countdown
+    // before the opening shows the seats too.
+    let summary: FounderSeatSummary | null = null;
+    let summaryFailed = false;
+    if (founderWindow(value, null, now, FOUNDER_MEMBERSHIP_ON_SALE)) {
+      const { data: rows, error: rpcError } = await supabase.rpc("founder_seat_summary");
+      if (rpcError) {
+        logOnce("[campaigns/active GET] founder_seat_summary failed:", rpcError.code, rpcError.message);
+        summaryFailed = true;
+      } else {
+        summary = founderSummaryFromRpc(rows);
+        if (!summary) {
+          logOnce("[campaigns/active GET] founder_seat_summary returned an unusable row");
+          summaryFailed = true;
+        }
+      }
     }
-    const summary = founderSummaryFromRpc(rows);
-    if (!summary) {
-      logOnce("[campaigns/active GET] founder_seat_summary returned an unusable row");
-      return unavailable();
-    }
+    const window = founderWindow(value, summary, now, FOUNDER_MEMBERSHIP_ON_SALE);
 
-    return answer(founderOfferCampaign(campaign, summary, FOUNDER_MEMBERSHIP_ON_SALE));
+    if (!campaign) return answer(null, window);
+    if (summaryFailed || !summary) return unavailable(window);
+    return answer(founderOfferCampaign(campaign, summary, FOUNDER_MEMBERSHIP_ON_SALE), window);
   } catch (err) {
     logOnce("[campaigns/active GET] unexpected error:", err);
     return unavailable();
