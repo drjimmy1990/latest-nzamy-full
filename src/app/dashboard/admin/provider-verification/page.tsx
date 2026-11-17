@@ -17,6 +17,7 @@ import {
 } from "@/lib/services/adminService";
 import type { VerificationRequest } from "@/lib/services/adminService";
 import { describeRegistryMatch, type RegistryMatch, type Tone } from "@/lib/registry/registryMatch";
+import { describeSignupView, type SignupVerificationView } from "@/lib/lawyerSignup/adminView";
 import {
   listOk,
   listFailed,
@@ -48,6 +49,43 @@ function RegistryLine({ match, isDark }: { match: RegistryMatch; isDark: boolean
       <p className={`mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
         مطابقة السجل لا تثبت أن صاحب الطلب هو صاحب الترخيص؛ القرار للمراجع.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Owner ٢٠–٢١ (20261124_70): the signup verification of a lawyer — decision,
+ * reasons, code status, AI pre-check and the signup licence photo. The photo
+ * link is signed for 5 minutes when the list is read; past 4 minutes a click
+ * re-reads the list instead.
+ */
+const SIGNUP_LINK_FRESH_MS = 4 * 60 * 1000;
+
+function SignupLine({ view, isDark, readAt, onStale }: { view: SignupVerificationView; isDark: boolean; readAt: { current: number }; onStale: () => void }) {
+  const { headline, tone, lines } = describeSignupView(view);
+  const cls = isDark ? REGISTRY_TONE[tone].dark : REGISTRY_TONE[tone].light;
+  return (
+    <div className="mt-2 text-[11px] leading-relaxed">
+      <p className={`font-bold ${cls}`}>توثيق التسجيل: {headline}</p>
+      <ul className={`mt-0.5 list-disc ps-4 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+        {lines.map((l) => <li key={l}>{l}</li>)}
+      </ul>
+      {view.image?.url && (
+        <a
+          href={view.image.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => {
+            if (Date.now() - readAt.current > SIGNUP_LINK_FRESH_MS) {
+              e.preventDefault();
+              onStale();
+            }
+          }}
+          className="mt-1 inline-flex items-center gap-1 font-bold text-blue-400 hover:underline"
+        >
+          <Eye size={11} /> صورة الترخيص من التسجيل{view.image.purpose === "mobile_change" ? " (طلب تغيير الرقم)" : ""}
+        </a>
+      )}
     </div>
   );
 }
@@ -483,6 +521,17 @@ export default function ProviderVerificationPage() {
                   {/* Launch batch R2/R3/R5: the lawyers' register on this
                       licence — a hint for the decision, not a proof. */}
                   {r.type === "lawyer" && r.registryMatch && <RegistryLine match={r.registryMatch} isDark={isDark} />}
+                  {r.type === "lawyer" && r.signupVerification && (
+                    <SignupLine
+                      view={r.signupVerification}
+                      isDark={isDark}
+                      readAt={readAt}
+                      onStale={() => {
+                        setToast("رابط صورة الترخيص قارب انتهاء صلاحيته، فأُعيد تحميل القائمة. اضغط الرابط مرة أخرى.");
+                        fetchData();
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* AI Score + Actions */}
