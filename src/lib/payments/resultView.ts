@@ -181,6 +181,8 @@ export function resultViewWithoutPayment(order: ResultOrder): ResultView {
 export const FOUNDER_WELCOME_TITLE = "أهلاً بك في نخبة المؤسسين";
 export const FOUNDER_WELCOME_TOOLS_LABEL = "ابدأ استخدام أدواتك الآن";
 export const FOUNDER_WELCOME_RECEIPT_LABEL = "عرض الإيصال";
+/** Owner decisions ١٥ / ١٨ (17 Nov 2026): the founder's 100 founding points, for the library AI assistant only. */
+export const FOUNDER_WELCOME_POINTS_LINE = "+١٠٠ نقطة لمساعد المكتبة الذكي";
 /** The AI tools hub (the lawyer's tools are listed there). */
 export const FOUNDER_WELCOME_TOOLS_HREF = "/ai";
 
@@ -190,6 +192,8 @@ export interface FounderWelcome {
   body: string;
   /** What the membership includes: the founder card's own list (FOUNDER_BENEFITS), never a typed copy. */
   benefits: readonly string[];
+  /** «+١٠٠ نقطة لمساعد المكتبة الذكي» — the founding points, shown apart from the card's benefits. */
+  pointsLine: string;
   toolsHref: string;
   receiptHref: string;
 }
@@ -203,9 +207,11 @@ export interface FounderWelcome {
  * failure, a pending or a refund keeps the ordinary card. Every other order
  * keeps the ordinary card too.
  *
- * No points line: founder_activate (20261101_10) grants credits, a seat and
- * library access — no points. The «+٧٠٠ نقطة» in the owner's request is the
- * top-up counter (topup-500), not part of this membership.
+ * The points line (owner ١٥ / ١٨, 17 Nov 2026): every founder gets 100
+ * founding points for the library AI assistant only (5 points a question),
+ * granted with the seat. It is a field of its own, not one of the benefits:
+ * FOUNDER_BENEFITS is the /pricing card's list too. (The «+٧٠٠ نقطة» of an
+ * earlier owner request is the top-up counter, topup-500 — not this.)
  */
 export function founderWelcomeFor(view: ResultView, order: Pick<ResultOrder, "kind" | "item_id">): FounderWelcome | null {
   if (view.tone !== "success" || !view.receiptHref) return null;
@@ -214,6 +220,7 @@ export function founderWelcomeFor(view: ResultView, order: Pick<ResultOrder, "ki
     title: FOUNDER_WELCOME_TITLE,
     body: view.body,
     benefits: FOUNDER_BENEFITS,
+    pointsLine: FOUNDER_WELCOME_POINTS_LINE,
     toolsHref: FOUNDER_WELCOME_TOOLS_HREF,
     receiptHref: view.receiptHref,
   };

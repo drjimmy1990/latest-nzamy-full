@@ -183,6 +183,11 @@ function FounderWelcomeCard({ welcome }: { welcome: FounderWelcome }) {
         <h1 className="text-2xl font-extrabold text-[#0B3D2E] sm:text-3xl dark:text-[#e5cca0]">{welcome.title}</h1>
         <p className="mx-auto mt-3 max-w-md leading-7 text-zinc-700 dark:text-zinc-300">{welcome.body}</p>
 
+        <p className="mx-auto mt-5 inline-flex items-center gap-2 rounded-full border border-[#C8A762]/50 bg-[#C8A762]/[0.12] px-4 py-1.5 text-sm font-bold text-[#0B3D2E] dark:text-[#e5cca0]">
+          <Sparkle className="h-3.5 w-3.5 text-[#b8974f]" />
+          {welcome.pointsLine}
+        </p>
+
         <ul className="mx-auto mt-6 max-w-md space-y-2 text-start text-sm">
           {welcome.benefits.map((benefit) => (
             <li key={benefit} className="flex items-start gap-2 rounded-xl border border-[#C8A762]/30 bg-[#C8A762]/[0.07] px-3 py-2">

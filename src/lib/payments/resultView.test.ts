@@ -244,9 +244,9 @@ test("F16: a granted founder membership gets the gold welcome — the card's own
   assert.equal(w.toolsHref, "/ai");
   assert.equal(w.receiptHref, `/dashboard/billing/receipt/${founder.id}`);
   assert.ok(w.benefits.length > 0);
-  // founder_activate grants no points: the welcome never promises any
-  assert.ok(!w.benefits.some((b) => /نقطة/.test(b)));
-  assert.doesNotMatch(w.body, /نقطة/);
+  // owner ١٥ / ١٨ (17 Nov 2026): the 100 founding points for the library assistant, on a line of their own
+  assert.equal(w.pointsLine, "+١٠٠ نقطة لمساعد المكتبة الذكي");
+  assert.ok(!w.benefits.some((b) => /نقطة/.test(b)), "the shared benefits list stays the /pricing card's");
   // a refresh after success is still a success
   assert.ok(founderWelcomeFor(paymentResultView({ outcome: "already_done" }, founder), founder));
 });
