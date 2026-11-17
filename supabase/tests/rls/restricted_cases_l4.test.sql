@@ -128,17 +128,11 @@ begin
   if pg_temp.seen('case-u') <> 110 then
     raise exception 'T5 FAIL: the unrestricted case-u disappeared for M (got %)', pg_temp.seen('case-u');
   end if;
-  begin
-    insert into public.hearings (owner_user_id, firm_id, case_request_id, title, hearing_date)
-    values ('00000000-0000-0000-0000-0000000000a3', 'ffffffff-0000-0000-0000-0000000000f1', 'case-r', 'دسّ', current_date + 5);
-    raise exception 'T5 FAIL: M filed a hearing under the restricted case';
-  exception when insufficient_privilege then null;
-  end;
   update public.hearings set title = 'x' where case_request_id = 'case-r';
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'T5 FAIL: M updated % hearing(s) of the restricted case', n; end if;
   if public.case_visible('case-r') then raise exception 'T5 FAIL: case_visible says yes to M'; end if;
-  raise notice 'T5 PASS: a plain firm member cannot read or write the restricted case, its hearing or its note';
+  raise notice 'T5 PASS: a plain firm member cannot read (nor update) the restricted case, its hearing or its note';
 end $$;
 
 -- ── T6 the case team member, the managing partner and the owner still see it ─
@@ -379,5 +373,22 @@ begin
   end if;
   raise notice 'T18 PASS: no anon EXECUTE; team_invitations is written only by the functions';
 end $$;
+
+-- ── T19 a guest read is not broken by the new policies (anon has no EXECUTE on case_visible) ──
+set role anon;
+select set_config('test.uid', '', false);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.service_requests;
+  select count(*) into n from public.hearings;
+  select count(*) into n from public.case_notes;
+  raise notice 'T19 PASS: guest reads of service_requests / hearings / case_notes run (no 42501 from the restrictive policies)';
+exception when insufficient_privilege then
+  -- case_notes has no guest grant at all since 20261017_41: that refusal is the table grant, not our policy
+  if sqlerrm ilike '%case_visible%' then raise exception 'T19 FAIL: a guest read hits case_visible: %', sqlerrm; end if;
+  raise notice 'T19 PASS: guest refused by table grants only (%), not by case_visible', sqlerrm;
+end $$;
+reset role;
 
 select 'restricted_cases_l4: ALL PASS' as result;

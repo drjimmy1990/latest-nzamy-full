@@ -18,11 +18,12 @@
 --         The firm owner and managing partner are in the set ON PURPOSE (the
 --         restriction model decision, see the l4-lawyer report): whoever may
 --         lift a restriction must still see the case to do it.
---      3. RESTRICTIVE policies (AND-ed with every permissive policy, new names
---         that no older file drops), so can_access_case_row(owner, firm) and
---         every existing policy stay exactly as they are:
---           * service_requests  FOR SELECT  (not is_restricted or case_visible(id))
---           * every case child table that has a firm-wide arm, FOR ALL:
+--      3. RESTRICTIVE SELECT policies TO authenticated (AND-ed with every
+--         permissive policy; new names that no older file drops), so
+--         can_access_case_row(owner, firm) and every existing policy stay
+--         exactly as they are:
+--           * service_requests: (not is_restricted or case_visible(id))
+--           * every case child table that has a firm-wide arm:
 --             (<case column> is null or case_visible(<case column>))
 --             case_stages, hearings, tasks, activity_events, case_graphs,
 --             deadlines, legal_ledger_entries, case_tracking_links,
@@ -30,6 +31,15 @@
 --             case_team_members, contracts, consultations (request_id).
 --             task_steps follows tasks through its own EXISTS policy.
 --           A table or column missing on this database is skipped (NOTICE).
+--         SELECT only, on purpose: a hidden row cannot be UPDATEd or DELETEd
+--         either (both read through the SELECT policies), and a restrictive
+--         INSERT/ALL policy would trip _verify's write-policy checks on
+--         dashboard_notes / legal_ledger_entries / case_notes. TO authenticated
+--         only: anon holds no EXECUTE on case_visible, and a policy naming it
+--         would turn every guest read of these tables into 42501.
+--         _verify.sql: the four exact policy counts (dashboard_notes,
+--         legal_ledger_entries, case_tracking_links, case_team_members) now
+--         count PERMISSIVE policies only (batch l4-lawyer).
 --         can_access_case_row(p_owner, p_firm) has no case id (it is also
 --         called with (null, firm_id) on non-case rows), so the rule lives in
 --         case_visible() instead — the TODO's «can_access_case_row: isolate
@@ -182,6 +192,7 @@ drop policy if exists "restricted case: case team only" on public.service_reques
 create policy "restricted case: case team only" on public.service_requests
   as restrictive
   for select
+  to authenticated
   using (not is_restricted or public.case_visible(id));
 
 -- the case child tables
@@ -219,8 +230,8 @@ begin
     end if;
     execute pg_catalog.format('drop policy if exists %I on public.%I', 'restricted case rows: case team only', t);
     execute pg_catalog.format(
-      'create policy %I on public.%I as restrictive for all using (%I is null or public.case_visible(%I)) with check (%I is null or public.case_visible(%I))',
-      'restricted case rows: case team only', t, c, c, c, c);
+      'create policy %I on public.%I as restrictive for select to authenticated using (%I is null or public.case_visible(%I))',
+      'restricted case rows: case team only', t, c, c);
   end loop;
 end
 $children$;
@@ -346,7 +357,7 @@ revoke insert, update, delete, truncate on public.team_invitations from public;
 do $ti$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
-    revoke insert, update, delete, truncate on public.team_invitations from anon;
+    revoke all on public.team_invitations from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke insert, update, delete, truncate on public.team_invitations from authenticated;

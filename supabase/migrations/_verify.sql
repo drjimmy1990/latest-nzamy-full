@@ -1826,7 +1826,8 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid = 'public.case_team_members'::regclass AND relrowsecurity) THEN
     missing := missing || ' RLS is off on case_team_members;';
   END IF;
-  SELECT count(*) INTO n FROM pg_policy WHERE polrelid = 'public.case_team_members'::regclass;
+  -- PERMISSIVE only: 20261125_40 adds a RESTRICTIVE «restricted case rows» SELECT policy.
+  SELECT count(*) INTO n FROM pg_policy WHERE polrelid = 'public.case_team_members'::regclass AND polpermissive;
   IF n <> 3 THEN
     missing := missing || format(' case_team_members carries %s policies, expected 3;', n);
   END IF;
@@ -3701,7 +3702,8 @@ begin
   if not (select relrowsecurity from pg_class where oid = 'public.dashboard_notes'::regclass) then
     raise exception '_verify: RLS is off on public.dashboard_notes (re-run 20261025_31)';
   end if;
-  select count(*) into n from pg_policy where polrelid = 'public.dashboard_notes'::regclass;
+  -- PERMISSIVE only: 20261125_40 adds a RESTRICTIVE «restricted case rows» SELECT policy.
+  select count(*) into n from pg_policy where polrelid = 'public.dashboard_notes'::regclass and polpermissive;
   if n <> 4 then
     raise exception '_verify: public.dashboard_notes carries % policies, expected 4 (re-run 20261025_31)', n;
   end if;
@@ -3744,7 +3746,8 @@ begin
   if not (select relrowsecurity from pg_class where oid = 'public.legal_ledger_entries'::regclass) then
     raise exception '_verify: RLS is off on public.legal_ledger_entries (re-run 20261025_33)';
   end if;
-  select count(*) into n from pg_policy where polrelid = 'public.legal_ledger_entries'::regclass;
+  -- PERMISSIVE only: 20261125_40 adds a RESTRICTIVE «restricted case rows» SELECT policy.
+  select count(*) into n from pg_policy where polrelid = 'public.legal_ledger_entries'::regclass and polpermissive;
   if n <> 3 then
     raise exception '_verify: public.legal_ledger_entries carries % policies, expected 3 (re-run 20261025_33)', n;
   end if;
@@ -3786,7 +3789,8 @@ begin
   if not (select relrowsecurity from pg_class where oid = 'public.case_tracking_links'::regclass) then
     raise exception '_verify: RLS is off on public.case_tracking_links (re-run 20261025_32)';
   end if;
-  select count(*) into n from pg_policy where polrelid = 'public.case_tracking_links'::regclass;
+  -- PERMISSIVE only: 20261125_40 adds a RESTRICTIVE «restricted case rows» SELECT policy.
+  select count(*) into n from pg_policy where polrelid = 'public.case_tracking_links'::regclass and polpermissive;
   if n <> 3 then
     raise exception '_verify: public.case_tracking_links carries % policies, expected 3 (re-run 20261025_32)', n;
   end if;
@@ -6912,3 +6916,60 @@ select 'Private bucket lawyer-licences, own-folder insert only (run 20261124_70 
                                || coalesce(pg_catalog.pg_get_expr(polwithcheck, polrelid), '')) like '%lawyer-licences%')
        as ok;
 -- <<< verify:l3_signup
+
+-- >>> verify:l4_lawyer
+-- Batch l4-lawyer (owner 13 Nov N01-19/21/22, F7, Q468–Q470): run 20261125_40 BEFORE the deploy.
+select 'Restricted firm cases: column + case_visible + restrictive SELECT policies, authenticated only (run 20261125_40)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'service_requests' and column_name = 'is_restricted')
+       and to_regprocedure('public.case_visible(text)') is not null
+       and not has_function_privilege('anon', 'public.case_visible(text)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_policy
+                    where polrelid = 'public.service_requests'::regclass
+                      and polname = 'restricted case: case team only' and not polpermissive and polcmd = 'r')
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polname = 'restricted case rows: case team only' and not polpermissive and polcmd = 'r'
+               and polrelid in ('public.hearings'::regclass, 'public.tasks'::regclass, 'public.case_stages'::regclass,
+                                'public.case_notes'::regclass, 'public.deadlines'::regclass)) = 5
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polname in ('restricted case: case team only', 'restricted case rows: case team only')
+                          and not (polroles @> array[(select oid from pg_catalog.pg_roles where rolname = 'authenticated')]))
+       as ok;
+select 'Restricting a case only through set_case_restricted (run 20261125_40)' as check,
+       to_regprocedure('public.set_case_restricted(text, boolean)') is not null
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                       where p.oid = to_regprocedure('public.set_case_restricted(text, boolean)')), false)
+       and not has_function_privilege('anon', 'public.set_case_restricted(text, boolean)', 'EXECUTE')
+       as ok;
+select 'AI run linked to a case: ai_runs.case_request_id readable, not writable by sessions (run 20261125_40)' as check,
+       to_regclass('public.ai_runs') is null
+       or (exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'ai_runs' and column_name = 'case_request_id')
+           and has_column_privilege('authenticated', 'public.ai_runs', 'case_request_id', 'SELECT')
+           and not has_table_privilege('authenticated', 'public.ai_runs', 'UPDATE'))
+       as ok;
+select 'Firm invitation links: team_invitations written only by the definer functions (run 20261125_40)' as check,
+       to_regclass('public.team_invitations') is not null
+       and not has_table_privilege('authenticated', 'public.team_invitations', 'INSERT')
+       and not has_table_privilege('authenticated', 'public.team_invitations', 'UPDATE')
+       and not has_table_privilege('authenticated', 'public.team_invitations', 'DELETE')
+       and not has_table_privilege('anon', 'public.team_invitations', 'SELECT')
+       and to_regprocedure('public.create_firm_team_invitation(uuid, text, text)') is not null
+       and to_regprocedure('public.redeem_firm_team_invitation(text)') is not null
+       and to_regprocedure('public.cancel_firm_team_invitation(uuid)') is not null
+       and not has_function_privilege('anon', 'public.redeem_firm_team_invitation(text)', 'EXECUTE')
+       as ok;
+select 'Leaving a firm: leave_firm + the removed-member transfer trigger (run 20261125_40; 20261026_70)' as check,
+       to_regprocedure('public.leave_firm(uuid)') is not null
+       and not has_function_privilege('anon', 'public.leave_firm(uuid)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.firm_members'::regclass and tgname = 'trg_firm_members_removed_transfer'
+                      and not tgisinternal and tgenabled <> 'D')
+       as ok;
+select 'Firm points counter: finance manager admitted + firm_points_overview (run 20261125_40)' as check,
+       to_regprocedure('public.firm_points_overview(uuid)') is not null
+       and not has_function_privilege('anon', 'public.firm_points_overview(uuid)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.firm_points_overview(uuid)', 'EXECUTE')
+       and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_member_points_usage(uuid)'))) > 0, false)
+       as ok;
+-- <<< verify:l4_lawyer
