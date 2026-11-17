@@ -10,7 +10,7 @@
  */
 import { useEffect, useState, type RefObject } from "react";
 import { BookmarkSimple, X } from "@phosphor-icons/react";
-import { cartItems, folderItems, insertAtCursor, type InsertableItem } from "@/lib/library/insertFromLibrary";
+import { cartItems, fitsLimit, folderItems, insertAtCursor, type InsertableItem } from "@/lib/library/insertFromLibrary";
 
 interface Props {
   isDark: boolean;
@@ -19,6 +19,8 @@ interface Props {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
+  /** The box's own limit (what its run or route refuses beyond): a pick that would pass it is refused here, never cut. */
+  maxLength: number;
 }
 
 type Source = "cart" | "folders";
@@ -29,8 +31,9 @@ const SOURCES: { id: Source; label: string; empty: string }[] = [
   { id: "folders", label: "مجلداتي", empty: "لا وثائق محفوظة في مجلداتك بعد." },
 ];
 
-export default function InsertFromLibraryButton({ isDark, targetRef, value, onChange, disabled }: Props) {
+export default function InsertFromLibraryButton({ isDark, targetRef, value, onChange, disabled, maxLength }: Props) {
   const [open, setOpen] = useState(false);
+  const [tooLong, setTooLong] = useState(false);
   const [source, setSource] = useState<Source>("cart");
   const [lists, setLists] = useState<Record<Source, ListState>>({ cart: { status: "loading" }, folders: { status: "loading" } });
 
@@ -55,6 +58,10 @@ export default function InsertFromLibraryButton({ isDark, targetRef, value, onCh
   }, [open]);
 
   function pick(item: InsertableItem) {
+    if (!fitsLimit(value, item.text, maxLength)) {
+      setTooLong(true);
+      return;
+    }
     const el = targetRef.current;
     const { value: next, caret } = insertAtCursor(value, el?.selectionStart, el?.selectionEnd, item.text);
     onChange(next);
@@ -76,7 +83,7 @@ export default function InsertFromLibraryButton({ isDark, targetRef, value, onCh
       <button
         type="button"
         disabled={disabled}
-        onClick={() => { setLists({ cart: { status: "loading" }, folders: { status: "loading" } }); setOpen(true); }}
+        onClick={() => { setLists({ cart: { status: "loading" }, folders: { status: "loading" } }); setTooLong(false); setOpen(true); }}
         className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold disabled:opacity-40 ${isDark ? "border-white/[0.08] text-zinc-300 hover:text-white" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E]"}`}
       >
         <BookmarkSimple size={12} /> إدراج من مسودة المكتبة / مجلداتي
@@ -120,6 +127,11 @@ export default function InsertFromLibraryButton({ isDark, targetRef, value, onCh
                 </ul>
               )}
             </div>
+            {tooLong && (
+              <p role="alert" className="mt-3 text-[11px] font-semibold text-amber-600">
+                لا يتسع هذا الحقل لهذا النص (الحد {maxLength.toLocaleString("ar-SA")} حرف) — اختصر ما في الحقل أو اختر نصاً أقصر.
+              </p>
+            )}
             <p className={`mt-3 text-[11px] ${muted}`}>
               {source === "cart" ? "تُدرج المادة بنصها بين «» ومعها اسم النظام." : "يُدرج اسم الوثيقة ورابطها في المكتبة."}
             </p>

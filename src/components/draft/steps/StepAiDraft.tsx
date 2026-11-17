@@ -8,6 +8,7 @@ import { useAiRun } from "@/hooks/useAiRun";
 import AiResultActions from "@/components/AiResultActions";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import InsertFromLibraryButton from "@/components/library/InsertFromLibraryButton";
+import { DRAFT_FACTS_MAX } from "@/lib/ai/tools";
 import CitationCheckList from "@/components/ai/CitationCheckList";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import LibraryToolRefusalNote from "@/components/ai/LibraryToolRefusalNote";
@@ -261,7 +262,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
             <div className="block space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label htmlFor="draft-facts-summary" className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الوقائع كما ستُكتب في المذكرة</label>
-                <InsertFromLibraryButton isDark={isDark} targetRef={factsRef} value={edited.facts_summary} onChange={(v) => update({ facts_summary: v })} disabled={locked} />
+                <InsertFromLibraryButton isDark={isDark} targetRef={factsRef} value={edited.facts_summary} onChange={(v) => update({ facts_summary: v })} disabled={locked} maxLength={DRAFT_FACTS_MAX} />
               </div>
               <textarea id="draft-facts-summary" ref={factsRef} rows={7} value={edited.facts_summary} onChange={(e) => update({ facts_summary: e.target.value })} className={field} disabled={locked} />
             </div>

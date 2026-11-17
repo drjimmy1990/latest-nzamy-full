@@ -175,14 +175,17 @@ function AICommunicatePage() {
               )}
             </div>
             <div className="p-5">
+              {/* P1-27: mounted whatever the phase — it renders while the run works,
+                  and the links to follow a run still going after polling stops. */}
+              <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("communicate")} />
               {!output && !generating ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <Envelope size={28} className={isDark ? "text-zinc-700 mb-3" : "text-zinc-300 mb-3"} />
                   <p className={`text-[13px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>اختر نوع الرسالة واشرح ما تريد قوله</p>
                 </div>
               ) : generating ? (
-                // P1-27: the run's real progress and elapsed time, not a spinner.
-                <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr("communicate")} />
+                // P1-27: the stage below shows the run's real progress and elapsed time.
+                null
               ) : (
                 <>
                   <div className={`rounded-2xl p-5 ${isDark ? "bg-zinc-800/40 border border-white/[0.05]" : "bg-zinc-50 border border-zinc-100"}`}>

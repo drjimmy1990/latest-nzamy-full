@@ -37,12 +37,22 @@ export function insertAtCursor(value: string, start: number | null | undefined, 
   return { value: next, caret: before.length + lead.length + insert.length };
 }
 
-/** The reader URL of a saved document (same routes as «مكتبتي»'s reading history). */
-export function libraryHref(entityType: unknown, slug: string): string {
+/** Whether `insert` (plus up to two line breaks) still fits a box limited to `max` characters. */
+export function fitsLimit(value: string, insert: string, max: number): boolean {
+  return value.length + insert.length + 2 <= max;
+}
+
+/**
+ * The reader URL of a saved document (same routes as «مكتبتي»'s reading
+ * history), or null for a kind with no reader route of its own (a fiqh book):
+ * a broken link must never be written into a pleading.
+ */
+export function libraryHref(entityType: unknown, slug: string): string | null {
   const safe = /%[0-9A-Fa-f]{2}/.test(slug) ? slug : encodeURIComponent(slug);
   if (entityType === "order") return `/laws/orders/${safe}`;
   if (entityType === "precedent") return `/precedents/${safe}`;
-  return `/laws/${safe}`;
+  if (entityType === "law" || entityType === undefined || entityType === null || entityType === "") return `/laws/${safe}`;
+  return null;
 }
 
 const KIND_AR: Record<string, string> = { law: "نظام", order: "أمر أو تعميم", precedent: "سوابق قضائية", book: "كتاب" };
@@ -63,19 +73,23 @@ export function folderItems(body: unknown, origin: string): InsertableItem[] {
       const title = str(row.title);
       const slug = str(row.entity_id);
       if (!title || !slug) continue;
-      const url = `${origin}${libraryHref(row.entity_type, slug)}`;
+      const href = libraryHref(row.entity_type, slug);
       out.push({
         key: `f-${str(row.id) || slug}-${folderName}`,
         label: title,
         detail: [KIND_AR[str(row.entity_type)] ?? "", folderName].filter(Boolean).join(" · "),
-        text: `«${title}» — مكتبة الأنظمة: ${url}`,
+        text: href ? `«${title}» — مكتبة الأنظمة: ${origin}${href}` : `«${title}»`,
       });
     }
   }
   return out;
 }
 
-/** GET /api/v1/drafts/cart → one item per article added to the draft (quote + citation). */
+/**
+ * GET /api/v1/drafts/cart → one item per text the user added to the draft:
+ * the article when «isArticleAdded», its executive regulation when
+ * «isExecRegAdded» — each quoted with its citation, never one in place of the other.
+ */
 export function cartItems(body: unknown): InsertableItem[] {
   const items = (body as { data?: { items?: unknown } } | null)?.data?.items;
   if (!Array.isArray(items)) return [];
@@ -85,15 +99,22 @@ export function cartItems(body: unknown): InsertableItem[] {
     const lawName = str(p.lawName);
     const num = str(p.articleNum) || str((row as { article_number?: unknown }).article_number);
     const title = str(p.articleTitle);
-    const text = str(p.articleText);
     if (!lawName || !num) continue;
-    const head = `${lawName} — ${title || `المادة ${num}`}`;
-    out.push({
-      key: `c-${str(p.lawSlug)}-${num}`,
-      label: title || `المادة ${num}`,
-      detail: lawName,
-      text: text ? `${head}:\n«${text}»` : head,
-    });
+    const articleLabel = title || `المادة ${num}`;
+    // A legacy row has no flags: it was an article.
+    const articleAdded = p.isArticleAdded !== false;
+    if (articleAdded) {
+      const text = str(p.articleText);
+      const head = `${lawName} — ${articleLabel}`;
+      out.push({ key: `c-${str(p.lawSlug)}-${num}`, label: articleLabel, detail: lawName, text: text ? `${head}:\n«${text}»` : head });
+    }
+    const reg = (p.execReg ?? null) as { ref?: unknown; text?: unknown } | null;
+    const regText = str(reg?.text);
+    if (p.isExecRegAdded === true && regText) {
+      const regRef = str(reg?.ref);
+      const head = `اللائحة التنفيذية لـ${lawName} — ${regRef || `لائحة ${articleLabel}`}`;
+      out.push({ key: `r-${str(p.lawSlug)}-${num}`, label: regRef || `لائحة ${articleLabel}`, detail: `اللائحة التنفيذية · ${lawName}`, text: `${head}:\n«${regText}»` });
+    }
   }
   return out;
 }

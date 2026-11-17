@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  LIBRARY_HANDOFF_KEY, DRAFTER_LIBRARY_URL, consumeLibraryHandoff, discardLibraryHandoff, notesWithLibraryText, writeLibraryHandoff,
+  LIBRARY_HANDOFF_KEY, LIBRARY_NOTES_MAX, DRAFTER_LIBRARY_URL, consumeLibraryHandoff, discardLibraryHandoff, notesWithLibraryText, writeLibraryHandoff,
 } from "./libraryDrafterHandoff.ts";
 import { TRANSCRIPT_HANDOFF_KEY } from "./transcriptHandoff.ts";
 
@@ -42,6 +42,14 @@ test("expired, empty, missing storage and a throwing storage", () => {
   assert.deepEqual(writeLibraryHandoff(bad, "x", "a"), { ok: false, reason: "storage" });
   assert.equal(consumeLibraryHandoff(bad), null);
   discardLibraryHandoff(bad);
+});
+
+test("a text longer than the drafter's notes limit is cut to it, and the cut is reported", () => {
+  const s = memory();
+  assert.deepEqual(writeLibraryHandoff(s, "س".repeat(LIBRARY_NOTES_MAX + 10), "x", 1), { ok: true, truncated: true });
+  const h = consumeLibraryHandoff(s, 2);
+  assert.equal(h?.text.length, LIBRARY_NOTES_MAX);
+  assert.equal(h?.truncated, true);
 });
 
 test("the notes field keeps what was there and names the source", () => {

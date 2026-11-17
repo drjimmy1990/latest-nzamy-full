@@ -269,9 +269,8 @@ function AssistantPage() {
     if (!content || loading) return;
 
     const userMsg: Message = { id: Date.now().toString(), role: "user", content, timestamp: new Date() };
-    const thinkingMsg: Message = { id: "thinking", role: "assistant", content: "", timestamp: new Date(), thinking: true };
-
-    setMessages(prev => [...prev, userMsg, thinkingMsg]);
+    // P1-27: the waiting state is the AiThinkingStage below the thread, not a dots bubble.
+    setMessages(prev => [...prev, userMsg]);
     setInput("");
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);

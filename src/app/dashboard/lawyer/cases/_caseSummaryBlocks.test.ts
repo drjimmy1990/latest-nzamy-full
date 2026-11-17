@@ -46,5 +46,10 @@ test("the case page and the hearings page mount the letterhead bar (P1-37)", () 
   // The single-event file and the Google link no longer carry notes or the client.
   assert.ok(!hearings.includes("`الموكل: ${ev.client}`"));
   assert.ok(!hearings.includes("منصة نظامي القانونية"));
-  assert.ok(read("src/app/dashboard/lawyer/hearings/_HearingsExportBar.tsx").includes("<LetterheadExportBar"));
+  const bar = read("src/app/dashboard/lawyer/hearings/_HearingsExportBar.tsx");
+  assert.ok(bar.includes("<LetterheadExportBar"));
+  // A capped read is said in the file's note, never hidden.
+  assert.ok(hearings.includes("hearingsTruncated={truncated}") && bar.includes("deadlines.truncated"));
+  // A single deadline as a calendar file, under the same privacy rule.
+  assert.ok(read("src/app/dashboard/lawyer/_components/DeadlineCard.tsx").includes("buildHearingIcs(deadlineIcsInput("));
 });

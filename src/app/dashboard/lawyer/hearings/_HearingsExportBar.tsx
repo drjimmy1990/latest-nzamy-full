@@ -19,6 +19,7 @@ import { CircleNotch, DownloadSimple } from "@phosphor-icons/react";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import type { DocBlock } from "@/lib/docx/ooxml";
 import { buildCalendarFeed, CALENDAR_FEED_FILENAME, type FeedDeadline, type FeedHearing } from "@/lib/calendar/calendarFeed";
+import { downloadIcsFile } from "@/lib/calendar/downloadIcs";
 
 export interface PrintGroup {
   heading: string;
@@ -33,6 +34,8 @@ interface Props {
   printGroups: PrintGroup[];
   /** False while the read is in flight or failed: nothing to export yet. */
   ready: boolean;
+  /** The server holds more hearings than the page read: the file says so. */
+  hearingsTruncated: boolean;
 }
 
 interface DeadlineWire {
@@ -43,31 +46,23 @@ interface DeadlineWire {
   caseTitle?: unknown;
 }
 
-async function readOpenDeadlines(): Promise<FeedDeadline[] | null> {
+const DEADLINES_LIMIT = 500;
+
+async function readOpenDeadlines(): Promise<{ rows: FeedDeadline[]; truncated: boolean } | null> {
   try {
-    const res = await fetch("/api/v1/lawyer/deadlines?status=open&limit=500", { cache: "no-store" });
+    const res = await fetch(`/api/v1/lawyer/deadlines?status=open&limit=${DEADLINES_LIMIT}`, { cache: "no-store" });
     if (!res.ok) return null;
-    const body = (await res.json().catch(() => null)) as { data?: DeadlineWire[] } | null;
+    const body = (await res.json().catch(() => null)) as { data?: DeadlineWire[]; total?: unknown } | null;
     if (!Array.isArray(body?.data)) return null;
-    return body.data.flatMap((d) =>
+    const rows = body.data.flatMap((d) =>
       typeof d.id === "string" && typeof d.title === "string" && typeof d.dueDate === "string"
         ? [{ id: d.id, title: d.title, dueDate: d.dueDate, status: typeof d.status === "string" ? d.status : "open", caseTitle: typeof d.caseTitle === "string" ? d.caseTitle : null }]
         : [],
     );
+    return { rows, truncated: typeof body.total === "number" && body.total > body.data.length };
   } catch {
     return null;
   }
-}
-
-function saveFile(text: string, filename: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: "text/calendar;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 export function hearingsPrintBlocks(groups: PrintGroup[]): DocBlock[] {
@@ -79,7 +74,7 @@ export function hearingsPrintBlocks(groups: PrintGroup[]): DocBlock[] {
   return blocks;
 }
 
-export default function HearingsExportBar({ isDark, hearings, printGroups, ready }: Props) {
+export default function HearingsExportBar({ isDark, hearings, printGroups, ready, hearingsTruncated }: Props) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -88,13 +83,17 @@ export default function HearingsExportBar({ isDark, hearings, printGroups, ready
     setBusy(true);
     setNote(null);
     const deadlines = await readOpenDeadlines();
-    const { ics, count } = buildCalendarFeed(hearings, deadlines ?? []);
+    const { ics, count } = buildCalendarFeed(hearings, deadlines?.rows ?? []);
     if (count === 0) {
       setNote(deadlines === null ? "لا مواعيد لتنزيلها، وتعذّرت قراءة المهل." : "لا مواعيد ولا مهل مفتوحة لتنزيلها.");
     } else {
-      saveFile(ics, CALENDAR_FEED_FILENAME);
-      // Honest about a partial file: the deadlines read failed, the hearings went in.
-      setNote(deadlines === null ? "نُزّلت الجلسات؛ تعذّرت قراءة المهل فلم تُضمَّن." : null);
+      downloadIcsFile(ics, CALENDAR_FEED_FILENAME);
+      // Honest about a partial file: a failed or capped read is said, never hidden.
+      const gaps = [
+        deadlines === null ? "تعذّرت قراءة المهل فلم تُضمَّن" : deadlines.truncated ? "المهل أكثر مما قُرئ فضُمّن أقربها فقط" : "",
+        hearingsTruncated ? "الجلسات أكثر مما تعرضه الصفحة فضُمّن ما قُرئ منها فقط" : "",
+      ].filter(Boolean);
+      setNote(gaps.length ? `نُزّل الملف — ${gaps.join("، و")}.` : null);
     }
     setBusy(false);
   }

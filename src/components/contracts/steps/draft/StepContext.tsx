@@ -4,6 +4,7 @@ import { VoiceInput } from "@/components/ui/VoiceInput";
 import { RequiredMark } from "@/components/ui/RequiredMark";
 import { useRef } from "react";
 import InsertFromLibraryButton from "@/components/library/InsertFromLibraryButton";
+import { CONTRACTS_PRO_DESC_MAX } from "@/lib/ai/tools";
 
 interface StepContextProps {
   isDark: boolean;
@@ -36,7 +37,7 @@ export function StepContext({ isDark, contractDesc, setContractDesc, courtType, 
             rows={4} className={`${inputCls} resize-none pe-20`} />
           <div className="absolute bottom-3 start-3"><VoiceInput onTranscript={t => setContractDesc(contractDesc ? `${contractDesc} ${t}` : t)} compact /></div>
         </div>
-        <InsertFromLibraryButton isDark={isDark} targetRef={descRef} value={contractDesc} onChange={setContractDesc} />
+        <InsertFromLibraryButton isDark={isDark} targetRef={descRef} value={contractDesc} onChange={setContractDesc} maxLength={CONTRACTS_PRO_DESC_MAX} />
         {contractDesc.length > 0 && contractDesc.trim().length < 20 ? (
           <p className="text-[11px] text-amber-500">أضف المزيد من التفاصيل (٢٠ حرفاً على الأقل) — هذا الوصف هو ما تُكتب منه صياغة العقد</p>
         ) : (

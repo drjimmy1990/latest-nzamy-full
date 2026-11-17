@@ -1375,6 +1375,7 @@ function LawyerHearingsPage() {
         <HearingsExportBar
           isDark={isDark}
           ready={loadState === "ready" && events.length > 0}
+          hearingsTruncated={truncated}
           hearings={events.map(feedHearingOf)}
           printGroups={printGroups}
         />

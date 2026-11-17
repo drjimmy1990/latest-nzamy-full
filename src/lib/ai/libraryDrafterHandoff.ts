@@ -25,6 +25,13 @@ export const LIBRARY_HANDOFF_KEY = "nzamy.libraryDrafterHandoff";
 export const LIBRARY_FROM_PARAM = "library";
 export const DRAFTER_LIBRARY_URL = `/ai/draft?from=${LIBRARY_FROM_PARAM}`;
 
+/**
+ * The drafter refuses notes longer than 3,000 characters (tools.ts,
+ * legal-drafter «ملاحظاتك»), so a library text is cut to that here and the
+ * cut is reported (the drafter's notice says so) — never a run that fails later.
+ */
+export const LIBRARY_NOTES_MAX = 3000;
+
 /** Saves the text, replacing any earlier one. */
 export function writeLibraryHandoff(
   storage: HandoffStorage | null | undefined,
@@ -32,9 +39,11 @@ export function writeLibraryHandoff(
   sourceLabel: string | null | undefined,
   now: number = Date.now(),
 ): WriteHandoffResult {
-  const handoff = buildTranscriptHandoff(text, sourceLabel, now);
-  if (!handoff) return { ok: false, reason: "empty" };
+  const built = buildTranscriptHandoff(text, sourceLabel, now);
+  if (!built) return { ok: false, reason: "empty" };
   if (!storage) return { ok: false, reason: "storage" };
+  const cut = built.text.length > LIBRARY_NOTES_MAX;
+  const handoff = { ...built, text: cut ? built.text.slice(0, LIBRARY_NOTES_MAX) : built.text, truncated: built.truncated || cut };
   try {
     storage.setItem(LIBRARY_HANDOFF_KEY, JSON.stringify(handoff));
     return { ok: true, truncated: handoff.truncated };
