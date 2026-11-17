@@ -1094,6 +1094,7 @@ test("founder: `reserved` goes on to the Moyasar form — 2,996 + VAT, billed on
 test("founder: every answer but `reserved` cancels the order, opens no intent, and answers in Arabic", async () => {
   const cases: Array<[string, number, string]> = [
     ["not_verified", 403, "يُتاح اشتراك المؤسس بعد توثيق رخصتك المهنية"],
+    ["not_advocate", 403, "باقة المؤسس للمحامي المرخّص للترافع فقط، ولا تُتاح لحساب المستشار"],
     ["already_member", 409, "أنت عضو مؤسس بالفعل"],
     ["full", 409, "اكتملت مقاعد المؤسسين"],
     ["closed", 410, "باب الاشتراك مغلق حاليًا"],
@@ -1266,7 +1267,7 @@ test("founder (R13): an intent refusal, a stamp failure and a reserve RPC throw 
 });
 
 test("founder (R13): a seat refusal reserved nothing, so nothing is released", async () => {
-  for (const answer of ["not_verified", "already_member", "full", "closed", "paused"]) {
+  for (const answer of ["not_verified", "not_advocate", "already_member", "full", "closed", "paused"]) {
     const { client: admin, log } = db("lawyer");
     const rel = releaseSpy();
     await startCheckoutWith(

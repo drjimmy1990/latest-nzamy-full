@@ -8,6 +8,7 @@ import {
   FOUNDER_BENEFITS,
   FOUNDER_CARD_TITLE,
   FOUNDER_CLOSED_TEXT,
+  FOUNDER_ADVOCATE_ONLY_TEXT,
   FOUNDER_CONSULTANT_NOTE,
   FOUNDER_FINE_PRINT,
   FOUNDER_GUEST_LOGIN_HREF,
@@ -252,14 +253,17 @@ test("founderCta: a signed-in account that is not a lawyer is told the plan is f
   }
 });
 
-test("founderCta (R19): a consultant sees the note and may still check out (owner ٤٠٧ decides)", () => {
+test("founderCta (17 Nov, 20261122_10): a consultant is refused before payment; the R19 note stays", () => {
   const consultant = { ...lawyer, practiceKind: "consultant" } as const;
   const cta = founderCta(consultant);
-  assert.equal(cta.kind, "checkout");
+  assert.equal(cta.kind, "lawyers_only");
+  assert.equal(cta.label, FOUNDER_ADVOCATE_ONLY_TEXT);
   assert.equal(cta.note, FOUNDER_CONSULTANT_NOTE);
-  assert.equal(founderCta({ ...consultant, verification: "unverified" }).note, FOUNDER_CONSULTANT_NOTE);
+  assert.equal(founderCta({ ...consultant, verification: "unverified" }).kind, "lawyers_only");
+  assert.equal(founderCta({ ...consultant, gateway: { disabled: true, provider: null } }).kind, "lawyers_only");
+  // a consultant who is already a member still sees his membership
+  assert.equal(founderCta({ ...consultant, member: true }).kind, "member");
   assert.equal(founderCta({ ...consultant, member: true }).note, FOUNDER_CONSULTANT_NOTE);
-  assert.equal(founderCta({ ...consultant, gateway: { disabled: true, provider: null } }).note, FOUNDER_CONSULTANT_NOTE);
   // An advocate never sees it.
   assert.equal(founderCta({ ...lawyer, verification: "unverified" }).note, null);
 });
