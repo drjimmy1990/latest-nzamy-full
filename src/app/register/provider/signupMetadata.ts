@@ -9,8 +9,10 @@
  * supabase/migrations/20261019_20_lawyer_practice_kind.sql copies it onto the
  * row only when it is exactly 'consultant'. The other five cards send no
  * `practice_kind` key at all, so their signups are what they were before.
- * Consultants register only through this form (ruling P11): Google onboarding
- * has no consultant option.
+ * Ruling P11 (consultants by this form only) is superseded by R9 (owner TODO
+ * 17 Nov 2026): the Google onboarding now asks «محامٍ مترافع أم مستشار
+ * قانوني؟» and the firm kind (src/lib/auth/claimKinds.ts). The consultant
+ * card still offers no Google button here — the onboarding asks instead.
  *
  * No `@/` imports and no runtime imports: `node --test` loads this file
  * directly (signupMetadata.test.ts). `./types.ts` is a type-only import.
@@ -53,6 +55,16 @@ export function providerSignupMetadata(type: ProviderTypeId): ProviderSignupMeta
  */
 export function parseProviderTypeParam(v: string | null | undefined): ProviderTypeId | null {
   return typeof v === "string" && (PROVIDER_TYPE_IDS as string[]).includes(v) ? (v as ProviderTypeId) : null;
+}
+
+/**
+ * R9: the firm card's «نوع المنشأة». Only «مكتب استشارات مرخص (م١٨)» travels
+ * in the signup metadata (`firm_kind: 'consulting_office'`); the BEFORE INSERT
+ * trigger of 20261126_50 copies exactly that value onto firm_profiles. Every
+ * other card, and a law firm, sends no key — their signups are unchanged.
+ */
+export function firmKindMetadata(type: ProviderType, chosen: string | null | undefined): { firm_kind?: "consulting_office" } {
+  return type === "firm" && chosen === "consulting_office" ? { firm_kind: "consulting_office" } : {};
 }
 
 /** The consultant card is for consultants licensed in Saudi Arabia only. */

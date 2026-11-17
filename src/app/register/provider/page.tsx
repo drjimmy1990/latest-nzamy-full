@@ -35,6 +35,7 @@ import {
   CONSULTANT_COUNTRY,
   parseProviderTypeParam,
   providerSignupMetadata,
+  firmKindMetadata,
   signupCountry,
   type ProviderTypeId,
 } from "./signupMetadata";
@@ -523,6 +524,8 @@ export default function RegisterProviderPage() {
                               password: formData.password,
                               options: withSignupCaptcha({
                                   ...signupMeta,
+                                  // R9: «مكتب استشارات مرخص (م١٨)» only; nothing for a law firm.
+                                  ...firmKindMetadata(providerType, formData.firmKind),
                                   display_name: displayName,
                                   full_name: displayName,
                                   tier,
