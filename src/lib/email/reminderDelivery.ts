@@ -104,13 +104,23 @@ export async function loadEmailRecipients(
   const ids = Array.from(new Set(userIds.filter((u) => typeof u === "string" && u)));
   try {
     for (const part of chunks(ids, ID_CHUNK)) {
-      const [profiles, settings] = await Promise.all([
+      const [profiles, settings, banned] = await Promise.all([
         admin.from("profiles").select("id, email, user_type").in("id", part),
         admin
           .from("user_settings")
           .select("user_id, notifications_enabled, email_notifications, preferences")
           .in("user_id", part),
+        // Suspended accounts (20261124_60) get no reminders. Best-effort: when
+        // the function is missing or fails, nobody is skipped for it.
+        Promise.resolve()
+          .then(() => (typeof admin.rpc === "function" ? admin.rpc("admin_suspended_user_ids", { p_ids: part }) : null))
+          .then((r) => r, () => null),
       ]);
+      const suspended = new Set<string>(
+        banned && !banned.error && Array.isArray((banned as { data?: unknown }).data)
+          ? ((banned as { data: unknown[] }).data).map((r) => (typeof r === "string" ? r : String((r as Record<string, unknown>)?.admin_suspended_user_ids ?? "")))
+          : [],
+      );
       if (profiles.error) return { addresses: new Map(), userTypes, muted, noAddress, error: `profiles: ${profiles.error.code ?? profiles.error.message}` };
       if (settings.error) return { addresses: new Map(), userTypes, muted, noAddress, error: `user_settings: ${settings.error.code ?? settings.error.message}` };
       const byUser = new Map<string, UserSettingsRow>();
@@ -121,7 +131,7 @@ export async function loadEmailRecipients(
         userTypes.set(p.id, typeof p.user_type === "string" ? p.user_type : null);
       }
       for (const id of part) {
-        if (emailMuted(byUser.get(id), categories)) {
+        if (suspended.has(id) || emailMuted(byUser.get(id), categories)) {
           muted++;
           continue;
         }
