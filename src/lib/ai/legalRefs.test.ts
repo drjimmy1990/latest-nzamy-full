@@ -42,3 +42,36 @@ test("non-text input gives no references", () => {
   assert.deepEqual(extractLegalRefs(undefined as unknown as string), []);
   assert.deepEqual(extractLegalRefs(""), []);
 });
+
+test("a spelled-out article reads as the same key as its digits", () => {
+  assert.deepEqual(extractLegalRefs("نصت المادة الخامسة والعشرون على ذلك"), ["مادة 25"]);
+  assert.deepEqual(extractLegalRefs("المادة الخامسة والعشرون ثم المادة (25)"), ["مادة 25"]);
+  assert.deepEqual(
+    extractLegalRefs("وفق المادة الأولى، وللمادة الحادية عشرة، وبالمادة الثمانين، والمادة العاشرة، والمادة المائة"),
+    ["مادة 1", "مادة 11", "مادة 80", "مادة 10", "مادة 100"],
+  );
+  assert.deepEqual(extractLegalRefs("المادة (الخامسة والسبعين) من نظام العمل"), ["مادة 75"]);
+  assert.deepEqual(extractLegalRefs("المادة الثانية عشرة والمادة السابعة والتسعون"), ["مادة 12", "مادة 97"]);
+});
+
+test("a spelled-out article past the hundred: «… بعد المائة / المائتين»", () => {
+  assert.deepEqual(extractLegalRefs("المادة الحادية والعشرون بعد المائة"), ["مادة 121"]);
+  assert.deepEqual(extractLegalRefs("المادة الأولى بعد المئتين والمادة الخامسة بعد الثلاثمائة"), ["مادة 201", "مادة 305"]);
+  // «بعد» followed by anything else is not a number: no key rather than a wrong one.
+  assert.deepEqual(extractLegalRefs("المادة الحادية والعشرون بعد التعديل"), []);
+});
+
+test("digits and words keep the text's order, and a spelled number needs «المادة»", () => {
+  assert.deepEqual(extractLegalRefs("المادة 80 ثم المادة الخامسة ثم المادة ٧"), ["مادة 80", "مادة 5", "مادة 7"]);
+  assert.deepEqual(extractLegalRefs("في الفقرة الخامسة والعشرين، وفي المادة الأساسية"), []);
+});
+
+test("Arabic-Indic and Persian digits read as ASCII", () => {
+  assert.deepEqual(extractLegalRefs("المادة ٧٧ والمادة ۸۰ والحكم رقم ٤٤٣٠١٢٣"), ["مادة 77", "مادة 80", "رقم 4430123"]);
+});
+
+test("missingLegalRefs accepts a spelled-out reference rewritten in digits, and the reverse", () => {
+  const required = extractLegalRefs("المادة الخامسة والعشرون والمادة 80");
+  assert.deepEqual(missingLegalRefs(required, "المادة 25 والمادة الثمانون"), []);
+  assert.deepEqual(missingLegalRefs(required, "المادة 25 فقط"), ["مادة 80"]);
+});
