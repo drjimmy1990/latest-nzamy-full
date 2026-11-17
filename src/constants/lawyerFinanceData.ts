@@ -20,7 +20,8 @@
  */
 import { CheckCircle, CurrencyCircleDollar, Clock, Warning } from "@phosphor-icons/react";
 
-export type FinanceTab = "overview" | "invoices" | "expenses" | "pl";
+// "expenses" is the PLATFORM WALLET tab; the office's own expenses are "lawyerExpenses" (l6-ledger).
+export type FinanceTab = "overview" | "invoices" | "expenses" | "pl" | "time" | "trust" | "lawyerExpenses";
 export type InvoiceStatus = "paid" | "pending" | "overdue" | "partial";
 export type FeeType = "full" | "partial";
 export type Period = "monthly" | "quarterly" | "annual";
