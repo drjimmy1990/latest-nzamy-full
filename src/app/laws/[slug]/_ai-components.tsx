@@ -397,7 +397,7 @@ export function CommunityQuestionModal({
 
   // Success only for a question the server saved; its own error text otherwise.
   const handleSubmit = async () => {
-    if (!canSend || cat === "") return;
+    if (!canSend) return;
     setSending(true);
     setError(null);
     try {
