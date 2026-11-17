@@ -62,6 +62,16 @@ export async function PATCH(
     .select("user_id, verification_status")
     .maybeSingle();
 
+  // R6 (20261122_40): another VERIFIED lawyer already holds this licence
+  // number. Say so, instead of falling through to the other tables and
+  // answering "not found".
+  if (lawyerErr?.code === "23505") {
+    return NextResponse.json(
+      { error: "لا يمكن الاعتماد: رقم الترخيص نفسه مسجّل لحساب محامٍ آخر موثّق. راجع الحسابين قبل الاعتماد." },
+      { status: 409 },
+    );
+  }
+
   if (!lawyerErr && lawyerUpdate) {
     updated = true;
     updatedType = "lawyer";

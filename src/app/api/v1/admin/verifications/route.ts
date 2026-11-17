@@ -5,6 +5,7 @@ import type { VerificationStatus } from "@/types/database";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { toPracticeKind } from "@/lib/auth/practiceKind";
 import { isOwnLicencePath } from "@/lib/storagePathOwnership";
+import { registryMatchesByUser, type RegistryMatch } from "@/lib/registry/registryMatch";
 
 /**
  * GET /api/v1/admin/verifications — List verification requests
@@ -86,6 +87,15 @@ export async function GET(request: NextRequest) {
     lawyerRows.map((lp) => signLicenceImage(adminClient, lp.licence_image_path, lp.user_id)),
   );
 
+  // ── Registry match (launch batch R2/R3/R5, 20261122_40) ──────────────────
+  // What the lawyers' register says about the licence on each file, computed
+  // by the database now (never stored from the signup form). Before that
+  // migration runs the RPC is missing: the queue then simply has no line.
+  const registryMatches = await readRegistryMatches(
+    adminClient,
+    lawyerRows.map((lp) => lp.user_id).filter((id): id is string => typeof id === "string"),
+  );
+
   // ── Fetch provider verifications ───────────────────────────────────────────
   let providerQuery = adminClient
     .from("provider_profiles")
@@ -149,6 +159,7 @@ export async function GET(request: NextRequest) {
         phone: p.phone,
         licenceImageUrl: licenceImageUrls[i],
         practiceKind: toPracticeKind(lp.practice_kind),
+        registryMatch: registryMatches.get(p.id) ?? null,
       };
     }),
     // Provider profiles (notary, arbitrator, bailiff)
@@ -241,6 +252,25 @@ async function signLicenceImage(
   } catch (err) {
     console.error("[admin/verifications GET] licence image signing threw:", err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+/** Never throws and never fails the queue: no RPC / an error → an empty map. */
+async function readRegistryMatches(
+  adminClient: Awaited<ReturnType<typeof createServiceClient>>,
+  userIds: string[],
+): Promise<Map<string, RegistryMatch>> {
+  if (userIds.length === 0) return new Map();
+  try {
+    const { data, error } = await adminClient.rpc("lawyer_registry_admin_matches", { p_user_ids: userIds });
+    if (error) {
+      console.error("[admin/verifications GET] registry match unavailable:", error.code);
+      return new Map();
+    }
+    return registryMatchesByUser(data);
+  } catch (err) {
+    console.error("[admin/verifications GET] registry match threw:", err instanceof Error ? err.message : err);
+    return new Map();
   }
 }
 
