@@ -172,7 +172,7 @@ test("the library gate itself is untouched: the run route still checks every lib
   assert.ok(route.includes("(await libraryGate()) ?? (await libraryAiAccess(toolId))"));
   assert.ok(route.includes('code: body.libraryClosed ? "library_closed" : "library_tier"'));
   const access = src("app/api/ai/_libraryAiAccess.ts");
-  assert.ok(access.includes("libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember }, TIER_RANK)"));
+  assert.ok(access.includes("libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember, libraryGrant }, TIER_RANK)"));
 });
 
 test("each library tool's screen maps the gate's refusal to its own words", () => {
