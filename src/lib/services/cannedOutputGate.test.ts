@@ -305,7 +305,8 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
   assert.deepEqual(wrong, []);
   // /ai/analyze is the live case brief for lawyer and firm (S3-01, S3-02): one
   // unbadged row in each of the two sidebars this file holds.
-  const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => r.href.startsWith("/ai/analyze"));
+  // Segment-exact: /ai/analyze-strength (N06-32, a firm row) is another tool.
+  const lawyerAnalyze = navRows("constants/navigation.sidebars.legal.ts").filter((r) => /^\/ai\/analyze(?:[/?#]|$)/.test(r.href));
   assert.equal(lawyerAnalyze.length, 2);
   for (const r of lawyerAnalyze) assert.equal(r.badge, null);
 });
