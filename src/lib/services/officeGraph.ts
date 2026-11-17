@@ -38,7 +38,11 @@ export interface OfficeCaseInput {
   title: string;
   status: string;
   lawyerClientId: string | null;
-  /** The platform account that filed the case — never the caller himself (the route drops that). */
+  /**
+   * The platform account that filed the case, ONLY when it is plausibly the
+   * client's own account — the route drops the caller, the assignee, the
+   * caller's firm colleagues and any lawyer/firm filer (requester.role).
+   */
   requesterUserId?: string | null;
   requester: { name?: unknown } | null;
   metadata: Record<string, unknown> | null;
@@ -311,9 +315,13 @@ export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClient
   }
 
   // ── client resolution (N07-49) ──────────────────────────────────────────
-  // Platform accounts with no card: one node per account, numbered in input
-  // order (the account id itself never leaves the server).
+  // Platform accounts with no card: one node per account AND name, numbered
+  // in input order (the account id itself never leaves the server). Keyed on
+  // the name too: should a filer slip through the route's filter, two
+  // different clients filed by one account are still two nodes, never one
+  // node under the first client's name.
   const accountNode = new Map<string, string>();
+  const accountsByAccount = new Map<string, string[]>();
   const looseByName = new Map<string, Set<string>>(); // norm → non-card client node ids
   const viaAccount = new Set<string>(); // card nodes a platform case was merged into
   const noteLoose = (norm: string, id: string) => {
@@ -321,10 +329,12 @@ export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClient
     looseByName.get(norm)!.add(id);
   };
   const ensureAccountNode = (account: string, label: string): string => {
-    const known = accountNode.get(account);
+    const key = `${account}|${normalizePartyName(label)}`;
+    const known = accountNode.get(key);
     if (known) return known;
     const id = `client:acct:${accountNode.size + 1}`;
-    accountNode.set(account, id);
+    accountNode.set(key, id);
+    accountsByAccount.set(account, [...(accountsByAccount.get(account) ?? []), id]);
     nodes.set(id, { id, kind: "client", label, caseCount: 0 });
     noteLoose(normalizePartyName(label), id);
     return id;
@@ -410,7 +420,12 @@ export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClient
   // The client a contract / consultation names, if it is on the map.
   const clientNodeFor = (lawyerClientId: string | null, account: string | null): string | null => {
     if (lawyerClientId && nodes.has(`client:${lawyerClientId}`)) return `client:${lawyerClientId}`;
-    if (account) return cardByAccount.get(account) ?? accountNode.get(account) ?? null;
+    if (!account) return null;
+    const card = cardByAccount.get(account);
+    if (card) return card;
+    // An account with one node only — two names under one account is no basis for a link.
+    const own = accountsByAccount.get(account);
+    return own && own.length === 1 ? own[0] : null;
     return null;
   };
 

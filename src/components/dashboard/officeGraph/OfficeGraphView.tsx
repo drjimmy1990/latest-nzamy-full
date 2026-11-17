@@ -66,7 +66,7 @@ import {
 } from "@phosphor-icons/react";
 import { getOfficeGraph, type OfficeGraphRead } from "@/lib/services/officeGraphService";
 import { autoRefetchAllowed, keepPositions, layoutPlan, officeGraphSignature, type Point } from "@/lib/services/officeGraphRefresh";
-import { layeredLayout, OFFICE_NODE_W, placeNewNodes } from "@/lib/services/officeGraphLayout";
+import { layeredLayout, OFFICE_NODE_W, officeNodeHeight, placeNewNodes } from "@/lib/services/officeGraphLayout";
 import { OFFICE_NODE_KINDS, type OfficeEdgeRelation, type OfficeGraph, type OfficeNode, type OfficeNodeKind } from "@/lib/services/officeGraph";
 import { normalizePartyName } from "@/lib/services/caseParties";
 import { toArabicDigits } from "@/lib/services/arabicCount";
@@ -315,7 +315,11 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
         selected: n.id === selected,
         measured: measured[n.id],
         ariaLabel: `${KIND_AR[n.kind]}: ${n.label}${n.nameClash ? " — تشابه اسم" : ""}`,
-        width: OFFICE_NODE_W,
+        // Every card is rendered (no onlyRenderVisibleElements) so all are
+        // measured and the opening fitView covers the whole map; the estimate
+        // only bridges the first frame.
+        initialWidth: OFFICE_NODE_W,
+        initialHeight: officeNodeHeight(n),
       };
     });
   }, [graph, positions, measured, shown, selected, neighbours, q, isDark]);
@@ -526,7 +530,6 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
                 multiSelectionKeyCode={null}
                 selectionKeyCode={null}
                 zoomOnDoubleClick={false}
-                onlyRenderVisibleElements
                 fitView
                 fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}
                 minZoom={0.1}

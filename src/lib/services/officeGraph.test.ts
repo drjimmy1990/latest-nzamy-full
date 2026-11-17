@@ -200,3 +200,17 @@ test("officeOwnRowsFilter: own rows and own firms only", () => {
   assert.equal(officeOwnRowsFilter("lawyer_user_id", uid, [f1, "bad)"]), `lawyer_user_id.eq.${uid},firm_id.in.(${f1})`);
   assert.equal(officeOwnRowsFilter("owner_user_id", uid, []), `owner_user_id.eq.${uid}`);
 });
+
+test("N07-49: one filing account with two different client names is two nodes, never one under the first name", () => {
+  const g = buildOfficeGraph(
+    [
+      kase("a", { requesterUserId: "acct-x", requester: { name: "فهد" } }),
+      kase("b", { requesterUserId: "acct-x", requester: { name: "نورة" } }),
+    ],
+    [],
+    { consultations: [{ id: "s1", status: "completed", mode: null, specialty: null, scheduledAt: null, lawyerClientId: null, requesterUserId: "acct-x", convertedCaseId: null, feeSar: null, feePaid: false }] },
+  );
+  const clients = g.nodes.filter((n) => n.kind === "client");
+  assert.deepEqual(clients.map((n) => n.label).sort(), ["فهد", "نورة"]);
+  assert.ok(!g.nodes.some((n) => n.kind === "consultation"), "an account with two names is no basis for linking a consultation");
+});

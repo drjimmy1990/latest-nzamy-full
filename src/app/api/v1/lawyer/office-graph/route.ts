@@ -33,8 +33,8 @@ import {
  * reach the map through its hearings. Upcoming scheduled hearings and open
  * tasks only — the map is today's work, not the archive.
  *
- * Amounts: an invoice is returned only to whoever RLS lets read it (the
- * assigned lawyer, the requester, the invoice owner); a card's agreed fee, a
+ * Amounts: invoices only of the cases assigned to the caller (as
+ * /api/v1/lawyer/finance) and his own case-less ones; a card's agreed fee, a
  * contract's value and a consultation's fee only when clientFeeVisibility.ts
  * allows (own row, or a partner / finance manager of that firm).
  *
@@ -66,7 +66,8 @@ interface CaseRow {
   type: string;
   lawyer_client_id: string | null;
   requester_user_id: string | null;
-  requester: { name?: unknown } | null;
+  assigned_to: string | null;
+  requester: { name?: unknown; role?: unknown } | null;
   metadata: Record<string, unknown> | null;
 }
 
@@ -185,7 +186,7 @@ export async function GET() {
     const [casesRes, clientsRes, contractsRes, consultationsRes] = await Promise.all([
       supabase
         .from("service_requests")
-        .select("id, title, status, type, lawyer_client_id, requester_user_id, requester, metadata", { count: "exact" })
+        .select("id, title, status, type, lawyer_client_id, requester_user_id, assigned_to, requester, metadata", { count: "exact" })
         .eq("type", "service")
         .in("receiver", [...OFFICE_CASE_RECEIVERS])
         // His own work only — see officeCaseOrFilter (RLS also admits the
@@ -222,14 +223,42 @@ export async function GET() {
 
     const partial: string[] = [];
     const caseRows = ((casesRes.data ?? []) as CaseRow[]).filter((r) => isCaseRow(r.type, r.metadata));
+
+    // N07-49 merges a platform case into the card linked to the account that
+    // filed it. `requester_user_id` is the FILER: on a case added from the
+    // dashboard it is the lawyer, a colleague or the firm owner, never the
+    // client. So an account counts as the client's only when it is none of
+    // those: not the caller, not the case's assignee, not a lawyer/firm filer
+    // (requester.role is the filer's user type), not one of the caller's firm
+    // colleagues or firm owners. If the colleague list cannot be read, no
+    // account is trusted — the merge falls back to card and name.
+    let staff: Set<string> | null = new Set([uid]);
+    if (firmIds.length > 0) {
+      const [colleaguesRes, ownersRes] = await Promise.all([
+        supabase.from("firm_members").select("user_id").in("firm_id", firmIds).eq("status", "active"),
+        supabase.from("firm_profiles").select("owner_user_id").in("id", firmIds),
+      ]);
+      if (colleaguesRes.error || ownersRes.error) {
+        const e = colleaguesRes.error ?? ownersRes.error;
+        console.error("[lawyer/office-graph GET] colleague lookup failed:", e?.message, e?.code);
+        staff = null;
+      } else {
+        for (const r of (colleaguesRes.data ?? []) as Array<{ user_id: string | null }>) if (r.user_id) staff.add(r.user_id);
+        for (const r of (ownersRes.data ?? []) as Array<{ owner_user_id: string | null }>) if (r.owner_user_id) staff.add(r.owner_user_id);
+      }
+    }
+    const clientAccount = (account: string | null, assignedTo: string | null, role: unknown): string | null => {
+      if (!account || !staff || staff.has(account) || account === assignedTo) return null;
+      if (role === "lawyer" || role === "firm") return null;
+      return account;
+    };
+
     const cases: OfficeCaseInput[] = caseRows.map((r) => ({
       id: r.id,
       title: r.title ?? "",
       status: r.status,
       lawyerClientId: r.lawyer_client_id,
-      // A lawyer's own case names HIM as the requester (AddCaseModal): that is
-      // not a client's platform account.
-      requesterUserId: r.requester_user_id && r.requester_user_id !== uid ? r.requester_user_id : null,
+      requesterUserId: clientAccount(r.requester_user_id, r.assigned_to, r.requester?.role),
       requester: r.requester,
       metadata: r.metadata,
     }));
@@ -276,7 +305,7 @@ export async function GET() {
         specialty: c.specialty,
         scheduledAt: c.scheduled_at,
         lawyerClientId: c.lawyer_client_id,
-        requesterUserId: c.requester_user_id && c.requester_user_id !== uid ? c.requester_user_id : null,
+        requesterUserId: clientAccount(c.requester_user_id, c.lawyer_user_id, null),
         convertedCaseId: c.converted_case_request_id,
         feeSar: feesVisible(c.lawyer_user_id, c.firm_id) ? num(c.fee_sar) : null,
         feePaid: c.fee_paid === true,
@@ -286,6 +315,10 @@ export async function GET() {
     // ── the drawn cases' own hearings, tasks and invoices ─────────────────
     const caseIds = cases.map((c) => c.id);
     const idChunks = chunks(caseIds, ID_CHUNK);
+    // Invoices: the cases assigned to the caller only — the same set as
+    // GET /api/v1/lawyer/finance. Payments RLS would also hand the filer of a
+    // case (a secretary, say) its amounts, which no other screen shows him.
+    const invoiceChunks = chunks(caseRows.filter((r) => r.assigned_to === uid).map((r) => r.id), ID_CHUNK);
     const today = new Date(Date.now() + RIYADH_OFFSET_MS).toISOString().slice(0, 10);
 
     const [hearingReads, taskReads, paymentReads, ownInvoicesRes] = await Promise.all([
@@ -308,7 +341,7 @@ export async function GET() {
           .order("due_date", { ascending: true, nullsFirst: false })
           .limit(TASK_CAP),
       )),
-      Promise.all(idChunks.map((ids) =>
+      Promise.all(invoiceChunks.map((ids) =>
         supabase
           .from("payments")
           .select("id, request_id, amount, status, metadata", { count: "exact" })
