@@ -21,7 +21,14 @@ import { arabicDate, tone, useMurshidJson } from "./_murshidShared";
  * using the page's search grammar.
  */
 
-interface GuideResponse extends NajizClassifications { sourceDate: string }
+interface GuideResponse extends Partial<NajizClassifications> { sourceDate: string }
+
+/**
+ * `?v=2`: the route's body changed from `{ blocks }` to `{ steps, courts }`, and
+ * murshid responses are publicly cached (an hour, stale for a day), so the new
+ * page asks a new URL instead of reading an old cached body.
+ */
+const NAJIZ_GUIDE_URL = "/api/v1/murshid/najiz-guide?v=2";
 interface TypeRow { court: NajizCourt; klass: NajizClass; type: NajizType }
 
 const typesCount = (court: NajizCourt) => court.classes.reduce((n, k) => n + k.types.length, 0);
@@ -29,7 +36,7 @@ const rowFields = (r: TypeRow) => [r.type.name, r.type.description, r.klass.titl
 
 export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
   const t = tone(isDark);
-  const { data, failed } = useMurshidJson<GuideResponse>("/api/v1/murshid/najiz-guide");
+  const { data, failed } = useMurshidJson<GuideResponse>(NAJIZ_GUIDE_URL);
   const [q, setQ] = useState("");
   const query = useDeferredValue(q.trim());
 
@@ -41,6 +48,8 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
 
   if (failed) return <p className={`text-[12px] ${t.muted}`}>تعذّر تحميل دليل ناجز — أعد تحميل الصفحة.</p>;
   if (!data) return <p className={`text-[12px] ${t.muted}`}>جارٍ تحميل دليل ناجز…</p>;
+  const steps = data.steps ?? [];
+  const courts = data.courts ?? [];
 
   const line = isDark ? "border-white/[0.06]" : "border-slate-100";
   const summary = `flex items-center justify-between gap-2 cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden`;
@@ -80,14 +89,14 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
         </p>
       </div>
 
-      {data.steps.length > 0 && (
+      {steps.length > 0 && (
         <details className={`group ${t.card} px-4 py-3`}>
           <summary className={summary}>
-            <span className={`text-[13px] font-bold ${t.strong}`}>خطوات رفع صحيفة الدعوى في ناجز ({toArabicDigits(data.steps.length)})</span>
+            <span className={`text-[13px] font-bold ${t.strong}`}>خطوات رفع صحيفة الدعوى في ناجز ({toArabicDigits(steps.length)})</span>
             <CaretDown size={14} className={caret} />
           </summary>
           <ol className="mt-3 space-y-2.5">
-            {data.steps.map((s) => (
+            {steps.map((s) => (
               <li key={s.no} className="flex gap-2.5">
                 <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${t.chip}`}>{toArabicDigits(s.no)}</span>
                 <div className="min-w-0">
@@ -133,7 +142,7 @@ export function MurshidNajizGuide({ isDark }: { isDark: boolean }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {data.courts.map((court) => (
+            {courts.map((court) => (
               <details key={court.no} className={`group ${t.card} px-4 py-3`}>
                 <summary className={summary}>
                   <span className="min-w-0">

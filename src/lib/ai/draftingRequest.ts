@@ -83,6 +83,7 @@ const QUESTION_BEFORE_SECOND = set("كيف متي ماذا لماذا ما اي�
 const EXPLANATIONS = set(`
   ملخص ملخصا تلخيص خلاصه شرح شرحا تعريف نبذه معني مفهوم مقارنه الفرق
   شروط مده مدة احكام اركان اجراءات مواعيد ميعاد معرفه حكم رايك
+  انواع اسباب طرق عناصر متطلبات مرفقات رسوم
 `);
 
 /** Documents that are a pleading on their own. */
