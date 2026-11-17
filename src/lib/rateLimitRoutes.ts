@@ -305,3 +305,40 @@ export function isGeneralRateLimitedApiPath(method: string, pathname: string): b
   if (RATE_LIMIT_EXEMPT_API_PATHS.has(pathname)) return false;
   return true;
 }
+
+// S5 (owner package 17 Nov, file 04): «الحجز 3 كل 10 دقائق لكل مستخدم». The
+// founder seat is reserved INSIDE POST /api/v1/payments/checkout
+// (founder_reserve_seat, src/lib/payments/checkoutCore.ts), and the proxy
+// cannot tell a founder checkout from any other without reading the body,
+// which it does not do. So every checkout start counts: 3 per 10 minutes per
+// signed-in user (a verified getUser() in the proxy, on this path only),
+// and per proxy-resolved IP when there is no verifiable session. A refusal
+// comes before any order or reservation is written. POST only; the exact
+// path, percent-decoded once (canonicalApiPath) so an encoded spelling of the
+// same route is counted too.
+export const CHECKOUT_START_RE = /^\/api\/v1\/payments\/checkout$/;
+
+/** True for a POST of /api/v1/payments/checkout. */
+export function isCheckoutStartRoute(method: string, pathname: string): boolean {
+  return method.toUpperCase() === "POST" && CHECKOUT_START_RE.test(canonicalApiPath(pathname));
+}
+
+/** 3 checkout starts per 10 minutes (owner S5). */
+export const CHECKOUT_START_POLICY = Object.freeze({ windowMs: 10 * 60 * 1000, max: 3 });
+
+/**
+ * The bucket key: the verified user id when there is one, else the IP. The
+ * two spaces never collide (prefixes), so a guest's address can never spend
+ * a user's budget or the reverse.
+ */
+export function checkoutStartKey(userId: string | null | undefined, ip: string): string {
+  return typeof userId === "string" && userId.length > 0 ? `user:${userId}` : `ip:${ip}`;
+}
+
+/** The Arabic refusal, with the wait in whole minutes (at least 1). */
+export function checkoutStartRefusalAr(retryAfterSeconds: number): string {
+  const minutes = Math.max(1, Math.ceil((Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : 60) / 60));
+  const wait =
+    minutes === 1 ? "دقيقة" : minutes === 2 ? "دقيقتين" : minutes <= 10 ? `${minutes} دقائق` : `${minutes} دقيقة`;
+  return `محاولات دفع كثيرة خلال وقت قصير. حاول مرة أخرى بعد ${wait}.`;
+}
