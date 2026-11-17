@@ -264,6 +264,16 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "الصائغ القانوني",       labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple", divider: true },
       { label: "المجمّع البحثي",        labelEn: "Research Collector", href: "/ai/collector",      icon: "Tray",         badge: "جديد" },
       { label: "محترف العقود",           labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
+      // N06-32 (owner package 13 Nov): four lawyer-and-firm tools (LAWYER_ONLY_AI_PAGES) that had
+      // no firm row. contract-drafter runs straight through useAiRun and brief-check's team order
+      // does not depend on tool-status; communicate and analyze-strength are gated by tool-status
+      // (ToolUsableGate / StrengthUsableGate), so they carry «قريباً» + liveToolId until the admin
+      // opens the tool for this account (BUG-12). brief-check and analyze-strength are court tools
+      // (Art. 18, CONSULTANT_BLOCKED_PREFIXES) — only the litigation roles list them.
+      { label: "محترف العقود المختصر",   labelEn: "Contract Drafter Lite", href: "/ai/contract-drafter", icon: "PencilLine" },
+      { label: "المتحدث الذكي",          labelEn: "Smart Communicator", href: "/ai/communicate",     icon: "Envelope",     badge: "قريباً", liveToolId: "communicate" },
+      { label: "مراجعة وتدقيق مذكرة",    labelEn: "Brief Review",     href: "/ai/brief-check",      icon: "ListChecks" },
+      { label: "محلل قوة الموقف",        labelEn: "Position Strength", href: "/ai/analyze-strength", icon: "Target",      badge: "قريباً", liveToolId: "analyze-strength" },
       // BUG-12: the page reads tool-status itself (useToolUsable), so the badge follows the same answer.
       // N06-26: no firm «مراجع العقود» row — /ai/contract-reviewer is a 301 to /ai/contracts, the
       // «محترف العقود» row just above (its review mode). N06-30: the corporate-only /ai/corp/* tools
