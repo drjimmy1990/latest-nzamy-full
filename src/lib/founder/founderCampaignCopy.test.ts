@@ -84,3 +84,19 @@ test("owner 17 Nov (١٢، ١٥، ١٧، ١٨): the library year, the 100 foundi
   // the refund answer links the terms page
   assert.match(page, /وفق\{" "\}\s*<Link href=\{FOUNDER_TERMS_PATH\}/);
 });
+
+test("V16: the promo sits right after the hero, with a poster, controls, no autoplay, loaded only on play", () => {
+  const page = code(join(SRC, "app", "founder", "page.tsx"));
+  const video = page.slice(page.indexOf("<video"), page.indexOf("</video>"));
+  assert.ok(video.length > 0, "a <video> element");
+  assert.ok(page.indexOf("<video") > page.indexOf('id="founder-h1"') && page.indexOf("<video") < page.indexOf('id="samples"'), "after the hero, before the samples");
+  for (const s of ["controls", 'preload="none"', "playsInline", "poster={PROMO_POSTER_SRC}"]) assert.ok(video.includes(s), s);
+  assert.doesNotMatch(video, /autoPlay|autoplay/);
+  assert.match(page, /const PROMO_VIDEO_SRC = "\/media\/founder\/promo-whatsapp-720p\.mp4";/);
+  assert.match(page, /const PROMO_POSTER_SRC = "\/media\/founder\/video-poster\.jpg";/);
+  assert.match(page, /<figcaption/);
+  for (const f of ["promo-whatsapp-720p.mp4", "video-poster.jpg"]) {
+    const size = statSync(join(SRC, "..", "public", "media", "founder", f)).size;
+    assert.ok(size > 10_000 && size < 10_000_000, `${f}: ${size} bytes`);
+  }
+});

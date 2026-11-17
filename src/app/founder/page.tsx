@@ -24,7 +24,10 @@ import { WindowLine } from "./_components/WindowLine";
  *   - the hero's eight-station race track with its «٩ من ١٠» trophy: the
  *     owner's conflict ruling ٣ allows the page to describe the live
  *     drafter's stages only, never the unpublished eight;
- *   - the video placeholder (no video file exists yet);
+ *   - the prototype's video placeholder: the real promo (V16, the owner's
+ *     WhatsApp 720p cut, public/media/founder/) sits right after the hero
+ *     instead — controls, no autoplay, preload="none" so nothing but the
+ *     poster loads before the visitor presses play;
  *   - the site-wide Navbar/Footer: they name products the campaign must not
  *     mention, so the page carries its own small header and footer.
  * Numbers: the price from quote() (landingCopy.ts, pinned to the manifest),
@@ -42,6 +45,9 @@ export const metadata = buildMetadata({
 });
 
 const JOIN_ID = "join";
+/** V16 promo (owner package 17 Nov 2026, 08_المواد_التسويقية/video): 1280×720, 122.7 s, 7.5 MB. */
+const PROMO_VIDEO_SRC = "/media/founder/promo-whatsapp-720p.mp4";
+const PROMO_POSTER_SRC = "/media/founder/video-poster.jpg";
 const PRICE = founderLandingPrice();
 
 const wrap = "mx-auto max-w-[1180px] px-4 sm:px-6";
@@ -166,6 +172,29 @@ export default function FounderPage() {
               </div>
             )}
           </div>
+
+          {/* ── V16 promo video: inside the hero's dark band (dark in both themes) ── */}
+          <figure className={`${wrap} mt-11`}>
+            <video
+              controls
+              preload="none"
+              playsInline
+              poster={PROMO_POSTER_SRC}
+              width={1280}
+              height={720}
+              aria-label="الفيديو التعريفي لباقة المحامي المؤسس"
+              className="block aspect-video h-auto w-full rounded-[22px] border border-white/15 bg-black"
+            >
+              <source src={PROMO_VIDEO_SRC} type="video/mp4" />
+              متصفحك لا يدعم تشغيل الفيديو.{" "}
+              <a href={PROMO_VIDEO_SRC} className="underline">
+                افتح الفيديو
+              </a>
+            </video>
+            <figcaption className="mt-3 text-sm text-[#BFD3C9]">
+              باقة المحامي المؤسس في دقيقتين — اضغط للتشغيل
+            </figcaption>
+          </figure>
         </section>
 
         {/* ── samples ── */}
