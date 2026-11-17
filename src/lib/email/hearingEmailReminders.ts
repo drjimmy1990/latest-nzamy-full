@@ -78,13 +78,14 @@ export function hearingEmailMessage(
   h: HearingEmailRow,
   via: HearingEmailVia,
   env: EmailEnv = process.env,
+  dashboardRoot: "/dashboard/lawyer" | "/dashboard/firm" = "/dashboard/lawyer",
 ): { subject: string; html: string; text: string } {
   const title = (h.title ?? "").trim() || "جلسة";
   const t = parseHearingTime(h.hearing_time);
   const time = t ? `${String(t.h).padStart(2, "0")}:${String(t.m).padStart(2, "0")}` : null;
   const place = (h.court_name ?? "").trim() || null;
   const location = (h.location ?? "").trim() || null;
-  const href = siteLink("/dashboard/lawyer/hearings", env);
+  const href = siteLink(`${dashboardRoot}/hearings`, env);
   const { html, text } = renderEmailAr({
     heading: "تذكير: لديك جلسة غداً",
     paragraphs: [

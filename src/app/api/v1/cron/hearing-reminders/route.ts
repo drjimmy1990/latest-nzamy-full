@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { cronSecretMatches } from "@/lib/payments/fulfillDecision";
 import { emailConfigured } from "@/lib/email/sendEmail";
 import {
+  dashboardRootFor,
   emptyEmailReport,
   loadEmailRecipients,
   riyadhDayPlus,
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
     const outcome = await sendReminderOnce(
       admin,
       { kind: "hearing_1d", subjectId: p.h.id, recipientUserId: p.userId, dueOn: p.h.hearing_date },
-      { to, ...hearingEmailMessage(p.h, p.via) },
+      { to, ...hearingEmailMessage(p.h, p.via, process.env, dashboardRootFor(lookup.userTypes.get(p.userId))) },
     );
     if (outcome === "schema_missing") return NextResponse.json({ ...report, skipped: "schema_missing" });
     if (outcome === "sent") report.sent++;

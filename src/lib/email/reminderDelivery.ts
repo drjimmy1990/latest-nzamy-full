@@ -78,6 +78,8 @@ export function emailMuted(row: UserSettingsRow | null | undefined, categories: 
 export interface RecipientLookup {
   /** user id → address, only for accounts that may receive this reminder. */
   addresses: Map<string, string>;
+  /** user id → profiles.user_type (decides which dashboard a link opens). */
+  userTypes: Map<string, string | null>;
   muted: number;
   noAddress: number;
   error: string | null;
@@ -96,24 +98,28 @@ export async function loadEmailRecipients(
   categories: readonly string[],
 ): Promise<RecipientLookup> {
   const addresses = new Map<string, string>();
+  const userTypes = new Map<string, string | null>();
   let muted = 0;
   let noAddress = 0;
   const ids = Array.from(new Set(userIds.filter((u) => typeof u === "string" && u)));
   try {
     for (const part of chunks(ids, ID_CHUNK)) {
       const [profiles, settings] = await Promise.all([
-        admin.from("profiles").select("id, email").in("id", part),
+        admin.from("profiles").select("id, email, user_type").in("id", part),
         admin
           .from("user_settings")
           .select("user_id, notifications_enabled, email_notifications, preferences")
           .in("user_id", part),
       ]);
-      if (profiles.error) return { addresses: new Map(), muted, noAddress, error: `profiles: ${profiles.error.code ?? profiles.error.message}` };
-      if (settings.error) return { addresses: new Map(), muted, noAddress, error: `user_settings: ${settings.error.code ?? settings.error.message}` };
+      if (profiles.error) return { addresses: new Map(), userTypes, muted, noAddress, error: `profiles: ${profiles.error.code ?? profiles.error.message}` };
+      if (settings.error) return { addresses: new Map(), userTypes, muted, noAddress, error: `user_settings: ${settings.error.code ?? settings.error.message}` };
       const byUser = new Map<string, UserSettingsRow>();
       for (const s of (settings.data ?? []) as UserSettingsRow[]) byUser.set(s.user_id, s);
       const emails = new Map<string, unknown>();
-      for (const p of (profiles.data ?? []) as Array<{ id: string; email: unknown }>) emails.set(p.id, p.email);
+      for (const p of (profiles.data ?? []) as Array<{ id: string; email: unknown; user_type?: unknown }>) {
+        emails.set(p.id, p.email);
+        userTypes.set(p.id, typeof p.user_type === "string" ? p.user_type : null);
+      }
       for (const id of part) {
         if (emailMuted(byUser.get(id), categories)) {
           muted++;
@@ -128,9 +134,9 @@ export async function loadEmailRecipients(
         addresses.set(id, email);
       }
     }
-    return { addresses, muted, noAddress, error: null };
+    return { addresses, userTypes, muted, noAddress, error: null };
   } catch (err) {
-    return { addresses: new Map(), muted, noAddress, error: err instanceof Error ? err.message : String(err) };
+    return { addresses: new Map(), userTypes, muted, noAddress, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -248,6 +254,15 @@ export interface EmailStepReport {
 
 export function emptyEmailReport(): EmailStepReport {
   return { ok: true, due: 0, sent: 0, already: 0, failed: 0, muted: 0, noAddress: 0 };
+}
+
+/**
+ * The dashboard a reminder link opens: a «firm» account cannot open
+ * /dashboard/lawyer/* (src/lib/auth/routeAccess.ts), every other recipient of
+ * these reminders is a lawyer.
+ */
+export function dashboardRootFor(userType: string | null | undefined): "/dashboard/firm" | "/dashboard/lawyer" {
+  return userType === "firm" ? "/dashboard/firm" : "/dashboard/lawyer";
 }
 
 /** Riyadh's calendar day (UTC+3, no DST) `days` after `now`, as YYYY-MM-DD. */

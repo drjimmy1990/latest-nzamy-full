@@ -86,10 +86,11 @@ function daysLeftAr(n: number): string {
 export function poaEmailMessage(
   r: PlannedPoaReminder,
   env: EmailEnv = process.env,
+  dashboardRoot: "/dashboard/lawyer" | "/dashboard/firm" = "/dashboard/lawyer",
 ): { subject: string; html: string; text: string } {
   const title = (r.contract.title ?? "").trim() || "وكالة قانونية";
   const when = daysLeftAr(r.daysLeft);
-  const href = siteLink(`/dashboard/lawyer/contracts/${encodeURIComponent(r.contract.id)}`, env);
+  const href = siteLink(`${dashboardRoot}/contracts/${encodeURIComponent(r.contract.id)}`, env);
   const { html, text } = renderEmailAr({
     heading: "تذكير: وكالة قانونية تقترب من نهايتها",
     paragraphs: [

@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { cronSecretMatches } from "@/lib/payments/fulfillDecision";
 import { emailConfigured } from "@/lib/email/sendEmail";
 import {
+  dashboardRootFor,
   emptyEmailReport,
   loadEmailRecipients,
   riyadhDayPlus,
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
     const outcome = await sendReminderOnce(
       admin,
       { kind: r.offset === 7 ? "poa_7d" : "poa_30d", subjectId: r.contract.id, recipientUserId: owner, dueOn: r.contract.ends_on as string },
-      { to, ...poaEmailMessage(r) },
+      { to, ...poaEmailMessage(r, process.env, dashboardRootFor(lookup.userTypes.get(owner))) },
     );
     if (outcome === "schema_missing") return NextResponse.json({ ...report, skipped: "schema_missing" });
     if (outcome === "sent") report.sent++;

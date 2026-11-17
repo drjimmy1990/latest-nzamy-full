@@ -70,6 +70,7 @@ test("hearing e-mail: Arabic, escaped, with the date, time, court and an https l
   assert.ok(m.text.includes("https://nezamy.sa/dashboard/lawyer/hearings"));
   assert.ok(hearingEmailMessage({ ...H, firm_id: "f", assignee_user_id: "m" }, "assignee", ENV).text.includes("أُسندت إليك"));
   assert.ok(!hearingEmailMessage(H, "owner", {}).text.includes("http"), "no site URL → no link");
+  assert.ok(hearingEmailMessage(H, "owner", ENV, "/dashboard/firm").text.includes("https://nezamy.sa/dashboard/firm/hearings"), "a firm account opens its own dashboard");
 });
 
 // ── power of attorney ─────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ test("poa: ended, owner-less and undated rows are not reminded", () => {
   assert.ok(m.subject.includes("بعد ٣ أيام"));
   assert.ok(m.text.includes("https://nezamy.sa/dashboard/lawyer/contracts/b"));
   assert.ok(m.text.includes("٢٠٢٦-١١-٢٠"));
+  assert.ok(poaEmailMessage(plan[1], ENV, "/dashboard/firm").text.includes("https://nezamy.sa/dashboard/firm/contracts/b"));
 });
 
 // ── library ───────────────────────────────────────────────────────────────────

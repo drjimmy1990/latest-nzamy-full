@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   claimReminder,
+  dashboardRootFor,
   emailMuted,
   loadEmailRecipients,
   MAX_EMAIL_ATTEMPTS,
@@ -145,6 +146,9 @@ test("recipients: address from profiles, muted and address-less accounts left ou
   assert.deepEqual([...r.addresses.entries()], [["a", "a@example.test"]]);
   assert.equal(r.muted, 1);
   assert.equal(r.noAddress, 2);
+  assert.equal(dashboardRootFor("firm"), "/dashboard/firm");
+  assert.equal(dashboardRootFor("lawyer"), "/dashboard/lawyer");
+  assert.equal(dashboardRootFor(null), "/dashboard/lawyer");
 
   const failing = await loadEmailRecipients(
     fakeAdmin(tables, { failOn: { "user_settings:select": { code: "XX000", message: "down" } } }),
