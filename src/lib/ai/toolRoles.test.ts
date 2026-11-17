@@ -169,10 +169,10 @@ test("libraryToolRefusal: the plans link only where a Pro plan is on sale; the c
 
 test("the library gate itself is untouched: the run route still checks every library tool before the charge", () => {
   const route = src("app/api/v1/ai/runs/route.ts");
-  assert.ok(route.includes("(await libraryGate()) ?? (await libraryAiAccess())"));
+  assert.ok(route.includes("(await libraryGate()) ?? (await libraryAiAccess(toolId))"));
   assert.ok(route.includes('code: body.libraryClosed ? "library_closed" : "library_tier"'));
   const access = src("app/api/ai/_libraryAiAccess.ts");
-  assert.ok(access.includes("libraryAiDecision({ signedIn: true, tier, isAdmin }, TIER_RANK)"));
+  assert.ok(access.includes("libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember }, TIER_RANK)"));
 });
 
 test("each library tool's screen maps the gate's refusal to its own words", () => {

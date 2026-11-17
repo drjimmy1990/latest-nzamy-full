@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getUserTier, isPlatformAdmin, TIER_RANK } from '@/lib/access-control';
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from '@/lib/auth/apiAuth';
 import { libraryAiDecision } from './libraryAiDecision';
+import { isFounderMemberForTool } from './_founderToolMember';
 
 /**
  * Who may use the library's AI: POST /api/v1/ai/runs asks this for every
@@ -33,8 +34,14 @@ import { libraryAiDecision } from './libraryAiDecision';
  * 401/403 into "sign in" / "subscribe" (src/app/laws/[slug]/_ai-reply.ts), which
  * must not be offered while the assistant is offline. Call it before the body is
  * read and before any n8n call.
+ *
+ * `toolId` (0.5, owner package 17 Nov): an active founder member running one
+ * of the founder plan's tools (founderPlanTool.ts: the drafter and the four
+ * independent-output tools) passes as well — founder activation writes no
+ * subscriptions row, so the Pro rule alone refused what he paid for. The
+ * seat is read only for those tools (_founderToolMember.ts).
  */
-export async function libraryAiAccess(): Promise<NextResponse | null> {
+export async function libraryAiAccess(toolId?: string): Promise<NextResponse | null> {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (isAuthUnavailable(user, authError)) return authUnavailableResponse();
@@ -49,8 +56,12 @@ export async function libraryAiAccess(): Promise<NextResponse | null> {
   const frozen = frozenAccountResponse(user);
   if (frozen) return frozen;
 
-  const [tier, isAdmin] = await Promise.all([getUserTier(user.id), isPlatformAdmin(user.id)]);
-  const decision = libraryAiDecision({ signedIn: true, tier, isAdmin }, TIER_RANK);
+  const [tier, isAdmin, founderMember] = await Promise.all([
+    getUserTier(user.id),
+    isPlatformAdmin(user.id),
+    isFounderMemberForTool(user.id, toolId),
+  ]);
+  const decision = libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember }, TIER_RANK);
   if (decision === 'allow') return null;
 
   // `upgrade`, and anything else the rule may answer: closed. A library

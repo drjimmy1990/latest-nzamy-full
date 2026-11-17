@@ -154,12 +154,12 @@ test("a signed-in user below pro who is not an admin is a 403, decided after the
   const guest = at(gateSource, "if (!user) {", "gate");
   const reads = at(
     gateSource,
-    "const [tier, isAdmin] = await Promise.all([getUserTier(user.id), isPlatformAdmin(user.id)]);",
+    "const [tier, isAdmin, founderMember] = await Promise.all([",
     "gate",
   );
   const decided = at(
     gateSource,
-    "const decision = libraryAiDecision({ signedIn: true, tier, isAdmin }, TIER_RANK);",
+    "const decision = libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember }, TIER_RANK);",
     "gate",
   );
   const allowed = at(gateSource, "if (decision === 'allow') return null;", "gate");
@@ -203,5 +203,24 @@ test("the gate's own error bodies are Arabic", () => {
     assert.match(text, /[؀-ۿ]/, text);
     // "Pro" is the plan's name, as in checkLibraryAccess's own message.
     assert.doesNotMatch(text.replace(/\bPro\b/g, ""), /[A-Za-z]/, text);
+  }
+});
+
+// 0.5 (owner package 17 Nov): a founder member passes for the founder plan's tools only
+test("libraryAiDecision: an active founder member running a founder-plan tool is allowed", () => {
+  assert.equal(libraryAiDecision({ signedIn: true, tier: "free", isAdmin: false, founderMember: true }, RANKS), "allow");
+  assert.equal(libraryAiDecision({ signedIn: true, tier: "free", isAdmin: false, founderMember: false }, RANKS), "upgrade");
+  assert.equal(libraryAiDecision({ signedIn: false, tier: "free", isAdmin: false, founderMember: true }, RANKS), "sign_in");
+  const loose = { signedIn: true, tier: "free", isAdmin: false, founderMember: 1 as unknown as boolean };
+  assert.equal(libraryAiDecision(loose, RANKS), "upgrade");
+});
+
+test("isFounderPlanTool: the drafter and the four output tools, nothing else", async () => {
+  const { isFounderPlanTool } = await import("./founderPlanTool.ts");
+  for (const t of ["legal-drafter", "contracts-pro", "legal-opinion-consult", "legal-opinion-letter", "wargaming"]) {
+    assert.equal(isFounderPlanTool(t), true, t);
+  }
+  for (const t of ["library-assistant", "quick-answer", "assistant", "canvas-card", "", undefined, null, 5]) {
+    assert.equal(isFounderPlanTool(t), false, String(t));
   }
 });
