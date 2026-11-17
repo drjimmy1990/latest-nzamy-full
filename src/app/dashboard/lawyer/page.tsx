@@ -66,6 +66,7 @@ import { apiGet, isSupabaseMode } from "@/lib/services/api";
 import { profileShareState, type ProfileShareState } from "./_components/profileShareTargets";
 import ShareProfileModal from "./_components/ShareProfileModal";
 import FounderMembershipCard from "./_components/FounderMembershipCard";
+import FounderCampaignNotice from "./_components/FounderCampaignNotice";
 import StickyNotesWall from "@/components/dashboard/notes/StickyNotesWall";
 import { formatTimeOfDayAr } from "./hearings/_timeOfDay";
 import { useRiyadhToday } from "@/hooks/useRiyadhToday";
@@ -834,6 +835,18 @@ export default function LawyerDashboardPage() {
           </Link>
         </motion.div>
       )}
+
+      {/* ── Founder campaign notice (owner item 0.4, 17 Nov package) ──
+          Before the opening a countdown, during the campaign a join card
+          linking to /founder (unless the invite below already shows),
+          nothing after it or for anyone but a non-member advocate lawyer.
+          Dismissible; the dismissal is remembered per phase. */}
+      <FounderCampaignNotice
+        isDark={isDark}
+        userLoading={userLoading}
+        userType={userType ?? null}
+        practiceKind={practiceKind ?? null}
+      />
 
       {/* ── «عضويتي المؤسسة» (P3 Task 9) ──
           A paid founder sees his membership; a verified lawyer who is not

@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { BETA_MONOPOLY_MODE } from "@/lib/betaConfig";
+import { FOUNDER_TERMS_PUBLISHED } from "@/lib/founder/founderTerms";
 import { createServiceClient } from "@/lib/supabase/server";
 import { selectAllPages } from "@/lib/supabase/selectAllPages";
 import { blogCategorySlug } from "./blog/_categories";
@@ -29,6 +30,12 @@ const publicRoutes: SitemapRoute[] = [
   { url: "/community/public", priority: 0.7, changeFrequency: "weekly" },
   { url: "/contact", priority: 0.7, changeFrequency: "monthly" },
   { url: "/faq", priority: 0.7, changeFrequency: "monthly" },
+  // The founder-lawyer campaign page (owner package 17 Nov 2026). Its terms
+  // page joins only once published: until then it is noindex.
+  { url: "/founder", priority: 0.85, changeFrequency: "weekly" },
+  ...(FOUNDER_TERMS_PUBLISHED
+    ? [{ url: "/founder-terms", priority: 0.5, changeFrequency: "yearly" } as const]
+    : []),
   { url: "/join", priority: 0.7, changeFrequency: "monthly" },
   { url: "/lawyers", priority: 0.85, changeFrequency: "weekly" },
   { url: "/lawyers/browse", priority: 0.8, changeFrequency: "weekly" },
