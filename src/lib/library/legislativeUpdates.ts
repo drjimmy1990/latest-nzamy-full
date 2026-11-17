@@ -14,6 +14,7 @@
  */
 import { latestLegislativeEvent } from "./legislativeEvent.ts";
 import { lawStatusForDetail } from "../../app/laws/law-status.ts";
+import { partsOf } from "../services/dualCalendar.ts";
 
 export const LEGISLATIVE_UPDATES_LIMIT = 8;
 /** Rows read: a few more than shown, for the repealed or undated ones dropped. */
@@ -30,10 +31,17 @@ const HIDDEN_STATUSES: ReadonlySet<string> = new Set(["repealed", "superseded_du
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
+/** Today's Hijri date as the YYYYMMDD key the dates sort by, or null. */
+export function hijriTodayKey(now: Date = new Date()): number | null {
+  const p = partsOf(now.toISOString().slice(0, 10), "hijri");
+  return p ? p.year * 10000 + p.month * 100 + p.day : null;
+}
+
 /** Rows read newest first (slug, title, status, issue_date_hijri, latest_update_date) → the items to show. */
 export function shapeLegislativeUpdates(
   rows: ReadonlyArray<Record<string, unknown>>,
   limit: number = LEGISLATIVE_UPDATES_LIMIT,
+  todayKey: number | null = null,
 ): LegislativeUpdateItem[] {
   const items: Array<LegislativeUpdateItem & { key: number }> = [];
   for (const row of rows) {
@@ -45,6 +53,9 @@ export function shapeLegislativeUpdates(
       issue_date_hijri: row.issue_date_hijri,
     });
     if (!event) continue;
+    // A stored date after today (a typo, or an entry into force read as the
+    // update) would lead the list: it is left out here, not shown as news.
+    if (todayKey && event.key > todayKey) continue;
     items.push({ slug, title, dateHijri: event.dateHijri, key: event.key });
   }
   // The database already ordered by the same key; sorting again keeps the list

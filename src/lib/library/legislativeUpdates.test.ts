@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { shapeLegislativeUpdates } from "./legislativeUpdates.ts";
+import { hijriTodayKey, shapeLegislativeUpdates } from "./legislativeUpdates.ts";
 
 const law = (slug: string, title: string, issue: string | null, update: string | null, status: string | null = "active") => ({
   slug,
@@ -34,6 +34,13 @@ test("newest legislative date first, the date alone; undated, untitled and repea
   assert.match(items[0].dateHijri, /1447/);
   assert.match(items[1].dateHijri, /1446/);
   assert.deepEqual(Object.keys(items[0]).sort(), ["dateHijri", "slug", "title"], "nothing but the title, link and date");
+});
+
+test("a date after today is left out, never shown as the newest update", () => {
+  const today = hijriTodayKey(new Date("2026-11-17T12:00:00Z"));
+  assert.ok(today && today > 14480000 && today < 14490000, String(today));
+  const items = shapeLegislativeUpdates([law("future", "نظام لاحق", "1460/01/01", null), law("now", "نظام", "1447/01/01", null)], 8, today);
+  assert.deepEqual(items.map((i) => i.slug), ["now"]);
 });
 
 test("the limit", () => {

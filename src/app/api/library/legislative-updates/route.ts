@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { libraryGate } from "@/lib/library-gate";
 import { isMissingColumnError } from "@/lib/library/optionalColumn";
-import { LEGISLATIVE_UPDATES_READ, shapeLegislativeUpdates } from "@/lib/library/legislativeUpdates";
+import { hijriTodayKey, LEGISLATIVE_UPDATES_LIMIT, LEGISLATIVE_UPDATES_READ, shapeLegislativeUpdates } from "@/lib/library/legislativeUpdates";
 
 /**
  * GET /api/library/legislative-updates — the laws with the newest «آخر تحديث
@@ -41,7 +41,7 @@ export async function GET() {
       return NextResponse.json({ items: [] }, { headers: HEADERS });
     }
     const rows = (Array.isArray(data) ? data : []) as unknown as Array<Record<string, unknown>>;
-    return NextResponse.json({ items: shapeLegislativeUpdates(rows) }, { headers: HEADERS });
+    return NextResponse.json({ items: shapeLegislativeUpdates(rows, LEGISLATIVE_UPDATES_LIMIT, hijriTodayKey()) }, { headers: HEADERS });
   } catch (err) {
     console.error("[library/legislative-updates] threw:", err);
     return NextResponse.json({ items: [] }, { headers: HEADERS });
