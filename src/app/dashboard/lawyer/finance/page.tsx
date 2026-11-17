@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Receipt, CheckCircle, Clock, Warning, Plus, MagnifyingGlass,
@@ -15,6 +15,13 @@ import { apiGet, apiMutate, ApiTimeoutError, isSupabaseMode } from "@/lib/servic
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { AreaBarChart, DonutChart } from "@/components/dashboard/lawyer/FinanceCharts";
 import { groupInvoices, lastMonthsBuckets, remainderOf } from "./chartBuckets";
+import { createLawyerClient, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import {
+  clientOptionValue, clientOptionLabel, parseClientOptionValue, orderPickable, ensureClientCard,
+  type PickableClient,
+} from "@/lib/services/clientPickOptions";
+import { getContracts, getContract } from "@/lib/services/contractsService";
+import { readInvoiceIntent, initialInvoiceAmount, INVOICE_PAGE } from "@/lib/services/invoiceFromContract";
 
 /** Owner ٤٣٠: the label every fee statement carries (not a ZATCA e-invoice). DB/API names stay «invoice». */
 const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";
@@ -99,7 +106,12 @@ function EmptyCard({ text, cardCls }: { text: string; cardCls: string }) {
 
 
 /** صفوف القراءتين التي يعرض منها نموذج الإصدار الموكّل وقضاياه (CODE-F21). */
-type CrmClientRow = { id?: unknown; name?: unknown; clientType?: string | null; source?: string };
+type CrmClientRow = {
+  id?: unknown; name?: unknown; clientType?: string | null; source?: string; clientUserId?: string | null;
+  phone?: string | null; commercialRegisterNo?: string | null; unifiedNumber700?: string | null;
+};
+/** N01-8 / N01-10: a contract the fee statement can bill. */
+type ContractOption = { id: string; title: string; lawyerClientId: string | null; valueSar: number | null };
 type CaseRow = { id?: unknown; title?: unknown; type?: string; metadata?: Record<string, unknown> | null };
 type FinanceRead = {
   invoices?: any[];
@@ -209,7 +221,13 @@ export default function FinancePage() {
   const [createUncertain, setCreateUncertain] = useState(false);
   // الربط بالمعرّفات (CODE-F21): بطاقة الموكّل من الدليل وقضيته. نوع العميل
   // يأتي من البطاقة، أو يحدده المحامي صراحةً — لا «شركة» افتراضية.
-  const [crmClients, setCrmClients] = useState<Array<{ id: string; name: string; clientType: string | null }> | null>(null);
+  // N01-2 / N01-8: cards AND platform accounts with no card yet (a picked
+  // platform account gets its card filed first — ensureClientCard).
+  const [crmClients, setCrmClients] = useState<PickableClient[] | null>(null);
+  const [clientPickBusy, setClientPickBusy] = useState(false);
+  // N01-8 / N01-10: the contract this statement bills (optional).
+  const [crmContracts, setCrmContracts] = useState<ContractOption[] | null>(null);
+  const [newInvContractId, setNewInvContractId] = useState("");
   const [newInvClientId, setNewInvClientId] = useState("");
   const [newInvClientType, setNewInvClientType] = useState<"" | "individual" | "company">("");
   const [clientCases, setClientCases] = useState<Array<{ id: string; title: string }>>([]);
@@ -303,10 +321,21 @@ export default function FinancePage() {
       apiGet<{ data?: CrmClientRow[] }>("/api/v1/lawyer/clients", undefined, { timeoutMs: READ_TIMEOUT_MS })
         .then((res) =>
           setCrmClients(
-            // صفوف «profile» بلا بطاقة لا معرّف لها في الدليل، فلا تُختار هنا.
-            (res?.data ?? [])
-              .filter((c) => c?.source === "card")
-              .map((c) => ({ id: String(c.id), name: String(c.name ?? ""), clientType: c.clientType ?? null })),
+            // N01-2: صفوف «حساب منصة» تُعرض أيضاً؛ اختيار أحدها يُنشئ بطاقته أولاً.
+            orderPickable(
+              (res?.data ?? [])
+                .filter((c) => c?.source === "card" || c?.source === "profile")
+                .map((c): PickableClient => ({
+                  id: String(c.id),
+                  source: c.source === "profile" ? "profile" : "card",
+                  clientUserId: c.clientUserId ?? null,
+                  clientType: c.clientType === "company" ? "company" : c.clientType === "individual" ? "individual" : null,
+                  name: String(c.name ?? ""),
+                  phone: c.phone ?? null,
+                  commercialRegisterNo: c.commercialRegisterNo ?? null,
+                  unifiedNumber700: c.unifiedNumber700 ?? null,
+                })),
+            ),
           ),
         )
         .catch((err) => {
@@ -314,21 +343,32 @@ export default function FinancePage() {
           setCrmClients([]);
         });
     }
+    if (isSupabaseMode && crmContracts === null) {
+      getContracts({ limit: 200 }).then((read) => {
+        const listed: ContractOption[] = read.ok
+          ? read.items.map((k) => ({ id: k.id, title: k.title || "عقد بدون عنوان", lawyerClientId: k.lawyerClientId, valueSar: k.valueSar }))
+          : [];
+        // A contract already put here (opened from «إصدار بيان أتعاب») stays.
+        setCrmContracts((prev) => [...listed, ...(prev ?? []).filter((p) => !listed.some((k) => k.id === p.id))]);
+      });
+    }
+    // N01-8: القضايا تُعرض حتى قبل اختيار موكّل.
+    if (isSupabaseMode && !newInvClientId && clientCases.length === 0) loadCases("");
   };
 
-  // ── اختيار موكّل من الدليل: تُقرأ قضاياه ليختار المحامي إحداها ──
-  const pickClient = (id: string) => {
-    setNewInvClientId(id);
-    setNewInvCaseId("");
-    setClientCases([]);
-    if (!id || !isSupabaseMode) return;
+  // ── قضايا المحامي (كلها، أو قضايا موكّل واحد) ──
+  const casesFor = useRef("");
+  const loadCases = (clientId: string) => {
+    if (!isSupabaseMode) return;
+    casesFor.current = clientId;
     apiGet<{ data?: CaseRow[] }>(
       "/api/v1/service-requests",
-      { receiver: "lawyer", lawyer_client_id: id, limit: 100 },
+      { receiver: "lawyer", ...(clientId ? { lawyer_client_id: clientId } : {}), limit: 100 },
       { timeoutMs: READ_TIMEOUT_MS },
     )
       .then((res) =>
-        setClientCases(
+        // a slower answer for another client never replaces the current list
+        casesFor.current === clientId && setClientCases(
           (res?.data ?? [])
             .filter((r) => {
               const m = r?.metadata ?? {};
@@ -340,11 +380,90 @@ export default function FinancePage() {
       .catch((err) => console.error("[finance] client cases read failed:", err));
   };
 
+  // ── اختيار موكّل من الدليل: تُقرأ قضاياه ليختار المحامي إحداها ──
+  const pickClient = (id: string) => {
+    setNewInvClientId(id);
+    setNewInvCaseId("");
+    setClientCases([]);
+    // عقدُ موكّلٍ آخر لا يبقى مختاراً مخفياً.
+    const k = crmContracts?.find((c) => c.id === newInvContractId);
+    if (k && id && k.lawyerClientId && k.lawyerClientId !== id) setNewInvContractId("");
+    loadCases(id);
+  };
+
+  // N01-2: اختيار من القائمة — «حساب منصة» تُنشأ له بطاقة موكّل ثم يُختار.
+  const pickClientOption = async (value: string) => {
+    setInvoiceError(null);
+    const parsed = parseClientOptionValue(value);
+    if (!parsed) { pickClient(""); return; }
+    const row = crmClients?.find((c) => c.source === parsed.source && c.id === parsed.id);
+    if (!row) return;
+    if (row.source === "card") { pickClient(row.id); return; }
+    setClientPickBusy(true);
+    try {
+      const created = await ensureClientCard<PickableClient>(row, async (input) => {
+        const c: LawyerClient = await createLawyerClient(input);
+        return {
+          id: c.id, source: "card", clientUserId: c.clientUserId, clientType: c.clientType, name: c.name,
+          phone: c.phone, commercialRegisterNo: c.commercialRegisterNo, unifiedNumber700: c.unifiedNumber700,
+        };
+      });
+      setCrmClients((prev) => (prev ?? []).map((c) => (c.source === "profile" && c.id === row.id ? created : c)));
+      pickClient(created.id);
+    } catch (err) {
+      setInvoiceError(err instanceof Error && err.message ? err.message : "تعذّر إنشاء بطاقة لهذا الموكّل.");
+    } finally {
+      setClientPickBusy(false);
+    }
+  };
+
+  // N01-10: اختيار العقد يملأ موكّله وقيمته حين تكون الحقول فارغة.
+  const pickContract = (id: string, linkAmount: number | null = null, known?: ContractOption) => {
+    setNewInvContractId(id);
+    const k = known ?? crmContracts?.find((c) => c.id === id);
+    if (!k) return;
+    if (k.lawyerClientId && k.lawyerClientId !== newInvClientId) pickClient(k.lawyerClientId);
+    if (linkAmount !== null || !newInvFee.trim()) {
+      const amount = initialInvoiceAmount(linkAmount, k.valueSar);
+      if (amount) setNewInvFee(amount);
+    }
+    setNewInvDesc((d) => (d.trim() ? d : `أتعاب عقد: ${k.title}`));
+  };
+
+  // N01-10 (owner 13-Nov): «إصدار بيان أتعاب» from a contract lands here with
+  // ?newInvoice=1&contractId=…[&amount=…] — the form opens with the contract,
+  // its client card and the amount filled. The query is dropped from the
+  // address at once, so a reload does not open a second form.
+  const invoiceIntentRead = useRef(false);
+  useEffect(() => {
+    if (invoiceIntentRead.current || !isSupabaseMode || typeof window === "undefined") return;
+    invoiceIntentRead.current = true;
+    const intent = readInvoiceIntent(window.location.search);
+    if (!intent) return;
+    window.history.replaceState(null, "", INVOICE_PAGE);
+    openInvoiceModal();
+    getContract(intent.contractId)
+      .then((k) => {
+        const opt: ContractOption = { id: k.id, title: k.title || "عقد بدون عنوان", lawyerClientId: k.lawyerClientId, valueSar: k.valueSar };
+        setCrmContracts((prev) => (prev ? (prev.some((c) => c.id === opt.id) ? prev : [opt, ...prev]) : [opt]));
+        pickContract(opt.id, intent.amountSar, opt);
+      })
+      .catch((err) => {
+        console.error("[finance] contract for the new fee statement failed to load:", err);
+        setInvoiceError("تعذّر تحميل العقد المطلوب — اختره من القائمة أو أكمل البيان يدوياً.");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
 
-    const pickedCard = crmClients?.find((c) => c.id === newInvClientId) ?? null;
+    const pickedCard = newInvClientId
+      ? (crmClients?.find((c) => c.source === "card" && c.id === newInvClientId)
+         ?? { id: newInvClientId, source: "card" as const, clientUserId: null, clientType: null, name: "", phone: null, commercialRegisterNo: null, unifiedNumber700: null })
+      : null;
+    const pickedContract = crmContracts?.find((c) => c.id === newInvContractId) ?? null;
     if (!pickedCard && !newInvClient.trim()) {
       setInvoiceError("اختر الموكّل من دليلك أو اكتب اسمه.");
       return;
@@ -375,6 +494,7 @@ export default function FinancePage() {
             ? { clientId: pickedCard.id }
             : { client: newInvClient.trim(), clientType: newInvClientType }),
           ...(pickedCase ? { caseId: pickedCase.id } : { caseTitle: newInvCase || undefined }),
+          ...(pickedContract ? { contractId: pickedContract.id } : {}),
           description: newInvDesc || "أتعاب نظامية متفق عليها",
           feeType: newInvType,
         }, { timeoutMs: WRITE_TIMEOUT_MS });
@@ -397,6 +517,7 @@ export default function FinancePage() {
         setNewInvClientId("");
         setNewInvClientType("");
         setNewInvCaseId("");
+        setNewInvContractId("");
         setClientCases([]);
 
         // إطلاق كرات الاحتفال بالنجاح
@@ -1373,18 +1494,46 @@ export default function FinancePage() {
                         <label htmlFor="inv-client-card" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">الموكّل من دليل موكليك:</label>
                         <select
                           id="inv-client-card"
-                          value={newInvClientId}
-                          onChange={(e) => pickClient(e.target.value)}
+                          value={newInvClientId ? clientOptionValue({ source: "card", id: newInvClientId }) : ""}
+                          disabled={clientPickBusy}
+                          onChange={(e) => { void pickClientOption(e.target.value); }}
                           className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-bold ${
                             isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
                           }`}
                         >
-                          <option value="">— عميل غير مسجّل في الدليل (اكتب اسمه أدناه) —</option>
+                          <option value="">
+                            {clientPickBusy ? "جارٍ إنشاء بطاقة الموكّل..." : "— عميل غير مسجّل في الدليل (اكتب اسمه أدناه) —"}
+                          </option>
+                          {newInvClientId && !crmClients.some((c) => c.source === "card" && c.id === newInvClientId) && (
+                            <option value={clientOptionValue({ source: "card", id: newInvClientId })}>موكّل العقد المختار</option>
+                          )}
                           {crmClients.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} — {c.clientType === "company" ? "شركة" : "فرد"}
+                            <option key={clientOptionValue(c)} value={clientOptionValue(c)}>
+                              {clientOptionLabel(c)}
                             </option>
                           ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* N01-8 / N01-10: العقد الذي يُصدر عنه البيان (اختياري) */}
+                    {crmContracts && crmContracts.length > 0 && (
+                      <div className="space-y-1.5">
+                        <label htmlFor="inv-contract" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">العقد (اختياري):</label>
+                        <select
+                          id="inv-contract"
+                          value={newInvContractId}
+                          onChange={(e) => pickContract(e.target.value)}
+                          className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-bold ${
+                            isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <option value="">— بلا عقد —</option>
+                          {crmContracts
+                            .filter((k) => !newInvClientId || !k.lawyerClientId || k.lawyerClientId === newInvClientId || k.id === newInvContractId)
+                            .map((k) => (
+                              <option key={k.id} value={k.id}>{k.title}</option>
+                            ))}
                         </select>
                       </div>
                     )}
@@ -1393,14 +1542,14 @@ export default function FinancePage() {
                     {!newInvClientId && (
                     <>
                     <div className="space-y-1.5">
-                      <label htmlFor="inv-client-name" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">اسم الجهة أو العميل المستحق:</label>
+                      <label htmlFor="inv-client-name" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">اسم العميل (فرد أو جهة):</label>
                       <input
                         id="inv-client-name"
                         required
                         type="text"
                         value={newInvClient}
                         onChange={(e) => setNewInvClient(e.target.value)}
-                        placeholder="أدخل الاسم التجاري للشركة أو اسم الفرد..."
+                        placeholder="اسم الفرد أو الاسم التجاري للجهة..."
                         className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right ${
                           isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
                         }`}
@@ -1439,7 +1588,7 @@ export default function FinancePage() {
                     )}
 
                     {/* قضية الموكّل المختار (CODE-F21): تُربط بالمعرّف، وعنوانها من القضية نفسها */}
-                    {newInvClientId && clientCases.length > 0 && (
+                    {clientCases.length > 0 && (
                       <div className="space-y-1.5">
                         <label htmlFor="inv-case" className="block text-[11px] font-bold text-slate-500 dark:text-zinc-400">القضية (اختياري):</label>
                         <select
