@@ -11,6 +11,7 @@ import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
 import type { VerificationStatus } from "@/types/database";
 import type { RegistryMatch } from "@/lib/registry/registryMatch";
+import type { SignupVerificationView } from "@/lib/lawyerSignup/adminView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,12 @@ export interface VerificationRequest {
    * proof — no OTP yet. null/absent before that migration runs.
    */
   registryMatch?: RegistryMatch | null;
+  /**
+   * Lawyer rows only (owner ٢٠–٢١, 20261124_70): the signup verification —
+   * photo link (5-minute signed URL), AI pre-check, registry-mobile code,
+   * e-mail code, «رقمي تغيّر», decision + reasons. null before the migration.
+   */
+  signupVerification?: SignupVerificationView | null;
 }
 
 interface VerificationListResponse {

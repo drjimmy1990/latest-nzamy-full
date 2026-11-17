@@ -25,6 +25,9 @@ import { providerTypes, specializations, plans } from "../data";
 import { signupCountry } from "../signupMetadata";
 import { BACKEND_MODE } from "@/lib/runtimeMode";
 import { LawyerRegistryLookup } from "./LawyerRegistryLookup";
+import { LICENCE_ACCEPT, LICENCE_MAX_BYTES, LICENCE_MIME_TYPES } from "@/lib/services/licenceUpload";
+import { isFourPartName } from "@/lib/lawyerSignup/nameLicence";
+import { isThrowawayEmail, THROWAWAY_EMAIL_AR } from "@/lib/lawyerSignup/throwawayEmail";
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
   return (
@@ -95,7 +98,22 @@ export function Step1({ isAr, selected, onSelect }: { isAr: boolean; selected: P
 }
 
 // ─── Step 2: Professional info (Type-Aware) ──────────────────────────────────
-export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSelectedSpecs }: { isAr: boolean; providerType: ProviderType; data: Record<string, string>; onChange: (k: string, v: string) => void; selectedSpecs: string[]; setSelectedSpecs: React.Dispatch<React.SetStateAction<string[]>> }) {
+/**
+ * Owner decisions ٢٠–٢١: the lawyer (and the legal consultant, a lawyer
+ * account) gives a four-part name and a licence photo. Supabase mode only —
+ * the demo has no server to verify anything.
+ */
+export function needsLicenceProofFor(providerType: ProviderType): boolean {
+  return BACKEND_MODE === "supabase" && (providerType === "lawyer" || providerType === "consultant");
+}
+
+/** Four Arabic words, or exactly the name the registry lookup filled in. */
+export function signupNameOk(data: Record<string, string>): boolean {
+  const n = (data.registryFullName ?? "").trim();
+  return isFourPartName(n) || (n !== "" && n === (data.registryNameFromLookup ?? "").trim());
+}
+
+export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSelectedSpecs, licenceFile = null, onLicenceFile }: { isAr: boolean; providerType: ProviderType; data: Record<string, string>; onChange: (k: string, v: string) => void; selectedSpecs: string[]; setSelectedSpecs: React.Dispatch<React.SetStateAction<string[]>>; licenceFile?: File | null; onLicenceFile?: (f: File | null) => void }) {
   const isFirm = providerType === "firm";
   // A consultant registers in Saudi Arabia only (owner answer ٢١٩): the
   // country is SA and its select is disabled, whatever the form holds.
@@ -125,6 +143,10 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
   const trackerSpecs    = isAr ? ["تسجيل عقارات","استخراج وثائق","الجوازات","الأحوال المدنية","التأمينات","وزارة العمل"] : ["Real Estate","Documents","Passports","Civil Affairs","Insurance","Labor"];
   const arbitratorSpecs = isAr ? ["تجاري","عقاري","عمالي","بنكي","شركات","دولي"] : ["Commercial","Real Estate","Labor","Banking","Corporate","International"];
   const activeSpecs = providerType === "notary" ? notarySpecs : providerType === "tracker" ? trackerSpecs : providerType === "arbitrator" ? arbitratorSpecs : specs;
+  const needsLicenceProof = needsLicenceProofFor(providerType);
+  const nameTouched = Boolean(data.registryFullName);
+  const nameOk = signupNameOk(data);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   return (
     <motion.div initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
@@ -156,6 +178,27 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
           </div>
         )}
 
+        {/* Owner decision ٢٠: the four-part name exactly as on the licence
+            (lawyer and consultant, Supabase mode). Compared with the lawyers'
+            registry on the server after signup. */}
+        {needsLicenceProof && (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{isAr ? "الاسم الرباعي كما في الترخيص" : "Four-part name as on the licence"}</label>
+            <input
+              type="text"
+              value={data.registryFullName || ""}
+              onChange={(e) => onChange("registryFullName", e.target.value)}
+              placeholder={isAr ? "الاسم الأول واسم الأب والجد والعائلة" : "First, father's, grandfather's and family name"}
+              aria-invalid={nameTouched && !nameOk}
+              className={`${inputBase} ${nameTouched && !nameOk ? "border-red-400 dark:border-red-500/60" : ""}`}
+              maxLength={120}
+            />
+            {nameTouched && !nameOk && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{isAr ? "اكتب اسمك الرباعي بالعربية كما في الترخيص." : "Write your four-part name in Arabic as on the licence."}</p>
+            )}
+          </div>
+        )}
+
         {/* License — type-specific */}
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{lc.label}</label>
@@ -170,7 +213,41 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
             lawyers' register. Advocates only (the register lists advocates,
             not consultants). A hint for the form, never a verification. */}
         {providerType === "lawyer" && BACKEND_MODE === "supabase" && (
-          <LawyerRegistryLookup isAr={isAr} data={data} onChange={onChange} inputClassName={inputBase} />
+          <LawyerRegistryLookup isAr={isAr} data={data} onChange={onChange} />
+        )}
+
+        {/* Owner decision ٢٠: a photo of the licence is mandatory. Kept in
+            memory and uploaded to the private bucket right after the account
+            is created (or on /register/provider/verify after sign-in). */}
+        {needsLicenceProof && (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
+              {isAr ? "صورة الترخيص (إلزامية)" : "Licence photo (required)"}
+            </label>
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 p-5 transition-colors hover:border-royal/30 hover:bg-royal/[0.02] dark:border-white/10 dark:hover:border-gold/30">
+              <UploadSimple size={22} className="text-ink-faint dark:text-gray-500" />
+              <span className="text-xs font-medium text-ink-muted dark:text-gray-400">
+                {licenceFile ? licenceFile.name : isAr ? "اضغط لاختيار صورة الترخيص" : "Click to choose the licence photo"}
+              </span>
+              <span className="text-[10px] text-ink-faint dark:text-gray-500">JPG, PNG, WEBP, PDF — {isAr ? "حتى ٥ ميغابايت" : "up to 5 MB"}</span>
+              <input
+                type="file"
+                accept={LICENCE_ACCEPT}
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  if (f && (f.size > LICENCE_MAX_BYTES || !(LICENCE_MIME_TYPES as readonly string[]).includes(f.type))) {
+                    setFileError(isAr ? "صورة JPG أو PNG أو WEBP أو ملف PDF حتى ٥ ميغابايت." : "JPG, PNG, WEBP or PDF up to 5 MB.");
+                    onLicenceFile?.(null);
+                    return;
+                  }
+                  setFileError(null);
+                  onLicenceFile?.(f);
+                }}
+              />
+            </label>
+            {fileError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{fileError}</p>}
+          </div>
         )}
 
         {/* Arbitrator: affiliated centre */}
@@ -293,7 +370,9 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
 }
 
 // ─── Step 3: Account & documents ─────────────────────────────────────────────
-export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<string, string>; onChange: (k: string, v: string) => void }) {
+export function Step3({ isAr, data, onChange, providerType = null }: { isAr: boolean; data: Record<string, string>; onChange: (k: string, v: string) => void; providerType?: ProviderType }) {
+  // Owner decision ٢١: no throwaway e-mail domains (the server refuses them too).
+  const throwaway = isThrowawayEmail(data.email);
   const [show, setShow] = useState(false);
   const phoneTouched = Boolean(data.phone);
   const phoneResult = normalizeSaudiMobile(data.phone);
@@ -312,8 +391,11 @@ export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<st
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{isAr ? "البريد الإلكتروني المهني" : "Professional Email"}</label>
           <div className="relative">
             <EnvelopeSimple size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-            <input type="email" dir="ltr" placeholder="name@firm.com" value={data.email || ""} onChange={e => onChange("email", e.target.value)} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
+            <input type="email" dir="ltr" placeholder="name@firm.com" value={data.email || ""} onChange={e => onChange("email", e.target.value)} aria-invalid={throwaway} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"} ${throwaway ? "border-red-400 dark:border-red-500/60" : ""}`} />
           </div>
+          {throwaway && (
+            <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{isAr ? THROWAWAY_EMAIL_AR : "This is a throwaway e-mail domain. Use a permanent address."}</p>
+          )}
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{isAr ? "رقم الجوال" : "Phone Number"}</label>
@@ -348,7 +430,9 @@ export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<st
           </div>
         </div>
 
-        {/* Document upload placeholder */}
+        {/* Document upload placeholder — not for the lawyer / consultant,
+            whose licence photo is a real upload on step 2 (owner ٢٠). */}
+        {!needsLicenceProofFor(providerType) && (
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
             {isAr ? "رفع شهادة الترخيص / الهوية المهنية" : "Upload License / Professional ID"}
@@ -382,6 +466,7 @@ export function Step3({ isAr, data, onChange }: { isAr: boolean; data: Record<st
             {isAr ? "سيتم مراجعة الوثائق خلال ٢٤ ساعة من قِبل فريق نظامي" : "Documents will be reviewed within 24 hours by the Nezamy team"}
           </p>
         </div>
+        )}
       </div>
     </motion.div>
   );
@@ -456,7 +541,7 @@ export function Step4({ isAr, selectedPlan, onSelect }: { isAr: boolean; selecte
 }
 
 // ─── Step 5: Success ──────────────────────────────────────────────────────────
-export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; providerType: ProviderType; selectedPlan: string }) {
+export function Step5({ isAr, providerType, selectedPlan, verificationOwnsStatus = false }: { isAr: boolean; providerType: ProviderType; selectedPlan: string; verificationOwnsStatus?: boolean }) {
   const typeLabel = {
     lawyer: isAr ? "محامي" : "Lawyer",
     firm: isAr ? "شركة محاماة" : "Law Firm",
@@ -497,15 +582,23 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
       </motion.div>
 
       <h2 className="font-brand text-2xl font-bold text-ink">
-        {isAr ? "طلبك قيد المراجعة!" : "Your Application Is Under Review!"}
+        {verificationOwnsStatus
+          ? (isAr ? "تم إنشاء حسابك" : "Your account is created")
+          : (isAr ? "طلبك قيد المراجعة!" : "Your Application Is Under Review!")}
       </h2>
       <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">
-        {isAr
-          ? `تم استلام طلبك كـ${typeLabel} بباقة ${planLabel}. سيتم مراجعة وثائقك خلال ٢٤ ساعة وإشعارك على بريدك.`
-          : `Your application as ${typeLabel} with the ${planLabel} plan has been received. Your documents will be reviewed within 24 hours.`}
+        {verificationOwnsStatus
+          ? (isAr
+              ? `سجّلنا حسابك كـ${typeLabel} بباقة ${planLabel}. أكمل توثيق ترخيصك أدناه.`
+              : `Your ${typeLabel} account with the ${planLabel} plan is created. Finish verifying your licence below.`)
+          : (isAr
+              ? `تم استلام طلبك كـ${typeLabel} بباقة ${planLabel}. سيتم مراجعة وثائقك خلال ٢٤ ساعة وإشعارك على بريدك.`
+              : `Your application as ${typeLabel} with the ${planLabel} plan has been received. Your documents will be reviewed within 24 hours.`)}
       </p>
 
-      {/* Review steps */}
+      {/* Review steps — the verification panel below owns the status for a
+          lawyer with a session (owner ٢٠–٢١), so they are not shown then. */}
+      {!verificationOwnsStatus && (
       <div className="my-8 space-y-3 text-start">
         {[
           { icon: IdentificationCard, labelAr: "مراجعة الوثائق — ٢٤ ساعة", labelEn: "Document review — 24 hours", done: false },
@@ -527,6 +620,7 @@ export function Step5({ isAr, providerType, selectedPlan }: { isAr: boolean; pro
           );
         })}
       </div>
+      )}
 
       <motion.a href={href} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}
