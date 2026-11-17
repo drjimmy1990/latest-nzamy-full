@@ -3,6 +3,7 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { DETAIL_SELECT, cleanDetail, contactIssueIn, publicDetail, visibilityForTab } from "../_feed";
+import { viewerStateFor } from "../_viewer";
 
 /**
  * GET /api/v1/community/posts/[id] — Get single post with all answers
@@ -49,6 +50,12 @@ import { DETAIL_SELECT, cleanDetail, contactIssueIn, publicDetail, visibilityFor
  *
  * Post and answer text pass through the contact filter (cleanDetail) before
  * they leave the server.
+ *
+ * Reader state (owner TODO N05-C4..7), computed here so the page never needs
+ * an author id: `myVote` on the post and on each answer (the reader's own
+ * community_votes rows), `saved` (his community_saves row) and `isMine` (he
+ * asked this question — only then does the page offer «اختر أفضل إجابة»).
+ * All three are false/0 for a guest. Names stay anonymous (owner question ٤٢).
  */
 export async function GET(
   _request: NextRequest,
@@ -111,12 +118,30 @@ export async function GET(
     }
   }
 
+  const viewer = await viewerStateFor(
+    supabase,
+    user?.id ?? null,
+    [id],
+    answers.map((a) => String(a?.id ?? "")),
+  );
+
   const answersWithSlug = answers.map((a) => ({
     ...a,
     lawyerSlug: slugByAuthor.get(a.author_id) ?? null,
+    myVote: viewer.voteOn("answer", String(a.id)),
   }));
 
-  return NextResponse.json({ data: publicDetail(cleanDetail({ ...post, answers: answersWithSlug })) });
+  const isMine = user != null && (post as { author_id?: unknown }).author_id === user.id;
+
+  return NextResponse.json({
+    data: publicDetail(cleanDetail({
+      ...post,
+      answers: answersWithSlug,
+      myVote: viewer.voteOn("post", id),
+      saved: viewer.savedPost(id),
+      isMine,
+    })),
+  });
 }
 
 /**

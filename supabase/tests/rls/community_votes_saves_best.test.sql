@@ -215,3 +215,20 @@ begin
   raise notice 'T5 PASS: posting still works and the fold runs as the writing user';
 end $$;
 reset role;
+
+-- T6 the exact tsquery text the route builds (posts/_search.ts, its unit test
+--    pins these strings) parses under 'simple' and finds the post as a guest
+set role anon;
+select set_config('test.uid', '', false);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.community_posts
+   where search_fts @@ pg_catalog.to_tsquery('simple', '(الحضانه:* | والحضانه:* | بالحضانه:* | للحضانه:*) & 1444:*');
+  if n <> 1 then raise exception 'T6 FAIL: the route''s query «الحضانة 1444» finds % posts (want 1)', n; end if;
+  select count(*) into n from public.community_posts
+   where search_fts @@ pg_catalog.to_tsquery('simple', '(طلاق:* | الطلاق:* | والطلاق:* | بالطلاق:* | للطلاق:*)');
+  if n <> 1 then raise exception 'T6 FAIL: «طلاق» does not find «الطلاق» (% posts)', n; end if;
+  raise notice 'T6 PASS: the route''s tsquery text parses and matches under simple';
+end $$;
+reset role;

@@ -69,6 +69,12 @@ export async function getCommunityPosts(opts?: {
   category?: CommunityCategory;
   limit?: number;
   offset?: number;
+  /** Server search (supabase mode): Arabic-folded title + body — see posts/_search.ts. */
+  q?: string;
+  /** Server order (supabase mode): hot = votes, top = answers, new = newest. */
+  sort?: "hot" | "new" | "top";
+  /** The signed-in reader's own questions only. */
+  mine?: boolean;
 }): Promise<ListRead<StoredCommunityQuestion>> {
   // Demo path unchanged: communityStore is the backend in that mode.
   if (!isSupabaseMode) {
@@ -83,6 +89,9 @@ export async function getCommunityPosts(opts?: {
       category: opts?.category !== "all" ? opts?.category : undefined,
       limit: opts?.limit,
       offset: opts?.offset,
+      q: opts?.q?.trim() ? opts.q.trim() : undefined,
+      sort: opts?.sort,
+      mine: opts?.mine ? "1" : undefined,
     });
     // The route 500s on a Supabase error (posts/route.ts:46) — no `degraded`
     // envelope, so a throw or a missing array is the failure signal.
@@ -166,16 +175,74 @@ export async function addCommunityAnswer(
   return res.data;
 }
 
+/** What the vote route answers: the caller's vote now, and the server's count. */
+export interface CommunityVoteResult {
+  myVote: -1 | 0 | 1;
+  votes: number;
+}
+
+/**
+ * Vote on a post or an answer; `0` removes the caller's vote (toggle off).
+ * Resolves to the server's own count — the page shows that number, never one
+ * it added up itself. THROWS on a refusal (a guest's 401, an unreadable
+ * target), so the screen can say the vote was not counted. Demo mode has no
+ * vote persistence and resolves `null`.
+ */
 export async function voteCommunityPost(
   postId: number | string,
   targetType: "post" | "answer",
   targetId: string,
-  value: 1 | -1,
-): Promise<void> {
-  if (!isSupabaseMode) return; // Demo mode: no voting persistence
-  await apiMutate(`/api/v1/community/posts/${postId}/vote`, "POST", {
-    target_type: targetType,
-    target_id: targetId,
-    value,
-  });
+  value: 1 | -1 | 0,
+): Promise<CommunityVoteResult | null> {
+  if (!isSupabaseMode) return null; // Demo mode: no voting persistence
+  const res = await apiMutate<{ data?: { myVote?: number; votes?: number } }>(
+    `/api/v1/community/posts/${encodeURIComponent(String(postId))}/vote`,
+    "POST",
+    { target_type: targetType, target_id: targetId, value },
+  );
+  if (!res?.data || typeof res.data.votes !== "number") throw new Error("لم يصل تأكيد التصويت من الخادم");
+  const my = res.data.myVote;
+  return { myVote: my === 1 ? 1 : my === -1 ? -1 : 0, votes: res.data.votes };
+}
+
+/** «حفظ» / إلغاء الحفظ. Resolves the saved state the server now holds; THROWS on failure. */
+export async function setCommunityPostSaved(postId: string, saved: boolean): Promise<boolean> {
+  if (!isSupabaseMode) throw new Error("الحفظ غير متاح في وضع العرض التجريبي.");
+  const res = await apiMutate<{ data?: { saved?: boolean } }>(
+    `/api/v1/community/posts/${encodeURIComponent(postId)}/save`,
+    saved ? "POST" : "DELETE",
+  );
+  if (typeof res?.data?.saved !== "boolean") throw new Error("لم يصل تأكيد الحفظ من الخادم");
+  return res.data.saved;
+}
+
+/** «أفضل إجابة» — the question's author only (the database checks). `null` clears it. THROWS on refusal. */
+export async function setCommunityBestAnswer(postId: string, answerId: string | null): Promise<string | null> {
+  if (!isSupabaseMode) throw new Error("اختيار أفضل إجابة غير متاح في وضع العرض التجريبي.");
+  const res = await apiMutate<{ data?: { accepted_answer_id?: string | null } }>(
+    `/api/v1/community/posts/${encodeURIComponent(postId)}/best-answer`,
+    "POST",
+    { answer_id: answerId },
+  );
+  if (!res?.data) throw new Error("لم يصل تأكيد الاختيار من الخادم");
+  return res.data.accepted_answer_id ?? null;
+}
+
+/** The signed-in reader's saved questions, newest save first (GET /api/v1/community/saved). */
+export async function getSavedCommunityPosts(opts?: {
+  limit?: number;
+  offset?: number;
+}): Promise<ListRead<StoredCommunityQuestion>> {
+  if (!isSupabaseMode) return listOk<StoredCommunityQuestion>([], 0);
+  try {
+    const response = await apiGet<PostListResponse>("/api/v1/community/saved", {
+      limit: opts?.limit,
+      offset: opts?.offset,
+    });
+    if (!Array.isArray(response?.data)) return listFailed<StoredCommunityQuestion>();
+    return listOk(response.data, response.total);
+  } catch (error) {
+    console.error("[communityService] getSavedCommunityPosts failed:", error);
+    return listFailed<StoredCommunityQuestion>();
+  }
 }

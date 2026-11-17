@@ -81,3 +81,22 @@ test("displayWhen prints a date for ISO input and passes worded values through",
   assert.equal(displayWhen("2026-10-16T08:00:00.000Z"), formatPostedDate("2026-10-16T08:00:00.000Z"));
   assert.equal(formatPostedDate("not a date"), "");
 });
+
+test("server-ordered (supabase): the server's search and order are kept, only tab/category guard", () => {
+  // The server matched «أحكام» for «احكام» (folded) and ordered by votes; a
+  // local `includes` would drop it and a local sort would reshuffle pages.
+  const a = toFeedQuestion({ ...API_ITEM, id: "a", tab: "public", title: "أحكام الحضانة", votes: 1 });
+  const b = toFeedQuestion({ ...API_ITEM, id: "b", tab: "public", title: "نفقة", votes: 9 });
+  const opts = { tab: "public" as const, category: "all", search: "احكام", sort: "hot" as const, serverOrdered: true };
+  assert.deepEqual(filterAndSortFeed([a, b], opts).map((q) => q.key), ["a", "b"]);
+  assert.deepEqual(filterAndSortFeed([a, b], { ...opts, tab: "lawyers" }), []);
+});
+
+test("the reader's own vote and save come through from the API item, and default to none", () => {
+  const voted = toFeedQuestion({ ...API_ITEM, myVote: -1, saved: true });
+  assert.equal(voted.myVote, -1);
+  assert.equal(voted.saved, true);
+  const plain = toFeedQuestion(DEMO_ITEM);
+  assert.equal(plain.myVote, 0);
+  assert.equal(plain.saved, false);
+});
