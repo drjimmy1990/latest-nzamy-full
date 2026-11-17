@@ -426,6 +426,16 @@ const PROTECTED = [
   // corporate account (routeAccess.ts rule), and the advisor is not a guest page.
   "/ai/corp",
   "/ai/consult",
+  // N05-V2 / N05-M6 (owner package 17 Nov, file 04): the template library
+  // needs an account, and so do the marketplace pages that act for one
+  // (post a request, an order, a shared workspace, the collaboration board).
+  // The public listing (/marketplace, /marketplace/<id>) and /pro/marketplace
+  // stay open on purpose. Any signed-in type is admitted (no routeAccess rule).
+  "/ai/templates",
+  "/marketplace/post",
+  "/marketplace/order",
+  "/marketplace/workspace",
+  "/marketplace/collaborate",
   "/settings",
   "/notifications",
   "/onboarding",
