@@ -10,6 +10,7 @@
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
 import { listOk, listFailed, type ListRead } from "@/lib/services/listRead";
 import type { VerificationStatus } from "@/types/database";
+import type { RegistryMatch } from "@/lib/registry/registryMatch";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,12 @@ export interface VerificationRequest {
   licenceImageUrl?: string | null;
   /** Lawyer rows only: 'consultant' = مستشار قانوني. */
   practiceKind?: "advocate" | "consultant";
+  /**
+   * Lawyer rows only: what the lawyers' register says about the licence on
+   * this file (20261122_40), computed when the list was read. A hint, not a
+   * proof — no OTP yet. null/absent before that migration runs.
+   */
+  registryMatch?: RegistryMatch | null;
 }
 
 interface VerificationListResponse {

@@ -16,6 +16,7 @@ import {
   rejectVerification,
 } from "@/lib/services/adminService";
 import type { VerificationRequest } from "@/lib/services/adminService";
+import { describeRegistryMatch, type RegistryMatch, type Tone } from "@/lib/registry/registryMatch";
 import {
   listOk,
   listFailed,
@@ -23,6 +24,33 @@ import {
   itemsOf,
   type ListRead,
 } from "@/lib/services/listRead";
+
+/* ── Registry line (20261122_40) ─────────────────────────────────────────────── */
+
+const REGISTRY_TONE: Record<Tone, { dark: string; light: string }> = {
+  good: { dark: "text-emerald-400", light: "text-emerald-700" },
+  warn: { dark: "text-amber-400", light: "text-amber-700" },
+  bad: { dark: "text-red-400", light: "text-red-700" },
+  neutral: { dark: "text-zinc-400", light: "text-slate-500" },
+};
+
+function RegistryLine({ match, isDark }: { match: RegistryMatch; isDark: boolean }) {
+  const { line, notes, tone } = describeRegistryMatch(match);
+  const cls = isDark ? REGISTRY_TONE[tone].dark : REGISTRY_TONE[tone].light;
+  return (
+    <div className="mt-2 text-[11px] leading-relaxed">
+      <p className={`font-bold ${cls}`}>{line}</p>
+      {notes.length > 0 && (
+        <ul className={`mt-0.5 list-disc ps-4 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+          {notes.map((n) => <li key={n}>{n}</li>)}
+        </ul>
+      )}
+      <p className={`mt-0.5 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
+        مطابقة السجل لا تثبت أن صاحب الطلب هو صاحب الترخيص؛ القرار للمراجع.
+      </p>
+    </div>
+  );
+}
 
 /* ── Config ──────────────────────────────────────────────────────────────────── */
 
@@ -451,6 +479,9 @@ export default function ProviderVerificationPage() {
                       </span>
                     ))}
                   </div>
+                  {/* Launch batch R2/R3/R5: the lawyers' register on this
+                      licence — a hint for the decision, not a proof. */}
+                  {r.type === "lawyer" && r.registryMatch && <RegistryLine match={r.registryMatch} isDark={isDark} />}
                 </div>
 
                 {/* AI Score + Actions */}
