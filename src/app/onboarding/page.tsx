@@ -34,6 +34,9 @@ import { logout } from "@/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeSaudiMobile, saudiMobileMessage } from "@/lib/services/saudiMobile";
 import { apiGet, apiMutate, isSupabaseMode } from "@/lib/services/api";
+import TermsConsentCheckbox from "@/components/legal/TermsConsentCheckbox";
+import { CURRENT_TERMS_VERSION } from "@/lib/legal/termsVersion";
+import { fetchTermsStatus, recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 import {
   buildNotificationPreferences,
   getWizardCategories,
@@ -817,6 +820,14 @@ export default function OnboardingPage() {
   const [hasLawyer, setHasLawyer] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /**
+   * R7 (owner package 2026-11-17): a Google sign-up never passed a register
+   * form, so this wizard is where it ticks the consent box. An account that
+   * already accepted the current terms (an email signup that also lands here)
+   * is not asked twice. Unknown (read failed) asks — a tick costs nothing.
+   */
+  const [termsAlreadyAccepted, setTermsAlreadyAccepted] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   /**
    * The type this wizard is working with: whatever the account already has,
@@ -843,6 +854,15 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (step === 5) clearPendingPlan(sessionStorageOrNull());
   }, [step]);
+
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    let cancelled = false;
+    fetchTermsStatus().then((status) => {
+      if (!cancelled && status.kind === "accepted") setTermsAlreadyAccepted(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // Read the account's real type from `profiles` — not from user_metadata,
   // which an OAuth provider never populates. A type that is already set is
@@ -900,6 +920,7 @@ export default function OnboardingPage() {
     // without it: profiles.phone is the only number the outbound notification
     // payload can carry, and all 16 live accounts have none.
     if (step === 3) return city.length > 0 && normalizeSaudiMobile(phone).ok;
+    if (step === 4) return termsAlreadyAccepted || termsAccepted;
     return true;
   };
 
@@ -1014,6 +1035,17 @@ export default function OnboardingPage() {
         ),
       });
 
+      // ── 3b. R7: the consent ticked on step 4 ───────────────────────────────
+      // Best-effort, like the mirror below: a failure (or the table not being
+      // there yet) does not strand a finished wizard. `terms_version` is also
+      // mirrored into user_metadata (step 5), so the next signed-in request
+      // records it as 'signup' (GET /api/v1/legal/terms-acceptance); failing
+      // that, the re-ask modal asks once more.
+      if (!termsAlreadyAccepted && termsAccepted) {
+        const recorded = await recordTermsAcceptance("signup");
+        if (recorded.ok) setTermsAlreadyAccepted(true);
+      }
+
       // ── 4. Commit: the wizard is finished ──────────────────────────────────
       await apiMutate("/api/v1/profile", "PATCH", { onboarding_completed: true });
 
@@ -1034,6 +1066,7 @@ export default function OnboardingPage() {
           specialties: specialties.length > 0 ? specialties : undefined,
           has_in_house_lawyer: hasLawyer,
           phone: normalizedPhone,
+          ...(termsAccepted ? { terms_version: CURRENT_TERMS_VERSION } : {}),
         };
         // Mirror the type the database actually holds — never `admin`, which
         // this wizard must not be able to write anywhere.
@@ -1196,6 +1229,13 @@ export default function OnboardingPage() {
                   />
                 )}
               </AnimatePresence>
+
+              {/* R7 consent — on the step that finishes the account. */}
+              {step === 4 && !termsAlreadyAccepted && (
+                <div className="mt-6">
+                  <TermsConsentCheckbox checked={termsAccepted} onChange={setTermsAccepted} isAr={isAr} disabled={saving} />
+                </div>
+              )}
 
               {step < 5 && (
                 <div className="mt-8">

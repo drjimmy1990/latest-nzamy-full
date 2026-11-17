@@ -50,6 +50,9 @@ import {
 import { translateAuthError } from "@/lib/auth/translateAuthError";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
+import TermsConsentCheckbox from "@/components/legal/TermsConsentCheckbox";
+import { CURRENT_TERMS_VERSION } from "@/lib/legal/termsVersion";
+import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 
 // `?type=` from a /pricing CTA (e.g. /register/provider?type=consultant)
 // preselects that card. Step 1 stays on screen, so the choice can still be
@@ -81,6 +84,9 @@ export default function RegisterProviderPage() {
   // OWNER-SEC-01: GoTrue's captcha check covers /signup too, so signUp sends
   // a Turnstile token (src/lib/auth/captcha.ts). One token per attempt.
   const captcha = useTurnstile({ isAr, theme, action: "signup" });
+  // R7 (owner package 2026-11-17): the consent box, unticked by default;
+  // «أرسل الطلب» stays disabled until it is ticked.
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const handleChange = (k: string, v: string) => setFormData(d => ({ ...d, [k]: v }));
@@ -274,7 +280,7 @@ export default function RegisterProviderPage() {
       const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email || "");
       return emailValid && normalizeSaudiMobile(formData.phone).ok && (formData.password?.length ?? 0) >= 8;
     }
-    if (step === 4) return !!selectedPlan;
+    if (step === 4) return !!selectedPlan && termsAccepted;
     return true;
   };
 
@@ -412,6 +418,13 @@ export default function RegisterProviderPage() {
                 {step === 5 && <Step5 key="s5" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} />}
               </AnimatePresence>
 
+              {/* R7 consent — on the step that creates the account. */}
+              {step === 4 && (
+                <div className="mt-6">
+                  <TermsConsentCheckbox checked={termsAccepted} onChange={setTermsAccepted} isAr={isAr} disabled={authLoading} />
+                </div>
+              )}
+
               {/* Security check (Turnstile) on the step that calls signUp. */}
               {step === 4 && BACKEND_MODE === "supabase" && (
                 <div className="mt-6">
@@ -473,7 +486,7 @@ export default function RegisterProviderPage() {
                               setAuthLoading(false);
                               return;
                             }
-                            const { error } = await supabase.auth.signUp({
+                            const { data: signUpData, error } = await supabase.auth.signUp({
                               email: formData.email,
                               password: formData.password,
                               options: withSignupCaptcha({
@@ -496,6 +509,12 @@ export default function RegisterProviderPage() {
                                   license_number: formData.licenseNumber?.trim(),
                                   experience_years: formData.experience,
                                   selected_plan: selectedPlan,
+                                  // R7: the version the box above accepted.
+                                  // Without a session (email confirmation on)
+                                  // the server records it as 'signup' on the
+                                  // first signed-in request (terms-acceptance
+                                  // GET), and only for an account with no row.
+                                  terms_version: CURRENT_TERMS_VERSION,
                                   ...(providerType === "arbitrator" && {
                                     arbitration_center: formData.arbitrationCenter,
                                   }),
@@ -515,6 +534,11 @@ export default function RegisterProviderPage() {
                               setAuthLoading(false);
                               return;
                             }
+
+                            // R7: record the acceptance now when signUp gave a
+                            // session. Best-effort — a failure is healed by the
+                            // metadata path above on the next signed-in visit.
+                            if (signUpData.session) await recordTermsAcceptance("signup");
 
                             setStep(5);
                           } catch {

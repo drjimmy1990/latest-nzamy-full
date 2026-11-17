@@ -14,6 +14,11 @@ import {
   NO_DIRECT_CONSULTATION_AR,
   NO_DIRECT_CONSULTATION_EN,
 } from "@/constants/legalIdentity";
+import {
+  PLATFORM_PROTECTION_ANCHOR,
+  TERMS_LAST_UPDATED_AR,
+  TERMS_LAST_UPDATED_EN,
+} from "@/lib/legal/termsVersion";
 
 // ─── Sections ────────────────────────────────────────────────────────────────
 
@@ -94,8 +99,27 @@ const sections = {
       ],
     },
     {
+      // R8 (owner package 2026-11-17, file 11 «ثالثاً أ»): the owner's text,
+      // verbatim. Pending a specialist lawyer's review (file 11 «ثانياً»);
+      // nothing here may claim otherwise.
+      id: PLATFORM_PROTECTION_ANCHOR,
+      title: "٨. حماية المنصة ومحتواها",
+      content: [
+        "١. أقرّ بأن المنصة وبرمجياتها وتطبيقاتها وقواعد بياناتها ومحتوى مكتبتها القانونية مصنفات محمية بموجب نظام حقوق المؤلف، وأن دخولي إليها واستخدامي لها مشروطان بما ورد في هذه الشروط وفق المادة (الثانية عشرة) من نظام حقوق المؤلف، وأن كل دخول أو استخدام على خلاف هذه الشروط دخول غير مصرح به.",
+        "٢. وبناءً عليه ألتزم بما يأتي، وأعلم أن مخالفته تعرّضني للعقوبة المبيّنة أمام كل التزام:",
+        "**التزام أول:** ألتزم بعدم استخراج محتوى المكتبة أو بياناتها بوسائل آلية، ومنها برمجيات الزحف والسحب والاستعلام الآلي المتتابع، أو نسخه بصورة منهجية. والعقوبة: إن تضمّن ذلك دخولاً غير مشروع فهو جريمة بموجب المادة (الثالثة) من نظام مكافحة جرائم المعلوماتية، عقوبتها السجن مدة لا تزيد على سنة وغرامة لا تزيد على خمسمائة ألف ريال، أو إحدى هاتين العقوبتين. وإن أفضى إلى إعاقة الخدمة أو تعطيلها فبموجب المادة (الخامسة) السجن مدة لا تزيد على أربع سنوات وغرامة لا تزيد على ثلاثة ملايين ريال، أو إحدى هاتين العقوبتين.",
+        "**التزام ثانٍ:** ألتزم بعدم تجاوز الحصص أو حدود الاستخدام أو التحقق الأمني أو سياسة الأجهزة المصرح بها، وبعدم التحايل عليها. والعقوبة: التحايل على تدابير الحماية التقنية جريمة بموجب المادة (السابعة والأربعين) من نظام حقوق المؤلف، عقوبتها السجن مدة لا تزيد على سنة وغرامة لا تزيد على مليون ريال، أو إحدى هاتين العقوبتين.",
+        "**التزام ثالث:** ألتزم بعدم فك المنصة أو تفكيكها، أو محاولة استخراج شيفرتها أو تعليمات تشغيل أدواتها أو نماذجها أو منطق عملها، بقصد استنساخها، ومنه توجيه أسئلة منهجية متتابعة أو استدراج المخرجات لاستنساخ سلوك النماذج، أو استخدام واجهات برمجية غير معلنة. والعقوبة: التحايل على تدابير الحماية لهذا الغرض يعاقب بالمادة (السابعة والأربعين) المذكورة، وللمنصة المطالبة بالتعويض وإيقاف النسخ.",
+        "**التزام رابع:** ألتزم بعدم استخدام محتوى المنصة أو مخرجاتها لتدريب أي نموذج آلي أو بناء أي قاعدة بيانات، سواء كانت منافسة أم لا. والعقوبة: التعويض وفق ما يلي في البند (٣)، وما يترتب على الاستخراج الآلي من عقوبات في الالتزام الأول.",
+        "**التزام خامس:** ألتزم بعدم مشاركة بيانات دخولي أو السماح لغيري باستخدام حسابي. والعقوبة: إيقاف الحساب، وتحمّلي مسؤولية ما يجريه الغير بحسابي.",
+        "٣. **الجزاء المدني والتعاقدي:** عند المخالفة يحق للمنصة فوراً إيقاف حسابي أو إنهاء اشتراكي وفق سياسة الاسترداد المعتمدة، والمطالبة بالتعويض عن الأضرار بموجب المادة (العشرين بعد المائة) من نظام المعاملات المدنية والمادة (الحادية والخمسين) من نظام حقوق المؤلف ومنها الأرباح التي جناها المتعدي، والإبلاغ للجهات المختصة. وقد يشمل التعويض ما يلحق المنصة من أضرار ناتجة عن سحب بيانات شخصية لمشتركين وفق نظام حماية البيانات الشخصية.",
+        "٤. **أحكام عامة في العقوبة:** يعاقب المحرّض والمساعد والمتفق على الجريمة وفق المادة (التاسعة) من نظام مكافحة جرائم المعلوماتية، ويعاقب الشروع بنصف الحد الأعلى وفق المادة (العاشرة) منه، وتضاعف العقوبة في العود وفق المادة (الثامنة والأربعين) من نظام حقوق المؤلف. والمبالغ والمدد المذكورة حدود قصوى، وتقدّر المحكمة المختصة العقوبة في كل حالة.",
+        "٥. لا يخلّ هذا البند بما يجيزه النظام صراحةً لمالك النسخة المشروعة بموجب المادة (الثالثة والثلاثين) من نظام حقوق المؤلف.",
+      ],
+    },
+    {
       id: "liability",
-      title: "٨. تحديد المسؤولية",
+      title: "٩. تحديد المسؤولية",
       content: [
         "لا تتحمل المنصة المسؤولية عن جودة الخدمة القانونية المقدمة من مقدمي الخدمة المستقلين.",
         "الحد الأقصى لمسؤولية المنصة في جميع الأحوال لا يتجاوز قيمة الأتعاب المدفوعة فعلياً عن الخدمة محل النزاع، ولا يخلّ هذا الحد بأي حق مقرر لطالب الخدمة بموجب نظام التجارة الإلكترونية أو نظام حماية المستهلك.",
@@ -104,7 +128,7 @@ const sections = {
     },
     {
       id: "termination",
-      title: "٩. الإنهاء والتعليق",
+      title: "١٠. الإنهاء والتعليق",
       content: [
         "يحق للمستخدم إنهاء حسابه في أي وقت عبر صفحة الإعدادات. تُنجز المعاملات الجارية قبل الإنهاء.",
         "تحتفظ المنصة بحق تعليق أي حساب فوراً في حال ثبوت انتهاك لهذه الشروط أو الأنظمة النافذة.",
@@ -113,7 +137,7 @@ const sections = {
     },
     {
       id: "governing-law",
-      title: "١٠. القانون الحاكم والاختصاص القضائي",
+      title: "١١. القانون الحاكم والاختصاص القضائي",
       content: [
         "تخضع هذه الشروط لأحكام نظام التجارة الإلكترونية السعودي ونظام حماية المستهلك وسائر الأنظمة ذات الصلة.",
         "تختص المحاكم السعودية بالنظر في أي نزاع ينشأ عن هذه الشروط، وتكون مكة المكرمة هي دار القضاء المختصة.",
@@ -123,7 +147,7 @@ const sections = {
     },
     {
       id: "amendments",
-      title: "١١. التعديلات",
+      title: "١٢. التعديلات",
       content: [
         "تحتفظ المنصة بحق تعديل هذه الشروط في أي وقت مع إشعار المستخدمين المسجلين بالبريد الإلكتروني قبل ١٤ يوماً من نفاذ التعديل.",
         "استمرار استخدام المنصة بعد إشعار التعديل يُعدّ قبولاً ضمنياً للشروط المعدّلة.",
@@ -131,7 +155,7 @@ const sections = {
     },
     {
       id: "contact-legal",
-      title: "١٢. التواصل",
+      title: "١٣. التواصل",
       content: [
         "لأي استفسارات قانونية أو شكاوى تتعلق بهذه الشروط، يُرجى التواصل عبر: legal@nezamy.sa",
         "العنوان: نظامي، مكة المكرمة — بطحاء قريش، المملكة العربية السعودية.",
@@ -214,8 +238,25 @@ const sections = {
       ],
     },
     {
+      // R8: an English rendering of the owner's Arabic clause above.
+      id: PLATFORM_PROTECTION_ANCHOR,
+      title: "8. Platform and Content Protection",
+      content: [
+        "1. I acknowledge that the platform, its software, applications, databases and the content of its legal library are works protected under the Copyright Law; that my access to and use of them are conditional on these terms pursuant to Article (12) of the Copyright Law; and that any access or use contrary to these terms is unauthorised access.",
+        "2. Accordingly, I undertake the following, and I am aware that breaching it exposes me to the penalty stated against each undertaking:",
+        "**First undertaking:** I will not extract the library's content or data by automated means — including crawling, scraping and sequential automated querying software — nor copy it systematically. Penalty: if this involves unlawful access, it is a crime under Article (3) of the Anti-Cyber Crime Law, punishable by imprisonment of up to one year and a fine of up to five hundred thousand riyals, or either penalty; and if it leads to obstructing or disabling the service, under Article (5), imprisonment of up to four years and a fine of up to three million riyals, or either penalty.",
+        "**Second undertaking:** I will not exceed or circumvent the quotas, usage limits, security verification or the authorised-devices policy. Penalty: circumventing technical protection measures is a crime under Article (47) of the Copyright Law, punishable by imprisonment of up to one year and a fine of up to one million riyals, or either penalty.",
+        "**Third undertaking:** I will not decompile or disassemble the platform, or attempt to extract its code, the operating instructions of its tools or models, or its working logic, in order to replicate it — including by systematic sequential questioning or eliciting outputs to replicate the models' behaviour, or by using undisclosed programming interfaces. Penalty: circumventing protection measures for this purpose is punishable under the said Article (47), and the platform may claim compensation and the cessation of copying.",
+        "**Fourth undertaking:** I will not use the platform's content or outputs to train any automated model or to build any database, whether competing or not. Penalty: compensation as set out in clause (3) below, together with the penalties attached to automated extraction under the first undertaking.",
+        "**Fifth undertaking:** I will not share my login details or allow anyone else to use my account. Penalty: suspension of the account, and my bearing responsibility for whatever others do through my account.",
+        "3. **Civil and contractual sanctions:** upon a breach, the platform may immediately suspend my account or terminate my subscription in accordance with the approved refund policy, claim compensation for damages under Article (120) of the Civil Transactions Law and Article (51) of the Copyright Law — including the profits made by the infringer — and report to the competent authorities. Compensation may include damage the platform suffers from the scraping of subscribers' personal data under the Personal Data Protection Law.",
+        "4. **General provisions on penalties:** the instigator, the accomplice and the party agreeing to the crime are punished under Article (9) of the Anti-Cyber Crime Law; an attempt is punished by half the maximum under Article (10) thereof; and the penalty is doubled for repeat offences under Article (48) of the Copyright Law. The amounts and periods stated are maximum limits, and the competent court determines the penalty in each case.",
+        "5. This clause does not prejudice what the law expressly permits the owner of a lawful copy under Article (33) of the Copyright Law.",
+      ],
+    },
+    {
       id: "liability",
-      title: "8. Limitation of Liability",
+      title: "9. Limitation of Liability",
       content: [
         "The platform bears no responsibility for the quality of legal services provided by independent service providers.",
         "The platform's maximum liability in all cases shall not exceed the fees actually paid for the disputed service. This cap does not limit any right afforded to the service seeker under the Saudi E-Commerce Law or the Consumer Protection Law.",
@@ -224,7 +265,7 @@ const sections = {
     },
     {
       id: "termination",
-      title: "9. Termination and Suspension",
+      title: "10. Termination and Suspension",
       content: [
         "Users may terminate their account at any time through the settings page. Ongoing transactions are completed before termination.",
         "The platform reserves the right to immediately suspend any account upon proven violation of these terms or applicable regulations.",
@@ -233,7 +274,7 @@ const sections = {
     },
     {
       id: "governing-law",
-      title: "10. Governing Law and Jurisdiction",
+      title: "11. Governing Law and Jurisdiction",
       content: [
         "These terms are governed by Saudi e-commerce law, consumer protection regulations, and other relevant laws.",
         "Saudi courts have jurisdiction over any dispute arising from these terms, with Makkah as the competent court location.",
@@ -243,7 +284,7 @@ const sections = {
     },
     {
       id: "amendments",
-      title: "11. Amendments",
+      title: "12. Amendments",
       content: [
         "The platform reserves the right to amend these terms at any time with 14 days prior notice to registered users by email before the amendment takes effect.",
         "Continued use of the platform after the amendment notice is considered implicit acceptance of the amended terms.",
@@ -251,7 +292,7 @@ const sections = {
     },
     {
       id: "contact-legal",
-      title: "12. Contact",
+      title: "13. Contact",
       content: [
         "For any legal inquiries or complaints related to these terms, please contact: legal@nezamy.sa",
         "Address: Nezamy, Makkah — Batha Quraish, Kingdom of Saudi Arabia.",
@@ -281,7 +322,7 @@ export default function TermsPage() {
               {isRTL ? "الشروط والأحكام" : "Terms & Conditions"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ١ يناير ٢٠٢٥" : "Last updated: January 1, 2025"}
+              {isRTL ? `آخر تحديث: ${TERMS_LAST_UPDATED_AR}` : `Last updated: ${TERMS_LAST_UPDATED_EN}`}
             </p>
             <div className={`mx-auto mt-4 max-w-lg rounded-xl border px-4 py-3 text-sm ${isDark ? "border-yellow-500/20 bg-yellow-500/5 text-yellow-300" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
               {isRTL
