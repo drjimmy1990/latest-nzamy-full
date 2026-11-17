@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import { formatHalalas, type Billing } from "@/lib/payments/catalog";
 import { NOT_FOR_SALE_AR, type CheckoutResponse } from "@/lib/payments/checkoutRules";
 import { FOUNDER_CONSENT_LABEL_AR, FOUNDER_TERMS_HREF } from "@/lib/payments/founderConsent";
+import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR, CHECKOUT_TURNSTILE_ACTION } from "@/lib/payments/checkoutCaptcha";
+import { canSubmitWithCaptcha } from "@/lib/auth/captcha";
+import { useTheme } from "@/components/ThemeProvider";
+import { useTurnstile } from "@/components/auth/useTurnstile";
+import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import {
   checkoutRequestBody,
   intentNeedsRefresh,
@@ -52,6 +57,18 @@ import {
  *      (checkoutRequestBody) — on the first checkout and on the near-expiry
  *      refresh alike; the server refuses a founder order without them and
  *      records the version and its own clock on the order.
+ *   7. S6b (owner package 17 Nov): the founder membership (`captchaRequired`)
+ *      shows a Cloudflare Turnstile widget (action founder_checkout) above
+ *      «متابعة الدفع», which stays disabled until it holds a token
+ *      (canSubmitWithCaptcha; with no site key in the build the widget is
+ *      off and the server decides). Every checkout POST carries the token of
+ *      THAT attempt and spends it right after (success or failure), so the
+ *      widget resets for the next one. The widget stays on screen beside the
+ *      Moyasar form too: the near-expiry refresh is a new POST and needs a
+ *      fresh token. A 403 {code: "captcha"} shows «تعذّر اجتياز التحقق
+ *      الأمني — أكمله مرة أخرى» with «حاول مرة أخرى» — never as the final
+ *      account-type refusal. Every other item renders no widget and loads
+ *      no Turnstile script.
  * 401 → /login and back here; 403 / 503 / 400 → the server's Arabic copy.
  * 403 (not this account type) and 410 (retired item or cycle, «لم يعد هذا
  * المنتج متاحاً للشراء») are final: «العودة إلى الباقات», never a retry.
@@ -81,13 +98,14 @@ async function startCheckout(
   billing: Billing,
   couponCode: string | null,
   founderTermsVersion: string | null,
+  turnstileToken: string | null,
 ): Promise<StartResult | "signed-out"> {
   let res: Response;
   try {
     res = await fetch("/api/v1/payments/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(checkoutRequestBody(itemId, billing, couponCode, founderTermsVersion)),
+      body: JSON.stringify(checkoutRequestBody(itemId, billing, couponCode, founderTermsVersion, turnstileToken)),
       cache: "no-store",
     });
   } catch {
@@ -106,6 +124,10 @@ async function startCheckout(
   }
   const error = (body as { error?: unknown } | null)?.error;
   const serverCopy = typeof error === "string" && error ? error : null;
+  // S6b: a refused Turnstile check is retryable, not the account-type 403
+  if (res.status === 403 && (body as { code?: unknown } | null)?.code === CHECKOUT_CAPTCHA_CODE) {
+    return { ok: false, message: serverCopy ?? CHECKOUT_CAPTCHA_REFUSED_AR, audience: false };
+  }
   if (res.status === 410) return { ok: false, message: serverCopy ?? NOT_FOR_SALE_AR, audience: true };
   return {
     ok: false,
@@ -158,6 +180,7 @@ export default function MoyasarCheckout({
   billing,
   couponsEnabled = false,
   founderTermsVersion = null,
+  captchaRequired = false,
 }: {
   itemId: string;
   billing: Billing;
@@ -165,8 +188,19 @@ export default function MoyasarCheckout({
   couponsEnabled?: boolean;
   /** The founder membership only (owner ١٦): the terms version the consent checkbox accepts; null → no checkbox. */
   founderTermsVersion?: string | null;
+  /** S6b: the founder membership only — the Turnstile widget and a token on every checkout POST. */
+  captchaRequired?: boolean;
 }) {
   const router = useRouter();
+  const { theme } = useTheme();
+  // Always called (hooks); the widget renders, and the script loads, only when captchaRequired.
+  const captcha = useTurnstile({ isAr: true, theme, action: CHECKOUT_TURNSTILE_ACTION });
+  /** This attempt's token and the spend, for the intent refresh (it runs inside the form's callbacks). */
+  const captchaNow = useRef<{ token: string | null; spend: () => void }>({ token: null, spend: () => {} });
+  useEffect(() => {
+    captchaNow.current = { token: captchaRequired ? (captcha.token ?? null) : null, spend: captcha.spend };
+  }, [captchaRequired, captcha.token, captcha.spend]);
+  const captchaReady = !captchaRequired || canSubmitWithCaptcha(captcha.state);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [notice, setNotice] = useState<string | null>(null);
   const [couponInput, setCouponInput] = useState("");
@@ -194,12 +228,14 @@ export default function MoyasarCheckout({
 
   async function onStart() {
     if (needsTerms && !termsVersion.current) return;
+    if (!captchaReady) return;
     if (inFlight.current || current.current) return;
     inFlight.current = true;
     setNotice(null);
     setPhase({ kind: "starting" });
+    const turnstileToken = captchaRequired ? (captcha.token ?? null) : null;
     try {
-      const result = await startCheckout(itemId, billing, couponCode.current, termsVersion.current);
+      const result = await startCheckout(itemId, billing, couponCode.current, termsVersion.current, turnstileToken);
       if (result === "signed-out") {
         router.push(loginHref());
         return;
@@ -211,6 +247,8 @@ export default function MoyasarCheckout({
       current.current = { resp: result.resp, at: Date.now() };
       setPhase({ kind: "ready", resp: result.resp });
     } finally {
+      // one token per attempt: spent whatever the answer was
+      if (captchaRequired) captcha.spend();
       inFlight.current = false;
     }
   }
@@ -262,7 +300,9 @@ export default function MoyasarCheckout({
       const held = current.current;
       if (!held) return null;
       if (!intentNeedsRefresh(held.resp, held.at, Date.now())) return held.resp;
-      const fresh = await startCheckout(itemId, billing, couponCode.current, termsVersion.current);
+      const spent = captchaNow.current;
+      const fresh = await startCheckout(itemId, billing, couponCode.current, termsVersion.current, spent.token);
+      if (captchaRequired) spent.spend();
       if (fresh === "signed-out") {
         router.push(loginHref());
         return null;
@@ -317,7 +357,7 @@ export default function MoyasarCheckout({
         setNotice(FORM_FAILED_AR);
       }
     })();
-  }, [ready, itemId, billing, router]);
+  }, [ready, itemId, billing, router, captchaRequired]);
 
   const couponBox = couponsEnabled ? (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
@@ -444,10 +484,11 @@ export default function MoyasarCheckout({
             </a>
           </div>
         ) : null}
+        {captchaRequired ? <TurnstileWidget control={captcha} isAr /> : null}
         <button
           type="button"
           onClick={onStart}
-          disabled={phase.kind === "starting" || (needsTerms && !termsAccepted)}
+          disabled={phase.kind === "starting" || (needsTerms && !termsAccepted) || !captchaReady}
           className="inline-flex w-full items-center justify-center rounded-xl bg-[#0B3D2E] px-6 py-3.5 text-sm font-bold text-white transition-colors hover:bg-[#0E4D3A] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {phase.kind === "starting" ? "جارٍ تجهيز الدفع…" : "متابعة الدفع"}
@@ -514,6 +555,9 @@ export default function MoyasarCheckout({
       >
         <div className="mysr-form" />
       </div>
+
+      {/* S6b: a fresh token for the near-expiry refresh (a new checkout POST). */}
+      {captchaRequired ? <TurnstileWidget control={captcha} isAr /> : null}
     </div>
   );
 }

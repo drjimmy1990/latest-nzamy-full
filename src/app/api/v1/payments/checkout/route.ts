@@ -8,6 +8,9 @@ import { startCheckoutWith } from "@/lib/payments/checkoutCore";
 import { parseFounderConsent } from "@/lib/payments/founderConsent";
 import { checkoutModeAllowed } from "@/lib/payments/testModeAccess";
 import { frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { clientIpFrom } from "@/lib/rateLimit";
+import { checkoutCaptchaPasses, checkoutCaptchaPolicy, parseCheckoutTurnstileToken } from "@/lib/payments/checkoutCaptcha";
+import { ATTRIBUTION_COOKIE, parseAttributionCookie } from "@/lib/attribution/utmAttribution";
 
 /**
  * POST /api/v1/payments/checkout — starts one online payment (Moyasar
@@ -37,6 +40,23 @@ import { frozenAccountResponse } from "@/lib/auth/apiAuth";
  * founder_reserve_seat RPC (20261101_10, service role only) — the
  * reserveFounderSeat dependency below; an RPC error throws into
  * startCheckoutWith, which cancels the order and answers 503.
+ *
+ * S6b (owner package 17 Nov): the founder membership also needs a Cloudflare
+ * Turnstile token (`turnstileToken`, parseCheckoutTurnstileToken). The
+ * verifyHuman dependency below runs it through checkoutCaptchaPasses
+ * (src/lib/payments/checkoutCaptcha.ts) BEFORE founder_reserve_seat — inside
+ * startCheckoutWith, step 0d, before any read or write; a refusal is 403
+ * {code: "captcha"} «تعذّر اجتياز التحقق الأمني — أكمله مرة أخرى». Policy:
+ * TURNSTILE_SECRET_KEY (server) + NEXT_PUBLIC_TURNSTILE_SITE_KEY (build).
+ * DELIBERATE: in production a missing key ('misconfigured') does NOT stop the
+ * sale — it is logged loudly on every founder checkout and the buyer goes on,
+ * because a lost env line must never stop paying customers (the registry
+ * lookup, which reads personal data for guests, refuses instead). Every other
+ * item is never checked.
+ *
+ * F13: the first-touch utm cookie (ATTRIBUTION_COOKIE, set by src/proxy.ts)
+ * is re-validated here (parseAttributionCookie) and stored on the order as
+ * metadata.attribution — for every item.
  */
 
 function reply(body: object, status = 200) {
@@ -101,6 +121,15 @@ export async function POST(request: NextRequest) {
     return reply({ error: MOYASAR_DISABLED_MESSAGE_AR }, 503);
   }
 
+  // S6b: one token per attempt; used for the founder membership only (step 0d)
+  const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+  const captchaPolicy = checkoutCaptchaPolicy(
+    turnstileSecret,
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+    process.env.NODE_ENV,
+  );
+  const turnstileToken = parseCheckoutTurnstileToken(raw);
+
   try {
     const result = await startCheckoutWith(
       {
@@ -115,6 +144,14 @@ export async function POST(request: NextRequest) {
           const { error } = await admin.rpc("founder_release_order", { p_order: orderId });
           if (error) throw new Error(`founder_release_order ${error.code ?? "error"}`);
         },
+        verifyHuman: () =>
+          checkoutCaptchaPasses({
+            policy: captchaPolicy,
+            secret: turnstileSecret,
+            token: turnstileToken,
+            remoteIp: clientIpFrom(request),
+            fetchImpl: fetch,
+          }),
       },
       {
         user: { id: user.id, email: user.email ?? null },
@@ -122,6 +159,7 @@ export async function POST(request: NextRequest) {
         billing: parsed.billing,
         couponCode: parsed.couponCode ?? null,
         founderConsent: parseFounderConsent(raw),
+        attribution: parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value),
         origin: origin.origin,
         publishableKey: cfg.publishableKey,
       },

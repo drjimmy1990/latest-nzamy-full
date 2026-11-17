@@ -1395,3 +1395,120 @@ test("founder terms: every other item ignores the consent fields and records non
     assert.ok(!("founder_terms_version" in meta) && !("founder_terms_accepted_at" in meta), JSON.stringify(over));
   }
 });
+
+// ── S6b: Turnstile before the founder seat; F13: attribution on the order ──
+
+test("S6b: a refused Turnstile check is 403 {code: captcha} before anything is read or written — no order, no seat, no intent", async () => {
+  const refusals: Array<() => Promise<boolean>> = [
+    async () => false,
+    async () => {
+      throw new Error("network");
+    },
+  ];
+  for (const verifyHuman of refusals) {
+    const { client: admin, log } = db("lawyer");
+    const m = moyasar();
+    const seat = seatSpy("reserved", log);
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, onSale: true, reserveFounderSeat: seat.reserveFounderSeat, verifyHuman },
+      input(FOUNDER),
+    );
+    assert.equal(r.status, 403);
+    assert.deepEqual(r.body, { error: "تعذّر اجتياز التحقق الأمني — أكمله مرة أخرى", code: "captcha" });
+    assert.equal(log.length, 0, "nothing read or written");
+    assert.equal(seat.calls.length, 0, "founder_reserve_seat never called");
+    assert.equal(m.intents.length, 0);
+  }
+});
+
+test("S6b: a passed check goes on to the seat and the intent; the check runs once per attempt", async () => {
+  const { client: admin, log } = db("lawyer");
+  const m = moyasar();
+  const seat = seatSpy("reserved", log);
+  let checks = 0;
+  const r = await startCheckoutWith(
+    {
+      admin,
+      client: m.client,
+      now: () => NOW,
+      onSale: true,
+      reserveFounderSeat: seat.reserveFounderSeat,
+      verifyHuman: async () => {
+        checks += 1;
+        return true;
+      },
+    },
+    input(FOUNDER),
+  );
+  assert.equal(r.status, 200);
+  assert.equal(checks, 1);
+  assert.equal(seat.calls.length, 1);
+  assert.equal(m.intents.length, 1);
+});
+
+test("S6b: the sale switch and the terms consent are still answered first (no check spent on a refused body)", async () => {
+  let checks = 0;
+  const verifyHuman = async () => {
+    checks += 1;
+    return false;
+  };
+  const { client: admin } = db("lawyer");
+  const closed = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW, onSale: false, verifyHuman }, input(FOUNDER));
+  assert.equal(closed.status, 410);
+  const noTerms = await startCheckoutWith(
+    { admin, client: moyasar().client, now: () => NOW, onSale: true, verifyHuman },
+    input({ ...FOUNDER, founderConsent: null }),
+  );
+  assert.equal(noTerms.status, 400);
+  assert.equal(checks, 0);
+});
+
+test("S6b: every other item never calls verifyHuman — a plan, a library pass, a top-up are unchanged", async () => {
+  const cases: Array<[Partial<CheckoutInput>, string]> = [
+    [{}, "lawyer"],
+    [{ itemId: "lib-q1", billing: "once" }, "lawyer"],
+    [{ itemId: "topup-250", billing: "once" }, "individual"],
+  ];
+  for (const [over, userType] of cases) {
+    let checks = 0;
+    const { client: admin } = db(userType);
+    const r = await startCheckoutWith(
+      {
+        admin,
+        client: moyasar().client,
+        now: () => NOW,
+        verifyHuman: async () => {
+          checks += 1;
+          return false;
+        },
+      },
+      input(over),
+    );
+    assert.equal(r.status, 200, JSON.stringify(over));
+    assert.equal(checks, 0, JSON.stringify(over));
+  }
+});
+
+test("F13: the first-touch attribution is stored as metadata.attribution (any item); without it nothing is added", async () => {
+  const attribution = {
+    utm_source: "twitter",
+    utm_campaign: "founder-launch",
+    landing_path: "/founder",
+    first_seen_at: "2026-11-17T20:00:00.000Z",
+  };
+  for (const over of [FOUNDER, {}]) {
+    const { client: admin, log } = db("lawyer");
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: seatSpy("reserved").reserveFounderSeat },
+      input({ ...over, attribution }),
+    );
+    assert.equal(r.status, 200);
+    const meta = (inserts(log)[0].payload as { metadata?: Record<string, unknown> }).metadata ?? {};
+    assert.deepEqual(meta.attribution, attribution);
+    assert.equal(meta.user_email, "buyer@example.test", "the other metadata stays");
+  }
+  const { client: admin, log } = db("lawyer");
+  await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ attribution: null }));
+  const meta = (inserts(log)[0].payload as { metadata?: Record<string, unknown> }).metadata ?? {};
+  assert.ok(!("attribution" in meta));
+});

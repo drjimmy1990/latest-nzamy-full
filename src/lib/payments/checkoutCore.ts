@@ -43,7 +43,9 @@
  *      first and the order closed only when that worked, or when it never had
  *      an intent (checkoutRules.ts says why). Best-effort.
  *   5. A new payment_orders row: status 'created', the quote's amounts,
- *      metadata {user_email} (user_id is set null if the account is deleted).
+ *      metadata {user_email} (user_id is set null if the account is deleted),
+ *      plus metadata.attribution when the buyer's browser carries the F13
+ *      first-touch utm cookie (any item; the route reads and re-validates it).
  *   6. The intent: the quote's total, «NEZAMY — <labelAr>», callback
  *      <origin>/payments/result?order=<id>. Refused → the order is closed, 503.
  *   7. The stamp: moyasar_intent_id + 'initiated', only while still 'created',
@@ -69,6 +71,12 @@
  *       not published → 410. The order's metadata records
  *       founder_terms_version and founder_terms_accepted_at (this request's
  *       server clock, deps.now, ISO).
+ *   0d. S6b: the Turnstile check (deps.verifyHuman, the route's
+ *       checkoutCaptchaPasses — checkoutCaptcha.ts). False or a throw → 403
+ *       {error: CHECKOUT_CAPTCHA_REFUSED_AR, code: "captcha"} before
+ *       anything is read or written: no order, no seat, no intent. The
+ *       browser shows it with a retry, never as a final refusal. Absent →
+ *       not checked (the route always passes it; route.test.ts pins that).
  *   5b. After the order row, the seat: deps.reserveFounderSeat (the route's
  *       founder_reserve_seat RPC, 20261101_10). Anything but 'reserved'
  *       cancels the order (still 'created', no intent yet) and answers:
@@ -100,6 +108,8 @@ import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./co
 import type { BookEntry } from "../pricing/priceBook.ts";
 import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { checkFounderConsent, type FounderConsent, type FounderTermsState } from "./founderConsent.ts";
+import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR } from "./checkoutCaptcha.ts";
+import type { Attribution } from "../attribution/utmAttribution.ts";
 import {
   callbackUrlFor,
   cancelOrderAfterIntentCancel,
@@ -164,6 +174,11 @@ export interface CheckoutDeps {
    * Best-effort; never called for any other kind.
    */
   releaseFounderSeat?: (orderId: string) => Promise<void>;
+  /**
+   * S6b: the Turnstile check for a founder membership checkout (step 0d) —
+   * true to go on. Never called for any other kind. A throw is a refusal.
+   */
+  verifyHuman?: () => Promise<boolean>;
 }
 
 export interface CheckoutInput {
@@ -177,11 +192,13 @@ export interface CheckoutInput {
   couponCode?: string | null;
   /** Owner ١٦: the founder terms consent (parseFounderConsent); read for the founder membership only. */
   founderConsent?: FounderConsent | null;
+  /** F13: the first-touch utm cookie (utmAttribution.ts), stored as metadata.attribution; null / absent → nothing stored. */
+  attribution?: Attribution | null;
 }
 
 export type CheckoutReply =
   | { status: 200; body: CheckoutResponse }
-  | { status: 400 | 403 | 409 | 410 | 429 | 503; body: { error: string } };
+  | { status: 400 | 403 | 409 | 410 | 429 | 503; body: { error: string; code?: string } };
 
 const OPEN = ["created", "initiated"];
 
@@ -280,6 +297,16 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     const consent = checkFounderConsent(input.founderConsent, deps.now?.() ?? new Date(), deps.founderTerms);
     if (!consent.ok) return fail(consent.status, consent.error);
     consentMeta = consent.metadata;
+    // 0d (S6b). the Turnstile check — before any read, so a refusal writes nothing
+    if (deps.verifyHuman) {
+      let human = false;
+      try {
+        human = (await deps.verifyHuman()) === true;
+      } catch {
+        human = false;
+      }
+      if (!human) return { status: 403, body: { error: CHECKOUT_CAPTCHA_REFUSED_AR, code: CHECKOUT_CAPTCHA_CODE } };
+    }
   }
 
   // 0. a buyer who spent his coupon tries is answered before any read
@@ -376,6 +403,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
         user_email: user.email ?? null,
         ...(couponMeta ? { coupon: couponMeta } : {}),
         ...(consentMeta ?? {}),
+        ...(input.attribution ? { attribution: input.attribution } : {}),
         ...(q.launch
           ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
           : {}),

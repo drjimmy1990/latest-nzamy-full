@@ -120,3 +120,28 @@ test("CheckoutResponse documents that orderId goes into the payment metadata", (
   assert.match(rules, /export interface CheckoutResponse/);
   assert.match(rules, /metadata\.order_id/);
 });
+
+test("S6b: the founder seat waits for the Turnstile check — verifyHuman from checkoutCaptchaPasses with this request's token, policy from both keys", () => {
+  assert.match(code, /import \{ checkoutCaptchaPasses, checkoutCaptchaPolicy, parseCheckoutTurnstileToken \} from "@\/lib\/payments\/checkoutCaptcha"/);
+  assert.match(
+    post,
+    /checkoutCaptchaPolicy\(\s*turnstileSecret,\s*process\.env\.NEXT_PUBLIC_TURNSTILE_SITE_KEY,\s*process\.env\.NODE_ENV,\s*\)/,
+  );
+  assert.match(post, /const turnstileSecret = process\.env\.TURNSTILE_SECRET_KEY;/);
+  assert.match(post, /const turnstileToken = parseCheckoutTurnstileToken\(raw\);/);
+  assert.match(
+    post,
+    /verifyHuman: \(\) =>\s*checkoutCaptchaPasses\(\{\s*policy: captchaPolicy,\s*secret: turnstileSecret,\s*token: turnstileToken,\s*remoteIp: clientIpFrom\(request\),\s*fetchImpl: fetch,\s*\}\)/,
+  );
+  // the check runs inside startCheckoutWith before any read (checkoutCore step 0d), so before founder_reserve_seat
+  const step0d = core.indexOf("deps.verifyHuman");
+  assert.ok(step0d > 0 && step0d < core.indexOf('.from("profiles")'), "verifyHuman before the first read");
+  assert.ok(step0d < core.indexOf("reserveSeat(deps, user.id, orderId)"), "verifyHuman before the seat");
+  // the secret is never logged or sent to the browser
+  assert.doesNotMatch(post, /reply\([^)]*turnstileSecret/);
+});
+
+test("F13: the order's attribution is the re-validated first-touch cookie, never the body", () => {
+  assert.match(code, /import \{ ATTRIBUTION_COOKIE, parseAttributionCookie \} from "@\/lib\/attribution\/utmAttribution"/);
+  assert.match(post, /attribution: parseAttributionCookie\(request\.cookies\.get\(ATTRIBUTION_COOKIE\)\?\.value\),/);
+});

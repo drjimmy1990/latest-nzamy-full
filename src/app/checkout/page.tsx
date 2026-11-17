@@ -44,6 +44,9 @@ import {
  *     FOUNDER_TERMS_VERSION and shows the mandatory terms checkbox above
  *     «متابعة الدفع» (the form, not this page, holds it: the consent rides
  *     on the checkout POST).
+ *   - S6b: the founder membership also gets the Turnstile widget
+ *     (captchaRequired); the checkout route verifies its token before the
+ *     seat is reserved. Every other item: no widget, unchanged.
  */
 
 export const dynamic = "force-dynamic";
@@ -184,6 +187,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
             billing={parsed.billing}
             couponsEnabled={couponFieldShown(item, couponsReady)}
             founderTermsVersion={item.kind === "membership" ? FOUNDER_TERMS_VERSION : null}
+            captchaRequired={item.kind === "membership"}
           />
         </div>
 
