@@ -6912,3 +6912,18 @@ select 'Private bucket lawyer-licences, own-folder insert only (run 20261124_70 
                                || coalesce(pg_catalog.pg_get_expr(polwithcheck, polrelid), '')) like '%lawyer-licences%')
        as ok;
 -- <<< verify:l3_signup
+-- >>> verify:l4_email
+-- Reminder e-mails (owner F1 / N01-16 / N05-L14): run 20261125_20 any time.
+-- Docker: supabase/tests/rls/email_reminder_log.test.sql
+select 'Reminder e-mail log, service role only (run 20261125_20)' as check,
+       to_regclass('public.email_reminder_log') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.email_reminder_log')), false)
+       and not exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'email_reminder_log')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = to_regclass('public.email_reminder_log') and contype = 'p'
+                      and pg_catalog.pg_get_constraintdef(oid) ilike '%kind, subject_id, recipient_user_id, due_on%')
+       and coalesce(not has_table_privilege('authenticated', to_regclass('public.email_reminder_log'), 'SELECT'), false)
+       and coalesce(not has_table_privilege('anon', to_regclass('public.email_reminder_log'), 'SELECT'), false)
+       and coalesce(has_table_privilege('service_role', to_regclass('public.email_reminder_log'), 'INSERT'), false)
+       as ok;
+-- <<< verify:l4_email
