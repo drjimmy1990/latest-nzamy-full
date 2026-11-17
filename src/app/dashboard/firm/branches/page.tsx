@@ -15,7 +15,7 @@ const BRANCHES = [
 
 export default function FirmBranchesPage() {
   const { isDark } = useTheme();
-  const [toast, setToast] = useState("فروع شركة المحاماة Backend-ready: بيانات الفروع والربط بالمقاعد والنقاط محلية فقط حتى Firm/Branches API.");
+  const [toast, setToast] = useState("فروع المكتب للعرض فقط حالياً: البيانات أدناه أمثلة ولا يُحفظ ما تغيّره بعد. إدارة الفروع قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -30,13 +30,13 @@ export default function FirmBranchesPage() {
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-[11px] font-bold text-blue-300">
               <Buildings size={13} weight="duotone" />
-              Backend-ready
+              قريباً
             </div>
             <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>فروع مكتب/شركة المحاماة</h1>
             <p className={`mt-1 text-sm ${muted}`}>إدارة الفروع حسب المدينة، المدير، الفريق، القضايا، الإيراد، واستهلاك النقاط.</p>
           </div>
           <button
-            onClick={() => setToast("إضافة فرع جديد جاهزة للربط فقط. يلزم لاحقا FirmBranch API وتدقيق إداري قبل حفظ الإنتاج.")}
+            onClick={() => setToast("إضافة فرع جديد غير متاحة بعد — قريباً.")}
             className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-sm font-black text-[#C8A762]"
           >
             <Plus size={15} weight="bold" />
@@ -73,7 +73,7 @@ export default function FirmBranchesPage() {
               </div>
 
               <button
-                onClick={() => setToast(`تم تجهيز فتح إعدادات فرع ${branch.city} محليا فقط. الربط الحقيقي ينتظر Branch/Profile API.`)}
+                onClick={() => setToast(`إعدادات فرع ${branch.city} غير متاحة بعد — قريباً.`)}
                 className={`mt-4 w-full rounded-xl border px-3 py-2 text-xs font-bold ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
               >
                 إدارة الفرع محليا

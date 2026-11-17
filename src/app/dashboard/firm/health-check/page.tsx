@@ -9,16 +9,16 @@ import { FirmProfileReadinessPanel } from "@/components/dashboard/firm/FirmProfi
 import { useAdminSettings } from "@/hooks/useAdminSettings";
 
 const CHECKS = [
-  { label: "الأدوار والصلاحيات", score: 82, status: "Backend-ready", icon: ShieldCheck },
-  { label: "تعارض المصالح وChinese Walls", score: 64, status: "يتطلب ربط سياسات", icon: WarningCircle },
-  { label: "محفظة النقاط وتوزيع الأقسام", score: 76, status: "واجهة محلية", icon: Coins },
-  { label: "جاهزية الإدارات والتعاون", score: 88, status: "UI Working", icon: CheckCircle },
+  { label: "الأدوار والصلاحيات", score: 82, status: "قريباً", icon: ShieldCheck },
+  { label: "الجدران الصينية وعزل الملفات", score: 64, status: "قريباً", icon: WarningCircle },
+  { label: "محفظة النقاط وتوزيع الأقسام", score: 76, status: "قريباً", icon: Coins },
+  { label: "الإدارات والتعاون", score: 88, status: "قريباً", icon: CheckCircle },
 ];
 
 export default function FirmHealthCheckPage() {
   const { isDark } = useTheme();
   const { currentFirmFeatures } = useAdminSettings();
-  const [toast, setToast] = useState("Health Check 360 Backend-ready: النتائج الحالية واجهة محلية فقط حتى ربط تحليل حقيقي وسجل تدقيق.");
+  const [toast, setToast] = useState("الفحص الشامل غير مفعّل بعد: الأرقام أدناه أمثلة توضيحية وليست تحليلاً لمكتبك. قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -32,16 +32,16 @@ export default function FirmHealthCheckPage() {
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-[11px] font-bold text-blue-300">
               <ChartLineUp size={13} weight="duotone" />
-              Backend-ready
+              قريباً
             </div>
-            <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>Health Check 360 لشركة المحاماة</h1>
-            <p className={`mt-1 text-sm ${muted}`}>فحص جاهزية تشغيل الفيرم: الأدوار، الأقسام، النقاط، الحوكمة، وتعارض المصالح. لا يوجد تحليل خادمي حقيقي الآن.</p>
+            <h1 className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-800"}`}>الفحص الشامل ٣٦٠° للمكتب</h1>
+            <p className={`mt-1 text-sm ${muted}`}>فحص تشغيل المكتب: الأدوار، الأقسام، النقاط، والحوكمة. لا يُجرى تحليل فعلي لمكتبك الآن.</p>
           </div>
           <button
-            onClick={() => setToast("تم تشغيل فحص محلي تجريبي. لا يوجد تحليل خادمي أو قراءة بيانات إنتاجية قبل ربط HealthCheck API.")}
+            onClick={() => setToast("الفحص الشامل غير مفعّل بعد — لم يُقرأ شيء من بيانات مكتبك. قريباً.")}
             className="rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-sm font-black text-[#C8A762]"
           >
-            إعادة فحص محلي
+            إعادة الفحص
           </button>
         </div>
 
@@ -67,7 +67,7 @@ export default function FirmHealthCheckPage() {
         <div className={`${card} p-5`}>
           <p className={`text-sm font-black ${isDark ? "text-white" : "text-slate-800"}`}>سلوك نفاد النقاط</p>
           <p className={`mt-2 text-sm leading-relaxed ${muted}`}>
-            الرصيد الحالي {currentFirmFeatures.availablePoints.toLocaleString("ar-SA")} نقطة من {currentFirmFeatures.annualPoints.toLocaleString("ar-SA")}. إذا نفد الرصيد، تتوقف أدوات الاستهلاك فقط مثل AI المتقدم والترجمة وOCR والتحليل الضخم، بينما تستمر القضايا والعملاء والفريق والمستندات الأساسية.
+            الرصيد الحالي {currentFirmFeatures.availablePoints.toLocaleString("ar-SA")} نقطة من {currentFirmFeatures.annualPoints.toLocaleString("ar-SA")}. إذا نفد الرصيد، تتوقف أدوات الاستهلاك فقط مثل أدوات الذكاء الاصطناعي المتقدمة والترجمة وقراءة المستندات الممسوحة والتحليل الضخم، بينما تستمر القضايا والعملاء والفريق والمستندات الأساسية.
           </p>
         </div>
       </div>

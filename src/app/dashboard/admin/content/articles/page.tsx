@@ -333,7 +333,7 @@ export default function AdminArticlesPage() {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`${card} p-5 space-y-4`}>
           <div className="flex items-center justify-between">
             <h2 className={`font-black ${isDark ? "text-white" : "text-gray-900"}`}>تجهيز مقال</h2>
-            <span className="text-[11px] px-2 py-1 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold">Backend-ready</span>
+            <span className="text-[11px] px-2 py-1 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold">قريباً</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Field label="العنوان"><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} className={inputClass(isDark)} /></Field>
@@ -356,7 +356,7 @@ export default function AdminArticlesPage() {
           <Field label="المقتطف (excerpt)">
             <textarea value={content.excerpt} onChange={(event) => setContent({ ...content, excerpt: event.target.value })} rows={2} className={inputClass(isDark)} />
           </Field>
-          <Field label="المحتوى (Markdown)">
+          <Field label="المحتوى">
             <textarea value={content.body} onChange={(event) => setContent({ ...content, body: event.target.value })} rows={12} className={`${inputClass(isDark)} font-mono leading-6`} dir="auto" />
           </Field>
           <div className="flex justify-end gap-2">

@@ -164,7 +164,7 @@ export default function CorporateTab() {
               </div>
               
               <div>
-                <p className="text-[12px] font-bold text-zinc-300 mb-3">الصلاحيات والخصائص المتاحة (Feature Flags)</p>
+                <p className="text-[12px] font-bold text-zinc-300 mb-3">الصلاحيات والخصائص المتاحة</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {[
                     { key: "hasSecondment", label: "نظام الانتداب والمحامين الخارجين", icon: compFeatures.hasSecondment ? CheckCircle : Warning, active: compFeatures.hasSecondment },

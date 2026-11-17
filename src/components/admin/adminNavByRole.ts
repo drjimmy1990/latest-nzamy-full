@@ -63,7 +63,7 @@ export const NAV = [
       { href: "/dashboard/admin/community/moderation", icon: Flag, label: "إشراف المجتمع" },
       { href: "/dashboard/admin/community/reports", icon: Flag, label: "بلاغات المجتمع" },
       { href: "/dashboard/admin/marketplace/orders",icon: Storefront, label: "طلبات السوق" },
-      { href: "/dashboard/admin/features",          icon: ToggleRight,label: "Feature Flags" },
+      { href: "/dashboard/admin/features",          icon: ToggleRight,label: "مفاتيح الميزات" },
     ],
   },
   {

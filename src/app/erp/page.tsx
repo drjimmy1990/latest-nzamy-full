@@ -38,7 +38,7 @@ const modules = {
     { icon: Database, title: "إدارة المستندات", desc: "مستودع ذكي للمستندات مع بحث AI وتصنيف تلقائي وإدارة الإصدارات.", color: "bg-orange-500/10 text-orange-600" },
     { icon: ChartLineUp, title: "التقارير والتحليلات", desc: "لوحات بيانات تفاعلية وتقارير تفصيلية عن أداء المكتب والإيرادات والقضايا.", color: "bg-pink-500/10 text-pink-600" },
     { icon: Globe, title: "البوابة الرقمية للموكلين", desc: "منصة مخصصة لموكليك لتتابع قضاياهم ومستنداتهم والتواصل مع فريقكم.", color: "bg-cyan-500/10 text-cyan-600" },
-    { icon: Gear, title: "التكاملات والـ API", desc: "قيد التطوير: تكاملات مخطط لها مع منظومة وزارة العدل (ناجز) وهيئة المحامين وأنظمتكم الداخلية، ولم يُفعَّل أيٌّ منها بعد.", color: "bg-amber-500/10 text-amber-600" },
+    { icon: Gear, title: "التكاملات والربط مع الأنظمة", desc: "قيد التطوير: تكاملات مخطط لها مع منظومة وزارة العدل (ناجز) وهيئة المحامين وأنظمتكم الداخلية، ولم يُفعَّل أيٌّ منها بعد.", color: "bg-amber-500/10 text-amber-600" },
   ],
   en: [
     { icon: FileText, title: "Case Management", desc: "Full case tracking from filing to closure with deadlines, hearings, and document management.", color: "bg-royal/10 text-royal" },

@@ -41,9 +41,9 @@ const AREA_ICON: Record<PlatformSurfaceArea, ElementType> = {
 
 const STATUS_LABEL: Record<PlatformSurfaceStatus, string> = {
   live: "موجود فعلياً",
-  beta: "Beta",
-  mock: "Mock موثق",
-  "backend-ready": "Backend-ready",
+  beta: "قيد التجربة",
+  mock: "بيانات توضيحية",
+  "backend-ready": "واجهة دون حفظ",
 };
 
 const STATUS_CLASS: Record<PlatformSurfaceStatus, string> = {
@@ -54,10 +54,10 @@ const STATUS_CLASS: Record<PlatformSurfaceStatus, string> = {
 };
 
 const READINESS_LABEL: Record<AdminReadinessStatus, string> = {
-  "UI Working": "UI Working",
-  "Backend-ready": "Backend-ready",
-  "Missing UI": "Missing UI",
-  Risk: "Risk",
+  "UI Working": "يعمل",
+  "Backend-ready": "واجهة دون حفظ",
+  "Missing UI": "بلا واجهة",
+  Risk: "خطر",
 };
 
 const READINESS_CLASS: Record<AdminReadinessStatus, string> = {
@@ -104,9 +104,9 @@ export default function AdminPlatformPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { label: "أسطح المنصة", value: PLATFORM_OWNER_SURFACES.length, icon: Globe },
-          { label: "Routes عامة", value: publicRoutesCount, icon: Compass },
-          { label: "Routes أدمن", value: adminRoutesCount, icon: ShieldCheck },
-          { label: "Backend-ready / Mock", value: `${backendReadyCount}/${mockCount}`, icon: WarningCircle },
+          { label: "صفحات عامة", value: publicRoutesCount, icon: Compass },
+          { label: "صفحات الإدارة", value: adminRoutesCount, icon: ShieldCheck },
+          { label: "دون حفظ / توضيحية", value: `${backendReadyCount}/${mockCount}`, icon: WarningCircle },
         ].map((stat, index) => (
           <motion.div
             key={stat.label}

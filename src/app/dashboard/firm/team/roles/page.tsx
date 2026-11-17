@@ -94,7 +94,7 @@ const PERMISSION_GROUPS = [
       { key: "admin:billing", label: "إدارة الاشتراك" },
       { key: "admin:settings", label: "إعدادات المكتب" },
       { key: "admin:audit", label: "سجل التدقيق" },
-      { key: "admin:governance", label: "الحوكمة وChinese Walls" },
+      { key: "admin:governance", label: "الحوكمة والجدران الصينية" },
     ],
   },
 ];
@@ -174,7 +174,7 @@ export default function RolesPage() {
   const [roles, setRoles] = useState<Role[]>(MOCK_ROLES);
   const [selectedRole, setSelectedRole] = useState<string>(MOCK_ROLES[0].id);
   const [editMode, setEditMode] = useState(false);
-  const [toast, setToast] = useState("مصفوفة الصلاحيات Backend-ready: التعديل هنا واجهة محلية فقط حتى ربط Auth/RBAC API.");
+  const [toast, setToast] = useState("مصفوفة الصلاحيات للعرض فقط حالياً: ما تعدّله هنا لا يُحفظ ولا يقيّد الوصول بعد. حفظ الصلاحيات قريباً.");
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -184,7 +184,7 @@ export default function RolesPage() {
 
   const togglePermission = (permissionKey: string) => {
     if (!canEditRoles) {
-      setToast("صلاحياتك تسمح بعرض مصفوفة الأدوار فقط. تعديل RBAC يحتاج الشريك المدير أو الأدمن.");
+      setToast("صلاحياتك تسمح بعرض مصفوفة الأدوار فقط. تعديل الصلاحيات للشريك المدير.");
       return;
     }
     setRoles(prev => prev.map(role => {
@@ -197,7 +197,7 @@ export default function RolesPage() {
         },
       };
     }));
-    setToast("تم تعديل الصلاحية محليا فقط. الحفظ الإنتاجي ينتظر Auth/RBAC API وسجل تدقيق.");
+    setToast("تغيّرت الصلاحية على هذه الشاشة فقط ولم تُحفظ — حفظ الصلاحيات قريباً.");
   };
 
   return (
@@ -218,7 +218,7 @@ export default function RolesPage() {
         </div>
         {canEditRoles && (
           <button
-            onClick={() => setToast("إنشاء دور جديد جاهز للباك إند فقط. يلزم لاحقا role_policy API وسجل تدقيق قبل الإنتاج.")}
+            onClick={() => setToast("إنشاء دور جديد غير متاح بعد — قريباً.")}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[12px] font-semibold bg-[#0B3D2E] text-[#C8A762] hover:bg-[#0a3328] transition-colors"
           >
             <Plus size={14} weight="bold" /> إنشاء دور جديد
@@ -248,7 +248,7 @@ export default function RolesPage() {
                 <div className="flex-1 min-w-0">
                   <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{role.name}</p>
                   <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                    {role.memberCount} {role.memberCount > 1 ? "أعضاء" : "عضو"} · {role.nameEn}
+                    {role.memberCount} {role.memberCount > 1 ? "أعضاء" : "عضو"}
                   </p>
                 </div>
               </div>
@@ -277,7 +277,7 @@ export default function RolesPage() {
               {canEditRoles ? (
                 <button
                   onClick={() => {
-                    if (editMode) setToast(`تم تجهيز صلاحيات ${active.name} محليا فقط. الحفظ الحقيقي ينتظر Auth/RBAC API.`);
+                    if (editMode) setToast(`لم تُحفظ صلاحيات ${active.name} — حفظ الصلاحيات قريباً.`);
                     setEditMode(!editMode);
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-colors ${
