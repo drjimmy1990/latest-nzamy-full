@@ -3,7 +3,8 @@
  * the caller's own rows (P3 Task 6):
  *
  *   { member, endsAt, credits: { drafting_work: { total, remaining },
- *     independent_output: { total, remaining } }, libraryUntil }
+ *     independent_output: { total, remaining } },
+ *     libraryPoints: { total, remaining }, libraryUntil }
  *
  * A member holds an ACTIVE founder seat whose end is still ahead. Anything
  * else (no seat, reserved, released, revoked, past its end) is NOT_A_FOUNDER:
@@ -11,13 +12,17 @@
  * (ai_start_run_with_credit spends only on an active seat, before ends_at).
  *
  * Credits are the rows of THAT seat; a row past its end counts its total
- * but nothing remaining. libraryUntil is the end of the library coverage
- * running now (libraryCoverage: stacked grants chained), null when none.
+ * but nothing remaining. libraryPoints (owner ٨ / ١٥ / ١٨, SQL 20261124_10)
+ * is the seat's 'library_question' row shown as POINTS — questions × 5, so
+ * 20 questions read 100 points — the founder's «نقاط مساعد المكتبة الذكي»;
+ * zeros before 20261124_10 gives the seat its row. libraryUntil is the end of
+ * the library coverage running now (libraryCoverage: stacked grants chained),
+ * null when none.
  *
  * Pure: relative imports only, so `node --test` loads it directly.
  */
 import { libraryCoverage, type LibraryGrantRow } from "../libraryAccess.ts";
-import { FOUNDER_CREDITS, type FounderCreditKind } from "./founderPlan.ts";
+import { FOUNDER_CREDITS, libraryQuestionsToPoints, type FounderCreditKind } from "./founderPlan.ts";
 
 export interface FounderSeatRow {
   id: string;
@@ -37,6 +42,8 @@ export interface FounderMembershipView {
   member: boolean;
   endsAt: string | null;
   credits: Record<FounderCreditKind, { total: number; remaining: number }>;
+  /** The library assistant's founder points (library_question × 5). */
+  libraryPoints: { total: number; remaining: number };
   libraryUntil: string | null;
 }
 
@@ -50,6 +57,7 @@ export const NOT_A_FOUNDER: Readonly<FounderMembershipView> = Object.freeze({
   member: false,
   endsAt: null,
   credits: zeroCredits(),
+  libraryPoints: { total: 0, remaining: 0 },
   libraryUntil: null,
 });
 
@@ -65,13 +73,20 @@ export function founderMembershipView(args: {
   const t = now.getTime();
   const seatEnd = seat?.ends_at ? Date.parse(seat.ends_at) : NaN;
   if (!seat || seat.status !== "active" || !Number.isFinite(seatEnd) || seatEnd <= t) {
-    return { ...NOT_A_FOUNDER, credits: zeroCredits() };
+    return { ...NOT_A_FOUNDER, credits: zeroCredits(), libraryPoints: { total: 0, remaining: 0 } };
   }
 
   const credits = zeroCredits();
+  const questions = { total: 0, remaining: 0 };
   for (const row of args.credits) {
-    if (!row || row.seat_id !== seat.id || !(KINDS as string[]).includes(row.kind)) continue;
-    const c = credits[row.kind as FounderCreditKind];
+    if (!row || row.seat_id !== seat.id) continue;
+    const c =
+      row.kind === "library_question"
+        ? questions
+        : (KINDS as string[]).includes(row.kind)
+          ? credits[row.kind as FounderCreditKind]
+          : null;
+    if (!c) continue;
     c.total += count(row.total);
     const end = Date.parse(row.ends_at);
     if (Number.isFinite(end) && end > t) c.remaining += count(row.remaining);
@@ -82,6 +97,10 @@ export function founderMembershipView(args: {
     member: true,
     endsAt: seat.ends_at,
     credits,
+    libraryPoints: {
+      total: libraryQuestionsToPoints(questions.total),
+      remaining: libraryQuestionsToPoints(questions.remaining),
+    },
     libraryUntil: coverage.status === "active" ? coverage.endsAt : null,
   };
 }

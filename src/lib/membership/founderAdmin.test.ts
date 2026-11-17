@@ -136,7 +136,9 @@ test("members: active seats only, credits from those seats only (a revoked seat'
   const credits = [
     { seat_id: "s1", kind: "drafting_work", total: 6, remaining: 4 },
     { seat_id: "s1", kind: "independent_output", total: 1, remaining: 0 },
+    { seat_id: "s1", kind: "library_question", total: 20, remaining: 17 },
     { seat_id: "s2", kind: "independent_output", total: 1, remaining: 1 },
+    { seat_id: "s2", kind: "library_question", total: 20, remaining: 20 },
     { seat_id: "s3", kind: "drafting_work", total: 6, remaining: 6 },
   ];
   const people = new Map([["u-1", { name: "أ. سعد", email: "s@x.sa" }]]);
@@ -151,10 +153,10 @@ test("members: active seats only, credits from those seats only (a revoked seat'
     email: "s@x.sa",
     activatedAt: "2026-11-02T08:00:00Z",
     endsAt: "2027-11-02T08:00:00Z",
-    credits: { draftingWork: { remaining: 4, total: 6 }, independentOutput: { remaining: 0, total: 1 } },
+    credits: { draftingWork: { remaining: 4, total: 6 }, independentOutput: { remaining: 0, total: 1 }, libraryPoints: { remaining: 85, total: 100 } },
     live: true,
   });
-  assert.deepEqual(members[0].credits, { draftingWork: { remaining: 6, total: 6 }, independentOutput: null });
+  assert.deepEqual(members[0].credits, { draftingWork: { remaining: 6, total: 6 }, independentOutput: null, libraryPoints: null });
   assert.equal(members[0].name, null);
   assert.equal(members[0].live, false, "R32: a test-mode order's seat is tagged");
 });

@@ -36,6 +36,7 @@ import {
   type FounderVerification,
 } from "../../../../lib/pricing/founderCard.ts";
 import { toArabicDigits } from "../../../../lib/services/arabicCount.ts";
+import { FOUNDER_LIBRARY_POINTS_LABEL } from "../../../../lib/membership/founderPlan.ts";
 
 export const FOUNDER_DASHBOARD_TITLE = "عضويتي المؤسسة";
 
@@ -92,6 +93,14 @@ function memberCard(reply: Record<string, unknown>, practiceKind: string | null)
     `أعمال الصائغ: متبقٍ ${toArabicDigits(works.remaining)} من ${toArabicDigits(works.total)}`,
     `المخرج المستقل: ${toArabicDigits(output.remaining)} من ${toArabicDigits(output.total)}`,
   ];
+  // Owner ٨ / ١٥ / ١٨: the library assistant's founder points (questions × 5,
+  // from the server). Hidden while the seat has none (before 20261124_10).
+  const points = isObject(reply.libraryPoints) ? reply.libraryPoints : null;
+  if (points && isCount(points.total) && isCount(points.remaining) && points.total > 0) {
+    lines.push(
+      `${FOUNDER_LIBRARY_POINTS_LABEL}: متبقٍ ${toArabicDigits(points.remaining)} من ${toArabicDigits(points.total)} نقطة`,
+    );
+  }
   const library = libraryEndsAtAr(reply.libraryUntil);
   if (library) lines.push(`المكتبة حتى ${library}`);
   lines.push(OFFICE_LINE);

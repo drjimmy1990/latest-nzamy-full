@@ -6741,3 +6741,41 @@ select 'Several contracts per case (run 20261123_40)' as check,
        and to_regclass('public.idx_contracts_request_id') is not null
        as ok;
 -- <<< verify:launch_2026_11_17
+
+-- >>> verify:l2_2026_11_17
+-- 2026-11-24 — 20261124_10 (owner decisions 17 Nov: ٣ seat hold 15 minutes;
+-- ٨ / ١٥ / ١٨ the founder's 100 library points = library_question 20).
+-- Run any time, before the sale opens. A re-run of 20261122_10 puts the hold
+-- back to 2 hours (re-run 20261124_10 after it).
+-- Docker: supabase/tests/rls/founder_l2_2026_11_17.test.sql
+select 'Founder seat hold 15 minutes, advocate rule kept (run 20261124_10)' as check,
+       coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%15 minutes%'
+                        and pg_catalog.pg_get_functiondef(p.oid) not like '%2 hours%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%not_advocate%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_reserve_seat' limit 1), false)
+       as ok;
+select 'membership_credits allows library_question (run 20261124_10)' as check,
+       coalesce((select pg_catalog.pg_get_constraintdef(c.oid) like '%library_question%'
+                   from pg_catalog.pg_constraint c
+                  where c.conrelid = 'public.membership_credits'::regclass
+                    and c.conname = 'membership_credits_kind_check'), false)
+       as ok;
+select 'founder_activate writes library_question 20; ai_start_run_with_credit pays it for library-assistant only (run 20261124_10)' as check,
+       coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%''library_question'', 20, 20%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_activate' limit 1), false)
+       and coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%''library_question''%''library-assistant''%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%''rejoinder''%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'ai_start_run_with_credit' limit 1), false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname in ('founder_activate', 'ai_start_run_with_credit')) = 2
+       as ok;
+select 'Every active founder seat has its library points (run 20261124_10)' as check,
+       not exists (select 1 from public.founder_seats s
+                    where s.status = 'active'
+                      and not exists (select 1 from public.membership_credits c
+                                       where c.seat_id = s.id and c.kind = 'library_question'))
+       as ok;
+-- <<< verify:l2_2026_11_17

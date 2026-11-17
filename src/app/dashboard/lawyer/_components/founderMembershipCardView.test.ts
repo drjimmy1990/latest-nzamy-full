@@ -58,6 +58,20 @@ test("a member sees the brief's lines, Riyadh date, Arabic-Indic digits", () => 
   assert.equal(v.note, null);
 });
 
+test("owner ٨ / ١٥ / ١٨: the library assistant's founder points show as «نقاط مساعد المكتبة الذكي», after the credits; hidden when the seat has none", () => {
+  const v = founderDashboardCardView(base({ membership: { ...MEMBER, libraryPoints: { total: 100, remaining: 85 } } }));
+  assert.equal(v.kind, "member");
+  if (v.kind !== "member") return;
+  assert.equal(v.lines[3], "نقاط مساعد المكتبة الذكي: متبقٍ ٨٥ من ١٠٠ نقطة");
+  assert.equal(v.lines[4], "المكتبة حتى ١ نوفمبر ٢٠٢٧");
+  const zero = founderDashboardCardView(base({ membership: { ...MEMBER, libraryPoints: { total: 100, remaining: 0 } } }));
+  assert.ok(zero.kind === "member" && zero.lines.includes("نقاط مساعد المكتبة الذكي: متبقٍ ٠ من ١٠٠ نقطة"));
+  for (const libraryPoints of [undefined, null, { total: 0, remaining: 0 }, { total: "100", remaining: 5 }, { total: 100, remaining: -5 }]) {
+    const none = founderDashboardCardView(base({ membership: { ...MEMBER, libraryPoints } }));
+    assert.ok(none.kind === "member" && !none.lines.some((l) => l.startsWith("نقاط مساعد")), JSON.stringify(libraryPoints));
+  }
+});
+
 test("the end date is the Riyadh calendar day, not the UTC one", () => {
   // 21:30 UTC on 1 Nov is 00:30 on 2 Nov in Riyadh.
   const v = founderDashboardCardView(

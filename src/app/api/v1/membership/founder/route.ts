@@ -16,7 +16,11 @@ import {
  * رصيد باقة المؤسس» choice:
  *
  *   { member, endsAt, credits: { drafting_work: { total, remaining },
- *     independent_output: { total, remaining } }, libraryUntil }
+ *     independent_output: { total, remaining } },
+ *     libraryPoints: { total, remaining }, libraryUntil }
+ *
+ * libraryPoints is the library assistant's founder points (owner ٨ / ١٥ / ١٨:
+ * the seat's 'library_question' credit × 5, SQL 20261124_10).
  *
  * Reads with the USER client under RLS (20261101_10: "founder seats: owner
  * reads own", "membership credits: owner reads own"; 20261019_10: "own
