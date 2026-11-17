@@ -6929,12 +6929,19 @@ select 'Demo accounts: no payment, no founder seat (re-run 20261125_50 after any
        and pg_catalog.pg_get_functiondef('public.founder_reserve_seat(uuid, uuid)'::regprocedure) like '%15 minutes%'
        and not has_function_privilege('authenticated', 'public.founder_reserve_seat(uuid, uuid)', 'EXECUTE')
        as ok;
-select 'Demo accounts: shared-table + sandbox guards on 11 tables (run 20261125_50)' as check,
-       (select count(*) from pg_catalog.pg_trigger t
-         where t.tgname = 'trg_demo_guard' and not t.tgisinternal
-           and t.tgrelid in (select to_regclass('public.' || x) from unnest(array[
-                 'community_posts', 'community_answers', 'community_votes', 'community_reports', 'reviews',
-                 'library_issue_reports', 'marketplace_listings', 'marketplace_offers',
-                 'service_requests', 'consultations', 'lawyer_clients']) x)) = 11
+select 'Demo accounts: every guarded table that exists here carries trg_demo_guard (run 20261125_50)' as check,
+       not exists (
+         select 1
+           from (values ('community_posts', 'author_id'), ('community_answers', 'author_id'),
+                        ('community_votes', 'user_id'), ('community_reports', 'reporter_user_id'),
+                        ('reviews', 'reviewer_id'), ('library_issue_reports', 'user_id'),
+                        ('marketplace_listings', 'owner_id'), ('marketplace_offers', 'offeror_id'),
+                        ('service_requests', 'requester_user_id'), ('consultations', 'requester_user_id'),
+                        ('lawyer_clients', 'owner_user_id')) v(t, col)
+          where exists (select 1 from information_schema.columns c
+                         where c.table_schema = 'public' and c.table_name = v.t and c.column_name = v.col)
+            and not exists (select 1 from pg_catalog.pg_trigger tg
+                             where tg.tgrelid = to_regclass('public.' || v.t)
+                               and tg.tgname = 'trg_demo_guard' and not tg.tgisinternal))
        as ok;
 -- <<< verify:l5_demo

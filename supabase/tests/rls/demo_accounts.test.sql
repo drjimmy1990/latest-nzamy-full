@@ -308,3 +308,37 @@ begin
   end if;
   raise notice 'T6 PASS: a demo lawyer is never listed; flagging un-lists at once; a real lawyer stays listed';
 end $$;
+
+-- T7 the same rules hold for a SIGNED-IN session (role authenticated, RLS on):
+-- real users' ordinary writes still pass the new triggers; a demo client's
+-- marketplace request is refused
+select set_config('test.uid', '00000000-0000-0000-0000-0000000d0004', false);
+set role authenticated;
+insert into public.service_requests (id, requester_user_id, title, assigned_to, status, receiver)
+  values ('r-sr-session', '00000000-0000-0000-0000-0000000d0004', 'طلب عميل', null, 'pending_assignment', 'lawyer');
+reset role;
+select set_config('test.uid', '00000000-0000-0000-0000-0000000d0003', false);
+set role authenticated;
+insert into public.lawyer_clients (owner_user_id, client_user_id)
+  values ('00000000-0000-0000-0000-0000000d0003', '00000000-0000-0000-0000-0000000d0004');
+insert into public.community_posts (author_id, title) values ('00000000-0000-0000-0000-0000000d0003', 'منشور');
+reset role;
+select set_config('test.uid', '00000000-0000-0000-0000-0000000d0002', false);
+set role authenticated;
+select pg_temp.expect($q$insert into public.service_requests (id, requester_user_id, title, assigned_to, status, receiver)
+                         values ('d-sr-session', '00000000-0000-0000-0000-0000000d0002', 'x', null, 'pending_assignment', 'lawyer')$q$,
+                      'demo_account:readonly', 'T7 demo client session request into the marketplace');
+select pg_temp.expect($q$insert into public.community_posts (author_id, title) values ('00000000-0000-0000-0000-0000000d0002', 'x')$q$,
+                      'demo_account:readonly', 'T7 demo client session community post');
+reset role;
+do $$
+begin
+  if not exists (select 1 from public.service_requests where id = 'r-sr-session')
+     or not exists (select 1 from public.lawyer_clients
+                     where owner_user_id = '00000000-0000-0000-0000-0000000d0003'
+                       and client_user_id = '00000000-0000-0000-0000-0000000d0004')
+     or exists (select 1 from public.service_requests where id = 'd-sr-session') then
+    raise exception 'T7 FAIL: session writes';
+  end if;
+  raise notice 'T7 PASS: as authenticated — real intake request, real lawyer client + post go through; demo marketplace request + post refused';
+end $$;

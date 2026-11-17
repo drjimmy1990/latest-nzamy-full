@@ -88,12 +88,17 @@ test("demo: payment_orders refuses the order (demo_account:no_payment) → 403 w
 });
 
 test("demo: the same refusal on a plain plan or a top-up is the same 403 (a demo account never pays)", async () => {
-  for (const over of [{ itemId: "lawyer-pro", billing: "yearly" as const, founderConsent: undefined }]) {
-    const { client: admin } = db((q) =>
-      q.table === "payment_orders" && q.op === "insert"
-        ? { error: { code: "P0001", message: "demo_account:no_payment" } }
-        : undefined,
-    );
+  for (const [over, userType] of [
+    [{ itemId: "lawyer-pro", billing: "yearly" as const, founderConsent: undefined }, "lawyer"],
+    [{ itemId: "topup-250", billing: "once" as const, founderConsent: undefined }, "individual"],
+  ] as const) {
+    const { client: admin } = db((q) => {
+      if (q.table === "profiles") return { data: { user_type: userType } };
+      if (q.table === "payment_orders" && q.op === "insert") {
+        return { error: { code: "P0001", message: "demo_account:no_payment" } };
+      }
+      return undefined;
+    });
     const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input(over));
     assert.equal(r.status, 403, over.itemId);
     assert.deepEqual(r.body, { error: DEMO_NO_PAYMENT_AR });

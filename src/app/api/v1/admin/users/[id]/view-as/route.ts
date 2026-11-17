@@ -19,8 +19,9 @@ import {
  *
  * Without `session` a new view session starts: `view_as_start` + the first
  * `view_as_page`; with it, one more `view_as_page`. The rows land in
- * admin_audit_events BEFORE any data is read; if they do not land, 503 and
- * nothing is shown.
+ * admin_audit_events BEFORE any of the user's page data is read (only the
+ * header — name / email / type, which the 404 needs — is read first); if they
+ * do not land, 503 and nothing is shown.
  *
  * Gate: requireStaff("users.view_as") — super_admin only (and every admin
  * while platform_staff does not exist, requireStaff's deploy-order rule).
