@@ -15,6 +15,14 @@ import {
   type FounderMemberDto,
   type FounderRefundOrderDto,
 } from "@/lib/membership/founderAdmin";
+import {
+  conversionPercent,
+  UNTRACKED_AR,
+  WEBHOOK_UNRECORDED_NOTE_AR,
+  type ConversionRow,
+  type FounderSaleStats,
+  type WebhookProblemDto,
+} from "@/lib/membership/founderSaleStats";
 
 /**
  * «حملة المؤسس» (P3 Task 10) — the founder campaign at a glance and its two
@@ -35,6 +43,46 @@ interface Overview {
   membersTruncated: boolean;
   refundOrders: FounderRefundOrderDto[];
   canManage: boolean;
+  /** F14: released / revoked seats; null when the count failed. */
+  seatCounts?: { released: number; revoked: number } | null;
+  /** F14 (payments.read only): revenue, conversion by source, webhook problems. */
+  sale?: (FounderSaleStats & { webhookProblems: WebhookProblemDto[] }) | null;
+  saleHidden?: boolean;
+  saleError?: string | null;
+}
+
+function ConversionTable({ title, rows, keyLabel }: { title: string; rows: ConversionRow[]; keyLabel: string }) {
+  return (
+    <div className="overflow-x-auto">
+      <h3 className="px-5 pb-2 text-[13px] font-bold text-white">{title}</h3>
+      <table className="w-full min-w-[560px]">
+        <thead>
+          <tr className="border-b border-white/[0.06]">
+            {[keyLabel, "بدأوا الشراء", "دفعوا", "نسبة التحويل", "الإيراد (حي)"].map((h) => (
+              <th key={h} className={th}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/[0.06]">
+          {rows.map((r) => {
+            const pct = conversionPercent(r);
+            return (
+              <tr key={r.key ?? "__untracked"}>
+                <td className={td} dir={r.key ? "ltr" : undefined}>
+                  {r.key ?? <span className="text-zinc-400">{UNTRACKED_AR}</span>}
+                </td>
+                <td className={td}>{r.started}</td>
+                <td className={td}>{r.paid}</td>
+                <td className={td}>{pct === null ? "—" : `${pct}٪`}</td>
+                <td className={`${td} whitespace-nowrap`}>{formatHalalas(r.revenueHalalas)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {rows.length === 0 ? <p className="px-5 pb-4 text-[12px] text-zinc-400">لا توجد طلبات عضوية بعد.</p> : null}
+    </div>
+  );
 }
 
 const fmt = (iso: string | null) => {
@@ -265,6 +313,117 @@ export default function FounderCampaignPage() {
               ))}
             </div>
           </section>
+
+          {/* F14: the seats' life cycle in one row */}
+          <section className={`${card} p-5`}>
+            <h2 className="mb-3 text-[14px] font-bold text-white">دورة المقاعد</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                { label: "محجوزة الآن (مهلة ١٥ دقيقة)", value: summary ? String(summary.reserved) : "—" },
+                { label: "عمليات مدفوعة", value: String(data.ordersByStatus.paid ?? 0) },
+                { label: "مقاعد مفعّلة", value: summary ? String(summary.active) : "—" },
+                { label: "مستردّة", value: String((data.ordersByStatus.refunded ?? 0) + (data.ordersByStatus.voided ?? 0)) },
+                { label: "حجوزات أُفرج عنها", value: data.seatCounts ? String(data.seatCounts.released) : "—" },
+                { label: "مقاعد مسحوبة", value: data.seatCounts ? String(data.seatCounts.revoked) : "—" },
+              ].map((t) => (
+                <div key={t.label} className="rounded-xl border border-white/[0.06] bg-zinc-950/40 p-3">
+                  <p className="text-[11px] text-zinc-400">{t.label}</p>
+                  <p className="mt-1 text-xl font-bold text-white">{t.value}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] text-zinc-400">
+              «عمليات مدفوعة» و«مستردّة» تشمل العمليات التجريبية؛ الإيراد أدناه للعمليات الحية فقط.
+            </p>
+          </section>
+
+          {data.saleHidden ? (
+            <p className="rounded-xl border border-white/[0.06] bg-zinc-900/60 px-4 py-3 text-[12px] text-zinc-400">
+              أرقام الإيراد ومصادر الزيارات تظهر لمن يملك صلاحية عرض المدفوعات فقط.
+            </p>
+          ) : null}
+          {data.saleError ? (
+            <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[12px] text-red-300">{data.saleError}</p>
+          ) : null}
+
+          {data.sale ? (
+            <>
+              <section className={`${card} p-5`}>
+                <h2 className="mb-3 text-[14px] font-bold text-white">الإيراد (مدفوعات حية فقط)</h2>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                  {[
+                    { label: "عمليات دُفعت", value: String(data.sale.revenue.live.paidOrders) },
+                    { label: "قبل الضريبة", value: formatHalalas(data.sale.revenue.live.netHalalas) },
+                    { label: "ضريبة القيمة المضافة", value: formatHalalas(data.sale.revenue.live.vatHalalas) },
+                    { label: "الإجمالي المحصَّل", value: formatHalalas(data.sale.revenue.live.totalHalalas) },
+                    { label: "المُعاد (استرداد/إلغاء)", value: formatHalalas(data.sale.revenue.live.reversedHalalas) },
+                    { label: "الصافي بعد الاسترداد", value: formatHalalas(data.sale.revenue.live.keptHalalas) },
+                  ].map((t) => (
+                    <div key={t.label} className="rounded-xl border border-white/[0.06] bg-zinc-950/40 p-3">
+                      <p className="text-[11px] text-zinc-400">{t.label}</p>
+                      <p className="mt-1 text-[15px] font-bold text-white">{t.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] text-zinc-400">
+                  من المبالغ المحفوظة في كل عملية (السعر قبل الضريبة + الضريبة). لا تُحتسب هنا {data.sale.revenue.test.paidOrders} عملية تجريبية
+                  {data.sale.revenue.unknownMode > 0 ? ` ولا ${data.sale.revenue.unknownMode} عملية مدفوعة وضعها غير معروف` : ""}.
+                </p>
+                {data.sale.ordersTruncated ? (
+                  <p className="mt-2 text-[11px] text-amber-300">عدد الطلبات تجاوز حد القراءة — الأرقام حدّ أدنى.</p>
+                ) : null}
+              </section>
+
+              <section className={`${card} space-y-4 py-5`}>
+                <div className="px-5">
+                  <h2 className="text-[14px] font-bold text-white">التحويل حسب مصدر الزيارة</h2>
+                  <p className="mt-1 text-[11px] text-zinc-400">
+                    بالمشترين لا بالطلبات، من أول رابط حملة (utm) فتحه المشتري خلال ٣٠ يومًا قبل الشراء. «{UNTRACKED_AR}»: طلبات بلا رابط حملة،
+                    ومنها كل طلب سبق إطلاق هذا التتبع. العمليات التجريبية مستبعدة.
+                  </p>
+                </div>
+                <ConversionTable title="حسب المصدر (utm_source)" rows={data.sale.conversion.bySource} keyLabel="المصدر" />
+                <ConversionTable title="حسب الحملة (utm_campaign)" rows={data.sale.conversion.byCampaign} keyLabel="الحملة" />
+              </section>
+
+              <section className={`${card} overflow-hidden`}>
+                <div className="p-5 pb-3">
+                  <h2 className="text-[14px] font-bold text-white">أحدث مشكلات إشعارات ميسّر ({data.sale.webhookProblems.length})</h2>
+                  <p className="mt-1 text-[11px] text-zinc-400">{WEBHOOK_UNRECORDED_NOTE_AR}</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px]">
+                    <thead>
+                      <tr className="border-b border-white/[0.06]">
+                        {["الوقت", "الحدث", "المشكلة", "رقم الدفعة"].map((h) => (
+                          <th key={h} className={th}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.06]">
+                      {data.sale.webhookProblems.map((w) => (
+                        <tr key={w.eventId}>
+                          <td className={td}>{fmt(w.receivedAt)}</td>
+                          <td className={td} dir="ltr">
+                            {w.type ?? "—"}
+                            {w.live === false ? <span className="ms-2 text-[10px] text-amber-300">test</span> : null}
+                          </td>
+                          <td className={td}>
+                            <p>{w.labelAr}</p>
+                            <p className="text-[11px] text-zinc-400" dir="ltr">{w.outcome ?? "—"}</p>
+                          </td>
+                          <td className={td} dir="ltr">{w.paymentId ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {data.sale.webhookProblems.length === 0 ? (
+                    <p className="p-5 text-[12px] text-zinc-400">لا توجد مشكلات مسجّلة في إشعارات ميسّر.</p>
+                  ) : null}
+                </div>
+              </section>
+            </>
+          ) : null}
 
           <section className={`${card} overflow-hidden`}>
             <div className="flex flex-wrap items-center justify-between gap-2 p-5 pb-3">
