@@ -127,3 +127,17 @@ test("the receipt page has the site Navbar and a button-styled way back, both hi
   // the main clears the fixed Navbar on screen; print resets it
   assert.match(receipt, /<main[^>]*pt-32[^>]*print:p-0/);
 });
+
+// ── F16: the founder welcome ─────────────────────────────────────────────────
+
+test("F16: a founder success renders the gold welcome; anything else the ordinary card; motion is CSS with a reduced-motion off switch", () => {
+  assert.match(code, /welcome=\{founderWelcomeFor\(view, order\)\}/);
+  assert.match(code, /\{welcome \? <FounderWelcomeCard welcome=\{welcome\} \/> : <ResultCard view=\{view\} refreshHref=\{refreshHref\} \/>\}/);
+  assert.match(code, /from-\[#C8A762\]/, "the gold frame");
+  assert.match(code, /<Link href=\{welcome\.toolsHref\}[^>]*>\s*\{FOUNDER_WELCOME_TOOLS_LABEL\}/);
+  assert.match(code, /<Link href=\{welcome\.receiptHref\}[^>]*>\s*\{FOUNDER_WELCOME_RECEIPT_LABEL\}/);
+  // still a server component: no framer-motion, no client hooks
+  assert.doesNotMatch(code, /framer-motion|useState|useEffect/);
+  const css = readFileSync(join(import.meta.dirname, "../../globals.css"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.nz-founder-rise,\s*\.nz-founder-sparkle \{\s*animation: none;/);
+});

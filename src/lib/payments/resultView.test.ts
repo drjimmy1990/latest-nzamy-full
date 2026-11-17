@@ -11,6 +11,8 @@ import {
   AUTO_REFRESH_INTERVAL_MS,
   AUTO_REFRESH_WINDOW_MS,
   autoRefreshDecision,
+  founderWelcomeFor,
+  FOUNDER_WELCOME_TITLE,
   paymentResultView,
   pendingView,
   resultViewWithoutPayment,
@@ -225,4 +227,50 @@ test("Task F fix round 1: the result page names the points a top-up's lot credit
   assert.match(credited.body, /«شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة \(منها ٢٥٠ نقطة مكافأة\)»/);
   const unread = paymentResultView({ outcome: "granted" }, top);
   assert.match(unread.body, /«شحن ١٬٠٠٠ — ١٬٥٠٠ نقطة \(منها ٥٠٠ نقطة مكافأة\)»/);
+});
+
+// ── F16: the founder welcome card ────────────────────────────────────────────
+
+const founder: ResultOrder = { ...order, kind: "membership", item_id: "lawyer-founder-2026", billing: "once" };
+
+test("F16: a granted founder membership gets the gold welcome — the card's own benefits, the tools hub and the receipt", () => {
+  const view = paymentResultView({ outcome: "granted", receiptNumber: "NZ-1" }, founder);
+  const w = founderWelcomeFor(view, founder);
+  assert.ok(w);
+  assert.equal(w.title, FOUNDER_WELCOME_TITLE);
+  assert.equal(w.title, "أهلاً بك في نخبة المؤسسين");
+  assert.equal(w.body, view.body);
+  assert.match(w.body, /NZ-1/);
+  assert.equal(w.toolsHref, "/ai");
+  assert.equal(w.receiptHref, `/dashboard/billing/receipt/${founder.id}`);
+  assert.ok(w.benefits.length > 0);
+  // founder_activate grants no points: the welcome never promises any
+  assert.ok(!w.benefits.some((b) => /نقطة/.test(b)));
+  assert.doesNotMatch(w.body, /نقطة/);
+  // a refresh after success is still a success
+  assert.ok(founderWelcomeFor(paymentResultView({ outcome: "already_done" }, founder), founder));
+});
+
+test("F16: no welcome for a founder payment that did not seat, failed, is pending or refunded", () => {
+  for (const r of [
+    { outcome: "already_done" as const, reason: "already_entitled" },
+    { outcome: "already_done" as const, reason: "order_refunded" },
+    { outcome: "failed" as const, reason: "declined" },
+    { outcome: "pending" as const },
+    { outcome: "rejected" as const },
+  ]) {
+    assert.equal(founderWelcomeFor(paymentResultView(r, founder), founder), null, JSON.stringify(r));
+  }
+  assert.equal(founderWelcomeFor(pendingView(), founder), null);
+});
+
+test("F16: every other order keeps the ordinary card", () => {
+  const granted = { outcome: "granted" as const };
+  assert.equal(founderWelcomeFor(paymentResultView(granted, order), order), null);
+  const top: ResultOrder = { ...order, kind: "topup", item_id: "topup-500", billing: "once" };
+  assert.equal(founderWelcomeFor(paymentResultView(granted, top), top), null);
+  const otherMembership: ResultOrder = { ...founder, item_id: "some-other-membership" };
+  assert.equal(founderWelcomeFor(paymentResultView(granted, otherMembership), otherMembership), null);
+  const wrongKind: ResultOrder = { ...founder, kind: "plan" };
+  assert.equal(founderWelcomeFor(paymentResultView(granted, wrongKind), wrongKind), null);
 });
