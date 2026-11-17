@@ -1779,6 +1779,7 @@ function LawSystemPageContent() {
         {explainArticle && (
           <ArticleExplainModal
             article={explainArticle}
+            lawName={law?.title}
             isDark={isDark}
             onClose={() => setExplainArticle(null)}
             isRTL={isRTL}
