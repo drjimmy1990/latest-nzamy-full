@@ -6688,3 +6688,49 @@ select 'Graph call log + live stats (run 20261121_10)' as check,
               and not has_table_privilege('anon', 'library_graph.call_log', 'SELECT')
        end as ok;
 -- <<< verify:library_graph_call_log
+
+-- >>> verify:launch_2026_11_17
+-- 2026-11-22 — the founder campaign + launch batch (owner package 17 Nov).
+-- 20261122_10 with the deploy; 20261122_20/30/31/40/50 any time.
+-- Docker: supabase/tests/rls/{founder_campaign_nov18,terms_acceptances,service_requests_open_view,
+--   firm_row_write_check,lawyer_registry,academy_certificates_private}.test.sql
+select 'Founder campaign 18 Nov - 17 Dec, advocate only (run 20261122_10)' as check,
+       coalesce((select value ->> 'starts_on' = '2026-11-18' and value ->> 'ends_on' = '2026-12-17'
+                   from public.platform_settings where key = 'founder_campaign'), false)
+       and coalesce(pg_catalog.pg_get_functiondef(
+             (select p.oid from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'founder_reserve_seat' limit 1)) like '%not_advocate%', false)
+       as ok;
+select 'Terms acceptances (run 20261122_20)' as check,
+       to_regclass('public.terms_acceptances') is not null
+       and coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.terms_acceptances')), false)
+       as ok;
+select 'Open requests: requester/assignee only + marketplace_open_requests (run 20261122_30)' as check,
+       to_regprocedure('public.marketplace_open_requests(integer, integer)') is not null
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid = 'public.service_requests'::regclass
+                          and pg_catalog.pg_get_expr(polqual, polrelid) ilike '%lawyer_profiles%')
+       as ok;
+select 'Firm row write check on 5 tables (run 20261122_31)' as check,
+       to_regprocedure('public.can_write_firm_row(uuid)') is not null
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polname in ('firm_id is the writer''s firm (insert)', 'firm_id is the writer''s firm (update)')
+               and polpermissive = false
+               and polrelid in ('public.hearings'::regclass, 'public.tasks'::regclass, 'public.case_stages'::regclass,
+                                'public.case_graphs'::regclass, 'public.lawyer_clients'::regclass)) = 10
+       as ok;
+select 'Lawyer registry server-only (run 20261122_40)' as check,
+       to_regclass('public.lawyer_registry') is not null
+       and not has_table_privilege('anon', 'public.lawyer_registry', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.lawyer_registry', 'SELECT')
+       and not has_function_privilege('anon', 'public.lawyer_registry_lookup(text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.lawyer_registry_lookup(text, text)', 'EXECUTE')
+       as ok;
+select 'Academy certificates: holder only + verify by number and name (run 20261122_50)' as check,
+       to_regclass('academy.certificates') is null
+       or (not exists (select 1 from pg_policies
+                        where schemaname = 'academy' and tablename = 'certificates'
+                          and policyname = 'Public verify certificates')
+           and to_regprocedure('public.academy_verify_certificate(text, text)') is not null)
+       as ok;
+-- <<< verify:launch_2026_11_17
