@@ -7053,3 +7053,41 @@ select 'Firm points counter: finance manager admitted + firm_points_overview (ru
        and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_member_points_usage(uuid)'))) > 0, false)
        as ok;
 -- <<< verify:l4_lawyer
+-- >>> verify:l6_accounts
+-- 2026-11-26 — 20261126_50_accounts_limits.sql (owner TODO R9, S9, firm seat cap):
+-- run BEFORE the l6-accounts deploy (the onboarding claim writes the two new
+-- columns). Re-run it after any re-run of 20261030_12 (firm_court_rows_stay_with_member).
+-- Docker: supabase/tests/rls/accounts_limits_l6.test.sql
+select 'R9: lawyer_profiles.practice_kind_confirmed_at (no session privilege) + firm_profiles.firm_kind (run 20261126_50)' as check,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'lawyer_profiles' and column_name = 'practice_kind_confirmed_at')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.firm_profiles'::regclass and conname = 'firm_profiles_firm_kind_check')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.lawyer_profiles'::regclass and tgname = 'trg_lawyer_profiles_kind_confirmed' and not tgisinternal)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.firm_profiles'::regclass and tgname = 'trg_firm_profiles_kind_guard' and not tgisinternal)
+       and not has_column_privilege('authenticated', 'public.lawyer_profiles', 'practice_kind_confirmed_at', 'UPDATE')
+       and pg_catalog.pg_get_functiondef('public.firm_court_rows_stay_with_member(uuid)'::regprocedure) like '%consulting_office%'
+       as ok;
+select 'S9: free solo lawyer capped at 5 active cases / 10 clients (run 20261126_50)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.service_requests'::regclass and tgname = 'trg_solo_lawyer_case_cap' and not tgisinternal)
+       and (to_regclass('public.lawyer_clients') is null
+            or exists (select 1 from pg_catalog.pg_trigger
+                        where tgrelid = 'public.lawyer_clients'::regclass and tgname = 'trg_solo_lawyer_client_cap' and not tgisinternal))
+       and (select l.cases = 5 and l.clients = 10 from public.solo_lawyer_limits() l)
+       and not has_function_privilege('authenticated', 'public.solo_lawyer_is_capped(uuid)', 'EXECUTE')
+       as ok;
+select 'Firm seat cap: members + invitation links (basic 5 / enterprise 15 / max_seats override) (run 20261126_50)' as check,
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.firm_members'::regclass and tgname = 'trg_firm_seat_cap' and not tgisinternal)
+       and (to_regclass('public.team_invitations') is null
+            or exists (select 1 from pg_catalog.pg_trigger
+                        where tgrelid = 'public.team_invitations'::regclass and tgname = 'trg_firm_invite_seat_cap' and not tgisinternal))
+       and public.firm_plan_seat_cap('firm-basic') = 5
+       and public.firm_plan_seat_cap('firm-enterprise') = 15
+       and not has_function_privilege('authenticated', 'public.firm_seat_cap(uuid)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.firm_seat_status(uuid)', 'EXECUTE')
+       as ok;
+-- <<< verify:l6_accounts
