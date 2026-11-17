@@ -300,7 +300,8 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
       if (r.badge !== "قريباً") wrong.push(`${f}: ${r.href} badged «${r.badge ?? "(none)"}»`);
     }
   }
-  assert.ok(seen >= 19, `found only ${seen} rows — the parser broke`);
+  // 17, not 19: N06-30 (13 Nov 2026) took the firm sidebar's /ai/corp/clm and /ai/corp/hr rows out.
+  assert.ok(seen >= 17, `found only ${seen} rows — the parser broke`);
   assert.deepEqual(wrong, []);
   // /ai/analyze is the live case brief for lawyer and firm (S3-01, S3-02): one
   // unbadged row in each of the two sidebars this file holds.

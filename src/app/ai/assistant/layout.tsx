@@ -1,8 +1,9 @@
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "نظامي أسيستنت — مساعدك القانوني الذكي",
-  description: "تحدث مع نظامي أسيستنت — مساعد قانوني ذكي يجيبك على أسئلتك القانونية، يساعد في الصياغة، البحث، والاستراتيجية القانونية",
+  // N06-23: one name for /ai/assistant everywhere — «المساعد المتقدم», as in the sidebar.
+  title: "المساعد المتقدم — نظامي",
+  description: "المساعد المتقدم في نظامي: محادثة قانونية تجيب من نصوص الأنظمة ومبادئ القضاء في مكتبة نظامي، مع رابط كل نص.",
 };
 
 export default function AssistantLayout({ children }: { children: React.ReactNode }) {

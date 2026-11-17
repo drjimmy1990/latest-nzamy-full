@@ -10,6 +10,7 @@ import { useState, useEffect, useMemo } from "react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import { PartyData, MainDefense } from "@/components/draft/draftConstants";
+import { valueLabelAr } from "@/lib/services/intakeValues";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface MemoSection {
@@ -524,7 +525,8 @@ export function StepDrafting({
       <div className={`${card} px-4 py-3 flex items-center gap-3 shadow-sm`}>
         <PencilSimple size={14} className={isDark ? "text-zinc-500" : "text-zinc-400"} />
         <span className={`text-[12px] font-semibold flex-1 ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
-          {memoType}: {memoSubType}
+          {/* N06-19: the Arabic type name; an id with no Arabic name is left out, never shown raw. */}
+          {[valueLabelAr("memoType", memoType), memoSubType].filter((part) => part && !/^[A-Za-z_]+$/.test(part)).join(": ")}
         </span>
         <div className="flex items-center gap-1.5">
           {revisionHistory.length > 0 && (
