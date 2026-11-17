@@ -5,6 +5,7 @@ import { PAYMENT_LINK_COLUMNS, readIssuerVat } from "@/lib/finance/invoiceFinanc
 import { readInvoiceVat } from "@/lib/finance/invoiceVat";
 import { buildInvoiceMessage, invoiceNotification, statementReference } from "@/lib/finance/invoiceMessage";
 import { emailConfigured, isPlainEmail, renderEmailAr, sendEmail } from "@/lib/email/sendEmail";
+import { assertLinkableAccount } from "@/app/api/v1/lawyer/clients/_link";
 
 /**
  * POST /api/v1/lawyer/finance/<paymentId>/send — «إرسال بيان الأتعاب للموكّل»
@@ -19,9 +20,13 @@ import { emailConfigured, isPlainEmail, renderEmailAr, sendEmail } from "@/lib/e
  *   1. returns the statement as plain text — the page copies it for WhatsApp
  *      or any other channel the lawyer uses;
  *   2. when the statement's client card is linked to a platform account
- *      (lawyer_clients.client_user_id), writes ONE in-app notification to that
- *      account (no link: the client has no screen for it) — not again within
- *      10 minutes;
+ *      (lawyer_clients.client_user_id) AND that account has a real relationship
+ *      with this lawyer (assertLinkableAccount: it requested a service or a
+ *      consultation from him / his firm — re-checked here because the column
+ *      itself has no database guard against a direct REST write), writes ONE
+ *      in-app notification to that account: platform-composed (issuer, amount,
+ *      reference — no free text), no link (the client has no screen for it),
+ *      not again within 10 minutes;
  *   3. when e-mail is configured on this server (RESEND_API_KEY + EMAIL_FROM)
  *      and the card has an address, e-mails it once per statement per day
  *      (Resend idempotency key).
@@ -62,10 +67,10 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     const isIssuer = !!p && meta.invoice === true && (meta.issued_by === user.id || p.owner_user_id === user.id);
     if (!isIssuer) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     if (p.status !== "requires_payment") {
-      return NextResponse.json(
-        { error: p.status === "void" ? "هذا البيان ملغى، فلا يُرسل." : "هذا البيان مسدّد بالكامل، فلا مطالبة لإرسالها." },
-        { status: 409 },
-      );
+      const why = p.status === "void" ? "هذا البيان ملغى، فلا يُرسل."
+        : p.status === "paid" ? "هذا البيان مسدّد بالكامل، فلا مطالبة لإرسالها."
+        : "لا يُرسل إلا بيان أتعاب مفتوح لم يُسدَّد بعد.";
+      return NextResponse.json({ error: why }, { status: 409 });
     }
 
     const vat = readInvoiceVat(meta);
@@ -111,7 +116,14 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
 
     // 2. in-app notification, at most once per 10 minutes per statement
     let notified = false;
-    let notifySkipped: "no_account" | "recent" | "failed" | null = clientUserId ? null : "no_account";
+    let notifySkipped: "no_account" | "not_linked" | "recent" | "failed" | null = clientUserId ? null : "no_account";
+    if (clientUserId && cardId) {
+      const link = await assertLinkableAccount(supabase, user.id, clientUserId, cardId, false);
+      if (!link.ok) {
+        clientUserId = null;
+        notifySkipped = "not_linked";
+      }
+    }
     if (clientUserId) {
       const note = invoiceNotification(input);
       const since = new Date(Date.now() - RECENT_MS).toISOString();
@@ -144,12 +156,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       if (!emailConfigured()) {
         email = "unavailable";
       } else {
-        const rendered = renderEmailAr({
-          heading: message.heading,
-          paragraphs: message.paragraphs,
-          details: message.details,
-          footer: message.footer,
-        });
+        const rendered = renderEmailAr(message);
         const day = new Date().toISOString().slice(0, 10);
         email = await sendEmail({
           to: clientEmail,

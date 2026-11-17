@@ -85,12 +85,16 @@ export function buildInvoiceMessage(input: InvoiceMessageInput): InvoiceMessage 
   return { subject: heading, heading, paragraphs, details, footer, text };
 }
 
-/** The in-app notification: short, no link (the client has no screen for an office's statement). */
+/**
+ * The in-app notification: short, no link (the client has no screen for an
+ * office's statement), and PLATFORM-COMPOSED — issuer, amount, reference; the
+ * lawyer's free-text description never reaches another account's bell.
+ */
 export function invoiceNotification(input: InvoiceMessageInput): { title: string; body: string } {
   const remaining = Math.max(0, input.totalHalalas - input.paidHalalas);
-  const issuer = input.issuerName.trim() || "مكتب المحاماة";
+  const issuer = input.issuerName.trim().slice(0, 120) || "مكتب المحاماة";
   return {
     title: `بيان أتعاب من ${issuer}`,
-    body: `${input.description} — المتبقي ${formatSar(remaining)} (المرجع ${input.reference}). ${PAY_DIRECTLY_AR}`,
+    body: `المتبقي ${formatSar(remaining)} (المرجع ${input.reference}). ${PAY_DIRECTLY_AR}`,
   };
 }

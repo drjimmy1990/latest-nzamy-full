@@ -48,6 +48,8 @@ test("a part-paid statement shows what was collected and the remainder", () => {
   assert.equal(note.title, "بيان أتعاب من مكتب العدل");
   assert.ok(note.body.includes("AB12CD34"));
   assert.doesNotMatch(note.body, /https?:\/\//);
+  // platform-composed: the lawyer's free text never reaches another account's bell
+  assert.ok(!note.body.includes(base.description));
 });
 
 test("statementReference is the first block of the id, upper-cased", () => {
@@ -61,4 +63,6 @@ test("wiring: the send route never charges and never builds a checkout URL; e-ma
   assert.match(route, /if \(!emailConfigured\(\)\)/);
   assert.match(route, /meta\.issued_by === user\.id \|\| p\.owner_user_id === user\.id/);
   assert.match(route, /p\.status !== "requires_payment"/);
+  // a card's account is notified only after the relationship is re-proved
+  assert.match(route, /assertLinkableAccount\(supabase, user\.id, clientUserId, cardId, false\)/);
 });

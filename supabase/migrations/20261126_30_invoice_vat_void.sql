@@ -391,7 +391,9 @@ grant execute on function public.create_lawyer_invoice_v3(uuid, text, bigint, te
 
 -- ── 3. void (N01-14) ────────────────────────────────────────────────────────
 -- The status CHECK of 20260518 is an inline (auto-named) constraint: find it
--- by its definition rather than assume its name, then add the named one.
+-- by its definition (the status IN-list: requires_payment AND not_required AND
+-- refunded) rather than assume its name, then add the named one. Every drop
+-- is announced.
 do $status$
 declare
   c record;
@@ -401,8 +403,12 @@ begin
       from pg_catalog.pg_constraint con
      where con.conrelid = 'public.payments'::regclass
        and con.contype = 'c'
+       and pg_catalog.pg_get_constraintdef(con.oid) like '%status%'
        and pg_catalog.pg_get_constraintdef(con.oid) like '%requires_payment%'
+       and pg_catalog.pg_get_constraintdef(con.oid) like '%not_required%'
+       and pg_catalog.pg_get_constraintdef(con.oid) like '%refunded%'
   loop
+    raise notice '20261126_30: dropping payments CHECK % (re-created as payments_status_check with void)', c.conname;
     execute format('alter table public.payments drop constraint %I', c.conname);
   end loop;
 end

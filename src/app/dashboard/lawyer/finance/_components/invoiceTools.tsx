@@ -446,7 +446,7 @@ export function InvoicePrintDocument({
 /** N01-14: only an open statement with nothing collected may be voided. */
 export const isVoidable = (inv: FinanceInvoice) => inv.status === "pending" && (Number(inv.paidAmount) || 0) === 0;
 /** N01-13: only an open statement is sent. */
-export const isSendable = (inv: FinanceInvoice) => inv.status === "pending" || inv.status === "partial" || inv.status === "overdue";
+export const isSendable = (inv: FinanceInvoice) => inv.status === "pending" || inv.status === "partial";
 
 type SendResult = { text: string; notified: boolean; notifySkipped: string | null; email: string };
 
@@ -456,6 +456,7 @@ function sendSummaryAr(r: SendResult, copied: boolean): string {
   if (r.notified) parts.push("وصل إشعار داخل المنصة إلى حساب الموكّل.");
   else if (r.notifySkipped === "recent") parts.push("أُرسل إشعار المنصة قبل دقائق، فلم يُكرَّر.");
   else if (r.notifySkipped === "no_account") parts.push("بطاقة الموكّل غير مرتبطة بحساب على المنصة، فلم يُرسل إشعار داخلي.");
+  else if (r.notifySkipped === "not_linked") parts.push("الحساب المربوط ببطاقة الموكّل لم يطلب منك خدمة على المنصة، فلم يُرسل إشعار داخلي.");
   else if (r.notifySkipped === "failed") parts.push("تعذّر إرسال إشعار المنصة.");
   if (r.email === "sent") parts.push("أُرسل البيان إلى بريد الموكّل.");
   else if (r.email === "unavailable") parts.push("البريد الإلكتروني غير مفعّل على المنصة بعد، فلم يُرسل بريد.");
