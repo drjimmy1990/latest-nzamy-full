@@ -385,10 +385,15 @@ export default function FinancePage() {
     setNewInvClientId(id);
     setNewInvCaseId("");
     setClientCases([]);
-    // عقدُ موكّلٍ آخر لا يبقى مختاراً مخفياً.
-    const k = crmContracts?.find((c) => c.id === newInvContractId);
-    if (k && id && k.lawyerClientId && k.lawyerClientId !== id) setNewInvContractId("");
     loadCases(id);
+  };
+
+  // A client the LAWYER picks: a contract of another client does not stay
+  // selected out of sight. (Not run when a contract picks its own client —
+  // that would clear the contract just chosen.)
+  const dropForeignContract = (clientId: string) => {
+    const k = crmContracts?.find((c) => c.id === newInvContractId);
+    if (k && clientId && k.lawyerClientId && k.lawyerClientId !== clientId) setNewInvContractId("");
   };
 
   // N01-2: اختيار من القائمة — «حساب منصة» تُنشأ له بطاقة موكّل ثم يُختار.
@@ -398,7 +403,7 @@ export default function FinancePage() {
     if (!parsed) { pickClient(""); return; }
     const row = crmClients?.find((c) => c.source === parsed.source && c.id === parsed.id);
     if (!row) return;
-    if (row.source === "card") { pickClient(row.id); return; }
+    if (row.source === "card") { dropForeignContract(row.id); pickClient(row.id); return; }
     setClientPickBusy(true);
     try {
       const created = await ensureClientCard<PickableClient>(row, async (input) => {
@@ -409,6 +414,7 @@ export default function FinancePage() {
         };
       });
       setCrmClients((prev) => (prev ?? []).map((c) => (c.source === "profile" && c.id === row.id ? created : c)));
+      dropForeignContract(created.id);
       pickClient(created.id);
     } catch (err) {
       setInvoiceError(err instanceof Error && err.message ? err.message : "تعذّر إنشاء بطاقة لهذا الموكّل.");
@@ -417,17 +423,25 @@ export default function FinancePage() {
     }
   };
 
-  // N01-10: اختيار العقد يملأ موكّله وقيمته حين تكون الحقول فارغة.
+  // N01-10: اختيار العقد يملأ موكّله وقيمته ووصفه — الحقول الفارغة، أو ما
+  // ملأه عقدٌ سابق ولم يغيّره المحامي؛ ما كتبه المحامي بنفسه لا يُستبدل.
+  const contractAutoFill = useRef<{ fee: string; desc: string }>({ fee: "", desc: "" });
   const pickContract = (id: string, linkAmount: number | null = null, known?: ContractOption) => {
     setNewInvContractId(id);
     const k = known ?? crmContracts?.find((c) => c.id === id);
     if (!k) return;
     if (k.lawyerClientId && k.lawyerClientId !== newInvClientId) pickClient(k.lawyerClientId);
-    if (linkAmount !== null || !newInvFee.trim()) {
-      const amount = initialInvoiceAmount(linkAmount, k.valueSar);
-      if (amount) setNewInvFee(amount);
+    const prevFill = contractAutoFill.current;
+    const amount = initialInvoiceAmount(linkAmount, k.valueSar);
+    if (amount && (linkAmount !== null || !newInvFee.trim() || newInvFee === prevFill.fee)) {
+      setNewInvFee(amount);
+      prevFill.fee = amount;
     }
-    setNewInvDesc((d) => (d.trim() ? d : `أتعاب عقد: ${k.title}`));
+    const desc = `أتعاب عقد: ${k.title}`;
+    if (!newInvDesc.trim() || newInvDesc === prevFill.desc) {
+      setNewInvDesc(desc);
+      prevFill.desc = desc;
+    }
   };
 
   // N01-10 (owner 13-Nov): «إصدار بيان أتعاب» from a contract lands here with
