@@ -7053,3 +7053,23 @@ select 'Firm points counter: finance manager admitted + firm_points_overview (ru
        and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_member_points_usage(uuid)'))) > 0, false)
        as ok;
 -- <<< verify:l4_lawyer
+-- >>> verify:l6_pay
+-- Batch l6-pay (Q511 pro-rata upgrade, coupon lock): run 20261126_60 BEFORE the deploy.
+select 'Limited coupons reserved at checkout: coupon_reservations + coupon_reserve, service role only (run 20261126_60)' as check,
+       case when to_regclass('public.coupon_reservations') is null
+              or to_regprocedure('public.coupon_reserve(uuid, uuid, uuid)') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.coupon_reservations')), false)
+       and not exists (select 1 from pg_catalog.pg_policy where polrelid = to_regclass('public.coupon_reservations'))
+       and not has_table_privilege('anon', 'public.coupon_reservations', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.coupon_reservations', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.coupon_reservations', 'INSERT')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                       where p.oid = to_regprocedure('public.coupon_reserve(uuid, uuid, uuid)')), false)
+       and not has_function_privilege('anon', 'public.coupon_reserve(uuid, uuid, uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.coupon_reserve(uuid, uuid, uuid)', 'EXECUTE')
+       end as ok;
+select 'One prorated upgrade order per credited plan set: payment_orders_proration_once_key (run 20261126_60)' as check,
+       to_regclass('public.payment_orders_proration_once_key') is not null
+       and pg_catalog.pg_get_indexdef(to_regclass('public.payment_orders_proration_once_key')) like 'CREATE UNIQUE INDEX%proration%key%'
+       as ok;
+-- <<< verify:l6_pay
