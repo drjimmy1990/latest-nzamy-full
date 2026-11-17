@@ -15,6 +15,14 @@
  * A question about a pleading («ما مدة الاستئناف؟»، «ما شروط صياغة لائحة
  * الدعوى؟»، «كيف أكتب مذكرة؟») is not a request and goes to the model as
  * before (whose prompt also says it does not draft).
+ *
+ * Owner ١٣ / ٢٢ (17 Nov 2026): a CONTRACT is refused the same way
+ * («اكتب لي عقداً»، «صغ لي عقد إيجار»، «أبي عقد عمل جاهز»، «draft an NDA»)
+ * and referred to «محترف العقود» (/ai/contracts) for whoever may run it.
+ * Reviewing one is not writing it: «راجع لي هذا العقد»، «ما رأيك في هذا
+ * البند» go to the assistant, whose prompt explains the clauses in general and
+ * refers the full review (n8n/ai/workflows.mjs). A review word right after a
+ * cue («اكتب لي مراجعة للعقد») stops the match like an explanation word.
  */
 
 /** Arabic letters folded so spelling variants compare equal. */
@@ -84,6 +92,7 @@ const EXPLANATIONS = set(`
   ملخص ملخصا تلخيص خلاصه شرح شرحا تعريف نبذه معني مفهوم مقارنه الفرق
   شروط مده مدة احكام اركان اجراءات مواعيد ميعاد معرفه حكم رايك
   انواع اسباب طرق عناصر متطلبات مرفقات رسوم
+  مراجعه تدقيق تحليل ملاحظات تقييم تفسير
 `);
 
 /** Documents that are a pleading on their own. */
@@ -96,6 +105,17 @@ const NEEDS_NEXT = set("لائحه لوائح صحيفه صحايف");
 const NEXT_MAKES_PLEADING = set(`
   دعوي اعتراضيه اعتراض استئناف جوابيه ادعاء دفاع رد طعن نقض التماس
 `);
+
+/** Owner ٢٢: a contract, an agreement or one of its clauses («اكتب لي بنداً»). */
+const CONTRACTS = set("عقد عقود اتفاقيه اتفاقيات بند");
+/** «عقد اجتماع»: the verb «عَقْد» (holding a meeting), not a contract. */
+const NOT_A_CONTRACT_NEXT = set("اجتماع جلسه جمعيه مؤتمر ندوه قران لقاء ورشه دوره");
+/** «عقد إيجار جاهز»: a ready-made contract. */
+const READY = set("جاهز جاهزه");
+/** What may stand before «عقد … جاهز» for it to be a request («عندك عقد إيجار جاهز؟»). */
+const READY_ASKS = set("عندك لديك يوجد توجد هات اعطني اعطيني عطني ارسل ارسلي ابي اريد ابغي ابغى احتاج نبي بدي ممكن");
+/** A message that opens with «نموذج عقد…» and asks nothing else is a request for one. */
+const QUESTION_WORDS = set("ما ماذا متي هل كيف لماذا اين كم هو هي");
 
 const PREFIXES = ["وال", "بال", "فال", "كال", "لل", "ال", "و", "ف", "ب", "ل"];
 
@@ -118,29 +138,67 @@ function isPleadingAt(tokens: string[], i: number): boolean {
   return isIn(NEEDS_NEXT, tokens[i]) && isIn(NEXT_MAKES_PLEADING, tokens[i + 1]);
 }
 
+/** True when tokens[i] names a contract (not «عقد اجتماع»). */
+function isContractAt(tokens: string[], i: number): boolean {
+  return isIn(CONTRACTS, tokens[i]) && !isIn(NOT_A_CONTRACT_NEXT, tokens[i + 1]);
+}
+
+export type DraftingKind = "pleading" | "contract";
+
 /**
- * A pleading among the first `words` words after the cue at `i` (fillers and
+ * The document among the first `words` words after the cue at `i` (fillers and
  * draft words skipped), with no explanation word before it.
  */
-function pleadingFollows(tokens: string[], i: number, words: number): boolean {
+function documentFollows(tokens: string[], i: number, words: number): DraftingKind | null {
   let seen = 0;
   for (let j = i + 1; j < tokens.length && seen < words; j += 1) {
     if (isIn(FILLERS, tokens[j]) || isIn(TEMPLATES, tokens[j])) continue;
-    if (isIn(EXPLANATIONS, tokens[j])) return false;
-    if (isPleadingAt(tokens, j)) return true;
+    if (isIn(EXPLANATIONS, tokens[j])) return null;
+    if (isPleadingAt(tokens, j)) return "pleading";
+    if (isContractAt(tokens, j)) return "contract";
     seen += 1;
+  }
+  return null;
+}
+
+/**
+ * «عقد إيجار جاهز» / «عندك عقد عمل جاهز؟» / «نموذج عقد إيجار»: a contract asked
+ * for without a verb. Not «هل عقد الإيجار الجاهز في منصة إيجار ملزم؟».
+ */
+function readyContractAsked(tokens: string[]): boolean {
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!isContractAt(tokens, i)) continue;
+    let p = i - 1;
+    let template = false;
+    while (p >= 0 && (isIn(TEMPLATES, tokens[p]) || isIn(FILLERS, tokens[p]))) {
+      template ||= isIn(TEMPLATES, tokens[p]);
+      p -= 1;
+    }
+    const opens = p === -1 || isIn(READY_ASKS, tokens[p]);
+    if (!opens) continue;
+    if (tokens.slice(i + 1, i + 4).some((t) => isIn(READY, t))) return true;
+    // «نموذج عقد إيجار» on its own (a short message with no question in it).
+    if (template && p === -1 && tokens.length <= 5 && !tokens.some((t) => isIn(QUESTION_WORDS, t))) return true;
   }
   return false;
 }
 
-/** The index of the word before `i` that is not a filler, or -1. */
-function previousWord(tokens: string[], i: number): number {
-  for (let j = i - 1; j >= 0; j -= 1) if (!isIn(FILLERS, tokens[j])) return j;
-  return -1;
+/** English: «write me a contract», «draft an NDA», «can you draft my appeal». Not «how do I draft…». */
+const EN_HOW_TO = /\bhow (?:do|can|should|would|to)\b|\bhow i\b|\bsteps to\b|\btips\b/;
+const EN_EXPLAIN = /\b(?:summary|summari[sz]e|explanation|explain|overview|review|analysis|analy[sz]e|meaning|requirements|conditions|rules|deadline)\b/;
+const EN_CUE = /\b(?:write|draft|prepare|create|make|generate|compose|produce|draw up)\b((?: [^ ]+){0,4}?) (contracts?|agreements?|nda|leases?|clauses?|memos?|memorandums?|memoranda|pleadings?|statements? of claim|lawsuits?|appeals?|petitions?|complaints?|objections?)\b/;
+
+function englishDraftingKind(text: string): DraftingKind | null {
+  const t = String(text ?? "").toLowerCase().replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!t || EN_HOW_TO.test(t)) return null;
+  const m = EN_CUE.exec(t);
+  // «a summary of», or «the requirements to draft…»: an explanation, before or inside.
+  if (!m || EN_EXPLAIN.test(m[1] ?? "") || EN_EXPLAIN.test(t.slice(0, m.index))) return null;
+  return /^(?:contracts?|agreements?|nda|leases?|clauses?)$/.test(m[2]) ? "contract" : "pleading";
 }
 
-/** True when the message asks the assistant to write a memo, a claim, an appeal or another pleading. */
-export function isDraftingRequest(message: string): boolean {
+/** What the message asks the assistant to write: a pleading, a contract, or nothing. */
+export function draftingRequestKind(message: string): DraftingKind | null {
   const tokens = foldArabic(message).split(" ").filter(Boolean);
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i];
@@ -160,9 +218,24 @@ export function isDraftingRequest(message: string): boolean {
       // Opening the message («صياغة لائحة دعوى»), or asked for («هل يمكنك صياغة…»).
       cue = prev === -1 || isIn(ASKS, tokens[prev]);
     }
-    if (cue && pleadingFollows(tokens, i, words)) return true;
+    if (cue) {
+      const kind = documentFollows(tokens, i, words);
+      if (kind) return kind;
+    }
   }
-  return false;
+  if (readyContractAsked(tokens)) return "contract";
+  return englishDraftingKind(message);
+}
+
+/** The index of the word before `i` that is not a filler, or -1. */
+function previousWord(tokens: string[], i: number): number {
+  for (let j = i - 1; j >= 0; j -= 1) if (!isIn(FILLERS, tokens[j])) return j;
+  return -1;
+}
+
+/** True when the message asks the assistant to write a memo, a pleading or a contract. */
+export function isDraftingRequest(message: string): boolean {
+  return draftingRequestKind(message) !== null;
 }
 
 export const DRAFTING_REFUSED_CODE = "drafting_refused";
@@ -188,5 +261,30 @@ export function draftingRefusal(canUseDrafter: boolean): {
     error: DRAFTING_REFUSAL_TEXT + DRAFTER_HINT,
     code: DRAFTING_REFUSED_CODE,
     action: { label: "افتح الصائغ القانوني", href: DRAFTER_HREF },
+  };
+}
+
+/** Where «محترف العقود» lives (toolLabels.ts); the only link a contract refusal may carry. */
+export const CONTRACTS_HREF = "/ai/contracts";
+
+export const CONTRACT_REFUSAL_TEXT =
+  "عذراً، مساعد المكتبة يشرح النصوص النظامية ويجيب عن أسئلتك عنها، ولا يكتب العقود أو بنودها.";
+const CONTRACTS_HINT = " لصياغة عقدك استعمل «محترف العقود».";
+
+/**
+ * Owner ٢٢: the reply body for a refused contract-writing request.
+ * `canUseContracts` is whether this caller may run «محترف العقود» (lawyers and
+ * firms, consultants included, or an admin): only then does it carry the link.
+ */
+export function contractDraftingRefusal(canUseContracts: boolean): {
+  error: string;
+  code: typeof DRAFTING_REFUSED_CODE;
+  action?: { label: string; href: string };
+} {
+  if (!canUseContracts) return { error: CONTRACT_REFUSAL_TEXT, code: DRAFTING_REFUSED_CODE };
+  return {
+    error: CONTRACT_REFUSAL_TEXT + CONTRACTS_HINT,
+    code: DRAFTING_REFUSED_CODE,
+    action: { label: "افتح محترف العقود", href: CONTRACTS_HREF },
   };
 }
