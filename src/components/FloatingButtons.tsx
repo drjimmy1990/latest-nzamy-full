@@ -416,6 +416,18 @@ function isLegalItemDetailPage(pathname: string | null): boolean {
   return false;
 }
 
+/**
+ * N02-3 (owner, 13-Nov package): the readers that carry their own «المسودة»
+ * button in the page header — the law, royal-order, principles-collection and
+ * feqh-book readers. There the floating draft button was a second copy of it,
+ * sitting over the article text. The judgment page (/precedents/judgment/…)
+ * has no header button, so it keeps the floating one.
+ */
+export function readerHasOwnDraftButton(pathname: string | null): boolean {
+  if (!isLegalItemDetailPage(pathname) || !pathname) return false;
+  return !pathname.startsWith("/precedents/judgment/");
+}
+
 /** Dashboard actions must remain unobstructed by the public support/order FAB. */
 const FAB_SUPPRESSED_PREFIXES = ["/dashboard"] as const;
 
@@ -525,8 +537,9 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
   // Use props if provided, otherwise use internal draft cart
   const cartCount = propCartCount !== undefined ? propCartCount : cart.length;
-  // Floating Draft Cart FAB is strictly restricted to legal item detail pages
-  const showDraftFab = cartCount > 0 && isItemDetail;
+  // Floating Draft Cart FAB is strictly restricted to legal item detail pages,
+  // and never where the page header already has its own «المسودة» button (N02-3).
+  const showDraftFab = cartCount > 0 && isItemDetail && !readerHasOwnDraftButton(pathname);
   const removeArticle = (id: string) => {
     setCart(prev => prev.filter(item => item.articleId !== id));
   };
