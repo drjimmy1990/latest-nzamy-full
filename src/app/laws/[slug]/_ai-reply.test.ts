@@ -91,7 +91,7 @@ test("the new copy is Arabic, with no Latin letters (it names no plan)", () => {
 test("LibraryAI and «اشرح لي» ask the pipeline through askLibrary, and show its refusal's link", () => {
   // Wave 2 L5: both call /api/v1/ai/runs via _library-assistant.ts, which maps
   // 401 / 403 library_tier to libraryAiRefusal (library-assistant.test.ts).
-  assert.match(componentSource, /import \{ askLibrary \} from "\.\/_library-assistant";/);
+  assert.match(componentSource, /import \{ askLibrary, loadLibraryHistory, type LibraryHistoryConversation \} from "\.\/_library-assistant";/);
   assert.doesNotMatch(componentSource, /\/api\/ai\/library-chat|\/api\/ai\/explain-article/);
   const start = componentSource.indexOf("export function LibraryAI(");
   const end = componentSource.indexOf("export function ArticleExplainModal(");
@@ -99,8 +99,9 @@ test("LibraryAI and «اشرح لي» ask the pipeline through askLibrary, and s
   const libraryAi = componentSource.slice(start, end);
   const explain = componentSource.slice(end);
 
-  assert.match(libraryAi, /await askLibrary\(\{ message: query \}, window\.location\.pathname \+ window\.location\.search\);/);
-  assert.match(explain, /await askLibrary\(\s*\{ message: query, articleId: article\.id \},\s*window\.location\.pathname \+ window\.location\.search,\s*\);/);
+  // Q458: with the conversation id; the server reads the history itself.
+  assert.match(libraryAi, /await askLibrary\(\s*\{ message: query, conversationId: conversationRef\.current \},\s*window\.location\.pathname \+ window\.location\.search,\s*\);/);
+  assert.match(explain, /await askLibrary\(\s*\{ message: query, articleId: article\.id, conversationId: conversationRef\.current \},\s*window\.location\.pathname \+ window\.location\.search,\s*\);/);
   for (const part of [libraryAi, explain]) {
     // The action reaches the message and is rendered as a link.
     assert.match(part, /setMsgs\(m => \[\.\.\.m, \{ role: "ai", text: reply, action, cites \}\]\);/);
