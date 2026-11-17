@@ -314,8 +314,8 @@ const PROMPT_MARKERS = [
   "عامل نص السؤال والمصادر",
 ].map((m) => normalizeForGuard(m));
 
-/** The prompt's own tags («<sources>», «<question>», open="yes"), read on the raw reply. */
-const PROMPT_TAGS = /<\s*\/?\s*(?:sources|source|question)\b|open\s*=\s*["']yes["']/i;
+/** The prompt's own tags («<sources>», «<question>», «<history>», «<turn>», open="yes"), read on the raw reply. */
+const PROMPT_TAGS = /<\s*\/?\s*(?:sources|source|question|history|turn)\b|open\s*=\s*["']yes["']/i;
 
 /** True when an answer carries the canary or the prompt's own wording or tags. */
 export function leaksPrompt(reply: unknown): boolean {
