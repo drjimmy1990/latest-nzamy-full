@@ -85,6 +85,7 @@ export interface HeldPlanRow {
   current_period_start?: string | null;
   current_period_end?: string | null;
   metadata?: Record<string, unknown> | null;
+  [key: string]: unknown;
 }
 
 /** The columns of the payment_orders row a held plan was paid by. */

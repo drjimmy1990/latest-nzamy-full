@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { getMoyasarConfig } from "@/lib/access-control";
+import { getMoyasarConfig, TIER_RANK } from "@/lib/access-control";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "@/lib/payments/moyasarConfig";
 import { createMoyasarClient, type MoyasarClient } from "@/lib/payments/moyasarClient";
 import { parseCheckoutBody, resolveCallbackOrigin } from "@/lib/payments/checkoutRules";
@@ -135,6 +135,8 @@ export async function POST(request: NextRequest) {
       {
         admin,
         client,
+        // l6-pay (Q511): a plan checkout refuses a downgrade and credits an upgrade
+        ranks: TIER_RANK,
         reserveFounderSeat: async (userId, orderId) => {
           const { data, error } = await admin.rpc("founder_reserve_seat", { p_user: userId, p_order: orderId });
           if (error) throw new Error(`founder_reserve_seat ${error.code ?? "error"}`);

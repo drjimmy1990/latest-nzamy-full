@@ -55,6 +55,26 @@
  *      order.
  *   8. 200 CheckoutResponse, with the intent's callback URL and expiry.
  *
+ * l6-pay (batch 6, 18 Nov 2026) — never on the founder membership:
+ *   3a. A PLAN (deps.ranks given — the route passes TIER_RANK): the buyer's
+ *       active plans (upgradeProration.readUpgrade). A running higher tier,
+ *       or an open-ended row of the same tier → 409 before any order (it
+ *       would be paid and grant nothing). An upgrade from a lower PAID plan →
+ *       the pro-rata credit; a coupon with it → 400 UPGRADE_NO_COUPON_AR. A
+ *       failed read → 503.
+ *   3c. A TOP-UP of an active founder member (F12, founderDiscount.ts): 15 %
+ *       off the net, or the coupon if it is larger (never both). A failed
+ *       founder read → 503. metadata.founder_discount; quote.founderDiscount.
+ *   3d. The credit off the net before VAT (VAT recomputed); less than 1 SAR
+ *       left → 409 UPGRADE_CREDIT_TOO_BIG_AR. metadata.proration;
+ *       quote.prorationCredit. A second open / paid order crediting the same
+ *       plans hits payment_orders_proration_once_key → 409 UPGRADE_PENDING_AR.
+ *   5c. A LIMITED coupon (max_uses) is reserved for the order (the
+ *       coupon_reserve RPC, 20261126_60) before any intent: exhausted → 400
+ *       (the generic sentence), an RPC error → 503; the order is cancelled
+ *       either way. The reservation lapses by itself when the order fails,
+ *       is cancelled or its hold expires.
+ *
  * The founder membership (P3, kind "membership" — lawyer-founder-2026) adds,
  * for that kind only (every other item is untouched):
  *   0.  The sale switch (deps.onSale, FOUNDER_MEMBERSHIP_ON_SALE by default)
@@ -104,6 +124,27 @@ import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type Pay
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
 import { COUPON_PENDING_AR, isCouponOrderConflict, priceWithCoupon } from "./couponServer.ts";
+import { applyDiscount, COUPON_INVALID_AR, COUPONS_UNAVAILABLE_AR } from "./couponRules.ts";
+import {
+  isProrationOrderConflict,
+  netAfterCredit,
+  prorationMetadata,
+  readUpgrade,
+  UPGRADE_CREDIT_TOO_BIG_AR,
+  UPGRADE_FAILED_AR,
+  UPGRADE_NO_COUPON_AR,
+  UPGRADE_PENDING_AR,
+  type UpgradeDecision,
+} from "./upgradeProration.ts";
+import {
+  bestDiscount,
+  FOUNDER_DISCOUNT_FAILED_AR,
+  founderDiscountApplies,
+  founderDiscountHalalas,
+  founderDiscountMetadata,
+  isActiveFounder,
+} from "./founderDiscount.ts";
+import type { TierRankTable } from "../entitlementGrantRules.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import type { BookEntry } from "../pricing/priceBook.ts";
 import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
@@ -182,6 +223,13 @@ export interface CheckoutDeps {
    * true to go on. Never called for any other kind. A throw is a refusal.
    */
   verifyHuman?: () => Promise<boolean>;
+  /**
+   * l6-pay (Q511): TIER_RANK (src/lib/access-control.ts) — the route passes
+   * it. With it a PLAN checkout reads what the buyer holds (step 3a): a
+   * downgrade is refused, an upgrade carries the pro-rata credit. Absent →
+   * not read (the plan is priced as before). Never used for any other kind.
+   */
+  ranks?: TierRankTable;
 }
 
 export interface CheckoutInput {
@@ -260,6 +308,30 @@ async function releaseSeat(deps: CheckoutDeps, orderId: string): Promise<void> {
   } catch (err) {
     console.warn("[payments/checkout] freeing the founder seat failed (the sweep frees it):", orderId, err instanceof Error ? err.message : "unknown");
   }
+}
+
+/** The coupon_reserve RPC's name (20261126_60). */
+export const COUPON_RESERVE_RPC = "coupon_reserve";
+
+/** Step 5c — null when the coupon's use is held for this order, else the reply (the caller cancels the order). */
+async function reserveCoupon(admin: SupabaseClient, couponId: string, orderId: string, userId: string): Promise<CheckoutReply | null> {
+  let answer: unknown;
+  try {
+    const { data, error } = await admin.rpc(COUPON_RESERVE_RPC, { p_coupon: couponId, p_order: orderId, p_user: userId });
+    if (error) {
+      if (isMissingPaymentsObject(error.code)) logMissingOnce("coupon_reserve", error.code);
+      else console.error("[payments/checkout] reserving the coupon failed:", orderId, error.code);
+      return fail(503, COUPONS_UNAVAILABLE_AR);
+    }
+    answer = data;
+  } catch (err) {
+    console.error("[payments/checkout] reserving the coupon threw:", orderId, err instanceof Error ? err.message : "unknown");
+    return fail(503, COUPONS_UNAVAILABLE_AR);
+  }
+  if (answer === "reserved" || answer === "unlimited") return null;
+  if (answer === "exhausted") return fail(400, COUPON_INVALID_AR);
+  console.error("[payments/checkout] coupon_reserve gave an unexpected answer:", orderId, String(answer).slice(0, 40));
+  return fail(503, COUPONS_UNAVAILABLE_AR);
 }
 
 /** Step 5b — null when the seat is reserved, else the reply (the caller cancels the order). */
@@ -346,12 +418,28 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     return fail(400, q.error === "unknown_item" ? UNKNOWN_ITEM_AR : BILLING_NOT_OFFERED_AR);
   }
 
+  // 3a (l6-pay, Q511). a plan: what the buyer already holds — a downgrade is
+  // refused before any order (it would be paid and grant nothing); an upgrade
+  // from a lower PAID plan carries the pro-rata credit (upgradeProration.ts),
+  // which is never combined with a coupon
+  let upgrade: Extract<UpgradeDecision, { kind: "credit" }> | null = null;
+  if (q.item.kind === "plan" && q.item.tier && deps.ranks) {
+    const held = await readUpgrade(admin, { userId: user.id, tier: q.item.tier, now, ranks: deps.ranks });
+    if (!held) return fail(503, UPGRADE_FAILED_AR);
+    if (held.kind === "refused") return fail(409, held.error);
+    if (held.kind === "credit") {
+      if (input.couponCode) return fail(400, UPGRADE_NO_COUPON_AR);
+      upgrade = held;
+    }
+  }
+
   // 3b. the coupon, on the net before VAT
   let net = q.netHalalas;
   let vat = q.vatHalalas;
   let total = q.totalHalalas;
   let couponMeta: Record<string, unknown> | null = null;
   let couponQuote: { listNet: number; discount: number; couponCode: string } | null = null;
+  let couponLimited = false;
   if (input.couponCode) {
     const priced = await priceWithCoupon(admin, {
       code: input.couponCode,
@@ -376,6 +464,41 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       list_net_halalas: priced.quote.listNetHalalas,
     };
     couponQuote = { listNet: priced.quote.listNetHalalas, discount: priced.quote.discountHalalas, couponCode: priced.coupon.code };
+    couponLimited = priced.coupon.limited === true;
+  }
+
+  // 3c (l6-pay, F12). an active founder member: 15 % off a top-up, never
+  // combined with a better offer — the larger of coupon and founder discount
+  // wins (a tie keeps the coupon unused)
+  let founderMeta: Record<string, unknown> | null = null;
+  let founderQuote: { listNet: number; founderDiscount: number } | null = null;
+  if (founderDiscountApplies(q.item.kind)) {
+    const founder = await isActiveFounder(admin, user.id, now);
+    if (founder === null) return fail(503, FOUNDER_DISCOUNT_FAILED_AR);
+    if (founder) {
+      const fd = founderDiscountHalalas(q.netHalalas);
+      if (bestDiscount(couponQuote?.discount ?? null, fd).source === "founder") {
+        const d = applyDiscount(q.netHalalas, fd);
+        ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
+        couponMeta = null;
+        couponQuote = null;
+        couponLimited = false;
+        founderMeta = founderDiscountMetadata(q.netHalalas, d.discountHalalas);
+        founderQuote = { listNet: q.netHalalas, founderDiscount: d.discountHalalas };
+      }
+    }
+  }
+
+  // 3d (l6-pay, Q511). the pro-rata credit off the net before VAT; less than
+  // 1 SAR left → refused (Moyasar charges no 0, and the credit would be lost)
+  let prorationMeta: Record<string, unknown> | null = null;
+  let prorationQuote: { listNet: number; prorationCredit: number } | null = null;
+  if (upgrade) {
+    if (netAfterCredit(net, upgrade.creditHalalas) === null) return fail(409, UPGRADE_CREDIT_TOO_BIG_AR);
+    const d = applyDiscount(net, upgrade.creditHalalas);
+    ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
+    prorationMeta = prorationMetadata(upgrade, q.netHalalas);
+    prorationQuote = { listNet: q.netHalalas, prorationCredit: d.discountHalalas };
   }
 
   // 4. earlier open orders for the same item
@@ -405,6 +528,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       metadata: {
         user_email: user.email ?? null,
         ...(couponMeta ? { coupon: couponMeta } : {}),
+        ...(founderMeta ? { founder_discount: founderMeta } : {}),
+        ...(prorationMeta ? { proration: prorationMeta } : {}),
         ...(consentMeta ?? {}),
         ...(input.attribution ? { attribution: input.attribution } : {}),
         ...(q.launch
@@ -421,6 +546,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       attempts.spend(user.id);
       return fail(400, COUPON_PENDING_AR);
     }
+    // l6-pay (20261126_60): another open / paid order already carries the credit of these plans
+    if (prorationMeta && isProrationOrderConflict(insertErr)) return fail(409, UPGRADE_PENDING_AR);
     // 20261125_50 (S3): payment_orders refuses a demo account's order
     const demo = demoRefusal(insertErr);
     if (demo) return fail(demo.status, demo.message);
@@ -435,6 +562,21 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // 5b (P3). the founder seat — reserved, or the order is closed before any intent
   if (isMembership) {
     const refused = await reserveSeat(deps, user.id, orderId);
+    if (refused) {
+      await admin.from("payment_orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "created");
+      return refused;
+    }
+  }
+
+  // 5c (l6-pay, 20261126_60). a LIMITED coupon (max_uses) is reserved for this
+  // order before any intent: coupon_reserve locks the coupon row and counts
+  // the uses plus the live reservations, so two buyers cannot both take the
+  // last use. A reservation stops counting by itself once its order fails, is
+  // cancelled or its hold expires, and turns into the use when fulfilment
+  // records it. Exhausted → the generic coupon sentence; an RPC error or the
+  // function missing (20261126_60 not run) → 503, never an unguarded charge.
+  if (couponMeta && couponLimited) {
+    const refused = await reserveCoupon(admin, String(couponMeta.id), orderId, user.id);
     if (refused) {
       await admin.from("payment_orders").update({ status: "cancelled" }).eq("id", orderId).eq("status", "created");
       return refused;
@@ -491,6 +633,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
         total,
         vatMode: q.vatMode,
         ...(couponQuote ?? {}),
+        ...(founderQuote ?? {}),
+        ...(prorationQuote ?? {}),
         ...(q.launch ? { launchListNet: q.launch.listNetHalalas } : {}),
       },
       callbackUrl,

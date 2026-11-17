@@ -61,6 +61,8 @@ import { isMissingFeatureColumn } from "../library/optionalColumn.ts";
 import { activeLaunchPrice, bookEntry, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { SUPERSEDE_WINDOW_MS } from "./checkoutRules.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
+import { readUpgrade, UPGRADE_FAILED_AR, UPGRADE_NO_COUPON_AR } from "./upgradeProration.ts";
+import type { TierRankTable } from "../entitlementGrantRules.ts";
 
 export const COUPON_COLUMNS =
   "id, code, discount_type, discount_value, min_order_amount, eligible_user_types, max_uses, used_count, valid_from, valid_until, active, max_discount_pct, excluded_kinds, metadata";
@@ -126,7 +128,7 @@ export function isCouponOrderConflict(error: DbError): boolean {
 export const COUPON_OPEN_ORDER_LIFETIME_MS = SUPERSEDE_WINDOW_MS;
 
 export type CouponPricing =
-  | { ok: true; coupon: { id: string; code: string }; quote: DiscountedQuote }
+  | { ok: true; coupon: { id: string; code: string; limited: boolean }; quote: DiscountedQuote }
   | { ok: false; status: 400 | 503; error: string };
 
 export interface CouponPricingInput {
@@ -372,7 +374,8 @@ export async function priceWithCoupon(admin: SupabaseClient, input: CouponPricin
   if (pending === "pending") return { ok: false, status: 400, error: COUPON_PENDING_AR };
   return {
     ok: true,
-    coupon: { id: row.id, code: row.code },
+    // l6-pay: a limited code (max_uses) is reserved at checkout (coupon_reserve, 20261126_60)
+    coupon: { id: row.id, code: row.code, limited: typeof row.max_uses === "number" && row.max_uses > 0 },
     quote: applyDiscount(input.netHalalas, decision.discountHalalas),
   };
 }
@@ -393,6 +396,12 @@ export interface ValidateDeps {
   now?: () => Date;
   catalog?: Readonly<Record<string, PayableItem>>;
   book?: Readonly<Record<string, BookEntry>>;
+  /**
+   * l6-pay (Q511): TIER_RANK, so a plan's preview refuses a code exactly when
+   * checkout would (a downgrade, or an upgrade carrying a pro-rata credit —
+   * a coupon is never combined with the credit). Absent → not checked.
+   */
+  ranks?: TierRankTable;
 }
 
 export type ValidateReply =
@@ -427,6 +436,15 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
   const now = deps.now?.() ?? new Date();
   const q = quote(input.itemId, input.billing, catalog, now);
   if (!q.ok) return { status: 400, body: { error: COUPON_INVALID_AR } };
+
+  // l6-pay (Q511): the same upgrade read as checkout, so the preview never
+  // promises a coupon the charge would refuse
+  if (q.item.kind === "plan" && q.item.tier && deps.ranks) {
+    const upgrade = await readUpgrade(admin, { userId: input.userId, tier: q.item.tier, now, ranks: deps.ranks });
+    if (!upgrade) return { status: 503, body: { error: UPGRADE_FAILED_AR } };
+    if (upgrade.kind === "refused") return { status: 400, body: { error: upgrade.error } };
+    if (upgrade.kind === "credit") return { status: 400, body: { error: UPGRADE_NO_COUPON_AR } };
+  }
 
   const priced = await priceWithCoupon(admin, {
     code: input.code,
