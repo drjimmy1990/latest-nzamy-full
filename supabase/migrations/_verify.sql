@@ -7132,6 +7132,9 @@ select 'Firm finance read rule + trust balance: definer, empty search_path, no g
        and not has_function_privilege('anon', 'public.can_read_firm_finance(uuid)', 'EXECUTE')
        and coalesce(position('finance_manager' in pg_catalog.pg_get_functiondef(to_regprocedure('public.can_read_firm_finance(uuid)'))) > 0, false)
        as ok;
+select 'A voided invoice frees its billed time/expense lines (20261126_40 §4b)' as check,
+       exists (select 1 from pg_trigger where tgname = 'trg_release_billed_lines_on_void'
+               and tgrelid = 'public.payments'::regclass and not tgisinternal) as ok;
 -- <<< verify:l6_ledger
 -- >>> verify:l6_accounts
 -- 2026-11-26 — 20261126_50_accounts_limits.sql (owner TODO R9, S9, firm seat cap):

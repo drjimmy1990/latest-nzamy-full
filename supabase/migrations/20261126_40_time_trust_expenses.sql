@@ -409,6 +409,40 @@ comment on function public.client_trust_balance(uuid) is
   'l6-ledger (20261126_40): deposits − disbursements (halalas) of every non-voided trust row of client card p_client. For the card''s owner or a finance role of its firm; 42501 otherwise.';
 
 
+-- ── 4b. A voided invoice frees the lines it billed (merge fix, batch 6) ────
+-- void_lawyer_invoice (20261126_30) sets payments.status = 'void'. The time
+-- and expense lines that statement covered go back to «غير مفوتر» so they can
+-- be billed again; the guard lets billed_payment_id/billed_at move (v_free).
+create or replace function public.release_billed_lines_on_void()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.time_entries set billed_payment_id = null
+   where billed_payment_id = new.id and voided_at is null;
+  update public.lawyer_expenses set billed_payment_id = null
+   where billed_payment_id = new.id and voided_at is null;
+  return null;
+end;
+$$;
+revoke all on function public.release_billed_lines_on_void() from public, anon, authenticated;
+
+do $void$
+begin
+  if to_regclass('public.payments') is not null then
+    drop trigger if exists trg_release_billed_lines_on_void on public.payments;
+    create trigger trg_release_billed_lines_on_void
+      after update of status on public.payments
+      for each row
+      when (new.status = 'void' and old.status is distinct from 'void')
+      execute function public.release_billed_lines_on_void();
+  end if;
+end
+$void$;
+
+
 -- ── 5. RLS ───────────────────────────────────────────────────────────────────
 alter table public.time_entries        enable row level security;
 alter table public.lawyer_expenses     enable row level security;
