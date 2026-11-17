@@ -41,6 +41,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const PAYMENT_COLUMNS =
   "id, request_id, provider, amount, currency, status, metadata, created_at";
 
+/**
+ * N01-9 (20261124_40): the same columns plus the invoice's own links. Read
+ * only from rows that carry them (the request-less read in finance GET), so a
+ * database that has not run 20261124_40 yet still answers the main read.
+ */
+export const PAYMENT_LINK_COLUMNS =
+  "id, request_id, provider, amount, currency, status, metadata, created_at, owner_user_id, lawyer_client_id, firm_id, contract_id";
+
 export const COLLECT_METHODS = ["cash", "bank_transfer"] as const;
 export type CollectMethod = (typeof COLLECT_METHODS)[number];
 
@@ -114,6 +122,8 @@ export interface CreateInvoiceBody {
   caseId: string | null;
   /** An existing request of this lawyer the invoice hangs on (CODE-F01). */
   requestId: string | null;
+  /** N01-9 / N01-10: a contract of this lawyer the invoice bills (contracts.id). */
+  contractId: string | null;
   description: string | null;
   feeType: "full" | "partial" | null;
   caseTitle: string | null;
@@ -151,6 +161,7 @@ export function parseCreateBody(
     clientType: optString(b.clientType),
     caseId: optString(b.caseId),
     requestId: optString(b.requestId),
+    contractId: optString(b.contractId),
     description: optString(b.description),
     feeType: optString(b.feeType),
     caseTitle: optString(b.caseTitle),
@@ -160,6 +171,7 @@ export function parseCreateBody(
   }
   const f = raw as Record<keyof typeof raw, string | null>;
   if (f.clientId !== null && !UUID_RE.test(f.clientId)) return { ok: false, error: CREATE_INVALID_AR };
+  if (f.contractId !== null && f.contractId.length > 100) return { ok: false, error: CREATE_INVALID_AR };
   if (f.clientType !== null && f.clientType !== "individual" && f.clientType !== "company") {
     return { ok: false, error: CREATE_INVALID_AR };
   }
@@ -167,8 +179,10 @@ export function parseCreateBody(
     return { ok: false, error: CREATE_INVALID_AR };
   }
   // No card: a typed name and an explicit type. The page used to send
-  // clientType "company" for everyone (CODE-F21).
-  if (f.clientId === null && (!f.client?.trim() || f.clientType === null)) {
+  // clientType "company" for everyone (CODE-F21). An invoice of a contract
+  // may name neither: the SQL takes the contract's own client card (N01-10),
+  // and answers 'invalid' when the contract has none.
+  if (f.clientId === null && f.contractId === null && (!f.client?.trim() || f.clientType === null)) {
     return { ok: false, error: CREATE_INVALID_AR };
   }
   return {
@@ -181,6 +195,7 @@ export function parseCreateBody(
       clientType: f.clientType as CreateInvoiceBody["clientType"],
       caseId: f.caseId,
       requestId: f.requestId,
+      contractId: f.contractId,
       description: f.description,
       feeType: f.feeType as CreateInvoiceBody["feeType"],
       caseTitle: f.caseTitle,
@@ -194,10 +209,16 @@ export interface CreateInvoiceInput {
 }
 
 /**
- * CODE-F01 / CODE-F22: one call to public.create_lawyer_invoice
- * (20261030_20), which checks ownership and writes the placeholder request
- * and the payments row in ONE transaction, once per idempotency key. A
- * refused call writes nothing; a repeated form gets the same invoice back.
+ * CODE-F01 / CODE-F22: one call to public.create_lawyer_invoice_v2
+ * (20261124_40), which checks ownership (request, case, card, contract) and
+ * writes ONE payments row, once per idempotency key. A refused call writes
+ * nothing; a repeated form gets the same invoice back.
+ *
+ * N01-9 (owner 13-Nov): v1 (20261030_20) also wrote a placeholder
+ * service_requests row «فاتورة: …» that showed up as a fake case. v2 writes
+ * none — the invoice carries owner_user_id / lawyer_client_id / firm_id /
+ * contract_id itself — and there is NO fallback to v1: a database without
+ * 20261124_40 answers 503 and nothing is written.
  */
 export async function createInvoiceWith(
   deps: FinanceDeps,
@@ -207,7 +228,7 @@ export async function createInvoiceWith(
   if (!parsed.ok) return fail(400, parsed.error);
   const c = parsed.value;
 
-  const { data, error } = await deps.admin.rpc("create_lawyer_invoice", {
+  const { data, error } = await deps.admin.rpc("create_lawyer_invoice_v2", {
     p_actor: input.userId,
     p_idempotency_key: c.idempotencyKey,
     p_amount_halalas: c.amountHalalas,
@@ -219,17 +240,18 @@ export async function createInvoiceWith(
     p_description: c.description,
     p_fee_type: c.feeType,
     p_case_title: c.caseTitle,
+    p_contract_id: c.contractId,
   });
 
   if (error) {
     // Never fall back to the old two-step write: that is CODE-F22.
     if (MISSING_FUNCTION.has(String(error.code ?? ""))) {
       console.error(
-        "[lawyer/finance POST] create_lawyer_invoice is missing — run 20261030_20_create_invoice_atomic.sql",
+        "[lawyer/finance POST] create_lawyer_invoice_v2 is missing — run 20261124_40_invoice_links.sql",
       );
       return fail(503, CREATE_UNAVAILABLE_AR);
     }
-    console.error("[lawyer/finance POST] create_lawyer_invoice failed:", error.message);
+    console.error("[lawyer/finance POST] create_lawyer_invoice_v2 failed:", error.message);
     return fail(500, "Failed to create invoice");
   }
 

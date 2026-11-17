@@ -20,7 +20,10 @@ import {
 } from "@/lib/services/contractVocabulary";
 import { normalizeCommercialRegister, isValidCommercialRegister } from "@/lib/services/clientIdentityRules";
 import { checkSaudiPhone, checkOptionalEmail, phoneAllowsUnified } from "@/lib/services/contactFieldRules";
-import { getLawyerClients, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import { getLawyerClients, createLawyerClient, type LawyerClient } from "@/lib/services/lawyerClientsService";
+import {
+  clientOptionValue, clientOptionLabel, parseClientOptionValue, orderPickable, ensureClientCard,
+} from "@/lib/services/clientPickOptions";
 
 /**
  * ContractChildForms.tsx
@@ -147,11 +150,44 @@ export function PartyFormModal({ contractId, isDark, onClose, initial, onSaved, 
     getLawyerClients().then((read) => {
       if (cancelled) return;
       if (!read.ok) { setClientsUnreadable(true); setClientsLoading(false); return; }
-      setClientCards(read.items.filter((c) => c.source === "card"));
+      setClientCards(orderPickable(read.items));
       setClientsLoading(false);
     });
     return () => { cancelled = true; };
   }, []);
+
+  // N01-2 / N01-5 (owner 13-Nov): a platform client is pickable too (its card
+  // is filed first), and picking fills the party's empty fields from the card.
+  const [pickBusy, setPickBusy] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+  async function handlePickClient(value: string) {
+    setPickError(null);
+    const parsed = parseClientOptionValue(value);
+    if (!parsed) { setSelectedClientId(""); return; }
+    const row = clientCards.find((c) => c.source === parsed.source && c.id === parsed.id);
+    if (!row) return;
+    let picked: LawyerClient = row;
+    if (row.source === "profile") {
+      setPickBusy(true);
+      try {
+        picked = await ensureClientCard(row, (input) => createLawyerClient(input));
+        setClientCards((prev) => prev.map((c) => (c.source === "profile" && c.id === row.id ? picked : c)));
+      } catch (err) {
+        setPickError(err instanceof Error && err.message ? err.message : "تعذّر إنشاء بطاقة لهذا الموكّل.");
+        return;
+      } finally {
+        setPickBusy(false);
+      }
+    }
+    setSelectedClientId(picked.id);
+    if (!name.trim()) setName(picked.name);
+    if (!contactPhone.trim() && picked.phone) setContactPhone(picked.phone);
+    if (!contactEmail.trim() && picked.email) setContactEmail(picked.email);
+    if (!commercialRegisterNo.trim() && picked.clientType === "company" && picked.commercialRegisterNo) {
+      setCommercialRegisterNo(picked.commercialRegisterNo);
+    }
+    if (!isEdit && picked.clientType) setEntityType(picked.clientType);
+  }
 
   const crTrimmed = commercialRegisterNo.trim();
   const crInvalid = !!crTrimmed && !isValidCommercialRegister(crTrimmed);
@@ -235,11 +271,25 @@ export function PartyFormModal({ contractId, isDark, onClose, initial, onSaved, 
 
         {!clientsUnreadable && (clientsLoading || clientCards.length > 0) && (
           <div>
-            <label className={labelCls}>ربط ببطاقة موكّل (اختياري)</label>
-            <select value={selectedClientId} onChange={(e) => setSelectedClientId(e.target.value)} disabled={clientsLoading} className={inputCls}>
-              <option value="">{clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون ربط —"}</option>
-              {clientCards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <label className={labelCls}>ربط بموكّل (اختياري)</label>
+            <select
+              value={selectedClientId ? clientOptionValue({ source: "card", id: selectedClientId }) : ""}
+              onChange={(e) => { void handlePickClient(e.target.value); }}
+              disabled={clientsLoading || pickBusy}
+              className={inputCls}
+            >
+              <option value="">
+                {clientsLoading ? "جارٍ تحميل الموكّلين..." : pickBusy ? "جارٍ إنشاء بطاقة الموكّل..." : "— بدون ربط —"}
+              </option>
+              {initial?.lawyerClientId && selectedClientId === initial.lawyerClientId &&
+                !clientCards.some((c) => c.source === "card" && c.id === initial.lawyerClientId) && (
+                <option value={clientOptionValue({ source: "card", id: initial.lawyerClientId })}>الموكّل المرتبط حالياً</option>
+              )}
+              {clientCards.map((c) => (
+                <option key={clientOptionValue(c)} value={clientOptionValue(c)}>{clientOptionLabel(c)}</option>
+              ))}
             </select>
+            {pickError && <p className="mt-1.5 text-[11px] font-semibold text-red-500">{pickError}</p>}
           </div>
         )}
 

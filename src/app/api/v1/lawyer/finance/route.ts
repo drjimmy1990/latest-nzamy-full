@@ -4,6 +4,7 @@ import { assertRole } from "@/lib/auth/assertRole";
 import {
   createInvoiceWith,
   PAYMENT_COLUMNS,
+  PAYMENT_LINK_COLUMNS,
   recordCollectionWith,
   type FinanceReply,
 } from "@/lib/finance/invoiceFinanceCore";
@@ -80,6 +81,14 @@ function mapPaymentToInvoice(p: Record<string, unknown>) {
     client: String(meta.client ?? "عميل"),
     clientType: meta.clientType === "company" ? "company" : "individual",
     caseTitle: typeof meta.caseTitle === "string" ? meta.caseTitle : "—",
+    // N01-9 / N01-10 (20261124_40): the invoice's own links. The columns win;
+    // metadata carries the same ids for invoices issued before the columns.
+    clientId: typeof p.lawyer_client_id === "string" ? p.lawyer_client_id
+      : typeof meta.clientId === "string" ? meta.clientId : null,
+    caseId: typeof meta.caseId === "string" ? meta.caseId : null,
+    contractId: typeof p.contract_id === "string" ? p.contract_id
+      : typeof meta.contractId === "string" ? meta.contractId : null,
+    contractTitle: typeof meta.contractTitle === "string" ? meta.contractTitle : null,
     desc: typeof meta.description === "string" ? meta.description : "أتعاب قانونية",
     totalFee: amount,
     paidAmount,
@@ -167,8 +176,8 @@ export async function GET() {
       return NextResponse.json({ error: "Failed to read finance data" }, { status: 500 });
     };
 
-    // Request ids assigned to this lawyer (scopes payments via the NOT NULL
-    // request_id FK on payments).
+    // Request ids assigned to this lawyer (scopes the payments that hang on a
+    // request; the request-less ones are read by owner below — N01-9).
     const { data: myRequests, error: reqErr } = await supabase
       .from("service_requests")
       .select("id")
@@ -183,7 +192,20 @@ export async function GET() {
       chunks.push(requestIds.slice(i, i + REQUEST_ID_CHUNK));
     }
 
-    const [paymentResults, walletResult] = await Promise.all([
+    // N01-9 (20261124_40): an invoice issued without a case hangs on no
+    // request; it is this lawyer's through payments.owner_user_id (RLS policy
+    // "invoice owner reads own invoices"). `request_id is null` keeps this read
+    // disjoint from the chunked one, so the two counts add up exactly.
+    const ownInvoicesQuery = supabase
+      .from("payments")
+      .select(PAYMENT_LINK_COLUMNS, { count: "exact" })
+      .is("request_id", null)
+      .eq("owner_user_id", uid)
+      .in("status", INVOICEABLE_STATUS_LIST)
+      .order("created_at", { ascending: false })
+      .limit(MAX_ROWS);
+
+    const [paymentResults, walletResult, ownInvoicesRaw] = await Promise.all([
       Promise.all(
         chunks.map((chunk) =>
           supabase
@@ -201,7 +223,19 @@ export async function GET() {
         .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .limit(MAX_ROWS),
+      ownInvoicesQuery,
     ]);
+
+    // Before 20261124_40 runs the column does not exist (42703): no invoice
+    // can be request-less yet, so that read is an honest 0, not a failure.
+    const ownInvoicesMissing = ownInvoicesRaw.error?.code === "42703";
+    if (ownInvoicesRaw.error && !ownInvoicesMissing) {
+      return readFailed("payments (own)", ownInvoicesRaw.error.message);
+    }
+    const ownInvoices = {
+      data: ownInvoicesMissing ? [] : ((ownInvoicesRaw.data ?? []) as unknown as Record<string, unknown>[]),
+      count: ownInvoicesMissing ? 0 : ownInvoicesRaw.count,
+    };
 
     const failedChunk = paymentResults.find((r) => r.error);
     if (failedChunk?.error) return readFailed("payments", failedChunk.error.message);
@@ -220,6 +254,7 @@ export async function GET() {
     // number either way, so nothing on the screen can claim to be a total.
     const paymentsRaw = paymentResults
       .flatMap((r) => (r.data ?? []) as unknown as Record<string, unknown>[])
+      .concat(ownInvoices.data)
       // Belt to the query's braces — see INVOICEABLE_STATUS_LIST. Reads the
       // same constant the `.in("status", …)` above does, so the two cannot
       // drift apart, and a query edit that let a `refunded` row through still
@@ -242,9 +277,10 @@ export async function GET() {
      * Zero chunks (a lawyer with no assigned requests) is a real 0, not an
      * unknown: there is nothing to count.
      */
-    const invoicesTotal = paymentResults.some((r) => typeof r.count !== "number")
-      ? null
-      : paymentResults.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    const invoicesTotal =
+      paymentResults.some((r) => typeof r.count !== "number") || typeof ownInvoices.count !== "number"
+        ? null
+        : paymentResults.reduce((sum, r) => sum + (r.count ?? 0), 0) + (ownInvoices.count as number);
 
     /**
      * wallet_transactions → the lawyer's PLATFORM WALLET ledger.
@@ -298,15 +334,16 @@ function respond(reply: FinanceReply) {
 
 /**
  * POST /api/v1/lawyer/finance
- * Auth required. Creates a manual invoice: a placeholder service_requests row
- * (assigned to the lawyer) plus a payments row referencing it.
+ * Auth required. Creates a manual invoice: ONE payments row (N01-9 — no
+ * placeholder «فاتورة: …» service_requests row any more, 20261124_40).
  *
  * `payments` has no INSERT RLS policy, so the write goes through
  * createServiceClient. A supplied `requestId` must be assigned to this lawyer
  * (CODE-F01) — otherwise 403 `{ error: "Forbidden" }`, the same for a request
  * that does not exist, and nothing is written. See createInvoiceWith().
  *
- * Body: { client, description, amount, feeType?, caseTitle?, clientType?, requestId? }
+ * Body: { idempotencyKey, amountHalalas, clientId? | client + clientType, caseId?,
+ *         caseTitle?, requestId?, contractId?, description?, feeType? }
  * Returns { data: <invoice-shaped row> }.
  */
 export async function POST(request: NextRequest) {

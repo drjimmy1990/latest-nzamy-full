@@ -15,13 +15,14 @@ import type {
   ObligationKind, ObligationStatus, PaymentStage, PaymentStatus,
 } from "@/lib/services/contractsService";
 import { caseRelationshipFilter, caseLinkIssue } from "@/lib/services/contractCaseLink";
+import { readCounterparty } from "@/lib/services/contractCounterparty";
 
 // ─── selects (column lists the tables actually have — 20260905_phase3) ───────
 
 export const CONTRACT_SELECT =
   "id, owner_user_id, firm_id, lawyer_client_id, client_user_id, request_id, title, contract_type, status, " +
   "counterparty_name, value_sar, currency, starts_on, ends_on, auto_renew, renewal_notice_days, signed_on, " +
-  "current_version_id, notes, created_at, updated_at";
+  "current_version_id, notes, metadata, created_at, updated_at";
 export const VERSION_SELECT =
   "id, contract_id, version_no, label, file_name, storage_path, mime_type, size_bytes, uploaded_by, notes, created_at";
 export const PARTY_SELECT =
@@ -54,6 +55,8 @@ export interface ContractRow {
   signed_on: string | null;
   current_version_id: string | null;
   notes: string | null;
+  /** N01-5: `counterparty: { phone, idNo }` (contractCounterparty.ts). */
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,6 +108,8 @@ export function toContractDto(row: ContractRow, extras: ContractExtras = {}): Co
     contractType: row.contract_type as ContractType,
     status: row.status as ContractStatus,
     counterpartyName: row.counterparty_name,
+    counterpartyPhone: readCounterparty(row.metadata).phone,
+    counterpartyIdNo: readCounterparty(row.metadata).idNo,
     valueSar: num(row.value_sar),
     currency: row.currency || "SAR",
     startsOn: row.starts_on,

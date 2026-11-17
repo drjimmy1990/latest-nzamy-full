@@ -18,6 +18,10 @@ import { isSupabaseMode } from "@/lib/runtimeMode";
 import { apiGet } from "@/lib/services/api";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { isLawyerCaseRow } from "../../cases/_caseListRules";
+import {
+  clientOptionValue, clientOptionLabel, parseClientOptionValue, orderPickable,
+  ensureClientCard, counterpartyFill,
+} from "@/lib/services/clientPickOptions";
 
 /** A case the contract can be linked to (N01-6) — the rows the case list shows. */
 interface CaseOption { id: string; title: string }
@@ -69,6 +73,9 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
   const [contractType, setContractType] = useState<ContractType>(initial?.contractType ?? "service_agreement");
   const [status, setStatus] = useState<ContractStatus>(initial?.status ?? "draft");
   const [counterpartyName, setCounterpartyName] = useState(initial?.counterpartyName ?? "");
+  // N01-5: «الطرف الآخر» contact (contracts.metadata.counterparty).
+  const [counterpartyPhone, setCounterpartyPhone] = useState(initial?.counterpartyPhone ?? "");
+  const [counterpartyIdNo, setCounterpartyIdNo] = useState(initial?.counterpartyIdNo ?? "");
   const [valueSar, setValueSar] = useState(initial?.valueSar !== null && initial?.valueSar !== undefined ? String(initial.valueSar) : "");
   const [startsOn, setStartsOn] = useState(initial?.startsOn ?? "");
   const [endsOn, setEndsOn] = useState(initial?.endsOn ?? "");
@@ -77,9 +84,12 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
   const [signedOn, setSignedOn] = useState(initial?.signedOn ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
-  // ── Client card picker — same pattern as AddCaseModal: cards only
-  // ("source: 'card'"), free text stays the fallback. ─────────────────────
+  // ── Client picker — N01-2 (owner 13-Nov): client cards AND platform
+  // accounts with no card yet, each labelled; picking a platform account
+  // files its card first (ensureClientCard). Free text stays the fallback. ──
   const [clientCards, setClientCards] = useState<LawyerClient[]>([]);
+  const [pickBusy, setPickBusy] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [clientsUnreadable, setClientsUnreadable] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState(initial?.lawyerClientId ?? "");
@@ -125,7 +135,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
       setSelectedClientId(card.id);
       // A new card has no cases yet: a case picked before cannot stay linked.
       setSelectedRequestId("");
-      if (!counterpartyName.trim()) setCounterpartyName(card.name);
+      fillCounterpartyFrom(card);
       setQuickOpen(false);
       setQuickName("");
       setQuickPhone("");
@@ -141,17 +151,57 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
     getLawyerClients().then((read) => {
       if (cancelled) return;
       if (!read.ok) { setClientsUnreadable(true); setClientsLoading(false); return; }
-      setClientCards(read.items.filter((c) => c.source === "card"));
+      setClientCards(orderPickable(read.items));
       setClientsLoading(false);
     });
     return () => { cancelled = true; };
   }, []);
 
+  // N01-5 (owner 13-Nov): picking a client fills «الطرف الآخر», its phone and
+  // (for a company) its commercial register — only the fields still empty.
+  function fillCounterpartyFrom(c: LawyerClient) {
+    const next = counterpartyFill(c, { name: counterpartyName, phone: counterpartyPhone, idNo: counterpartyIdNo });
+    setCounterpartyName(next.name);
+    setCounterpartyPhone(next.phone);
+    setCounterpartyIdNo(next.idNo);
+  }
+
+  async function handlePickClient(value: string) {
+    setPickError(null);
+    const parsed = parseClientOptionValue(value);
+    if (!parsed) {
+      if (selectedClientId) setSelectedRequestId("");
+      setSelectedClientId("");
+      return;
+    }
+    const row = clientCards.find((c) => c.source === parsed.source && c.id === parsed.id);
+    if (!row) return;
+    let picked: LawyerClient = row;
+    if (row.source === "profile") {
+      setPickBusy(true);
+      try {
+        picked = await ensureClientCard(row, (input) => createLawyerClient(input));
+        // the platform row becomes the card it now has
+        setClientCards((prev) => prev.map((c) => (c.source === "profile" && c.id === row.id ? picked : c)));
+      } catch (err) {
+        setPickError(err instanceof Error && err.message ? err.message : "تعذّر إنشاء بطاقة لهذا الموكّل.");
+        return;
+      } finally {
+        setPickBusy(false);
+      }
+    }
+    // The case list follows the client, so a case picked for another client
+    // is cleared — never saved while hidden.
+    if (picked.id !== selectedClientId) setSelectedRequestId("");
+    setSelectedClientId(picked.id);
+    fillCounterpartyFrom(picked);
+  }
+
   // CODE-F34: "dirty" = differs from what the form opened with (empty for a
   // new contract, the saved contract for an edit). The first render's snapshot
   // is the baseline.
   const snapshot = JSON.stringify([
-    title, contractType, status, counterpartyName, selectedClientId, valueSar,
+    title, contractType, status, counterpartyName, counterpartyPhone, counterpartyIdNo, selectedClientId, valueSar,
     startsOn, endsOn, autoRenew, renewalNoticeDays, signedOn, notes, selectedRequestId,
   ]);
   const [baseline] = useState(snapshot);
@@ -201,6 +251,8 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
           title: trimmedTitle,
           contractType,
           counterpartyName: counterpartyName.trim() || null,
+          counterpartyPhone: counterpartyPhone.trim() || null,
+          counterpartyIdNo: counterpartyIdNo.trim() || null,
           lawyerClientId: selectedClientId || null,
           requestId: selectedRequestId || null,
           valueSar: valueNum,
@@ -219,6 +271,10 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
         if (status !== initial.status) patch.status = status;
         const nextCounterparty = counterpartyName.trim() || null;
         if (nextCounterparty !== initial.counterpartyName) patch.counterpartyName = nextCounterparty;
+        const nextCpPhone = counterpartyPhone.trim() || null;
+        if (nextCpPhone !== (initial.counterpartyPhone ?? null)) patch.counterpartyPhone = nextCpPhone;
+        const nextCpIdNo = counterpartyIdNo.trim() || null;
+        if (nextCpIdNo !== (initial.counterpartyIdNo ?? null)) patch.counterpartyIdNo = nextCpIdNo;
         const nextClientId = selectedClientId || null;
         if (nextClientId !== (initial.lawyerClientId ?? null)) patch.lawyerClientId = nextClientId;
         const nextRequestId = selectedRequestId || null;
@@ -293,28 +349,43 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
             <input type="text" value={counterpartyName} onChange={(e) => setCounterpartyName(e.target.value)} placeholder="اسم الطرف الآخر أو الجهة" className={inputCls} />
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>جوال الطرف الآخر (اختياري)</label>
+              <input type="tel" dir="ltr" value={counterpartyPhone} onChange={(e) => setCounterpartyPhone(e.target.value)} placeholder="05XXXXXXXX" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>السجل التجاري / الرقم الموحّد (اختياري)</label>
+              <input type="text" dir="ltr" inputMode="numeric" value={counterpartyIdNo} onChange={(e) => setCounterpartyIdNo(e.target.value)} placeholder="١٠ أرقام" className={inputCls} />
+            </div>
+          </div>
+          <p className={`-mt-2 text-[10.5px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+            رقم هوية الفرد لا يُحفظ نصاً في المنصة — يبقى مشفّراً في بطاقة الموكّل فقط.
+          </p>
+
           {!clientsUnreadable && (clientsLoading || clientCards.length > 0 || isSupabaseMode) && (
             <div>
-              <label className={labelCls}>بطاقة الموكّل (اختياري)</label>
+              <label className={labelCls}>الموكّل (اختياري)</label>
               <select
-                value={selectedClientId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setSelectedClientId(id);
-                  // The case list follows the client, so a case picked for
-                  // another client is cleared — never saved while hidden.
-                  if (id !== selectedClientId) setSelectedRequestId("");
-                  // N01-5 (owner package 13 Nov): picking the client fills «الطرف الآخر»
-                  // when it is still empty; a name the lawyer typed is never overwritten.
-                  const picked = clientCards.find((c) => c.id === id);
-                  if (picked && !counterpartyName.trim()) setCounterpartyName(picked.name);
-                }}
-                disabled={clientsLoading}
+                value={selectedClientId ? clientOptionValue({ source: "card", id: selectedClientId }) : ""}
+                onChange={(e) => { void handlePickClient(e.target.value); }}
+                disabled={clientsLoading || pickBusy}
                 className={inputCls}
               >
-                <option value="">{clientsLoading ? "جارٍ تحميل الموكّلين..." : "— بدون ربط —"}</option>
-                {clientCards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <option value="">
+                  {clientsLoading ? "جارٍ تحميل الموكّلين..." : pickBusy ? "جارٍ إنشاء بطاقة الموكّل..." : "— بدون ربط —"}
+                </option>
+                {initial?.lawyerClientId && selectedClientId === initial.lawyerClientId &&
+                  !clientCards.some((c) => c.source === "card" && c.id === initial.lawyerClientId) && (
+                  <option value={clientOptionValue({ source: "card", id: initial.lawyerClientId })}>
+                    {initial.clientName ? `${initial.clientName} — بطاقة موكّل` : "الموكّل المرتبط حالياً"}
+                  </option>
+                )}
+                {clientCards.map((c) => (
+                  <option key={clientOptionValue(c)} value={clientOptionValue(c)}>{clientOptionLabel(c)}</option>
+                ))}
               </select>
+              {pickError && <p className="mt-1.5 text-[11px] font-semibold text-red-500">{pickError}</p>}
               {isSupabaseMode && !clientsLoading && !quickOpen && (
                 <button
                   type="button"

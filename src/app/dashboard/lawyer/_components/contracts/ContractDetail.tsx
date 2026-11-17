@@ -6,8 +6,9 @@ import Link from "next/link";
 import {
   FileText, PencilSimple, Sparkle, Plus, Trash, DownloadSimple,
   CheckCircle, XCircle, Warning, ArrowClockwise, CircleNotch,
-  Timer, CurrencyCircleDollar, Info, UploadSimple,
+  Timer, CurrencyCircleDollar, Info, UploadSimple, Receipt,
 } from "@phosphor-icons/react";
+import { invoiceFromContractHref } from "@/lib/services/invoiceFromContract";
 
 import {
   getContract, deleteContractVersion, getContractVersionUrl,
@@ -315,6 +316,8 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
             </div>
             <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
               {detail.counterpartyName && <span>الطرف الآخر: {detail.counterpartyName}</span>}
+              {detail.counterpartyPhone && <span dir="ltr">{detail.counterpartyPhone}</span>}
+              {detail.counterpartyIdNo && <span>السجل/الموحّد: <span dir="ltr">{detail.counterpartyIdNo}</span></span>}
               {detail.valueSar !== null && <span className="font-bold text-[#C8A762]">{formatSarAr(detail.valueSar)}</span>}
               {detail.startsOn && <span>من {formatGregorianAr(detail.startsOn)}</span>}
               {detail.endsOn && <span>إلى {formatGregorianAr(detail.endsOn)}</span>}
@@ -328,6 +331,17 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
             >
               <PencilSimple size={13} /> تعديل
             </button>
+            {/* N01-10 (owner 13-Nov): an invoice of this contract — client,
+                contract and amount pre-filled on the finance page. The firm
+                dashboard has no live invoice screen yet, so lawyer only. */}
+            {basePath === "/dashboard/lawyer" && (
+              <Link
+                href={invoiceFromContractHref(contractId)}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-bold transition ${isDark ? "bg-white/[0.06] text-zinc-300 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+              >
+                <Receipt size={13} /> إصدار بيان أتعاب
+              </Link>
+            )}
             <Link
               href={`/ai/contracts?contract=${encodeURIComponent(contractId)}`}
               className="flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-3 py-2 text-[12px] font-bold text-[#C8A762] hover:bg-[#092e22] transition"
@@ -655,6 +669,14 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
                             >
                               <CurrencyCircleDollar size={12} /> تسجيل السداد
                             </button>
+                          )}
+                          {basePath === "/dashboard/lawyer" && p.status !== "paid" && p.status !== "cancelled" && (
+                            <Link
+                              href={invoiceFromContractHref(contractId, p.amountSar)}
+                              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${isDark ? "bg-white/[0.06] text-zinc-300 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                            >
+                              <Receipt size={12} /> بيان أتعاب لهذه الدفعة
+                            </Link>
                           )}
                           <button
                             onClick={() => setPaymentModal({ mode: "edit", payment: p })}
