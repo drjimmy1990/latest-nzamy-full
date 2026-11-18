@@ -2,6 +2,7 @@ import Link from "next/link";
 import { buildMetadata } from "@/lib/seo";
 import {
   FOUNDER_ADVOCATE_ONLY_LINE,
+  FOUNDER_FALLBACK_ENDS_AT_EXCLUSIVE,
   FOUNDER_ONCE_LINE,
   FOUNDER_TERMS_PATH,
   FOUNDER_TERMS_REFUND_PATH,
@@ -9,6 +10,7 @@ import {
   founderLandingPrice,
 } from "@/lib/founder/landingCopy";
 import { FOUNDER_PENDING_NOTE } from "@/lib/pricing/founderCard";
+import { buildFounderOfferJsonLd, serializeJsonLd } from "@/lib/publicSeo/structuredData";
 import { FounderWindowProvider } from "./_components/FounderWindowProvider";
 import { HeroMeter } from "./_components/HeroMeter";
 import { JoinButton } from "./_components/JoinButton";
@@ -37,11 +39,20 @@ import { WindowLine } from "./_components/WindowLine";
  * (FounderWindowProvider). Nothing time-dependent renders on the server.
  */
 
+const FOUNDER_DESCRIPTION =
+  "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.";
+
+// Owner 18 Nov, item 4.6: schema.org Product + Offer (price 2,996 SAR before
+// VAT from quote(), valid to the manifest's last day) — src/lib/publicSeo/structuredData.ts.
+const FOUNDER_OFFER_JSON_LD = buildFounderOfferJsonLd({
+  description: FOUNDER_DESCRIPTION,
+  endsAtExclusive: FOUNDER_FALLBACK_ENDS_AT_EXCLUSIVE,
+});
+
 export const metadata = buildMetadata({
   titleAr: "باقة المحامي المؤسس",
   titleEn: "Founding Lawyer Membership",
-  descriptionAr:
-    "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.",
+  descriptionAr: FOUNDER_DESCRIPTION,
   path: "/founder",
   keywords: ["المحامي المؤسس", "باقة المؤسس", "الصائغ القانوني"],
 });
@@ -109,6 +120,9 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
 export default function FounderPage() {
   return (
     <FounderWindowProvider>
+      {FOUNDER_OFFER_JSON_LD && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(FOUNDER_OFFER_JSON_LD) }} />
+      )}
       <div dir="rtl" className="font-body text-[17px] leading-[1.85]">
         {/* ── header ── */}
         <header className="sticky top-0 z-30 bg-[#06201A]/95 text-white backdrop-blur">

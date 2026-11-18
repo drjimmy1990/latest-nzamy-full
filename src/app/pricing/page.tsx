@@ -21,6 +21,7 @@ import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
 import { audienceTabsView, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 import { audienceFromParam } from "@/lib/pricing/founderCard";
+import FounderCampaignLink from "@/components/seo/FounderCampaignLink";
 
 // Which package families the audience bar offers (owner, 2026-10-24): a
 // member sees only their own account type's family — the bar is locked to it
@@ -128,6 +129,10 @@ export default function PricingPage() {
 
         {/* A dated campaign only (owner ١٧٩); renders nothing today. */}
         <PromotionalCampaignBanner />
+
+        {/* Owner 18 Nov, item 4.6: an internal link to /founder in the server HTML,
+            whatever the tab (the founder card below shows on the lawyers tab only). */}
+        <FounderCampaignLink />
 
         {/* The lawyer founder membership (P3): the card while on sale; the
             «انتهت…» line for a campaign-link visitor after it closes. */}

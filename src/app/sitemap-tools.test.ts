@@ -27,9 +27,15 @@ test("task 6 review M1: no gate-only or «قريباً» tool route is advertise
   assert.deepEqual(listed, []);
 });
 
-test("the tools with a working path stay listed", () => {
-  for (const route of ["/ai/draft", "/ai/legal-opinion", "/ai/legal-translate"]) {
+test("the guest tools with a working path stay listed", () => {
+  for (const route of ["/ai/legal-translate", "/ai/collector", "/ai/procedures"]) {
     assert.ok(urls.includes(route), route);
+  }
+});
+
+test("owner 18 Nov, item 4.3: /ai/draft and /ai/legal-opinion are sign-in pages (proxy.ts PROTECTED) — not advertised", () => {
+  for (const route of ["/ai/draft", "/ai/legal-opinion"]) {
+    assert.ok(!urls.includes(route), route);
   }
 });
 

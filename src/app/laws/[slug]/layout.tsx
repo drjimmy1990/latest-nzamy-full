@@ -19,7 +19,9 @@ import { libraryDocMetadata, loadLibraryDocSeo } from "@/lib/library/libraryDocu
  * guards the reader itself and the section guard (src/app/laws/layout.tsx,
  * `lawReaderGuardsItself`) lets this path through. Nothing is printed while
  * the library is closed (the load answers "closed"); the ديباجة (a
- * subscriber's, T28-22) and article texts (server-only) are never printed.
+ * subscriber's, T28-22) is never printed, and of the articles only the first
+ * one, when a guest's reader shows it too, cut short (owner 18 Nov, item 4.1:
+ * src/lib/library/lawPublicExcerpt.ts). The block's name is the page's H1.
  */
 type Params = { params: Promise<{ slug: string }> };
 
@@ -35,7 +37,7 @@ export default async function Layout({ children, params }: Params & { children: 
     <>
       {load.status === "ok" && <LibraryJsonLd doc={load.doc} />}
       <LibraryGuard>{children}</LibraryGuard>
-      {load.status === "ok" && <LibraryDocumentShell doc={load.doc} />}
+      {load.status === "ok" && <LibraryDocumentShell doc={load.doc} shell={load.shell} />}
     </>
   );
 }

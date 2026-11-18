@@ -306,7 +306,11 @@ export default function ArticleView({
     return () => io.disconnect();
   }, [mounted, toc]);
 
-  if (!mounted) return null;
+  // Owner 18 Nov, item 4.1: no `if (!mounted) return null` any more — the
+  // article (title, H1, body) is rendered on the server, so the first HTML
+  // holds it for a visitor and a crawler alike (it was an empty shell). The
+  // render reads nothing from the browser: the theme starts at the
+  // provider's fixed default, and the share links use the canonical URL.
 
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const card = `rounded-2xl border p-6 ${isDark ? "bg-[#161b22] border-[#2d3748]" : "bg-white border-gray-200"}`;
@@ -367,7 +371,7 @@ export default function ArticleView({
                 <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${isDark ? "bg-[#0B3D2E] text-[#C8A762]" : "bg-[#0B3D2E] text-white"}`}>{isRTL ? article.tag : article.tagEn}</span>
                 <span className={`text-xs ${muted}`}>{isRTL ? article.date : article.dateEn}</span>
                 <span className={`flex items-center gap-1 text-xs ${muted}`}><Clock size={11} />{isRTL ? article.readTime : article.readTimeEn} {isRTL ? "قراءة" : "read"}</span>
-                <span className={`flex items-center gap-1 text-xs ${muted}`}><Eye size={11} />{article.views.toLocaleString()}</span>
+                <span className={`flex items-center gap-1 text-xs ${muted}`}><Eye size={11} />{article.views.toLocaleString(isRTL ? "ar-SA" : "en-US")}</span>
               </div>
               <h1 className={`text-2xl font-black leading-snug mb-4 ${isDark ? "text-white" : "text-gray-900"}`}>
                 {isRTL ? article.title : article.titleEn}
@@ -410,7 +414,8 @@ export default function ArticleView({
                   <span className="text-xs">{isRTL ? "شارك:" : "Share:"}</span>
                   {(() => {
                     const shareTitle = isRTL ? article.title : article.titleEn;
-                    const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+                    // The canonical URL, not window.location: the same on the server and the client.
+                    const shareUrl = article.canonical_url || `https://nezamy.sa/blog/${article.slug}`;
                     const targets = [
                       { name: isRTL ? "مشاركة عبر واتساب" : "Share on WhatsApp", Icon: WhatsappLogo, color: "#25d366", href: `https://wa.me/?text=${encodeURIComponent(`${shareTitle} ${shareUrl}`)}` },
                       { name: isRTL ? "مشاركة عبر منصة إكس" : "Share on X", Icon: XLogo, color: isDark ? "#e7e9ea" : "#0f1419", href: `https://x.com/intent/post?text=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}` },

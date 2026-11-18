@@ -24,6 +24,7 @@ const IDENTITY_PAGES = [
   "app/refund-policy/page.tsx",
   "app/contact/page.tsx",
   "app/faq/page.tsx",
+  "app/faq/faqData.ts",
 ];
 
 test("Q27: the owner's identity sentence is the one exported", () => {
@@ -43,9 +44,12 @@ test("Q27: no page names the platform «شركة نظامي للمحاماة» o
 });
 
 test("Q27: the footer, terms, contact page and FAQ show the identity from the shared constant", () => {
-  for (const path of ["components/Footer.tsx", "app/terms/page.tsx", "app/contact/page.tsx", "app/faq/page.tsx"]) {
+  for (const path of ["components/Footer.tsx", "app/terms/page.tsx", "app/contact/page.tsx"]) {
     assert.match(src(path), /@\/constants\/legalIdentity/, `${path}: does not use the shared identity`);
   }
+  // The FAQ's answers moved to a pure module (owner 18 Nov, item 4.4): a relative import.
+  assert.match(src("app/faq/faqData.ts"), /from "\.\.\/\.\.\/constants\/legalIdentity\.ts"/);
+  assert.match(src("app/faq/faqData.ts"), /\$\{LEGAL_IDENTITY_AR\}/);
 });
 
 test("Q27: client screens call the platform «فريق نظامي», not «مكتب نظامي»", () => {
@@ -62,7 +66,9 @@ test("Q27: client screens call the platform «فريق نظامي», not «مك�
 });
 
 test("Q27: the home page's structured data is an Organization, not a schema.org LegalService (a law firm)", () => {
-  const text = src("app/page.tsx");
+  // Built in src/lib/publicSeo/structuredData.ts since 18 Nov (owner item 4.5).
+  assert.match(src("app/page.tsx"), /buildOrganizationJsonLd\(\)/);
+  const text = src("lib/publicSeo/structuredData.ts");
   assert.doesNotMatch(text, /"@type":\s*"LegalService"/);
   assert.match(text, /"@type":\s*"Organization"/);
   assert.match(text, /description:\s*LEGAL_IDENTITY_AR/);

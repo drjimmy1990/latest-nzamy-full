@@ -11,5 +11,7 @@ export const metadata = buildMetadata({
 });
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <LibraryGuard>{children}</LibraryGuard>;
+  // A collection's reader (/precedents/[slug]) carries its own guard, so its
+  // public block and JSON-LD reach the first HTML: see that layout.
+  return <LibraryGuard collectionReaderGuardsItself>{children}</LibraryGuard>;
 }

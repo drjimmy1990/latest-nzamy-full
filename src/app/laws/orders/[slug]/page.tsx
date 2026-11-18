@@ -450,7 +450,7 @@ export default function OrderReaderPage() {
           </div>
           <div className="flex flex-wrap items-start gap-3 justify-between">
             <div>
-              <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}><Hl text={order.title} /></h1>
+              <h2 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}><Hl text={order.title} /></h2>
               {/* Owner ٤٢٤ / ٣٨٠: the number and date are a subscriber's; a
                   visitor sees the «للمشتركين» row, never a lone «•». */}
               {orderHeaderLine(order.ref, order.date) ? (
