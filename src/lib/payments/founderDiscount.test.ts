@@ -15,6 +15,10 @@ import {
   founderDiscountMetadata,
   FOUNDER_DISCOUNT_LABEL_AR,
   isActiveFounder,
+  addMonthsUtc,
+  founderDiscountEndsAt,
+  founderDiscountExpiresIssue,
+  founderDiscountWindowFromSetting,
 } from "./founderDiscount.ts";
 import { applyDiscount } from "./couponRules.ts";
 import { quote } from "./catalog.ts";
@@ -74,23 +78,81 @@ test("the metadata the order stores", () => {
   assert.deepEqual(founderDiscountMetadata(50000, 7500), { pct: 15, discount_halalas: 7500, list_net_halalas: 50000 });
 });
 
-test("isActiveFounder (l7, decision 4: lifetime): an active seat at any date; a missing table is false; another error is null", async () => {
+test("isActiveFounder (l8 reverts l7's lifetime rule): an active seat inside its membership year; a missing table is false; another error is null", async () => {
   const now = new Date("2026-11-20T10:00:00.000Z");
-  const yes = fakeDb((q) => (q.table === "founder_seats" ? { data: [{ id: "s1" }] } : undefined));
+  const seat = (activated_at: string | null, ends_at: string | null = null) =>
+    fakeDb((q) => (q.table === "founder_seats" ? { data: [{ id: "s1", activated_at, ends_at }] } : undefined));
+  const yes = seat("2026-01-20T10:00:00.000Z"); // 10 months ago
   assert.equal(await isActiveFounder(yes.client, "u1", now), true);
   const q = yes.log[0];
-  // no ends_at filter: the year ending does not end the discount; a revoked
-  // (refunded) or pending_verification seat is not 'active'
+  // a revoked (refunded) or pending_verification seat is not 'active'
   assert.deepEqual(
     q.filters.map(([op, c, v]) => `${op}:${c}:${String(v)}`),
     ["eq:user_id:u1", "eq:campaign_id:founder-2026", "eq:status:active"],
   );
+  assert.equal(yes.log[1].table, "platform_settings", "the length is read from the setting");
+  assert.deepEqual(yes.log[1].filters.map(([op, c, v]) => `${op}:${c}:${String(v)}`), ["eq:key:founder_topup_discount_expires"]);
+  // 11 months → still inside; 13 months → the year ended: no discount (never lifetime)
+  assert.equal(await isActiveFounder(seat("2025-12-20T10:00:00.000Z").client, "u1", now), true);
+  assert.equal(await isActiveFounder(seat("2025-10-20T10:00:00.000Z").client, "u1", now), false);
+  // the boundary: activation + 12 months exactly is outside
+  assert.equal(await isActiveFounder(seat("2025-11-20T10:00:00.000Z").client, "u1", now), false);
+  assert.equal(await isActiveFounder(seat("2025-11-20T10:00:01.000Z").client, "u1", now), true);
+  // no activation date: the membership end stands for the default year; neither → no discount
+  assert.equal(await isActiveFounder(seat(null, "2027-01-01T00:00:00.000Z").client, "u1", now), true);
+  assert.equal(await isActiveFounder(seat(null, "2026-11-01T00:00:00.000Z").client, "u1", now), false);
+  assert.equal(await isActiveFounder(seat(null, null).client, "u1", now), false);
   const no = fakeDb(() => ({ data: [] }));
   assert.equal(await isActiveFounder(no.client, "u1", now), false);
   const missing = fakeDb(() => ({ error: { code: "42P01" } }));
   assert.equal(await isActiveFounder(missing.client, "u1", now), false);
   const broken = fakeDb(() => ({ error: { code: "XX000" } }));
   assert.equal(await isActiveFounder(broken.client, "u1", now), null);
+});
+
+test("l8: founder_topup_discount_expires — months after activation (default 12, 0 = off) or a fixed Riyadh day; a bad value is the year, never lifetime", async () => {
+  const now = new Date("2026-11-20T10:00:00.000Z");
+  const with_ = (value: unknown, activated_at = "2026-05-20T10:00:00.000Z") =>
+    fakeDb((q) =>
+      q.table === "founder_seats"
+        ? { data: [{ id: "s1", activated_at, ends_at: null }] }
+        : q.table === "platform_settings"
+          ? { data: { value } }
+          : undefined,
+    );
+  // 6 months after activation
+  assert.equal(await isActiveFounder(with_({ months_after_activation: 6 }).client, "u1", now), false);
+  assert.equal(await isActiveFounder(with_({ months_after_activation: 7 }).client, "u1", now), true);
+  assert.equal(await isActiveFounder(with_({ months_after_activation: 0 }).client, "u1", now), false, "0 switches it off");
+  // a fixed last day (Riyadh), the same for every founder
+  assert.equal(await isActiveFounder(with_({ until: "2026-11-20" }).client, "u1", now), true);
+  assert.equal(await isActiveFounder(with_({ until: "2026-11-19" }).client, "u1", now), false);
+  // malformed → the membership year
+  for (const bad of [null, 12, "lifetime", { months_after_activation: -1 }, { months_after_activation: 1.5 }, { until: "2026-02-30" }, { until: "x", months_after_activation: 3 }]) {
+    assert.equal(await isActiveFounder(with_(bad, "2025-10-01T00:00:00.000Z").client, "u1", now), false, JSON.stringify(bad));
+    assert.equal(await isActiveFounder(with_(bad, "2026-01-01T00:00:00.000Z").client, "u1", now), true, JSON.stringify(bad));
+  }
+  // a failed setting read is the default year, never an error for the buyer
+  const failed = fakeDb((q) =>
+    q.table === "founder_seats" ? { data: [{ id: "s1", activated_at: "2026-01-01T00:00:00.000Z" }] } : { error: { code: "XX000" } },
+  );
+  assert.equal(await isActiveFounder(failed.client, "u1", now), true);
+});
+
+test("l8: the expires validator and the pure helpers", () => {
+  assert.equal(founderDiscountExpiresIssue({ months_after_activation: 12 }), null);
+  assert.equal(founderDiscountExpiresIssue({ months_after_activation: 0 }), null);
+  assert.equal(founderDiscountExpiresIssue({ until: "2027-11-18" }), null);
+  for (const bad of [null, 12, "2027-01-01", {}, { months_after_activation: 121 }, { until: "2027-13-01" }, { lifetime: true }]) {
+    assert.match(founderDiscountExpiresIssue(bad) ?? "", /founder_topup_discount_expires/, JSON.stringify(bad));
+  }
+  assert.deepEqual(founderDiscountWindowFromSetting(undefined), { kind: "months_after_activation", months: 12 });
+  assert.equal(addMonthsUtc(new Date("2026-01-31T12:00:00.000Z"), 1).toISOString(), "2026-02-28T12:00:00.000Z");
+  assert.equal(addMonthsUtc(new Date("2026-11-18T09:30:00.000Z"), 12).toISOString(), "2027-11-18T09:30:00.000Z");
+  assert.equal(
+    founderDiscountEndsAt({ activated_at: null }, { kind: "until", day: "2027-01-31" })?.toISOString(),
+    "2027-01-31T21:00:00.000Z",
+  );
 });
 
 test("l7 decision 4: the rate comes from founder_topup_discount_bps, 1500 by default", async () => {

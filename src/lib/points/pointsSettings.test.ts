@@ -34,8 +34,15 @@ test("the code defaults are what the migration seeds", () => {
   assert.match(sql, /'gift_valid_days', '90'::jsonb/);
   assert.deepEqual(DEFAULT_FREE_QUESTIONS, { lawyer: 10, individual: 5 });
   assert.match(sql, /'free_questions_by_account_type', '\{"lawyer": 10, "individual": 5\}'::jsonb/);
-  for (const [t, n] of Object.entries(DEFAULT_MIN_TOPUP_SAR)) assert.match(sql, new RegExp(`"${t}": ${n}`), t);
-  assert.equal("individual" in DEFAULT_MIN_TOPUP_SAR, false, "individual: no minimum (owner's number pending)");
+  for (const [t, n] of Object.entries(DEFAULT_MIN_TOPUP_SAR)) {
+    if (t === "individual") continue;
+    assert.match(sql, new RegExp(`"${t}": ${n}`), t);
+  }
+  // ٥٦ (owner 18 Nov, l8): individual 100 — added to the stored map by 20261128_10 when the key is absent
+  assert.equal(DEFAULT_MIN_TOPUP_SAR.individual, 100);
+  const l8 = readFileSync(join(ROOT, "supabase", "migrations", "20261128_10_payref_settings.sql"), "utf8");
+  assert.match(l8, /'\{"individual": 100\}'::jsonb/);
+  assert.match(l8, /not \(value \? 'individual'\)/, "never overwrites an admin's own individual minimum");
 });
 
 test("validators refuse what would silently misprice", () => {

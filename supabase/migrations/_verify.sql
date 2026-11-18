@@ -7445,3 +7445,14 @@ select 'Every refunded / voided platform order has its credit note (run 20261127
              and not exists (select 1 from public.payment_credit_notes c where c.order_id = o.id)', false, true, '')))[1]::text = '0'
        end as ok;
 -- <<< verify:l7_refund
+-- >>> verify:l8_payref
+-- Batch l8 payref (owner 18 Nov: founder discount = the membership year, ٥٣ extra-seat price stored only, ٥٦ individual 100): run 20261128_10 before or after the deploy.
+select 'Payref settings: founder_topup_discount_expires (months/until), firm_extra_seat_price_sar {"sar"}, individual top-up minimum, no «lifetime» discount wording (run 20261128_10)' as check,
+       exists (select 1 from public.platform_settings
+                where key = 'founder_topup_discount_expires' and pg_catalog.jsonb_typeof(value) = 'object'
+                  and (value ? 'months_after_activation' or value ? 'until'))
+       and exists (select 1 from public.platform_settings where key = 'firm_extra_seat_price_sar' and value ? 'sar')
+       and exists (select 1 from public.platform_settings where key = 'min_topup_by_account_type' and value ? 'individual')
+       and not exists (select 1 from public.platform_settings
+                        where key like 'founder_topup_discount%' and pg_catalog.strpos(coalesce(description, ''), 'مدى الحياة') > 0) as ok;
+-- <<< verify:l8_payref

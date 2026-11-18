@@ -169,7 +169,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     try {
       const svc = await createServiceClient();
       if ((await isActiveFounder(svc, user.id, new Date())) === true) {
-        // l7 (decision 4): lifetime, at the founder_topup_discount_bps rate
+        // the founder_topup_discount_bps rate, within founder_topup_discount_expires (l8: the membership year)
         founderBps = await founderDiscountBps(svc);
         founderHalalas = founderDiscountHalalas(priced.netHalalas, founderBps);
       }

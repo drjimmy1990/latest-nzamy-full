@@ -3,8 +3,7 @@
  * top-up an account type may buy, from platform_settings
  * min_topup_by_account_type (SAR, the pack's BASE price — before the founder
  * discount, any coupon and VAT). Lawyer, firm and every business type: 500;
- * individual: no minimum beyond the packs on sale (the owner's number is
- * pending). The type is profiles.user_type, read on the server by the
+ * individual: 100 (٥٦, owner 18 Nov — l8). The type is profiles.user_type, read on the server by the
  * checkout (never the browser's).
  *
  * A refusal answers «الحد الأدنى للشحن لحسابك ٥٠٠ ريال» and leaves one

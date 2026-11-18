@@ -4,24 +4,30 @@
  * combined with a better offer — when a coupon also applies, the buyer gets
  * the BETTER of the two, never both (bestDiscount).
  *
- * Batch l7 (decision 4, 18 Nov 2026; pricing gap row 16):
- *   - the discount is LIFETIME: during the membership year, after it and
- *     after the 6 works. Only a seat that is no longer 'active' — revoked
- *     (refund, violation) — loses it; a seat still waiting for the licence
- *     check (pending_verification, 20261127_10) is not a membership yet;
+ * Batch l7 (decision 4) made the discount lifetime; batch l8 (owner 18 Nov
+ * evening, decisions ط/ك, questions ٤٨–٤٩) REVERTS that:
+ *   - the discount runs for the MEMBERSHIP YEAR from activation, never for
+ *     life. Its length is the setting platform_settings
+ *     founder_topup_discount_expires (founderDiscountWindowFromSetting):
+ *       {"months_after_activation": N} → activated_at + N months (default
+ *                                        12; 0 switches the discount off);
+ *       {"until": "YYYY-MM-DD"}        → to the end of that Riyadh day, for
+ *                                        every founder alike.
+ *     Absent, malformed or unreadable → 12 months from activation, never
+ *     lifetime. A seat that is no longer 'active' — revoked (refund,
+ *     violation) — loses it; a seat still waiting for the licence check
+ *     (pending_verification, 20261127_10) is not a membership yet;
  *   - the rate is the setting platform_settings.founder_topup_discount_bps
  *     (basis points; 1500 = 15 %), read by founderDiscountBps(). Absent,
  *     malformed or unreadable → FOUNDER_DISCOUNT_DEFAULT_BPS.
- *   - the discount vs a pack's bonus is an open owner question: the top-up
- *     keeps every point of its pack (the bonus included), as before.
+ *   - ٤٨: the top-up keeps every point of its pack (the bonus included).
  *
- * Eligible items: point top-ups only (kind "topup"). The spec also names
- * «رسوم نظامي المؤهلة» (eligible platform fees) without saying which; until
- * the owner names them nothing else is discounted (listed in the l6-pay
- * report). Plans, the library and the founder membership itself: never.
+ * Eligible items: point top-ups only (kind "topup"; ٤٩ — never platform fees
+ * nor a plan renewal). Plans, the library and the founder membership itself:
+ * never.
  *
  * Founder member = a founder_seats row of the founder campaign with status
- * 'active' (no end-date filter since l7).
+ * 'active' whose discount window (above) has not ended at `now`.
  *
  * Money: the discount is floor(net × bps / 10000) halalas off the net BEFORE
  * VAT; VAT is recomputed on the rest (couponRules.applyDiscount).
@@ -123,20 +129,120 @@ export async function founderDiscountBps(admin: SupabaseClient): Promise<number>
   }
 }
 
+// ── the discount's length (l8: the membership year, never lifetime) ─────────
+
+/** platform_settings key of the discount's length (20261128_10). */
+export const FOUNDER_DISCOUNT_EXPIRES_KEY = "founder_topup_discount_expires";
+/** The default length: the membership year from activation (owner 18 Nov, decision ك). */
+export const FOUNDER_DISCOUNT_DEFAULT_MONTHS = 12;
+const MAX_DISCOUNT_MONTHS = 120;
+
+/** How long the discount runs: N months from the seat's activation, or to a fixed Riyadh day for everyone. */
+export type FounderDiscountWindow =
+  | { kind: "months_after_activation"; months: number }
+  | { kind: "until"; day: string };
+
+export const FOUNDER_DISCOUNT_DEFAULT_WINDOW: FounderDiscountWindow = Object.freeze({
+  kind: "months_after_activation",
+  months: FOUNDER_DISCOUNT_DEFAULT_MONTHS,
+}) as FounderDiscountWindow;
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+function isRealDay(v: unknown): v is string {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === v;
+}
+
+const EXPIRES_SHAPE_AR =
+  'قيمة founder_topup_discount_expires يجب أن تكون {"months_after_activation": عدد أشهر صحيح من 0 إلى 120} (12 = سنة العضوية من التفعيل، 0 = إيقاف الخصم) أو {"until": "YYYY-MM-DD"} (آخر يوم للخصم بتوقيت الرياض)';
+
+/** Admin write check for founder_topup_discount_expires; null when acceptable. */
+export function founderDiscountExpiresIssue(value: unknown): string | null {
+  if (!isPlainObject(value)) return EXPIRES_SHAPE_AR;
+  const keys = Object.keys(value);
+  if (keys.length !== 1) return EXPIRES_SHAPE_AR;
+  if (keys[0] === "months_after_activation") {
+    const n = value.months_after_activation;
+    return typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= MAX_DISCOUNT_MONTHS ? null : EXPIRES_SHAPE_AR;
+  }
+  if (keys[0] === "until") return isRealDay(value.until) ? null : EXPIRES_SHAPE_AR;
+  return EXPIRES_SHAPE_AR;
+}
+
+/** The stored value as a window; anything absent or malformed is the membership year (never lifetime). */
+export function founderDiscountWindowFromSetting(value: unknown): FounderDiscountWindow {
+  if (founderDiscountExpiresIssue(value) !== null) return { ...FOUNDER_DISCOUNT_DEFAULT_WINDOW };
+  const v = value as Record<string, unknown>;
+  if (Object.hasOwn(v, "until")) return { kind: "until", day: v.until as string };
+  return { kind: "months_after_activation", months: v.months_after_activation as number };
+}
+
+/** `at` + `months` calendar months (UTC); the day is clamped to the month's last, as Postgres does (31 Jan + 1 → end of Feb). */
+export function addMonthsUtc(at: Date, months: number): Date {
+  const y = at.getUTCFullYear();
+  const m = at.getUTCMonth() + months;
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const d = new Date(at.getTime());
+  d.setUTCFullYear(y, m, Math.min(at.getUTCDate(), lastDay));
+  return d;
+}
+
 /**
- * Whether `userId` is a founder member: an 'active' seat, at any date (l7,
- * decision 4: lifetime). A revoked seat (refund, violation) is not, nor a
- * seat still pending verification. `_now` is kept for the callers' signature;
- * the end date is no longer read. A missing table (the founder migrations not
- * applied) is false; any other read error is null — the caller answers 503
- * rather than charge a founder the full price.
+ * When one seat's discount ends (exclusive), or null when it cannot be told
+ * (no activation date) — the caller then gives NO discount, never a lifetime
+ * one. `until` ends at the end of that Riyadh day (UTC+3, no DST).
  */
-export async function isActiveFounder(admin: SupabaseClient, userId: string, _now?: Date): Promise<boolean | null> {
-  void _now;
+export function founderDiscountEndsAt(
+  seat: { activated_at?: string | null; ends_at?: string | null },
+  window: FounderDiscountWindow,
+): Date | null {
+  if (window.kind === "until") return new Date(Date.parse(`${window.day}T00:00:00+03:00`) + 86_400_000);
+  const activated = seat.activated_at ? Date.parse(seat.activated_at) : NaN;
+  if (Number.isFinite(activated)) return addMonthsUtc(new Date(activated), window.months);
+  // a row without activated_at: its membership end stands for the default year
+  const ends = seat.ends_at ? Date.parse(seat.ends_at) : NaN;
+  if (window.months === FOUNDER_DISCOUNT_DEFAULT_MONTHS && Number.isFinite(ends)) return new Date(ends);
+  return null;
+}
+
+/** The window from platform_settings; a failed read is the default (the membership year). Never throws. */
+export async function founderDiscountWindow(admin: SupabaseClient): Promise<FounderDiscountWindow> {
+  try {
+    const { data, error } = await admin
+      .from("platform_settings")
+      .select("value")
+      .eq("key", FOUNDER_DISCOUNT_EXPIRES_KEY)
+      .maybeSingle();
+    if (error) {
+      if (!MISSING_CODES.includes(error.code ?? "")) {
+        console.error("[payments/founder-discount] reading the discount length failed:", error.code);
+      }
+      return { ...FOUNDER_DISCOUNT_DEFAULT_WINDOW };
+    }
+    return founderDiscountWindowFromSetting((data as { value?: unknown } | null)?.value);
+  } catch (err) {
+    console.error("[payments/founder-discount] reading the discount length threw:", err instanceof Error ? err.message : "unknown");
+    return { ...FOUNDER_DISCOUNT_DEFAULT_WINDOW };
+  }
+}
+
+/**
+ * Whether `userId` gets the founder top-up discount at `now`: an 'active'
+ * seat whose discount window (founder_topup_discount_expires — by default the
+ * membership year from activation; l8 reverts l7's lifetime rule) has not
+ * ended. A revoked seat (refund, violation) is not, nor a seat still pending
+ * verification, nor a seat past its window. A missing table (the founder
+ * migrations not applied) is false; any other read error of the seat is null
+ * — the caller answers 503 rather than charge a founder the full price.
+ */
+export async function isActiveFounder(admin: SupabaseClient, userId: string, now: Date = new Date()): Promise<boolean | null> {
   try {
     const { data, error } = await admin
       .from("founder_seats")
-      .select("id")
+      .select("id, activated_at, ends_at")
       .eq("user_id", userId)
       .eq("campaign_id", FOUNDER_DISCOUNT_CAMPAIGN_ID)
       .eq("status", "active")
@@ -146,7 +252,12 @@ export async function isActiveFounder(admin: SupabaseClient, userId: string, _no
       console.error("[payments/founder-discount] reading the founder seat failed:", error.code);
       return null;
     }
-    return Array.isArray(data) && data.length > 0;
+    const seat = Array.isArray(data)
+      ? (data[0] as { activated_at?: string | null; ends_at?: string | null } | undefined)
+      : undefined;
+    if (!seat) return false;
+    const endsAt = founderDiscountEndsAt(seat, await founderDiscountWindow(admin));
+    return endsAt !== null && now.getTime() < endsAt.getTime();
   } catch (err) {
     console.error("[payments/founder-discount] reading the founder seat threw:", err instanceof Error ? err.message : "unknown");
     return null;
