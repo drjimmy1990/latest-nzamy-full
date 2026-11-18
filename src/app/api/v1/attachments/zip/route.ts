@@ -5,6 +5,7 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { assertRole } from "@/lib/auth/assertRole";
 import { mayDownloadRequestFiles } from "@/lib/requestFileAccess";
 import { checkZipCaps, isZipScope, type ZipScope } from "@/lib/attachmentsZipShared";
+import { staffMfaGate } from "@/lib/auth/staffMfaServer";
 import {
   archiveFileName,
   buildZipStream,
@@ -109,6 +110,11 @@ async function listRequestFiles(requestId: string): Promise<Listing> {
   const { data: profile } = await admin
     .from("profiles").select("user_type").eq("id", user.id).single();
   const userType = profile?.user_type as string | undefined;
+  // Owner item 18 (l7): an admin session that fails the two-step rule is refused.
+  if (userType === "admin") {
+    const mfa = await staffMfaGate(supabase, user);
+    if (!mfa.ok) return { response: NextResponse.json({ error: mfa.error, code: mfa.code }, { status: 403 }) };
+  }
   if (!mayDownloadRequestFiles(order, user.id, userType)) {
     return { response: NextResponse.json({ error: "غير مصرح" }, { status: 403 }) };
   }

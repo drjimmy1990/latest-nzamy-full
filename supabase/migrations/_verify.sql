@@ -7396,3 +7396,25 @@ select 'Library devices: e-mail code per new device, third device suspends, one 
        and not has_column_privilege('authenticated', 'public.user_devices', 'code_hash', 'SELECT')
        as ok;
 -- <<< verify:l7_community
+-- >>> verify:l7_admin2fa
+-- Batch l7-admin2fa (owner item 18, admin TOTP): run 20261127_50 before or after the deploy.
+select 'Admin 2FA: is_admin() needs aal2 once a factor is verified; backup codes + login events service role only (run 20261127_50)' as check,
+       position('aal2' in pg_catalog.pg_get_functiondef('public.is_admin()'::regprocedure)) > 0
+       and position('mfa_factors' in pg_catalog.pg_get_functiondef('public.is_admin()'::regprocedure)) > 0
+       and to_regclass('public.admin_mfa_backup_codes') is not null
+       and to_regclass('public.admin_mfa_events') is not null
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.admin_mfa_backup_codes')), false)
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.admin_mfa_events')), false)
+       and not exists (select 1 from pg_catalog.pg_policy where polrelid in (to_regclass('public.admin_mfa_backup_codes'), to_regclass('public.admin_mfa_events')))
+       and not has_table_privilege('authenticated', 'public.admin_mfa_backup_codes', 'SELECT')
+       and not has_table_privilege('anon', 'public.admin_mfa_backup_codes', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.admin_mfa_events', 'SELECT')
+       and to_regprocedure('public.admin_mfa_backup_code_consume(uuid, text)') is not null
+       and to_regprocedure('public.admin_mfa_backup_codes_replace(uuid, text[])') is not null
+       and to_regprocedure('public.admin_login_seen(uuid, uuid, text, text, text)') is not null
+       and not has_function_privilege('authenticated', 'public.admin_mfa_backup_code_consume(uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.admin_mfa_backup_codes_replace(uuid, text[])', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.admin_login_seen(uuid, uuid, text, text, text)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.admin_mfa_backup_code_consume(uuid, text)', 'EXECUTE')
+       as ok;
+-- <<< verify:l7_admin2fa

@@ -178,7 +178,9 @@ export default function AdminDashboard() {
                   • SSL «تنتهي في مارس ٢٠٢٦» — no certificate is read here, and
                     the date had already passed (today is 2026-09).
                   • 2FA «مفعلة إجبارياً» — there is no MFA in this codebase at
-                    all; grep for mfa/enroll returns nothing.
+                    all at the time. (Batch l7 built real staff TOTP: the
+                    security page's «التحقق بخطوتين» tab shows each admin's
+                    own state; this panel still claims nothing about it.)
                   • IDS «لم يتم رصد هجمات» — there is no intrusion detection
                     system, so "no attacks detected" is an absence of a sensor,
                     not an absence of attacks.

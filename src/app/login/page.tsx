@@ -30,6 +30,7 @@ import { useUser } from "@/hooks/useUser";
 import { getDashboardRoute } from "@/constants/navigation";
 import { isDbUserType } from "@/lib/auth/userTypes";
 import { postLoginPath } from "@/lib/auth/postLoginPath";
+import { staffMfaUrlFor } from "@/lib/auth/staffMfa";
 import { firmLandingFor, FIRM_DASHBOARD_PATH } from "@/lib/auth/firmLanding";
 import { postLoginCookieAssignment, stashablePostLoginPath } from "@/lib/auth/postLoginCookie";
 import { createClient } from "@/lib/supabase/client";
@@ -325,10 +326,18 @@ export default function LoginPage() {
               )
             : "/onboarding";
 
+        // Owner item 18 (batch l7): an account with a verified authenticator
+        // (staff) has only aal1 after the password; the code is asked on
+        // /auth/mfa before anything else. src/proxy.ts and the server gates
+        // hold this anyway; this saves a redirect.
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        const finalDest =
+          aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2" ? staffMfaUrlFor(dest) : dest;
+
         // A FULL document load, not router.push: the next request has to reach
         // the server carrying the cookies so SSR and src/proxy.ts see the same
         // session the handshake just confirmed.
-        window.location.assign(dest);
+        window.location.assign(finalDest);
         return;
       }
 

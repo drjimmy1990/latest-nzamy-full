@@ -7,6 +7,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import LibraryLocksPanel from "./LibraryLocksPanel";
 import LibraryActivityPanel from "./LibraryActivityPanel";
 import LibraryDevicesPanel from "./LibraryDevicesPanel";
+import TwoFactorPanel from "./TwoFactorPanel";
 
 // "library_activity" (20261031_10) and "library_locks" (owner note ١٣ C09,
 // public.library_security_locks) are real and read the database. The other
@@ -15,8 +16,8 @@ import LibraryDevicesPanel from "./LibraryDevicesPanel";
 // removed the invented accounts, IPs, percentages and the KPI row that used
 // to fill them, as promised in the Wave 1 owner report.
 // "library_devices" — owner ٤٢٧, the device limit (20261108_20).
-type SecTab = "library_activity"|"library_locks"|"library_devices"|"overview"|"duplicates"|"scraping"|"threats";
-const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","library_devices","overview","duplicates","scraping","threats"];
+type SecTab = "library_activity"|"library_locks"|"library_devices"|"two_factor"|"overview"|"duplicates"|"scraping"|"threats";
+const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","library_devices","two_factor","overview","duplicates","scraping","threats"];
 
 export default function SecurityPage() {
   const { isDark } = useTheme();
@@ -36,6 +37,8 @@ export default function SecurityPage() {
     { id:"library_activity", label:"نشاط المكتبة", icon:BookOpenText },
     { id:"library_locks", label:"قفل المكتبة", icon:LockSimple },
     { id:"library_devices", label:"أجهزة المكتبة", icon:Devices },
+    // Owner item 18 (batch l7): the staff member's own two-step state.
+    { id:"two_factor", label:"التحقق بخطوتين", icon:ShieldCheck },
     { id:"overview", label:"نظرة عامة", icon:ShieldCheck, soon:true },
     { id:"duplicates", label:"حسابات مكررة", icon:Users, soon:true },
     { id:"scraping", label:"حماية البوتات", icon:Bug, soon:true },
@@ -71,6 +74,7 @@ export default function SecurityPage() {
       {tab==="library_activity" && <LibraryActivityPanel isDark={isDark} card={card} />}
       {tab==="library_locks" && <LibraryLocksPanel isDark={isDark} card={card} />}
       {tab==="library_devices" && <LibraryDevicesPanel isDark={isDark} card={card} />}
+      {tab==="two_factor" && <TwoFactorPanel isDark={isDark} card={card} />}
 
       {current?.soon && (
         <motion.div key={tab} initial={{opacity:0}} animate={{opacity:1}}
