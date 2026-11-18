@@ -19,7 +19,7 @@
  */
 
 import { formatHalalas, quote, PAYABLE_ITEMS, type PayableItem } from "../payments/catalog.ts";
-import { checkoutHref, gatewayAllowsCheckout } from "../payments/checkoutView.ts";
+import { checkoutHref, gatewayAllowsCheckout, SALE_PAUSED_LINE_AR, saleGatewayPaused } from "../payments/checkoutView.ts";
 import {
   FOUNDER_CAMPAIGN_ID,
   FOUNDER_CREDITS,
@@ -61,7 +61,13 @@ export const FOUNDER_PRE_TEXT = "لم تُفتح حملة المحامي الم�
  * R31: shown instead of FOUNDER_CLOSED_TEXT when the admin paused the sale
  * («إيقاف البيع مؤقتًا») and seats are left — the campaign has not ended.
  */
-export const FOUNDER_PAUSED_TEXT = "البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف";
+export const FOUNDER_PAUSED_TEXT = "البيع متوقف مؤقتاً — تابعنا لموعد الاستئناف";
+
+/**
+ * l8 (owner 18 Nov, item 1.1 / ج5): online payment is not switched on for this
+ * viewer — the campaign says «البيع متوقف مؤقتاً» and why, never a dead button.
+ */
+export const FOUNDER_GATEWAY_PAUSED_TEXT = SALE_PAUSED_LINE_AR;
 
 /**
  * R19: legal-drafter and wargaming are consultantBlocked, so a consultant
@@ -280,7 +286,9 @@ export type FounderCta = { note: string | null } & (
  *      no lawyer row) → «وثّق رخصتك أولاً»; pending (l7, decision 1) → the
  *      buy steps below with FOUNDER_PENDING_NOTE;
  *   6. gateway loading → wait; checkoutHref null (gateway off / stub) →
- *      «الدفع الإلكتروني غير متاح حاليًا»; else /checkout.
+ *      FOUNDER_GATEWAY_PAUSED_TEXT «البيع متوقف مؤقتاً — …» (l8); else /checkout.
+ *   l8: a guest is told the sale is paused too (once the status has loaded)
+ *   instead of being sent to sign in for a purchase he cannot make.
  * An unreadable profile or membership ("unknown") never blocks: the checkout
  * gate (founder_reserve_seat) decides. A consultant gets FOUNDER_CONSULTANT_NOTE
  * on every lawyer state (R19), and since 17 Nov a consultant who is not a
@@ -288,6 +296,8 @@ export type FounderCta = { note: string | null } & (
  */
 export function founderCta(s: FounderCtaState): FounderCta {
   if (s.sessionLoading) return { kind: "loading", label: "جارٍ التحميل…", note: null };
+  if (!s.signedIn && s.gateway.loading === true) return { kind: "loading", label: "جارٍ التحميل…", note: null };
+  if (!s.signedIn && saleGatewayPaused(s.gateway)) return { kind: "unavailable", label: FOUNDER_GATEWAY_PAUSED_TEXT, note: null };
   if (!s.signedIn) {
     return {
       kind: "guest",
@@ -314,7 +324,7 @@ export function founderCta(s: FounderCtaState): FounderCta {
   const buyNote = s.verification === "pending" ? FOUNDER_PENDING_NOTE : note;
   if (s.gateway.loading === true) return { kind: "wait", label: "جارٍ التحقق من بوابة الدفع…", note: buyNote };
   const href = checkoutHref(FOUNDER_PLAN_ID, "once", gatewayAllowsCheckout(s.gateway), true);
-  if (!href) return { kind: "unavailable", label: "الدفع الإلكتروني غير متاح حاليًا", note: buyNote };
+  if (!href) return { kind: "unavailable", label: FOUNDER_GATEWAY_PAUSED_TEXT, note: buyNote };
   return { kind: "checkout", label: "اشترك الآن", href, note: buyNote };
 }
 

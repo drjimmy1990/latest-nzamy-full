@@ -16,7 +16,7 @@
  * «تعذّر التحقق», never «مؤهل») and the other reads still run.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { RefundEvidence } from "./refundEligibility.ts";
+import { LIBRARY_AI_TOOLS, type RefundEvidence } from "./refundEligibility.ts";
 
 export const AI_RUN_EVIDENCE_LIMIT = 200;
 
@@ -51,8 +51,11 @@ export async function readRefundEvidence(
       }
     }
     if (order.user_id) {
-      const runs = await admin.from("ai_runs").select("tool,created_at").eq("user_id", order.user_id)
-        .gt("created_at", since).in("status", ["running", "review", "succeeded"]).order("created_at", { ascending: true }).limit(AI_RUN_EVIDENCE_LIMIT);
+      // l8: a library order is judged on its own assistant — filtered in the query, so the row limit never hides one
+      let runQuery = admin.from("ai_runs").select("tool,created_at").eq("user_id", order.user_id)
+        .gt("created_at", since).in("status", ["running", "review", "succeeded"]);
+      if (order.kind === "library") runQuery = runQuery.in("tool", [...LIBRARY_AI_TOOLS]);
+      const runs = await runQuery.order("created_at", { ascending: true }).limit(AI_RUN_EVIDENCE_LIMIT);
       if (runs.error) fail("ai_runs", runs.error.code);
       evidence.aiRuns = ((runs.data ?? []) as Array<{ tool: unknown; created_at: unknown }>)
         .filter((r) => typeof r.tool === "string" && typeof r.created_at === "string")

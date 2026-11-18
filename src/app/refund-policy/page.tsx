@@ -11,16 +11,23 @@ import {
   afterWithdrawalLineAr,
   afterWithdrawalLineEn,
   arNumber,
+  FOUNDER_REFUND_LINE_AR,
+  FOUNDER_REFUND_LINE_EN,
   INSTANT_CANCEL_MINUTES,
   promoPointsLinesAr,
   promoPointsLinesEn,
   renewalReminderLinesAr,
   renewalReminderLinesEn,
+  SUBSCRIPTION_REFUND_LINE_AR,
+  SUBSCRIPTION_REFUND_LINE_EN,
+  TOPUP_REFUND_LINE_AR,
+  TOPUP_REFUND_LINE_EN,
   topupValidityAr,
   topupValidityEn,
   upgradeProrationLinesAr,
   upgradeProrationLinesEn,
   WITHDRAWAL_DAYS,
+  WITHDRAWAL_MAX_POINTS_USED_PCT,
 } from "@/lib/payments/refundPolicy";
 
 // The policy's numbers live in src/lib/payments/refundPolicy.ts. The new
@@ -30,20 +37,26 @@ import {
 // renewal reminders (sent only once B2 exists) and the 90-day promotional
 // points (nothing expires them yet) are spread in from refundPolicy.ts and
 // stay empty while their flags are off. The 90-minute cancel has no
-// self-service button: it is asked of support. The owner's two clauses of
-// ١٨٠ stay word for word as he wrote them (pricingHonesty.test.ts pins the
-// text); refundPolicy.test.ts pins their 14 days / 5 % / 24 hours to the same
-// constants and to the refund code (refundDecision.ts).
+// self-service button: it is asked of support. Batch l8 (owner 18 Nov, items
+// 1.2, ٥٠ and ٦٤): section ٣ states the refund rule per product — the founder
+// plan's text is /founder-terms item ٧ word for word (FOUNDER_REFUND_CLAUSE),
+// the library / bundles / other subscriptions follow it (no AI feature used),
+// and the 5 % rule belongs to point top-ups alone; the upgrade line says the
+// remaining value is deducted at the upgrade. The owner's professional-fees
+// clause of ١٨٠ stays word for word (pricingHonesty.test.ts);
+// refundPolicy.test.ts pins the numbers to the constants and the refund code.
 const AR = {
   minutes: arNumber(INSTANT_CANCEL_MINUTES),
   days: arNumber(WITHDRAWAL_DAYS),
+  pct: arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT),
 };
 
 // ─── Sections ────────────────────────────────────────────────────────────────
 
 const sections = {
-  // Owner answer ١٨٠ (2026-10-16): sections ٢ and ٣ carry his two clauses
-  // verbatim. Professional fees are a direct contract between the client and
+  // Owner answer ١٨٠ (2026-10-16): section ٢ carries his professional-fees
+  // clause verbatim (section ٣'s subscription clause was replaced by the
+  // per-product rules of 18 Nov, ٦٤ — batch l8). Professional fees are a direct contract between the client and
   // the licensed law office through a SAMA-licensed gateway; the platform
   // holds no funds, so there is no intermediary account, no commission
   // deducted on payout and no platform refund of those fees (section ٤ says
@@ -73,14 +86,18 @@ const sections = {
       content: [
         // Pricing doc §13ج.1 — the instant cancel of a purchase made by mistake.
         `**الإلغاء الفوري عند الشراء بالخطأ** (تُطلب من الدعم): خلال (${AR.minutes}) دقيقة من السداد يحق لك إلغاء الشراء واسترداد كامل المبلغ، بشرط عدم استخدام أي نقطة (٠ نقطة) وعدم تصدير أي ملف.`,
-        // Owner answer ١٨٠ — the rule for digital plans, in his words.
-        "**الاشتراكات والوحدات الرقمية**: يحق للمشترك ممارسة حق العدول واسترداد كامل قيمة الاشتراك الرقمي خلال (١٤) يوماً من تاريخ السداد وفق نظام التجارة الإلكترونية ولائحته، بشرط عدم استهلاك أكثر من ٥٪ من رصيد وحدات الاستخدام (النقاط) أو تصدير مذكرات مدفوعة.",
+        // l8 (owner 18 Nov, 1.2): the founder plan — /founder-terms item ٧, word for word.
+        FOUNDER_REFUND_LINE_AR,
+        // ٦٤: the library, the bundles and the other subscriptions follow the founder's rule.
+        SUBSCRIPTION_REFUND_LINE_AR,
+        // ٦٤: the 5 % rule is the top-ups' alone.
+        TOPUP_REFUND_LINE_AR,
         "يُرد المبلغ إلى وسيلة الدفع الأصلية، وبما لا يتجاوز المدد المبيّنة في القسم ٧ أدناه.",
         // No auto-renewal and no cancel control exist yet (SUBSCRIPTIONS_AUTO_RENEW).
         afterWithdrawalLineAr(),
         // Owner ٢٨٨ (C): two reminders before an automatic renewal — shown once B2 sends them.
         ...renewalReminderLinesAr(),
-        // No pro-rata on an upgrade yet (SHOW_UPGRADE_PRORATION, payments B2).
+        // ٥٠: the remaining value is deducted at the upgrade; a downgrade is refused (SHOW_UPGRADE_PRORATION).
         ...upgradeProrationLinesAr(),
         // Pricing doc §13ج.4 — shown once promotional points actually expire.
         ...promoPointsLinesAr(),
@@ -165,7 +182,9 @@ const sections = {
       title: "3. Refunds of Subscriptions and Points",
       content: [
         `**Instant cancellation of a purchase made by mistake** (requested from support): within (${INSTANT_CANCEL_MINUTES}) minutes of payment you may cancel the purchase for a full refund, provided no point has been used (0 points) and no file has been exported.`,
-        "**Subscriptions and digital units**: the subscriber may exercise the right of withdrawal and recover the full value of the digital subscription within (14) days of payment under the E-Commerce Law and its Regulation, provided no more than 5% of the usage units (points) has been consumed and no paid memos have been exported.",
+        FOUNDER_REFUND_LINE_EN,
+        SUBSCRIPTION_REFUND_LINE_EN,
+        TOPUP_REFUND_LINE_EN,
         "Refunds go to the original payment method, within the periods set out in Section 7 below.",
         afterWithdrawalLineEn(),
         ...renewalReminderLinesEn(),
@@ -252,12 +271,12 @@ export default function RefundPolicyPage() {
               {isRTL ? "سياسة الاسترجاع والاستبدال" : "Refund & Exchange Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ٢٦ أكتوبر ٢٠٢٦" : "Last updated: October 26, 2026"}
+              {isRTL ? "آخر تحديث: ٢٠ نوفمبر ٢٠٢٦" : "Last updated: November 20, 2026"}
             </p>
             <div className={`mx-auto mt-4 max-w-lg rounded-xl border px-4 py-3 text-sm ${isDark ? "border-yellow-500/20 bg-yellow-500/5 text-yellow-300" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
               {isRTL
-                ? `إلغاء فوري خلال ${AR.minutes} دقيقة من الشراء بالخطأ (يُطلب من الدعم)، وحق العدول عن الاشتراكات خلال ${AR.days} يوماً وفق نظام التجارة الإلكترونية، واسترداد أتعاب الخدمات الفردية وفق الشروط أدناه.`
-                : `An instant cancel within ${INSTANT_CANCEL_MINUTES} minutes of a purchase made by mistake (requested from support), a ${WITHDRAWAL_DAYS}-day right of withdrawal on subscriptions under the Saudi E-Commerce Law, and refunds for individual service fees per the terms below.`}
+                ? `إلغاء فوري خلال ${AR.minutes} دقيقة من الشراء بالخطأ (يُطلب من الدعم)، والاسترداد خلال ${AR.days} يوماً من الشراء بشرط عدم استخدام أي ميزة ذكاء اصطناعي (ولشحن النقاط: ألا يتجاوز المستخدم ${AR.pct}٪ من نقاط الشحنة)، واسترداد أتعاب الخدمات الفردية وفق الشروط أدناه.`
+                : `An instant cancel within ${INSTANT_CANCEL_MINUTES} minutes of a purchase made by mistake (requested from support), a refund within ${WITHDRAWAL_DAYS} days of purchase provided no AI feature was used (for point top-ups: at most ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of the top-up's points used), and refunds for individual service fees per the terms below.`}
             </div>
           </motion.div>
         </div>

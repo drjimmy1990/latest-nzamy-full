@@ -20,11 +20,11 @@ test("the refusal names the limit in Arabic digits", () => {
   assert.equal(minTopupRefusalAr(500), "الحد الأدنى للشحن لحسابك ٥٠٠ ريال");
 });
 
-test("defaults: lawyer, firm and the business types 500; individual none", () => {
+test("defaults: lawyer, firm and the business types 500; individual 100 (٥٦, l8)", () => {
   for (const t of ["lawyer", "firm", "corporate", "micro", "government", "ngo", "provider"]) {
     assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, t), 500, t);
   }
-  assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, "individual"), null);
+  assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, "individual"), 100);
   assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, null), null);
 });
 

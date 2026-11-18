@@ -62,8 +62,10 @@
  *       would be paid and grant nothing). An upgrade from a lower PAID plan →
  *       the pro-rata credit; a coupon with it → 400 UPGRADE_NO_COUPON_AR. A
  *       failed read → 503.
- *   3c. A TOP-UP of a founder member (F12, founderDiscount.ts; lifetime and
- *       founder_topup_discount_bps since l7): 15 % by default off the net,
+ *   3c. A TOP-UP of a founder member (F12, founderDiscount.ts; the rate is
+ *       founder_topup_discount_bps, and since l8 the discount runs only for
+ *       founder_topup_discount_expires — the membership year from
+ *       activation, never lifetime): 15 % by default off the net,
  *       or the coupon if it is larger (never both). A failed
  *       founder read → 503. metadata.founder_discount; quote.founderDiscount.
  *   3d. The credit off the net before VAT (VAT recomputed); less than 1 SAR

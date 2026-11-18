@@ -10,7 +10,8 @@ import {
   mergeFounderCampaignSetting,
 } from "@/lib/pricing/campaigns";
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
-import { isFounderDiscountBps } from "@/lib/payments/founderDiscount";
+import { founderDiscountExpiresIssue, isFounderDiscountBps } from "@/lib/payments/founderDiscount";
+import { firmExtraSeatPriceIssue } from "@/lib/pricing/firmSeats";
 import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopupIssue } from "@/lib/points/pointsSettings";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import {
@@ -56,10 +57,17 @@ const ALLOWED_SETTINGS_KEYS = [
   "library_plan_points",
   // days (1..3650) an admin gift / grant of points lasts (90);
   "gift_valid_days",
-  // {"<user_type>": SAR} — the lowest top-up per account type (500; individual none);
+  // {"<user_type>": SAR} — the lowest top-up per account type (500; individual 100 since l8);
   "min_topup_by_account_type",
   // {"<user_type>": n} — the library assistant's free questions, once per account (10 / 5).
   "free_questions_by_account_type",
+  // Batch l8 payref (20261128_10): how long the founder top-up discount runs —
+  // {"months_after_activation": 0..120} (12 = the membership year) or
+  // {"until": "YYYY-MM-DD"}; read by founderDiscountWindow(). Never lifetime.
+  "founder_topup_discount_expires",
+  // l8 payref (٥٣): {"sar": an extra firm seat's price before VAT | null} —
+  // stored only; not sold online, never shown publicly.
+  "firm_extra_seat_price_sar",
 ] as const;
 
 /**
@@ -133,6 +141,9 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   gift_valid_days: giftValidDaysIssue,
   min_topup_by_account_type: minTopupIssue,
   free_questions_by_account_type: freeQuestionsIssue,
+  // Batch l8 payref: pure, covered by founderDiscount.test.ts / firmSeats.test.ts.
+  founder_topup_discount_expires: founderDiscountExpiresIssue,
+  firm_extra_seat_price_sar: firmExtraSeatPriceIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

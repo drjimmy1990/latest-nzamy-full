@@ -33,8 +33,20 @@ test("item ٧ is the owner's 18-Nov refund (draft clause 7): no AI feature, brow
   assert.doesNotMatch(founderTermsText(), /خدمات الباقة/, "the published wording the owner called an urgent fix is gone");
 });
 
-test("the 18-Nov text has its own version, so new consents record it", () => {
-  assert.equal(FOUNDER_TERMS_VERSION, "2026-11-19");
+test("the l8 text (no open-amount top-up, the discount for the membership year) has its own version, so new consents record it", () => {
+  assert.equal(FOUNDER_TERMS_VERSION, "2026-11-20");
+});
+
+test("l8 (owner 18 Nov, 1.2 / ٤٩ / ك): no top-up «of any amount», and the 15 % is top-ups only, for the membership year — never lifetime", () => {
+  const t = founderTermsText();
+  assert.doesNotMatch(t, /أي قيمة|أي مبلغ|مدى الحياة|دائم/);
+  assert.ok(t.includes("بما لا يقل عن الحد الأدنى للشحن لنوع حسابك"));
+  const discount = FOUNDER_TERMS_ITEMS.flatMap((i) => i.bullets ?? []).find((b) => b.includes("15%"));
+  assert.ok(discount, "the discount bullet");
+  assert.match(discount!, /شحنات النقاط وحدها/);
+  assert.match(discount!, /سنة العضوية من تاريخ التفعيل/);
+  assert.match(discount!, /لا يشمل رسوم المنصة ولا تجديد الاشتراك/);
+  assert.doesNotMatch(discount!, /رسوم نظامي المؤهلة/);
 });
 
 test("item ٥ carries the draft's library bullet: the year, no-renewal top-up, 100 founding points from the first question", () => {
@@ -50,7 +62,7 @@ test("the pending note is the agreed wording", () => {
 
 test("the draft's points (TEST-PLAN د) are all in the text", () => {
   const t = founderTermsText();
-  for (const s of ["6 أعمال", "5 نقاط", "شحن النقاط بأي قيمة", "18 نوفمبر 2026", "17 ديسمبر 2026", "تحديث عروضها", "الاسترداد", "9,500", "3,445.40", "10 نقاط", "14 يوماً"]) {
+  for (const s of ["6 أعمال", "5 نقاط", "شحن النقاط", "18 نوفمبر 2026", "17 ديسمبر 2026", "تحديث عروضها", "الاسترداد", "9,500", "3,445.40", "10 نقاط", "14 يوماً"]) {
     assert.ok(t.includes(s), s);
   }
   assert.equal(FOUNDER_TERMS_ITEMS.length, 10);

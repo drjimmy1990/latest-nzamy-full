@@ -34,7 +34,7 @@ const MATRIX_EXAMPLE = [
   { type: "عقد أقل من ٥٠٠ ألف", depts: ["القانونية"], approver: "مدير القانونية", days: 3 },
   { type: "عقد ٥٠٠ ألف — ٢ مليون", depts: ["القانونية", "المالية"], approver: "CFO", days: 5 },
   { type: "عقد أكثر من ٢ مليون", depts: ["القانونية", "المالية", "التشغيل"], approver: "CEO", days: 7 },
-  { type: "عقد عمالي (أي قيمة)", depts: ["الموارد البشرية", "القانونية"], approver: "مدير HR", days: 3 },
+  { type: "عقد عمالي (مهما بلغت قيمته)", depts: ["الموارد البشرية", "القانونية"], approver: "مدير HR", days: 3 },
   { type: "قرار إداري", depts: ["CEO", "القانونية"], approver: "CEO", days: 2 },
 ];
 

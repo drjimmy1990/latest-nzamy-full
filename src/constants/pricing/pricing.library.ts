@@ -6,10 +6,11 @@ import { Plan } from "./pricing.types";
  * Stand-alone Library subscription plans.
  * Shown when audience is "lawyers" or "firms" AND libraryMode === true.
  *
- * Pricing (the plan objects below are the source of truth):
- *   lib-q1:     1,500 SAR / 3 months
- *   lib-q2:     2,750 SAR / 6 months
- *   lib-annual: 5,000 SAR / year
+ * Pricing: the price book (src/lib/pricing/priceBook.ts) is the source of
+ * truth — the cards carry no typed price for the individual plans:
+ *   lib-q1:     1,050 SAR / 3 months
+ *   lib-q2:     1,920 SAR / 6 months
+ *   lib-annual: 3,490 SAR / year (owner 18 Nov 2026: confirmed 3,490)
  *
  * No `priceOriginal` and no «خصم ٥٠٪ لفترة الإطلاق» pill: the struck-through
  * "was" prices (2,000 / 3,500 / 6,000, and 2× every firm-library price) were

@@ -571,8 +571,8 @@ test("٢١٧: no stale firm price or seat price is left on the firm surfaces", (
   assert.doesNotMatch(admin, /"firm-growth"|"firm-scale"/, "admin pricing: plans that no longer exist");
   const readiness = readFileSync(new URL("../../constants/firmProfileReadiness.ts", import.meta.url), "utf8");
   const contracts = readiness.slice(readiness.indexOf("export const FIRM_PLAN_CONTRACTS"), readiness.indexOf("export const FIRM_ROLE_CONTRACTS"));
-  assert.match(contracts, /plan: "firm-basic",\s*annualPrice: bookSar\("firm-basic", "yearly"\),\s*includedSeats: 3,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
-  assert.match(contracts, /plan: "firm-enterprise",\s*annualPrice: bookSar\("firm-enterprise", "yearly"\),\s*includedSeats: 5,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
+  assert.match(contracts, /plan: "firm-basic",\s*annualPrice: bookSar\("firm-basic", "yearly"\),\s*includedSeats: 5,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
+  assert.match(contracts, /plan: "firm-enterprise",\s*annualPrice: bookSar\("firm-enterprise", "yearly"\),\s*includedSeats: 15,\s*extraSeatAnnualPrice: null,\s*includedAnnualPoints: 0,/);
   assert.doesNotMatch(contracts, /firm-growth|firm-scale/);
 });
 

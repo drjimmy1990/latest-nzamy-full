@@ -177,21 +177,19 @@ test("Q3/Q28: no page says the platform holds fees and releases them on delivery
   }
 });
 
-test("١٨٠: the refund policy carries the owner's two clauses verbatim", () => {
+test("١٨٠: the refund policy carries the owner's professional-fees clause verbatim (his subscription clause gave way to ٦٤, l8)", () => {
   const refund = code("app/refund-policy/page.tsx");
-  assert.ok(
-    refund.includes(
-      "يحق للمشترك ممارسة حق العدول واسترداد كامل قيمة الاشتراك الرقمي خلال (١٤) يوماً من تاريخ السداد وفق نظام التجارة الإلكترونية ولائحته، بشرط عدم استهلاك أكثر من ٥٪ من رصيد وحدات الاستخدام (النقاط) أو تصدير مذكرات مدفوعة.",
-    ),
-    "the owner's subscription clause is missing from /refund-policy",
-  );
+  // Owner 18 Nov (٦٤ + message 1.2): subscriptions follow the founder's no-AI
+  // rule and the 5 % belongs to top-ups only — refundPolicy.test.ts pins the new lines.
+  assert.ok(!refund.includes("بشرط عدم استهلاك أكثر من ٥٪ من رصيد وحدات الاستخدام"), "the 5 % subscription clause is gone");
+  assert.ok(refund.includes("SUBSCRIPTION_REFUND_LINE_AR") && refund.includes("TOPUP_REFUND_LINE_AR"));
   assert.ok(
     refund.includes(
       "تمثل علاقة تعاقدية مباشرة بين العميل ومكتب المحاماة المستقل المرخص عبر بوابة دفع معتمدة ومرخصة من البنك المركزي (SAMA)، ولا تحتفظ المنصة بأي أموال في حساب وسيط، وتخضع لسياسة الإلغاء الكامل قبل ٢٤ ساعة من موعد الجلسة الاستشارية.",
     ),
     "the owner's professional-fees clause is missing from /refund-policy",
   );
-  assert.ok(refund.includes("no more than 5% of the usage units (points) has been consumed"), "the English subscription clause is missing");
+  assert.ok(!refund.includes("no more than 5% of the usage units (points) has been consumed"), "the English 5 % subscription clause is gone");
 });
 
 test("١٨٠: no platform commission on the refund page or the pricing price list", () => {
@@ -448,9 +446,10 @@ test("P1 item 2: /services/individuals counts its own service cards", () => {
   assert.match(page, /serviceList\.length\.toLocaleString\(/);
 });
 
-test("P1 item 2: the CTA's refund line states the refund page's condition", () => {
+test("P1 item 2 + l8 (٦٤): the CTA's refund line states the refund page's conditions — no AI for subscriptions, 5 % for top-ups only", () => {
   const cta = code("components/pricing/PricingCTA.tsx");
-  assert.match(cta, /استرداد خلال ١٤ يوماً ما لم يُستهلك أكثر من ٥٪ من النقاط/);
+  assert.match(cta, /استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه/);
+  assert.doesNotMatch(cta, /ما لم يُستهلك أكثر من ٥٪ من النقاط/);
 });
 
 // ── Task 1.6 (owner ٢٠١–٢٠٣): an invite code opens the library, nothing else ──

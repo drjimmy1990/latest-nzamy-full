@@ -45,16 +45,46 @@ test("fail closed: a failed evidence read is «تعذّر التحقق», never 
   assert.equal(needsOverride(v), true);
 });
 
-test("library and plan use the no-AI rule but are not enforced; a top-up uses the 5 % rule on its own lot", () => {
+test("l8 (٦٤): the library uses the founder's no-AI rule and is ENFORCED — its own assistant and its own points count, another tool does not", () => {
   assert.equal(ruleFor("library"), "no_ai_use");
-  assert.equal(ruleFor("plan"), "no_ai_use");
+  const lib = (e: RefundEvidence) => refundEligibility({ kind: "library", paid_at: PAID }, at(60_000), e)!;
+  const asked = lib(ev({ aiRuns: [{ tool: "library-assistant", created_at: PAID }] }));
+  assert.deepEqual([asked.state, asked.enforced, needsOverride(asked)], ["ineligible", true, true]);
+  assert.ok(asked.reasons.includes("استُخدمت ميزة ذكاء اصطناعي في الاشتراك منذ الدفع."));
+  assert.equal(asked.ruleLabel, "سياسة الاسترداد: بلا استخدام ذكاء اصطناعي");
+  const spent = lib(ev({ orderLotTotal: 300, orderLotUsed: 5 }));
+  assert.equal(spent.state, "ineligible", "points of the library plan's own lot spent");
+  // a drafter run paid by another plan, or points debited elsewhere, are not the library's AI
+  const other = lib(ev({ aiRuns: [{ tool: "legal-drafter", created_at: PAID }], pointsDebited: 500 }));
+  assert.deepEqual([other.state, needsOverride(other)], ["eligible", false]);
+  assert.ok(other.lines.some((l) => l.includes("تصفح المكتبة القانونية لا يُحتسب")));
+  const late = lib(ev());
+  assert.equal(late.state, "eligible");
+  assert.equal(refundEligibility({ kind: "library", paid_at: PAID }, at(REFUND_WINDOW_MS + 1000), ev())!.state, "ineligible");
+});
+
+test("l8 (٦٤): a top-up keeps the 5 % rule on its own lot, now ENFORCED", () => {
   assert.equal(ruleFor("topup"), "points_5pct");
-  const lib = refundEligibility({ kind: "library", paid_at: PAID }, at(60_000), ev({ aiRuns: [{ tool: "x", created_at: PAID }] }))!;
-  assert.deepEqual([lib.state, lib.enforced, needsOverride(lib)], ["ineligible", false, false]);
-  assert.ok(lib.lines.some((l) => l.includes("إرشادي")));
   const top = (used: number) => refundEligibility({ kind: "topup", paid_at: PAID }, at(60_000), ev({ orderLotTotal: 1000, orderLotUsed: used, aiRuns: [{ tool: "x", created_at: PAID }] }))!;
-  assert.equal(top(50).state, "eligible", "5 % is allowed; AI runs do not matter for a top-up");
-  assert.equal(top(51).state, "ineligible");
+  assert.deepEqual([top(50).state, top(50).enforced, needsOverride(top(50))], ["eligible", true, false], "5 % is allowed; AI runs do not matter for a top-up");
+  assert.deepEqual([top(51).state, needsOverride(top(51))], ["ineligible", true]);
+  assert.equal(top(51).ruleLabel, "سياسة الاسترداد: شحن النقاط (٥٪ من نقاط الشحنة)");
+});
+
+test("a plan uses the no-AI rule but stays advisory (٦٤ names the library and the bundles only — owner question)", () => {
+  assert.equal(ruleFor("plan"), "no_ai_use");
+  const plan = refundEligibility({ kind: "plan", paid_at: PAID }, at(60_000), ev({ aiRuns: [{ tool: "x", created_at: PAID }] }))!;
+  assert.deepEqual([plan.state, plan.enforced, needsOverride(plan)], ["ineligible", false, false]);
+  assert.ok(plan.lines.some((l) => l.includes("إرشادي")));
+});
+
+test("an order the platform owes back (already_entitled: nothing granted) is never blocked, whatever its kind", () => {
+  for (const kind of ["membership", "library", "topup"]) {
+    const v = refundEligibility({ kind, paid_at: PAID, metadata: { already_entitled: true } }, at(40 * 86400000), ev({ aiRuns: [{ tool: "library-assistant", created_at: PAID }], orderLotTotal: 100, orderLotUsed: 100 }))!;
+    assert.equal(v.state, "ineligible", kind);
+    assert.deepEqual([v.enforced, needsOverride(v)], [false, false], kind);
+    assert.ok(v.lines.some((l) => l.includes("مستحقة الاسترداد")), kind);
+  }
 });
 
 test("no paid_at → null", () => {
