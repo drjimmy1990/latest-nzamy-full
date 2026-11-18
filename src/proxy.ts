@@ -69,6 +69,23 @@ import {
 // library-only security lock (public.library_read_quota_hit, 20261030_80).
 import { libraryQuotaTarget, hasSupabaseAuthCookie, quotaRefusal } from "@/lib/library/readQuota";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
+// Owner item 2 (batch l8): the public-library guard — per-session + per-IP
+// budgets, a Turnstile challenge past a threshold, consecutive-page cap.
+import {
+  isLibraryGuardedRequest,
+  isPagedLibraryRequest,
+  librarySessionId,
+  libraryPassSecret,
+  passBinding,
+  verifyLibraryPass,
+  newLibraryId,
+  LIBRARY_SESSION_COOKIE,
+  LIBRARY_PASS_COOKIE,
+  LIBRARY_CHALLENGE_HEADER,
+  LIBRARY_CHALLENGE_MESSAGE_AR,
+  LIBRARY_BUSY_MESSAGE_AR,
+} from "@/lib/library/publicGuard";
+import { loadLibraryGuardSettings } from "@/lib/library/publicGuardServer";
 // F13: the first-touch utm cookie. Pure, no DB, no network.
 import {
   ATTRIBUTION_COOKIE,
@@ -338,6 +355,109 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
   } catch {
     return null;
   }
+}
+
+// ─── Public-library guard (owner message 18 Nov, item 2; batch l8) ──────────
+//
+// The note-١٣ buckets above stop a flood; a patient script at one request a
+// second never met them (the 18-Nov audit: ~90 requests, no 429). This step
+// adds, on every counted library request (publicGuard.ts
+// isLibraryGuardedRequest — reads, search, catalogue; not the challenge,
+// status, devices or private folders), whoever the caller is — a forged
+// session-cookie NAME must not buy a wider budget, and a crawler is a visitor:
+//   • a HARD ceiling per session (429 + Retry-After; no challenge lifts it);
+//   • three SOFT budgets — per session, per address, and paged requests
+//     (offset > 0 / page > 1: the «consecutive pages» walk) — past which the
+//     answer is 429 with `x-library-challenge: required`: the browser shows a
+//     Turnstile box (LibraryChallengeHost), POST /api/library/challenge
+//     verifies it and sets a signed pass cookie (HMAC, bound to the visitor's
+//     address, passMinutes long) that opens a FRESH soft allowance.
+// The session is the `nz_lib_sid` cookie (set below on the first library
+// answer); a request without one is counted by its address. Every number is
+// the admin setting platform_settings.library_public_protection (60-second
+// memo; the owner's defaults when the row is missing or unreadable).
+// Without a pass secret or a Turnstile site key no challenge can be passed,
+// so a spent soft budget is then a plain 429 with Retry-After.
+// Per process and in memory, like every bucket here. FAILS OPEN on any error.
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+function libraryChallengeAvailable(): boolean {
+  if (!libraryPassSecret(process.env)) return false;
+  if (process.env.NODE_ENV === "production") return Boolean((process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "").trim());
+  return true;
+}
+
+async function applyLibraryPublicGuard(req: NextRequest, pathname: string): Promise<NextResponse | null> {
+  if (!isLibraryGuardedRequest(req.method, pathname)) return null;
+  try {
+    const { protection } = await loadLibraryGuardSettings();
+    const ip = resolveClientIp((name) => req.headers.get(name));
+    const visitor = libraryReadClientKey((name) => req.headers.get(name), ip);
+    const sid = librarySessionId(req.cookies.get(LIBRARY_SESSION_COOKIE)?.value);
+    const sessionKey = sid ? `s:${sid}` : `v:${visitor}`;
+
+    const hard = rateLimiter.check("library-guard-hard", sessionKey, { windowMs: TEN_MINUTES_MS, max: protection.sessionHardPer10Min });
+    if (!hard.allowed) {
+      const busy = NextResponse.json({ error: LIBRARY_BUSY_MESSAGE_AR, code: "library_busy" }, { status: 429 });
+      busy.headers.set("Retry-After", String(hard.retryAfterSeconds));
+      busy.headers.set("Cache-Control", "no-store");
+      return busy;
+    }
+
+    const secret = libraryPassSecret(process.env);
+    const passNonce = secret
+      ? await verifyLibraryPass(secret, req.cookies.get(LIBRARY_PASS_COOKIE)?.value, await passBinding(visitor), Date.now())
+      : null;
+    const allowance = passNonce ? `|p:${passNonce}` : "";
+    const soft = { windowMs: TEN_MINUTES_MS };
+    const checks = [
+      rateLimiter.check("library-guard-session", sessionKey + allowance, { ...soft, max: protection.sessionChallengeAfter }),
+      rateLimiter.check("library-guard-ip", `v:${visitor}` + allowance, { ...soft, max: protection.ipChallengeAfter }),
+    ];
+    if (isPagedLibraryRequest(req.nextUrl.searchParams)) {
+      checks.push(rateLimiter.check("library-guard-pages", sessionKey + allowance, { ...soft, max: protection.pagesChallengeAfter }));
+    }
+    const refused = checks.find((d) => !d.allowed);
+    if (!refused) return null;
+
+    if (libraryChallengeAvailable()) {
+      const challenge = NextResponse.json(
+        { error: LIBRARY_CHALLENGE_MESSAGE_AR, code: "library_challenge_required" },
+        { status: 429 },
+      );
+      challenge.headers.set(LIBRARY_CHALLENGE_HEADER, "required");
+      challenge.headers.set("Retry-After", String(refused.retryAfterSeconds));
+      challenge.headers.set("Cache-Control", "no-store");
+      return challenge;
+    }
+    const busy = NextResponse.json({ error: LIBRARY_BUSY_MESSAGE_AR, code: "library_busy" }, { status: 429 });
+    busy.headers.set("Retry-After", String(refused.retryAfterSeconds));
+    busy.headers.set("Cache-Control", "no-store");
+    return busy;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The library session cookie, on any answer to a counted library request
+ * from a browser that has none yet. HttpOnly, path /api (the only place it is
+ * read), a browser-session cookie. Never breaks the response.
+ */
+function withLibrarySessionCookie(req: NextRequest, response: NextResponse): NextResponse {
+  try {
+    if (!isLibraryGuardedRequest(req.method, req.nextUrl.pathname)) return response;
+    if (librarySessionId(req.cookies.get(LIBRARY_SESSION_COOKIE)?.value)) return response;
+    response.cookies.set(LIBRARY_SESSION_COOKIE, newLibraryId(), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/api",
+    });
+  } catch {
+    // the session cookie is a nice-to-have: requests without it are counted by address
+  }
+  return response;
 }
 
 // ─── Checkout start / founder seat reservation (S5, owner package 17 Nov) ────
@@ -630,7 +750,7 @@ function withAttributionCookie(req: NextRequest, response: NextResponse): NextRe
 }
 
 export default async function proxy(req: NextRequest) {
-  return withAttributionCookie(req, await proxyRoutes(req));
+  return withLibrarySessionCookie(req, withAttributionCookie(req, await proxyRoutes(req)));
 }
 
 async function proxyRoutes(req: NextRequest) {
@@ -642,6 +762,11 @@ async function proxyRoutes(req: NextRequest) {
   //    existing behaviour beneath this point runs exactly as it did before.
   const rateLimited = applyRateLimit(req, pathname);
   if (rateLimited) return rateLimited;
+
+  // 0-l8. The public-library guard (per-session / per-address budgets, the
+  //       Turnstile challenge, consecutive pages). null for every other request.
+  const libraryGuarded = await applyLibraryPublicGuard(req, pathname);
+  if (libraryGuarded) return libraryGuarded;
 
   // 0a. S5: checkout starts (the founder seat reservation), 3 per 10 minutes
   //     per signed-in user. null for every other request.
