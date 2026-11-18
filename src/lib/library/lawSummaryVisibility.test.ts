@@ -624,9 +624,11 @@ test("a second card the reader cannot lift («🗂️ البطاقة التعر�
   assert.ok(out.includes("بعد الاطلاع على …"), out);
 });
 
-test("the precedents route cleans a principle's card before the 150-character cut", () => {
+test("the precedents route cleans a principle's card before the locked excerpt (150 characters, or the rulings setting)", () => {
   const route = read("src/app/api/library/precedents/[slug]/route.ts");
-  assert.match(route, /const text = typeof p\.text === 'string' \? withCleanCardRows\(p\.text\) : p\.text;\s*return isLocked \? truncate\(text, 150\) : text;/);
+  assert.match(route, /const text = typeof p\.text === 'string' \? withCleanCardRows\(p\.text\) : p\.text;\s*return isLocked \? publicExcerpt\(text, excerptChars\) : text;/);
+  // Batch l8-libguard: a principle keeps the 150-character cap; a ruling uses public_full_rulings_per_collection.excerpt_chars.
+  assert.match(route, /const excerptChars = isRuling \? publicRulings\.excerptChars : 150;/);
 });
 
 test("the export's file rows are dropped for EVERY viewer; a status row loses its English gloss", () => {

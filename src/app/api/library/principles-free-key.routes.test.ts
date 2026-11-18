@@ -20,7 +20,9 @@ test('precedent detail evaluates each principle id and preserves its first-N gat
   assert.match(detail, /itemId:\s*p\.id as string/);
   // The gate is the principle's GLOBAL index in the collection (offset + its
   // index in the window), through the tested pure helper; -1 = unlimited.
-  assert.match(detail, /const isLocked = isPrincipleLocked\(isFree, freeLimit, offset \+ idx\)/);
+  assert.match(detail, /const isLocked =\s*isPrincipleLocked\(isFree, freeLimit, offset \+ idx\) \|\|/);
+  // Batch l8-libguard: a ruling also locks past public_full_rulings_per_collection.full (owner: 0).
+  assert.match(detail, /\(!isFree && isRuling && offset \+ idx >= publicRulings\.full\)/);
   const windowHelper = source('./precedents/[slug]/_window.ts');
   assert.match(windowHelper, /return !isFree && freeLimit !== -1 && globalIndex >= freeLimit;/);
 });
