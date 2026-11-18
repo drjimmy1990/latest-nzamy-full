@@ -8,7 +8,9 @@ import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
 import { readWithOptionalFeatures } from '@/lib/library/optionalColumn';
-import { FREE_PAGES, FREE_PAGES_SCAN, feqhLockFrom, type BlockPlace } from '@/lib/library/freePages';
+import { FREE_PAGES_SCAN, feqhLockFrom, type BlockPlace } from '@/lib/library/freePages';
+// Owner decision (18 Nov): fiqh text is subscribers only — library_feqh_free_pages (0).
+import { loadLibraryGuardSettings } from '@/lib/library/publicGuardServer';
 import { cleanBookText, firstBlockOrderBySection, normalizeHashiyah, planBlocksPage, planBlocksRequest, shapeToc, type ResolvedBlocksSelection } from './_shape';
 
 /**
@@ -172,10 +174,17 @@ export async function GET(
     // book's first two printed pages (its leading blocks' page_number, public
     // columns); an admin per-book override still counts blocks, as before. A
     // failed lookup locks every block rather than open the text.
+    // Owner decision (18 Nov 2026): «الفقه للمشتركين فقط كالمبادئ» — the free
+    // printed pages are the admin setting library_feqh_free_pages (0 by
+    // default: every block locked for a non-subscriber). A per-book override
+    // and a whitelisted / free-marked book still win, as before.
+    const feqhFreePages = hasFullAccess || byOverride ? 0 : (await loadLibraryGuardSettings()).feqhFreePages;
     let lockFrom = Number.POSITIVE_INFINITY;
     if (!hasFullAccess) {
       if (byOverride) {
         lockFrom = freeLimit;
+      } else if (feqhFreePages <= 0) {
+        lockFrom = Number.NEGATIVE_INFINITY;
       } else {
         const { data: lead, error: leadError } = await supabase
           .schema('library')
@@ -189,7 +198,7 @@ export async function GET(
           console.error(`[Books] free-pages lookup failed for "${slug}" — every block locked:`, leadError);
           lockFrom = Number.NEGATIVE_INFINITY;
         } else {
-          lockFrom = feqhLockFrom((lead ?? []) as BlockPlace[], FREE_PAGES_SCAN);
+          lockFrom = feqhLockFrom((lead ?? []) as BlockPlace[], FREE_PAGES_SCAN, feqhFreePages);
         }
       }
     }
@@ -513,9 +522,10 @@ export async function GET(
       }),
       paywall: {
         isWhitelisted,
-        // What is free: -1 = everything; otherwise FREE_PAGES printed pages
-        // (freeUnit 'pages'), or an admin override's block count ('blocks').
-        freeLimit: hasFullAccess ? -1 : byOverride ? freeLimit : FREE_PAGES,
+        // What is free: -1 = everything; otherwise library_feqh_free_pages
+        // printed pages (freeUnit 'pages', 0 by default), or an admin
+        // override's block count ('blocks').
+        freeLimit: hasFullAccess ? -1 : byOverride ? freeLimit : feqhFreePages,
         freeUnit: byOverride ? 'blocks' : 'pages',
         hasFullAccess,
         // A cursor window is not counted (the count would be of the window's
