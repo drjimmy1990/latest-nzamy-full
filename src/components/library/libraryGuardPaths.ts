@@ -32,3 +32,30 @@ export function isLawReaderPath(pathname: string | null | undefined): boolean {
   }
   return !LAWS_STATIC_SEGMENTS.has(segment);
 }
+
+/**
+ * Owner 18 Nov, item 4.1 — the same P1-10 pattern for a decree's reader
+ * (/laws/orders/<id>) and a judicial collection's reader (/precedents/<slug>):
+ * each one's own layout guards the reader and prints the public block and
+ * JSON-LD OUTSIDE its guard, so they reach the first HTML. The section guards
+ * let exactly these paths through.
+ */
+export function isOrderReaderPath(pathname: string | null | undefined): boolean {
+  return /^\/laws\/orders\/[^/?#]+\/?$/.test(String(pathname ?? ""));
+}
+
+/** Static folders under src/app/precedents (they win over [slug]); each stays under the section guard. */
+export const PRECEDENTS_STATIC_SEGMENTS: ReadonlySet<string> = new Set(["judgment"]);
+
+/** True for /precedents/<slug> (one segment) that is not a static sibling. */
+export function isCollectionReaderPath(pathname: string | null | undefined): boolean {
+  const m = /^\/precedents\/([^/?#]+)\/?$/.exec(String(pathname ?? ""));
+  if (!m) return false;
+  let segment = m[1];
+  try {
+    segment = decodeURIComponent(segment);
+  } catch {
+    // A malformed escape is not one of the static names either.
+  }
+  return !PRECEDENTS_STATIC_SEGMENTS.has(segment);
+}

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import LibraryGuard from "@/components/library/LibraryGuard";
+import LibraryDocumentShell from "@/components/library/LibraryDocumentShell";
 import LibraryJsonLd from "@/components/library/LibraryJsonLd";
 import { libraryDocMetadata, loadLibraryDocSeo } from "@/lib/library/libraryDocumentSeo";
 
@@ -11,10 +13,12 @@ import { libraryDocMetadata, loadLibraryDocSeo } from "@/lib/library/libraryDocu
  * service role and print it as a GUEST sees it — no decree number or date, no
  * official link, whoever asked (owner answers ٣١٨ / ٣١٩).
  *
- * The JSON-LD sits inside the section's LibraryGuard (src/app/laws/layout.tsx), so it
- * reaches the DOM once the guard resolves, not the first HTML; see the S6
- * ledger (NOTE-14-C03) for the follow-up that lets the guard render on the
- * server.
+ * Owner 18 Nov, item 4.1 (the P1-10 pattern of /laws/[slug]): this layout
+ * guards the reader itself, and the JSON-LD and the public block (the name as
+ * the page's H1 and the public description — nothing else) sit OUTSIDE that
+ * guard, so they are in the first HTML: the guard SSRs only a spinner. The
+ * section guard (src/app/laws/layout.tsx) lets this path through. Nothing is
+ * printed while the library is closed (the load answers "closed").
  */
 type Params = { params: Promise<{ slug: string }> };
 
@@ -29,7 +33,8 @@ export default async function Layout({ children, params }: Params & { children: 
   return (
     <>
       {load.status === "ok" && <LibraryJsonLd doc={load.doc} />}
-      {children}
+      <LibraryGuard>{children}</LibraryGuard>
+      {load.status === "ok" && <LibraryDocumentShell doc={load.doc} />}
     </>
   );
 }

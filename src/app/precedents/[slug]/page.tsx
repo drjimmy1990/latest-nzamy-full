@@ -866,7 +866,8 @@ export default function JudicialPrinciplesPage() {
                   {getCourtOrIssuer(null)}
                 </div>
               )}
-              <h1 className="text-2xl font-black">{collection.title}</h1>
+              {/* An <h2>: the page's H1 is the server-rendered «عن هذه المجموعة» block (owner 18 Nov, item 4.1). */}
+              <h2 className="text-2xl font-black">{collection.title}</h2>
               {/* N2.4: in a series the volume label replaces «الجزء: 1» (the
                   loader stores part 1 on every volume of the owner's series). */}
               {(() => {

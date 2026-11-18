@@ -12,14 +12,29 @@ import type { LibraryDocShell } from "@/lib/library/libraryDocumentSeo";
  * a closed <details> the reader can open, under the reader. It carries only
  * public catalogue text — the cleaned name and موجز (libraryMetadata.ts) and
  * the chapter titles — never a block's text (server-only, 20261018_02).
- * A law's block has the cleaned name and موجز only: never its ديباجة (a
- * subscriber's, T28-22) nor an article's text (server-only, 20260929_01).
+ * A law's block has the cleaned name and موجز, and (owner 18 Nov, item 4.1)
+ * the public excerpt: its first article only when a guest's reader shows it
+ * too, cut short (lawPublicExcerpt.ts) — never its ديباجة (a subscriber's,
+ * T28-22), never a locked article. A decree's and a collection's block: the
+ * name and the public description only (no ruling text: that excerpt is the
+ * collection reader's own rule).
  * The layout renders it only while the library is open.
+ *
+ * The document's name is the page's <h1> here for a law, a decree and a
+ * collection — the client reader shows its title as an <h2>, so the page has
+ * one H1 in the server HTML and after hydration. A book keeps <h2>: its
+ * reader's title stays the <h1>.
  */
-const HEADING: Partial<Record<LibraryDocSeo["kind"], string>> = { book: "عن هذا الكتاب", law: "عن هذا النظام" };
+const HEADING: Record<LibraryDocSeo["kind"], string> = {
+  book: "عن هذا الكتاب",
+  law: "عن هذا النظام",
+  order: "عن هذا القرار",
+  collection: "عن هذه المجموعة",
+};
 
 export default function LibraryDocumentShell({ doc, shell }: { doc: LibraryDocSeo; shell?: LibraryDocShell }) {
   const heading = HEADING[doc.kind] ?? "عن هذا المستند";
+  const TitleTag = doc.kind === "book" ? "h2" : "h1";
   return (
     <section dir="rtl" aria-label={heading} className="mx-auto w-full max-w-5xl px-4 pb-10">
       <details className="rounded-xl border border-zinc-300/60 dark:border-white/10 px-4 py-3">
@@ -27,9 +42,16 @@ export default function LibraryDocumentShell({ doc, shell }: { doc: LibraryDocSe
           {heading}
         </summary>
         <div className="mt-3 space-y-3 text-sm leading-7 text-zinc-700 dark:text-zinc-300">
-          <h2 className="text-base font-black text-zinc-900 dark:text-white">{doc.name}</h2>
+          <TitleTag className="text-base font-black text-zinc-900 dark:text-white">{doc.name}</TitleTag>
           {shell?.author && <p>المؤلف: {shell.author}</p>}
           {doc.description && <p>{doc.description}</p>}
+          {shell?.excerpt && (
+            <>
+              <h2 className="font-bold text-zinc-900 dark:text-white">من نص النظام</h2>
+              <blockquote className="whitespace-pre-line border-r-2 border-[#C8A762] pr-3">{shell.excerpt}</blockquote>
+              <p className="text-zinc-600 dark:text-zinc-400">تابع قراءة النظام في القارئ أعلاه.</p>
+            </>
+          )}
           {shell && shell.toc.length > 0 && (
             <>
               <h3 className="font-bold text-zinc-900 dark:text-white">فهرس الكتاب</h3>

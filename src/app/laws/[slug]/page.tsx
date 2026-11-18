@@ -910,7 +910,8 @@ function LawSystemPageContent() {
           </div>
           <div className="flex flex-wrap items-start gap-3 justify-between">
             <div>
-              <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{lawTitle}</h1>
+              {/* An <h2>: the page's H1 is the server-rendered «عن هذا النظام» block (owner 18 Nov, item 4.1). */}
+              <h2 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{lawTitle}</h2>
               {/* T28-22: withheld for a non-subscriber → one locked row; simply
                   empty → nothing (this used to render an empty line). */}
               {officialMeta.locked ? (

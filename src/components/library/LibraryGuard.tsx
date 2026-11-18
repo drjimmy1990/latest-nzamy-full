@@ -5,7 +5,7 @@ import { useLibraryStatus } from "@/hooks/useLibraryStatus";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryClosedNotice from "./LibraryClosedNotice";
 import LibrarySecurityLockNotice, { LibraryDailyLimitBanner } from "./LibrarySecurityLockNotice";
-import { isLawReaderPath } from "./libraryGuardPaths";
+import { isCollectionReaderPath, isLawReaderPath, isOrderReaderPath } from "./libraryGuardPaths";
 
 /**
  * LibraryGuard — renders library content only while the library is open.
@@ -45,12 +45,17 @@ const ALWAYS_OPEN_PATHS = ["/laws/subscribe"];
 export default function LibraryGuard({
   children,
   lawReaderGuardsItself = false,
+  collectionReaderGuardsItself = false,
 }: {
   children: React.ReactNode;
   lawReaderGuardsItself?: boolean;
+  /** Only src/app/precedents/layout.tsx: /precedents/[slug] guards itself (owner 18 Nov, item 4.1). */
+  collectionReaderGuardsItself?: boolean;
 }) {
   const pathname = usePathname();
-  if (lawReaderGuardsItself && isLawReaderPath(pathname)) return <>{children}</>;
+  // A decree's reader (/laws/orders/[slug]) guards itself as a law's does (owner 18 Nov, item 4.1).
+  if (lawReaderGuardsItself && (isLawReaderPath(pathname) || isOrderReaderPath(pathname))) return <>{children}</>;
+  if (collectionReaderGuardsItself && isCollectionReaderPath(pathname)) return <>{children}</>;
   return <GuardedContent pathname={pathname}>{children}</GuardedContent>;
 }
 
