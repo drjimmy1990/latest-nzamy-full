@@ -258,3 +258,24 @@ test("the crawler gets nothing more than a visitor: no library route or reader b
   for (const r of roots) walk(r);
   assert.deepEqual(offenders, []);
 });
+
+test("no bulk export: no library API route sends a file download, and every list route caps its page", () => {
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(path.join(SRC, dir), { withFileTypes: true })) {
+      const rel = path.join(dir, e.name);
+      if (e.isDirectory()) walk(rel);
+      else if (/route\.ts$/.test(e.name) && /content-disposition|text\/csv|application\/zip/i.test(read(rel))) offenders.push(rel);
+    }
+  };
+  walk("app/api/library");
+  assert.deepEqual(offenders, []);
+  assert.match(read("app/api/library/precedents/[slug]/_window.ts"), /50/);
+  assert.match(read("app/api/library/books/[slug]/_shape.ts"), /BLOCKS_MAX_LIMIT = 50/);
+  assert.match(read("app/api/library/init/route.ts"), /, 200\)/);
+});
+
+test("audit م-1: a locked law article body is cut at a word and never whole", () => {
+  const src = read("app/api/library/laws/[slug]/route.ts");
+  assert.match(src, /if \(limit === LOCKED_PREVIEW_CHARS && s\.trim\(\) !== ''\) return publicExcerpt\(s, limit\)/);
+});

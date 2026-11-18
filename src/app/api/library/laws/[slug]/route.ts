@@ -1,4 +1,5 @@
 import { articleStatusForDetail } from "./_article-status";
+import { publicExcerpt } from '@/lib/library/publicGuard';
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
@@ -520,6 +521,10 @@ const LOCKED_TITLE_CHARS = 120;
  */
 function preview(value: unknown, limit: number = LOCKED_PREVIEW_CHARS): string {
   const s = (value as string) || '';
+  // Audit م-1 (batch l8-libguard): an article BODY shorter than the cap was
+  // shipped whole to a locked reader. The body is now cut at a word and never
+  // in full (publicExcerpt); a locked title keeps the plain cap.
+  if (limit === LOCKED_PREVIEW_CHARS && s.trim() !== '') return publicExcerpt(s, limit) as string;
   return s.substring(0, limit) + (s.length > limit ? '...' : '');
 }
 
