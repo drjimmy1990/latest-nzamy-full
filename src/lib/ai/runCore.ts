@@ -523,7 +523,8 @@ export async function startRunWith(
     const kind = draftingRequestKind(String(checked.input[spec.draftingGuard.field] ?? ""));
     if (kind === "contract") {
       const pro = getAiTool("contracts-pro");
-      return { status: 422, body: contractDraftingRefusal(pro !== null && toolRoleRefusal(pro, actor) === null) };
+      // Owner ٢٦: an individual / business gets the lawyer-drafting link instead.
+      return { status: 422, body: contractDraftingRefusal(pro !== null && toolRoleRefusal(pro, actor) === null, actor.userType) };
     }
     if (kind === "pleading") {
       const drafter = getAiTool("legal-drafter");

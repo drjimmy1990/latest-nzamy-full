@@ -15,6 +15,7 @@
 import { saudiCityLabelAr } from "../../constants/saudiCities.ts";
 import { isSafePublicSummary } from "./requestPublicSummary.ts";
 import { requestTypeLabelAr } from "./requestTypeLabels.ts";
+import { openRequestCategoryLabelAr } from "./openRequestCategory.ts";
 
 export interface OpenRequestRow {
   id?: unknown;
@@ -24,11 +25,16 @@ export interface OpenRequestRow {
   public_summary?: unknown;
   status?: unknown;
   created_at?: unknown;
+  /** Owner ٢٣ (20261127_70): the type staff published it under. */
+  category?: unknown;
 }
 
 export interface OpenRequestItem {
   id: string;
-  /** Arabic type label («خدمة», «استشارة» …), «طلب» for a type this build does not know. */
+  /**
+   * Arabic type label: the published type (استشارة / قضية / صياغة, owner ٢٣)
+   * when there is one, else the row type («خدمة» …), «طلب» for an unknown one.
+   */
   typeLabel: string;
   /** Arabic city label, or null (an older request, or a slug this build does not know). */
   cityLabel: string | null;
@@ -42,7 +48,10 @@ export function toOpenRequestItem(row: OpenRequestRow): OpenRequestItem | null {
   const summary = typeof row.public_summary === "string" && isSafePublicSummary(row.public_summary) ? row.public_summary : null;
   return {
     id: row.id,
-    typeLabel: requestTypeLabelAr(typeof row.type === "string" ? row.type : null) ?? "طلب",
+    typeLabel:
+      openRequestCategoryLabelAr(row.category) ??
+      requestTypeLabelAr(typeof row.type === "string" ? row.type : null) ??
+      "طلب",
     cityLabel: saudiCityLabelAr(typeof row.city === "string" ? row.city : null),
     summary,
     createdAt: typeof row.created_at === "string" ? row.created_at : null,

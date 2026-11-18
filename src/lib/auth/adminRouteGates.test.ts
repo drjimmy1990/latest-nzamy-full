@@ -284,8 +284,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "coupons/[id]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "coupons/[id]/route.ts", method: "DELETE", action: "coupons.delete", logs: 1 },
   { file: "corporates/route.ts", method: "PATCH", action: "entitlements.grant", logs: 1 },
-  // resend_whatsapp arm, assign arm, claim/deliver/cancel arm
-  { file: "service-orders/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 3 },
+  // resend_whatsapp arm, assign arm, publish_open/unpublish_open arm (owner ٢٣), claim/deliver/cancel arm
+  { file: "service-orders/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 4 },
   { file: "verifications/[id]/route.ts", method: "PATCH", action: "verifications.decide", logs: 1 },
   { file: "community/moderation/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },

@@ -77,7 +77,7 @@ export function layeredLayout(graph: Pick<OfficeGraph, "nodes" | "edges">): Map<
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const links = new Map<string, Set<string>>();
   for (const e of graph.edges) {
-    if (e.relation === "same_name" || !byId.has(e.from) || !byId.has(e.to)) continue;
+    if (!byId.has(e.from) || !byId.has(e.to)) continue;
     if (!links.has(e.from)) links.set(e.from, new Set());
     if (!links.has(e.to)) links.set(e.to, new Set());
     links.get(e.from)!.add(e.to);

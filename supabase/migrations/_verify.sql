@@ -7207,3 +7207,25 @@ select 'Named case boards: canvas_boards with RLS as case_graphs, no guest grant
        and has_table_privilege('authenticated', 'public.canvas_boards', 'SELECT')
        as ok;
 -- <<< verify:l6_tools
+-- >>> verify:l7_misc
+-- 2026-11-27 — owner ٢٣: staff publish to the lawyers' open requests (consultation / case / drafting),
+-- test accounts (profiles.is_demo / test_accounts) never listed. Run 20261127_70 any time.
+-- Docker: supabase/tests/rls/open_requests_publish.test.sql
+select 'Open requests: staff publish + type filter + no test accounts (run 20261127_70)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute
+         where attrelid = 'public.service_requests'::regclass and not attisdropped
+           and attname in ('marketplace_published_at', 'marketplace_published_by', 'marketplace_category')) = 3
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_marketplace_category_check')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.service_requests'::regclass
+                      and tgname = 'trg_02_service_requests_marketplace_guard' and tgenabled <> 'D')
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      like '%category%', false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'marketplace_published_at is not null') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'test_accounts') > 0, false)
+       and not has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE')
+       as ok;
+-- <<< verify:l7_misc

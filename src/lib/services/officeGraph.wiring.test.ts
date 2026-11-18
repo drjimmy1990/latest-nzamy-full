@@ -52,7 +52,8 @@ test("lawyers get the link in both sidebar variants", () => {
 
 test("the page is honest about what it shows", () => {
   const view = read("components/dashboard/officeGraph/OfficeGraphView.tsx");
-  assert.match(view, /تنبيه للتحقق، لا حكم بوجود تعارض/);
+  // owner ٣٥: the «تشابه أسماء» panel (and its «تنبيه للتحقق» line) is gone.
+  assert.doesNotMatch(view, /تشابه أسماء|graph\.clashes/);
   assert.match(view, /read\.truncated\.cases \|\| read\.truncated\.clients/);
   assert.doesNotMatch(view, /localStorage|setTimeout|نسبة|احتمال/);
 });

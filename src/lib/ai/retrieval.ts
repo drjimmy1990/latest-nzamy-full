@@ -406,7 +406,8 @@ export function questionRefLookups(
 const EDGE_PROVENANCE_AR: Record<string, string> = {
   EXEMPTS_FROM: "استثناء نظامي مرتبط",
   AMENDS_ARTICLE: "تعديل نظامي مرتبط",
-  INTERPRETS_ARTICLE: "تفسير قضائي مرتبط",
+  // H8 (owner decision 17): his category name; the key is unchanged.
+  INTERPRETS_ARTICLE: "مبدأ قضائي يستند لمادة",
   PARENT_LAW: "النظام الأساسي المرتبط",
   CITES_ARTICLE: "إحالة نظامية مرتبطة",
   ESTABLISHES_RULE: "قاعدة نظامية مرتبطة",

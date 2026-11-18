@@ -82,12 +82,14 @@ export const EDGE_TYPE_META: Readonly<
     color: "#D9826F",
     hint: "مرسوم أو قرار عدّل نص المادة أو أضاف إليها أو حذف منها.",
   },
+  // H8 (owner decision 17, 18 Nov 2026): his category name. The edge key stays
+  // INTERPRETS_ARTICLE (the graph's own link type); only the words change.
   INTERPRETS_ARTICLE: {
-    label: "تفسير قضائي",
-    out: "يفسّر",
-    in: "مفسَّرة في",
+    label: "مبدأ قضائي يستند لمادة",
+    out: "مبدأ قضائي يستند لمادة",
+    in: "مبدأ قضائي يستند إليها",
     color: "#5FB3A1",
-    hint: "مبدأ قضائي طبّق المادة أو فسّرها.",
+    hint: "مبدأ قضائي يستند إلى المادة.",
   },
   PENALIZES: {
     label: "عقوبة",

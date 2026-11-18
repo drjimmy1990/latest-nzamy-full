@@ -35,6 +35,8 @@ export interface CaseStage {
    */
   triggerEvent?: StageTriggerEvent | null;
   triggerDate?: string | null;
+  /** Owner ٣٢: the lawyer ticked «مستعجلة» (10-day objection, not 30). */
+  urgent?: boolean;
   /** The open/closed auto deadline linked to this stage, if any (GET only). */
   linkedDeadline?: LinkedStageDeadline | null;
 }
@@ -158,6 +160,7 @@ export type AutoDeadlineResult =
 export async function recordCaseStageOutcome(caseId: string, input: {
   id: string; outcome: string; closedOn?: string | null; notes?: string;
   triggerEvent?: StageTriggerEvent | null; triggerDate?: string | null;
+  urgent?: boolean;
 }): Promise<{ stage: CaseStage; autoDeadline: AutoDeadlineResult | null; droppedForPending: boolean }> {
   const res = await apiMutate<{ data: CaseStage; autoDeadline?: AutoDeadlineResult | null; droppedForPending?: boolean }>(
     `/api/v1/lawyer/case-stages/${encodeURIComponent(caseId)}`, "PATCH", input,

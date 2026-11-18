@@ -1,19 +1,17 @@
 import { LegalDomain } from "./types";
 
+/**
+ * The client analyzer's canned guidance (behind GatedToolScreen). Owner ٣٨
+ * (18 Nov 2026): the hard-coded «قوة موقفك القانوني» verdict and its 65 / 35
+ * bar — a keyword test, not an analysis — are gone; no tool predicts the
+ * outcome, and an indicator may only be shown as «مؤشر مساعد».
+ */
 export function buildEvalReport(
   domain: LegalDomain,
-  answers: string[],
+  _answers: string[],
   isRTL: boolean
 ) {
-  const hasDocs = answers.some(
-    (a) => a.toLowerCase().includes("نعم") || a.toLowerCase().includes("yes") || a.length > 30
-  );
-  const strength = hasDocs ? "متوسط إلى قوي" : "يحتاج تعزيز";
-  const strengthEn = hasDocs ? "Moderate to Strong" : "Needs Strengthening";
-
   return {
-    strength: isRTL ? strength : strengthEn,
-    strengthScore: hasDocs ? 65 : 35,
     risks: isRTL
       ? ["غياب وثائق داعمة قد يضعف موقفك", "التأخر في رفع الشكوى قد يسقط الحق", "تعدد الأطراف يزيد تعقيد القضية"]
       : ["Lack of supporting documents may weaken your case", "Delay in filing may forfeit rights", "Multiple parties increases complexity"],

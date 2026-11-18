@@ -91,3 +91,13 @@ test("the cassation SQL: 15 days copied from cassation's settings; cassation cit
   assert.match(sql, /set source_ar\s+= 'نظام المرافعات الشرعية — المادة \(١٩٤\)'/);
   assert.match(sql, /select code, period_days, source_ar/);
 });
+
+test("owner ٣٢ (المادة ١٨٧): urgent objection is 10 days — the platform rule appeal_urgent, else the guide 10", () => {
+  const p = preset("appeal_urgent");
+  assert.equal(p.ruleCode, "appeal_urgent");
+  assert.equal(p.days, 10);
+  const guide = presetInputs(p, "2026-11-01", [])!;
+  assert.equal(guide.basis, "guide");
+  assert.equal(guide.periodDays, 10);
+  assert.equal(preset("appeal").days, 30, "the ordinary appeal keeps 30 days");
+});

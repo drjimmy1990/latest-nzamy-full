@@ -13,7 +13,7 @@ import { getDeadlineRules, getCourtHolidays, type DeadlineRule } from "@/lib/ser
 import type { HolidayRule } from "@/lib/services/deadlineEngine";
 import { itemsOf, type ListRead } from "@/lib/services/listRead";
 import {
-  DEGREE_TO_AUTO_RULE_CODE, STAGE_TRIGGER_EVENTS, TRIGGER_EVENT_LABEL_AR, defaultStageTriggerEvent, isFinalOutcome,
+  DEGREE_TO_AUTO_RULE_CODE, STAGE_TRIGGER_EVENTS, TRIGGER_EVENT_LABEL_AR, autoRuleCodeFor, defaultStageTriggerEvent, isFinalOutcome,
 } from "@/lib/services/stageDeadlineSync";
 import { describeAutoDeadline } from "@/lib/services/stageDeadlineCopy";
 import {
@@ -78,6 +78,10 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
     stage.triggerEvent && stage.triggerEvent !== "judgment_date" ? stage.triggerDate ?? "" : "",
   );
   const [notes, setNotes] = useState(stage.notes ?? "");
+  // Owner ٣٢ (decision 16): «مستعجلة» → the 10-day objection rule (appeal_urgent),
+  // or the 15-day urgent cassation after an appeal judgment; unticked → 30 days.
+  const initialUrgent = stage.urgent === true;
+  const [urgent, setUrgent] = useState(initialUrgent);
 
   const [rulesRead, setRulesRead] = useState<ListRead<DeadlineRule> | null>(null);
   const [holidaysRead, setHolidaysRead] = useState<ListRead<HolidayRule> | null>(null);
@@ -89,7 +93,7 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
   }, []);
 
   const dbDegree = degreeToDb(stage.degree);
-  const ruleCode = DEGREE_TO_AUTO_RULE_CODE[dbDegree];
+  const ruleCode = autoRuleCodeFor(dbDegree, urgent);
   const rule = useMemo(
     () => itemsOf(rulesRead).find((r) => r.code === ruleCode && r.ownerUserId === null && r.active) ?? null,
     [rulesRead, ruleCode],
@@ -119,7 +123,7 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
 
   const dirty =
     outcome !== initialOutcome || closedOn !== (stage.closedOn ?? "") ||
-    triggerEvent !== initialTriggerEvent || notes !== (stage.notes ?? "") ||
+    triggerEvent !== initialTriggerEvent || notes !== (stage.notes ?? "") || urgent !== initialUrgent ||
     triggerDate !== (stage.triggerEvent && stage.triggerEvent !== "judgment_date" ? stage.triggerDate ?? "" : "");
 
   const inputCls = `w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none ${
@@ -183,6 +187,7 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
             notes,
             triggerEvent: triggerEvent || null,
             triggerDate: triggerEvent && triggerEvent !== "judgment_date" ? triggerDate || null : null,
+            ...(ruleCode ? { urgent } : {}),
           }
         : { id: stage.id, outcome, closedOn: null, notes, triggerEvent: null });
       setAutoDeadline(res.autoDeadline);
@@ -302,6 +307,25 @@ export default function RecordStageOutcomeModal({ onClose, isDark, caseRequestId
                 <DualDatePicker label="تاريخ صدور الحكم" value={closedOn} onChange={setClosedOn} clearable={false} className={inputCls} />
                 {dateMissing && <p className="mt-1.5 text-[11px] font-semibold text-red-500">اختر تاريخ صدور الحكم — لا يُفترض تاريخ تلقائياً</p>}
               </div>
+
+              {ruleCode && (
+                <label className={`flex items-start gap-2 text-[12.5px] ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={urgent}
+                    onChange={(e) => setUrgent(e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-bold">مستعجلة</span>
+                    <span className={`block text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                      {dbDegree === "appeal"
+                        ? "الدعوى من المسائل المستعجلة: مهلة الاعتراض بطلب النقض ١٥ يوماً بدل ٣٠."
+                        : "الدعوى من المسائل المستعجلة: مهلة الاعتراض ١٠ أيام بدل ٣٠."}
+                    </span>
+                  </span>
+                </label>
+              )}
 
               {ruleCode && (
                 <fieldset>

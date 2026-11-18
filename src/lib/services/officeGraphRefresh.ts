@@ -29,11 +29,11 @@ export interface Point {
 /** The minimum gap between two automatic reads (focus / visibility). */
 export const OFFICE_GRAPH_AUTO_REFETCH_GAP_MS = 10_000;
 
-/** A stable fingerprint of everything the map draws: nodes, edges and the clash list. */
+/** A stable fingerprint of everything the map draws: nodes and edges (owner ٣٥: no clash list). */
 export function officeGraphSignature(graph: OfficeGraph, truncated?: Readonly<Record<string, boolean>>): string {
   const nodes = graph.nodes
     .map((n) => [
-      n.id, n.kind, n.label, n.refId ?? "", n.caseCount, n.nameClash ? 1 : 0,
+      n.id, n.kind, n.label, n.refId ?? "", n.caseCount,
       // The side panel's fields: a moved hearing or a new payment is a change.
       (n.facts ?? []).map((f) => `${f.label}=${f.value}`).join(";"),
       n.link ? `${n.link.kind}:${n.link.id ?? ""}` : "",
@@ -42,10 +42,7 @@ export function officeGraphSignature(graph: OfficeGraph, truncated?: Readonly<Re
   const edges = graph.edges
     .map((e) => `${e.from}|${e.to}|${e.relation}`)
     .sort();
-  const clashes = graph.clashes
-    .map((c) => `${c.name}|${[...c.clientIn].sort().join(",")}|${[...c.opponentIn].sort().join(",")}|${[...(c.clientCardIds ?? [])].sort().join(",")}`)
-    .sort();
-  return JSON.stringify({ nodes, edges, clashes, unlinked: graph.unlinked ?? null, truncated: truncated ?? null });
+  return JSON.stringify({ nodes, edges, unlinked: graph.unlinked ?? null, truncated: truncated ?? null });
 }
 
 /**
