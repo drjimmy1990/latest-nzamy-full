@@ -9,7 +9,7 @@ import { arabicDigits, billingDateAr, pointsSummary, type BillingData } from "@/
  * /dashboard/billing, which the card links to.
  */
 export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBalance" | "lots"> }) {
-  const { balance, nearestExpiry } = pointsSummary(data);
+  const { balance, nearestExpiry, libraryOnly } = pointsSummary(data);
   return (
     <div className="rounded-[2rem] border border-slate-200/50 bg-white/80 px-6 py-6 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] backdrop-blur-xl dark:border-white/[0.06] dark:bg-[#161b22]/80">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -21,6 +21,11 @@ export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBal
             <p className="text-2xl font-extrabold text-zinc-900 dark:text-zinc-100">
               {arabicDigits(balance)} <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">نقطة</span>
             </p>
+            {libraryOnly > 0 && (
+              <p className="mt-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                منها {arabicDigits(libraryOnly)} نقطة لمساعد المكتبة فقط
+              </p>
+            )}
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
               {nearestExpiry ? `أقرب انتهاء: ${billingDateAr(nearestExpiry)}` : "لا توجد نقاط صالحة للاستخدام حالياً."}
             </p>

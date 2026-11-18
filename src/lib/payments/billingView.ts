@@ -140,15 +140,21 @@ export function parseBillingResponse(body: unknown): BillingData | null {
   if (!Array.isArray(lots) || !lots.every(isLotRow)) return null;
   return body as unknown as BillingData;
 }
-/** The balance and the nearest expiry among the lots that still hold points (null when none). */
-export function pointsSummary(data: Pick<BillingData, "pointsBalance" | "lots">): { balance: number; nearestExpiry: string | null } {
+/**
+ * The balance, the nearest expiry among the lots that still hold points (null
+ * when none), and (l7) how much of the balance only the library assistant can
+ * spend (lots with wallet_scope 'library_agent').
+ */
+export function pointsSummary(data: Pick<BillingData, "pointsBalance" | "lots">): { balance: number; nearestExpiry: string | null; libraryOnly: number } {
   let nearest: string | null = null;
   let nearestAt = Number.POSITIVE_INFINITY;
+  let libraryOnly = 0;
   for (const lot of data.lots) {
     const at = Date.parse(lot.expires_at);
     if (lot.points_left > 0 && Number.isFinite(at) && at < nearestAt) { nearestAt = at; nearest = lot.expires_at; }
+    if (lot.points_left > 0 && lot.wallet_scope === "library_agent") libraryOnly += lot.points_left;
   }
-  return { balance: data.pointsBalance, nearestExpiry: nearest };
+  return { balance: data.pointsBalance, nearestExpiry: nearest, libraryOnly };
 }
 const BRANDS_AR: Record<string, string> = { mada: "مدى", visa: "فيزا", master: "ماستركارد", mastercard: "ماستركارد", amex: "أمريكان إكسبريس" };
 /** The card network in Arabic, or null for one we do not know. */
