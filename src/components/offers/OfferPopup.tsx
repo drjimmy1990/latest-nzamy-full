@@ -18,8 +18,8 @@ import { OfferCard } from "./OfferCard";
  *     payment (billing, wallets, checkout) or the terms, never in the admin
  *     console; and never while the terms re-ask modal is open (an account
  *     that must accept new terms gets no offer first).
- *   - At most once per sign-in: the server's sessionKey changes at every
- *     sign-in, and the browser remembers it once the popup has shown.
+ *   - At most once per session: once shown, this tab's sessionStorage
+ *     remembers it (keyed by the sign-in), so a reload does not bring it back.
  *   - Closing it records a dismissal (offer_dismissals), so it stays away for
  *     the offer's return delay (default 3 days); the offer stays a card in
  *     «العروض» and on /pricing meanwhile. The button records a click.
@@ -27,32 +27,25 @@ import { OfferCard } from "./OfferCard";
  * Mounted once in src/app/dashboard/layout.tsx.
  */
 
+/*
+ * "Not again in the same session" = this browser tab's session
+ * (sessionStorage), keyed by the sign-in. A reload keeps it away (protocol
+ * هـ3); a new tab or a new browser session after the return delay brings it
+ * back (هـ6) — the server's dismissal clock decides that part.
+ */
 function seen(key: string): boolean {
   try {
-    return window.localStorage.getItem(POPUP_SESSION_PREFIX + key) === "1";
+    return window.sessionStorage.getItem(POPUP_SESSION_PREFIX + key) === "1";
   } catch {
-    try {
-      return window.sessionStorage.getItem(POPUP_SESSION_PREFIX + key) === "1";
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 
 function markSeen(key: string): void {
   try {
-    // One key per sign-in: older sign-ins' keys are dropped.
-    for (let i = window.localStorage.length - 1; i >= 0; i--) {
-      const k = window.localStorage.key(i);
-      if (k && k.startsWith(POPUP_SESSION_PREFIX) && k !== POPUP_SESSION_PREFIX + key) window.localStorage.removeItem(k);
-    }
-    window.localStorage.setItem(POPUP_SESSION_PREFIX + key, "1");
+    window.sessionStorage.setItem(POPUP_SESSION_PREFIX + key, "1");
   } catch {
-    try {
-      window.sessionStorage.setItem(POPUP_SESSION_PREFIX + key, "1");
-    } catch {
-      // Storage blocked: the component's own state still shows it once per page load.
-    }
+    // Storage blocked: the component's own state still shows it once per page load.
   }
 }
 

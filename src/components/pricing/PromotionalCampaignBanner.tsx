@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Crown, ArrowLeft, X } from "@phosphor-icons/react";
 import { activeCampaign, campaignFromApi, type Campaign } from "@/lib/pricing/campaigns";
+import { useUser } from "@/hooks/useUser";
 
 const DISMISSED_PREFIX = "nzamy_dismissed_campaign_";
 
@@ -20,6 +21,11 @@ const DISMISSED_PREFIX = "nzamy_dismissed_campaign_";
  */
 export function PromotionalCampaignBanner() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  // l8 (owner item 5, protocol هـ7 / هـ8): the founder campaign is the founder
+  // OFFER — a signed-in consultant, individual, firm or company never sees it.
+  // Guests keep the banner (the campaign's public face); loading shows nothing.
+  const { loading: userLoading, isLoggedIn, userType, practiceKind } = useUser();
+  const audienceOk = !userLoading && (!isLoggedIn || (userType === "lawyer" && practiceKind !== "consultant"));
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +56,7 @@ export function PromotionalCampaignBanner() {
     };
   }, []);
 
-  if (!campaign) return null;
+  if (!campaign || !audienceOk) return null;
 
   function dismiss() {
     if (!campaign) return;

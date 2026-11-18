@@ -82,11 +82,11 @@ export async function readViewer(db: Db, userId: string, planRefs: readonly stri
   let verified: boolean | null = null;
   if (p.user_type === "lawyer") {
     const lp = await db.from("lawyer_profiles").select("practice_kind, verification_status").eq("user_id", userId).maybeSingle();
-    if (!lp.error) {
-      const row = (lp.data ?? null) as { practice_kind?: unknown; verification_status?: unknown } | null;
-      practiceKind = row?.practice_kind ?? null;
-      verified = row ? row.verification_status === "verified" : false;
-    }
+    // Fail closed: an unread practice kind would read a consultant as an advocate.
+    if (lp.error) throw new OffersReadError(`lawyer profile: ${lp.error.code}`);
+    const row = (lp.data ?? null) as { practice_kind?: unknown; verification_status?: unknown } | null;
+    practiceKind = row?.practice_kind ?? null;
+    verified = row ? row.verification_status === "verified" : false;
   } else if (p.user_type === "firm") {
     verified = await verificationOf(db, "firm_profiles", "owner_user_id", userId);
   } else if (p.user_type === "corporate") {

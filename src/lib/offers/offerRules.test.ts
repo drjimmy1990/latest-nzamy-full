@@ -359,6 +359,17 @@ test("the wiring: popup in the dashboard layout, «العروض» in every dashb
   assert.ok(popup.includes("popupAllowedOnPath(pathname)"));
   assert.ok(popup.includes('terms.kind === "needs_acceptance"'), "no popup while the terms re-ask is open");
   assert.ok(popup.includes('reportOfferEvent(offer.id, "dismiss")'));
+  assert.equal(popup.includes("localStorage"), false, "same session = this tab's sessionStorage (هـ3 / هـ6)");
+});
+
+test("protocol هـ7 / هـ8: no founder surface for a signed-in consultant, individual, firm or company", () => {
+  const banner = read("components", "pricing", "PromotionalCampaignBanner.tsx");
+  assert.ok(banner.includes('(!isLoggedIn || (userType === "lawyer" && practiceKind !== "consultant"))'));
+  assert.ok(banner.includes("if (!campaign || !audienceOk) return null;"));
+  const pricing = read("app", "pricing", "page.tsx");
+  assert.ok(pricing.includes('!(isLoggedIn && userType === "lawyer" && practiceKind === "consultant") && ('));
+  const server = read("lib", "offers", "offersServer.ts");
+  assert.ok(server.includes("if (lp.error) throw new OffersReadError("), "an unread practice kind fails closed");
 });
 
 test("the SQL: RLS on with no policy, the founder audience CHECK, the seed only when missing", () => {

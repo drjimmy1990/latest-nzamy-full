@@ -132,7 +132,11 @@ export default function PricingPage() {
 
         {/* The lawyer founder membership (P3): the card while on sale; the
             «انتهت…» line for a campaign-link visitor after it closes. */}
-        <FounderPlanSection audience={audience} libraryMode={libraryMode} campaignParam={url.campaign} />
+        {/* l8 (owner item 5, protocol هـ7): the founder offer is for the advocate
+            lawyer only — a signed-in consultant sees no founder card at all. */}
+        {!(isLoggedIn && userType === "lawyer" && practiceKind === "consultant") && (
+          <FounderPlanSection audience={audience} libraryMode={libraryMode} campaignParam={url.campaign} />
+        )}
 
         {/* Owner item 5: the offers meant for this signed-in user (the
             popup's offer stays here after it is closed). */}
