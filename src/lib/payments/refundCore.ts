@@ -54,18 +54,28 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
     // l7: a membership is read like every other order (it has no lot today;
     // finish_payment_refund revokes any lot keyed on the order either way).
     const isMembership = order.kind === "membership";
-    const lots = await deps.admin.from("points_lots").select("points_total,points_left").eq("order_id", orderId);
+    const lots = await deps.admin.from("points_lots").select("id,points_total,points_left").eq("order_id", orderId);
     if (lots.error) return unavailable();
-    const rows = (lots.data ?? []) as Array<{ points_total: number; points_left: number }>;
+    const rows = (lots.data ?? []) as Array<{ id: string; points_total: number; points_left: number }>;
     const total = rows.reduce((n,l) => n + l.points_total,0);
-    const used = rows.reduce((n,l) => n + l.points_total - l.points_left,0);
+    // l7: "used" = the lots' usage ledger rows net of usage_refund — never
+    // points_total − points_left, which since 20261127_40 also counts points
+    // emptied by EXPIRY. A failed ledger read falls back to that difference
+    // and marks the verdict unverified (fail closed).
+    let used = rows.reduce((n,l) => n + l.points_total - l.points_left,0);
+    let lotsReadFailed = false;
+    if (rows.length) {
+      const ledger = await deps.admin.from("points_ledger").select("delta,reason").in("lot_id", rows.map(l => l.id)).in("reason", ["usage", "usage_refund"]);
+      if (ledger.error) lotsReadFailed = true;
+      else used = Math.max(0, ((ledger.data ?? []) as Array<{ delta: unknown }>).reduce((n, r) => n - (Number.isSafeInteger(r.delta) ? r.delta as number : 0), 0));
+    }
     const decision = refundDecision(order, deps.now?.() ?? new Date(), { pointsUsedFromOrderLot: used, planPointsUsedPct: total ? used * 100 / total : 0 });
     if (!decision) return fail(409, "هذه العملية غير متاحة للاسترداد");
     // A claim already in flight (money may have moved) is finished, never re-judged.
     const pending = order.metadata?.refund_job as RefundJob | undefined;
     const fresh = !pending || pending.state === "retryable";
     const now = deps.now?.() ?? new Date();
-    const verdict = !confirm || fresh ? refundEligibility(order, now, await readRefundEvidence(deps.admin, order, { total, used, readFailed: false })) : null;
+    const verdict = !confirm || fresh ? refundEligibility(order, now, await readRefundEvidence(deps.admin, order, { total, used, readFailed: lotsReadFailed })) : null;
     if (!confirm) return { status: 200, body: { review: true, method: decision.method, warnings: decision.warnings, totalHalalas: order.total_halalas, eligibility: verdict } };
     if (fresh && opts.enforceEligibility && verdict && needsOverride(verdict)) {
       const reason = cleanOverrideReason(opts.overrideReason);

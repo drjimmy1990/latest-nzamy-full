@@ -11,7 +11,9 @@ function setup(over: Partial<typeof order> = {}, gatewayFails = false, claimLost
   const db = fakeDb(q => {
     events.push(q.table);
     if (q.table === "payment_orders") return { data: { ...order, ...over } };
-    if (q.table === "points_lots") return { data: [{ points_total: 100, points_left: 80 }] };
+    if (q.table === "points_lots") return { data: [{ id: "lot", points_total: 100, points_left: 80 }] };
+    // the order lot's own use (20 points) — and the buyer's debits since payment, read by the evidence
+    if (q.table === "points_ledger") return { data: [{ delta: -20, reason: "usage" }] };
     if (q.table === "claim_payment_refund") return { data: claimLost ? null : job };
     if (q.table === "finish_payment_refund") return { data: { done: true, tier: "free" } };
     return {};
@@ -24,12 +26,12 @@ test("preview warns about spent points without any claim or gateway action", asy
   const r = await refundOrderWith(deps, "o", "admin", false);
   assert.equal(r.status, 200);
   assert.ok("warnings" in r.body && r.body.warnings?.length);
-  assert.deepEqual(events, ["payment_orders", "points_lots", "ai_runs", "points_ledger"]);
+  assert.deepEqual(events, ["payment_orders", "points_lots", "points_ledger", "ai_runs", "points_ledger"]);
 });
 test("refund is claimed before money moves; atomic finish before tier and notice", async () => {
   const { deps, events } = setup();
   assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 200);
-  assert.deepEqual(events, ["payment_orders", "points_lots", "ai_runs", "points_ledger", "claim_payment_refund", "gateway-refund", "finish_payment_refund", "issue_payment_credit_note", "notice"]);
+  assert.deepEqual(events, ["payment_orders", "points_lots", "points_ledger", "ai_runs", "points_ledger", "claim_payment_refund", "gateway-refund", "finish_payment_refund", "issue_payment_credit_note", "notice"]);
 });
 test("gateway failure changes no grants and sends no success notification", async () => {
   const { deps, events } = setup({}, true);
@@ -253,4 +255,33 @@ test("l7: a missing credit-note function (SQL not run) never fails the refund", 
   const { deps } = setupUsed({}, t => t === "issue_payment_credit_note" ? { error: { code: "PGRST202", message: "missing" } } : undefined);
   const r = await refundOrderWith(deps, "o", "admin", true);
   assert.deepEqual(r.body, { refunded: true, creditNote: null });
+});
+
+test("l7 × 20261127_40: points emptied by EXPIRY are not «used» — the order lot's use comes from its usage ledger rows", async () => {
+  // a 1,000-point top-up lot emptied by expiry (points_left 0), 10 points actually used, 5 refunded by a failed run
+  const events: string[] = [];
+  const db = fakeDb(q => {
+    events.push(q.table);
+    if (q.table === "payment_orders") return { data: { ...order } };
+    if (q.table === "points_lots") return { data: [{ id: "lot", points_total: 1000, points_left: 0 }] };
+    if (q.table === "points_ledger" && q.filters.some(([k, c]) => k === "in" && c === "lot_id")) return { data: [{ delta: -10, reason: "usage" }, { delta: 5, reason: "usage_refund" }] };
+    return {};
+  });
+  const { deps } = setup();
+  const r = await refundOrderWith({ ...deps, admin: db.client }, "o", "admin", false);
+  const v = (r.body as { eligibility: { state: string; lines: string[] } }).eligibility;
+  assert.equal(v.state, "eligible", "5 of 1,000 used (0.5 %), not 1,000");
+  assert.ok(v.lines.some(l => l.includes("استُخدم ٥ من ١٬٠٠٠") || l.includes("استُخدم ٥ من ١٠٠٠")), v.lines.join(" | "));
+  assert.ok((r.body as { warnings: string[] }).warnings.some(w => w.includes("استُخدمت بعض نقاط")), "the used-points warning still fires for real use");
+});
+test("l7 × 20261127_40: a failed ledger read of the order lot leaves the verdict «تعذّر التحقق»", async () => {
+  const db = fakeDb(q => {
+    if (q.table === "payment_orders") return { data: { ...order } };
+    if (q.table === "points_lots") return { data: [{ id: "lot", points_total: 100, points_left: 100 }] };
+    if (q.table === "points_ledger" && q.filters.some(([k, c]) => k === "in" && c === "lot_id")) return { error: { code: "XX000", message: "x" } };
+    return {};
+  });
+  const { deps } = setup();
+  const r = await refundOrderWith({ ...deps, admin: db.client }, "o", "admin", false);
+  assert.equal((r.body as { eligibility: { state: string } }).eligibility.state, "unverified");
 });
