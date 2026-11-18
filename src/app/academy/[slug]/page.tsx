@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import {
   ArrowLeft, Play, Clock, Users, Star, Certificate,
-  CheckCircle, BookOpen, Lock, SealCheck, Lightning,
+  CheckCircle, Lock, SealCheck, Lightning,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
 import { isDemoMode } from '@/lib/runtimeMode';
@@ -179,7 +179,6 @@ function CourseDetailPageDemo() {
                 {[
                   { icon: Play,       label: `${course.lessons} درس فيديو` },
                   { icon: Clock,      label: `${course.duration} محتوى` },
-                  { icon: BookOpen,   label: 'وصول مدى الحياة' },
                   { icon: SealCheck,  label: 'من محامٍ مرخّص' },
                   ...(course.certificate ? [{ icon: Certificate, label: 'شهادة رقمية' }] : []),
                 ].map((f, i) => {
