@@ -1,10 +1,13 @@
 // Unit tests for the signup registry lookup (launch batch R2/R3/R5).
 // SYNTHETIC values only — never a real name, licence or mobile.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import {
-  formatExpiry,
   LICENCE_MAX,
+  LOOKUP_UNVERIFIED_AR,
+  lookupGreetingAr,
   NAME_MAX,
   parseLookupBody,
   shapeLookupResult,
@@ -54,7 +57,7 @@ test("parseLookupBody: nothing, wrong types and oversize input are refused", () 
   assert.equal(parseLookupBody({ licenseNumber: "99001", turnstileToken: "x".repeat(5000) }).ok, false);
 });
 
-test("shapeLookupResult: a valid answer keeps only the whitelisted fields", () => {
+test("shapeLookupResult: a valid answer carries the registry NAME only (owner 18 Nov, item 3.1)", () => {
   const out = shapeLookupResult({
     status: "valid",
     name: " اسم تجريبي كامل ",
@@ -65,36 +68,45 @@ test("shapeLookupResult: a valid answer keeps only the whitelisted fields", () =
     mobile: "0500000011",
     extra: "x",
   });
-  assert.deepEqual(out, {
-    status: "valid",
-    name: "اسم تجريبي كامل",
-    licence: "99001",
-    expiry: "2030-01-15",
-    mobileHint: "11",
-    city: "مدينة",
-  });
-  assert.equal(JSON.stringify(out).includes("0500000011"), false);
-});
-
-test("shapeLookupResult: a mobile hint that is not exactly two digits is dropped", () => {
-  const out = shapeLookupResult({ status: "valid", name: "ا ب ج", licence: "1", expiry: "2030-01-15", mobile_hint: "0500000011" });
-  assert.equal(out.status === "valid" && out.mobileHint, null);
-});
-
-test("shapeLookupResult: no-data statuses carry nothing else", () => {
-  for (const s of ["expired", "unverifiable", "not_found", "ambiguous"]) {
-    assert.deepEqual(shapeLookupResult({ status: s, name: "تسريب", licence: "1" }), { status: s });
+  assert.deepEqual(out, { status: "valid", name: "اسم تجريبي كامل" });
+  const json = JSON.stringify(out);
+  for (const leak of ["99001", "2030", "11", "0500000011", "مدينة"]) {
+    assert.equal(json.includes(leak), false, `no ${leak} in the guest answer`);
   }
 });
 
-test("shapeLookupResult: anything malformed becomes not_found", () => {
-  for (const raw of [null, "valid", [], {}, { status: "valid" }, { status: "valid", name: "x", licence: "1", expiry: "15/01/2030" }, { status: "weird" }]) {
-    assert.deepEqual(shapeLookupResult(raw), { status: "not_found" });
+test("shapeLookupResult: expired / unverifiable / not_found are ONE status — never a validity word", () => {
+  for (const s of ["expired", "unverifiable", "not_found"]) {
+    assert.deepEqual(shapeLookupResult({ status: s, name: "تسريب", licence: "1", expiry: "2020-01-01" }), { status: "unverified" });
+  }
+  assert.deepEqual(shapeLookupResult({ status: "ambiguous", name: "تسريب" }), { status: "ambiguous" });
+});
+
+test("shapeLookupResult: anything malformed becomes unverified", () => {
+  for (const raw of [null, "valid", [], {}, { status: "valid" }, { status: "valid", name: "x" }, { status: "valid", name: " ", licence: "1" }, { status: "weird" }]) {
+    assert.deepEqual(shapeLookupResult(raw), { status: "unverified" });
   }
 });
 
-test("splitRegistryName and formatExpiry", () => {
+test("splitRegistryName and the greeting", () => {
   assert.deepEqual(splitRegistryName(" سالم  احمد ابراهيم الاختباري "), { firstName: "سالم", lastName: "احمد ابراهيم الاختباري" });
   assert.deepEqual(splitRegistryName(""), { firstName: "", lastName: "" });
-  assert.equal(formatExpiry("2030-01-15"), "15/01/2030");
+  assert.equal(lookupGreetingAr(" اسم تجريبي "), "أهلاً أ. اسم تجريبي");
+  assert.equal(LOOKUP_UNVERIFIED_AR, "تعذّر التحقق الآلي، وسيراجع فريقنا طلبك");
+});
+
+test("the signup lookup card never shows validity, a licence number or mobile digits (owner 18 Nov, item 3.1)", () => {
+  const root = join(import.meta.dirname, "../../..");
+  const card = readFileSync(join(root, "src/app/register/provider/components/LawyerRegistryLookup.tsx"), "utf8");
+  // Comments may explain the rule; the rendered code may not break it.
+  const code = card.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  for (const word of ["سارٍ", "ساري", "منته", "valid until", "expired", "ترخيص رقم"]) {
+    assert.equal(code.includes(word), false, `no «${word}» in the lookup card`);
+  }
+  for (const field of [".licence", ".expiry", "mobileHint", ".city", "formatExpiry"]) {
+    assert.equal(code.includes(field), false, `the card never reads ${field}`);
+  }
+  assert.match(code, /lookupGreetingAr\(shown\.result\.name\)/);
+  assert.match(code, /LOOKUP_UNVERIFIED_AR/);
+  assert.doesNotMatch(code, /onChange\("licenseNumber"/, "a lookup never fills the licence field");
 });

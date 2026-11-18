@@ -10,14 +10,14 @@ import { parseLookupBody, shapeLookupResult } from "@/lib/registry/lawyerRegistr
  * page (launch batch R2/R3/R5; migration 20261122_40).
  *
  * Body: { licenseNumber?: string, fullName?: string, turnstileToken?: string }
- * 200 { status: "valid", name, licence, expiry, mobileHint, city }
- *   | { status: "expired" | "unverifiable" | "not_found" | "ambiguous" }
+ * 200 { status: "valid", name } | { status: "ambiguous" } | { status: "unverified" }
  * 400 bad input · 403 { code: "captcha" } · 429 too many · 503 { status: "unavailable" }
  *
  * Order: per-visitor limit (10 / 10 min) → body → Turnstile (siteverify,
  * TURNSTILE_SECRET_KEY; refused in production without it) → the service-role
- * RPC → whitelisted fields only. The full mobile never leaves the database
- * (mobileHint = last two digits).
+ * RPC → the registry name only (owner 18 Nov, item 3.1): no licence number,
+ * no expiry, no mobile digits; expired / unverifiable / not found are one
+ * "unverified" — the registrant is never told about validity.
  *
  * Nothing is verified here: the answer only fills the form. The account stays
  * pending until an admin approves it (no OTP yet — R4); the admin queue shows
