@@ -7207,3 +7207,30 @@ select 'Named case boards: canvas_boards with RLS as case_graphs, no guest grant
        and has_table_privilege('authenticated', 'public.canvas_boards', 'SELECT')
        as ok;
 -- <<< verify:l6_tools
+-- >>> verify:l7_refund
+-- Batch l7-refund (decision 10: a VAT credit note for every refund/void): run 20261127_30 before or after the deploy.
+select 'Credit notes: payment_credit_notes (own-rows SELECT, no session write) + issue_payment_credit_note service role only (run 20261127_30)' as check,
+       case when to_regclass('public.payment_credit_notes') is null
+              or to_regprocedure('public.issue_payment_credit_note(uuid)') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.payment_credit_notes')), false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy where polrelid = to_regclass('public.payment_credit_notes')) = 1
+       and not has_table_privilege('anon', 'public.payment_credit_notes', 'SELECT')
+       and has_any_column_privilege('authenticated', 'public.payment_credit_notes', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.payment_credit_notes', 'INSERT')
+       and not has_table_privilege('authenticated', 'public.payment_credit_notes', 'UPDATE')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                       where p.oid = to_regprocedure('public.issue_payment_credit_note(uuid)')), false)
+       and not has_function_privilege('anon', 'public.issue_payment_credit_note(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.issue_payment_credit_note(uuid)', 'EXECUTE')
+       end as ok;
+select 'Every refunded / voided platform order has its credit note (run 20261127_30; a gap: «إصدار الإشعار الدائن» on the admin orders page)' as check,
+       -- query_to_xml: the table is named only inside text, so this parses before 20261127_30 runs
+       case when to_regclass('public.payment_credit_notes') is null then false else
+       (xpath('/row/n/text()', query_to_xml(
+         'select count(*) as n from public.payment_orders o
+           where o.status in (''refunded'', ''voided'') and o.merchant = ''platform''
+             and o.receipt_number is not null and o.paid_at is not null and o.live is not null
+             and o.refunded_halalas = o.total_halalas
+             and not exists (select 1 from public.payment_credit_notes c where c.order_id = o.id)', false, true, '')))[1]::text = '0'
+       end as ok;
+-- <<< verify:l7_refund
