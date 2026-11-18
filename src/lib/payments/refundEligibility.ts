@@ -24,6 +24,10 @@
  * Pure: relative imports only, so `node --test` loads it.
  */
 import { WITHDRAWAL_DAYS, WITHDRAWAL_MAX_POINTS_USED_PCT } from "./refundPolicy.ts";
+import { countPhraseAr } from "../services/arabicCount.ts";
+
+/** «مضى على الدفع …» — the subject, nominative: يوم واحد / يومان / ٣ أيام / ١١ يوماً. */
+const ELAPSED_DAYS = { zero: "أقل من يوم", one: "يوم واحد", two: "يومان", few: "أيام", many: "يوماً" };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const REFUND_WINDOW_MS = WITHDRAWAL_DAYS * DAY_MS;
@@ -95,7 +99,7 @@ export function refundEligibility(order: { kind: string; paid_at: string | null 
   const reasons: string[] = [];
   const lines: string[] = [];
 
-  lines.push(`مضى على الدفع ${ar(daysSincePayment)} يوماً، ونافذة الاسترداد ${ar(WITHDRAWAL_DAYS)} يوماً تنتهي في ${dateAr(windowEndsAt)}.`);
+  lines.push(`مضى على الدفع ${countPhraseAr(daysSincePayment, ELAPSED_DAYS) ?? "—"}، ونافذة الاسترداد ${ar(WITHDRAWAL_DAYS)} يوماً تنتهي في ${dateAr(windowEndsAt)}.`);
   if (!inWindow) reasons.push(`انقضت نافذة الـ${ar(WITHDRAWAL_DAYS)} يوماً من تاريخ الدفع.`);
 
   if (rule === "no_ai_use") {

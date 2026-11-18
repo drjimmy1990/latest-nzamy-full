@@ -77,3 +77,13 @@ test("the admin refund route enforces the verdict and forwards the typed reason;
   assert.ok(page.indexOf("<VerdictBox") > -1 && page.indexOf("<VerdictBox") < page.indexOf("تأكيد الاسترداد"), "the verdict comes before the button");
   assert.match(page, /needsReason\(review\) && overrideReason\.trim\(\)\.length < MIN_OVERRIDE_REASON_CHARS/);
 });
+
+test("the elapsed-days line is correct Arabic for 0, 1, 2, 3, 11 and 14 days", () => {
+  const line = (days: number) => refundEligibility(member, at(days * 86400000 + 60_000), ev())!.lines[0];
+  assert.match(line(0), /^مضى على الدفع أقل من يوم،/);
+  assert.match(line(1), /^مضى على الدفع يوم واحد،/);
+  assert.match(line(2), /^مضى على الدفع يومان،/);
+  assert.match(line(3), /^مضى على الدفع ٣ أيام،/);
+  assert.match(line(11), /^مضى على الدفع ١١ يوماً،/);
+  assert.match(line(14), /^مضى على الدفع ١٤ يوماً، ونافذة الاسترداد ١٤ يوماً/);
+});
