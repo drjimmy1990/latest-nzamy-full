@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
 import { buildMonthlyBuckets, type LedgerRow } from "@/lib/services/revenueMath";
+import { isTestAccountId, readTestAccountIds } from "@/lib/testAccounts/testAccountIds";
 
 /**
  * GET /api/v1/admin/revenue — owner item ١٨٣.
@@ -27,6 +28,11 @@ import { buildMonthlyBuckets, type LedgerRow } from "@/lib/services/revenueMath"
  * entitlements build), so counting `subscription_plans.price_monthly` as
  * money received would be inventing a figure, exactly what this pass exists
  * to remove. It only backs `activePaidSubscriptions`, a plain count.
+ *
+ * l7 decision 3: a TEST ACCOUNT's payment_orders (profiles.is_demo or
+ * public.test_accounts, not staff — testAccountIds.ts) never count, even a
+ * live one paid before 20261127_80 confined them to test mode.
+ * `testAccountsExcluded` / `testAccountsComplete` say so on the page.
  *
  * SERVICE-ROLE CLIENT, ON PURPOSE. `payments` grants SELECT only to the
  * request's participants (requester/assigned_to — see
@@ -59,7 +65,7 @@ export async function GET() {
       Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() - (MONTHS - 1), 1),
     ).toISOString();
 
-    const [paymentsRes, receiptsRes, subscriptionsRes, refundsRes, ordersRes, orderRefundsRes] = await Promise.all([
+    const [paymentsRes, receiptsRes, subscriptionsRes, refundsRes, ordersRes, orderRefundsRes, testAccounts] = await Promise.all([
       admin
         .from("payments")
         .select("amount, created_at")
@@ -81,18 +87,19 @@ export async function GET() {
         .gte("created_at", windowStart),
       admin
         .from("payment_orders")
-        .select("total_halalas, paid_at")
+        .select("user_id, total_halalas, paid_at")
         .eq("merchant", "platform")
         .eq("live", true)
         .eq("status", "paid")
         .gte("paid_at", windowStart),
       admin
         .from("payment_orders")
-        .select("refunded_halalas")
+        .select("user_id, refunded_halalas")
         .eq("merchant", "platform")
         .eq("live", true)
         .gt("refunded_halalas", 0)
         .gte("refunded_at", windowStart),
+      readTestAccountIds(admin),
     ]);
 
     if (paymentsRes.error) {
@@ -119,13 +126,13 @@ export async function GET() {
     }
 
     const ledgerRows: LedgerRow[] = [
-      ...(ordersRes.data ?? []).map((r) => ({ amount: Number(r.total_halalas) / 100, occurredAt: r.paid_at as string })),
+      ...(ordersRes.data ?? []).filter((r) => !isTestAccountId(testAccounts.ids, r.user_id)).map((r) => ({ amount: Number(r.total_halalas) / 100, occurredAt: r.paid_at as string })),
       ...(paymentsRes.data ?? []).map((r) => ({ amount: Number(r.amount), occurredAt: r.created_at as string })),
       ...(receiptsRes.data ?? []).map((r) => ({ amount: Number(r.amount), occurredAt: r.issued_at as string })),
     ];
 
     const months = buildMonthlyBuckets(ledgerRows, reference, MONTHS);
-    const orderRefunds = orderRefundsRes.data ?? [];
+    const orderRefunds = (orderRefundsRes.data ?? []).filter((r) => !isTestAccountId(testAccounts.ids, r.user_id));
     const refundsTotal =
       (refundsRes.data ?? []).reduce((acc, r) => acc + Number(r.amount ?? 0), 0) +
       orderRefunds.reduce((acc, r) => acc + Number(r.refunded_halalas ?? 0) / 100, 0);
@@ -136,6 +143,8 @@ export async function GET() {
       activePaidSubscriptions: subscriptionsRes.count ?? subscriptionsRes.data?.length ?? 0,
       refundsTotal,
       refundsCount: (refundsRes.data ?? []).length + orderRefunds.length,
+      testAccountsExcluded: testAccounts.ids.size,
+      testAccountsComplete: testAccounts.complete,
     });
   } catch (err) {
     console.error("[admin/revenue] Unexpected error:", err);

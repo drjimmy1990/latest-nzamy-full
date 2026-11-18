@@ -24,6 +24,7 @@ import {
   type SaleOrderRow,
   type WebhookEventRow,
 } from "@/lib/membership/founderSaleStats";
+import { isTestAccountId, readTestAccountIds } from "@/lib/testAccounts/testAccountIds";
 
 /**
  * GET /api/v1/admin/founder/overview — «حملة المؤسس» (P3 Task 10). Any staff
@@ -225,7 +226,7 @@ export async function GET() {
           service
             .from("payment_orders")
             .select(
-              "id, user_id, status, live, net_halalas, vat_halalas, total_halalas, refunded_halalas, paid_at, attribution:metadata->attribution",
+              "id, user_id, status, live, net_halalas, vat_halalas, total_halalas, refunded_halalas, paid_at, attribution:metadata->attribution, gateway_mode:metadata->>gateway_mode",
             )
             .eq("kind", "membership")
             .order("created_at", { ascending: true })
@@ -239,6 +240,11 @@ export async function GET() {
           .order("received_at", { ascending: false })
           .limit(20),
       ]);
+      // l7 decision 3: a test account's order (or a test-mode one) is never a sale
+      const testAccounts = await readTestAccountIds(service);
+      for (const o of saleOrders.rows as Array<SaleOrderRow & { gateway_mode?: unknown }>) {
+        o.test = isTestAccountId(testAccounts.ids, o.user_id) || o.gateway_mode === "test";
+      }
       if (saleOrders.error || events.error) {
         console.error("[admin/founder/overview] sale figures failed:", (saleOrders.error ?? events.error)?.code);
         saleError = "تعذّر تحميل أرقام المبيعات ومصادرها.";

@@ -38,6 +38,13 @@ export interface SaleOrderRow {
   paid_at: string | null;
   /** metadata->attribution (F13), selected on its own — never the whole metadata. */
   attribution: unknown;
+  /**
+   * l7 decision 3: the order of a TEST ACCOUNT (profiles.is_demo or
+   * test_accounts, not staff), or one placed in Moyasar test mode
+   * (metadata.gateway_mode 'test'). Counted with the test-mode money even
+   * when live, and never a buyer in the conversion. Absent → false.
+   */
+  test?: boolean;
 }
 
 export interface RevenueTotals {
@@ -105,7 +112,7 @@ export function attributionKey(attribution: unknown, key: "utm_source" | "utm_ca
 function conversionBy(orders: SaleOrderRow[], key: "utm_source" | "utm_campaign"): ConversionRow[] {
   const groups = new Map<string | null, { started: Set<string>; paid: Set<string>; revenue: number }>();
   for (const o of orders) {
-    if (o.live === false) continue; // test-mode orders are not buyers
+    if (o.live === false || o.test === true) continue; // test-mode orders / test accounts are not buyers
     const buyer = o.user_id ?? `order:${o.id}`;
     const k = attributionKey(o.attribution, key);
     let g = groups.get(k);
@@ -133,7 +140,8 @@ export function founderSaleStats(orders: SaleOrderRow[], ordersTruncated = false
   let unknownMode = 0;
   for (const o of orders) {
     if (!wasPaid(o)) continue;
-    if (o.live === true) addPaid(live, o);
+    if (o.test === true) addPaid(test, o); // l7 decision 3: a test account's money is never revenue
+    else if (o.live === true) addPaid(live, o);
     else if (o.live === false) addPaid(test, o);
     else unknownMode += 1;
   }
