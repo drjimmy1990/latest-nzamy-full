@@ -26,6 +26,10 @@ const SQL_CAPS_426 = readFileSync(
   join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261107_20_library_caps_owner_426.sql"),
   "utf8",
 ).replace(/--.*$/gm, "");
+const SQL_GUARD_L8 = readFileSync(
+  join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261128_30_library_public_guard.sql"),
+  "utf8",
+).replace(/--.*$/gm, "");
 const SQL_AUTO_LOCK = readFileSync(
   join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261103_10_library_auto_lock_hours.sql"),
   "utf8",
@@ -41,7 +45,10 @@ test("every field is a column of the settings table, with the same bounds and de
     if (f.type === "int") {
       assert.match(line, new RegExp(`check \\(${f.column} between ${f.min} and ${f.max}\\)`), f.column);
       // Owner answer ٤٢٦: these three defaults were moved by 20261107_20.
-      const moved = SQL_CAPS_426.match(new RegExp(`alter column ${f.column}\\s+set default (\\d+)`));
+      // Batch l8 (owner item 3.2): 20261128_30 moved daily / member / slow daily to 50 / 50 / 25.
+      const moved =
+        SQL_GUARD_L8.match(new RegExp(`alter column ${f.column}\\s+set default (\\d+)`)) ??
+        SQL_CAPS_426.match(new RegExp(`alter column ${f.column}\\s+set default (\\d+)`));
       if (moved) assert.equal(Number(moved[1]), def, `${f.column} default (20261107_20)`);
       else assert.match(line, new RegExp(`default ${def}\\b`), `${f.column} default`);
     } else if (f.type === "bool") {
@@ -105,12 +112,12 @@ test("the seeded caps are the old constants, so the deploy changes nothing a rea
   assert.equal(MONITOR_SETTINGS_DEFAULTS.flagAction, "notify");
 });
 
-test("owner answer ٤٢٦: 50 documents, 240 requests, 60 searches an hour; the daily caps unchanged (q٤٤٧ pending)", () => {
+test("owner answer ٤٢٦: 50 documents, 240 requests, 60 searches an hour; owner item 3.2 (l8): 50 a day for everyone", () => {
   assert.equal(MONITOR_SETTINGS_DEFAULTS.hourlyDocs, 50);
   assert.equal(MONITOR_SETTINGS_DEFAULTS.ruleHourRequests, 240);
   assert.equal(MONITOR_SETTINGS_DEFAULTS.ruleHourSearches, 60);
-  assert.equal(MONITOR_SETTINGS_DEFAULTS.dailyDocs, 220);
-  assert.equal(MONITOR_SETTINGS_DEFAULTS.memberDailyDocs, 400);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.dailyDocs, 50);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.memberDailyDocs, 50);
   assert.match(SQL_CAPS_426, /hourly_docs\s*=\s*50\b/);
   assert.match(SQL_CAPS_426, /rule_hour_requests\s*=\s*240\b/);
   assert.match(SQL_CAPS_426, /rule_hour_searches\s*=\s*60\b/);

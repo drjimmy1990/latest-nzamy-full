@@ -55,8 +55,9 @@ const bool = (key: string, column: string, labelAr: string, group: SettingsGroup
   ({ key, column, type: "bool", labelAr, group });
 
 export const MONITOR_SETTINGS_FIELDS: readonly SettingsField[] = [
-  int("dailyDocs", "daily_docs", 1, 100000, "حد الوثائق المختلفة في اليوم — الفرد", "caps"),
-  int("memberDailyDocs", "member_daily_docs", 1, 100000, "حد الوثائق المختلفة في اليوم — عضو المكتب أو الشركة", "caps"),
+  // Owner item 3.2 (batch l8): daily_full_read_limit — full-text opens per user per day (50).
+  int("dailyDocs", "daily_docs", 1, 100000, "حد القراءة اليومي (daily_full_read_limit): فتح النص الكامل لوثائق مختلفة في اليوم — الفرد", "caps"),
+  int("memberDailyDocs", "member_daily_docs", 1, 100000, "حد القراءة اليومي (daily_full_read_limit) — عضو المكتب أو الشركة", "caps"),
   int("hourlyDocs", "hourly_docs", 1, 100000, "حد الوثائق المختلفة في الساعة", "caps"),
   int("lockAfterRefused", "lock_after_refused", 0, 100000, "إيقاف تلقائي بعد محاولة فتح هذا العدد من الوثائق بعد بلوغ الحد اليومي (٠ = لا إيقاف تلقائي)", "caps"),
   // 20261103_10 (owner q362): how long an AUTOMATIC lock lasts; admin locks keep the end the admin chose.
@@ -102,7 +103,7 @@ export type MonitorSettings = Record<string, number | boolean | string>;
  * rules stay admin alerts, not refusals, this batch.
  */
 export const MONITOR_SETTINGS_DEFAULTS: Readonly<MonitorSettings> = Object.freeze({
-  dailyDocs: 220, memberDailyDocs: 400, hourlyDocs: 50, lockAfterRefused: 60, autoLockHours: 24,
+  dailyDocs: 50, memberDailyDocs: 50, hourlyDocs: 50, lockAfterRefused: 60, autoLockHours: 24,
   ruleHourRequestsOn: true, ruleHourRequests: 240,
   ruleHourSearchesOn: true, ruleHourSearches: 60,
   ruleWeekDocsOn: true, ruleWeekDocs: 600,
@@ -110,7 +111,7 @@ export const MONITOR_SETTINGS_DEFAULTS: Readonly<MonitorSettings> = Object.freez
   ruleNightOn: false, ruleNightDocs: 60,
   ruleNearCapOn: true, ruleNearCapPct: 80,
   reflagQuietHours: 24,
-  flagAction: "notify", slowDailyDocs: 60, slowHourlyDocs: 20, slowHours: 24,
+  flagAction: "notify", slowDailyDocs: 25, slowHourlyDocs: 20, slowHours: 24,
   notifyAdmins: true, notifyOnAutoLock: true, retentionDays: 30,
 });
 
