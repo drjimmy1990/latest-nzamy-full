@@ -80,6 +80,12 @@ export default function AdminEntitlementsPage() {
       setToast({ ok: false, msg: "سبب منح المكتبة إلزامي (ثلاثة أحرف على الأقل)" });
       return;
     }
+    // The amount fields are text now (Latin digits while typing): an empty
+    // field or a lone "." must be refused here, not sent as 0 / null.
+    if ((action === "credits" || action === "wallet") && !(Number(action === "credits" ? creditsAmount : walletAmount) > 0)) {
+      setToast({ ok: false, msg: "أدخل كمية أكبر من صفر" });
+      return;
+    }
     setGranting(true);
     setToast(null);
     try {
