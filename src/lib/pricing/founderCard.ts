@@ -75,7 +75,7 @@ export const FOUNDER_CONSULTANT_NOTE = "حساب المستشار: لا يشمل
  * only. A consultant who is not already a member gets this instead of a buy
  * button; the checkout refuses him too (founder_reserve_seat → not_advocate).
  */
-export const FOUNDER_ADVOCATE_ONLY_TEXT = "باقة المؤسس للمحامي المرخّص للترافع فقط، ولا تُتاح لحساب المستشار";
+export const FOUNDER_ADVOCATE_ONLY_TEXT = "باقة المؤسس للمحامي المرخص فقط، ولا تُتاح لحساب المستشار";
 
 const CHECKOUT_PATH = `/checkout?item=${FOUNDER_PLAN_ID}&billing=once`;
 

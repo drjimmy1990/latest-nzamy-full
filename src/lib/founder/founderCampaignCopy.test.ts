@@ -76,14 +76,17 @@ test("owner 17 Nov (١٢، ١٥، ١٧، ١٨): the library year, the 100 foundi
     "والشحن لا يجدّد السنة",
     "ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم ٥ نقاط، فإذا نفدت أُغلق المساعد الذكي وحده",
     "وتبقى المكتبة مفتوحة طوال السنة",
-    "نعم، خلال ١٤ يوماً من الشراء بشرط عدم استخدام أي من خدمات الباقة، وفق",
+    "نعم، خلال ١٤ يوماً من الشراء إن لم تستخدم أي ميزة ذكاء اصطناعي في الباقة، ولا يمنع الاسترداد تصفح المكتبة، ويُردّ المبلغ كاملاً شاملاً الضريبة، وفق",
     "في ساعات لا في أيام",
   ]) {
     assert.ok(page.includes(s), s);
   }
   assert.doesNotMatch(page, /٣٦٥ يوماً/, "the library is a year from activation, not a fixed 365 days");
-  // the refund answer links the terms page
-  assert.match(page, /وفق\{" "\}\s*<Link href=\{FOUNDER_TERMS_PATH\}/);
+  // the refund answer links item ٧ of the terms page; so does the footer's «سياسة الاسترداد» (file 09 أ-11)
+  assert.match(page, /وفق\{" "\}\s*<Link href=\{FOUNDER_TERMS_REFUND_PATH\}/);
+  assert.match(page, /<Link href=\{FOUNDER_TERMS_REFUND_PATH\} className="hover:text-\[#E6CD8E\]">\s*سياسة الاسترداد/);
+  assert.doesNotMatch(page, /خدمات الباقة/, "the old refund wording the owner fixed on 18 Nov");
+  assert.doesNotMatch(page, /المرخّص للترافع/, "file 09 أ-9: «للمحامي المرخص فقط»");
 });
 
 test("V16: the promo sits right after the hero, with a poster, controls, no autoplay, loaded only on play", () => {

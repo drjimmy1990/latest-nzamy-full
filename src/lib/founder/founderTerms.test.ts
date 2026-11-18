@@ -23,14 +23,23 @@ test("owner ١٦ (17 Nov 2026): the terms are published, with a version the chec
   assert.match(FOUNDER_TERMS_VERSION, /^\d{4}-\d{2}-\d{2}$/);
 });
 
-test("item ٧ is the owner's 14-day refund; item ٥ carries the year, the no-renewal top-up and the 100 founding points", () => {
+test("item ٧ is the owner's 18-Nov refund (draft clause 7): no AI feature, browsing allowed, full incl. VAT, no fee, credit note", () => {
   const refund = FOUNDER_TERMS_ITEMS.find((i) => i.title.endsWith("الاسترداد"));
+  assert.equal(refund?.id, "refund", "/founder-terms#refund is the founder page's refund link");
   assert.equal(
     refund?.paragraphs?.[0],
-    "يحق لك الاسترداد خلال **14 يوماً** من الشراء بشرط **عدم استخدام أي من خدمات الباقة** (الأعمال أو النقاط أو الأدوات).",
+    "يحق لك الاسترداد خلال **14 يوماً** من الشراء بشرط **ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي في الباقة**: الصائغ القانوني، أو أدوات المحترفين، أو مساعد المكتبة الذكي والنقاط. ولا يمنع الاسترداد تصفح المكتبة القانونية العادية. ويُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة إلى وسيلة الدفع نفسها دون خصم أي رسوم، ويصدر بذلك إشعار دائن. وتحدد جهة إصدار بطاقتك مدة ظهور المبلغ في حسابك.",
   );
+  assert.doesNotMatch(founderTermsText(), /خدمات الباقة/, "the published wording the owner called an urgent fix is gone");
+});
+
+test("the 18-Nov text has its own version, so new consents record it", () => {
+  assert.equal(FOUNDER_TERMS_VERSION, "2026-11-19");
+});
+
+test("item ٥ carries the draft's library bullet: the year, no-renewal top-up, 100 founding points from the first question", () => {
   const t = founderTermsText();
-  for (const s of ["سنة كاملة من تفعيل الباقة", "الشحن لا يجدّد السنة", "100 نقطة تأسيسية", "والسؤال الواحد عليه يخصم **5 نقاط**", "أُغلق مساعد المكتبة الذكي وحده", "وتبقى المكتبة مفتوحة لك طوال السنة"]) {
+  for (const s of ["لسنة كاملة من تفعيل الباقة", "الشحن لا يجدّد السنة", "استخدام المكتبة العادية لا يستهلك نقاطاً", "100 نقطة تأسيسية", "والسؤال الواحد عليه يخصم **5 نقاط** من أول سؤال", "أُغلق المساعد الذكي وحده", "وتبقى المكتبة مفتوحة طوال مدة العضوية"]) {
     assert.ok(t.includes(s), s);
   }
 });

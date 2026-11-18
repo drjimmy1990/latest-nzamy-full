@@ -42,7 +42,7 @@ export const JOIN_LABELS = Object.freeze({
   ended: "انتهى العرض",
   sold_out: "اكتملت المقاعد",
   paused: FOUNDER_PAUSED_TEXT,
-  advocate_only: "هذه الباقة للمحامي المرخّص للترافع فقط",
+  advocate_only: "هذه الباقة للمحامي المرخص فقط",
 });
 
 export function preLabel(remainingMs: number | null): string {
