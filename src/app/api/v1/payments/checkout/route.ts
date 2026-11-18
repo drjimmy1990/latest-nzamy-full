@@ -167,6 +167,8 @@ export async function POST(request: NextRequest) {
         analytics: orderAnalyticsFromCookies((name) => request.cookies.get(name)?.value, process.env.NEXT_PUBLIC_GA4_ID),
         origin: origin.origin,
         publishableKey: cfg.publishableKey,
+        // l7 decision 3: a test account's order is accepted in test mode only
+        gatewayMode: cfg.mode,
       },
     );
     return reply(result.body, result.status);

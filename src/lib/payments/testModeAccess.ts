@@ -6,7 +6,12 @@
  * In test mode online checkout is open ONLY to:
  *   - platform staff: profiles.user_type = 'admin', or a row in
  *     public.platform_staff (20261019_30);
- *   - the accounts in public.test_accounts (service-only, 20261017_44).
+ *   - the accounts in public.test_accounts (service-only, 20261017_44);
+ *   - l7 decision 3 (20261127_80): a demo account (profiles.is_demo) — the
+ *     same "test account" mode: it pays in TEST mode only. The database
+ *     refuses a test account's order unless the checkout stamped
+ *     metadata.gateway_mode = 'test' ('demo_account:live_payment'), so a
+ *     test account never pays live even though live itself is not gated here.
  * Everyone else — guests included — sees the gateway exactly as disabled:
  *   GET /api/v1/payments/status → {status:"disabled", provider:null,
  *   disabled:true}; POST /api/v1/payments/checkout → 503
@@ -66,14 +71,14 @@ function logMissingOnce(table: string, consequence: string): void {
 type Row = { data: unknown; error: { code?: string; message?: string } | null };
 
 /**
- * profiles.user_type, platform_staff and test_accounts for this user, with the
+ * profiles.user_type + is_demo, platform_staff and test_accounts for this user, with the
  * service client. A null / empty id reads nothing and allows nothing.
  */
 export async function readTestModeAccess(admin: SupabaseClient, userId: string | null): Promise<TestModeAccess> {
   if (!userId) return { ...NO_ACCESS };
   try {
     const [profile, staff, testAccount] = (await Promise.all([
-      admin.from("profiles").select("user_type").eq("id", userId).maybeSingle(),
+      admin.from("profiles").select("user_type, is_demo").eq("id", userId).maybeSingle(),
       admin.from("platform_staff").select("user_id").eq("user_id", userId).maybeSingle(),
       admin.from("test_accounts").select("user_id").eq("user_id", userId).maybeSingle(),
     ])) as Row[];
@@ -105,8 +110,10 @@ export async function readTestModeAccess(admin: SupabaseClient, userId: string |
       testRow = testAccount.data !== null && testAccount.data !== undefined;
     }
 
-    const isAdmin = (profile.data as { user_type?: unknown } | null)?.user_type === "admin";
-    return { isStaff: isAdmin || staffRow, isTestAccount: testRow };
+    const row = profile.data as { user_type?: unknown; is_demo?: unknown } | null;
+    const isAdmin = row?.user_type === "admin";
+    // l7 decision 3: a demo account is a test account too
+    return { isStaff: isAdmin || staffRow, isTestAccount: testRow || row?.is_demo === true };
   } catch (err) {
     console.error("[payments/test-mode] the lookup threw; test mode refused:", err instanceof Error ? err.message : "unknown");
     return { ...NO_ACCESS };

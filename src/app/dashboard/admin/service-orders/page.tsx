@@ -13,6 +13,8 @@ import OpenRequestPublishBox from "./_components/OpenRequestPublishBox";
 import { uploadErrorMessage } from "./_errorCopy";
 import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
 import { estimateLineAr } from "@/lib/services/estimateLine";
+import TestAccountBadge from "@/components/ui/TestAccountBadge";
+import { isTestMetadata } from "@/lib/testAccounts/testRow";
 
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
@@ -1138,6 +1140,7 @@ export default function AdminServiceOrdersPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{o.title}</p>
+                  {isTestMetadata(o.metadata) && <TestAccountBadge />}
                   {/* Task 5 — account-type and service badges. `provider` now
                       has its own badge (owner س٦); `admin` is the one
                       user_type still left unmapped, and an unmapped user_type

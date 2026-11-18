@@ -255,6 +255,13 @@ export interface CheckoutInput {
   attribution?: Attribution | null;
   /** l7-analytics: the consented GA client id (orderAnalyticsFromCookies), stored as metadata.analytics for the server purchase event; null / absent → nothing stored, no event. */
   analytics?: OrderAnalytics | null;
+  /**
+   * l7 decision 3 (20261127_80): the gateway mode of this checkout, stored as
+   * metadata.gateway_mode. The database accepts a TEST ACCOUNT's order only
+   * when it says 'test' ('demo_account:live_payment' otherwise, mapped by
+   * demoRefusal below). Absent → not stored.
+   */
+  gatewayMode?: "test" | "live";
 }
 
 export type CheckoutReply =
@@ -590,6 +597,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       ...(consentMeta ?? {}),
       ...(input.attribution ? { attribution: input.attribution } : {}),
       ...(input.analytics ? { analytics: input.analytics } : {}),
+      ...(input.gatewayMode ? { gateway_mode: input.gatewayMode } : {}),
       ...(q.launch
         ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
         : {}),
@@ -615,7 +623,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     }
     // l6-pay (20261126_60): another open / paid order already carries the credit of these plans
     if (prorationMeta && isProrationOrderConflict(insertErr)) return fail(409, UPGRADE_PENDING_AR);
-    // 20261125_50 (S3): payment_orders refuses a demo account's order
+    // 20261125_50 (S3) / 20261127_80: payment_orders refuses a test account's order outside test mode
     const demo = demoRefusal(insertErr);
     if (demo) return fail(demo.status, demo.message);
     if (insertErr && isMissingPaymentsObject(insertErr.code)) {

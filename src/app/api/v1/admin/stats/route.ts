@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { monthlyEquivalent } from "@/lib/payments/planRowPrice";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { isTestAccountId, readTestAccountIds } from "@/lib/testAccounts/testAccountIds";
 
 /**
  * GET /api/v1/admin/stats — Real admin dashboard KPIs
@@ -13,6 +14,9 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  *   - mrr: estimated Monthly Recurring Revenue
  *   - total_credits_used: total AI credits consumed
  *   - recent_signups_7d: signups in last 7 days
+ *   - test_accounts_excluded / test_accounts_complete (l7 decision 3): every
+ *     figure above leaves out the test accounts (profiles.is_demo or
+ *     public.test_accounts, not staff — testAccountIds.ts)
  *
  * Requires: authenticated admin user
  */
@@ -48,6 +52,12 @@ export async function GET() {
   const adminClient = await createServiceClient();
 
   try {
+    // l7 decision 3: test accounts never count in the admin KPIs
+    const testAccounts = await readTestAccountIds(adminClient);
+    const testIds = [...testAccounts.ids];
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const noRows = Promise.resolve({ count: 0 as number | null });
+
     // ── Run all queries in parallel ────────────────────────────────────────
     const [
       totalUsersResult,
@@ -55,6 +65,8 @@ export async function GET() {
       activeSubsResult,
       creditsUsedResult,
       recentSignupsResult,
+      testUsersResult,
+      testRecentResult,
     ] = await Promise.all([
       // 1. Total users
       adminClient
@@ -64,13 +76,14 @@ export async function GET() {
       // 2. Users grouped by user_type
       adminClient
         .from("profiles")
-        .select("user_type"),
+        .select("id, user_type"),
 
       // 3. Active subscriptions with plan prices
       adminClient
         .from("subscriptions")
         .select(
           `
+          user_id,
           tier,
           billing_cycle,
           subscription_plans ( * )
@@ -81,22 +94,35 @@ export async function GET() {
       // 4. Total AI credits used (kind = 'usage', amounts are negative)
       adminClient
         .from("credit_transactions")
-        .select("amount")
+        .select("user_id, amount")
         .eq("kind", "usage"),
 
       // 5. Recent signups (last 7 days)
       adminClient
         .from("profiles")
         .select("id", { count: "exact", head: true })
-        .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()),
+        .gte("created_at", since7d),
+
+      // 6–7. the test accounts among them (subtracted below)
+      testIds.length
+        ? adminClient.from("profiles").select("id", { count: "exact", head: true }).in("id", testIds)
+        : noRows,
+      testIds.length
+        ? adminClient
+            .from("profiles")
+            .select("id", { count: "exact", head: true })
+            .in("id", testIds)
+            .gte("created_at", since7d)
+        : noRows,
     ]);
 
     // ── Total users ────────────────────────────────────────────────────────
-    const totalUsers = totalUsersResult.count ?? 0;
+    const totalUsers = Math.max(0, (totalUsersResult.count ?? 0) - (testUsersResult.count ?? 0));
 
     // ── Users by type ──────────────────────────────────────────────────────
     const usersByType: Record<string, number> = {};
     for (const row of usersByTypeResult.data ?? []) {
+      if (isTestAccountId(testAccounts.ids, row.id)) continue;
       const type = (row.user_type as string) ?? "unknown";
       usersByType[type] = (usersByType[type] ?? 0) + 1;
     }
@@ -106,6 +132,7 @@ export async function GET() {
     let mrr = 0;
 
     for (const sub of activeSubsResult.data ?? []) {
+      if (isTestAccountId(testAccounts.ids, sub.user_id)) continue;
       const tier = (sub.tier as string) ?? "unknown";
       activeSubsByTier[tier] = (activeSubsByTier[tier] ?? 0) + 1;
 
@@ -119,12 +146,13 @@ export async function GET() {
     // ── Total credits used ─────────────────────────────────────────────────
     let totalCreditsUsed = 0;
     for (const tx of creditsUsedResult.data ?? []) {
+      if (isTestAccountId(testAccounts.ids, tx.user_id)) continue;
       // Usage amounts are negative, we want the absolute sum
       totalCreditsUsed += Math.abs(tx.amount as number);
     }
 
     // ── Recent signups ─────────────────────────────────────────────────────
-    const recentSignups7d = recentSignupsResult.count ?? 0;
+    const recentSignups7d = Math.max(0, (recentSignupsResult.count ?? 0) - (testRecentResult.count ?? 0));
 
     return NextResponse.json({
       data: {
@@ -134,6 +162,8 @@ export async function GET() {
         mrr: Math.round(mrr * 100) / 100,
         total_credits_used: totalCreditsUsed,
         recent_signups_7d: recentSignups7d,
+        test_accounts_excluded: testAccounts.ids.size,
+        test_accounts_complete: testAccounts.complete,
       },
     });
   } catch (err) {
