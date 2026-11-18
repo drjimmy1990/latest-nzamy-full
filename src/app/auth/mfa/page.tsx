@@ -37,6 +37,7 @@ type Status =
       aal: "aal1" | "aal2" | null;
       need: null | "challenge" | "enroll";
       backupCodesLeft: number | null;
+      emailAlerts: boolean;
     };
 
 type EnrollState = { factorId: string; qr: string; secret: string } | null;
@@ -91,6 +92,7 @@ export default function StaffMfaPage() {
         aal: body.aal ?? null,
         need: body.need ?? null,
         backupCodesLeft: typeof body.backupCodesLeft === "number" ? body.backupCodesLeft : null,
+        emailAlerts: body.emailAlerts === true,
       });
     } catch {
       setStatus({ kind: "error", message: "تعذّر الاتصال بالخادم. تحقق من الاتصال ثم أعد تحميل الصفحة." });
@@ -336,7 +338,7 @@ export default function StaffMfaPage() {
         <h2 className="text-base font-bold">استخدام رمز احتياط</h2>
         <p>
           أدخل أحد رموز الاحتياط العشرة. سيُلغى تطبيق المصادقة القديم، ثم تربط تطبيقاً جديداً مباشرة وتحصل على رموز
-          احتياط جديدة. يُرسل إليك بريد بهذا الإجراء.
+          احتياط جديدة.{status.emailAlerts ? " يُرسل إليك بريد بهذا الإجراء." : ""}
         </p>
         <input
           dir="ltr"

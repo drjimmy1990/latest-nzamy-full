@@ -39,6 +39,12 @@
 --   docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261127_50_admin_mfa.sql
 --   Expect: NOTICE  20261127_50 verify: OK  and a row with `t`.
 --
+-- IF VERIFY SAYS "the owner of is_admin() cannot read auth.mfa_factors":
+--   nothing was changed (the file rolled back). As supabase_admin run
+--     select proowner::regrole from pg_proc where oid = 'public.is_admin()'::regprocedure;
+--     grant select on auth.mfa_factors to <that role>;
+--   then run this file again.
+--
 -- RUN ORDER: after 20260625_fix_rls_recursion (is_admin) and the GoTrue
 --   schema (auth.mfa_factors exists on every GoTrue v2 install). Recommended:
 --   before the deploy.

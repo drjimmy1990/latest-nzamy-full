@@ -15,6 +15,7 @@ type MfaStatus = {
   enrolled: boolean;
   aal: "aal1" | "aal2" | null;
   backupCodesLeft: number | null;
+  emailAlerts: boolean;
 };
 
 const MFA_PAGE = `/auth/mfa?next=${encodeURIComponent("/dashboard/admin/security?tab=two_factor")}`;
@@ -30,7 +31,7 @@ export default function TwoFactorPanel({ isDark, card }: { isDark: boolean; card
       .then((b) => {
         if (!alive) return;
         if (!b?.isStaff) return setFailed(true);
-        setStatus({ mode: b.mode, enrolled: !!b.enrolled, aal: b.aal ?? null, backupCodesLeft: b.backupCodesLeft ?? null });
+        setStatus({ mode: b.mode, enrolled: !!b.enrolled, aal: b.aal ?? null, backupCodesLeft: b.backupCodesLeft ?? null, emailAlerts: b.emailAlerts === true });
       })
       .catch(() => alive && setFailed(true));
     return () => {
@@ -70,6 +71,11 @@ export default function TwoFactorPanel({ isDark, card }: { isDark: boolean; card
                 : `رموز الاحتياط المتبقية: ${status.backupCodesLeft} من ١٠.`}
             </p>
           )}
+          <p className={`text-[12px] ${muted}`}>
+            {status.emailAlerts
+              ? "تنبيه البريد عند كل دخول جديد إلى حساب إدارة: مفعّل."
+              : "تنبيه البريد عند الدخول الجديد متوقف: لم يُضبط مفتاح البريد (RESEND_API_KEY و EMAIL_FROM) في الخادم."}
+          </p>
           <Link href={MFA_PAGE} className={button}>
             {status.enrolled ? "إدارة رموز الاحتياط" : "تفعيل التحقق بخطوتين"}
           </Link>

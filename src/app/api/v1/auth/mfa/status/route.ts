@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { emailConfigured } from "@/lib/email/sendEmail";
 import { adminMfaMode, staffMfaDecision } from "@/lib/auth/staffMfa";
 import { noStore, readStaffMfaCaller } from "@/lib/auth/staffMfaRoute";
 
@@ -9,7 +10,8 @@ import { noStore, readStaffMfaCaller } from "@/lib/auth/staffMfaRoute";
  *
  *   200 { isStaff, mode: 'rollout'|'required', enrolled, aal,
  *         need: null|'challenge'|'enroll', suggestEnroll,
- *         backupCodesLeft: number|null }   (null: not aal2, or 20261127_50 not run)
+ *         backupCodesLeft: number|null,    (null: not aal2, or 20261127_50 not run)
+ *         emailAlerts: boolean }           (the new-login / change e-mails can be sent here)
  *   401 / 503 as every gate.
  */
 export const dynamic = "force-dynamic";
@@ -46,5 +48,6 @@ export async function GET() {
     need: decision.ok ? null : decision.need,
     suggestEnroll: decision.ok ? decision.suggestEnroll : false,
     backupCodesLeft,
+    emailAlerts: emailConfigured(),
   });
 }
