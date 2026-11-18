@@ -28,6 +28,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 
 import { ProviderType, Step } from "./types";
+import { trackEventOnce } from "@/lib/analytics/track";
 import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor, signupNameOk } from "./components/Steps";
 import { LawyerVerificationPanel } from "@/components/lawyerSignup/LawyerVerificationPanel";
 import { isThrowawayEmail } from "@/lib/lawyerSignup/throwawayEmail";
@@ -487,6 +488,7 @@ export default function RegisterProviderPage() {
                     whileTap={{ scale: canNext() ? 0.98 : 1 }}
                     onClick={async () => {
                       if (!canNext()) return;
+                      trackEventOnce("sign_up_start", { account: "provider" });
                       if (step === 4) {
                         // Unreachable without a card: step 1's canNext needs one.
                         if (providerType === null) return;

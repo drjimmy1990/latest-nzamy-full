@@ -52,3 +52,42 @@ test("the report-only policy lists the sources the site loads", async () => {
   assert.equal(directive("frame-ancestors"), "frame-ancestors 'none'");
   assert.doesNotMatch(csp, /[\r\n]/);
 });
+
+test("Permissions-Policy: no camera or location, microphone and payment for our own pages", async () => {
+  const pp = valueOf((await rules())[0], "Permissions-Policy") ?? "";
+  assert.match(pp, /(^|, )camera=\(\)/);
+  assert.match(pp, /(^|, )geolocation=\(\)/);
+  // voice input (SpeechRecognition) needs the microphone on our own pages
+  assert.match(pp, /(^|, )microphone=\(self\)/);
+  assert.match(pp, /(^|, )payment=\(self "https:\/\/pay\.google\.com"\)/);
+  assert.doesNotMatch(pp, /[\r\n]/);
+});
+
+test("analytics hosts are in the policy only when their env id is set at build", async () => {
+  const csp = valueOf((await rules())[0], "Content-Security-Policy-Report-Only") ?? "";
+  if (!process.env.NEXT_PUBLIC_GA4_ID) assert.doesNotMatch(csp, /googletagmanager|google-analytics/);
+  if (!process.env.NEXT_PUBLIC_CLARITY_ID) assert.doesNotMatch(csp, /clarity\.ms|c\.bing\.com/);
+
+  const saved = { ga: process.env.NEXT_PUBLIC_GA4_ID, cl: process.env.NEXT_PUBLIC_CLARITY_ID };
+  process.env.NEXT_PUBLIC_GA4_ID = "G-TEST1234";
+  process.env.NEXT_PUBLIC_CLARITY_ID = "abcdef1234";
+  try {
+    const { default: withIds } = await import(`../../next.config.ts?ids=${Date.now()}`);
+    const all = (await withIds.headers()) as HeaderRule[];
+    const on = valueOf(all[0], "Content-Security-Policy-Report-Only") ?? "";
+    const directive = (name: string) => on.split("; ").find((d) => d.startsWith(`${name} `)) ?? "";
+    assert.match(directive("script-src"), /https:\/\/www\.googletagmanager\.com/);
+    assert.match(directive("script-src"), /https:\/\/\*\.clarity\.ms/);
+    assert.match(directive("connect-src"), /https:\/\/\*\.google-analytics\.com/);
+    assert.match(directive("connect-src"), /https:\/\/\*\.analytics\.google\.com/);
+    assert.match(directive("connect-src"), /https:\/\/\*\.clarity\.ms/);
+    assert.match(directive("connect-src"), /https:\/\/c\.bing\.com/);
+    // still report-only
+    assert.equal(valueOf(all[0], "Content-Security-Policy"), undefined);
+  } finally {
+    if (saved.ga === undefined) delete process.env.NEXT_PUBLIC_GA4_ID;
+    else process.env.NEXT_PUBLIC_GA4_ID = saved.ga;
+    if (saved.cl === undefined) delete process.env.NEXT_PUBLIC_CLARITY_ID;
+    else process.env.NEXT_PUBLIC_CLARITY_ID = saved.cl;
+  }
+});

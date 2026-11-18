@@ -25,6 +25,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { canSubmitWithCaptcha, captchaSubmitError } from "@/lib/auth/captcha";
+import { trackEvent } from "@/lib/analytics/track";
 import {
   formatExpiry,
   splitRegistryName,
@@ -98,6 +99,7 @@ export function LawyerRegistryLookup({
         if (lastName) onChange("lastName", lastName);
         setCheckedLicence(body.licence);
         setOutcome({ kind: "valid", result: body });
+        trackEvent("licence_verified", { step: "registry_match" });
       } else if (res.ok && body && "status" in body && body.status === "ambiguous") {
         setOutcome({ kind: "ambiguous" });
       } else {

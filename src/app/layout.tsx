@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import ThemeProvider from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
+import AnalyticsConsent from "@/components/analytics/AnalyticsConsent";
 import { densityInitSnippet } from "@/lib/density";
 
 // Self-hosted via next/font (no runtime request to fonts.googleapis.com).
@@ -152,6 +153,8 @@ export default function RootLayout({
         <ThemeProvider>
           <main id="main-content">{children}</main>
           <FloatingButtons />
+          {/* Visitor analytics: nothing without the env ids and the visitor's consent (src/lib/analytics/analytics.ts). */}
+          <AnalyticsConsent />
         </ThemeProvider>
       </body>
     </html>
