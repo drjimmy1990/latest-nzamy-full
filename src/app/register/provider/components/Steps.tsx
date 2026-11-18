@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Globe,
+  CheckCircle,
 } from "@phosphor-icons/react";
 import { ProviderType, Step } from "../types";
 import { providerTypes, specializations, plans } from "../data";
@@ -247,12 +248,37 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
             <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">
               {isAr ? "صورة الترخيص (إلزامية)" : "Licence photo (required)"}
             </label>
-            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 p-5 transition-colors hover:border-royal/30 hover:bg-royal/[0.02] dark:border-white/10 dark:hover:border-gold/30">
-              <UploadSimple size={22} className="text-ink-faint dark:text-gray-500" />
-              <span className="text-xs font-medium text-ink-muted dark:text-gray-400">
-                {licenceFile ? licenceFile.name : isAr ? "اضغط لاختيار صورة الترخيص" : "Click to choose the licence photo"}
-              </span>
-              <span className="text-[10px] text-ink-faint dark:text-gray-500">JPG, PNG, WEBP, PDF — {isAr ? "حتى ٥ ميغابايت" : "up to 5 MB"}</span>
+            <label
+              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 transition-colors ${
+                licenceFile
+                  ? "border-solid border-emerald-400 bg-emerald-50/60 dark:border-emerald-500/50 dark:bg-emerald-900/10"
+                  : "border-dashed border-slate-200 hover:border-royal/30 hover:bg-royal/[0.02] dark:border-white/10 dark:hover:border-gold/30"
+              }`}
+            >
+              {licenceFile ? (
+                <>
+                  <CheckCircle size={24} weight="fill" className="text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                    {isAr ? "تم اختيار صورة الترخيص" : "Licence photo selected"}
+                  </span>
+                  <span className="max-w-full truncate text-xs text-ink-muted dark:text-gray-400" dir="ltr">
+                    {licenceFile.name} · {Math.max(1, Math.round(licenceFile.size / 1024))} KB
+                  </span>
+                  <span className="text-[11px] text-ink-muted dark:text-gray-400">
+                    {isAr
+                      ? "تُرفع بعد إنشاء الحساب وتأكيد بريدك. اضغط هنا لتغييرها."
+                      : "It is uploaded once the account is created and your e-mail confirmed. Click to change it."}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <UploadSimple size={22} className="text-ink-faint dark:text-gray-500" />
+                  <span className="text-xs font-medium text-ink-muted dark:text-gray-400">
+                    {isAr ? "اضغط لاختيار صورة الترخيص" : "Click to choose the licence photo"}
+                  </span>
+                  <span className="text-[10px] text-ink-faint dark:text-gray-500">JPG, PNG, WEBP, PDF — {isAr ? "حتى ٥ ميغابايت" : "up to 5 MB"}</span>
+                </>
+              )}
               <input
                 type="file"
                 accept={LICENCE_ACCEPT}
@@ -481,12 +507,12 @@ export function Step3({ isAr, data, onChange, providerType = null }: { isAr: boo
           </label>
           {data.verification_docs && (
             <p className="mt-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              {isAr ? "الملفات المختارة: " : "Selected: "}
+              {isAr ? "الملفات المختارة (لم تُرفع بعد): " : "Selected (not uploaded yet): "}
               {data.verification_docs}
             </p>
           )}
           <p className="mt-2 text-xs text-ink-faint dark:text-gray-500">
-            {isAr ? "سيتم مراجعة الوثائق خلال ٢٤ ساعة من قِبل فريق نظامي" : "Documents will be reviewed within 24 hours by the Nezamy team"}
+            {isAr ? "لا تُرفع هذه الملفات الآن؛ يطلب منك فريق نظامي الوثائق بعد إنشاء الحساب." : "These files are not uploaded now; the Nezamy team will ask you for the documents after sign-up."}
           </p>
         </div>
         )}

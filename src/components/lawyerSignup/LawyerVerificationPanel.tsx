@@ -202,6 +202,14 @@ export function LawyerVerificationPanel({
             ? "أكّد بريدك الإلكتروني من الرسالة التي وصلتك، ثم سجّل الدخول لإكمال توثيق ترخيصك."
             : "Confirm your e-mail from the message we sent, then sign in to finish verifying your licence."}
         </p>
+        {initialFile && (
+          <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200">
+            <Info size={16} className="mt-0.5 flex-shrink-0" />
+            {isAr
+              ? "صورة الترخيص التي اخترتها لم تُرفع بعد، لأن الحساب لا يُفتح قبل تأكيد البريد. بعد تسجيل الدخول اخترها مرة أخرى واضغط «رفع الصورة»."
+              : "The licence photo you chose is not uploaded yet: the account opens only after the e-mail is confirmed. After signing in, choose it again and press Upload."}
+          </p>
+        )}
         <a href="/login?next=/register/provider/verify" className={`${btn} mt-4`}>
           {isAr ? "تسجيل الدخول" : "Sign in"}
         </a>
@@ -237,6 +245,13 @@ export function LawyerVerificationPanel({
           </p>
         )}
 
+        {!done && state.licenceUploaded && (
+          <p className="mt-3 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300" aria-live="polite">
+            <CheckCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
+            {isAr ? "تم رفع صورة الترخيص، وستراجعها الإدارة." : "Your licence photo is uploaded and will be reviewed."}
+          </p>
+        )}
+
         {state.status === "review" && (
           <p className="mt-3 flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm text-ink dark:border-white/10 dark:bg-dark-card dark:text-gray-300">
             <Info size={18} className="mt-0.5 flex-shrink-0" />
@@ -251,13 +266,16 @@ export function LawyerVerificationPanel({
             </p>
             <label className="mt-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-200 p-5 hover:border-royal/30 dark:border-white/10 dark:hover:border-gold/30">
               <UploadSimple size={22} className="text-ink-faint dark:text-gray-500" />
-              <span className="text-xs text-ink-muted dark:text-gray-400">{file ? file.name : isAr ? "اختر الصورة" : "Choose the photo"}</span>
+              {file ? <CheckCircle size={18} weight="fill" className="text-emerald-600 dark:text-emerald-400" /> : null}
+              <span className={`text-xs ${file ? "font-semibold text-emerald-800 dark:text-emerald-300" : "text-ink-muted dark:text-gray-400"}`} dir={file ? "ltr" : undefined}>
+                {file ? `${file.name} · ${Math.max(1, Math.round(file.size / 1024))} KB` : isAr ? "اختر الصورة" : "Choose the photo"}
+              </span>
               <span className="text-[10px] text-ink-faint dark:text-gray-500">JPG, PNG, WEBP, PDF — {isAr ? "حتى ٥ ميغابايت" : "up to 5 MB"}</span>
               <input type="file" accept={LICENCE_ACCEPT} className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>
             <button type="button" className={`${btn} mt-3`} disabled={!file || busy} onClick={() => file && upload(file)}>
               {busy ? <SpinnerGap size={16} className="animate-spin" /> : <UploadSimple size={16} />}
-              {isAr ? "رفع الصورة" : "Upload"}
+              {busy ? (isAr ? "جارٍ رفع الصورة…" : "Uploading…") : isAr ? "رفع الصورة" : "Upload"}
             </button>
           </div>
         )}

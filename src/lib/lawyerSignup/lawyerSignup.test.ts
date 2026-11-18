@@ -388,3 +388,16 @@ test("decision ٢٧: the signup UI and routes carry no WhatsApp / SMS step and n
   const lookup = readFileSync(join(root, "src/app/register/provider/components/LawyerRegistryLookup.tsx"), "utf8");
   assert.equal(lookup.includes("يصل إلى هذا الجوال"), false, "no promise of a code to the registry mobile");
 });
+
+// ── owner 18 Nov: the licence photo always says where it stands ────────────────
+test("the licence photo shows selected / uploaded / not-yet-uploaded, never silence", () => {
+  const root = join(import.meta.dirname, "../../..");
+  const steps = readFileSync(join(root, "src/app/register/provider/components/Steps.tsx"), "utf8");
+  assert.ok(steps.includes("تم اختيار صورة الترخيص"), "step 2 shows a selected state");
+  assert.ok(steps.includes("تُرفع بعد إنشاء الحساب وتأكيد بريدك"), "step 2 says when it is uploaded");
+  const panel = readFileSync(join(root, "src/components/lawyerSignup/LawyerVerificationPanel.tsx"), "utf8");
+  assert.ok(panel.includes("state.licenceUploaded"), "the panel reads the server's licenceUploaded");
+  assert.ok(panel.includes("تم رفع صورة الترخيص"), "the panel confirms the upload");
+  assert.ok(panel.includes("لم تُرفع بعد"), "the sign-in card says the chosen photo is not uploaded yet");
+  assert.ok(panel.includes("جارٍ رفع الصورة"), "the upload button shows progress");
+});
