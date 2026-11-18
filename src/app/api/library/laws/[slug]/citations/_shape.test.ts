@@ -10,8 +10,10 @@ import { readFileSync } from "node:fs";
 import {
   MAX_ITEMS_PER_SECTION,
   READER_LINK_TYPES,
+  READER_SECTION_QUERIES,
   applyLiveRows,
   docNameCandidates,
+  mergeSectionRefs,
   parseNumbers,
   parseRefKey,
   refHrefs,
@@ -105,6 +107,40 @@ test("a section lists at most MAX_ITEMS_PER_SECTION, and its total says how many
   assert.equal(out.sections.legislation.total, 0, "a hidden type's count never reaches a section");
 });
 
+test("one query per section: 200 principles never crowd out a legislation link", () => {
+  assert.deepEqual(
+    READER_SECTION_QUERIES.map((q) => [q.section, [...q.types].sort()]),
+    [
+      ["legislation", ["AMENDS_ARTICLE", "PARENT_LAW", "SUPERSEDES_LAW"]],
+      ["judicial", ["INTERPRETS_ARTICLE"]],
+    ],
+    "fiqh has no shown type, so it is not asked for",
+  );
+  const center = { node_key: "article:c", node_type: "article", law_slug: "l" };
+  // What the function returns when asked for everything at once: 200 principles fill the limit.
+  const crowded = {
+    found: true,
+    truncated: true,
+    center_edge_counts: { INTERPRETS_ARTICLE: { out: 0, in: 250 }, PARENT_LAW: { out: 1, in: 0 } },
+    nodes: [center, ...Array.from({ length: 200 }, (_, i) => ({ node_key: `principle:p${i}`, node_type: "principle", title: `p${i}`, url: `/precedents/k#p${i}` }))],
+    edges: Array.from({ length: 200 }, (_, i) => ({ source: `principle:p${i}`, target: "article:c", edge_type: "INTERPRETS_ARTICLE" })),
+  };
+  const legislationOnly = {
+    found: true,
+    nodes: [center, { node_key: "law:parent", node_type: "law", law_slug: "parent", title: "النظام الأصل" }],
+    edges: [{ source: "article:c", target: "law:parent", edge_type: "PARENT_LAW" }],
+  };
+  const merged = mergeSectionRefs([
+    { section: "legislation", refs: shapeArticleRefs(legislationOnly, "c", "l") },
+    { section: "judicial", refs: shapeArticleRefs(crowded, "c", "l") },
+  ]);
+  assert.deepEqual(merged.sections.legislation.items.map((i) => i.key), ["law:parent"]);
+  assert.equal(merged.sections.legislation.total, 1);
+  assert.equal(merged.sections.judicial.items.length, MAX_ITEMS_PER_SECTION);
+  assert.equal(merged.sections.judicial.total, 250);
+  assert.equal(merged.found, true);
+});
+
 test("live rows: statuses from library.*; a missing anchor links to its document; a missing document is dropped", () => {
   const shaped = shapeArticleRefs(
     {
@@ -189,8 +225,10 @@ test("route contract: libraryGate first, service role for graph and articles, no
   assert.match(route, /const ARTICLE_COLUMNS = 'id, number, title, status, instrument';/);
   assert.doesNotMatch(route, /select\([^)]*\btext\b/);
   assert.doesNotMatch(route, /spendLibraryDocument/);
-  assert.match(route, /shapeArticleRefs\(data, id, slug\)/);
-  assert.match(route, /p_edge_types: \[\.\.\.READER_LINK_TYPES\]/);
+  assert.match(route, /shapeArticleRefs\(answers\[i\]\.data, id, slug\)/);
+  assert.match(route, /READER_SECTION_QUERIES\.map\(\(q\) =>/, "one graph call per section");
+  assert.match(route, /p_edge_types: q\.types,/);
+  assert.match(route, /p_types: \[\.\.\.READER_LINK_TYPES\]/, "the map passes the same allow-list");
   assert.match(route, /rpc\('library_reader_law_links_typed'/);
   assert.doesNotMatch(route, /rpc\('library_reader_law_links'/, "the untyped map counts hidden types");
 });

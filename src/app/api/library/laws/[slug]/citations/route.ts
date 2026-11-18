@@ -7,9 +7,11 @@ import { articleStatusForDetail } from '../_article-status';
 import {
   NEIGHBORHOOD_LIMIT,
   READER_LINK_TYPES,
+  READER_SECTION_QUERIES,
   applyLiveRows,
   capTitle,
   docNameCandidates,
+  mergeSectionRefs,
   parseNumbers,
   refIds,
   shapeArticleRefs,
@@ -73,19 +75,28 @@ export async function GET(
     if (url.searchParams.has('article')) {
       const id = validArticleId(url.searchParams.get('article'));
       if (!id) return json({ error: 'bad article' }, 400);
-      const { data, error } = await serverOnly.rpc('graph_rag_explore_neighborhood', {
-        p_node_key: `article:${id}`,
-        p_depth: 1,
-        // Only the types matching the owner's graph file (graphLinkTypes.ts).
-        p_edge_types: [...READER_LINK_TYPES],
-        p_limit: NEIGHBORHOOD_LIMIT,
-      });
-      if (error) {
-        if (graphFunctionMissing(error.code)) return json({ available: false });
-        console.error('[citations] article links failed:', error.code ?? 'no-code', error.message);
+      // One call per section, each with that section's types only (all of them
+      // the owner-matched READER_LINK_TYPES, graphLinkTypes.ts): hundreds of
+      // principles citing an article never crowd out its legislation links.
+      const answers = await Promise.all(
+        READER_SECTION_QUERIES.map((q) =>
+          serverOnly.rpc('graph_rag_explore_neighborhood', {
+            p_node_key: `article:${id}`,
+            p_depth: 1,
+            p_edge_types: q.types,
+            p_limit: NEIGHBORHOOD_LIMIT,
+          }),
+        ),
+      );
+      const failed = answers.find((a) => a.error)?.error;
+      if (failed) {
+        if (graphFunctionMissing(failed.code)) return json({ available: false });
+        console.error('[citations] article links failed:', failed.code ?? 'no-code', failed.message);
         return json({ error: 'تعذّر تحميل الإحالات' }, 500);
       }
-      const shaped = shapeArticleRefs(data, id, slug);
+      const shaped = mergeSectionRefs(
+        READER_SECTION_QUERIES.map((q, i) => ({ section: q.section, refs: shapeArticleRefs(answers[i].data, id, slug) })),
+      );
       // Statuses from library.* now, not the graph's copy. A vanished anchor
       // links to its document; a vanished document is dropped (applyLiveRows).
       const ids = refIds(shaped);

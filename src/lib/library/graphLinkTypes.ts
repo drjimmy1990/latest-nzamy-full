@@ -124,3 +124,8 @@ export const SHOWN_LINK_LABELS: Readonly<Record<ShownLinkType, { out: string; in
 export function linkLabel(t: unknown, direction: "out" | "in"): string {
   return isShownLinkType(t) ? SHOWN_LINK_LABELS[t][direction] : "";
 }
+
+/** The shown types of one section (the reader asks the graph per section, so one section never starves another). */
+export function linkTypesOfSection(s: LinkSection): ShownLinkType[] {
+  return SHOWN_LINK_TYPES.filter((t) => sectionOfLinkType(t) === s);
+}

@@ -19,6 +19,7 @@ import {
   LINK_SECTIONS,
   SHOWN_LINK_TYPES,
   isShownLinkType,
+  linkTypesOfSection,
   linkLabel,
   sectionOfLinkType,
   type LinkSection,
@@ -240,6 +241,21 @@ export function shapeArticleRefs(raw: unknown, articleId: string, lawSlug: strin
       out.sections[s].total = Math.max(out.sections[s].total, n);
     }
   }
+  return out;
+}
+
+/**
+ * The graph is asked once per section (with that section's types only), so a
+ * heavily cited article's hundreds of principles never use up the slots of its
+ * legislation links. Each section is taken from its own answer; found = any.
+ */
+export const READER_SECTION_QUERIES: ReadonlyArray<{ section: LinkSection; types: ShownLinkType[] }> = LINK_SECTIONS
+  .map((section) => ({ section, types: linkTypesOfSection(section) }))
+  .filter((q) => q.types.length > 0);
+
+export function mergeSectionRefs(parts: ReadonlyArray<{ section: LinkSection; refs: ArticleRefs }>): ArticleRefs {
+  const out: ArticleRefs = { found: parts.some((p) => p.refs.found), sections: emptySections() };
+  for (const p of parts) out.sections[p.section] = p.refs.sections[p.section];
   return out;
 }
 
