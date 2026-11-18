@@ -15,6 +15,12 @@
  * renewal_notice_days before ends_on, an in-app radar deadline) is unchanged;
  * this e-mail is in addition to it.
  *
+ * OWNER ٤٥ (18 Nov 2026, batch l8): no client data through the e-mail
+ * provider. The e-mail names no client / counterparty and not the contract's
+ * title (free text — where a client's name usually is): only that a power of
+ * attorney ends, when, and a link to open it in the platform. The route does
+ * not read those columns.
+ *
  * Relative imports only: `node --test` loads it (poaEmailReminders.test.ts).
  */
 
@@ -24,14 +30,16 @@ import { renderEmailAr, siteLink, REMINDER_FOOTER_AR, type EmailEnv } from "./se
 export const POA_ENDED_STATUSES = ["expired", "terminated", "cancelled"] as const;
 export const POA_HORIZON_DAYS = 30;
 
+/** The columns the route reads — deliberately no title or counterparty (owner ٤٥). */
 export interface PoaContractRow {
   id: string;
   owner_user_id: string | null;
-  title: string | null;
-  counterparty_name: string | null;
   ends_on: string | null;
   status: string | null;
 }
+
+/** The route's select list, kept next to the row type (pinned by a test). */
+export const POA_EMAIL_COLUMNS = "id, owner_user_id, ends_on, status";
 
 export type PoaOffset = 30 | 7;
 
@@ -82,28 +90,23 @@ function daysLeftAr(n: number): string {
   return `بعد ${toArabicDigits(String(n))} يوماً`;
 }
 
-/** The Arabic e-mail of one power-of-attorney reminder. */
+/** The Arabic e-mail of one power-of-attorney reminder — no client data (owner ٤٥). */
 export function poaEmailMessage(
   r: PlannedPoaReminder,
   env: EmailEnv = process.env,
   dashboardRoot: "/dashboard/lawyer" | "/dashboard/firm" = "/dashboard/lawyer",
 ): { subject: string; html: string; text: string } {
-  const title = (r.contract.title ?? "").trim() || "وكالة قانونية";
   const when = daysLeftAr(r.daysLeft);
   const href = siteLink(`${dashboardRoot}/contracts/${encodeURIComponent(r.contract.id)}`, env);
   const { html, text } = renderEmailAr({
     heading: "تذكير: وكالة قانونية تقترب من نهايتها",
     paragraphs: [
-      `تنتهي الوكالة «${title}» ${when}.`,
-      "إن كانت القضية أو المعاملة مستمرة، فاطلب من الموكل تجديدها قبل انتهائها.",
+      `لديك وكالة قانونية تنتهي ${when} — افتحها من نظامي.`,
+      "بيانات الوكالة والموكل لا تُرسل بالبريد حفاظاً على سريتها. إن كانت القضية أو المعاملة مستمرة، فاطلب من الموكل تجديدها قبل انتهائها.",
     ],
-    details: [
-      ["الوكالة", title],
-      ["الموكل / الطرف", (r.contract.counterparty_name ?? "").trim() || null],
-      ["تاريخ الانتهاء", r.contract.ends_on ? toArabicDigits(r.contract.ends_on) : null],
-    ],
-    action: href ? { label: "افتح الوكالة", href } : null,
+    details: [["تاريخ الانتهاء", r.contract.ends_on ? toArabicDigits(r.contract.ends_on) : null]],
+    action: href ? { label: "افتح الوكالة في نظامي", href } : null,
     footer: REMINDER_FOOTER_AR,
   });
-  return { subject: `تنتهي وكالة ${when}: ${title}`, html, text };
+  return { subject: `تذكير: وكالة قانونية تنتهي ${when}`, html, text };
 }

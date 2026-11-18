@@ -11,6 +11,7 @@ import {
   type EmailStepReport,
 } from "@/lib/email/reminderDelivery";
 import {
+  HEARING_EMAIL_COLUMNS,
   assigneesToCheck,
   hearingEmailMessage,
   hearingEmailRecipients,
@@ -73,7 +74,8 @@ export async function POST(request: NextRequest) {
   for (let offset = 0; offset < MAX_HEARINGS; offset += PAGE) {
     const { data, error } = await admin
       .from("hearings")
-      .select("id, owner_user_id, assignee_user_id, firm_id, title, hearing_date, hearing_time, court_name, location, status")
+      // Owner ٤٥: no title / court / place / time — the e-mail is generic.
+      .select(HEARING_EMAIL_COLUMNS)
       .eq("status", "scheduled")
       .eq("hearing_date", tomorrow)
       .order("id", { ascending: true })

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   assigneesToCheck,
   hearingEmailMessage,
@@ -18,13 +19,21 @@ const H: HearingEmailRow = {
   owner_user_id: "owner",
   assignee_user_id: null,
   firm_id: null,
-  title: "دعوى عمالية <رقم ٥>",
   hearing_date: "2026-11-20",
-  hearing_time: "09:30:00",
-  court_name: "المحكمة العمالية بالرياض",
-  location: null,
   status: "scheduled",
 };
+
+// Owner ٤٥: marker strings in every case-data column a row could carry. Even
+// if a caller passed them, none may reach the e-mail.
+const LEAKY = {
+  ...H,
+  title: "عنوان-سري-للقضية",
+  court_name: "محكمة-سرية",
+  location: "مكان-سري",
+  hearing_time: "09:30:00",
+  client_name: "موكل-سري",
+} as HearingEmailRow;
+const HEARING_SECRETS = ["عنوان-سري-للقضية", "محكمة-سرية", "مكان-سري", "موكل-سري", "09:30", "٠٩:٣٠"];
 
 test("hearing: the owner always; the assignee only while an active member of the hearing's firm", () => {
   assert.deepEqual(hearingEmailRecipients(H, new Set()), [{ userId: "owner", via: "owner" }]);
@@ -59,22 +68,27 @@ test("hearing: only other-person assignees on a firm hearing are checked, once e
   assert.deepEqual(assigneesToCheck(rows), [{ firmId: "f1", userId: "m1" }]);
 });
 
-test("hearing e-mail: Arabic, escaped, with the date, time, court and an https link", () => {
-  const m = hearingEmailMessage(H, "owner", ENV);
-  assert.equal(m.subject, "تذكير بجلسة غداً: دعوى عمالية <رقم ٥>");
-  assert.ok(m.html.includes("دعوى عمالية &lt;رقم ٥&gt;"));
-  assert.ok(!m.html.includes("<رقم"));
+test("hearing e-mail (owner ٤٥): generic — «لديك جلسة غداً — افتحها من نظامي», the date and a link, no case data", () => {
+  const m = hearingEmailMessage(LEAKY, "owner", ENV);
+  assert.equal(m.subject, "تذكير: لديك جلسة غداً");
+  assert.ok(m.text.includes("لديك جلسة غداً — افتحها من نظامي"));
   assert.ok(m.text.includes("٢٠٢٦-١١-٢٠"));
-  assert.ok(m.text.includes("٠٩:٣٠ ص"));
-  assert.ok(m.text.includes("المحكمة العمالية بالرياض"));
   assert.ok(m.text.includes("https://nezamy.sa/dashboard/lawyer/hearings"));
-  assert.ok(hearingEmailMessage({ ...H, firm_id: "f", assignee_user_id: "m" }, "assignee", ENV).text.includes("أُسندت إليك"));
+  const assigned = hearingEmailMessage({ ...LEAKY, firm_id: "f", assignee_user_id: "m" }, "assignee", ENV);
+  assert.ok(assigned.text.includes("مُسندة إليك"));
+  for (const msg of [m, assigned]) {
+    for (const secret of HEARING_SECRETS) {
+      for (const part of [msg.subject, msg.html, msg.text]) {
+        assert.equal(part.includes(secret), false, `no «${secret}» in a hearing e-mail`);
+      }
+    }
+  }
   assert.ok(!hearingEmailMessage(H, "owner", {}).text.includes("http"), "no site URL → no link");
   assert.ok(hearingEmailMessage(H, "owner", ENV, "/dashboard/firm").text.includes("https://nezamy.sa/dashboard/firm/hearings"), "a firm account opens its own dashboard");
 });
 
 // ── power of attorney ─────────────────────────────────────────────────────────
-const C: PoaContractRow = { id: "ct-1", owner_user_id: "lawyer", title: "وكالة عامة", counterparty_name: "موكل", ends_on: null, status: "active" };
+const C: PoaContractRow = { id: "ct-1", owner_user_id: "lawyer", ends_on: null, status: "active" };
 
 test("poa: 30 between 8 and 30 days, 7 from 7 days to the last day, nothing outside", () => {
   const today = "2026-11-17";
@@ -103,10 +117,20 @@ test("poa: ended, owner-less and undated rows are not reminded", () => {
   );
   assert.deepEqual(plan.map((p) => [p.contract.id, p.offset, p.daysLeft]), [["a", 30, 14], ["b", 7, 3]]);
   const m = poaEmailMessage(plan[1], ENV);
-  assert.ok(m.subject.includes("بعد ٣ أيام"));
+  assert.equal(m.subject, "تذكير: وكالة قانونية تنتهي بعد ٣ أيام");
+  assert.ok(m.text.includes("افتحها من نظامي"));
   assert.ok(m.text.includes("https://nezamy.sa/dashboard/lawyer/contracts/b"));
   assert.ok(m.text.includes("٢٠٢٦-١١-٢٠"));
   assert.ok(poaEmailMessage(plan[1], ENV, "/dashboard/firm").text.includes("https://nezamy.sa/dashboard/firm/contracts/b"));
+});
+
+test("poa e-mail (owner ٤٥): no client, counterparty or contract title — even if a row carried them", () => {
+  const leaky = { ...C, id: "z", ends_on: "2026-11-20", title: "وكالة-فلان-السري", counterparty_name: "موكل-سري" } as PoaContractRow;
+  const [r] = planPoaReminders([leaky], "2026-11-17");
+  const m = poaEmailMessage(r, ENV);
+  for (const secret of ["وكالة-فلان-السري", "موكل-سري", "الموكل / الطرف"]) {
+    for (const part of [m.subject, m.html, m.text]) assert.equal(part.includes(secret), false, `no «${secret}» in a POA e-mail`);
+  }
 });
 
 // ── library ───────────────────────────────────────────────────────────────────
@@ -120,4 +144,11 @@ test("library: kind by offset, the chain-end grant as subject, the Riyadh day as
   const m = libraryEmailMessage(r7, now, ENV);
   assert.equal(m.subject, "اشتراك المكتبة ينتهي قريباً");
   assert.ok(m.text.includes("https://nezamy.sa/laws/subscribe"));
+  // Owner ٤٥: the library e-mail is about the user's own subscription — it
+  // carries no client or case data, only the end of the subscription.
+  const src = readFileSync(new URL("./libraryEmailReminders.ts", import.meta.url), "utf8");
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const field of ["client", "counterparty", "case_", "court", "hearing"]) {
+    assert.equal(code.includes(field), false, `no ${field} in the library e-mail`);
+  }
 });
