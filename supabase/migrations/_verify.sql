@@ -7445,3 +7445,24 @@ select 'Every refunded / voided platform order has its credit note (run 20261127
              and not exists (select 1 from public.payment_credit_notes c where c.order_id = o.id)', false, true, '')))[1]::text = '0'
        end as ok;
 -- <<< verify:l7_refund
+-- >>> verify:l8_libguard
+-- Batch l8-libguard (owner message 18 Nov, items 2 + 3.2): run 20261128_30 before or after the deploy.
+select 'Library public guard: library_public_protection, public_full_rulings_per_collection, library_feqh_free_pages seeded (run 20261128_30)' as check,
+       (select pg_catalog.count(*) from public.platform_settings
+         where key in ('library_public_protection', 'public_full_rulings_per_collection', 'library_feqh_free_pages')) = 3
+       as ok;
+select 'daily_full_read_limit = 50 for a person and a member; slow cap below it (run 20261128_30)' as check,
+       coalesce((select s.daily_docs = 50 and s.member_daily_docs = 50 and s.slow_daily_docs < 50
+                   from public.library_monitor_settings s where s.id), false)
+       as ok;
+select 'No full-text library column is readable by anon (full listing: supabase/one-time/rls_proof.sql)' as check,
+       not exists (
+         select 1 from (values ('library.articles', 'text'), ('library.principles', 'text'), ('library.principles', 'facts'),
+                               ('library.principles', 'reasons'), ('library.principles', 'ruling'), ('library.principle_paragraphs', 'text'),
+                               ('library.feqh_blocks', 'matn'), ('library.feqh_blocks', 'sharh'), ('library.decree_pages', 'content'),
+                               ('library.laws', 'preamble')) as v(t, c)
+          where case when exists (select 1 from information_schema.columns ic
+                                   where ic.table_schema || '.' || ic.table_name = v.t and ic.column_name = v.c)
+                     then has_column_privilege('anon', v.t, v.c, 'SELECT') else false end)
+       as ok;
+-- <<< verify:l8_libguard
