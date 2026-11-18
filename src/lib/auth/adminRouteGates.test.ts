@@ -320,6 +320,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // P3 Task 10: «حملة المؤسس» — pause / resume and capacity (R2), and the R24 retry
   { file: "founder/sale/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "founder/orders/[id]/activate/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  // l7 decision 3: «تحرير المقاعد التجريبية» (founder_revoke per test seat, one audit row)
+  { file: "founder/test-seats/route.ts", method: "POST", action: "settings.write", logs: 1 },
   // S6-T7 (R18): an admin edits one client-catalogue price row (one audited update)
   { file: "pricing-catalog/[serviceId]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   // Legal GraphRAG admin controls: switch_model, trigger_sync, set_feqh_vectors (3 audited arms)
