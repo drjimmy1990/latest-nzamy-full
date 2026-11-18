@@ -392,6 +392,7 @@ const CLAIM_SURFACES = [
   "app/invite/[code]/page.tsx",
   "app/join/page.tsx",
   "app/faq/page.tsx",
+  "app/faq/faqData.ts",
   "components/legal-opinion/ContextConsult.tsx",
   "components/legal-opinion/ContextStudy.tsx",
 ];

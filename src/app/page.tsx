@@ -10,28 +10,18 @@ import SocialProof from "@/components/SocialProof";
 import CommunityHighlights from "@/components/CommunityHighlights";
 import FAQ from "@/components/FAQ";
 import Footer from "@/components/Footer";
-import { LEGAL_IDENTITY_AR } from "@/constants/legalIdentity";
+import { buildOrganizationJsonLd, serializeJsonLd } from "@/lib/publicSeo/structuredData";
 
 const HOME_DESCRIPTION =
   "نظامي — المنصة القانونية الأولى في المملكة العربية السعودية: استشارات فورية، صياغة عقود بالذكاء الاصطناعي، تمثيل قضائي، وإدارة مكاتب المحاماة في منصة واحدة.";
 
-// Organization structured data (schema.org) — same server-rendered
-// <script type="application/ld+json"> pattern as ArticleJsonLd.tsx, so it
-// lands in the initial HTML with no client hydration required.
-// Owner decision Q27: an Organization, not a schema.org LegalService (the
-// type for law firms) — نظامي is a LegalTech provider, and the description is
-// the owner's identity sentence.
-const organizationJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: "نظامي",
-  alternateName: "Nezamy",
-  url: "https://nezamy.sa",
-  logo: "https://nezamy.sa/logo.png",
-  description: LEGAL_IDENTITY_AR,
-  areaServed: "SA",
-  knowsLanguage: ["ar", "en"],
-};
+// Organization structured data (schema.org) — server-rendered, so it lands in
+// the initial HTML. Owner decision Q27: an Organization, not a schema.org
+// LegalService (the type for law firms). Built in
+// src/lib/publicSeo/structuredData.ts (owner 18 Nov, item 4.5): contact,
+// address, sameAs, and the commercial-registration / licence fields, which
+// stay out of the JSON-LD until the owner sends them.
+const organizationJsonLd = buildOrganizationJsonLd();
 
 export const metadata: Metadata = {
   title: "نظامي | منصة الخدمات القانونية الذكية في السعودية",
@@ -58,7 +48,7 @@ export default function Home() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(organizationJsonLd) }}
       />
       {/* S79: redirect مستخدم مسجّل لداشبورده تلقائياً */}
       <HomeRedirectGuard />
