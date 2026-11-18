@@ -3,6 +3,9 @@ import type { MoyasarClient } from "./moyasarClient.ts";
 import { refundDecision } from "./refundDecision.ts";
 import { BILLING_ORDER_COLUMNS } from "./billingCore.ts";
 import { releaseCouponUsage } from "./couponServer.ts";
+import { cleanOverrideReason, needsOverride, OVERRIDE_REQUIRED_AR, refundEligibility } from "./refundEligibility.ts";
+import { readRefundEvidence } from "./refundEvidence.ts";
+import { buildAdminAuditRow } from "../auth/adminAuditRow.ts";
 interface RefundRow { id: string; user_id: string | null; merchant: string; kind: string; status: string; total_halalas: number; paid_at: string | null; fulfilled_at: string | null; moyasar_payment_id: string | null; live: boolean | null; metadata: Record<string, unknown> }
 interface RefundJob { token: string; state: string; method: "void" | "refund"; actor_id: string }
 export interface RefundDeps {
@@ -22,8 +25,18 @@ export const REFUND_NOTICE_AR = {
   body: "بدأت إعادة المبلغ إلى وسيلة الدفع الأصلية، وقد يستغرق ظهوره في حسابك عدة أيام حسب البنك. وأُلغيت الصلاحيات المرتبطة بهذه العملية.",
 };
 
+/**
+ * Batch l7 (decision 10). `enforceEligibility` is passed by the admin refund
+ * route: a founder membership that is not eligible (refundEligibility.ts) is
+ * refused unless `overrideReason` holds a typed reason, which is written to
+ * admin_audit_events BEFORE the claim (a failed write moves no money). Other
+ * callers (none today) keep the old behaviour; a system refund (e.g. a
+ * rejected licence) passes its own reason the same way.
+ */
+export interface RefundOptions { enforceEligibility?: boolean; overrideReason?: unknown }
+
 /** An uncertain gateway outcome leaves the claim in place: never resend blindly. */
-export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId: string, confirm: boolean) {
+export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId: string, confirm: boolean, opts: RefundOptions = {}) {
   try {
     const result = await deps.admin.from("payment_orders").select(`${BILLING_ORDER_COLUMNS},user_id,merchant,kind,fulfilled_at,moyasar_payment_id,metadata`).eq("id", orderId).maybeSingle();
     if (result.error) return unavailable();
@@ -38,16 +51,32 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
       if (granted.error) return unavailable();
       if (granted.data?.status === "cancelled") return fail(409, "استُبدلت هذه الباقة بعملية لاحقة؛ يلزم مراجعة فترات الاشتراك قبل الاسترداد");
     }
-    // P3: a membership grants no points lot — nothing to read (or revoke) there
+    // l7: a membership is read like every other order (it has no lot today;
+    // finish_payment_refund revokes any lot keyed on the order either way).
     const isMembership = order.kind === "membership";
-    const lots = isMembership ? { data: [], error: null } : await deps.admin.from("points_lots").select("points_total,points_left").eq("order_id", orderId);
+    const lots = await deps.admin.from("points_lots").select("points_total,points_left").eq("order_id", orderId);
     if (lots.error) return unavailable();
     const rows = (lots.data ?? []) as Array<{ points_total: number; points_left: number }>;
     const total = rows.reduce((n,l) => n + l.points_total,0);
     const used = rows.reduce((n,l) => n + l.points_total - l.points_left,0);
     const decision = refundDecision(order, deps.now?.() ?? new Date(), { pointsUsedFromOrderLot: used, planPointsUsedPct: total ? used * 100 / total : 0 });
     if (!decision) return fail(409, "هذه العملية غير متاحة للاسترداد");
-    if (!confirm) return { status: 200, body: { review: true, method: decision.method, warnings: decision.warnings, totalHalalas: order.total_halalas } };
+    // A claim already in flight (money may have moved) is finished, never re-judged.
+    const pending = order.metadata?.refund_job as RefundJob | undefined;
+    const fresh = !pending || pending.state === "retryable";
+    const now = deps.now?.() ?? new Date();
+    const verdict = !confirm || fresh ? refundEligibility(order, now, await readRefundEvidence(deps.admin, order, { total, used, readFailed: false })) : null;
+    if (!confirm) return { status: 200, body: { review: true, method: decision.method, warnings: decision.warnings, totalHalalas: order.total_halalas, eligibility: verdict } };
+    if (fresh && opts.enforceEligibility && verdict && needsOverride(verdict)) {
+      const reason = cleanOverrideReason(opts.overrideReason);
+      if (!reason) return { status: 409, body: { error: OVERRIDE_REQUIRED_AR, eligibility: verdict } };
+      const audit = await deps.admin.from("admin_audit_events").insert(buildAdminAuditRow({
+        actorId, action: "payment_refund_eligibility_override", targetType: "payment_order", targetId: order.id,
+        before: { verdict: verdict.state, reasons: verdict.reasons },
+        metadata: { reason, kind: order.kind, days_since_payment: verdict.daysSincePayment, evidence: verdict.lines },
+      }, null));
+      if (audit.error) return unavailable();
+    }
     const gateway = await deps.gateway();
     if (!gateway || (gateway.mode === "live") !== order.live) return unavailable();
     let job = order.metadata?.refund_job as RefundJob | undefined;
@@ -89,6 +118,15 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
     }
     const finished = await deps.admin.rpc("finish_payment_refund", { p_order: order.id, p_token: job.token, p_method: job.method });
     if (finished.error || !finished.data?.done) return unavailable();
+    // l7: the VAT credit note for this reversal (void or refund), idempotent —
+    // a duplicate finish fills a gap. Missing (SQL 20261127_30 not run) or
+    // failed: the refund stands; the orders page offers «إصدار الإشعار الدائن».
+    let creditNote: string | null = null;
+    try {
+      const note = await deps.admin.rpc("issue_payment_credit_note", { p_order: order.id });
+      if (note.error) console.error("[refund] credit note not issued:", order.id, note.error.code);
+      else creditNote = typeof (note.data as { number?: unknown } | null)?.number === "string" ? (note.data as { number: string }).number : null;
+    } catch { console.error("[refund] credit note not issued:", order.id, "exception"); }
     // P7 review (finding 5): a void inside the 90-minute window gives the
     // coupon back (its coupon_usage row goes; the voided order leaves the
     // counted set). A later refund keeps it used. Never fails the refund;
@@ -102,6 +140,6 @@ export async function refundOrderWith(deps: RefundDeps, orderId: string, actorId
       try { await deps.notify(order.user_id); }
       catch { console.error("[refund] notification failed:", order.id); }
     }
-    return { status: 200, body: { refunded: true } };
+    return { status: 200, body: { refunded: true, creditNote } };
   } catch { return unavailable(); }
 }
