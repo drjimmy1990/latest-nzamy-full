@@ -10,6 +10,7 @@ import {
   mergeFounderCampaignSetting,
 } from "@/lib/pricing/campaigns";
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
+import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopupIssue } from "@/lib/points/pointsSettings";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import {
   billingCompanySettingIssue,
@@ -46,6 +47,15 @@ const ALLOWED_SETTINGS_KEYS = [
   // "review" is refused (aiToolsSettingIssue) until Wave 3's money-safe gate.
   // A tool not named keeps its default in src/lib/ai/tools.ts ("off").
   "ai_tools",
+  // Batch l7 (owner 18 Nov 2026, 20261127_40; src/lib/points/pointsSettings.ts):
+  // {"lib-q1"|"lib-q2"|"lib-annual": points} — the library plans' assistant points;
+  "library_plan_points",
+  // days (1..3650) an admin gift / grant of points lasts (90);
+  "gift_valid_days",
+  // {"<user_type>": SAR} — the lowest top-up per account type (500; individual none);
+  "min_topup_by_account_type",
+  // {"<user_type>": n} — the library assistant's free questions, once per account (10 / 5).
+  "free_questions_by_account_type",
 ] as const;
 
 /**
@@ -111,6 +121,11 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   founder_campaign: founderCampaignSettingIssue,
   // Pure, so src/lib/ai/runCore.test.ts covers it.
   ai_tools: (value) => aiToolsSettingIssue(value, Object.keys(AI_TOOLS)),
+  // Batch l7: pure, covered by src/lib/points/pointsSettings.test.ts.
+  library_plan_points: libraryPlanPointsIssue,
+  gift_valid_days: giftValidDaysIssue,
+  min_topup_by_account_type: minTopupIssue,
+  free_questions_by_account_type: freeQuestionsIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */
