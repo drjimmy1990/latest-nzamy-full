@@ -260,6 +260,8 @@ test("l8 (٦٤): a library pass is judged on its own assistant — a drafter run
   const review = await refundOrderWith(lib.deps, "o", "admin", false);
   const v = (review.body as { eligibility: { state: string; enforced: boolean } }).eligibility;
   assert.deepEqual([v.state, v.enforced], ["eligible", true]);
+  const runs = lib.log.find((q) => q.table === "ai_runs");
+  assert.ok(runs?.filters.some(([k, c, val]) => k === "in" && c === "tool" && JSON.stringify(val) === '["library-assistant"]'), "filtered by tool in the query (the row limit never hides one)");
   const asked = setupUsed({ kind: "library" }, (t) => (t === "ai_runs" ? { data: [{ tool: "library-assistant", created_at: "2026-10-22T11:00:00Z" }] } : undefined));
   assert.equal((await refundOrderWith(asked.deps, "o", "admin", true, { enforceEligibility: true })).status, 409);
   const owed = setupUsed({ metadata: { founder: "not_verified", already_entitled: true } });

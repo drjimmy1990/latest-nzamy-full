@@ -445,9 +445,10 @@ test("P1 item 2: /services/individuals counts its own service cards", () => {
   assert.match(page, /serviceList\.length\.toLocaleString\(/);
 });
 
-test("P1 item 2: the CTA's refund line states the refund page's condition", () => {
+test("P1 item 2 + l8 (٦٤): the CTA's refund line states the refund page's conditions — no AI for subscriptions, 5 % for top-ups only", () => {
   const cta = code("components/pricing/PricingCTA.tsx");
-  assert.match(cta, /استرداد خلال ١٤ يوماً ما لم يُستهلك أكثر من ٥٪ من النقاط/);
+  assert.match(cta, /استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه/);
+  assert.doesNotMatch(cta, /ما لم يُستهلك أكثر من ٥٪ من النقاط/);
 });
 
 // ── Task 1.6 (owner ٢٠١–٢٠٣): an invite code opens the library, nothing else ──
