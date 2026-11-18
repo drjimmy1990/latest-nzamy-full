@@ -131,6 +131,13 @@ test("wiring: the gate covers every entry point the brief names", () => {
   assert.match(read("../../app/api/v1/payments/checkout/route.ts"), /libraryAccountAllowed: async \(userId\) => \(await readLibraryAccountAccess\(userId\)\)\.allowed/);
 });
 
+test("wiring: a bearer token is a signed-in caller, never a guest (createClient honours it)", () => {
+  const server = read("./accountAccessServer.ts");
+  assert.ok(server.includes(String.raw`const bearer = /^\s*bearer\s+\S/i.test(auth);`));
+  assert.match(server, /if \(!bearer && !hasSupabaseAuthCookie\(/);
+  assert.match(read("../supabase/server.ts"), /Authorization: authHeader/);
+});
+
 test("wiring: the client shows the lock before any library page, /laws/subscribe included", () => {
   const guard = read("../../components/library/LibraryGuard.tsx");
   const lock = guard.indexOf("if (lib.accountLock)");

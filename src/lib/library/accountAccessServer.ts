@@ -15,7 +15,7 @@
  *   viewerLibraryAccountLocked() — the same question for a status read: true
  *     only for a signed-in account that is locked.
  */
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { hasSupabaseAuthCookie } from "@/lib/library/readQuota";
@@ -102,9 +102,14 @@ export function libraryAccountLockedResponse(): NextResponse {
 /** The signed-in caller's id, or null (a guest, or a session that cannot be read). */
 async function sessionUserId(): Promise<string | null> {
   try {
-    // A guest carries no auth cookie: answered without a round-trip.
+    // A guest carries neither an auth cookie nor a bearer token: answered
+    // without a round-trip. A bearer token counts as signed in — createClient()
+    // honours `Authorization: Bearer` (the native-app path), so skipping it
+    // would let a locked account read the library with a curl and no cookie.
     const jar = await cookies();
-    if (!hasSupabaseAuthCookie(jar.getAll().map((c) => c.name))) return null;
+    const auth = (await headers()).get("authorization") ?? "";
+    const bearer = /^\s*bearer\s+\S/i.test(auth);
+    if (!bearer && !hasSupabaseAuthCookie(jar.getAll().map((c) => c.name))) return null;
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     return user?.id ?? null;
