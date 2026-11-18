@@ -266,6 +266,8 @@ function countOf(body: string, needle: string): number {
  */
 const GATES: Array<{ file: string; method: string; action: StaffAction | "per-field"; logs: number }> = [
   { file: "payments/orders/[id]/refund/route.ts", method: "POST", action: "payments.refund", logs: 0 },
+  // l7: issues a missing credit note (idempotent; the audit row only for a new one)
+  { file: "payments/orders/[id]/credit-note/route.ts", method: "POST", action: "payments.refund", logs: 1 },
   { file: "users/[id]/route.ts", method: "DELETE", action: "users.delete", logs: 1 },
   { file: "users/[id]/route.ts", method: "PATCH", action: "per-field", logs: 1 },
   { file: "teams/route.ts", method: "POST", action: "staff.manage", logs: 1 },
@@ -535,7 +537,10 @@ test("the community and verification routes keep their audit labels and metadata
 test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per action)", () => {
   // onboarding/account-type records a USER's own claim (actor_type "user");
   // logAdminAction writes actor_type "admin" only, so that writer stays.
-  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts"]);
+  // l7: refundCore writes the founder-refund override row ITSELF, built by
+  // buildAdminAuditRow, BEFORE any money moves, and refuses the refund when the
+  // write fails — logAdminAction never throws, so it cannot be the gate there.
+  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts"]);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {

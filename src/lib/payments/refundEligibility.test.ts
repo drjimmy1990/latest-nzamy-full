@@ -1,4 +1,6 @@
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { cleanOverrideReason, needsOverride, NO_EVIDENCE, REFUND_WINDOW_MS, refundEligibility, ruleFor, type RefundEvidence } from "./refundEligibility.ts";
 import { WITHDRAWAL_DAYS } from "./refundPolicy.ts";
@@ -64,4 +66,14 @@ test("the override reason is trimmed, at least 10 characters, capped at 500", ()
   assert.equal(cleanOverrideReason(42), null);
   assert.equal(cleanOverrideReason("  رُفض توثيق الرخصة   بعد المراجعة "), "رُفض توثيق الرخصة بعد المراجعة");
   assert.equal(cleanOverrideReason("ا".repeat(900))?.length, 500);
+});
+
+test("the admin refund route enforces the verdict and forwards the typed reason; the orders page shows the verdict above the button", () => {
+  const root = join(import.meta.dirname, "..", "..", "..");
+  const route = readFileSync(join(root, "src/app/api/v1/admin/payments/orders/[id]/refund/route.ts"), "utf8");
+  assert.match(route, /enforceEligibility: true,/);
+  assert.match(route, /overrideReason: \(body as \{ overrideReason\?: unknown \}\)\.overrideReason/);
+  const page = readFileSync(join(root, "src/app/dashboard/admin/subscriptions/orders/page.tsx"), "utf8");
+  assert.ok(page.indexOf("<VerdictBox") > -1 && page.indexOf("<VerdictBox") < page.indexOf("تأكيد الاسترداد"), "the verdict comes before the button");
+  assert.match(page, /needsReason\(review\) && overrideReason\.trim\(\)\.length < MIN_OVERRIDE_REASON_CHARS/);
 });

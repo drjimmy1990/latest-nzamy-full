@@ -230,10 +230,15 @@ test("l7: a failed usage read is «تعذّر التحقق» and needs the reaso
   assert.equal((review.body as { eligibility: { state: string } }).eligibility.state, "unverified");
   assert.equal((await refundOrderWith(deps, "o", "admin", true, { enforceEligibility: true })).status, 409);
 });
-test("l7: without enforceEligibility (the old 4-argument call) nothing is blocked", async () => {
+test("l7: the system path (l7-founder's automatic refund on a rejected licence: the old 4-argument call) is never blocked and still gets its credit note", async () => {
+  // an ineligible founder order, 40 days late: AI used and past the window
   const { deps, events } = setupUsed();
-  assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 200);
+  deps.now = () => new Date("2026-12-01T13:00:00Z");
+  const r = await refundOrderWith(deps, "o", "admin", true);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { refunded: true, creditNote: "CN-2026-000001" });
   assert.ok(!events.includes("admin_audit_events"));
+  assert.ok(events.indexOf("issue_payment_credit_note") > events.indexOf("finish_payment_refund"));
 });
 test("l7: a top-up past its window is shown ineligible but never blocked", async () => {
   const { deps, events } = setup();

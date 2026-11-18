@@ -122,6 +122,14 @@ export function PaymentsTab() {
                       عرض الإيصال
                     </Link>
                   ) : null}
+                  {order.credit_note_number ? (
+                    <Link
+                      href={`/dashboard/billing/credit-note/${encodeURIComponent(order.id)}`}
+                      className="text-xs font-bold text-[#0B3D2E] hover:underline dark:text-[#C8A762]"
+                    >
+                      الإشعار الدائن
+                    </Link>
+                  ) : null}
                 </div>
               </li>
             ))}

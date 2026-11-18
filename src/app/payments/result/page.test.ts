@@ -85,6 +85,7 @@ function stripComments(source: string): string {
 const readRel = (rel: string) => stripComments(readFileSync(join(import.meta.dirname, rel), "utf8"));
 const poller = readRel("../../../components/payments/ResultAutoRefresh.tsx");
 const receipt = readRel("../../dashboard/billing/receipt/[orderId]/page.tsx");
+const docs = readRel("../../../components/payments/TaxDocuments.tsx");
 
 test("the auto-refresh renders only for a view that offers the refresh link, with no key", () => {
   assert.match(code, /import ResultAutoRefresh from "@\/components\/payments\/ResultAutoRefresh"/);
@@ -120,12 +121,14 @@ test("ResultAutoRefresh: leaving a pending render re-reads the shared session (t
 test("the receipt page has the site Navbar and a button-styled way back, both hidden when printing", () => {
   assert.match(receipt, /import Navbar from "@\/components\/Navbar"/);
   assert.match(receipt, /<div className="print:hidden"><Navbar \/><\/div>/);
-  assert.match(receipt, /const BACK_LINK = "inline-flex[^"]*rounded-xl[^"]*print:hidden"/);
-  assert.match(receipt, /<Link href="\/dashboard\/billing" className=\{BACK_LINK\}>العودة إلى الفوترة<\/Link>/);
+  // l7: the document itself (invoice / credit note) lives in TaxDocuments.tsx, shared with the admin pages
+  assert.match(docs, /export const DOC_BACK_LINK = "inline-flex[^"]*rounded-xl[^"]*print:hidden"/);
+  assert.match(docs, /<Link href=\{backHref\} className=\{DOC_BACK_LINK\}>\{backLabel\}<\/Link>/);
+  assert.match(receipt, /<DocumentShell backHref="\/dashboard\/billing" backLabel="العودة إلى الفوترة">/);
   // every render path — the receipt and the unavailable state — has the Navbar
   assert.equal((receipt.match(/<ScreenNavbar \/>/g) ?? []).length, 2);
   // the main clears the fixed Navbar on screen; print resets it
-  assert.match(receipt, /<main[^>]*pt-32[^>]*print:p-0/);
+  assert.match(docs, /<main[^>]*pt-32[^>]*print:p-0/);
 });
 
 // ── F16: the founder welcome ─────────────────────────────────────────────────
