@@ -169,8 +169,9 @@ test("libraryToolRefusal: the plans link only where a Pro plan is on sale; the c
 
 test("the library gate itself is untouched: the run route still checks every library tool before the charge", () => {
   const route = src("app/api/v1/ai/runs/route.ts");
-  assert.ok(route.includes("(await libraryGate()) ?? (await libraryAiAccess(toolId))"));
-  assert.ok(route.includes('code: body.libraryClosed ? "library_closed" : "library_tier"'));
+  // l8 owner item 9.7: the per-account library lock applies to the library assistant only
+  assert.ok(route.includes("(await libraryGate({ accountLock: isLibraryAiTool(toolId) })) ?? (await libraryAiAccess(toolId))"));
+  assert.ok(route.includes('const code = typeof body.code === "string" ? body.code : body.libraryClosed ? "library_closed" : "library_tier";'));
   const access = src("app/api/ai/_libraryAiAccess.ts");
   assert.ok(access.includes("libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember, libraryGrant }, TIER_RANK)"));
 });

@@ -389,6 +389,7 @@ const SAFE_CALLEES = new Set([
   "resolveGovernmentRole", "isUnderHref",
   "setAdminView", // writes the admin VIEW to this tab's sessionStorage (useAdminView.ts) — UI state, R27's own sibling
   "withoutConsultantBlockedItems", // N01-29: the pure Art. 18 menu filter getSidebarByUserType itself applies (navigation.sidebars.ts) — returns a subset of the static config
+  "withoutLibraryItems", // l8 owner item 9: the pure library-lock menu filter (src/lib/library/accountAccess.ts) — returns a subset of the static config
 ]);
 /** Built-in methods that cannot send anything; the binding they produce stays tainted, so the later sink is still checked. */
 const PURE_METHODS = new Set([
