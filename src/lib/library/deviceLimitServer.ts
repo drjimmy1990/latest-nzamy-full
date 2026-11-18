@@ -23,16 +23,34 @@
  * while it is off, or for staff, nothing changes. A future phone app sends its
  * own device id as that cookie (deviceLimit.ts DEVICE_COOKIE_REQUIRED_CODE).
  *
- * MEMO. (user, device) allowed is remembered 60 s, so a precedents collection
- * read in 24 windows costs one database call. A revoke made on another server
+ * OWNER ٤٠ (18 Nov 2026, 20261127_60) — still only while the admin's switch
+ * device_limit_enabled is on. The check is public.library_device_gate:
+ *   - a never-verified device needs the e-mail code first (403
+ *     device_code_required; the code is sent and checked by
+ *     /api/v1/library/devices/code and /verify);
+ *   - a verified device opening with a session it did not open with before
+ *     ends every OTHER session of the account («لا يُفتحان معاً»);
+ *   - a never-verified device while the verified ones fill the limit (the
+ *     third device) suspends the account: GoTrue ban + the freeze of owner ٢٥
+ *     (reason device_limit) + an audit row, then 403 device_limit_suspended.
+ *   When this server cannot send a code (no e-mail provider or no pepper) a
+ *   new device with room is registered at once, as before — never a lock-out.
+ *   Before 20261127_60 runs, the old library_device_check answers instead.
+ *
+ * MEMO. (user, device, session) allowed is remembered 60 s, so a precedents
+ * collection read in 24 windows costs one database call. A revoke made on another server
  * process reaches an already-open reader within that minute; one made in this
  * process clears the user's entries at once (forgetLibraryDevices).
  */
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { emailConfigured } from "@/lib/email/sendEmail";
+import { logAdminAction } from "@/lib/auth/adminAudit";
+import { freezeEntitlementsWith, suspendAccountWith } from "@/lib/accountSuspension/suspensionServer";
 import {
   LIBRARY_DEVICE_COOKIE,
+  deviceCodePepper,
   cookielessGateDecision,
   deviceGateDecision,
   deviceLabelFromUserAgent,
@@ -80,7 +98,33 @@ function memoSet(key: string, ttlMs: number): void {
 
 const GLOBAL_DISABLED_KEY = "!disabled";
 const userKey = (userId: string) => `${userId}\u0000!exempt`;
-const deviceKey = (userId: string, hash: string) => `${userId}\u0000${hash}`;
+const deviceKey = (userId: string, hash: string, session: string | null = null) =>
+  `${userId}\u0000${hash}\u0000${session ?? ""}`;
+
+/** The gate function of 20261127_60 is missing: use library_device_check (20261108_20) until it runs. */
+let gateMissingUntil = 0;
+const isMissingFunction = (code: unknown) => code === "PGRST202" || code === "42883";
+
+/** True when this server can issue the e-mail code of a new device (owner ٤٠). */
+export function deviceCodesAvailable(): boolean {
+  return emailConfigured() && deviceCodePepper(process.env) !== null;
+}
+
+/**
+ * The auth session id of this request (the JWT's session_id claim), or null.
+ * null = the gate never ends another session for this read (it cannot tell
+ * which one is this device's).
+ */
+export async function currentSessionId(): Promise<string | null> {
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getClaims();
+    const sid = (data?.claims as { session_id?: unknown } | undefined)?.session_id;
+    return typeof sid === "string" && /^[0-9a-f-]{36}$/i.test(sid) ? sid : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Drops every memo entry of this user (after a revoke or an admin reset). */
 export function forgetLibraryDevices(userId: string): void {
@@ -138,34 +182,104 @@ export async function enforceLibraryDevice(userId: string | null, entitled: bool
       jar.set(LIBRARY_DEVICE_COOKIE, id, libraryDeviceCookieOptions(process.env.NODE_ENV === "production"));
     }
     const hash = hashDeviceId(id);
-    if (memoGet(deviceKey(userId, hash))) return null;
+    const session = await currentSessionId();
+    if (memoGet(deviceKey(userId, hash, session))) return null;
 
     const service = await createServiceClient();
-    const { data, error } = await service
-      .rpc("library_device_check", {
-        p_user: userId,
-        p_device_hash: hash,
-        p_label: deviceLabelFromUserAgent(hdrs.get("user-agent")),
-      })
-      .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
+    const label = deviceLabelFromUserAgent(hdrs.get("user-agent"));
+    let data: unknown = null;
+    let error: { code?: string } | null = null;
+    // Owner ٤٠: library_device_gate (20261127_60); the old check until it runs.
+    if (Date.now() >= gateMissingUntil) {
+      ({ data, error } = await service
+        .rpc("library_device_gate", {
+          p_user: userId,
+          p_device_hash: hash,
+          p_label: label,
+          p_session: session,
+          p_code_required: deviceCodesAvailable(),
+        })
+        .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS)));
+      if (error && isMissingFunction(error.code)) {
+        gateMissingUntil = Date.now() + MISSING_RETRY_MS;
+        error = null;
+        data = undefined;
+      }
+    }
+    if (data === undefined || Date.now() < gateMissingUntil) {
+      ({ data, error } = await service
+        .rpc("library_device_check", { p_user: userId, p_device_hash: hash, p_label: label })
+        .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS)));
+    }
     if (error) {
       if (!noteMissing(error.code)) console.error("[library-device] check failed:", error.code ?? "no-code");
       return null;
     }
     const row: DeviceCheckRow | null = parseDeviceCheckRow(data);
-    return finish(userId, hash, deviceGateDecision(row));
+    const decision = deviceGateDecision(row);
+    if (decision.action === "suspend") {
+      await suspendForThirdDevice(service, userId, row?.limit ?? 2);
+      return NextResponse.json(decision.body, {
+        status: decision.status,
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    }
+    return finish(userId, hash, decision, session);
   } catch (err) {
     console.error("[library-device] check threw:", err instanceof Error ? err.name : "error");
     return null;
   }
 }
 
+/**
+ * Owner ٤٠: «محاولة جهاز ثالث توقف الحساب حتى التواصل مع الدعم». The same
+ * suspension an admin applies (GoTrue ban + every session ended), with the
+ * freeze of owner ٢٥ (reason device_limit — the lift resets the devices), and
+ * one audit row so the admin console shows why. Never throws: a failure is
+ * logged, and the read is refused either way.
+ */
+async function suspendForThirdDevice(
+  service: Awaited<ReturnType<typeof createServiceClient>>,
+  userId: string,
+  limit: number,
+): Promise<void> {
+  try {
+    const nowIso = new Date().toISOString();
+    const ban = await suspendAccountWith(service, { userId, actorId: userId, nowIso });
+    const freeze = ban.ok
+      ? await freezeEntitlementsWith(service, { userId, actorId: null, reason: "device_limit" })
+      : null;
+    if (!ban.ok) console.error("[library-device] third device: the suspension failed:", ban.error);
+    forgetLibraryDevices(userId);
+    await logAdminAction({
+      actorId: userId,
+      action: ban.ok ? "user_suspended_device_limit" : "user_suspension_failed",
+      targetType: "profile",
+      targetId: userId,
+      before: {},
+      after: {
+        banned: ban.ok,
+        sessions: ban.ok ? (ban.sessions.state === "ended" ? ban.sessions.count : ban.sessions.state) : null,
+        freeze: freeze?.state ?? "not_attempted",
+      },
+      metadata: { reason: "device_limit", limit, system: true },
+    });
+  } catch (err) {
+    console.error("[library-device] third device: suspension threw:", err instanceof Error ? err.name : "error");
+  }
+}
+
 /** Memoise an allow as the decision says; a refusal becomes the 403, never remembered. */
-function finish(userId: string, hash: string | null, decision: DeviceGateDecision): NextResponse | null {
+function finish(
+  userId: string,
+  hash: string | null,
+  decision: DeviceGateDecision,
+  session: string | null = null,
+): NextResponse | null {
   if (decision.action === "allow") {
     if (decision.remember === "global") memoSet(GLOBAL_DISABLED_KEY, ALLOWED_TTL_MS);
     else if (decision.remember === "user") memoSet(userKey(userId), EXEMPT_TTL_MS);
-    else if (decision.remember === "device" && hash) memoSet(deviceKey(userId, hash), ALLOWED_TTL_MS);
+    else if (decision.remember === "device" && hash) memoSet(deviceKey(userId, hash, session), ALLOWED_TTL_MS);
     return null;
   }
   return NextResponse.json(decision.body, {
@@ -264,9 +378,11 @@ export async function readLibraryDevices(userId: string): Promise<DeviceRowsRead
   try {
     const service = await createServiceClient();
     const [rowsRes, settingsRes] = await Promise.all([
+      // "*": verified_at exists only after 20261127_60; a pending (never
+      // verified) device is not one of the account's devices yet (owner ٤٠).
       service
         .from("user_devices")
-        .select("id, label, first_seen, last_seen, device_hash")
+        .select("*")
         .eq("user_id", userId)
         .is("revoked_at", null)
         .order("last_seen", { ascending: false })
@@ -282,7 +398,15 @@ export async function readLibraryDevices(userId: string): Promise<DeviceRowsRead
     const s = (settingsRes.data ?? {}) as { device_limit_enabled?: unknown; device_limit?: unknown };
     return {
       ok: true,
-      rows: (rowsRes.data ?? []) as Record<string, unknown>[],
+      rows: ((rowsRes.data ?? []) as Record<string, unknown>[])
+        .filter((r) => !("verified_at" in r) || r.verified_at !== null)
+        .map((r) => ({
+          id: r.id,
+          label: r.label,
+          first_seen: r.first_seen,
+          last_seen: r.last_seen,
+          device_hash: r.device_hash,
+        })),
       settings: {
         enabled: s.device_limit_enabled === true,
         limit: typeof s.device_limit === "number" ? s.device_limit : 2,

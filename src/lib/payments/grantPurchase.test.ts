@@ -206,6 +206,52 @@ test("a library 23505 (the order's grant exists) is already granted → ok; the 
   assert.deepEqual(seen, [{ userId: USER, planRef: "lib-q2", days: 180, source: "purchase", orderId: ORDER }]);
 });
 
+// ── l7 decision 7: a library plan's library-assistant points ────────────────
+const walletLots = (log: FakeQuery[]) => log.filter((q) => q.table === "credit_wallet_points" && q.op === "rpc");
+
+test("l7: a library plan credits its points (setting default 120 for lib-q2) as a library_agent 'plan' lot ending with the grant", async () => {
+  const end = inDays(180);
+  const { client, log } = fakeDb(() => ({ data: "lot" }));
+  const grantLibrary: GrantLibraryFn = async () => ({ ok: true, endsAt: end });
+  const r = await grantPurchase({ admin: client, grantLibrary, ranks: RANKS }, order("lib-q2", "library", "once"), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+  const lot = walletLots(log)[0]?.payload as Record<string, unknown>;
+  assert.deepEqual(
+    [lot.p_user, lot.p_points, lot.p_source, lot.p_scope, lot.p_order, lot.p_expires_at],
+    [USER, 120, "plan", "library_agent", ORDER, end],
+  );
+  assert.equal(lots(log).length, 0, "never a general credit_points lot");
+});
+
+test("l7: the points come from platform_settings.library_plan_points (an admin's 400 for lib-annual)", async () => {
+  const { client, log } = fakeDb((q) =>
+    q.table === "platform_settings" ? { data: { value: { "lib-q1": 50, "lib-q2": 120, "lib-annual": 400 } } } : { data: "lot" });
+  const grantLibrary: GrantLibraryFn = async () => ({ ok: true, endsAt: inDays(365) });
+  await grantPurchase({ admin: client, grantLibrary, ranks: RANKS }, order("lib-annual", "library", "once"), { now: NOW });
+  assert.equal((walletLots(log)[0].payload as Record<string, unknown>).p_points, 400);
+});
+
+test("l7: a retry (grant 23505) reads the grant's end and credits; an existing lot (23505) is done", async () => {
+  const end = inDays(90);
+  const { client, log } = fakeDb((q) => {
+    if (q.table === "library_access_grants") return { data: { ends_at: end } };
+    if (q.table === "credit_wallet_points") return { error: { code: "23505", message: "points_lots_order_source_key" } };
+    return { data: null };
+  });
+  const grantLibrary: GrantLibraryFn = async () => ({ ok: false, error: "duplicate key", code: "23505" });
+  const r = await grantPurchase({ admin: client, grantLibrary, ranks: RANKS }, order("lib-q1", "library", "once"), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+  assert.equal((walletLots(log)[0].payload as Record<string, unknown>).p_expires_at, end);
+});
+
+test("l7: before 20261127_40 runs the credit is missing → not ok (the sweep retries), the access already granted", async () => {
+  const { client } = fakeDb((q) => (q.table === "credit_wallet_points" ? { error: { code: "PGRST202", message: "not found" } } : { data: null }));
+  const grantLibrary: GrantLibraryFn = async () => ({ ok: true, endsAt: inDays(90) });
+  const r = await grantPurchase({ admin: client, grantLibrary, ranks: RANKS }, order("lib-q1", "library", "once"), { now: NOW });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.missing, true);
+});
+
 test("a missing points function → ok:false, missing (the sweep retries later)", async () => {
   const { client } = fakeDb(() => ({ error: { code: "PGRST202", message: "function not found" } }));
   const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS }, order("topup-100", "topup", "once"), { now: NOW });
@@ -387,4 +433,12 @@ test("membership: a top-up, a library pass and a plan never call activateFounder
   await grantPurchase({ admin: client, grantLibrary: (async () => ({ ok: true, endsAt: NOW.toISOString() })) as GrantLibraryFn, ranks: RANKS, activateFounder: spy.activateFounder }, order("lib-q1", "library", "once"), { now: NOW });
   await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, order("ind-ai", "plan", "monthly"), { now: NOW });
   assert.equal(spy.calls.length, 0);
+});
+
+test("l7 (decision 1): 'pending_verification' — the seat waits for the licence check: ok, not a refund case", async () => {
+  const { client, log } = memberDb();
+  const spy = activateSpy("pending_verification");
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, MEMBER(), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false, founderPending: true });
+  assert.equal(lots(log).length, 0);
 });

@@ -26,6 +26,7 @@ import { carriesServiceEstimate, stampServiceEstimate } from "@/lib/pricing/serv
 import { fallbackPublicSummary, type SummarySource } from "@/lib/services/requestPublicSummary";
 import { modelPublicSummary, requestSummaryModelEnabled } from "@/lib/services/requestPublicSummaryModel";
 import { callN8n } from "@/lib/ai/n8nClient";
+import { staffMfaGate } from "@/lib/auth/staffMfaServer";
 
 async function resolveActiveEntityIds(supabase: SupabaseClient, userId: string) {
   const [firmResult, businessResult, ownedFirmResult, ownedBusinessResult] = await Promise.all([
@@ -265,7 +266,8 @@ export async function GET(request: NextRequest) {
         .select("user_type")
         .eq("id", user.id)
         .maybeSingle();
-      isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+      // Owner item 18 (l7): admin sight only on a session that passes the two-step rule.
+      isAdmin = (callerProfile?.user_type as string | undefined) === "admin" && (await staffMfaGate(supabase, user)).ok;
     }
     const mapped = rows.map((row) =>
       toWorkflowRequest({

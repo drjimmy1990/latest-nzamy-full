@@ -43,10 +43,16 @@ const FALLBACK = "تعذّر الاتصال بالخادم — حاول مرة �
 const LOCK_SUPPORT = "/contact";
 /** Point top-ups and plans are on /pricing (PaywallGate's CreditsBanner links there too). */
 const TOP_UP = { label: "شحن النقاط", href: "/pricing" } as const;
-/** draftingRequest.DRAFTER_HREF / CONTRACTS_HREF: the only links a drafting refusal may carry. */
+/**
+ * draftingRequest.DRAFTER_HREF / CONTRACTS_HREF / CLIENT_CONTRACT_DRAFTING_HREF /
+ * CONTRACT_SERVICES_HREF: the only links a drafting refusal may carry (owner ٢٦
+ * added drafting through a lawyer for an individual or a business).
+ */
 const DRAFTER_HREF = "/ai/draft";
 const CONTRACTS_HREF = "/ai/contracts";
-const REFUSAL_LINKS: ReadonlySet<string> = new Set([DRAFTER_HREF, CONTRACTS_HREF]);
+const CLIENT_CONTRACT_DRAFTING_HREF = "/dashboard/client/requests/new?type=general";
+const CONTRACT_SERVICES_HREF = "/services/contracts";
+const REFUSAL_LINKS: ReadonlySet<string> = new Set([DRAFTER_HREF, CONTRACTS_HREF, CLIENT_CONTRACT_DRAFTING_HREF, CONTRACT_SERVICES_HREF]);
 
 function newKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();

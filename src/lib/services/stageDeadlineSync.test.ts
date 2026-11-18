@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   resolveStagePatch, planStageDeadlineSync, readStageTrigger, inferLegacyTrigger,
   effectiveTriggerDate, recomputedMetadata, syncCancelledMetadata, isFinalOutcome, defaultStageTriggerEvent,
+  autoRuleCodeFor, readStageUrgent,
   type ExistingAutoDeadline,
 } from "./stageDeadlineSync.ts";
 
@@ -220,4 +221,60 @@ test("q347: a degree already closed with «لم يُحدَّد بعد» keeps it
 test("q347: a stored event is kept, the pronouncement date included", () => {
   assert.equal(defaultStageTriggerEvent({ triggerEvent: "judgment_date", closedOn: "2026-10-01", hasAutoRule: true }), "judgment_date");
   assert.equal(defaultStageTriggerEvent({ triggerEvent: "notified", closedOn: null, hasAutoRule: true }), "notified");
+});
+
+// ── Owner ٣٢ (decision 16): «مستعجلة» → 10 days, else 30 ─────────────────────
+
+test("٣٢: an urgent first-instance judgment follows appeal_urgent (10 days); otherwise appeal_general (30)", () => {
+  assert.equal(autoRuleCodeFor("first_instance", false), "appeal_general");
+  assert.equal(autoRuleCodeFor("first_instance", true), "appeal_urgent");
+  assert.equal(autoRuleCodeFor("appeal", false), "cassation");
+  assert.equal(autoRuleCodeFor("appeal", true), "cassation_urgent");
+  assert.equal(autoRuleCodeFor("cassation", true), undefined, "nothing follows a cassation judgment");
+  assert.equal(autoRuleCodeFor("execution", false), undefined);
+});
+
+test("٣٢: the tick is stored on the stage's metadata, kept when not sent, and moves the deadline", () => {
+  const ticked = resolveStagePatch({ outcome: null, closed_on: null, metadata: {} }, { outcome: "lost", closedOn: "2026-11-01", triggerEvent: "judgment_date", urgent: true });
+  assert.ok(ticked.ok);
+  if (!ticked.ok) return;
+  assert.deepEqual(ticked.patch.metadata, { deadline_trigger: { event: "judgment_date", date: null }, urgent: true });
+  assert.equal(ticked.final.urgent, true);
+  assert.equal(readStageUrgent(ticked.patch.metadata), true);
+
+  const stored = { outcome: "lost", closed_on: "2026-11-01", metadata: { deadline_trigger: { event: "judgment_date" }, urgent: true } };
+  const kept = resolveStagePatch(stored, { notes: "x" });
+  assert.ok(kept.ok);
+  if (!kept.ok) return;
+  assert.equal(kept.final.urgent, true, "a save that does not send the tick keeps it");
+  assert.equal(kept.patch.metadata, undefined);
+  assert.equal(kept.affectsDeadline, false);
+
+  const unticked = resolveStagePatch(stored, { urgent: false });
+  assert.ok(unticked.ok);
+  if (!unticked.ok) return;
+  assert.equal(unticked.final.urgent, false);
+  assert.equal(unticked.affectsDeadline, true, "unticking recomputes the open deadline on the 30-day rule");
+  assert.deepEqual(unticked.patch.metadata, { deadline_trigger: { event: "judgment_date", date: null } });
+
+  assert.equal(resolveStagePatch(stored, { urgent: "yes" as unknown as boolean }).ok, false);
+  assert.equal(readStageUrgent(null), false);
+  assert.equal(readStageUrgent({ urgent: "true" }), false);
+});
+
+test("٣٢: switching the rule recomputes the open auto deadline (rule ids differ)", () => {
+  const plan = planStageDeadlineSync({ degree: "first_instance", outcome: "lost", triggerDate: "2026-10-29", ruleId: "rule-appeal-urgent", existing: [auto({ rule_id: "rule-appeal-general" })] });
+  assert.equal(plan.kind, "recompute");
+});
+
+test("٣٢: the outcome form offers «مستعجلة» and sends it; the route reads the rule through autoRuleCodeFor", async () => {
+  const { readFileSync } = await import("node:fs");
+  const modal = readFileSync(new URL("../../app/dashboard/lawyer/_components/RecordStageOutcomeModal.tsx", import.meta.url), "utf8");
+  assert.match(modal, />مستعجلة</);
+  assert.match(modal, /autoRuleCodeFor\(dbDegree, urgent\)/);
+  assert.match(modal, /\{ urgent \}/);
+  const route = readFileSync(new URL("../../app/api/v1/lawyer/case-stages/[caseId]/route.ts", import.meta.url), "utf8");
+  assert.match(route, /const ruleCode = autoRuleCodeFor\(degree, urgent\)/);
+  assert.match(route, /rule_code: autoRuleCodeFor\(stage\.degree, urgent\)/);
+  assert.doesNotMatch(route, /DEGREE_TO_AUTO_RULE_CODE\[/);
 });

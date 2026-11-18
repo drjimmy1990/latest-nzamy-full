@@ -11,6 +11,7 @@ import { frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { clientIpFrom } from "@/lib/rateLimit";
 import { checkoutCaptchaPasses, checkoutCaptchaPolicy, parseCheckoutTurnstileToken } from "@/lib/payments/checkoutCaptcha";
 import { ATTRIBUTION_COOKIE, parseAttributionCookie } from "@/lib/attribution/utmAttribution";
+import { orderAnalyticsFromCookies } from "@/lib/analytics/analytics";
 
 /**
  * POST /api/v1/payments/checkout — starts one online payment (Moyasar
@@ -162,8 +163,12 @@ export async function POST(request: NextRequest) {
         couponCode: parsed.couponCode ?? null,
         founderConsent: parseFounderConsent(raw),
         attribution: parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value),
+        // l7-analytics: the GA client id, only when the buyer consented (analytics.ts)
+        analytics: orderAnalyticsFromCookies((name) => request.cookies.get(name)?.value, process.env.NEXT_PUBLIC_GA4_ID),
         origin: origin.origin,
         publishableKey: cfg.publishableKey,
+        // l7 decision 3: a test account's order is accepted in test mode only
+        gatewayMode: cfg.mode,
       },
     );
     return reply(result.body, result.status);

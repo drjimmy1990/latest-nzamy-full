@@ -28,10 +28,9 @@ test("a client card on two cases is one shared node with two edges", () => {
   assert.equal(card?.caseCount, 2);
   assert.deepEqual(g.edges.filter((e) => e.to === "client:c1").map((e) => e.from).sort(), ["case:a", "case:b"]);
   assert.equal(g.nodes.find((n) => n.id === "client:c2")?.caseCount, 0, "a card with no case is still on the map");
-  assert.equal(g.clashes.length, 0);
 });
 
-test("the same name as client on one case and opponent on another is a «تشابه اسم» hint", () => {
+test("owner ٣٥: the same name as client on one case and opponent on another is NOT flagged — no «تشابه أسماء»", () => {
   const g = buildOfficeGraph(
     [
       kase("a", { lawyerClientId: "c1", requester: { name: "مؤسسة النور" } }),
@@ -39,23 +38,19 @@ test("the same name as client on one case and opponent on another is a «تشا�
     ],
     [{ id: "c1", name: "مؤسسة النور", clientType: "company" }],
   );
-  assert.equal(g.clashes.length, 1);
-  assert.deepEqual(g.clashes[0].clientIn, ["a"]);
-  assert.deepEqual(g.clashes[0].opponentIn, ["b"]);
-  assert.deepEqual(g.clashes[0].clientCardIds, ["c1"]);
-  const sameName = g.edges.filter((e) => e.relation === "same_name");
-  assert.equal(sameName.length, 1);
-  assert.ok(g.nodes.filter((n) => n.nameClash).length >= 2);
+  assert.equal("clashes" in g, false);
+  assert.equal(g.edges.some((e) => (e.relation as string) === "same_name"), false);
+  assert.equal(g.nodes.some((n) => "nameClash" in n), false);
   assert.ok(!JSON.stringify(g).includes("1010"), "no register number leaves the server");
 });
 
-test("a card whose name is an opponent elsewhere clashes even with no case of its own", () => {
-  const g = buildOfficeGraph(
-    [kase("b", { metadata: { intake: { otherParty: "شركة الأفق" } } })],
-    [{ id: "c9", name: "شركة الافق", clientType: "company" }],
-  );
-  assert.equal(g.clashes.length, 1);
-  assert.deepEqual(g.clashes[0].clientCardIds, ["c9"]);
+test("owner ٣٥: the map and its screen offer no name-similarity list, edge or badge", async () => {
+  const { readFileSync } = await import("node:fs");
+  for (const f of ["./officeGraph.ts", "./officeGraphRefresh.ts", "./officeGraphLayout.ts", "../../components/dashboard/officeGraph/OfficeGraphView.tsx"]) {
+    const src = readFileSync(new URL(f, import.meta.url), "utf8");
+    assert.doesNotMatch(src, /nameClash|same_name|NameClash|clashes/, f);
+    assert.doesNotMatch(src.replace(/^\s*(\/\/|\*|\/\*\*).*$/gm, ""), /تشابه/, f);
+  }
 });
 
 test("nothing recorded, nothing drawn: a case without parties is a lone node, no opponent invented", () => {
@@ -132,7 +127,7 @@ test("an opponent is never folded into a client card of the same name", () => {
     [{ id: "c9", name: "شركة الأفق", clientType: "company" }],
   );
   assert.ok(g.nodes.some((n) => n.id === "opponent:شركه الافق"));
-  assert.equal(g.clashes.length, 1);
+  assert.ok(g.nodes.some((n) => n.id === "client:c9"));
 });
 
 // ── N07-50..52: the office's other records ────────────────────────────────

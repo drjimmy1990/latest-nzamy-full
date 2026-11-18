@@ -25,6 +25,17 @@ import { freezeStateFromUser, ACCOUNT_FROZEN_PATH, ACCOUNT_FROZEN_AR } from "@/l
 // getUser() returned (GoTrue's banned_until, app_metadata), no query.
 import { isSuspendedUser, ACCOUNT_SUSPENDED_PATH, ACCOUNT_SUSPENDED_AR, ACCOUNT_SUSPENDED_CODE } from "@/lib/auth/accountSuspension";
 import { isSupabaseMode, isDemoMode } from "@/lib/runtimeMode";
+// Owner item 18 (batch l7): two-step sign-in for staff. Pure, edge-safe
+// (atob/TextDecoder only); reads the user getUser() returned and the aal
+// claim of the token GoTrue just accepted, no query.
+import {
+  aalFromAccessToken,
+  adminMfaMode,
+  hasVerifiedFactor,
+  isAdminApiPath,
+  staffMfaDecision,
+  staffMfaUrlFor,
+} from "@/lib/auth/staffMfa";
 import {
   RateLimiter,
   resolveClientIp,
@@ -37,6 +48,7 @@ import {
   isLibraryReadRateLimitedRoute,
   isTrackingPageRoute,
   isCouponValidateRoute,
+  isMfaRecoverRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
   isDocumentPreviewRoute,
@@ -110,6 +122,9 @@ const LIBRARY_READ_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300
 // CF-Connecting-IP, which anyone reaching the origin directly can forge. It
 // is wide because X-Real-IP may be one Cloudflare edge shared by many buyers.
 const COUPON_VALIDATE_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 200 };
+// Owner item 18 (batch l7): staff backup codes, 5 tries per address per 15
+// minutes (the database locks the ACCOUNT after 5 refusals as well).
+const MFA_RECOVER_RATE_LIMIT: RateLimitPolicy = { windowMs: 15 * 60 * 1000, max: 5 };
 const TRACKING_PAGE_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 30 };
 // The same page per proxy-resolved IP (X-Real-IP first, as every other bucket).
 // CF-Connecting-IP is forgeable by anyone reaching the origin directly, so the
@@ -203,12 +218,13 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isToolStatusMatch = isToolStatusRoute(method, pathname);
     const isAiRunStartMatch = isAiRunStartRoute(method, pathname);
     const isLetterheadVerifyMatch = isLetterheadVerifyRoute(method, pathname);
+    const isMfaRecoverMatch = isMfaRecoverRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
-      !isToolStatusMatch && !isAiRunStartMatch && !isLetterheadVerifyMatch &&
+      !isToolStatusMatch && !isAiRunStartMatch && !isLetterheadVerifyMatch && !isMfaRecoverMatch &&
       !isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
@@ -221,6 +237,11 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
 
     if (isGeneralMatch) {
       const decision = rateLimiter.check("general", ip, GENERAL_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isMfaRecoverMatch) {
+      const decision = rateLimiter.check("mfa-recover", ip, MFA_RECOVER_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 
@@ -708,6 +729,22 @@ async function proxyRoutes(req: NextRequest) {
     if (isSuspendedUser(user)) {
       return NextResponse.json({ error: ACCOUNT_SUSPENDED_AR, code: ACCOUNT_SUSPENDED_CODE }, { status: 403 });
     }
+    // Owner item 18 (batch l7): the admin API needs the two-step rule
+    // (src/lib/auth/staffMfa.ts). No profiles read: a non-admin is refused by
+    // every route here anyway, so the rule is applied to whoever calls. The
+    // aal claim is read from the token getUser() just had GoTrue accept.
+    if (isAdminApiPath(pathname)) {
+      const accessToken =
+        bearerToken ?? (await supabase.auth.getSession()).data.session?.access_token ?? null;
+      const mfa = staffMfaDecision({
+        hasVerifiedFactor: hasVerifiedFactor(user),
+        aal: aalFromAccessToken(accessToken),
+        mode: adminMfaMode(process.env),
+      });
+      if (!mfa.ok) {
+        return NextResponse.json({ error: mfa.error, code: mfa.code }, { status: 403 });
+      }
+    }
     return apiResponse;
   }
 
@@ -1054,6 +1091,27 @@ async function proxyRoutes(req: NextRequest) {
     // supabase/migrations/20260716_security_hardening.sql:123-156), so this is
     // not a claim a user can make about themselves.
     const isAdmin = knownType === "admin";
+
+    // ─── Owner item 18 (batch l7): two-step sign-in for staff ──────────────
+    // Every PROTECTED page of an admin account, not only /dashboard/admin:
+    // `isAdmin` opens every dashboard below. An enrolled admin on an aal1
+    // session is sent to the code challenge; with ADMIN_MFA_ENFORCE=required
+    // an unenrolled one is sent to enrol. /auth/mfa is not PROTECTED, so the
+    // redirect cannot loop. The refreshed sb-* cookies ride on the redirect.
+    if (isAdmin) {
+      const accessToken = (await supabase.auth.getSession()).data.session?.access_token ?? null;
+      const mfa = staffMfaDecision({
+        hasVerifiedFactor: hasVerifiedFactor(user),
+        aal: aalFromAccessToken(accessToken),
+        mode: adminMfaMode(process.env),
+      });
+      if (!mfa.ok) {
+        const mfaUrl = new URL(staffMfaUrlFor(`${pathname}${req.nextUrl.search}`), req.url);
+        const mfaRedirect = NextResponse.redirect(mfaUrl);
+        supabaseResponse.cookies.getAll().forEach((cookie) => mfaRedirect.cookies.set(cookie));
+        return mfaRedirect;
+      }
+    }
 
     const typeRefused =
       !!rbacRule &&

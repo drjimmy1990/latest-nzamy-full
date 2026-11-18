@@ -28,12 +28,13 @@ function db(opts: {
   userType?: string | null;
   staff?: boolean;
   testAccount?: boolean;
+  demo?: boolean;
   over?: FakeHandler;
 }) {
   return fakeDb((q) => {
     const r = opts.over?.(q);
     if (r) return r;
-    if (q.table === "profiles") return { data: opts.userType ? { user_type: opts.userType } : null };
+    if (q.table === "profiles") return { data: opts.userType ? { user_type: opts.userType, is_demo: opts.demo === true } : null };
     if (q.table === "platform_staff") return { data: opts.staff ? { user_id: USER } : null };
     if (q.table === "test_accounts") return { data: opts.testAccount ? { user_id: USER } : null };
     return { data: null };
@@ -244,4 +245,13 @@ test("checkout in test mode: test_accounts missing → refused (only staff pass)
   } finally {
     console.warn = original;
   }
+});
+
+test("readTestModeAccess (l7 decision 3): a demo account (profiles.is_demo) is a test account — test mode open, staff not implied", async () => {
+  assert.deepEqual(await readTestModeAccess(db({ userType: "lawyer", demo: true }).client, USER), {
+    isStaff: false,
+    isTestAccount: true,
+  });
+  assert.equal(await checkoutModeAllowed(db({ userType: "individual", demo: true }).client, "test", USER), true);
+  assert.equal(await checkoutModeAllowed(db({ userType: "individual" }).client, "test", USER), false);
 });

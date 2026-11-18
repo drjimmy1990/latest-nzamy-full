@@ -29,6 +29,7 @@ import { fullLibraryAccess } from "@/lib/libraryAccessDecision";
 import { hasActiveLibraryGrant } from "@/lib/libraryAccessServer";
 import type { StaffAction, StaffRole } from "@/lib/auth/staffRoles";
 import { isMissingStaffTable, staffDecision } from "@/lib/auth/staffDecision";
+import { currentAccessToken, recordStaffLogin, staffMfaGate } from "@/lib/auth/staffMfaServer";
 
 export type { PaymentGatewayState, PaymentGatewayStatus } from "@/lib/paymentGatewayPolicy";
 
@@ -69,6 +70,8 @@ export interface AdminCheckResult {
   userId: string | null;
   error?: string;
   status?: number;
+  /** A machine code with some refusals (owner item 18: mfa_required, mfa_enrollment_required). */
+  code?: string;
 }
 
 // ─── Tier ranking (mirrors client-side useSubscription) ────────────────────────
@@ -151,6 +154,18 @@ export async function requireAdmin(): Promise<AdminCheckResult> {
     return { isAdmin: false, userId: user.id, error: "غير مصرح — صلاحيات المسؤول مطلوبة", status: 403 };
   }
 
+  // Owner item 18 (batch l7): an enrolled admin needs an aal2 session, and
+  // with ADMIN_MFA_ENFORCE=required an unenrolled one is refused until he
+  // enrols (src/lib/auth/staffMfa.ts). requireStaff inherits this.
+  const accessToken = await currentAccessToken(supabase);
+  const mfa = await staffMfaGate(supabase, user, accessToken);
+  if (!mfa.ok) {
+    return { isAdmin: false, userId: user.id, error: mfa.error, status: 403, code: mfa.code };
+  }
+  // The new-login alert's backstop (a sign-in that never called
+  // /api/v1/auth/session, e.g. Google): once per session per process.
+  void recordStaffLogin({ user, accessToken, trigger: "admin_api" });
+
   return { isAdmin: true, userId: user.id };
 }
 
@@ -183,7 +198,10 @@ export async function requireStaff(action: StaffAction): Promise<StaffCheckResul
     // requireAdmin's 503 / 401 / 403, unchanged.
     return {
       ok: false,
-      response: NextResponse.json({ error: adminCheck.error }, { status: adminCheck.status ?? 403 }),
+      response: NextResponse.json(
+        adminCheck.code ? { error: adminCheck.error, code: adminCheck.code } : { error: adminCheck.error },
+        { status: adminCheck.status ?? 403 },
+      ),
     };
   }
 

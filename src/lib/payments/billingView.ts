@@ -1,6 +1,7 @@
 import { formatHalalas, orderLabelAr, orderLabelWithPointsAr, PAYABLE_ITEMS, type PayableItem } from "./catalog.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { isBillingCompanyComplete } from "./moyasarConfig.ts";
+import { zatcaQrPayload } from "./zatcaQr.ts";
 
 export interface BillingOrder {
   id: string;
@@ -24,7 +25,28 @@ export interface BillingOrder {
    * there is no lot or the read failed — the label then comes from the book.
    */
   credited_points?: number | null;
+  /** payment_orders.merchant: only a 'platform' order is the platform's tax invoice (l7). */
+  merchant?: string | null;
+  /** l7: the number of this order's credit note (payment_credit_notes), when one was issued. */
+  credit_note_number?: string | null;
 }
+/** One payment_credit_notes row (20261127_30), as the user's RLS client or the service client reads it. */
+export interface BillingCreditNote {
+  number: string;
+  order_id: string;
+  invoice_number: string;
+  invoice_issued_at: string;
+  item_id: string;
+  billing: string | null;
+  method: string;
+  net_halalas: number;
+  vat_halalas: number;
+  total_halalas: number;
+  currency: string;
+  live: boolean;
+  issued_at: string;
+}
+export const CREDIT_NOTE_COLUMNS = "number,order_id,invoice_number,invoice_issued_at,item_id,billing,method,net_halalas,vat_halalas,total_halalas,currency,live,issued_at";
 export interface BillingCard {
   id: string;
   merchant: string;
@@ -40,6 +62,8 @@ export interface BillingLot {
   points_total: number;
   expires_at: string;
   source: string;
+  /** 20261127_40: 'library_agent' = spent only by the library assistant; absent before it runs. */
+  wallet_scope?: string | null;
 }
 export interface BillingData {
   orders: BillingOrder[];
@@ -78,18 +102,51 @@ export function billingDateAr(value: string | null | undefined): string {
   if (!value || !Number.isFinite(Date.parse(value))) return "غير متاح";
   return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", { dateStyle: "medium", timeZone: "Asia/Riyadh" }).format(new Date(value));
 }
+/** «١٩ نوفمبر ٢٠٢٦، ٩:٠٠ ص» — the issue time a tax invoice must carry (Riyadh). */
+export function billingDateTimeAr(value: string | null | undefined): string {
+  if (!value || !Number.isFinite(Date.parse(value))) return "غير متاح";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Riyadh" }).format(new Date(value));
+}
 /** A receipt exists only for money actually taken: paid, or paid then refunded. A voided payment never settled. */
 const RECEIPT_STATUSES: readonly string[] = ["paid", "refunded"];
 export function hasReceipt(order: Pick<BillingOrder, "status" | "receipt_number">): boolean {
   return !!order.receipt_number && RECEIPT_STATUSES.includes(order.status);
 }
-/** Receipts use the paid order's amounts; current catalog prices never replace them. */
+export const TAX_INVOICE_TITLE_AR = "فاتورة ضريبية مبسطة";
+export const RECEIPT_TITLE_AR = "إيصال دفع";
+/** The honest line under a document that is NOT (yet) a tax invoice, by cause. */
+export const NOT_TAX_INVOICE_AR = {
+  company: "لا تصدر الفاتورة الضريبية المبسطة حتى تكتمل بيانات المنشأة (الاسم والرقم الضريبي)؛ هذا إيصال بالمبلغ المدفوع.",
+  test: "عملية تجريبية: لا تصدر لها فاتورة ضريبية.",
+  office: "هذا إيصال بالمبلغ المدفوع؛ تصدر الفاتورة الضريبية من الجهة المستفيدة.",
+} as const;
+export const TAX_INVOICE_NOTE_AR = "فاتورة ضريبية مبسطة صادرة آلياً عند الدفع، ورقمها رقم العملية.";
+
+/**
+ * The paid order's document (batch l7): a simplified tax invoice with its
+ * ZATCA QR when the order is a LIVE PLATFORM payment and billing_company is
+ * complete (name, CR, VAT no., address); otherwise the payment receipt with
+ * the reason it is not a tax invoice. Amounts are the order's own; current
+ * catalog prices never replace them. Issue time = paid_at.
+ */
 export function receiptView(order: BillingOrder, company: unknown) {
   if (!hasReceipt(order) || !order.paid_at) return null;
   const amounts = [order.net_halalas, order.vat_halalas, order.total_halalas, order.refunded_halalas];
   if (order.currency !== "SAR" || !amounts.every(v => Number.isSafeInteger(v) && v >= 0) || order.total_halalas <= 0 || order.total_halalas !== order.net_halalas + order.vat_halalas || order.refunded_halalas > order.total_halalas) return null;
+  const seller = isBillingCompanyComplete(company) ? company as BillingCompany : null;
+  const cause: keyof typeof NOT_TAX_INVOICE_AR | null = order.live === false ? "test" : order.merchant !== "platform" || order.live !== true ? "office" : !seller ? "company" : null;
+  let qrPayload: string | null = null;
+  if (!cause && seller) {
+    try { qrPayload = zatcaQrPayload({ sellerName: seller.legal_name_ar, vatNumber: seller.vat_number, timestamp: order.paid_at, totalHalalas: order.total_halalas, vatHalalas: order.vat_halalas }); }
+    catch { qrPayload = null; }
+  }
+  const isTaxInvoice = !!qrPayload;
   return {
-    title: "إيصال دفع",
+    title: isTaxInvoice ? TAX_INVOICE_TITLE_AR : RECEIPT_TITLE_AR,
+    isTaxInvoice,
+    qrPayload,
+    issuedAt: billingDateTimeAr(order.paid_at),
+    creditNoteNumber: order.credit_note_number ?? null,
     testNotice: order.live === false ? "إيصال تجريبي — لم تُخصم أموال حقيقية" : null,
     number: order.receipt_number,
     date: billingDateAr(order.paid_at),
@@ -104,7 +161,37 @@ export function receiptView(order: BillingOrder, company: unknown) {
     lastFour: typeof order.last_four === "string" && /^\d{4}$/.test(order.last_four) ? arabicDigits(order.last_four) : null,
     company: isBillingCompanyComplete(company) ? company as BillingCompany : null,
     companyNotice: "بيانات المنشأة غير مكتملة",
-    taxInvoiceNotice: "تصدر الفاتورة الضريبية الرسمية بشكل منفصل",
+    taxInvoiceNotice: isTaxInvoice ? TAX_INVOICE_NOTE_AR : NOT_TAX_INVOICE_AR[cause ?? "company"],
+  };
+}
+
+const CREDIT_METHOD_AR: Record<string, string> = { refund: "استرداد كامل إلى وسيلة الدفع نفسها", void: "إلغاء العملية لدى مزوّد الدفع قبل تسويتها" };
+/**
+ * The credit note of a refunded / voided order (batch l7, decision 10): it
+ * names the original invoice, and reverses the full amount incl. VAT with no
+ * fee. Null for a malformed row (the page then says it is unavailable).
+ */
+export function creditNoteView(note: BillingCreditNote | null, company: unknown) {
+  if (!note || typeof note.number !== "string" || !note.number) return null;
+  const amounts = [note.net_halalas, note.vat_halalas, note.total_halalas];
+  if (note.currency !== "SAR" || !amounts.every(v => Number.isSafeInteger(v) && v >= 0) || note.total_halalas <= 0 || note.total_halalas !== note.net_halalas + note.vat_halalas) return null;
+  return {
+    title: "إشعار دائن",
+    number: note.number,
+    issuedAt: billingDateTimeAr(note.issued_at),
+    testNotice: note.live === false ? "إشعار تجريبي — لم تُخصم أموال حقيقية ولم تُرد" : null,
+    invoiceNumber: note.invoice_number,
+    invoiceDate: billingDateTimeAr(note.invoice_issued_at),
+    item: billingItemAr(note.item_id),
+    billing: orderBillingAr(note.billing),
+    reason: CREDIT_METHOD_AR[note.method] ?? "استرداد",
+    net: formatHalalas(note.net_halalas),
+    vatLabel: "ضريبة القيمة المضافة ١٥٪ المستردة",
+    vat: formatHalalas(note.vat_halalas),
+    total: formatHalalas(note.total_halalas),
+    company: isBillingCompanyComplete(company) ? company as BillingCompany : null,
+    companyNotice: "بيانات المنشأة غير مكتملة",
+    feeNote: "يُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة دون خصم أي رسوم، وتحدد جهة إصدار البطاقة مدة ظهوره في حسابك.",
   };
 }
 
@@ -138,15 +225,21 @@ export function parseBillingResponse(body: unknown): BillingData | null {
   if (!Array.isArray(lots) || !lots.every(isLotRow)) return null;
   return body as unknown as BillingData;
 }
-/** The balance and the nearest expiry among the lots that still hold points (null when none). */
-export function pointsSummary(data: Pick<BillingData, "pointsBalance" | "lots">): { balance: number; nearestExpiry: string | null } {
+/**
+ * The balance, the nearest expiry among the lots that still hold points (null
+ * when none), and (l7) how much of the balance only the library assistant can
+ * spend (lots with wallet_scope 'library_agent').
+ */
+export function pointsSummary(data: Pick<BillingData, "pointsBalance" | "lots">): { balance: number; nearestExpiry: string | null; libraryOnly: number } {
   let nearest: string | null = null;
   let nearestAt = Number.POSITIVE_INFINITY;
+  let libraryOnly = 0;
   for (const lot of data.lots) {
     const at = Date.parse(lot.expires_at);
     if (lot.points_left > 0 && Number.isFinite(at) && at < nearestAt) { nearestAt = at; nearest = lot.expires_at; }
+    if (lot.points_left > 0 && lot.wallet_scope === "library_agent") libraryOnly += lot.points_left;
   }
-  return { balance: data.pointsBalance, nearestExpiry: nearest };
+  return { balance: data.pointsBalance, nearestExpiry: nearest, libraryOnly };
 }
 const BRANDS_AR: Record<string, string> = { mada: "مدى", visa: "فيزا", master: "ماستركارد", mastercard: "ماستركارد", amex: "أمريكان إكسبريس" };
 /** The card network in Arabic, or null for one we do not know. */

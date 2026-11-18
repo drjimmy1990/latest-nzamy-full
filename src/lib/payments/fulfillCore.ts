@@ -62,6 +62,12 @@
  *     the sweep's founder_release_expired frees an abandoned one
  *     (releaseExpiredFounderSeats below). Best-effort: a release that fails
  *     changes no answer;
+ *   - a lawyer whose licence is still being checked (l7, decision 1,
+ *     20261127_10): founder_activate answers 'pending_verification' — the
+ *     seat is held, counted and never expires; the order is stamped (no
+ *     refund review) and the payer told «تُفعَّل الباقة بعد توثيق رخصتك…».
+ *     outcome 'granted' / 'already_done' with reason FOUNDER_PENDING_REASON;
+ *     founderVerification.ts activates or refunds it on the admin decision;
  *   - a refund case later activated (a resume after a failed stamp, ruling
  *     R18) clears metadata.already_entitled before the stamp, so neither the
  *     payer nor the admin list keeps showing a refund review.
@@ -79,6 +85,7 @@ import { resolveItem } from "./catalog.ts";
 import { grantPurchase, type FounderRefundReason, type GrantPurchaseDeps } from "./grantPurchase.ts";
 import { recordCouponUsage } from "./couponServer.ts";
 import {
+  FOUNDER_PENDING_REASON,
   fulfilmentNoticeAr,
   fulfillDecision,
   isMissingPaymentsObject,
@@ -132,6 +139,21 @@ export interface FulfilDeps extends GrantPurchaseDeps {
   releaseFounderSeat?: (orderId: string) => Promise<void>;
   /** P3: the in-site bell of every admin (library_monitor_notify_admins, 20261031_10). Best-effort. */
   notifyAdmins?: (input: { title: string; body: string; href: string }) => Promise<void>;
+  /**
+   * l7-analytics: the GA4 purchase event (src/lib/analytics/analytics.ts,
+   * sendPurchaseEvent). Called once, after the fulfilled_at stamp, for a LIVE
+   * order that granted something; it sends only when the buyer consented at
+   * checkout (metadata.analytics). Best-effort: never changes the outcome.
+   */
+  reportPurchase?: (input: {
+    orderId: string;
+    itemId: string;
+    itemName: string;
+    kind: string;
+    totalHalalas: number;
+    currency: string;
+    metadata: Record<string, unknown> | null;
+  }) => Promise<unknown>;
 }
 
 interface OrderRow {
@@ -435,13 +457,32 @@ async function finish(
     labelAr: item.labelAr,
     receiptNumber,
     alreadyEntitled: granted.alreadyEntitled,
+    founderPending: granted.founderPending === true,
   });
   await deps.notify({ userId: order.user_id, title: notice.title, body: notice.body, href: notice.href });
+  // The one analytics call on the payment path: after the stamp (so once,
+  // whichever of the callback, the webhook or the sweep got here first).
+  if (deps.reportPurchase && order.live === true && !granted.alreadyEntitled) {
+    try {
+      await deps.reportPurchase({
+        orderId: order.id,
+        itemId: order.item_id,
+        itemName: item.labelAr,
+        kind: order.kind,
+        totalHalalas: order.total_halalas,
+        currency: order.currency,
+        metadata: order.metadata,
+      });
+    } catch {
+      // analytics never touches a sale
+    }
+  }
   if (granted.refundReason) await alertAdminsFounderRefund(deps, order, granted.refundReason, receiptNumber);
 
-  return granted.alreadyEntitled
-    ? { outcome: "already_done", reason: "already_entitled", receiptNumber }
-    : { outcome: "granted", receiptNumber };
+  if (granted.alreadyEntitled) return { outcome: "already_done", reason: "already_entitled", receiptNumber };
+  // l7 (decision 1): fulfilled, but the founder seat waits for the licence check
+  if (granted.founderPending) return { outcome: "granted", reason: FOUNDER_PENDING_REASON, receiptNumber };
+  return { outcome: "granted", receiptNumber };
 }
 
 /** The sweep's resume: the claim already verified the payment; fetch it only for the card. */
@@ -490,7 +531,9 @@ async function run(deps: FulfilDeps, input: FulfillOrderInput): Promise<FulfillR
         ? "already_entitled"
         : order.status === "refunded"
           ? "order_refunded"
-          : undefined;
+          : order.kind === "membership" && order.metadata?.founder === "pending_verification"
+            ? FOUNDER_PENDING_REASON
+            : undefined;
     return { outcome: "already_done", ...(reason ? { reason } : {}), receiptNumber: order.receipt_number };
   }
 

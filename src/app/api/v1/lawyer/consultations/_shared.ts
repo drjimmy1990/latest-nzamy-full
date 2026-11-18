@@ -20,11 +20,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { LawyerConsultation } from "@/lib/services/lawyerConsultationsService";
 import type { ConsultationMode, ConsultationOutcome, ConsultationStatus } from "@/lib/services/consultationVocabulary";
+import { isTestRow } from "@/lib/testAccounts/testRow";
 
 export const CONSULTATION_SELECT =
   "id, request_id, requester_user_id, lawyer_user_id, firm_id, lawyer_client_id, mode, specialty, " +
   "scheduled_at, duration_minutes, ended_at, status, outcome, opinion_text, opinion_delivered_at, " +
-  "opinion_attachment_path, converted_case_request_id, fee_sar, fee_paid, cancelled_reason, created_at, updated_at";
+  "opinion_attachment_path, converted_case_request_id, fee_sar, fee_paid, cancelled_reason, created_at, updated_at, " +
+  // l7 decision 3: only the «تجريبي» tag of metadata, never the rest (20261127_80; null before it)
+  "test_account:metadata->test_account";
 
 export interface ConsultationRow {
   id: string;
@@ -49,6 +52,8 @@ export interface ConsultationRow {
   cancelled_reason: string | null;
   created_at: string;
   updated_at: string;
+  /** metadata->test_account (l7 decision 3); absent / null on an untagged row. */
+  test_account?: unknown;
 }
 
 const num = (v: number | string | null | undefined): number | null => {
@@ -98,6 +103,7 @@ export function toConsultationDto(row: ConsultationRow, extras: ConsultationExtr
     notesCount: extras.notesCount ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    ...(isTestRow(row) ? { isTest: true } : {}),
   };
 }
 

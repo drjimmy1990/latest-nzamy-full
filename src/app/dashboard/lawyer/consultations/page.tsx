@@ -32,6 +32,7 @@ import { formatGregorianAr } from "../_components/DeadlineCard";
 import ConsultationActionModal, { type ConsultationAction } from "../_components/consultations/ConsultationActionModal";
 import { saudiCalendarDate } from "@/lib/services/enactmentCountdown";
 import DualDatePicker from "@/components/ui/DualDatePicker";
+import TestAccountBadge from "@/components/ui/TestAccountBadge";
 import { bookingDateError } from "./_bookingDate";
 
 /**
@@ -598,6 +599,7 @@ function ConsultCard({
             <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${isDark ? STATUS_CHIP_CLS[c.status].dark : STATUS_CHIP_CLS[c.status].light}`}>
               {CONSULTATION_STATUS_AR[c.status]}
             </span>
+            {c.isTest && <TestAccountBadge />}
             {c.opinionDeliveredAt && (
               <span className={`flex-shrink-0 flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? "bg-emerald-500/10 text-emerald-400" : "bg-emerald-50 text-emerald-700"}`}>
                 <FileText size={10} /> رأي مُسلَّم

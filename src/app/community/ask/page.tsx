@@ -11,6 +11,7 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { createCommunityPost } from "@/lib/services/communityService";
+import { postedNoticeAr, reviewStateOf } from "@/lib/community/review";
 import Link from "next/link";
 import { isDemoMode } from "@/lib/runtimeMode";
 import { useRouter } from "next/navigation";
@@ -40,6 +41,8 @@ export default function AskQuestionPage() {
   const [isAnon, setIsAnon] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [postedId, setPostedId] = useState<string | null>(null);
+  // Owner ٤٢: the server stored the question pending_review (not public yet).
+  const [pendingReview, setPendingReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // /community/lawyers links here with ?tab=lawyers. Read once on mount from
@@ -81,6 +84,7 @@ export default function AskQuestionPage() {
       };
       const question = await createCommunityPost(input);
       setPostedId(question?.id != null ? String(question.id) : null);
+      setPendingReview(reviewStateOf((question as unknown as { status?: unknown } | null)?.status) === "pending");
       setSubmitted(true);
     } catch (err) {
       setSubmitError(err instanceof Error && err.message ? err.message : "تعذّر نشر السؤال — لم يُحفظ.");
@@ -105,12 +109,18 @@ export default function AskQuestionPage() {
               <CheckCircle size={36} color="#22c55e" weight="fill" />
             </div>
             <h2 className={`text-xl font-bold mb-2 ${isDark ? "text-white" : "text-gray-900"}`}>
-              {isRTL ? "تم نشر سؤالك" : "Your question was posted"}
+              {pendingReview
+                ? isRTL ? "استلمنا سؤالك — بانتظار المراجعة" : "Received — waiting for review"
+                : isRTL ? "تم نشر سؤالك" : "Your question was posted"}
             </h2>
             {/* No «ستصلك إشعار» here: nothing sends one when an answer is
-                added (the answers route records no notification). */}
+                added (the answers route records no notification). Owner ٤٢:
+                while review before publishing is on, the question is not
+                public yet, and the page says so. */}
             <p className={`text-sm mb-6 ${muted}`}>
-              {isRTL ? "تظهر الإجابات في صفحة السؤال." : "Answers appear on the question's page."}
+              {pendingReview
+                ? postedNoticeAr("post", true)
+                : isRTL ? "تظهر الإجابات في صفحة السؤال." : "Answers appear on the question's page."}
             </p>
             <div className="flex flex-col gap-3">
               {isGuest && (

@@ -22,6 +22,7 @@
 
 import type { createServiceClient } from "@/lib/supabase/server";
 import { recordNotification } from "@/lib/notify";
+import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
 import { dispatchVerificationToN8n } from "@/lib/n8n/dispatch";
 
 type Svc = Awaited<ReturnType<typeof createServiceClient>>;
@@ -54,5 +55,8 @@ export async function approveLawyerInstantly(svc: Svc, userId: string): Promise<
     type: "lawyer",
     status: "verified",
   });
+  // l7 (decision 1): a founder seat paid while pending is activated now, as
+  // the admin approval does (founderVerification.ts). Never fails the approval.
+  await settleFounderSeatAfterDecision(svc, userId, userId, "approve");
   return "approved";
 }

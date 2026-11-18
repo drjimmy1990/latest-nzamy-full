@@ -49,7 +49,7 @@ test("live: a consultant is locked out, and the consultant note never reaches th
   const cta = lawyerCta("consultant");
   assert.equal(cta.note, FOUNDER_CONSULTANT_NOTE, "founderCta still carries it (pricing card)");
   const b = founderJoinButton({ ...base, practiceKind: "consultant", cta, phase: "live" });
-  assert.deepEqual(b, { kind: "locked", reason: "advocate_only", label: "هذه الباقة للمحامي المرخّص للترافع فقط" });
+  assert.deepEqual(b, { kind: "locked", reason: "advocate_only", label: "هذه الباقة للمحامي المرخص فقط" });
 });
 
 test("live: a guest gets the sign-in CTA (note stripped)", () => {
@@ -65,4 +65,19 @@ test("live: a guest gets the sign-in CTA (note stripped)", () => {
   const b = founderJoinButton({ ...base, userType: null, practiceKind: null, cta, phase: "live" });
   assert.equal(b.kind === "cta" && b.cta.kind, "guest");
   assert.equal(b.kind === "cta" && b.cta.note, null);
+});
+
+test("live (l7, decision 1): a pending lawyer may buy, and the owner's sentence reaches the page", () => {
+  const cta = founderCta({
+    sessionLoading: false,
+    signedIn: true,
+    userType: "lawyer",
+    practiceKind: "advocate",
+    verification: "pending",
+    member: false,
+    gateway: { disabled: false, provider: "moyasar" },
+  });
+  const b = founderJoinButton({ ...base, cta, phase: "live" });
+  assert.equal(b.kind === "cta" && b.cta.kind, "checkout");
+  assert.equal(b.kind === "cta" && b.cta.note, "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.");
 });

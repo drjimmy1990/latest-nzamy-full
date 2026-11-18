@@ -9,12 +9,14 @@
  *   3. founderCta (src/lib/pricing/founderCard.ts) — the same button logic
  *      as the /pricing card (guest → sign in, unverified → verify, gateway
  *      off → unavailable, else checkout). Its `note` is set to null here:
- *      the campaign page never names the other practice kind.
+ *      the campaign page never names the other practice kind — except
+ *      FOUNDER_PENDING_NOTE (l7, decision 1), which a pending lawyer must
+ *      read before he pays.
  *
  * Pure: relative imports only, so `node --test` loads it.
  */
 
-import { FOUNDER_PAUSED_TEXT, type FounderCta } from "../pricing/founderCard.ts";
+import { FOUNDER_PAUSED_TEXT, FOUNDER_PENDING_NOTE, type FounderCta } from "../pricing/founderCard.ts";
 import { durationAr, type FounderPhase } from "./founderWindow.ts";
 
 export type LockReason =
@@ -42,7 +44,7 @@ export const JOIN_LABELS = Object.freeze({
   ended: "انتهى العرض",
   sold_out: "اكتملت المقاعد",
   paused: FOUNDER_PAUSED_TEXT,
-  advocate_only: "هذه الباقة للمحامي المرخّص للترافع فقط",
+  advocate_only: "هذه الباقة للمحامي المرخص فقط",
 });
 
 export function preLabel(remainingMs: number | null): string {
@@ -87,5 +89,5 @@ export function founderJoinButton(input: JoinInput): JoinButton {
   if (input.userType === "lawyer" && input.practiceKind === "consultant") {
     return locked("advocate_only", JOIN_LABELS.advocate_only);
   }
-  return { kind: "cta", cta: { ...input.cta, note: null } };
+  return { kind: "cta", cta: { ...input.cta, note: input.cta.note === FOUNDER_PENDING_NOTE ? FOUNDER_PENDING_NOTE : null } };
 }

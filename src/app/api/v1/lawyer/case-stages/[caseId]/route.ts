@@ -14,7 +14,7 @@ import {
 } from "@/lib/services/deadlineEngine";
 import { enqueueDeadlineReminders, cancelPendingDeadlineReminders } from "@/lib/deadlineReminders";
 import {
-  DEGREE_TO_AUTO_RULE_CODE, STAGE_DEADLINE_ENGINE_VERSION,
+  autoRuleCodeFor, readStageUrgent, STAGE_DEADLINE_ENGINE_VERSION,
   type ExistingAutoDeadline, type StageTriggerEvent, type ComputationRecord,
   readStageTrigger, effectiveTriggerDate, inferLegacyTrigger, resolveStagePatch,
   planStageDeadlineSync, recomputedMetadata, syncCancelledMetadata,
@@ -104,6 +104,7 @@ function toDto(row: StageRow, linkedDeadline?: LinkedStageDeadline | null) {
     notes: row.notes || undefined,
     triggerEvent: trigger?.event ?? null,
     triggerDate: effectiveTriggerDate(trigger, row.closed_on),
+    urgent: readStageUrgent(row.metadata),
     ...(linkedDeadline !== undefined ? { linkedDeadline } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -301,8 +302,9 @@ interface RuleRow {
 }
 
 /** Loads the platform rule for a degree, or null (none / inactive / failed). */
-async function loadAutoRule(supabase: SupabaseClient, degree: string): Promise<{ rule: RuleRow | null; failed: boolean }> {
-  const ruleCode = DEGREE_TO_AUTO_RULE_CODE[degree];
+async function loadAutoRule(supabase: SupabaseClient, degree: string, urgent: boolean): Promise<{ rule: RuleRow | null; failed: boolean }> {
+  // Owner ٣٢: «مستعجلة» → appeal_urgent (10 days) / cassation_urgent (15).
+  const ruleCode = autoRuleCodeFor(degree, urgent);
   if (!ruleCode) return { rule: null, failed: false };
   const { data, error } = await supabase
     .from("deadline_rules")
@@ -387,7 +389,8 @@ async function syncStatutoryDeadline(params: {
 }): Promise<AutoDeadlineResult> {
   const { supabase, userId, firmId, caseId, stage, outcome, triggerEvent, triggerDate, existing } = params;
   try {
-    const { rule, failed } = await loadAutoRule(supabase, stage.degree);
+    const urgent = readStageUrgent(stage.metadata);
+    const { rule, failed } = await loadAutoRule(supabase, stage.degree, urgent);
     if (failed) return { created: false, action: "skipped", skipped: "rule_missing" };
 
     const plan = planStageDeadlineSync({ degree: stage.degree, outcome, triggerDate, ruleId: rule?.id ?? null, existing });
@@ -447,7 +450,7 @@ async function syncStatutoryDeadline(params: {
     const record: ComputationRecord = {
       engine: STAGE_DEADLINE_ENGINE_VERSION,
       rule_id: rule.id,
-      rule_code: DEGREE_TO_AUTO_RULE_CODE[stage.degree] ?? "",
+      rule_code: autoRuleCodeFor(stage.degree, urgent) ?? "",
       period_days: rule.period_days,
       count_from_next_day: rule.count_from_next_day,
       roll_forward_if_holiday: rule.roll_forward_if_holiday,
@@ -466,9 +469,17 @@ async function syncStatutoryDeadline(params: {
         from: { trigger_date: row.trigger_date, due_date: row.due_date },
         to: { trigger_date: plan.triggerDate, due_date: computation.dueDate },
       });
+      // Owner ٣٢: ticking or unticking «مستعجلة» swaps the rule (30 ↔ 10
+      // days); the deadline's title names the rule, so it follows it.
+      let retitle: { title: string } | Record<string, never> = {};
+      if (row.rule_id !== rule.id) {
+        const { data: caseRow } = await supabase.from("service_requests").select("title").eq("id", caseId).maybeSingle();
+        retitle = { title: `${rule.title_ar} — ${(caseRow?.title as string | undefined) || "قضية"}` };
+      }
       const { data: updated, error: updateError } = await supabase
         .from("deadlines")
         .update({
+          ...retitle,
           trigger_date: plan.triggerDate,
           due_date: computation.dueDate,
           due_date_hijri: computation.dueDateHijri,
@@ -603,7 +614,7 @@ async function syncStatutoryDeadline(params: {
 
 /**
  * PATCH /api/v1/lawyer/case-stages/[caseId]
- * Body: { id, outcome?, closedOn?, notes?, triggerEvent?, triggerDate? } —
+ * Body: { id, outcome?, closedOn?, notes?, triggerEvent?, triggerDate?, urgent? } —
  * recording (or correcting) how a degree ended. Degree/court identity is
  * fixed at creation. See `resolveStagePatch` for the rules: a final outcome
  * needs its judgment date; «قيد النظر» drops any closing date / trigger
@@ -621,9 +632,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
     const { caseId } = await context.params;
 
     const body = await request.json();
-    const { id, outcome, closedOn, notes, triggerEvent, triggerDate } = body as {
+    const { id, outcome, closedOn, notes, triggerEvent, triggerDate, urgent } = body as {
       id?: string; outcome?: string; closedOn?: string | null; notes?: string;
       triggerEvent?: string | null; triggerDate?: string | null;
+      /** Owner ٣٢: the «مستعجلة» tick (10-day objection instead of 30). */
+      urgent?: boolean;
     };
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
@@ -655,7 +668,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
     const storedTrigger = readStageTrigger(stored.metadata) ?? inferLegacyTrigger(stored, existing);
     const resolved = resolveStagePatch(
       { outcome: stored.outcome, closed_on: stored.closed_on, metadata: stored.metadata },
-      { outcome, closedOn, notes, triggerEvent, triggerDate },
+      { outcome, closedOn, notes, triggerEvent, triggerDate, urgent },
       storedTrigger,
     );
     if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: 400 });
@@ -706,7 +719,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ c
           caseRequestId: caseId,
           subjectTable: "case_stages",
           subjectId: id,
-          payload: { outcome, closedOn: row.closed_on, triggerEvent: resolved.final.trigger?.event ?? null },
+          payload: { outcome, closedOn: row.closed_on, triggerEvent: resolved.final.trigger?.event ?? null, urgent: resolved.final.urgent },
         });
       }
 

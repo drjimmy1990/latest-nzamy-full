@@ -34,6 +34,30 @@ export const DEGREE_TO_AUTO_RULE_CODE: Record<string, string | undefined> = {
   appeal: "cassation",
 };
 
+/**
+ * Owner ٣٢ (decision 16, 18 Nov 2026): the lawyer ticks «مستعجلة» in the
+ * outcome form. An urgent first-instance judgment opens the 10-day objection
+ * window (`appeal_urgent`, نظام المرافعات الشرعية المادة ١٨٧ — rule
+ * 20261016_04) instead of the 30-day `appeal_general`; an urgent appeal
+ * judgment opens the 15-day `cassation_urgent` (المادة ١٩٤ — rule 20261107_30).
+ * The tick is stored on the stage (`case_stages.metadata.urgent`), never
+ * guessed from the case.
+ */
+export const URGENT_DEGREE_TO_AUTO_RULE_CODE: Record<string, string | undefined> = {
+  first_instance: "appeal_urgent",
+  appeal: "cassation_urgent",
+};
+
+/** The platform rule the degree's auto deadline follows — urgent or not. */
+export function autoRuleCodeFor(degree: string, urgent: boolean): string | undefined {
+  return (urgent ? URGENT_DEGREE_TO_AUTO_RULE_CODE[degree] : undefined) ?? DEGREE_TO_AUTO_RULE_CODE[degree];
+}
+
+/** The lawyer's «مستعجلة» tick stored on the stage (metadata.urgent === true). */
+export function readStageUrgent(metadata: unknown): boolean {
+  return !!metadata && typeof metadata === "object" && (metadata as Record<string, unknown>).urgent === true;
+}
+
 export const STAGE_OUTCOMES = ["pending", "won", "lost", "partial", "settled", "withdrawn"] as const;
 export type StageOutcome = typeof STAGE_OUTCOMES[number];
 
@@ -151,6 +175,8 @@ export interface StagePatchInput {
   /** null clears the trigger. */
   triggerEvent?: string | null;
   triggerDate?: string | null;
+  /** Owner ٣٢: the «مستعجلة» tick; undefined leaves the stored value. */
+  urgent?: boolean;
 }
 
 export interface StoredStage {
@@ -164,7 +190,7 @@ export type ResolvedStagePatch =
       ok: true;
       /** Columns to write (only what changes). */
       patch: { outcome?: string; closed_on?: string | null; notes?: string; metadata?: Record<string, unknown> };
-      final: { outcome: string | null; closedOn: string | null; trigger: StageTrigger | null; triggerDate: string | null };
+      final: { outcome: string | null; closedOn: string | null; trigger: StageTrigger | null; triggerDate: string | null; urgent: boolean };
       /** The request touched something the deadline depends on. */
       affectsDeadline: boolean;
       /** A closing date / trigger was sent with a non-final outcome and dropped. */
@@ -194,6 +220,9 @@ export function resolveStagePatch(
   }
   if (input.triggerEvent !== undefined && input.triggerEvent !== null && !isTriggerEvent(input.triggerEvent)) {
     return { ok: false, error: `triggerEvent must be one of: ${STAGE_TRIGGER_EVENTS.join(", ")}` };
+  }
+  if (input.urgent !== undefined && typeof input.urgent !== "boolean") {
+    return { ok: false, error: "urgent must be true or false" };
   }
 
   const outcome = input.outcome !== undefined ? input.outcome : stored.outcome;
@@ -232,21 +261,26 @@ export function resolveStagePatch(
   const before = readStageTrigger(stored.metadata);
   const sameTrigger = (a: StageTrigger | null, b: StageTrigger | null) =>
     (a === null && b === null) || (!!a && !!b && a.event === b.event && a.date === b.date);
-  if (!sameTrigger(before, trigger)) {
+  const urgentBefore = readStageUrgent(stored.metadata);
+  const urgent = input.urgent !== undefined ? input.urgent : urgentBefore;
+  if (!sameTrigger(before, trigger) || urgent !== urgentBefore) {
     const metadata = { ...(stored.metadata ?? {}) };
     if (trigger) metadata.deadline_trigger = { event: trigger.event, date: trigger.date };
     else delete metadata.deadline_trigger;
+    if (urgent) metadata.urgent = true;
+    else delete metadata.urgent;
     patch.metadata = metadata;
   }
 
   const affectsDeadline =
     input.outcome !== undefined || input.closedOn !== undefined ||
-    input.triggerEvent !== undefined || input.triggerDate !== undefined;
+    input.triggerEvent !== undefined || input.triggerDate !== undefined ||
+    input.urgent !== undefined;
 
   return {
     ok: true,
     patch,
-    final: { outcome, closedOn, trigger, triggerDate: effectiveTriggerDate(trigger, closedOn) },
+    final: { outcome, closedOn, trigger, triggerDate: effectiveTriggerDate(trigger, closedOn), urgent },
     affectsDeadline,
     droppedForPending,
   };

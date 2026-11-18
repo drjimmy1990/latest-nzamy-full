@@ -22,10 +22,9 @@
  *     they hang on a case or a client already on the map (the route passes
  *     only hearings/tasks/invoices of the cases it drew, so a case the caller
  *     cannot read never leaks through its satellites);
- *   * «تشابه اسم» — the same name, after spelling normalisation, recorded as a
- *     client on one case and as the other side on another (or on the same
- *     one). It is a hint to check, the same rule the conflict-check screen
- *     applies to names (exact match, no fuzzy scoring), never a finding.
+ *   * owner ٣٥ (18 Nov 2026): no «تشابه أسماء» hint — the map no longer
+ *     flags a name that is a client on one case and the other side on
+ *     another (same family as the removed conflict check).
  *
  * No identity numbers, phones, registers or account ids are read into the
  * result. Pure — caseParties.ts only — so officeGraph.test.ts runs under
@@ -146,14 +145,12 @@ export interface OfficeNode {
   refId?: string;
   /** Number of cases the node is linked to as a party (0 for a client card with none). */
   caseCount: number;
-  /** True when the node's name also appears on the other side somewhere. */
-  nameClash?: boolean;
   /** Key fields for the side panel. */
   facts?: OfficeFact[];
   link?: { kind: OfficeLinkKind; id?: string };
 }
 
-export type OfficeEdgeRelation = "client" | "opponent" | "same_name" | "contract" | "consultation" | "hearing" | "task" | "fee";
+export type OfficeEdgeRelation = "client" | "opponent" | "contract" | "consultation" | "hearing" | "task" | "fee";
 
 export interface OfficeEdge {
   from: string;
@@ -161,20 +158,9 @@ export interface OfficeEdge {
   relation: OfficeEdgeRelation;
 }
 
-export interface NameClash {
-  name: string;
-  /** Case ids where the name is the client. */
-  clientIn: string[];
-  /** Case ids where the name is the other side. */
-  opponentIn: string[];
-  /** The client card(s) carrying the name. */
-  clientCardIds: string[];
-}
-
 export interface OfficeGraph {
   nodes: OfficeNode[];
   edges: OfficeEdge[];
-  clashes: NameClash[];
   /** Rows read but not drawn because they hang on nothing on the map. */
   unlinked?: { contracts: number; consultations: number };
 }
@@ -202,7 +188,7 @@ export const OFFICE_CASE_RECEIVERS = ["lawyer", "firm"] as const;
  * filed it, it is assigned to him, or it belongs to one of his firms. RLS
  * alone is not that set: "service_requests_select_policy" also lets a
  * verified lawyer read every unassigned pending marketplace request, which
- * must not be drawn as one of his cases (and its client as a name clash).
+ * must not be drawn as one of his cases.
  * Ids that are not uuids are dropped, so nothing else reaches the filter.
  */
 export function officeCaseOrFilter(uid: string, firmIds: string[]): string {
@@ -273,18 +259,6 @@ export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClient
   const nodes = new Map<string, OfficeNode>();
   const edges: OfficeEdge[] = [];
   const edgeKeys = new Set<string>();
-  // normalised name → where it appears
-  const byName = new Map<string, { label: string; clientIn: Set<string>; opponentIn: Set<string>; cards: Set<string>; nodeIds: Set<string> }>();
-
-  const nameEntry = (label: string) => {
-    const norm = normalizePartyName(label);
-    let e = byName.get(norm);
-    if (!e) {
-      e = { label, clientIn: new Set(), opponentIn: new Set(), cards: new Set(), nodeIds: new Set() };
-      byName.set(norm, e);
-    }
-    return e;
-  };
   const addEdge = (from: string, to: string, relation: OfficeEdgeRelation) => {
     const k = `${from}|${to}|${relation}`;
     if (edgeKeys.has(k)) return;
@@ -303,9 +277,6 @@ export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClient
     const id = `client:${c.id}`;
     nodes.set(id, { id, kind: "client", label, refId: c.id, caseCount: 0, link: { kind: "client", id: c.id } });
     cardInput.set(id, c);
-    const e = nameEntry(label);
-    e.cards.add(c.id);
-    e.nodeIds.add(id);
     const norm = normalizePartyName(label);
     cardsByName.set(norm, [...(cardsByName.get(norm) ?? []), id]);
     if (c.clientUserId) {
@@ -400,9 +371,6 @@ export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClient
         if (!nodes.has(partyId)) nodes.set(partyId, { id: partyId, kind: "opponent", label: p.name, caseCount: 0 });
       }
       addEdge(caseNodeId, partyId, p.role);
-      const e = nameEntry(p.name);
-      e.nodeIds.add(partyId);
-      (p.role === "client" ? e.clientIn : e.opponentIn).add(k.id);
     }
   }
 
@@ -580,25 +548,5 @@ export function buildOfficeGraph(cases: OfficeCaseInput[], clients: OfficeClient
     n.facts = facts;
   }
 
-  const clashes: NameClash[] = [];
-  for (const e of byName.values()) {
-    const isClash = e.opponentIn.size > 0 && (e.clientIn.size > 0 || e.cards.size > 0);
-    if (!isClash) continue;
-    clashes.push({
-      name: e.label,
-      clientIn: [...e.clientIn].sort(),
-      opponentIn: [...e.opponentIn].sort(),
-      clientCardIds: [...e.cards].sort(),
-    });
-    const ids = [...e.nodeIds].sort();
-    for (const id of ids) {
-      const n = nodes.get(id);
-      if (n) n.nameClash = true;
-    }
-    // The dashed «تشابه اسم» line joins the clashing nodes pairwise in a chain.
-    for (let i = 1; i < ids.length; i++) addEdge(ids[i - 1], ids[i], "same_name");
-  }
-  clashes.sort((a, b) => a.name.localeCompare(b.name, "ar"));
-
-  return { nodes: [...nodes.values()], edges, clashes, unlinked: { contracts: unlinkedContracts, consultations: unlinkedConsultations } };
+  return { nodes: [...nodes.values()], edges, unlinked: { contracts: unlinkedContracts, consultations: unlinkedConsultations } };
 }

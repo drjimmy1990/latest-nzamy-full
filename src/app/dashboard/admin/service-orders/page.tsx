@@ -9,13 +9,23 @@ import { validateUploadFile } from "@/lib/services/fileValidation";
 import { buildOrderPrompt } from "@/lib/services/orderPrompt";
 import PastedContractBlock from "@/components/orders/PastedContractBlock";
 import { ReceiptPanel } from "./_components/ReceiptPanel";
+import OpenRequestPublishBox from "./_components/OpenRequestPublishBox";
 import { uploadErrorMessage } from "./_errorCopy";
 import { orderReference, matchesOrderReference } from "@/lib/services/orderReference";
 import { estimateLineAr } from "@/lib/services/estimateLine";
+import TestAccountBadge from "@/components/ui/TestAccountBadge";
+import { isTestMetadata } from "@/lib/testAccounts/testRow";
 
 interface AdminOrder {
   id: string; title: string; description: string; status: string;
   created_at: string; metadata: Record<string, unknown>;
+  // Owner ٢٣ (20261127_70): the row's own columns, read by the publish box.
+  // Absent until that SQL has run — the box then shows «غير منشور».
+  type?: string;
+  city?: string | null;
+  public_summary?: string | null;
+  marketplace_published_at?: string | null;
+  marketplace_category?: string | null;
   profile: { display_name?: string; email?: string; phone?: string; user_type?: string } | null;
   /**
    * The registered entity behind a CORPORATE order — null for every individual
@@ -1130,6 +1140,7 @@ export default function AdminServiceOrdersPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className={`text-[13px] font-semibold ${isDark ? "text-zinc-100" : "text-zinc-900"}`}>{o.title}</p>
+                  {isTestMetadata(o.metadata) && <TestAccountBadge />}
                   {/* Task 5 — account-type and service badges. `provider` now
                       has its own badge (owner س٦); `admin` is the one
                       user_type still left unmapped, and an unmapped user_type
@@ -1317,6 +1328,21 @@ export default function AdminServiceOrdersPage() {
                       التوجيه داخلي — لا يُرسل أي إشعار للعميل ولا يغيّر حالة الطلب.
                     </p>
                   </div>
+                )}
+
+                {/* Owner ٢٣ — «نشر في الطلبات المفتوحة» after a quick triage. Only
+                    while the order still waits for someone: the lawyers' list
+                    (marketplace_open_requests) shows unassigned, waiting
+                    requests only, so publishing anything else would list
+                    nothing. */}
+                {(o.status === "pending_assignment" || o.status === "pending") && (
+                  <OpenRequestPublishBox
+                    order={o}
+                    isDark={isDark}
+                    busy={busy}
+                    onPublish={(category) => act(o.id, { action: "publish_open", category }, { keepOpen: true })}
+                    onUnpublish={() => act(o.id, { action: "unpublish_open" }, { keepOpen: true })}
+                  />
                 )}
 
                 {/* Task 7 (owner س١١) — did the WhatsApp notice actually reach

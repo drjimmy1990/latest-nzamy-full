@@ -3065,7 +3065,7 @@ DECLARE
   v        jsonb;
   n        int;
   missing  text := '';
-  lots_cols   CONSTANT text[] := array['id','user_id','source','points_total','points_left','expires_at','order_id','created_at'];
+  lots_cols   CONSTANT text[] := array['id','user_id','source','points_total','points_left','expires_at','order_id','created_at','wallet_scope'];
   ledger_cols CONSTANT text[] := array['id','user_id','lot_id','delta','reason','tool','ref','created_at'];
   fns         CONSTANT text[] := array['public.points_balance(uuid)',
                                        'public.credit_points(uuid,integer,text,timestamp with time zone,uuid,text)',
@@ -7207,3 +7207,241 @@ select 'Named case boards: canvas_boards with RLS as case_graphs, no guest grant
        and has_table_privilege('authenticated', 'public.canvas_boards', 'SELECT')
        as ok;
 -- <<< verify:l6_tools
+-- >>> verify:l7_misc
+-- 2026-11-27 — owner ٢٣: staff publish to the lawyers' open requests (consultation / case / drafting),
+-- test accounts (profiles.is_demo / test_accounts) never listed. Run 20261127_70 any time.
+-- Docker: supabase/tests/rls/open_requests_publish.test.sql
+select 'Open requests: staff publish + type filter + no test accounts (run 20261127_70)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute
+         where attrelid = 'public.service_requests'::regclass and not attisdropped
+           and attname in ('marketplace_published_at', 'marketplace_published_by', 'marketplace_category')) = 3
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.service_requests'::regclass and conname = 'service_requests_marketplace_category_check')
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.service_requests'::regclass
+                      and tgname = 'trg_02_service_requests_marketplace_guard' and tgenabled <> 'D')
+       and coalesce(pg_catalog.pg_get_function_result(to_regprocedure('public.marketplace_open_requests(integer, integer)'))
+                      like '%category%', false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'marketplace_published_at is not null') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                      'test_accounts') > 0, false)
+       and not has_function_privilege('anon', 'public.marketplace_open_requests(integer, integer)', 'EXECUTE')
+       as ok;
+-- <<< verify:l7_misc
+-- >>> verify:l7_testacct
+-- One test-account mode (l7 decision 3): run 20261127_80 AFTER the l7 deploy (and after any re-run of 20261125_50).
+select 'Test accounts: is_test_account (is_demo or test_accounts, not staff), service role only (run 20261127_80)' as check,
+       to_regprocedure('public.is_test_account(uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.is_test_account(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.is_test_account(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_account_stamp_rows(uuid)', 'EXECUTE')
+       as ok;
+select 'Test accounts pay in Moyasar TEST mode only: payment_orders.trg_demo_guard runs test_account_payment_guard (run 20261127_80)' as check,
+       to_regprocedure('public.test_account_payment_guard()') is not null
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = 'public.payment_orders'::regclass and t.tgname = 'trg_demo_guard' and not t.tgisinternal
+                      and t.tgfoid = to_regprocedure('public.test_account_payment_guard()'))
+       and pg_catalog.pg_get_functiondef(to_regprocedure('public.test_account_payment_guard()')) like '%gateway_mode%'
+       as ok;
+select 'Test accounts: sandbox, no open request, caps 5/5 and the «تجريبي» tag cover test_accounts too (run 20261127_80)' as check,
+       pg_catalog.pg_get_functiondef('public.demo_guard_sandbox_row()'::regprocedure) like '%is_test_account%'
+       and pg_catalog.pg_get_functiondef('public.demo_guard_sandbox_row()'::regprocedure) like '%demo_account:open_request%'
+       and pg_catalog.pg_get_functiondef('public.demo_guard_sandbox_row()'::regprocedure) like '%test_account%true%'
+       and (select l.cases = 5 and l.consultations = 5 from public.demo_account_limits() l)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.test_accounts'::regclass and tgname = 'trg_test_accounts_stamp' and not tgisinternal)
+       as ok;
+-- <<< verify:l7_testacct
+-- >>> verify:l7_founder
+-- Batch l7 (decisions 1, 2, 3, 4 of 18 Nov 2026): run 20261127_10 AFTER the deploy.
+-- Docker: supabase/tests/rls/founder_l7.test.sql
+select 'Founder: a pending lawyer may pay, the seat waits in pending_verification and is revoked on rejection (run 20261127_10)' as check,
+       coalesce((select pg_catalog.pg_get_constraintdef(c.oid) like '%pending_verification%'
+                   from pg_catalog.pg_constraint c
+                  where c.conrelid = 'public.founder_seats'::regclass and c.conname = 'founder_seats_status_check'), false)
+       and coalesce(pg_catalog.pg_get_indexdef(to_regclass('public.founder_seats_one_per_user')) like '%pending_verification%', false)
+       and coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%''verified'', ''pending''%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%demo_account%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%15 minutes%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%not_advocate%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_reserve_seat' limit 1), false)
+       and coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%pending_verification%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_revoke' limit 1), false)
+       as ok;
+select 'Founder: a paid order is never refused for want of a seat (founder_oversold), library_question kept (run 20261127_10)' as check,
+       coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%founder_oversold%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%pending_verification%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%''library_question'', 20, 20%'
+                        and pg_catalog.pg_get_functiondef(p.oid) not like '%return ''full''%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_activate' limit 1), false)
+       as ok;
+select 'Founder counter: test / demo / test-mode seats never count, seats_left never negative, overflow for the admin (run 20261127_10)' as check,
+       to_regprocedure('public.founder_seat_counted(uuid, uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.founder_seat_counted(uuid, uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.founder_seat_summary()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.founder_seat_summary()', 'EXECUTE')
+       and exists (select 1 from information_schema.parameters
+                    where specific_schema = 'public' and specific_name like 'founder_seat_summary%'
+                      and parameter_mode = 'OUT' and parameter_name = 'overflow')
+       as ok;
+select 'Founder top-up discount rate setting founder_topup_discount_bps (run 20261127_10)' as check,
+       exists (select 1 from public.platform_settings
+                where key = 'founder_topup_discount_bps' and jsonb_typeof(value) = 'number')
+       as ok;
+-- <<< verify:l7_founder
+-- >>> verify:l7_points — supabase/tests/rls/points_wallets_l7.test.sql
+-- 2026-11-19 — 20261127_40_points_wallets.sql (batch l7, decisions 5–9):
+-- wallets on points_lots, debit_points by wallet → plan → purchased →
+-- bonus/gift, credit_wallet_points, points_expire_lots + expiry notices, the
+-- free library questions once per account, four settings. Run BEFORE the
+-- deploy. Read-only, safe to repeat. Every row must say ok = true
+-- (false = run 20261127_40).
+select 'points_lots.wallet_scope exists, checked, readable by its owner' as check_name,
+       coalesce((select true from information_schema.columns
+                  where table_schema = 'public' and table_name = 'points_lots' and column_name = 'wallet_scope'), false)
+       and exists (select 1 from pg_constraint where conrelid = to_regclass('public.points_lots')
+                    and conname = 'points_lots_wallet_scope_check')
+       and coalesce((select has_column_privilege('authenticated', 'public.points_lots', 'wallet_scope', 'SELECT')
+                      where to_regclass('public.points_lots') is not null
+                        and exists (select 1 from information_schema.columns
+                                     where table_schema = 'public' and table_name = 'points_lots' and column_name = 'wallet_scope')), false) as ok;
+
+select 'points_lots_source_check allows plan / topup / bonus / gift and the old kinds' as check_name,
+       coalesce((select pg_get_constraintdef(oid) like '%gift%' and pg_get_constraintdef(oid) like '%refund_restore%'
+                        and pg_get_constraintdef(oid) like '%plan_monthly%'
+                   from pg_constraint where conrelid = to_regclass('public.points_lots')
+                    and conname = 'points_lots_source_check'), false) as ok;
+
+select 'debit_points keeps the lock order and spends by wallet (one overload)' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) ~* 'order\s+by\s+pl\.expires_at\s*,\s*pl\.created_at\s*,\s*pl\.id\s+for\s+update'
+                        and pg_get_functiondef(p.oid) like '%library_agent%'
+                        and pg_get_functiondef(p.oid) like '%''library-assistant''%'
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_proc p where p.oid = to_regprocedure('public.debit_points(uuid,int,text,text)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'debit_points') = 1 as ok;
+
+select 'credit_wallet_points / points_expire_lots / ai_free_question_status: definer, search_path '''', service role only' as check_name,
+       coalesce((select bool_and(p.prosecdef and p.proconfig @> array['search_path=""']
+                                 and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                 and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                 and has_function_privilege('service_role', p.oid, 'EXECUTE')) and count(*) = 3
+                   from pg_proc p
+                  where p.oid in (to_regprocedure('public.credit_wallet_points(uuid,int,text,timestamptz,uuid,text,text)'),
+                                  to_regprocedure('public.points_expire_lots(int)'),
+                                  to_regprocedure('public.ai_free_question_status(uuid)'))), false) as ok;
+
+select 'ai_start_free_question is the once-only library question (one overload, service role only)' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) like '%ai_free_question_uses%'
+                        and pg_get_functiondef(p.oid) like '%''library-assistant''%'
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
+
+select 'points_lot_expiry_notices and ai_free_question_uses: RLS on, no session privilege' as check_name,
+       coalesce((select bool_and(c.relrowsecurity) and count(*) = 2 from pg_class c
+                  where c.oid in (to_regclass('public.points_lot_expiry_notices'), to_regclass('public.ai_free_question_uses'))), false)
+       and case when to_regclass('public.points_lot_expiry_notices') is null or to_regclass('public.ai_free_question_uses') is null then false
+                else not exists (
+                  select 1 from (values ('anon'), ('authenticated')) r(role),
+                                (values ('public.points_lot_expiry_notices'), ('public.ai_free_question_uses')) t(tbl),
+                                (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) p(priv)
+                   where has_table_privilege(r.role, t.tbl, p.priv)) end as ok;
+
+select 'the four settings exist' as check_name,
+       (select count(*) from public.platform_settings
+         where key in ('library_plan_points', 'gift_valid_days', 'min_topup_by_account_type', 'free_questions_by_account_type')) = 4 as ok;
+
+-- informational: lots that expired but still hold points (the cron empties them)
+select 'expired lots still holding points (info — the points-expiry cron empties them)' as check_name,
+       true as ok,
+       (select count(*) from public.points_lots where expires_at <= now() and points_left > 0) as expired_with_points;
+-- <<< verify:l7_points
+-- >>> verify:l7_community
+-- Batch l7-community (owner ٢٥ / ٤٠ / ٤٢): run 20261127_60 before or after the deploy.
+select 'Community: posts and answers wait for review (pending_review/rejected, review trigger, author-only arm, setting row) (run 20261127_60)' as check,
+       exists (select 1 from pg_catalog.pg_trigger where tgrelid = to_regclass('public.community_posts')
+                  and tgname = 'trg_community_posts_review' and not tgisinternal)
+       and exists (select 1 from pg_catalog.pg_trigger where tgrelid = to_regclass('public.community_answers')
+                  and tgname = 'trg_community_answers_review' and not tgisinternal)
+       and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                  and policyname = 'anyone reads public community posts' and qual ilike '%pending_review%')
+       and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'community_answers'
+                  and policyname = 'anyone reads active community answers' and qual ilike '%pending_review%')
+       and exists (select 1 from public.platform_settings where key = 'community_prepublish_review')
+       and to_regprocedure('public.community_verified_office_users(uuid[])') is not null
+       and not has_function_privilege('authenticated', 'public.community_verified_office_users(uuid[])', 'EXECUTE')
+       as ok;
+select 'Suspension freezes, never cancels: account_suspension_freezes + freeze open/lift, service role only (run 20261127_60)' as check,
+       to_regclass('public.account_suspension_freezes') is not null
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.account_suspension_freezes')), false)
+       and not has_table_privilege('authenticated', 'public.account_suspension_freezes', 'SELECT')
+       and to_regprocedure('public.account_freeze_open(uuid,uuid,text)') is not null
+       and to_regprocedure('public.account_freeze_lift(uuid,uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.account_freeze_open(uuid,uuid,text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.account_freeze_lift(uuid,uuid)', 'EXECUTE')
+       as ok;
+select 'Library devices: e-mail code per new device, third device suspends, one open session (switch stays as set) (run 20261127_60)' as check,
+       to_regprocedure('public.library_device_gate(uuid,text,text,uuid,boolean)') is not null
+       and to_regprocedure('public.library_device_code_issue(uuid,text,text)') is not null
+       and to_regprocedure('public.library_device_code_verify(uuid,text,text,uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.library_device_gate(uuid,text,text,uuid,boolean)', 'EXECUTE')
+       and not has_column_privilege('authenticated', 'public.user_devices', 'code_hash', 'SELECT')
+       as ok;
+-- <<< verify:l7_community
+-- >>> verify:l7_admin2fa
+-- Batch l7-admin2fa (owner item 18, admin TOTP): run 20261127_50 before or after the deploy.
+select 'Admin 2FA: is_admin() needs aal2 once a factor is verified; backup codes + login events service role only (run 20261127_50)' as check,
+       position('aal2' in pg_catalog.pg_get_functiondef('public.is_admin()'::regprocedure)) > 0
+       and position('mfa_factors' in pg_catalog.pg_get_functiondef('public.is_admin()'::regprocedure)) > 0
+       and to_regclass('public.admin_mfa_backup_codes') is not null
+       and to_regclass('public.admin_mfa_events') is not null
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.admin_mfa_backup_codes')), false)
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.admin_mfa_events')), false)
+       and not exists (select 1 from pg_catalog.pg_policy where polrelid in (to_regclass('public.admin_mfa_backup_codes'), to_regclass('public.admin_mfa_events')))
+       and not has_table_privilege('authenticated', 'public.admin_mfa_backup_codes', 'SELECT')
+       and not has_table_privilege('anon', 'public.admin_mfa_backup_codes', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.admin_mfa_events', 'SELECT')
+       and to_regprocedure('public.admin_mfa_backup_code_consume(uuid, text)') is not null
+       and to_regprocedure('public.admin_mfa_backup_codes_replace(uuid, text[])') is not null
+       and to_regprocedure('public.admin_login_seen(uuid, uuid, text, text, text)') is not null
+       and not has_function_privilege('authenticated', 'public.admin_mfa_backup_code_consume(uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.admin_mfa_backup_codes_replace(uuid, text[])', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.admin_login_seen(uuid, uuid, text, text, text)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.admin_mfa_backup_code_consume(uuid, text)', 'EXECUTE')
+       as ok;
+-- <<< verify:l7_admin2fa
+-- >>> verify:l7_refund
+-- Batch l7-refund (decision 10: a VAT credit note for every refund/void): run 20261127_30 before or after the deploy.
+select 'Credit notes: payment_credit_notes (own-rows SELECT, no session write) + issue_payment_credit_note service role only (run 20261127_30)' as check,
+       case when to_regclass('public.payment_credit_notes') is null
+              or to_regprocedure('public.issue_payment_credit_note(uuid)') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.payment_credit_notes')), false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy where polrelid = to_regclass('public.payment_credit_notes')) = 1
+       and not has_table_privilege('anon', 'public.payment_credit_notes', 'SELECT')
+       and has_any_column_privilege('authenticated', 'public.payment_credit_notes', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.payment_credit_notes', 'INSERT')
+       and not has_table_privilege('authenticated', 'public.payment_credit_notes', 'UPDATE')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                       where p.oid = to_regprocedure('public.issue_payment_credit_note(uuid)')), false)
+       and not has_function_privilege('anon', 'public.issue_payment_credit_note(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.issue_payment_credit_note(uuid)', 'EXECUTE')
+       end as ok;
+select 'Every refunded / voided platform order has its credit note (run 20261127_30; a gap: «إصدار الإشعار الدائن» on the admin orders page)' as check,
+       -- query_to_xml: the table is named only inside text, so this parses before 20261127_30 runs
+       case when to_regclass('public.payment_credit_notes') is null then false else
+       (xpath('/row/n/text()', query_to_xml(
+         'select count(*) as n from public.payment_orders o
+           where o.status in (''refunded'', ''voided'') and o.merchant = ''platform''
+             and o.receipt_number is not null and o.paid_at is not null and o.live is not null
+             and o.refunded_halalas = o.total_halalas
+             and not exists (select 1 from public.payment_credit_notes c where c.order_id = o.id)', false, true, '')))[1]::text = '0'
+       end as ok;
+-- <<< verify:l7_refund

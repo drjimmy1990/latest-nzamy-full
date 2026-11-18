@@ -612,3 +612,75 @@ test("founder: the sweep's release of expired reservations calls founder_release
   const throwing = { rpc: () => { throw new Error("boom"); } } as unknown as FulfilDeps["admin"];
   assert.equal(await releaseExpiredFounderSeats(throwing), null);
 });
+
+// ── l7-analytics: the one analytics call on the payment path ────────────────
+
+test("purchase event: reported once, after the stamp, for a LIVE order that granted something", async () => {
+  const meta = { user_email: "u@example.test", analytics: { ga_client_id: "111.222" } };
+  // live comes from the claim (claim_payment_order sets live = p_live and returns the row), not the pre-claim read
+  const pre = orderRow({ live: null, metadata: meta });
+  const { client, log } = happyDb(pre, (q) =>
+    q.table === "claim_payment_order"
+      ? { data: [{ ...pre, live: true, status: "paid", moyasar_payment_id: "pay_1", receipt_number: "NZ-2026-000001", paid_at: NOW.toISOString() }] }
+      : undefined,
+  );
+  const reported: Array<Record<string, unknown>> = [];
+  const { d } = deps(client, gateway(paymentOf()), {
+    reportPurchase: async (p) => {
+      reported.push({ ...p, stampedBefore: stamps(log).length });
+    },
+  });
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.equal(r.outcome, "granted");
+  assert.equal(reported.length, 1);
+  assert.equal(reported[0].orderId, ORDER);
+  assert.equal(reported[0].itemId, "topup-100");
+  assert.equal(reported[0].totalHalalas, 11500);
+  assert.equal(reported[0].stampedBefore, 1, "after the fulfilled_at stamp");
+  assert.deepEqual(reported[0].metadata, meta);
+});
+
+test("purchase event: never for a test-mode order, and a throwing reporter never changes the outcome", async () => {
+  {
+    const { client } = happyDb(orderRow({ live: false }));
+    let calls = 0;
+    const { d } = deps(client, gateway(paymentOf()), { reportPurchase: async () => void calls++ });
+    assert.equal((await fulfillOrderWith(d, INPUT)).outcome, "granted");
+    assert.equal(calls, 0);
+  }
+  {
+    const { client } = happyDb(orderRow({ live: true }));
+    const { d, notices } = deps(client, gateway(paymentOf()), {
+      reportPurchase: async () => {
+        throw new Error("ga down");
+      },
+    });
+    assert.deepEqual(await fulfillOrderWith(d, INPUT), { outcome: "granted", receiptNumber: "NZ-2026-000001" });
+    assert.equal(notices.length, 1);
+  }
+});
+
+test("l7 (decision 1): a pending lawyer's paid membership — stamped, «تُفعَّل الباقة بعد توثيق رخصتك» notice, no refund flag, no admin alert", async () => {
+  const { client, log } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY()), "pending_verification");
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.deepEqual([r.outcome, r.reason], ["granted", "founder_pending_verification"]);
+  assert.equal(stamps(log).length, 1);
+  assert.equal(f.notices.length, 1);
+  assert.equal(f.notices[0].title, "تم الدفع وحُجز مقعدك");
+  assert.match(f.notices[0].body, /تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً/);
+  assert.equal(f.admins.length, 0, "not a refund review");
+  assert.equal(
+    log.filter((q) => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("already_entitled")).length,
+    0,
+  );
+});
+
+test("l7: a refresh of a stamped pending order answers founder_pending_verification, not a success", async () => {
+  const row = { ...MEMBER_ROW(), status: "paid", fulfilled_at: NOW.toISOString(), moyasar_payment_id: "pay_1", metadata: { founder: "pending_verification" } };
+  const { client } = memberDb(row);
+  const f = founderDeps(client, gateway(MEMBER_PAY()));
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.deepEqual([r.outcome, r.reason], ["already_done", "founder_pending_verification"]);
+  assert.equal(f.activations.length, 0);
+});

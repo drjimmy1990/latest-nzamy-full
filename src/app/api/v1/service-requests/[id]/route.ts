@@ -8,6 +8,7 @@ import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { canRequesterCancel } from "@/lib/services/orderTransitions";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { staffMfaGate } from "@/lib/auth/staffMfaServer";
 import {
   evaluateOrderEditability,
   validateEditedDescription,
@@ -390,7 +391,8 @@ export async function GET(
       .select("user_type")
       .eq("id", user.id)
       .maybeSingle();
-    isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+    // Owner item 18 (l7): admin sight only on a session that passes the two-step rule.
+    isAdmin = (callerProfile?.user_type as string | undefined) === "admin" && (await staffMfaGate(supabase, user)).ok;
   }
   const sanitizedRequest = {
     ...(serviceRequest as Record<string, unknown>),
@@ -1004,7 +1006,8 @@ export async function PATCH(
           .select("user_type")
           .eq("id", user.id)
           .single();
-        isAdmin = (callerProfile?.user_type as string | undefined) === "admin";
+        // Owner item 18 (l7): admin power only on a session that passes the two-step rule.
+        isAdmin = (callerProfile?.user_type as string | undefined) === "admin" && (await staffMfaGate(supabase, user)).ok;
       }
       permitted =
         isAssignee || isAdmin || (isRequester && targetStatus === "cancelled");

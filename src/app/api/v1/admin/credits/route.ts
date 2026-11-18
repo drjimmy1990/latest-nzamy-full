@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { adjustPointsWith } from "@/lib/payments/pointsAdmin";
+import { giftExpiry, readGiftValidDays } from "@/lib/points/pointsSettings";
 
 /**
  * POST /api/v1/admin/credits — Grant or adjust credits for a user
@@ -54,8 +55,8 @@ export async function POST(request: NextRequest) {
   const adminClient = await createServiceClient();
 
   try {
-    const expires = new Date();
-    expires.setUTCFullYear(expires.getUTCFullYear() + 1);
+    // Decision 9 (owner 18 Nov §16.4): a gift or grant lasts gift_valid_days (90).
+    const expires = giftExpiry(new Date(), await readGiftValidDays(adminClient));
     const changed = await adjustPointsWith(adminClient, { userId: user_id, amount, ref: `admin:${gate.userId}:${description}`, expiresAt: expires });
     if (!changed.ok) return NextResponse.json({ error: changed.error }, { status: changed.error.includes("غير كافٍ") ? 400 : 503 });
     const currentBalance = changed.previous_balance;

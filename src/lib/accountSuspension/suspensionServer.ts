@@ -8,6 +8,9 @@
  *                        admin update, then the open sessions are ended
  *                        (public.admin_revoke_user_sessions, 20261124_60).
  *   liftSuspensionWith   ban_duration "none" + app_metadata "active".
+ *   freezeEntitlementsWith / thawEntitlementsWith  owner ٢٥ (20261127_60):
+ *                        the suspension freezes what is live; the lift gives
+ *                        the suspended days back. Nothing is cancelled.
  *   readSuspendedIds     which of a page of ids are banned now
  *                        (public.admin_suspended_user_ids), for the admin list.
  *
@@ -124,5 +127,108 @@ export async function readSuspendedIds(admin: Pick<SupabaseClient, "rpc">, ids: 
     );
   } catch {
     return null;
+  }
+}
+
+// ── owner ٢٥ (20261127_60): a suspension FREEZES, it never cancels ─────────
+
+/** What the freeze of a suspension did. */
+export type FreezeOutcome =
+  /** The snapshot was taken (or an open one already existed). counts = rows frozen. */
+  | { state: "frozen" | "already_frozen"; counts: Record<string, number> | null }
+  /** 20261127_60 has not run: nothing is frozen and nothing will be extended on lift. Nothing is cancelled either. */
+  | { state: "migration_missing" }
+  | { state: "failed"; error: string };
+
+/** What lifting the freeze did. */
+export type ThawOutcome =
+  | { state: "lifted"; reason: string | null; extendedDays: number | null; extended: Record<string, number> | null }
+  /** No open freeze (a suspension from before 20261127_60, or lifted already): nothing to extend. */
+  | { state: "not_frozen" }
+  | { state: "migration_missing" }
+  | { state: "failed"; error: string };
+
+/** PostgREST / Postgres codes for "account_freeze_* does not exist yet". */
+function isMissingFreezeSchema(code: unknown): boolean {
+  return code === "42883" || code === "42P01" || code === "PGRST202";
+}
+
+function countsOf(value: unknown): Record<string, number> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
+
+/** account_freeze_open's jsonb → FreezeOutcome (pure; exported for the tests). */
+export function parseFreezeOpen(data: unknown): FreezeOutcome {
+  const d = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  if (d.state === "frozen") return { state: "frozen", counts: countsOf(d.counts) };
+  if (d.state === "already_frozen") return { state: "already_frozen", counts: null };
+  return { state: "failed", error: "unexpected answer" };
+}
+
+/** account_freeze_lift's jsonb → ThawOutcome (pure; exported for the tests). */
+export function parseFreezeLift(data: unknown): ThawOutcome {
+  const d = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  if (d.state === "not_frozen") return { state: "not_frozen" };
+  if (d.state === "lifted") {
+    const days = typeof d.extended_days === "number" ? d.extended_days : Number(d.extended_days);
+    return {
+      state: "lifted",
+      reason: typeof d.reason === "string" ? d.reason : null,
+      extendedDays: Number.isFinite(days) ? days : null,
+      extended: countsOf(d.extended),
+    };
+  }
+  return { state: "failed", error: "unexpected answer" };
+}
+
+/**
+ * Opens the freeze of a suspension (public.account_freeze_open): a snapshot of
+ * the subscriptions, library grants, founder seat, membership credits and
+ * points lots live now. Nothing is cancelled. Never throws.
+ */
+export async function freezeEntitlementsWith(
+  admin: Pick<SupabaseClient, "rpc">,
+  args: { userId: string; actorId: string | null; reason: "admin" | "device_limit" },
+): Promise<FreezeOutcome> {
+  try {
+    const { data, error } = await admin.rpc("account_freeze_open", {
+      p_user: args.userId,
+      p_actor: args.actorId,
+      p_reason: args.reason,
+    });
+    if (error) {
+      return isMissingFreezeSchema(error.code)
+        ? { state: "migration_missing" }
+        : { state: "failed", error: error.code ?? error.message ?? "error" };
+    }
+    return parseFreezeOpen(data);
+  } catch (err) {
+    return { state: "failed", error: err instanceof Error ? err.message : "error" };
+  }
+}
+
+/**
+ * Lifts the freeze (public.account_freeze_lift): the frozen rows still live
+ * get the suspended days back. A second lift extends nothing. Never throws.
+ */
+export async function thawEntitlementsWith(
+  admin: Pick<SupabaseClient, "rpc">,
+  args: { userId: string; actorId: string | null },
+): Promise<ThawOutcome> {
+  try {
+    const { data, error } = await admin.rpc("account_freeze_lift", { p_user: args.userId, p_actor: args.actorId });
+    if (error) {
+      return isMissingFreezeSchema(error.code)
+        ? { state: "migration_missing" }
+        : { state: "failed", error: error.code ?? error.message ?? "error" };
+    }
+    return parseFreezeLift(data);
+  } catch (err) {
+    return { state: "failed", error: err instanceof Error ? err.message : "error" };
   }
 }

@@ -127,6 +127,8 @@ export async function GET() {
       supabase
         .from("community_posts")
         .select("id, title, category, created_at")
+        // Owner ٤٢: published questions only (RLS also returns the reader's own under review).
+        .in("status", ["active", "closed"])
         .order("created_at", { ascending: false })
         .limit(3),
     )

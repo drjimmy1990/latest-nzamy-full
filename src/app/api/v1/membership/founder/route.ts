@@ -22,6 +22,10 @@ import {
  * libraryPoints is the library assistant's founder points (owner ٨ / ١٥ / ١٨:
  * the seat's 'library_question' credit × 5, SQL 20261124_10).
  *
+ * l7 (decision 1): a non-member whose PAID seat waits for the licence check
+ * (founder_seats.status 'pending_verification', 20261127_10) gets
+ * member: false plus pendingVerification: true.
+ *
  * Reads with the USER client under RLS (20261101_10: "founder seats: owner
  * reads own", "membership credits: owner reads own"; 20261019_10: "own
  * library grants"), each query also filtered to the session's own id. A
@@ -64,7 +68,20 @@ export async function GET() {
       return NextResponse.json(UNAVAILABLE, { status: 503, headers: NO_STORE });
     }
     const seat = (seatRead.data ?? null) as FounderSeatRow | null;
-    if (!seat) return NextResponse.json(NOT_A_FOUNDER, { headers: NO_STORE });
+    if (!seat) {
+      // l7 (decision 1, 20261127_10): paid while the licence is still being
+      // checked — not a member yet, but the buy button must not offer a second
+      // seat. A failed read only drops the flag (checkout refuses a second seat).
+      const pendingRead = await supabase
+        .from("founder_seats")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("campaign_id", FOUNDER_CAMPAIGN_ID)
+        .eq("status", "pending_verification")
+        .limit(1);
+      const pending = !pendingRead.error && Array.isArray(pendingRead.data) && pendingRead.data.length > 0;
+      return NextResponse.json(pending ? { ...NOT_A_FOUNDER, pendingVerification: true } : NOT_A_FOUNDER, { headers: NO_STORE });
+    }
 
     const [creditsRead, grantsRead] = await Promise.all([
       supabase

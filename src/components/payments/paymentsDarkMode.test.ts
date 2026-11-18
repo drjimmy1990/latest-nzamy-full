@@ -30,6 +30,8 @@ const FILES = [
   "app/dashboard/billing/page.tsx",
   "components/payments/BillingControls.tsx",
   "app/dashboard/billing/receipt/[orderId]/page.tsx",
+  "app/dashboard/billing/credit-note/[orderId]/page.tsx",
+  "components/payments/TaxDocuments.tsx",
   "app/settings/components/tabs/SubscriptionTab.tsx",
   "app/settings/components/tabs/PaymentsTab.tsx",
   "components/payments/PointsBalanceCard.tsx",
@@ -44,6 +46,7 @@ const FILES = [
 const ALLOW: [string, string, string][] = [
   ["components/payments/MoyasarCheckout.tsx", "nz-moyasar-surface", "Moyasar's card form keeps its own light styling: an always-light surface in both themes (item 2)"],
   ["components/pricing/PricingCards.tsx", "bg-white text-[#0B3D2E] shadow-[0_4px_20px_-4px_rgba(255,255,255,0.3)]", "the white CTA on the highlighted (dark green) plan card"],
+  ["components/payments/TaxDocuments.tsx", "h-36 w-36 shrink-0 rounded-lg bg-white p-1", "the tax-invoice QR (l7): black modules on a white box, so it scans in dark mode too"],
 ];
 
 function stripComments(source: string): string {
@@ -154,7 +157,8 @@ test("no payments surface paints a light panel, a light border or invisible text
 
 test("the Moyasar form renders into an always-light surface: white, dark text, color-scheme light", () => {
   const form = stripComments(readFileSync(join(ROOT, "components/payments/MoyasarCheckout.tsx"), "utf8"));
-  const wrapper = /<div\s+data-light-surface\s+className="([^"]*)"\s+style=\{\{ colorScheme: "light" \}\}\s*>\s*<div className="mysr-form" \/>/.exec(form);
+  // (the optional ref is the Latin-digits listener's anchor, owner 18 Nov)
+  const wrapper = /<div\s+(?:ref=\{cardSurface\}\s+)?data-light-surface\s+className="([^"]*)"\s+style=\{\{ colorScheme: "light" \}\}\s*>\s*<div className="mysr-form" \/>/.exec(form);
   assert.ok(wrapper, "the wrapper directly around .mysr-form");
   for (const cls of ["nz-moyasar-surface", "bg-white", "text-zinc-900", "[color-scheme:light]"]) {
     assert.ok(wrapper[1].split(/\s+/).includes(cls), cls);
@@ -193,10 +197,13 @@ test("the admin console is dark whatever the site theme is: ForceDarkTheme + `da
 });
 
 test("the receipt prints black on white, also when printed from dark mode", () => {
-  const receipt = stripComments(readFileSync(join(ROOT, "app/dashboard/billing/receipt/[orderId]/page.tsx"), "utf8"));
+  // l7: the receipt page renders TaxDocuments.tsx (the invoice and the credit note share it)
+  const receipt = ["app/dashboard/billing/receipt/[orderId]/page.tsx", "app/dashboard/billing/credit-note/[orderId]/page.tsx", "components/payments/TaxDocuments.tsx"]
+    .map((f) => stripComments(readFileSync(join(ROOT, f), "utf8"))).join("\n");
   // a print: variant loses to dark: on the same property; the important form wins
   assert.match(receipt, /<main[^>]*dark:text-zinc-100[^>]*print:text-black!/);
-  assert.match(receipt, /<article[^>]*print:text-black!/);
+  assert.match(receipt, /const ARTICLE = "[^"]*print:text-black!"/);
+  assert.match(receipt, /<article className=\{ARTICLE\}/);
   assert.match(receipt, /const NOTICE = "[^"]*dark:bg-amber-500\/10 dark:text-amber-300[^"]*print:text-black!"/);
   for (const m of receipt.matchAll(/className="([^"]*)"/g)) {
     if (/(?<![\w-])dark:text-/.test(m[1]) && !/print:hidden/.test(m[1])) assert.match(m[1], /print:text-[^\s"]+!/, m[1]);

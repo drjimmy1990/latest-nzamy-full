@@ -14,7 +14,7 @@
  * Clearing the browser's cookies makes the browser a new device — the honest
  * limit of a cookie, said in the report.
  */
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 export const LIBRARY_DEVICE_COOKIE = "nz_lib_device";
 
@@ -93,7 +93,13 @@ export function deviceLabelFromUserAgent(ua: string | null | undefined): string 
 
 // ── the database's answer ───────────────────────────────────────────────────
 
-export type DeviceStatus = "disabled" | "exempt" | "ok" | "registered" | "refused";
+/**
+ * Owner ٤٠ (18 Nov 2026, 20261127_60) adds two answers of library_device_gate:
+ *   needs_code — a never-verified device with room left: an e-mail code first;
+ *   suspend    — a never-verified device while the verified ones fill the
+ *                limit (the third device): the server suspends the account.
+ */
+export type DeviceStatus = "disabled" | "exempt" | "ok" | "registered" | "refused" | "needs_code" | "suspend";
 
 export interface AuthorisedDevice {
   id: string;
@@ -107,9 +113,11 @@ export interface DeviceCheckRow {
   limit: number;
   deviceId: string | null;
   devices: AuthorisedDevice[];
+  /** library_device_gate only: the other sessions of the account it ended (owner ٤٠, «لا يُفتحان معاً»). */
+  sessionsEnded?: number;
 }
 
-const STATUSES: ReadonlySet<string> = new Set(["disabled", "exempt", "ok", "registered", "refused"]);
+const STATUSES: ReadonlySet<string> = new Set(["disabled", "exempt", "ok", "registered", "refused", "needs_code", "suspend"]);
 
 function str(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
@@ -144,12 +152,14 @@ export function parseDeviceCheckRow(json: unknown): DeviceCheckRow | null {
   const r = row as Record<string, unknown>;
   if (typeof r.status !== "string" || !STATUSES.has(r.status)) return null;
   const limit = typeof r.device_limit === "number" && Number.isFinite(r.device_limit) ? Math.trunc(r.device_limit) : 2;
-  return {
+  const out: DeviceCheckRow = {
     status: r.status as DeviceStatus,
     limit,
     deviceId: str(r.device_id),
     devices: parseDevices(r.devices),
   };
+  if (typeof r.sessions_ended === "number" && Number.isFinite(r.sessions_ended)) out.sessionsEnded = r.sessions_ended;
+  return out;
 }
 
 /** «جهاز واحد», «جهازين», «3 أجهزة», «11 جهازاً». */
@@ -185,16 +195,39 @@ export const DEVICE_COOKIE_REQUIRED_AR =
   "لا يمكن فتح نص المكتبة الكامل من هذا الاتصال لأنه لا يحمل معرّف الجهاز. " +
   "افتح المكتبة من المتصفح، أو حدّث التطبيق إلى إصدار يرسل معرّف الجهاز.";
 
+// ── owner ٤٠ (18 Nov 2026): e-mail code per new device, third device suspends ──
+
+/** A new device waits for the e-mail code before it reads the library's full text. */
+export const DEVICE_CODE_REQUIRED_CODE = "device_code_required";
+export const DEVICE_CODE_REQUIRED_AR =
+  "هذا جهاز جديد على حسابك. أرسلنا — أو نرسل عند طلبك — رمز تحقق إلى بريدك الإلكتروني المسجّل؛ أدخله لتفتح المكتبة من هذا الجهاز. " +
+  "عند تأكيده يُسجَّل خروج حسابك من أي جهاز آخر، لأن المكتبة لا تُفتح على جهازين معاً.";
+
+/** The third device: the account is suspended until support (owner ٤٠). */
+export const DEVICE_LIMIT_SUSPENDED_CODE = "device_limit_suspended";
+export function deviceSuspendedMessageAr(limit: number): string {
+  return (
+    `أُوقف الحساب لمحاولة فتح المكتبة من جهاز جديد بعد أن بلغ حسابك ${devicesCountAr(limit)} مصرّحة. ` +
+    "تواصل مع الدعم الفني لإعادة تفعيله."
+  );
+}
+
 export interface DeviceLimitRefusalBody {
   error: string;
-  code: typeof DEVICE_LIMIT_CODE | typeof DEVICE_COOKIE_REQUIRED_CODE;
+  code:
+    | typeof DEVICE_LIMIT_CODE
+    | typeof DEVICE_COOKIE_REQUIRED_CODE
+    | typeof DEVICE_CODE_REQUIRED_CODE
+    | typeof DEVICE_LIMIT_SUSPENDED_CODE;
   limit: number;
   devices: AuthorisedDevice[];
 }
 
 export type DeviceGateDecision =
   | { action: "allow"; remember: "device" | "user" | "global" | null }
-  | { action: "refuse"; status: 403; body: DeviceLimitRefusalBody };
+  | { action: "refuse"; status: 403; body: DeviceLimitRefusalBody }
+  /** The caller suspends the account (ban + freeze), then answers `body`. Never remembered. */
+  | { action: "suspend"; status: 403; body: DeviceLimitRefusalBody };
 
 /**
  * The route's decision. No row (missing function, timeout, any error) → allow:
@@ -215,6 +248,18 @@ export function deviceGateDecision(row: DeviceCheckRow | null): DeviceGateDecisi
           limit: row.limit,
           devices: row.devices,
         },
+      };
+    case "needs_code":
+      return {
+        action: "refuse",
+        status: 403,
+        body: { error: DEVICE_CODE_REQUIRED_AR, code: DEVICE_CODE_REQUIRED_CODE, limit: row.limit, devices: [] },
+      };
+    case "suspend":
+      return {
+        action: "suspend",
+        status: 403,
+        body: { error: deviceSuspendedMessageAr(row.limit), code: DEVICE_LIMIT_SUSPENDED_CODE, limit: row.limit, devices: [] },
       };
     case "disabled":
       return { action: "allow", remember: "global" };
@@ -329,4 +374,66 @@ export function parseDeviceSettingsPatch(
   }
   if (Object.keys(columns).length === 0) return { ok: false, error: "لا يوجد ما يُحفظ" };
   return { ok: true, columns };
+}
+
+// ── the e-mail code of a new device (owner ٤٠) ──────────────────────────────
+
+export const DEVICE_CODE_TTL_MINUTES = 10;
+export const DEVICE_CODE_PEPPER_MIN = 32;
+
+/**
+ * The key the code is hashed with: DEVICE_CODE_PEPPER, else the lawyer-signup
+ * LAWYER_OTP_PEPPER (the hash input below is prefixed «device:v1», so a code
+ * of one flow can never pass the other). null = no usable key: the server
+ * cannot issue codes, and a new device registers as before (never a lock-out).
+ */
+export function deviceCodePepper(env: Record<string, string | undefined>): string | null {
+  for (const raw of [env.DEVICE_CODE_PEPPER, env.LAWYER_OTP_PEPPER]) {
+    const s = (raw ?? "").trim();
+    if (s.length >= DEVICE_CODE_PEPPER_MIN) return s;
+  }
+  return null;
+}
+
+/** HMAC-SHA256 of the code, bound to the user and the device. Only this is stored. */
+export function hashDeviceCode(pepper: string, userId: string, deviceHash: string, code: string): string {
+  return createHmac("sha256", pepper).update(`device:v1:${userId}:${deviceHash}:${code}`).digest("hex");
+}
+
+export function deviceCodeEmail(code: string, label: string): { subject: string; heading: string; paragraphs: string[] } {
+  return {
+    subject: "رمز تفعيل جهاز جديد للمكتبة القانونية — نظامي",
+    heading: "رمز تفعيل جهاز جديد",
+    paragraphs: [
+      `طُلب فتح المكتبة القانونية في حسابك من جهاز جديد (${label}).`,
+      `رمز التحقق: ${code}`,
+      `الرمز صالح ${DEVICE_CODE_TTL_MINUTES} دقائق. لا تشاركه مع أحد.`,
+      "عند تأكيده يُسجَّل خروج حسابك من الأجهزة الأخرى، لأن المكتبة لا تُفتح على جهازين معاً.",
+      "إن لم تكن أنت من طلبه فلا تُدخله، وغيّر كلمة المرور فوراً.",
+    ],
+  };
+}
+
+export type DeviceCodeVerifyState = "verified" | "wrong" | "expired" | "too_many" | "no_code" | "not_pending" | "full";
+
+/** library_device_code_verify's state → the Arabic answer (null = success). */
+export function deviceCodeVerifyMessageAr(state: DeviceCodeVerifyState, attemptsLeft: number | null): string | null {
+  switch (state) {
+    case "verified":
+      return null;
+    case "wrong":
+      return attemptsLeft !== null && attemptsLeft > 0
+        ? `الرمز غير صحيح. بقي لك ${attemptsLeft === 1 ? "محاولة واحدة" : attemptsLeft === 2 ? "محاولتان" : `${attemptsLeft} محاولات`}.`
+        : "الرمز غير صحيح.";
+    case "expired":
+      return "انتهت صلاحية الرمز. اطلب رمزاً جديداً.";
+    case "too_many":
+      return "تجاوزت عدد المحاولات. اطلب رمزاً جديداً.";
+    case "no_code":
+      return "لم يُرسل رمز لهذا الجهاز بعد. اطلب الرمز أولاً.";
+    case "full":
+      return "اكتمل عدد الأجهزة المصرّحة لحسابك قبل تأكيد هذا الجهاز. سجّل الخروج من أحد أجهزتك ثم أعد المحاولة.";
+    default:
+      return "هذا الجهاز لا ينتظر رمز تحقق. أعد تحميل الصفحة.";
+  }
 }

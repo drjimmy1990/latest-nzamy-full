@@ -6,6 +6,9 @@
  * Success is shown ONLY for 'granted', or 'already_done' with no reason (a
  * refresh after success). Every other answer says what actually happened:
  *   already_entitled  — paid, nothing replaced: the refund-review notice;
+ *   founder_pending_verification (l7) — a founder seat paid before the
+ *                       licence check: «قيد المراجعة», activated or refunded
+ *                       on the admin's decision;
  *   order_refunded    — refunded;
  *   claimed_elsewhere — another call is still granting: pending, refresh;
  *   order_<status>    — a closed unpaid order: closed, retry, contact;
@@ -19,7 +22,7 @@
  */
 
 import { orderLabelWithPointsAr, sellableItem } from "./catalog.ts";
-import { fulfilmentNoticeAr } from "./fulfillDecision.ts";
+import { FOUNDER_PENDING_REASON, fulfilmentNoticeAr } from "./fulfillDecision.ts";
 import { FOUNDER_PLAN_ID } from "../membership/founderPlan.ts";
 import { FOUNDER_BENEFITS } from "../pricing/founderCard.ts";
 
@@ -110,6 +113,19 @@ export function paymentResultView(result: ResultInput, order: ResultOrder): Resu
   const receiptNumber = result.receiptNumber ?? order.receipt_number ?? null;
   const notice = (alreadyEntitled: boolean) =>
     fulfilmentNoticeAr({ kind: noticeKind(order.kind), labelAr: labelOf(order), receiptNumber, alreadyEntitled });
+
+  // l7 (decision 1): a founder seat paid before the licence check — not the
+  // gold welcome (that waits for the activation), not a refund review
+  if ((result.outcome === "granted" || result.outcome === "already_done") && result.reason === FOUNDER_PENDING_REASON) {
+    const n = fulfilmentNoticeAr({
+      kind: noticeKind(order.kind),
+      labelAr: labelOf(order),
+      receiptNumber,
+      alreadyEntitled: false,
+      founderPending: true,
+    });
+    return { tone: "review", title: n.title, body: n.body, receiptHref: receiptHrefFor(order), refresh: false, contact: false };
+  }
 
   switch (result.outcome) {
     case "granted": {

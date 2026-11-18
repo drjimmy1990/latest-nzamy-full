@@ -28,6 +28,8 @@ import {
   founderSeatsLine,
   founderVatLine,
   founderVerificationFromProfile,
+  FOUNDER_PENDING_MEMBER_LABEL,
+  FOUNDER_PENDING_NOTE,
   type FounderCtaState,
 } from "./founderCard.ts";
 
@@ -271,9 +273,11 @@ test("founderCta (17 Nov, 20261122_10): a consultant is refused before payment; 
 
 // ── the two reads behind the CTA ────────────────────────────────────────────
 
-test("founderVerificationFromProfile: only an exact 'verified' is verified; a failed read is unknown", () => {
+test("founderVerificationFromProfile: only an exact 'verified' is verified, an exact 'pending' pending (l7); a failed read is unknown", () => {
   assert.equal(founderVerificationFromProfile({ roleProfile: { verification_status: "verified" } }), "verified");
-  assert.equal(founderVerificationFromProfile({ roleProfile: { verification_status: "pending" } }), "unverified");
+  assert.equal(founderVerificationFromProfile({ roleProfile: { verification_status: "pending" } }), "pending");
+  assert.equal(founderVerificationFromProfile({ roleProfile: { verification_status: "rejected" } }), "unverified");
+  assert.equal(founderVerificationFromProfile({ roleProfile: { verification_status: "suspended" } }), "unverified");
   assert.equal(founderVerificationFromProfile({ roleProfile: { verification_status: null } }), "unverified");
   assert.equal(founderVerificationFromProfile({ roleProfile: null, roleProfileReadFailed: false }), "unverified");
   assert.equal(founderVerificationFromProfile({ roleProfile: null, roleProfileReadFailed: true }), "unknown");
@@ -287,6 +291,22 @@ test("founderMemberFromReply: exactly true or false, anything else unknown", () 
   assert.equal(founderMemberFromReply({ error: "تعذّر" }), "unknown");
   assert.equal(founderMemberFromReply({ member: "true" }), "unknown");
   assert.equal(founderMemberFromReply(null), "unknown");
+  // l7 (decision 1): paid while the licence is still being checked
+  assert.equal(founderMemberFromReply({ member: false, pendingVerification: true }), "pending");
+  assert.equal(founderMemberFromReply({ member: true, pendingVerification: true }), true);
+});
+
+test("founderCta (l7, decision 1): a pending lawyer may pay and is told plainly what happens; one who paid sees his held seat", () => {
+  const cta = founderCta({ ...lawyer, verification: "pending" });
+  assert.equal(cta.kind, "checkout");
+  if (cta.kind === "checkout") assert.equal(cta.href, CHECKOUT);
+  assert.equal(cta.note, FOUNDER_PENDING_NOTE);
+  assert.equal(FOUNDER_PENDING_NOTE, "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.");
+  assert.equal(founderCta({ ...lawyer, verification: "pending", gateway: { disabled: true, provider: null } }).note, FOUNDER_PENDING_NOTE);
+  const held = founderCta({ ...lawyer, member: "pending", verification: "pending" });
+  assert.deepEqual([held.kind, held.label, held.note], ["member", FOUNDER_PENDING_MEMBER_LABEL, FOUNDER_PENDING_NOTE]);
+  // a consultant is still refused before payment, pending or not
+  assert.equal(founderCta({ ...lawyer, practiceKind: "consultant", verification: "pending" }).kind, "lawyers_only");
 });
 
 test("before the opening day the offer is «pre», never «انتهت» (founderWindow.state pre)", () => {

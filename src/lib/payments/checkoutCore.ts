@@ -62,8 +62,9 @@
  *       would be paid and grant nothing). An upgrade from a lower PAID plan →
  *       the pro-rata credit; a coupon with it → 400 UPGRADE_NO_COUPON_AR. A
  *       failed read → 503.
- *   3c. A TOP-UP of an active founder member (F12, founderDiscount.ts): 15 %
- *       off the net, or the coupon if it is larger (never both). A failed
+ *   3c. A TOP-UP of a founder member (F12, founderDiscount.ts; lifetime and
+ *       founder_topup_discount_bps since l7): 15 % by default off the net,
+ *       or the coupon if it is larger (never both). A failed
  *       founder read → 503. metadata.founder_discount; quote.founderDiscount.
  *   3d. The credit off the net before VAT (VAT recomputed); less than 1 SAR
  *       left → 409 UPGRADE_CREDIT_TOO_BIG_AR. metadata.proration;
@@ -121,6 +122,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
+import { checkMinTopup } from "./minTopup.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
 import {
@@ -147,6 +149,7 @@ import {
   bestDiscount,
   FOUNDER_DISCOUNT_FAILED_AR,
   founderDiscountApplies,
+  founderDiscountBps,
   founderDiscountHalalas,
   founderDiscountMetadata,
   isActiveFounder,
@@ -158,6 +161,7 @@ import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { checkFounderConsent, type FounderConsent, type FounderTermsState } from "./founderConsent.ts";
 import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR } from "./checkoutCaptcha.ts";
 import type { Attribution } from "../attribution/utmAttribution.ts";
+import type { OrderAnalytics } from "../analytics/analytics.ts";
 import { DEMO_NO_PAYMENT_AR, demoRefusal } from "../api/dbErrorCore.ts";
 import {
   callbackUrlFor,
@@ -252,6 +256,15 @@ export interface CheckoutInput {
   founderConsent?: FounderConsent | null;
   /** F13: the first-touch utm cookie (utmAttribution.ts), stored as metadata.attribution; null / absent → nothing stored. */
   attribution?: Attribution | null;
+  /** l7-analytics: the consented GA client id (orderAnalyticsFromCookies), stored as metadata.analytics for the server purchase event; null / absent → nothing stored, no event. */
+  analytics?: OrderAnalytics | null;
+  /**
+   * l7 decision 3 (20261127_80): the gateway mode of this checkout, stored as
+   * metadata.gateway_mode. The database accepts a TEST ACCOUNT's order only
+   * when it says 'test' ('demo_account:live_payment' otherwise, mapped by
+   * demoRefusal below). Absent → not stored.
+   */
+  gatewayMode?: "test" | "live";
 }
 
 export type CheckoutReply =
@@ -463,6 +476,13 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // 2. the audience, before any price
   const known = resolveItem(input.itemId, catalog);
   if (!known) return fail(400, UNKNOWN_ITEM_AR);
+  // 2a (l7 decision 5). a top-up below the account type's minimum (setting
+  // min_topup_by_account_type, on the BASE price) — before the audience check,
+  // so a lawyer sent to a 100 pack is told the limit; audited (minTopup.ts)
+  if (known.kind === "topup" && typeof known.listedPrices[input.billing] === "number") {
+    const min = await checkMinTopup(admin, { userId: user.id, userType, itemId: known.id, baseNetHalalas: known.listedPrices[input.billing] as number });
+    if (!min.ok) return { status: min.status, body: { error: min.error, code: min.code } };
+  }
   if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
 
   // 3. the price — on the request's clock, so a launch price (owner ٣٠٣) is
@@ -523,7 +543,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     couponLimited = priced.coupon.limited === true;
   }
 
-  // 3c (l6-pay, F12). an active founder member: 15 % off a top-up, never
+  // 3c (l6-pay, F12). a founder member: 15 % (the setting) off a top-up, never
   // combined with a better offer — the larger of coupon and founder discount
   // wins (a tie keeps the coupon unused)
   let founderMeta: Record<string, unknown> | null = null;
@@ -532,14 +552,16 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     const founder = await isActiveFounder(admin, user.id, now);
     if (founder === null) return fail(503, FOUNDER_DISCOUNT_FAILED_AR);
     if (founder) {
-      const fd = founderDiscountHalalas(q.netHalalas);
+      // l7 (decision 4): the rate is the founder_topup_discount_bps setting (default 1500)
+      const bps = await founderDiscountBps(admin);
+      const fd = founderDiscountHalalas(q.netHalalas, bps);
       if (bestDiscount(couponQuote?.discount ?? null, fd).source === "founder") {
         const d = applyDiscount(q.netHalalas, fd);
         ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
         couponMeta = null;
         couponQuote = null;
         couponLimited = false;
-        founderMeta = founderDiscountMetadata(q.netHalalas, d.discountHalalas);
+        founderMeta = founderDiscountMetadata(q.netHalalas, d.discountHalalas, bps);
         founderQuote = { listNet: q.netHalalas, founderDiscount: d.discountHalalas };
       }
     }
@@ -586,6 +608,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       ...(prorationMeta ? { proration: prorationMeta } : {}),
       ...(consentMeta ?? {}),
       ...(input.attribution ? { attribution: input.attribution } : {}),
+      ...(input.analytics ? { analytics: input.analytics } : {}),
+      ...(input.gatewayMode ? { gateway_mode: input.gatewayMode } : {}),
       ...(q.launch
         ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
         : {}),
@@ -611,7 +635,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     }
     // l6-pay (20261126_60): another open / paid order already carries the credit of these plans
     if (prorationMeta && isProrationOrderConflict(insertErr)) return fail(409, UPGRADE_PENDING_AR);
-    // 20261125_50 (S3): payment_orders refuses a demo account's order
+    // 20261125_50 (S3) / 20261127_80: payment_orders refuses a test account's order outside test mode
     const demo = demoRefusal(insertErr);
     if (demo) return fail(demo.status, demo.message);
     if (insertErr && isMissingPaymentsObject(insertErr.code)) {

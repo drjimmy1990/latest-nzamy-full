@@ -35,7 +35,7 @@ export async function readSignupViews(svc: Svc, userIds: string[]): Promise<Map<
         .from("lawyer_otp_challenges")
         .select("user_id, created_at, delivery")
         .in("user_id", ids)
-        .eq("purpose", "identity")
+        .eq("purpose", "email")
         .order("created_at", { ascending: false }),
     ]);
     const latestImage = new Map<string, Record<string, unknown>>();

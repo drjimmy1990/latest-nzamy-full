@@ -28,6 +28,8 @@ import {
   readConsultChannel,
   type ConsultChannel,
 } from "@/constants/clientConsultationData";
+import TestAccountBadge from "@/components/ui/TestAccountBadge";
+import { isTestMetadata, isTestRow } from "@/lib/testAccounts/testRow";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +93,8 @@ interface Consultation {
   price: number | null;
   /** Real stored notes (service rows). Never a synthesised sentence. */
   notes?: string;
+  /** l7 decision 3: a test account's row (metadata.test_account) — shown «تجريبي». */
+  isTest?: boolean;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -256,6 +260,7 @@ function ConsultCard({ c, isDark }: { c: Consultation; isDark: boolean }) {
                   <span className="font-black text-sm text-gray-900 dark:text-white" style={{ fontFamily: 'var(--font-brand)' }}>
                     {c.title}
                   </span>
+                  {c.isTest && <TestAccountBadge />}
                   <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2.5 py-0.5 rounded-full border ${status.badge}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
                     {c.requestStatusLabel}
@@ -397,6 +402,7 @@ const toConsultation = (request: WorkflowRequest): Consultation => {
     date: formatDate(request.createdAt),
     scheduledDate: "",
     price: request.payment.amount,
+    isTest: isTestMetadata(request.metadata),
   };
 };
 
@@ -470,6 +476,7 @@ export default function ConsultationListPage() {
                 status: CONSULT_STATUS_BY_SERVICE_STATUS[scStatus] ?? "upcoming",
                 requestStatusLabel: SERVICE_STATUS_AR[scStatus] ?? "حالة غير معروفة",
                 title: sc.topic || sc.description || "طلب استشارة",
+                isTest: isTestRow(sc),
                 // `sc.lawyer_id` is a uuid. It was rendered straight into the
                 // lawyer-name slot, so the card showed the client a raw
                 // identifier and called it their lawyer. We know one is

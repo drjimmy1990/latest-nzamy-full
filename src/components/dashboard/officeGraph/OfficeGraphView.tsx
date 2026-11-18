@@ -15,10 +15,9 @@
  * Read-only: a map of the caller's cases, clients, opponents, contracts,
  * consultations, upcoming hearings, open tasks and fees exactly as GET
  * /api/v1/lawyer/office-graph returns them through RLS (N07-50..52). A party
- * on several cases is one node, and one client is one node (N07-49);
- * «تشابه اسم» marks a name that is a client in one file and the other side in
- * another — a hint to check, not a conflict finding. Clicking a node opens
- * its fields and a link to the record. Nothing here writes anything.
+ * on several cases is one node, and one client is one node (N07-49). No
+ * name-similarity hint (owner ٣٥, 18 Nov 2026). Clicking a node opens its
+ * fields and a link to the record. Nothing here writes anything.
  *
  * STAYS CURRENT (BUG-03): the read runs again when the tab comes back into
  * view, on window focus, when a case is saved in this tab
@@ -118,7 +117,7 @@ function kindColors(kind: OfficeNodeKind, isDark: boolean) {
   return { fill, stroke, text };
 }
 
-const RELATION_KIND: Record<Exclude<OfficeEdgeRelation, "client" | "opponent" | "same_name">, OfficeNodeKind> = {
+const RELATION_KIND: Record<Exclude<OfficeEdgeRelation, "client" | "opponent">, OfficeNodeKind> = {
   contract: "contract",
   consultation: "consultation",
   hearing: "hearing",
@@ -153,7 +152,7 @@ const OfficeNodeCard = memo(function OfficeNodeCard({ data }: NodeProps<OfficeFl
         width: OFFICE_NODE_W,
         background: c.fill,
         color: c.text,
-        border: `${chosen ? 3 : node.nameClash ? 2.5 : 1.5}px solid ${node.nameClash ? "#f59e0b" : c.stroke}`,
+        border: `${chosen ? 3 : 1.5}px solid ${c.stroke}`,
         boxShadow: hit ? `0 0 0 3px ${isDark ? "rgba(200,167,98,0.55)" : "rgba(200,167,98,0.65)"}` : undefined,
         opacity: dimmed ? 0.22 : 1,
       }}
@@ -165,7 +164,6 @@ const OfficeNodeCard = memo(function OfficeNodeCard({ data }: NodeProps<OfficeFl
       <p className="flex items-center gap-1 text-[10.5px] font-semibold" style={{ opacity: 0.8 }}>
         <Icon size={12} weight="duotone" />
         <span>{sub}</span>
-        {node.nameClash && <span className="ms-auto" style={{ color: "#f59e0b" }}>⚠ تشابه اسم</span>}
       </p>
       <p className="mt-0.5 whitespace-normal break-words text-[13px] font-bold leading-snug" dir="auto">{node.label}</p>
     </div>
@@ -314,7 +312,7 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
         hidden: !shown[n.kind],
         selected: n.id === selected,
         measured: measured[n.id],
-        ariaLabel: `${KIND_AR[n.kind]}: ${n.label}${n.nameClash ? " — تشابه اسم" : ""}`,
+        ariaLabel: `${KIND_AR[n.kind]}: ${n.label}`,
         // Every card is rendered (no onlyRenderVisibleElements) so all are
         // measured and the opening fitView covers the whole map; the estimate
         // only bridges the first frame.
@@ -335,8 +333,7 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
       const leftward = !!a && !!b && b.x < a.x;
       const sameColumn = !!a && !!b && a.x === b.x;
       const stroke =
-        e.relation === "same_name" ? "#f59e0b"
-          : e.relation === "opponent" ? (isDark ? "#fb7185" : "#e11d48")
+        e.relation === "opponent" ? (isDark ? "#fb7185" : "#e11d48")
           : e.relation === "client" ? neutral
           : kindColors(RELATION_KIND[e.relation], isDark).stroke;
       const lit = !focus || (focus.has(e.from) && focus.has(e.to));
@@ -350,8 +347,8 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
         focusable: false,
         style: {
           stroke,
-          strokeWidth: e.relation === "same_name" ? 2 : 1.4,
-          strokeDasharray: e.relation === "same_name" ? "6 4" : e.relation === "opponent" ? "3 3" : undefined,
+          strokeWidth: 1.4,
+          strokeDasharray: e.relation === "opponent" ? "3 3" : undefined,
           opacity: lit ? 0.85 : 0.1,
         },
       };
@@ -431,7 +428,6 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
     task: "فتح المهام",
     fee: "فتح المالية",
   };
-  const caseTitle = (id: string) => nodeById.get(`case:${id}`)?.label ?? id;
   const counts = Object.fromEntries(OFFICE_NODE_KINDS.map((k) => [k, graph.nodes.filter((n) => n.kind === k).length])) as Record<OfficeNodeKind, number>;
   const visibleCount = graph.nodes.filter((n) => shown[n.kind]).length;
   const otherCuts = (["contracts", "consultations", "hearings", "tasks", "invoices"] as const).filter((k) => read.truncated[k]);
@@ -575,9 +571,6 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
                   <X size={14} />
                 </button>
               </div>
-              {sel.nameClash && (
-                <p className={`mt-2 rounded-lg px-2 py-1 text-[11px] ${isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800"}`}>⚠ تشابه اسم — راجِع قائمة تشابه الأسماء أدناه.</p>
-              )}
               {(sel.facts ?? []).length > 0 && (
                 <dl className="mt-3 space-y-1.5 text-[12px]">
                   {(sel.facts ?? []).map((f) => (
@@ -618,33 +611,6 @@ function OfficeGraphCanvas({ base, isDark }: { base: "lawyer" | "firm"; isDark: 
               )}
             </div>
           )}
-
-          <div className={`${card} p-4`}>
-            <p className={`flex items-center gap-1.5 text-[13px] font-bold ${isDark ? "text-zinc-100" : "text-slate-800"}`}>
-              <Warning size={14} className="text-amber-500" /> تشابه أسماء ({toArabicDigits(graph.clashes.length)})
-            </p>
-            <p className={`mt-1 text-[11px] leading-relaxed ${muted}`}>
-              اسم مسجّل موكّلاً في ملف وطرفاً آخر في ملف (أو الملف نفسه)، بعد توحيد الإملاء. تنبيه للتحقق، لا حكم بوجود تعارض، ويقتصر على ما في سجلاتك.
-            </p>
-            {graph.clashes.length === 0 ? (
-              <p className={`mt-3 text-[12px] ${muted}`}>لا تشابه أسماء في سجلاتك.</p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {graph.clashes.map((c) => (
-                  <li key={c.name} className={`rounded-xl border p-2.5 text-[12px] ${isDark ? "border-amber-500/20 bg-amber-500/5" : "border-amber-200 bg-amber-50"}`}>
-                    <p className={`font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}>«{c.name}» — تحقّق</p>
-                    {c.clientIn.length > 0 && (
-                      <p className={isDark ? "text-zinc-300" : "text-slate-700"}>موكّل في: {c.clientIn.map(caseTitle).join("، ")}</p>
-                    )}
-                    {c.clientIn.length === 0 && c.clientCardIds.length > 0 && (
-                      <p className={isDark ? "text-zinc-300" : "text-slate-700"}>له بطاقة موكّل في سجلاتك</p>
-                    )}
-                    <p className={isDark ? "text-zinc-300" : "text-slate-700"}>طرف آخر في: {c.opponentIn.map(caseTitle).join("، ")}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
 
           <p className={`text-[11px] leading-relaxed ${muted}`}>
             الخريطة للقراءة فقط وتُبنى من قضاياك وقضايا مكتبك التي تملك صلاحية قراءتها. الخصوم يظهرون فقط حين يسجّلهم ملف القضية.

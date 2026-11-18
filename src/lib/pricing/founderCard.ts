@@ -75,7 +75,7 @@ export const FOUNDER_CONSULTANT_NOTE = "حساب المستشار: لا يشمل
  * only. A consultant who is not already a member gets this instead of a buy
  * button; the checkout refuses him too (founder_reserve_seat → not_advocate).
  */
-export const FOUNDER_ADVOCATE_ONLY_TEXT = "باقة المؤسس للمحامي المرخّص للترافع فقط، ولا تُتاح لحساب المستشار";
+export const FOUNDER_ADVOCATE_ONLY_TEXT = "باقة المؤسس للمحامي المرخص فقط، ولا تُتاح لحساب المستشار";
 
 const CHECKOUT_PATH = `/checkout?item=${FOUNDER_PLAN_ID}&billing=once`;
 
@@ -229,8 +229,19 @@ export function founderSectionView(input: {
 
 // ── the button ──────────────────────────────────────────────────────────────
 
-export type FounderVerification = "verified" | "unverified" | "unknown" | "loading";
-export type FounderMember = boolean | "unknown" | "loading";
+/**
+ * "pending" (l7, decision 1): the lawyer's signup is still being checked
+ * (held for review included) — he may pay; the seat activates when he is
+ * approved and is refunded in full if he is not.
+ */
+export type FounderVerification = "verified" | "pending" | "unverified" | "unknown" | "loading";
+/** "pending" (l7): he paid while his licence was pending — the seat waits for the check. */
+export type FounderMember = boolean | "pending" | "unknown" | "loading";
+
+/** l7 decision 1, the owner's sentence, shown before a pending lawyer pays and after. */
+export const FOUNDER_PENDING_NOTE = "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.";
+/** l7: the button of a lawyer who paid while pending. */
+export const FOUNDER_PENDING_MEMBER_LABEL = "مقعدك محجوز بانتظار توثيق رخصتك";
 
 export interface FounderCtaState {
   /** useUser() still resolving. */
@@ -264,7 +275,10 @@ export type FounderCta = { note: string | null } & (
  *   3. signed in, not a lawyer → «للمحامين المرخّصين» (the item sells to lawyers only);
  *   4. membership loading → nothing yet; a member → «أنت عضو مؤسس»
  *      (before verification: a member's licence was verified at activation);
- *   5. verification loading → nothing yet; unverified → «وثّق رخصتك أولاً»;
+ *   4b. l7: paid while pending → «مقعدك محجوز بانتظار توثيق رخصتك» + FOUNDER_PENDING_NOTE;
+ *   5. verification loading → nothing yet; unverified (rejected, suspended,
+ *      no lawyer row) → «وثّق رخصتك أولاً»; pending (l7, decision 1) → the
+ *      buy steps below with FOUNDER_PENDING_NOTE;
  *   6. gateway loading → wait; checkoutHref null (gateway off / stub) →
  *      «الدفع الإلكتروني غير متاح حاليًا»; else /checkout.
  * An unreadable profile or membership ("unknown") never blocks: the checkout
@@ -290,28 +304,37 @@ export function founderCta(s: FounderCtaState): FounderCta {
   const note = s.practiceKind === "consultant" ? FOUNDER_CONSULTANT_NOTE : null;
   if (s.member === "loading") return { kind: "loading", label: "جارٍ التحميل…", note };
   if (s.member === true) return { kind: "member", label: "أنت عضو مؤسس", note };
+  if (s.member === "pending") return { kind: "member", label: FOUNDER_PENDING_MEMBER_LABEL, note: FOUNDER_PENDING_NOTE };
   if (s.practiceKind === "consultant") return { kind: "lawyers_only", label: FOUNDER_ADVOCATE_ONLY_TEXT, note };
   if (s.verification === "loading") return { kind: "loading", label: "جارٍ التحميل…", note };
   if (s.verification === "unverified") {
     return { kind: "verify", label: "وثّق رخصتك أولاً", href: FOUNDER_VERIFY_HREF, note };
   }
-  if (s.gateway.loading === true) return { kind: "wait", label: "جارٍ التحقق من بوابة الدفع…", note };
+  // l7 (decision 1): a pending lawyer may pay — told plainly what happens next
+  const buyNote = s.verification === "pending" ? FOUNDER_PENDING_NOTE : note;
+  if (s.gateway.loading === true) return { kind: "wait", label: "جارٍ التحقق من بوابة الدفع…", note: buyNote };
   const href = checkoutHref(FOUNDER_PLAN_ID, "once", gatewayAllowsCheckout(s.gateway), true);
-  if (!href) return { kind: "unavailable", label: "الدفع الإلكتروني غير متاح حاليًا", note };
-  return { kind: "checkout", label: "اشترك الآن", href, note };
+  if (!href) return { kind: "unavailable", label: "الدفع الإلكتروني غير متاح حاليًا", note: buyNote };
+  return { kind: "checkout", label: "اشترك الآن", href, note: buyNote };
 }
 
-/** GET /api/v1/profile → the lawyer's verification. Only an exact 'verified' counts. */
+/**
+ * GET /api/v1/profile → the lawyer's verification. Only an exact 'verified'
+ * is verified; an exact 'pending' (l7: still being checked, held included) is
+ * pending; anything else (rejected, suspended, null) is unverified.
+ */
 export function founderVerificationFromProfile(reply: unknown): Exclude<FounderVerification, "loading"> {
   if (!isObject(reply) || !("roleProfile" in reply)) return "unknown";
   const role = reply.roleProfile;
   if (role === null) return reply.roleProfileReadFailed === true ? "unknown" : "unverified";
   if (!isObject(role)) return "unknown";
-  return role.verification_status === "verified" ? "verified" : "unverified";
+  if (role.verification_status === "verified") return "verified";
+  return role.verification_status === "pending" ? "pending" : "unverified";
 }
 
-/** GET /api/v1/membership/founder → member, or "unknown" for an error body. */
+/** GET /api/v1/membership/founder → member, "pending" (l7: paid, licence being checked), or "unknown" for an error body. */
 export function founderMemberFromReply(reply: unknown): Exclude<FounderMember, "loading"> {
   if (!isObject(reply) || typeof reply.member !== "boolean") return "unknown";
+  if (!reply.member && reply.pendingVerification === true) return "pending";
   return reply.member;
 }

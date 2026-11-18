@@ -11,6 +11,9 @@
  * عرض» or «قبول» button here. The full text and the client's name are shown
  * only once a lawyer is assigned, on the case itself.
  *
+ * Owner ٢٣: only requests the office reviewed and PUBLISHED appear here, typed
+ * استشارة / قضية / صياغة (20261127_70); a test account's request never does.
+ *
  * Every state is honest: loading, an error, «not verified yet», an empty list.
  */
 
@@ -80,8 +83,8 @@ export default function OpenRequestsList() {
         </button>
       </div>
       <p className={`text-xs leading-relaxed mb-4 ${ts}`}>
-        للاطلاع فقط: نوع الطلب والمدينة وسطر ملخّص لا يحمل اسم العميل ولا أرقامه. يُسند الطلب من المكتب، ولا يظهر
-        النص الكامل ولا اسم العميل إلا للمحامي المُسنَد إليه.
+        طلبات راجعتها إدارة المنصة ونشرتها: استشارة أو قضية أو صياغة. للاطلاع فقط: نوع الطلب والمدينة وسطر ملخّص لا
+        يحمل اسم العميل ولا أرقامه. يُسند الطلب من المكتب، ولا يظهر النص الكامل ولا اسم العميل إلا للمحامي المُسنَد إليه.
       </p>
 
       {state.kind === "loading" && <p className={`text-sm ${ts}`}>جارٍ التحميل…</p>}

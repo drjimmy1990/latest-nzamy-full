@@ -592,3 +592,10 @@ test("withinMs: the value in time, else the fallback (late or rejected); the see
   assert.deepEqual(await withinMs(Promise.reject(new Error("db")), 50, ["fb"]), ["fb"]);
   assert.ok(SEED_LOOKUP_MS < GRAPH_BUDGET_MS);
 });
+
+test("H8 (owner decision 17): a principle reached over INTERPRETS_ARTICLE is titled «مبدأ قضائي يستند لمادة» for the model", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("./retrieval.ts", import.meta.url), "utf8");
+  assert.match(src, /INTERPRETS_ARTICLE: "مبدأ قضائي يستند لمادة",/);
+  assert.doesNotMatch(src, /تفسير قضائي|يفسّر/);
+});

@@ -137,3 +137,18 @@ test("the page says plainly that forged / malformed deliveries are not recorded"
   assert.match(WEBHOOK_UNRECORDED_NOTE_AR, /لا يسجّلها التطبيق/);
   assert.match(WEBHOOK_UNRECORDED_NOTE_AR, /وليس المؤسس وحده/);
 });
+
+test("l7 decision 3: a test account's order is never revenue nor a buyer, even when live", () => {
+  const s = founderSaleStats([
+    order({}),
+    order({ test: true }),
+    order({ test: true, live: null }),
+    order({ test: true, status: "initiated", paid_at: null, live: null }),
+  ]);
+  assert.equal(s.revenue.live.paidOrders, 1);
+  assert.equal(s.revenue.test.paidOrders, 2);
+  assert.equal(s.revenue.unknownMode, 0);
+  const untracked = s.conversion.bySource.find((r) => r.key === null);
+  assert.equal(untracked?.started, 1);
+  assert.equal(untracked?.paid, 1);
+});

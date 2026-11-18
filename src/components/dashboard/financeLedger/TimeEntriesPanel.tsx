@@ -20,6 +20,7 @@ import {
   createTimeEntry, listRecentFocusSessions, listTimeEntries, patchTimeEntry, type RecentSession,
 } from "@/lib/services/financeLedgerService";
 import { TargetFields, VoidBox, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
+import { latinAmountInput, latinDigitsOnly } from "@/lib/forms/latinDigits";
 
 export default function TimeEntriesPanel({ isDark, caseId, compact = false }: { isDark: boolean; caseId?: string; compact?: boolean }) {
   const t = themeCls(isDark);
@@ -167,11 +168,11 @@ export default function TimeEntriesPanel({ isDark, caseId, compact = false }: { 
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className={t.label}>ساعات</label>
-              <input inputMode="numeric" className={t.input} value={fHours} onChange={(e) => setFHours(e.target.value.replace(/\D/g, ""))} placeholder="0" />
+              <input inputMode="numeric" dir="ltr" className={t.input} value={fHours} onChange={(e) => setFHours(latinDigitsOnly(e.target.value))} placeholder="0" />
             </div>
             <div>
               <label className={t.label}>دقائق</label>
-              <input inputMode="numeric" className={t.input} value={fMinutes} onChange={(e) => setFMinutes(e.target.value.replace(/\D/g, ""))} placeholder="0" />
+              <input inputMode="numeric" dir="ltr" className={t.input} value={fMinutes} onChange={(e) => setFMinutes(latinDigitsOnly(e.target.value))} placeholder="0" />
             </div>
           </div>
           <div className="sm:col-span-2">
@@ -180,7 +181,7 @@ export default function TimeEntriesPanel({ isDark, caseId, compact = false }: { 
           </div>
           <div>
             <label className={t.label}>سعر الساعة (ر.س) — اتركه فارغاً إن لم يُسعَّر</label>
-            <input inputMode="decimal" className={t.input} value={fRate} onChange={(e) => setFRate(e.target.value)} placeholder="مثال: 500" />
+            <input inputMode="decimal" dir="ltr" className={t.input} value={fRate} onChange={(e) => setFRate(latinAmountInput(e.target.value))} placeholder="مثال: 500" />
           </div>
           <div className="flex flex-col justify-end gap-1">
             <label className={`flex items-center gap-2 text-[12px] ${t.text}`}>

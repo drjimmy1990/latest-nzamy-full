@@ -8,6 +8,7 @@ import { recordEvent, RequestEvent } from "@/lib/events";
 import { recordNotification } from "@/lib/notify";
 import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
+import { isOpenRequestCategory, openRequestPublishBlock } from "@/lib/services/openRequestCategory";
 
 /**
  * What happened when this route tried to hand the client's WhatsApp notice to
@@ -174,8 +175,9 @@ async function dispatchOrderNotice(opts: {
 
 /**
  * PATCH /api/v1/admin/service-orders/[id]
- * Body: { action: "claim" | "assign" | "deliver" | "cancel" | "resend_whatsapp",
- *         documentId?, fileName?, notes?, reason?, sendWhatsapp?, assigneeUserId? }
+ * Body: { action: "claim" | "assign" | "deliver" | "cancel" | "resend_whatsapp"
+ *                 | "publish_open" | "unpublish_open",
+ *         documentId?, fileName?, notes?, reason?, sendWhatsapp?, assigneeUserId?, category? }
  * Side-channels (event, notification, n8n) are best-effort and never break the write.
  *
  * "claim" is a single atomic UPDATE via public.claim_service_request() (Owner
@@ -209,11 +211,13 @@ export async function PATCH(
   const adminUserId = gate.userId;
 
   let body: {
-    action?: "claim" | "assign" | "deliver" | "cancel" | "resend_whatsapp";
+    action?: "claim" | "assign" | "deliver" | "cancel" | "resend_whatsapp" | "publish_open" | "unpublish_open";
     documentId?: string; fileName?: string; notes?: string; reason?: string;
     internalNotes?: string; sendWhatsapp?: boolean;
     /** "assign" only — the admin to route this order to, or null to clear it. */
     assigneeUserId?: string | null;
+    /** "publish_open" only — consultation | case | drafting (owner ٢٣). */
+    category?: string;
   };
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 }); }
@@ -355,6 +359,71 @@ export async function PATCH(
     });
 
     return NextResponse.json({ success: true, data: routed });
+  }
+
+  // ── "publish_open" / "unpublish_open" — owner ٢٣ ──────────────────────────
+  //
+  // «نشر في الطلبات المفتوحة»: after a quick triage, staff publish the request
+  // under one of three types (استشارة / قضية / صياغة) and verified lawyers see
+  // it in their open list — the type, the city and the server-written summary
+  // line only (public.marketplace_open_requests, 20261127_70). The receiver,
+  // status and assignee are NOT touched: the order stays in this queue, and
+  // claiming or routing it takes it off the lawyers' list by itself. No client
+  // notification and no n8n webhook: nothing about the client's order changed.
+  // A test account's request is never published (owner decision 3).
+  if (body.action === "publish_open" || body.action === "unpublish_open") {
+    const publishing = body.action === "publish_open";
+    if (publishing && !isOpenRequestCategory(body.category)) {
+      return NextResponse.json({ error: "اختر نوع الطلب: استشارة أو قضية أو صياغة" }, { status: 400 });
+    }
+    if (publishing) {
+      const requesterId = (order.requester_user_id as string | null) ?? null;
+      let isTestAccount = false;
+      if (requesterId) {
+        const [{ data: prof }, { data: testRow }] = await Promise.all([
+          admin.from("profiles").select("is_demo").eq("id", requesterId).maybeSingle(),
+          admin.from("test_accounts").select("user_id").eq("user_id", requesterId).maybeSingle(),
+        ]);
+        isTestAccount = (prof as { is_demo?: boolean } | null)?.is_demo === true || !!testRow;
+      }
+      const blocked = openRequestPublishBlock(order, { isTestAccount });
+      if (blocked) return NextResponse.json({ error: blocked }, { status: 409 });
+    }
+
+    const publication = publishing
+      ? { marketplace_published_at: nowIso, marketplace_published_by: adminUserId, marketplace_category: body.category }
+      : { marketplace_published_at: null, marketplace_published_by: null, marketplace_category: null };
+    const { data: published, error: publishError } = await admin
+      .from("service_requests")
+      .update(publication)
+      .eq("id", id)
+      .select()
+      .single();
+    if (publishError) {
+      // 20261127_70 has not run: the columns do not exist yet. Say so — never
+      // a generic error, never a pretend success.
+      if (publishError.code === "42703" || publishError.code === "PGRST204") {
+        return NextResponse.json(
+          { error: "النشر في الطلبات المفتوحة غير مفعّل بعد على قاعدة البيانات (ملف SQL ‏20261127_70)." },
+          { status: 503 },
+        );
+      }
+      return dbErrorJson("admin/service-orders/[id] PATCH publish_open", publishError);
+    }
+
+    await logAdminAction({
+      actorId: adminUserId,
+      action: publishing ? "service_order_published_open" : "service_order_unpublished_open",
+      targetType: "service_request",
+      targetId: id,
+      before: {
+        marketplace_published_at: (order as Record<string, unknown>).marketplace_published_at ?? null,
+        marketplace_category: (order as Record<string, unknown>).marketplace_category ?? null,
+      },
+      after: { marketplace_published_at: publication.marketplace_published_at, marketplace_category: publication.marketplace_category },
+    });
+
+    return NextResponse.json({ success: true, data: published });
   }
 
   const metadata = (order.metadata ?? {}) as Record<string, unknown>;

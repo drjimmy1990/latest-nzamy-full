@@ -70,7 +70,14 @@ test("edgePhrase reads the link from the viewer's side (outgoing vs incoming)", 
   assert.equal(edgePhrase("AMENDS_ARTICLE", "out"), "يعدّل");
   assert.equal(edgePhrase("AMENDS_ARTICLE", "in"), "معدّلة بموجب");
   assert.equal(edgePhrase("EXEMPTS_FROM", "out"), "يستثني من");
-  assert.equal(edgePhrase("INTERPRETS_ARTICLE", "in"), "مفسَّرة في");
+  // H8 (owner decision 17): «مبدأ قضائي يستند لمادة», never «يفسّر» / «تفسير قضائي».
+  assert.equal(edgePhrase("INTERPRETS_ARTICLE", "out"), "مبدأ قضائي يستند لمادة");
+  assert.equal(edgePhrase("INTERPRETS_ARTICLE", "in"), "مبدأ قضائي يستند إليها");
+  assert.equal(EDGE_TYPE_META.INTERPRETS_ARTICLE.label, "مبدأ قضائي يستند لمادة");
+  for (const t of EXPLORER_EDGE_TYPES) {
+    const m = EDGE_TYPE_META[t];
+    assert.doesNotMatch(`${m.label} ${m.out} ${m.in} ${m.hint}`, /يفسّر|يفسر|تفسير|مفسَّرة|فسّرها/, t);
+  }
 });
 
 // ─── Request validation ──────────────────────────────────────────────────────

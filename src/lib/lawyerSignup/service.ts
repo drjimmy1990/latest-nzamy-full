@@ -1,34 +1,34 @@
 /**
- * The lawyer signup verification flow (owner decisions ٢٠–٢١). Server-only;
- * every call uses the service client AFTER the route has proved the caller is
- * a signed-in lawyer, and only ever acts on that caller's own rows.
+ * The lawyer signup verification flow (owner decisions ٢٠–٢١, amended by ٢٧ /
+ * batch l7 decision 12: e-mail only). Server-only; every call uses the
+ * service client AFTER the route has proved the caller is a signed-in lawyer,
+ * and only ever acts on that caller's own rows.
  *
- * Steps (the browser sees only the public state below — never the registry
- * mobile, never a code, never the reasons):
+ * Steps (the browser sees only the public state below — never a code, never
+ * the reasons):
  *   1. licence photo → the private bucket lawyer-licences/<uid>/…, AI
  *      pre-check if switched on (else 'skipped' → a human looks at it);
  *   2. registry check of the licence on HIS file + the four-part name he typed
  *      (lawyer_signup_registry_check, 20261124_70);
- *   3. identity code to the REGISTRY mobile only (WhatsApp, then SMS);
+ *   3. a code to the account's OWN e-mail (no WhatsApp, no SMS, no
+ *      registry-mobile code);
  *   4. decision table (decision.ts) → instant approval when switched on and
  *      everything holds, else «سجّلنا بياناتك وسنتواصل معك».
- * The e-mail code is separate: it confirms the address, not the identity.
  */
 
 import { randomUUID } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
 import type { createServiceClient } from "@/lib/supabase/server";
-import { normalizeSaudiMobile } from "@/lib/services/saudiMobile";
 import { validateLicenceUpload } from "@/lib/services/licenceUpload";
 import { toPracticeKind } from "@/lib/auth/practiceKind";
-import { readSignupProviderConfig, identityChannelAvailable, type SignupProviderConfig } from "./providerConfig.ts";
+import { readSignupProviderConfig, type SignupProviderConfig } from "./providerConfig.ts";
 import { decideLawyerSignup, HOLD_MESSAGE_AR, type AiStatus, type Decision, type RegistryStatus } from "./decision.ts";
 import { generateOtpCode, hashOtpCode, hashOtpTarget, OTP_RESEND_SECONDS, OTP_TTL_MINUTES, type OtpPurpose } from "./otpCode.ts";
 import { isThrowawayEmail } from "./throwawayEmail.ts";
-import { maskEmail, mobileHint } from "./mask.ts";
+import { maskEmail } from "./mask.ts";
 import { compareExtracted } from "./aiLicenceCheck.ts";
 import { readLicenceWithGemini } from "./geminiLicence.ts";
-import { resendEmailAdapter, smsAdapter, zernioWhatsAppAdapter, type OtpChannelAdapter } from "./channels.ts";
+import { resendEmailAdapter, type OtpChannelAdapter } from "./channels.ts";
 import { approveLawyerInstantly } from "./approve.ts";
 import type { NameMatch } from "./nameLicence.ts";
 
@@ -45,19 +45,11 @@ export class SignupUnavailable extends Error {}
 
 export type PublicState = {
   status: "verified" | "approved" | "pending" | "review";
-  next: "upload_licence" | "identity_otp" | null;
+  next: "upload_licence" | "email_otp" | null;
   holdMessage: string | null;
   practiceKind: "advocate" | "consultant";
   licenceUploaded: boolean;
-  /** Last two digits of the registry mobile, only while the code step is open or done. */
-  mobileHint: string | null;
-  identity: {
-    verified: boolean;
-    whatsapp: boolean;
-    sms: boolean;
-    lastChannel: "whatsapp" | "sms" | null;
-    lastSentAt: string | null;
-  };
+  /** The e-mail code — the one code of the signup (decision ٢٧). */
   email: {
     masked: string | null;
     verified: boolean;
@@ -65,7 +57,6 @@ export type PublicState = {
     throwaway: boolean;
     lastSentAt: string | null;
   };
-  mobileChangeRequested: boolean;
 };
 
 type Row = Record<string, unknown> | null;
@@ -167,9 +158,10 @@ export async function evaluate(svc: Svc, user: User, opts: { fullName?: string |
   const throwaway = isThrowawayEmail(user.email);
   const row = (await readRow(svc, user.id)) ?? {};
   const image = await latestImage(svc, user.id);
-  const [lastId, lastEmail] = await Promise.all([lastChallenge(svc, user.id, "identity"), lastChallenge(svc, user.id, "email")]);
+  const lastEmail = await lastChallenge(svc, user.id, "email");
 
-  const identityVerified = row.identity_otp_verified_at != null;
+  const emailVerified = row.email_otp_verified_at != null;
+  const emailAvailable = config.email && !throwaway;
   const decision: Decision = decideLawyerSignup({
     alreadyVerified: accountStatus === "verified",
     accountBlocked: accountStatus === "rejected" || accountStatus === "suspended",
@@ -177,12 +169,10 @@ export async function evaluate(svc: Svc, user: User, opts: { fullName?: string |
     registryStatus: reg.status,
     nameMatch: reg.nameMatch,
     otherVerifiedClaims: reg.otherVerifiedClaims,
-    hasRegistryMobile: reg.hasMobile,
     licenceImageUploaded: image !== null,
     aiStatus: image?.ai_status ?? null,
-    identityOtpVerified: identityVerified,
-    identityOtpLicenceMatches: identityVerified && row.identity_otp_licence_no === reg.licence,
-    identityChannelAvailable: identityChannelAvailable(config),
+    emailOtpVerified: emailVerified,
+    emailChannelAvailable: emailAvailable,
     mobileChangeRequested: row.mobile_change_requested_at != null,
     emailThrowaway: throwaway,
     instantApprovalEnabled: config.instantApproval,
@@ -217,29 +207,19 @@ export async function evaluate(svc: Svc, user: User, opts: { fullName?: string |
       .eq("user_id", user.id);
   }
 
-  const showHint = decision.next === "identity_otp" || identityVerified;
   return {
     status,
     next: decision.next,
     holdMessage: status === "review" ? HOLD_MESSAGE_AR : null,
     practiceKind,
     licenceUploaded: image !== null,
-    mobileHint: showHint ? reg.mobileHint : null,
-    identity: {
-      verified: identityVerified,
-      whatsapp: config.whatsapp,
-      sms: config.sms,
-      lastChannel: lastId?.channel === "whatsapp" || lastId?.channel === "sms" ? lastId.channel : null,
-      lastSentAt: lastId?.created_at ?? null,
-    },
     email: {
       masked: maskEmail(user.email),
-      verified: row.email_otp_verified_at != null,
-      available: config.email && !throwaway,
+      verified: emailVerified,
+      available: emailAvailable,
       throwaway,
       lastSentAt: lastEmail?.created_at ?? null,
     },
-    mobileChangeRequested: row.mobile_change_requested_at != null,
   };
 }
 
@@ -251,7 +231,7 @@ export async function storeLicenceImage(
   svc: Svc,
   user: User,
   file: File,
-  purpose: "signup" | "mobile_change",
+  purpose: "signup",
   fullName: string | null,
 ): Promise<UploadOutcome> {
   const config = cfg();
@@ -321,26 +301,10 @@ export async function storeLicenceImage(
   return { ok: true };
 }
 
-// ── «رقمي تغيّر» ────────────────────────────────────────────────────────────
-
-export async function recordMobileChange(svc: Svc, user: User, newMobileE164: string): Promise<void> {
-  const now = new Date().toISOString();
-  const { error } = await svc
-    .from("lawyer_signup_verifications")
-    .upsert(
-      { user_id: user.id, mobile_change_requested_at: now, mobile_change_new_mobile: newMobileE164, updated_at: now },
-      { onConflict: "user_id" },
-    );
-  if (error) {
-    if (isMissingSchema(error)) throw new SignupUnavailable("schema");
-    throw new Error(`mobile change failed: ${error.code}`);
-  }
-}
-
 // ── codes ────────────────────────────────────────────────────────────────────
 
 export type StartOutcome =
-  | { ok: true; channel: "whatsapp" | "sms" | "email"; hint: string | null; resendAfterSec: number; expiresInSec: number }
+  | { ok: true; channel: "email"; hint: string | null; resendAfterSec: number; expiresInSec: number }
   | { ok: false; reason: "not_now" | "unavailable" | "failed" | "cooldown" | "user_limit" | "target_limit" | "throwaway" | "already"; retryAfterSec?: number };
 
 async function issueAndSend(
@@ -348,7 +312,7 @@ async function issueAndSend(
   args: {
     user: User;
     purpose: OtpPurpose;
-    channel: "whatsapp" | "sms" | "email";
+    channel: "email";
     adapter: OtpChannelAdapter;
     pepper: string;
     target: string;
@@ -383,33 +347,6 @@ async function issueAndSend(
     .eq("id", j.id);
   if (sent !== "sent") return { ok: false, reason: sent === "unavailable" ? "unavailable" : "failed" };
   return { ok: true, channel: args.channel, hint: args.hint, resendAfterSec: OTP_RESEND_SECONDS, expiresInSec: OTP_TTL_MINUTES * 60 };
-}
-
-/** The identity code — to the registry mobile of the licence on his file, nowhere else. */
-export async function startIdentityOtp(svc: Svc, user: User, channel: "whatsapp" | "sms"): Promise<StartOutcome> {
-  const config = cfg();
-  const state = await evaluate(svc, user);
-  if (state.next !== "identity_otp") return { ok: false, reason: state.identity.verified ? "already" : "not_now" };
-  if (!config.pepper || !(channel === "whatsapp" ? config.whatsapp : config.sms)) return { ok: false, reason: "unavailable" };
-
-  const { data: mobile, error } = await svc.rpc("lawyer_signup_registry_mobile", { p_user: user.id });
-  if (error) {
-    if (isMissingSchema(error)) throw new SignupUnavailable("schema");
-    return { ok: false, reason: "failed" };
-  }
-  const normal = normalizeSaudiMobile(typeof mobile === "string" ? mobile : "");
-  if (!normal.ok) return { ok: false, reason: "unavailable" };
-  const row = await readRow(svc, user.id);
-  return issueAndSend(svc, {
-    user,
-    purpose: "identity",
-    channel,
-    adapter: channel === "whatsapp" ? zernioWhatsAppAdapter(process.env, config) : smsAdapter(process.env, config),
-    pepper: config.pepper,
-    target: normal.e164,
-    hint: mobileHint(normal.e164),
-    licenceNo: typeof row?.licence_no === "string" ? row.licence_no : null,
-  });
 }
 
 /** The e-mail code — to the address of the account itself (never a typed one). */

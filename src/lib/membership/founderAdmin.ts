@@ -52,6 +52,12 @@ export interface FounderAdminSummary {
   salePaused: boolean;
   /** The SQL's on_sale: window open, not paused, a seat left. */
   onSale: boolean;
+  /** 20261127_10 (decision 1): paid seats waiting for the licence check — counted. 0 before that file. */
+  pending: number;
+  /** 20261127_10 (decision 2): paid seats sold past capacity — the admin's number, never public. 0 before that file. */
+  overflow: number;
+  /** 20261127_10 (decision 3): test-account / demo / test-mode seats, never counted. 0 before that file. */
+  testSeats: number;
 }
 
 /** founder_seat_summary()'s one row (an array from PostgREST, or the bare row), or null. */
@@ -61,7 +67,13 @@ export function founderAdminSummaryFromRpc(data: unknown): FounderAdminSummary |
   const { capacity, active, reserved, seats_left: seatsLeft, sale_paused: salePaused, on_sale: onSale } = row;
   if (!isWhole(capacity) || !isWhole(active) || !isWhole(reserved) || !isWhole(seatsLeft)) return null;
   if (typeof salePaused !== "boolean" || typeof onSale !== "boolean") return null;
-  return { capacity, active, reserved, seatsLeft, salePaused, onSale };
+  // 20261127_10's columns; a database before it has none of them (→ 0)
+  const extra = (v: unknown): number | null => (v === undefined || v === null ? 0 : isWhole(v) ? v : null);
+  const pending = extra(row.pending);
+  const overflow = extra(row.overflow);
+  const testSeats = extra(row.test_seats);
+  if (pending === null || overflow === null || testSeats === null) return null;
+  return { capacity, active, reserved, seatsLeft, salePaused, onSale, pending, overflow, testSeats };
 }
 
 /**
@@ -287,9 +299,15 @@ export function parseFounderSalePatch(body: unknown): { ok: true; patch: Founder
   return { ok: true, patch };
 }
 
-/** The capacity may not drop below the seats already taken (active + live reserved). */
-export function founderCapacityFloorIssue(capacity: number, summary: { active: number; reserved: number }): string | null {
-  const taken = summary.active + summary.reserved;
+/**
+ * The capacity may not drop below the seats already taken (active + paid
+ * pending verification + live reserved — 20261127_10 adds the pending ones).
+ */
+export function founderCapacityFloorIssue(
+  capacity: number,
+  summary: { active: number; reserved: number; pending?: number },
+): string | null {
+  const taken = summary.active + summary.reserved + (summary.pending ?? 0);
   if (capacity >= taken) return null;
   return `لا يمكن جعل عدد المقاعد ${capacity} أقل من المقاعد المفعّلة والمحجوزة الآن (${taken})`;
 }
@@ -325,7 +343,13 @@ export function activationRetryIssue(order: FounderOrderRow | null): RetryIssue 
   return null;
 }
 
-export type RetryOutcomeKind = "activated" | "already_activated" | "still_refund" | "in_progress" | "failed";
+export type RetryOutcomeKind =
+  | "activated"
+  | "already_activated"
+  | "pending_verification"
+  | "still_refund"
+  | "in_progress"
+  | "failed";
 
 export interface RetryOutcome {
   status: 200 | 409 | 503;
@@ -342,6 +366,12 @@ const IN_PROGRESS: RetryOutcome = {
   message: "تفعيل هذه العملية جارٍ الآن — أعد المحاولة بعد دقائق.",
 };
 const UNAVAILABLE: RetryOutcome = { status: 503, outcome: "failed", message: "تعذّر إكمال التفعيل الآن — حاول مجددًا." };
+/** l7 (decision 1, 20261127_10): the buyer's licence is still being checked — the seat is held, not refunded. */
+const PENDING_VERIFICATION: RetryOutcome = {
+  status: 200,
+  outcome: "pending_verification",
+  message: "حُجز المقعد بانتظار توثيق رخصة المحامي — يُفعَّل عند اعتماده من «التحقق»، ويُردّ المبلغ كاملاً إن رُفض.",
+};
 
 const STILL_REFUND_AR: Readonly<Record<FounderRefundCase, string>> = {
   seat_unavailable: "لم تُفعَّل: لا يوجد مقعد متاح — تبقى العملية بانتظار استرداد.",
@@ -373,6 +403,8 @@ export function activationAnswer(rpc: unknown, founderAfter: unknown): RetryOutc
       return stillRefund("seat_unavailable");
     case "not_verified":
       return stillRefund("not_verified");
+    case "pending_verification":
+      return PENDING_VERIFICATION;
     case "already":
       if (founderAfter === "activated") return ALREADY;
       if (founderAfter === "already_member") return stillRefund("already_member");
@@ -386,6 +418,10 @@ export function activationAnswer(rpc: unknown, founderAfter: unknown): RetryOutc
 
 /** fulfillOrder({ resume: true })'s answer for a paid order whose stamp never happened. */
 export function outcomeFromFulfil(result: { outcome: string; reason?: string }, founderAfter: unknown): RetryOutcome {
+  // l7: stamped, but the seat waits for the licence check (FOUNDER_PENDING_REASON)
+  if ((result.outcome === "granted" || result.outcome === "already_done") && result.reason === "founder_pending_verification") {
+    return PENDING_VERIFICATION;
+  }
   if (result.outcome === "granted") return ACTIVATED;
   if (result.outcome === "already_done") {
     if (result.reason === "already_entitled") return stillRefund(asRefundCase(founderAfter));

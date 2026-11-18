@@ -27,6 +27,7 @@ import Link from "next/link";
 import { isDemoMode } from "@/lib/runtimeMode";
 import { isSupabaseMode } from "@/lib/services/api";
 import { shareOrCopyLink } from "@/lib/community/shareLink";
+import { REVIEW_PENDING_AR, REVIEW_REJECTED_AR, VERIFIED_OFFICE_AR, postedNoticeAr } from "@/lib/community/review";
 import { useParams } from "next/navigation";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -42,6 +43,11 @@ interface Reply {
   isBest?: boolean;
   /** The reader's own vote on this answer, from the server (0 = none). */
   myVote: -1 | 0 | 1;
+  /** Owner ٤٢: «مكتب موثّق». */
+  isVerifiedOffice?: boolean;
+  /** Owner ٤٢: the reader's own answer under review / rejected. */
+  reviewState?: "pending" | "rejected" | null;
+  reviewNote?: string | null;
 }
 
 /** Reader state the detail route adds to the post (posts/[id]/route.ts). */
@@ -50,6 +56,9 @@ interface ViewerFields {
   saved?: boolean;
   isMine?: boolean;
   accepted_answer_id?: string | null;
+  /** Owner ٤٢: this question is the reader's own, still under review or rejected. */
+  reviewState?: "pending" | "rejected" | null;
+  review_note?: string | null;
 }
 
 const asVote = (v: unknown): -1 | 0 | 1 => (v === 1 ? 1 : v === -1 ? -1 : 0);
@@ -130,6 +139,9 @@ function mapStoredReply(
     isBest: mapped.isBest,
     rating: mapped.rating,
     myVote: asVote((answer as unknown as { myVote?: unknown }).myVote),
+    isVerifiedOffice: mapped.isVerifiedOffice,
+    reviewState: mapped.reviewState,
+    reviewNote: mapped.reviewNote,
   };
 }
 
@@ -142,6 +154,8 @@ export default function QuestionDetailPage() {
   const [userVote, setUserVote] = useState<"up" | "down" | null>(null);
   const [saved, setSaved] = useState(false);
   const [isMine, setIsMine] = useState(false);
+  // Owner ٤٢: the reader's own question, still under review or rejected.
+  const [questionReview, setQuestionReview] = useState<{ state: "pending" | "rejected"; note: string | null } | null>(null);
   // The question's best answer (accepted_answer_id). `undefined` in demo mode,
   // where each demo answer carries its own `isAccepted`.
   const [bestId, setBestId] = useState<string | null | undefined>(undefined);
@@ -193,6 +207,11 @@ export default function QuestionDetailPage() {
           setUserVote(mine === 1 ? "up" : mine === -1 ? "down" : null);
           setSaved(viewer.saved === true);
           setIsMine(isSupabaseMode && viewer.isMine === true);
+          setQuestionReview(
+            viewer.reviewState === "pending" || viewer.reviewState === "rejected"
+              ? { state: viewer.reviewState, note: typeof viewer.review_note === "string" ? viewer.review_note : null }
+              : null,
+          );
           setBestId(isSupabaseMode ? (typeof acceptedAnswerId === "string" ? acceptedAnswerId : null) : undefined);
           setReplyVotes({});
           setLoadState("ready");
@@ -388,8 +407,11 @@ export default function QuestionDetailPage() {
         authorRating: user.userType === "lawyer" ? 1 : 0,
         content: replyText,
       });
-      setReplies(prev => [...prev, mapStoredReply(savedAnswer)]);
+      const reply = mapStoredReply(savedAnswer);
+      setReplies(prev => [...prev, reply]);
       setReplyText("");
+      // Owner ٤٢: say plainly when the answer waits for review.
+      if (reply.reviewState === "pending") setNotice({ text: postedNoticeAr("answer", true) });
     } catch (err) {
       setReplyError(err instanceof Error && err.message ? err.message : "تعذّر نشر تعليقك — لم يُحفظ.");
     } finally {
@@ -433,48 +455,34 @@ export default function QuestionDetailPage() {
             </div>
             <div>
               {isLawyer ? (
-                // Item 147: only a real `lawyerSlug` (from the server, never
-                // a client-sent field) makes this a link — otherwise it's the
-                // dead /lawyers/undefined the owner flagged.
-                reply.lawyerSlug ? (
-                  <Link href={`/lawyers/${reply.lawyerSlug}`} className="group">
-                    <p className={`text-sm font-bold flex items-center gap-1.5 group-hover:text-[#0B3D2E] dark:group-hover:text-[#C8A762] transition ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
-                      {isRTL ? reply.author : reply.authorEn}
-                      <SealCheck size={14} color="#C8A762" weight="fill" />
-                      {(isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn) && (
-                        <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
-                          ⚖️ {isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn}
-                        </span>
-                      )}
-                    </p>
-                    <p className={`text-xs ${muted}`}>
-                      {typeof reply.rating === "number" ? `⭐ ${reply.rating} · ` : ""}
-                      {isRTL ? reply.date : reply.dateEn}
-                    </p>
-                  </Link>
-                ) : (
-                  <div>
-                    <p className={`text-sm font-bold flex items-center gap-1.5 ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
-                      {isRTL ? reply.author : reply.authorEn}
-                      <SealCheck size={14} color="#C8A762" weight="fill" />
-                      {(isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn) && (
-                        <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
-                          ⚖️ {isRTL ? reply.lawyerSpecialty : reply.lawyerSpecialtyEn}
-                        </span>
-                      )}
-                    </p>
-                    <p className={`text-xs ${muted}`}>
-                      {typeof reply.rating === "number" ? `⭐ ${reply.rating} · ` : ""}
-                      {isRTL ? reply.date : reply.dateEn}
-                    </p>
-                  </div>
-                )
+                // Owner ٤٢ (18 Nov 2026): names are hidden — the writer's name
+                // and profile link are not sent; the badge says what he is.
+                <div>
+                  <p className={`text-sm font-bold flex flex-wrap items-center gap-1.5 ${isDark ? "text-zinc-100" : "text-gray-800"}`}>
+                    {isRTL ? reply.author : reply.authorEn}
+                    <SealCheck size={14} color="#C8A762" weight="fill" />
+                    <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
+                      {isRTL ? "محامٍ موثّق" : "Verified lawyer"}
+                    </span>
+                    {reply.isVerifiedOffice && (
+                      <span className="text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
+                        {VERIFIED_OFFICE_AR}
+                      </span>
+                    )}
+                  </p>
+                  <p className={`text-xs ${muted}`}>{isRTL ? reply.date : reply.dateEn}</p>
+                </div>
               ) : (
                 <div>
                   <p className={`text-sm font-semibold ${isDark ? "text-zinc-200" : "text-gray-700"}`}>
                     {isRTL ? reply.author : reply.authorEn}
                     {reply.type === "guest" && (
                       <span className={`ms-2 text-xs font-normal ${muted}`}>{isRTL ? "(زائر)" : "(Guest)"}</span>
+                    )}
+                    {reply.isVerifiedOffice && (
+                      <span className="ms-2 text-xs font-normal px-1.5 py-0.5 rounded-full bg-[#0B3D2E]/10 text-[#0B3D2E] dark:bg-[#C8A762]/10 dark:text-[#C8A762]">
+                        {VERIFIED_OFFICE_AR}
+                      </span>
                     )}
                   </p>
                   <p className={`text-xs ${muted}`}>{isRTL ? reply.date : reply.dateEn}</p>
@@ -516,6 +524,15 @@ export default function QuestionDetailPage() {
           </div>
         </div>
 
+        {/* Owner ٤٢: the reader's own answer, not public yet */}
+        {reply.reviewState && (
+          <p role="status" className={`mb-3 text-xs font-semibold rounded-xl px-3 py-2 ${reply.reviewState === "pending" ? isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800" : isDark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-700"}`}>
+            {reply.reviewState === "pending"
+              ? `${REVIEW_PENDING_AR} — إجابتك لا تظهر لغيرك قبل موافقة فريق المراجعة.`
+              : `${REVIEW_REJECTED_AR}${reply.reviewNote ? ` — السبب: ${reply.reviewNote}` : ""}`}
+          </p>
+        )}
+
         {/* Text */}
         <p className={`text-sm leading-relaxed ${isLawyer ? isDark ? "text-zinc-200" : "text-gray-700" : muted}`}>
           {(isRTL ? reply.text : reply.textEn).replace(/\*\*(.+?)\*\*/g, "«$1»")}
@@ -536,25 +553,6 @@ export default function QuestionDetailPage() {
           </div>
         )}
 
-        {/* Lawyer: book CTA — item 147: only when a real slug exists, and no
-            dead #consult anchor (retired on the lawyer surfaces already). */}
-        {isLawyer && reply.lawyerSlug && (
-          <div className="mt-4 pt-3 border-t border-current/10 flex items-center justify-between gap-3">
-            <Link
-              href={`/lawyers/${reply.lawyerSlug}`}
-              className="text-xs font-bold text-[#0B3D2E] dark:text-[#C8A762] hover:underline flex items-center gap-1"
-            >
-              {isRTL ? "عرض بروفايل المحامي" : "View Lawyer Profile"}
-              <ArrowRight size={11} className={isRTL ? "rotate-180" : ""} />
-            </Link>
-            <Link
-              href={`/lawyers/${reply.lawyerSlug}`}
-              className="px-4 py-1.5 bg-[#0B3D2E] text-white text-xs font-bold rounded-xl hover:bg-[#0a3328] transition"
-            >
-              {isRTL ? "احجز استشارة" : "Book Consultation"}
-            </Link>
-          </div>
-        )}
       </motion.div>
     );
   };
@@ -576,6 +574,15 @@ export default function QuestionDetailPage() {
         <div className="flex gap-8">
           {/* ── Main ── */}
           <div className="flex-1 min-w-0 space-y-6">
+
+            {/* Owner ٤٢: the reader's own question, not public yet */}
+            {questionReview && (
+              <div role="status" className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${questionReview.state === "pending" ? isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800" : isDark ? "border-red-500/30 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700"}`}>
+                {questionReview.state === "pending"
+                  ? `${REVIEW_PENDING_AR} — سؤالك لا يظهر لغيرك قبل موافقة فريق المراجعة، ولا يمكن الإجابة عليه قبلها.`
+                  : `${REVIEW_REJECTED_AR}${questionReview.note ? ` — السبب: ${questionReview.note}` : ""}. يمكنك تعديله ليعود إلى المراجعة.`}
+              </div>
+            )}
 
             {/* Question card */}
             <div className={`${card} p-6 relative overflow-hidden`}>

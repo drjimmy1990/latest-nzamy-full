@@ -11,7 +11,9 @@ import { dirname, join } from "node:path";
 import {
   DEMO_FLAG_LOCKED_AR,
   DEMO_LIMIT_AR,
+  DEMO_LIVE_PAYMENT_AR,
   DEMO_NO_PAYMENT_AR,
+  DEMO_OPEN_REQUEST_AR,
   DEMO_READONLY_AR,
   DEMO_SANDBOX_AR,
   demoRefusal,
@@ -24,6 +26,8 @@ test("every token 20261125_50 raises maps to its sentence with a 403", () => {
     ["demo_account", DEMO_NO_PAYMENT_AR],
     ["demo_account:no_payment", DEMO_NO_PAYMENT_AR],
     ["demo_account:readonly", DEMO_READONLY_AR],
+    ["demo_account:live_payment", DEMO_LIVE_PAYMENT_AR],
+    ["demo_account:open_request", DEMO_OPEN_REQUEST_AR],
     ["demo_account:sandbox", DEMO_SANDBOX_AR],
     ["demo_account:flag_locked", DEMO_FLAG_LOCKED_AR],
     ["demo_account:limit:cases", DEMO_LIMIT_AR.cases],
@@ -79,4 +83,14 @@ test("dbErrorJson branches on demoRefusal before its generic answer", () => {
   const demoAt = src.indexOf("demoRefusal(err)");
   const genericAt = src.indexOf("opts.message ?? DB_ERROR_AR");
   assert.ok(demoAt > 0 && genericAt > demoAt);
+});
+
+test("20261127_80 raises exactly the two tokens it adds (no drift)", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const sql = readFileSync(join(here, "../../../supabase/migrations/20261127_80_test_account_mode.sql"), "utf8");
+  for (const token of ["demo_account:live_payment", "demo_account:open_request", "demo_account:sandbox", "demo_account:limit:%"]) {
+    assert.ok(sql.includes(token), token);
+  }
+  // the test-mode sentence never says a test account cannot pay at all
+  assert.ok(DEMO_LIVE_PAYMENT_AR.includes("وضع الاختبار"));
 });

@@ -100,7 +100,8 @@ test("grantPurchase keys every grant on the order", () => {
   assert.doesNotMatch(plan, /credit_points|creditOrderLot|plan_monthly/);
 
   assert.match(grant, /source: "purchase",\s*orderId: order\.id/, "library grants carry the order");
-  assert.match(grant, /grant\.code === "23505"\) return \{ ok: true/, "library 23505 = already granted");
+  assert.match(grant, /grant\.code === "23505"\) return await creditLibraryPlanPoints\(deps\.admin, order, item\.id, null, now\)/,
+    "library 23505 = already granted (its points are credited if a try stopped short; l7)");
   assert.match(grant, /error\.code === "23505"\) return \{ ok: true \}/, "points 23505 = already credited");
   assert.match(grant, /p_order: input\.orderId/);
 });

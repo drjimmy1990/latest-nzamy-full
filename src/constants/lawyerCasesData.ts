@@ -20,6 +20,7 @@ import {
 import { type WorkflowRequest } from "@/lib/workflowStore";
 import type { CaseStatus, CaseType, CourtDegree, Priority, KanbanCol, Case } from "@/app/dashboard/lawyer/cases/_types";
 import { courtClassOf } from "@/app/dashboard/lawyer/_components/courtTypes";
+import { isTestMetadata } from "@/lib/testAccounts/testRow";
 
 export function workflowTypeToCaseType(request: WorkflowRequest): CaseType {
   const raw = String(request.metadata?.requestedType ?? request.metadata?.serviceId ?? request.title);
@@ -93,6 +94,8 @@ export function workflowToCase(request: WorkflowRequest): Case {
     // فقط — لا شيء يقرؤه بعد إزالة شريط التعاون من صفحة القضايا (اقرأ التعليق
     // هناك). أول قارئ جديد لهذا الحقل يجب أن ينتظر عمود تعاون حقيقياً.
     collab: "solo",
+    // l7 decision 3: a test account's case is tagged by the database (20261127_80)
+    isTest: isTestMetadata(request.metadata),
   };
 }
 

@@ -23,6 +23,7 @@ import {
   type FounderSaleStats,
   type WebhookProblemDto,
 } from "@/lib/membership/founderSaleStats";
+import TestSeatsRelease from "./TestSeatsRelease";
 
 /**
  * «حملة المؤسس» (P3 Task 10) — the founder campaign at a glance and its two
@@ -196,7 +197,13 @@ export default function FounderCampaignPage() {
         { label: "عدد المقاعد", value: String(summary.capacity) },
         { label: "مفعّلة", value: String(summary.active) },
         { label: "محجوزة الآن", value: String(summary.reserved) },
+        // l7 (decision 1): paid, waiting for the licence check — counted
+        { label: "مدفوعة بانتظار التوثيق", value: String(summary.pending) },
         { label: "المتبقية", value: String(summary.seatsLeft) },
+        // l7 (decision 2): every paid buyer is honoured; the public counter stops at 0
+        { label: "مباعة فوق العدد", value: String(summary.overflow) },
+        // l7 (decision 3): test accounts / test-mode payments — never counted
+        { label: "مقاعد تجريبية (لا تُحتسب)", value: String(summary.testSeats) },
         { label: "تفعيلات اليوم", value: String(data?.activations.today ?? 0) },
         { label: "آخر ٧ أيام", value: String(data?.activations.last7Days ?? 0) },
       ]
@@ -297,7 +304,7 @@ export default function FounderCampaignPage() {
                   {busy === "capacity" ? "جارٍ الحفظ…" : "حفظ عدد المقاعد"}
                 </button>
                 <p className="text-[11px] text-zinc-400">
-                  لا يقل عن المفعّلة والمحجوزة الآن ({summary.active + summary.reserved}).
+                  لا يقل عن المفعّلة والمحجوزة الآن ({summary.active + summary.pending + summary.reserved}).
                 </p>
               </div>
             ) : null}
@@ -336,6 +343,9 @@ export default function FounderCampaignPage() {
               «عمليات مدفوعة» و«مستردّة» تشمل العمليات التجريبية؛ الإيراد أدناه للعمليات الحية فقط.
             </p>
           </section>
+
+          {/* l7 decision 3: free the seats test accounts took (preview, then confirm) */}
+          {data.canManage ? <TestSeatsRelease onDone={() => void load()} /> : null}
 
           {data.saleHidden ? (
             <p className="rounded-xl border border-white/[0.06] bg-zinc-900/60 px-4 py-3 text-[12px] text-zinc-400">

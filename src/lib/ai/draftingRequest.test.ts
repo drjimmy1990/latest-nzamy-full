@@ -8,6 +8,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CLIENT_CONTRACT_DRAFTING_HREF,
+  CLIENT_CONTRACT_DRAFTING_LABEL,
+  CONTRACT_SERVICES_HREF,
   CONTRACTS_HREF,
   CONTRACT_REFUSAL_TEXT,
   DRAFTER_HREF,
@@ -173,4 +176,32 @@ test("the contract refusal: «محترف العقود» only for a caller who ma
   assert.match(lawyer.error, /محترف العقود/);
   assert.deepEqual(lawyer.action, { label: "افتح محترف العقود", href: CONTRACTS_HREF });
   assert.equal(CONTRACTS_HREF, "/ai/contracts");
+});
+
+test("owner ٢٦: an individual or a business is refused politely, uncharged, with a link to drafting through a lawyer", () => {
+  for (const userType of ["individual", "corporate"]) {
+    const r = contractDraftingRefusal(false, userType);
+    assert.equal(r.code, DRAFTING_REFUSED_CODE);
+    assert.ok(r.error.startsWith(CONTRACT_REFUSAL_TEXT), userType);
+    assert.match(r.error, /محامٍ في المنصة/);
+    assert.doesNotMatch(r.error, /محترف العقود/, "never the lawyers' tool");
+    assert.deepEqual(r.action, { label: CLIENT_CONTRACT_DRAFTING_LABEL, href: CLIENT_CONTRACT_DRAFTING_HREF });
+  }
+  assert.equal(CLIENT_CONTRACT_DRAFTING_LABEL, "صياغة العقود عبر محامٍ في المنصة");
+  assert.equal(CLIENT_CONTRACT_DRAFTING_HREF, "/dashboard/client/requests/new?type=general");
+  // another client account cannot open the /dashboard/client form: the public page
+  assert.deepEqual(contractDraftingRefusal(false, "micro").action, { label: CLIENT_CONTRACT_DRAFTING_LABEL, href: CONTRACT_SERVICES_HREF });
+  // a lawyer-side caller refused for another reason: no link (unchanged)
+  for (const t of ["lawyer", "firm", "admin", null, undefined]) assert.equal("action" in contractDraftingRefusal(false, t), false, String(t));
+  // a caller who may run «محترف العقود» keeps that link whatever the type
+  assert.deepEqual(contractDraftingRefusal(true, "lawyer").action, { label: "افتح محترف العقود", href: CONTRACTS_HREF });
+});
+
+test("owner ٢٦: runCore passes the caller's type; the library client lets the two new links through", async () => {
+  const { readFileSync } = await import("node:fs");
+  const core = readFileSync(new URL("./runCore.ts", import.meta.url), "utf8");
+  assert.match(core, /contractDraftingRefusal\(pro !== null && toolRoleRefusal\(pro, actor\) === null, actor\.userType\)/);
+  const client = readFileSync(new URL("../../app/laws/[slug]/_library-assistant.ts", import.meta.url), "utf8");
+  assert.ok(client.includes(`"${CLIENT_CONTRACT_DRAFTING_HREF}"`));
+  assert.ok(client.includes(`"${CONTRACT_SERVICES_HREF}"`));
 });

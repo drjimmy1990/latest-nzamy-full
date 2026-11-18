@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { receiptView, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr, billingItemAr, billingOrderItemAr, orderBillingAr } from "./billingView.ts";
+import { receiptView, creditNoteView, NOT_TAX_INVOICE_AR, TAX_INVOICE_TITLE_AR, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr, billingItemAr, billingOrderItemAr, orderBillingAr } from "./billingView.ts";
 import { buildCatalog, orderLabelWithPointsAr, PAYABLE_ITEMS } from "./catalog.ts";
 import { PRICE_BOOK } from "../pricing/priceBook.ts";
+import { decodeZatcaQr } from "./zatcaQr.ts";
 
 const order = { id: "order-1", item_id: "lawyer-pro", net_halalas: 39900, vat_halalas: 5985, total_halalas: 45885, currency: "SAR", receipt_number: "NZ-2026-000001", paid_at: "2026-10-22T10:00:00Z", status: "paid", refunded_halalas: 0, last_four: "1111" };
 const company = { legal_name_ar: "منشأة الاختبار", cr_number: "1234567890", vat_number: "300000000000003", address_ar: "الرياض" };
@@ -15,7 +16,9 @@ test("receipt uses recorded halalas, keeps VAT arithmetic and labels a receipt",
   assert.equal(view.total, "٤٥٨٫٨٥ ر.س");
   assert.equal(view.lastFour, "١١١١");
   assert.equal(view.company?.legal_name_ar, company.legal_name_ar);
-  assert.equal(view.taxInvoiceNotice, "تصدر الفاتورة الضريبية الرسمية بشكل منفصل");
+  // no merchant/live on this row: never a tax invoice, and it says why (l7)
+  assert.equal(view.isTaxInvoice, false);
+  assert.equal(view.qrPayload, null);
 });
 test("incomplete or invalid company shows explicit notice, never blank business fields", () => {
   for (const c of [null, {}, { ...company, address_ar: " " }, { ...company, vat_number: "123" }]) {
@@ -92,7 +95,13 @@ test("pointsSummary: the balance and the nearest expiry among lots with points l
   });
   assert.equal(summary.balance, 70);
   assert.equal(summary.nearestExpiry, "2026-12-01T00:00:00Z");
-  assert.deepEqual(pointsSummary({ pointsBalance: 0, lots: [] }), { balance: 0, nearestExpiry: null });
+  assert.deepEqual(pointsSummary({ pointsBalance: 0, lots: [] }), { balance: 0, nearestExpiry: null, libraryOnly: 0 });
+  // l7: the part of the balance only the library assistant can spend
+  const lib = pointsSummary({
+    pointsBalance: 370,
+    lots: [{ ...lot("plan", 300, "2027-11-01T00:00:00Z"), wallet_scope: "library_agent" }, lot("topup", 70, "2027-02-01T00:00:00Z")],
+  });
+  assert.equal(lib.libraryOnly, 300);
 });
 test("cardBrandAr names the known networks in Arabic and nothing else", () => {
   assert.equal(cardBrandAr("mada"), "مدى");
@@ -150,4 +159,44 @@ test("Task F fix round 1: a top-up bought before owner ٤٢٢ prints the points 
   // anything but a top-up ignores a points count
   assert.equal(orderLabelWithPointsAr("lawyer-pro", 1250), billingItemAr("lawyer-pro"));
   assert.equal(billingOrderItemAr({ item_id: "no-such-item", credited_points: 5 }), "عملية شراء");
+});
+
+// ── l7: the automatic simplified tax invoice and the credit note ──
+const founder = { ...order, item_id: "lawyer-pro", net_halalas: 299600, vat_halalas: 44940, total_halalas: 344540, paid_at: "2026-11-19T06:00:00Z", merchant: "platform", live: true };
+test("l7: a live platform order with a complete billing_company is a «فاتورة ضريبية مبسطة» with the 5-field QR", () => {
+  const view = receiptView(founder, company)!;
+  assert.equal(view.title, TAX_INVOICE_TITLE_AR);
+  assert.equal(view.isTaxInvoice, true);
+  assert.deepEqual(decodeZatcaQr(view.qrPayload!), { 1: company.legal_name_ar, 2: company.vat_number, 3: "2026-11-19T06:00:00Z", 4: "3445.40", 5: "449.40" });
+  assert.equal(view.total, "٣٬٤٤٥٫٤٠ ر.س");
+  assert.doesNotMatch(view.taxInvoiceNotice, /بشكل منفصل/);
+  assert.notEqual(view.issuedAt, "غير متاح");
+});
+test("l7: no tax invoice and no QR without the seller data, for a test payment, or for an office order — each says why", () => {
+  for (const c of [null, {}, { ...company, vat_number: "" }]) {
+    const v = receiptView(founder, c)!;
+    assert.deepEqual([v.title, v.isTaxInvoice, v.qrPayload, v.taxInvoiceNotice], ["إيصال دفع", false, null, NOT_TAX_INVOICE_AR.company]);
+  }
+  assert.equal(receiptView({ ...founder, live: false }, company)!.taxInvoiceNotice, NOT_TAX_INVOICE_AR.test);
+  assert.equal(receiptView({ ...founder, live: false }, company)!.qrPayload, null);
+  assert.equal(receiptView({ ...founder, merchant: "office" }, company)!.taxInvoiceNotice, NOT_TAX_INVOICE_AR.office);
+  assert.equal(receiptView({ ...founder, merchant: "office" }, company)!.qrPayload, null);
+});
+test("l7: a refunded invoice names its credit note", () => {
+  assert.equal(receiptView({ ...founder, status: "refunded", refunded_halalas: 344540, credit_note_number: "CN-2026-000001" }, company)!.creditNoteNumber, "CN-2026-000001");
+});
+const note = { number: "CN-2026-000001", order_id: "order-1", invoice_number: "NZ-2026-000001", invoice_issued_at: "2026-11-19T06:00:00Z", item_id: "lawyer-pro", billing: "yearly", method: "refund", net_halalas: 299600, vat_halalas: 44940, total_halalas: 344540, currency: "SAR", live: true, issued_at: "2026-11-20T07:00:00Z" };
+test("l7: the credit note references the original invoice and reverses the full amount incl. VAT, no fee", () => {
+  const v = creditNoteView(note, company)!;
+  assert.equal(v.title, "إشعار دائن");
+  assert.equal(v.invoiceNumber, "NZ-2026-000001");
+  assert.equal(v.total, "٣٬٤٤٥٫٤٠ ر.س");
+  assert.equal(v.vat, "٤٤٩٫٤٠ ر.س");
+  assert.equal(v.reason, "استرداد كامل إلى وسيلة الدفع نفسها");
+  assert.match(v.feeNote, /دون خصم أي رسوم/);
+  assert.equal(v.testNotice, null);
+  assert.equal(creditNoteView({ ...note, method: "void" }, company)!.reason, "إلغاء العملية لدى مزوّد الدفع قبل تسويتها");
+  assert.match(creditNoteView({ ...note, live: false }, null)!.testNotice ?? "", /تجريبي/);
+  assert.equal(creditNoteView({ ...note, total_halalas: 1 }, company), null);
+  assert.equal(creditNoteView(null, company), null);
 });

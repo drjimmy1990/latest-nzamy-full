@@ -4,9 +4,11 @@ import {
   FOUNDER_ADVOCATE_ONLY_LINE,
   FOUNDER_ONCE_LINE,
   FOUNDER_TERMS_PATH,
+  FOUNDER_TERMS_REFUND_PATH,
   FOUNDER_WORK_KINDS,
   founderLandingPrice,
 } from "@/lib/founder/landingCopy";
+import { FOUNDER_PENDING_NOTE } from "@/lib/pricing/founderCard";
 import { FounderWindowProvider } from "./_components/FounderWindowProvider";
 import { HeroMeter } from "./_components/HeroMeter";
 import { JoinButton } from "./_components/JoinButton";
@@ -39,7 +41,7 @@ export const metadata = buildMetadata({
   titleAr: "باقة المحامي المؤسس",
   titleEn: "Founding Lawyer Membership",
   descriptionAr:
-    "عضوية تأسيسية محدودة للمحامي المرخّص للترافع: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.",
+    "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.",
   path: "/founder",
   keywords: ["المحامي المؤسس", "باقة المؤسس", "الصائغ القانوني"],
 });
@@ -90,12 +92,12 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     a: "تحتفظ نظامي بحق تحديث عروضها وباقاتها في أي وقت بما يحفظ استمرارية الخدمة وجودتها، دون المساس بحقوق المشتركين المكتسبة في باقتهم. ويبقى ما اشتريته لك كاملاً طوال مدة عضويتك.",
   },
   {
-    // Owner ١١ / ١٦ (17 Nov 2026): 14 days from purchase, if no service of the plan was used — item ٧ of /founder-terms.
+    // Owner 18 Nov (urgent fix of item ٧ of /founder-terms): 14 days, if no AI feature was used; browsing the library never blocks it.
     q: "هل أستطيع الاسترداد؟",
     a: (
       <>
-        نعم، خلال ١٤ يوماً من الشراء بشرط عدم استخدام أي من خدمات الباقة، وفق{" "}
-        <Link href={FOUNDER_TERMS_PATH} className="font-bold text-[#0B3D2E] underline dark:text-[#E6CD8E]">
+        نعم، خلال ١٤ يوماً من الشراء إن لم تستخدم أي ميزة ذكاء اصطناعي في الباقة، ولا يمنع الاسترداد تصفح المكتبة، ويُردّ المبلغ كاملاً شاملاً الضريبة، وفق{" "}
+        <Link href={FOUNDER_TERMS_REFUND_PATH} className="font-bold text-[#0B3D2E] underline dark:text-[#E6CD8E]">
           صفحة الشروط
         </Link>
         .
@@ -139,7 +141,7 @@ export default function FounderPage() {
                 أنت صاحب القرار والاعتماد.
               </p>
               <div className="mt-8 flex flex-wrap gap-3.5">
-                <a href={`#${JOIN_ID}`} className={goldBtn}>
+                <a href={`#${JOIN_ID}`} className={goldBtn} data-analytics-event="reserve_seat_click" data-analytics-placement="hero">
                   احجز مقعدك
                 </a>
                 <a href="#samples" className={ghostBtn}>
@@ -361,7 +363,7 @@ export default function FounderPage() {
                   يشمل السعر ٦ أعمال قانونية. المكتبة مفتوحة سنة كاملة من تفعيل الباقة، والشحن
                   لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال عليه بـ٥ نقاط، وعند نفادها
                   يُغلق المساعد وحده حتى الشحن بأي قيمة، وتبقى المكتبة مفتوحة طوال السنة. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم التفعيل بعد
-                  توثيق الرخصة وإتمام السداد وحجز مقعدك.
+                  توثيق الرخصة وإتمام السداد وحجز مقعدك، ويمكنك السداد قبل اكتمال التوثيق: {FOUNDER_PENDING_NOTE}
                 </p>
                 <p className="mt-3.5 rounded-xl border border-[#E8CF8A] bg-[#FFF3D6] px-3.5 py-2.5 text-[15px] font-bold text-[#5C4200]">
                   {FOUNDER_ADVOCATE_ONLY_LINE}
@@ -408,7 +410,7 @@ export default function FounderPage() {
             <Link href="/privacy" className="hover:text-[#E6CD8E]">
               سياسة الخصوصية
             </Link>
-            <Link href="/refund-policy" className="hover:text-[#E6CD8E]">
+            <Link href={FOUNDER_TERMS_REFUND_PATH} className="hover:text-[#E6CD8E]">
               سياسة الاسترداد
             </Link>
           </nav>

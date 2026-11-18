@@ -3,18 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import React, { useState, useRef } from "react";
 import {
   Sword, Scales, Brain, SpeakerHigh, MagnifyingGlass,
-  CheckCircle, FileArrowUp, X, FileText, HandFist, Gavel,
-  Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft, Pencil,
-  Plus, PencilSimple, Trash, Check, Copy, CaretDown, Lightbulb,
-  Eye, CheckFat, DownloadSimple, Warning, ArrowsCounterClockwise,
-  Robot, Microphone, Spinner, PaperPlaneTilt, Sparkle,
+  FileArrowUp, X, FileText, HandFist, Gavel,
+  Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft,
+  Check, CaretDown, Warning, ArrowsCounterClockwise,
+  Spinner, PaperPlaneTilt, Sparkle,
 } from "@phosphor-icons/react";
-import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { VoiceInput } from "@/components/ui/VoiceInput";
-import AiResultActions from "@/components/AiResultActions";
-import BetaReviewGate from "@/components/BetaReviewGate";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
@@ -46,7 +42,6 @@ type SimTarget  = "opponent" | "court" | "critique" | "plea";
 type CaseRole   = "plaintiff" | "defendant" | "advisor";
 // A LEGAL_TAXONOMY section id (SA-00 … SA-99) or WARGAMING_AREA_OTHER.
 type CaseArea   = string;
-type ItemAction = "add" | "edit" | "delete" | null;
 
 interface CaseContext {
   role: CaseRole | "";
@@ -56,23 +51,7 @@ interface CaseContext {
   summary: string;
 }
 
-interface SimPoint {
-  id: string;
-  source: SimTarget;
-  severity: "high" | "medium" | "low";
-  title: string;
-  detail: string;
-  counter: string;
-  probability?: number;
-}
-
 // ─── Constants ─────────────────────────────────────────────────────────────────
-const SEV = {
-  high:   { dot:"bg-red-500",   badgeD:"border-red-700/20 bg-red-900/10 text-red-400",     badgeL:"border-red-200 bg-red-50 text-red-600",   label:"خطر عالٍ"   },
-  medium: { dot:"bg-amber-400", badgeD:"border-amber-700/20 bg-amber-900/10 text-amber-400",badgeL:"border-amber-200 bg-amber-50 text-amber-700",label:"خطر متوسط" },
-  low:    { dot:"bg-blue-400",  badgeD:"border-blue-700/20 bg-blue-900/10 text-blue-400",   badgeL:"border-blue-200 bg-blue-50 text-blue-700", label:"تحسين"      },
-};
-
 const SIM_TARGETS: { id: SimTarget; label: string; sub: string; icon: typeof Sword; color: string; grad: string }[] = [
   { id:"opponent", label:"محاكاة الخصم",    sub:"هجماته ودفوعه المتوقعة",     icon:HandFist,        color:"text-red-400",    grad:"from-red-700 to-red-500"     },
   { id:"court",    label:"اتجاه المحكمة",  sub:"ما ستفحصه المحكمة وأسئلتها",  icon:Scales,          color:"text-amber-400",  grad:"from-amber-600 to-amber-400" },
@@ -102,258 +81,6 @@ function caseAreaLabel(ctx: CaseContext): string {
   // «أخرى» with nothing typed names no specialty: the run and the order send none.
   if (ctx.area === WARGAMING_AREA_OTHER) return ctx.areaOther.trim();
   return CASE_AREAS.find(a => a.id === ctx.area)?.label ?? "";
-}
-
-// Kept for when real AI simulation lands — currently unreachable, no live
-// caller substitutes this into an order (Task C1).
-const MOCK_MEMO_BASE = `بسم الله الرحمن الرحيم\n\nأصحاب الفضيلة / قضاة الدائرة المختصة حفظهم الله\n\nالموضوع: صحيفة دعوى\n\nأولاً: الوقائع\nالتحق موكلنا بالعمل لدى المدعى عليها، وقد فوجئ بإنهاء خدماته دون مسوّغ نظامي.\n\nثانياً: الأسانيد\nالدفع الأول: بطلان الإنهاء\nالدفع الثاني: مكافأة نهاية الخدمة\n\nثالثاً: الطلبات\n١. أجر الإشعار  ٢. المكافأة كاملة  ٣. التعويض`;
-
-// ─── Mock data generator ────────────────────────────────────────────────────────
-// Kept for when real AI simulation lands — unreachable since runSim() is no
-// longer called (Task C1: this page submits a real order instead).
-function buildPoints(targets: Set<SimTarget>, area: CaseArea | ""): SimPoint[] {
-  const pts: SimPoint[] = [];
-
-  if (targets.has("opponent")) {
-    const base = [
-      { id:"o1", severity:"high"   as const, title:"الدفع بانقضاء مدة التقادم",    detail:"الخصم سيثير دفعاً شكلياً بانتهاء مدة التقادم.", counter:"أثبت أن العلم بالضرر تأخر لأسباب موضوعية — المادة ٢١٥.", probability:85 },
-      { id:"o2", severity:"high"   as const, title:"التشكيك في أصالة المستند",      detail:"الخصم سيطعن في مصداقية العقد المقدَّم.", counter:"قدّم نسخة موثقة من كاتب العدل وأرفق سجل المراسلات.", probability:72 },
-      { id:"o3", severity:"medium" as const, title:"شاهد نفي الاتفاق الشفهي",      detail:"الخصم سيُقدِّم شاهد نفي.", counter:"اطلب كشف سجل المكالمات والرسائل النصية عبر المحكمة.", probability:58 },
-      { id:"o4", severity:"low"    as const, title:"نفي العلاقة السببية للضرر",     detail:"إسناد الضرر لعوامل خارجية.", counter:"قدّم تقرير خبير فني يثبت السلسلة السببية المباشرة.", probability:40 },
-    ];
-    const laborExtra = { id:"o0", severity:"high" as const, title:"ادعاء الاستقالة الطوعية", detail:"الخصم سيدعي أن الإنهاء باستقالة طوعية.", counter:"أبرز خطاب الإنهاء الرسمي الصادر من صاحب العمل.", probability:88 };
-    const items = area === "labor" ? [laborExtra, ...base.slice(1)] : base;
-    pts.push(...items.map(p => ({ ...p, source: "opponent" as SimTarget })));
-  }
-
-  if (targets.has("court")) {
-    pts.push(
-      { id:"c1", source:"court", severity:"high",   title:"مناطق خطر أمام المحكمة — ضعف الشهود",      detail:"ضعف شهادة الشهود قد يؤثر سلباً على الحكم.", counter:"أرفق مستنداً رسمياً بديلاً يُغني عن شهادة الشهود.", probability:70 },
-      { id:"c2", source:"court", severity:"medium",  title:"توافق السوابق القضائية مع موقفك — جيد",    detail:"السوابق تدعم الحكم لصالحك بنسبة ٦٨٪.", counter:"أشر لقرار المحكمة العليا رقم ٣٤١/ق في مذكرتك.", probability:60 },
-      { id:"c3", source:"court", severity:"low",     title:"الاتجاه التاريخي للمحكمة داعم للتعويض",   detail:"المحاكم تميل للحكم بالتعويض عند ثبوت الانتهاك الصريح.", counter:"أكّد النص الصريح على الانتهاك في مقدمة المذكرة.", probability:50 },
-    );
-  }
-
-  if (targets.has("critique")) {
-    pts.push(
-      { id:"cr1", source:"critique", severity:"high",   title:"غياب السند النظامي الصريح", detail:"لا يستشهد بنص المادة ٧٧ صراحةً.", counter:"أضف: «استناداً للمادة (٧٧) من نظام العمل»." },
-      { id:"cr2", source:"critique", severity:"high",   title:"غياب مبادئ قضائية داعمة",  detail:"لا توجد إشارة لأي مبدأ قضائي.",   counter:"أضف مبدأ المحكمة العليا رقم ٣٤١/ق لعام ١٤٤٢هـ." },
-      { id:"cr3", source:"critique", severity:"medium", title:"الطلبات مجملة",             detail:"الطلبات ذُكرت بصورة عامة.",        counter:"حدد كل طلب بمبلغ صريح." },
-    );
-  }
-
-  if (targets.has("plea")) {
-    pts.push(
-      { id:"p1", source:"plea", severity:"medium", title:"الافتتاحية — تحسين التأثير", detail:"ابدأ بـ«السلام عليكم» وانظر للقاضي مباشرة.", counter:"أصحاب الفضيلة، موكلي عمل بإخلاص سنوات ثم فوجئ بالفصل دون إشعار." },
-      { id:"p2", source:"plea", severity:"low",    title:"سكريبت الدفوع القانونية",    detail:"رتّب دفوعك من الأقوى للأضعف.", counter:"أولاً: بطلان الإنهاء (المادة ٧٧). ثانياً: أحقية مكافأة نهاية الخدمة." },
-      { id:"p3", source:"plea", severity:"low",    title:"خاتمة المرافعة",             detail:"اختم بهدوء وثقة.", counter:"نلتمس الحكم بإلزام المدعى عليها بأجر الإشعار والمكافأة والتعويض." },
-    );
-  }
-
-  // Sort: high → medium → low
-  const order = { high:0, medium:1, low:2 };
-  return pts.sort((a,b) => (order[a.severity] ?? 0) - (order[b.severity] ?? 0));
-}
-
-// ─── Small helpers ─────────────────────────────────────────────────────────────
-function Bar({ v, c="red" }: { v:number; c?:string }) {
-  const cl = c==="red"?"bg-red-500":c==="amber"?"bg-amber-500":"bg-blue-500";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
-        <motion.div initial={{width:0}} animate={{width:`${v}%`}} transition={{duration:0.8}} className={`h-full rounded-full ${cl}`}/>
-      </div>
-      <span className={`text-[10px] font-bold ${c==="red"?"text-red-400":c==="amber"?"text-amber-400":"text-blue-400"}`}>{v}%</span>
-    </div>
-  );
-}
-
-function CopyTextBtn({ text, isDark }: { text:string; isDark:boolean }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <motion.button whileTap={{ scale:0.93 }}
-      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(()=>setCopied(false),1800); }}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${ copied?"border-emerald-500/40 bg-emerald-500/10 text-emerald-500":isDark?"border-white/[0.07] bg-zinc-800 text-zinc-400 hover:text-zinc-200":"border-slate-200 bg-white text-slate-500 hover:text-slate-700"}`}>
-      {copied ? <><Check size={11} weight="bold"/>نُسخ</> : <><Copy size={11}/>نسخ كنص</>}
-    </motion.button>
-  );
-}
-
-function DownloadBar({ isDark, text }: { isDark:boolean; text?:string }) {
-  return (
-    <div className="flex gap-2 flex-wrap">
-      <motion.button whileHover={{scale:1.02}} whileTap={{scale:0.97}}
-        className="flex items-center justify-center gap-2 flex-1 min-w-[110px] rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-[12px] font-bold text-white">
-        <DownloadSimple size={14}/>تنزيل Word
-      </motion.button>
-      <motion.button whileHover={{scale:1.02}} whileTap={{scale:0.97}}
-        className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-[12px] font-bold ${isDark?"border-white/[0.07] bg-zinc-800 text-zinc-300":"border-slate-200 bg-white text-zinc-600"}`}>
-        <DownloadSimple size={14}/>PDF
-      </motion.button>
-      <CopyTextBtn text={text ?? MOCK_MEMO_BASE} isDark={isDark}/>
-    </div>
-  );
-}
-
-// ─── Source label chip ─────────────────────────────────────────────────────────
-function SourceChip({ src, isDark }: { src: SimTarget; isDark: boolean }) {
-  const cfg = SIM_TARGETS.find(t => t.id === src)!;
-  return (
-    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${isDark?"border-white/[0.08]":"border-slate-200"} ${cfg.color}`}>
-      {cfg.label}
-    </span>
-  );
-}
-
-// ─── Unified ActionCard ────────────────────────────────────────────────────────
-// Kept for when real AI simulation lands — unreachable (only rendered from
-// Results, itself unreachable). Its edit textarea was a dead end even when
-// this was live (editText was never read outside this component) — do not
-// resurrect that pattern anywhere reachable (Task C1).
-function ActionCard({
-  point, isDark, action, onAction,
-}: {
-  point: SimPoint; isDark: boolean;
-  action: ItemAction; onAction: (a: ItemAction) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [editText, setEditText] = useState(point.counter);
-  const s = SEV[point.severity];
-
-  const borderCls =
-    action === "add"    ? isDark?"border-emerald-700/30":"border-emerald-200"
-    : action === "delete" ? "border-red-500/20 opacity-50"
-    : action === "edit"   ? isDark?"border-[#C8A762]/30":"border-amber-200"
-    : isDark?"border-white/[0.06]":"border-slate-200";
-
-  return (
-    <div className={`rounded-2xl border overflow-hidden transition-all ${isDark?"bg-zinc-900/70":"bg-white shadow-sm"} ${borderCls}`}>
-      <button onClick={()=>setExpanded(v=>!v)} className="w-full flex items-start gap-3 px-4 py-3.5 text-right">
-        <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${s.dot}`}/>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${isDark?s.badgeD:s.badgeL}`}>{s.label}</span>
-            <SourceChip src={point.source} isDark={isDark}/>
-          </div>
-          <p className={`text-[12px] font-semibold leading-snug ${isDark?"text-zinc-200":"text-zinc-800"}`}>{point.title}</p>
-          <p className={`text-[10px] mt-0.5 leading-snug ${isDark?"text-zinc-500":"text-slate-500"}`}>{point.detail}</p>
-          {point.probability !== undefined && (
-            <div className="mt-1.5">
-              <Bar v={point.probability} c={point.severity==="high"?"red":point.severity==="medium"?"amber":"blue"}/>
-            </div>
-          )}
-        </div>
-        {/* Action buttons */}
-        <div className="flex items-center gap-1 flex-shrink-0" onClick={e=>e.stopPropagation()}>
-          <button onClick={()=>onAction(action==="add"?null:"add")} title="إضافة للمذكرة"
-            className={`w-7 h-7 rounded-xl border flex items-center justify-center transition-all ${action==="add"?"border-emerald-500 bg-emerald-500 text-white":isDark?"border-white/[0.08] text-zinc-500 hover:border-emerald-500/40 hover:text-emerald-400":"border-slate-200 text-slate-400 hover:border-emerald-400 hover:text-emerald-500"}`}>
-            {action==="add"?<Check size={11} weight="bold"/>:<Plus size={11}/>}
-          </button>
-          <button onClick={()=>onAction(action==="edit"?null:"edit")} title="تعديل وإضافة"
-            className={`w-7 h-7 rounded-xl border flex items-center justify-center transition-all ${action==="edit"?"border-[#C8A762] bg-[#C8A762]/10 text-[#C8A762]":isDark?"border-white/[0.08] text-zinc-500 hover:border-[#C8A762]/40 hover:text-[#C8A762]":"border-slate-200 text-slate-400 hover:border-amber-400 hover:text-amber-500"}`}>
-            <PencilSimple size={11}/>
-          </button>
-          <button onClick={()=>onAction(action==="delete"?null:"delete")} title="تجاهل"
-            className={`w-7 h-7 rounded-xl border flex items-center justify-center transition-all ${action==="delete"?"border-red-500/40 bg-red-500/10 text-red-400":isDark?"border-white/[0.08] text-zinc-500 hover:border-red-500/30 hover:text-red-400":"border-slate-200 text-slate-400 hover:border-red-300 hover:text-red-400"}`}>
-            <Trash size={11}/>
-          </button>
-          <motion.span animate={{rotate:expanded?180:0}} transition={{duration:0.18}}>
-            <CaretDown size={10} className={isDark?"text-zinc-600":"text-slate-400"}/>
-          </motion.span>
-        </div>
-      </button>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div initial={{height:0,opacity:0}} animate={{height:"auto",opacity:1}} exit={{height:0,opacity:0}} transition={{duration:0.18}} className="overflow-hidden">
-            <div className={`border-t px-4 pb-4 pt-3 space-y-2.5 ${isDark?"border-white/[0.04]":"border-slate-100"}`}>
-              <div className={`p-2.5 rounded-xl border flex items-start gap-2 ${isDark?"border-[#C8A762]/20 bg-[#C8A762]/5":"border-amber-200 bg-amber-50"}`}>
-                <Lightbulb size={11} weight="duotone" className="text-[#C8A762] flex-shrink-0 mt-0.5"/>
-                <div>
-                  <p className="text-[9px] font-bold text-[#C8A762] mb-0.5">الرد / الإصلاح المقترح</p>
-                  <p className={`text-[11px] leading-relaxed ${isDark?"text-zinc-300":"text-zinc-700"}`}>{point.counter}</p>
-                </div>
-              </div>
-              {action==="edit" && (
-                <textarea rows={2} value={editText} onChange={e=>setEditText(e.target.value)}
-                  placeholder="عدّل الرد قبل إضافته..."
-                  className={`w-full resize-none rounded-xl border px-3 py-2 text-[11px] outline-none ${isDark?"border-white/[0.07] bg-zinc-800/60 text-zinc-200 placeholder:text-zinc-600":"border-amber-200 bg-white text-zinc-800 placeholder:text-zinc-400"}`}/>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ─── Polish panel (memo preview after apply) ───────────────────────────────────
-// Kept for when real AI simulation lands — unreachable (only rendered from
-// Results, itself unreachable) (Task C1).
-function PolishPanel({ isDark, points, actions }: { isDark:boolean; points:SimPoint[]; actions:Record<string,ItemAction> }) {
-  const applied = points.filter(p => actions[p.id]==="add" || actions[p.id]==="edit");
-  const fullText = MOCK_MEMO_BASE + "\n\n" + applied.map(p=>p.counter).join("\n");
-  return (
-    <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-3">
-      {/* Header */}
-      <div className={`rounded-2xl border-2 p-4 ${isDark?"border-emerald-700/30 bg-emerald-900/8":"border-emerald-200 bg-emerald-50/80"}`}>
-        <div className="flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark?"bg-emerald-900/50":"bg-emerald-100"}`}>
-            <CheckFat size={17} weight="fill" className="text-emerald-500"/>
-          </div>
-          <div>
-            <p className={`text-[13px] font-bold ${isDark?"text-emerald-300":"text-emerald-800"}`}>نقّح المذكرة بناءً على المحاكاة</p>
-            <p className={`text-[11px] ${isDark?"text-emerald-600":"text-emerald-600"}`}>تم اختيار {applied.length} بند — راجع المسودة أدناه ثم نزّل</p>
-          </div>
-        </div>
-      </div>
-
-      <BetaReviewGate toolId="wargaming.result" toolName="محاكاة القضية والمذكرة المنقحة" reviewScope="legal-data">
-      {/* Memo preview */}
-      <div className={`rounded-2xl border overflow-hidden ${isDark?"border-white/[0.06]":"border-slate-200"}`}>
-        <div className={`flex items-center gap-2.5 px-4 py-3 border-b ${isDark?"border-white/[0.05] bg-zinc-900/60":"border-slate-100 bg-slate-50"}`}>
-          <Eye size={13} weight="duotone" className="text-[#C8A762]"/>
-          <p className={`text-[12px] font-bold flex-1 ${isDark?"text-zinc-200":"text-zinc-700"}`}>المذكرة المنقّحة</p>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1"><div className={`w-2 h-2 rounded ${isDark?"bg-zinc-600":"bg-slate-300"}`}/><span className={`text-[9px] ${isDark?"text-zinc-600":"text-slate-400"}`}>أصلي</span></div>
-            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-red-400"/><span className="text-[9px] text-red-400">إضافة</span></div>
-          </div>
-        </div>
-        <div className="p-4 space-y-3">
-          <div className={`rounded-xl p-3 text-[11px] leading-[2] whitespace-pre-line ${isDark?"bg-zinc-950/40 text-zinc-400":"bg-slate-50 text-slate-600"}`}>{MOCK_MEMO_BASE}</div>
-          <div className="space-y-2">
-            <p className={`text-[11px] font-bold ${isDark?"text-red-400":"text-red-600"}`}>الإضافات المُطبَّقة ({applied.length})</p>
-            {applied.map(p=>(
-              <div key={p.id} className={`border-r-4 border-red-500 rounded-xl px-3 py-2.5 ${isDark?"bg-red-900/8 border-red-700/20":"bg-red-50 border-red-200"}`}>
-                <p className="text-[9px] font-bold text-red-500 mb-1">{p.title} — {SIM_TARGETS.find(t=>t.id===p.source)?.label}</p>
-                <p className={`text-[11px] leading-relaxed ${isDark?"text-red-300/80":"text-red-800"}`}>{p.counter}</p>
-              </div>
-            ))}
-          </div>
-          <DownloadBar isDark={isDark} text={fullText}/>
-          <AiResultActions
-            text={fullText}
-            filename="wargaming-memo"
-            showVault
-            showHumanReview
-            className="justify-start"
-          />
-        </div>
-      </div>
-      </BetaReviewGate>
-
-      {/* CTA to drafter */}
-      <div className={`rounded-2xl border p-4 flex flex-col sm:flex-row items-center justify-between gap-4 ${isDark?"border-[#C8A762]/15 bg-[#C8A762]/5":"border-amber-100 bg-amber-50/60"}`}>
-        <div>
-          <p className={`font-bold text-[13px] ${isDark?"text-zinc-100":"text-slate-800"}`}>أرسل هذه التحسينات للصائغ القانوني؟</p>
-          <p className={`text-[11px] mt-0.5 ${isDark?"text-zinc-400":"text-slate-500"}`}>سيتولى الصائغ تضمين الردود في مذكرتك الاحترافية تلقائياً.</p>
-        </div>
-        <Link href="/ai/draft" className="flex-shrink-0 flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-[12px] font-bold text-[#C8A762] shadow-md">
-          <Pencil size={13}/>متابعة مع الصائغ
-        </Link>
-      </div>
-    </motion.div>
-  );
 }
 
 // ─── Case Setup ────────────────────────────────────────────────────────────────
@@ -799,121 +526,6 @@ function SubmitReview({
   );
 }
 
-// ─── Results (Step 3) ──────────────────────────────────────────────────────────
-// Kept for when real AI simulation lands — unreachable, step "results" is no
-// longer set from anywhere (Task C1: this page submits a real order instead
-// of simulating one).
-function Results({ D, ctx, targets, points, onReset }: {
-  D:boolean; ctx:CaseContext; targets:Set<SimTarget>;
-  points:SimPoint[]; onReset:()=>void;
-}) {
-  const [actions, setActions] = useState<Record<string,ItemAction>>({});
-  const [applied, setApplied] = useState(false);
-
-  const selectedItems = points.filter(p => actions[p.id]==="add" || actions[p.id]==="edit");
-  const hasSelected = selectedItems.length > 0;
-
-  const critCount  = points.filter(p=>p.severity==="high").length;
-  const medCount   = points.filter(p=>p.severity==="medium").length;
-  const lowCount   = points.filter(p=>p.severity==="low").length;
-
-  return (
-    <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="space-y-3">
-
-      {/* Summary bar */}
-      <div className={`flex items-center justify-between p-3.5 rounded-2xl border ${D?"border-amber-700/20 bg-amber-900/8":"border-amber-200 bg-amber-50"}`}>
-        <div className="flex items-center gap-2">
-          <CheckCircle size={16} weight="fill" className="text-amber-500"/>
-          <p className={`text-[12px] font-bold ${D?"text-amber-400":"text-amber-700"}`}>
-            {points.length} نقطة · {critCount} حرجة · {medCount} متوسطة · {lowCount} تحسين
-          </p>
-        </div>
-        <button onClick={onReset} className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-xl border ${D?"border-white/[0.08] text-zinc-500 hover:text-zinc-300":"border-slate-200 text-slate-400 hover:text-slate-600"}`}>
-          <ArrowsCounterClockwise size={10}/>إعادة
-        </button>
-      </div>
-
-      {/* Active targets tags */}
-      <div className="flex flex-wrap gap-1.5">
-        {SIM_TARGETS.filter(t=>targets.has(t.id)).map(t=>(
-          <span key={t.id} className={`text-[10px] font-bold px-2 py-1 rounded-full border ${D?"border-white/[0.08]":"border-slate-200"} ${t.color}`}>
-            {t.label}
-          </span>
-        ))}
-      </div>
-
-      <div className={`flex items-center gap-4 px-0.5 text-[10px] font-bold ${D?"text-zinc-600":"text-slate-400"}`}>
-        <span className="text-emerald-500 flex items-center gap-1"><CheckCircle size={12} weight="fill" /> إضافة للمذكرة</span>
-        <span className="text-[#C8A762] flex items-center gap-1"><PencilSimple size={12} /> تعديل وإضافة</span>
-        <span className="text-red-400 flex items-center gap-1"><Trash size={12} /> تجاهل</span>
-      </div>
-
-      {/* Cards */}
-      <div className="space-y-2.5">
-        {points.map(p => (
-          <ActionCard key={p.id} point={p} isDark={D}
-            action={actions[p.id]??null}
-            onAction={a=>setActions(prev=>({...prev,[p.id]:a}))}/>
-        ))}
-      </div>
-
-      {/* Apply bar */}
-      {hasSelected && !applied && (
-        <motion.div initial={{opacity:0,y:4}} animate={{opacity:1,y:0}}
-          className={`rounded-2xl border-2 p-3.5 ${D?"border-emerald-700/30 bg-emerald-900/8":"border-emerald-200 bg-emerald-50"}`}>
-          <div className="flex items-center gap-3">
-            <CheckFat size={15} weight="fill" className="text-emerald-500 flex-shrink-0"/>
-            <p className={`flex-1 text-[12px] font-bold ${D?"text-emerald-400":"text-emerald-700"}`}>مختار للإضافة: {selectedItems.length} بند</p>
-            <motion.button whileTap={{scale:0.96}} onClick={()=>setApplied(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0B3D2E] text-[#C8A762] text-[11px] font-bold">
-              <CheckFat size={11} weight="fill"/>طبّق على المذكرة
-            </motion.button>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Polish panel */}
-      {applied && <PolishPanel isDark={D} points={points} actions={actions}/>}
-    </motion.div>
-  );
-}
-
-// ─── Simulating animation ──────────────────────────────────────────────────────
-// Kept for when real AI simulation lands — unreachable, step "simulating" is
-// no longer set from anywhere (Task C1).
-function SimulatingLoader({ D, targets }: { D:boolean; targets:Set<SimTarget> }) {
-  const steps = [
-    ...(targets.has("opponent") ? ["محاكاة دفوع الخصم وهجماته"] : []),
-    ...(targets.has("court")    ? ["تحليل اتجاه المحكمة والسوابق"] : []),
-    ...(targets.has("critique") ? ["كشف ثغرات المذكرة"] : []),
-    ...(targets.has("plea")     ? ["بناء سكريبت المرافعة"] : []),
-    "ترتيب النتائج حسب الأهمية",
-  ];
-  return (
-    <motion.div initial={{opacity:0}} animate={{opacity:1}} className="flex flex-col items-center gap-4 py-12">
-      <div className="relative w-16 h-16">
-        <motion.div animate={{rotate:360}} transition={{duration:3,repeat:Infinity,ease:"linear"}}
-          className={`absolute inset-0 rounded-full border-2 border-dashed ${D?"border-amber-700/40":"border-amber-300"}`}/>
-        <div className={`absolute inset-3 rounded-full flex items-center justify-center ${D?"bg-zinc-800":"bg-amber-50"}`}>
-          <Sword size={18} weight="duotone" className="text-amber-500"/>
-        </div>
-      </div>
-      <p className={`text-[13px] font-bold ${D?"text-zinc-300":"text-zinc-700"}`}>جارٍ تشغيل المحاكاة الشاملة...</p>
-      <div className="space-y-2 text-center">
-        {steps.map((s,i)=>(
-          <motion.div key={s} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*0.5}}
-            className="flex items-center gap-2">
-            <motion.div animate={{rotate:360}} transition={{duration:1,repeat:Infinity,ease:"linear"}}>
-              <Spinner size={11} className="text-[#C8A762]"/>
-            </motion.div>
-            <p className={`text-[11px] ${D?"text-zinc-500":"text-slate-400"}`}>{s}</p>
-          </motion.div>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
-
 /**
  * Map a thrown submitOrder error to Arabic user-facing copy. The underlying
  * message (which may be English — "Unauthorized", a raw Postgres error,
@@ -943,15 +555,14 @@ function AIWargamingPage() {
   const { isDark:D } = useTheme();
   const user = useUser();
 
-  // "simulating" and "results" are kept in the union (and in stepLabels /
-  // stepNums below) only because SimulatingLoader / Results stay in the file
-  // unreachable, per "hide, do not delete" — nothing ever calls setStep with
-  // either value any more. "submit" is the real replacement.
-  type PageStep = "setup" | "targets" | "simulating" | "submit" | "results";
+  // Owner ٣٨ (18 Nov 2026): the old mock simulation (an outcome prediction
+  // and invented probabilities) is deleted, with its
+  // "simulating" / "results" steps. "submit" sends the team order and runs
+  // the real AI simulation (SimResultView).
+  type PageStep = "setup" | "targets" | "submit";
   const [step,    setStep]    = useState<PageStep>("setup");
   const [ctx,     setCtx]     = useState<CaseContext>({ role:"", area:"", areaOther:"", summary:"" });
   const [targets, setTargets] = useState<Set<SimTarget>>(new Set(["opponent","court"]));
-  const [points,  setPoints]  = useState<SimPoint[]>([]);
   const [memoText, setMemoText] = useState("");
   const [docsText, setDocsText] = useState("");
   // documentIds from the shared attachments list that were uploaded via the
@@ -1024,25 +635,10 @@ function AIWargamingPage() {
     setMemoAttachmentIds(prev => prev.filter(id => id !== documentId));
   }
 
-  // Kept defined but uncalled — the button that used to fire this now goes
-  // to "submit" instead (Task C1). Left in place along with buildPoints() so
-  // real AI simulation can be wired back in later without re-deriving this.
-  async function runSim() {
-    setStep("simulating");
-    await new Promise(r => setTimeout(r, 2000 + targets.size * 400));
-    setPoints(buildPoints(targets, ctx.area));
-    setStep("results");
-  }
-
-  // Only reachable from the (now-hidden) Results component's "إعادة" button
-  // — kept pointed at a still-reachable step regardless.
-  function reset() { setStep("targets"); setPoints([]); }
-
   function fullReset() {
     setStep("setup");
     setCtx({role:"",area:"",areaOther:"",summary:""});
     setTargets(new Set(["opponent","court"]));
-    setPoints([]);
     setMemoText("");
     setDocsText("");
     setMemoAttachmentIds([]);
@@ -1117,9 +713,9 @@ function AIWargamingPage() {
   }
 
   const stepLabels: Record<PageStep,string> = {
-    setup:"بيانات القضية", targets:"أهداف المحاكاة", simulating:"جارٍ المحاكاة", submit:"مراجعة وإرسال", results:"النتائج والتطبيق"
+    setup:"بيانات القضية", targets:"أهداف المحاكاة", submit:"مراجعة وإرسال"
   };
-  const stepNums: Record<PageStep,number> = { setup:1, targets:2, simulating:3, submit:3, results:3 };
+  const stepNums: Record<PageStep,number> = { setup:1, targets:2, submit:3 };
 
   return (
     <div className={`p-5 md:p-7 max-w-3xl mx-auto space-y-5 ${D?"text-zinc-100":"text-zinc-900"}`} dir="rtl">
@@ -1136,7 +732,7 @@ function AIWargamingPage() {
       <div className={`flex items-center gap-1 p-3 rounded-2xl border ${D?"border-white/[0.05] bg-white/[0.02]":"border-slate-100 bg-slate-50/60"}`}>
         {(["setup","targets","submit"] as const).map((s,i,arr)=>{
           const num = i+1;
-          const active = stepNums[step]===num||step==="simulating"&&num===3;
+          const active = stepNums[step]===num;
           const done   = stepNums[step]>num;
           return (
             <React.Fragment key={s}>
@@ -1191,12 +787,6 @@ function AIWargamingPage() {
               memoAttachmentIds={memoAttachmentIds}
               uploading={uploading} attachError={attachError}
               attachMemoFile={attachMemoFile} removeMemoAttachment={removeMemoAttachment}/>
-          </motion.div>
-        )}
-
-        {step==="simulating" && (
-          <motion.div key="sim" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <SimulatingLoader D={D} targets={targets}/>
           </motion.div>
         )}
 
@@ -1257,11 +847,6 @@ function AIWargamingPage() {
           </motion.div>
         )}
 
-        {step==="results" && (
-          <motion.div key="results" initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
-            <Results D={D} ctx={ctx} targets={targets} points={points} onReset={reset}/>
-          </motion.div>
-        )}
       </AnimatePresence>
     </div>
   );

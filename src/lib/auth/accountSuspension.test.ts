@@ -254,7 +254,7 @@ test("requireApiUser refuses a suspended account even with allowFrozen; frozenAc
   assert.ok(resp.includes("if (!isSuspendedUser(user)) return null;") && resp.includes("status: 403"));
 });
 
-test("users PATCH: refuses the caller's own account and an admin account before any write; the ban precedes the subscription writes", () => {
+test("users PATCH: refuses the caller's own account and an admin account before any write; the ban precedes the freeze (owner ٢٥)", () => {
   const route = code(read("app/api/v1/admin/users/[id]/route.ts"));
   const patch = route.slice(route.indexOf("export async function PATCH("), route.indexOf("export async function DELETE("));
   const writeAt = patch.indexOf(".update(updateData)");
@@ -263,8 +263,12 @@ test("users PATCH: refuses the caller's own account and an admin account before 
   assert.ok(selfAt > -1 && selfAt < writeAt);
   assert.ok(adminAt > -1 && adminAt < writeAt);
   const banAt = patch.indexOf("await suspendAccountWith(adminClient,");
-  const cancelAt = patch.indexOf('.from("subscriptions")');
-  assert.ok(banAt > -1 && banAt < cancelAt, "the access stops first");
-  assert.ok(patch.includes("await liftSuspensionWith(adminClient,"));
+  const freezeAt = patch.indexOf("await freezeEntitlementsWith(adminClient,");
+  assert.ok(banAt > -1 && banAt < freezeAt, "the access stops first, then the freeze");
+  assert.equal(patch.includes('.from("subscriptions")'), false, "owner ٢٥: a suspension cancels no subscription");
+  assert.equal(patch.includes('tier: "free"'), false, "owner ٢٥: the auth tier is not reset");
+  const liftAt = patch.indexOf("await liftSuspensionWith(adminClient,");
+  const thawAt = patch.indexOf("await thawEntitlementsWith(adminClient,");
+  assert.ok(liftAt > -1 && liftAt < thawAt, "the ban is lifted, then the suspended days come back");
   assert.ok(patch.includes('"user_unsuspended"'));
 });

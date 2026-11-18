@@ -68,12 +68,16 @@ export interface AiToolSpec {
    */
   citationsOptional?: (input: Record<string, unknown>) => boolean;
   /**
-   * Owner ٤١٢ (quick-answer): one free question a day per verified phone of an
-   * individual account (freeQuestion.ts). A request with `useFreeQuestion`
-   * starts at price 0 through public.ai_start_free_question, which claims the
-   * day atomically or refuses; it never falls back to a charge or to free.
+   * Owner ٣٠ (18 Nov 2026, batch l7 decision 6; replaces owner ٤١٢'s daily
+   * free quick question): the account's free questions, ONCE — 10 for a
+   * lawyer, 5 for an individual (platform_settings
+   * free_questions_by_account_type; freeQuestion.ts). runCore spends one,
+   * with no opt-in, while the status says some are left: the run starts at
+   * price 0 through public.ai_start_free_question, which recounts under the
+   * start lock; if it refuses (the last one taken meanwhile), the same request
+   * is charged the normal price it showed.
    */
-  freeDailyQuestion?: boolean;
+  freeQuestions?: boolean;
   /** Runs per user per Riyadh day while nothing else limits them (plan §1.2). */
   dailyLimit: number;
   /** The mode until an admin sets one in platform_settings.ai_tools. */
@@ -1785,10 +1789,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "fast",
     roles: REGISTERED_ROLES,
     consultantBlocked: false,
-    // Owner ٤١٢ (7 Nov 2026): 10 points; one free question a day for an
-    // individual account with a verified phone (inert until OTP exists).
+    // Owner ٤١٢ (7 Nov 2026): 10 points. Its daily free question was replaced
+    // by the library assistant's free questions (owner ٣٠, 18 Nov; batch l7).
     price: () => 10,
-    freeDailyQuestion: true,
     dailyLimit: 30,
     defaultMode: "off",
     // Owner ٤١٣ option A: an answer that cites none of the texts is kept,
@@ -1808,6 +1811,9 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     consultantBlocked: false,
     // Owner ٢٥٧: 5 points flat, the chat and «اشرح لي» alike.
     price: () => 5,
+    // Owner ٣٠ (18 Nov, batch l7): the account's free questions, once —
+    // 10 for a lawyer, 5 for an individual (freeQuestion.ts).
+    freeQuestions: true,
     dailyLimit: 60,
     defaultMode: "off",
     retrieval: { from: "message", pinFrom: "article_id", scopeFrom: "law_slug", laws: 6, principles: 3 },

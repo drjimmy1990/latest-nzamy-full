@@ -266,6 +266,8 @@ function countOf(body: string, needle: string): number {
  */
 const GATES: Array<{ file: string; method: string; action: StaffAction | "per-field"; logs: number }> = [
   { file: "payments/orders/[id]/refund/route.ts", method: "POST", action: "payments.refund", logs: 0 },
+  // l7: issues a missing credit note (idempotent; the audit row only for a new one)
+  { file: "payments/orders/[id]/credit-note/route.ts", method: "POST", action: "payments.refund", logs: 1 },
   { file: "users/[id]/route.ts", method: "DELETE", action: "users.delete", logs: 1 },
   { file: "users/[id]/route.ts", method: "PATCH", action: "per-field", logs: 1 },
   { file: "teams/route.ts", method: "POST", action: "staff.manage", logs: 1 },
@@ -284,10 +286,11 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "coupons/[id]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "coupons/[id]/route.ts", method: "DELETE", action: "coupons.delete", logs: 1 },
   { file: "corporates/route.ts", method: "PATCH", action: "entitlements.grant", logs: 1 },
-  // resend_whatsapp arm, assign arm, claim/deliver/cancel arm
-  { file: "service-orders/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 3 },
+  // resend_whatsapp arm, assign arm, publish_open/unpublish_open arm (owner ٢٣), claim/deliver/cancel arm
+  { file: "service-orders/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 4 },
   { file: "verifications/[id]/route.ts", method: "PATCH", action: "verifications.decide", logs: 1 },
   { file: "community/moderation/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
+  { file: "community/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },
@@ -320,6 +323,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // P3 Task 10: «حملة المؤسس» — pause / resume and capacity (R2), and the R24 retry
   { file: "founder/sale/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "founder/orders/[id]/activate/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  // l7 decision 3: «تحرير المقاعد التجريبية» (founder_revoke per test seat, one audit row)
+  { file: "founder/test-seats/route.ts", method: "POST", action: "settings.write", logs: 1 },
   // S6-T7 (R18): an admin edits one client-catalogue price row (one audited update)
   { file: "pricing-catalog/[serviceId]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   // Legal GraphRAG admin controls: switch_model, trigger_sync, set_feqh_vectors (3 audited arms)
@@ -467,31 +472,27 @@ test("users DELETE: an admin cannot delete their own account from the console", 
   assert.ok(body.slice(refusalAt, refusalAt + 80).includes("status: 400"), "the refusal is a 400");
 });
 
-test("users PATCH: a suspension's audit row records what its writes really did", () => {
+test("users PATCH: a suspension's audit row records what its writes really did (owner ٢٥: a freeze, never a cancel)", () => {
   const body = handler("users/[id]/route.ts", "PATCH");
-  const cancelAt = body.indexOf('.from("subscriptions")');
-  assert.ok(cancelAt > -1, "the suspension no longer cancels subscriptions");
-  const cancel = body.slice(cancelAt, body.indexOf(";", cancelAt));
-  assert.ok(cancel.includes('.select("id")'), "the cancel returns its rows, so the count is real");
-  assert.ok(/const \{ data: cancelledRows, error: cancelError \}/.test(body), "the cancel's result is captured");
-  assert.ok(/const \{ data: tierResult, error: tierError \}/.test(body), "the tier change's result is captured");
+  assert.equal(body.includes('.from("subscriptions")'), false, "a suspension no longer cancels subscriptions");
+  assert.equal(body.includes('tier: "free"'), false, "a suspension no longer resets the auth tier");
+  const freezeAt = body.indexOf("await freezeEntitlementsWith(adminClient,");
+  assert.ok(freezeAt > -1, "the suspension freezes what is live");
 
-  // either error → 500 «تعذّر إكمال الإيقاف», recorded as a failed suspension, never as done
+  // the ban's failure → 500 «تعذّر إكمال الإيقاف», recorded as a failed suspension, never as done
   const helperAt = body.indexOf("const suspensionFailed = async");
-  assert.ok(helperAt > -1 && helperAt < cancelAt, "one failure path, defined before the writes");
-  const helper = body.slice(helperAt, cancelAt);
-  assert.ok(helper.includes('"user_suspension_failed"'), "a half-completed suspension is recorded as failed");
+  assert.ok(helperAt > -1 && helperAt < freezeAt, "one failure path, defined before the writes");
+  const helper = body.slice(helperAt, freezeAt);
+  assert.ok(helper.includes('"user_suspension_failed"'), "a failed suspension is recorded as failed");
   const msgAt = helper.indexOf('"تعذّر إكمال الإيقاف"');
   assert.ok(msgAt > -1 && helper.slice(msgAt, msgAt + 80).includes("status: 500"), "the failure answers 500 «تعذّر إكمال الإيقاف»");
   assert.ok(helper.indexOf("logAdminAction(") < msgAt, "the failed row is written, then the 500");
-  assert.equal(countOf(body, "return suspensionFailed("), 3, "the ban and both writes return through the failure path");
-  assert.ok(body.indexOf("if (cancelError)") > cancelAt, "the cancel's error is checked");
-  assert.ok(body.indexOf("if (tierError)") > body.indexOf("if (cancelError)"), "the tier error is checked");
+  assert.equal(countOf(body, "return suspensionFailed("), 1, "the ban returns through the failure path");
 
-  // success records the real values, never the old constants
-  assert.equal(body.includes('active_subscriptions: "cancelled"'), false, "no fixed claim of a cancellation");
-  assert.ok(body.includes("cancelled_count"), "the success row carries the real cancelled count");
-  assert.ok(/auth_tier\s*[:=]\s*.*tierResult/.test(body), "the tier recorded is the one the auth admin API returned");
+  // success records what the freeze and the lift really did
+  assert.ok(body.includes("after.freeze = freeze.state"), "the success row carries the freeze outcome");
+  assert.ok(body.includes("after.freeze = thaw.state"), "the lift row carries the thaw outcome");
+  assert.ok(body.includes("after.extended_days = thaw.extendedDays"), "the lift row carries the days given back");
 });
 
 test("deleting a row that does not exist is a 404 and writes no audit row", () => {
@@ -517,9 +518,10 @@ test("deleting a row that does not exist is a 404 and writes no audit row", () =
 
 test("the community and verification routes keep their audit labels and metadata", () => {
   const moderation = handler("community/moderation/[id]/route.ts", "PATCH");
-  assert.ok(moderation.includes('DB_STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_post_moderated"'));
+  // owner ٤٢: one label per decision and kind (moderationDecision, src/lib/community/review.ts)
+  assert.ok(moderation.includes("action: decision.audit,"));
   assert.ok(moderation.includes("metadata: { reason: body.reason ?? null, action: rawAction }"));
-  assert.ok(moderation.includes('targetType: "community_post"'));
+  assert.ok(moderation.includes('targetType: kind === "post" ? "community_post" : "community_answer"'));
 
   const reports = handler("community/reports/[id]/route.ts", "PATCH");
   assert.ok(reports.includes('STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_report_triaged"'));
@@ -535,7 +537,12 @@ test("the community and verification routes keep their audit labels and metadata
 test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per action)", () => {
   // onboarding/account-type records a USER's own claim (actor_type "user");
   // logAdminAction writes actor_type "admin" only, so that writer stays.
-  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts"]);
+  // l7: refundCore writes the founder-refund override row ITSELF, built by
+  // buildAdminAuditRow, BEFORE any money moves, and refuses the refund when the
+  // write fails — logAdminAction never throws, so it cannot be the gate there.
+  // payments/minTopup.ts (batch l7, decision 5) records a BUYER's refused top-up
+  // below his type's minimum (actor_type "user") — not an admin action either.
+  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/refundCore.ts", "lib/payments/minTopup.ts"]);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -559,6 +566,8 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   assert.deepEqual(offenders, []);
   const onboarding = codeOnly(readFileSync(join(SRC, "app/api/v1/onboarding/account-type/route.ts"), "utf8"));
   assert.ok(onboarding.includes('actor_type: "user"'), "the allow-listed onboarding writer must be a user actor");
+  const minTopup = codeOnly(readFileSync(join(SRC, "lib/payments/minTopup.ts"), "utf8"));
+  assert.ok(minTopup.includes('actor_type: "user"'), "the allow-listed min top-up writer must be a user actor");
 });
 
 test("requireStaff: requireAdmin first, the role from platform_staff with the service client, fail-closed", () => {

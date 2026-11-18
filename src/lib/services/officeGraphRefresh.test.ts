@@ -22,7 +22,6 @@ const graph = (extra = false): OfficeGraph => ({
     { from: "client:c1", to: "case:1", relation: "client" },
     ...(extra ? [{ from: "client:c1", to: "case:2", relation: "client" as const }] : []),
   ],
-  clashes: [],
 });
 
 test("the signature ignores order and catches every drawn change", () => {
