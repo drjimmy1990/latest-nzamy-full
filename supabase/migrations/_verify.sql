@@ -7445,3 +7445,15 @@ select 'Every refunded / voided platform order has its credit note (run 20261127
              and not exists (select 1 from public.payment_credit_notes c where c.order_id = o.id)', false, true, '')))[1]::text = '0'
        end as ok;
 -- <<< verify:l7_refund
+
+-- >>> verify:l8_refbox
+-- Batch l8-refbox (owner decision ٦٠, the reader's law map shows only the link types matching his graph file): run 20261128_60 any time.
+select 'Reader law map by link type: library_reader_law_links_typed, service role only, security invoker (run 20261128_60)' as check,
+       to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)') is not null
+       and not has_function_privilege('anon', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p
+                          where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
+       as ok;
+-- <<< verify:l8_refbox
