@@ -53,8 +53,8 @@ export const FIRM_ROLE_LABEL: Record<FirmRole, string> = {
 };
 
 // The two firm plans /pricing sells (owner answer ١٧٥, 2026-10-16):
-// «مكتب المحاماة» 9,900 SAR/year with 3 seats and «شركة المحاماة» 14,900
-// SAR/year with 5 seats, with no included points. Extra seats go through sales
+// «مكتب المحاماة» 9,900 SAR/year with 5 seats and «شركة المحاماة» 14,900
+// SAR/year with 15 seats (owner ٥٣, 18 Nov 2026), with no included points. Extra seats go through sales
 // (owner answer ٢١٧, 2026-10-18), so no seat price and no seat ceiling.
 // The retired middle tiers have no contract: a profile still marked
 // "firm-growth" / "firm-scale" (demo data) falls back to the first row.
@@ -62,7 +62,7 @@ export const FIRM_PLAN_CONTRACTS: FirmPlanContract[] = [
   {
     plan: "firm-basic",
     annualPrice: bookSar("firm-basic", "yearly"),
-    includedSeats: 3,
+    includedSeats: 5,
     extraSeatAnnualPrice: null,
     includedAnnualPoints: 0,
     maxSeats: null,
@@ -71,7 +71,7 @@ export const FIRM_PLAN_CONTRACTS: FirmPlanContract[] = [
   {
     plan: "firm-enterprise",
     annualPrice: bookSar("firm-enterprise", "yearly"),
-    includedSeats: 5,
+    includedSeats: 15,
     extraSeatAnnualPrice: null,
     includedAnnualPoints: 0,
     maxSeats: null,

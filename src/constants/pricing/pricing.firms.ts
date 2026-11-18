@@ -1,11 +1,16 @@
 import { Users, ShieldCheck } from "@phosphor-icons/react";
 import { Plan, ComparisonCategory } from "./pricing.types";
 import { bookPriceText } from "../../lib/pricing/priceBook";
+import { FIRM_PLAN_SEATS } from "../../lib/pricing/firmSeats";
 
 // ─── Law firms (owner answer ١٧٥, 2026-10-16) ─────────────────────────────────
 // Two plans replace the four yearly tiers:
-// - «مكتب المحاماة» (Firm Pro): 9,900 SAR/year, 3 seats.
-// - «شركة المحاماة» (Enterprise): 14,900 SAR/year, 5 seats.
+// - «مكتب المحاماة» (Firm Pro): 9,900 SAR/year, 5 seats.
+// - «شركة المحاماة» (Enterprise): 14,900 SAR/year, 15 seats.
+// Seats: owner question ٥٣ (18 Nov 2026) approved what is built — 5 / 15, the
+// numbers public.firm_plan_seat_cap enforces (src/lib/pricing/firmSeats.ts).
+// An extra seat's price is an admin setting (firmSeats.ts) that this page never
+// reads: it is not sold publicly: the cards keep «تواصل مع المبيعات» and quote no price.
 // The monthly cycle (990 / 1,490) is retired: professionals never pay monthly
 // (owner, 26 Oct 2026), so «السنوي بسعر عشرة أشهر» is gone with it — it
 // compared against a price no longer sold. Extra seats go through sales (owner answer
@@ -28,12 +33,12 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=firm",
       highlighted: true,
       color: "border-royal/20",
-      includedSeats: 3,
-      minimumSeats: 3,
-      pricingFormulaLabel: "٣ مقاعد مشمولة",
+      includedSeats: FIRM_PLAN_SEATS["firm-basic"],
+      minimumSeats: FIRM_PLAN_SEATS["firm-basic"],
+      pricingFormulaLabel: "٥ مقاعد مشمولة",
       features: {
         ai: [],
-        platform: ["٣ مقاعد مشمولة", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء المكتب وصلاحياتهم"],
+        platform: ["٥ مقاعد مشمولة", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء المكتب وصلاحياتهم"],
         support: [],
       },
       salesLine: { label: "مقاعد إضافية: تواصل مع المبيعات", href: "/contact?type=firm-seats" },
@@ -49,12 +54,12 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=firm",
       highlighted: false,
       color: "border-[#C8A762]/25",
-      includedSeats: 5,
-      minimumSeats: 5,
-      pricingFormulaLabel: "٥ مقاعد مشمولة",
+      includedSeats: FIRM_PLAN_SEATS["firm-enterprise"],
+      minimumSeats: FIRM_PLAN_SEATS["firm-enterprise"],
+      pricingFormulaLabel: "١٥ مقعداً مشمولاً",
       features: {
         ai: [],
-        platform: ["٥ مقاعد مشمولة", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء الشركة وصلاحياتهم"],
+        platform: ["١٥ مقعداً مشمولاً", "القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود", "أعضاء الشركة وصلاحياتهم"],
         support: [],
       },
       salesLine: { label: "مقاعد إضافية: تواصل مع المبيعات", href: "/contact?type=firm-seats" },
@@ -72,12 +77,12 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=firm",
       highlighted: true,
       color: "border-royal/20",
-      includedSeats: 3,
-      minimumSeats: 3,
-      pricingFormulaLabel: "3 seats included",
+      includedSeats: FIRM_PLAN_SEATS["firm-basic"],
+      minimumSeats: FIRM_PLAN_SEATS["firm-basic"],
+      pricingFormulaLabel: "5 seats included",
       features: {
         ai: [],
-        platform: ["3 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
+        platform: ["5 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
         support: [],
       },
       salesLine: { label: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
@@ -93,12 +98,12 @@ export const plansFirms: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/register/provider?type=firm",
       highlighted: false,
       color: "border-[#C8A762]/25",
-      includedSeats: 5,
-      minimumSeats: 5,
-      pricingFormulaLabel: "5 seats included",
+      includedSeats: FIRM_PLAN_SEATS["firm-enterprise"],
+      minimumSeats: FIRM_PLAN_SEATS["firm-enterprise"],
+      pricingFormulaLabel: "15 seats included",
       features: {
         ai: [],
-        platform: ["5 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
+        platform: ["15 seats included", "Cases, hearings and deadlines", "Clients, consultations and contracts", "Members and their permissions"],
         support: [],
       },
       salesLine: { label: "Extra seats: contact sales", href: "/contact?type=firm-seats" },
@@ -114,7 +119,7 @@ export const comparisonFirms: { ar: ComparisonCategory[]; en: ComparisonCategory
       rows: [
         // §2 rule 1: a firm is offered quarterly / half / yearly — no monthly row.
         { feature: "السنوي", "firm-basic": `${bookPriceText("firm-basic", "yearly", "ar")} ر.س`, "firm-enterprise": `${bookPriceText("firm-enterprise", "yearly", "ar")} ر.س` },
-        { feature: "المقاعد المشمولة", "firm-basic": "٣", "firm-enterprise": "٥" },
+        { feature: "المقاعد المشمولة", "firm-basic": "٥", "firm-enterprise": "١٥" },
       ],
     },
     {
@@ -132,7 +137,7 @@ export const comparisonFirms: { ar: ComparisonCategory[]; en: ComparisonCategory
       icon: Users,
       rows: [
         { feature: "Yearly", "firm-basic": `SAR ${bookPriceText("firm-basic", "yearly", "en")}`, "firm-enterprise": `SAR ${bookPriceText("firm-enterprise", "yearly", "en")}` },
-        { feature: "Seats included", "firm-basic": "3", "firm-enterprise": "5" },
+        { feature: "Seats included", "firm-basic": "5", "firm-enterprise": "15" },
       ],
     },
     {
