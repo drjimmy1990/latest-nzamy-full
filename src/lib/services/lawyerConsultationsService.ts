@@ -59,6 +59,8 @@ export interface LawyerConsultation {
   notesCount: number;
   createdAt: string;
   updatedAt: string;
+  /** l7 decision 3: a test account's consultation — shown «تجريبي». Absent on a real one. */
+  isTest?: boolean;
 }
 
 export interface ConsultationNote {

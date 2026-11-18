@@ -30,6 +30,7 @@ import type { CaseStatus, CaseType, CourtDegree, Priority, ViewMode, KanbanGroup
 import AddCaseModal from "../_components/AddCaseModal";
 import CaseStageBar from "../_components/CaseStageBar";
 import EmptyState from "@/components/ui/EmptyState";
+import TestAccountBadge from "@/components/ui/TestAccountBadge";
 import { getLatestCaseStages } from "@/lib/services/caseStagesService";
 import { stageBucketFor, STAGE_BUCKET_LABELS, type StageBucket } from "@/lib/caseStageBuckets";
 
@@ -535,6 +536,7 @@ export default function CasesPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <p className={`text-[13px] font-semibold truncate ${isDark ? "text-zinc-100" : "text-slate-800"}`}>{c.title}</p>
+            {c.isTest && <TestAccountBadge />}
             {dl.tone === "soon" && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 flex-shrink-0">⏰ مهلة قريبة</span>}
             <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${status.bg} ${status.color}`}>{status.label}</span>
           </div>
@@ -694,6 +696,7 @@ export default function CasesPage() {
                     >
                       {isDeadlineSoon(deadlineOf(c.id), today)&&<span className="text-[9px] font-black text-red-500 block mb-1.5 flex items-center gap-1">⏰ مهلة قريبة</span>}
                       <p className={`text-[13px] font-bold leading-snug mb-1 ${isDark?"text-zinc-100":"text-slate-800"}`}>{c.title}</p>
+                      {c.isTest && <TestAccountBadge className="mb-1" />}
                       <p className={`text-[11px] mb-2 ${isDark?"text-zinc-500":"text-slate-400"}`}>{c.client}</p>
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_CONFIG[c.status].bg} ${STATUS_CONFIG[c.status].color}`}>{STATUS_CONFIG[c.status].label}</span>

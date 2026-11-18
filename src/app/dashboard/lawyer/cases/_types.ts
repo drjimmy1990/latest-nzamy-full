@@ -32,4 +32,6 @@ export interface Case {
   lastActivity?: string;
   tags?:         string[];
   collab:        "solo" | "shared" | "team";
+  /** l7 decision 3: the row of a test account (metadata.test_account) — shown «تجريبي». */
+  isTest?:       boolean;
 }
