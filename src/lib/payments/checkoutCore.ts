@@ -158,6 +158,7 @@ import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { checkFounderConsent, type FounderConsent, type FounderTermsState } from "./founderConsent.ts";
 import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR } from "./checkoutCaptcha.ts";
 import type { Attribution } from "../attribution/utmAttribution.ts";
+import type { OrderAnalytics } from "../analytics/analytics.ts";
 import { DEMO_NO_PAYMENT_AR, demoRefusal } from "../api/dbErrorCore.ts";
 import {
   callbackUrlFor,
@@ -252,6 +253,8 @@ export interface CheckoutInput {
   founderConsent?: FounderConsent | null;
   /** F13: the first-touch utm cookie (utmAttribution.ts), stored as metadata.attribution; null / absent → nothing stored. */
   attribution?: Attribution | null;
+  /** l7-analytics: the consented GA client id (orderAnalyticsFromCookies), stored as metadata.analytics for the server purchase event; null / absent → nothing stored, no event. */
+  analytics?: OrderAnalytics | null;
 }
 
 export type CheckoutReply =
@@ -586,6 +589,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       ...(prorationMeta ? { proration: prorationMeta } : {}),
       ...(consentMeta ?? {}),
       ...(input.attribution ? { attribution: input.attribution } : {}),
+      ...(input.analytics ? { analytics: input.analytics } : {}),
       ...(q.launch
         ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
         : {}),

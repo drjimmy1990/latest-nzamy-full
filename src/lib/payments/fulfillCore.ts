@@ -132,6 +132,21 @@ export interface FulfilDeps extends GrantPurchaseDeps {
   releaseFounderSeat?: (orderId: string) => Promise<void>;
   /** P3: the in-site bell of every admin (library_monitor_notify_admins, 20261031_10). Best-effort. */
   notifyAdmins?: (input: { title: string; body: string; href: string }) => Promise<void>;
+  /**
+   * l7-analytics: the GA4 purchase event (src/lib/analytics/analytics.ts,
+   * sendPurchaseEvent). Called once, after the fulfilled_at stamp, for a LIVE
+   * order that granted something; it sends only when the buyer consented at
+   * checkout (metadata.analytics). Best-effort: never changes the outcome.
+   */
+  reportPurchase?: (input: {
+    orderId: string;
+    itemId: string;
+    itemName: string;
+    kind: string;
+    totalHalalas: number;
+    currency: string;
+    metadata: Record<string, unknown> | null;
+  }) => Promise<unknown>;
 }
 
 interface OrderRow {
@@ -437,6 +452,23 @@ async function finish(
     alreadyEntitled: granted.alreadyEntitled,
   });
   await deps.notify({ userId: order.user_id, title: notice.title, body: notice.body, href: notice.href });
+  // The one analytics call on the payment path: after the stamp (so once,
+  // whichever of the callback, the webhook or the sweep got here first).
+  if (deps.reportPurchase && order.live === true && !granted.alreadyEntitled) {
+    try {
+      await deps.reportPurchase({
+        orderId: order.id,
+        itemId: order.item_id,
+        itemName: item.labelAr,
+        kind: order.kind,
+        totalHalalas: order.total_halalas,
+        currency: order.currency,
+        metadata: order.metadata,
+      });
+    } catch {
+      // analytics never touches a sale
+    }
+  }
   if (granted.refundReason) await alertAdminsFounderRefund(deps, order, granted.refundReason, receiptNumber);
 
   return granted.alreadyEntitled

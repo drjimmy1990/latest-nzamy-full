@@ -612,3 +612,44 @@ test("founder: the sweep's release of expired reservations calls founder_release
   const throwing = { rpc: () => { throw new Error("boom"); } } as unknown as FulfilDeps["admin"];
   assert.equal(await releaseExpiredFounderSeats(throwing), null);
 });
+
+// ── l7-analytics: the one analytics call on the payment path ────────────────
+
+test("purchase event: reported once, after the stamp, for a LIVE order that granted something", async () => {
+  const meta = { user_email: "u@example.test", analytics: { ga_client_id: "111.222" } };
+  const { client, log } = happyDb(orderRow({ live: true, metadata: meta }));
+  const reported: Array<Record<string, unknown>> = [];
+  const { d } = deps(client, gateway(paymentOf()), {
+    reportPurchase: async (p) => {
+      reported.push({ ...p, stampedBefore: stamps(log).length });
+    },
+  });
+  const r = await fulfillOrderWith(d, INPUT);
+  assert.equal(r.outcome, "granted");
+  assert.equal(reported.length, 1);
+  assert.equal(reported[0].orderId, ORDER);
+  assert.equal(reported[0].itemId, "topup-100");
+  assert.equal(reported[0].totalHalalas, 11500);
+  assert.equal(reported[0].stampedBefore, 1, "after the fulfilled_at stamp");
+  assert.deepEqual(reported[0].metadata, meta);
+});
+
+test("purchase event: never for a test-mode order, and a throwing reporter never changes the outcome", async () => {
+  {
+    const { client } = happyDb(orderRow({ live: false }));
+    let calls = 0;
+    const { d } = deps(client, gateway(paymentOf()), { reportPurchase: async () => void calls++ });
+    assert.equal((await fulfillOrderWith(d, INPUT)).outcome, "granted");
+    assert.equal(calls, 0);
+  }
+  {
+    const { client } = happyDb(orderRow({ live: true }));
+    const { d, notices } = deps(client, gateway(paymentOf()), {
+      reportPurchase: async () => {
+        throw new Error("ga down");
+      },
+    });
+    assert.deepEqual(await fulfillOrderWith(d, INPUT), { outcome: "granted", receiptNumber: "NZ-2026-000001" });
+    assert.equal(notices.length, 1);
+  }
+});

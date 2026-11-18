@@ -18,6 +18,7 @@ import { getMoyasarConfig, TIER_RANK } from "@/lib/access-control";
 import { recordNotification } from "@/lib/notify";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { createMoyasarClient } from "./moyasarClient.ts";
+import { sendPurchaseEvent } from "@/lib/analytics/analytics";
 import {
   findPaidPaymentWith,
   fulfillOrderWith,
@@ -61,6 +62,10 @@ async function serverDeps(): Promise<FulfilDeps> {
       const { error } = await admin.rpc("library_monitor_notify_admins", { p_title: n.title, p_body: n.body, p_href: n.href });
       if (error) throw new Error(`library_monitor_notify_admins ${error.code ?? "error"}`);
     },
+    // l7-analytics: GA4 Measurement Protocol; "off" unless NEXT_PUBLIC_GA4_ID
+    // AND GA4_API_SECRET are set, "skipped" unless the buyer consented.
+    reportPurchase: (p) =>
+      sendPurchaseEvent({ ga4Id: process.env.NEXT_PUBLIC_GA4_ID, apiSecret: process.env.GA4_API_SECRET }, p),
   };
 }
 
