@@ -847,7 +847,8 @@ test("routes that need locked columns read them with the service role and keep m
   // service role; the per-principle mask is the paywall.
   assert.match(precedent, /const serverOnly = await createServiceClient\(\);\s*const principlesQuery = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
   assert.match(precedent, /const head = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
-  assert.match(precedent, /return isLocked \? truncate\(text, 150\) : text;/);
+  // Batch l8-libguard: cut at a word and never whole (audit م-1); 150 for a principle, the setting for a ruling.
+  assert.match(precedent, /return isLocked \? publicExcerpt\(text, excerptChars\) : text;/);
   assert.match(precedent, /paragraphs: isLocked\s*\? \[\]/);
   assert.match(precedent, /details: isLocked \? null : \{/);
 });

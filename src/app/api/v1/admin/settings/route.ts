@@ -19,6 +19,7 @@ import {
   isBillingCompanyComplete,
   paymentsGatewaySettingIssue,
 } from "@/lib/payments/moyasarConfig";
+import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -68,6 +69,15 @@ const ALLOWED_SETTINGS_KEYS = [
   // l8 payref (٥٣): {"sar": an extra firm seat's price before VAT | null} —
   // stored only; not sold online, never shown publicly.
   "firm_extra_seat_price_sar",
+  // Batch l8-libguard (owner message 18 Nov, item 2; 20261128_30;
+  // src/lib/library/publicGuard.ts): the public library's protection numbers
+  // (per-session / per-address budgets, Turnstile threshold, consecutive
+  // pages, browsing depth, pass minutes);
+  "library_public_protection",
+  // {"full": n, "excerpt_chars": n} — full rulings per collection for a non-subscriber (owner: 0, ~1.5 lines);
+  "public_full_rulings_per_collection",
+  // {"pages": n} — fiqh free pages (owner: 0, subscribers only).
+  "library_feqh_free_pages",
 ] as const;
 
 /**
@@ -144,6 +154,10 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l8 payref: pure, covered by founderDiscount.test.ts / firmSeats.test.ts.
   founder_topup_discount_expires: founderDiscountExpiresIssue,
   firm_extra_seat_price_sar: firmExtraSeatPriceIssue,
+  // Batch l8-libguard: pure, covered by src/lib/library/publicGuard.test.ts.
+  library_public_protection: libraryPublicProtectionIssue,
+  public_full_rulings_per_collection: publicRulingsIssue,
+  library_feqh_free_pages: feqhFreePagesIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

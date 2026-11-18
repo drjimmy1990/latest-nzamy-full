@@ -1150,7 +1150,7 @@ export function LawsTabContent({
                           {!book.free && (
                             <span className="px-2 py-1 text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-lg flex items-center gap-1">
                               <Lock size={10} weight="fill" />
-                              {isRTL ? "أول صفحتين مجاناً" : "First 2 pages free"}
+                              {isRTL ? "النص للمشتركين" : "Subscribers only"}
                             </span>
                           )}
                         </div>
@@ -1217,7 +1217,7 @@ export function LawsTabContent({
                           {!book.free && (
                             <span className="px-2 py-1 text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-lg flex items-center gap-1">
                               <Lock size={10} weight="fill" />
-                              {isRTL ? "أول صفحتين مجاناً" : "First 2 pages free"}
+                              {isRTL ? "النص للمشتركين" : "Subscribers only"}
                             </span>
                           )}
                         </div>
