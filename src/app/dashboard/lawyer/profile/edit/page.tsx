@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -751,7 +752,7 @@ export default function LawyerProfileEditPage() {
           <div><label className={label}>سنوات الخبرة</label>
             <input type="number" min="0" value={form.years_experience} onChange={(e) => set("years_experience", e.target.value)} className={input} /></div>
           <div><label className={label}>سعر الساعة (ر.س)</label>
-            <input type="number" min="0" value={form.hourly_rate} onChange={(e) => set("hourly_rate", e.target.value)} className={input} /></div>
+            <input type="text" inputMode="decimal" dir="ltr" value={form.hourly_rate} onChange={(e) => set("hourly_rate", latinAmountInput(e.target.value))} className={input} /></div>
           <div><label className={label}>رقم الترخيص</label>
             <input value={form.license_number} onChange={(e) => set("license_number", e.target.value)} className={input} placeholder="رقم ترخيص المحاماة" /></div>
           <div><label className={label}>جهة الترخيص</label>

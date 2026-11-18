@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { latinSignedIntegerInput } from "@/lib/forms/latinDigits";
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -1236,7 +1237,7 @@ export default function UserProfilePage() {
                     </button>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <input type="number" value={creditAmount} onChange={e => setCreditAmount(e.target.value)}
+                      <input type="text" dir="ltr" value={creditAmount} onChange={e => setCreditAmount(latinSignedIntegerInput(e.target.value))}
                         placeholder="الكمية (+ أو -)" className={`w-28 px-3 py-2 rounded-xl text-[11px] font-bold border transition-colors ${
                           isDark ? "bg-zinc-800 border-white/[0.06] text-zinc-200 placeholder:text-zinc-600" : "bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-400"
                         }`} />

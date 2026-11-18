@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import { motion } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -839,11 +840,11 @@ export default function ClientDetailPage() {
               </div>
               <div>
                 <label className={labelCls}>إجمالي الأتعاب (ر.س)</label>
-                <input value={editFeeTotal} onChange={e => setEditFeeTotal(e.target.value)} className={inputCls} placeholder="بلا تغيير" inputMode="decimal" />
+                <input value={editFeeTotal} onChange={e => setEditFeeTotal(latinAmountInput(e.target.value))} className={inputCls} placeholder="بلا تغيير" inputMode="decimal" dir="ltr" />
               </div>
               <div>
                 <label className={labelCls}>المبلغ المسدّد (ر.س)</label>
-                <input value={editFeePaid} onChange={e => setEditFeePaid(e.target.value)} className={inputCls} placeholder="بلا تغيير" inputMode="decimal" />
+                <input value={editFeePaid} onChange={e => setEditFeePaid(latinAmountInput(e.target.value))} className={inputCls} placeholder="بلا تغيير" inputMode="decimal" dir="ltr" />
               </div>
               <div className="sm:col-span-2">
                 <label className={labelCls}>التقييم</label>

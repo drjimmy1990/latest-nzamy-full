@@ -18,6 +18,7 @@ import {
 } from "@/lib/financeLedger/financeLedgerRules";
 import { TrustNegativeError, createTrustEntry, listTrust, voidTrustEntry } from "@/lib/services/financeLedgerService";
 import { TargetFields, VoidBox, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 
 export default function TrustPanel({ isDark, caseId }: { isDark: boolean; caseId?: string }) {
   const t = themeCls(isDark);
@@ -155,7 +156,7 @@ export default function TrustPanel({ isDark, caseId }: { isDark: boolean; caseId
           </div>
           <div>
             <label className={t.label}>المبلغ (ر.س)</label>
-            <input inputMode="decimal" className={t.input} value={fAmount} onChange={(e) => { setFAmount(e.target.value); setNegative(null); }} required />
+            <input inputMode="decimal" dir="ltr" className={t.input} value={fAmount} onChange={(e) => { setFAmount(latinAmountInput(e.target.value)); setNegative(null); }} required />
           </div>
           <div>
             <label className={t.label}>التاريخ</label>

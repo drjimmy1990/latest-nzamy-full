@@ -27,6 +27,7 @@ import { BACKEND_MODE } from "@/lib/runtimeMode";
 import { LawyerRegistryLookup } from "./LawyerRegistryLookup";
 import { LICENCE_ACCEPT, LICENCE_MAX_BYTES, LICENCE_MIME_TYPES } from "@/lib/services/licenceUpload";
 import { isFourPartName } from "@/lib/lawyerSignup/nameLicence";
+import { latinLicenceInput } from "@/lib/forms/latinDigits";
 import { isThrowawayEmail, THROWAWAY_EMAIL_AR } from "@/lib/lawyerSignup/throwawayEmail";
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
@@ -226,7 +227,7 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
           <label className="mb-1.5 block text-sm font-medium text-ink dark:text-gray-300">{lc.label}</label>
           <div className="relative">
             <IdentificationCard size={18} className={`absolute top-1/2 -translate-y-1/2 text-ink-faint dark:text-gray-500 pointer-events-none ${isAr ? "right-3.5" : "left-3.5"}`} />
-            <input type="text" dir="ltr" placeholder={lc.ph} value={data.licenseNumber || ""} onChange={e => onChange("licenseNumber", e.target.value)} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
+            <input type="text" dir="ltr" placeholder={lc.ph} value={data.licenseNumber || ""} onChange={e => onChange("licenseNumber", latinLicenceInput(e.target.value))} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
           </div>
           <p className="mt-1 text-xs text-ink-faint dark:text-gray-500">{lc.hint}</p>
         </div>

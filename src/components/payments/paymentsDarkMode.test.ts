@@ -154,7 +154,8 @@ test("no payments surface paints a light panel, a light border or invisible text
 
 test("the Moyasar form renders into an always-light surface: white, dark text, color-scheme light", () => {
   const form = stripComments(readFileSync(join(ROOT, "components/payments/MoyasarCheckout.tsx"), "utf8"));
-  const wrapper = /<div\s+data-light-surface\s+className="([^"]*)"\s+style=\{\{ colorScheme: "light" \}\}\s*>\s*<div className="mysr-form" \/>/.exec(form);
+  // (the optional ref is the Latin-digits listener's anchor, owner 18 Nov)
+  const wrapper = /<div\s+(?:ref=\{cardSurface\}\s+)?data-light-surface\s+className="([^"]*)"\s+style=\{\{ colorScheme: "light" \}\}\s*>\s*<div className="mysr-form" \/>/.exec(form);
   assert.ok(wrapper, "the wrapper directly around .mysr-form");
   for (const cls of ["nz-moyasar-surface", "bg-white", "text-zinc-900", "[color-scheme:light]"]) {
     assert.ok(wrapper[1].split(/\s+/).includes(cls), cls);

@@ -1,5 +1,5 @@
 // Unit tests for the pure modules of the lawyer signup verification (owner
-// decisions ٢٠–٢١, migration 20261124_70). SYNTHETIC values only.
+// decisions ٢٠–٢١ and ٢٧ — e-mail only —, migration 20261124_70). SYNTHETIC values only.
 //   node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/lawyerSignup/lawyerSignup.test.ts
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -16,8 +16,8 @@ import {
 import { maskEmail, maskedMobile, mobileHint } from "./mask.ts";
 import { emailDomain, isThrowawayEmail, THROWAWAY_DOMAINS } from "./throwawayEmail.ts";
 import { cleanOtpInput, generateOtpCode, hashOtpCode, hashOtpTarget, otpPepper } from "./otpCode.ts";
-import { identityChannelAvailable, readSignupProviderConfig, ZERNIO_ADAPTER_IMPLEMENTED, zernioConfigured } from "./providerConfig.ts";
-import { decideLawyerSignup, REASON_AR, type DecisionInput } from "./decision.ts";
+import { readSignupProviderConfig } from "./providerConfig.ts";
+import { decideLawyerSignup, LEGACY_REASON_AR, reasonLineAr, REASON_AR, type DecisionInput } from "./decision.ts";
 import { compareExtracted, parseModelAnswer } from "./aiLicenceCheck.ts";
 
 // ── normalisers: the SQL verify vectors of 20261122_40 ───────────────────────
@@ -134,56 +134,39 @@ test("otpPepper: 32 characters or none", () => {
 test("no provider is on with credentials alone — every one needs its =on switch", () => {
   const creds = {
     LAWYER_OTP_PEPPER: "x".repeat(40),
-    ZERNIO_API_KEY: "k",
-    ZERNIO_BASE_URL: "http://zernio.invalid",
-    ZERNIO_WHATSAPP_SENDER: "s",
     RESEND_API_KEY: "k",
     EMAIL_FROM: "a@b.test",
     GEMINI_API_KEY: "k",
   };
   const off = readSignupProviderConfig(creds);
-  assert.deepEqual(
-    { w: off.whatsapp, s: off.sms, e: off.email, a: off.ai, i: off.instantApproval },
-    { w: false, s: false, e: false, a: false, i: false },
-  );
+  assert.deepEqual({ e: off.email, a: off.ai, i: off.instantApproval }, { e: false, a: false, i: false });
   const on = readSignupProviderConfig({
     ...creds,
-    LAWYER_OTP_WHATSAPP: "on",
-    LAWYER_OTP_SMS: "on",
-    LAWYER_SMS_PROVIDER: "anything",
     LAWYER_OTP_EMAIL: "ON",
     LAWYER_LICENCE_AI: "on",
     LAWYER_INSTANT_APPROVAL: "on",
   });
-  assert.equal(zernioConfigured(creds), true);
-  assert.equal(on.whatsapp, ZERNIO_ADAPTER_IMPLEMENTED, "WhatsApp waits for the Zernio adapter to be written");
-  assert.equal(on.sms, false, "no SMS adapter is implemented yet");
   assert.equal(on.email, true);
   assert.equal(on.ai, true);
   assert.equal(on.aiModel, "gemini-2.5-flash");
   assert.equal(on.instantApproval, true);
-  assert.equal(identityChannelAvailable(on), ZERNIO_ADAPTER_IMPLEMENTED);
-  assert.equal(identityChannelAvailable({ whatsapp: true, sms: false }), true);
-  assert.equal(identityChannelAvailable({ whatsapp: false, sms: false }), false);
 });
 
-test("Evolution variables never turn the signup WhatsApp channel on", () => {
+test("decision ٢٧: the signup has no WhatsApp / SMS channel at all, whatever the environment says", () => {
   const c = readSignupProviderConfig({
-    LAWYER_OTP_PEPPER: "x".repeat(40), LAWYER_OTP_WHATSAPP: "on",
+    LAWYER_OTP_PEPPER: "x".repeat(40),
+    LAWYER_OTP_WHATSAPP: "on", LAWYER_OTP_SMS: "on", LAWYER_SMS_PROVIDER: "any",
+    ZERNIO_API_KEY: "k", ZERNIO_BASE_URL: "u", ZERNIO_WHATSAPP_SENDER: "s",
     EVOLUTION_API_URL: "u", EVOLUTION_API_KEY: "k", EVOLUTION_INSTANCE_NAME: "i",
   });
-  assert.equal(c.whatsapp, false);
+  assert.deepEqual(Object.keys(c).sort(), ["ai", "aiModel", "email", "instantApproval", "pepper"]);
+  assert.equal(c.email, false, "the e-mail switch and Resend are still needed");
 });
 
 test("no pepper → no code channel at all", () => {
-  const c = readSignupProviderConfig({
-    ZERNIO_API_KEY: "k", ZERNIO_BASE_URL: "u", ZERNIO_WHATSAPP_SENDER: "s", LAWYER_OTP_WHATSAPP: "on",
-    RESEND_API_KEY: "k", EMAIL_FROM: "a@b.test", LAWYER_OTP_EMAIL: "on",
-  });
+  const c = readSignupProviderConfig({ RESEND_API_KEY: "k", EMAIL_FROM: "a@b.test", LAWYER_OTP_EMAIL: "on" });
   assert.equal(c.pepper, null);
-  assert.equal(c.whatsapp, false);
   assert.equal(c.email, false);
-  assert.equal(identityChannelAvailable(c), false);
 });
 
 // ── decision table ────────────────────────────────────────────────────────────
@@ -194,18 +177,16 @@ const ALL_GOOD: DecisionInput = {
   registryStatus: "valid",
   nameMatch: "exact",
   otherVerifiedClaims: 0,
-  hasRegistryMobile: true,
   licenceImageUploaded: true,
   aiStatus: "match",
-  identityOtpVerified: true,
-  identityOtpLicenceMatches: true,
-  identityChannelAvailable: true,
+  emailOtpVerified: true,
+  emailChannelAvailable: true,
   mobileChangeRequested: false,
   emailThrowaway: false,
   instantApprovalEnabled: true,
 };
 
-test("approve only when every condition holds", () => {
+test("approve only when every condition holds — the e-mail code included", () => {
   assert.deepEqual(decideLawyerSignup(ALL_GOOD), { outcome: "approve", next: null, reasons: [] });
   assert.equal(decideLawyerSignup({ ...ALL_GOOD, nameMatch: "subset" }).outcome, "approve");
 });
@@ -221,13 +202,13 @@ test("already verified wins over everything", () => {
 });
 
 test("the photo is asked first, even for an account that will be held", () => {
-  const d = decideLawyerSignup({ ...ALL_GOOD, licenceImageUploaded: false, registryStatus: "not_found", identityOtpVerified: false });
+  const d = decideLawyerSignup({ ...ALL_GOOD, licenceImageUploaded: false, registryStatus: "not_found", emailOtpVerified: false });
   assert.equal(d.outcome, "pending");
   assert.equal(d.next, "upload_licence");
   assert.deepEqual(d.reasons, ["registry_not_found"]);
 });
 
-test("every hard reason holds the account and never offers a code", () => {
+test("every hard reason holds the account, before the e-mail step and after it", () => {
   const cases: Array<[Partial<DecisionInput>, string]> = [
     [{ accountBlocked: true }, "account_not_pending"],
     [{ practiceKind: "consultant" }, "consultant_not_in_registry"],
@@ -247,25 +228,32 @@ test("every hard reason holds the account and never offers a code", () => {
     [{ aiStatus: "error" }, "ai_error"],
     [{ aiStatus: "pending" }, "ai_error"],
   ];
-  for (const [patch, reason] of cases) {
-    const d = decideLawyerSignup({ ...ALL_GOOD, identityOtpVerified: false, ...patch });
-    assert.equal(d.outcome, "review", reason);
-    assert.equal(d.next, null, `${reason}: no code may be sent`);
-    assert.ok((d.reasons as string[]).includes(reason), reason);
+  for (const emailOtpVerified of [false, true]) {
+    for (const [patch, reason] of cases) {
+      const d = decideLawyerSignup({ ...ALL_GOOD, emailOtpVerified, ...patch });
+      assert.equal(d.outcome, "review", reason);
+      assert.equal(d.next, null, `${reason}: held, no further step`);
+      assert.ok((d.reasons as string[]).includes(reason), reason);
+    }
   }
 });
 
-test("the OTP step: offered only with a registry mobile and a working channel", () => {
-  const before = { ...ALL_GOOD, identityOtpVerified: false };
-  assert.deepEqual(decideLawyerSignup(before), { outcome: "pending", next: "identity_otp", reasons: [] });
-  assert.deepEqual(decideLawyerSignup({ ...before, hasRegistryMobile: false }).reasons, ["no_registry_mobile"]);
-  assert.deepEqual(decideLawyerSignup({ ...before, identityChannelAvailable: false }), {
-    outcome: "review", next: null, reasons: ["otp_unavailable"],
+test("the e-mail step: offered when the channel works, else a human reviews", () => {
+  const before = { ...ALL_GOOD, emailOtpVerified: false };
+  assert.deepEqual(decideLawyerSignup(before), { outcome: "pending", next: "email_otp", reasons: [] });
+  assert.deepEqual(decideLawyerSignup({ ...before, emailChannelAvailable: false }), {
+    outcome: "review", next: null, reasons: ["email_unavailable"],
   });
+  assert.equal(decideLawyerSignup({ ...before, instantApprovalEnabled: false }).next, "email_otp", "the code is asked even while approval is manual");
 });
 
-test("a code proved for another licence does not count", () => {
-  assert.deepEqual(decideLawyerSignup({ ...ALL_GOOD, identityOtpLicenceMatches: false }).reasons, ["licence_changed"]);
+test("decision ٢٧: no registry-mobile, WhatsApp or SMS input exists in the table any more", () => {
+  const keys = Object.keys(ALL_GOOD);
+  for (const gone of ["hasRegistryMobile", "identityOtpVerified", "identityOtpLicenceMatches", "identityChannelAvailable"]) {
+    assert.equal(keys.includes(gone), false, gone);
+  }
+  const src = readFileSync(join(import.meta.dirname, "decision.ts"), "utf8");
+  assert.equal(/identity_otp|identityOtp/.test(src), false);
 });
 
 test("AI skipped (no key / switch off) → human review, never approval", () => {
@@ -274,8 +262,14 @@ test("AI skipped (no key / switch off) → human review, never approval", () => 
   assert.deepEqual(d.reasons, ["ai_skipped"]);
 });
 
-test("every reason code has an Arabic line for the admin", () => {
+test("every reason code has an Arabic line for the admin — the old ones too", () => {
   for (const [k, v] of Object.entries(REASON_AR)) assert.ok(v.length > 4, k);
+  for (const old of ["no_registry_mobile", "otp_unavailable", "licence_changed", "approval_error"]) {
+    assert.ok(LEGACY_REASON_AR[old], old);
+    assert.notEqual(reasonLineAr(old), old);
+  }
+  assert.equal(reasonLineAr("email_unavailable"), REASON_AR.email_unavailable);
+  assert.equal(reasonLineAr("something_new"), "something_new");
 });
 
 // ── AI answer ─────────────────────────────────────────────────────────────────
@@ -318,31 +312,57 @@ test("compareExtracted: doubt when something is unread or only differs", () => {
 // ── admin queue line ──────────────────────────────────────────────────────────
 import { describeSignupView, shapeSignupView } from "./adminView.ts";
 
-test("shapeSignupView keeps the known fields; describeSignupView never shows a full registry mobile", () => {
+test("the admin line shows the e-mail check; never a full registry mobile", () => {
   const v = shapeSignupView(
     {
       decision: "review",
-      decision_reasons: ["otp_unavailable", 7],
+      decision_reasons: ["email_unavailable", 7],
       registry_status: "valid",
       name_match: "exact",
       full_name_input: "سالم أحمد إبراهيم الاختباري",
       mobile_hint: "11",
       email_throwaway: false,
-      mobile_change_new_mobile: "+966500000099",
-      mobile_change_requested_at: "2026-11-17T10:00:00Z",
     },
     { purpose: "signup", ai_status: "skipped", ai_result: { skipped: true }, created_at: "2026-11-17T09:00:00Z" },
     "https://storage.invalid/signed",
     { created_at: "2026-11-17T09:30:00Z", delivery: "failed" },
   );
-  assert.deepEqual(v.reasons, ["otp_unavailable"]);
+  assert.deepEqual(v.reasons, ["email_unavailable"]);
   assert.equal(v.image?.url, "https://storage.invalid/signed");
   const d = describeSignupView(v);
   assert.equal(d.headline, "محجوز للمراجعة البشرية");
-  assert.ok(d.lines.some((l) => l.includes("لا توجد قناة إرسال")));
-  assert.ok(d.lines.some((l) => l.includes("تعذّر التسليم")));
-  assert.ok(d.lines.some((l) => l.includes("+966500000099")), "the admin sees the new mobile of «رقمي تغيّر»");
+  assert.ok(d.lines.some((l) => l.includes("رمز البريد غير مفعّل")));
+  assert.ok(d.lines.some((l) => l.startsWith("رمز البريد: أُرسل") && l.includes("تعذّر التسليم")));
   assert.ok(d.lines.some((l) => l.includes("ينتهي بـ 11")));
+  assert.equal(d.lines.some((l) => l.includes("رمز جوال السجل")), false, "no registry-mobile code line on a new row");
+  assert.equal(d.lines.some((l) => l.includes("رقمي تغيّر")), false);
+});
+
+test("the e-mail line: confirmed / not sent / throwaway", () => {
+  const confirmed = describeSignupView(shapeSignupView({ decision: "approved", decided_by: "system", email_otp_verified_at: "2026-11-18T10:00:00Z", email_otp_hint: "l•••@example.test" }, null, null, null));
+  assert.ok(confirmed.lines.includes("رمز البريد: مؤكَّد (l•••@example.test)"));
+  assert.ok(describeSignupView(shapeSignupView({ decision: "pending" }, null, null, null)).lines.includes("رمز البريد: لم يُرسل"));
+  assert.ok(describeSignupView(shapeSignupView({ decision: "review", email_throwaway: true }, null, null, null)).lines.some((l) => l.includes("نطاق مؤقت")));
+});
+
+test("rows from before the e-mail-only change keep their old lines, in Arabic", () => {
+  const v = shapeSignupView(
+    {
+      decision: "review",
+      decision_reasons: ["otp_unavailable", "mobile_change"],
+      identity_otp_verified_at: "2026-11-10T10:00:00Z",
+      identity_otp_channel: "sms",
+      mobile_change_new_mobile: "+966500000099",
+      mobile_change_requested_at: "2026-11-17T10:00:00Z",
+    },
+    null,
+    null,
+    null,
+  );
+  const d = describeSignupView(v);
+  assert.ok(d.lines.some((l) => l.includes("قاعدة قديمة")), "a legacy reason is shown in Arabic");
+  assert.ok(d.lines.some((l) => l.includes("رمز جوال السجل (قبل التوثيق بالبريد): مؤكَّد (رسالة نصية)")));
+  assert.ok(d.lines.some((l) => l.includes("+966500000099")), "the admin still sees the new mobile of an old «رقمي تغيّر»");
 });
 
 test("an admin decision on the account wins over a stale signup headline", () => {
@@ -351,4 +371,20 @@ test("an admin decision on the account wins over a stale signup headline", () =>
   assert.equal(describeSignupView(v, "verified").tone, "good");
   assert.equal(describeSignupView(v, "rejected").tone, "bad");
   assert.equal(describeSignupView(shapeSignupView({ decision: "approved", decided_by: "system" }, null, null, null), "verified").headline, "اعتُمد فورياً بعد التحقق");
+});
+
+// ── the signup UI and routes: e-mail only ──────────────────────────────────────
+test("decision ٢٧: the signup UI and routes carry no WhatsApp / SMS step and no «رقمي تغيّر»", async () => {
+  const { existsSync } = await import("node:fs");
+  const root = join(import.meta.dirname, "../../..");
+  for (const gone of ["identity/start", "identity/verify", "mobile-change"]) {
+    assert.equal(existsSync(join(root, "src/app/api/v1/lawyer/signup-verification", gone, "route.ts")), false, gone);
+  }
+  const panel = readFileSync(join(root, "src/components/lawyerSignup/LawyerVerificationPanel.tsx"), "utf8");
+  for (const word of ["رقمي تغيّر", "WhatsappLogo", "identity/start", "mobile-change", "واتساب", "رسالة نصية"]) {
+    assert.equal(panel.includes(word), false, word);
+  }
+  assert.ok(panel.includes("email/verify"));
+  const lookup = readFileSync(join(root, "src/app/register/provider/components/LawyerRegistryLookup.tsx"), "utf8");
+  assert.equal(lookup.includes("يصل إلى هذا الجوال"), false, "no promise of a code to the registry mobile");
 });

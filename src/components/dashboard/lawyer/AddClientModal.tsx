@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import {
   User, Buildings, Star, Check, X, Warning
 } from "@phosphor-icons/react";
@@ -408,12 +409,12 @@ export default function AddClientModal({ isDark, onClose, onCreated }: {
                   {/* Placeholder was "0", which showed a greyed-out zero in an
                       empty box — the field reading as though it would save 0.
                       It no longer saves anything at all when left blank. */}
-                  <input type="number" value={total} onChange={e => setTotal(e.target.value)} placeholder="اختياري"
+                  <input type="text" inputMode="decimal" dir="ltr" value={total} onChange={e => setTotal(latinAmountInput(e.target.value))} placeholder="اختياري"
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                 </div>
                 <div>
                   <label className={`text-[10px] font-bold uppercase tracking-wider mb-1 block ${labelCls}`}>المدفوع مقدمًا (ر.س، اختياري)</label>
-                  <input type="number" value={paid} onChange={e => setPaid(e.target.value)} placeholder="اختياري"
+                  <input type="text" inputMode="decimal" dir="ltr" value={paid} onChange={e => setPaid(latinAmountInput(e.target.value))} placeholder="اختياري"
                     className={`w-full rounded-xl border px-3 py-2.5 text-[13px] outline-none transition ${inputCls}`} />
                 </div>
                 <div>

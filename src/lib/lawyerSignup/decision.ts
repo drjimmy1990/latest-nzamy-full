@@ -1,5 +1,6 @@
 /**
- * The lawyer signup decision table (owner decisions ٢٠–٢١). Pure.
+ * The lawyer signup decision table (owner decisions ٢٠–٢١, amended by ٢٧ /
+ * batch l7 decision 12: e-mail only). Pure.
  *
  * Instant approval ONLY when all of these hold:
  *   - an advocate (consultants are not in the lawyers' registry);
@@ -9,17 +10,15 @@
  *   - no other VERIFIED account holds the licence;
  *   - the licence photo is uploaded and the AI check read it as a MATCH
  *     (skipped / doubt / mismatch / error → human review);
- *   - the code sent to the REGISTRY mobile was confirmed, for the licence that
- *     is still on his file;
- *   - he did not report «رقمي تغيّر», his e-mail is not a throwaway address;
+ *   - the code sent to the account's OWN e-mail was confirmed (no WhatsApp,
+ *     no SMS, no registry-mobile code any more);
+ *   - his e-mail is not a throwaway address;
  *   - LAWYER_INSTANT_APPROVAL=on.
  * Everything else ends in «سجّلنا بياناتك وسنتواصل معك» (review) — never a
  * dead end — or in the next step he still has to do.
  *
- * Order: the photo is mandatory, so it is always asked first. No code is ever
- * sent while a hard reason already holds the account: the code goes to the
- * real lawyer's phone, and someone whose name or licence does not match is not
- * him.
+ * Order: the photo is mandatory, so it is always asked first. A hard reason
+ * holds the account before the e-mail step is offered: the reviewer decides.
  */
 
 import { nameMatchAccepted, type NameMatch } from "./nameLicence.ts";
@@ -43,13 +42,16 @@ export type DecisionInput = {
   registryStatus: RegistryStatus;
   nameMatch: NameMatch | null;
   otherVerifiedClaims: number;
-  hasRegistryMobile: boolean;
   licenceImageUploaded: boolean;
   aiStatus: AiStatus | null;
-  identityOtpVerified: boolean;
-  /** The licence the code proved is the licence on his file now. */
-  identityOtpLicenceMatches: boolean;
-  identityChannelAvailable: boolean;
+  /** The code sent to the account's own e-mail was confirmed. */
+  emailOtpVerified: boolean;
+  /** The e-mail code can be sent (LAWYER_OTP_EMAIL=on + Resend + pepper). */
+  emailChannelAvailable: boolean;
+  /**
+   * A «رقمي تغيّر» request recorded before the e-mail-only change (the
+   * column stays). Still a hold: a human looks at those accounts.
+   */
   mobileChangeRequested: boolean;
   emailThrowaway: boolean;
   instantApprovalEnabled: boolean;
@@ -72,14 +74,12 @@ export type ReasonCode =
   | "ai_doubt"
   | "ai_error"
   | "ai_skipped"
-  | "no_registry_mobile"
-  | "otp_unavailable"
-  | "licence_changed"
+  | "email_unavailable"
   | "instant_approval_off";
 
 export type Decision =
   | { outcome: "verified"; next: null; reasons: [] }
-  | { outcome: "pending"; next: "upload_licence" | "identity_otp"; reasons: ReasonCode[] }
+  | { outcome: "pending"; next: "upload_licence" | "email_otp"; reasons: ReasonCode[] }
   | { outcome: "review"; next: null; reasons: ReasonCode[] }
   | { outcome: "approve"; next: null; reasons: [] };
 
@@ -104,12 +104,10 @@ export function decideLawyerSignup(i: DecisionInput): Decision {
   if (!i.licenceImageUploaded) return { outcome: "pending", next: "upload_licence", reasons: hard };
   if (hard.length > 0) return { outcome: "review", next: null, reasons: hard };
 
-  if (!i.identityOtpVerified) {
-    if (!i.hasRegistryMobile) return { outcome: "review", next: null, reasons: ["no_registry_mobile"] };
-    if (!i.identityChannelAvailable) return { outcome: "review", next: null, reasons: ["otp_unavailable"] };
-    return { outcome: "pending", next: "identity_otp", reasons: [] };
+  if (!i.emailOtpVerified) {
+    if (!i.emailChannelAvailable) return { outcome: "review", next: null, reasons: ["email_unavailable"] };
+    return { outcome: "pending", next: "email_otp", reasons: [] };
   }
-  if (!i.identityOtpLicenceMatches) return { outcome: "review", next: null, reasons: ["licence_changed"] };
 
   const soft: ReasonCode[] = [];
   if (i.aiStatus !== "match") soft.push("ai_skipped");
@@ -130,17 +128,33 @@ export const REASON_AR: Record<ReasonCode, string> = {
   registry_not_checked: "لم يُفحص السجل بعد",
   name_mismatch: "الاسم المُدخل لا يطابق اسم السجل",
   licence_claimed: "رقم الترخيص نفسه لحساب محامٍ آخر موثّق",
-  mobile_change: "أبلغ أن رقمه تغيّر — يُراجع يدوياً",
+  mobile_change: "طلب قديم «رقمي تغيّر» (قبل التوثيق بالبريد) — يُراجع يدوياً",
   throwaway_email: "بريد من نطاق مؤقت",
   ai_mismatch: "الفحص الآلي للصورة: لا تطابق",
   ai_doubt: "الفحص الآلي للصورة: غير متأكد",
   ai_error: "الفحص الآلي للصورة: تعذّر",
   ai_skipped: "لم يُفحص آلياً — تُراجع الصورة يدوياً",
-  no_registry_mobile: "لا يوجد جوال صالح في السجل",
-  otp_unavailable: "لا توجد قناة إرسال رمز مفعّلة (واتساب/SMS)",
-  licence_changed: "تغيّر رقم الترخيص بعد التحقق بالرمز",
+  email_unavailable: "رمز البريد غير مفعّل (مزوّد البريد غير مضبوط) — يُراجع يدوياً",
   instant_approval_off: "الاعتماد الفوري غير مفعّل — كل الشروط متحققة",
 };
+
+/**
+ * Reasons recorded before the e-mail-only change (decision_reasons rows that
+ * the next evaluation has not rewritten yet), plus the service's own
+ * approval_error. Kept so the admin never sees a
+ * bare English code.
+ */
+export const LEGACY_REASON_AR: Record<string, string> = {
+  no_registry_mobile: "لا يوجد جوال صالح في السجل (قاعدة قديمة: رمز جوال السجل)",
+  otp_unavailable: "لا توجد قناة إرسال رمز للجوال (قاعدة قديمة: واتساب/SMS)",
+  licence_changed: "تغيّر رقم الترخيص بعد التحقق برمز الجوال (قاعدة قديمة)",
+  approval_error: "تعذّر الاعتماد الآلي وقت التنفيذ — يُراجع يدوياً",
+};
+
+/** The admin's Arabic line for any recorded reason, current or legacy. */
+export function reasonLineAr(code: string): string {
+  return (REASON_AR as Record<string, string>)[code] ?? LEGACY_REASON_AR[code] ?? code;
+}
 
 /** The one line the lawyer sees whenever his account is held (decision ٢١). */
 export const HOLD_MESSAGE_AR = "سجّلنا بياناتك وسنتواصل معك";

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import { motion } from "framer-motion";
 import { XCircle } from "@phosphor-icons/react";
 import DualDatePicker from "@/components/ui/DualDatePicker";
@@ -529,7 +530,7 @@ export function PaymentFormModal({ contractId, isDark, onClose, initial, onSaved
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>المبلغ (ر.س) <span className="text-red-500">*</span></label>
-            <input type="number" min="0" value={amountSar} onChange={(e) => setAmountSar(e.target.value)} className={inputCls} />
+            <input type="text" inputMode="decimal" dir="ltr" value={amountSar} onChange={(e) => setAmountSar(latinAmountInput(e.target.value))} className={inputCls} />
           </div>
           <div>
             <label className={labelCls}>تاريخ الاستحقاق</label>
