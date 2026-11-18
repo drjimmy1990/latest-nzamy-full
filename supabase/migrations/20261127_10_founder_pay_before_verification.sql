@@ -33,8 +33,14 @@
 --      founder_reserve_seat still answers 'full' BEFORE any payment.
 --   3. The counter (decision 2 + 3). New helper founder_seat_counted(user,
 --      order): false for a test account (public.test_accounts), a demo
---      account (profiles.is_demo) and a seat whose order was paid in Moyasar
---      TEST mode (payment_orders.live = false). Such seats never count: not
+--      account (profiles.is_demo), a seat whose order was paid in Moyasar
+--      TEST mode (payment_orders.live = false) and an order the checkout
+--      opened in test mode (metadata.gateway_mode = 'test' — live is still
+--      null until the claim; l7-testacct's checkout stamps it).
+--      Decision 3: founder_reserve_seat refuses a demo account
+--      ('demo_account') ONLY for an order that is not test mode
+--      (metadata.gateway_mode <> 'test'): a demo / test account may take a
+--      seat in Moyasar TEST mode, and that seat never counts. Such seats never count: not
 --      in founder_seat_summary, not in the capacity checks of
 --      founder_reserve_seat / founder_activate.
 --      founder_seat_summary() is re-created (DROP + CREATE: its row gains
@@ -129,11 +135,13 @@ as $fn$
   select not (
         exists (select 1 from public.test_accounts t where t.user_id = p_user)
      or public.is_demo_user(p_user)
-     or exists (select 1 from public.payment_orders o where o.id = p_order and o.live = false));
+     or exists (select 1 from public.payment_orders o
+                 where o.id = p_order
+                   and (o.live = false or coalesce(o.metadata ->> 'gateway_mode', '') = 'test')));
 $fn$;
 
 comment on function public.founder_seat_counted(uuid, uuid) is
-  'Decisions 2 + 3 (20261127_10): false for a founder seat that must never count in the seats — a test account (test_accounts), a demo account (profiles.is_demo) or an order paid in Moyasar TEST mode (payment_orders.live = false). Service role only.';
+  'Decisions 2 + 3 (20261127_10): false for a founder seat that must never count in the seats — a test account (test_accounts), a demo account (profiles.is_demo) or an order in Moyasar TEST mode (payment_orders.live = false, or metadata.gateway_mode = ''test'' before the claim). Service role only.';
 
 -- ── 3. founder_reserve_seat: 20261125_50 + a pending lawyer may reserve ─────
 create or replace function public.founder_reserve_seat(p_user uuid, p_order uuid)
@@ -157,15 +165,18 @@ begin
 
   perform pg_advisory_xact_lock(hashtext('founder_seats:founder-2026'));
 
-  select o.id, o.user_id, o.kind into v_order from public.payment_orders o where o.id = p_order;
+  select o.id, o.user_id, o.kind, o.metadata ->> 'gateway_mode' as gateway_mode into v_order
+    from public.payment_orders o where o.id = p_order;
   if v_order.id is null or v_order.user_id is distinct from p_user or v_order.kind <> 'membership' then
     raise exception 'founder_reserve_seat: % is not a membership order of this user', p_order
       using errcode = '22023';
   end if;
 
-  -- 20261125_50 (S3): a demo account never reserves a seat, so it is never
-  -- counted in the seats
-  if public.is_demo_user(p_user) then
+  -- 20261125_50 (S3): a demo account never reserves a seat with real money.
+  -- 20261127_10 (decision 3): it may in Moyasar TEST mode (the checkout's
+  -- metadata.gateway_mode = 'test'); founder_seat_counted keeps that seat out
+  -- of every count.
+  if public.is_demo_user(p_user) and coalesce(v_order.gateway_mode, '') <> 'test' then
     return 'demo_account';
   end if;
 
@@ -251,7 +262,7 @@ begin
 end $$;
 
 comment on function public.founder_reserve_seat(uuid, uuid) is
-  'Reserves a founder seat for 15 minutes under the seats lock (20261101_10; advocate only since 20261122_10; 15 minutes since 20261124_10, owner ٣; demo accounts refused since 20261125_50, S3; a pending lawyer may reserve and test / demo / test-mode seats never count since 20261127_10): reserved | already_member | full | closed | paused | not_verified | not_advocate | demo_account. An unpaid reservation of the same user is moved to the new order (a retry). Service role only.';
+  'Reserves a founder seat for 15 minutes under the seats lock (20261101_10; advocate only since 20261122_10; 15 minutes since 20261124_10, owner ٣; demo accounts refused since 20261125_50, S3 — in live mode only since 20261127_10; a pending lawyer may reserve and test / demo / test-mode seats never count since 20261127_10): reserved | already_member | full | closed | paused | not_verified | not_advocate | demo_account. An unpaid reservation of the same user is moved to the new order (a retry). Service role only.';
 
 -- ── 4. founder_activate: 20261124_10 + pending verification + oversell ──────
 create or replace function public.founder_activate(p_order uuid)
@@ -544,7 +555,8 @@ begin
   if pg_catalog.strpos(v_reserve, 'demo_account') = 0 or pg_catalog.strpos(v_reserve, '15 minutes') = 0
      or pg_catalog.strpos(v_reserve, 'not_advocate') = 0 or pg_catalog.strpos(v_reserve, '2 hours') > 0
      or pg_catalog.strpos(v_reserve, '''verified'', ''pending''') = 0
-     or pg_catalog.strpos(v_reserve, 'founder_seat_counted') = 0 then
+     or pg_catalog.strpos(v_reserve, 'founder_seat_counted') = 0
+     or pg_catalog.strpos(v_reserve, 'gateway_mode') = 0 then
     raise exception '20261127_10 verify: founder_reserve_seat lost an earlier rule or misses the pending lawyer / counted seats';
   end if;
   if pg_catalog.strpos(v_activate, '''library_question'', 20, 20') = 0

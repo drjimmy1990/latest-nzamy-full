@@ -242,6 +242,40 @@ begin
   raise notice 'T6 PASS: rejection revokes the pending seat; it never comes back';
 end $$;
 
+-- T6b decision 3: a demo account is refused a seat in live mode, may take one in
+-- TEST mode (metadata.gateway_mode = 'test'), and that seat never counts
+do $$
+declare v_before record; v_after record;
+begin
+  insert into auth.users (id) values ('00000000-0000-0000-0000-00000000c007');
+  insert into public.profiles (id, user_type, display_name) values ('00000000-0000-0000-0000-00000000c007', 'lawyer', 'محامٍ تجريبي');
+  insert into public.lawyer_profiles (user_id, verification_status, practice_kind)
+    values ('00000000-0000-0000-0000-00000000c007', 'verified', 'advocate');
+  -- the orders first: 20261125_50's payment guard refuses a demo account's insert
+  insert into public.payment_orders (id, user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, status, metadata)
+  values ('00000000-0000-0000-0000-00000000d007', '00000000-0000-0000-0000-00000000c007', 'membership',
+          'lawyer-founder-2026', 'once', 299600, 44940, 344540, 'exclusive', 'initiated', '{}'::jsonb),
+         ('00000000-0000-0000-0000-00000000d017', '00000000-0000-0000-0000-00000000c007', 'membership',
+          'lawyer-founder-2026', 'once', 299600, 44940, 344540, 'exclusive', 'initiated', '{"gateway_mode": "test"}'::jsonb);
+  update public.profiles set is_demo = true where id = '00000000-0000-0000-0000-00000000c007';
+  update public.platform_settings set value = value || '{"capacity": 100}'::jsonb where key = 'founder_campaign';
+  select * into v_before from public.founder_seat_summary();
+  if public.founder_reserve_seat('00000000-0000-0000-0000-00000000c007', '00000000-0000-0000-0000-00000000d007') <> 'demo_account' then
+    raise exception 'T6b FAIL: a demo account reserved with a live-mode order';
+  end if;
+  if public.founder_reserve_seat('00000000-0000-0000-0000-00000000c007', '00000000-0000-0000-0000-00000000d017') <> 'reserved' then
+    raise exception 'T6b FAIL: a demo account could not reserve in test mode';
+  end if;
+  select * into v_after from public.founder_seat_summary();
+  if v_after.reserved <> v_before.reserved or v_after.seats_left <> v_before.seats_left
+     or v_after.test_seats <> v_before.test_seats + 1 then
+    raise exception 'T6b FAIL: the test-mode reservation counted (reserved % -> %, left % -> %)',
+      v_before.reserved, v_after.reserved, v_before.seats_left, v_after.seats_left;
+  end if;
+  update public.platform_settings set value = value || '{"capacity": 2}'::jsonb where key = 'founder_campaign';
+  raise notice 'T6b PASS: demo refused live, allowed test mode, never counted';
+end $$;
+
 -- T7 a paid order of a rejected lawyer is still the refund case (not_verified)
 do $$
 begin
