@@ -7207,3 +7207,27 @@ select 'Named case boards: canvas_boards with RLS as case_graphs, no guest grant
        and has_table_privilege('authenticated', 'public.canvas_boards', 'SELECT')
        as ok;
 -- <<< verify:l6_tools
+-- >>> verify:l7_testacct
+-- One test-account mode (l7 decision 3): run 20261127_80 AFTER the l7 deploy (and after any re-run of 20261125_50).
+select 'Test accounts: is_test_account (is_demo or test_accounts, not staff), service role only (run 20261127_80)' as check,
+       to_regprocedure('public.is_test_account(uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.is_test_account(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.is_test_account(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_account_stamp_rows(uuid)', 'EXECUTE')
+       as ok;
+select 'Test accounts pay in Moyasar TEST mode only: payment_orders.trg_demo_guard runs test_account_payment_guard (run 20261127_80)' as check,
+       to_regprocedure('public.test_account_payment_guard()') is not null
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = 'public.payment_orders'::regclass and t.tgname = 'trg_demo_guard' and not t.tgisinternal
+                      and t.tgfoid = to_regprocedure('public.test_account_payment_guard()'))
+       and pg_catalog.pg_get_functiondef(to_regprocedure('public.test_account_payment_guard()')) like '%gateway_mode%'
+       as ok;
+select 'Test accounts: sandbox, no open request, caps 5/5 and the «تجريبي» tag cover test_accounts too (run 20261127_80)' as check,
+       pg_catalog.pg_get_functiondef('public.demo_guard_sandbox_row()'::regprocedure) like '%is_test_account%'
+       and pg_catalog.pg_get_functiondef('public.demo_guard_sandbox_row()'::regprocedure) like '%demo_account:open_request%'
+       and pg_catalog.pg_get_functiondef('public.demo_guard_sandbox_row()'::regprocedure) like '%test_account%true%'
+       and (select l.cases = 5 and l.consultations = 5 from public.demo_account_limits() l)
+       and exists (select 1 from pg_catalog.pg_trigger
+                    where tgrelid = 'public.test_accounts'::regclass and tgname = 'trg_test_accounts_stamp' and not tgisinternal)
+       as ok;
+-- <<< verify:l7_testacct
