@@ -12,6 +12,7 @@
 // ─── Types & labels ───────────────────────────────────────────────────────────
 
 import { COMMITTEE_FAMILIES, SECTION_LABELS, normalizeSectionCode } from "./graphRouting.ts";
+import { isExplorerVisibleLinkType } from "../library/graphLinkTypes.ts";
 
 export const EXPLORER_NODE_TYPES = ["article", "principle", "decree", "feqh", "concept", "law", "chapter", "term"] as const;
 export type ExplorerNodeType = (typeof EXPLORER_NODE_TYPES)[number];
@@ -218,9 +219,61 @@ export function nodeMetaFor(t: unknown): NodeMeta {
   return isExplorerNodeType(t) ? NODE_TYPE_META[t] : UNKNOWN_NODE_META;
 }
 
+/**
+ * Owner decision ٦٠: a link type that is not in the owner's graph file is
+ * hidden until he reviews it (src/lib/library/graphLinkTypes.ts). The explorer
+ * route drops those links; where one is still named — the retrieval lab shows
+ * what the AI walked — it reads as this, never by its own name.
+ */
+const UNREVIEWED_EDGE_META: EdgeMeta = {
+  label: "رابط قيد المراجعة",
+  out: "رابط قيد المراجعة",
+  in: "رابط قيد المراجعة",
+  color: "#71717a",
+  dashed: true,
+  hint: "نوع رابط ليس في ملف المالك؛ مخفيّ في المستكشف والقارئ حتى يراجعه (القرار ٦٠).",
+};
+
+/** The link types the explorer draws, lists and filters by (decision ٦٠): the shown and the outline types. */
+export const EXPLORER_SHOWN_EDGE_TYPES: readonly ExplorerEdgeType[] = EXPLORER_EDGE_TYPES.filter((t) => isExplorerVisibleLinkType(t));
+
 /** A link type's label, phrases and colour; an unknown type gets a neutral grey entry, never «مطابقة». */
 export function edgeMetaFor(t: unknown): EdgeMeta {
-  return isExplorerEdgeType(t) ? EDGE_TYPE_META[t] : UNKNOWN_EDGE_META;
+  if (!isExplorerEdgeType(t)) return UNKNOWN_EDGE_META;
+  return isExplorerVisibleLinkType(t) ? EDGE_TYPE_META[t] : UNREVIEWED_EDGE_META;
+}
+
+/** The types to ask the neighbourhood for: the asked ones that are shown; null = every type (filtered after). */
+export function explorerEdgeFilter(asked: readonly string[]): ExplorerEdgeType[] | null {
+  if (asked.length === 0) return null;
+  const shown = asked.filter((t): t is ExplorerEdgeType => isExplorerEdgeType(t) && isExplorerVisibleLinkType(t));
+  return shown.length > 0 ? shown : [...EXPLORER_SHOWN_EDGE_TYPES];
+}
+
+/** `{TYPE: n}` or `{TYPE: {out, in}}` without the hidden types (٦٠). */
+export function shownEdgeCounts<V>(counts: unknown): Record<string, V> {
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)) return {};
+  return Object.fromEntries(Object.entries(counts as Record<string, V>).filter(([t]) => isExplorerVisibleLinkType(t)));
+}
+
+/**
+ * A neighbourhood answer without the hidden link types (٦٠): their edges go,
+ * a node only they reached goes, the centre's counts and total follow.
+ */
+export function hideUnreviewedLinks(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const r = raw as { found?: unknown; center_key?: unknown; nodes?: unknown; edges?: unknown; center_edge_counts?: unknown; total_center_edges?: unknown };
+  if (r.found !== true) return raw;
+  const edges = (Array.isArray(r.edges) ? r.edges : []).filter((e) => isExplorerVisibleLinkType((e as { edge_type?: unknown })?.edge_type));
+  const touched = new Set<unknown>([r.center_key]);
+  for (const e of edges as Array<{ source?: unknown; target?: unknown }>) {
+    touched.add(e.source);
+    touched.add(e.target);
+  }
+  const nodes = (Array.isArray(r.nodes) ? r.nodes : []).filter((n) => touched.has((n as { node_key?: unknown })?.node_key));
+  const counts = shownEdgeCounts<{ out?: number; in?: number }>(r.center_edge_counts);
+  const total = Object.values(counts).reduce((s, c) => s + (Number(c?.out) || 0) + (Number(c?.in) || 0), 0);
+  return { ...r, nodes, edges, center_edge_counts: counts, total_center_edges: total };
 }
 
 // ─── Where a link came from ──────────────────────────────────────────────────
