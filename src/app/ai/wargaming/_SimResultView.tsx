@@ -4,13 +4,15 @@
  * The L9 simulation's answer under the submit step: a summary, the points by
  * target (severity in words, what the lawyer does about each), the plea script
  * when «تدريب المرافعة» was asked, and every article the answer relies on
- * with the LIBRARY's verdict. No probability (owner ١٩٣).
+ * with the LIBRARY's verdict. No probability (owner ١٩٣); the severities are
+ * labelled «مؤشر مساعد» (owner ٣٨).
  */
 import { Warning, SealWarning, Lightbulb, ArrowsCounterClockwise } from "@phosphor-icons/react";
 import AiResultActions from "@/components/AiResultActions";
 import CitationCheckList, { asCitationVerdicts } from "@/components/ai/CitationCheckList";
 import { groupPoints, simResultText, SEVERITY_LABEL, SOURCE_LABEL, type SimResult } from "./_simResult";
 import { FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
+import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
 
 const SEVERITY = {
   high:   { Icon: Warning,     cls: "border-red-500/25 bg-red-500/10 text-red-500" },
@@ -35,6 +37,8 @@ export default function SimResultView({ result, isDark, chargedPoints, creditUse
           </button>
         </div>
         <p className={`text-[13px] leading-relaxed ${body}`}>{result.summary}</p>
+        {/* Owner ٣٨: the severities below are an «مؤشر مساعد», never a prediction. */}
+        <AssistIndicatorNote isDark={isDark} className="mt-2" />
       </div>
 
       <AiResultActions text={simResultText(result)} filename="nzamy-wargaming" collectorSource="other" />

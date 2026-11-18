@@ -224,20 +224,6 @@ export default function SmartAnalyzer({ isDark, isRTL }: Props) {
   if (phase === "result" && report) return (
     <motion.div key="result" variants={stagger} initial="hidden" animate="show" className="space-y-5">
       <BetaReviewGate toolId="analyze.smart.result" toolName="تحليل قوة الموقف القانوني" reviewScope="legal-data">
-      <motion.div variants={fadeUp} className={`${card} p-5`}>
-        <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${ts}`}>قوة موقفك القانوني</p>
-        <div className="flex items-center gap-4">
-          <div className={`flex-1 h-2 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-slate-100"}`}>
-            <motion.div initial={{ width: 0 }} animate={{ width: `${report.strengthScore}%` }}
-              transition={{ duration: 1.1, ease: [0.16,1,0.3,1], delay: 0.2 }}
-              className={`h-full rounded-full ${report.strengthScore >= 60 ? "bg-emerald-500" : report.strengthScore >= 40 ? "bg-amber-500" : "bg-red-500"}`} />
-          </div>
-          <span className={`text-sm font-black min-w-max tabular-nums ${report.strengthScore >= 60 ? "text-emerald-500" : report.strengthScore >= 40 ? "text-amber-500" : "text-red-500"}`}>
-            {report.strength}
-          </span>
-        </div>
-      </motion.div>
-
       <motion.div variants={fadeUp} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className={`rounded-2xl border p-5 ${isDark ? "border-amber-500/20 bg-amber-500/[0.06]" : "border-amber-200 bg-amber-50"}`}>
           <div className="flex items-center gap-2 mb-3">
@@ -278,7 +264,7 @@ export default function SmartAnalyzer({ isDark, isRTL }: Props) {
       </motion.div>
 
       <motion.div variants={fadeUp} className={`pt-4 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
-        <AiResultActions text={`${report.strength}\n${report.recommendation}\n${report.risks.join("\n")}`}
+        <AiResultActions text={`${report.recommendation}\n${report.risks.join("\n")}`}
           filename="legal-analysis" showVault showHumanReview className="justify-start" />
       </motion.div>
       </BetaReviewGate>
@@ -317,7 +303,7 @@ export default function SmartAnalyzer({ isDark, isRTL }: Props) {
   // ── LOADING (final analysis) ──────────────────────────────────────────────
   if (phase === "loading") return (
     <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <p className={`text-[12px] font-black mb-4 ${ts}`}>AI يحلّل وضعك القانوني ويقيس قوة موقفك...</p>
+      <p className={`text-[12px] font-black mb-4 ${ts}`}>AI يحلّل وضعك القانوني...</p>
       <ResultSkeleton isDark={isDark} />
     </motion.div>
   );

@@ -45,6 +45,7 @@ import { useToolUsable } from "@/hooks/useToolUsable";
 import Navbar from "@/components/Navbar";
 import { useToolDraft } from "@/hooks/useToolDraft";
 import { draftText } from "@/lib/payments/topUpDraft";
+import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
 
 type TabKey = "strength" | "opponent" | "risks" | "devil";
 const TABS: { key: TabKey; label: string; icon: typeof Gauge }[] = [
@@ -324,6 +325,8 @@ function StrengthReportView({ report, isDark, activeTab, setActiveTab, chargedPo
             <p className={head}>تقدير الموقف</p>
             <p className={`mt-1 text-[18px] font-bold ${LEVEL_TONE[g.level]}`}>{LEVEL_LABEL[g.level]}</p>
             <p className={`mt-1 text-[11px] leading-relaxed ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{STRENGTH_DISCLAIMER}</p>
+            {/* Owner ٣٨: the level is an «مؤشر مساعد», never a prediction. */}
+            <AssistIndicatorNote isDark={isDark} className="mt-1.5" />
             <p className={`mt-2 text-[13px] leading-relaxed ${body}`}>{g.summary}</p>
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
