@@ -42,7 +42,7 @@ export default async function BillingPage() {
             <h2 className="text-xl font-bold">رصيد النقاط</h2>
             <p className="mt-3 text-3xl font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{arabicDigits(data.pointsBalance)} <span className="text-base">نقطة</span></p>
             <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">تُستخدم النقاط الأقرب انتهاءً أولاً. النقاط مخصصة لاستخدام أدوات الذكاء الاصطناعي ولا تُحوّل إلى نقد.</p>
-            {data.lots.length ? <ul className="mt-5 divide-y divide-zinc-200 dark:divide-zinc-800">{data.lots.map(lot => <li key={lot.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span>{arabicDigits(lot.points_left)} نقطة متبقية من {arabicDigits(lot.points_total)}</span><span className="text-zinc-500 dark:text-zinc-400">تنتهي في {billingDateAr(lot.expires_at)}</span></li>)}</ul> : <p className="mt-5 text-sm text-zinc-500">لا توجد نقاط صالحة للاستخدام حالياً.</p>}
+            {data.lots.length ? <ul className="mt-5 divide-y divide-zinc-200 dark:divide-zinc-800">{data.lots.map(lot => <li key={lot.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span>{arabicDigits(lot.points_left)} نقطة متبقية من {arabicDigits(lot.points_total)}{lot.wallet_scope === "library_agent" && <span className="ms-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">لمساعد المكتبة فقط</span>}</span><span className="text-zinc-500 dark:text-zinc-400">تنتهي في {billingDateAr(lot.expires_at)}</span></li>)}</ul> : <p className="mt-5 text-sm text-zinc-500">لا توجد نقاط صالحة للاستخدام حالياً.</p>}
           </section>
           <section className={PANEL}>
             <h2 className="text-xl font-bold">البطاقات المحفوظة</h2>

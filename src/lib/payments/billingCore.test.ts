@@ -200,3 +200,25 @@ test("Task F fix round 1: a top-up receipt reads the points its lot credited; ot
   assert.ok(lotQ && has(lotQ, "eq", "user_id", USER) && has(lotQ, "eq", "source", "purchase"));
   assert.ok(!admin.log.some(q => q.table === "points_lots"), "the lot is read through RLS, not the service client");
 });
+
+test("l7: the lots carry their wallet; before 20261127_40 (42703) they are read again without it, never a failed page", async () => {
+  const LOT = { id: "lot-1", source: "plan", points_total: 300, points_left: 300, expires_at: "2027-11-20T00:00:00.000Z", created_at: "2026-11-20T00:00:00.000Z" };
+  const withWallet = fakeDb(q => {
+    if (q.table === "points_balance") return { data: 300 };
+    if (q.table === "points_lots") return { data: [{ ...LOT, wallet_scope: "library_agent" }] };
+    return { data: [] };
+  });
+  const r = await getBillingWith(withWallet.client, USER);
+  assert.equal(r.status, 200);
+  assert.equal((r.body as { lots: Array<{ wallet_scope?: string }> }).lots[0].wallet_scope, "library_agent");
+  assert.match(withWallet.log.find(q => q.table === "points_lots")?.columns ?? "", /,wallet_scope$/);
+
+  const before = fakeDb(q => {
+    if (q.table === "points_balance") return { data: 300 };
+    if (q.table === "points_lots") return q.columns?.includes("wallet_scope") ? { error: { code: "42703" } } : { data: [LOT] };
+    return { data: [] };
+  });
+  const r2 = await getBillingWith(before.client, USER);
+  assert.equal(r2.status, 200);
+  assert.equal((r2.body as { lots: unknown[] }).lots.length, 1);
+});

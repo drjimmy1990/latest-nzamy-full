@@ -40,6 +40,8 @@ export interface BillingLot {
   points_total: number;
   expires_at: string;
   source: string;
+  /** 20261127_40: 'library_agent' = spent only by the library assistant; absent before it runs. */
+  wallet_scope?: string | null;
 }
 export interface BillingData {
   orders: BillingOrder[];
