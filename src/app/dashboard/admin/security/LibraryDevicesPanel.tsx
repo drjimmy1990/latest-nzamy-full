@@ -21,6 +21,7 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
   const [enabled, setEnabled] = useState(false);
   const [limit, setLimit] = useState(2);
   const [available, setAvailable] = useState(true);
+  const [codesAvailable, setCodesAvailable] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -38,6 +39,7 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
           setEnabled(body.enabled === true);
           setLimit(typeof body.limit === "number" ? body.limit : 2);
           setAvailable(body.available !== false);
+          setCodesAvailable(typeof body.codesAvailable === "boolean" ? body.codesAvailable : null);
         }
       } catch {
         if (!cancelled) setNotice({ ok: false, msg: "تعذّر الاتصال." });
@@ -84,11 +86,19 @@ export default function LibraryDevicesPanel({ isDark, card }: Props) {
         <p className={`text-[13px] font-bold ${tp}`}>حد الأجهزة في المكتبة (المشتركون)</p>
       </div>
       <p className={`text-[11px] leading-6 ${ts}`}>
-        عند التفعيل يُرفض الجهاز الجديد بعد بلوغ العدد المحدد، ويُطلب من المستخدم تسجيل الخروج من أحد أجهزته المصرّحة.
+        عند التفعيل (قرار المالك ٤٠): كل جهاز جديد يحتاج رمز تحقق يُرسل إلى بريد الحساب، ولا تُفتح المكتبة على جهازين معاً —
+        فتحها من جهاز يُسجّل خروج الحساب من الجهاز الآخر — ومحاولة جهاز جديد بعد بلوغ العدد المحدد توقف الحساب حتى يتواصل مع الدعم
+        (يُرفع الإيقاف من صفحة المستخدم، وتُعاد عندها تهيئة أجهزته). الجهاز الذي سجّل خروجه يعود دون رمز إن بقي مكان.
         يشمل نص المكتبة الكامل للمشترك فقط (الأنظمة، القرارات، المبادئ، الكتب، والبحث داخل الوثيقة)؛ الزائر وغير المشترك لا يُفحص جهازه،
         وحسابات المسؤولين مستثناة. إعادة تعيين أجهزة مستخدم من صفحته: المستخدمون ← الأمان.
       </p>
 
+      {!loading && available && codesAvailable === false && (
+        <p className={`text-[11px] leading-6 ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+          رمز البريد غير مفعّل على هذا الخادم (لا مزوّد بريد أو لا مفتاح للرموز: DEVICE_CODE_PEPPER أو LAWYER_OTP_PEPPER).
+          ما دام كذلك يُسجَّل الجهاز الجديد دون رمز إن بقي مكان، وتبقى بقية القواعد سارية.
+        </p>
+      )}
       {loading ? (
         <p className={`text-[11px] ${ts}`}>جارٍ التحميل…</p>
       ) : !available ? (
