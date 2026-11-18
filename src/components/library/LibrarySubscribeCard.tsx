@@ -6,6 +6,8 @@ import { Crown, Lock, X, ArrowLeft } from "@phosphor-icons/react";
 import { bookPriceText } from "@/lib/pricing/priceBook";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { activeCampaign, campaignFromApi, type Campaign } from "@/lib/pricing/campaigns";
+import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
+import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
 
 /**
  * The subscribe card a non-subscriber sees on locked library content (owner
@@ -15,11 +17,21 @@ import { activeCampaign, campaignFromApi, type Campaign } from "@/lib/pricing/ca
  * the same source as PromotionalCampaignBanner; nothing when it is off).
  *
  * Owner decision (18 Nov, «Library»): shown only to account types whose
- * library is open. TODO(l8-liblock): wrap the two exports below in the
- * account-type library gate helper that l8-liblock adds (hide the card, and
- * show its locked message instead, when the viewer's type has no library
- * access). Until it is wired every viewer sees the card.
+ * library is open: when the signed-in account's type is locked (item 9,
+ * useLibraryAccountLocked) both exports show the owner's locked message
+ * instead — no price, no button, no founder banner. A signed-out visitor
+ * and any read error keep the card (the server is the enforcement).
  */
+
+/** The owner's item-9 sentence, inline (no price, no button, no banner). */
+function AccountLockedLine({ className = "" }: { className?: string }) {
+  return (
+    <div role="note" dir="rtl" data-library-account-locked className={`flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-bold text-slate-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 ${className}`}>
+      <Lock size={14} weight="fill" className="flex-shrink-0 text-[#C8A762]" />
+      <span>{LIBRARY_ACCOUNT_LOCKED_AR}</span>
+    </div>
+  );
+}
 
 export const LIBRARY_SUBSCRIBE_HREF = "/laws/subscribe?plan=lib-annual";
 export const LIBRARY_SUBSCRIBE_LABEL = "اشترك في المكتبة";
@@ -47,7 +59,9 @@ function useFounderCampaign(): Campaign | null {
 }
 
 export function LibrarySubscribeCard({ title, onClose, className = "" }: { title?: string; onClose?: () => void; className?: string }) {
+  const { locked } = useLibraryAccountLocked();
   const founder = useFounderCampaign();
+  if (locked) return <AccountLockedLine className={className} />;
   const price = bookPriceText("lib-annual", "once", "ar");
   return (
     <section
@@ -102,6 +116,8 @@ export function LibrarySubscribeCard({ title, onClose, className = "" }: { title
  */
 export function LibraryLockedNote({ message, className = "" }: { message: string; className?: string }) {
   const [open, setOpen] = useState(false);
+  const { locked } = useLibraryAccountLocked();
+  if (locked) return <AccountLockedLine className={className} />;
   return (
     <>
       <div
