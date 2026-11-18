@@ -226,12 +226,14 @@ test("wiring: admin settings allow and validate the three keys", () => {
   assert.match(src, /library_feqh_free_pages: feqhFreePagesIssue/);
 });
 
-test("subscribe card: the owner's button, the price, the founder banner, the liblock TODO; mounted on locked items", () => {
+test("subscribe card: the owner's button, the price, the founder banner, the account-type lock; mounted on locked items", () => {
   const card = read("components/library/LibrarySubscribeCard.tsx");
   assert.ok(card.includes("اشترك في المكتبة"));
   assert.match(card, /bookPriceText\("lib-annual", "once", "ar"\)/);
   assert.match(card, /\/api\/v1\/campaigns\/active/);
-  assert.match(card, /TODO\(l8-liblock\)/);
+  assert.doesNotMatch(card, /TODO\(l8-liblock\)/);
+  assert.match(card, /useLibraryAccountLocked\(\)/, "a locked account type sees the owner's line, not the price");
+  assert.match(card, /LIBRARY_ACCOUNT_LOCKED_AR/);
   assert.match(read("app/precedents/[slug]/_principle-block.tsx"), /<LibraryLockedNote/);
   assert.match(read("app/book/[slug]/_stream-block.tsx"), /<LibraryLockedNote/);
   assert.match(read("app/layout.tsx"), /<LibraryChallengeHost \/>/);
