@@ -535,7 +535,9 @@ test("the community and verification routes keep their audit labels and metadata
 test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per action)", () => {
   // onboarding/account-type records a USER's own claim (actor_type "user");
   // logAdminAction writes actor_type "admin" only, so that writer stays.
-  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts"]);
+  // payments/minTopup.ts (batch l7, decision 5) records a BUYER's refused top-up
+  // below his type's minimum (actor_type "user") — not an admin action either.
+  const ALLOWED = new Set(["lib/auth/adminAudit.ts", "app/api/v1/onboarding/account-type/route.ts", "lib/payments/minTopup.ts"]);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -559,6 +561,8 @@ test("nothing outside adminAudit.ts inserts into admin_audit_events (one row per
   assert.deepEqual(offenders, []);
   const onboarding = codeOnly(readFileSync(join(SRC, "app/api/v1/onboarding/account-type/route.ts"), "utf8"));
   assert.ok(onboarding.includes('actor_type: "user"'), "the allow-listed onboarding writer must be a user actor");
+  const minTopup = codeOnly(readFileSync(join(SRC, "lib/payments/minTopup.ts"), "utf8"));
+  assert.ok(minTopup.includes('actor_type: "user"'), "the allow-listed min top-up writer must be a user actor");
 });
 
 test("requireStaff: requireAdmin first, the role from platform_staff with the service client, fail-closed", () => {
