@@ -69,7 +69,12 @@ export function dbErrorBody(
 export const DEMO_READONLY_AR =
   "هذا حساب تجريبي: لا يمكنه النشر أو الكتابة في الأقسام العامة (المجتمع، التقييمات، السوق، بلاغات المكتبة).";
 export const DEMO_SANDBOX_AR = "هذا حساب تجريبي: لا يمكن ربطه بحسابات حقيقية.";
-export const DEMO_NO_PAYMENT_AR = "الحساب التجريبي لا يمكنه الدفع ولا حجز مقعد في باقة المؤسس.";
+export const DEMO_NO_PAYMENT_AR = "الحساب التجريبي لا يمكنه الدفع الحقيقي ولا حجز مقعد في باقة المؤسس.";
+/** l7 decision 3 (20261127_80): a test account pays in Moyasar TEST mode only. */
+export const DEMO_LIVE_PAYMENT_AR = "الحساب التجريبي يدفع في وضع الاختبار فقط، ولا يُقبل منه أي دفع حقيقي.";
+/** l7 decision 3 (20261127_80): a test account's request never reaches real lawyers' open requests. */
+export const DEMO_OPEN_REQUEST_AR =
+  "هذا حساب تجريبي: لا تُعرض طلباته في الطلبات المفتوحة للمحامين، وجّه الطلب إلى محامٍ تجريبي مباشرة.";
 export const DEMO_FLAG_LOCKED_AR = "لا يمكن تغيير وضع الحساب التجريبي من هنا.";
 export const DEMO_LIMIT_AR: Readonly<Record<"cases" | "consultations" | "clients", string>> = Object.freeze({
   cases: "بلغ الحساب التجريبي الحد الأقصى من القضايا (٥).",
@@ -81,7 +86,8 @@ export type DemoRefusal = { status: 403; message: string; token: string };
 
 /**
  * The demo refusal carried by a database / PostgREST error, or null. Reads
- * only `message` and accepts only the exact tokens 20261125_50 raises.
+ * only `message` and accepts only the exact tokens 20261125_50 and
+ * 20261127_80 (live_payment, open_request) raise.
  */
 export function demoRefusal(err: unknown): DemoRefusal | null {
   const message = describeDbError(err).message;
@@ -92,8 +98,12 @@ export function demoRefusal(err: unknown): DemoRefusal | null {
     case "demo_account":
     case "demo_account:no_payment":
       return out(DEMO_NO_PAYMENT_AR);
+    case "demo_account:live_payment":
+      return out(DEMO_LIVE_PAYMENT_AR);
     case "demo_account:readonly":
       return out(DEMO_READONLY_AR);
+    case "demo_account:open_request":
+      return out(DEMO_OPEN_REQUEST_AR);
     case "demo_account:sandbox":
       return out(DEMO_SANDBOX_AR);
     case "demo_account:flag_locked":

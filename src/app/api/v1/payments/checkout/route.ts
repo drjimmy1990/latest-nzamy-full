@@ -164,6 +164,8 @@ export async function POST(request: NextRequest) {
         attribution: parseAttributionCookie(request.cookies.get(ATTRIBUTION_COOKIE)?.value),
         origin: origin.origin,
         publishableKey: cfg.publishableKey,
+        // l7 decision 3: a test account's order is accepted in test mode only
+        gatewayMode: cfg.mode,
       },
     );
     return reply(result.body, result.status);

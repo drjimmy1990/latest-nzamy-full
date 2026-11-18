@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 import { fakeDb, type FakeHandler, type FakeQuery } from "./fakeDb.test-helper.ts";
 import { startCheckoutWith, type CheckoutDeps, type CheckoutInput } from "./checkoutCore.ts";
-import { DEMO_NO_PAYMENT_AR } from "../api/dbErrorCore.ts";
+import { DEMO_LIVE_PAYMENT_AR, DEMO_NO_PAYMENT_AR } from "../api/dbErrorCore.ts";
 import { FOUNDER_TERMS_VERSION } from "../founder/founderTerms.ts";
 
 const NOW = new Date("2026-11-20T08:00:00.000Z");
@@ -130,4 +130,48 @@ test("demo: an unrelated insert error stays the generic 503 (the mapping is toke
   );
   const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW, onSale: true, reserveFounderSeat: async () => "reserved" }, input());
   assert.equal(r.status, 503);
+});
+
+// ── l7 decision 3 (20261127_80): a test account pays in TEST mode only ──
+
+const individual: FakeHandler = (q) => (q.table === "profiles" ? { data: { user_type: "individual" } } : undefined);
+
+test("l7: the order carries metadata.gateway_mode — the database reads it to accept a test account in test mode only", async () => {
+  for (const mode of ["test", "live"] as const) {
+    const { client: admin, log } = db(individual);
+    await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW },
+      input({ itemId: "topup-250", billing: "once", founderConsent: undefined, gatewayMode: mode }),
+    );
+    const row = orderInserts(log)[0]?.payload as { metadata?: Record<string, unknown> } | undefined;
+    assert.equal(row?.metadata?.gateway_mode, mode, mode);
+  }
+  // absent → nothing stored (older callers, tests)
+  const { client: admin, log } = db(individual);
+  await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ itemId: "topup-250", billing: "once", founderConsent: undefined }));
+  const row = orderInserts(log)[0]?.payload as { metadata?: Record<string, unknown> } | undefined;
+  assert.equal(row?.metadata && "gateway_mode" in row.metadata, false);
+});
+
+test("l7: payment_orders refuses a test account outside test mode (demo_account:live_payment) → 403 «وضع الاختبار فقط», no intent", async () => {
+  const { client: admin } = db((q) =>
+    individual(q) ??
+    (q.table === "payment_orders" && q.op === "insert"
+      ? { error: { code: "P0001", message: "demo_account:live_payment" } }
+      : undefined),
+  );
+  const m = moyasar();
+  const r = await startCheckoutWith(
+    { admin, client: m.client, now: () => NOW },
+    input({ itemId: "topup-250", billing: "once", founderConsent: undefined, gatewayMode: "live" }),
+  );
+  assert.equal(r.status, 403);
+  assert.deepEqual(r.body, { error: DEMO_LIVE_PAYMENT_AR });
+  assert.equal(m.intents.length, 0);
+});
+
+test("l7: the checkout route passes the gateway mode to startCheckoutWith", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../app/api/v1/payments/checkout/route.ts", import.meta.url), "utf8");
+  assert.ok(src.includes("gatewayMode: cfg.mode"));
 });
