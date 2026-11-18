@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+import * as nodeModule from "node:module";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,9 @@ import {
   type OwnerEdge,
   type OwnerNode,
 } from "./graphOwnerCompareCore.ts";
+
+// Node ≥ 22.13 has module.stripTypeScriptTypes; the installed @types/node does not declare it yet.
+const stripTypeScriptTypes = (nodeModule as unknown as { stripTypeScriptTypes: (code: string) => string }).stripTypeScriptTypes;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
