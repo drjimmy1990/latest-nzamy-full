@@ -9,6 +9,7 @@ import { FOUNDER_CONSENT_LABEL_AR, FOUNDER_TERMS_HREF } from "@/lib/payments/fou
 import { FOUNDER_DISCOUNT_LABEL_AR } from "@/lib/payments/founderDiscount";
 import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR, CHECKOUT_TURNSTILE_ACTION } from "@/lib/payments/checkoutCaptcha";
 import { canSubmitWithCaptcha } from "@/lib/auth/captcha";
+import { trackEvent } from "@/lib/analytics/track";
 import { useTheme } from "@/components/ThemeProvider";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
@@ -225,6 +226,7 @@ export default function MoyasarCheckout({
   function onTermsChange(checked: boolean) {
     setTermsAccepted(checked);
     termsVersion.current = checked && needsTerms ? founderTermsVersion : null;
+    if (checked && needsTerms) trackEvent("founder_consent_ticked", { item_id: itemId });
   }
 
   async function onStart() {
@@ -247,6 +249,7 @@ export default function MoyasarCheckout({
       }
       current.current = { resp: result.resp, at: Date.now() };
       setPhase({ kind: "ready", resp: result.resp });
+      trackEvent("begin_checkout", { item_id: itemId, currency: "SAR", value: result.resp.quote.total / 100 });
     } finally {
       // one token per attempt: spent whatever the answer was
       if (captchaRequired) captcha.spend();

@@ -50,6 +50,7 @@ import { recordTermsAcceptance } from "@/lib/legal/termsAcceptanceClient";
 import { getPlanList, type AudienceTab } from "@/constants/pricingData";
 import { resolveRequestedPlan } from "@/lib/pricing/planRequest";
 import { savePendingPlan, sessionStorageOrNull } from "@/lib/pricing/pendingPlan";
+import { trackEventOnce } from "@/lib/analytics/track";
 
 // The /pricing audience whose plans a given account type can sign up for.
 const AUDIENCE_BY_CLIENT_TYPE: Record<NonNullable<ClientType>, AudienceTab> = {
@@ -315,6 +316,7 @@ export default function RegisterClientPage() {
                     whileTap={{ scale: canNext() ? 0.98 : 1 }}
                     onClick={async () => {
                       if (!canNext()) return;
+                      trackEventOnce("sign_up_start", { account: "client" });
                       if (step === 3) {
                         const userType: UserType = clientType === "individual" ? "individual" : clientType === "company" ? "corporate" : clientType === "micro" ? "micro" : clientType === "government" ? "government" : clientType === "ngo" ? "ngo" : "individual";
                         // Trimmed: a name of pure whitespace is truthy, and this

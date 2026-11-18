@@ -110,6 +110,8 @@ export function PulsePopup({ joinId }: { joinId: string }) {
       <p className="mb-2.5 text-sm text-[#D5E5DC]">{text}</p>
       <a
         href={`#${joinId}`}
+        data-analytics-event="reserve_seat_click"
+        data-analytics-placement="popup"
         className="flex min-h-[42px] w-full items-center justify-center rounded-full bg-gradient-to-l from-[#E6CD8E] to-[#C8A762] px-4 font-bold text-[#2A1F07]"
       >
         احجز مقعدك الآن

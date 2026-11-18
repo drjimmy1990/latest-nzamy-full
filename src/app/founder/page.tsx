@@ -139,7 +139,7 @@ export default function FounderPage() {
                 أنت صاحب القرار والاعتماد.
               </p>
               <div className="mt-8 flex flex-wrap gap-3.5">
-                <a href={`#${JOIN_ID}`} className={goldBtn}>
+                <a href={`#${JOIN_ID}`} className={goldBtn} data-analytics-event="reserve_seat_click" data-analytics-placement="hero">
                   احجز مقعدك
                 </a>
                 <a href="#samples" className={ghostBtn}>
