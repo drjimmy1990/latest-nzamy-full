@@ -7,6 +7,7 @@ import {
   FOUNDER_WORK_KINDS,
   founderLandingPrice,
 } from "@/lib/founder/landingCopy";
+import { FOUNDER_PENDING_NOTE } from "@/lib/pricing/founderCard";
 import { FounderWindowProvider } from "./_components/FounderWindowProvider";
 import { HeroMeter } from "./_components/HeroMeter";
 import { JoinButton } from "./_components/JoinButton";
@@ -361,7 +362,7 @@ export default function FounderPage() {
                   يشمل السعر ٦ أعمال قانونية. المكتبة مفتوحة سنة كاملة من تفعيل الباقة، والشحن
                   لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال عليه بـ٥ نقاط، وعند نفادها
                   يُغلق المساعد وحده حتى الشحن بأي قيمة، وتبقى المكتبة مفتوحة طوال السنة. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم التفعيل بعد
-                  توثيق الرخصة وإتمام السداد وحجز مقعدك.
+                  توثيق الرخصة وإتمام السداد وحجز مقعدك، ويمكنك السداد قبل اكتمال التوثيق: {FOUNDER_PENDING_NOTE}
                 </p>
                 <p className="mt-3.5 rounded-xl border border-[#E8CF8A] bg-[#FFF3D6] px-3.5 py-2.5 text-[15px] font-bold text-[#5C4200]">
                   {FOUNDER_ADVOCATE_ONLY_LINE}

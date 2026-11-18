@@ -4,6 +4,7 @@ import { dispatchVerificationToN8n } from "@/lib/n8n/dispatch";
 import { recordNotification } from "@/lib/notify";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
 
 /**
  * PATCH /api/v1/admin/verifications/[id] — Approve or reject a verification
@@ -164,6 +165,13 @@ export async function PATCH(
     status: newStatus as "verified" | "rejected",
   });
 
+  // ── l7 (decision 1): a founder seat paid while the licence was pending ─────
+  // approve → activated; reject → the full refund. Never fails the decision.
+  const founder =
+    updatedType === "lawyer"
+      ? await settleFounderSeatAfterDecision(adminClient, gate.userId, userId, action === "approve" ? "approve" : "reject")
+      : null;
+
   // ── Response ───────────────────────────────────────────────────────────────
   const actionLabel = action === "approve" ? "اعتماد" : "رفض";
   const message = `تم ${actionLabel} ${updatedName} بنجاح`;
@@ -177,5 +185,6 @@ export async function PATCH(
       type: updatedType,
       status: newStatus,
     },
+    ...(founder && founder.outcome !== "none" ? { founderSeat: founder.outcome } : {}),
   });
 }

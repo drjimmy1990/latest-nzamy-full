@@ -6,6 +6,7 @@ import { Lock, SealCheck } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import {
+  FOUNDER_PENDING_NOTE,
   founderCta,
   founderMemberFromReply,
   founderVerificationFromProfile,
@@ -110,6 +111,12 @@ export function JoinButton() {
       {(c.kind === "loading" || c.kind === "wait" || c.kind === "unavailable" || c.kind === "lawyers_only") && (
         <p className={QUIET} role="status" aria-live="polite">
           {c.label}
+        </p>
+      )}
+      {/* l7 (decision 1): a pending lawyer pays first — said plainly, before and after */}
+      {c.note === FOUNDER_PENDING_NOTE && (
+        <p className="rounded-xl border border-[#E8CF8A] bg-[#FFF3D6] px-3.5 py-2.5 text-sm font-bold leading-relaxed text-[#5C4200]">
+          {c.note}
         </p>
       )}
     </div>
