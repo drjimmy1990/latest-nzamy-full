@@ -38,7 +38,7 @@ import {
 } from "@phosphor-icons/react";
 import {
   EDGE_TYPE_META,
-  EXPLORER_EDGE_TYPES,
+  EXPLORER_SHOWN_EDGE_TYPES,
   EXPLORER_NODE_TYPES,
   NODE_TYPE_META,
   QUERY_NODE_KEY,
@@ -172,7 +172,7 @@ function ExplorerInner() {
       setLoading(true);
       setError(null);
       const named = opts.meaning ?? meaningLinks;
-      const res = await explorerApi.neighborhood(key, opts.depth ?? depth, opts.limit ?? limit, named ? EXPLORER_EDGE_TYPES : []);
+      const res = await explorerApi.neighborhood(key, opts.depth ?? depth, opts.limit ?? limit, named ? EXPLORER_SHOWN_EDGE_TYPES : []);
       if (mine !== focusSeq.current) return;
       setLoading(false);
       if (!res.ok) {
@@ -821,7 +821,7 @@ function ExplorerInner() {
                       </span>
                     ) : null;
                   })()}
-                  {EXPLORER_EDGE_TYPES.filter((t) => onCanvasCounts.byEdge[t]).map((t) => {
+                  {EXPLORER_SHOWN_EDGE_TYPES.filter((t) => onCanvasCounts.byEdge[t]).map((t) => {
                     const off = hiddenEdges.has(t);
                     const m = EDGE_TYPE_META[t];
                     const all = meta?.counts[t];

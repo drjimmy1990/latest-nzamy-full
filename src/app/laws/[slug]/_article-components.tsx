@@ -32,7 +32,7 @@ import { PreviousVersionText } from "./_word-diff";
 import { linkCitationsHtml } from "./_cite-links";
 import { useCitations } from "./_citation-popover";
 import { articleNumberOf } from "./_cite-status";
-import { ArticleLinksBar } from "./_article-links-bar";
+import { RefSheetButton, useRefBox } from "./_ref-box";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
 import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton"; // l6-tools Q485
 
@@ -847,8 +847,9 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const inCart      = !!entry && entry.isArticleAdded;
   const regInCart   = !!entry && entry.isExecRegAdded;
   // Batch l6-reader: chips in the body (inside a CitationProvider), «المادة (n)» of itself excluded.
-  const citations   = useCitations();
-  const citeSelf    = useMemo(() => ({ selfNumber: articleNumberOf(article) }), [article]);
+  // Batch l8-refbox: the links box's context (null outside a RefBoxProvider: no button).
+  const refBox      = useRefBox();
+  const citeSelf   = useMemo(() => ({ selfNumber: articleNumberOf(article) }), [article]);
 
   const handleCopy = useCallback(() => {
     if (isLocked) { showPaywall(); return; }
@@ -1164,10 +1165,10 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 <MD text={article.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} cite={citeSelf} />
               )
             )}
-            {/* N02-16: the articles and laws this one cites and that cite it (graph, on demand). */}
-            {viewMode !== "regulation" && citations && (
-              <ArticleLinksBar articleId={article.id} lawSlug={citations.lawSlug} isDark={isDark} isRTL={isRTL} />
-            )}
+            {/* Owner item 6 (18 Nov): the links live in the side box beside the
+                article; on a phone (and in reading mode) this opens the same
+                sections in a bottom sheet (_ref-box.tsx). */}
+            {viewMode !== "regulation" && refBox && <RefSheetButton articleId={article.id} />}
 
             {/*
               Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks).

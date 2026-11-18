@@ -18,7 +18,7 @@ import {
 import {
   EDGE_ORIGIN_LABELS,
   EDGE_TYPE_META,
-  EXPLORER_EDGE_TYPES,
+  EXPLORER_SHOWN_EDGE_TYPES,
   EXPLORER_NODE_TYPES,
   LAB_LAYERS,
   LAB_ROUTING_SOURCE_LABELS,
@@ -313,7 +313,7 @@ function StartTab({ overview, onFocus }: Props) {
       <section>
         <h3 className="font-heading text-[13px] font-bold text-zinc-200">أنواع الروابط</h3>
         <div className="mt-3 space-y-2">
-          {EXPLORER_EDGE_TYPES.filter((t) => (overview.edge_counts[t] ?? 0) > 0).map((t) => {
+          {EXPLORER_SHOWN_EDGE_TYPES.filter((t) => (overview.edge_counts[t] ?? 0) > 0).map((t) => {
             const n = overview.edge_counts[t] ?? 0;
             const m = EDGE_TYPE_META[t];
             return (

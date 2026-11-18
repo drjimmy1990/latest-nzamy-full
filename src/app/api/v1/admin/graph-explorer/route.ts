@@ -6,7 +6,10 @@ import { embedQueryWithin } from "@/lib/ai/graphRagSwitch";
 import {
   labLimits,
   deriveLabQueries,
+  explorerEdgeFilter,
+  hideUnreviewedLinks,
   isExplorerNodeType,
+  shownEdgeCounts,
   parseExplorerRequest,
   parseExplorerStatus,
   parseLabRouting,
@@ -60,6 +63,13 @@ function explorerSchemaMissing(error: RpcError): boolean {
   return /graph_rag_explore|library_graph/i.test(error.message ?? "") && /does not exist|could not find/i.test(error.message ?? "");
 }
 
+/** An overview / node answer whose `edge_counts` lists only the shown link types (owner decision ٦٠). */
+function withShownEdgeCounts(data: unknown): unknown {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return data;
+  const d = data as Record<string, unknown>;
+  return "edge_counts" in d ? { ...d, edge_counts: shownEdgeCounts(d.edge_counts) } : d;
+}
+
 function missing(migration: string = EXPLORER_MIGRATION) {
   return NextResponse.json({ schemaMissing: true, migration }, { headers: NO_STORE });
 }
@@ -80,7 +90,7 @@ export async function GET(request: NextRequest) {
     if (req.action === "overview") {
       const { data, error } = await admin.rpc("graph_rag_explore_overview");
       if (error) return explorerSchemaMissing(error) ? missing() : failed("overview", error);
-      return NextResponse.json({ ok: true, overview: data }, { headers: NO_STORE });
+      return NextResponse.json({ ok: true, overview: withShownEdgeCounts(data) }, { headers: NO_STORE });
     }
 
     if (req.action === "status") {
@@ -109,17 +119,18 @@ export async function GET(request: NextRequest) {
       const { data, error } = await admin.rpc("graph_rag_explore_neighborhood", {
         p_node_key: req.key,
         p_depth: req.depth,
-        p_edge_types: req.edges.length > 0 ? req.edges : null,
+        // Owner decision ٦٠: only the link types matching his graph file (and the outline).
+        p_edge_types: explorerEdgeFilter(req.edges),
         p_limit: req.limit,
       });
       if (error) return explorerSchemaMissing(error) ? missing() : failed("neighborhood", error);
-      return NextResponse.json({ ok: true, neighborhood: data }, { headers: NO_STORE });
+      return NextResponse.json({ ok: true, neighborhood: hideUnreviewedLinks(data) }, { headers: NO_STORE });
     }
 
     if (req.action === "node") {
       const { data, error } = await admin.rpc("graph_rag_explore_node", { p_node_key: req.key });
       if (error) return explorerSchemaMissing(error) ? missing() : failed("node", error);
-      return NextResponse.json({ ok: true, node: data }, { headers: NO_STORE });
+      return NextResponse.json({ ok: true, node: withShownEdgeCounts(data) }, { headers: NO_STORE });
     }
 
     // ── retrieval lab ────────────────────────────────────────────────────────

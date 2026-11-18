@@ -7526,3 +7526,15 @@ select 'Free library questions (٥٨): only for a verified e-mail and an open li
                 and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
                 false) as ok;
 -- <<< verify:l8_liblock
+
+-- >>> verify:l8_refbox
+-- Batch l8-refbox (owner decision ٦٠, the reader's law map shows only the link types matching his graph file): run 20261128_60 any time.
+select 'Reader law map by link type: library_reader_law_links_typed, service role only, security invoker (run 20261128_60)' as check,
+       to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)') is not null
+       and not has_function_privilege('anon', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p
+                          where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
+       as ok;
+-- <<< verify:l8_refbox
