@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { readFounderOfferCopy } from "@/lib/offers/offersServer";
+import type { FounderOfferCopy } from "@/lib/offers/offerRules";
 import {
   FOUNDER_MEMBERSHIP_ON_SALE,
+  founderCampaignCopyFromOffer,
   founderCampaignFromSetting,
   founderOfferCampaign,
   founderSummaryFromRpc,
@@ -57,6 +60,14 @@ import {
  * cache bounds the drift at midnight and the staleness of the seat count (the
  * checkout gate is the authority on seats), and the banner re-checks the
  * dates on the client.
+ *
+ * l8 (owner item 5, the offers system): the founder campaign is the first row
+ * of public.offers (slug founder-2026). The banner's words come from that row
+ * (title, body, button) and every answer carries `founderOffer: { promoted,
+ * title, body, ctaLabel, ctaHref }` — promoted false once the admin stops the
+ * offer, which hides the banner and the lawyer dashboard's campaign card. The
+ * sale itself (dates, seats, onSale, checkout) is untouched. Before
+ * 20261128_50 runs, founderOffer is null and the built-in copy stays.
  */
 export const dynamic = "force-dynamic";
 
@@ -72,13 +83,13 @@ function logOnce(...args: unknown[]): void {
   console.error(...args);
 }
 
-function answer(campaign: FounderOfferCampaign | null, window: FounderWindow | null = null) {
-  return NextResponse.json({ campaign, founderWindow: window }, { status: 200, headers: HEADERS });
+function answer(campaign: FounderOfferCampaign | null, window: FounderWindow | null = null, founderOffer: FounderOfferCopy | null = null) {
+  return NextResponse.json({ campaign, founderWindow: window, founderOffer }, { status: 200, headers: HEADERS });
 }
 
-function unavailable(window: FounderWindow | null = null) {
+function unavailable(window: FounderWindow | null = null, founderOffer: FounderOfferCopy | null = null) {
   return NextResponse.json(
-    { campaign: null, founderUnavailable: true, founderWindow: window },
+    { campaign: null, founderUnavailable: true, founderWindow: window, founderOffer },
     { status: 200, headers: HEADERS },
   );
 }
@@ -102,7 +113,9 @@ export async function GET() {
 
     const value = data?.value ?? null;
     const now = new Date();
-    const campaign = founderCampaignFromSetting(value, riyadhDay(now));
+    // l8: the founder offer row's copy (null before 20261128_50 / on a failed read).
+    const founderOffer = await readFounderOfferCopy(supabase);
+    const campaign = founderCampaignFromSetting(value, riyadhDay(now), founderCampaignCopyFromOffer(founderOffer));
 
     // The seat count is read whenever dates are configured: the countdown
     // before the opening shows the seats too.
@@ -123,9 +136,9 @@ export async function GET() {
     }
     const window = founderWindow(value, summary, now, FOUNDER_MEMBERSHIP_ON_SALE);
 
-    if (!campaign) return answer(null, window);
-    if (summaryFailed || !summary) return unavailable(window);
-    return answer(founderOfferCampaign(campaign, summary, FOUNDER_MEMBERSHIP_ON_SALE), window);
+    if (!campaign) return answer(null, window, founderOffer);
+    if (summaryFailed || !summary) return unavailable(window, founderOffer);
+    return answer(founderOfferCampaign(campaign, summary, FOUNDER_MEMBERSHIP_ON_SALE), window, founderOffer);
   } catch (err) {
     logOnce("[campaigns/active GET] unexpected error:", err);
     return unavailable();

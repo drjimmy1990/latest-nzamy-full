@@ -13,6 +13,7 @@ import { PricingHero }         from "@/components/pricing/PricingHero";
 import { PricingCards }        from "@/components/pricing/PricingCards";
 import { PromotionalCampaignBanner } from "@/components/pricing/PromotionalCampaignBanner";
 import { FounderPlanSection } from "@/components/pricing/FounderPlanCard";
+import { OffersList } from "@/components/offers/OffersList";
 import { PricingComparison }   from "@/components/pricing/PricingComparison";
 import { PricingTestimonials } from "@/components/pricing/PricingTestimonials";
 import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
@@ -132,6 +133,10 @@ export default function PricingPage() {
         {/* The lawyer founder membership (P3): the card while on sale; the
             «انتهت…» line for a campaign-link visitor after it closes. */}
         <FounderPlanSection audience={audience} libraryMode={libraryMode} campaignParam={url.campaign} />
+
+        {/* Owner item 5: the offers meant for this signed-in user (the
+            popup's offer stays here after it is closed). */}
+        <OffersList variant="strip" enabled={!userLoading && isLoggedIn} />
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards

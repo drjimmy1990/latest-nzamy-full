@@ -110,12 +110,36 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * not a real day, when `ends_on` is before `starts_on`, when `today` is
  * outside them, or when the value is not an object.
  */
-export function founderCampaignFromSetting(value: unknown, today: string): Campaign | null {
+export function founderCampaignFromSetting(
+  value: unknown,
+  today: string,
+  copy: FounderCampaignCopy = FOUNDER_CAMPAIGN_COPY,
+): Campaign | null {
   if (!isPlainObject(value) || !isCalendarDay(today)) return null;
   const { starts_on: startsOn, ends_on: endsOn } = value;
   if (!isCalendarDay(startsOn) || !isCalendarDay(endsOn)) return null;
   if (startsOn > endsOn || today < startsOn || today > endsOn) return null;
-  return { id: `founder-${startsOn}`, startsOn, endsOn, ...FOUNDER_CAMPAIGN_COPY };
+  return { id: `founder-${startsOn}`, startsOn, endsOn, ...copy };
+}
+
+/** The banner's words. l8 (owner item 5): read from the founder offer row when it exists. */
+export type FounderCampaignCopy = Pick<Campaign, "badgeAr" | "messageAr" | "ctaAr" | "ctaHref">;
+
+/**
+ * l8 (owner item 5): the founder offer row's copy as the banner's words —
+ * title → badge, body → message (the built-in message when empty), button.
+ * Null input → the built-in FOUNDER_CAMPAIGN_COPY.
+ */
+export function founderCampaignCopyFromOffer(
+  offer: { title: string; body: string; ctaLabel: string; ctaHref: string } | null,
+): FounderCampaignCopy {
+  if (!offer) return FOUNDER_CAMPAIGN_COPY;
+  return {
+    badgeAr: offer.title,
+    messageAr: offer.body || FOUNDER_CAMPAIGN_COPY.messageAr,
+    ctaAr: offer.ctaLabel,
+    ctaHref: offer.ctaHref,
+  };
 }
 
 const FOUNDER_SETTING_KEYS = new Set(["starts_on", "ends_on", "library_days", "capacity", "sale_paused"]);
@@ -268,6 +292,8 @@ export function founderOfferCampaign(
  */
 export function campaignFromApi(body: unknown): Campaign | null {
   if (!isPlainObject(body) || !isPlainObject(body.campaign)) return null;
+  // l8 (owner item 5): the admin stopped the founder offer — the banner steps aside (the sale does not).
+  if (isPlainObject(body.founderOffer) && body.founderOffer.promoted === false) return null;
   const c = body.campaign;
   if (c.onSale === false) return null;
   const fields = ["id", "startsOn", "endsOn", "badgeAr", "messageAr", "ctaAr", "ctaHref"] as const;

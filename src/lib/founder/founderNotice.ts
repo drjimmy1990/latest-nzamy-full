@@ -20,6 +20,7 @@
 import { countPhraseAr } from "../services/arabicCount.ts";
 import { FOUNDER_PAGE_PATH } from "./landingCopy.ts";
 import { durationAr, type PhaseView } from "./founderWindow.ts";
+import type { FounderOfferCopy } from "../offers/offerRules.ts";
 
 export type NoticePhase = "pre" | "live";
 
@@ -40,6 +41,12 @@ export interface FounderNoticeInput {
   inviteShown: boolean;
   /** The phases this viewer dismissed. */
   dismissed: ReadonlySet<NoticePhase>;
+  /**
+   * l8 (owner item 5): the founder offer row (GET /api/v1/campaigns/active's
+   * founderOffer). Stopped by the admin → no card; else its title and button.
+   * Absent / null (before 20261128_50) → the built-in words.
+   */
+  copy?: FounderOfferCopy | null;
 }
 
 const NONE: FounderNoticeView = Object.freeze({ kind: "none" }) as FounderNoticeView;
@@ -50,6 +57,9 @@ const SEATS = { zero: null, one: "مقعد واحد", two: "مقعدان", few: 
 
 export function founderNoticeView(i: FounderNoticeInput): FounderNoticeView {
   if (i.userLoading || i.userType !== "lawyer" || i.practiceKind === "consultant") return NONE;
+  if (i.copy && !i.copy.promoted) return NONE;
+  const title = i.copy?.title ?? NOTICE_TITLE;
+  const href = i.copy?.ctaHref ?? FOUNDER_PAGE_PATH;
   const m = i.membership;
   if (typeof m !== "object" || m === null || (m as { member?: unknown }).member !== false) return NONE;
 
@@ -59,10 +69,10 @@ export function founderNoticeView(i: FounderNoticeInput): FounderNoticeView {
     return {
       kind: "countdown",
       phase: "pre",
-      title: NOTICE_TITLE,
+      title,
       text: `يفتح التسجيل في عضوية المحامي المؤسس ${when}، والمقاعد محدودة.`,
       linkLabel: "تعرّف على الباقة",
-      href: FOUNDER_PAGE_PATH,
+      href,
     };
   }
 
@@ -72,12 +82,12 @@ export function founderNoticeView(i: FounderNoticeInput): FounderNoticeView {
     return {
       kind: "join",
       phase: "live",
-      title: NOTICE_TITLE,
+      title,
       text: seats
         ? `التسجيل مفتوح الآن — بقي ${seats}.`
         : "التسجيل مفتوح الآن، والمقاعد محدودة.",
-      linkLabel: "انضم إلى المؤسسين",
-      href: FOUNDER_PAGE_PATH,
+      linkLabel: i.copy?.ctaLabel ?? "انضم إلى المؤسسين",
+      href,
     };
   }
 

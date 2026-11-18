@@ -29,6 +29,7 @@ import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
 import { isSharedClientIntakePath } from "@/lib/auth/routeAccess";
 import { QuickAddSidebarItem } from "@/components/dashboard/quickAdd/QuickAdd";
 import { AdminViewSwitch } from "@/components/dashboard/AdminViewSwitch";
+import { OffersNavItem } from "@/components/offers/OffersNavItem";
 import { useAdminView } from "@/hooks/useAdminView";
 import { useAdminSimulation } from "@/hooks/useAdminSimulation";
 import { resolveNavUserType, adminViewSuffix, switchCurrentView } from "@/lib/nav/shellContext";
@@ -192,6 +193,10 @@ export default function SharedSidebar() {
       {/* «+ إضافة سريعة» (N3.3) — renders only inside the lawyer/firm
           layouts' QuickAddProvider; every other dashboard is unchanged. */}
       <QuickAddSidebarItem onBeforeOpen={() => setMobileOpen(false)} />
+
+      {/* «العروض» (owner item 5, 18 Nov): the offers meant for this user,
+          with a count badge; nothing when there is none. */}
+      <OffersNavItem isDark={isDark} enabled={!loading && isLoggedIn && !isRealAdmin} />
 
       {/* Nav groups */}
       {/* `pb-8` is not decoration. This scroll region's bottom edge is flush

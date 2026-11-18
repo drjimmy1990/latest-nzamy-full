@@ -329,6 +329,9 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "pricing-catalog/[serviceId]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   // Legal GraphRAG admin controls: switch_model, trigger_sync, set_feqh_vectors (3 audited arms)
   { file: "graph-rag/route.ts", method: "POST", action: "settings.write", logs: 3 },
+  // l8 (owner item 5): offers — create, and edit / «إيقاف فوري» (one audit row each)
+  { file: "offers/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "offers/[id]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
 ];
 
 for (const { file, method, action, logs } of GATES) {

@@ -1,5 +1,6 @@
 import ServerSessionGate from "@/components/auth/ServerSessionGate";
 import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
+import OfferPopup from "@/components/offers/OfferPopup";
 
 /**
  * The first server-side gate any /dashboard/* route has ever had.
@@ -27,6 +28,9 @@ export default async function DashboardLayout({
     <ServerSessionGate fallbackPath="/dashboard">
       {children}
       <TermsReacceptGate />
+      {/* Owner item 5: one offer popup per sign-in (never on billing,
+          wallets, the admin console, or while the terms re-ask is open). */}
+      <OfferPopup />
     </ServerSessionGate>
   );
 }
