@@ -13,10 +13,12 @@
  *   - Scripts load after «أوافق», on an analytics route. Leaving the routes:
  *       · a link click to any other page becomes a full page load, so the
  *         scripts are gone before that page exists;
- *       · a programmatic navigation flips GA's own off switch
- *         (window['ga-disable-<id>']) inside history.pushState, before GA
- *         can count it, and the effect below reloads the page when Clarity
- *         had been loaded.
+ *       · a programmatic navigation (e.g. HomeRedirectGuard's router.replace
+ *         for a signed-in visitor on "/") is caught inside
+ *         history.pushState/replaceState, synchronously: GA's own off switch
+ *         (window['ga-disable-<id>']) is set and the whole <body> is masked
+ *         for Clarity before the original runs; the effect below then reloads
+ *         the page (masked) when Clarity had been loaded.
  *   - Clarity: every input/textarea/select/contenteditable gets
  *     data-clarity-mask, and on FULL_MASK_ROUTES the whole <body> does.
  *   - Events: page_view on each analytics-route path (sent here, not by GA's
@@ -55,6 +57,8 @@ type W = Window & {
 } & Record<string, unknown>;
 
 const MASK_ATTR = "data-clarity-mask";
+// Microsoft's documented value (clarity-masking): «data-clarity-mask="True"».
+const MASK_VALUE = "True";
 const MASK_SELECTOR = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
 
 /** Save a choice, clear the analytics cookies on «لا أوافق», and tell the page. */
@@ -135,18 +139,23 @@ function loadScripts(w: W): void {
   w.__nzAnalyticsLoaded = { ga4Id, clarity: Boolean(clarityId) };
 }
 
-/** GA's off switch, flipped synchronously inside pushState/replaceState for a non-analytics URL. */
+/**
+ * Inside pushState/replaceState, synchronously, for a non-analytics URL:
+ * GA's off switch on, and the whole <body> masked for Clarity — before the
+ * new page's content can be recorded.
+ */
 function patchHistory(w: W): void {
-  if (w.__nzHistoryPatched || !ANALYTICS.ga4Id) return;
+  if (w.__nzHistoryPatched) return;
   w.__nzHistoryPatched = true;
-  const flag = `ga-disable-${ANALYTICS.ga4Id}`;
+  const flag = ANALYTICS.ga4Id ? `ga-disable-${ANALYTICS.ga4Id}` : null;
   for (const method of ["pushState", "replaceState"] as const) {
     const original = history[method].bind(history);
     history[method] = (data: unknown, unused: string, url?: string | URL | null) => {
       try {
         if (url != null) {
-          const next = new URL(String(url), window.location.href);
-          w[flag] = !isAnalyticsRoute(next.pathname);
+          const leaving = !isAnalyticsRoute(new URL(String(url), window.location.href).pathname);
+          if (flag) w[flag] = leaving;
+          if (leaving) document.body.setAttribute(MASK_ATTR, MASK_VALUE);
         }
       } catch {
         // never break navigation
@@ -157,7 +166,7 @@ function patchHistory(w: W): void {
 }
 
 function maskInputs(root: ParentNode): void {
-  root.querySelectorAll?.(MASK_SELECTOR).forEach((el) => el.setAttribute(MASK_ATTR, "true"));
+  root.querySelectorAll?.(MASK_SELECTOR).forEach((el) => el.setAttribute(MASK_ATTR, MASK_VALUE));
 }
 
 export default function AnalyticsConsent() {
@@ -184,14 +193,19 @@ export default function AnalyticsConsent() {
     if (!allowed || choice !== "granted") {
       if (loaded) {
         if (loaded.ga4Id) w[`ga-disable-${loaded.ga4Id}`] = true;
-        // Clarity has no documented pause: a fresh load of this page drops it.
-        if (loaded.clarity) window.location.reload();
+        if (loaded.clarity) {
+          // Clarity has no documented pause: stay masked, and a fresh load
+          // of this page drops it.
+          document.body.setAttribute(MASK_ATTR, MASK_VALUE);
+          window.location.reload();
+          return;
+        }
       }
       document.body.removeAttribute(MASK_ATTR);
       return;
     }
 
-    if (isFullMaskRoute(pathname)) document.body.setAttribute(MASK_ATTR, "true");
+    if (isFullMaskRoute(pathname)) document.body.setAttribute(MASK_ATTR, MASK_VALUE);
     else document.body.removeAttribute(MASK_ATTR);
     maskInputs(document);
     patchHistory(w);
@@ -239,7 +253,7 @@ export default function AnalyticsConsent() {
     const observer = new MutationObserver((records) => {
       for (const r of records) r.addedNodes.forEach((n) => {
         if (n instanceof Element) {
-          if (n.matches(MASK_SELECTOR)) n.setAttribute(MASK_ATTR, "true");
+          if (n.matches(MASK_SELECTOR)) n.setAttribute(MASK_ATTR, MASK_VALUE);
           maskInputs(n);
         }
       });
@@ -262,9 +276,9 @@ export default function AnalyticsConsent() {
       className="fixed inset-x-3 bottom-3 z-[70] mx-auto max-w-2xl rounded-2xl border border-[#E6CD8E]/40 bg-[#06201A] p-4 text-sm leading-7 text-[#E8F1EC] shadow-2xl sm:inset-x-6 sm:p-5"
     >
       <p>
-        نستخدم أداتي قياس الزيارات Google Analytics وMicrosoft Clarity في هذه الصفحة وصفحات الأسعار والتسجيل والدفع
-        فقط، لنعرف كيف تُستخدم ونحسّنها. لا تعملان إلا بموافقتك، ولا تعملان داخل لوحات الحسابات، وتُخفى كل حقول
-        الإدخال (البطاقة والرخصة والبريد).{" "}
+        {bannerToolsAr(ANALYTICS)} في الصفحة الرئيسية وصفحات المؤسس والأسعار والتسجيل والدفع فقط، لنعرف كيف تُستخدم
+        ونحسّنها. لا يُحمَّل شيء إلا بموافقتك، ولا شيء منها داخل لوحات الحسابات، وتُخفى كل حقول الإدخال (البطاقة
+        والرخصة والبريد).{" "}
         <Link href="/privacy#cookies" className="font-bold text-[#E6CD8E] underline underline-offset-2">
           التفاصيل في سياسة الخصوصية
         </Link>
@@ -284,6 +298,13 @@ export default function AnalyticsConsent() {
 // «أوافق» and «لا أوافق» share one class: refusing is exactly as easy as accepting.
 const BUTTON =
   "min-h-[44px] rounded-full border border-[#E6CD8E] px-4 font-bold text-[#E6CD8E] motion-safe:transition hover:bg-[#E6CD8E]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#E6CD8E]";
+
+/** The banner names only the tools that are actually configured. */
+export function bannerToolsAr(ids: { ga4Id: string | null; clarityId: string | null }): string {
+  if (ids.ga4Id && ids.clarityId) return "نستخدم أداتي قياس الزيارات Google Analytics وMicrosoft Clarity";
+  if (ids.ga4Id) return "نستخدم أداة قياس الزيارات Google Analytics";
+  return "نستخدم أداة قياس الزيارات Microsoft Clarity";
+}
 
 function parseDetail(detail: unknown): ConsentChoice | null {
   return detail === "granted" || detail === "denied" ? detail : null;

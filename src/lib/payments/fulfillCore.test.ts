@@ -617,7 +617,13 @@ test("founder: the sweep's release of expired reservations calls founder_release
 
 test("purchase event: reported once, after the stamp, for a LIVE order that granted something", async () => {
   const meta = { user_email: "u@example.test", analytics: { ga_client_id: "111.222" } };
-  const { client, log } = happyDb(orderRow({ live: true, metadata: meta }));
+  // live comes from the claim (claim_payment_order sets live = p_live and returns the row), not the pre-claim read
+  const pre = orderRow({ live: null, metadata: meta });
+  const { client, log } = happyDb(pre, (q) =>
+    q.table === "claim_payment_order"
+      ? { data: [{ ...pre, live: true, status: "paid", moyasar_payment_id: "pay_1", receipt_number: "NZ-2026-000001", paid_at: NOW.toISOString() }] }
+      : undefined,
+  );
   const reported: Array<Record<string, unknown>> = [];
   const { d } = deps(client, gateway(paymentOf()), {
     reportPurchase: async (p) => {

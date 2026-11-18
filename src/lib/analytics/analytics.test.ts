@@ -57,11 +57,14 @@ test("public routes only: home, /founder, /pricing, /register/*, checkout and th
   }
 });
 
-test("the payment and verification pages are masked whole", () => {
+test("the signup, verification and payment pages are masked whole", () => {
   assert.equal(isFullMaskRoute("/checkout"), true);
   assert.equal(isFullMaskRoute("/payments/result"), true);
+  assert.equal(isFullMaskRoute("/register/provider"), true, "the registry lookup shows the licence as text");
   assert.equal(isFullMaskRoute("/register/provider/verify"), true);
+  assert.equal(isFullMaskRoute("/register/client"), true);
   assert.equal(isFullMaskRoute("/founder"), false);
+  assert.equal(isFullMaskRoute("/pricing"), false);
 });
 
 test("the consent cookie: two answers, remembered 180 days, first-party Lax", () => {
@@ -158,6 +161,15 @@ test("sendPurchaseEvent is off without the id or the secret, skips without conse
 
 const read = (p: string) => readFileSync(join(SRC, p), "utf8");
 
+test("the banner names only the configured tools", async () => {
+  // the component module reads process.env at import: check the pure helper by its source contract
+  const c = read("components/analytics/AnalyticsConsent.tsx");
+  assert.match(c, /\{bannerToolsAr\(ANALYTICS\)\}/);
+  assert.match(c, /if \(ids\.ga4Id && ids\.clarityId\) return "نستخدم أداتي قياس الزيارات Google Analytics وMicrosoft Clarity"/);
+  assert.match(c, /if \(ids\.ga4Id\) return "نستخدم أداة قياس الزيارات Google Analytics"/);
+  assert.match(c, /return "نستخدم أداة قياس الزيارات Microsoft Clarity"/);
+});
+
 test("the root layout mounts the banner; the scripts are loaded only from AnalyticsConsent", () => {
   assert.match(read("app/layout.tsx"), /<AnalyticsConsent \/>/);
   const c = read("components/analytics/AnalyticsConsent.tsx");
@@ -168,6 +180,10 @@ test("the root layout mounts the banner; the scripts are loaded only from Analyt
   assert.match(c, /send_page_view: false/);
   assert.match(c, /allow_google_signals: false/);
   assert.match(c, /data-clarity-mask/);
+  assert.match(c, /MASK_VALUE = "True"/, "Microsoft's documented value");
+  // leaving the routes masks the page synchronously inside history, GA4 or not
+  assert.match(c, /if \(leaving\) document\.body\.setAttribute\(MASK_ATTR, MASK_VALUE\)/);
+  assert.doesNotMatch(c, /__nzHistoryPatched \|\| !ANALYTICS\.ga4Id/);
   // «أوافق» and «لا أوافق» share one class
   assert.match(c, /onClick=\{\(\) => saveConsent\("granted"\)\} className=\{BUTTON\}/);
   assert.match(c, /onClick=\{\(\) => saveConsent\("denied"\)\} className=\{BUTTON\}/);

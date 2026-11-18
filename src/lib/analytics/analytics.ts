@@ -17,7 +17,9 @@
  *      /register/*, /checkout, /payments/result). Never a dashboard, /ai/*
  *      (the drafter), /dashboard/admin or any other page.
  *   4. Clarity sees no typed value: every input is masked, and on the
- *      payment and verification pages the whole page is (FULL_MASK_ROUTES).
+ *      signup, verification and payment pages the whole page is
+ *      (FULL_MASK_ROUTES: the registry lookup shows the name, licence and
+ *      expiry as text).
  *   5. The purchase is sent by the server (GA4 Measurement Protocol) only
  *      for a LIVE order whose buyer had consented at checkout — the GA client
  *      id is copied from the `_ga` cookie then and only then. No client id →
@@ -66,8 +68,8 @@ export function analyticsIds(ga4: string | undefined | null, clarity: string | u
  */
 export const ANALYTICS_ROUTES = ["/", "/founder", "/pricing", "/register", "/checkout", "/payments/result"] as const;
 
-/** Pages whose whole content Clarity masks (amounts, masked e-mail, licence). */
-export const FULL_MASK_ROUTES = ["/checkout", "/payments/result", "/register/provider/verify"] as const;
+/** Pages whose whole content Clarity masks (registry name / licence / expiry, masked e-mail, amounts). */
+export const FULL_MASK_ROUTES = ["/register", "/checkout", "/payments/result"] as const;
 
 function normalisePath(pathname: string | null | undefined): string | null {
   if (typeof pathname !== "string" || !pathname.startsWith("/") || pathname.startsWith("//")) return null;
