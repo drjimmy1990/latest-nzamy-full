@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveAuthOutcome } from "@/lib/auth/resolveAuthOutcome";
 import { sessionResponseFor } from "@/lib/auth/sessionResponse";
+import { recordStaffLogin, currentAccessToken } from "@/lib/auth/staffMfaServer";
 
 /**
  * GET /api/v1/auth/session — the login handshake.
@@ -64,6 +65,16 @@ export async function GET() {
   }
 
   const decision = sessionResponseFor(outcome, user?.id ?? null, profile, isActiveFirmMember);
+
+  // Owner item 18 (batch l7): the new-login alert of a STAFF account, at the
+  // password step (aal1) — the moment that tells the admin a password leaked.
+  // After the answer, so the login never waits on it. The trail row and the
+  // e-mail are written by staffMfaServer (service role, staff only); the
+  // answer above stays the RLS-scoped decision it always was.
+  if (outcome === "ok" && user && profile?.user_type === "admin") {
+    const accessToken = await currentAccessToken(supabase);
+    after(() => recordStaffLogin({ user, accessToken, trigger: "login" }));
+  }
 
   return NextResponse.json(decision.body, {
     status: decision.status,

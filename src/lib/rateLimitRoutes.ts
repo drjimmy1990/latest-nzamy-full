@@ -49,6 +49,16 @@ export function isCouponValidateRoute(method: string, pathname: string): boolean
   return method === "POST" && COUPON_VALIDATE_RE.test(pathname);
 }
 
+// Owner item 18 (batch l7): a staff backup code (POST /api/v1/auth/mfa/recover).
+// Its own bucket, per address: the database also locks the account after 5
+// refused codes in 15 minutes (admin_mfa_backup_code_consume, 20261127_50).
+export const MFA_RECOVER_RE = /^\/api\/v1\/auth\/mfa\/recover$/;
+
+/** True for POST /api/v1/auth/mfa/recover. */
+export function isMfaRecoverRoute(method: string, pathname: string): boolean {
+  return method === "POST" && MFA_RECOVER_RE.test(pathname);
+}
+
 // The law reader, search, scoped search and autocomplete read article text with the service
 // role since 20260929_01 (article text is server-only), which also drops the
 // database's anon statement timeout. A per-client ceiling keeps one client

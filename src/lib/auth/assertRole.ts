@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse } from '@/lib/auth/apiAuth';
 import { freezeStateFromUser, ACCOUNT_FROZEN_AR } from '@/lib/auth/accountFreeze';
 import { isSuspendedUser, ACCOUNT_SUSPENDED_AR, ACCOUNT_SUSPENDED_CODE } from '@/lib/auth/accountSuspension';
+import { staffMfaGate } from '@/lib/auth/staffMfaServer';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 type Ok = { ok: true; user: User; userType: string; supabase: SupabaseClient };
@@ -74,6 +75,21 @@ export async function assertRole(allowed?: string[]): Promise<Ok | Err> {
     .single();
 
   const userType = profile?.user_type ?? '';
+
+  // Owner item 18 (batch l7): `'admin'` passes every role list below, so an
+  // admin whose session fails the two-step rule (enrolled but aal1, or not
+  // enrolled while ADMIN_MFA_ENFORCE=required) is refused here, on every
+  // route this gate guards (src/lib/auth/staffMfa.ts).
+  if (userType === 'admin') {
+    const mfa = await staffMfaGate(supabase, user);
+    if (!mfa.ok) {
+      return {
+        ok: false,
+        response: NextResponse.json({ error: mfa.error, code: mfa.code }, { status: 403 }),
+      };
+    }
+  }
+
   if (
     allowed &&
     allowed.length > 0 &&
