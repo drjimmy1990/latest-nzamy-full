@@ -76,6 +76,22 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       const after = rpcError || answer !== "already" ? null : (await readOrder()).order;
       result = rpcError ? activationAnswer(null, null) : activationAnswer(answer, after?.metadata?.founder ?? null);
 
+      if (result.outcome === "pending_verification") {
+        // l7 (decision 1): a refund case whose buyer's licence is still pending
+        // now waits for the admin's decision instead — not a refund review.
+        await mergeOrderMetadata(service, order.id, { already_entitled: false });
+        const item = resolveItem(order.item_id);
+        if (order.user_id && item) {
+          const notice = fulfilmentNoticeAr({
+            kind: item.kind,
+            labelAr: item.labelAr,
+            receiptNumber: order.receipt_number ?? null,
+            alreadyEntitled: false,
+            founderPending: true,
+          });
+          await recordNotification({ userId: order.user_id, title: notice.title, body: notice.body, href: notice.href });
+        }
+      }
       if (result.outcome === "activated") {
         // R18: no longer a refund review — the orders page reads already_entitled.
         if (!(await mergeOrderMetadata(service, order.id, { already_entitled: false }))) {

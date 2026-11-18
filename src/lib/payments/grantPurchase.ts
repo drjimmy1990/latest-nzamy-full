@@ -39,6 +39,16 @@
  *                 true, refundReason }: nothing granted, the order stays paid
  *                 and is stamped fulfilled (so the sweep does not loop on it)
  *                 for an admin refund (ruling R7);
+ *               pending_verification (l7, decision 1, 20261127_10: the
+ *                 buyer's licence is still being checked; his seat is held,
+ *                 counted and never expires) → { ok: true, alreadyEntitled:
+ *                 false, founderPending: true }: the order is stamped
+ *                 fulfilled, NOT a refund review. The admin's approval
+ *                 activates the seat (founderVerification.ts), a rejection
+ *                 refunds it in full;
+ *               full is never answered since 20261127_10 (decision 2: a paid
+ *                 order is honoured past capacity); it is still read as the
+ *                 refund case for a database before that file;
  *               not_paid, an unknown answer, an RPC error → not ok (retried).
  *             No points lot: a membership never falls into the top-up branch.
  *
@@ -81,7 +91,13 @@ export type FounderRefundReason = "seat_unavailable" | "not_verified" | "already
  * membership `refundReason` says why (absent on every other kind).
  */
 export type GrantPurchaseResult =
-  | { ok: true; alreadyEntitled: boolean; refundReason?: FounderRefundReason }
+  | {
+      ok: true;
+      alreadyEntitled: boolean;
+      refundReason?: FounderRefundReason;
+      /** l7 (decision 1): a membership paid by a lawyer whose licence is still being checked — the seat waits. */
+      founderPending?: boolean;
+    }
   | { ok: false; error: string; missing?: boolean };
 
 /** founder_activate(p_order) (20261101_10): the raw RPC answer, never thrown. */
@@ -238,6 +254,8 @@ async function grantMembership(deps: GrantPurchaseDeps, order: PurchaseOrder): P
   if (data === "activated") return { ok: true, alreadyEntitled: false };
   if (data === "full") return { ok: true, alreadyEntitled: true, refundReason: "seat_unavailable" };
   if (data === "not_verified") return { ok: true, alreadyEntitled: true, refundReason: "not_verified" };
+  // l7 (decision 1, 20261127_10): paid before the licence check — the seat waits
+  if (data === "pending_verification") return { ok: true, alreadyEntitled: false, founderPending: true };
   if (data === "already") {
     // 'already' is both «this order's seat is active» (a retry: success) and
     // «he holds a seat from ANOTHER order» (he paid twice: a refund). Only the

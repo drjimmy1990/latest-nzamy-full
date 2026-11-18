@@ -659,3 +659,28 @@ test("purchase event: never for a test-mode order, and a throwing reporter never
     assert.equal(notices.length, 1);
   }
 });
+
+test("l7 (decision 1): a pending lawyer's paid membership — stamped, «تُفعَّل الباقة بعد توثيق رخصتك» notice, no refund flag, no admin alert", async () => {
+  const { client, log } = memberDb();
+  const f = founderDeps(client, gateway(MEMBER_PAY()), "pending_verification");
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.deepEqual([r.outcome, r.reason], ["granted", "founder_pending_verification"]);
+  assert.equal(stamps(log).length, 1);
+  assert.equal(f.notices.length, 1);
+  assert.equal(f.notices[0].title, "تم الدفع وحُجز مقعدك");
+  assert.match(f.notices[0].body, /تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً/);
+  assert.equal(f.admins.length, 0, "not a refund review");
+  assert.equal(
+    log.filter((q) => q.table === "merge_payment_order_metadata" && JSON.stringify(q.payload).includes("already_entitled")).length,
+    0,
+  );
+});
+
+test("l7: a refresh of a stamped pending order answers founder_pending_verification, not a success", async () => {
+  const row = { ...MEMBER_ROW(), status: "paid", fulfilled_at: NOW.toISOString(), moyasar_payment_id: "pay_1", metadata: { founder: "pending_verification" } };
+  const { client } = memberDb(row);
+  const f = founderDeps(client, gateway(MEMBER_PAY()));
+  const r = await fulfillOrderWith(f.d, INPUT);
+  assert.deepEqual([r.outcome, r.reason], ["already_done", "founder_pending_verification"]);
+  assert.equal(f.activations.length, 0);
+});

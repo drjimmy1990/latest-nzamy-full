@@ -323,6 +323,17 @@ export function isMissingPaymentsObject(code: string | null | undefined): boolea
 
 // ── the Arabic notices ──────────────────────────────────────────────────────
 
+/**
+ * l7 (decision 1, 20261127_10): a FulfillResult reason (fulfillCore.ts) — the
+ * membership is paid and stamped, its seat held until the admin checks the
+ * licence. With outcome 'granted' (the call that stamped) or 'already_done'
+ * (a later one).
+ */
+export const FOUNDER_PENDING_REASON = "founder_pending_verification";
+
+/** l7 decision 1, the owner's sentence: a founder seat paid before the licence check. */
+export const FOUNDER_PENDING_SENTENCE_AR = "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.";
+
 export interface FulfilmentNotice {
   title: string;
   body: string;
@@ -335,10 +346,22 @@ export function fulfilmentNoticeAr(input: {
   labelAr: string;
   receiptNumber: string | null;
   alreadyEntitled: boolean;
+  /** l7 (decision 1): a founder membership paid before the licence check — the seat waits. */
+  founderPending?: boolean;
 }): FulfilmentNotice {
   const label = `«${input.labelAr}»`;
   const receipt = input.receiptNumber ? ` رقم الإيصال: ${input.receiptNumber}.` : "";
   const href = "/dashboard/billing";
+
+  if (input.founderPending && input.kind === "membership" && !input.alreadyEntitled) {
+    // 20261127_10: the seat is held (counted, never expiring) until the admin
+    // approves the licence (→ activated) or rejects it (→ the full refund)
+    return {
+      title: "تم الدفع وحُجز مقعدك",
+      body: `استلمنا دفعتك مقابل ${label} وحُجز مقعدك.${receipt} ${FOUNDER_PENDING_SENTENCE_AR}`,
+      href,
+    };
+  }
 
   if (input.alreadyEntitled && input.kind === "membership") {
     // P3: paid, no seat (seats full, licence not verified, or already a member)

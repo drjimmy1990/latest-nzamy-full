@@ -66,3 +66,18 @@ test("live: a guest gets the sign-in CTA (note stripped)", () => {
   assert.equal(b.kind === "cta" && b.cta.kind, "guest");
   assert.equal(b.kind === "cta" && b.cta.note, null);
 });
+
+test("live (l7, decision 1): a pending lawyer may buy, and the owner's sentence reaches the page", () => {
+  const cta = founderCta({
+    sessionLoading: false,
+    signedIn: true,
+    userType: "lawyer",
+    practiceKind: "advocate",
+    verification: "pending",
+    member: false,
+    gateway: { disabled: false, provider: "moyasar" },
+  });
+  const b = founderJoinButton({ ...base, cta, phase: "live" });
+  assert.equal(b.kind === "cta" && b.cta.kind, "checkout");
+  assert.equal(b.kind === "cta" && b.cta.note, "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.");
+});

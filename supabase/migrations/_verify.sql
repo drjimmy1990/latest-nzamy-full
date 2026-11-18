@@ -7253,3 +7253,43 @@ select 'Test accounts: sandbox, no open request, caps 5/5 and the «تجريبي
                     where tgrelid = 'public.test_accounts'::regclass and tgname = 'trg_test_accounts_stamp' and not tgisinternal)
        as ok;
 -- <<< verify:l7_testacct
+-- >>> verify:l7_founder
+-- Batch l7 (decisions 1, 2, 3, 4 of 18 Nov 2026): run 20261127_10 AFTER the deploy.
+-- Docker: supabase/tests/rls/founder_l7.test.sql
+select 'Founder: a pending lawyer may pay, the seat waits in pending_verification and is revoked on rejection (run 20261127_10)' as check,
+       coalesce((select pg_catalog.pg_get_constraintdef(c.oid) like '%pending_verification%'
+                   from pg_catalog.pg_constraint c
+                  where c.conrelid = 'public.founder_seats'::regclass and c.conname = 'founder_seats_status_check'), false)
+       and coalesce(pg_catalog.pg_get_indexdef(to_regclass('public.founder_seats_one_per_user')) like '%pending_verification%', false)
+       and coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%''verified'', ''pending''%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%demo_account%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%15 minutes%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%not_advocate%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_reserve_seat' limit 1), false)
+       and coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%pending_verification%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_revoke' limit 1), false)
+       as ok;
+select 'Founder: a paid order is never refused for want of a seat (founder_oversold), library_question kept (run 20261127_10)' as check,
+       coalesce((select pg_catalog.pg_get_functiondef(p.oid) like '%founder_oversold%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%pending_verification%'
+                        and pg_catalog.pg_get_functiondef(p.oid) like '%''library_question'', 20, 20%'
+                        and pg_catalog.pg_get_functiondef(p.oid) not like '%return ''full''%'
+                   from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                  where n.nspname = 'public' and p.proname = 'founder_activate' limit 1), false)
+       as ok;
+select 'Founder counter: test / demo / test-mode seats never count, seats_left never negative, overflow for the admin (run 20261127_10)' as check,
+       to_regprocedure('public.founder_seat_counted(uuid, uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.founder_seat_counted(uuid, uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.founder_seat_summary()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.founder_seat_summary()', 'EXECUTE')
+       and exists (select 1 from information_schema.parameters
+                    where specific_schema = 'public' and specific_name like 'founder_seat_summary%'
+                      and parameter_mode = 'OUT' and parameter_name = 'overflow')
+       as ok;
+select 'Founder top-up discount rate setting founder_topup_discount_bps (run 20261127_10)' as check,
+       exists (select 1 from public.platform_settings
+                where key = 'founder_topup_discount_bps' and jsonb_typeof(value) = 'number')
+       as ok;
+-- <<< verify:l7_founder

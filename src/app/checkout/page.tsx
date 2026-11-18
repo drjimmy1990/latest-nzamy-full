@@ -13,7 +13,13 @@ import { AUDIENCE_REFUSED_AR, NOT_FOR_SALE_AR, UNKNOWN_ITEM_AR } from "@/lib/pay
 import { buyerAllowed, formatHalalas, quote, sellableItem } from "@/lib/payments/catalog";
 import { couponsAvailable } from "@/lib/payments/couponServer";
 import { readUpgrade, upgradeCreditLineAr } from "@/lib/payments/upgradeProration";
-import { FOUNDER_DISCOUNT_LABEL_AR, founderDiscountApplies, founderDiscountHalalas, isActiveFounder } from "@/lib/payments/founderDiscount";
+import {
+  founderDiscountApplies,
+  founderDiscountBps,
+  founderDiscountHalalas,
+  founderDiscountLabelAr,
+  isActiveFounder,
+} from "@/lib/payments/founderDiscount";
 import { FOUNDER_TERMS_VERSION } from "@/lib/founder/founderTerms";
 import {
   billingLabelAr,
@@ -149,6 +155,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   // founder membership.
   let creditHalalas = 0;
   let founderHalalas = 0;
+  let founderBps: number | undefined;
   if (priced.ok && item.kind === "plan" && item.tier) {
     try {
       const held = await readUpgrade(await createServiceClient(), { userId: user.id, tier: item.tier, now: new Date(), ranks: TIER_RANK });
@@ -160,8 +167,11 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   }
   if (priced.ok && founderDiscountApplies(item.kind)) {
     try {
-      if ((await isActiveFounder(await createServiceClient(), user.id, new Date())) === true) {
-        founderHalalas = founderDiscountHalalas(priced.netHalalas);
+      const svc = await createServiceClient();
+      if ((await isActiveFounder(svc, user.id, new Date())) === true) {
+        // l7 (decision 4): lifetime, at the founder_topup_discount_bps rate
+        founderBps = await founderDiscountBps(svc);
+        founderHalalas = founderDiscountHalalas(priced.netHalalas, founderBps);
       }
     } catch {
       console.warn("[checkout] reading the founder seat threw");
@@ -204,7 +214,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
         ) : null}
         {founderHalalas > 0 ? (
           <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
-            {FOUNDER_DISCOUNT_LABEL_AR}: − {formatHalalas(founderHalalas)}
+            {founderDiscountLabelAr(founderBps)}: − {formatHalalas(founderHalalas)}
           </p>
         ) : null}
 

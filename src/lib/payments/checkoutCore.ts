@@ -62,8 +62,9 @@
  *       would be paid and grant nothing). An upgrade from a lower PAID plan →
  *       the pro-rata credit; a coupon with it → 400 UPGRADE_NO_COUPON_AR. A
  *       failed read → 503.
- *   3c. A TOP-UP of an active founder member (F12, founderDiscount.ts): 15 %
- *       off the net, or the coupon if it is larger (never both). A failed
+ *   3c. A TOP-UP of a founder member (F12, founderDiscount.ts; lifetime and
+ *       founder_topup_discount_bps since l7): 15 % by default off the net,
+ *       or the coupon if it is larger (never both). A failed
  *       founder read → 503. metadata.founder_discount; quote.founderDiscount.
  *   3d. The credit off the net before VAT (VAT recomputed); less than 1 SAR
  *       left → 409 UPGRADE_CREDIT_TOO_BIG_AR. metadata.proration;
@@ -147,6 +148,7 @@ import {
   bestDiscount,
   FOUNDER_DISCOUNT_FAILED_AR,
   founderDiscountApplies,
+  founderDiscountBps,
   founderDiscountHalalas,
   founderDiscountMetadata,
   isActiveFounder,
@@ -533,7 +535,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     couponLimited = priced.coupon.limited === true;
   }
 
-  // 3c (l6-pay, F12). an active founder member: 15 % off a top-up, never
+  // 3c (l6-pay, F12). a founder member: 15 % (the setting) off a top-up, never
   // combined with a better offer — the larger of coupon and founder discount
   // wins (a tie keeps the coupon unused)
   let founderMeta: Record<string, unknown> | null = null;
@@ -542,14 +544,16 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     const founder = await isActiveFounder(admin, user.id, now);
     if (founder === null) return fail(503, FOUNDER_DISCOUNT_FAILED_AR);
     if (founder) {
-      const fd = founderDiscountHalalas(q.netHalalas);
+      // l7 (decision 4): the rate is the founder_topup_discount_bps setting (default 1500)
+      const bps = await founderDiscountBps(admin);
+      const fd = founderDiscountHalalas(q.netHalalas, bps);
       if (bestDiscount(couponQuote?.discount ?? null, fd).source === "founder") {
         const d = applyDiscount(q.netHalalas, fd);
         ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
         couponMeta = null;
         couponQuote = null;
         couponLimited = false;
-        founderMeta = founderDiscountMetadata(q.netHalalas, d.discountHalalas);
+        founderMeta = founderDiscountMetadata(q.netHalalas, d.discountHalalas, bps);
         founderQuote = { listNet: q.netHalalas, founderDiscount: d.discountHalalas };
       }
     }

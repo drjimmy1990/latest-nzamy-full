@@ -47,9 +47,18 @@ const order = (over: Record<string, unknown> = {}) => ({
 
 test("the summary row: PostgREST's array or the bare row; anything malformed is null", () => {
   const row = { capacity: 1096, active: 10, reserved: 2, seats_left: 1084, sale_paused: false, on_sale: true };
-  const want = { capacity: 1096, active: 10, reserved: 2, seatsLeft: 1084, salePaused: false, onSale: true };
+  // a database before 20261127_10 has no pending / overflow / test_seats → 0
+  const want = {
+    capacity: 1096, active: 10, reserved: 2, seatsLeft: 1084, salePaused: false, onSale: true,
+    pending: 0, overflow: 0, testSeats: 0,
+  };
   assert.deepEqual(founderAdminSummaryFromRpc([row]), want);
   assert.deepEqual(founderAdminSummaryFromRpc(row), want);
+  // 20261127_10's columns
+  const l7 = { ...row, pending: 3, overflow: 1, test_seats: 2 };
+  assert.deepEqual(founderAdminSummaryFromRpc([l7]), { ...want, pending: 3, overflow: 1, testSeats: 2 });
+  assert.equal(founderAdminSummaryFromRpc([{ ...l7, overflow: -1 }]), null);
+  assert.equal(founderAdminSummaryFromRpc([{ ...l7, pending: "3" }]), null);
   assert.equal(founderAdminSummaryFromRpc([]), null);
   assert.equal(founderAdminSummaryFromRpc(null), null);
   assert.equal(founderAdminSummaryFromRpc([{ ...row, active: "10" }]), null);
@@ -57,7 +66,7 @@ test("the summary row: PostgREST's array or the bare row; anything malformed is 
 });
 
 test("the sale state reads paused first, then the code switch, then the SQL's on_sale", () => {
-  const s = { capacity: 10, active: 1, reserved: 0, seatsLeft: 9, salePaused: false, onSale: true };
+  const s = { capacity: 10, active: 1, reserved: 0, seatsLeft: 9, salePaused: false, onSale: true, pending: 0, overflow: 0, testSeats: 0 };
   assert.equal(saleStateAr(s, true), "معروض للبيع");
   assert.equal(saleStateAr({ ...s, salePaused: true, onSale: false }, true), "البيع متوقف مؤقتًا");
   assert.equal(saleStateAr(s, false), "البيع مغلق في الشيفرة");
@@ -234,6 +243,9 @@ test("capacity cannot go below active + reserved; equal is allowed", () => {
   assert.equal(founderCapacityFloorIssue(1096, s), null);
   const issue = founderCapacityFloorIssue(44, s);
   assert.ok(issue && issue.includes("45") && issue.includes("44"), String(issue));
+  // l7: paid seats waiting for the licence check are taken too
+  assert.equal(founderCapacityFloorIssue(46, { ...s, pending: 1 }), null);
+  assert.ok(founderCapacityFloorIssue(45, { ...s, pending: 1 })?.includes("46"));
 });
 
 test("today starts at Riyadh midnight, not UTC midnight", () => {
@@ -303,6 +315,17 @@ test("the resume path's answers on a paid order whose stamp never happened", () 
   assert.equal(outcomeFromFulfil({ outcome: "already_done", reason: "claimed_elsewhere" }, null).outcome, "in_progress");
   assert.equal(outcomeFromFulfil({ outcome: "pending", reason: "grant_failed" }, null).status, 503);
   assert.equal(outcomeFromFulfil({ outcome: "rejected", reason: "order_mismatch" }, null).status, 409);
+  // l7 (decision 1): stamped, the seat waits for the licence check — not «activated»
+  for (const outcome of ["granted", "already_done"]) {
+    const p = outcomeFromFulfil({ outcome, reason: "founder_pending_verification" }, "pending_verification");
+    assert.deepEqual([p.status, p.outcome], [200, "pending_verification"]);
+  }
+});
+
+test("l7: founder_activate's pending_verification is a held seat, not a refund", () => {
+  const p = activationAnswer("pending_verification", "pending_verification");
+  assert.deepEqual([p.status, p.outcome, p.reason], [200, "pending_verification", undefined]);
+  assert.match(p.message, /بانتظار توثيق/);
 });
 
 test("the switch: the brief's two labels, a confirm question each, and the value it posts", () => {
