@@ -26,6 +26,8 @@ import { toArabicDigits } from "../services/arabicCount.ts";
 
 export const FOUNDER_PAGE_PATH = "/founder";
 export const FOUNDER_TERMS_PATH = "/founder-terms";
+/** Item ٧ (the refund) of /founder-terms: the founder page's refund links (file 09 أ-11). */
+export const FOUNDER_TERMS_REFUND_PATH = `${FOUNDER_TERMS_PATH}#refund`;
 
 /** Manifest `campaign.starts_at` / `ends_at_exclusive` (fallback only). */
 export const FOUNDER_FALLBACK_STARTS_AT = "2026-11-18T00:00:00+03:00";
@@ -77,7 +79,7 @@ export function founderLandingPrice(
 export const FOUNDER_ONCE_LINE = "عرض تأسيسي خاص بهذه الحملة، ولا نتوقع تكراره بهذه الصيغة.";
 
 /** Who may buy (manifest `eligible_practice_kind: advocate`). */
-export const FOUNDER_ADVOCATE_ONLY_LINE = "للمحامي المرخّص للترافع فقط";
+export const FOUNDER_ADVOCATE_ONLY_LINE = "للمحامي المرخص فقط";
 
 /** The seven eligible drafting kinds (manifest `drafting_works.eligible_types`), in the owner's order. */
 export const FOUNDER_WORK_KINDS: readonly string[] = Object.freeze([

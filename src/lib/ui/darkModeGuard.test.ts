@@ -64,6 +64,8 @@ const ALLOW: [string, string | null, string][] = [
   ["app/onboarding/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
   ["app/register/client/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
   ["app/register/provider/page.tsx", "bg-white text-royal", `${ON_BAND}: the current step in the green side panel`],
+  // l7: a scanner needs dark modules on white, in both themes (the ZATCA QR of the tax invoice)
+  ["components/payments/TaxDocuments.tsx", "h-36 w-36 shrink-0 rounded-lg bg-white p-1", "the tax-invoice QR: black on a white box so it scans in dark mode"],
   // /founder (owner package 17 Nov): paper cards inside the dark green sections
   ["app/founder/page.tsx", "rounded-[23px] bg-white p-6 text-[#14261F]", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text`],
   ["app/founder/_components/LibraryGifs.tsx", "border border-[#D9E3DD] bg-white shadow-", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the GIF's browser frame"],

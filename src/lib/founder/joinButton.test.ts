@@ -49,7 +49,7 @@ test("live: a consultant is locked out, and the consultant note never reaches th
   const cta = lawyerCta("consultant");
   assert.equal(cta.note, FOUNDER_CONSULTANT_NOTE, "founderCta still carries it (pricing card)");
   const b = founderJoinButton({ ...base, practiceKind: "consultant", cta, phase: "live" });
-  assert.deepEqual(b, { kind: "locked", reason: "advocate_only", label: "هذه الباقة للمحامي المرخّص للترافع فقط" });
+  assert.deepEqual(b, { kind: "locked", reason: "advocate_only", label: "هذه الباقة للمحامي المرخص فقط" });
 });
 
 test("live: a guest gets the sign-in CTA (note stripped)", () => {

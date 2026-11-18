@@ -25,9 +25,9 @@
 export const FOUNDER_TERMS_PUBLISHED: boolean = true;
 
 /** The version of the text below, as recorded on each founder order (metadata.founder_terms_version). */
-export const FOUNDER_TERMS_VERSION = "2026-11-17";
+export const FOUNDER_TERMS_VERSION = "2026-11-19";
 /** FOUNDER_TERMS_VERSION as the page shows it (item ٩: the date of the last update). */
-export const FOUNDER_TERMS_UPDATED_AR = "17 نوفمبر 2026";
+export const FOUNDER_TERMS_UPDATED_AR = "19 نوفمبر 2026";
 
 export const FOUNDER_TERMS_TITLE = "شروط وأحكام باقة المحامي المؤسس";
 
@@ -38,11 +38,20 @@ export interface TermsItem {
   title: string;
   paragraphs?: readonly string[];
   bullets?: readonly string[];
+  /** An anchor on the page (/founder-terms#refund). */
+  id?: string;
 }
 
-/** Item ٧ — the owner's refund wording (decision ١١ / ١٦, 17 Nov 2026). */
+/**
+ * Item ٧ — the owner's refund wording: TERMS-founder-draft.md clause 7, copied
+ * as is, after his 18-Nov decision (an urgent fix of the published text: no AI
+ * feature used — drafter, pro tools, library assistant and points; browsing
+ * the library never blocks it; full refund incl. VAT to the same method with
+ * no fee, and a credit note). The admin refund screen checks exactly this
+ * (src/lib/payments/refundEligibility.ts).
+ */
 export const FOUNDER_REFUND_CLAUSE =
-  "يحق لك الاسترداد خلال **14 يوماً** من الشراء بشرط **عدم استخدام أي من خدمات الباقة** (الأعمال أو النقاط أو الأدوات).";
+  "يحق لك الاسترداد خلال **14 يوماً** من الشراء بشرط **ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي في الباقة**: الصائغ القانوني، أو أدوات المحترفين، أو مساعد المكتبة الذكي والنقاط. ولا يمنع الاسترداد تصفح المكتبة القانونية العادية. ويُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة إلى وسيلة الدفع نفسها دون خصم أي رسوم، ويصدر بذلك إشعار دائن. وتحدد جهة إصدار بطاقتك مدة ظهور المبلغ في حسابك.";
 
 export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
   {
@@ -72,7 +81,7 @@ export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
     bullets: [
       "**6 أعمال قانونية** عبر الصائغ، من الأنواع السبعة المؤهلة، متنوعة أو مكررة، خلال سنة العضوية. جولة التنقيح الثانية داخل الجلسة لا تخصم عملاً.",
       "**مخرج مستقل واحد** إجمالاً تختاره من أدوات المحترفين الأربع.",
-      "**المكتبة القانونية** مفتوحة لك **سنة كاملة من تفعيل الباقة**، و**الشحن لا يجدّد السنة**. ويصلك **100 نقطة تأسيسية** لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم **5 نقاط**. فإذا نفدت النقاط أُغلق مساعد المكتبة الذكي وحده حتى **شحن النقاط بأي قيمة**، وتبقى المكتبة مفتوحة لك طوال السنة.",
+      "**المكتبة القانونية** لسنة كاملة من تفعيل الباقة، و**الشحن لا يجدّد السنة**. استخدام المكتبة العادية لا يستهلك نقاطاً. ويصلك **100 نقطة تأسيسية** تُخصَّص لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم **5 نقاط** من أول سؤال. فإذا نفدت النقاط أُغلق المساعد الذكي وحده حتى **شحن النقاط بأي قيمة**، وتبقى المكتبة مفتوحة طوال مدة العضوية. وكل استخدام للذكاء الاصطناعي مرتبط بالنقاط، وأعمال الصائغ الستة مشمولة في السعر.",
       "إدارة المكتب قريباً: مدتها ضمن سنة العضوية من التفعيل، ولا تبدأ سنة جديدة عند إتاحتها.",
       "خصم المؤسس **15%** على شحنات النقاط ورسوم نظامي المؤهلة. وإذا وُجد عرض عام أقل سعراً يُطبَّق الأفضل فقط دون جمع الخصمين، ولا يشمل الرسوم الحكومية ولا مبالغ الأطراف الثالثة.",
       "**3 دعوات** تتجدد شهرياً لمحامين مرخصين جدد لم يسبق لهم التسجيل، ولا تتراكم.",
@@ -84,6 +93,7 @@ export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
   },
   {
     title: "٧. الاسترداد",
+    id: "refund",
     paragraphs: [FOUNDER_REFUND_CLAUSE],
   },
   {

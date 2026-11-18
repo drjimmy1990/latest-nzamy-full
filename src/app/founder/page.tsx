@@ -4,6 +4,7 @@ import {
   FOUNDER_ADVOCATE_ONLY_LINE,
   FOUNDER_ONCE_LINE,
   FOUNDER_TERMS_PATH,
+  FOUNDER_TERMS_REFUND_PATH,
   FOUNDER_WORK_KINDS,
   founderLandingPrice,
 } from "@/lib/founder/landingCopy";
@@ -40,7 +41,7 @@ export const metadata = buildMetadata({
   titleAr: "باقة المحامي المؤسس",
   titleEn: "Founding Lawyer Membership",
   descriptionAr:
-    "عضوية تأسيسية محدودة للمحامي المرخّص للترافع: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.",
+    "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.",
   path: "/founder",
   keywords: ["المحامي المؤسس", "باقة المؤسس", "الصائغ القانوني"],
 });
@@ -91,12 +92,12 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     a: "تحتفظ نظامي بحق تحديث عروضها وباقاتها في أي وقت بما يحفظ استمرارية الخدمة وجودتها، دون المساس بحقوق المشتركين المكتسبة في باقتهم. ويبقى ما اشتريته لك كاملاً طوال مدة عضويتك.",
   },
   {
-    // Owner ١١ / ١٦ (17 Nov 2026): 14 days from purchase, if no service of the plan was used — item ٧ of /founder-terms.
+    // Owner 18 Nov (urgent fix of item ٧ of /founder-terms): 14 days, if no AI feature was used; browsing the library never blocks it.
     q: "هل أستطيع الاسترداد؟",
     a: (
       <>
-        نعم، خلال ١٤ يوماً من الشراء بشرط عدم استخدام أي من خدمات الباقة، وفق{" "}
-        <Link href={FOUNDER_TERMS_PATH} className="font-bold text-[#0B3D2E] underline dark:text-[#E6CD8E]">
+        نعم، خلال ١٤ يوماً من الشراء إن لم تستخدم أي ميزة ذكاء اصطناعي في الباقة، ولا يمنع الاسترداد تصفح المكتبة، ويُردّ المبلغ كاملاً شاملاً الضريبة، وفق{" "}
+        <Link href={FOUNDER_TERMS_REFUND_PATH} className="font-bold text-[#0B3D2E] underline dark:text-[#E6CD8E]">
           صفحة الشروط
         </Link>
         .
@@ -409,7 +410,7 @@ export default function FounderPage() {
             <Link href="/privacy" className="hover:text-[#E6CD8E]">
               سياسة الخصوصية
             </Link>
-            <Link href="/refund-policy" className="hover:text-[#E6CD8E]">
+            <Link href={FOUNDER_TERMS_REFUND_PATH} className="hover:text-[#E6CD8E]">
               سياسة الاسترداد
             </Link>
           </nav>

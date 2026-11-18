@@ -50,7 +50,7 @@ function Rich({ text }: { text: string }) {
 
 function Item({ item }: { item: TermsItem }) {
   return (
-    <section className="mb-6">
+    <section id={item.id} className="mb-6 scroll-mt-24">
       <h3 className="mb-2 font-brand text-lg font-bold text-[#0B3D2E] dark:text-[#E6CD8E]">{item.title}</h3>
       {item.paragraphs?.map((p) => (
         <p key={p} className="mb-2 leading-loose">
