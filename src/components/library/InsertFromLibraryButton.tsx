@@ -11,6 +11,7 @@
 import { useEffect, useState, type RefObject } from "react";
 import { BookmarkSimple, X } from "@phosphor-icons/react";
 import { cartItems, fitsLimit, folderItems, insertAtCursor, type InsertableItem } from "@/lib/library/insertFromLibrary";
+import { isLibraryAccountLockedBody, LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
 
 interface Props {
   isDark: boolean;
@@ -24,7 +25,7 @@ interface Props {
 }
 
 type Source = "cart" | "folders";
-type ListState = { status: "loading" } | { status: "error" } | { status: "ready"; items: InsertableItem[] };
+type ListState = { status: "loading" } | { status: "error" } | { status: "locked"; message: string } | { status: "ready"; items: InsertableItem[] };
 
 const SOURCES: { id: Source; label: string; empty: string }[] = [
   { id: "cart", label: "مسودة المكتبة", empty: "لا مواد في مسودة المكتبة — أضفها من صفحة النظام بزر «أضف للمسودة»." },
@@ -44,6 +45,14 @@ export default function InsertFromLibraryButton({ isDark, targetRef, value, onCh
     const load = async (s: Source) => {
       try {
         const res = await fetch(s === "cart" ? "/api/v1/drafts/cart" : "/api/library/folders", { cache: "no-store" });
+        // Owner item 9 (batch l8): an account whose library is locked is told so, not «تعذّرت القراءة».
+        if (res.status === 403) {
+          const refusal = await res.json().catch(() => null);
+          if (isLibraryAccountLockedBody(refusal)) {
+            if (!cancelled) setLists((prev) => ({ ...prev, [s]: { status: "locked", message: LIBRARY_ACCOUNT_LOCKED_AR } }));
+            return;
+          }
+        }
         if (!res.ok) throw new Error(String(res.status));
         const body = await res.json();
         const items = s === "cart" ? cartItems(body) : folderItems(body, origin);
@@ -112,6 +121,7 @@ export default function InsertFromLibraryButton({ isDark, targetRef, value, onCh
             <div className="max-h-[50vh] overflow-y-auto">
               {list.status === "loading" && <p role="status" className={`py-6 text-center text-[12px] ${muted}`}>جارٍ التحميل…</p>}
               {list.status === "error" && <p role="alert" className="py-6 text-center text-[12px] text-red-500">تعذّرت القراءة — حاول مرة أخرى.</p>}
+              {list.status === "locked" && <p role="status" className={`py-6 text-center text-[12px] ${muted}`}>{list.message}</p>}
               {list.status === "ready" && list.items.length === 0 && <p className={`py-6 text-center text-[12px] ${muted}`}>{meta.empty}</p>}
               {list.status === "ready" && list.items.length > 0 && (
                 <ul className="space-y-1.5">

@@ -7507,3 +7507,22 @@ select 'No full-text library column is readable by anon (full listing: supabase/
                      then has_column_privilege('anon', v.t, v.c, 'SELECT') else false end)
        as ok;
 -- <<< verify:l8_libguard
+-- >>> verify:l8_liblock
+-- Batch l8-liblock (owner item 9 + ٥٨: the library per account type): run 20261128_20 before or after the deploy.
+select 'Library per account type: setting + library_access_user_overrides (RLS, no session grant) + library_access_for service role only (run 20261128_20)' as check,
+       case when to_regclass('public.library_access_user_overrides') is null
+              or to_regprocedure('public.library_access_for(uuid)') is null then false else
+       exists (select 1 from public.platform_settings where key = 'library_access_by_account_type')
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.library_access_user_overrides')), false)
+       and not has_table_privilege('anon', 'public.library_access_user_overrides', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_access_user_overrides', 'SELECT')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                       where p.oid = to_regprocedure('public.library_access_for(uuid)')), false)
+       and not has_function_privilege('anon', 'public.library_access_for(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_access_for(uuid)', 'EXECUTE')
+       end as ok;
+select 'Free library questions (٥٨): only for a verified e-mail and an open library (ai_free_question_status of 20261128_20, not 20261127_40)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'library_access_for') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
+                false) as ok;
+-- <<< verify:l8_liblock

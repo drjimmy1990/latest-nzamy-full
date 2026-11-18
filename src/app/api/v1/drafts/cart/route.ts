@@ -3,12 +3,15 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { buildCartRows } from "./_cartRows";
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * GET /api/v1/drafts/cart — Get user's draft cart articles
  * Returns all saved articles as an array.
  */
 export async function GET() {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   const supabase = await createClient();
   const {
     data: { user },
@@ -58,6 +61,8 @@ export async function GET() {
  * cleanup leaves the new items plus some old ones — never fewer.
  */
 export async function PUT(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   const supabase = await createClient();
   const {
     data: { user },

@@ -12,6 +12,7 @@ import { clientIpFrom } from "@/lib/rateLimit";
 import { checkoutCaptchaPasses, checkoutCaptchaPolicy, parseCheckoutTurnstileToken } from "@/lib/payments/checkoutCaptcha";
 import { ATTRIBUTION_COOKIE, parseAttributionCookie } from "@/lib/attribution/utmAttribution";
 import { orderAnalyticsFromCookies } from "@/lib/analytics/analytics";
+import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
 /**
  * POST /api/v1/payments/checkout — starts one online payment (Moyasar
@@ -138,6 +139,8 @@ export async function POST(request: NextRequest) {
         client,
         // l6-pay (Q511): a plan checkout refuses a downgrade and credits an upgrade
         ranks: TIER_RANK,
+        // l8 (owner item 9): a library plan is refused while the library is locked for the account
+        libraryAccountAllowed: async (userId) => (await readLibraryAccountAccess(userId)).allowed,
         reserveFounderSeat: async (userId, orderId) => {
           const { data, error } = await admin.rpc("founder_reserve_seat", { p_user: userId, p_order: orderId });
           if (error) throw new Error(`founder_reserve_seat ${error.code ?? "error"}`);

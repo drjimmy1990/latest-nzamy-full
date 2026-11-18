@@ -45,9 +45,9 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 36 items of the console sidebar", () => {
+test("super_admin sees all 37 items of the console sidebar", () => {
   const all = hrefsOf(NAV);
-  assert.equal(all.length, 36, "the console sidebar has 36 items (+ اشتراكات المكتبة, note ١٨ C03; + حملة المؤسس, P3 Task 10; + مستكشف الجراف القانوني; + العروض, l8 owner item 5)");
+  assert.equal(all.length, 37, "the console sidebar has 37 items (+ اشتراكات المكتبة, note ١٨ C03; + حملة المؤسس, P3 Task 10; + مستكشف الجراف القانوني; + العروض, l8 owner item 5; + المكتبة حسب نوع الحساب, l8 item 9)");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });

@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { validateArticleNoteInput, mergeArticleNoteFields, type ArticleNoteFields } from "@/lib/services/articleNoteInput";
 import { ARTICLE_NOTE_SELECT, articleNoteDbErrorResponse, toArticleNoteDto, type ArticleNoteRow } from "./_shared";
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * /api/v1/library/notes — sticky notes, voice-memo pointers and highlight
@@ -17,6 +18,8 @@ import { ARTICLE_NOTE_SELECT, articleNoteDbErrorResponse, toArticleNoteDto, type
  */
 
 export async function GET(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const auth = await assertRole();
     if (!auth.ok) return auth.response;
@@ -60,6 +63,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const auth = await assertRole();
     if (!auth.ok) return auth.response;
@@ -137,6 +142,8 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const auth = await assertRole();
     if (!auth.ok) return auth.response;

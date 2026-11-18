@@ -17,6 +17,12 @@
  * LibraryGuard can show the honest notice instead of a reader that fails.
  * Both are null for a guest, an admin, or while 20261030_80 is not applied
  * (libraryReadQuotaHit fails open). The enforcement is in src/proxy.ts.
+ *
+ * Owner item 9 (batch l8): `accountLock` — {message} when THIS signed-in
+ * account's type (or its own exception) has the library locked, else null (a
+ * guest, an admin, an open account). LibraryGuard then shows the owner's
+ * message instead of any library page, /laws/subscribe included. The
+ * enforcement is libraryGate() on every library route.
  */
 
 import { NextResponse } from "next/server";
@@ -28,6 +34,8 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
 import { LIBRARY_LOCK_SUPPORT_PATH, libraryLockMessageAr } from "@/lib/library/readQuota";
+import { viewerLibraryAccountLocked } from "@/lib/library/accountAccessServer";
+import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
 
 /** The caller's own lock and today's quota; nulls when unknown (never throws). */
 async function callerReadState() {
@@ -67,7 +75,11 @@ async function callerReadState() {
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const [state, readState] = await Promise.all([getLibraryStatus(), callerReadState()]);
+  const [state, readState, accountLocked] = await Promise.all([
+    getLibraryStatus(),
+    callerReadState(),
+    viewerLibraryAccountLocked().catch(() => false),
+  ]);
 
   // Admins keep access while closed, so the client needs to know that the
   // server would let THIS caller through — otherwise an admin sees the public
@@ -90,6 +102,8 @@ export async function GET() {
       securityLock: readState.securityLock,
       /** Owner note ١٣ C07: this caller's distinct documents today, or null. */
       readQuota: readState.readQuota,
+      /** Owner item 9: this account's library is locked for its type, or null. */
+      accountLock: accountLocked ? { message: LIBRARY_ACCOUNT_LOCKED_AR } : null,
     },
     // Per caller now (the lock and the quota): never shared by a cache.
     { headers: { "Cache-Control": "private, no-store, must-revalidate" } },

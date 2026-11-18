@@ -29,6 +29,8 @@ export interface LibraryStatusState {
   effectiveStatus: LibraryStatus;
   securityLock: LibrarySecurityLock | null;
   readQuota: LibraryReadQuota | null;
+  /** Owner item 9 (batch l8): the library is locked for this account's type. */
+  accountLock: { message: string } | null;
 }
 
 function parseLock(value: unknown): LibrarySecurityLock | null {
@@ -41,6 +43,12 @@ function parseLock(value: unknown): LibrarySecurityLock | null {
     message: v.message,
     support: typeof v.support === "string" && v.support.startsWith("/") ? v.support : "/contact",
   };
+}
+
+function parseAccountLock(value: unknown): { message: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const message = (value as { message?: unknown }).message;
+  return typeof message === "string" && message.trim() !== "" ? { message } : null;
 }
 
 function parseQuota(value: unknown): LibraryReadQuota | null {
@@ -66,6 +74,7 @@ const DEFAULT_STATUS: LibraryStatusState = {
   effectiveStatus: "open",
   securityLock: null,
   readQuota: null,
+  accountLock: null,
 };
 
 /**
@@ -105,6 +114,7 @@ export function useLibraryStatus(intervalMs = 60_000) {
             effectiveStatus,
             securityLock: parseLock(data.securityLock),
             readQuota: parseQuota(data.readQuota),
+            accountLock: parseAccountLock(data.accountLock),
           });
         }
       } catch {

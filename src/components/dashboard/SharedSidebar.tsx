@@ -21,6 +21,8 @@ import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { getSidebarByUserType, getRoleLabel, withoutConsultantBlockedItems } from "@/constants/navigation";
 import { comingSoonToolIds } from "@/constants/navigation.comingSoon";
 import { useLiveTools } from "@/hooks/useLiveTools";
+import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
+import { withoutLibraryItems } from "@/lib/library/accountAccess";
 import { isSupabaseMode } from "@/lib/services/api";
 import { SidebarFeatureRequest } from "@/components/FeatureRequestBanner";
 import HijriDateWidget from "@/components/HijriDateWidget";
@@ -127,9 +129,14 @@ export default function SharedSidebar() {
   // Art. 18: a consultant LAWYER drawn the firm menu (a firm member, N01-29)
   // loses the court tools there too — getSidebarByUserType reads practiceKind
   // for the lawyer menu only. The pages lock him either way; this is the menu.
-  const groups = userType === "firm" && sessionUserType === "lawyer" && practiceKind === "consultant"
+  const roleGroups = userType === "firm" && sessionUserType === "lawyer" && practiceKind === "consultant"
     ? withoutConsultantBlockedItems(menuGroups)
     : menuGroups;
+  // Owner item 9 (batch l8): the library row is hidden while the library is
+  // locked for the SESSION's account (the server's answer, not the menu's
+  // type: a lawyer member drawn the firm menu keeps it).
+  const libraryLock = useLibraryAccountLocked(isSupabaseMode && !loading && isLoggedIn);
+  const groups = libraryLock.locked ? withoutLibraryItems(roleGroups) : roleGroups;
   
   const showCredits = false; // user requested to remove any mention of credits
 

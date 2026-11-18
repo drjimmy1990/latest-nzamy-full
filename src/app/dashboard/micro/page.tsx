@@ -2,6 +2,8 @@
 
 import { motion } from "framer-motion";
 import { useUser } from "@/hooks/useUser";
+import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
+import { isLibraryHref } from "@/lib/library/accountAccess";
 import Link from "next/link";
 import {
   Robot, ChatCircle, Scan, Briefcase, ShieldStar,
@@ -71,6 +73,10 @@ const CONTRACT_TEMPLATES = [
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function MicroDashboardPage() {
   const { name, businessType } = useUser();
+  // Owner item 9 (batch l8): no library links while the library is locked for this account.
+  const libraryLock = useLibraryAccountLocked();
+  const quickLinks = libraryLock.locked ? QUICK_LINKS.filter((l) => !isLibraryHref(l.href)) : QUICK_LINKS;
+  const navLinks = libraryLock.locked ? NAV_LINKS.filter((l) => !isLibraryHref(l.href)) : NAV_LINKS;
   const { isDark, lang } = useTheme();
   const isAr = lang === "ar";
   const dir  = isAr ? "rtl" : "ltr";
@@ -170,7 +176,7 @@ export default function MicroDashboardPage() {
           {isAr ? "خدمات سريعة لمنشأتك" : "Quick Business Services"}
         </p>
         <div className="flex flex-wrap gap-2">
-          {QUICK_LINKS.map((item, i) => {
+          {quickLinks.map((item, i) => {
             const Icon = item.icon;
             return (
               <motion.div key={item.href} custom={i} variants={fadeUp} initial="hidden" animate="show">
@@ -394,7 +400,7 @@ export default function MicroDashboardPage() {
       {/* ── Nav Links ── */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={7}
         className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {NAV_LINKS.map(({ href, hrefSuffix, labelAr, labelEn, icon: Icon }, i) => (
+        {navLinks.map(({ href, hrefSuffix, labelAr, labelEn, icon: Icon }, i) => (
           <motion.div key={labelAr} custom={i} variants={fadeUp} initial="hidden" animate="show">
             <Link href={href ?? `/dashboard/micro${hrefSuffix}`}
               className={`flex items-center gap-3 p-4 rounded-xl border transition-colors ${

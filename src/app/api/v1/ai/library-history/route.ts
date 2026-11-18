@@ -8,6 +8,7 @@ import {
   LIBRARY_HISTORY_SLUG,
   LIBRARY_HISTORY_TOOL,
 } from "@/lib/ai/libraryHistory";
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * GET /api/v1/ai/library-history?law=<slug> — the signed-in user's last
@@ -24,6 +25,8 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store" };
 
 export async function GET(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const supabase = await createClient();
     const auth = await requireApiUser(supabase, { error: "سجّل الدخول لعرض محادثاتك" });

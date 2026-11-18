@@ -86,6 +86,8 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/entitlements": "entitlements.grant",
   "/dashboard/admin/library-invitations": "entitlements.grant",
   "/dashboard/admin/library-subscriptions": "entitlements.grant",
+  // l8 owner item 9: the library per account type (its PUT is settings.write)
+  "/dashboard/admin/library-access": "settings.write",
   "/dashboard/admin/broadcasts": "broadcasts.send",
   "/dashboard/admin/escrow": "subscriptions.write",
   "/dashboard/admin/payouts": "subscriptions.write",

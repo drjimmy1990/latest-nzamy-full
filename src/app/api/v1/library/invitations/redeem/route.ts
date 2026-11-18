@@ -10,6 +10,7 @@ import {
   libraryInvitationDbErrorResponse,
   type LibraryInvitationRow,
 } from "../_shared";
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * POST /api/v1/library/invitations/redeem — spend an admin-issued
@@ -63,6 +64,8 @@ const MAX_REDEEM_ATTEMPTS = 5;
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   const auth = await assertRole();
   if (!auth.ok) return auth.response;
   const userId = auth.user.id;
