@@ -63,8 +63,11 @@ const ROUTES = [
   "app/api/library/scoped-search/route.ts",
 ] as const;
 
-/** Batch l6 (N06-34): the AI citation sheet reads one cited text; its responses all use its own NO_STORE. */
-const NO_STORE_ROUTES = ["app/api/v1/ai/source-preview/route.ts"] as const;
+/**
+ * Batch l6 (N06-34): the AI citation sheet reads one cited text; its responses all use its own NO_STORE.
+ * Batch l8-refbox (owner item 6): the links box's text preview, likewise.
+ */
+const NO_STORE_ROUTES = ["app/api/v1/ai/source-preview/route.ts", "app/api/library/laws/[slug]/citations/preview/route.ts"] as const;
 
 for (const rel of NO_STORE_ROUTES) {
   test(`${rel}: every response is private, no-store`, () => {

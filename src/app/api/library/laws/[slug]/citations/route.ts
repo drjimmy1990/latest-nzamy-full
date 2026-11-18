@@ -15,6 +15,7 @@ import {
   shapeArticleRefs,
   shapeLawLinks,
   validArticleId,
+  withHrefs,
 } from './_shape';
 
 /**
@@ -110,7 +111,7 @@ export async function GET(
         safeArticleStatus,
         lawStatusForDetail,
       );
-      return json({ available: true, ...live });
+      return json({ available: true, ...withHrefs(live) });
     }
 
     // ── The law's linked laws (the map): shown types only (20261128_60) ─────

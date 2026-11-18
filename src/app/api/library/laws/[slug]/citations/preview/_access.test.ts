@@ -32,7 +32,7 @@ test("principles and fiqh: subscribers only; laws and decrees: never text", () =
 test("route contract: gate first, never cached, device check before text, no quota spend, text only when open", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(route, /const gate = await libraryGate\(\);\s*if \(gate\) return gate;/);
-  assert.match(route, /'Cache-Control': 'private, no-store'/);
+  assert.match(route, /const NO_STORE = { "Cache-Control": "private, no-store" };/);
   assert.doesNotMatch(route, /spendLibraryDocument/);
   assert.doesNotMatch(route, /display_text|snippet/, "text comes from library.*, never the graph");
   assert.match(route, /const open = isSubscriber && subscriberOnlyKind\('principle'\);/);

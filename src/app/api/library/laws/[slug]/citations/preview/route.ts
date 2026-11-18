@@ -37,7 +37,7 @@ import { articleTextOpen, subscriberOnlyKind, type PreviewLock } from './_access
  * An item whose row is gone (the owner's «308» case) answers `found: false`
  * with the link to its document — never a 404 page.
  */
-const NO_STORE = { 'Cache-Control': 'private, no-store' } as const;
+const NO_STORE = { "Cache-Control": "private, no-store" };
 
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: NO_STORE });
@@ -89,7 +89,7 @@ export async function GET(request: Request) {
   if (gate) return gate;
 
   const key = parseRefKey(new URL(request.url).searchParams.get('key'));
-  if (!key) return json({ error: 'bad key' }, 400);
+  if (!key) return NextResponse.json({ error: 'bad key' }, { status: 400, headers: NO_STORE });
 
   const supabase = await createClient();
   let userId: string | null = null;
@@ -240,6 +240,6 @@ export async function GET(request: Request) {
   } catch (err) {
     const e = err as { code?: string; message?: string };
     console.error('[citations/preview] failed:', e?.code ?? 'no-code', e?.message ?? String(err));
-    return json({ error: 'تعذّر تحميل المعاينة' }, 500);
+    return NextResponse.json({ error: 'تعذّر تحميل المعاينة' }, { status: 500, headers: NO_STORE });
   }
 }

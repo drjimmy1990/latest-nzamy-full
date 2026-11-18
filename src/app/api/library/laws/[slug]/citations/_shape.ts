@@ -337,6 +337,16 @@ export function refHrefs(it: Pick<RefItem, "docKind" | "docId" | "anchorId" | "a
   return { href, docHref };
 }
 
+/** What the box receives: every item with its two paths. */
+export type RefItemOut = RefItem & { href: string; docHref: string };
+export function withHrefs(refs: ArticleRefs): { found: boolean; sections: Record<LinkSection, { total: number; items: RefItemOut[] }> } {
+  const sections = {} as Record<LinkSection, { total: number; items: RefItemOut[] }>;
+  for (const s of LINK_SECTIONS) {
+    sections[s] = { total: refs.sections[s].total, items: refs.sections[s].items.map((it) => ({ ...it, ...refHrefs(it) })) };
+  }
+  return { found: refs.found, sections };
+}
+
 export interface LawLink {
   slug: string;
   title: string;
