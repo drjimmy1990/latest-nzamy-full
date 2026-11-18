@@ -72,6 +72,24 @@ export function gatewayAllowsCheckout(status: {
   return status.loading !== true && status.disabled === false && status.provider === "moyasar";
 }
 
+/**
+ * Batch l8 (owner 18 Nov, item 1.1 / test ج5): while online payment is not
+ * switched on for this viewer, the founder campaign and the buy buttons say
+ * «البيع متوقف مؤقتاً» with a short reason — never a dead button without an
+ * explanation. Read from the runtime payments_gateway flag (the viewer's
+ * GET /api/v1/payments/status: test mode is "off" for the public).
+ */
+export const SALE_PAUSED_AR = "البيع متوقف مؤقتاً";
+export const SALE_PAUSED_REASON_AR = "لم يُفعَّل الدفع الإلكتروني بعد، ويُفتح الشراء فور تفعيله";
+export const SALE_PAUSED_LINE_AR = `${SALE_PAUSED_AR} — ${SALE_PAUSED_REASON_AR}`;
+/** The /pricing and library buy buttons still send a request while sale is paused (owner ٢٤٦) — said plainly. */
+export const SALE_PAUSED_REQUEST_NOTE_AR = `${SALE_PAUSED_LINE_AR}. زر الاشتراك يرسل طلبك إلى فريق نظامي ليتواصل معك، ولا يُخصم أي مبلغ.`;
+
+/** True once the status has loaded and it cannot take a checkout (off, test mode for the public, the stub). */
+export function saleGatewayPaused(status: { disabled: boolean; provider: string | null; loading?: boolean }): boolean {
+  return status.loading !== true && !gatewayAllowsCheckout(status);
+}
+
 export type BuyAction = { kind: "checkout"; href: string } | { kind: "wait" } | { kind: "request" };
 
 /**
