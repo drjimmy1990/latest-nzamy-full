@@ -249,6 +249,28 @@ begin
   raise notice 'T9 PASS: the allowance comes from the setting';
 end $$;
 
+-- T9b points_enforcement off (or an exempt caller): the question runs, nothing
+--     is charged anyway, and NO free question is used up
+do $$
+declare r record; v_before int;
+begin
+  update public.platform_settings set value = '{"lawyer": 10, "individual": 5}'::jsonb where key = 'free_questions_by_account_type';
+  update public.platform_settings set value = 'false'::jsonb where key = 'points_enforcement';
+  v_before := (select count(*) from public.ai_free_question_uses);
+  select * into r from pg_temp.ask('00000000-0000-0000-0000-00000000f001', 'fq-off-0001');
+  if not r.created or r.charged then raise exception 'T9b FAIL: the run with enforcement off: %', r; end if;
+  if (select count(*) from public.ai_free_question_uses) <> v_before then
+    raise exception 'T9b FAIL: enforcement off used up a free question';
+  end if;
+  update public.platform_settings set value = 'true'::jsonb where key = 'points_enforcement';
+  select * into r from public.ai_start_free_question('00000000-0000-0000-0000-00000000f001', 'library-assistant', null, 'fast', 5, 60,
+    'fq-exempt-0001', now() + interval '90 seconds', true, '{"message":"سؤال"}'::jsonb);
+  if not r.created or r.charged or (select count(*) from public.ai_free_question_uses) <> v_before then
+    raise exception 'T9b FAIL: an exempt caller used up a free question or was charged: %', r;
+  end if;
+  raise notice 'T9b PASS: enforcement off / exempt → a normal uncharged run, the allowance kept';
+end $$;
+
 -- T10 sessions: own wallet_scope readable through RLS; no session reaches the
 --     new tables or functions
 do $$

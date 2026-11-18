@@ -68,6 +68,11 @@
 --        lock it counts the account's free runs that did not fail:
 --          a key already used          → ai_start_run's duplicate answer;
 --          allowance 0 / type unknown  → P0001 free_question_not_eligible;
+--          points_enforcement off, or an exempt caller
+--                                      → a normal ai_start_run (nothing is
+--                                        charged anyway) and NO use row: the
+--                                        allowance is kept for when charging
+--                                        starts;
 --          allowance used              → P0001 free_question_used;
 --          else ai_start_run at price 0 and one use row, one transaction.
 --        A failed (refunded) run gives its free question back.
@@ -439,6 +444,18 @@ begin
   if exists (select 1 from public.ai_runs r where r.user_id = p_user and r.idempotency_key = p_idempotency_key) then
     return query select * from public.ai_start_run(
       p_user, p_tool, p_variant, p_class, 0, p_daily_limit, p_idempotency_key, p_deadline,
+      p_exempt, p_input, p_file_ids, p_pages, p_conversation, p_source_ids);
+    return;
+  end if;
+
+  -- Nothing is charged while points_enforcement is off (ai_start_run reads it
+  -- the same way), nor for an exempt caller: the question is free anyway, so
+  -- it starts as a normal run and uses up NONE of the account's allowance.
+  if not coalesce((select ps.value = 'true'::jsonb from public.platform_settings ps
+                    where ps.key = 'points_enforcement'), false)
+     or coalesce(p_exempt, false) then
+    return query select * from public.ai_start_run(
+      p_user, p_tool, p_variant, p_class, p_price, p_daily_limit, p_idempotency_key, p_deadline,
       p_exempt, p_input, p_file_ids, p_pages, p_conversation, p_source_ids);
     return;
   end if;
