@@ -119,7 +119,9 @@ test("quick-answer and the lawyer's assistant refuse an extraction attempt the s
   }
 });
 
-test("owner ٢٢: a contract-writing request is refused uncharged, with «محترف العقود» for lawyers and firms only", async () => {
+test("owner ٢٢ / ٢٦: a contract-writing request is refused uncharged — «محترف العقود» for lawyers and firms, drafting through a lawyer for a client", async () => {
+  const CLIENT_FORM = { label: "صياغة العقود عبر محامٍ في المنصة", href: "/dashboard/client/requests/new?type=general" };
+  const SERVICES = { label: "صياغة العقود عبر محامٍ في المنصة", href: "/services/contracts" };
   const cases: Array<[string, string, boolean]> = [
     ["lawyer", "advocate", true],
     ["firm", "advocate", true],
@@ -138,7 +140,7 @@ test("owner ٢٢: a contract-writing request is refused uncharged, with «محت
     assert.equal(r.body.code, "drafting_refused", userType);
     assert.match(String(r.body.error), /لا يكتب العقود/);
     if (link) assert.deepEqual(r.body.action, { label: "افتح محترف العقود", href: "/ai/contracts" }, `${userType}/${practice}`);
-    else assert.equal(r.body.action, undefined, `${userType}/${practice}`);
+    else assert.deepEqual(r.body.action, userType === "micro" ? SERVICES : CLIENT_FORM, `${userType}/${practice}`);
     assert.ok(!log.some((q) => q.op === "rpc"), "nothing charged");
     assert.deepEqual(calls, [], "no n8n call");
   }
