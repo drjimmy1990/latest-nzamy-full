@@ -16,35 +16,16 @@ type DeviceRefusal = Extract<ReaderRefusal, { kind: "device" }>;
  * الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز.» with the
  * authorised devices (label + last use) and «تسجيل خروج هذا الجهاز» on each.
  * Signing one out frees its slot; the page then reloads and this device
- * registers on the next read.
+ * registers on the next read (with the e-mail code when the server sends
+ * codes). Owner ٦٣: a third device is never suspended — it lands here, with a
+ * link to «مكتبتي» (/laws/my#devices) where the devices are managed too.
  */
 export function LibraryDeviceLimitNotice({ refusal }: { refusal: DeviceRefusal }) {
   const { isDark } = useTheme();
   const [devices, setDevices] = useState(refusal.devices);
 
-  // Owner ٤٠ (20261127_60): a new device waits for its e-mail code; the third
-  // device suspended the account.
+  // Owner ٤٠ (20261127_60): a new device waits for its e-mail code.
   if (refusal.mode === "code") return <DeviceCodeCard messageAr={refusal.messageAr} />;
-  if (refusal.mode === "suspended") {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center px-4 py-16" dir="rtl">
-        <div
-          role="alertdialog"
-          aria-modal="false"
-          className={`w-full max-w-lg rounded-3xl border p-6 text-center shadow-xl ${
-            isDark ? "border-red-500/20 bg-zinc-900 text-white" : "border-red-200 bg-white text-zinc-900"
-          }`}
-        >
-          <Devices size={40} className={`mx-auto mb-3 ${isDark ? "text-red-300" : "text-red-700"}`} />
-          <h2 className="mb-2 text-base font-bold">أُوقف الحساب</h2>
-          <p className={`mb-5 text-sm leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>{refusal.messageAr}</p>
-          <Link href="/contact" className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90">
-            التواصل مع الدعم الفني
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-[60vh] items-center justify-center px-4 py-16" dir="rtl">
@@ -65,7 +46,15 @@ export function LibraryDeviceLimitNotice({ refusal }: { refusal: DeviceRefusal }
             window.location.reload();
           }}
         />
-        <div className="mt-5 flex justify-center">
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <Link
+            href="/laws/my#devices"
+            className={`rounded-xl border px-4 py-2 text-xs font-bold transition ${
+              isDark ? "border-white/10 text-zinc-200 hover:bg-white/5" : "border-zinc-200 text-zinc-700 hover:bg-zinc-50"
+            }`}
+          >
+            إدارة أجهزتي في «مكتبتي»
+          </Link>
           <Link href="/laws" className="rounded-xl bg-[#0B3D2E] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90">
             العودة إلى المكتبة القانونية
           </Link>

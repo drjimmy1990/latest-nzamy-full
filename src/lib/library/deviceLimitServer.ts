@@ -31,8 +31,11 @@
  *   - a verified device opening with a session it did not open with before
  *     ends every OTHER session of the account («لا يُفتحان معاً»);
  *   - a never-verified device while the verified ones fill the limit (the
- *     third device) suspends the account: GoTrue ban + the freeze of owner ٢٥
- *     (reason device_limit) + an audit row, then 403 device_limit_suspended.
+ *     third device) is REFUSED with the list of devices (403 device_limit) —
+ *     owner ٦٣ (18 Nov evening, batch l8) removed batch 7's suspension: the
+ *     user removes an old device (on the refusal or at /laws/my), and this
+ *     device then asks for its e-mail code. The gate still answers "suspend"
+ *     there; deviceGateDecision reads it as the refusal.
  *   When this server cannot send a code (no e-mail provider or no pepper) a
  *   new device with room is registered at once, as before — never a lock-out.
  *   Before 20261127_60 runs, the old library_device_check answers instead.
@@ -46,8 +49,6 @@ import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { emailConfigured } from "@/lib/email/sendEmail";
-import { logAdminAction } from "@/lib/auth/adminAudit";
-import { freezeEntitlementsWith, suspendAccountWith } from "@/lib/accountSuspension/suspensionServer";
 import {
   LIBRARY_DEVICE_COOKIE,
   deviceCodePepper,
@@ -216,56 +217,10 @@ export async function enforceLibraryDevice(userId: string | null, entitled: bool
       return null;
     }
     const row: DeviceCheckRow | null = parseDeviceCheckRow(data);
-    const decision = deviceGateDecision(row);
-    if (decision.action === "suspend") {
-      await suspendForThirdDevice(service, userId, row?.limit ?? 2);
-      return NextResponse.json(decision.body, {
-        status: decision.status,
-        headers: { "Cache-Control": "private, no-store" },
-      });
-    }
-    return finish(userId, hash, decision, session);
+    return finish(userId, hash, deviceGateDecision(row), session);
   } catch (err) {
     console.error("[library-device] check threw:", err instanceof Error ? err.name : "error");
     return null;
-  }
-}
-
-/**
- * Owner ٤٠: «محاولة جهاز ثالث توقف الحساب حتى التواصل مع الدعم». The same
- * suspension an admin applies (GoTrue ban + every session ended), with the
- * freeze of owner ٢٥ (reason device_limit — the lift resets the devices), and
- * one audit row so the admin console shows why. Never throws: a failure is
- * logged, and the read is refused either way.
- */
-async function suspendForThirdDevice(
-  service: Awaited<ReturnType<typeof createServiceClient>>,
-  userId: string,
-  limit: number,
-): Promise<void> {
-  try {
-    const nowIso = new Date().toISOString();
-    const ban = await suspendAccountWith(service, { userId, actorId: userId, nowIso });
-    const freeze = ban.ok
-      ? await freezeEntitlementsWith(service, { userId, actorId: null, reason: "device_limit" })
-      : null;
-    if (!ban.ok) console.error("[library-device] third device: the suspension failed:", ban.error);
-    forgetLibraryDevices(userId);
-    await logAdminAction({
-      actorId: userId,
-      action: ban.ok ? "user_suspended_device_limit" : "user_suspension_failed",
-      targetType: "profile",
-      targetId: userId,
-      before: {},
-      after: {
-        banned: ban.ok,
-        sessions: ban.ok ? (ban.sessions.state === "ended" ? ban.sessions.count : ban.sessions.state) : null,
-        freeze: freeze?.state ?? "not_attempted",
-      },
-      metadata: { reason: "device_limit", limit, system: true },
-    });
-  } catch (err) {
-    console.error("[library-device] third device: suspension threw:", err instanceof Error ? err.name : "error");
   }
 }
 

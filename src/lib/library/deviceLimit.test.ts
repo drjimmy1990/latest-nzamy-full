@@ -126,7 +126,7 @@ test("decision: only 'refused' refuses; no row allows; what may be remembered", 
     assert.equal(refused.body.devices.length, 1);
     assert.equal(
       refused.body.error,
-      "هذا الحساب مفعّل على جهازين بالفعل. سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز.",
+      "هذا الحساب مفعّل على جهازين بالفعل. سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز، من القائمة أدناه أو من صفحة «مكتبتي».",
     );
   }
 });

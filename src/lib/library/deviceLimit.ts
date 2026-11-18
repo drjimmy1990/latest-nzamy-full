@@ -97,7 +97,11 @@ export function deviceLabelFromUserAgent(ua: string | null | undefined): string 
  * Owner ٤٠ (18 Nov 2026, 20261127_60) adds two answers of library_device_gate:
  *   needs_code — a never-verified device with room left: an e-mail code first;
  *   suspend    — a never-verified device while the verified ones fill the
- *                limit (the third device): the server suspends the account.
+ *                limit (the third device).
+ * Owner ٦٣ (18 Nov evening, batch l8): NO suspension. The database still
+ * answers "suspend" there (the SQL has no side effect on it), and this file
+ * reads it as the plain list refusal (device_limit): remove an old device,
+ * then this one asks for its e-mail code.
  */
 export type DeviceStatus = "disabled" | "exempt" | "ok" | "registered" | "refused" | "needs_code" | "suspend";
 
@@ -170,11 +174,17 @@ export function devicesCountAr(n: number): string {
   return `${n} جهازاً`;
 }
 
-/** The owner's refusal, with the account's real number of devices. */
+/**
+ * The owner's refusal, with the account's real number of devices. Owner ٦٣:
+ * never a suspension — remove an old device (here or from «مكتبتي», /laws/my);
+ * this device then registers on its next read (with the e-mail code when the
+ * server sends codes — the code card says so itself).
+ */
 export function deviceLimitMessageAr(limit: number): string {
   return (
     `هذا الحساب مفعّل على ${devicesCountAr(limit)} بالفعل. ` +
-    "سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز."
+    "سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز، " +
+    "من القائمة أدناه أو من صفحة «مكتبتي»."
   );
 }
 
@@ -195,7 +205,7 @@ export const DEVICE_COOKIE_REQUIRED_AR =
   "لا يمكن فتح نص المكتبة الكامل من هذا الاتصال لأنه لا يحمل معرّف الجهاز. " +
   "افتح المكتبة من المتصفح، أو حدّث التطبيق إلى إصدار يرسل معرّف الجهاز.";
 
-// ── owner ٤٠ (18 Nov 2026): e-mail code per new device, third device suspends ──
+// ── owner ٤٠ / ٦٣ (18 Nov 2026): e-mail code per new device, no suspension ──
 
 /** A new device waits for the e-mail code before it reads the library's full text. */
 export const DEVICE_CODE_REQUIRED_CODE = "device_code_required";
@@ -203,31 +213,19 @@ export const DEVICE_CODE_REQUIRED_AR =
   "هذا جهاز جديد على حسابك. أرسلنا — أو نرسل عند طلبك — رمز تحقق إلى بريدك الإلكتروني المسجّل؛ أدخله لتفتح المكتبة من هذا الجهاز. " +
   "عند تأكيده يُسجَّل خروج حسابك من أي جهاز آخر، لأن المكتبة لا تُفتح على جهازين معاً.";
 
-/** The third device: the account is suspended until support (owner ٤٠). */
-export const DEVICE_LIMIT_SUSPENDED_CODE = "device_limit_suspended";
-export function deviceSuspendedMessageAr(limit: number): string {
-  return (
-    `أُوقف الحساب لمحاولة فتح المكتبة من جهاز جديد بعد أن بلغ حسابك ${devicesCountAr(limit)} مصرّحة. ` +
-    "تواصل مع الدعم الفني لإعادة تفعيله."
-  );
-}
-
 export interface DeviceLimitRefusalBody {
   error: string;
   code:
     | typeof DEVICE_LIMIT_CODE
     | typeof DEVICE_COOKIE_REQUIRED_CODE
-    | typeof DEVICE_CODE_REQUIRED_CODE
-    | typeof DEVICE_LIMIT_SUSPENDED_CODE;
+    | typeof DEVICE_CODE_REQUIRED_CODE;
   limit: number;
   devices: AuthorisedDevice[];
 }
 
 export type DeviceGateDecision =
   | { action: "allow"; remember: "device" | "user" | "global" | null }
-  | { action: "refuse"; status: 403; body: DeviceLimitRefusalBody }
-  /** The caller suspends the account (ban + freeze), then answers `body`. Never remembered. */
-  | { action: "suspend"; status: 403; body: DeviceLimitRefusalBody };
+  | { action: "refuse"; status: 403; body: DeviceLimitRefusalBody };
 
 /**
  * The route's decision. No row (missing function, timeout, any error) → allow:
@@ -238,6 +236,9 @@ export type DeviceGateDecision =
 export function deviceGateDecision(row: DeviceCheckRow | null): DeviceGateDecision {
   if (!row) return { action: "allow", remember: null };
   switch (row.status) {
+    // Owner ٦٣: the third never-verified device ("suspend" from 20261127_60)
+    // is refused like a full list — never a suspension.
+    case "suspend":
     case "refused":
       return {
         action: "refuse",
@@ -254,12 +255,6 @@ export function deviceGateDecision(row: DeviceCheckRow | null): DeviceGateDecisi
         action: "refuse",
         status: 403,
         body: { error: DEVICE_CODE_REQUIRED_AR, code: DEVICE_CODE_REQUIRED_CODE, limit: row.limit, devices: [] },
-      };
-    case "suspend":
-      return {
-        action: "suspend",
-        status: 403,
-        body: { error: deviceSuspendedMessageAr(row.limit), code: DEVICE_LIMIT_SUSPENDED_CODE, limit: row.limit, devices: [] },
       };
     case "disabled":
       return { action: "allow", remember: "global" };
