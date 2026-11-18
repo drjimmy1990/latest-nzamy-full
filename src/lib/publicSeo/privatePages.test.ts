@@ -58,7 +58,7 @@ test("the X-Robots-Tag rules: noindex, follow on each prefix and everything unde
 test("next.config.ts sends those rules, and makes metadata blocking for every user agent", () => {
   // Not comment-stripped: the file's own strings ("…/public/**") would read as a comment opener.
   const cfg = read("../../../next.config.ts");
-  assert.match(cfg, /import \{ privateRobotsHeaderRules \} from "\.\/src\/lib\/publicSeo\/privatePages";/);
+  assert.match(cfg, /import \{ privateRobotsHeaderRules \} from "\.\/src\/lib\/publicSeo\/privatePages\.ts";/);
   assert.match(cfg, /\.\.\.privateRobotsHeaderRules\(\),/);
   // Before the stricter /track/:token rule, so that one wins.
   assert.ok(cfg.indexOf("...privateRobotsHeaderRules()") < cfg.indexOf('source: "/track/:token"'));

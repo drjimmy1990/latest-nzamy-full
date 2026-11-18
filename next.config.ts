@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { privateRobotsHeaderRules } from "./src/lib/publicSeo/privatePages";
+import { privateRobotsHeaderRules } from "./src/lib/publicSeo/privatePages.ts";
 
 // ── Supabase Storage host, derived from the runtime env ─────────────────────
 // Blog cover images (and any other public Storage object) are served from

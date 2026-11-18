@@ -37,12 +37,13 @@ export default function LibraryDocumentShell({ doc, shell }: { doc: LibraryDocSe
   const TitleTag = doc.kind === "book" ? "h2" : "h1";
   return (
     <section dir="rtl" aria-label={heading} className="mx-auto w-full max-w-5xl px-4 pb-10">
+      {/* The name stays outside the closed <details>: visible, and in the accessibility tree. */}
+      <TitleTag className="mb-2 text-base font-black text-zinc-900 dark:text-white">{doc.name}</TitleTag>
       <details className="rounded-xl border border-zinc-300/60 dark:border-white/10 px-4 py-3">
         <summary className="cursor-pointer select-none text-sm font-bold text-zinc-700 dark:text-zinc-300">
           {heading}
         </summary>
         <div className="mt-3 space-y-3 text-sm leading-7 text-zinc-700 dark:text-zinc-300">
-          <TitleTag className="text-base font-black text-zinc-900 dark:text-white">{doc.name}</TitleTag>
           {shell?.author && <p>المؤلف: {shell.author}</p>}
           {doc.description && <p>{doc.description}</p>}
           {shell?.excerpt && (
