@@ -23,6 +23,10 @@
  * البند» go to the assistant, whose prompt explains the clauses in general and
  * refers the full review (n8n/ai/workflows.mjs). A review word right after a
  * cue («اكتب لي مراجعة للعقد») stops the match like an explanation word.
+ *
+ * Owner ٢٦ (18 Nov 2026): an individual or a business that asks for a
+ * contract gets the same apology, no charge, and a link to «صياغة العقود عبر
+ * محامٍ في المنصة» — the client request form (CLIENT_CONTRACT_DRAFTING_HREF).
  */
 
 /** Arabic letters folded so spelling variants compare equal. */
@@ -272,16 +276,45 @@ export const CONTRACT_REFUSAL_TEXT =
 const CONTRACTS_HINT = " لصياغة عقدك استعمل «محترف العقود».";
 
 /**
+ * Owner ٢٦: where an individual or a business asks a lawyer on the platform to
+ * draft the contract — the client request form (open to individual and
+ * corporate accounts, routeAccess.ts CLIENT_INTAKE_PREFIXES), «طلب عام».
+ */
+export const CLIENT_CONTRACT_DRAFTING_HREF = "/dashboard/client/requests/new?type=general";
+/** Any other client account (micro, provider, …): the public contracts service page. */
+export const CONTRACT_SERVICES_HREF = "/services/contracts";
+export const CLIENT_CONTRACT_DRAFTING_LABEL = "صياغة العقود عبر محامٍ في المنصة";
+const CLIENT_CONTRACTS_HINT = " يمكنك طلب صياغة عقدك من محامٍ في المنصة.";
+
+/** The account types the owner names «فرد» and «منشأة» (٢٦), which may file through the client request form. */
+const CLIENT_INTAKE_TYPES: ReadonlySet<string> = new Set(["individual", "corporate"]);
+const LAWYER_SIDE_TYPES: ReadonlySet<string> = new Set(["lawyer", "firm", "admin"]);
+
+/**
  * Owner ٢٢: the reply body for a refused contract-writing request.
  * `canUseContracts` is whether this caller may run «محترف العقود» (lawyers and
- * firms, consultants included, or an admin): only then does it carry the link.
+ * firms, consultants included, or an admin): only then does it carry that link.
+ * Owner ٢٦: a client account (`userType` individual / corporate / any other
+ * non-lawyer type) that may not run it gets a link to drafting through a
+ * lawyer on the platform instead. A lawyer-side caller refused for another
+ * reason gets no link (as before).
  */
-export function contractDraftingRefusal(canUseContracts: boolean): {
+export function contractDraftingRefusal(canUseContracts: boolean, userType?: string | null): {
   error: string;
   code: typeof DRAFTING_REFUSED_CODE;
   action?: { label: string; href: string };
 } {
-  if (!canUseContracts) return { error: CONTRACT_REFUSAL_TEXT, code: DRAFTING_REFUSED_CODE };
+  if (!canUseContracts) {
+    if (!userType || LAWYER_SIDE_TYPES.has(userType)) return { error: CONTRACT_REFUSAL_TEXT, code: DRAFTING_REFUSED_CODE };
+    return {
+      error: CONTRACT_REFUSAL_TEXT + CLIENT_CONTRACTS_HINT,
+      code: DRAFTING_REFUSED_CODE,
+      action: {
+        label: CLIENT_CONTRACT_DRAFTING_LABEL,
+        href: CLIENT_INTAKE_TYPES.has(userType) ? CLIENT_CONTRACT_DRAFTING_HREF : CONTRACT_SERVICES_HREF,
+      },
+    };
+  }
   return {
     error: CONTRACT_REFUSAL_TEXT + CONTRACTS_HINT,
     code: DRAFTING_REFUSED_CODE,
