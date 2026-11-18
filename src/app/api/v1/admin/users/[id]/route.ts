@@ -21,7 +21,13 @@ import {
   freezeAccountWith,
   purgeNowWith,
 } from "@/lib/accountDeletion/accountDeletionServer";
-import { suspendAccountWith, liftSuspensionWith } from "@/lib/accountSuspension/suspensionServer";
+import {
+  suspendAccountWith,
+  liftSuspensionWith,
+  freezeEntitlementsWith,
+  thawEntitlementsWith,
+} from "@/lib/accountSuspension/suspensionServer";
+import { revokeLibraryDevice } from "@/lib/library/deviceLimitServer";
 
 /**
  * GET /api/v1/admin/users/[id] — Fetch single user with full details
@@ -150,9 +156,11 @@ export async function GET(
  *
  * status "suspended" (TODO 3.5, real suspension): GoTrue bans the account
  * (ban_duration) and the app_metadata copy the gates read is written in the
- * same call, then its open sessions are ended (20261124_60), then — as
- * before — any active subscription is cancelled and the auth tier set to free.
- * status "active" lifts the ban (the cancelled subscription is NOT restored).
+ * same call, then its open sessions are ended (20261124_60). Owner ٢٥
+ * (20261127_60): nothing is cancelled — the subscriptions, library grants,
+ * founder seat, credits and points lots live now are FROZEN.
+ * status "active" lifts the ban and the freeze: what was frozen gets the
+ * suspended days back.
  * Neither is allowed on the caller's own account or on an admin account.
  *
  * Demoting an admin to another type (Task 3.4) removes them from staff: it is
@@ -317,11 +325,14 @@ export async function PATCH(
     }
 
     // ── Handle suspension ──────────────────────────────────────────────────
-    // No table holds a "suspended" status (the profile is not marked): a
-    // suspension cancels the active subscriptions, then sets the auth tier to
-    // free. Each result is checked. A write that fails stops the suspension
-    // with a 500, and the audit row records what really happened, under
-    // user_suspension_failed, so a half-done suspension never reads as done.
+    // Owner ٢٥ (20261127_60): a suspension FREEZES, it never cancels. No
+    // subscription is cancelled and the auth tier is not touched; the freeze
+    // snapshots what is live, and the lift gives the suspended days back.
+    // The ban is the one write that must succeed: if it fails nothing was
+    // written and the audit row says so (user_suspension_failed). A freeze
+    // that could not be recorded (migration missing, a failed write) does not
+    // undo the ban — the account is suspended — and the audit row and the
+    // answer say what happened to the freeze.
     if (body.status === "suspended") {
       const suspensionFailed = async (detail: Record<string, unknown>) => {
         await logAdminAction({
@@ -337,11 +348,11 @@ export async function PATCH(
       };
 
       // 1. The ban + the gates' copy (one GoTrue call), then the open sessions.
-      //    Before the subscription writes: the access is what must stop now.
+      //    Before the freeze: the access is what must stop now.
       const ban = await suspendAccountWith(adminClient, { userId, actorId, nowIso: new Date().toISOString() });
       if (!ban.ok) {
         console.error("[admin/users/[id]] suspension: the GoTrue ban failed:", ban.error);
-        return suspensionFailed({ banned: false, ban_error: ban.error, cancelled_count: null, auth_tier: "unchanged" });
+        return suspensionFailed({ banned: false, ban_error: ban.error, freeze: "not_attempted" });
       }
       after.banned = true;
       after.sessions = ban.sessions.state === "ended" ? ban.sessions.count : ban.sessions.state;
@@ -349,35 +360,16 @@ export async function PATCH(
         console.error("[admin/users/[id]] suspension: ending the open sessions failed:", ban.sessions.error);
       }
 
-      const { data: cancelledRows, error: cancelError } = await adminClient
-        .from("subscriptions")
-        .update({
-          status: "cancelled",
-          cancelled_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId)
-        .eq("status", "active")
-        .select("id");
-      if (cancelError) {
-        console.error("[admin/users/[id]] suspension: cancelling subscriptions failed:", cancelError.code, cancelError.message);
-        return suspensionFailed({ cancelled_count: null, cancel_error: cancelError.code ?? "error", auth_tier: "unchanged" });
+      // 2. The freeze (owner ٢٥): nothing is cancelled.
+      const freeze = await freezeEntitlementsWith(adminClient, { userId, actorId, reason: "admin" });
+      if (freeze.state === "failed") {
+        console.error("[admin/users/[id]] suspension: recording the freeze failed:", freeze.error);
       }
-      const cancelledCount = cancelledRows?.length ?? 0;
-
-      const { data: tierResult, error: tierError } = await adminClient.auth.admin.updateUserById(userId, {
-        user_metadata: { tier: "free" },
-      });
-      if (tierError) {
-        console.error("[admin/users/[id]] suspension: setting the auth tier failed:", tierError.message);
-        return suspensionFailed({ cancelled_count: cancelledCount, auth_tier: "unchanged", tier_error: tierError.message });
-      }
-
-      after.cancelled_count = cancelledCount;
-      after.auth_tier = (tierResult?.user?.user_metadata as { tier?: unknown } | undefined)?.tier ?? null;
+      after.freeze = freeze.state;
+      if (freeze.state === "frozen") after.frozen_counts = freeze.counts;
     }
 
-    // ── Lifting a suspension (TODO 3.5) ────────────────────────────────────
+    // ── Lifting a suspension (TODO 3.5 + owner ٢٥) ─────────────────────────
     if (body.status === "active") {
       const lifted = await liftSuspensionWith(adminClient, { userId, actorId, nowIso: new Date().toISOString() });
       if (!lifted.ok) {
@@ -397,6 +389,23 @@ export async function PATCH(
         );
       }
       after.banned = false;
+
+      // The suspended days come back to what was frozen (owner ٢٥).
+      const thaw = await thawEntitlementsWith(adminClient, { userId, actorId });
+      if (thaw.state === "failed") {
+        console.error("[admin/users/[id]] lifting: extending the frozen subscriptions failed:", thaw.error);
+      }
+      after.freeze = thaw.state;
+      if (thaw.state === "lifted") {
+        after.extended_days = thaw.extendedDays;
+        after.extended = thaw.extended;
+        // A device-limit suspension (owner ٤٠) ends with the devices reset:
+        // the account verifies its devices again by e-mail code.
+        if (thaw.reason === "device_limit") {
+          const reset = await revokeLibraryDevice(userId, {}, "admin_reset", actorId);
+          after.devices_reset = reset.ok ? reset.count : "failed";
+        }
+      }
     }
 
     await logAdminAction({

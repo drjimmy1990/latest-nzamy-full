@@ -331,7 +331,7 @@ function UserRow({
   };
 
   const handleSuspend = async () => {
-    if (!confirm("هل أنت متأكد من إيقاف هذا الحساب؟ سيُمنع من الدخول فوراً وتُنهى جلساته المفتوحة، ويُلغى أي اشتراك نشط (رفع الإيقاف لا يعيده).")) return;
+    if (!confirm("هل أنت متأكد من إيقاف هذا الحساب؟ سيُمنع من الدخول فوراً وتُنهى جلساته المفتوحة، وتُجمَّد اشتراكاته ومنحه ونقاطه دون إلغاء، وتُمدَّد بقدر مدة الإيقاف عند رفعه.")) return;
     setActionLoading(true);
     try {
       const res = await fetch(`/api/v1/admin/users/${user.id}`, {
@@ -350,7 +350,7 @@ function UserRow({
 
   // TODO 3.5: «رفع الإيقاف» lifts the GoTrue ban (PATCH status "active").
   const handleUnsuspend = async () => {
-    if (!confirm("رفع الإيقاف عن هذا الحساب؟ سيتمكن من الدخول من جديد.")) return;
+    if (!confirm("رفع الإيقاف عن هذا الحساب؟ سيتمكن من الدخول من جديد، وتُمدَّد اشتراكاته ومنحه المجمّدة بقدر مدة الإيقاف.")) return;
     setActionLoading(true);
     try {
       const res = await fetch(`/api/v1/admin/users/${user.id}`, {
@@ -902,35 +902,13 @@ export default function AdminUsersPage() {
           </p>
         )}
 
-        {/* «موقوف» is a state this platform cannot hold, and until the status
-            control actually filtered, nothing revealed that: the chip returned
-            the unfiltered list, so it never looked empty. Now that it really
-            narrows, selecting it returns nothing — and an empty result reads as
-            «no account is suspended», which is a stronger and false claim.
-            The chain, end to end:
-              • `profiles` has no status column at all — only `verified_at`
-                (20260603_phase1_001_profiles.sql:30-53).
-              • `subscriptions.status` is CHECK-constrained to
-                ('active','past_due','cancelled','expired','trialing') — no
-                'suspended' (…003_subscriptions_billing.sql:38), and no later
-                migration adds one.
-              • PATCH /api/v1/admin/users/[id] never persists `body.status`. Its
-                suspension branch (:210-226) cancels active subscriptions and
-                downgrades the auth-metadata tier to free, and writes no mark
-                anywhere. `mapStatus('cancelled', verified_at)` then returns
-                "active", so a just-«إيقاف»ed account re-renders as نشط.
-              • Nothing in src/ gates sign-in on any of this.
-            So the button is not a no-op — it really does cancel the
-            subscription — but «إيقاف» promises more than it does, and the
-            «موقوف» counter can only ever read 0. Stated here rather than left
-            for an admin to conclude from an empty list. Making suspension real
-            needs a column and a route this pass does not own. */}
+        {/* Owner ٢٥ (20261127_60): «موقوف» is real (TODO 3.5 — a GoTrue ban read
+            through admin_suspended_user_ids), and a suspension FREEZES what
+            the account holds instead of cancelling it. */}
         {statusFilter === "suspended" && (
           <p className={`text-[11px] leading-6 ${isDark ? "text-amber-400/80" : "text-amber-700"}`}>
-            لا تُسجَّل حالة «موقوف» في المنصة: زر «إيقاف» يُلغي الاشتراك النشط
-            ويُنزل الباقة إلى المجانية، ولا يكتب أي وسم إيقاف على الحساب ولا يمنع
-            الدخول. لذلك لا يمكن لهذه التصفية — ولا لعدّاد «موقوف» أعلاه — أن
-            تُظهر أي حساب، مهما كان عدد الحسابات الموقوفة فعلياً.
+            الإيقاف يمنع الدخول وينهي الجلسات المفتوحة، ويجمّد الاشتراكات والمنح
+            والنقاط ولا يلغيها؛ وعند رفعه تُمدَّد بقدر مدة الإيقاف.
           </p>
         )}
       </div>

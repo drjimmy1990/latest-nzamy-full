@@ -467,31 +467,27 @@ test("users DELETE: an admin cannot delete their own account from the console", 
   assert.ok(body.slice(refusalAt, refusalAt + 80).includes("status: 400"), "the refusal is a 400");
 });
 
-test("users PATCH: a suspension's audit row records what its writes really did", () => {
+test("users PATCH: a suspension's audit row records what its writes really did (owner ٢٥: a freeze, never a cancel)", () => {
   const body = handler("users/[id]/route.ts", "PATCH");
-  const cancelAt = body.indexOf('.from("subscriptions")');
-  assert.ok(cancelAt > -1, "the suspension no longer cancels subscriptions");
-  const cancel = body.slice(cancelAt, body.indexOf(";", cancelAt));
-  assert.ok(cancel.includes('.select("id")'), "the cancel returns its rows, so the count is real");
-  assert.ok(/const \{ data: cancelledRows, error: cancelError \}/.test(body), "the cancel's result is captured");
-  assert.ok(/const \{ data: tierResult, error: tierError \}/.test(body), "the tier change's result is captured");
+  assert.equal(body.includes('.from("subscriptions")'), false, "a suspension no longer cancels subscriptions");
+  assert.equal(body.includes('tier: "free"'), false, "a suspension no longer resets the auth tier");
+  const freezeAt = body.indexOf("await freezeEntitlementsWith(adminClient,");
+  assert.ok(freezeAt > -1, "the suspension freezes what is live");
 
-  // either error → 500 «تعذّر إكمال الإيقاف», recorded as a failed suspension, never as done
+  // the ban's failure → 500 «تعذّر إكمال الإيقاف», recorded as a failed suspension, never as done
   const helperAt = body.indexOf("const suspensionFailed = async");
-  assert.ok(helperAt > -1 && helperAt < cancelAt, "one failure path, defined before the writes");
-  const helper = body.slice(helperAt, cancelAt);
-  assert.ok(helper.includes('"user_suspension_failed"'), "a half-completed suspension is recorded as failed");
+  assert.ok(helperAt > -1 && helperAt < freezeAt, "one failure path, defined before the writes");
+  const helper = body.slice(helperAt, freezeAt);
+  assert.ok(helper.includes('"user_suspension_failed"'), "a failed suspension is recorded as failed");
   const msgAt = helper.indexOf('"تعذّر إكمال الإيقاف"');
   assert.ok(msgAt > -1 && helper.slice(msgAt, msgAt + 80).includes("status: 500"), "the failure answers 500 «تعذّر إكمال الإيقاف»");
   assert.ok(helper.indexOf("logAdminAction(") < msgAt, "the failed row is written, then the 500");
-  assert.equal(countOf(body, "return suspensionFailed("), 3, "the ban and both writes return through the failure path");
-  assert.ok(body.indexOf("if (cancelError)") > cancelAt, "the cancel's error is checked");
-  assert.ok(body.indexOf("if (tierError)") > body.indexOf("if (cancelError)"), "the tier error is checked");
+  assert.equal(countOf(body, "return suspensionFailed("), 1, "the ban returns through the failure path");
 
-  // success records the real values, never the old constants
-  assert.equal(body.includes('active_subscriptions: "cancelled"'), false, "no fixed claim of a cancellation");
-  assert.ok(body.includes("cancelled_count"), "the success row carries the real cancelled count");
-  assert.ok(/auth_tier\s*[:=]\s*.*tierResult/.test(body), "the tier recorded is the one the auth admin API returned");
+  // success records what the freeze and the lift really did
+  assert.ok(body.includes("after.freeze = freeze.state"), "the success row carries the freeze outcome");
+  assert.ok(body.includes("after.freeze = thaw.state"), "the lift row carries the thaw outcome");
+  assert.ok(body.includes("after.extended_days = thaw.extendedDays"), "the lift row carries the days given back");
 });
 
 test("deleting a row that does not exist is a 404 and writes no audit row", () => {
