@@ -274,3 +274,15 @@ test("F16: every other order keeps the ordinary card", () => {
   const wrongKind: ResultOrder = { ...founder, kind: "plan" };
   assert.equal(founderWelcomeFor(paymentResultView(granted, wrongKind), wrongKind), null);
 });
+
+test("l7 (decision 1): a founder seat paid before the licence check — «قيد المراجعة» with the owner's sentence, no gold welcome", () => {
+  for (const outcome of ["granted", "already_done"] as const) {
+    const view = paymentResultView({ outcome, reason: "founder_pending_verification", receiptNumber: "NZ-2026-000010" }, founder);
+    assert.equal(view.tone, "review", outcome);
+    assert.equal(view.title, "تم الدفع وحُجز مقعدك");
+    assert.match(view.body, /تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً\./);
+    assert.match(view.body, /NZ-2026-000010/);
+    assert.ok(!view.body.includes("تفعيل عضويتك"), "never «تم التفعيل»");
+    assert.equal(founderWelcomeFor(view, founder), null);
+  }
+});

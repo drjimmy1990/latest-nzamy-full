@@ -388,3 +388,11 @@ test("membership: a top-up, a library pass and a plan never call activateFounder
   await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, order("ind-ai", "plan", "monthly"), { now: NOW });
   assert.equal(spy.calls.length, 0);
 });
+
+test("l7 (decision 1): 'pending_verification' — the seat waits for the licence check: ok, not a refund case", async () => {
+  const { client, log } = memberDb();
+  const spy = activateSpy("pending_verification");
+  const r = await grantPurchase({ admin: client, grantLibrary: noLibrary, ranks: RANKS, activateFounder: spy.activateFounder }, MEMBER(), { now: NOW });
+  assert.deepEqual(r, { ok: true, alreadyEntitled: false, founderPending: true });
+  assert.equal(lots(log).length, 0);
+});

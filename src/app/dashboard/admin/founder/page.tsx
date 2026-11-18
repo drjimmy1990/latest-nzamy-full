@@ -196,7 +196,13 @@ export default function FounderCampaignPage() {
         { label: "عدد المقاعد", value: String(summary.capacity) },
         { label: "مفعّلة", value: String(summary.active) },
         { label: "محجوزة الآن", value: String(summary.reserved) },
+        // l7 (decision 1): paid, waiting for the licence check — counted
+        { label: "مدفوعة بانتظار التوثيق", value: String(summary.pending) },
         { label: "المتبقية", value: String(summary.seatsLeft) },
+        // l7 (decision 2): every paid buyer is honoured; the public counter stops at 0
+        { label: "مباعة فوق العدد", value: String(summary.overflow) },
+        // l7 (decision 3): test accounts / test-mode payments — never counted
+        { label: "مقاعد تجريبية (لا تُحتسب)", value: String(summary.testSeats) },
         { label: "تفعيلات اليوم", value: String(data?.activations.today ?? 0) },
         { label: "آخر ٧ أيام", value: String(data?.activations.last7Days ?? 0) },
       ]
@@ -297,7 +303,7 @@ export default function FounderCampaignPage() {
                   {busy === "capacity" ? "جارٍ الحفظ…" : "حفظ عدد المقاعد"}
                 </button>
                 <p className="text-[11px] text-zinc-400">
-                  لا يقل عن المفعّلة والمحجوزة الآن ({summary.active + summary.reserved}).
+                  لا يقل عن المفعّلة والمحجوزة الآن ({summary.active + summary.pending + summary.reserved}).
                 </p>
               </div>
             ) : null}
