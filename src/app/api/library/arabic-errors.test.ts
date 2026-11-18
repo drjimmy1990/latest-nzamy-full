@@ -26,7 +26,8 @@ test("the locked-text notice names the library subscription, never 'Pro'", () =>
   const precedent = read("precedents/[slug]/route.ts");
   const block = read("../../precedents/[slug]/_principle-block.tsx");
   assert.match(law, /result\.lockedMessage = '[^']*باقة المكتبة القانونية[^']*';/);
-  assert.match(precedent, /lockedMessage: isLocked \? '[^']*باقة المكتبة القانونية[^']*'/);
+  // Batch l8-libguard: a ruling's own message, a principle's as before — both name the library plan.
+  assert.match(precedent, /lockedMessage: isLocked\s*\? \(isRuling\s*\? '[^']*المكتبة القانونية[^']*'\s*: '[^']*باقة المكتبة القانونية[^']*'\)/);
   for (const source of [law, precedent]) assert.doesNotMatch(source, /lockedMessage[^\n]*Pro/);
   assert.match(block, /const DEFAULT_LOCKED_MESSAGE = "[^"]*المكتبة القانونية[^"]*";/);
   assert.doesNotMatch(block, /DEFAULT_LOCKED_MESSAGE = "[^"]*Pro/);

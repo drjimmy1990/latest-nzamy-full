@@ -1,12 +1,13 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef } from "react";
-import { FileText, Copy, Check, Plus, Minus, Lock } from "@phosphor-icons/react";
+import { FileText, Copy, Check, Plus, Minus } from "@phosphor-icons/react";
 import { JudicialPrincipleItem } from "@/app/laws/data";
 import { cleanPrincipleText, principleParagraphs, principleReferenceLine } from "./_principle-text";
 import { HighlightScope, Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
 import { useNearViewport } from "@/hooks/useNearViewport";
 import { principleLabel } from "./_principle-label";
+import { LibraryLockedNote } from "@/components/library/LibrarySubscribeCard";
 
 /**
  * Principle text as paragraphs: no raw Markdown marks, and a ruling split on
@@ -201,14 +202,9 @@ export default function PrincipleBlock({
       </div>
 
       {/* Paywall: the text above is cut short for this viewer — say so, as the book reader does. */}
+      {/* Owner item 2.4 (l8): a real «اشترك في المكتبة» button, not a static note. */}
       {isLocked && (
-        <div
-          role="note"
-          className="mt-4 flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] text-xs font-bold text-amber-700 dark:text-amber-400"
-        >
-          <Lock size={14} weight="fill" className="flex-shrink-0" />
-          <span>{lock.lockedMessage?.trim() || DEFAULT_LOCKED_MESSAGE}</span>
-        </div>
+        <LibraryLockedNote className="mt-4" message={lock.lockedMessage?.trim() || DEFAULT_LOCKED_MESSAGE} />
       )}
 
       {/* Reference Citation Footer */}

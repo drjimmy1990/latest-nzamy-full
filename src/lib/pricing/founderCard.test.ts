@@ -47,7 +47,7 @@ test("the card copy is the brief's, verbatim", () => {
   ]);
   assert.equal(FOUNDER_FINE_PRINT, "لا يُعدّ سعر السنة الأولى سعر تجديد ثابتًا");
   assert.equal(FOUNDER_CLOSED_TEXT, "انتهت حملة المؤسس أو اكتملت مقاعدها");
-  assert.equal(FOUNDER_PAUSED_TEXT, "البيع متوقف مؤقتًا — تابعنا لموعد الاستئناف");
+  assert.equal(FOUNDER_PAUSED_TEXT, "البيع متوقف مؤقتاً — تابعنا لموعد الاستئناف");
   assert.equal(FOUNDER_CONSULTANT_NOTE, "حساب المستشار: لا يشمل الصائغ القانوني والمحاكي الشامل");
   // «مخرج مستقل واحد» is written out; it must stay what one activation grants.
   assert.equal(FOUNDER_CREDITS.independent_output, 1);
@@ -239,11 +239,19 @@ test("founderCta: an unreadable profile or membership never blocks — the check
   assert.equal(founderCta({ ...lawyer, member: "unknown" }).kind, "checkout");
 });
 
-test("founderCta: the gateway still loading waits; the gateway off says so", () => {
+test("founderCta: the gateway still loading waits; the gateway off says «البيع متوقف مؤقتاً» and why (l8, ج5)", () => {
   assert.equal(founderCta({ ...lawyer, gateway: { ...MOYASAR, loading: true } }).kind, "wait");
   const off = founderCta({ ...lawyer, gateway: { disabled: true, provider: null, loading: false } });
   assert.equal(off.kind, "unavailable");
-  assert.match(off.label, /غير متاح/);
+  assert.equal(off.label, "البيع متوقف مؤقتاً — لم يُفعَّل الدفع الإلكتروني بعد، ويُفتح الشراء فور تفعيله");
+  // a guest is told the same, instead of being sent to sign in for a purchase he cannot make
+  const guest = { ...lawyer, signedIn: false, userType: null, practiceKind: null, verification: "loading", member: "loading" } as const;
+  const guestOff = founderCta({ ...guest, gateway: { disabled: true, provider: null, loading: false } });
+  assert.deepEqual([guestOff.kind, guestOff.label], ["unavailable", off.label]);
+  assert.equal(founderCta({ ...guest, gateway: { disabled: true, provider: null, loading: true } }).kind, "loading");
+  assert.equal(founderCta({ ...guest, gateway: MOYASAR }).kind, "guest");
+  // a member is still a member while the sale is paused
+  assert.equal(founderCta({ ...lawyer, member: true, gateway: { disabled: true, provider: null, loading: false } }).kind, "member");
   // The stub gateway cannot take a checkout either.
   assert.equal(founderCta({ ...lawyer, gateway: { disabled: false, provider: "stub", loading: false } }).kind, "unavailable");
 });

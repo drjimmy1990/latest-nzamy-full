@@ -201,6 +201,8 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
       { label: "الأمان والحماية",      labelEn: "Security",        href: "/dashboard/admin/security",              icon: "ShieldCheck",            badge: "مُطوَّر" },
       // P3 Task 10: seats, members, refunds, pause / resume, capacity, retry activation
       { label: "حملة المؤسس",          labelEn: "Founder Campaign", href: "/dashboard/admin/founder",              icon: "Crown",                  badge: "جديد" },
+      // l8 (owner item 5): offers — create / edit / preview / stop + stats
+      { label: "العروض",               labelEn: "Offers",          href: "/dashboard/admin/offers",               icon: "Gift",                   badge: "جديد" },
       // Owner answer ١١٥ — all three showed fixed logs, backups and figures and
       // render DashboardComingSoon now.
       { label: "سجل النظام",           labelEn: "System Log",      href: "/dashboard/admin/system",                icon: "Terminal",               badge: "قريباً" },

@@ -5,15 +5,22 @@
  *
  * The lawyer types his full name (as on the licence) OR his licence number
  * and presses «تحقّق»; POST /api/v1/auth/lawyer-registry-lookup answers from
- * the lawyers' registry and, on a valid licence, this fills the licence and
- * the first / last name fields and greets him.
+ * the lawyers' registry and, on a match, this fills the first / last name
+ * fields and greets him «أهلاً أ. [الاسم]».
+ *
+ * Owner 18 Nov (message item 3.1): the reply never mentions the licence's
+ * validity or expiry, never shows a licence number or mobile digits (the API
+ * no longer sends them — a lookup by name would reveal another lawyer's
+ * number). A lookup by name therefore no longer fills the licence field: the
+ * lawyer types his own number. The expiry stays on the admin reviewer's
+ * screen.
  *
  * It never verifies anything: without an OTP (R4) anyone could type someone
  * else's licence, so the account stays pending and the admin decides (the
  * admin queue shows the registry match from the database). Every failure —
- * not found, expired, the security check, the service down — ends in the same
- * «سجّل بياناتك وسنتواصل معك» and the form goes on: «التالي» never depends on
- * this check.
+ * not found, not verifiable, the security check, the service down — ends in
+ * the same «تعذّر التحقق الآلي، وسيراجع فريقنا طلبك» and the form goes on:
+ * «التالي» never depends on this check.
  *
  * Its own Turnstile widget (action registry_lookup): a token is single-use,
  * and step 4's widget belongs to the signUp call.
@@ -27,7 +34,8 @@ import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { canSubmitWithCaptcha, captchaSubmitError } from "@/lib/auth/captcha";
 import { trackEvent } from "@/lib/analytics/track";
 import {
-  formatExpiry,
+  LOOKUP_UNVERIFIED_AR,
+  lookupGreetingAr,
   splitRegistryName,
   type LookupResponse,
 } from "@/lib/registry/lawyerRegistryLookup";
@@ -39,8 +47,7 @@ type Outcome =
   | { kind: "busy" }
   | { kind: "input"; message: string };
 
-const UNVERIFIED_AR = "لم نتمكن من التحقق من ترخيصك، سجّل بياناتك وسنتواصل معك.";
-const UNVERIFIED_EN = "We could not verify your licence. Complete your details and we will contact you.";
+const UNVERIFIED_EN = "Automatic verification was not possible; our team will review your request.";
 
 export function LawyerRegistryLookup({
   isAr,
@@ -55,15 +62,17 @@ export function LawyerRegistryLookup({
   const captcha = useTurnstile({ isAr, theme, action: "registry_lookup" });
   const [loading, setLoading] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [checkedLicence, setCheckedLicence] = useState<string | null>(null);
+  // The field the last check used, and its value then.
+  const [checkedBy, setCheckedBy] = useState<{ field: "licence" | "name"; value: string } | null>(null);
 
   const licence = (data.licenseNumber ?? "").trim();
   const fullName = (data.registryFullName ?? "").trim();
   const hasInput = !!licence || !!fullName;
   const captchaReady = canSubmitWithCaptcha(captcha.state);
 
-  // A greeting for a licence the lawyer has since edited is no longer true.
-  const shown = outcome?.kind === "valid" && checkedLicence !== licence ? null : outcome;
+  // A greeting for a licence (or name) the lawyer has since edited is no longer true.
+  const checkedNow = checkedBy ? (checkedBy.field === "licence" ? licence : fullName) : null;
+  const shown = outcome?.kind === "valid" && checkedBy?.value !== checkedNow ? null : outcome;
 
   async function check() {
     if (!hasInput || loading) return;
@@ -90,20 +99,21 @@ export function LawyerRegistryLookup({
         setOutcome({ kind: "input", message: (body && "error" in body && body.error) || (isAr ? "بيانات غير صالحة" : "Invalid input") });
       } else if (res.ok && body && "status" in body && body.status === "valid") {
         const { firstName, lastName } = splitRegistryName(body.name);
-        onChange("licenseNumber", body.licence);
+        // Owner 18 Nov (3.1): the answer carries no licence number; the field
+        // keeps what the lawyer typed.
         onChange("registryFullName", body.name);
         // The registry's own spelling is accepted as the name even when it
         // is not four Arabic words (2 of 28,467 rows on 17 Nov).
         onChange("registryNameFromLookup", body.name);
         if (firstName) onChange("firstName", firstName);
         if (lastName) onChange("lastName", lastName);
-        setCheckedLicence(body.licence);
+        setCheckedBy(licence ? { field: "licence", value: licence } : { field: "name", value: body.name.trim() });
         setOutcome({ kind: "valid", result: body });
         trackEvent("licence_verified", { step: "registry_match" });
       } else if (res.ok && body && "status" in body && body.status === "ambiguous") {
         setOutcome({ kind: "ambiguous" });
       } else {
-        // not_found / expired / unverifiable / captcha refused / unavailable
+        // unverified / captcha refused / unavailable
         setOutcome({ kind: "unverified" });
       }
     } catch {
@@ -122,8 +132,8 @@ export function LawyerRegistryLookup({
       </p>
       <p className="mt-1 text-xs leading-relaxed text-ink-muted dark:text-gray-400">
         {isAr
-          ? "اضغط «تحقّق» لنبحث عن رقم ترخيصك (أو اسمك الرباعي إن لم تكتب الرقم) في سجل المحامين المرخّصين ونملأ بقية البيانات."
-          : "Press “Check” to look up your licence number (or your four-part name if no number is given) in the licensed lawyers' register and fill in the rest."}
+          ? "اضغط «تحقّق» لنبحث عن رقم ترخيصك (أو اسمك الرباعي إن لم تكتب الرقم) في سجل المحامين المرخّصين ونملأ اسمك كما فيه."
+          : "Press “Check” to look up your licence number (or your four-part name if no number is given) in the licensed lawyers' register and fill in your name as it appears there."}
       </p>
       <div className="mt-3">
         <TurnstileWidget control={captcha} isAr={isAr} />
@@ -145,11 +155,14 @@ export function LawyerRegistryLookup({
             <p className="flex items-start gap-2 font-semibold">
               <CheckCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
               <span>
-                {isAr
-                  ? `أهلاً ${shown.result.name}، ترخيص رقم ${shown.result.licence}، سارٍ حتى ${formatExpiry(shown.result.expiry)}.`
-                  : `Welcome ${shown.result.name}, licence no. ${shown.result.licence}, valid until ${formatExpiry(shown.result.expiry)}.`}
+                {isAr ? lookupGreetingAr(shown.result.name) : `Welcome, ${shown.result.name}`}
               </span>
             </p>
+            {!licence && (
+              <p className="mt-1 text-xs">
+                {isAr ? "اكتب رقم ترخيصك في الحقل أعلاه." : "Enter your licence number in the field above."}
+              </p>
+            )}
             {/* Decision ٢٧: verification is by e-mail only — no code goes to the registry mobile. */}
             <p className="mt-1 text-xs">
               {isAr
@@ -169,7 +182,7 @@ export function LawyerRegistryLookup({
         {shown?.kind === "unverified" && (
           <p className="mt-3 flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm text-ink-muted dark:border-white/10 dark:bg-dark-card dark:text-gray-300">
             <Info size={18} className="mt-0.5 flex-shrink-0" />
-            {isAr ? UNVERIFIED_AR : UNVERIFIED_EN}
+            {isAr ? LOOKUP_UNVERIFIED_AR : UNVERIFIED_EN}
           </p>
         )}
         {shown?.kind === "busy" && (

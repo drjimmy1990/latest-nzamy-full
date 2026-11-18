@@ -15,6 +15,12 @@
  *   - founderTerms.test.ts fails while the flag is true and a bracketed
  *     placeholder or the word «مسودة» is left in anything shown.
  *
+ * Batch l8 (owner 18 Nov evening, message item 1.2 and decisions ٤٩/ك),
+ * version 2026-11-20: item ٥ no longer says top-ups of «any amount» (the
+ * minimum top-up is per account type), and the 15 % founder discount is on
+ * point top-ups ONLY, for the membership year from activation — never
+ * lifetime (src/lib/payments/founderDiscount.ts enforces the same).
+ *
  * FOUNDER_TERMS_VERSION names this text. The founder checkout requires the
  * buyer to accept exactly this version (founderConsent.ts) and stores it on
  * the order: change it whenever a word of the terms changes.
@@ -25,9 +31,9 @@
 export const FOUNDER_TERMS_PUBLISHED: boolean = true;
 
 /** The version of the text below, as recorded on each founder order (metadata.founder_terms_version). */
-export const FOUNDER_TERMS_VERSION = "2026-11-19";
+export const FOUNDER_TERMS_VERSION = "2026-11-20";
 /** FOUNDER_TERMS_VERSION as the page shows it (item ٩: the date of the last update). */
-export const FOUNDER_TERMS_UPDATED_AR = "19 نوفمبر 2026";
+export const FOUNDER_TERMS_UPDATED_AR = "20 نوفمبر 2026";
 
 export const FOUNDER_TERMS_TITLE = "شروط وأحكام باقة المحامي المؤسس";
 
@@ -81,9 +87,9 @@ export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
     bullets: [
       "**6 أعمال قانونية** عبر الصائغ، من الأنواع السبعة المؤهلة، متنوعة أو مكررة، خلال سنة العضوية. جولة التنقيح الثانية داخل الجلسة لا تخصم عملاً.",
       "**مخرج مستقل واحد** إجمالاً تختاره من أدوات المحترفين الأربع.",
-      "**المكتبة القانونية** لسنة كاملة من تفعيل الباقة، و**الشحن لا يجدّد السنة**. استخدام المكتبة العادية لا يستهلك نقاطاً. ويصلك **100 نقطة تأسيسية** تُخصَّص لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم **5 نقاط** من أول سؤال. فإذا نفدت النقاط أُغلق المساعد الذكي وحده حتى **شحن النقاط بأي قيمة**، وتبقى المكتبة مفتوحة طوال مدة العضوية. وكل استخدام للذكاء الاصطناعي مرتبط بالنقاط، وأعمال الصائغ الستة مشمولة في السعر.",
+      "**المكتبة القانونية** لسنة كاملة من تفعيل الباقة، و**الشحن لا يجدّد السنة**. استخدام المكتبة العادية لا يستهلك نقاطاً. ويصلك **100 نقطة تأسيسية** تُخصَّص لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم **5 نقاط** من أول سؤال. فإذا نفدت النقاط أُغلق المساعد الذكي وحده حتى **شحن النقاط** بما لا يقل عن الحد الأدنى للشحن لنوع حسابك، وتبقى المكتبة مفتوحة طوال مدة العضوية. وكل استخدام للذكاء الاصطناعي مرتبط بالنقاط، وأعمال الصائغ الستة مشمولة في السعر.",
       "إدارة المكتب قريباً: مدتها ضمن سنة العضوية من التفعيل، ولا تبدأ سنة جديدة عند إتاحتها.",
-      "خصم المؤسس **15%** على شحنات النقاط ورسوم نظامي المؤهلة. وإذا وُجد عرض عام أقل سعراً يُطبَّق الأفضل فقط دون جمع الخصمين، ولا يشمل الرسوم الحكومية ولا مبالغ الأطراف الثالثة.",
+      "خصم المؤسس **15%** على **شحنات النقاط وحدها** طوال **سنة العضوية من تاريخ التفعيل**، ثم ينتهي بانتهائها. ولا يشمل رسوم المنصة ولا تجديد الاشتراك ولا الرسوم الحكومية ولا مبالغ الأطراف الثالثة، وإذا وُجد عرض عام أقل سعراً يُطبَّق الأفضل فقط دون جمع الخصمين.",
       "**3 دعوات** تتجدد شهرياً لمحامين مرخصين جدد لم يسبق لهم التسجيل، ولا تتراكم.",
     ],
   },

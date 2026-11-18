@@ -1,5 +1,10 @@
 import ServerSessionGate from "@/components/auth/ServerSessionGate";
 import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
+import { PRIVATE_ROBOTS } from "@/lib/publicSeo/privatePages";
+
+// Owner 18 Nov, item 4.3: a private page — <meta name="robots" content="noindex, follow">
+// (next.config.ts also sends it as X-Robots-Tag). A child page's own robots wins.
+export const metadata = { robots: PRIVATE_ROBOTS };
 
 /**
  * Settings Layout — pass-through, plus the server-side session gate.

@@ -153,10 +153,14 @@ test("start: another tool or an admin never takes a free question", async () => 
 
 test("source contract: the runs route wires the status; the status route signs the user in and fails closed", () => {
   const runs = readFileSync("src/app/api/v1/ai/runs/route.ts", "utf8");
-  assert.match(runs, /freeQuestions: async \(userId\) => \(await freeQuestionStatusWith\(admin, userId\)\)\.available/);
+  // ٥٨ (l8): only an e-mail-verified account
+  assert.match(runs, /freeQuestions: async \(userId\) =>\s*Boolean\(user\.email_confirmed_at\) && \(await freeQuestionStatusWith\(admin, userId\)\)\.available/);
   const src = readFileSync("src/app/api/v1/ai/free-question/route.ts", "utf8");
   assert.match(src, /requireApiUser/);
   assert.match(src, /freeQuestionStatusWith\(admin, auth\.user\.id\)/);
+  // ٥٨ (l8): none for an unverified e-mail, none while the library is locked for the account
+  assert.match(src, /if \(!auth\.user\.email_confirmed_at\) return NextResponse\.json\(NONE/);
+  assert.match(src, /if \(!\(await readLibraryAccountAccess\(auth\.user\.id\)\)\.allowed\) return NextResponse\.json\(NONE/);
   assert.match(src, /const NONE = \{ available: false, left: 0, total: 0 \}/);
 });
 

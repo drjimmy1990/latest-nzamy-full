@@ -26,9 +26,9 @@ import { AI_TOOLS } from "../ai/tools.ts";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const API = path.resolve(HERE, "..", "..", "app", "api");
 
-test("the owner's numbers (note ١٣): 220 for a person, 400 for an office / company member", () => {
-  assert.equal(LIBRARY_READ_QUOTA.dailyDocs, 220);
-  assert.equal(LIBRARY_READ_QUOTA.memberDailyDocs, 400);
+test("owner item 3.2 (batch l8): daily_full_read_limit is 50 for every user (was 220 / 400)", () => {
+  assert.equal(LIBRARY_READ_QUOTA.dailyDocs, 50);
+  assert.equal(LIBRARY_READ_QUOTA.memberDailyDocs, 50);
   // Owner answer ٤٢٦ (2026-11-07): 50 distinct documents per hour.
   assert.equal(LIBRARY_READ_QUOTA.hourlyDocs, 50);
   assert.ok(LIBRARY_READ_QUOTA.lockAfterRefused >= 20);
@@ -250,12 +250,13 @@ test("the status route passes the lock's end to the message (the notice prints t
 
 test("quotaRefusal: the daily cap is 429 until Riyadh midnight; documents already read stay open", () => {
   const now = Date.parse("2026-10-30T20:00:00Z");
-  const r = quotaRefusal(parseQuotaRow(row({ status: "over_daily", used_today: 220 })) as QuotaRow, now);
+  const r = quotaRefusal(parseQuotaRow(row({ status: "over_daily", used_today: 50, day_limit: 50 })) as QuotaRow, now);
   assert.ok(r);
   assert.equal(r.status, 429);
   assert.equal(r.body.code, "library_daily_limit");
   assert.equal(r.retryAfterSeconds, 3600);
-  assert.match(r.body.error, /220 وثيقة/);
+  assert.match(r.body.error, /50 وثيقة/);
+  assert.match(r.body.error, /النص الكامل/);
   assert.match(r.body.error, /تبقى متاحة/);
   assert.match(r.body.error, /منتصف الليل بتوقيت الرياض/);
 });

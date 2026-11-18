@@ -10,6 +10,9 @@ import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { isPrincipleLocked, parsePrincipleTarget, planPrincipleWindow, targetWindowOffset } from './_window';
 import { buildCollectionSeries, type CollectionSeriesInfo } from '@/lib/library/precedentVolumes';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
+// Owner item 2 (batch l8): browsing depth, rulings for the public, excerpts.
+import { isBeyondPublicDepth, isRulingRow, libraryDepthMessageAr, publicExcerpt } from '@/lib/library/publicGuard';
+import { loadLibraryGuardSettings } from '@/lib/library/publicGuardServer';
 
 /** A runaway guard for one series' volumes (the largest today: 30). */
 const SERIES_MAX_VOLUMES = 200;
@@ -174,6 +177,24 @@ export async function GET(
       }
     }
 
+    // Owner item 2 (batch l8): a non-subscriber pages at most
+    // library_public_protection.max_public_offset items into a collection
+    // (a free-marked collection is not capped). Past it: 403 with the code
+    // the reader shows as its subscribe card — no text, no titles.
+    const guard = await loadLibraryGuardSettings();
+    const maxPublicOffset = guard.protection.maxPublicOffset;
+    if (collection.free !== true && isBeyondPublicDepth(offset, hasFullAccess, maxPublicOffset)) {
+      return NextResponse.json(
+        { error: libraryDepthMessageAr(maxPublicOffset), code: 'library_depth_limit', maxOffset: maxPublicOffset },
+        { status: 403, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } },
+      );
+    }
+    // Owner item 2.3: a ruling (a principle row carrying facts / reasons /
+    // operative part) is read in full by a non-subscriber only within the
+    // first public_full_rulings_per_collection.full of the collection (owner:
+    // 0); every other ruling shows one paragraph of excerpt_chars (~1.5 lines).
+    const publicRulings = guard.rulings;
+
     // Fetch one window of principles with paragraphs. Explicit columns: `*`
     // dragged the fts tsvector along for every row. Service role: the text
     // columns and principle_paragraphs are server-only since 20261016_01.
@@ -236,6 +257,10 @@ export async function GET(
       paywall: {
         isWhitelisted,
         freeLimit,
+        // Owner item 2 (l8): full rulings a non-subscriber reads here, and how
+        // far into the collection he may page.
+        freeRulings: hasFullAccess ? -1 : publicRulings.full,
+        maxPublicOffset: hasFullAccess || collection.free === true ? null : maxPublicOffset,
         hasFullAccess,
         totalItems: totalCount,
       },
@@ -256,12 +281,14 @@ export async function GET(
           whitelistedLawSlugs: whitelistedSlugs,
         });
         // The GLOBAL position in the collection, not the index in this window.
-        const isLocked = isPrincipleLocked(isFree, freeLimit, offset + idx);
+        const isRuling = isRulingRow(p);
+        const isLocked =
+          isPrincipleLocked(isFree, freeLimit, offset + idx) ||
+          (!isFree && isRuling && offset + idx >= publicRulings.full);
         const paragraphs = p.principle_paragraphs as Record<string, unknown>[];
-        const truncate = (val: unknown, len: number) =>
-          typeof val === 'string'
-            ? val.substring(0, len) + (val.length > len ? '...' : '')
-            : val;
+        // Audit م-1 (l8): cut at a word and never the whole text, even when
+        // the item is shorter than the cap (publicGuard.ts publicExcerpt).
+        const excerptChars = isRuling ? publicRulings.excerptChars : 150;
         return {
           id: p.id,
           number: p.principle_number,
@@ -274,7 +301,7 @@ export async function GET(
           // every viewer — cleaned first, then cut: the 150-character rule stands.
           text: (() => {
             const text = typeof p.text === 'string' ? withCleanCardRows(p.text) : p.text;
-            return isLocked ? truncate(text, 150) : text;
+            return isLocked ? publicExcerpt(text, excerptChars) : text;
           })(),
           // The page indexes and searches on this; it was never sent, so the
           // page threw on `.slice` of undefined.
@@ -282,7 +309,11 @@ export async function GET(
             ? (p.classification_keywords as unknown[]).filter((k): k is string => typeof k === 'string')
             : [],
           locked: isLocked,
-          lockedMessage: isLocked ? 'للاطلاع على المبدأ كاملاً، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية' : undefined,
+          lockedMessage: isLocked
+            ? (isRuling
+                ? 'يُعرض مقتطف من هذا الحكم فقط؛ نصه الكامل لمشتركي المكتبة القانونية'
+                : 'للاطلاع على المبدأ كاملاً، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية')
+            : undefined,
           // Locked principles: paragraphs & details are withheld from the payload.
           paragraphs: isLocked
             ? []

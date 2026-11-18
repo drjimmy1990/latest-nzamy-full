@@ -16,7 +16,7 @@ interface Review { id: string; method: string; totalHalalas: number; warnings: s
 /** l7 decision 10: the verdict box, shown above the button (green / red / amber). */
 function VerdictBox({ v }: { v: RefundVerdict }) {
   const tone = v.state === "eligible" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200" : v.state === "ineligible" ? "border-red-300 bg-red-50 text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200" : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200";
-  return <div className={`mt-3 rounded-xl border p-4 text-sm ${tone}`} data-verdict={v.state}><p className="font-bold">الفحص الآلي: {v.label}{v.enforced ? " — شروط باقة المؤسس (البند ٧)" : ""}</p>{v.reasons.map(r => <p key={r} className="mt-1 font-semibold">{r}</p>)}<ul className="mt-2 list-disc space-y-1 ps-5">{v.lines.map(l => <li key={l}>{l}</li>)}</ul></div>;
+  return <div className={`mt-3 rounded-xl border p-4 text-sm ${tone}`} data-verdict={v.state}><p className="font-bold">الفحص الآلي: {v.label}{v.enforced ? ` — ${v.ruleLabel ?? "سياسة الاسترداد"}` : ""}</p>{v.reasons.map(r => <p key={r} className="mt-1 font-semibold">{r}</p>)}<ul className="mt-2 list-disc space-y-1 ps-5">{v.lines.map(l => <li key={l}>{l}</li>)}</ul></div>;
 }
 /** The server refuses these without a typed reason (an enforced verdict that is not eligible). */
 const needsReason = (r: Review) => !!r.eligibility && r.eligibility.enforced && r.eligibility.state !== "eligible";

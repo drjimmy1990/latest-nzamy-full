@@ -17,7 +17,7 @@ import { cache } from "react";
 import type { Metadata } from "next";
 import { buildLibraryFallbackMetadata, buildLibraryMetadata } from "@/lib/seo";
 import { createServiceClient } from "@/lib/supabase/server";
-import { getLibraryStatus } from "@/lib/access-control";
+import { checkLibraryAccess, getLibraryStatus } from "@/lib/access-control";
 import {
   decodeRouteSlug,
   lawDateModified,
@@ -28,17 +28,24 @@ import {
   type LibraryDocSeo,
 } from "./libraryMetadata.ts";
 import { isMissingColumnError } from "./optionalColumn.ts";
+import { effectiveFreeLimit } from "./previewLimit.ts";
+import { lawPublicExcerpt } from "./lawPublicExcerpt.ts";
 
 export type LibraryDocLoad =
   | { status: "ok"; doc: LibraryDocSeo; shell?: LibraryDocShell }
   | { status: "closed" | "not_found" | "error" };
 
-/** What the visible «عن هذا الكتاب» block may show (books only, for now). */
+/** What the server-rendered «عن هذا الكتاب / النظام» block may show. */
 export interface LibraryDocShell {
   author: string;
   /** Top-level chapter titles, in book order (at most SHELL_TOC_LIMIT). */
   toc: string[];
   tocTruncated: boolean;
+  /**
+   * A law's first article as a guest's reader shows it, cut short
+   * (lawPublicExcerpt.ts; owner 18 Nov, item 4.1) — or null.
+   */
+  excerpt?: string | null;
 }
 
 export const SHELL_TOC_LIMIT = 60;
@@ -75,17 +82,52 @@ async function readLaw(slug: string): Promise<LibraryDocLoad> {
   }
   if (!data) return { status: "not_found" };
   const type = str(data.type);
+  const lawSlug = str(data.slug) || slug;
   return {
     status: "ok",
     doc: {
       kind: "law",
-      id: str(data.slug) || slug,
+      id: lawSlug,
       name: publicDocumentTitle("law", { title: str(data.title), type }),
       description: publicDescription("law", str((data as Record<string, unknown>).summary_brief)),
       dateModified: lawDateModified(data),
       legislationType: type || null,
     },
+    shell: { author: "", toc: [], tocTruncated: false, excerpt: await readLawExcerpt(supabase, lawSlug) },
   };
+}
+
+/**
+ * The law's first article for the server-rendered block, by the reader's own
+ * paywall for a GUEST (checkLibraryAccess(null, …) + effectiveFreeLimit, as
+ * /api/library/laws/[slug] computes it) — lawPublicExcerpt.ts decides what
+ * is printed. Supplementary: any failure is no excerpt, never a failed page.
+ * articles is server-only (20260929_01): read with the service role here, and
+ * only id, text and status of ONE row.
+ */
+async function readLawExcerpt(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  slug: string,
+): Promise<string | null> {
+  try {
+    const [{ count, error: countError }, { data: rows, error: rowError }, access] = await Promise.all([
+      supabase.schema("library").from("articles").select("id", { count: "exact", head: true }).eq("law_slug", slug),
+      supabase
+        .schema("library")
+        .from("articles")
+        .select("id, text, status")
+        .eq("law_slug", slug)
+        .order("order_index", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(1),
+      checkLibraryAccess(null, slug, 0),
+    ]);
+    if (countError || rowError || typeof count !== "number" || count <= 0) return null;
+    return lawPublicExcerpt((rows ?? [])[0], effectiveFreeLimit(access, count));
+  } catch (err) {
+    console.warn(`[library-seo] law excerpt read failed for "${slug}":`, err);
+    return null;
+  }
 }
 
 async function readOrder(id: string): Promise<LibraryDocLoad> {

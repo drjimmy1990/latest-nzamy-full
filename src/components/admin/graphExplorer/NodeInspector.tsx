@@ -12,7 +12,6 @@ import {
   ArrowSquareOut, Crosshair, CopySimple, Check, GitFork, X, Info, Lightning, CircleNotch,
 } from "@phosphor-icons/react";
 import {
-  EDGE_TYPE_META,
   describeNodeMetadata,
   edgeMetaFor,
   edgeProvenance,
@@ -159,7 +158,7 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
             </div>
             {labHit.via_edge_type && isExplorerEdgeType(labHit.via_edge_type) ? (
               <p className="mt-1 text-zinc-400">
-                {labHop(labHit) >= 2 ? "جاء في الخطوة الثانية عبر رابط" : "جاء عبر رابط"} «{EDGE_TYPE_META[labHit.via_edge_type].label}» من: <span className="text-zinc-200">{labHit.via_from_title}</span>
+                {labHop(labHit) >= 2 ? "جاء في الخطوة الثانية عبر رابط" : "جاء عبر رابط"} «{edgeMetaFor(labHit.via_edge_type).label}» من: <span className="text-zinc-200">{labHit.via_from_title}</span>
               </p>
             ) : (
               <p className="mt-1 text-zinc-400">نتيجة مباشرة من البحث النصي/الدلالي.</p>
@@ -190,8 +189,8 @@ export default function NodeInspector({ node, detail, loading, isCenter, connect
             <h3 className="mb-2 text-[11px] font-bold tracking-wide text-zinc-500">كل روابطها في الجراف</h3>
             <div className="flex flex-wrap gap-1.5">
               {(Object.entries(detail.edge_counts) as Array<[ExplorerEdgeType, { out: number; in: number }]>).map(([t, c]) => (
-                <span key={t} className="rounded-md border px-2 py-0.5 text-[10.5px]" style={{ borderColor: `${EDGE_TYPE_META[t]?.color ?? "#71717a"}55`, color: EDGE_TYPE_META[t]?.color ?? "#a1a1aa" }}>
-                  {EDGE_TYPE_META[t]?.label ?? t} · {c.out + c.in}
+                <span key={t} className="rounded-md border px-2 py-0.5 text-[10.5px]" style={{ borderColor: `${edgeMetaFor(t).color}55`, color: edgeMetaFor(t).color }}>
+                  {edgeMetaFor(t).label} · {c.out + c.in}
                 </span>
               ))}
             </div>

@@ -460,3 +460,23 @@ test("S6b: checkoutRequestBody carries this attempt's Turnstile token when there
   assert.deepEqual(checkoutRequestBody("lawyer-pro", "yearly", null, null, null), { itemId: "lawyer-pro", billing: "yearly" });
   assert.deepEqual(checkoutRequestBody("lawyer-pro", "yearly", null, null, ""), { itemId: "lawyer-pro", billing: "yearly" });
 });
+
+// ── l8 (owner 18 Nov, item 1.1 / ج5): «البيع متوقف مؤقتاً» while payment is off ──
+
+test("l8: saleGatewayPaused — off, the stub and a refused test mode are paused once loaded; loading is not; Moyasar on is not", async () => {
+  const { saleGatewayPaused, SALE_PAUSED_LINE_AR, SALE_PAUSED_REQUEST_NOTE_AR } = await import("./checkoutView.ts");
+  assert.equal(saleGatewayPaused({ disabled: true, provider: null }), true);
+  assert.equal(saleGatewayPaused({ disabled: false, provider: "stub" }), true);
+  assert.equal(saleGatewayPaused({ disabled: true, provider: null, loading: true }), false);
+  assert.equal(saleGatewayPaused({ disabled: false, provider: "moyasar" }), false);
+  assert.equal(SALE_PAUSED_LINE_AR, "البيع متوقف مؤقتاً — لم يُفعَّل الدفع الإلكتروني بعد، ويُفتح الشراء فور تفعيله");
+  assert.ok(SALE_PAUSED_REQUEST_NOTE_AR.startsWith(SALE_PAUSED_LINE_AR));
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const root = join(import.meta.dirname, "..", "..", "..");
+  const cards = readFileSync(join(root, "src/components/pricing/PricingCards.tsx"), "utf8");
+  assert.match(cards, /saleGatewayPaused\(payments\)/);
+  assert.match(cards, /SALE_PAUSED_REQUEST_NOTE_AR : SALE_PAUSED_LINE_AR/);
+  const hero = readFileSync(join(root, "src/app/founder/_components/HeroMeter.tsx"), "utf8");
+  assert.match(hero, /saleGatewayPaused\(usePaymentsStatus\(\)\) && view\.phase === "live"/);
+});

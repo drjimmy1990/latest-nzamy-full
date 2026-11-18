@@ -24,6 +24,8 @@ interface PricingHeroProps {
   setHasLegalDept: (v: boolean) => void;
   libraryMode: boolean;
   setLibraryMode: (v: boolean) => void;
+  /** Owner item 9 (batch l8): the viewer's library is locked — no library toggle, no library prices. */
+  libraryLocked?: boolean;
   /**
    * Which audience tabs the bar offers (owner, 2026-10-24):
    *   all     — every family, clickable (default; guests and admins);
@@ -46,7 +48,7 @@ function findAudienceTab(audience: AudienceTab) {
 export function PricingHero({
   isAr, billing, setBilling, cycles, audience, setAudience,
   companySize, setCompanySize, hasLegalDept, setHasLegalDept,
-  libraryMode, setLibraryMode, audienceTabs = "all",
+  libraryMode, setLibraryMode, audienceTabs = "all", libraryLocked = false,
 }: PricingHeroProps) {
   const note = billingNotes[audience];
   const showBillingToggle = cycles.length >= 2;
@@ -198,7 +200,7 @@ export function PricingHero({
           </motion.div>
         )}
         {/* Library mode sub-toggle — only for lawyers and firms */}
-        {(audience === "lawyers" || audience === "firms") && (
+        {(audience === "lawyers" || audience === "firms") && !libraryLocked && (
           <motion.div
             key={`lib-toggle-${audience}`}
             initial={{ opacity: 0, y: 16 }}

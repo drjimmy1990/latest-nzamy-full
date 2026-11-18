@@ -61,6 +61,7 @@ import {
   type CollectionRun,
 } from "./_collection-model";
 import { principleLabel } from "./_principle-label";
+import { LibrarySubscribeCard } from "@/components/library/LibrarySubscribeCard";
 
 /**
  * q390: principles per window — the API's cap (PRINCIPLES_MAX_LIMIT). The
@@ -160,6 +161,9 @@ export default function JudicialPrinciplesPage() {
   const [runStart, setRunStart] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string | null>(null);
+  // Owner item 2 (l8): a non-subscriber's browsing depth is capped by the
+  // server (403 library_depth_limit) — the list ends with the subscribe card.
+  const [depthLimit, setDepthLimit] = useState<string | null>(null);
   const [loadingBefore, setLoadingBefore] = useState(false);
   const [beforeError, setBeforeError] = useState<string | null>(null);
   const runRef = useRef<CollectionRun>(EMPTY_RUN);
@@ -437,6 +441,11 @@ export default function JudicialPrinciplesPage() {
           // A device refused mid-collection (owner ٤٢٧) gets the device page, not a line.
           const device = deviceRefusalOf(res.status, body);
           if (device) { setDeviceRefusal(device); return "error"; }
+          if (res.status === 403 && body?.code === "library_depth_limit") {
+            setDepthLimit(typeof body.error === "string" ? body.error : "للمتابعة اشترك في المكتبة القانونية.");
+            setHasMore(false);
+            return "done";
+          }
           setMoreError(typeof body?.error === "string" ? body.error : "تعذّر تحميل المزيد من المبادئ");
           return "error";
         }
@@ -866,7 +875,8 @@ export default function JudicialPrinciplesPage() {
                   {getCourtOrIssuer(null)}
                 </div>
               )}
-              <h1 className="text-2xl font-black">{collection.title}</h1>
+              {/* An <h2>: the page's H1 is the server-rendered «عن هذه المجموعة» block (owner 18 Nov, item 4.1). */}
+              <h2 className="text-2xl font-black">{collection.title}</h2>
               {/* N2.4: in a series the volume label replaces «الجزء: 1» (the
                   loader stores part 1 on every volume of the owner's series). */}
               {(() => {
@@ -1112,6 +1122,11 @@ export default function JudicialPrinciplesPage() {
                 {/* A collection with no text yet: «نص هذه المجموعة قيد الإضافة — قريباً.» */}
                 <p className="text-xs text-slate-500">{notice?.bodyAr ?? "لا توجد مبادئ في هذه المجموعة بعد."}</p>
               </div>
+            )}
+
+            {/* Owner item 2 (l8): the end of the free browsing depth — one card, not a repeated note. */}
+            {depthLimit && (
+              <LibrarySubscribeCard className="print:hidden" title={depthLimit} />
             )}
 
             {/* Windowed loading: status, infinite-scroll sentinel and a manual fallback. */}

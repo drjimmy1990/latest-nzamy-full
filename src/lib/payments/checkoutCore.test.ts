@@ -23,6 +23,7 @@ import { buildCatalog, quote } from "./catalog.ts";
 import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { FOUNDER_MEMBERSHIP_ON_SALE } from "../pricing/campaigns.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
+import { LIBRARY_ACCOUNT_LOCKED_AR } from "../library/accountAccess.ts";
 import { FOUNDER_TERMS_REQUIRED_AR, FOUNDER_TERMS_STALE_AR } from "./founderConsent.ts";
 import { FOUNDER_TERMS_VERSION } from "../founder/founderTerms.ts";
 
@@ -196,6 +197,41 @@ test("LIVE-F05: an individual cannot buy the library through the API (403, no or
     assert.deepEqual(r, { status: 403, body: { error: AUDIENCE_REFUSED_AR } }, itemId);
     assert.equal(inserts(log).length, 0, itemId);
     assert.equal(m.intents.length, 0, itemId);
+  }
+});
+
+test("l8 owner item 9: a library plan for an account whose library is locked — the owner's message, nothing written; a throw refuses; open → sold", async () => {
+  for (const itemId of ["lib-q1", "lib-q2", "lib-annual"]) {
+    const { client: admin, log } = db("corporate");
+    const m = moyasar();
+    const asked: string[] = [];
+    const r = await startCheckoutWith(
+      { admin, client: m.client, now: () => NOW, libraryAccountAllowed: async (id) => { asked.push(id); return false; } },
+      input({ itemId, billing: "once" }),
+    );
+    assert.deepEqual(r, { status: 403, body: { error: LIBRARY_ACCOUNT_LOCKED_AR, code: "library_account_locked" } }, itemId);
+    assert.deepEqual(asked, [USER], itemId);
+    assert.equal(inserts(log).length, 0, itemId);
+    assert.equal(m.intents.length, 0, itemId);
+  }
+  // a throw is a refusal
+  {
+    const { client: admin, log } = db("lawyer");
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, libraryAccountAllowed: async () => { throw new Error("down"); } },
+      input({ itemId: "lib-q1", billing: "once" }),
+    );
+    assert.equal(r.status, 403);
+    assert.equal(inserts(log).length, 0);
+  }
+  // open → sold as before
+  {
+    const { client: admin } = db("lawyer");
+    const r = await startCheckoutWith(
+      { admin, client: moyasar().client, now: () => NOW, libraryAccountAllowed: async () => true },
+      input({ itemId: "lib-q1", billing: "once" }),
+    );
+    assert.equal(r.status, 200);
   }
 });
 

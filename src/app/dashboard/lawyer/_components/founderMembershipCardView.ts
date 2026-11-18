@@ -37,6 +37,7 @@ import {
 } from "../../../../lib/pricing/founderCard.ts";
 import { toArabicDigits } from "../../../../lib/services/arabicCount.ts";
 import { FOUNDER_LIBRARY_POINTS_LABEL } from "../../../../lib/membership/founderPlan.ts";
+import type { FounderOfferCopy } from "../../../../lib/offers/offerRules.ts";
 
 export const FOUNDER_DASHBOARD_TITLE = "عضويتي المؤسسة";
 
@@ -62,6 +63,11 @@ export interface FounderDashboardInput {
   offer: FounderOffer | null;
   /** founderPriceLine() !== null — without a price the /pricing card hides, so the invite would land nowhere. */
   priced: boolean;
+  /**
+   * l8 (owner item 5): the founder offer row (campaigns/active's founderOffer).
+   * Stopped by the admin → no invite; else its button. Absent / null → built-in.
+   */
+  copy?: FounderOfferCopy | null;
 }
 
 export type FounderDashboardCardView =
@@ -122,10 +128,11 @@ export function founderDashboardCardView(input: FounderDashboardInput): FounderD
   if (input.userLoading || input.userType !== "lawyer") return NONE;
   if (input.verification !== "verified") return NONE;
   if (!input.priced || !input.offer || input.offer.state !== "open") return NONE;
+  if (input.copy && !input.copy.promoted) return NONE;
   return {
     kind: "invite",
     text: `${FOUNDER_CARD_TITLE} متاحة لحسابك الموثّق — ${founderSeatsLine(input.offer.seatsLeft, input.offer.capacity)}`,
-    linkLabel: FOUNDER_CAMPAIGN_COPY.ctaAr,
-    href: FOUNDER_CAMPAIGN_COPY.ctaHref,
+    linkLabel: input.copy?.ctaLabel ?? FOUNDER_CAMPAIGN_COPY.ctaAr,
+    href: input.copy?.ctaHref ?? FOUNDER_CAMPAIGN_COPY.ctaHref,
   };
 }

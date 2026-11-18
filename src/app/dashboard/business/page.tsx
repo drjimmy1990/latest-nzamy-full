@@ -33,6 +33,7 @@ import {
   type ListRead,
 } from "@/lib/services/listRead";
 import PendingInvitationsBanner from "@/components/dashboard/PendingInvitationsBanner";
+import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 
 /**
  * نظرة عامة على المنشأة — /dashboard/business.
@@ -184,6 +185,8 @@ const fadeUp = {
 export default function BusinessOverviewPage() {
   const { isDark } = useTheme();
   const user = useUser();
+  // Owner item 9 (batch l8): no library link while the library is locked for this account.
+  const libraryLock = useLibraryAccountLocked();
 
   const [ordersRead, setOrdersRead] = useState<ListRead<ClientCase> | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(true);
@@ -593,6 +596,7 @@ export default function BusinessOverviewPage() {
           laws/page.tsx:176 posts to /api/library/search, which runs
           `.textSearch('fts', …, { config: LIBRARY_FTS_CONFIG })` over the
           seeded text. No count is asserted, because none is countable here. */}
+      {!libraryLock.loading && !libraryLock.locked && (
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={3}>
         <Link
           href="/laws"
@@ -614,6 +618,7 @@ export default function BusinessOverviewPage() {
           </span>
         </Link>
       </motion.div>
+      )}
 
       <AnimatePresence>
         {showNewRequest && (

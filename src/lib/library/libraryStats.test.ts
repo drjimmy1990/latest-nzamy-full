@@ -147,7 +147,8 @@ test("T28-21: library.articles is counted with the server-only client, the rest 
 // with a public/s-maxage header that a shared cache could replay to guests.
 test("the stats route derives Cache-Control from statsCacheControl(closed), checked after libraryGate", () => {
   const route = readFileSync(new URL("../../app/api/library/stats/route.ts", import.meta.url), "utf8");
-  assert.match(route, /const gate = await libraryGate\(\);/);
+  // l8 owner item 9: counts only, so not behind the per-account library lock
+  assert.match(route, /const gate = await libraryGate\(\{ accountLock: false \}\);/);
   assert.match(route, /const \{ closed \} = await getLibraryStatus\(\);/);
   assert.match(route, /"Cache-Control": statsCacheControl\(closed\)/);
   assert.doesNotMatch(route, /"Cache-Control": "public, max-age=3600/);

@@ -17,6 +17,15 @@
  *
  * Admins bypass the gate so they can verify content while it is closed to the
  * public.
+ *
+ * Owner item 9 (batch l8): then, for a SIGNED-IN caller, the library's
+ * per-account-type switch (library_access_by_account_type, plus the per-account
+ * exceptions): a locked account gets a 403 with the owner's message and code
+ * `library_account_locked` (src/lib/library/accountAccessServer.ts). A guest is
+ * never asked, so the public pages are unchanged. `{ accountLock: false }`
+ * skips it: /api/library/stats (counts only, for the marketing widgets) and the
+ * lawyers' AI tools that also read the library (ai/runs passes it for every tool
+ * but the library assistant — owner item 9.7).
  */
 
 import { NextResponse } from "next/server";
@@ -25,6 +34,7 @@ import {
   requireAdmin,
   LIBRARY_CLOSED_DEFAULT_MESSAGE,
 } from "@/lib/access-control";
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * Returns a 503 response when the library is closed to this caller, or `null`
@@ -33,13 +43,13 @@ import {
  * Cost note: the common (open) case costs exactly one settings lookup — the
  * admin check runs only once the library is already known to be closed.
  */
-export async function libraryGate(): Promise<NextResponse | null> {
+export async function libraryGate(opts: { accountLock?: boolean } = {}): Promise<NextResponse | null> {
   const state = await getLibraryStatus();
-  if (!state.closed) return null;
+  if (!state.closed) return opts.accountLock === false ? null : libraryAccountGate();
 
   // Closed — admins still get through.
   const admin = await requireAdmin();
-  if (admin.isAdmin) return null;
+  if (admin.isAdmin) return null; // an admin's account is never locked either
 
   return NextResponse.json(
     {

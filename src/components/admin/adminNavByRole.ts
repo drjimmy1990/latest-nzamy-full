@@ -12,7 +12,7 @@ import {
   Scales, ShieldCheck, Database, ClipboardText,
   Money, Megaphone, Star, Globe, BookOpen, Article,
   Storefront, ToggleRight, Flag, Tag, UsersFour, Crown, Tray, Files,
-  Lightbulb, Graph,
+  Lightbulb, Graph, Gift,
 } from "@phosphor-icons/react";
 import type { StaffRole } from "../../lib/auth/staffRoles.ts";
 import { filterNavGroupsByRole } from "../../lib/auth/adminNavAccess.ts";
@@ -73,9 +73,11 @@ export const NAV = [
       { href: "/dashboard/admin/audit-log", icon: ClipboardText, label: "سجل التدقيق" },
       { href: "/dashboard/admin/security",  icon: ShieldCheck,   label: "الأمان" },
       { href: "/dashboard/admin/founder",   icon: Crown,         label: "حملة المؤسس" },
+      { href: "/dashboard/admin/offers",    icon: Gift,          label: "العروض" },
       { href: "/dashboard/admin/system",    icon: Database,      label: "إعدادات النظام" },
       { href: "/dashboard/admin/library-invitations", icon: Ticket, label: "أكواد دعوة المكتبة" },
       { href: "/dashboard/admin/library-subscriptions", icon: BookOpen, label: "اشتراكات المكتبة" },
+      { href: "/dashboard/admin/library-access", icon: BookOpen, label: "المكتبة حسب نوع الحساب" },
     ],
   },
 ];

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { buildMetadata } from "@/lib/seo";
 import {
   FOUNDER_ADVOCATE_ONLY_LINE,
+  FOUNDER_FALLBACK_ENDS_AT_EXCLUSIVE,
   FOUNDER_ONCE_LINE,
   FOUNDER_TERMS_PATH,
   FOUNDER_TERMS_REFUND_PATH,
@@ -9,6 +10,7 @@ import {
   founderLandingPrice,
 } from "@/lib/founder/landingCopy";
 import { FOUNDER_PENDING_NOTE } from "@/lib/pricing/founderCard";
+import { buildFounderOfferJsonLd, serializeJsonLd } from "@/lib/publicSeo/structuredData";
 import { FounderWindowProvider } from "./_components/FounderWindowProvider";
 import { HeroMeter } from "./_components/HeroMeter";
 import { JoinButton } from "./_components/JoinButton";
@@ -37,11 +39,20 @@ import { WindowLine } from "./_components/WindowLine";
  * (FounderWindowProvider). Nothing time-dependent renders on the server.
  */
 
+const FOUNDER_DESCRIPTION =
+  "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.";
+
+// Owner 18 Nov, item 4.6: schema.org Product + Offer (price 2,996 SAR before
+// VAT from quote(), valid to the manifest's last day) — src/lib/publicSeo/structuredData.ts.
+const FOUNDER_OFFER_JSON_LD = buildFounderOfferJsonLd({
+  description: FOUNDER_DESCRIPTION,
+  endsAtExclusive: FOUNDER_FALLBACK_ENDS_AT_EXCLUSIVE,
+});
+
 export const metadata = buildMetadata({
   titleAr: "باقة المحامي المؤسس",
   titleEn: "Founding Lawyer Membership",
-  descriptionAr:
-    "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.",
+  descriptionAr: FOUNDER_DESCRIPTION,
   path: "/founder",
   keywords: ["المحامي المؤسس", "باقة المؤسس", "الصائغ القانوني"],
 });
@@ -83,7 +94,7 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
   { q: "هل التنقيح يخصم عملاً آخر؟", a: "لا. جولة التنقيح الثانية داخل الجلسة نفسها لا تخصم من رصيد أعمالك." },
   {
     q: "ماذا يشمل السعر؟",
-    a: "يشمل ٦ أعمال قانونية. والمكتبة القانونية مفتوحة لك سنة كاملة من تفعيل الباقة، والشحن لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم ٥ نقاط، فإذا نفدت أُغلق المساعد الذكي وحده حتى تشحن بأي قيمة تختارها، وتبقى المكتبة مفتوحة طوال السنة.",
+    a: "يشمل ٦ أعمال قانونية. والمكتبة القانونية مفتوحة لك سنة كاملة من تفعيل الباقة، والشحن لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم ٥ نقاط، فإذا نفدت أُغلق المساعد الذكي وحده حتى تشحن نقاطاً بما لا يقل عن الحد الأدنى للشحن لحسابك، وتبقى المكتبة مفتوحة طوال السنة.",
   },
   { q: "هل السعر هو سعر كل مذكرة؟", a: "لا. ٢٬٩٩٦ ر.س قيمة الباقة كلها، وليست سعراً لعمل منفرد." },
   { q: "متى تبدأ مدة العضوية؟", a: "من لحظة تفعيل العضوية بعد توثيق الرخصة وإتمام السداد." },
@@ -109,6 +120,9 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
 export default function FounderPage() {
   return (
     <FounderWindowProvider>
+      {FOUNDER_OFFER_JSON_LD && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(FOUNDER_OFFER_JSON_LD) }} />
+      )}
       <div dir="rtl" className="font-body text-[17px] leading-[1.85]">
         {/* ── header ── */}
         <header className="sticky top-0 z-30 bg-[#06201A]/95 text-white backdrop-blur">
@@ -335,8 +349,8 @@ export default function FounderPage() {
                 <p className="mb-2.5 mt-1.5 text-sm font-bold text-[#7A5C16]">{FOUNDER_ONCE_LINE}</p>
                 <ul className="mb-3 list-disc space-y-1 ps-5 text-sm leading-relaxed">
                   <li>
-                    خصم المؤسس ١٥٪ على شحنات النقاط ورسوم نظامي المؤهلة، وإذا وُجد عرض عام أقل سعراً يُطبَّق عليك الأفضل
-                    فقط دون جمع الخصمين.
+                    خصم المؤسس ١٥٪ على شحنات النقاط وحدها طوال سنة العضوية من تاريخ التفعيل، وإذا وُجد عرض عام أقل سعراً
+                    يُطبَّق عليك الأفضل فقط دون جمع الخصمين.
                   </li>
                   <li>١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي.</li>
                   <li>٣ دعوات تتجدد شهرياً لمحامين مرخصين جدد لم يسبق لهم التسجيل.</li>
@@ -362,7 +376,7 @@ export default function FounderPage() {
                 <p className="text-sm leading-relaxed text-[#4B6158]">
                   يشمل السعر ٦ أعمال قانونية. المكتبة مفتوحة سنة كاملة من تفعيل الباقة، والشحن
                   لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال عليه بـ٥ نقاط، وعند نفادها
-                  يُغلق المساعد وحده حتى الشحن بأي قيمة، وتبقى المكتبة مفتوحة طوال السنة. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم التفعيل بعد
+                  يُغلق المساعد وحده حتى تشحن نقاطاً بما لا يقل عن الحد الأدنى للشحن لحسابك، وتبقى المكتبة مفتوحة طوال السنة. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم التفعيل بعد
                   توثيق الرخصة وإتمام السداد وحجز مقعدك، ويمكنك السداد قبل اكتمال التوثيق: {FOUNDER_PENDING_NOTE}
                 </p>
                 <p className="mt-3.5 rounded-xl border border-[#E8CF8A] bg-[#FFF3D6] px-3.5 py-2.5 text-[15px] font-bold text-[#5C4200]">

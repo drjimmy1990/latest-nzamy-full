@@ -7,8 +7,13 @@
  * The assignee is e-mailed only while he may still read the hearing: he is
  * the owner, or an ACTIVE member of the hearing's firm. The assignee trigger
  * checks membership only when the column is set, so a member removed later
- * keeps the value — and must not receive the case title and court by e-mail
- * (the same reason 20261124_50 added no assignee-only read policy).
+ * keeps the value (the same reason 20261124_50 added no assignee-only read
+ * policy).
+ *
+ * OWNER ٤٥ (18 Nov 2026, batch l8): the e-mail is GENERIC — «لديك جلسة غداً —
+ * افتحها من نظامي» and a link to the platform. No case title, no court, no
+ * place, no time, no client: no case data travels through the e-mail
+ * provider. The route does not even read those columns.
  *
  * In-app hearing reminders are separate (src/lib/hearingReminders.ts, the
  * hourly /api/v1/cron/deadlines) and unchanged.
@@ -16,23 +21,21 @@
  * Relative imports only: `node --test` loads it (hearingEmailReminders.test.ts).
  */
 
-import { parseHearingTime } from "../calendar/hearingReminderStages.ts";
 import { toArabicDigits } from "../services/arabicCount.ts";
-import { formatTimeOfDayAr } from "../../app/dashboard/lawyer/hearings/_timeOfDay.ts";
 import { renderEmailAr, siteLink, REMINDER_FOOTER_AR, type EmailEnv } from "./sendEmail.ts";
 
+/** The columns the route reads — deliberately no title, court, place or time (owner ٤٥). */
 export interface HearingEmailRow {
   id: string;
   owner_user_id: string | null;
   assignee_user_id: string | null;
   firm_id: string | null;
-  title: string | null;
   hearing_date: string;
-  hearing_time: string | null;
-  court_name: string | null;
-  location: string | null;
   status?: string | null;
 }
+
+/** The route's select list, kept next to the row type (pinned by a test). */
+export const HEARING_EMAIL_COLUMNS = "id, owner_user_id, assignee_user_id, firm_id, hearing_date, status";
 
 export type HearingEmailVia = "owner" | "assignee";
 
@@ -73,36 +76,26 @@ export function assigneesToCheck(rows: readonly HearingEmailRow[]): Array<{ firm
   return out;
 }
 
-/** The Arabic e-mail of one hearing reminder. */
+/** The heading and subject of every hearing reminder (owner ٤٥). */
+export const HEARING_EMAIL_HEADING_AR = "لديك جلسة غداً — افتحها من نظامي";
+
+/** The Arabic e-mail of one hearing reminder — generic, no case data (owner ٤٥). */
 export function hearingEmailMessage(
   h: HearingEmailRow,
   via: HearingEmailVia,
   env: EmailEnv = process.env,
   dashboardRoot: "/dashboard/lawyer" | "/dashboard/firm" = "/dashboard/lawyer",
 ): { subject: string; html: string; text: string } {
-  const title = (h.title ?? "").trim() || "جلسة";
-  const t = parseHearingTime(h.hearing_time);
-  const time = t ? `${String(t.h).padStart(2, "0")}:${String(t.m).padStart(2, "0")}` : null;
-  const place = (h.court_name ?? "").trim() || null;
-  const location = (h.location ?? "").trim() || null;
   const href = siteLink(`${dashboardRoot}/hearings`, env);
   const { html, text } = renderEmailAr({
-    heading: "تذكير: لديك جلسة غداً",
+    heading: HEARING_EMAIL_HEADING_AR,
     paragraphs: [
-      via === "assignee"
-        ? `أُسندت إليك جلسة «${title}» وموعدها غداً.`
-        : `موعد جلسة «${title}» غداً.`,
-      "راجع ملف القضية ومستنداتها قبل الموعد.",
+      via === "assignee" ? "لديك جلسة مُسندة إليك موعدها غداً." : "لديك جلسة موعدها غداً.",
+      "تفاصيل الجلسة والقضية لا تُرسل بالبريد حفاظاً على سريتها؛ افتحها من حسابك في نظامي.",
     ],
-    details: [
-      ["الجلسة", title],
-      ["التاريخ", toArabicDigits(h.hearing_date)],
-      ["الوقت", time ? formatTimeOfDayAr(time) : null],
-      ["المحكمة", place],
-      ["المكان", location && location !== place ? location : null],
-    ],
-    action: href ? { label: "افتح جلساتي", href } : null,
+    details: [["التاريخ", toArabicDigits(h.hearing_date)]],
+    action: href ? { label: "افتح جلساتي في نظامي", href } : null,
     footer: REMINDER_FOOTER_AR,
   });
-  return { subject: `تذكير بجلسة غداً: ${title}`, html, text };
+  return { subject: "تذكير: لديك جلسة غداً", html, text };
 }

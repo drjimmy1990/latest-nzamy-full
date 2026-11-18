@@ -12,7 +12,7 @@ import { lawyerServicesTable, LAWYER_ARCHIVE_NOTE } from "@/constants/pricing/pr
 import { aiToolPointsLabel, aiToolPriceUnit } from "@/lib/ai/toolPointsDisplay";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
-import { buyButtonAction } from "@/lib/payments/checkoutView";
+import { buyButtonAction, checkoutHref, SALE_PAUSED_LINE_AR, SALE_PAUSED_REQUEST_NOTE_AR, saleGatewayPaused } from "@/lib/payments/checkoutView";
 import { buyClickGate } from "@/lib/pricing/buyClickGate";
 import { requestEntitlement } from "@/lib/services/entitlementService";
 import { referencePriceFor } from "@/lib/pricing/priceDisplay";
@@ -602,10 +602,23 @@ export function PricingCards({ planList, billing, isAr, audience, libraryMode }:
     return true;
   }
 
+  // l8 (owner 18 Nov, 1.1): online payment off for this viewer and a card here is sold online →
+  // «البيع متوقف مؤقتاً» and why above the cards; a signed-in click still sends a request (owner ٢٤٦).
+  const salePaused =
+    !sessionLoading && saleGatewayPaused(payments) && shownPlans.some((p) => checkoutHref(p.id, billing, true, true) !== null);
+
   return (
     <CardContext.Provider value={{ launch, signedIn: !sessionLoading && isLoggedIn }}>
     <section className="pb-16 md:pb-24">
       <div className="mx-auto max-w-[1200px] px-4">
+
+        {salePaused && (
+          <p role="status" className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-bold text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            {isAr
+              ? isLoggedIn ? SALE_PAUSED_REQUEST_NOTE_AR : SALE_PAUSED_LINE_AR
+              : "Sales are paused — online payment is not switched on yet; buying opens as soon as it is."}
+          </p>
+        )}
 
         {isLawyer && !libraryMode ? (
           <LawyerCreditsLayout planList={shownPlans} billing={billing} isAr={isAr} onSubscribe={handleSubscribe} />

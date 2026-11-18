@@ -7445,3 +7445,96 @@ select 'Every refunded / voided platform order has its credit note (run 20261127
              and not exists (select 1 from public.payment_credit_notes c where c.order_id = o.id)', false, true, '')))[1]::text = '0'
        end as ok;
 -- <<< verify:l7_refund
+-- >>> verify:l8_offers
+-- Batch l8-offers (owner item 5, the offers system): run 20261128_50 before or after the deploy.
+select 'Offers: offers / offer_dismissals / offer_events — RLS on, no policy, no session privilege, offer_event_counts service role only (run 20261128_50)' as check,
+       case when to_regclass('public.offers') is null or to_regclass('public.offer_dismissals') is null
+              or to_regclass('public.offer_events') is null
+              or to_regprocedure('public.offer_event_counts()') is null then false else
+       coalesce((select bool_and(c.relrowsecurity) from pg_catalog.pg_class c
+                  where c.oid in (to_regclass('public.offers'), to_regclass('public.offer_dismissals'), to_regclass('public.offer_events'))), false)
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid in (to_regclass('public.offers'), to_regclass('public.offer_dismissals'), to_regclass('public.offer_events')))
+       and not has_table_privilege('anon', 'public.offers', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.offers', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.offers', 'UPDATE')
+       and not has_table_privilege('authenticated', 'public.offer_dismissals', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.offer_dismissals', 'INSERT')
+       and not has_table_privilege('authenticated', 'public.offer_events', 'INSERT')
+       and not has_function_privilege('authenticated', 'public.offer_event_counts()', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.offer_event_counts()', 'EXECUTE')
+       end as ok;
+select 'Offers: the founder offer is a row — verified advocate lawyers only (consultant outside), seats read from the campaign, requires_invite_code present and empty (run 20261128_50)' as check,
+       case when to_regclass('public.offers') is null then false else
+       (xpath('/row/n/text()', query_to_xml(
+         'select count(*) as n from public.offers
+           where slug = ''founder-2026'' and campaign_id = ''founder-2026''
+             and audience_account_types = array[''lawyer'']::text[] and audience_verification = ''verified''
+             and seats_total is null and requires_invite_code is null', false, true, '')))[1]::text = '1'
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = to_regclass('public.offers') and conname = 'offers_founder_audience_check')
+       end as ok;
+-- <<< verify:l8_offers
+-- >>> verify:l8_payref
+-- Batch l8 payref (owner 18 Nov: founder discount = the membership year, ٥٣ extra-seat price stored only, ٥٦ individual 100): run 20261128_10 before or after the deploy.
+select 'Payref settings: founder_topup_discount_expires (months/until), firm_extra_seat_price_sar {"sar"}, individual top-up minimum, no «lifetime» discount wording (run 20261128_10)' as check,
+       exists (select 1 from public.platform_settings
+                where key = 'founder_topup_discount_expires' and pg_catalog.jsonb_typeof(value) = 'object'
+                  and (value ? 'months_after_activation' or value ? 'until'))
+       and exists (select 1 from public.platform_settings where key = 'firm_extra_seat_price_sar' and value ? 'sar')
+       and exists (select 1 from public.platform_settings where key = 'min_topup_by_account_type' and value ? 'individual')
+       and not exists (select 1 from public.platform_settings
+                        where key like 'founder_topup_discount%' and pg_catalog.strpos(coalesce(description, ''), 'مدى الحياة') > 0) as ok;
+-- <<< verify:l8_payref
+-- >>> verify:l8_libguard
+-- Batch l8-libguard (owner message 18 Nov, items 2 + 3.2): run 20261128_30 before or after the deploy.
+select 'Library public guard: library_public_protection, public_full_rulings_per_collection, library_feqh_free_pages seeded (run 20261128_30)' as check,
+       (select pg_catalog.count(*) from public.platform_settings
+         where key in ('library_public_protection', 'public_full_rulings_per_collection', 'library_feqh_free_pages')) = 3
+       as ok;
+select 'daily_full_read_limit = 50 for a person and a member; slow cap below it (run 20261128_30)' as check,
+       coalesce((select s.daily_docs = 50 and s.member_daily_docs = 50 and s.slow_daily_docs < 50
+                   from public.library_monitor_settings s where s.id), false)
+       as ok;
+select 'No full-text library column is readable by anon (full listing: supabase/one-time/rls_proof.sql)' as check,
+       not exists (
+         select 1 from (values ('library.articles', 'text'), ('library.principles', 'text'), ('library.principles', 'facts'),
+                               ('library.principles', 'reasons'), ('library.principles', 'ruling'), ('library.principle_paragraphs', 'text'),
+                               ('library.feqh_blocks', 'matn'), ('library.feqh_blocks', 'sharh'), ('library.decree_pages', 'content'),
+                               ('library.laws', 'preamble')) as v(t, c)
+          where case when exists (select 1 from information_schema.columns ic
+                                   where ic.table_schema || '.' || ic.table_name = v.t and ic.column_name = v.c)
+                     then has_column_privilege('anon', v.t, v.c, 'SELECT') else false end)
+       as ok;
+-- <<< verify:l8_libguard
+-- >>> verify:l8_liblock
+-- Batch l8-liblock (owner item 9 + ٥٨: the library per account type): run 20261128_20 before or after the deploy.
+select 'Library per account type: setting + library_access_user_overrides (RLS, no session grant) + library_access_for service role only (run 20261128_20)' as check,
+       case when to_regclass('public.library_access_user_overrides') is null
+              or to_regprocedure('public.library_access_for(uuid)') is null then false else
+       exists (select 1 from public.platform_settings where key = 'library_access_by_account_type')
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.library_access_user_overrides')), false)
+       and not has_table_privilege('anon', 'public.library_access_user_overrides', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_access_user_overrides', 'SELECT')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                       where p.oid = to_regprocedure('public.library_access_for(uuid)')), false)
+       and not has_function_privilege('anon', 'public.library_access_for(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_access_for(uuid)', 'EXECUTE')
+       end as ok;
+select 'Free library questions (٥٨): only for a verified e-mail and an open library (ai_free_question_status of 20261128_20, not 20261127_40)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'library_access_for') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
+                false) as ok;
+-- <<< verify:l8_liblock
+
+-- >>> verify:l8_refbox
+-- Batch l8-refbox (owner decision ٦٠, the reader's law map shows only the link types matching his graph file): run 20261128_60 any time.
+select 'Reader law map by link type: library_reader_law_links_typed, service role only, security invoker (run 20261128_60)' as check,
+       to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)') is not null
+       and not has_function_privilege('anon', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.library_reader_law_links_typed(text, text[], integer)', 'EXECUTE')
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p
+                          where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
+       as ok;
+-- <<< verify:l8_refbox

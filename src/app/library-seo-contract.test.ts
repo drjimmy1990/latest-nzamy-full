@@ -51,16 +51,56 @@ test("P1-10: the law's shell and JSON-LD sit OUTSIDE its own LibraryGuard, and t
   const guard = src.indexOf("<LibraryGuard>{children}</LibraryGuard>");
   assert.ok(guard > 0, "the law layout guards the reader itself");
   assert.ok(src.indexOf("<LibraryJsonLd") < guard);
-  assert.ok(src.indexOf("<LibraryDocumentShell doc={load.doc} />") > guard);
-  // The guest-shaped loader only: never the preamble or an article's text.
+  assert.ok(src.indexOf("<LibraryDocumentShell doc={load.doc} shell={load.shell} />") > guard);
+  // The guest-shaped loader only: the layout itself reads nothing (the one
+  // article excerpt is the loader's, by the guest paywall — see below).
   assert.doesNotMatch(src.replace(/\/\*[\s\S]*?\*\//g, ""), /preamble|articles|createServiceClient|createClient/);
   const section = read("./laws/layout.tsx");
   assert.match(section, /<LibraryGuard lawReaderGuardsItself>/);
   const guardSrc = read("../components/library/LibraryGuard.tsx");
-  assert.match(guardSrc, /if \(lawReaderGuardsItself && isLawReaderPath\(pathname\)\) return <>\{children\}<\/>;/);
-  // The shell prints the name and the موجز, never a preamble or article text.
+  // Owner 18 Nov, item 4.1: a decree's reader guards itself too.
+  assert.match(guardSrc, /if \(lawReaderGuardsItself && \(isLawReaderPath\(pathname\) \|\| isOrderReaderPath\(pathname\)\)\) return <>\{children\}<\/>;/);
+  // The shell prints the name, the موجز and the loader's excerpt — never a preamble or a raw article text.
   const shell = read("../components/library/LibraryDocumentShell.tsx").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
   assert.doesNotMatch(shell, /preamble|\.text\b|articles/);
+  assert.match(shell, /\{shell\?\.excerpt && \(/);
+});
+
+test("owner 18 Nov, item 4.1: a decree's and a collection's public block and JSON-LD sit OUTSIDE their own guard", () => {
+  for (const [file, section, prop] of [
+    ["./laws/orders/[slug]/layout.tsx", "./laws/layout.tsx", "lawReaderGuardsItself"],
+    ["./precedents/[slug]/layout.tsx", "./precedents/layout.tsx", "collectionReaderGuardsItself"],
+  ]) {
+    const src = read(file);
+    const guard = src.indexOf("<LibraryGuard>{children}</LibraryGuard>");
+    assert.ok(guard > 0, `${file} guards its reader itself`);
+    assert.ok(src.indexOf("<LibraryJsonLd") < guard, file);
+    assert.ok(src.indexOf('{load.status === "ok" && <LibraryDocumentShell doc={load.doc} />}') > guard, file);
+    assert.doesNotMatch(src.replace(/\/\*[\s\S]*?\*\//g, ""), /preamble|articles|principles|createServiceClient|createClient/, file);
+    assert.match(read(section), new RegExp(`<LibraryGuard ${prop}>`), section);
+  }
+  const guardSrc = read("../components/library/LibraryGuard.tsx");
+  assert.match(guardSrc, /if \(collectionReaderGuardsItself && isCollectionReaderPath\(pathname\)\) return <>\{children\}<\/>;/);
+});
+
+test("owner 18 Nov, item 4.1: one H1 — the server block's; the client readers' titles are <h2>", () => {
+  const shell = read("../components/library/LibraryDocumentShell.tsx");
+  assert.match(shell, /const TitleTag = doc\.kind === "book" \? "h2" : "h1";/);
+  assert.match(shell, /<TitleTag className=[^>]*>\{doc\.name\}<\/TitleTag>/);
+  assert.match(read("./laws/[slug]/page.tsx"), /<h2 className=\{`text-xl font-black mb-0\.5 [^`]*`\}>\{lawTitle\}<\/h2>/);
+  assert.match(read("./laws/orders/[slug]/page.tsx"), /<h2 className=\{`text-xl font-black mb-0\.5 [^`]*`\}><Hl text=\{order\.title\} \/><\/h2>/);
+  assert.match(read("./precedents/[slug]/page.tsx"), /<h2 className="text-2xl font-black">\{collection\.title\}<\/h2>/);
+});
+
+test("owner 18 Nov, item 4.1: the law excerpt follows the GUEST paywall — one row, the reader's order, the guest's free limit", () => {
+  const src = read("../lib/library/libraryDocumentSeo.ts").replace(/\r\n/g, "\n");
+  const fn = src.slice(src.indexOf("async function readLawExcerpt"), src.indexOf("async function readOrder"));
+  assert.ok(fn.length > 100);
+  assert.match(fn, /\.select\("id, text, status"\)\s*\.eq\("law_slug", slug\)\s*\.order\("order_index", \{ ascending: true \}\)\s*\.order\("id", \{ ascending: true \}\)\s*\.limit\(1\)/);
+  assert.match(fn, /checkLibraryAccess\(null, slug, 0\)/, "a guest's access, whoever asked");
+  assert.match(fn, /lawPublicExcerpt\(\(rows \?\? \[\]\)\[0\], effectiveFreeLimit\(access, count\)\)/);
+  assert.doesNotMatch(fn.replace(/\/\*[\s\S]*?\*\//g, ""), /original_text|article_regulations|preamble/);
+  assert.match(fn, /catch \(err\) \{[\s\S]*?return null;/, "a failed read is no excerpt, not a failed page");
 });
 
 test("the loader reads as the service role, checks the library switch, and never uses the cookie client", () => {

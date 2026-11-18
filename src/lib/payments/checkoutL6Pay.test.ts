@@ -86,7 +86,8 @@ function db(
     if (q.table === "subscriptions") return opts.subsErr ? { error: { code: "XX000" } } : { data: opts.subs ?? [] };
     if (q.table === "founder_seats") {
       if (opts.founder === "error") return { error: { code: "XX000" } };
-      return { data: opts.founder ? [{ id: "seat" }] : [] };
+      // l8: the discount runs for the membership year from activated_at (NOW is inside it)
+      return { data: opts.founder ? [{ id: "seat", activated_at: "2026-10-01T00:00:00.000Z" }] : [] };
     }
     if (q.table === "coupons") return { data: opts.coupon ?? null };
     if (q.table === "coupon_usage") return { data: [] };
@@ -257,6 +258,15 @@ test("F12: a non-founder pays the list price; a failed founder read is 503, neve
   const r2 = await startCheckoutWith({ admin: b.client, client: moyasar().client, now: () => NOW }, input({ itemId: "topup-500", billing: "once" }));
   assert.deepEqual(r2, { status: 503, body: { error: FOUNDER_DISCOUNT_FAILED_AR } });
   assert.equal(inserted(b.log), undefined);
+});
+
+test("l8 (owner 18 Nov, ك): the founder discount ends with the membership year — a seat activated 13 months ago pays the list price", async () => {
+  const old = db("lawyer", { founder: true }, (q) =>
+    q.table === "founder_seats" ? { data: [{ id: "seat", activated_at: "2025-09-22T08:00:00.000Z" }] } : undefined,
+  );
+  const r = await startCheckoutWith({ admin: old.client, client: moyasar().client, now: () => NOW }, input({ itemId: "topup-500", billing: "once" }));
+  assert.equal(r.status, 200);
+  assert.equal("founder_discount" in (inserted(old.log)!.payload as { metadata: Record<string, unknown> }).metadata, false);
 });
 
 test("F12: a plan, a library pass and the founder membership get no founder discount and never read the seat", async () => {

@@ -17,7 +17,8 @@
  */
 
 import { memo } from "react";
-import { BookmarkSimple, Check, Copy, FileText, ListNumbers, Lock, Plus } from "@phosphor-icons/react";
+import { BookmarkSimple, Check, Copy, FileText, ListNumbers, Plus } from "@phosphor-icons/react";
+import { LibraryLockedNote } from "@/components/library/LibrarySubscribeCard";
 import { Hl } from "@/components/search/MultiColorHighlight";
 import { pageToken, volumeToken } from "./_locator";
 import { emptyLayerNote, layerShows, type ReaderBlock, type ReaderLayer } from "./_reader-model";
@@ -129,11 +130,10 @@ function StreamBlock({
 
       {/* The paywall is the server's (owner ١٨٣): a locked block carries its
           place and topic, no text — the same notice as before. */}
+      {/* Owner decision (18 Nov): fiqh text is for subscribers only (library_feqh_free_pages,
+          0 by default) — the note names no free pages, and carries the subscribe button. */}
       {block.locked && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.05] text-xs font-bold text-amber-700 dark:text-amber-400">
-          <Lock size={14} weight="fill" />
-          <span>المعاينة المجانية أول صفحتين من الكتاب؛ نص هذا الموضع متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية.</span>
-        </div>
+        <LibraryLockedNote message="نص هذا الموضع متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية." />
       )}
 
       {/* Sharh */}

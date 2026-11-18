@@ -22,12 +22,12 @@ function hasText(value: unknown): value is string {
 /** The catalogue writes «—» for a book with no known author; the card then leaves the line out. */
 const hasAuthor = hasText;
 
-/** A book a non-subscriber can open but not read in full: the reader serves its first two pages (FREE_PAGES). */
+/** A book whose text is for subscribers (owner, 18 Nov: fiqh text is subscribers only — library_feqh_free_pages, 0). */
 function FreePagesChip({ isRTL }: { isRTL: boolean }) {
   return (
     <span className="px-2 py-0.5 text-[9px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-md flex items-center gap-1 shrink-0">
       <Lock size={9} weight="fill" />
-      {isRTL ? "أول صفحتين مجاناً" : "First 2 pages free"}
+      {isRTL ? "النص للمشتركين" : "Subscribers only"}
     </span>
   );
 }

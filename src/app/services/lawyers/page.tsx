@@ -12,6 +12,7 @@ import {
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
+import FounderCampaignLink from "@/components/seo/FounderCampaignLink";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -429,6 +430,9 @@ export default function LawyersPage() {
             </div>
           </div>
         </section>
+
+        {/* Owner 18 Nov, item 4.6: an internal link to /founder in the server HTML. */}
+        <FounderCampaignLink />
 
         {/* ── Active Role Profile ─────────────────────────────────────────── */}
         <AnimatePresence mode="wait">

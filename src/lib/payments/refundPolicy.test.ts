@@ -40,6 +40,14 @@ import {
 import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 import { quote } from "./catalog.ts";
 import { refundDecision, VOID_WINDOW_MS } from "./refundDecision.ts";
+import {
+  FOUNDER_REFUND_LINE_AR,
+  SUBSCRIPTION_REFUND_LINE_AR,
+  SUBSCRIPTION_REFUND_LINE_EN,
+  TOPUP_REFUND_LINE_AR,
+  TOPUP_REFUND_LINE_EN,
+} from "./refundPolicy.ts";
+import { FOUNDER_REFUND_CLAUSE, FOUNDER_TERMS_ITEMS } from "../founder/founderTerms.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const PAGE = readFileSync(join(ROOT, "src", "app", "refund-policy", "page.tsx"), "utf8");
@@ -125,13 +133,16 @@ test("the page agrees with refundPolicy.ts: new sentences built from it, the own
   }
   const text = visible(PAGE);
   assert.ok(!text.includes("٩٠ دقيقة") && !text.includes("90 minutes"), "the instant-cancel window is typed, not built");
-  // ١٨٠ — his clauses stay word for word (pricingHonesty.test.ts); their numbers are these constants
-  assert.ok(text.includes(`خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من تاريخ السداد`));
-  assert.ok(text.includes(`أكثر من ${arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ من رصيد وحدات الاستخدام`));
+  // l8 (٦٤): the per-product lines are built from the constants
+  for (const name of ["FOUNDER_REFUND_LINE_AR", "SUBSCRIPTION_REFUND_LINE_AR", "TOPUP_REFUND_LINE_AR", "FOUNDER_REFUND_LINE_EN", "SUBSCRIPTION_REFUND_LINE_EN", "TOPUP_REFUND_LINE_EN"]) {
+    assert.ok(PAGE.includes(name), name);
+  }
+  assert.ok(SUBSCRIPTION_REFUND_LINE_AR.includes(`خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء`));
+  assert.ok(TOPUP_REFUND_LINE_AR.includes(`${arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ منها`));
   assert.ok(text.includes(`قبل ${arNumber(CONSULTATION_CANCEL_HOURS)} ساعة من موعد الجلسة الاستشارية`));
   assert.ok(text.includes(`الإلغاء قبل ${arNumber(CONSULTATION_CANCEL_HOURS)} ساعة`));
-  assert.ok(text.includes(`within (${WITHDRAWAL_DAYS}) days of payment`));
-  assert.ok(text.includes(`no more than ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of the usage units`));
+  assert.ok(SUBSCRIPTION_REFUND_LINE_EN.includes(`within (${WITHDRAWAL_DAYS}) days of purchase`));
+  assert.ok(TOPUP_REFUND_LINE_EN.includes(`no more than ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of that top-up's own points`));
   assert.ok(text.includes(`up to ${CONSULTATION_CANCEL_HOURS} hours before the consultation session`));
   // no other value of these numbers anywhere in the visible text
   for (const other of ["(٧) يوماً", "(٣٠) يوماً", "١٠٪ من رصيد", "قبل ٤٨ ساعة", "(7) days", "(30) days", "up to 48 hours"]) {
@@ -176,15 +187,36 @@ test("no subscription renews automatically, so the page promises no cancel contr
   assert.match(afterWithdrawalLineAr(true), /إلغاء التجديد التلقائي/);
 });
 
-test("no upgrade is pro-rated today, so the page promises no pro-rata on a next invoice", () => {
-  assert.equal(SHOW_UPGRADE_PRORATION, false);
-  const decision = readFileSync(join(ROOT, "src", "lib", "payments", "fulfillDecision.ts"), "utf8");
-  assert.match(decision, /pro-rata is B2/);
-  assert.deepEqual(upgradeProrationLinesAr(), []);
-  assert.deepEqual(upgradeProrationLinesEn(), []);
-  const page = visible(PAGE);
-  assert.equal(page.includes("تناسبياً على الفاتورة التالية"), false);
-  assert.equal(page.includes("pro-rated on the next invoice"), false);
-  // kept for the day B2 builds it
-  assert.match(upgradeProrationLinesAr(true)[0], /تناسبياً/);
+test("٥٠ (l8): the page says the remaining value is deducted AT the upgrade and a downgrade is refused — what checkout does", () => {
+  assert.equal(SHOW_UPGRADE_PRORATION, true);
+  const [ar] = upgradeProrationLinesAr();
+  const [en] = upgradeProrationLinesEn();
+  assert.match(ar, /يُخصم المتبقي من قيمة باقتك الحالية المدفوعة من سعر الباقة الجديدة لحظة الترقية/);
+  assert.match(ar, /لا يمكن شراء باقة أدنى ما دامت باقة أعلى سارية/);
+  assert.match(en, /at the moment of the upgrade/);
+  for (const line of [ar, en]) assert.doesNotMatch(line, /الفاتورة التالية|next invoice/);
+  assert.deepEqual(upgradeProrationLinesAr(false), []);
+  // the checkout's own rule (l6-pay upgradeProration.ts): the credit off the new price, a downgrade refused
+  const proration = readFileSync(join(ROOT, "src", "lib", "payments", "upgradeProration.ts"), "utf8");
+  assert.ok(proration.includes('export const UPGRADE_DOWNGRADE_AR = "لديك باقة أعلى سارية؛ لا يمكن شراء باقة أدنى قبل انتهائها"'));
+  assert.ok(proration.includes("يُخصم المتبقي من باقتك الحالية"));
+  assert.ok(PAGE.includes("...upgradeProrationLinesAr()"));
+  assert.ok(PAGE.includes("...upgradeProrationLinesEn()"));
+});
+
+test("l8 (owner 18 Nov, 1.2 / ج8): ONE founder refund text — /founder-terms item ٧ word for word on /refund-policy", () => {
+  const item7 = FOUNDER_TERMS_ITEMS.find((i) => i.id === "refund")?.paragraphs?.[0];
+  assert.equal(item7, FOUNDER_REFUND_CLAUSE);
+  assert.ok(FOUNDER_REFUND_LINE_AR.endsWith(FOUNDER_REFUND_CLAUSE));
+  assert.ok(FOUNDER_REFUND_CLAUSE.includes("خلال **14 يوماً** من الشراء بشرط **ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي"));
+  // ٦٤: the library / bundles share the no-AI rule; the 5 % belongs to top-ups only
+  assert.ok(SUBSCRIPTION_REFUND_LINE_AR.includes("المكتبة القانونية والباقات المدمجة"));
+  assert.ok(SUBSCRIPTION_REFUND_LINE_AR.includes("أي ميزة ذكاء اصطناعي"));
+  assert.ok(!SUBSCRIPTION_REFUND_LINE_AR.includes("٪"));
+  assert.ok(TOPUP_REFUND_LINE_AR.startsWith("**شحن النقاط**"));
+  // the old clause that let a founder use 5 % of the points is gone from the page
+  const text = visible(PAGE);
+  assert.ok(!text.includes("رصيد وحدات الاستخدام"));
+  assert.ok(!text.includes("usage units"));
+  assert.ok(text.includes("٢٠ نوفمبر ٢٠٢٦"), "the last-update date moved");
 });

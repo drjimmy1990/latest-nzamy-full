@@ -20,3 +20,14 @@ export function parseLibraryAccessResponse(ok: boolean, body: unknown): boolean 
   if (!ok || typeof body !== "object" || body === null) return false;
   return (body as { hasFullAccess?: unknown }).hasFullAccess === true;
 }
+
+/**
+ * Owner item 9 (batch l8): true only for a 2xx whose body says
+ * `accountLocked: true` — the library is locked for this account's type. A
+ * failed read is false (the menu keeps its library row; the pages themselves
+ * show the lock, and the server enforces it).
+ */
+export function parseLibraryAccountLocked(ok: boolean, body: unknown): boolean {
+  if (!ok || typeof body !== "object" || body === null) return false;
+  return (body as { accountLocked?: unknown }).accountLocked === true;
+}

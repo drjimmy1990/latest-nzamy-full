@@ -62,8 +62,10 @@
  *       would be paid and grant nothing). An upgrade from a lower PAID plan →
  *       the pro-rata credit; a coupon with it → 400 UPGRADE_NO_COUPON_AR. A
  *       failed read → 503.
- *   3c. A TOP-UP of a founder member (F12, founderDiscount.ts; lifetime and
- *       founder_topup_discount_bps since l7): 15 % by default off the net,
+ *   3c. A TOP-UP of a founder member (F12, founderDiscount.ts; the rate is
+ *       founder_topup_discount_bps, and since l8 the discount runs only for
+ *       founder_topup_discount_expires — the membership year from
+ *       activation, never lifetime): 15 % by default off the net,
  *       or the coupon if it is larger (never both). A failed
  *       founder read → 503. metadata.founder_discount; quote.founderDiscount.
  *   3d. The credit off the net before VAT (VAT recomputed); less than 1 SAR
@@ -123,6 +125,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
 import { checkMinTopup } from "./minTopup.ts";
+import { LIBRARY_ACCOUNT_LOCKED_AR, LIBRARY_ACCOUNT_LOCKED_CODE } from "../library/accountAccess.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
 import {
@@ -241,6 +244,14 @@ export interface CheckoutDeps {
    * not read (the plan is priced as before). Never used for any other kind.
    */
   ranks?: TierRankTable;
+  /**
+   * Owner item 9 (batch l8): may this account use the library
+   * (library_access_by_account_type and its exceptions —
+   * src/lib/library/accountAccessServer.ts)? Asked only for a library plan
+   * (step 2b); false → 403 with the owner's message, nothing written. A throw
+   * is a refusal. Absent → not asked.
+   */
+  libraryAccountAllowed?: (userId: string) => Promise<boolean>;
 }
 
 export interface CheckoutInput {
@@ -482,6 +493,18 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   if (known.kind === "topup" && typeof known.listedPrices[input.billing] === "number") {
     const min = await checkMinTopup(admin, { userId: user.id, userType, itemId: known.id, baseNetHalalas: known.listedPrices[input.billing] as number });
     if (!min.ok) return { status: min.status, body: { error: min.error, code: min.code } };
+  }
+  // 2b (l8, owner item 9). a library plan (and the library-assistant points it
+  // carries) for an account whose library is locked for its type: the owner's
+  // message, before the audience check, before any price — nothing written
+  if (known.kind === "library" && deps.libraryAccountAllowed) {
+    let open = false;
+    try {
+      open = (await deps.libraryAccountAllowed(user.id)) === true;
+    } catch {
+      open = false;
+    }
+    if (!open) return { status: 403, body: { error: LIBRARY_ACCOUNT_LOCKED_AR, code: LIBRARY_ACCOUNT_LOCKED_CODE } };
   }
   if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
 

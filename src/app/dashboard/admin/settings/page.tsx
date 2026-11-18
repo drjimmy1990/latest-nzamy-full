@@ -21,8 +21,10 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { LibraryPublicGuardSettings } from "./_library-public-guard";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
+import { PaymentRulesCard } from "./_components/PaymentRulesCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -560,6 +562,12 @@ export default function AdminSettingsPage() {
           {/* ── Divider ── */}
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
 
+          {/* ── Public library protection (batch l8-libguard, owner item 2) ── */}
+          <LibraryPublicGuardSettings isDark={isDark} />
+
+          {/* ── Divider ── */}
+          <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
+
           {/* ── Whitelisted Laws ── */}
           <div>
             <label className={`text-sm font-bold block mb-3 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>
@@ -940,6 +948,9 @@ export default function AdminSettingsPage() {
           </div>
         </div>
       </motion.div>
+
+      {/* ── l8 payref: top-up minimum, founder discount rate + length, extra-seat price ── */}
+      <PaymentRulesCard />
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* ── Section 4: Legal Library Open/Close ── */}

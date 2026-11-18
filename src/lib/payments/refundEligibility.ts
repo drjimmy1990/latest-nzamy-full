@@ -9,10 +9,18 @@
  *     refuses an ineligible founder refund unless the admin types a reason
  *     (MIN_OVERRIDE_REASON_CHARS), and that override is audited before any
  *     money moves (refundCore.ts).
- *   - library / plan: the same rule (07 ب-4 unifies them with the founder's
- *     "no AI used" rule, an owner question still open) — shown, NOT enforced.
- *   - top-up: the published 25-Oct rule (/refund-policy: 14 days, at most
- *     5 % of the points used) on the order's own lot — shown, NOT enforced.
+ *   - library (batch l8, owner ٦٤: «موحَّد مع المؤسس»): the same no-AI rule,
+ *     ENFORCED. The library subscription's AI feature is the library
+ *     assistant: its runs since paid_at and the points spent from THIS
+ *     order's own (library_agent) lot count; a drafter run paid by another
+ *     plan does not. Bundles (not built yet) are plans and will follow.
+ *   - top-up (٦٤: «5% للشحن فقط»): 14 days and at most 5 % of the order's own
+ *     lot used — ENFORCED since l8 (l7 only showed it).
+ *   - plan: the no-AI rule, shown and NOT enforced — ٦٤ names the library and
+ *     the bundles only; whether every plan is enforced is an owner question.
+ *   - an order the platform owes back (metadata.already_entitled: paid, nothing
+ *     granted — a duplicate, a rejected founder licence) is never blocked: the
+ *     verdict is shown and no reason is required.
  *
  * The window: eligible while now − paid_at ≤ 14 × 24 h (day 14 to the second
  * is still inside; one second later is not).
@@ -54,9 +62,11 @@ export type RefundRule = "no_ai_use" | "points_5pct";
 export type RefundVerdictState = "eligible" | "ineligible" | "unverified";
 export interface RefundVerdict {
   state: RefundVerdictState;
-  /** True only for a founder membership: the route refuses without an admin reason. */
+  /** True for a founder membership, a library pass and a top-up (l8): the route refuses an ineligible one without an admin reason. */
   enforced: boolean;
   rule: RefundRule;
+  /** The rule's name for the admin (refundRuleLabelAr). */
+  ruleLabel: string;
   /** «مؤهل للاسترداد» / «غير مؤهل للاسترداد» / «تعذّر التحقق من الأهلية». */
   label: string;
   /** Why it is not eligible (empty when eligible). */
@@ -79,6 +89,17 @@ export function ruleFor(kind: string): RefundRule {
   return kind === "topup" ? "points_5pct" : "no_ai_use";
 }
 
+/** The kinds whose verdict the admin refund route enforces (l7: membership; l8, ٦٤: library and top-up). */
+export const ENFORCED_REFUND_KINDS: readonly string[] = Object.freeze(["membership", "library", "topup"]);
+/** The AI features that belong to a library subscription (its assistant). */
+export const LIBRARY_AI_TOOLS: readonly string[] = Object.freeze(["library-assistant"]);
+
+/** Paid and nothing granted: the platform owes the money back, so the rule never blocks it. */
+export function platformOwesRefund(order: { metadata?: unknown }): boolean {
+  const m = order.metadata;
+  return typeof m === "object" && m !== null && (m as { already_entitled?: unknown }).already_entitled === true;
+}
+
 const dateAr = (iso: string) => {
   const t = Date.parse(iso);
   return Number.isFinite(t)
@@ -87,7 +108,7 @@ const dateAr = (iso: string) => {
 };
 
 /** The verdict, or null when the order has no valid paid_at (the caller refuses it anyway). */
-export function refundEligibility(order: { kind: string; paid_at: string | null }, now: Date, evidence: RefundEvidence): RefundVerdict | null {
+export function refundEligibility(order: { kind: string; paid_at: string | null; metadata?: unknown }, now: Date, evidence: RefundEvidence): RefundVerdict | null {
   const paidAt = order.paid_at ? Date.parse(order.paid_at) : NaN;
   if (!Number.isFinite(paidAt)) return null;
   const elapsed = now.getTime() - paidAt;
@@ -95,14 +116,26 @@ export function refundEligibility(order: { kind: string; paid_at: string | null 
   const daysSincePayment = Math.max(0, Math.floor(elapsed / DAY_MS));
   const windowEndsAt = new Date(paidAt + REFUND_WINDOW_MS).toISOString();
   const rule = ruleFor(order.kind);
-  const enforced = order.kind === "membership";
+  const owed = platformOwesRefund(order);
+  const enforced = ENFORCED_REFUND_KINDS.includes(order.kind) && !owed;
   const reasons: string[] = [];
   const lines: string[] = [];
 
   lines.push(`مضى على الدفع ${countPhraseAr(daysSincePayment, ELAPSED_DAYS) ?? "—"}، ونافذة الاسترداد ${ar(WITHDRAWAL_DAYS)} يوماً تنتهي في ${dateAr(windowEndsAt)}.`);
   if (!inWindow) reasons.push(`انقضت نافذة الـ${ar(WITHDRAWAL_DAYS)} يوماً من تاريخ الدفع.`);
 
-  if (rule === "no_ai_use") {
+  if (rule === "no_ai_use" && order.kind === "library") {
+    // l8 (٦٤): the library subscription's own AI feature — its assistant and this order's library points
+    const runs = evidence.aiRuns.filter((r) => LIBRARY_AI_TOOLS.includes(r.tool));
+    lines.push(runs.length
+      ? `أسئلة مساعد المكتبة الذكي منذ الدفع: ${ar(runs.length)}، أولها في ${dateAr(runs.map((r) => r.created_at).sort()[0])}.`
+      : "لا أسئلة لمساعد المكتبة الذكي منذ الدفع.");
+    lines.push(evidence.orderLotUsed > 0
+      ? `نقاط مساعد المكتبة المستخدمة من نقاط هذا الاشتراك: ${ar(evidence.orderLotUsed)} من ${ar(evidence.orderLotTotal)}.`
+      : "لم تُستخدم نقاط هذا الاشتراك.");
+    lines.push("تصفح المكتبة القانونية لا يُحتسب ولا يمنع الاسترداد.");
+    if (runs.length || evidence.orderLotUsed > 0) reasons.push("استُخدمت ميزة ذكاء اصطناعي في الاشتراك منذ الدفع.");
+  } else if (rule === "no_ai_use") {
     const credits = Object.entries(evidence.creditsUsed).filter(([, n]) => n > 0);
     lines.push(credits.length
       ? `أرصدة المؤسس المستخدمة: ${credits.map(([k, n]) => `${CREDIT_KIND_AR[k] ?? k} ${ar(n)}`).join("، ")}.`
@@ -126,8 +159,9 @@ export function refundEligibility(order: { kind: string; paid_at: string | null 
 
   const state: RefundVerdictState = reasons.length ? "ineligible" : evidence.readFailed ? "unverified" : "eligible";
   const label = state === "eligible" ? "مؤهل للاسترداد" : state === "ineligible" ? "غير مؤهل للاسترداد" : "تعذّر التحقق من الأهلية";
-  if (!enforced && state !== "eligible") lines.push("الحكم إرشادي لهذا النوع من العمليات ولا يمنع الاسترداد.");
-  return { state, enforced, rule, label, reasons, lines, daysSincePayment, windowEndsAt };
+  if (owed) lines.push("لم تمنح هذه العملية شيئاً (مستحقة الاسترداد)، فلا يمنع الحكم استردادها ولا يلزم سبب استثناء.");
+  else if (!enforced && state !== "eligible") lines.push("الحكم إرشادي لهذا النوع من العمليات ولا يمنع الاسترداد.");
+  return { state, enforced, rule, ruleLabel: refundRuleLabelAr(order.kind), label, reasons, lines, daysSincePayment, windowEndsAt };
 }
 
 /** The override reason, trimmed and checked; null when it is too short or missing. */
@@ -143,4 +177,11 @@ export function needsOverride(verdict: RefundVerdict): boolean {
   return verdict.enforced && verdict.state !== "eligible";
 }
 
-export const OVERRIDE_REQUIRED_AR = `هذه العملية غير مؤهلة للاسترداد وفق شروط باقة المؤسس (أو تعذّر التحقق من أهليتها). للمتابعة اكتب سبب الاستثناء (${ar(MIN_OVERRIDE_REASON_CHARS)} أحرف على الأقل)؛ يُسجَّل في سجل التدقيق.`;
+export const OVERRIDE_REQUIRED_AR = `هذه العملية غير مؤهلة للاسترداد وفق سياسة الاسترداد (أو تعذّر التحقق من أهليتها). للمتابعة اكتب سبب الاستثناء (${ar(MIN_OVERRIDE_REASON_CHARS)} أحرف على الأقل)؛ يُسجَّل في سجل التدقيق.`;
+
+/** The rule the admin's verdict box names, per kind (l8: not only the founder's). */
+export function refundRuleLabelAr(kind: string): string {
+  if (kind === "membership") return "شروط باقة المؤسس (البند ٧)";
+  if (kind === "topup") return "سياسة الاسترداد: شحن النقاط (٥٪ من نقاط الشحنة)";
+  return "سياسة الاسترداد: بلا استخدام ذكاء اصطناعي";
+}

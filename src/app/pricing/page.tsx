@@ -13,6 +13,7 @@ import { PricingHero }         from "@/components/pricing/PricingHero";
 import { PricingCards }        from "@/components/pricing/PricingCards";
 import { PromotionalCampaignBanner } from "@/components/pricing/PromotionalCampaignBanner";
 import { FounderPlanSection } from "@/components/pricing/FounderPlanCard";
+import { OffersList } from "@/components/offers/OffersList";
 import { PricingComparison }   from "@/components/pricing/PricingComparison";
 import { PricingTestimonials } from "@/components/pricing/PricingTestimonials";
 import { PricingFAQ }          from "@/components/pricing/PricingFAQ";
@@ -21,6 +22,8 @@ import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
 import { audienceTabsView, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 import { audienceFromParam } from "@/lib/pricing/founderCard";
+import FounderCampaignLink from "@/components/seo/FounderCampaignLink";
+import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 
 // Which package families the audience bar offers (owner, 2026-10-24): a
 // member sees only their own account type's family — the bar is locked to it
@@ -77,8 +80,10 @@ export default function PricingPage() {
   // admin, a tab they clicked wins over `?audience=`.
   const audience: AudienceTab =
     tabsView.kind === "locked" ? tabsView.audience : (pickedAudience ?? url.audience ?? "individuals");
+  // Owner item 9 (batch l8): a signed-in account whose library is locked sees no library plans.
+  const libraryLock = useLibraryAccountLocked(isLoggedIn && !userLoading);
   // The library plans exist on the lawyers and firms tabs only.
-  const libraryMode = libraryModeState && (audience === "lawyers" || audience === "firms");
+  const libraryMode = !libraryLock.locked && libraryModeState && (audience === "lawyers" || audience === "firms");
 
   // Open at the plans, not wherever the previous page was scrolled to.
   useEffect(() => {
@@ -120,6 +125,7 @@ export default function PricingPage() {
           hasLegalDept={hasLegalDept} setHasLegalDept={setHasLegalDept}
           libraryMode={libraryMode} setLibraryMode={setLibraryMode}
           audienceTabs={tabsView.kind === "locked" ? "own" : tabsView.kind}
+          libraryLocked={libraryLock.locked}
         />
 
         <Suspense fallback={null}>
@@ -129,9 +135,21 @@ export default function PricingPage() {
         {/* A dated campaign only (owner ١٧٩); renders nothing today. */}
         <PromotionalCampaignBanner />
 
+        {/* Owner 18 Nov, item 4.6: an internal link to /founder in the server HTML,
+            whatever the tab (the founder card below shows on the lawyers tab only). */}
+        <FounderCampaignLink />
+
         {/* The lawyer founder membership (P3): the card while on sale; the
             «انتهت…» line for a campaign-link visitor after it closes. */}
-        <FounderPlanSection audience={audience} libraryMode={libraryMode} campaignParam={url.campaign} />
+        {/* l8 (owner item 5, protocol هـ7): the founder offer is for the advocate
+            lawyer only — a signed-in consultant sees no founder card at all. */}
+        {!(isLoggedIn && userType === "lawyer" && practiceKind === "consultant") && (
+          <FounderPlanSection audience={audience} libraryMode={libraryMode} campaignParam={url.campaign} />
+        )}
+
+        {/* Owner item 5: the offers meant for this signed-in user (the
+            popup's offer stays here after it is closed). */}
+        <OffersList variant="strip" enabled={!userLoading && isLoggedIn} />
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards

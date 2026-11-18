@@ -50,6 +50,22 @@ test("hearing-reminders: tomorrow's scheduled hearings, assignees re-checked aga
   assert.ok(fail.indexOf("activeMembers.clear();") > -1 && fail.indexOf("activeMembers.clear();") < fail.indexOf("break;"));
 });
 
+test("owner ٤٥: the routes never read case or client columns for the e-mails", () => {
+  assert.match(hearing, /\.from\("hearings"\)\s*\/\/[^\n]*\n\s*\.select\(HEARING_EMAIL_COLUMNS\)/);
+  assert.match(poa, /\.from\("contracts"\)\s*\/\/[^\n]*\n\s*\.select\(POA_EMAIL_COLUMNS\)/);
+  const hearingLib = readFileSync(join(import.meta.dirname, "../../../../../lib/email/hearingEmailReminders.ts"), "utf8");
+  const poaLib = readFileSync(join(import.meta.dirname, "../../../../../lib/email/poaEmailReminders.ts"), "utf8");
+  const cols = (src: string, name: string) => /"([^"]+)"/.exec(src.slice(src.indexOf(`export const ${name} =`)))?.[1] ?? "";
+  for (const c of ["title", "court_name", "location", "hearing_time"]) {
+    assert.equal(cols(hearingLib, "HEARING_EMAIL_COLUMNS").split(/,\s*/).includes(c), false, `hearings: no ${c}`);
+  }
+  for (const c of ["title", "counterparty_name", "client_id"]) {
+    assert.equal(cols(poaLib, "POA_EMAIL_COLUMNS").split(/,\s*/).includes(c), false, `contracts: no ${c}`);
+  }
+  assert.ok(cols(hearingLib, "HEARING_EMAIL_COLUMNS").includes("hearing_date"));
+  assert.ok(cols(poaLib, "POA_EMAIL_COLUMNS").includes("ends_on"));
+});
+
 test("poa-reminders: power-of-attorney contracts, not ended, ending within 30 days, owner only", () => {
   assert.match(poa, /\.eq\("contract_type", "power_of_attorney"\)/);
   assert.match(poa, /\.not\("status", "in", `\(\$\{POA_ENDED_STATUSES\.join\(","\)\}\)`\)/);

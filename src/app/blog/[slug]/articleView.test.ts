@@ -41,10 +41,19 @@ test("N1.6: scroll-spy is an IntersectionObserver, with no scroll listener or la
   assert.doesNotMatch(code, /getBoundingClientRect|offsetTop|scrollY/);
 });
 
-test("N1.6: the observer's hooks run above the mounted early return", () => {
-  const io = code.indexOf("new IntersectionObserver(");
-  const early = code.indexOf("if (!mounted) return null;");
-  assert.ok(io > -1 && early > -1 && io < early);
+test("N1.6: the observer runs only once mounted (an effect, never during the server render)", () => {
+  assert.match(code, /if \(!mounted \|\| !toc \|\| typeof IntersectionObserver === "undefined"\) return;/);
+});
+
+// ─── Owner 18 Nov, item 4.1: the article is in the server HTML ──────────────
+
+test("4.1: no mounted gate — the server renders the article (H1, body), the same HTML for every visitor", () => {
+  assert.doesNotMatch(code, /if \(!mounted\) return null;/);
+  assert.match(code, /<h1 className=\{`text-2xl font-black leading-snug mb-4/);
+  // Nothing in the render reads the browser: the share links use the canonical URL.
+  assert.doesNotMatch(code, /window\.location/);
+  assert.match(code, /const shareUrl = article\.canonical_url \|\| `https:\/\/nezamy\.sa\/blog\/\$\{article\.slug\}`;/);
+  assert.match(code, /article\.views\.toLocaleString\(isRTL \? "ar-SA" : "en-US"\)/);
 });
 
 test("N1.6: both TOCs use gold for hover and the active entry, in light and dark", () => {

@@ -14,7 +14,8 @@ const SRC = readFileSync(join(import.meta.dirname, "proxy.ts"), "utf8").replace(
 const wrapper = SRC.slice(SRC.indexOf("function withAttributionCookie("), SRC.indexOf("export default async function proxy("));
 
 test("every response passes through the cookie step: the default export only wraps proxyRoutes", () => {
-  assert.match(SRC, /export default async function proxy\(req: NextRequest\) \{\n  return withAttributionCookie\(req, await proxyRoutes\(req\)\);\n\}/);
+  // Batch l8-libguard: the library session cookie wraps the same single call (it touches library API answers only).
+  assert.match(SRC, /export default async function proxy\(req: NextRequest\) \{\n  return withLibrarySessionCookie\(req, withAttributionCookie\(req, await proxyRoutes\(req\)\)\);\n\}/);
   assert.equal(SRC.match(/export default/g)?.length, 1);
   assert.ok(SRC.indexOf("export default async function proxy(") < SRC.indexOf("async function proxyRoutes("));
 });

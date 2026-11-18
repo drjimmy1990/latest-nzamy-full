@@ -308,6 +308,10 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // q372: super admin and operations lift (library.lock_lift); opening a lock stays settings.write
   { file: "library-security-locks/[id]/lift/route.ts", method: "POST", action: "library.lock_lift", logs: 1 },
   { file: "library-monitor/settings/route.ts", method: "PUT", action: "settings.write", logs: 1 },
+  // l8 owner item 9: the library per account type and per-account exceptions (one audit row each)
+  { file: "library-access/route.ts", method: "PUT", action: "settings.write", logs: 1 },
+  { file: "library-access/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "library-access/route.ts", method: "DELETE", action: "settings.write", logs: 1 },
   { file: "library-monitor/flags/[id]/clear/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "library-monitor/user-limits/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "library-monitor/user-limits/[userId]/route.ts", method: "DELETE", action: "settings.write", logs: 1 },
@@ -329,6 +333,9 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "pricing-catalog/[serviceId]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   // Legal GraphRAG admin controls: switch_model, trigger_sync, set_feqh_vectors (3 audited arms)
   { file: "graph-rag/route.ts", method: "POST", action: "settings.write", logs: 3 },
+  // l8 (owner item 5): offers — create, and edit / «إيقاف فوري» (one audit row each)
+  { file: "offers/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "offers/[id]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
 ];
 
 for (const { file, method, action, logs } of GATES) {

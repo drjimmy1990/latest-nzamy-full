@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * GET /api/v1/library/notes/audio-url?page=<id> — a 5-minute signed link
@@ -15,6 +16,8 @@ import { isPathInOwnerFolder } from "@/lib/storagePathOwnership";
  * `documents` does not otherwise grant the cookie-scoped client sign rights).
  */
 export async function GET(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const auth = await assertRole();
     if (!auth.ok) return auth.response;

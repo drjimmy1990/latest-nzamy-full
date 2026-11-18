@@ -11,7 +11,11 @@
  *     works for about two hours; 90 minutes leaves a margin). There is no
  *     self-service button: the buyer asks support, and an admin voids it from
  *     the orders page — the page says «تُطلب من الدعم»;
- *   - withdrawal: 14 days, at most 5 % of the points used, no full export;
+ *   - withdrawal (batch l8, owner 18 Nov items 1.2 and ٦٤): 14 days; the
+ *     founder plan, the library, the bundles and the other subscriptions
+ *     only when no AI feature was used (the founder plan's text is
+ *     /founder-terms item ٧ word for word); a point top-up when at most 5 %
+ *     of its own points was used. refundEligibility.ts checks the same;
  *   - scheduled consultations: full cancellation up to 24 hours before;
  *   - paid top-up points: valid per pack AS THE PRICE BOOK SELLS THEM
  *     (P7 review, finding 3) — the sentence is built from the book's on-sale
@@ -30,6 +34,7 @@
  */
 
 import { isOnSale, PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
+import { FOUNDER_REFUND_CLAUSE } from "../founder/founderTerms.ts";
 
 export const INSTANT_CANCEL_MINUTES = 90;
 export const WITHDRAWAL_DAYS = 14;
@@ -47,11 +52,13 @@ export const RENEWAL_REMINDER_DAYS: readonly number[] = Object.freeze([7, 3]);
  */
 export const SUBSCRIPTIONS_AUTO_RENEW = false;
 /**
- * Off: an upgrade is not pro-rated today. A higher plan starts now at its own
- * price (fulfillDecision.ts: "pro-rata is B2"), and with no renewal there is
- * no "next invoice" to carry a difference. Shown once B2 builds it.
+ * On since batch l8 (owner ٥٠, 18 Nov 2026): the page says what checkout does
+ * — an upgrade from a lower PAID plan has the remaining value of that plan
+ * deducted from the new price AT the upgrade (upgradeProration.ts, l6-pay),
+ * and buying a lower plan while a higher one runs is refused
+ * (UPGRADE_DOWNGRADE_AR). Nothing is carried to a "next invoice".
  */
-export const SHOW_UPGRADE_PRORATION = false;
+export const SHOW_UPGRADE_PRORATION = true;
 /** Off until B2 sends the two renewal reminders (owner ٢٨٨). */
 export const SHOW_RENEWAL_REMINDERS = false;
 /** Off until something expires promotional / welcome points after 90 days. */
@@ -160,13 +167,44 @@ export function renewalReminderLinesEn(show: boolean = SHOW_RENEWAL_REMINDERS): 
     : [];
 }
 
+/** ٥٠ (l8): the remaining value is deducted AT the upgrade; a downgrade is refused while the higher plan runs. */
 export function upgradeProrationLinesAr(show: boolean = SHOW_UPGRADE_PRORATION): string[] {
-  return show ? ["الترقية بين الباقات لا تستوجب رسوم استرداد؛ يُحتسب فرق السعر تناسبياً على الفاتورة التالية."] : [];
+  return show
+    ? [
+        "**الترقية إلى باقة أعلى**: يُخصم المتبقي من قيمة باقتك الحالية المدفوعة من سعر الباقة الجديدة لحظة الترقية، بحسب الأيام المتبقية منها، فتدفع الفرق وحده ولا يُرد المتبقي نقداً. ولا يمكن شراء باقة أدنى ما دامت باقة أعلى سارية.",
+      ]
+    : [];
 }
 
 export function upgradeProrationLinesEn(show: boolean = SHOW_UPGRADE_PRORATION): string[] {
-  return show ? ["Upgrading between plans does not require a refund; the price difference is pro-rated on the next invoice."] : [];
+  return show
+    ? [
+        "**Upgrading to a higher plan**: the remaining value of your current paid plan, by the days left on it, is deducted from the new plan's price at the moment of the upgrade, so you pay only the difference; the remainder is not refunded in cash. A lower plan cannot be bought while a higher one is running.",
+      ]
+    : [];
 }
+
+// ── the refund rules per product (batch l8: owner 18 Nov, items 1.2 and ٦٤) ──
+
+/**
+ * The founder plan's refund text is ONE text: FOUNDER_REFUND_CLAUSE of
+ * /founder-terms (item ٧), shown word for word on /refund-policy too.
+ */
+export const FOUNDER_REFUND_LINE_AR = `**باقة المحامي المؤسس**: ${FOUNDER_REFUND_CLAUSE}`;
+export const FOUNDER_REFUND_LINE_EN =
+  `**The founding lawyer plan**: you may get a refund within **${WITHDRAWAL_DAYS} days** of purchase provided **you have not used any AI feature of the plan**: the legal drafter, the professional tools, or the library's smart assistant and points. Browsing the ordinary legal library does not prevent a refund. The full amount, VAT included, is returned to the same payment method with no fee deducted, and a credit note is issued. Your card issuer decides how long the amount takes to appear in your account.`;
+
+/** ٦٤: the library, the bundles and every other digital subscription follow the founder's rule. */
+export const SUBSCRIPTION_REFUND_LINE_AR =
+  `**اشتراك المكتبة القانونية والباقات المدمجة وسائر الاشتراكات الرقمية**: القاعدة نفسها وفق نظام التجارة الإلكترونية ولائحته، فيحق لك الاسترداد خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء بشرط ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي في الاشتراك، ومنها مساعد المكتبة الذكي ونقاطه. ولا يمنع الاسترداد تصفح المكتبة القانونية العادية، ويُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة.`;
+export const SUBSCRIPTION_REFUND_LINE_EN =
+  `**The legal library, the bundles and every other digital subscription**: the same rule, under the E-Commerce Law and its Regulation — you may get a refund within (${WITHDRAWAL_DAYS}) days of purchase provided you have not used any AI feature of the subscription, including the library's smart assistant and its points. Browsing the ordinary legal library does not prevent a refund, and the full amount is returned, VAT included.`;
+
+/** ٦٤: the 5 % rule now belongs to point top-ups alone, measured on that top-up's own points. */
+export const TOPUP_REFUND_LINE_AR =
+  `**شحن النقاط**: يحق لك الاسترداد خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء بشرط ألا يتجاوز ما استُخدم من نقاط الشحنة نفسها ${arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ منها.`;
+export const TOPUP_REFUND_LINE_EN =
+  `**Point top-ups**: you may get a refund within (${WITHDRAWAL_DAYS}) days of purchase provided no more than ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of that top-up's own points has been used.`;
 
 export function promoPointsLinesAr(show: boolean = SHOW_PROMO_POINTS_VALIDITY): string[] {
   return show

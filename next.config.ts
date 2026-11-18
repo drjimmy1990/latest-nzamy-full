@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { privateRobotsHeaderRules } from "./src/lib/publicSeo/privatePages.ts";
 
 // ── Supabase Storage host, derived from the runtime env ─────────────────────
 // Blog cover images (and any other public Storage object) are served from
@@ -51,6 +52,17 @@ const dynamicSupabasePattern = supabaseStorageRemotePattern();
 //   block, in the console, and blocks nothing. No report-uri yet, so read the
 //   console on the main pages (home, laws, checkout, a dashboard, contact)
 //   before turning it into an enforcing policy.
+//   Owner 18 Nov, item 2.5 («تحويل CSP إلى enforce بعد المراجعة»): KEPT
+//   report-only on 19 Nov — enforcing needs proof that every directive covers
+//   what the live site loads, and none exists yet: no report-uri has ever
+//   collected a violation; the Moyasar 3-D Secure and wallet flows (Apple Pay,
+//   Google Pay, Samsung Pay) were never run under it; the Supabase origin is
+//   read from NEXT_PUBLIC_SUPABASE_URL when this file loads (a build without it
+//   would enforce a policy that blocks the whole backend); Cloudflare may
+//   inject its own scripts (Web Analytics / Rocket Loader) from hosts not
+//   listed here. To switch: run those flows with the browser console open,
+//   list every «[Report Only]» line, add what is legitimate, then rename the
+//   header key to Content-Security-Policy.
 //
 // CSP sources, each found in the code (2026-11-09):
 //   'unsafe-inline' scripts  Next's inline bootstrap + the theme / service
@@ -174,6 +186,18 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   // No `x-powered-by: Next.js` on responses (audit WEB-03).
   poweredByHeader: false,
+  // ── One HTML for every visitor (owner 18 Nov, items 2.7 + 4) ───────────────
+  // By default Next "streams" generateMetadata for any user agent outside its
+  // HTML-limited-bot list: the <title>, description, canonical and robots tags
+  // arrive late, in the <body>. Googlebot and GPTBot / ClaudeBot /
+  // PerplexityBot are outside that list, Bingbot and facebookexternalhit are
+  // inside — so two crawlers got two different documents, and the AI crawlers
+  // (no JavaScript) found no description or canonical in the <head> at all
+  // (the SEO audit of 18 Nov). Matching every user agent makes the metadata
+  // blocking for everyone: the browser, Googlebot and every other crawler get
+  // the same <head>. The cost is the metadata read before the first byte; the
+  // library readers' layouts await the same cached read anyway.
+  htmlLimitedBots: /.*/,
   // ── Build folder ────────────────────────────────────────────────────────────
   // deploy.sh alternates two build folders, `.next-a` and `.next-b`: it builds
   // into the one that is not live, then points the server at it through
@@ -208,6 +232,11 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: SECURITY_HEADERS,
       },
+      // Owner 18 Nov, item 4.3: `X-Robots-Tag: noindex, follow` on every
+      // private page (dashboards, sign-in and registration, settings, payment,
+      // the sign-in /ai tools…) — src/lib/publicSeo/privatePages.ts. Before
+      // the /track/:token rule below, whose stricter value then wins.
+      ...privateRobotsHeaderRules(),
       {
         // Prevent browser from caching /ai/wargaming (bust stale 301)
         source: "/ai/wargaming",

@@ -25,10 +25,17 @@ import { canonicalApiPath } from "../rateLimitRoutes.ts";
  * library_read_quota_hit uses an argument only when the settings row is gone.
  */
 export const LIBRARY_READ_QUOTA = Object.freeze({
-  /** Note ١٣: «فرد … 220 وثيقة فريدة/يوم». */
-  dailyDocs: 220,
-  /** Note ١٣: «عضو مكتب/شركة … 400». A firm / corporate account or an active member. */
-  memberDailyDocs: 400,
+  /**
+   * Owner item 3.2 (18 Nov 2026, batch l8): daily_full_read_limit = 50
+   * full-text opens per user per day, replacing note ١٣'s 220 (a person) and
+   * 400 (an office / company member). Counted only on a full-text open
+   * (libraryDocQuota.ts, owner ٤٤٧), never on a preview or a list. The admin
+   * row (library_monitor_settings.daily_docs / member_daily_docs) is set to 50
+   * by 20261128_30_library_public_guard.sql.
+   */
+  dailyDocs: 50,
+  /** The same 50 for an office / company member (one number for every user). */
+  memberDailyDocs: 50,
   /**
    * Owner answer ٤٢٦ (2026-11-07): 50 distinct documents per rolling hour (was
    * 120, chosen here before he answered). The settings row is set to the same
@@ -223,7 +230,7 @@ export function libraryLockMessageAr(reference: string | null, lockedUntil: stri
 
 export function libraryDailyLimitMessageAr(limit: number): string {
   return (
-    `بلغت الحد اليومي لفتح الوثائق في المكتبة (${limit} وثيقة مختلفة في اليوم). ` +
+    `بلغت الحد اليومي لفتح النص الكامل في المكتبة (${limit} وثيقة في اليوم). ` +
     "الوثائق التي فتحتها اليوم تبقى متاحة لك، ويتجدد الحد عند منتصف الليل بتوقيت الرياض. " +
     "إن كان عملك يحتاج أكثر من ذلك فتواصل مع الدعم."
   );

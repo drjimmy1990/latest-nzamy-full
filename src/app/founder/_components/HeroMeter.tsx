@@ -3,6 +3,8 @@
 import { splitRemaining, type FounderPhase } from "@/lib/founder/founderWindow";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import { useFounderWindow } from "./FounderWindowProvider";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
+import { SALE_PAUSED_LINE_AR, saleGatewayPaused } from "@/lib/payments/checkoutView";
 
 /**
  * The hero's countdown and seat meter. Every number is the server's: the
@@ -23,14 +25,17 @@ const PHASE_LINE: Record<FounderPhase, string> = {
   live: "يُغلق العرض بعد",
   ended: "انتهى العرض",
   sold_out: "اكتملت المقاعد",
-  paused: "البيع متوقف مؤقتًا",
+  paused: "البيع متوقف مؤقتاً",
 };
 
 const grouped = (n: number) => toArabicDigits(String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "٬"));
 
 export function HeroMeter() {
   const { view } = useFounderWindow();
-  const parts = view.remainingMs === null ? null : splitRemaining(view.remainingMs);
+  // l8 (owner 18 Nov, 1.1): on sale by the window but online payment is off → «البيع متوقف مؤقتاً» and why
+  const gatewayPaused = saleGatewayPaused(usePaymentsStatus()) && view.phase === "live";
+  const phaseLine = gatewayPaused ? SALE_PAUSED_LINE_AR : PHASE_LINE[view.phase];
+  const parts = view.remainingMs === null || gatewayPaused ? null : splitRemaining(view.remainingMs);
   const units: Array<[number | undefined, string]> = [
     [parts?.days, "يوم"],
     [parts?.hours, "ساعة"],
@@ -46,7 +51,7 @@ export function HeroMeter() {
   return (
     <div className="mt-8 max-w-[460px]">
       <p className="mb-1.5 min-h-[1.5em] text-sm text-[#E6CD8E]" aria-live="polite">
-        {PHASE_LINE[view.phase]}
+        {phaseLine}
       </p>
       {parts && (
         <div className="flex gap-2.5" role="timer" aria-label={PHASE_LINE[view.phase]}>

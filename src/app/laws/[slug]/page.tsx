@@ -52,6 +52,7 @@ import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/s
 import { CitationProvider, type CitationReaderContext } from "./_citation-popover";
 import { articlesByNumber } from "./_cite-status";
 import { LawMapButton } from "./_law-map-button";
+import { RefBox, RefBoxProvider, type RefBoxPageContext } from "./_ref-box";
 import { isPageNumberedDocument } from "@/lib/library/pageLocator";
 
 /**
@@ -757,6 +758,29 @@ function LawSystemPageContent() {
     };
   }, [law, allArticles, slug, viewerHasFullAccess, isDark, isRTL, cart, addArticle]);
 
+  // Batch l8-refbox (owner item 6): the links box beside the article, its
+  // «عرض الكل» dialog, its text preview and the phone's bottom sheet.
+  const refBoxContext = useMemo<RefBoxPageContext | null>(() => {
+    if (!law || allArticles.length === 0) return null;
+    return {
+      lawSlug: law.slug || decodeURIComponent(apiSlug(slug)),
+      viewerHasFullAccess,
+      isDark,
+      isRTL,
+      inlineTrigger: isReadingMode,
+      showPaywall: () => setShowPaywall(true),
+      addSameLawArticle: (articleId: string) => {
+        const a = allArticles.find((x) => x.id === articleId);
+        if (!a) return false;
+        addArticle(a);
+        return true;
+      },
+      addEntry: addScopedEntry,
+      isInCart: (id: string) => cart.some((e) => e.articleId === id && e.isArticleAdded),
+      articleLabel: (articleId: string) => allArticles.find((x) => x.id === articleId)?.num ?? "",
+    };
+  }, [law, allArticles, slug, viewerHasFullAccess, isDark, isRTL, isReadingMode, cart, addArticle, addScopedEntry]);
+
   // Copy DRAFT — HTML Clipboard (Bold في Word)
   const [copiedDraft, setCopiedDraft] = useState(false);
   const handleCopyDraft = async () => {
@@ -910,7 +934,8 @@ function LawSystemPageContent() {
           </div>
           <div className="flex flex-wrap items-start gap-3 justify-between">
             <div>
-              <h1 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{lawTitle}</h1>
+              {/* An <h2>: the page's H1 is the server-rendered «عن هذا النظام» block (owner 18 Nov, item 4.1). */}
+              <h2 className={`text-xl font-black mb-0.5 ${isDark ? "text-white" : "text-zinc-900"}`}>{lawTitle}</h2>
               {/* T28-22: withheld for a non-subscriber → one locked row; simply
                   empty → nothing (this used to render an empty line). */}
               {officialMeta.locked ? (
@@ -1047,6 +1072,7 @@ function LawSystemPageContent() {
         </div>
 
         {/* ── Dynamic layout ── */}
+        <RefBoxProvider value={refBoxContext}>
         <div className={`grid grid-cols-1 lg:grid-cols-12 gap-6 items-start ${isReadingMode ? "justify-center" : ""}`}>
 
           {/* RIGHT COLUMN: Identity Panel AND Index Panel */}
@@ -1633,6 +1659,10 @@ function LawSystemPageContent() {
           {/* LEFT COLUMN: AI Tools and related documents */}
           {!isReadingMode && (
             <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+              {/* Owner item 6 (18 Nov): the links of the article in view, beside it — three
+                 sections, owner-matched link types only (_ref-box.tsx). It replaces the
+                 bar under each article and the «وثائق وأنظمة ذات صلة» card. */}
+              {viewMode !== "regulation" && <RefBox articleId={activeArticle?.id ?? null} />}
               <button
                 onClick={() => setShowCommunity(true)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold transition ${
@@ -1645,71 +1675,11 @@ function LawSystemPageContent() {
               <LibraryAI isDark={isDark} isRTL={isRTL} />
 
               <ResearchWorkspace isDark={isDark} pageId={law.id || slug} isRTL={isRTL} />
-
-              {/* Related Documents Card */}
-              {((lawMeta.related_systems && lawMeta.related_systems.length > 0) || 
-                (lawMeta.related_principles && lawMeta.related_principles.length > 0)) && (
-                <div className={`p-4 rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"} space-y-3.5`}>
-                  <h3 className="text-xs font-black text-slate-500 dark:text-zinc-400 flex items-center gap-1.5 border-b pb-2 border-black/5 dark:border-white/5">
-                    <Stack size={14} className="text-[#C8A762]" weight="fill" />
-                    <span>{isRTL ? "وثائق وأنظمة ذات صلة" : "Related Documents"}</span>
-                  </h3>
-                  
-                  {/* Related Systems */}
-                  {lawMeta.related_systems && lawMeta.related_systems.length > 0 && (
-                    <div className="space-y-2">
-                      <h4 className="text-[10px] font-black text-amber-600 dark:text-amber-500/90 uppercase tracking-wider">
-                        {isRTL ? "الأنظمة واللوائح المرتبطة:" : "Related Laws & Regs:"}
-                      </h4>
-                      <div className="flex flex-col gap-1.5">
-                        {lawMeta.related_systems.map((doc, idx) => (
-                          <Link
-                            key={idx}
-                            href={`/laws/${doc.slug}`}
-                            className={`flex items-start gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-semibold transition ${
-                              isDark 
-                                ? "border-white/5 hover:border-white/10 hover:bg-white/5 text-zinc-300 hover:text-white" 
-                                : "border-slate-100 hover:border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-[#0B3D2E]"
-                            }`}
-                          >
-                            <BookOpen size={13} className="text-[#C8A762] flex-shrink-0 mt-0.5" />
-                            <span className="leading-tight">{doc.title}</span>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Related Principles */}
-                  {lawMeta.related_principles && lawMeta.related_principles.length > 0 && (
-                    <div className="space-y-2 pt-1">
-                      <h4 className="text-[10px] font-black text-amber-600 dark:text-amber-500/90 uppercase tracking-wider">
-                        {isRTL ? "المبادئ القضائية المتصلة:" : "Related Principles:"}
-                      </h4>
-                      <div className="flex flex-col gap-1.5">
-                        {lawMeta.related_principles.map((doc, idx) => (
-                          <Link
-                            key={idx}
-                            href={`/precedents/${doc.slug}`}
-                            className={`flex items-start gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-semibold transition ${
-                              isDark 
-                                ? "border-white/5 hover:border-white/10 hover:bg-white/5 text-zinc-300 hover:text-white" 
-                                : "border-slate-100 hover:border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-[#0B3D2E]"
-                            }`}
-                          >
-                            <Scales size={13} className="text-[#C8A762] flex-shrink-0 mt-0.5" />
-                            <span className="leading-tight">{doc.title}</span>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </aside>
           )}
 
         </div>
+        </RefBoxProvider>
       </div>
 
       <Footer />
