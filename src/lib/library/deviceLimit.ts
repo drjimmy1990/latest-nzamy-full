@@ -176,15 +176,17 @@ export function devicesCountAr(n: number): string {
 
 /**
  * The owner's refusal, with the account's real number of devices. Owner ٦٣:
- * never a suspension — remove an old device (here or from «مكتبتي», /laws/my);
- * this device then registers on its next read (with the e-mail code when the
+ * never a suspension — remove an old device (on the refusal card's list, or
+ * at «مكتبتي», /laws/my). The text names only «مكتبتي»: the scoped search and
+ * the AI source preview show this string without the list. This device then
+ * registers on its next read (with the e-mail code when the
  * server sends codes — the code card says so itself).
  */
 export function deviceLimitMessageAr(limit: number): string {
   return (
     `هذا الحساب مفعّل على ${devicesCountAr(limit)} بالفعل. ` +
-    "سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز، " +
-    "من القائمة أدناه أو من صفحة «مكتبتي»."
+    "سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز؛ " +
+    "تجد أجهزتك في صفحة «مكتبتي»."
   );
 }
 
