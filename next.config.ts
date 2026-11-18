@@ -71,6 +71,33 @@ const dynamicSupabasePattern = supabaseStorageRemotePattern();
 //   www.youtube-nocookie.com the home page's intro video
 //   img-src https:           blog covers, avatars and a few remote images
 //   blob: / data:            local previews, generated files, inline images
+//   GA4 / Microsoft Clarity  ONLY when NEXT_PUBLIC_GA4_ID / NEXT_PUBLIC_CLARITY_ID
+//                            are set at build (analyticsCspSources below); the
+//                            scripts load after consent on public routes only
+//                            (src/lib/analytics/analytics.ts)
+//
+// Analytics hosts, from Google's "Tag Manager / GA4 without Ads" CSP guide and
+// Microsoft's Clarity CSP page (checked 2026-11-18): GA4 script
+// www.googletagmanager.com, hits to *.google-analytics.com /
+// *.analytics.google.com / *.google.com; Clarity script and data *.clarity.ms
+// plus c.bing.com. img-src is already `https:`.
+function analyticsCspSources(): { script: string[]; connect: string[] } {
+  const ga4 = /^G-[A-Z0-9]{4,16}$/.test((process.env.NEXT_PUBLIC_GA4_ID ?? "").trim().toUpperCase());
+  const clarity = /^[a-z0-9]{6,16}$/.test((process.env.NEXT_PUBLIC_CLARITY_ID ?? "").trim().toLowerCase());
+  return {
+    script: [
+      ...(ga4 ? ["https://www.googletagmanager.com"] : []),
+      ...(clarity ? ["https://*.clarity.ms"] : []),
+    ],
+    connect: [
+      ...(ga4
+        ? ["https://www.googletagmanager.com", "https://*.google-analytics.com", "https://*.analytics.google.com", "https://*.google.com"]
+        : []),
+      ...(clarity ? ["https://*.clarity.ms", "https://c.bing.com"] : []),
+    ],
+  };
+}
+
 function supabaseCspOrigins(): string[] {
   const raw = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!raw) return [];
@@ -87,12 +114,14 @@ function contentSecurityPolicyReportOnly(): string {
   const [supabaseHttp, supabaseWs] = supabaseCspOrigins();
   const supabase = supabaseHttp ? [supabaseHttp] : [];
   const devEval = process.env.NODE_ENV === "production" ? [] : ["'unsafe-eval'"];
+  const analytics = analyticsCspSources();
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": [
       "'self'", "'unsafe-inline'", ...devEval,
       "https://challenges.cloudflare.com",
       "https://pay.google.com", "https://applepay.cdn-apple.com", "https://img.mpay.samsung.com",
+      ...analytics.script,
     ],
     "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
     "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
@@ -102,6 +131,7 @@ function contentSecurityPolicyReportOnly(): string {
       "'self'", ...supabase, ...(supabaseWs ? [supabaseWs] : []),
       "https://api.moyasar.com", "https://appsignal-endpoint.net",
       "https://challenges.cloudflare.com", "https://pay.google.com",
+      ...analytics.connect,
     ],
     "frame-src": [
       "'self'", "blob:", ...supabase,
@@ -118,11 +148,26 @@ function contentSecurityPolicyReportOnly(): string {
   return Object.entries(directives).map(([name, values]) => `${name} ${values.join(" ")}`).join("; ");
 }
 
+// Permissions-Policy (BACKEND-SPEC §10-6): no page uses the camera or
+// location; the microphone stays allowed for our own pages because voice input
+// (SpeechRecognition: /ai/assistant, /ai/analyze, /laws/[slug], VoiceInput)
+// needs it; payment for our own pages and the Google Pay frame Moyasar's form
+// opens. Topics: off.
+const PERMISSIONS_POLICY = [
+  "camera=()",
+  "microphone=(self)",
+  "geolocation=()",
+  'payment=(self "https://pay.google.com")',
+  "usb=()",
+  "browsing-topics=()",
+].join(", ");
+
 const SECURITY_HEADERS = [
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: PERMISSIONS_POLICY },
   { key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicyReportOnly() },
 ];
 
