@@ -1,6 +1,7 @@
 import ServerSessionGate from "@/components/auth/ServerSessionGate";
 import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
 import { PRIVATE_ROBOTS } from "@/lib/publicSeo/privatePages";
+import OfferPopup from "@/components/offers/OfferPopup";
 
 // Owner 18 Nov, item 4.3: a private page — <meta name="robots" content="noindex, follow">
 // (next.config.ts also sends it as X-Robots-Tag). A child page's own robots wins.
@@ -32,6 +33,9 @@ export default async function DashboardLayout({
     <ServerSessionGate fallbackPath="/dashboard">
       {children}
       <TermsReacceptGate />
+      {/* Owner item 5: one offer popup per sign-in (never on billing,
+          wallets, the admin console, or while the terms re-ask is open). */}
+      <OfferPopup />
     </ServerSessionGate>
   );
 }

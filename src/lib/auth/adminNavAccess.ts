@@ -49,6 +49,9 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   // P3 Task 10: «حملة المؤسس» — the overview is requireStaff("read"); pause /
   // capacity / retry activation are settings.write on the server.
   "/dashboard/admin/founder": "read",
+  // l8 (owner item 5): «العروض» — the list and stats are requireStaff("read");
+  // create / edit / stop are settings.write on the server.
+  "/dashboard/admin/offers": "read",
 
   // ── Operations' day-to-day queues ──────────────────────────────────────────
   "/dashboard/admin/provider-verification": "verifications.decide",

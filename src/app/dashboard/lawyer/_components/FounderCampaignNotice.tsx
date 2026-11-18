@@ -22,6 +22,7 @@ import {
   type NoticePhase,
 } from "@/lib/founder/founderNotice";
 import { founderDashboardCardView } from "./founderMembershipCardView";
+import { founderOfferCopyFromApi } from "@/lib/offers/offerRules";
 
 /**
  * The founder campaign card at the top of the lawyer dashboard (owner item
@@ -116,6 +117,8 @@ export default function FounderCampaignNotice({
 
   if (!isSupabaseMode || now === null || read === undefined) return null;
   const view = founderPhase(read, now + offset);
+  // l8 (owner item 5): the founder offer row — its status and words.
+  const copy = founderOfferCopyFromApi(campaignBody);
 
   // During the campaign, a verified lawyer already gets «عضويتي المؤسسة»'s invite.
   const inviteShown =
@@ -128,6 +131,7 @@ export default function FounderCampaignNotice({
       verification,
       offer: founderOfferFromApi(campaignBody),
       priced: PRICED,
+      copy,
     }).kind === "invite";
   // Until the verification answers, wait rather than flash a card that may step aside.
   if (view.phase === "live" && verification === "loading") return null;
@@ -140,6 +144,7 @@ export default function FounderCampaignNotice({
     view,
     inviteShown,
     dismissed,
+    copy,
   });
   if (notice.kind === "none") return null;
 

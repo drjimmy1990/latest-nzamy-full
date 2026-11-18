@@ -7445,3 +7445,33 @@ select 'Every refunded / voided platform order has its credit note (run 20261127
              and not exists (select 1 from public.payment_credit_notes c where c.order_id = o.id)', false, true, '')))[1]::text = '0'
        end as ok;
 -- <<< verify:l7_refund
+-- >>> verify:l8_offers
+-- Batch l8-offers (owner item 5, the offers system): run 20261128_50 before or after the deploy.
+select 'Offers: offers / offer_dismissals / offer_events — RLS on, no policy, no session privilege, offer_event_counts service role only (run 20261128_50)' as check,
+       case when to_regclass('public.offers') is null or to_regclass('public.offer_dismissals') is null
+              or to_regclass('public.offer_events') is null
+              or to_regprocedure('public.offer_event_counts()') is null then false else
+       coalesce((select bool_and(c.relrowsecurity) from pg_catalog.pg_class c
+                  where c.oid in (to_regclass('public.offers'), to_regclass('public.offer_dismissals'), to_regclass('public.offer_events'))), false)
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid in (to_regclass('public.offers'), to_regclass('public.offer_dismissals'), to_regclass('public.offer_events')))
+       and not has_table_privilege('anon', 'public.offers', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.offers', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.offers', 'UPDATE')
+       and not has_table_privilege('authenticated', 'public.offer_dismissals', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.offer_dismissals', 'INSERT')
+       and not has_table_privilege('authenticated', 'public.offer_events', 'INSERT')
+       and not has_function_privilege('authenticated', 'public.offer_event_counts()', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.offer_event_counts()', 'EXECUTE')
+       end as ok;
+select 'Offers: the founder offer is a row — verified advocate lawyers only (consultant outside), seats read from the campaign, requires_invite_code present and empty (run 20261128_50)' as check,
+       case when to_regclass('public.offers') is null then false else
+       (xpath('/row/n/text()', query_to_xml(
+         'select count(*) as n from public.offers
+           where slug = ''founder-2026'' and campaign_id = ''founder-2026''
+             and audience_account_types = array[''lawyer'']::text[] and audience_verification = ''verified''
+             and seats_total is null and requires_invite_code is null', false, true, '')))[1]::text = '1'
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = to_regclass('public.offers') and conname = 'offers_founder_audience_check')
+       end as ok;
+-- <<< verify:l8_offers

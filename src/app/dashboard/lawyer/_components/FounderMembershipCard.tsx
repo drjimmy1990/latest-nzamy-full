@@ -12,6 +12,7 @@ import {
   type FounderVerification,
 } from "@/lib/pricing/founderCard";
 import { founderDashboardCardView } from "./founderMembershipCardView";
+import { founderOfferCopyFromApi, type FounderOfferCopy } from "@/lib/offers/offerRules";
 
 /**
  * «عضويتي المؤسسة» on the lawyer dashboard (P3 Task 9).
@@ -48,6 +49,8 @@ export default function FounderMembershipCard({
   // undefined while loading; null when the fetch itself failed.
   const [membership, setMembership] = useState<Reply>(undefined);
   const [offer, setOffer] = useState<FounderOffer | null>(null);
+  // l8 (owner item 5): the founder offer row's status and button.
+  const [copy, setCopy] = useState<FounderOfferCopy | null>(null);
   const [verification, setVerification] = useState<FounderVerification>("loading");
 
   useEffect(() => {
@@ -71,6 +74,7 @@ export default function FounderMembershipCard({
       if (signal.aborted) return;
       const nextOffer = founderOfferFromApi(campaign.ok ? campaign.body : null);
       setOffer(nextOffer);
+      setCopy(founderOfferCopyFromApi(campaign.ok ? campaign.body : null));
       if (nextOffer.state !== "open") return;
 
       const profile = await read("/api/v1/profile");
@@ -89,6 +93,7 @@ export default function FounderMembershipCard({
     verification,
     offer,
     priced: PRICED,
+    copy,
   });
 
   if (view.kind === "none") return null;
