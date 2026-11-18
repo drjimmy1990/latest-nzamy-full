@@ -30,6 +30,7 @@ import {
 } from "@/lib/services/communityService";
 import { listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { toFeedQuestion } from "../_feedView";
+import { REVIEW_PENDING_AR, REVIEW_REJECTED_AR } from "@/lib/community/review";
 
 type MeTab = "saved" | "mine";
 const PAGE_SIZE = 20;
@@ -176,7 +177,7 @@ export default function CommunityMePage() {
             <p className={`text-sm ${muted}`}>
               {tab === "saved"
                 ? "اضغط «حفظ» في صفحة أي سؤال ليظهر هنا."
-                : "أسئلتك في المجتمع تظهر هنا بعد نشرها."}
+                : "أسئلتك في المجتمع تظهر هنا، ومنها ما ينتظر المراجعة قبل النشر."}
             </p>
           </div>
         ) : (
@@ -207,6 +208,17 @@ export default function CommunityMePage() {
                           <CheckCircle size={12} weight="fill" /> تمت الإجابة
                         </span>
                       )}
+                      {/* Owner ٤٢: not public yet (only the author sees this row). */}
+                      {q.reviewState === "pending" && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800"}`}>
+                          {REVIEW_PENDING_AR}
+                        </span>
+                      )}
+                      {q.reviewState === "rejected" && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${isDark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-700"}`}>
+                          {REVIEW_REJECTED_AR}
+                        </span>
+                      )}
                     </div>
                     <Link
                       href={q.href}
@@ -214,6 +226,9 @@ export default function CommunityMePage() {
                     >
                       {q.title}
                     </Link>
+                    {q.reviewState === "rejected" && q.reviewNote && (
+                      <p className={`text-xs mb-2 ${isDark ? "text-red-300" : "text-red-700"}`}>سبب عدم الاعتماد: {q.reviewNote}</p>
+                    )}
                     <div className={`flex flex-wrap items-center gap-3 text-xs ${muted}`}>
                       {q.when && <span>{q.when}</span>}
                       <span className="flex items-center gap-1"><ChatCircle size={12} /> {arNum(q.answerCount)} إجابة</span>

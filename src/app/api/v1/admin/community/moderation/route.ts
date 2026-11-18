@@ -3,79 +3,61 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
 import { COMMUNITY_REPORT_REASON_LABELS_AR, type CommunityReportReason } from "@/lib/services/communityReportsInput";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import {
+  COMMUNITY_REVIEW_SETTING_KEY,
+  dbStatusesFor,
+  moderationStatusOf,
+  prepublishReviewOn,
+} from "@/lib/community/review";
 
 /**
- * GET /api/v1/admin/community/moderation — Community moderation queue.
+ * GET /api/v1/admin/community/moderation — the community review queue
+ * (owner ٤٢, 18 Nov 2026; batch l7 decision 13).
  *
- * There is NO dedicated reports/flags table in the community schema
- * (community_posts / community_answers only). So the review queue is built from
- * recent community_posts, and the moderation "status" shown to the admin is
- * DERIVED from the post's own `status` column:
- *   community_posts.status ∈ ('active', 'closed', 'moderated', 'deleted')
- *     active    → pending   (needs review)
- *     closed    → approved  (kept / resolved)
- *     moderated → escalated (held for legal/senior review)
- *     deleted   → rejected  (removed)
+ * While `community_prepublish_review` is on (platform_settings, default ON —
+ * 20261127_60), a member's new question or answer is stored 'pending_review'
+ * and nobody but its author sees it until a reviewer approves it here. The
+ * queue reads both tables with the service role:
  *
- * Query params:
- *   - status ('pending' | 'approved' | 'rejected' | 'escalated' | 'all', default 'all')
- *   - search (matches post title/body)
- *   - limit  (default 50)
- *   - offset (default 0)
+ *   ?kind=post (default) | answer
+ *   ?status=pending (default) | approved | rejected | escalated | all
+ *     pending   → 'pending_review'
+ *     approved  → 'active', 'closed'
+ *     rejected  → 'rejected', 'deleted'
+ *     escalated → 'moderated'
+ *   ?search  (title/body for posts, body for answers)
+ *   ?limit (≤ 200, default 50), ?offset
  *
- * FAILURE IS A 500, NOT AN EMPTY LIST. This used to return `{ data: [] }` at
- * HTTP 200 "so the page degrades to its local fallback", and the page reads an
- * empty array as «لا توجد منشورات مجتمع بعد»
- * (src/app/dashboard/admin/community/moderation/page.tsx:102) — a moderation
- * queue reporting itself clear over a query that never ran. That page already
- * throws on `!res.ok` into its own distinct toast («تعذر الاتصال بطابور
- * الإشراف»), so the honest branch already exists and nothing depends on the 200.
+ * The answer carries `total` for the filter, the pending count of each kind
+ * (`pending`), and the setting (`prepublishReview`, null when it cannot be
+ * read or its row does not exist yet — before 20261127_60). The writer's name is shown to staff here only — the public pages
+ * never carry it.
  *
- * `total` is now returned alongside `data`: the `.range()` below is a silent cap
- * without it, and a queue that shows 50 of 300 pending posts with no notice is
- * the same understatement in a quieter form.
+ * Before 20261127_60 runs there is no 'pending_review' row: the pending
+ * filter is honestly empty, and approve/reject still write the status column.
  *
- * ── real reports (owner item ٦٩ remainder) ──────────────────────────────────
- * `public.community_reports` (20260911_community_reports.sql) now exists —
- * the ONE thing this route did not have when the comment above was written.
- * Scope of this change is `reportReason` ONLY, as the task named it — every
- * OTHER field (`reporter` included) is untouched, because the admin
- * moderation page that renders them lives outside this route's ownership.
+ * FAILURE IS A 500, NOT AN EMPTY LIST: an empty queue would read as «nothing
+ * to review» over a query that never ran.
  *
- * For every post on THIS page that has at least one real row there,
- * `reportReason` is now an Arabic-joined tally of the real reasons (e.g.
- * "إزعاج / محتوى مكرر (٢)، إساءة أو تنمّر (١)") instead of the guess.
- * `reportCount` is new and additive: the real row count, 0 when there are
- * none. `syntheticReportReason` is ALSO new and additive: the exact
- * placeholder text this route used to call `reportReason` unconditionally,
- * always present, clearly named as what it is — a derived guess, not a
- * submitted reason — so a caller can tell the two apart instead of trusting
- * a field that used to lie about its own nature. `reportReason` itself is
- * kept (existing consumers read it) and now only falls back to that
- * synthesized text when a post has zero real reports.
+ * Real reports (community_reports) are tallied per row as before
+ * (`reportReason`, `reportCount`).
  */
-
-// Map the DB post status → the UI CommunityModerationStatus vocabulary.
-const DB_TO_UI_STATUS: Record<string, "pending" | "approved" | "rejected" | "escalated"> = {
-  active: "pending",
-  closed: "approved",
-  moderated: "escalated",
-  deleted: "rejected",
-};
-
-// The reverse map, used to translate a ?status= filter back to DB values.
-const UI_TO_DB_STATUS: Record<string, string> = {
-  pending: "active",
-  approved: "closed",
-  rejected: "deleted",
-  escalated: "moderated",
-};
 
 interface AuthorJoin {
   id: string;
   display_name: string | null;
   display_name_en: string | null;
 }
+
+const POST_SELECT =
+  "id, title, body, category, status, visibility, author_id, created_at, review_note, profiles:author_id(id, display_name, display_name_en)";
+const ANSWER_SELECT =
+  "id, post_id, body, status, author_id, created_at, review_note, is_lawyer_verified, profiles:author_id(id, display_name, display_name_en), post:community_posts!community_answers_post_id_fkey(id, title)";
+/** Before 20261127_60 the review_note column does not exist. */
+const POST_SELECT_OLD = POST_SELECT.replace(", review_note", "");
+const ANSWER_SELECT_OLD = ANSWER_SELECT.replace(", review_note", "");
+
+const isMissingColumn = (code: unknown) => code === "42703" || code === "PGRST204";
 
 export async function GET(request: NextRequest) {
   try {
@@ -85,127 +67,116 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const statusFilter = searchParams.get("status") ?? "all";
-    const search = searchParams.get("search");
-    // Clamped to 200: `postIds` below (one id per row on this page) feeds a
-    // `.in("target_id", postIds)` against community_reports, and this repo's
-    // own PostgREST has already been caught silently truncating an `.in()`
-    // list past ~396 entries (library-postgrest-arabic-gotchas) — a caller
-    // passing `?limit=1000` must not be able to push this past that ceiling.
+    const kind = searchParams.get("kind") === "answer" ? "answer" : "post";
+    const statusFilter = searchParams.get("status") ?? "pending";
+    const search = (searchParams.get("search") ?? "").replace(/[%,()]/g, " ").trim();
+    // Clamped to 200: the ids of a page feed an `.in()` on community_reports,
+    // and this PostgREST truncates long `.in()` lists silently.
     const limit = Math.min(parseInt(searchParams.get("limit") ?? "50", 10) || 50, 200);
-    const offset = parseInt(searchParams.get("offset") ?? "0", 10);
+    const offset = Math.max(parseInt(searchParams.get("offset") ?? "0", 10) || 0, 0);
 
-    // Service client: admins read across all posts regardless of RLS visibility.
     const admin = await createServiceClient();
+    const table = kind === "post" ? "community_posts" : "community_answers";
 
-    let query = admin
-      .from("community_posts")
-      .select(
-        "id, title, body, category, status, visibility, author_id, created_at, profiles:author_id(id, display_name, display_name_en)",
-        { count: "exact" },
-      )
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+    const run = (select: string) => {
+      let query = admin
+        .from(table)
+        .select(select, { count: "exact" })
+        .order("created_at", { ascending: statusFilter === "pending" })
+        .range(offset, offset + limit - 1);
+      const statuses = dbStatusesFor(statusFilter);
+      if (statuses) query = query.in("status", statuses);
+      if (search) {
+        query = kind === "post"
+          ? query.or(`title.ilike.%${search}%,body.ilike.%${search}%`)
+          : query.ilike("body", `%${search}%`);
+      }
+      return query;
+    };
 
-    if (statusFilter !== "all" && UI_TO_DB_STATUS[statusFilter]) {
-      query = query.eq("status", UI_TO_DB_STATUS[statusFilter]);
+    let { data, count, error } = await run(kind === "post" ? POST_SELECT : ANSWER_SELECT);
+    if (error && isMissingColumn(error.code)) {
+      ({ data, count, error } = await run(kind === "post" ? POST_SELECT_OLD : ANSWER_SELECT_OLD));
     }
-
-    if (search) {
-      query = query.or(`title.ilike.%${search}%,body.ilike.%${search}%`);
-    }
-
-    const { data, count, error } = await query;
-
     if (error) {
-      console.error(
-        "[admin/community/moderation GET] Supabase error:",
-        error.message,
-        error.details,
-        error.hint,
-        error.code,
-      );
-      return NextResponse.json({ error: "تعذّر تحميل طابور الإشراف." }, { status: 500 });
+      console.error("[admin/community/moderation GET] read failed:", error.code, error.message);
+      return NextResponse.json({ error: "تعذّر تحميل طابور المراجعة." }, { status: 500 });
     }
 
-    const rows = data ?? [];
-    const postIds = rows.map((row) => (row as Record<string, unknown>).id as string);
+    const rows = (data ?? []) as unknown as Record<string, unknown>[];
+    const ids = rows.map((r) => String(r.id));
 
-    // Real reports for THIS page's posts. `target_type = 'post'` only — a
-    // report on an *answer* is not this post's own report and would inflate
-    // the wrong post's count if it were included here by target_id alone.
-    const reportsByPost = new Map<string, Record<CommunityReportReason, number>>();
-    if (postIds.length > 0) {
+    // Real reports for this page's rows (of this kind only).
+    const reportsById = new Map<string, Record<CommunityReportReason, number>>();
+    if (ids.length > 0) {
       const { data: reportRows, error: reportsError } = await admin
         .from("community_reports")
         .select("target_id, reason")
-        .eq("target_type", "post")
-        .in("target_id", postIds);
+        .eq("target_type", kind)
+        .in("target_id", ids);
       if (reportsError) {
-        console.error("[admin/community/moderation GET] reports lookup failed:", reportsError.message, reportsError.code);
+        console.error("[admin/community/moderation GET] reports lookup failed:", reportsError.code, reportsError.message);
       } else {
         for (const r of (reportRows ?? []) as Array<{ target_id: string; reason: string }>) {
           const reason = r.reason as CommunityReportReason;
-          const tally = reportsByPost.get(r.target_id) ?? ({} as Record<CommunityReportReason, number>);
+          const tally = reportsById.get(r.target_id) ?? ({} as Record<CommunityReportReason, number>);
           tally[reason] = (tally[reason] ?? 0) + 1;
-          reportsByPost.set(r.target_id, tally);
+          reportsById.set(r.target_id, tally);
         }
       }
     }
 
-    const items = rows.map((row) => {
-      const r = row as Record<string, unknown>;
+    // The pending count of each kind, and the setting — for the page header.
+    const [pendingPosts, pendingAnswers, setting] = await Promise.all([
+      admin.from("community_posts").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
+      admin.from("community_answers").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
+      admin.from("platform_settings").select("value").eq("key", COMMUNITY_REVIEW_SETTING_KEY).maybeSingle(),
+    ]);
+
+    const items = rows.map((r) => {
       const author = (r.profiles ?? null) as AuthorJoin | null;
-      const dbStatus = (r.status as string) ?? "active";
-
-      // Always present, always the OLD derived guess — clearly named so a
-      // caller can tell it apart from a real submitted reason.
-      const syntheticReportReason =
-        dbStatus === "moderated"
-          ? "محتوى محجوز للمراجعة القانونية"
-          : dbStatus === "deleted"
-            ? "تمت إزالة المحتوى"
-            : `مراجعة منشور (${(r.category as string) ?? "general"})`;
-
-      const tally = reportsByPost.get(r.id as string);
+      const post = (r.post ?? null) as { id?: string; title?: string } | null;
+      const tally = reportsById.get(String(r.id));
       const reportCount = tally ? Object.values(tally).reduce((sum, n) => sum + n, 0) : 0;
-      const realReportReason =
+      const reportReason =
         reportCount > 0 && tally
           ? Object.entries(tally)
               .sort(([, a], [, b]) => b - a)
               .map(([reason, n]) => `${COMMUNITY_REPORT_REASON_LABELS_AR[reason as CommunityReportReason] ?? reason} (${toArabicDigits(n)})`)
               .join("، ")
           : null;
-
       return {
-        id: r.id as string,
-        postId: r.id as string,
-        postTitle: (r.title as string) ?? "",
-        // Real when this post has ≥1 actual report, else the synthesized guess.
-        reportReason: realReportReason ?? syntheticReportReason,
-        // Additive — always the derived guess, regardless of real reports.
-        syntheticReportReason,
-        // Additive — the real row count for this post (0 when none exist).
+        id: String(r.id),
+        kind,
+        postId: kind === "post" ? String(r.id) : String(r.post_id ?? post?.id ?? ""),
+        postTitle: kind === "post" ? String(r.title ?? "") : String(post?.title ?? ""),
+        body: typeof r.body === "string" ? r.body : "",
+        author: author?.display_name || author?.display_name_en || "—",
+        isLawyerVerified: r.is_lawyer_verified === true,
+        status: moderationStatusOf(r.status),
+        dbStatus: typeof r.status === "string" ? r.status : null,
+        reviewNote: typeof r.review_note === "string" ? r.review_note : null,
         reportCount,
-        // Unchanged (task scope is `reportReason` only) — the admin
-        // moderation page (out of this route's ownership) reads this field
-        // and is not being touched here.
-        reporter: author?.display_name || author?.display_name_en || "النظام",
-        status: DB_TO_UI_STATUS[dbStatus] ?? "pending",
-        createdAt: (r.created_at as string) ?? "",
-        // Extra fields the client can ignore but are useful for context.
-        category: (r.category as string) ?? "general",
-        visibility: (r.visibility as string) ?? "public",
+        reportReason,
+        createdAt: typeof r.created_at === "string" ? r.created_at : "",
+        category: typeof r.category === "string" ? r.category : null,
+        visibility: typeof r.visibility === "string" ? r.visibility : null,
       };
     });
 
-    // `count` is the total matching the SAME filters `data` was drawn from
-    // (the status/search filters are applied in SQL above, not in memory), so
-    // it is directly comparable to `items.length` — unlike the audit-log route,
-    // where the severity filter runs after the fetch.
-    return NextResponse.json({ data: items, total: count ?? null });
+    return NextResponse.json({
+      data: items,
+      total: count ?? null,
+      pending: {
+        posts: pendingPosts.error ? null : pendingPosts.count ?? 0,
+        answers: pendingAnswers.error ? null : pendingAnswers.count ?? 0,
+      },
+      // No row = 20261127_60 has not run (it inserts the row): unknown, and
+      // nothing is held for review yet.
+      prepublishReview: setting.error || !setting.data ? null : prepublishReviewOn(setting.data.value),
+    });
   } catch (err) {
-    console.error("[admin/community/moderation GET] Unexpected error:", err);
-    return NextResponse.json({ error: "تعذّر تحميل طابور الإشراف." }, { status: 500 });
+    console.error("[admin/community/moderation GET] unexpected:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "تعذّر تحميل طابور المراجعة." }, { status: 500 });
   }
 }

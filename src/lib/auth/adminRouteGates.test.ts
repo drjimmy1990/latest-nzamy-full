@@ -288,6 +288,7 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "service-orders/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 3 },
   { file: "verifications/[id]/route.ts", method: "PATCH", action: "verifications.decide", logs: 1 },
   { file: "community/moderation/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
+  { file: "community/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },
@@ -513,9 +514,10 @@ test("deleting a row that does not exist is a 404 and writes no audit row", () =
 
 test("the community and verification routes keep their audit labels and metadata", () => {
   const moderation = handler("community/moderation/[id]/route.ts", "PATCH");
-  assert.ok(moderation.includes('DB_STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_post_moderated"'));
+  // owner ٤٢: one label per decision and kind (moderationDecision, src/lib/community/review.ts)
+  assert.ok(moderation.includes("action: decision.audit,"));
   assert.ok(moderation.includes("metadata: { reason: body.reason ?? null, action: rawAction }"));
-  assert.ok(moderation.includes('targetType: "community_post"'));
+  assert.ok(moderation.includes('targetType: kind === "post" ? "community_post" : "community_answer"'));
 
   const reports = handler("community/reports/[id]/route.ts", "PATCH");
   assert.ok(reports.includes('STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_report_triaged"'));

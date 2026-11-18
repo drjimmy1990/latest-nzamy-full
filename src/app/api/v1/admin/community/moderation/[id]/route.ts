@@ -3,46 +3,33 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
+import { moderationDecision, reviewNotificationAr } from "@/lib/community/review";
 
 /**
- * PATCH /api/v1/admin/community/moderation/[id] — Apply a moderation decision to
- * a community post.
+ * PATCH /api/v1/admin/community/moderation/[id] — a reviewer's decision on a
+ * community question or answer (owner ٤٢, 18 Nov 2026; batch l7 decision 13).
  *
- * URL param: id = community_posts.id (uuid)
- * Body: { action: 'approve' | 'hide' | 'remove' | 'escalate' | 'reject', reason?: string }
+ * URL param: id = community_posts.id, or community_answers.id with kind "answer"
+ * Body: { kind?: 'post' | 'answer', action: 'approve' | 'reject' | 'escalate' | 'remove', reason?: string }
  *
- * The write path IS supported: community_posts has a real `status` column
- *   status ∈ ('active', 'closed', 'moderated', 'deleted').
- * We translate the admin action → that column (no jsonb workaround needed):
- *   approve            → 'active'    (visible / kept)
- *   hide | escalate    → 'moderated' (held for legal/senior review)
- *   remove | reject    → 'deleted'   (removed)
- * The decision is also written to admin_audit_events for traceability, once,
- * through logAdminAction (owner ٢١٠), and needs a staff role with
- * community.moderate.
+ *   approve   → 'active'     public (an answer is counted again by its trigger)
+ *   reject    → 'rejected'   needs a reason (≤ 500 characters): the author
+ *                            reads it on his own row (review_note) and in a
+ *                            notification; he may edit and resubmit
+ *   escalate  → 'moderated'  held for legal/senior review (also 'hide')
+ *   remove    → 'deleted'
  *
- * The page also sends the UI status values directly (approved/rejected/escalated);
- * those are accepted as aliases.
+ * Written with the service role (members cannot write status, 20261016_06).
+ * Before 20261127_60 runs, 'rejected' is not an allowed status and the
+ * review columns do not exist: a rejection then answers the database error,
+ * and the other decisions are written without the review columns.
+ *
+ * The decision goes to admin_audit_events once (logAdminAction) and needs a
+ * staff role with community.moderate. The author is notified of an approval
+ * or a rejection (best effort — a failed notification never fails the
+ * decision).
  */
-
-// Admin action / UI-status alias → DB community_posts.status value.
-const ACTION_TO_DB_STATUS: Record<string, string> = {
-  approve: "active",
-  approved: "active",
-  hide: "moderated",
-  escalate: "moderated",
-  escalated: "moderated",
-  remove: "deleted",
-  reject: "deleted",
-  rejected: "deleted",
-};
-
-// DB status → the audit action label recorded in admin_audit_events.
-const DB_STATUS_TO_AUDIT_ACTION: Record<string, string> = {
-  active: "community_post_approved",
-  moderated: "community_post_escalated",
-  deleted: "community_post_removed",
-};
+const isMissingColumn = (code: unknown) => code === "42703" || code === "PGRST204";
 
 export async function PATCH(
   request: NextRequest,
@@ -54,86 +41,96 @@ export async function PATCH(
     const gate = await requireStaff("community.moderate");
     if (!gate.ok) return gate.response;
 
-    let body: { action?: string; reason?: string };
+    let body: { kind?: string; action?: string; reason?: string };
     try {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "بيانات غير صالحة" }, { status: 400 });
     }
 
-    const rawAction = (body.action ?? "").toLowerCase();
-    const newStatus = ACTION_TO_DB_STATUS[rawAction];
-    if (!newStatus) {
-      return NextResponse.json(
-        { error: "الإجراء مطلوب: approve أو hide/escalate أو remove/reject" },
-        { status: 400 },
-      );
+    const kind = body.kind === "answer" ? "answer" : "post";
+    const rawAction = typeof body.action === "string" ? body.action.toLowerCase() : "";
+    const decision = moderationDecision(kind, rawAction, body.reason);
+    if (!decision.ok) {
+      return NextResponse.json({ error: decision.error }, { status: 400 });
     }
+    const newStatus = decision.status;
+    const table = kind === "post" ? "community_posts" : "community_answers";
 
     const admin = await createServiceClient();
 
-    // Read the current status first so we can record before/after in the audit log.
+    // The row as it is now, for the audit row and the notification.
     const { data: existing, error: readError } = await admin
-      .from("community_posts")
-      .select("id, status, title")
+      .from(table)
+      .select(kind === "post" ? "id, status, title, author_id" : "id, status, author_id, post_id")
       .eq("id", id)
       .maybeSingle();
-
     if (readError) {
-      console.error(
-        "[admin/community/moderation PATCH] read error:",
-        readError.message,
-        readError.code,
-      );
+      console.error("[admin/community/moderation PATCH] read error:", readError.code, readError.message);
       return dbErrorJson("admin/community/moderation/[id] PATCH", readError);
     }
-
     if (!existing) {
-      return NextResponse.json(
-        { error: "لم يتم العثور على المنشور" },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: kind === "post" ? "لم يتم العثور على السؤال" : "لم يتم العثور على الإجابة" }, { status: 404 });
     }
+    const row = existing as unknown as { status?: string; title?: string; author_id?: string; post_id?: string };
+    const beforeStatus = row.status ?? "active";
 
-    const beforeStatus = (existing.status as string) ?? "active";
-
-    const { data: updated, error: updateError } = await admin
-      .from("community_posts")
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id, status, title")
-      .maybeSingle();
-
+    const nowIso = new Date().toISOString();
+    const write = (withReview: boolean) =>
+      admin
+        .from(table)
+        .update(
+          withReview
+            ? { status: newStatus, review_note: decision.note, reviewed_at: nowIso, updated_at: nowIso }
+            : { status: newStatus, updated_at: nowIso },
+        )
+        .eq("id", id)
+        .select("id, status")
+        .maybeSingle();
+    let { data: updated, error: updateError } = await write(true);
+    if (updateError && isMissingColumn(updateError.code) && newStatus !== "rejected") {
+      ({ data: updated, error: updateError } = await write(false));
+    }
     if (updateError) {
-      console.error(
-        "[admin/community/moderation PATCH] update error:",
-        updateError.message,
-        updateError.code,
-      );
+      console.error("[admin/community/moderation PATCH] update error:", updateError.code, updateError.message);
       return dbErrorJson("admin/community/moderation/[id] PATCH", updateError);
     }
 
-    // Audit trail (best-effort: logAdminAction never throws or fails the decision).
     await logAdminAction({
       actorId: gate.userId,
-      action: DB_STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_post_moderated",
-      targetType: "community_post",
+      action: decision.audit,
+      targetType: kind === "post" ? "community_post" : "community_answer",
       targetId: id,
       before: { status: beforeStatus },
       after: { status: newStatus, reason: body.reason ?? null },
       metadata: { reason: body.reason ?? null, action: rawAction },
     });
 
+    // The author learns the outcome (approval / rejection with its reason).
+    const note = reviewNotificationAr(kind, newStatus, decision.note);
+    if (note && row.author_id && beforeStatus !== newStatus) {
+      const postId = kind === "post" ? id : row.post_id;
+      const { error: notifyError } = await admin.from("notifications").insert({
+        user_id: row.author_id,
+        title: note.title,
+        body: note.body,
+        href: postId ? `/community/${postId}` : null,
+      });
+      if (notifyError) {
+        console.error("[admin/community/moderation PATCH] notification failed:", notifyError.code);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
-        id: (updated?.id as string) ?? id,
-        status: (updated?.status as string) ?? newStatus,
-        title: (updated?.title as string) ?? (existing.title as string) ?? "",
+        id: (updated as { id?: string } | null)?.id ?? id,
+        kind,
+        status: (updated as { status?: string } | null)?.status ?? newStatus,
       },
     });
   } catch (err) {
-    console.error("[admin/community/moderation PATCH] Unexpected error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error("[admin/community/moderation PATCH] unexpected:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "تعذّر حفظ القرار" }, { status: 500 });
   }
 }

@@ -16,6 +16,7 @@ import {
   communitySortFor,
 } from "./_search";
 import { viewerStateFor } from "./_viewer";
+import { OWN_POST_STATUSES, PUBLIC_POST_STATUSES, postedNoticeAr, reviewStateOf } from "@/lib/community/review";
 
 /**
  * GET /api/v1/community/posts — List community posts
@@ -79,11 +80,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data: [], total: 0 });
   }
 
+  // Owner ٤٢ (20261127_60): an allow-list, not a deny-list — a row under
+  // review or rejected is never in the public feed. «أسئلتي» (mine=1) also
+  // lists the author's own rows under review (RLS shows them to him only),
+  // each carrying reviewState «بانتظار المراجعة» / «مرفوض».
   let query = supabase
     .from("community_posts")
     .select(LIST_SELECT, { count: "exact" })
-    .neq("status", "deleted")
-    .neq("status", "moderated");
+    .in("status", mine ? [...OWN_POST_STATUSES] : [...PUBLIC_POST_STATUSES]);
 
   for (const [column, ascending] of communitySortColumns(communitySortFor(searchParams.get("sort")))) {
     query = query.order(column, { ascending });
@@ -128,6 +132,8 @@ export async function GET(request: NextRequest) {
  *   uses for `is_lawyer_verified`).
  * - Text carrying a phone number, e-mail, link or handle is refused with the
  *   Arabic reason (contactSanitizer.ts).
+ * - Owner ٤٢: the answer says whether the post is public yet (`pendingReview`
+ *   + the Arabic `message`).
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -198,5 +204,11 @@ export async function POST(request: NextRequest) {
     return dbErrorJson("community/posts POST", error);
   }
 
-  return NextResponse.json({ data }, { status: 201 });
+  // Owner ٤٢: while review before publishing is on, the database stores the
+  // post as pending_review (trigger, 20261127_60); say so instead of «نُشر».
+  const pendingReview = reviewStateOf((data as { status?: unknown } | null)?.status) === "pending";
+  return NextResponse.json(
+    { data, pendingReview, message: postedNoticeAr("post", pendingReview) },
+    { status: 201 },
+  );
 }

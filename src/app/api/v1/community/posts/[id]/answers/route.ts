@@ -3,6 +3,7 @@ import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { contactIssueIn } from "../../_feed";
+import { postedNoticeAr, reviewStateOf } from "@/lib/community/review";
 
 /**
  * POST /api/v1/community/posts/[id]/answers — Add an answer to a post
@@ -87,5 +88,10 @@ export async function POST(
     return dbErrorJson("community/posts/[id]/answers POST", error);
   }
 
-  return NextResponse.json({ data }, { status: 201 });
+  // Owner ٤٢: an answer also waits for review while the setting is on.
+  const pendingReview = reviewStateOf((data as { status?: unknown } | null)?.status) === "pending";
+  return NextResponse.json(
+    { data, pendingReview, message: postedNoticeAr("answer", pendingReview) },
+    { status: 201 },
+  );
 }

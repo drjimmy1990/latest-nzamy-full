@@ -52,6 +52,9 @@ export interface FeedQuestion {
   myVote: -1 | 0 | 1;
   /** The signed-in reader saved this question (server; false in demo). */
   saved: boolean;
+  /** Owner ٤٢: the author's own question under review / rejected (server; null = published). */
+  reviewState: "pending" | "rejected" | null;
+  reviewNote: string | null;
 }
 
 type Loose = Record<string, unknown>;
@@ -112,6 +115,8 @@ export function toFeedQuestion(raw: unknown): FeedQuestion {
     when: str(q.ago) || formatPostedDate(createdAt),
     myVote: q.myVote === 1 ? 1 : q.myVote === -1 ? -1 : 0,
     saved: q.saved === true,
+    reviewState: q.reviewState === "pending" || q.reviewState === "rejected" ? q.reviewState : null,
+    reviewNote: q.reviewState === "rejected" && typeof q.reviewNote === "string" ? q.reviewNote : null,
   };
 }
 

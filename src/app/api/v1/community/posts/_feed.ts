@@ -26,6 +26,7 @@ import {
   normalizeDigits,
   offPlatformContactIssue,
 } from "../../../../../lib/services/contactSanitizer.ts";
+import { reviewStateOf, type ReviewState } from "../../../../../lib/community/review.ts";
 
 /** community_answers.post_id → community_posts.id */
 export const POST_ANSWERS_FK = "community_answers_post_id_fkey";
@@ -117,6 +118,13 @@ export interface CommunityFeedItem {
   myVote: -1 | 0 | 1;
   /** The signed-in reader saved («حفظ») this post. Always false for a guest. */
   saved: boolean;
+  /**
+   * Owner ٤٢ (20261127_60): «بانتظار المراجعة» / «مرفوض» on the author's own
+   * rows (RLS shows such a row to its author only); null = published.
+   */
+  reviewState: ReviewState;
+  /** The reviewer's reason on a rejection (the author's own row only). */
+  reviewNote: string | null;
 }
 
 /** What the list route knows about the reader for one row (own vote / save). */
@@ -197,6 +205,8 @@ export function toFeedItem(row: Row, viewer?: FeedViewerState): CommunityFeedIte
     createdAt: text(row.created_at),
     myVote: voteValue(viewer?.myVote),
     saved: viewer?.saved === true,
+    reviewState: reviewStateOf(row.status),
+    reviewNote: reviewStateOf(row.status) === "rejected" && typeof row.review_note === "string" ? row.review_note : null,
   };
 }
 
@@ -206,8 +216,9 @@ export function toFeedItem(row: Row, viewer?: FeedViewerState): CommunityFeedIte
  * returned exactly as read.
  */
 /**
- * The public shape of a question page: `author_id`, `metadata` and
- * `search_fts` are dropped from the post and from every answer. The list route never sent author ids;
+ * The public shape of a question page: `author_id`, `metadata`,
+ * `search_fts`, `lawyerSlug` and `reviewed_at` are dropped from the post and
+ * from every answer. The list route never sent author ids;
  * the detail route reads them only to find the lawyers' profile slugs, and the
  * page never reads them. (Guests can open this route.)
  */
@@ -215,10 +226,14 @@ export function publicDetail(post: Row): Row {
   const strip = (r: Row): Row => {
     // search_fts (20261125_53) is the search index of the UNREDACTED text —
     // cleanText() exists to keep phone numbers and links out of the page.
-    const { author_id: _a, metadata: _m, search_fts: _s, ...rest } = r;
+    // lawyerSlug: owner ٤٢ (18 Nov) — the writer's name is not sent to the
+    // browser at all, and a profile slug is a name. reviewed_at is internal.
+    const { author_id: _a, metadata: _m, search_fts: _s, lawyerSlug: _l, reviewed_at: _r, ...rest } = r;
     void _a;
     void _m;
     void _s;
+    void _l;
+    void _r;
     return rest;
   };
   const answers = Array.isArray(post.answers)
