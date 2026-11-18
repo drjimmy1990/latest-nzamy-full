@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { publicDetail } from "./_feed.ts";
 
-test("the public question page carries no author ids and no metadata, for the post or its answers", () => {
+test("the public question page carries no author ids, no metadata and no profile slug (owner ٤٢: names hidden), for the post or its answers", () => {
   const out = publicDetail({
-    id: "p1", title: "t", author_id: "u1", metadata: { ip: "x" },
-    answers: [{ id: "a1", body: "b", author_id: "u2", metadata: {}, lawyerSlug: "s" }],
+    id: "p1", title: "t", author_id: "u1", metadata: { ip: "x" }, reviewed_at: "2026-11-19",
+    answers: [{ id: "a1", body: "b", author_id: "u2", metadata: {}, lawyerSlug: "s", verifiedOffice: true }],
   });
-  assert.deepEqual(out, { id: "p1", title: "t", answers: [{ id: "a1", body: "b", lawyerSlug: "s" }] });
+  assert.deepEqual(out, { id: "p1", title: "t", answers: [{ id: "a1", body: "b", verifiedOffice: true }] });
 });
 
 test("the detail route answers 404 only for a missing row, 500 for a failed read, and returns publicDetail", () => {

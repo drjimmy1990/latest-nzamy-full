@@ -37,6 +37,13 @@ export interface CommunityAnswerLike {
   created_at?: string;
   is_lawyer_verified?: boolean;
   lawyerSlug?: string | null;
+  /** Owner ٤٢: «مكتب موثّق» — the route's verifiedOffice flag (20261127_60). */
+  verifiedOffice?: boolean;
+  /** Owner ٤٢: the author's own answer under review / rejected (route's reviewState). */
+  reviewState?: "pending" | "rejected" | null;
+  /** The raw row's status (the POST answer returns the row itself). */
+  status?: string;
+  review_note?: string | null;
 }
 
 export interface MappedCommunityReply {
@@ -49,6 +56,11 @@ export interface MappedCommunityReply {
   isBest: boolean;
   rating?: number;
   lawyerSlug?: string;
+  /** «مكتب موثّق» (owner ٤٢): a firm with a verified CR and a lawyer whose licence is valid. */
+  isVerifiedOffice: boolean;
+  /** The reader's own answer still under review («بانتظار المراجعة») or rejected. */
+  reviewState: "pending" | "rejected" | null;
+  reviewNote: string | null;
 }
 
 /** Real answers carry no display name on the wire yet — see the route note. */
@@ -85,6 +97,12 @@ export function mapCommunityAnswer(
   const lawyerSlug =
     typeof answer.lawyerSlug === "string" && answer.lawyerSlug.length > 0 ? answer.lawyerSlug : undefined;
   const rating = typeof answer.authorRating === "number" ? answer.authorRating : undefined;
+  const reviewState: "pending" | "rejected" | null =
+    answer.reviewState === "pending" || answer.status === "pending_review"
+      ? "pending"
+      : answer.reviewState === "rejected" || answer.status === "rejected"
+        ? "rejected"
+        : null;
 
   return {
     type: isLawyer ? "lawyer" : "user",
@@ -96,5 +114,8 @@ export function mapCommunityAnswer(
     isBest,
     rating,
     lawyerSlug,
+    isVerifiedOffice: answer.verifiedOffice === true,
+    reviewState,
+    reviewNote: reviewState === "rejected" && typeof answer.review_note === "string" ? answer.review_note : null,
   };
 }

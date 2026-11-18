@@ -3,7 +3,7 @@ import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isMissingDeviceSchema, parseDeviceSettingsPatch } from "@/lib/library/deviceLimit";
-import { forgetLibraryDeviceSetting } from "@/lib/library/deviceLimitServer";
+import { deviceCodesAvailable, forgetLibraryDeviceSetting } from "@/lib/library/deviceLimitServer";
 
 /**
  * «أجهزة المكتبة» — the two device-limit columns of the library settings row
@@ -42,7 +42,14 @@ export async function GET() {
       return NextResponse.json({ error: "تعذّر تحميل الإعداد." }, { status: 500 });
     }
     return NextResponse.json(
-      { ...settingsOf((data ?? null) as Record<string, unknown> | null), available: Boolean(data) },
+      {
+        ...settingsOf((data ?? null) as Record<string, unknown> | null),
+        available: Boolean(data),
+        // Owner ٤٠: whether this server can e-mail the code of a new device
+        // (an e-mail provider and a code key). Without it a new device with
+        // room registers at once, as before.
+        codesAvailable: deviceCodesAvailable(),
+      },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (err) {

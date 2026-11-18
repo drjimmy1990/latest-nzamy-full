@@ -7364,3 +7364,35 @@ select 'expired lots still holding points (info — the points-expiry cron empti
        true as ok,
        (select count(*) from public.points_lots where expires_at <= now() and points_left > 0) as expired_with_points;
 -- <<< verify:l7_points
+-- >>> verify:l7_community
+-- Batch l7-community (owner ٢٥ / ٤٠ / ٤٢): run 20261127_60 before or after the deploy.
+select 'Community: posts and answers wait for review (pending_review/rejected, review trigger, author-only arm, setting row) (run 20261127_60)' as check,
+       exists (select 1 from pg_catalog.pg_trigger where tgrelid = to_regclass('public.community_posts')
+                  and tgname = 'trg_community_posts_review' and not tgisinternal)
+       and exists (select 1 from pg_catalog.pg_trigger where tgrelid = to_regclass('public.community_answers')
+                  and tgname = 'trg_community_answers_review' and not tgisinternal)
+       and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                  and policyname = 'anyone reads public community posts' and qual ilike '%pending_review%')
+       and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'community_answers'
+                  and policyname = 'anyone reads active community answers' and qual ilike '%pending_review%')
+       and exists (select 1 from public.platform_settings where key = 'community_prepublish_review')
+       and to_regprocedure('public.community_verified_office_users(uuid[])') is not null
+       and not has_function_privilege('authenticated', 'public.community_verified_office_users(uuid[])', 'EXECUTE')
+       as ok;
+select 'Suspension freezes, never cancels: account_suspension_freezes + freeze open/lift, service role only (run 20261127_60)' as check,
+       to_regclass('public.account_suspension_freezes') is not null
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.account_suspension_freezes')), false)
+       and not has_table_privilege('authenticated', 'public.account_suspension_freezes', 'SELECT')
+       and to_regprocedure('public.account_freeze_open(uuid,uuid,text)') is not null
+       and to_regprocedure('public.account_freeze_lift(uuid,uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.account_freeze_open(uuid,uuid,text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.account_freeze_lift(uuid,uuid)', 'EXECUTE')
+       as ok;
+select 'Library devices: e-mail code per new device, third device suspends, one open session (switch stays as set) (run 20261127_60)' as check,
+       to_regprocedure('public.library_device_gate(uuid,text,text,uuid,boolean)') is not null
+       and to_regprocedure('public.library_device_code_issue(uuid,text,text)') is not null
+       and to_regprocedure('public.library_device_code_verify(uuid,text,text,uuid)') is not null
+       and not has_function_privilege('authenticated', 'public.library_device_gate(uuid,text,text,uuid,boolean)', 'EXECUTE')
+       and not has_column_privilege('authenticated', 'public.user_devices', 'code_hash', 'SELECT')
+       as ok;
+-- <<< verify:l7_community

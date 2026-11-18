@@ -41,7 +41,18 @@ export interface ReaderDevice {
 export type ReaderRefusal =
   | { kind: "lock"; lock: ReaderLock }
   | { kind: "limit"; scope: ReaderLimitScope; messageAr: string }
-  | { kind: "device"; messageAr: string; limit: number; devices: ReaderDevice[] };
+  | {
+      kind: "device";
+      messageAr: string;
+      limit: number;
+      devices: ReaderDevice[];
+      /**
+       * Owner ٤٠ (20261127_60): "code" — a new device waits for the e-mail
+       * code; "suspended" — the third device suspended the account. Absent
+       * for the device-limit refusal itself.
+       */
+      mode?: "code" | "suspended";
+    };
 
 const HOUR_MS = 3_600_000;
 const MINUTE_MS = 60_000;
@@ -155,6 +166,9 @@ export function deviceRefusalOf(status: number, body: unknown): Extract<ReaderRe
   return refusal?.kind === "device" ? refusal : null;
 }
 
+const DEVICE_CODE_FALLBACK_AR = "هذا جهاز جديد على حسابك. أدخل رمز التحقق المرسل إلى بريدك لتفتح المكتبة منه.";
+const DEVICE_SUSPENDED_FALLBACK_AR = "أُوقف الحساب لمحاولة فتح المكتبة من جهاز إضافي. تواصل مع الدعم الفني لإعادة تفعيله.";
+
 const DEVICE_FALLBACK_AR =
   "هذا الحساب مفعّل على جهازين بالفعل. سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز.";
 
@@ -166,7 +180,14 @@ const DEVICE_FALLBACK_AR =
 function deviceRefusalFrom(b: Record<string, unknown>): ReaderRefusal | null {
   // device_cookie_required: a read that carried no device id while the limit
   // is on (a Bearer caller; a browser always gets one minted).
-  if (b.code !== "device_limit" && b.code !== "device_cookie_required") return null;
+  if (
+    b.code !== "device_limit" &&
+    b.code !== "device_cookie_required" &&
+    b.code !== "device_code_required" &&
+    b.code !== "device_limit_suspended"
+  ) {
+    return null;
+  }
   const devices: ReaderDevice[] = [];
   if (Array.isArray(b.devices)) {
     for (const d of b.devices) {
@@ -178,6 +199,12 @@ function deviceRefusalFrom(b: Record<string, unknown>): ReaderRefusal | null {
     }
   }
   const limit = typeof b.limit === "number" && Number.isFinite(b.limit) ? Math.trunc(b.limit) : 2;
+  if (b.code === "device_code_required") {
+    return { kind: "device", messageAr: text(b.error) ?? DEVICE_CODE_FALLBACK_AR, limit, devices, mode: "code" };
+  }
+  if (b.code === "device_limit_suspended") {
+    return { kind: "device", messageAr: text(b.error) ?? DEVICE_SUSPENDED_FALLBACK_AR, limit, devices, mode: "suspended" };
+  }
   return { kind: "device", messageAr: text(b.error) ?? DEVICE_FALLBACK_AR, limit, devices };
 }
 

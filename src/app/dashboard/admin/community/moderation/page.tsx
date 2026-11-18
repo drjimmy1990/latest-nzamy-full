@@ -1,271 +1,429 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+/**
+ * /dashboard/admin/community/moderation — «مراجعة المجتمع» (owner ٤٢, 18 Nov
+ * 2026; batch l7 decision 13).
+ *
+ * While review before publishing is on, every member's new question and
+ * answer waits here ('pending_review', 20261127_60) and is public only after
+ * «اعتماد». «رفض» needs a reason, which the author reads on his own row and
+ * in a notification. The switch at the top turns the review on or off
+ * (platform_settings.community_prepublish_review, settings.write).
+ *
+ * Everything on this page is what the server returned: no demo rows, and a
+ * failed read says so instead of showing an empty queue.
+ */
+
+import { useCallback, useEffect, useState } from "react";
 import {
+  ArrowClockwise,
+  ChatCircle,
   CheckCircle,
   Flag,
   MagnifyingGlass,
+  Question,
   ShieldWarning,
-  UserCircle,
+  SpinnerGap,
+  Trash,
   WarningCircle,
   XCircle,
 } from "@phosphor-icons/react";
-import { motion } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
-import type { CommunityModerationItem, CommunityModerationStatus } from "@/types/adminBackendReady";
 import { toArabicDigits } from "@/lib/services/arabicCount";
+import type { ModerationUiStatus } from "@/lib/community/review";
 
-// Additive, real field the GET route now returns per post (see its own header
-// comment) — not on `CommunityModerationItem` itself (out of this page's
-// ownership), so it is carried as a local widening rather than an edit there.
-type ModerationRow = CommunityModerationItem & { reportCount?: number };
+type Kind = "post" | "answer";
+type StatusFilter = ModerationUiStatus | "all";
 
-const STATUS_LABEL: Record<CommunityModerationStatus, string> = {
-  pending: "بانتظار المراجعة",
-  approved: "معتمد",
-  rejected: "مرفوض",
-  escalated: "مصعد قانونياً",
-};
-
-const INITIAL_REPORTS: CommunityModerationItem[] = [
-  {
-    id: "MOD-101",
-    postId: "community-1",
-    postTitle: "استفسار عن فسخ عقد عمل قبل انتهاء المدة",
-    reportReason: "إجابة قد تبدو فتوى قانونية قطعية",
-    reporter: "عميل فرد",
-    assignedModerator: "نورة القحطاني",
-    status: "pending",
-    createdAt: "2026-05-20 09:20",
-  },
-  {
-    id: "MOD-102",
-    postId: "community-2",
-    postTitle: "مناقشة حول شرط عدم المنافسة",
-    reportReason: "بلاغ محتوى دعائي",
-    reporter: "محامي",
-    assignedModerator: "فهد العتيبي",
-    status: "escalated",
-    createdAt: "2026-05-20 10:05",
-  },
-  {
-    id: "MOD-103",
-    postId: "community-3",
-    postTitle: "سؤال عن إجراءات مطالبة مالية",
-    reportReason: "تكرار سؤال منشور",
-    reporter: "مشرف مجتمع",
-    status: "pending",
-    createdAt: "2026-05-20 11:12",
-  },
-];
-
-// API GET returns the CommunityModerationItem shape plus a couple of extra
-// context fields; we only rely on the item shape the page already uses.
-interface ModerationApiItem extends CommunityModerationItem {
-  category?: string;
-  visibility?: string;
-  reportCount?: number;
+interface QueueItem {
+  id: string;
+  kind: Kind;
+  postId: string;
+  postTitle: string;
+  body: string;
+  author: string;
+  isLawyerVerified: boolean;
+  status: ModerationUiStatus;
+  reviewNote: string | null;
+  reportCount: number;
+  reportReason: string | null;
+  createdAt: string;
 }
 
-// The page's decision buttons pass UI statuses (approved/rejected/escalated).
-// The PATCH route accepts those UI values directly as action aliases.
-const STATUS_TO_ACTION: Record<CommunityModerationStatus, string> = {
-  approved: "approve",
-  rejected: "reject",
-  escalated: "escalate",
-  pending: "approve", // not wired to a button, but keep the map total
+interface QueueRead {
+  data: QueueItem[];
+  total: number | null;
+  pending: { posts: number | null; answers: number | null };
+  prepublishReview: boolean | null;
+}
+
+const STATUS_LABEL: Record<ModerationUiStatus, string> = {
+  pending: "بانتظار المراجعة",
+  approved: "معتمد ومنشور",
+  rejected: "مرفوض أو محذوف",
+  escalated: "مصعّد قانونياً",
 };
+
+const FILTERS: Array<[StatusFilter, string]> = [
+  ["pending", "بانتظار المراجعة"],
+  ["approved", "المعتمد"],
+  ["rejected", "المرفوض"],
+  ["escalated", "المصعّد"],
+  ["all", "الكل"],
+];
+
+function whenAr(iso: string): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleString("ar-SA", { timeZone: "Asia/Riyadh", dateStyle: "medium", timeStyle: "short" });
+}
 
 export default function AdminCommunityModerationPage() {
   const { isDark } = useTheme();
-  const [reports, setReports] = useState<ModerationRow[]>(INITIAL_REPORTS);
+  const [kind, setKind] = useState<Kind>("post");
+  const [filter, setFilter] = useState<StatusFilter>("pending");
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState("جاري تحميل طابور الإشراف...");
+  const [query, setQuery] = useState("");
+  const [read, setRead] = useState<QueueRead | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
 
-  // Fetch the real moderation queue on mount. Falls back to INITIAL_REPORTS if
-  // the request fails or returns no rows (tables may not be applied remotely yet).
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/v1/admin/community/moderation", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as { data?: ModerationApiItem[] };
-        const rows = json.data ?? [];
-        if (!active) return;
-        if (rows.length > 0) {
-          setReports(
-            rows.map((row) => ({
-              id: row.id,
-              postId: row.postId,
-              postTitle: row.postTitle,
-              reportReason: row.reportReason,
-              reporter: row.reporter,
-              assignedModerator: row.assignedModerator,
-              status: row.status,
-              createdAt: row.createdAt,
-              reportCount: row.reportCount,
-            })),
-          );
-          setToast("طابور الإشراف متصل بقاعدة البيانات. القرارات تُحفظ على المنشور مباشرة.");
-        } else {
-          setToast("لا توجد منشورات مجتمع بعد. تُعرض بيانات توضيحية محلية.");
-        }
-      } catch {
-        if (!active) return;
-        setToast("تعذر الاتصال بطابور الإشراف. تُعرض بيانات توضيحية محلية كاحتياط.");
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const filteredReports = reports.filter((item) =>
-    [item.postTitle, item.reportReason, item.reporter, item.assignedModerator ?? ""].some((value) =>
-      value.toLowerCase().includes(search.toLowerCase()),
-    ),
-  );
-
-  const stats = useMemo(() => ({
-    total: reports.length,
-    pending: reports.filter((item) => item.status === "pending").length,
-    escalated: reports.filter((item) => item.status === "escalated").length,
-    resolved: reports.filter((item) => item.status === "approved" || item.status === "rejected").length,
-  }), [reports]);
-
-  const card = `rounded-2xl border ${isDark ? "bg-[#0d1117] border-white/10" : "bg-white border-gray-200 shadow-sm"}`;
-  const muted = isDark ? "text-gray-400" : "text-gray-500";
-
-  async function setStatus(id: string, status: CommunityModerationStatus) {
-    // Optimistic update, then persist via the moderation PATCH route.
-    const previous = reports.find((item) => item.id === id)?.status;
-    setReports((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
-    setToast(`جاري حفظ القرار "${STATUS_LABEL[status]}"...`);
+  const load = useCallback(async () => {
+    setState("loading");
     try {
-      const res = await fetch(`/api/v1/admin/community/moderation/${id}`, {
+      const params = new URLSearchParams({ kind, status: filter, limit: "100" });
+      if (query) params.set("search", query);
+      const res = await fetch(`/api/v1/admin/community/moderation?${params}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as QueueRead;
+      setRead({
+        data: Array.isArray(json.data) ? json.data : [],
+        total: typeof json.total === "number" ? json.total : null,
+        pending: json.pending ?? { posts: null, answers: null },
+        prepublishReview: typeof json.prepublishReview === "boolean" ? json.prepublishReview : null,
+      });
+      setState("ready");
+    } catch {
+      setState("error");
+    }
+  }, [kind, filter, query]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function decide(item: QueueItem, action: "approve" | "reject" | "escalate" | "remove", why?: string) {
+    if (busy) return;
+    setBusy(item.id);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/v1/admin/community/moderation/${encodeURIComponent(item.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: STATUS_TO_ACTION[status] }),
+        body: JSON.stringify({ kind: item.kind, action, reason: why }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setToast(`تم حفظ القرار "${STATUS_LABEL[status]}" على المنشور وسجل التدقيق.`);
-    } catch {
-      // Revert on failure so the UI reflects the real (unchanged) backend state.
-      if (previous) {
-        setReports((current) => current.map((item) => (item.id === id ? { ...item, status: previous } : item)));
-      }
-      setToast(`تعذر حفظ القرار "${STATUS_LABEL[status]}". تم التراجع عن التغيير.`);
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(json?.error || "تعذّر حفظ القرار");
+      setRejecting(null);
+      setReason("");
+      setMessage({
+        tone: "ok",
+        text:
+          action === "approve"
+            ? "اعتُمد وأصبح ظاهراً للأعضاء، وأُبلغ صاحبه."
+            : action === "reject"
+              ? "رُفض، وأُبلغ صاحبه بالسبب."
+              : action === "escalate"
+                ? "صُعّد للمراجعة القانونية ولا يظهر للأعضاء."
+                : "حُذف ولا يظهر للأعضاء.",
+      });
+      await load();
+    } catch (err) {
+      setMessage({ tone: "error", text: err instanceof Error ? err.message : "تعذّر حفظ القرار — لم يتغيّر شيء." });
+    } finally {
+      setBusy(null);
     }
   }
 
-  // Assigning a moderator has no backing column on community_posts (no
-  // assigned_moderator field in the community schema), so this stays local-only.
-  // Persisting it would require a schema change (out of scope for this task).
-  function assignModerator(id: string) {
-    setReports((current) =>
-      current.map((item) => (item.id === id ? { ...item, assignedModerator: item.assignedModerator ? undefined : "مشرف مناوب" } : item)),
-    );
-    setToast("تعيين المشرف محلي فقط — لا يوجد عمود assigned_moderator في مخطط المجتمع.");
+  async function setReview(on: boolean) {
+    if (busy) return;
+    setBusy("setting");
+    setMessage(null);
+    try {
+      const res = await fetch("/api/v1/admin/community/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prepublishReview: on }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(json?.error || "تعذّر حفظ الإعداد");
+      setMessage({
+        tone: "ok",
+        text: on
+          ? "المراجعة قبل النشر مفعّلة: كل سؤال أو إجابة جديدة تنتظر الاعتماد."
+          : "أُوقفت المراجعة قبل النشر: الجديد يُنشر فوراً، وما ينتظر في الطابور يبقى حتى تقرر فيه.",
+      });
+      await load();
+    } catch (err) {
+      setMessage({ tone: "error", text: err instanceof Error ? err.message : "تعذّر حفظ الإعداد" });
+    } finally {
+      setBusy(null);
+    }
   }
 
+  const card = `rounded-2xl border ${isDark ? "bg-[#0d1117] border-white/10" : "bg-white border-gray-200 shadow-sm"}`;
+  const muted = isDark ? "text-gray-400" : "text-gray-500";
+  const strong = isDark ? "text-white" : "text-gray-900";
+  const items = read?.data ?? [];
+  const review = read?.prepublishReview ?? null;
+  const count = (n: number | null | undefined) => (typeof n === "number" ? toArabicDigits(n) : "—");
+
   return (
-    <div className="p-6 md:p-10 space-y-8 max-w-[1400px] mx-auto pb-32" dir="rtl">
+    <div className="p-6 md:p-10 space-y-6 max-w-[1400px] mx-auto pb-32" dir="rtl">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-3 mb-2">
             <div className={`p-2 rounded-xl ${isDark ? "bg-rose-500/10 text-rose-300" : "bg-rose-50 text-rose-700"}`}>
               <ShieldWarning size={24} weight="duotone" />
             </div>
-            <h1 className={`text-3xl font-black ${isDark ? "text-white" : "text-gray-900"}`}>إشراف المجتمع</h1>
+            <h1 className={`text-3xl font-black ${strong}`}>مراجعة المجتمع</h1>
           </div>
-          <p className={`text-sm ${muted}`}>طابور بلاغات ومراجعة محتوى.</p>
+          <p className={`text-sm ${muted}`}>
+            الأسئلة والإجابات الجديدة لا تظهر للأعضاء قبل اعتمادها هنا. أسماء الكاتبين تظهر لفريق المراجعة فقط.
+          </p>
         </div>
-        <span className="text-[11px] px-3 py-2 rounded-full border border-blue-500/25 bg-blue-500/10 text-blue-300 font-bold w-fit">قريباً</span>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border w-fit ${isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
+        >
+          <ArrowClockwise size={14} /> تحديث
+        </button>
       </div>
 
-      <div className={`flex items-start gap-2 text-sm p-4 rounded-2xl border ${isDark ? "border-blue-500/20 bg-blue-500/10 text-blue-100" : "border-blue-100 bg-blue-50 text-blue-800"}`}>
-        <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
-        <span>{toast}</span>
+      {/* The switch (owner ٤٢: «في الأسابيع الأولى») */}
+      <div className={`${card} p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+        <div>
+          <p className={`font-black ${strong}`}>المراجعة قبل النشر</p>
+          <p className={`text-xs mt-1 ${muted}`}>
+            {review === null
+              ? "حالة الإعداد غير معروفة الآن (تعذّرت قراءته، أو لم يُشغَّل ملف الترحيل 20261127_60 بعد — وعندها يُنشر كل جديد فوراً)."
+              : review
+                ? "مفعّلة: كل سؤال أو إجابة جديدة من عضو تنتظر الاعتماد. منشورات فريق الإدارة تُنشر فوراً."
+                : "موقوفة: الجديد يُنشر فوراً. التعديل على منشور معتمد لا يعود إلى المراجعة."}
+          </p>
+        </div>
+        {review !== null && (
+          <button
+            type="button"
+            disabled={busy === "setting"}
+            onClick={() => void setReview(!review)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold border disabled:opacity-50 ${review ? isDark ? "border-amber-500/30 text-amber-300 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-50" : "border-emerald-500/30 bg-emerald-600 text-white hover:bg-emerald-700"}`}
+          >
+            {review ? "إيقاف المراجعة قبل النشر" : "تفعيل المراجعة قبل النشر"}
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { label: "إجمالي البلاغات", value: stats.total, icon: Flag },
-          { label: "بانتظار المراجعة", value: stats.pending, icon: WarningCircle },
-          { label: "مصعدة قانونياً", value: stats.escalated, icon: ShieldWarning },
-          { label: "قرارات محلية", value: stats.resolved, icon: CheckCircle },
-        ].map((stat) => (
-          <div key={stat.label} className={`${card} p-5 flex items-center justify-between`}>
+      <div className="grid grid-cols-2 gap-4">
+        {([
+          ["post", "أسئلة بانتظار المراجعة", read?.pending.posts, Question],
+          ["answer", "إجابات بانتظار المراجعة", read?.pending.answers, ChatCircle],
+        ] as const).map(([k, label, n, Icon]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => { setKind(k); setFilter("pending"); }}
+            className={`${card} p-5 flex items-center justify-between text-right ${kind === k ? "ring-2 ring-[#C8A762]" : ""}`}
+          >
             <div>
-              <p className={`text-xs mb-2 ${muted}`}>{stat.label}</p>
-              <p className={`text-2xl font-black font-mono ${isDark ? "text-white" : "text-gray-900"}`}>{stat.value}</p>
+              <p className={`text-xs mb-2 ${muted}`}>{label}</p>
+              <p className={`text-2xl font-black font-mono ${strong}`}>{state === "ready" ? count(n) : "…"}</p>
             </div>
             <div className={`p-3 rounded-xl ${isDark ? "bg-white/5 text-[#C8A762]" : "bg-gray-100 text-[#0B3D2E]"}`}>
-              <stat.icon size={22} weight="duotone" />
+              <Icon size={22} weight="duotone" />
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
-      <div className={`${card} p-2 flex items-center gap-2`}>
-        <MagnifyingGlass size={16} className={muted} />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ابحث في البلاغات أو المشرف..." className={`w-full bg-transparent outline-none py-2 text-sm ${isDark ? "text-white placeholder:text-gray-600" : "text-gray-900 placeholder:text-gray-400"}`} />
+      <div className="flex flex-col lg:flex-row gap-3">
+        <div className={`flex gap-1 p-1 rounded-2xl border w-fit ${isDark ? "border-white/10" : "border-gray-200 bg-white"}`} role="tablist">
+          {(["post", "answer"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={kind === k}
+              onClick={() => setKind(k)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold ${kind === k ? "bg-[#0B3D2E] text-white" : muted}`}
+            >
+              {k === "post" ? "الأسئلة" : "الإجابات"}
+            </button>
+          ))}
+        </div>
+        <div className={`flex flex-wrap gap-1 p-1 rounded-2xl border w-fit ${isDark ? "border-white/10" : "border-gray-200 bg-white"}`}>
+          {FILTERS.map(([f, label]) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold ${filter === f ? "bg-[#C8A762] text-[#0B3D2E]" : muted}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <form
+          className={`${card} px-3 flex items-center gap-2 flex-1`}
+          onSubmit={(e) => { e.preventDefault(); setQuery(search.trim()); }}
+        >
+          <MagnifyingGlass size={16} className={muted} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="ابحث في النص ثم اضغط Enter…"
+            className={`w-full bg-transparent outline-none py-2 text-sm ${isDark ? "text-white placeholder:text-gray-600" : "text-gray-900 placeholder:text-gray-400"}`}
+          />
+        </form>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {filteredReports.map((item, index) => (
-          <motion.div key={item.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }} className={`${card} p-5 space-y-4`}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className={`text-xs font-mono mb-1 ${muted}`}>{item.id} · {item.createdAt}</p>
-                <h2 className={`font-black ${isDark ? "text-white" : "text-gray-900"}`}>{item.postTitle}</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                {!!item.reportCount && item.reportCount > 0 && (
-                  <span
-                    title="عدد البلاغات الفعلية على هذا المنشور (community_reports)"
-                    className={`text-[11px] px-2 py-1 rounded-full font-bold whitespace-nowrap ${isDark ? "bg-rose-500/10 text-rose-300" : "bg-rose-50 text-rose-700"}`}
+      {message && (
+        <div
+          role={message.tone === "error" ? "alert" : "status"}
+          className={`flex items-start gap-2 text-sm p-4 rounded-2xl border ${message.tone === "error" ? isDark ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-700" : isDark ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+        >
+          <WarningCircle size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
+          <span>{message.text}</span>
+        </div>
+      )}
+
+      {state === "loading" ? (
+        <div className={`${card} p-12 flex flex-col items-center`}>
+          <SpinnerGap size={28} className="animate-spin text-[#C8A762] mb-3" />
+          <p className={`text-sm ${muted}`}>جارٍ تحميل طابور المراجعة…</p>
+        </div>
+      ) : state === "error" ? (
+        <div className={`${card} p-12 flex flex-col items-center text-center`}>
+          <WarningCircle size={32} weight="fill" className="text-amber-500 mb-3" />
+          <p className={`font-black mb-1 ${strong}`}>تعذّر تحميل طابور المراجعة</p>
+          <p className={`text-sm mb-4 ${muted}`}>هذا ليس طابوراً فارغاً — لم نتمكّن من قراءته الآن.</p>
+          <button type="button" onClick={() => void load()} className="px-4 py-2 rounded-xl text-xs font-bold bg-[#0B3D2E] text-white">
+            إعادة المحاولة
+          </button>
+        </div>
+      ) : items.length === 0 ? (
+        <div className={`${card} p-12 text-center ${muted}`}>
+          {filter === "pending"
+            ? kind === "post" ? "لا أسئلة تنتظر المراجعة." : "لا إجابات تنتظر المراجعة."
+            : "لا يوجد ما يطابق هذا التصفية."}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {read?.total !== null && read && read.total > items.length && (
+            <p className={`text-xs ${muted}`}>يُعرض {toArabicDigits(items.length)} من {toArabicDigits(read.total)}.</p>
+          )}
+          {items.map((item) => (
+            <article key={item.id} className={`${card} p-5 space-y-3`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className={`text-xs mb-1 ${muted}`}>
+                    {item.kind === "post" ? "سؤال" : "إجابة على"} · {whenAr(item.createdAt)}
+                  </p>
+                  <a
+                    href={`/community/${encodeURIComponent(item.postId)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`font-black hover:underline ${strong}`}
                   >
-                    {toArabicDigits(item.reportCount)} بلاغ
+                    {item.postTitle || "—"}
+                  </a>
+                </div>
+                <div className="flex items-center gap-2">
+                  {item.reportCount > 0 && (
+                    <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full font-bold ${isDark ? "bg-rose-500/10 text-rose-300" : "bg-rose-50 text-rose-700"}`}>
+                      <Flag size={11} /> {toArabicDigits(item.reportCount)} بلاغ
+                    </span>
+                  )}
+                  <span className={`text-[11px] px-2 py-1 rounded-full font-bold ${item.status === "approved" ? "bg-emerald-500/10 text-emerald-500" : item.status === "rejected" ? "bg-rose-500/10 text-rose-500" : item.status === "escalated" ? "bg-amber-500/10 text-amber-500" : "bg-blue-500/10 text-blue-500"}`}>
+                    {STATUS_LABEL[item.status]}
                   </span>
-                )}
-                <StatusBadge status={item.status} />
+                </div>
               </div>
-            </div>
-            <div className={`p-3 rounded-xl ${isDark ? "bg-white/[0.03]" : "bg-gray-50"}`}>
-              <p className={`text-xs font-bold mb-1 ${muted}`}>سبب البلاغ</p>
-              <p className={`text-sm ${isDark ? "text-gray-200" : "text-gray-800"}`}>{item.reportReason}</p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}><Flag size={12} /> {item.reporter}</span>
-              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full ${isDark ? "bg-white/5 text-gray-300" : "bg-gray-100 text-gray-600"}`}><UserCircle size={12} /> {item.assignedModerator ?? "غير معين"}</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => setStatus(item.id, "approved")} className={actionClass(isDark)}><CheckCircle size={14} /> اعتماد</button>
-              <button onClick={() => setStatus(item.id, "rejected")} className={actionClass(isDark)}><XCircle size={14} /> رفض</button>
-              <button onClick={() => setStatus(item.id, "escalated")} className={actionClass(isDark)}><ShieldWarning size={14} /> تصعيد</button>
-              <button onClick={() => assignModerator(item.id)} className={actionClass(isDark)}><UserCircle size={14} /> تعيين</button>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-      {filteredReports.length === 0 && <div className={`p-12 text-center ${muted}`}>لا توجد بلاغات مطابقة</div>}
+
+              <p className={`text-sm whitespace-pre-wrap leading-relaxed p-3 rounded-xl ${isDark ? "bg-white/[0.03] text-gray-300" : "bg-gray-50 text-gray-800"}`}>
+                {item.body || "—"}
+              </p>
+
+              <div className={`flex flex-wrap gap-2 text-xs ${muted}`}>
+                <span>الكاتب (للمراجعين فقط): {item.author}{item.isLawyerVerified ? " · محامٍ موثّق" : ""}</span>
+                {item.reportReason && <span>· البلاغات: {item.reportReason}</span>}
+                {item.reviewNote && <span>· سبب الرفض: {item.reviewNote}</span>}
+              </div>
+
+              {rejecting === item.id ? (
+                <div className="space-y-2">
+                  <label className={`block text-xs font-bold ${muted}`} htmlFor={`reason-${item.id}`}>
+                    سبب الرفض (يقرؤه صاحب المحتوى)
+                  </label>
+                  <textarea
+                    id={`reason-${item.id}`}
+                    value={reason}
+                    maxLength={500}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={2}
+                    className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${isDark ? "bg-[#0c0f12] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={!reason.trim() || busy === item.id}
+                      onClick={() => void decide(item, "reject", reason.trim())}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white disabled:opacity-50"
+                    >
+                      <XCircle size={14} /> تأكيد الرفض
+                    </button>
+                    <button type="button" onClick={() => { setRejecting(null); setReason(""); }} className={actionClass(isDark)}>
+                      إلغاء
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {item.status !== "approved" && (
+                    <button type="button" disabled={busy === item.id} onClick={() => void decide(item, "approve")} className={actionClass(isDark)}>
+                      <CheckCircle size={14} /> اعتماد ونشر
+                    </button>
+                  )}
+                  {item.status !== "rejected" && (
+                    <button type="button" disabled={busy === item.id} onClick={() => { setRejecting(item.id); setReason(""); }} className={actionClass(isDark)}>
+                      <XCircle size={14} /> رفض مع السبب
+                    </button>
+                  )}
+                  {item.status !== "escalated" && (
+                    <button type="button" disabled={busy === item.id} onClick={() => void decide(item, "escalate")} className={actionClass(isDark)}>
+                      <ShieldWarning size={14} /> تصعيد قانوني
+                    </button>
+                  )}
+                  <button type="button" disabled={busy === item.id} onClick={() => void decide(item, "remove")} className={actionClass(isDark)}>
+                    <Trash size={14} /> حذف
+                  </button>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: CommunityModerationStatus }) {
-  const className =
-    status === "approved" ? "bg-emerald-500/10 text-emerald-500" :
-    status === "rejected" ? "bg-rose-500/10 text-rose-500" :
-    status === "escalated" ? "bg-amber-500/10 text-amber-500" :
-    "bg-blue-500/10 text-blue-500";
-  return <span className={`text-[11px] px-2 py-1 rounded-full font-bold whitespace-nowrap ${className}`}>{STATUS_LABEL[status]}</span>;
-}
-
 function actionClass(isDark: boolean) {
-  return `inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border ${
+  return `inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border disabled:opacity-50 ${
     isDark ? "border-white/10 text-gray-300 hover:bg-white/5" : "border-gray-200 text-gray-700 hover:bg-gray-50"
   }`;
 }

@@ -288,6 +288,7 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "service-orders/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 4 },
   { file: "verifications/[id]/route.ts", method: "PATCH", action: "verifications.decide", logs: 1 },
   { file: "community/moderation/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
+  { file: "community/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },
@@ -469,31 +470,27 @@ test("users DELETE: an admin cannot delete their own account from the console", 
   assert.ok(body.slice(refusalAt, refusalAt + 80).includes("status: 400"), "the refusal is a 400");
 });
 
-test("users PATCH: a suspension's audit row records what its writes really did", () => {
+test("users PATCH: a suspension's audit row records what its writes really did (owner ٢٥: a freeze, never a cancel)", () => {
   const body = handler("users/[id]/route.ts", "PATCH");
-  const cancelAt = body.indexOf('.from("subscriptions")');
-  assert.ok(cancelAt > -1, "the suspension no longer cancels subscriptions");
-  const cancel = body.slice(cancelAt, body.indexOf(";", cancelAt));
-  assert.ok(cancel.includes('.select("id")'), "the cancel returns its rows, so the count is real");
-  assert.ok(/const \{ data: cancelledRows, error: cancelError \}/.test(body), "the cancel's result is captured");
-  assert.ok(/const \{ data: tierResult, error: tierError \}/.test(body), "the tier change's result is captured");
+  assert.equal(body.includes('.from("subscriptions")'), false, "a suspension no longer cancels subscriptions");
+  assert.equal(body.includes('tier: "free"'), false, "a suspension no longer resets the auth tier");
+  const freezeAt = body.indexOf("await freezeEntitlementsWith(adminClient,");
+  assert.ok(freezeAt > -1, "the suspension freezes what is live");
 
-  // either error → 500 «تعذّر إكمال الإيقاف», recorded as a failed suspension, never as done
+  // the ban's failure → 500 «تعذّر إكمال الإيقاف», recorded as a failed suspension, never as done
   const helperAt = body.indexOf("const suspensionFailed = async");
-  assert.ok(helperAt > -1 && helperAt < cancelAt, "one failure path, defined before the writes");
-  const helper = body.slice(helperAt, cancelAt);
-  assert.ok(helper.includes('"user_suspension_failed"'), "a half-completed suspension is recorded as failed");
+  assert.ok(helperAt > -1 && helperAt < freezeAt, "one failure path, defined before the writes");
+  const helper = body.slice(helperAt, freezeAt);
+  assert.ok(helper.includes('"user_suspension_failed"'), "a failed suspension is recorded as failed");
   const msgAt = helper.indexOf('"تعذّر إكمال الإيقاف"');
   assert.ok(msgAt > -1 && helper.slice(msgAt, msgAt + 80).includes("status: 500"), "the failure answers 500 «تعذّر إكمال الإيقاف»");
   assert.ok(helper.indexOf("logAdminAction(") < msgAt, "the failed row is written, then the 500");
-  assert.equal(countOf(body, "return suspensionFailed("), 3, "the ban and both writes return through the failure path");
-  assert.ok(body.indexOf("if (cancelError)") > cancelAt, "the cancel's error is checked");
-  assert.ok(body.indexOf("if (tierError)") > body.indexOf("if (cancelError)"), "the tier error is checked");
+  assert.equal(countOf(body, "return suspensionFailed("), 1, "the ban returns through the failure path");
 
-  // success records the real values, never the old constants
-  assert.equal(body.includes('active_subscriptions: "cancelled"'), false, "no fixed claim of a cancellation");
-  assert.ok(body.includes("cancelled_count"), "the success row carries the real cancelled count");
-  assert.ok(/auth_tier\s*[:=]\s*.*tierResult/.test(body), "the tier recorded is the one the auth admin API returned");
+  // success records what the freeze and the lift really did
+  assert.ok(body.includes("after.freeze = freeze.state"), "the success row carries the freeze outcome");
+  assert.ok(body.includes("after.freeze = thaw.state"), "the lift row carries the thaw outcome");
+  assert.ok(body.includes("after.extended_days = thaw.extendedDays"), "the lift row carries the days given back");
 });
 
 test("deleting a row that does not exist is a 404 and writes no audit row", () => {
@@ -519,9 +516,10 @@ test("deleting a row that does not exist is a 404 and writes no audit row", () =
 
 test("the community and verification routes keep their audit labels and metadata", () => {
   const moderation = handler("community/moderation/[id]/route.ts", "PATCH");
-  assert.ok(moderation.includes('DB_STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_post_moderated"'));
+  // owner ٤٢: one label per decision and kind (moderationDecision, src/lib/community/review.ts)
+  assert.ok(moderation.includes("action: decision.audit,"));
   assert.ok(moderation.includes("metadata: { reason: body.reason ?? null, action: rawAction }"));
-  assert.ok(moderation.includes('targetType: "community_post"'));
+  assert.ok(moderation.includes('targetType: kind === "post" ? "community_post" : "community_answer"'));
 
   const reports = handler("community/reports/[id]/route.ts", "PATCH");
   assert.ok(reports.includes('STATUS_TO_AUDIT_ACTION[newStatus] ?? "community_report_triaged"'));

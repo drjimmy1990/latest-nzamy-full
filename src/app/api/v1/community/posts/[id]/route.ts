@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { DETAIL_SELECT, cleanDetail, contactIssueIn, publicDetail, visibilityForTab } from "../_feed";
 import { viewerStateFor } from "../_viewer";
+import { reviewStateOf } from "@/lib/community/review";
 
 /**
  * GET /api/v1/community/posts/[id] — Get single post with all answers
@@ -21,19 +22,9 @@ import { viewerStateFor } from "../_viewer";
  *      made `savedQuestion.answers.map(...)` throw on every real post, which
  *      the page's `catch` swallowed into the static `REPLIES` mock — so no
  *      real answer, lawyer or not, could ever have reached mapStoredReply.
- *   2. Each answer additionally carries `lawyerSlug`, resolved below. Raw
- *      `community_answers` rows have no such column (only `author_id`).
- *      Unlike `profiles` (no public SELECT policy — see
- *      src/app/api/v1/lawyers/route.ts's own note on why THAT lookup needs a
- *      service client), `lawyer_profiles` itself carries a `to public`
- *      policy ("public read verified lawyers", no `to authenticated`
- *      restriction, 20260603_phase1_001_profiles.sql:131-133) covering
- *      exactly the predicate queried below (`verification_status =
- *      'verified' and marketplace_visible = true`) — so the already-open
- *      RLS-scoped `supabase` client used for the rest of this handler reads
- *      the identical rows a service client would, no bypass needed. A lawyer
- *      who hasn't chosen a slug, or isn't verified + marketplace-visible,
- *      gets `lawyerSlug: null`, not a fabricated one.
+ *   2. (Owner ٤٢, 18 Nov 2026: the answers no longer carry `lawyerSlug` —
+ *      names are hidden, and a profile slug is a name. Each answer carries
+ *      `verifiedOffice` («مكتب موثّق») instead; see below.)
  *
  * `is_lawyer_verified` itself needs no route change — it is already a real
  * column on every answer row.
@@ -91,30 +82,37 @@ export async function GET(
   // direct update only ever passed for the post's own author anyway.
   await supabase.rpc("community_record_view", { p_post_id: id });
 
-  type RawAnswer = { id: string; author_id: string; is_lawyer_verified: boolean };
+  type RawAnswer = { id: string; author_id: string; is_lawyer_verified: boolean; status?: string; review_note?: string | null };
   const answers: RawAnswer[] = Array.isArray(post.answers) ? post.answers : [];
 
-  const lawyerAuthorIds = Array.from(
-    new Set(
-      answers
-        .filter((a) => a?.is_lawyer_verified === true)
-        .map((a) => a?.author_id)
-        .filter((v): v is string => typeof v === "string" && v.length > 0),
-    ),
-  );
-
-  const slugByAuthor = new Map<string, string>();
-  if (lawyerAuthorIds.length > 0) {
-    const { data: lawyerRows } = await supabase
-      .from("lawyer_profiles")
-      .select("user_id, slug")
-      .in("user_id", lawyerAuthorIds)
-      .eq("verification_status", "verified")
-      .eq("marketplace_visible", true);
-    for (const row of lawyerRows ?? []) {
-      if (typeof row.user_id === "string" && typeof row.slug === "string" && row.slug.length > 0) {
-        slugByAuthor.set(row.user_id, row.slug);
+  // Owner ٤٢ (18 Nov): names are hidden — no profile slug is resolved or sent
+  // (a slug is a name). What a reader learns about a writer is a badge only:
+  // «محامٍ موثّق» (is_lawyer_verified) or «مكتب موثّق» (a firm with a verified
+  // CR and a lawyer whose licence is valid — community_verified_office_users,
+  // 20261127_60, read with the service role; the author ids never leave here).
+  // Before that file runs, or on any error, no answer gets the office badge.
+  const officeAuthors = new Set<string>();
+  const authorIds = Array.from(
+    new Set(answers.map((a) => a?.author_id).filter((v): v is string => typeof v === "string" && v.length > 0)),
+  ).slice(0, 200);
+  if (authorIds.length > 0) {
+    try {
+      const service = await createServiceClient();
+      const { data: officeRows, error: officeError } = await service.rpc("community_verified_office_users", {
+        p_ids: authorIds,
+      });
+      if (officeError) {
+        if (officeError.code !== "PGRST202" && officeError.code !== "42883") {
+          console.error("[community/posts/[id] GET] office badge read failed:", officeError.code);
+        }
+      } else {
+        for (const r of (Array.isArray(officeRows) ? officeRows : []) as unknown[]) {
+          const id = typeof r === "string" ? r : (r as { community_verified_office_users?: unknown } | null)?.community_verified_office_users;
+          if (typeof id === "string") officeAuthors.add(id);
+        }
       }
+    } catch (err) {
+      console.error("[community/posts/[id] GET] office badge read threw:", err instanceof Error ? err.name : "error");
     }
   }
 
@@ -125,10 +123,14 @@ export async function GET(
     answers.map((a) => String(a?.id ?? "")),
   );
 
-  const answersWithSlug = answers.map((a) => ({
+  // RLS (20261127_60) adds the reader's OWN answers under review to the embed;
+  // nobody else's. They carry reviewState for «بانتظار المراجعة».
+  const answersWithState = answers.map((a) => ({
     ...a,
-    lawyerSlug: slugByAuthor.get(a.author_id) ?? null,
+    verifiedOffice: officeAuthors.has(a.author_id),
     myVote: viewer.voteOn("answer", String(a.id)),
+    reviewState: reviewStateOf(a.status),
+    review_note: reviewStateOf(a.status) === "rejected" ? (a.review_note ?? null) : null,
   }));
 
   const isMine = user != null && (post as { author_id?: unknown }).author_id === user.id;
@@ -136,10 +138,11 @@ export async function GET(
   return NextResponse.json({
     data: publicDetail(cleanDetail({
       ...post,
-      answers: answersWithSlug,
+      answers: answersWithState,
       myVote: viewer.voteOn("post", id),
       saved: viewer.savedPost(id),
       isMine,
+      reviewState: reviewStateOf((post as { status?: unknown }).status),
     })),
   });
 }

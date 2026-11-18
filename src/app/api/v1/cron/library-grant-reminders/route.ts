@@ -87,7 +87,27 @@ export async function POST(request: NextRequest) {
     console.error("[cron/library-grant-reminders] candidates:", candErr.code, candErr.message);
     return NextResponse.json({ error: "candidates_failed" }, { status: 500 });
   }
-  const userIds = Array.from(new Set((candidates ?? []).map((c: { user_id: string }) => c.user_id)));
+  let userIds = Array.from(new Set((candidates ?? []).map((c: { user_id: string }) => c.user_id)));
+  // Owner ٢٥ (20261127_60): a suspended account's grants are FROZEN and get
+  // the suspended days back on lift — «ينتهي اشتراكك خلال…» would announce a
+  // date that is no longer true. Before that file runs there is no table:
+  // nothing is skipped.
+  const skip = new Set<string>();
+  for (let i = 0; i < userIds.length; i += ID_CHUNK) {
+    const { data: frozen, error: frozenErr } = await admin
+      .from("account_suspension_freezes")
+      .select("user_id")
+      .is("lifted_at", null)
+      .in("user_id", userIds.slice(i, i + ID_CHUNK));
+    if (frozenErr) {
+      if (!SCHEMA_MISSING.has(frozenErr.code ?? "")) {
+        console.error("[cron/library-grant-reminders] frozen accounts:", frozenErr.code, frozenErr.message);
+      }
+      break;
+    }
+    for (const f of (frozen ?? []) as { user_id: string }[]) skip.add(f.user_id);
+  }
+  userIds = userIds.filter((id) => !skip.has(id));
   if (userIds.length === 0) return NextResponse.json({ ok: true, candidates: 0, due: 0, sent: 0, already: 0, errors: 0 });
 
   // 2. their live grants (the whole chain, not just the ending one)
