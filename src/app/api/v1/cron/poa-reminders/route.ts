@@ -13,6 +13,7 @@ import {
 import {
   planPoaReminders,
   poaEmailMessage,
+  POA_EMAIL_COLUMNS,
   POA_ENDED_STATUSES,
   POA_HORIZON_DAYS,
   type PoaContractRow,
@@ -67,7 +68,8 @@ export async function POST(request: NextRequest) {
   for (let offset = 0; offset < MAX_CONTRACTS; offset += PAGE) {
     const { data, error } = await admin
       .from("contracts")
-      .select("id, owner_user_id, title, counterparty_name, ends_on, status")
+      // Owner ٤٥: no title / counterparty — the e-mail carries no client data.
+      .select(POA_EMAIL_COLUMNS)
       .eq("contract_type", "power_of_attorney")
       .not("status", "in", `(${POA_ENDED_STATUSES.join(",")})`)
       .not("owner_user_id", "is", null)

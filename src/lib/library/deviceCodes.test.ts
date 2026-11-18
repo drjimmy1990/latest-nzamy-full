@@ -1,7 +1,8 @@
 /**
  * Owner ٤٠ (18 Nov 2026; batch l7 decision 14): e-mail code per new library
- * device, the third device suspends the account, never two devices open at
- * once — all behind device_limit_enabled. The SQL half is proven by
+ * device, never two devices open at once — all behind device_limit_enabled.
+ * Owner ٦٣ (18 Nov evening, batch l8): the third device is REFUSED with the
+ * list of devices, never suspended. The SQL half is proven by
  * supabase/tests/rls/l7_community.test.sql (T12–T19).
  */
 import test from "node:test";
@@ -9,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   DEVICE_CODE_REQUIRED_CODE,
-  DEVICE_LIMIT_SUSPENDED_CODE,
+  DEVICE_LIMIT_CODE,
   deviceCodePepper,
   deviceCodeVerifyMessageAr,
   deviceGateDecision,
@@ -29,7 +30,7 @@ test("parse: the gate's new answers and the sessions it ended", () => {
   assert.equal(parseDeviceCheckRow({ status: "ok", sessions_ended: 1 })?.sessionsEnded, 1);
 });
 
-test("decision: a new device needs the code; the third device suspends; neither is remembered", () => {
+test("decision: a new device needs the code; the third device is refused with the list (owner ٦٣); neither is remembered", () => {
   const code = deviceGateDecision({ ...base, status: "needs_code" });
   assert.equal(code.action, "refuse");
   if (code.action === "refuse") {
@@ -37,20 +38,26 @@ test("decision: a new device needs the code; the third device suspends; neither 
     assert.equal(code.body.code, DEVICE_CODE_REQUIRED_CODE);
     assert.match(code.body.error, /رمز تحقق/);
   }
-  const third = deviceGateDecision({ ...base, status: "suspend" });
-  assert.equal(third.action, "suspend");
-  if (third.action === "suspend") {
-    assert.equal(third.body.code, DEVICE_LIMIT_SUSPENDED_CODE);
-    assert.match(third.body.error, /أُوقف الحساب/);
+  const devices = [{ id: "d1", label: "كمبيوتر", firstSeen: null, lastSeen: null }];
+  const third = deviceGateDecision({ ...base, devices, status: "suspend" });
+  assert.equal(third.action, "refuse");
+  if (third.action === "refuse") {
+    assert.equal(third.status, 403);
+    assert.equal(third.body.code, DEVICE_LIMIT_CODE);
+    assert.deepEqual(third.body.devices, devices, "the list to remove an old device from");
+    assert.doesNotMatch(third.body.error, /أُوقف|إيقاف|الدعم/);
     assert.match(third.body.error, /جهازين/);
+    assert.match(third.body.error, /«مكتبتي»/);
   }
+  assert.deepEqual(third, deviceGateDecision({ ...base, devices, status: "refused" }), "same as a full list");
 });
 
-test("reader: the code and the suspension render as device refusals with their mode", () => {
+test("reader: the code renders with its mode; an old suspension code reads as the plain refusal", () => {
   const c = readerRefusalFrom(403, { code: "device_code_required", error: "رمز", limit: 2 }, 0);
   assert.deepEqual(c, { kind: "device", messageAr: "رمز", limit: 2, devices: [], mode: "code" });
-  const s = readerRefusalFrom(403, { code: "device_limit_suspended", limit: 2 }, 0);
-  assert.equal(s?.kind === "device" && s.mode, "suspended");
+  const s = readerRefusalFrom(403, { code: "device_limit_suspended", error: "أُوقف الحساب", limit: 2 }, 0);
+  assert.equal(s?.kind === "device" && "mode" in s, false);
+  assert.doesNotMatch(s?.kind === "device" ? s.messageAr : "", /أُوقف/);
   const old = readerRefusalFrom(403, { code: "device_limit", limit: 2 }, 0);
   assert.equal(old?.kind === "device" && "mode" in old, false, "the old refusal keeps its shape");
 });
@@ -80,15 +87,19 @@ test("verify answers in Arabic, with the attempts left", () => {
   assert.match(deviceCodeVerifyMessageAr("too_many", null) ?? "", /المحاولات/);
 });
 
-test("server: the gate first, the old check until 20261127_60 runs; the third device is suspended and frozen", () => {
+test("server: the gate first, the old check until 20261127_60 runs; nothing suspends or freezes the account (owner ٦٣)", () => {
   const src = read("lib/library/deviceLimitServer.ts");
   assert.ok(src.includes('.rpc("library_device_gate", {'));
   assert.ok(src.includes("p_code_required: deviceCodesAvailable(),"), "no e-mail → no lock-out");
   assert.ok(src.includes('.rpc("library_device_check", { p_user: userId, p_device_hash: hash, p_label: label })'));
-  const susp = src.slice(src.indexOf("async function suspendForThirdDevice("));
-  assert.ok(susp.includes("await suspendAccountWith(service,"));
-  assert.ok(susp.includes('reason: "device_limit"'));
-  assert.ok(susp.includes('"user_suspended_device_limit"'));
+  for (const gone of ["suspendForThirdDevice", "suspendAccountWith", "freezeEntitlementsWith", "user_suspended_device_limit", "logAdminAction"]) {
+    assert.equal(src.includes(gone), false, `no ${gone} in the device gate`);
+  }
+  const notice = read("components/library/LibraryDeviceLimitNotice.tsx");
+  assert.equal(notice.includes("أُوقف الحساب"), false);
+  assert.ok(notice.includes('href="/laws/my#devices"'), "the refusal links to «مكتبتي» where devices are removed");
+  const admin = read("app/dashboard/admin/security/LibraryDevicesPanel.tsx");
+  assert.equal(admin.includes("توقف الحساب"), false, "the admin text no longer promises a suspension");
 });
 
 test("routes: the code is sent on request only (never by a read) and checked with the session", () => {
@@ -103,7 +114,7 @@ test("routes: the code is sent on request only (never by a read) and checked wit
   assert.equal(server.includes("library_device_code_issue"), false, "a read never sends a code");
 });
 
-test("lifting a device-limit suspension resets the devices", () => {
+test("lifting a legacy device-limit suspension (batch 7) still resets the devices", () => {
   const route = read("app/api/v1/admin/users/[id]/route.ts");
   const at = route.indexOf('if (thaw.reason === "device_limit") {');
   assert.ok(at > 0);

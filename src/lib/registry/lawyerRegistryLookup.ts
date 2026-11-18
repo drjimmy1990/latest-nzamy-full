@@ -11,6 +11,15 @@
  * A registry hit is a hint, never a verification: there is no OTP yet (R4),
  * so anyone could type someone else's licence. The account stays
  * verification_status = 'pending' until an admin approves it.
+ *
+ * OWNER 18 Nov (message item 3.1, batch l8): the registrant is never told
+ * whether a licence is valid or expired — that is a public statement about a
+ * lawyer. So the guest answer carries the registry NAME only (for «أهلاً أ.
+ * [الاسم]» and the name fields): no licence number (a lookup by name would
+ * hand anyone another lawyer's number), no expiry, no mobile digits, no city.
+ * expired / unverifiable / not_found collapse into ONE status, "unverified",
+ * so the JSON itself never says «منتهٍ». The expiry stays on the admin
+ * reviewer's screen (registryMatch.ts, read from the database).
  */
 
 export const LICENCE_MAX = 32;
@@ -62,40 +71,36 @@ export function parseLookupBody(body: unknown): ParseResult {
   return { ok: false, error: "اكتب اسمك الكامل أو رقم ترخيصك" };
 }
 
+/**
+ * What the guest receives (owner 18 Nov, item 3.1):
+ *   valid      — the registry name only;
+ *   ambiguous  — several lawyers share the typed name: type the licence number;
+ *   unverified — everything else (expired, unverifiable, not found): «تعذّر
+ *                التحقق الآلي، وسيراجع فريقنا طلبك». Never a validity word.
+ */
 export type LookupResponse =
-  | {
-      status: "valid";
-      name: string;
-      licence: string;
-      expiry: string;
-      mobileHint: string | null;
-      city: string | null;
-    }
-  | { status: "expired" | "unverifiable" | "not_found" | "ambiguous" };
-
-const NO_DATA_STATUSES = new Set(["expired", "unverifiable", "not_found", "ambiguous"]);
+  | { status: "valid"; name: string }
+  | { status: "ambiguous" }
+  | { status: "unverified" };
 
 /**
  * The database answer → what the guest receives. Anything malformed becomes
- * not_found (never a crash, never an unexpected field).
+ * unverified (never a crash, never an unexpected field).
  */
 export function shapeLookupResult(raw: unknown): LookupResponse {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { status: "not_found" };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { status: "unverified" };
   const r = raw as Record<string, unknown>;
-  if (typeof r.status === "string" && NO_DATA_STATUSES.has(r.status)) {
-    return { status: r.status as "expired" | "unverifiable" | "not_found" | "ambiguous" };
-  }
+  if (r.status === "ambiguous") return { status: "ambiguous" };
+  // The database checked validity; a "valid" row without a name or licence is
+  // malformed and treated as unverified.
   if (
     r.status === "valid" &&
     typeof r.name === "string" && r.name.trim() &&
-    typeof r.licence === "string" && r.licence.trim() &&
-    typeof r.expiry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.expiry)
+    typeof r.licence === "string" && r.licence.trim()
   ) {
-    const hint = typeof r.mobile_hint === "string" && /^\d{2}$/.test(r.mobile_hint) ? r.mobile_hint : null;
-    const city = typeof r.city === "string" && r.city.trim() ? r.city.trim() : null;
-    return { status: "valid", name: r.name.trim(), licence: r.licence.trim(), expiry: r.expiry, mobileHint: hint, city };
+    return { status: "valid", name: r.name.trim() };
   }
-  return { status: "not_found" };
+  return { status: "unverified" };
 }
 
 /** Splits a registry name for the signup form's first / last name fields. */
@@ -104,8 +109,10 @@ export function splitRegistryName(name: string): { firstName: string; lastName: 
   return { firstName: words[0] ?? "", lastName: words.slice(1).join(" ") };
 }
 
-/** "2030-01-15" → "15/01/2030" (shown as written, no time zone shift). */
-export function formatExpiry(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+/** The one line an unverified lookup shows (owner 18 Nov, item 3.1). */
+export const LOOKUP_UNVERIFIED_AR = "تعذّر التحقق الآلي، وسيراجع فريقنا طلبك";
+
+/** «أهلاً أ. [الاسم]» — the name only: no licence number, no mobile digits, no validity. */
+export function lookupGreetingAr(name: string): string {
+  return `أهلاً أ. ${name.trim()}`;
 }

@@ -48,10 +48,10 @@ export type ReaderRefusal =
       devices: ReaderDevice[];
       /**
        * Owner ٤٠ (20261127_60): "code" — a new device waits for the e-mail
-       * code; "suspended" — the third device suspended the account. Absent
-       * for the device-limit refusal itself.
+       * code. Absent for the device-limit refusal itself (owner ٦٣: a third
+       * device is refused with the list, never suspended).
        */
-      mode?: "code" | "suspended";
+      mode?: "code";
     };
 
 const HOUR_MS = 3_600_000;
@@ -167,7 +167,6 @@ export function deviceRefusalOf(status: number, body: unknown): Extract<ReaderRe
 }
 
 const DEVICE_CODE_FALLBACK_AR = "هذا جهاز جديد على حسابك. أدخل رمز التحقق المرسل إلى بريدك لتفتح المكتبة منه.";
-const DEVICE_SUSPENDED_FALLBACK_AR = "أُوقف الحساب لمحاولة فتح المكتبة من جهاز إضافي. تواصل مع الدعم الفني لإعادة تفعيله.";
 
 const DEVICE_FALLBACK_AR =
   "هذا الحساب مفعّل على جهازين بالفعل. سجّل الخروج من أحد أجهزتك المصرّحة لتفتح المكتبة من هذا الجهاز.";
@@ -202,8 +201,10 @@ function deviceRefusalFrom(b: Record<string, unknown>): ReaderRefusal | null {
   if (b.code === "device_code_required") {
     return { kind: "device", messageAr: text(b.error) ?? DEVICE_CODE_FALLBACK_AR, limit, devices, mode: "code" };
   }
+  // device_limit_suspended (batch 7, removed by owner ٦٣) is no longer sent;
+  // an old answer reads as the plain refusal, never «أُوقف الحساب».
   if (b.code === "device_limit_suspended") {
-    return { kind: "device", messageAr: text(b.error) ?? DEVICE_SUSPENDED_FALLBACK_AR, limit, devices, mode: "suspended" };
+    return { kind: "device", messageAr: DEVICE_FALLBACK_AR, limit, devices };
   }
   return { kind: "device", messageAr: text(b.error) ?? DEVICE_FALLBACK_AR, limit, devices };
 }
