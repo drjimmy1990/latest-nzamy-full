@@ -148,17 +148,11 @@ export function LawyerRegistryLookup({
                   : `Welcome ${shown.result.name}, licence no. ${shown.result.licence}, valid until ${formatExpiry(shown.result.expiry)}.`}
               </span>
             </p>
-            {shown.result.mobileHint && (
-              <p className="mt-1 text-xs" dir={isAr ? "rtl" : "ltr"}>
-                {isAr
-                  ? `الجوال المسجّل في السجل ينتهي بالرقمين ${shown.result.mobileHint}.`
-                  : `The mobile on the register ends in ${shown.result.mobileHint}.`}
-              </p>
-            )}
+            {/* Decision ٢٧: verification is by e-mail only — no code goes to the registry mobile. */}
             <p className="mt-1 text-xs">
               {isAr
-                ? "أكمل التسجيل، ثم وثّق حسابك برمز يصل إلى هذا الجوال، أو يراجع فريق المنصّة طلبك."
-                : "Complete your registration, then verify with a code sent to this mobile, or the platform team reviews your request."}
+                ? "أكمل التسجيل، ثم ارفع صورة ترخيصك وأكّد بريدك الإلكتروني برمز يصل إليه، أو يراجع فريق المنصّة طلبك."
+                : "Complete your registration, then upload your licence photo and confirm your e-mail with a code sent to it, or the platform team reviews your request."}
             </p>
           </div>
         )}

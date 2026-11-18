@@ -5,8 +5,8 @@ import { THROWAWAY_EMAIL_AR } from "@/lib/lawyerSignup/throwawayEmail";
 
 /**
  * POST /api/v1/lawyer/signup-verification/email/start — a code to the
- * account's OWN e-mail (decision ٢١: it confirms the address, not the
- * identity). No address in the body. A throwaway domain is refused (400).
+ * account's OWN e-mail — the signup's one code (decision ٢٧: it replaced the
+ * registry-mobile code). No address in the body. A throwaway domain is refused (400).
  * Needs LAWYER_OTP_EMAIL=on + RESEND_API_KEY + EMAIL_FROM; else 503.
  */
 export const dynamic = "force-dynamic";

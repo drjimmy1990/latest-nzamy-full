@@ -429,8 +429,8 @@ export default function RegisterProviderPage() {
                 {step === 5 && <Step5 key="s5" isAr={isAr} providerType={providerType} selectedPlan={selectedPlan} verificationOwnsStatus={needsLicenceProofFor(providerType) && signupHasSession} />}
               </AnimatePresence>
 
-              {/* Owner decisions ٢٠–٢١: licence photo + the code to the
-                  registry mobile, right here when signUp gave a session;
+              {/* Owner decisions ٢٠–٢١ and ٢٧: licence photo + the e-mail
+                  code, right here when signUp gave a session;
                   otherwise after e-mail confirmation and sign-in. */}
               {step === 5 && needsLicenceProofFor(providerType) && (
                 <div className="mt-8">

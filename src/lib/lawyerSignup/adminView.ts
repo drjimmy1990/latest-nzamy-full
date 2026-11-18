@@ -1,14 +1,17 @@
 /**
  * The admin queue's «توثيق التسجيل» line for a lawyer (owner decisions
- * ٢٠–٢١) — the pure half: shaping the rows the server read into the fields
- * the page shows, and the Arabic lines. Pure (relative imports only).
+ * ٢٠–٢١, amended by ٢٧: e-mail only) — the pure half: shaping the rows the
+ * server read into the fields the page shows, and the Arabic lines. Pure
+ * (relative imports only).
  *
- * The admin sees what the lawyer never does: the reasons, the AI result, the
- * code status and the new mobile of a «رقمي تغيّر» request. Never the
- * registry mobile (last two digits only) and never a code.
+ * The admin sees what the lawyer never does: the reasons, the AI result and
+ * the e-mail code status. Rows from before the e-mail-only change may still
+ * carry a registry-mobile code or a «رقمي تغيّر» request; those lines show
+ * only when that old data is there. Never a full registry mobile (last two
+ * digits only) and never a code.
  */
 
-import { REASON_AR, type ReasonCode } from "./decision.ts";
+import { reasonLineAr } from "./decision.ts";
 
 export type SignupVerificationView = {
   decision: "pending" | "review" | "approved";
@@ -18,8 +21,10 @@ export type SignupVerificationView = {
   nameMatch: string | null;
   fullNameInput: string | null;
   mobileHint: string | null;
-  identity: { verifiedAt: string | null; channel: string | null; lastSentAt: string | null; lastDelivery: string | null };
-  email: { verifiedAt: string | null; hint: string | null; throwaway: boolean };
+  /** The e-mail code — the signup's one code (decision ٢٧). */
+  email: { verifiedAt: string | null; hint: string | null; throwaway: boolean; lastSentAt: string | null; lastDelivery: string | null };
+  /** A registry-mobile code confirmed before the e-mail-only change (old rows only). */
+  legacyIdentity: { verifiedAt: string | null; channel: string | null };
   mobileChange: { requestedAt: string | null; newMobile: string | null };
   image: {
     url: string | null;
@@ -37,7 +42,7 @@ export function shapeSignupView(
   row: Record<string, unknown>,
   image: Record<string, unknown> | null,
   imageUrl: string | null,
-  lastChallenge: Record<string, unknown> | null,
+  lastEmailChallenge: Record<string, unknown> | null,
 ): SignupVerificationView {
   const decision = row.decision === "review" || row.decision === "approved" ? row.decision : "pending";
   const ai = (image?.ai_result ?? null) as Record<string, unknown> | null;
@@ -51,13 +56,14 @@ export function shapeSignupView(
     nameMatch: s(row.name_match),
     fullNameInput: s(row.full_name_input),
     mobileHint: s(row.mobile_hint),
-    identity: {
-      verifiedAt: s(row.identity_otp_verified_at),
-      channel: s(row.identity_otp_channel),
-      lastSentAt: s(lastChallenge?.created_at),
-      lastDelivery: s(lastChallenge?.delivery),
+    email: {
+      verifiedAt: s(row.email_otp_verified_at),
+      hint: s(row.email_otp_hint),
+      throwaway: row.email_throwaway === true,
+      lastSentAt: s(lastEmailChallenge?.created_at),
+      lastDelivery: s(lastEmailChallenge?.delivery),
     },
-    email: { verifiedAt: s(row.email_otp_verified_at), hint: s(row.email_otp_hint), throwaway: row.email_throwaway === true },
+    legacyIdentity: { verifiedAt: s(row.identity_otp_verified_at), channel: s(row.identity_otp_channel) },
     mobileChange: { requestedAt: s(row.mobile_change_requested_at), newMobile: s(row.mobile_change_new_mobile) },
     image: image
       ? {
@@ -109,18 +115,22 @@ export function describeSignupView(
     tone = "bad";
   }
   const lines: string[] = [];
-  for (const r of v.reasons) lines.push(REASON_AR[r as ReasonCode] ?? r);
+  for (const r of v.reasons) lines.push(reasonLineAr(r));
   if (v.fullNameInput) lines.push(`الاسم المُدخل: ${v.fullNameInput}`);
   lines.push(
-    v.identity.verifiedAt
-      ? `رمز جوال السجل: مؤكَّد${v.identity.channel ? ` (${CHANNEL_AR[v.identity.channel] ?? v.identity.channel})` : ""}`
-      : v.identity.lastSentAt
-        ? `رمز جوال السجل: أُرسل${v.identity.lastDelivery === "failed" ? " وتعذّر التسليم" : ""} ولم يُؤكَّد`
-        : "رمز جوال السجل: لم يُرسل",
+    v.email.verifiedAt
+      ? `رمز البريد: مؤكَّد${v.email.hint ? ` (${v.email.hint})` : ""}`
+      : v.email.throwaway
+        ? "رمز البريد: لم يُرسل — بريد من نطاق مؤقت"
+        : v.email.lastSentAt
+          ? `رمز البريد: أُرسل${v.email.lastDelivery === "failed" ? " وتعذّر التسليم" : ""} ولم يُؤكَّد`
+          : "رمز البريد: لم يُرسل",
   );
   if (v.mobileHint) lines.push(`جوال السجل ينتهي بـ ${v.mobileHint}`);
-  lines.push(v.email.verifiedAt ? "البريد: مؤكَّد بالرمز" : v.email.throwaway ? "البريد: نطاق مؤقت" : "البريد: لم يُؤكَّد بالرمز");
-  if (v.mobileChange.requestedAt) lines.push(`طلب «رقمي تغيّر»: الجوال الجديد ${v.mobileChange.newMobile ?? "—"}`);
+  if (v.legacyIdentity.verifiedAt) {
+    lines.push(`رمز جوال السجل (قبل التوثيق بالبريد): مؤكَّد${v.legacyIdentity.channel ? ` (${CHANNEL_AR[v.legacyIdentity.channel] ?? v.legacyIdentity.channel})` : ""}`);
+  }
+  if (v.mobileChange.requestedAt) lines.push(`طلب «رقمي تغيّر» قديم: الجوال الجديد ${v.mobileChange.newMobile ?? "—"}`);
   if (v.image) {
     lines.push(AI_AR[v.image.aiStatus] ?? v.image.aiStatus);
     if (v.image.aiRead) {
