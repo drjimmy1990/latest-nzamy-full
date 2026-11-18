@@ -242,14 +242,30 @@ test("l7: the system path (l7-founder's automatic refund on a rejected licence: 
   assert.ok(!events.includes("admin_audit_events"));
   assert.ok(events.indexOf("issue_payment_credit_note") > events.indexOf("finish_payment_refund"));
 });
-test("l7: a top-up past its window is shown ineligible but never blocked", async () => {
+test("l8 (٦٤): a top-up past its window is ENFORCED — refused without a reason, refunded with an audited one", async () => {
   const { deps, events } = setup();
   deps.now = () => new Date("2026-11-22T13:00:00Z");
   const review = await refundOrderWith(deps, "o", "admin", false);
-  assert.equal((review.body as { eligibility: { state: string; enforced: boolean } }).eligibility.enforced, false);
+  assert.equal((review.body as { eligibility: { state: string; enforced: boolean } }).eligibility.enforced, true);
   assert.equal((review.body as { eligibility: { state: string } }).eligibility.state, "ineligible");
-  assert.equal((await refundOrderWith(deps, "o", "admin", true, { enforceEligibility: true })).status, 200);
-  assert.ok(!events.includes("admin_audit_events"));
+  const refused = await refundOrderWith(deps, "o", "admin", true, { enforceEligibility: true });
+  assert.equal(refused.status, 409);
+  assert.ok(!events.includes("claim_payment_refund") && !events.includes("gateway-refund"));
+  const done = await refundOrderWith(deps, "o", "admin", true, { enforceEligibility: true, overrideReason: "خطأ في الشحن أكده الدعم" });
+  assert.equal(done.status, 200);
+  assert.ok(events.indexOf("admin_audit_events") < events.indexOf("claim_payment_refund"));
+});
+test("l8 (٦٤): a library pass is judged on its own assistant — a drafter run paid elsewhere does not block it; the platform-owed order never needs a reason", async () => {
+  const lib = setupUsed({ kind: "library" });
+  const review = await refundOrderWith(lib.deps, "o", "admin", false);
+  const v = (review.body as { eligibility: { state: string; enforced: boolean } }).eligibility;
+  assert.deepEqual([v.state, v.enforced], ["eligible", true]);
+  const asked = setupUsed({ kind: "library" }, (t) => (t === "ai_runs" ? { data: [{ tool: "library-assistant", created_at: "2026-10-22T11:00:00Z" }] } : undefined));
+  assert.equal((await refundOrderWith(asked.deps, "o", "admin", true, { enforceEligibility: true })).status, 409);
+  const owed = setupUsed({ metadata: { founder: "not_verified", already_entitled: true } });
+  owed.deps.now = () => new Date("2026-12-01T13:00:00Z");
+  assert.equal((await refundOrderWith(owed.deps, "o", "admin", true, { enforceEligibility: true })).status, 200);
+  assert.ok(!owed.events.includes("admin_audit_events"));
 });
 test("l7: a missing credit-note function (SQL not run) never fails the refund", async () => {
   const { deps } = setupUsed({}, t => t === "issue_payment_credit_note" ? { error: { code: "PGRST202", message: "missing" } } : undefined);

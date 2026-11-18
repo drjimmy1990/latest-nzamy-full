@@ -27,7 +27,8 @@ export const REFUND_NOTICE_AR = {
 
 /**
  * Batch l7 (decision 10). `enforceEligibility` is passed by the admin refund
- * route: a founder membership that is not eligible (refundEligibility.ts) is
+ * route: a founder membership — and since batch l8 (owner ٦٤) a library pass
+ * or a point top-up — that is not eligible (refundEligibility.ts) is
  * refused unless `overrideReason` holds a typed reason, which is written to
  * admin_audit_events BEFORE the claim (a failed write moves no money). Other
  * callers (none today) keep the old behaviour; a system refund (e.g. a
