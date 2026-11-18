@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { latinAmountInput, latinDigitsOnly } from "@/lib/forms/latinDigits";
 import {
   Crown, MagnifyingGlass, CreditCard, Wallet, Coins,
   CheckCircle, XCircle, UserCircle, BookOpen,
@@ -43,8 +44,8 @@ export default function AdminEntitlementsPage() {
 
   const [tier, setTier] = useState<string>("pro");
   const [durationDays, setDurationDays] = useState(30);
-  const [creditsAmount, setCreditsAmount] = useState(100);
-  const [walletAmount, setWalletAmount] = useState(100);
+  const [creditsAmount, setCreditsAmount] = useState("100");
+  const [walletAmount, setWalletAmount] = useState("100");
   // owner note ١٨ C02: the library only (no plan, no AI tools)
   const [libraryPlan, setLibraryPlan] = useState<string>("lib-admin");
   const [libraryDays, setLibraryDays] = useState(90);
@@ -92,10 +93,10 @@ export default function AdminEntitlementsPage() {
         body.tier = tier;
         body.durationDays = durationDays;
       } else if (action === "credits") {
-        body.amount = creditsAmount;
+        body.amount = Number(creditsAmount);
         body.description = "منحة إدارية للنقاط";
       } else {
-        body.amount = walletAmount;
+        body.amount = Number(walletAmount);
         body.description = "إيداع إداري في المحفظة";
       }
       const res = await fetch("/api/v1/admin/entitlements/grant", {
@@ -237,7 +238,7 @@ export default function AdminEntitlementsPage() {
               <div className="mb-4 rounded-xl border border-white/[0.06] p-4">
                 <p className="mb-2 flex items-center gap-2 text-[13px] font-bold text-white"><Coins size={15} className="text-[#C8A762]" /> منح نقاط ذكاء اصطناعي</p>
                 <div className="flex gap-2">
-                  <input type="number" value={creditsAmount} onChange={(e) => setCreditsAmount(Number(e.target.value))}
+                  <input type="text" inputMode="numeric" dir="ltr" value={creditsAmount} onChange={(e) => setCreditsAmount(latinDigitsOnly(e.target.value))}
                     className="flex-1 rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-2 text-[12px] text-white focus:outline-none" />
                   <button onClick={() => grant("credits")} disabled={granting}
                     className="rounded-lg bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-emerald-300 hover:bg-[#0B3D2E]/80 disabled:opacity-50">منح</button>
@@ -274,7 +275,7 @@ export default function AdminEntitlementsPage() {
               <div className="rounded-xl border border-white/[0.06] p-4">
                 <p className="mb-2 flex items-center gap-2 text-[13px] font-bold text-white"><Wallet size={15} className="text-[#C8A762]" /> إيداع في المحفظة (ر.س)</p>
                 <div className="flex gap-2">
-                  <input type="number" value={walletAmount} onChange={(e) => setWalletAmount(Number(e.target.value))}
+                  <input type="text" inputMode="decimal" dir="ltr" value={walletAmount} onChange={(e) => setWalletAmount(latinAmountInput(e.target.value))}
                     className="flex-1 rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-2 text-[12px] text-white focus:outline-none" />
                   <button onClick={() => grant("wallet")} disabled={granting}
                     className="rounded-lg bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-emerald-300 hover:bg-[#0B3D2E]/80 disabled:opacity-50">إيداع</button>

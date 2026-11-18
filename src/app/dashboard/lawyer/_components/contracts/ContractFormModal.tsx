@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { latinAmountInput, toLatinDigits } from "@/lib/forms/latinDigits";
 import ModalShell from "@/components/ui/ModalShell";
 import DualDatePicker from "@/components/ui/DualDatePicker";
 import {
@@ -356,7 +357,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
             </div>
             <div>
               <label className={labelCls}>السجل التجاري / الرقم الموحّد (اختياري)</label>
-              <input type="text" dir="ltr" inputMode="numeric" value={counterpartyIdNo} onChange={(e) => setCounterpartyIdNo(e.target.value)} placeholder="١٠ أرقام" className={inputCls} />
+              <input type="text" dir="ltr" inputMode="numeric" value={counterpartyIdNo} onChange={(e) => setCounterpartyIdNo(toLatinDigits(e.target.value))} placeholder="١٠ أرقام" className={inputCls} />
             </div>
           </div>
           <p className={`-mt-2 text-[10.5px] leading-relaxed ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
@@ -470,7 +471,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
 
           <div>
             <label className={labelCls}>قيمة العقد (ر.س، اختياري)</label>
-            <input type="number" min="0" value={valueSar} onChange={(e) => setValueSar(e.target.value)} placeholder="مثال: ٢٠٠٠٠" className={inputCls} />
+            <input type="text" inputMode="decimal" dir="ltr" value={valueSar} onChange={(e) => setValueSar(latinAmountInput(e.target.value))} placeholder="مثال: ٢٠٠٠٠" className={inputCls} />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

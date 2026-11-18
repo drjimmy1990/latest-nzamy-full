@@ -20,6 +20,7 @@
  */
 
 import { useState } from "react";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import { motion } from "framer-motion";
 import { CheckCircle, Warning, XCircle, CircleNotch } from "@phosphor-icons/react";
 import {
@@ -211,9 +212,9 @@ export default function ServiceFormModal({ isDark, initial, onClose, onSaved }: 
                 السعر (ر.س){priceRequired ? "" : " — غير مطلوب"}
               </label>
               <input
-                type="number" min={0} step="0.01"
+                type="text" inputMode="decimal" dir="ltr"
                 value={priceSar} disabled={saving || pricingKind === "quote"}
-                onChange={(e) => setPriceSar(e.target.value)}
+                onChange={(e) => setPriceSar(latinAmountInput(e.target.value))}
                 placeholder={pricingKind === "quote" ? "بحسب الحالة" : "٣٠٠"}
                 className={inputCls}
               />

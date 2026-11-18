@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import { Receipt as ReceiptIcon } from "@phosphor-icons/react";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import { RECEIPT_METHODS, receiptMethodLabel } from "@/lib/services/receiptSerial";
@@ -148,8 +149,8 @@ export function ReceiptPanel({ orderId, isDark }: { orderId: string; isDark: boo
 
       {open && (
         <div className="space-y-2 pt-1">
-          <input value={amount} onChange={(e) => setAmount(e.target.value)}
-            inputMode="decimal" placeholder="المبلغ بالريال" className={field} />
+          <input value={amount} onChange={(e) => setAmount(latinAmountInput(e.target.value))}
+            inputMode="decimal" dir="ltr" placeholder="المبلغ بالريال" className={field} />
           {/* Shown before the button, not after: the words are the part of a
               receipt that cannot be corrected once it is in a client's hands. */}
           {preview && (

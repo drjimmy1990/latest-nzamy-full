@@ -43,6 +43,7 @@ import {
   type InvoiceVatSnapshot,
 } from "@/lib/finance/invoiceVat";
 import { FEE_STATEMENT_LABEL_AR, PAY_DIRECTLY_AR, statementReference } from "@/lib/finance/invoiceMessage";
+import { toLatinDigits } from "@/lib/forms/latinDigits";
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
@@ -187,7 +188,7 @@ export function IssuerVatCard({ issuer, onSaved, isDark }: { issuer: IssuerState
             dir="ltr"
             inputMode="numeric"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => setValue(toLatinDigits(e.target.value))}
             placeholder="3XXXXXXXXXXXXX3"
             className={`flex-1 rounded-xl border px-3 py-2 text-[12px] font-mono outline-none focus:border-[#C8A762]/50 ${isDark ? "border-white/[0.08] bg-zinc-900 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"}`}
           />

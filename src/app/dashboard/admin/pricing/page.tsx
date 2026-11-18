@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import {
   ArrowClockwise,
   CurrencyCircleDollar,
@@ -309,7 +310,7 @@ export default function PricingPage() {
                       </td>
                       <td className="px-4 py-4 text-sm font-mono text-[#C8A762]">
                         {editing ? (
-                          <input type="number" min={0} step="0.01" value={editing.basePrice} onChange={(e) => setDraft({ ...editing, basePrice: e.target.value })} className={`${input} w-28`} />
+                          <input type="text" inputMode="decimal" dir="ltr" value={editing.basePrice} onChange={(e) => setDraft({ ...editing, basePrice: latinAmountInput(e.target.value) })} className={`${input} w-28`} />
                         ) : (
                           <>
                             {/* Review M7: no bare amount for a mode whose customer string prints none */}

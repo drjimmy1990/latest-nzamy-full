@@ -17,6 +17,7 @@ import { LICENCE_ACCEPT } from "@/lib/services/licenceUpload";
 import { createExpense, listExpenses, patchExpense, receiptUrl, uploadExpenseReceipt } from "@/lib/services/financeLedgerService";
 import { openPendingTab } from "@/lib/ui/pendingTab";
 import { TargetFields, VoidBox, sar, themeCls, useFinancePickers } from "./financeLedgerUi";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 
 export default function ExpensesPanel({ isDark, caseId, compact = false }: { isDark: boolean; caseId?: string; compact?: boolean }) {
   const t = themeCls(isDark);
@@ -175,7 +176,7 @@ export default function ExpensesPanel({ isDark, caseId, compact = false }: { isD
           </div>
           <div>
             <label className={t.label}>المبلغ (ر.س)</label>
-            <input inputMode="decimal" className={t.input} value={fAmount} onChange={(e) => setFAmount(e.target.value)} required />
+            <input inputMode="decimal" dir="ltr" className={t.input} value={fAmount} onChange={(e) => setFAmount(latinAmountInput(e.target.value))} required />
           </div>
           <div>
             <label className={t.label}>الإيصال (اختياري — صورة أو PDF حتى ٥ ميغابايت)</label>

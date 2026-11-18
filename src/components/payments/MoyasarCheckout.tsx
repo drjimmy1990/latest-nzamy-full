@@ -9,6 +9,7 @@ import { FOUNDER_CONSENT_LABEL_AR, FOUNDER_TERMS_HREF } from "@/lib/payments/fou
 import { FOUNDER_DISCOUNT_LABEL_AR } from "@/lib/payments/founderDiscount";
 import { CHECKOUT_CAPTCHA_CODE, CHECKOUT_CAPTCHA_REFUSED_AR, CHECKOUT_TURNSTILE_ACTION } from "@/lib/payments/checkoutCaptcha";
 import { canSubmitWithCaptcha } from "@/lib/auth/captcha";
+import { attachLatinDigitsCapture, toLatinDigits } from "@/lib/forms/latinDigits";
 import { useTheme } from "@/components/ThemeProvider";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
@@ -216,6 +217,8 @@ export default function MoyasarCheckout({
   const inFlight = useRef(false);
   const initialised = useRef(false);
   const moyasar = useRef<MoyasarApi | null>(null);
+  /** The always-light surface the Moyasar form renders into. */
+  const cardSurface = useRef<HTMLDivElement | null>(null);
   /** Owner ١٦: the founder terms checkbox (unchecked at first). */
   const needsTerms = typeof founderTermsVersion === "string" && founderTermsVersion !== "";
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -360,6 +363,17 @@ export default function MoyasarCheckout({
     })();
   }, [ready, itemId, billing, router, captchaRequired]);
 
+  // Owner 18 Nov: card number, expiry and CVC typed on an Arabic keyboard
+  // become Latin digits as they are typed (Moyasar's mask keeps 0-9 only and
+  // would drop ٤; its CVC field has no mask and would send ٤٢١). One capture
+  // listener on the surface runs before the form's own handlers; see
+  // attachLatinDigitsCapture.
+  useEffect(() => {
+    const el = cardSurface.current;
+    if (!ready || !el) return;
+    return attachLatinDigitsCapture(el);
+  }, [ready]);
+
   const couponBox = couponsEnabled ? (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
       <label htmlFor="nz-coupon" className="block font-semibold text-zinc-800 dark:text-zinc-200">
@@ -403,7 +417,7 @@ export default function MoyasarCheckout({
             id="nz-coupon"
             dir="ltr"
             value={couponInput}
-            onChange={(e) => setCouponInput(e.target.value)}
+            onChange={(e) => setCouponInput(toLatinDigits(e.target.value))}
             maxLength={32}
             autoComplete="off"
             disabled={phase.kind !== "idle" || couponChecking}
@@ -569,6 +583,7 @@ export default function MoyasarCheckout({
           dark input colours inside it. Only this area — the summary above
           follows the theme. */}
       <div
+        ref={cardSurface}
         data-light-surface
         className="nz-moyasar-surface rounded-2xl bg-white p-4 text-zinc-900 shadow-sm ring-1 ring-zinc-200 [color-scheme:light] dark:ring-zinc-700"
         style={{ colorScheme: "light" }}

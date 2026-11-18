@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { Warning, X } from "@phosphor-icons/react";
@@ -392,7 +393,7 @@ export default function ConsultationActionModal({ consultation, action, isDark, 
               </div>
               <div>
                 <label className={labelCls}>الأتعاب (ر.س)</label>
-                <input value={feeSarText} onChange={(e) => setFeeSarText(e.target.value)} inputMode="decimal" placeholder="اختياري" className={inputCls} />
+                <input value={feeSarText} onChange={(e) => setFeeSarText(latinAmountInput(e.target.value))} inputMode="decimal" dir="ltr" placeholder="اختياري" className={inputCls} />
                 {!feeValid && <p className="mt-1.5 text-[11px] font-semibold text-red-500">قيمة الأتعاب يجب أن تكون رقماً غير سالب.</p>}
               </div>
               <label className={`flex items-center gap-2 text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>

@@ -28,6 +28,7 @@ import {
   InvoicePrintDocument, VoidedInvoicesList, type FinanceInvoice,
 } from "./_components/invoiceTools";
 import { LedgerTabBody } from "@/components/dashboard/financeLedger/FinanceLedgerTabs";
+import { latinAmountInput } from "@/lib/forms/latinDigits";
 
 /** Owner ٤٣٠: the label every fee statement carries (not a ZATCA e-invoice). DB/API names stay «invoice». */
 const FEE_STATEMENT_LABEL = "بيان أتعاب — ليست فاتورة ضريبية إلكترونية";
@@ -1684,11 +1685,11 @@ export default function FinancePage() {
                         <input
                           id="inv-fee"
                           required
-                          type="number"
-                          min="0.01"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
+                          dir="ltr"
                           value={newInvFee}
-                          onChange={(e) => setNewInvFee(e.target.value)}
+                          onChange={(e) => setNewInvFee(latinAmountInput(e.target.value))}
                           placeholder="مثال: ٢٥٠٠٠"
                           className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-semibold font-mono ${
                             isDark ? "border-white/[0.08] bg-zinc-900/60 text-zinc-200" : "border-slate-200 bg-slate-50 text-slate-700"
@@ -1889,11 +1890,11 @@ export default function FinancePage() {
                     <input
                       id="collect-amount"
                       required
-                      type="number"
-                      min="0.01"
-                      step="0.01"
+                      type="text"
+                      inputMode="decimal"
+                      dir="ltr"
                       value={collectAmount}
-                      onChange={(e) => setCollectAmount(e.target.value)}
+                      onChange={(e) => setCollectAmount(latinAmountInput(e.target.value))}
                       disabled={isCollecting}
                       placeholder="مثال: ١٥٠"
                       className={`w-full rounded-2xl border px-4 py-3 text-[12px] outline-none focus:border-[#C8A762]/50 transition-all text-right font-semibold font-mono disabled:opacity-60 ${
