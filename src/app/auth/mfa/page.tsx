@@ -391,7 +391,8 @@ export default function StaffMfaPage() {
           <li>اختر «إضافة حساب» ثم امسح الرمز التالي.</li>
           <li>أدخل الرمز المكوّن من ٦ أرقام الظاهر في التطبيق.</li>
         </ol>
-        <div className="flex justify-center rounded-2xl bg-white p-4">
+        {/* White in both themes on purpose: a QR code needs a light quiet zone to scan. */}
+        <div className="flex justify-center rounded-2xl p-4" style={{ background: "#ffffff" }}>
           {/* GoTrue returns an SVG data URI; rendered as an image, never as markup. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={enroll.qr} alt="رمز QR لربط تطبيق المصادقة" width={200} height={200} />
