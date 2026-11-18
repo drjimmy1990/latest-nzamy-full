@@ -26,7 +26,10 @@
  *             only). Until then lawyer-pro and consultant-independent orders
  *             got one 'plan_monthly' lot of 1,500 points; those lots stay as
  *             they are and are read like any other lot (balance, refunds).
- *   library → grantLibraryAccess({ source: 'purchase', orderId }).
+ *   library → grantLibraryAccess({ source: 'purchase', orderId }), then (l7,
+ *             owner 18 Nov) the plan's library-assistant points:
+ *             credit_wallet_points(user, 50 / 120 / 300, 'plan', the grant's
+ *             end, order, scope 'library_agent') — creditLibraryPlanPoints.
  *   topup   → credit_points(user, points, 'purchase', now + validity months, order).
  *   membership (P3, lawyer-founder-2026) → deps.activateFounder(order) — the
  *             founder_activate RPC (20261101_10), which allocates the seat,
@@ -73,6 +76,7 @@ import { planGrantDecision, type ActivePlanRow, type TierRankTable } from "../en
 import type { LibraryGrantSource, LibraryPlanRef } from "../libraryAccess.ts";
 import { resolveItem, type PayableItem } from "./catalog.ts";
 import { addMonthsUtc, isMissingPaymentsObject, planWindow } from "./fulfillDecision.ts";
+import { readLibraryPlanPoints } from "../points/pointsSettings.ts";
 
 /** The columns of a claimed payment_orders row a grant reads. */
 export interface PurchaseOrder {
@@ -156,6 +160,52 @@ async function creditOrderLot(
   // UNIQUE (order_id, source): this order's lot already exists
   if (error.code === "23505") return { ok: true };
   return failure("credit_points", error);
+}
+
+/**
+ * l7 decision 7 (owner 18 Nov §16.2, G4): a library plan brings points for the
+ * library assistant ONLY — 50 / 120 / 300 from platform_settings
+ * library_plan_points — as one lot of the order: source 'plan', wallet
+ * 'library_agent', expiring with the order's grant (credit_wallet_points,
+ * 20261127_40). UNIQUE (order_id, source) keeps it to one lot (23505 = done).
+ * `endsAt` null (a retry whose grant already existed): the grant's own end is
+ * read, so a failure between the grant and the credit never loses the points.
+ * A grant already over, or 0 points, credits nothing. Any other failure is not
+ * ok (missing: the SQL not run yet): the order stays unfulfilled and the sweep
+ * retries it — the access itself was granted.
+ */
+async function creditLibraryPlanPoints(
+  admin: SupabaseClient,
+  order: PurchaseOrder,
+  planId: string,
+  endsAt: string | null,
+  now: Date,
+): Promise<GrantPurchaseResult> {
+  const points = await readLibraryPlanPoints(admin, planId);
+  if (!(points > 0)) return { ok: true, alreadyEntitled: false };
+  let end = endsAt;
+  if (end === null) {
+    const { data, error } = await admin
+      .from("library_access_grants")
+      .select("ends_at")
+      .eq("order_id", order.id)
+      .maybeSingle();
+    if (error) return failure("library grant read", error);
+    const read = (data as { ends_at?: unknown } | null)?.ends_at;
+    end = typeof read === "string" ? read : null;
+  }
+  if (!end || !(Date.parse(end) > now.getTime())) return { ok: true, alreadyEntitled: false };
+  const { error } = await admin.rpc("credit_wallet_points", {
+    p_user: order.user_id,
+    p_points: points,
+    p_source: "plan",
+    p_expires_at: new Date(end).toISOString(),
+    p_order: order.id,
+    p_ref: `order:${order.id}`,
+    p_scope: "library_agent",
+  });
+  if (!error || error.code === "23505") return { ok: true, alreadyEntitled: false };
+  return failure("credit_wallet_points", error);
 }
 
 async function grantPlan(
@@ -308,9 +358,11 @@ export async function grantPurchase(
         source: "purchase",
         orderId: order.id,
       });
-      if (grant.ok) return { ok: true, alreadyEntitled: false };
+      if (grant.ok) return await creditLibraryPlanPoints(deps.admin, order, item.id, grant.endsAt, now);
       // library_access_grants.order_id UNIQUE: this order's grant already exists
-      if (grant.code === "23505") return { ok: true, alreadyEntitled: false };
+      // (a retry) → granted; its points are credited now if an earlier try
+      // stopped short of them
+      if (grant.code === "23505") return await creditLibraryPlanPoints(deps.admin, order, item.id, null, now);
       return { ok: false, error: `library grant: ${grant.error}`, missing: isMissingPaymentsObject(grant.code) };
     }
 

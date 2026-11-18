@@ -9,6 +9,7 @@ import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
+import { freeQuestionStatusWith } from "@/lib/ai/freeQuestion";
 import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
@@ -162,6 +163,8 @@ export async function POST(request: NextRequest) {
         onRunCreated: libraryRunCreatedFor(user.id),
         // The founder's 100 library points (20 questions) pay for library-assistant first.
         founderLibraryCredit: (userId) => founderLibraryCredit(admin, userId),
+        // Owner ٣٠ (l7): the account's free library questions, once (10 lawyer / 5 individual).
+        freeQuestions: async (userId) => (await freeQuestionStatusWith(admin, userId)).available,
         // GraphRAG only behind NZAMY_GRAPH_RAG=on (graphRagSwitch): off, the
         // run never embeds the question and never calls the graph.
         ...(graphOn ? { embedQuery: (text: string) => embedQueryWithin(text) } : {}),

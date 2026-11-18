@@ -17,8 +17,10 @@
  *                        falls back to points when none are left) — or, for a
  *                        drafter section edit (owner ٤١٠), ai_start_section_edit
  *                        (the memo's free edits counted again under the lock) —
- *                        or, for the day's free quick question (owner ٤١٢),
- *                        ai_start_free_question (the phone's day claimed)
+ *                        or, for one of the account's free library-assistant
+ *                        questions (owner ٣٠, l7; once, no opt-in),
+ *                        ai_start_free_question (recounted under the lock; a
+ *                        refusal falls back to the credit or the price)
  *                    A job tool answers 202 here, with the route's `defer`
  *                    running the rest after the reply (nginx cuts at 60 s, and
  *                    a consultation's searches alone can take most of that).
@@ -71,7 +73,7 @@ import {
   countSectionEdits,
   type SectionEditCounts,
 } from "./sectionEdits.ts";
-import { FREE_QUESTION_COPY } from "./freeQuestion.ts";
+import { freeQuestionFallsBack } from "./freeQuestion.ts";
 import { textPages } from "./textExtract.ts";
 import {
   STEP_LABEL_AR,
@@ -149,6 +151,13 @@ export interface StartRunDeps {
    * a throw → the ordinary 5-point charge.
    */
   founderLibraryCredit?: (userId: string) => Promise<boolean>;
+  /**
+   * Owner ٣٠ (batch l7): true when `userId` has free questions left
+   * (freeQuestion.freeQuestionStatusWith). Asked only for a non-admin, priced
+   * run of a `freeQuestions` tool; yes → ai_start_free_question. No dep,
+   * false or a throw → the normal path.
+   */
+  freeQuestions?: (userId: string) => Promise<boolean>;
   /** Library tools only: the searches → the texts (retrieval.retrieveLibrary). */
   retrieve?: (
     queries: string[],
@@ -245,7 +254,6 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 const isMissingFunction = (code: string | undefined) => code === "42883" || code === "PGRST202";
-const isMissingRelation = (code: string | undefined) => code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205";
 
 export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown> {
   const { data, error } = await admin.from("platform_settings").select("value").eq("key", "ai_tools").maybeSingle();
@@ -267,6 +275,16 @@ async function founderLibraryCreditSafe(read: (userId: string) => Promise<boolea
     return (await read(userId)) === true;
   } catch (err) {
     console.error("[ai] founder library credit read threw:", errorName(err));
+    return false;
+  }
+}
+
+/** deps.freeQuestions, never throwing: a failed read goes the normal way. */
+async function freeQuestionsLeftSafe(read: (userId: string) => Promise<boolean>, userId: string): Promise<boolean> {
+  try {
+    return (await read(userId)) === true;
+  } catch (err) {
+    console.error("[ai] free questions read threw:", errorName(err));
     return false;
   }
 }
@@ -646,10 +664,7 @@ export async function startRunWith(
   // above from this user's own runs of this conversation (never the browser's).
   const sectionEdit = !!spec.sectionEdit && !!conversationId && checked.input.phase === spec.sectionEdit.phase;
   const priorSectionEdits: SectionEditCounts | undefined = sectionEdit ? countSectionEdits(prior) : undefined;
-  // Owner ٤١٢: the day's free question, asked for by the page when the status
-  // said it is open; ai_start_free_question decides, under the start lock.
-  const freeQuestion = !!spec.freeDailyQuestion && req.useFreeQuestion === true;
-  const price = freeQuestion ? 0 : spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
+  const price = spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
   // The screen showed a price before the user confirmed: a different one now is
   // refused, uncharged, with the counts to show again.
   if (req.expectedPrice !== undefined && req.expectedPrice !== price) {
@@ -676,12 +691,19 @@ export async function startRunWith(
   // 1 there and so goes to plain ai_start_run at price 0. An exempt caller (admin)
   // never spends a credit. Anything else that asks falls back to points.
   // A section edit (owner ٤١٠) never spends a credit: it is not a drafting work.
-  const creditKind = !isAdmin && !sectionEdit && !freeQuestion && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  const creditKind = !isAdmin && !sectionEdit && req.useCredit === true ? creditKindForRun(spec.id, checked.input, turn) : null;
+  // Owner ٣٠ (18 Nov, batch l7): the account's free questions, once — first,
+  // with no opt-in, while the status says some are left (freeQuestion.ts).
+  // ai_start_free_question recounts under the start lock; a refusal falls back
+  // below to the founder credit, else the price shown.
+  let freeQuestion =
+    !!spec.freeQuestions && !creditKind && !isAdmin && !sectionEdit && price > 0 &&
+    !!deps.freeQuestions && (await freeQuestionsLeftSafe(deps.freeQuestions, actor.userId));
   // Owner ٨ / ١٥ / ١٨: a founder's library-assistant question is paid from his
   // 100 library points (20 'library_question' credits) from the first
   // question, with no opt-in; once they are gone (or before 20261124_10 runs:
   // credit_not_eligible) the same request is charged the normal points below.
-  const libraryCredit =
+  let libraryCredit =
     !creditKind && !isAdmin && !sectionEdit && !freeQuestion && price > 0 && spec.id === FOUNDER_LIBRARY_TOOL &&
     !!deps.founderLibraryCredit && (await founderLibraryCreditSafe(deps.founderLibraryCredit, actor.userId));
   // A section edit starts through ai_start_section_edit (20261108_40): it takes
@@ -720,6 +742,18 @@ export async function startRunWith(
         }
       : {}),
   });
+  // Owner ٣٠ (l7): the free question was refused — the last one taken
+  // meanwhile, not this account's, or 20261127_40 not run yet. Nothing was
+  // written, so the same request goes the normal way: the founder's library
+  // credit when he holds one, else the price the screen showed.
+  if (error && freeQuestion && freeQuestionFallsBack(error)) {
+    freeQuestion = false;
+    libraryCredit =
+      !creditKind && !isAdmin && spec.id === FOUNDER_LIBRARY_TOOL &&
+      !!deps.founderLibraryCredit && (await founderLibraryCreditSafe(deps.founderLibraryCredit, actor.userId));
+    startFn = libraryCredit ? "ai_start_run_with_credit" : "ai_start_run";
+    ({ data, error } = await admin.rpc(startFn, libraryCredit ? { ...startArgs, p_credit_kind: FOUNDER_LIBRARY_CREDIT_KIND } : startArgs));
+  }
   // The library points ran out between the check and the start (another
   // question took the last one), or 20261124_10 has not run yet: the credit
   // function wrote nothing, so the same request is charged the normal points.
@@ -744,18 +778,6 @@ export async function startRunWith(
     }
     if (error.message === "daily_limit") {
       return { status: 429, body: { error: AI_COPY.daily, code: "daily_limit" } };
-    }
-    // A free question refused is never charged instead: the page asks again.
-    if (freeQuestion) {
-      if (error.message === "free_question_used") {
-        return { status: 409, body: { error: FREE_QUESTION_COPY.used, code: "free_question_used" } };
-      }
-      if (error.message === "free_question_not_eligible") {
-        return { status: 403, body: { error: FREE_QUESTION_COPY.notEligible, code: "free_question_not_eligible" } };
-      }
-      if (isMissingFunction(error.code) || isMissingRelation(error.code)) {
-        return { status: 503, body: { error: FREE_QUESTION_COPY.unavailable, code: "free_question_unavailable" } };
-      }
     }
     if (sectionEdit) {
       const again = conversationId ? { conversationId } : {};

@@ -38,6 +38,7 @@ import {
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { FREE_QUESTION_COPY } from "@/lib/ai/freeQuestion";
 import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
 import { askLibrary, LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
 import type { LibraryAiAction } from "../[slug]/_ai-reply";
@@ -152,6 +153,22 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
   const conversationRef = useRef<string | null>(null);
   // P1-27: when the running question was sent (the stage shows the real elapsed time).
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  // Owner ٣٠ (l7): the account's free questions left, as the server counts
+  // them; null (nothing shown) until it answers or when none are left.
+  const [free, setFree] = useState<{ left: number; total: number } | null>(null);
+  useEffect(() => {
+    if (access !== "open" || running) return;
+    let live = true;
+    fetch("/api/v1/ai/free-question", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: unknown) => {
+        const s = j as { available?: unknown; left?: unknown; total?: unknown } | null;
+        if (!live) return;
+        setFree(s && s.available === true && typeof s.left === "number" && typeof s.total === "number" ? { left: s.left, total: s.total } : null);
+      })
+      .catch(() => { if (live) setFree(null); });
+    return () => { live = false; };
+  }, [access, running, turns.length]);
 
   useEffect(() => {
     if (turns.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -292,7 +309,10 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
               </button>
             </div>
             <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px] ${muted}`}>
-              <span>{aiToolPriceText(TOOL, "ar")} للسؤال · كل سؤال يُجاب مستقلاً</span>
+              <span>
+                {aiToolPriceText(TOOL, "ar")} للسؤال · كل سؤال يُجاب مستقلاً
+                {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
+              </span>
               <span className="inline-flex items-center gap-1">
                 <WarningDiamond size={11} /> الإجابات استرشادية ولا تُعدّ استشارة قانونية رسمية
               </span>

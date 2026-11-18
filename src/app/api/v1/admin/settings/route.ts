@@ -11,6 +11,7 @@ import {
 } from "@/lib/pricing/campaigns";
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
 import { isFounderDiscountBps } from "@/lib/payments/founderDiscount";
+import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopupIssue } from "@/lib/points/pointsSettings";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import {
   billingCompanySettingIssue,
@@ -50,6 +51,15 @@ const ALLOWED_SETTINGS_KEYS = [
   // l7 (decision 4, 20261127_10): the founder top-up discount in basis points
   // (1500 = 15 %), a whole number 0–10000; read by founderDiscountBps().
   "founder_topup_discount_bps",
+  // Batch l7 (owner 18 Nov 2026, 20261127_40; src/lib/points/pointsSettings.ts):
+  // {"lib-q1"|"lib-q2"|"lib-annual": points} — the library plans' assistant points;
+  "library_plan_points",
+  // days (1..3650) an admin gift / grant of points lasts (90);
+  "gift_valid_days",
+  // {"<user_type>": SAR} — the lowest top-up per account type (500; individual none);
+  "min_topup_by_account_type",
+  // {"<user_type>": n} — the library assistant's free questions, once per account (10 / 5).
+  "free_questions_by_account_type",
 ] as const;
 
 /**
@@ -118,6 +128,11 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // A malformed rate would read back as the default 1500 — refuse it here.
   founder_topup_discount_bps: (value) =>
     isFounderDiscountBps(value) ? null : "قيمة founder_topup_discount_bps يجب أن تكون عدداً صحيحاً من 0 إلى 10000 (1500 = ١٥٪)",
+  // Batch l7: pure, covered by src/lib/points/pointsSettings.test.ts.
+  library_plan_points: libraryPlanPointsIssue,
+  gift_valid_days: giftValidDaysIssue,
+  min_topup_by_account_type: minTopupIssue,
+  free_questions_by_account_type: freeQuestionsIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

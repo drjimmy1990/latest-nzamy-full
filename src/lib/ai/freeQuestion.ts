@@ -1,90 +1,85 @@
 /**
- * freeQuestion.ts — owner ٤١٢: «السؤال السريع: 10 نقاط، مع بقاء سؤال يومي مجاني
- * واحد (0 نقطة) لكل حساب فردي موثق برقم جوال.»
+ * freeQuestion.ts — owner ٣٠ (18 Nov 2026, batch l7 decision 6): the free
+ * questions are given ONCE per account — 10 for a lawyer, 5 for an individual —
+ * on the LIBRARY ASSISTANT only, from platform_settings
+ * free_questions_by_account_type. They replace owner ٤١٢'s daily free quick
+ * question (one a day per verified phone, inert since no phone OTP exists).
  *
- * Controller ruling (batch 2026-11-08, B4): built, and inert until phone
- * verification (OTP, owner question ٤٤٨) exists.
- *   * Eligible: profiles.user_type 'individual' with a VERIFIED phone
- *     (public.verified_phones, written only by the server). profiles.phone is
- *     typed by the user and is never treated as verified.
- *   * One free question per verified PHONE per Riyadh calendar day (Asia/Riyadh,
- *     UTC+3 all year), whichever account it is on: public.ai_free_question_claims,
- *     PRIMARY KEY (phone, day), claimed atomically by public.ai_start_free_question
- *     (20261108_50) with the run itself. A run that failed (refunded) gives it back.
- *   * The page asks for it (`useFreeQuestion`) only when this file's status says it
- *     is available; every other question costs the registry price (10).
- * Nobody is verified yet, so the status is «not available» for everyone and
- * nothing changes on production.
+ *   * The allowance and the count are the database's
+ *     (public.ai_free_question_status, 20261127_40): the allowance by
+ *     profiles.user_type, the used ones = the account's free runs that did not
+ *     fail (a failed, refunded run gives its question back). Another account
+ *     type has none.
+ *   * No opt-in: while some are left, runCore starts the question at price 0
+ *     through public.ai_start_free_question, which recounts under the start
+ *     lock. If it refuses (the last one was taken meanwhile, or the SQL has not
+ *     run yet) the same request goes the normal way — the founder's library
+ *     credit, else the price the screen showed. A free run is never started
+ *     without that lock.
+ *   * Any read error answers «none left», so nothing is promised that the
+ *     server would not keep.
  *
  * Pure (type-only Supabase import), so `node --test` runs it.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const FREE_QUESTION_TOOL = "quick-answer";
-export const FREE_QUESTION_USER_TYPE = "individual";
-/** The shape public.verified_phones accepts (a Saudi mobile in E.164, as profiles.phone). */
-const VERIFIED_PHONE = /^\+9665\d{8}$/;
-const RIYADH_OFFSET_MS = 3 * 60 * 60 * 1000;
-
-/** The Riyadh calendar day of `now` as YYYY-MM-DD (Saudi Arabia keeps UTC+3 all year; midnight there is 21:00 UTC). */
-export function riyadhDay(now: Date): string {
-  return new Date(now.getTime() + RIYADH_OFFSET_MS).toISOString().slice(0, 10);
-}
-
-/** An individual account whose phone the server verified. Anything else is not eligible. */
-export function freeQuestionEligible(a: { userType: unknown; verifiedPhone: unknown }): boolean {
-  return a.userType === FREE_QUESTION_USER_TYPE && typeof a.verifiedPhone === "string" && VERIFIED_PHONE.test(a.verifiedPhone);
-}
+export const FREE_QUESTION_TOOL = "library-assistant";
 
 export interface FreeQuestionStatus {
   available: boolean;
+  /** Free questions left (0 when none, or unknown). */
+  left: number;
+  /** The account's allowance (0 when none, or unknown). */
+  total: number;
 }
 
-const NOT_AVAILABLE: FreeQuestionStatus = Object.freeze({ available: false });
+const NONE: FreeQuestionStatus = Object.freeze({ available: false, left: 0, total: 0 });
+
+function count(v: unknown): number | null {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null;
+}
+
+/** The database's {allowance, used} row as a status; anything malformed is NONE. */
+export function freeQuestionStatusFrom(row: unknown): FreeQuestionStatus {
+  const r = (Array.isArray(row) ? row[0] : row) as { allowance?: unknown; used?: unknown } | null | undefined;
+  const total = count(r?.allowance);
+  const used = count(r?.used);
+  if (total === null || used === null || total === 0) return NONE;
+  const left = Math.max(0, total - used);
+  return { available: left > 0, left, total };
+}
 
 /**
- * Is today's free question open to this user? Read with the service client.
- * Any read error — the tables not created yet (20261108_50 not run) included —
- * answers «not available»: the page then shows the normal price and offers
- * nothing (never a promise that cannot be kept).
+ * The signed-in user's free questions, read with the service client. Any
+ * error — the function not created yet (20261127_40 not run) included — is
+ * «none left».
  */
-export async function freeQuestionStatusWith(admin: SupabaseClient, userId: string, now: Date = new Date()): Promise<FreeQuestionStatus> {
+export async function freeQuestionStatusWith(admin: SupabaseClient, userId: string): Promise<FreeQuestionStatus> {
   try {
-    const profile = await admin.from("profiles").select("user_type").eq("id", userId).maybeSingle();
-    if (profile.error || (profile.data as { user_type?: unknown } | null)?.user_type !== FREE_QUESTION_USER_TYPE) return NOT_AVAILABLE;
-
-    const phone = await admin.from("verified_phones").select("phone_e164").eq("user_id", userId).maybeSingle();
-    const verifiedPhone = (phone.data as { phone_e164?: unknown } | null)?.phone_e164;
-    if (phone.error || !freeQuestionEligible({ userType: FREE_QUESTION_USER_TYPE, verifiedPhone })) return NOT_AVAILABLE;
-
-    const claim = await admin
-      .from("ai_free_question_claims")
-      .select("run_id")
-      .eq("phone_e164", verifiedPhone as string)
-      .eq("riyadh_day", riyadhDay(now))
-      .maybeSingle();
-    if (claim.error) return NOT_AVAILABLE;
-    if (!claim.data) return { available: true };
-    const runId = (claim.data as { run_id?: unknown }).run_id;
-    if (typeof runId !== "string") return NOT_AVAILABLE;
-    // A claim whose run failed (refunded) is free again; ai_start_free_question agrees.
-    const run = await admin.from("ai_runs").select("status").eq("id", runId).maybeSingle();
-    if (run.error) return NOT_AVAILABLE;
-    return { available: (run.data as { status?: unknown } | null)?.status === "failed" };
+    const { data, error } = await admin.rpc("ai_free_question_status", { p_user: userId });
+    if (error) return NONE;
+    return freeQuestionStatusFrom(data);
   } catch {
-    return NOT_AVAILABLE;
+    return NONE;
   }
 }
 
-export const FREE_QUESTION_COPY = {
-  badge: "سؤالك المجاني اليوم",
-  price: "مجاناً — سؤالك المجاني اليوم",
-  used: "استُخدم سؤالك المجاني لهذا اليوم — أعد الإرسال ليُحتسب بالنقاط",
-  notEligible: "السؤال المجاني اليومي غير متاح لحسابك — أعد الإرسال ليُحتسب بالنقاط",
-  unavailable: "السؤال المجاني غير متاح الآن — أعد الإرسال ليُحتسب بالنقاط",
-} as const;
-
-/** A free question's failure gave no points back: it gave the free question back. */
-export function freeRunRefundText(message: string, free: boolean): string {
-  return free ? message.replace("وأُعيدت نقاطك", "ولم يُحتسب سؤالك المجاني").replace("أُعيدت نقاطك", "لم يُحتسب سؤالك المجاني") : message;
+/**
+ * A refusal of ai_start_free_question after which the request goes the normal
+ * way: the allowance used meanwhile or not this account's, the SQL not run yet
+ * (missing function / table), or the old 20261108_50 function that served
+ * quick-answer only (22023).
+ */
+export function freeQuestionFallsBack(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.message === "free_question_used" || error.message === "free_question_not_eligible") return true;
+  return ["22023", "42883", "PGRST202", "42P01", "PGRST205"].includes(error.code ?? "");
 }
+
+const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+const ar = (n: number) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[Number(d)]);
+
+export const FREE_QUESTION_COPY = {
+  /** «أسئلتك المجانية المتبقية: ٣ من ١٠» — shown only when the server says some are left. */
+  left: (left: number, total: number) => `أسئلتك المجانية المتبقية: ${ar(left)} من ${ar(total)} — تُستخدم قبل النقاط`,
+} as const;

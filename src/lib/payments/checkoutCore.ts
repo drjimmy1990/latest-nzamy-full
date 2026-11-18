@@ -122,6 +122,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
 import { buyerAllowed, PAYABLE_ITEMS, quote, resolveItem, type Billing, type PayableItem } from "./catalog.ts";
+import { checkMinTopup } from "./minTopup.ts";
 import { isMissingPaymentsObject } from "./fulfillDecision.ts";
 import { MOYASAR_DISABLED_MESSAGE_AR } from "./moyasarConfig.ts";
 import {
@@ -475,6 +476,13 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
   // 2. the audience, before any price
   const known = resolveItem(input.itemId, catalog);
   if (!known) return fail(400, UNKNOWN_ITEM_AR);
+  // 2a (l7 decision 5). a top-up below the account type's minimum (setting
+  // min_topup_by_account_type, on the BASE price) — before the audience check,
+  // so a lawyer sent to a 100 pack is told the limit; audited (minTopup.ts)
+  if (known.kind === "topup" && typeof known.listedPrices[input.billing] === "number") {
+    const min = await checkMinTopup(admin, { userId: user.id, userType, itemId: known.id, baseNetHalalas: known.listedPrices[input.billing] as number });
+    if (!min.ok) return { status: min.status, body: { error: min.error, code: min.code } };
+  }
   if (!buyerAllowed(known, userType)) return fail(403, AUDIENCE_REFUSED_AR);
 
   // 3. the price — on the request's clock, so a launch price (owner ٣٠٣) is

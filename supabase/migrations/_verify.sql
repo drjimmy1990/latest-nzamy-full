@@ -3065,7 +3065,7 @@ DECLARE
   v        jsonb;
   n        int;
   missing  text := '';
-  lots_cols   CONSTANT text[] := array['id','user_id','source','points_total','points_left','expires_at','order_id','created_at'];
+  lots_cols   CONSTANT text[] := array['id','user_id','source','points_total','points_left','expires_at','order_id','created_at','wallet_scope'];
   ledger_cols CONSTANT text[] := array['id','user_id','lot_id','delta','reason','tool','ref','created_at'];
   fns         CONSTANT text[] := array['public.points_balance(uuid)',
                                        'public.credit_points(uuid,integer,text,timestamp with time zone,uuid,text)',
@@ -7293,3 +7293,74 @@ select 'Founder top-up discount rate setting founder_topup_discount_bps (run 202
                 where key = 'founder_topup_discount_bps' and jsonb_typeof(value) = 'number')
        as ok;
 -- <<< verify:l7_founder
+-- >>> verify:l7_points — supabase/tests/rls/points_wallets_l7.test.sql
+-- 2026-11-19 — 20261127_40_points_wallets.sql (batch l7, decisions 5–9):
+-- wallets on points_lots, debit_points by wallet → plan → purchased →
+-- bonus/gift, credit_wallet_points, points_expire_lots + expiry notices, the
+-- free library questions once per account, four settings. Run BEFORE the
+-- deploy. Read-only, safe to repeat. Every row must say ok = true
+-- (false = run 20261127_40).
+select 'points_lots.wallet_scope exists, checked, readable by its owner' as check_name,
+       coalesce((select true from information_schema.columns
+                  where table_schema = 'public' and table_name = 'points_lots' and column_name = 'wallet_scope'), false)
+       and exists (select 1 from pg_constraint where conrelid = to_regclass('public.points_lots')
+                    and conname = 'points_lots_wallet_scope_check')
+       and coalesce((select has_column_privilege('authenticated', 'public.points_lots', 'wallet_scope', 'SELECT')
+                      where to_regclass('public.points_lots') is not null
+                        and exists (select 1 from information_schema.columns
+                                     where table_schema = 'public' and table_name = 'points_lots' and column_name = 'wallet_scope')), false) as ok;
+
+select 'points_lots_source_check allows plan / topup / bonus / gift and the old kinds' as check_name,
+       coalesce((select pg_get_constraintdef(oid) like '%gift%' and pg_get_constraintdef(oid) like '%refund_restore%'
+                        and pg_get_constraintdef(oid) like '%plan_monthly%'
+                   from pg_constraint where conrelid = to_regclass('public.points_lots')
+                    and conname = 'points_lots_source_check'), false) as ok;
+
+select 'debit_points keeps the lock order and spends by wallet (one overload)' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) ~* 'order\s+by\s+pl\.expires_at\s*,\s*pl\.created_at\s*,\s*pl\.id\s+for\s+update'
+                        and pg_get_functiondef(p.oid) like '%library_agent%'
+                        and pg_get_functiondef(p.oid) like '%''library-assistant''%'
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_proc p where p.oid = to_regprocedure('public.debit_points(uuid,int,text,text)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'debit_points') = 1 as ok;
+
+select 'credit_wallet_points / points_expire_lots / ai_free_question_status: definer, search_path '''', service role only' as check_name,
+       coalesce((select bool_and(p.prosecdef and p.proconfig @> array['search_path=""']
+                                 and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                 and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                 and has_function_privilege('service_role', p.oid, 'EXECUTE')) and count(*) = 3
+                   from pg_proc p
+                  where p.oid in (to_regprocedure('public.credit_wallet_points(uuid,int,text,timestamptz,uuid,text,text)'),
+                                  to_regprocedure('public.points_expire_lots(int)'),
+                                  to_regprocedure('public.ai_free_question_status(uuid)'))), false) as ok;
+
+select 'ai_start_free_question is the once-only library question (one overload, service role only)' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) like '%ai_free_question_uses%'
+                        and pg_get_functiondef(p.oid) like '%''library-assistant''%'
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
+
+select 'points_lot_expiry_notices and ai_free_question_uses: RLS on, no session privilege' as check_name,
+       coalesce((select bool_and(c.relrowsecurity) and count(*) = 2 from pg_class c
+                  where c.oid in (to_regclass('public.points_lot_expiry_notices'), to_regclass('public.ai_free_question_uses'))), false)
+       and case when to_regclass('public.points_lot_expiry_notices') is null or to_regclass('public.ai_free_question_uses') is null then false
+                else not exists (
+                  select 1 from (values ('anon'), ('authenticated')) r(role),
+                                (values ('public.points_lot_expiry_notices'), ('public.ai_free_question_uses')) t(tbl),
+                                (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) p(priv)
+                   where has_table_privilege(r.role, t.tbl, p.priv)) end as ok;
+
+select 'the four settings exist' as check_name,
+       (select count(*) from public.platform_settings
+         where key in ('library_plan_points', 'gift_valid_days', 'min_topup_by_account_type', 'free_questions_by_account_type')) = 4 as ok;
+
+-- informational: lots that expired but still hold points (the cron empties them)
+select 'expired lots still holding points (info — the points-expiry cron empties them)' as check_name,
+       true as ok,
+       (select count(*) from public.points_lots where expires_at <= now() and points_left > 0) as expired_with_points;
+-- <<< verify:l7_points

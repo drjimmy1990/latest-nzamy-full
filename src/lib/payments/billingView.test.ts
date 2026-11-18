@@ -92,7 +92,13 @@ test("pointsSummary: the balance and the nearest expiry among lots with points l
   });
   assert.equal(summary.balance, 70);
   assert.equal(summary.nearestExpiry, "2026-12-01T00:00:00Z");
-  assert.deepEqual(pointsSummary({ pointsBalance: 0, lots: [] }), { balance: 0, nearestExpiry: null });
+  assert.deepEqual(pointsSummary({ pointsBalance: 0, lots: [] }), { balance: 0, nearestExpiry: null, libraryOnly: 0 });
+  // l7: the part of the balance only the library assistant can spend
+  const lib = pointsSummary({
+    pointsBalance: 370,
+    lots: [{ ...lot("plan", 300, "2027-11-01T00:00:00Z"), wallet_scope: "library_agent" }, lot("topup", 70, "2027-02-01T00:00:00Z")],
+  });
+  assert.equal(lib.libraryOnly, 300);
 });
 test("cardBrandAr names the known networks in Arabic and nothing else", () => {
   assert.equal(cardBrandAr("mada"), "مدى");

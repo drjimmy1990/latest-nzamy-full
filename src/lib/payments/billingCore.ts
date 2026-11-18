@@ -1,10 +1,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MoyasarClient } from "./moyasarClient.ts";
-import type { BillingData, BillingOrder } from "./billingView.ts";
+import type { BillingData, BillingLot, BillingOrder } from "./billingView.ts";
 
 export const BILLING_ORDER_COLUMNS = "id,item_id,billing,net_halalas,vat_halalas,total_halalas,currency,status,receipt_number,paid_at,refunded_halalas,created_at,live";
 export const BILLING_CARD_COLUMNS = "id,merchant,brand,last_four,exp_month,exp_year,status,created_at";
 const LOT_COLUMNS = "id,source,points_total,points_left,expires_at,created_at";
+/** l7 (20261127_40): with the wallet, so the page can say which lots are the library assistant's only. */
+const LOT_COLUMNS_WALLET = `${LOT_COLUMNS},wallet_scope`;
+
+/**
+ * The user's unexpired lots with points, nearest expiry first. Before
+ * 20261127_40 runs the wallet column does not exist (42703 / PGRST204): read
+ * again without it, so the billing page never fails for it.
+ */
+async function readLots(rls: SupabaseClient, userId: string) {
+  const read = (columns: string) =>
+    rls.from("points_lots").select(columns).eq("user_id", userId).gt("points_left", 0).gt("expires_at", new Date().toISOString()).order("expires_at", { ascending: true });
+  const first = await read(LOT_COLUMNS_WALLET);
+  if (first.error && (first.error.code === "42703" || first.error.code === "PGRST204")) return read(LOT_COLUMNS);
+  return first;
+}
 
 /**
  * Task F fix round 1: the points each purchase lot credited, by order id —
@@ -51,7 +66,7 @@ export async function getBillingWith(rls: SupabaseClient, userId: string): Promi
     const [orders, cards, lots, balance] = await Promise.all([
       rls.from("payment_orders").select(BILLING_ORDER_COLUMNS).eq("user_id", userId).order("created_at", { ascending: false }).limit(100),
       rls.from("payment_methods").select(BILLING_CARD_COLUMNS).eq("user_id", userId).in("status", ["active", "inactive"]).order("created_at", { ascending: false }),
-      rls.from("points_lots").select(LOT_COLUMNS).eq("user_id", userId).gt("points_left", 0).gt("expires_at", new Date().toISOString()).order("expires_at", { ascending: true }),
+      readLots(rls, userId),
       rls.rpc("points_balance", { p_user: userId }),
     ]);
     const failed = [orders, cards, lots, balance].find(r => r.error);
@@ -60,7 +75,7 @@ export async function getBillingWith(rls: SupabaseClient, userId: string): Promi
     const orderRows = (orders.data ?? []) as unknown as BillingOrder[];
     const credited = await creditedByOrder(rls, userId, orderRows.filter(o => o.item_id?.startsWith("topup-")).map(o => o.id));
     const withPoints = orderRows.map(o => (credited.has(o.id) ? { ...o, credited_points: credited.get(o.id) } : o));
-    return { status: 200, body: { orders: withPoints, cards: cards.data ?? [], lots: lots.data ?? [], pointsBalance: balance.data } };
+    return { status: 200, body: { orders: withPoints, cards: cards.data ?? [], lots: (lots.data ?? []) as unknown as BillingLot[], pointsBalance: balance.data } };
   } catch (err) { logBillingError(`billing_exception:${errorName(err)}`); return unavailable(); }
 }
 

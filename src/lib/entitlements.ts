@@ -24,6 +24,7 @@ import {
 } from "./entitlementGrantRules.ts";
 import { pickPlanRow } from "./payments/pickPlanRow.ts";
 import { adjustPointsWith } from "./payments/pointsAdmin.ts";
+import { giftExpiry, readGiftValidDays } from "./points/pointsSettings.ts";
 
 export type GrantAction = "plan" | "credits" | "wallet";
 
@@ -252,8 +253,8 @@ export async function grantEntitlement(input: GrantInput): Promise<GrantResult> 
         return { ok: false, error: "المبلغ يجب أن يكون عددًا صحيحًا غير صفري" };
       }
 
-      const expires = new Date(now);
-      expires.setUTCFullYear(expires.getUTCFullYear() + 1);
+      // Decision 9 (owner 18 Nov §16.4): a gift or grant lasts gift_valid_days (90).
+      const expires = giftExpiry(now, await readGiftValidDays(admin));
       const changed = await adjustPointsWith(admin, { userId: input.userId, amount, ref: `grant:${input.actorId ?? "admin"}:${input.description ?? ""}`, expiresAt: expires });
       if (!changed.ok) return changed;
       return {
