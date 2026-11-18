@@ -7,6 +7,7 @@ import { BookOpen, X, ArrowLeft, ArrowRight, Star, MagnifyingGlass } from "@phos
 import { useTheme } from "@/components/ThemeProvider";
 import { LIBRARY_STAT_LABELS, formatLibraryCount, type LibraryStatKey } from "@/lib/library/libraryStats";
 import { useLibraryStats } from "@/lib/library/useLibraryStats";
+import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 
 // ─── Bilingual text ───────────────────────────────────────────────────────────
 //
@@ -98,7 +99,10 @@ export default function LegalLibraryBanner({
         .map((key) => ({ key, val: fmt(key), label: isAr ? LIBRARY_STAT_LABELS[key].ar : LIBRARY_STAT_LABELS[key].en }))
         .filter((s) => library.status === "loading" || s.val !== null);
 
-  if (dismissed) return null;
+  // Owner item 9 (batch l8): no library offer for an account whose library is
+  // locked for its type — nor while that is still being asked.
+  const libraryLock = useLibraryAccountLocked();
+  if (dismissed || libraryLock.loading || libraryLock.locked) return null;
 
   // ── Compact variant ──
   if (variant === "compact") {

@@ -9,6 +9,7 @@ import {
   isUuid,
   readJsonObject,
 } from './validate';
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * GET /api/library/folders — List user's smart folders
@@ -26,6 +27,8 @@ import {
  */
 
 export async function GET() {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const supabase = await createClient();
 
@@ -60,6 +63,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const supabase = await createClient();
 
@@ -108,6 +113,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const supabase = await createClient();
 
@@ -158,6 +165,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const supabase = await createClient();
 

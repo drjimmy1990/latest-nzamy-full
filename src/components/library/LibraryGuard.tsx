@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useLibraryStatus } from "@/hooks/useLibraryStatus";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryClosedNotice from "./LibraryClosedNotice";
+import LibraryAccountLockedNotice from "./LibraryAccountLockedNotice";
 import LibrarySecurityLockNotice, { LibraryDailyLimitBanner } from "./LibrarySecurityLockNotice";
 import { isLawReaderPath } from "./libraryGuardPaths";
 
@@ -57,14 +58,12 @@ export default function LibraryGuard({
 function GuardedContent({ children, pathname }: { children: React.ReactNode; pathname: string | null }) {
   const lib = useLibraryStatus();
   const { isDark } = useTheme();
-
-  if (pathname && ALWAYS_OPEN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    return <>{children}</>;
-  }
+  const alwaysOpen = !!pathname && ALWAYS_OPEN_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   // Render nothing content-shaped until the status resolves. Rendering children
   // first would flash real statutory text to visitors while the library is
-  // supposed to be closed.
+  // supposed to be closed — and, on /laws/subscribe, prices to an account whose
+  // library is locked (owner item 9), so that page waits for the status too.
   if (lib.loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center" dir="rtl">
@@ -78,6 +77,16 @@ function GuardedContent({ children, pathname }: { children: React.ReactNode; pat
       </div>
     );
   }
+
+  // Owner item 9 (batch l8): the library is locked for this account's type —
+  // every library page, /laws/subscribe included (no price, no buy button, no
+  // library offer). Checked before anything mounts: the precedent and book
+  // readers would otherwise fall back to their bundled copies.
+  if (lib.accountLock) {
+    return <LibraryAccountLockedNotice message={lib.accountLock.message} />;
+  }
+
+  if (alwaysOpen) return <>{children}</>;
 
   // effectiveStatus already accounts for the admin bypass, so an admin keeps
   // working while the library is closed to everyone else.

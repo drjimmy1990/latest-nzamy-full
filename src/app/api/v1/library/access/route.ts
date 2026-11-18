@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { hasFullLibraryAccess } from "@/lib/access-control";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
+import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
 /**
  * GET /api/v1/library/access — does THIS caller have the full library?
@@ -22,6 +23,11 @@ import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
  *
  * It says nothing about the library assistant, which has its own rule (Pro+ or
  * an admin, src/app/api/ai/_libraryAiAccess.ts; owner ٢٠٧).
+ *
+ * Owner item 9 (batch l8): `accountLocked` — true when the library is locked
+ * for this signed-in account's type (the dashboard sidebar hides the library
+ * and the library banner hides itself); such an account never has the full
+ * library. A guest: false.
  */
 
 // Per viewer and per request: never from a cache.
@@ -38,10 +44,14 @@ export async function GET() {
       return res;
     }
 
-    const hasFullAccess = await hasFullLibraryAccess(user?.id ?? null);
-    return NextResponse.json({ hasFullAccess }, { headers: NO_STORE });
+    const [hasFull, account] = await Promise.all([
+      hasFullLibraryAccess(user?.id ?? null),
+      user ? readLibraryAccountAccess(user.id) : Promise.resolve(null),
+    ]);
+    const accountLocked = account !== null && !account.allowed;
+    return NextResponse.json({ hasFullAccess: hasFull && !accountLocked, accountLocked }, { headers: NO_STORE });
   } catch (err) {
     console.error("[library access] full-access read failed:", err instanceof Error ? err.message : err);
-    return NextResponse.json({ hasFullAccess: false }, { headers: NO_STORE });
+    return NextResponse.json({ hasFullAccess: false, accountLocked: false }, { headers: NO_STORE });
   }
 }

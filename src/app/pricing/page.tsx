@@ -21,6 +21,7 @@ import { GovernmentRolesInfo } from "@/components/pricing/GovernmentRolesInfo";
 import { audienceTabsView, extraPlanIdsFor, withExtraPlans } from "@/lib/pricing/audienceForUserType";
 import { displayCycle, offeredCycles } from "@/lib/pricing/cardPrice";
 import { audienceFromParam } from "@/lib/pricing/founderCard";
+import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 
 // Which package families the audience bar offers (owner, 2026-10-24): a
 // member sees only their own account type's family — the bar is locked to it
@@ -77,8 +78,10 @@ export default function PricingPage() {
   // admin, a tab they clicked wins over `?audience=`.
   const audience: AudienceTab =
     tabsView.kind === "locked" ? tabsView.audience : (pickedAudience ?? url.audience ?? "individuals");
+  // Owner item 9 (batch l8): a signed-in account whose library is locked sees no library plans.
+  const libraryLock = useLibraryAccountLocked(isLoggedIn && !userLoading);
   // The library plans exist on the lawyers and firms tabs only.
-  const libraryMode = libraryModeState && (audience === "lawyers" || audience === "firms");
+  const libraryMode = !libraryLock.locked && libraryModeState && (audience === "lawyers" || audience === "firms");
 
   // Open at the plans, not wherever the previous page was scrolled to.
   useEffect(() => {
@@ -120,6 +123,7 @@ export default function PricingPage() {
           hasLegalDept={hasLegalDept} setHasLegalDept={setHasLegalDept}
           libraryMode={libraryMode} setLibraryMode={setLibraryMode}
           audienceTabs={tabsView.kind === "locked" ? "own" : tabsView.kind}
+          libraryLocked={libraryLock.locked}
         />
 
         <Suspense fallback={null}>

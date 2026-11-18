@@ -16,6 +16,7 @@ import { libraryGate } from "@/lib/library-gate";
 import { libraryAiAccess } from "@/app/api/ai/_libraryAiAccess";
 import { libraryRunAccess, libraryRunCreated } from "@/lib/ai/libraryRunAccess";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
+import { isLibraryAiTool } from "@/lib/library/readQuota";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 import { assistantGuardState } from "@/lib/ai/assistantGuard";
 
@@ -54,10 +55,14 @@ const SIGN_IN = { error: "سجّل الدخول لاستخدام أدوات ال
  * only (owner ٥ / ١٥, 17 Nov 2026). Every run is still charged.
  */
 async function libraryAccess(toolId: string): Promise<RouteReply | null> {
-  const refused = (await libraryGate()) ?? (await libraryAiAccess(toolId));
+  // Owner item 9.7 (batch l8): the per-account library lock applies to the
+  // library assistant only, never to the drafter, contract review, legal
+  // opinion or the other lawyers' tools that also read the library.
+  const refused = (await libraryGate({ accountLock: isLibraryAiTool(toolId) })) ?? (await libraryAiAccess(toolId));
   if (!refused) return null;
   const body = (await refused.json().catch(() => ({}))) as Record<string, unknown>;
-  return { status: refused.status, body: { ...body, code: body.libraryClosed ? "library_closed" : "library_tier" } };
+  const code = typeof body.code === "string" ? body.code : body.libraryClosed ? "library_closed" : "library_tier";
+  return { status: refused.status, body: { ...body, code } };
 }
 
 /**
@@ -164,7 +169,10 @@ export async function POST(request: NextRequest) {
         // The founder's 100 library points (20 questions) pay for library-assistant first.
         founderLibraryCredit: (userId) => founderLibraryCredit(admin, userId),
         // Owner ٣٠ (l7): the account's free library questions, once (10 lawyer / 5 individual).
-        freeQuestions: async (userId) => (await freeQuestionStatusWith(admin, userId)).available,
+        // ٥٨ (batch l8): only for an e-mail-verified account (the SQL checks it
+        // too, with the library being open for the account's type).
+        freeQuestions: async (userId) =>
+          Boolean(user.email_confirmed_at) && (await freeQuestionStatusWith(admin, userId)).available,
         // GraphRAG only behind NZAMY_GRAPH_RAG=on (graphRagSwitch): off, the
         // run never embeds the question and never calls the graph.
         ...(graphOn ? { embedQuery: (text: string) => embedQueryWithin(text) } : {}),

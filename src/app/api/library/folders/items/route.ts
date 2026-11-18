@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { checkFolderItem, readJsonObject } from '../validate';
+import { libraryAccountGate } from "@/lib/library/accountAccessServer";
 
 /**
  * POST /api/library/folders/items — add one item to a user-owned smart folder.
@@ -15,6 +16,8 @@ import { checkFolderItem, readJsonObject } from '../validate';
  * entityId 1–200 chars, title / titleEn ≤ 300, catId ≤ 30 (else dropped).
  */
 export async function POST(request: Request) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   try {
     const supabase = await createClient();
 

@@ -69,7 +69,8 @@ const readStats = (host: string): Promise<LibraryStats> =>
   )();
 
 export async function GET() {
-  const gate = await libraryGate();
+  // Counts only (login, about, banners): not behind the per-account lock (owner item 9).
+  const gate = await libraryGate({ accountLock: false });
   if (gate) return gate;
 
   try {
