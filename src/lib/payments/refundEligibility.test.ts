@@ -23,7 +23,8 @@ test("founder: no AI use + inside the window → «مؤهل», enforced", () => 
   const v = refundEligibility(member, at(60_000), ev())!;
   assert.deepEqual([v.state, v.enforced, v.rule, v.label], ["eligible", true, "no_ai_use", "مؤهل للاسترداد"]);
   assert.equal(needsOverride(v), false);
-  assert.ok(v.lines.some((l) => l.includes("تصفح المكتبة القانونية لا يُحتسب")), "browsing is said not to count");
+  // batch l9: the line is now the 5-full-text count (previews and lists never count)
+  assert.ok(v.lines.some((l) => l.includes("ملفات المكتبة المقروءة نصاً كاملاً منذ الدفع: ٠، والحد ٥")), "the full-text count is shown");
 });
 
 test("founder: any credit, AI run or points debit since payment blocks it", () => {
@@ -57,7 +58,7 @@ test("l8 (٦٤): the library uses the founder's no-AI rule and is ENFORCED — i
   // a drafter run paid by another plan, or points debited elsewhere, are not the library's AI
   const other = lib(ev({ aiRuns: [{ tool: "legal-drafter", created_at: PAID }], pointsDebited: 500 }));
   assert.deepEqual([other.state, needsOverride(other)], ["eligible", false]);
-  assert.ok(other.lines.some((l) => l.includes("تصفح المكتبة القانونية لا يُحتسب")));
+  assert.ok(other.lines.some((l) => l.includes("المعاينة والقوائم لا تُحتسب")));
   const late = lib(ev());
   assert.equal(late.state, "eligible");
   assert.equal(refundEligibility({ kind: "library", paid_at: PAID }, at(REFUND_WINDOW_MS + 1000), ev())!.state, "ineligible");
@@ -116,4 +117,45 @@ test("the elapsed-days line is correct Arabic for 0, 1, 2, 3, 11 and 14 days", (
   assert.match(line(3), /^مضى على الدفع ٣ أيام،/);
   assert.match(line(11), /^مضى على الدفع ١١ يوماً،/);
   assert.match(line(14), /^مضى على الدفع ١٤ يوماً، ونافذة الاسترداد ١٤ يوماً/);
+});
+
+// ── batch l9 (register 14 items 16 / 44, file 16 §9.10): ≤ 5 full texts ─────
+test("l9: 5 files read in full keep the refund possible; the 6th refuses it (founder and library), enforced", async () => {
+  const { MAX_REFUND_FULL_TEXT_READS } = await import("./refundEligibility.ts");
+  assert.equal(MAX_REFUND_FULL_TEXT_READS, 5);
+  for (const kind of ["membership", "library"]) {
+    const five = refundEligibility({ kind, paid_at: PAID }, at(60_000), ev({ fullTextReads: 5 }))!;
+    assert.equal(five.state, "eligible", kind);
+    const six = refundEligibility({ kind, paid_at: PAID }, at(60_000), ev({ fullTextReads: 6 }))!;
+    assert.deepEqual([six.state, six.enforced, needsOverride(six)], ["ineligible", true, true], kind);
+    assert.ok(six.reasons.includes("قُرئ نصاً كاملاً أكثر من ٥ ملفات من المكتبة منذ الدفع."), kind);
+  }
+});
+
+test("l9: the read log missing (SQL not run) → «تعذّر التحقق», never «مؤهل»", () => {
+  const v = refundEligibility({ kind: "library", paid_at: PAID }, at(60_000), ev({ fullTextReads: null }))!;
+  assert.equal(v.state, "unverified");
+  assert.ok(v.lines.some((l) => l.includes("سجل قراءة النصوص الكاملة غير متاح بعد")));
+});
+
+test("l9: a top-up never carries the rule; a plan only when its tier includes the library (advisory)", async () => {
+  const { orderIncludesLibrary } = await import("./refundEligibility.ts");
+  const top = refundEligibility({ kind: "topup", paid_at: PAID }, at(60_000), ev({ orderLotTotal: 100, fullTextReads: 40 }))!;
+  assert.equal(top.state, "eligible");
+  assert.equal(orderIncludesLibrary({ kind: "library" }), true);
+  assert.equal(orderIncludesLibrary({ kind: "membership" }), true);
+  assert.equal(orderIncludesLibrary({ kind: "topup", item_id: "topup-500" }), false);
+  assert.equal(orderIncludesLibrary({ kind: "plan", item_id: "no-such-plan" }), false);
+  assert.equal(orderIncludesLibrary({ kind: "plan", item_id: "ind-ai" }), false, "the AI tier has no library");
+  assert.equal(orderIncludesLibrary({ kind: "plan", item_id: "ind-preventive" }), true, "a Pro-tier plan includes the library");
+  const plan = refundEligibility({ kind: "plan", paid_at: PAID, item_id: "ind-preventive" }, at(60_000), ev({ fullTextReads: 9 }))!;
+  assert.deepEqual([plan.state, plan.enforced], ["ineligible", false]);
+});
+
+test("l9: the evidence reads distinct documents since payment from full_text_reads, only where the plan includes the library", () => {
+  const src = readFileSync(join(import.meta.dirname, "refundEvidence.ts"), "utf8");
+  assert.match(src, /if \(orderIncludesLibrary\(order\)\) \{/);
+  assert.match(src, /from\("full_text_reads"\)\.select\("doc_key"\)\.eq\("user_id", order\.user_id\)/);
+  assert.match(src, /\.gt\("opened_at", since\)/);
+  assert.match(src, /new Set\(/);
 });

@@ -9,23 +9,31 @@
  *   - the buyer's AI runs since paid_at that did not fail;
  *   - the buyer's points debited since paid_at, net of the refunds of failed
  *     runs (points_ledger usage − usage_refund);
- *   - the order's own points lot(s), passed in (refundCore already read them).
+ *   - the order's own points lot(s), passed in (refundCore already read them);
+ *   - batch l9 (register 14 items 16 / 44): the DISTINCT library documents
+ *     the buyer opened in full text since paid_at, from the server-only log
+ *     public.full_text_reads (20261129_40) — read only for an order whose
+ *     plan includes the library (orderIncludesLibrary). A missing table →
+ *     fullTextReads null (the verdict says the log is not available).
  *
- * Library browsing writes none of these rows, so it never counts.
+ * A preview or a list is never written to that log, so it never counts.
  * Every read is independent; an error marks `readFailed` (the verdict is then
  * «تعذّر التحقق», never «مؤهل») and the other reads still run.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { LIBRARY_AI_TOOLS, type RefundEvidence } from "./refundEligibility.ts";
+import { LIBRARY_AI_TOOLS, MAX_REFUND_FULL_TEXT_READS, orderIncludesLibrary, type RefundEvidence } from "./refundEligibility.ts";
 
 export const AI_RUN_EVIDENCE_LIMIT = 200;
+/** Rows read from full_text_reads (one per day and document): far past the 5-file rule. */
+export const FULL_TEXT_READ_EVIDENCE_LIMIT = 500;
+const MISSING_TABLE = new Set(["42P01", "PGRST205"]);
 
 export async function readRefundEvidence(
   admin: SupabaseClient,
-  order: { id: string; user_id: string | null; kind: string; paid_at: string | null },
+  order: { id: string; user_id: string | null; kind: string; paid_at: string | null; item_id?: string | null },
   orderLots: { total: number; used: number; readFailed: boolean },
 ): Promise<RefundEvidence> {
-  const evidence: RefundEvidence = { creditsUsed: {}, aiRuns: [], pointsDebited: 0, orderLotTotal: orderLots.total, orderLotUsed: orderLots.used, readFailed: orderLots.readFailed };
+  const evidence: RefundEvidence = { creditsUsed: {}, aiRuns: [], pointsDebited: 0, orderLotTotal: orderLots.total, orderLotUsed: orderLots.used, readFailed: orderLots.readFailed, fullTextReads: 0 };
   const paidAt = order.paid_at ? Date.parse(order.paid_at) : NaN;
   if (!Number.isFinite(paidAt)) { evidence.readFailed = true; return evidence; }
   // gt one millisecond earlier = "at or after paid_at"
@@ -66,6 +74,18 @@ export async function readRefundEvidence(
       let net = 0;
       for (const row of (ledger.data ?? []) as Array<{ delta: unknown }>) if (Number.isSafeInteger(row.delta)) net -= row.delta as number;
       evidence.pointsDebited = Math.max(0, net);
+      if (orderIncludesLibrary(order)) {
+        const reads = await admin.from("full_text_reads").select("doc_key").eq("user_id", order.user_id)
+          .gt("opened_at", since).limit(FULL_TEXT_READ_EVIDENCE_LIMIT);
+        if (reads.error) {
+          if (MISSING_TABLE.has(reads.error.code ?? "")) evidence.fullTextReads = null;
+          else fail("full_text_reads", reads.error.code);
+        } else {
+          const docs = new Set(((reads.data ?? []) as Array<{ doc_key: unknown }>).map((r) => r.doc_key).filter((k) => typeof k === "string"));
+          // A full page of rows with few distinct keys cannot prove ≤ 5: read as "more".
+          evidence.fullTextReads = (reads.data ?? []).length >= FULL_TEXT_READ_EVIDENCE_LIMIT ? Math.max(docs.size, MAX_REFUND_FULL_TEXT_READS + 1) : docs.size;
+        }
+      }
     }
   } catch (err) {
     fail("exception", err instanceof Error ? err.message : undefined);
