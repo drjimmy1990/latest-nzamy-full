@@ -196,9 +196,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const load = await loadArticle(slug);
-  // Metadata blocks the first byte for every user agent (htmlLimitedBots in
-  // next.config.ts), so notFound() here is the real 404 status.
-  if (load.status === "not_found") notFound();
+  // A miss: noindex and no canonical here; the page body below answers the
+  // real 404 (a notFound() thrown from metadata streamed into a 200 page in a
+  // production build, so the status comes from the body).
+  if (load.status === "not_found") {
+    return { title: "الصفحة غير موجودة | " + SITE_NAME, robots: { index: false, follow: false }, alternates: { canonical: null } };
+  }
   // A failed read keeps the article's OWN canonical, never /blog's.
   if (load.status === "error") return { title: SITE_NAME, alternates: { canonical: `${BASE_URL}/blog/${slug}` } };
   const row = load.row;

@@ -10,7 +10,27 @@
 // changes no URL: this is still /blog.
 
 import { Suspense } from "react";
+import type { Metadata } from "next";
+import { buildMetadata, BASE_URL } from "@/lib/seo";
 import BlogList from "../BlogList";
+
+const base = buildMetadata({
+  titleAr: "المدونة القانونية",
+  titleEn: "Legal Blog",
+  descriptionAr: "مقالات قانونية متخصصة في الأنظمة السعودية — عمالي، مدني، تجاري، أسري، وأكثر",
+  descriptionEn: "Specialized legal articles on Saudi regulations — labor, civil, commercial, family, and more",
+  path: "/blog",
+  keywords: ["مقالات قانونية","نظام سعودي","حقوق قانونية"],
+});
+
+// /blog's own head (moved from ../layout.tsx in batch l9) + the feed link.
+export const metadata: Metadata = {
+  ...base,
+  alternates: {
+    ...base.alternates,
+    types: { "application/rss+xml": [{ url: `${BASE_URL}/blog/rss.xml`, title: "المدونة القانونية — نظامي" }] },
+  },
+};
 
 export default function BlogPage() {
   return (

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import LibraryGuard from "@/components/library/LibraryGuard";
 import LibraryDocumentShell from "@/components/library/LibraryDocumentShell";
 import LibraryJsonLd from "@/components/library/LibraryJsonLd";
-import { libraryDocMetadata, loadLibraryDocSeo } from "@/lib/library/libraryDocumentSeo";
+import { isMissingLibraryDoc, libraryDocMetadata, loadLibraryDocSeo } from "@/lib/library/libraryDocumentSeo";
 
 /**
  * Guards the feqh book reader (/book/[slug]) with the global library switch.
@@ -28,6 +29,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function Layout({ children, params }: Params & { children: React.ReactNode }) {
   const { slug } = await params;
   const load = await loadLibraryDocSeo("book", slug);
+  // Batch l9 (file 20 §2): a document that does not exist is a 404, not a reader saying so.
+  if (isMissingLibraryDoc("book", slug, load)) notFound();
   return (
     <>
       {load.status === "ok" && <LibraryJsonLd doc={load.doc} />}

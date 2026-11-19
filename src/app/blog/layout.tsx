@@ -1,20 +1,12 @@
 ﻿import type { Metadata } from "next";
-import { buildMetadata, BASE_URL } from "@/lib/seo";
-
-const base = buildMetadata({
-  titleAr: "المدونة القانونية",
-  titleEn: "Legal Blog",
-  descriptionAr: "مقالات قانونية متخصصة في الأنظمة السعودية — عمالي، مدني، تجاري، أسري، وأكثر",
-  descriptionEn: "Specialized legal articles on Saudi regulations — labor, civil, commercial, family, and more",
-  path: "/blog",
-  keywords: ["مقالات قانونية","نظام سعودي","حقوق قانونية"],
-});
+import { BASE_URL } from "@/lib/seo";
 
 // P1-39: the feed, advertised in the head as <link rel="alternate" type="application/rss+xml">.
+// Batch l9 (file 20 §2): only the feed link here. /blog's title, canonical and
+// index,follow are the list page's own (./(list)/page.tsx): set here, a missing
+// article's 404 inherited /blog's canonical, which the owner's check forbids.
 export const metadata: Metadata = {
-  ...base,
   alternates: {
-    ...base.alternates,
     types: { "application/rss+xml": [{ url: `${BASE_URL}/blog/rss.xml`, title: "المدونة القانونية — نظامي" }] },
   },
 };

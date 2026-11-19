@@ -76,8 +76,12 @@ test("a missing blog article is a real 404 from the metadata; a failed read is n
   const page = readApp("blog/[slug]/page.tsx");
   assert.match(page, /if \(!data\) return \{ status: "not_found" \};/);
   assert.match(page, /if \(error\) \{[^}]*return \{ status: "error" \}; \}/);
-  // generateMetadata, then the page: notFound() on a definite miss only
-  assert.equal(page.match(/if \(load\.status === "not_found"\) notFound\(\);/g)?.length, 2);
+  // the metadata: noindex, no canonical; the page body: the real 404 (a definite miss only)
+  assert.match(page, /if \(load\.status === "not_found"\) \{\n\s*return \{ title: [^\n]*robots: \{ index: false, follow: false \}, alternates: \{ canonical: null \} \};/);
+  assert.equal(page.match(/if \(load\.status === "not_found"\) notFound\(\);/g)?.length, 1);
+  // /blog's canonical is the list page's, not the layout's (a 404 must not inherit it)
+  assert.doesNotMatch(readApp("blog/layout.tsx"), /buildMetadata\(|canonical:|path: "\/blog"/);
+  assert.match(readApp("blog/(list)/page.tsx"), /path: "\/blog",/);
   assert.match(page, /if \(load\.status === "error"\) throw new Error/);
   assert.doesNotMatch(page, /المقال غير موجود/, "no 200 «not found» page with an inherited canonical");
   const category = readApp("blog/category/[slug]/page.tsx");
@@ -86,9 +90,11 @@ test("a missing blog article is a real 404 from the metadata; a failed read is n
 
 test("library readers: a document that does not exist is a real 404 from the metadata (never on closed / error / legacy slugs)", () => {
   const seo = readFileSync(path.join(APP_DIR, "../lib/library/libraryDocumentSeo.ts"), "utf8").replace(/\r\n/g, "\n");
-  assert.match(seo, /if \(load\.status === "not_found" && !isLegacySlug\(kind, rawSlug\)\) notFound\(\);/);
-  for (const layout of ["laws/[slug]/layout.tsx", "laws/orders/[slug]/layout.tsx", "precedents/[slug]/layout.tsx", "book/[slug]/layout.tsx"]) {
-    assert.match(readApp(layout), /export async function generateMetadata[\s\S]*libraryDocMetadata\(/, layout);
+  assert.match(seo, /return load\.status === "not_found" && !isLegacySlug\(kind, rawSlug\);/);
+  for (const [layout, kind] of [["laws/[slug]/layout.tsx", "law"], ["laws/orders/[slug]/layout.tsx", "order"], ["precedents/[slug]/layout.tsx", "collection"], ["book/[slug]/layout.tsx", "book"]]) {
+    const src = readApp(layout);
+    assert.match(src, /export async function generateMetadata[\s\S]*libraryDocMetadata\(/, layout);
+    assert.ok(src.includes(`if (isMissingLibraryDoc("${kind}", slug, load)) notFound();`), layout);
   }
 });
 
