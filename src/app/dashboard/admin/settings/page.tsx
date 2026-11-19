@@ -26,6 +26,7 @@ import { LibraryPointsGateSettings } from "./_library-points-gate";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 import { PaymentRulesCard } from "./_components/PaymentRulesCard";
+import { PlatformLicenceCard } from "./_components/PlatformLicenceCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -956,6 +957,9 @@ export default function AdminSettingsPage() {
 
       {/* ── l8 payref: top-up minimum, founder discount rate + length, extra-seat price ── */}
       <PaymentRulesCard />
+
+      {/* ── l9 public: the platform licence number + issuer (owner file 20 row 4) ── */}
+      <PlatformLicenceCard />
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* ── Section 4: Legal Library Open/Close ── */}

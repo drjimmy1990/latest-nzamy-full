@@ -7774,3 +7774,22 @@ select 'Every test account has a current test batch (run 20261129_90)' as check,
                       and not exists (select 1 from public.test_account_batches b where b.user_id = x.id and b.until is null))
        end as ok;
 -- <<< verify:l9_testinfra
+
+-- >>> verify:l9_public
+-- Batch l9-public (owner register 4 / 36): an individual's free questions on the general assistant (quick-answer), every other type's on the library assistant. Run 20261129_60 any time after 20261128_20.
+select 'Free questions per account type: ai_start_free_question takes quick-answer for an individual, one overload, service role only (run 20261129_60)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''quick-answer''') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''library-assistant''') > 0
+                        and p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
+select 'Free questions: the library-open rule only for the library assistant; the e-mail rule for everyone (ai_free_question_status of 20261129_60)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'is distinct from ''individual''') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'library_access_for') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
+                false) as ok;
+-- <<< verify:l9_public

@@ -176,8 +176,8 @@ export interface ServiceRow {
 
 /** Shown under the price list (owner answer ٢١٦): the archive costs no points. */
 export const LAWYER_ARCHIVE_NOTE = {
-  ar: "الأرشيف السحابي: ضمن سعة الباقة",
-  en: "Cloud archive: within the plan's storage",
+  ar: "الأرشيف السحابي: بلا نقاط",
+  en: "Cloud archive: no points",
 };
 export interface ServiceCategory {
   category: string;

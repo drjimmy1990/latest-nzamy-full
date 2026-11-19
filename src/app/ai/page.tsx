@@ -603,7 +603,7 @@ const AI_TOOLS: AiToolCard[] = [
       : tool.comingSoon
       ? "غير متاحة حالياً — قيد الإعداد."
       : tool.betaStatus === "beta-free"
-        ? "أداة قانونية رسمية في البيتا؛ تُفتح بعد أن تعتمد الإدارة سعرها بالنقاط."
+        ? "أداة قانونية رسمية في المرحلة التجريبية؛ تُفتح بعد أن تعتمد الإدارة سعرها بالنقاط."
         : "أداة قانونية رسمية تُدفع بالنقاط بسعرها المعلن.",
     descEn: tool.permission === "ai:analyze"
       ? "Summarize a case file and extract its facts, contradictions and gaps from your papers"

@@ -94,7 +94,30 @@ const LEFT_OUT: Record<string, string> = {
 /** src/app/<path>/page.tsx for an href ("/x?y" → src/app/x/page.tsx). */
 function pageFileFor(href: string): string {
   const route = href.split(/[?#]/)[0].replace(/^\/+|\/+$/g, "");
-  return path.join(process.cwd(), "src/app", route, "page.tsx");
+  const app = path.join(process.cwd(), "src/app");
+  // A route group "(name)" adds a folder but no URL segment (blog/(list)/page.tsx
+  // is /blog since batch l9), so it may sit at any level.
+  const segments = route.split("/").filter(Boolean);
+  const walk = (dir: string, i: number): string | null => {
+    if (i === segments.length) {
+      const page = path.join(dir, "page.tsx");
+      if (existsSync(page)) return page;
+    } else {
+      const next = path.join(dir, segments[i]);
+      if (existsSync(next)) {
+        const found = walk(next, i + 1);
+        if (found) return found;
+      }
+    }
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory() && /^\(.+\)$/.test(e.name)) {
+        const found = walk(path.join(dir, e.name), i);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  return walk(app, 0) ?? path.join(app, route, "page.tsx");
 }
 
 /** Every static /services route on disk ("/services", "/services/notary", …). */

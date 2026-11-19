@@ -76,8 +76,8 @@ const sections = {
       content: [
         "نستخدم ملفات تعريف الارتباط الضرورية لتشغيل المنصة (مثل جلسات تسجيل الدخول وإعدادات اللغة).",
         "**أدوات قياس الزيارات**: قد نستخدم Google Analytics 4 وMicrosoft Clarity لنفهم كيف تُستخدم صفحاتنا العامة ونحسّنها. لا يُحمَّل أيٌّ منهما إلا بعد ضغطك «أوافق» في شريط ملفات الارتباط، و«لا أوافق» بالسهولة نفسها، ويُحفظ اختيارك في ملف الارتباط «nz_consent» مدة ستة أشهر.",
-        "تعملان فقط في الصفحة الرئيسية وصفحة عضوية المؤسس وصفحة الأسعار وصفحات التسجيل والدفع، ولا تعملان أبداً داخل لوحات المحامين والمكاتب والعملاء ولا في الصائغ ولا في لوحة الإدارة.",
-        "تُخفي Clarity كل ما تكتبه في حقول الإدخال (بيانات البطاقة ورقم الرخصة والبريد الإلكتروني)، وتُخفى صفحات التسجيل والتوثيق والدفع كاملة، ولا نرسل إلى أيٍّ من الأداتين اسمك أو بريدك أو رقم رخصتك.",
+        "تعمل Google Analytics فقط في الصفحة الرئيسية وصفحة عضوية المؤسس وصفحة الأسعار وصفحات التسجيل والدفع، وتعمل Microsoft Clarity في الصفحة الرئيسية وصفحة عضوية المؤسس وصفحة الأسعار فقط، لا في صفحات التسجيل والدفع. ولا تعملان أبداً داخل لوحات المحامين والمكاتب والعملاء ولا في الصائغ ولا في لوحة الإدارة.",
+        "تُخفي Clarity كل ما تكتبه في حقول الإدخال (بيانات البطاقة ورقم الرخصة والبريد الإلكتروني)، ولا تُحمَّل أصلاً في صفحات التسجيل والتوثيق والدفع، ولا نرسل إلى أيٍّ من الأداتين اسمك أو بريدك أو رقم رخصتك.",
         "ما نقيسه: زيارة الصفحة، والنقر على «احجز مقعدك»، وبدء التسجيل، ومطابقة الرخصة في سجل المحامين، وتأشير الموافقة على شروط باقة المؤسس، وبدء الدفع، وإتمام الشراء. يرسل خادمُنا حدث الشراء إلى Google Analytics بعد نجاح الدفع، ومعه رقم الطلب والمبلغ والباقة فقط، ولا يُرسَل إلا إن كنت وافقت قبل الدفع.",
         "مصدر الزيارة: إذا وصلت عبر رابط حملة (utm) نحفظ اسم الحملة ومصدرها وأول صفحة زرتها في ملف ارتباط من طرفنا («nz_attr») مدة ٣٠ يوماً، ونربطها بطلب الدفع لنعرف أي حملة جاء منها المشترك.",
         "لا نستخدم ملفات تعريف الارتباط للإعلانات المستهدفة من أطراف ثالثة.",
@@ -176,8 +176,8 @@ const sections = {
       content: [
         "We use necessary cookies to operate the platform (such as login sessions and language settings).",
         "**Visitor analytics**: we may use Google Analytics 4 and Microsoft Clarity to understand and improve how our public pages are used. Neither loads until you press «أوافق» (I agree) on the cookie banner; «لا أوافق» (I refuse) is just as easy, and your choice is kept in the «nz_consent» cookie for six months.",
-        "They run only on the home page, the founder membership page, the pricing page and the sign-up and payment pages, never inside the lawyer, firm or client dashboards, the drafter or the admin console.",
-        "Clarity masks everything typed into input fields (card details, licence number, e-mail), the sign-up, verification and payment pages are masked in full, and neither tool is sent your name, e-mail or licence number.",
+        "Google Analytics runs only on the home page, the founder membership page, the pricing page and the sign-up and payment pages; Microsoft Clarity runs only on the home page, the founder membership page and the pricing page, never on the sign-up or payment pages. Neither ever runs inside the lawyer, firm or client dashboards, the drafter or the admin console.",
+        "Clarity masks everything typed into input fields (card details, licence number, e-mail) and is not loaded at all on the sign-up, verification and payment pages, and neither tool is sent your name, e-mail or licence number.",
         "What we measure: page views, clicks on «Reserve your seat», sign-up start, a licence match in the lawyers' registry, ticking the founder-terms consent box, checkout start and purchase. Our server sends the purchase event to Google Analytics after a successful payment, with only the order id, amount and package, and only if you had agreed before paying.",
         "Traffic source: if you arrive through a campaign link (utm), we keep the campaign, source and first page in our own cookie («nz_attr») for 30 days and attach them to the payment order, to know which campaign brought the subscriber.",
         "We do not use cookies for third-party targeted advertising.",
@@ -242,7 +242,7 @@ export default function PrivacyPage() {
               {isRTL ? "سياسة الخصوصية" : "Privacy Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ١٨ نوفمبر ٢٠٢٦" : "Last updated: November 18, 2026"}
+              {isRTL ? "آخر تحديث: ٢٠ نوفمبر ٢٠٢٦" : "Last updated: November 20, 2026"}
             </p>
             <div className={`mx-auto mt-3 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium ${isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
               <ShieldCheck size={14} weight="fill" />

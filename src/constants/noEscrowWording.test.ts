@@ -36,10 +36,10 @@ const BANNED: readonly RegExp[] = [
 ];
 
 /**
- * Staff-only mock kept behind its URL (its sidebar link is gone) until the
- * owner decides whether to delete it — named in the 26-Oct owner report.
+ * No exception left: the staff-only mock /dashboard/admin/escrow was deleted
+ * (batch l9, owner file 15 row 75 — the cancelled escrow row's remnants).
  */
-const ALLOWED = new Set(["app/dashboard/admin/escrow/page.tsx"]);
+const ALLOWED = new Set<string>();
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {

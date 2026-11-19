@@ -30,6 +30,7 @@ import {
 import { isMissingColumnError } from "./optionalColumn.ts";
 import { effectiveFreeLimit } from "./previewLimit.ts";
 import { lawPublicExcerpt } from "./lawPublicExcerpt.ts";
+import { legacyTarget } from "./legacyLibrarySlugs.ts";
 
 export type LibraryDocLoad =
   | { status: "ok"; doc: LibraryDocSeo; shell?: LibraryDocShell }
@@ -251,11 +252,32 @@ export const loadLibraryDocSeo = cache(async (kind: LibraryDocKind, rawSlug: str
   }
 });
 
+/** A legacy collection / book slug: the reader redirects or explains it (legacyLibrarySlugs.ts). */
+function isLegacySlug(kind: LibraryDocKind, rawSlug: string): boolean {
+  if (kind !== "collection" && kind !== "book") return false;
+  return legacyTarget(kind, decodeRouteSlug(rawSlug)) !== null;
+}
+
+/**
+ * Owner file 20 §2, file 15 row 42 (batch l9): the document does not exist —
+ * the reader layouts then call notFound() in their BODY (a metadata-only
+ * notFound() was streamed as a 200 in a production build). Only a definite
+ * miss: the read is the same exact-id match the reader's API makes (which
+ * answers 404 too); "closed" and "error" are never a miss, nor a legacy
+ * collection / book slug the reader redirects or explains.
+ */
+export function isMissingLibraryDoc(kind: LibraryDocKind, rawSlug: string, load: LibraryDocLoad): boolean {
+  return load.status === "not_found" && !isLegacySlug(kind, rawSlug);
+}
+
 /**
  * generateMetadata for a reader route: the document's own <head> when it
- * reads; noindex with no database value when the library is closed or the
- * document does not exist; the section's generic, indexable <head> when the
- * read failed (a passing outage must not de-index a real page).
+ * reads; noindex with no database value when the library is closed; the
+ * section's generic, indexable <head> when the read failed (a passing outage
+ * must not de-index a real page).
+ *
+ * A document that does not exist (isMissingLibraryDoc) gets the noindex,
+ * canonical-less head here and a 404 from its layout's body (batch l9).
  */
 export async function libraryDocMetadata(kind: LibraryDocKind, rawSlug: string): Promise<Metadata> {
   const load = await loadLibraryDocSeo(kind, rawSlug);

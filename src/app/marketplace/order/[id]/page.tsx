@@ -33,7 +33,6 @@ const MOCK_ORDER = {
   budget: 3500,
   deadline: "٢٢ مارس ٢٠٢٥",
   createdAt: "١٥ مارس ٢٠٢٥",
-  escrowStatus: "held" as const, // held / released
 };
 
 const INITIAL_MESSAGES: ChatMessage[] = [

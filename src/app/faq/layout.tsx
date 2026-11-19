@@ -1,6 +1,4 @@
 ﻿import { buildMetadata } from "@/lib/seo";
-import { buildFaqPageJsonLd, serializeJsonLd, SITE_URL } from "@/lib/publicSeo/structuredData";
-import { faqData } from "./faqData";
 
 export const metadata = buildMetadata({
   titleAr: "الأسئلة الشائعة",
@@ -11,21 +9,10 @@ export const metadata = buildMetadata({
   keywords: ["أسئلة شائعة","مساعدة","كيفية"],
 });
 
-// Owner 18 Nov, item 4.4: FAQPage JSON-LD from the same 17 pairs the page
-// prints (./faqData.ts) — Arabic, word for word; the page keeps every answer
-// in its HTML.
-const FAQ_JSON_LD = buildFaqPageJsonLd(
-  faqData.map((item) => ({ question: item.questionAr, answer: item.answerAr })),
-  `${SITE_URL}/faq`,
-);
+// The FAQPage JSON-LD (owner 18 Nov, item 4.4) is printed by ./page.tsx, a
+// server page, from the very items it shows — the licence line included
+// (batch l9, owner file 20 row 4).
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return (
-    <>
-      {FAQ_JSON_LD && (
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(FAQ_JSON_LD) }} />
-      )}
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }

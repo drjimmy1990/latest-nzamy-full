@@ -73,7 +73,7 @@ import {
   countSectionEdits,
   type SectionEditCounts,
 } from "./sectionEdits.ts";
-import { freeQuestionFallsBack } from "./freeQuestion.ts";
+import { freeQuestionFallsBack, freeQuestionToolFor } from "./freeQuestion.ts";
 import { textPages } from "./textExtract.ts";
 import {
   STEP_LABEL_AR,
@@ -695,9 +695,12 @@ export async function startRunWith(
   // Owner ٣٠ (18 Nov, batch l7): the account's free questions, once — first,
   // with no opt-in, while the status says some are left (freeQuestion.ts).
   // ai_start_free_question recounts under the start lock; a refusal falls back
-  // below to the founder credit, else the price shown.
+  // below to the founder credit, else the price shown. Register 4 / 36 (l9):
+  // only on the account's own free tool — quick-answer for an individual, the
+  // library assistant for everyone else (freeQuestionToolFor, 20261129_60).
   let freeQuestion =
-    !!spec.freeQuestions && !creditKind && !isAdmin && !sectionEdit && price > 0 &&
+    !!spec.freeQuestions && spec.id === freeQuestionToolFor(actor.userType) &&
+    !creditKind && !isAdmin && !sectionEdit && price > 0 &&
     !!deps.freeQuestions && (await freeQuestionsLeftSafe(deps.freeQuestions, actor.userId));
   // Owner ٨ / ١٥ / ١٨: a founder's library-assistant question is paid from his
   // 100 library points (20 'library_question' credits) from the first

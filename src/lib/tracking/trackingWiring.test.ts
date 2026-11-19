@@ -10,7 +10,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const SRC = join(import.meta.dirname, "../..");
-const read = (p: string) => readFileSync(join(SRC, p), "utf8");
+const read = (p: string) => readFileSync(join(SRC, p), "utf8").replace(/\r\n/g, "\n");
 
 test("the public page: server-rendered, dynamic, noindex, no Referer, the CTA, and 404 for a dead link", () => {
   const page = read("app/track/[token]/page.tsx");
@@ -62,7 +62,7 @@ test("the lawyer routes use the session (RLS), never read the hash, and the pane
 });
 
 test("robots disallows /track/, the proxy rate-limits it, and the old /cases/[id] is still a 404", () => {
-  assert.match(read("app/robots.ts"), /"\/track\/",/);
+  assert.match(read("lib/publicSeo/robotsTxt.ts"), /"\/track\/",/);
   const proxy = read("proxy.ts");
   assert.match(proxy, /const isTrackingMatch = isTrackingPageRoute\(method, pathname\);/);
   assert.match(proxy, /rateLimiter\.check\("tracking-page", key, TRACKING_PAGE_RATE_LIMIT\)/);
@@ -76,7 +76,7 @@ test("robots disallows /track/, the proxy rate-limits it, and the old /cases/[id
 // firm role may open the firm's cases (/dashboard/firm/cases in
 // entityRouteAccess.ts). The SQL role list must stay that route's list.
 
-const MIGRATION_32 = readFileSync(join(SRC, "../supabase/migrations/20261025_32_case_tracking_links.sql"), "utf8");
+const MIGRATION_32 = readFileSync(join(SRC, "../supabase/migrations/20261025_32_case_tracking_links.sql"), "utf8").replace(/\r\n/g, "\n");
 
 test("tracking_link_maker_ok carries exactly the roles that may open /dashboard/firm/cases", async () => {
   const { FIRM_ROUTE_RULES } = await import("../../constants/entityRouteAccess.ts");

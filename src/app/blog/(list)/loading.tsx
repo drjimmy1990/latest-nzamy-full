@@ -1,9 +1,11 @@
 import { CardSkeleton, Shimmer } from "@/components/ui/Skeleton";
 
 /**
- * /blog loading screen — the owner's shimmer screens (4 Oct item 130). It also
- * covers an article and a category page while they load. pt-32 keeps the
- * fixed navbar's place, as <BlogList> does.
+ * /blog loading screen — the owner's shimmer screens (4 Oct item 130). It
+ * covers the /blog list ONLY (the (list) route group): above an article or a
+ * category page it would stream a 200 before notFound() runs, so a missing
+ * article was a soft 404 (owner file 20 §2; batch l9). pt-32 keeps the fixed
+ * navbar's place, as <BlogList> does.
  */
 export default function BlogLoading() {
   return (

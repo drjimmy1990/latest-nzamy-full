@@ -206,7 +206,7 @@ test("stackedGrantWindow: invalid days give null, with the same rules as grantWi
 
 // The IO half cannot be imported here (it uses @/ aliases), so its wiring is
 // pinned in the source.
-const serverSource = readFileSync(join(import.meta.dirname, "libraryAccessServer.ts"), "utf8");
+const serverSource = readFileSync(join(import.meta.dirname, "libraryAccessServer.ts"), "utf8").replace(/\r\n/g, "\n");
 
 test("grantLibraryAccess reads the user's latest active end and stacks the new window on it", () => {
   const grantAt = serverSource.indexOf("export async function grantLibraryAccess(");

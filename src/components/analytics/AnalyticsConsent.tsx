@@ -37,6 +37,7 @@ import {
   consentFromCookieHeader,
   isAnalyticsCookieName,
   isAnalyticsRoute,
+  isClarityRoute,
   isFullMaskRoute,
   type ConsentChoice,
 } from "@/lib/analytics/analytics";
@@ -103,10 +104,16 @@ function injectScript(src: string): void {
   document.head.appendChild(s);
 }
 
-function loadScripts(w: W): void {
-  if (w.__nzAnalyticsLoaded) return;
+/**
+ * GA4 once per page load; Clarity once, and only when `withClarity` (a
+ * CLARITY_ROUTES page: never sign-up or payment — batch l9). A visit that
+ * starts on /register loads GA4 only, and Clarity joins if it moves on to
+ * /pricing.
+ */
+function loadScripts(w: W, withClarity: boolean): void {
   const { ga4Id, clarityId } = ANALYTICS;
-  if (ga4Id) {
+  const loaded = w.__nzAnalyticsLoaded;
+  if (!loaded && ga4Id) {
     w[`ga-disable-${ga4Id}`] = false;
     w.dataLayer = w.dataLayer || [];
     // gtag.js reads the Arguments object, not an array.
@@ -128,7 +135,7 @@ function loadScripts(w: W): void {
     });
     injectScript(`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(ga4Id)}`);
   }
-  if (clarityId) {
+  if (clarityId && withClarity && !loaded?.clarity) {
     const q: ((...args: unknown[]) => void) & { q?: unknown[] } = function clarity() {
       // eslint-disable-next-line prefer-rest-params
       (q.q = q.q || []).push(arguments);
@@ -137,7 +144,7 @@ function loadScripts(w: W): void {
     injectScript(`https://www.clarity.ms/tag/${encodeURIComponent(clarityId)}`);
     w.clarity("consent");
   }
-  w.__nzAnalyticsLoaded = { ga4Id, clarity: Boolean(clarityId) };
+  w.__nzAnalyticsLoaded = { ga4Id, clarity: Boolean(loaded?.clarity || (clarityId && withClarity)) };
 }
 
 /**
@@ -154,9 +161,14 @@ function patchHistory(w: W): void {
     history[method] = (data: unknown, unused: string, url?: string | URL | null) => {
       try {
         if (url != null) {
-          const leaving = !isAnalyticsRoute(new URL(String(url), window.location.href).pathname);
+          const nextPath = new URL(String(url), window.location.href).pathname;
+          const leaving = !isAnalyticsRoute(nextPath);
           if (flag) w[flag] = leaving;
-          if (leaving) document.body.setAttribute(MASK_ATTR, MASK_VALUE);
+          // Clarity stops at sign-up and payment too (batch l9), not only at
+          // a non-analytics page.
+          if (leaving || (w.__nzAnalyticsLoaded?.clarity && !isClarityRoute(nextPath))) {
+            document.body.setAttribute(MASK_ATTR, MASK_VALUE);
+          }
         }
       } catch {
         // never break navigation
@@ -209,11 +221,21 @@ export default function AnalyticsConsent() {
       return;
     }
 
+    const clarityHere = isClarityRoute(pathname);
+    if (loaded?.clarity && !clarityHere) {
+      // Clarity has no documented pause, and it may not record sign-up or
+      // payment (batch l9): stay masked, and a fresh load of this page
+      // brings GA4 back without Clarity.
+      document.body.setAttribute(MASK_ATTR, MASK_VALUE);
+      window.location.reload();
+      return;
+    }
+
     if (isFullMaskRoute(pathname)) document.body.setAttribute(MASK_ATTR, MASK_VALUE);
     else document.body.removeAttribute(MASK_ATTR);
     maskInputs(document);
     patchHistory(w);
-    loadScripts(w);
+    loadScripts(w, clarityHere);
     if (ANALYTICS.ga4Id) w[`ga-disable-${ANALYTICS.ga4Id}`] = false;
 
     const location = cleanPageLocation(window.location.origin, window.location.pathname, window.location.search);
@@ -242,7 +264,9 @@ export default function AnalyticsConsent() {
     if (a.target && a.target !== "_self") return;
     try {
       const next = new URL(a.href, window.location.href);
-      if (next.origin !== window.location.origin || isAnalyticsRoute(next.pathname)) return;
+      if (next.origin !== window.location.origin) return;
+      const clarityOn = Boolean(w.__nzAnalyticsLoaded?.clarity);
+      if (isAnalyticsRoute(next.pathname) && (!clarityOn || isClarityRoute(next.pathname))) return;
       e.preventDefault();
       e.stopPropagation();
       window.location.assign(next.href);

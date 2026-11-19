@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 // The list lives in ./BlogList.tsx (shared by /blog and the category pages
 // since 4 Oct item 99); ./page.tsx only renders it. Both are read.
-const code = ["./page.tsx", "./BlogList.tsx"]
+const code = ["./(list)/page.tsx", "./BlogList.tsx"]
   .map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
   .join("\n")
   .replace(/\/\*[\s\S]*?\*\//g, "")

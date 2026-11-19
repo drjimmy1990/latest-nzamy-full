@@ -42,8 +42,6 @@ const txt = {
       "تصفية حسب الجهة والتاريخ والموضوع",
     ],
     featureWithCounts: (principles: string, decrees: string) => `${principles} مبدأ قضائي، و${decrees} قرار وتعميم`,
-    price: "٤٩ ر.س/شهر",
-    pricePeriod: "أو ٤٩٠ ر.س/سنة",
     cta: "تفاصيل الاشتراك",
     explore: "تصفح المكتبة",
   },
@@ -58,8 +56,6 @@ const txt = {
       "Filter by authority, date, and subject",
     ],
     featureWithCounts: (principles: string, decrees: string) => `${principles} judicial principles and ${decrees} decrees & circulars`,
-    price: "SAR 49/mo",
-    pricePeriod: "or SAR 490/year",
     cta: "Subscription details",
     explore: "Browse Library",
   },
@@ -207,16 +203,9 @@ export default function LegalLibraryBanner({
             </div>
           </div>
 
-          {/* Right: stats + price */}
+          {/* Right: stats. No price here (owner file 15 row 78: the old 49 / 490
+              price is cancelled); «تفاصيل الاشتراك» leads to the current one. */}
           <div className={`flex-shrink-0 w-full lg:w-[200px] rounded-2xl p-4 ${isDark ? "bg-white/[0.03] border border-white/[0.04]" : "bg-white border border-slate-100"}`}>
-            {/* Price */}
-            <div className="text-center mb-4">
-              <p className={`text-2xl font-bold ${isDark ? "text-white" : "text-slate-800"}`} style={{ fontFamily: "var(--font-brand)" }}>
-                {t.price}
-              </p>
-              <p className={`text-[11px] ${isDark ? "text-zinc-600" : "text-slate-400"}`}>{t.pricePeriod}</p>
-            </div>
-
             {/* Mini stats */}
             {miniStats.length > 0 && (
               <div className="space-y-2.5" aria-busy={library.status === "loading"}>

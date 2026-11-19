@@ -136,9 +136,10 @@ test("the AI run route binds the library gate, the lock read and the created-run
   assert.match(src, /import \{ libraryRunAccess, libraryRunCreated \} from "@\/lib\/ai\/libraryRunAccess";/);
   assert.match(src, /import \{ libraryReadQuotaHit \} from "@\/lib\/library\/readQuotaServer";/);
   assert.match(src, /import \{ recordLibraryActivity \} from "@\/lib\/library\/activityMeterServer";/);
-  assert.match(src, /gate: libraryAccess,\n\s*lockRow: \(\) => libraryReadQuotaHit\(userId, null, \{ memoLockCheck: true \}\),/);
+  // l9 (register 4 / 36): the gate carries the free-question opener for quick-answer's tier rule
+  assert.match(src, /gate: \(toolId\) => libraryAccess\(toolId, freeOpensTier\),\n\s*lockRow: \(\) => libraryReadQuotaHit\(userId, null, \{ memoLockCheck: true \}\),/);
   assert.match(src, /return libraryRunCreated\(\(\) => recordLibraryActivity\(userId, "ai"\)\);/);
-  assert.match(src, /libraryAccess: libraryAccessFor\(user\.id\),\n\s*onRunCreated: libraryRunCreatedFor\(user\.id\),/);
+  assert.match(src, /libraryAccess: libraryAccessFor\(user\.id, async \(toolId\) => \{[\s\S]*?\n {8}\}\),\n\s*onRunCreated: libraryRunCreatedFor\(user\.id\),/);
   // Task 2 review M1: the tally is no longer inside the gate (it ran for refused and duplicate runs).
   assert.equal((src.match(/recordLibraryActivity\(/g) ?? []).length, 1);
   assert.doesNotMatch(src, /أُوقفت القراءة/);

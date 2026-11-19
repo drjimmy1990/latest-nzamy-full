@@ -21,6 +21,7 @@ import {
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
+import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -82,6 +83,12 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
   // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
   "library_min_points_to_browse",
+  // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
+  // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
+  // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
+  // the footer, the Organization JSON-LD and /llms.txt.
+  "license_number",
+  "license_issuer",
 ] as const;
 
 /**
@@ -164,6 +171,9 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_feqh_free_pages: feqhFreePagesIssue,
   // Batch l9 read: pure, covered by src/lib/library/pointsGate.test.ts.
   library_min_points_to_browse: libraryMinPointsIssue,
+  // Batch l9 public: pure, covered by src/lib/publicSeo/platformRegistry.test.ts.
+  license_number: (value) => licenceSettingIssue("license_number", value),
+  license_issuer: (value) => licenceSettingIssue("license_issuer", value),
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

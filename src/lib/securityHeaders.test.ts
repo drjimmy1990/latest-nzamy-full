@@ -91,3 +91,13 @@ test("analytics hosts are in the policy only when their env id is set at build",
     else process.env.NEXT_PUBLIC_CLARITY_ID = saved.cl;
   }
 });
+
+test("batch l9 (file 15 row 43): the report-only policy reports to our endpoint; still not enforcing", async () => {
+  const g = (await rules())[0];
+  const csp = valueOf(g, "Content-Security-Policy-Report-Only") ?? "";
+  const directive = (name: string) => csp.split("; ").find((d) => d.startsWith(`${name} `)) ?? "";
+  assert.equal(directive("report-uri"), "report-uri /api/v1/security/csp-report");
+  assert.equal(directive("report-to"), "report-to csp-endpoint");
+  assert.equal(valueOf(g, "Reporting-Endpoints"), 'csp-endpoint="/api/v1/security/csp-report"');
+  assert.equal(valueOf(g, "Content-Security-Policy"), undefined, "owner register 24: report-only until the payment test + a clean week");
+});

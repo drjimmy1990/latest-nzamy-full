@@ -146,7 +146,7 @@ export default function AdminSectorProfilesPage() {
   const input = `w-full rounded-xl border px-3 py-2 text-sm outline-none ${isDark ? "bg-[#0d1117] border-white/10 text-white" : "bg-white border-gray-200 text-gray-900"}`;
 
   function announce(message: string) {
-    setToast(`${message} تم محليا فقط، والربط الحقيقي ينتظر Backend APIs وسجل تدقيق.`);
+    setToast(`${message} تم في هذا المتصفح فقط؛ الحفظ على الخادم وسجل التدقيق لم يُبنيا بعد.`);
   }
 
   function toggleGovernmentFeature(key: BooleanGovernmentFeatureKey) {
@@ -179,7 +179,7 @@ export default function AdminSectorProfilesPage() {
           </div>
           <h1 className={`text-2xl font-black mb-1 ${isDark ? "text-white" : "text-slate-800"}`}>بروفيلات القطاعات</h1>
           <p className={`max-w-3xl text-sm leading-relaxed ${muted}`}>
-            مركز أدمن نظامي للحكومة، الجمعيات/الأوقاف، والمنشآت الصغيرة. لا يوجد SSO أو Billing أو RBAC أو Entitlements API الآن.
+            مركز أدمن نظامي للحكومة، الجمعيات/الأوقاف، والمنشآت الصغيرة. لا يوجد الآن دخول موحّد ولا فوترة ولا صلاحيات أو مميزات محفوظة على الخادم.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -310,7 +310,7 @@ export default function AdminSectorProfilesPage() {
 
       <div className={`${card} overflow-hidden`}>
         <div className={`px-5 py-4 border-b ${isDark ? "border-white/[0.07]" : "border-slate-100"}`}>
-          <h2 className={`text-sm font-black ${isDark ? "text-white" : "text-slate-800"}`}>عقود الأدمن المطلوبة للباك إند لاحقاً</h2>
+          <h2 className={`text-sm font-black ${isDark ? "text-white" : "text-slate-800"}`}>ما تحتاجه لوحة الإدارة من الخادم لاحقاً</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {SECTOR_ADMIN_CONTROLS.map((control) => (
@@ -380,7 +380,7 @@ function GovernmentPanel({
       <div className={`rounded-xl border p-4 ${isDark ? "border-amber-500/20 bg-amber-500/5 text-amber-200" : "border-amber-100 bg-amber-50 text-amber-800"}`}>
         <div className="flex items-start gap-2 text-xs leading-relaxed">
           <LockKey size={15} weight="fill" className="mt-0.5 shrink-0" />
-          <span>القاضي لا يحصل على أدوات الضابط كصلاحية فعلية. المحقق والضابط مفصولان بوضوح، لكن الإلزام الحقيقي ينتظر RBAC API.</span>
+          <span>القاضي لا يحصل على أدوات الضابط كصلاحية فعلية. المحقق والضابط مفصولان بوضوح، لكن فرض هذه الصلاحيات على الخادم لم يُبنَ بعد.</span>
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

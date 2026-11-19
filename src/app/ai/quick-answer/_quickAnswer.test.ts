@@ -63,15 +63,18 @@ test("the lawyer sidebar has one quick-answer row and keeps its one assistant ro
   assert.equal(rows(FIRM_SIDEBAR).filter((r) => r.href === "/ai/quick-answer").length, 1);
 });
 
-test("٤١٢: 10 points, every registered role (٤١٧); no free question here any more (owner ٣٠, l7: the free questions moved to the library assistant)", () => {
+test("٤١٢: 10 points, every registered role (٤١٧); an individual's free questions are here (register 4 / 36, l9), shown only from the server's count", () => {
   const tool = AI_TOOLS["quick-answer"];
   assert.equal(tool.price({}, {} as never), 10);
   assert.deepEqual([...tool.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
   assert.ok(tool.retrieval, "the ungrounded rule stands on retrieval");
-  assert.equal(tool.freeQuestions, undefined, "quick-answer offers no free question");
+  assert.equal(tool.freeQuestions, true, "the individual's free questions (register 4 / 36)");
   const shown = page().replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
+  // no hard-coded promise: the only free wording is the server-counted line
   assert.doesNotMatch(shown, /مجاني|سؤال يومي|free daily/i);
-  assert.doesNotMatch(shown, /FREE_QUESTION_COPY|useFreeQuestion|\/api\/v1\/ai\/free-question/);
+  assert.match(shown, /fetch\(`\/api\/v1\/ai\/free-question\?tool=\$\{GENERAL_FREE_QUESTION_TOOL\}`/);
+  assert.match(shown, /freeQuestionToolFor\(user\.userType\) === GENERAL_FREE_QUESTION_TOOL/);
+  assert.match(shown, /\{free && <> · <span[^>]*>\{FREE_QUESTION_COPY\.left\(free\.left, free\.total\)\}<\/span><\/>\}/);
 });
 
 test("the page: examples, collapsible sources, the shared actions, a reset, and the stage kept (R4)", () => {

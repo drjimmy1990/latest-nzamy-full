@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { privateRobotsHeaderRules } from "./src/lib/publicSeo/privatePages.ts";
+import { CSP_REPORT_GROUP, CSP_REPORT_PATH } from "./src/lib/security/cspReport.ts";
 
 // ── Supabase Storage host, derived from the runtime env ─────────────────────
 // Blog cover images (and any other public Storage object) are served from
@@ -49,9 +50,12 @@ const dynamicSupabasePattern = supabaseStorageRemotePattern();
 //   on the Supabase host; the letter print frame is `srcdoc`, which the header
 //   does not touch).
 // - The Content-Security-Policy is REPORT-ONLY: the browser logs what it would
-//   block, in the console, and blocks nothing. No report-uri yet, so read the
-//   console on the main pages (home, laws, checkout, a dashboard, contact)
-//   before turning it into an enforcing policy.
+//   block, in the console, and blocks nothing. Since batch l9 (owner file 15
+//   row 43) it also REPORTS each violation to /api/v1/security/csp-report
+//   (report-uri, and report-to through the Reporting-Endpoints header), which
+//   writes one «[csp-report]» line per distinct violation to the server log.
+//   Owner register 24 / 71: enforce only after the payment test passes AND a
+//   week of clean reports — read them with `docker logs <app> | grep csp-report`.
 //   Owner 18 Nov, item 2.5 («تحويل CSP إلى enforce بعد المراجعة»): KEPT
 //   report-only on 19 Nov — enforcing needs proof that every directive covers
 //   what the live site loads, and none exists yet: no report-uri has ever
@@ -156,6 +160,10 @@ function contentSecurityPolicyReportOnly(): string {
     "base-uri": ["'self'"],
     "form-action": ["'self'", "https://api.moyasar.com"],
     "frame-ancestors": ["'none'"],
+    // Batch l9 (file 15 row 43): where the violations go. report-uri for the
+    // browsers that do not read report-to; same-origin, relative.
+    "report-uri": [CSP_REPORT_PATH],
+    "report-to": [CSP_REPORT_GROUP],
   };
   return Object.entries(directives).map(([name, values]) => `${name} ${values.join(" ")}`).join("; ");
 }
@@ -181,6 +189,8 @@ const SECURITY_HEADERS = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: PERMISSIONS_POLICY },
   { key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicyReportOnly() },
+  // The endpoint group the policy's report-to names (Reporting API v1).
+  { key: "Reporting-Endpoints", value: `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"` },
 ];
 
 const nextConfig: NextConfig = {

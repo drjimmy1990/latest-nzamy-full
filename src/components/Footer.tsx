@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Scales, ArrowLeft, ArrowRight } from "@phosphor-icons/react";
 import { useTheme } from "./ThemeProvider";
@@ -93,10 +94,38 @@ if (!BETA_MONOPOLY_MODE) {
   footerLinksEn["For Lawyers"].push({ label: "Professional Marketplace", href: "/pro/marketplace" });
 }
 
+/**
+ * Owner file 20 row 4 (batch l9): the licence line from the admin settings
+ * (GET /api/v1/public/platform-licence). Nothing until it answers, and
+ * nothing while license_number is empty — the line is hidden whole.
+ */
+function usePlatformLicenceLine(): { lineAr: string | null; lineEn: string | null } {
+  const [line, setLine] = useState<{ lineAr: string | null; lineEn: string | null }>({ lineAr: null, lineEn: null });
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/v1/public/platform-licence")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { lineAr?: unknown; lineEn?: unknown } | null) => {
+        if (!alive || !body) return;
+        setLine({
+          lineAr: typeof body.lineAr === "string" && body.lineAr ? body.lineAr : null,
+          lineEn: typeof body.lineEn === "string" && body.lineEn ? body.lineEn : null,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return line;
+}
+
 export default function Footer() {
   const { lang } = useTheme();
   const { isLoggedIn } = useUser();
   const isAr = lang === "ar";
+  const licence = usePlatformLicenceLine();
+  const licenceLine = isAr ? licence.lineAr : licence.lineEn;
   const footerLinks = isAr ? footerLinksAr : footerLinksEn;
 
   return (
@@ -176,6 +205,7 @@ export default function Footer() {
           {isAr
             ? `${LEGAL_IDENTITY_AR} ${NO_DIRECT_CONSULTATION_AR}`
             : `${LEGAL_IDENTITY_EN} ${NO_DIRECT_CONSULTATION_EN}`}
+          {licenceLine ? ` ${licenceLine}` : null}
         </p>
       </div>
     </footer>

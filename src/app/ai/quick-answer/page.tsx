@@ -15,6 +15,7 @@ import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { FREE_QUESTION_COPY, freeQuestionToolFor, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
@@ -42,9 +43,12 @@ import {
  * S3-06: examples, collapsible sources, the shared result actions, a reset and
  * the next tools. The price is the registry's (owner ٤١٢: 10 points).
  *
- * Owner ٣٠ (18 Nov 2026, batch l7 decision 6): the free questions are now a
- * once-per-account allowance on the LIBRARY ASSISTANT; the daily free quick
- * question (owner ٤١٢) is gone, so every question here costs the registry price.
+ * Owner ٣٠ (18 Nov 2026, batch l7 decision 6): the free questions are a
+ * once-per-account allowance; the daily free quick question (owner ٤١٢) is
+ * gone. Register 4 / 36 (batch l9): an INDIVIDUAL's 5 are spent HERE, on the
+ * general assistant, before any points; the line «أسئلتك المجانية المتبقية»
+ * shows only while the server says some are left. Everyone else pays the
+ * registry price here (a lawyer's 10 are on the library assistant).
  *
  * The page reads tool-status first (src/hooks/useToolUsable.ts): the tool's mode is
  * "off" by default, and a run would answer 423, so no price and no form until the
@@ -90,6 +94,23 @@ function QuickAnswerTool() {
     }
   }, []);
   const asking = run.busy;
+  // Register 4 / 36 (l9): an individual's free questions left on this tool, as
+  // the server counts them; null (nothing shown) until it answers or when none.
+  const [free, setFree] = useState<{ left: number; total: number } | null>(null);
+  const freeHere = freeQuestionToolFor(user.userType) === GENERAL_FREE_QUESTION_TOOL;
+  useEffect(() => {
+    if (!freeHere || asking) return;
+    let live = true;
+    fetch(`/api/v1/ai/free-question?tool=${GENERAL_FREE_QUESTION_TOOL}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: unknown) => {
+        const s = j as { available?: unknown; left?: unknown; total?: unknown } | null;
+        if (!live) return;
+        setFree(s && s.available === true && typeof s.left === "number" && typeof s.total === "number" ? { left: s.left, total: s.total } : null);
+      })
+      .catch(() => { if (live) setFree(null); });
+    return () => { live = false; };
+  }, [freeHere, asking, run.phase]);
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
   const cites = asCitations(run.citations);
   const ungrounded = isUngroundedAnswer(run.output);
@@ -181,6 +202,7 @@ function QuickAnswerTool() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className={`text-[11px] ${muted}`}>
             {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · {`${aiToolPriceText("quick-answer", "ar")} للسؤال`}
+            {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
           </span>
           <motion.button
             whileHover={{ scale: 1.03 }}

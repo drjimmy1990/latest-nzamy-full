@@ -66,9 +66,9 @@ export const faqData: readonly FAQItem[] = [
     questionAr: "ما المدن المتاحة حالياً على نظامي؟",
     questionEn: "Which cities are currently available on Nezamy?",
     answerAr:
-      "تغطي المنصة حالياً الرياض وجدة والدمام والمدينة المنورة ومكة المكرمة. ونعمل على توسيع التغطية لتشمل جميع مناطق المملكة خلال ٢٠٢٥.",
+      "تغطي المنصة حالياً الرياض وجدة والدمام والمدينة المنورة ومكة المكرمة. ونعمل على توسيع التغطية لتشمل جميع مناطق المملكة.",
     answerEn:
-      "The platform currently covers Riyadh, Jeddah, Dammam, Medina, and Makkah. We are working on expanding coverage to include all regions of the Kingdom during 2025.",
+      "The platform currently covers Riyadh, Jeddah, Dammam, Medina, and Makkah. We are working on expanding coverage to include all regions of the Kingdom.",
   },
   {
     id: 5,
@@ -205,6 +205,33 @@ export const faqData: readonly FAQItem[] = [
       `${LEGAL_IDENTITY_EN} ${NO_DIRECT_CONSULTATION_EN} We comply with the Saudi Personal Data Protection Law (PDPL). No electronic payments are received through the platform at this time.`,
   },
 ];
+
+/** The question «هل المنصة موثوقة ومرخّصة؟» (its answer keeps «منصة مرخّصة»). */
+export const LICENCE_FAQ_ID = 3;
+
+/**
+ * Owner file 20 row 4 (batch l9): the licence answer carries the licence line
+ * from the admin settings (src/lib/publicSeo/platformRegistry.ts
+ * licenceLineAr / licenceLineEn) — and nothing while it is empty: the whole
+ * line is hidden, never a «[[…]]» placeholder. The page and its FAQPage
+ * JSON-LD both print what this returns, so the two never differ.
+ */
+export function faqWithLicence(
+  items: readonly FAQItem[],
+  lineAr: string | null,
+  lineEn: string | null,
+): readonly FAQItem[] {
+  if (!lineAr && !lineEn) return items;
+  return items.map((item) =>
+    item.id !== LICENCE_FAQ_ID
+      ? item
+      : {
+          ...item,
+          answerAr: lineAr ? `${item.answerAr} ${lineAr}` : item.answerAr,
+          answerEn: lineEn ? `${item.answerEn} ${lineEn}` : item.answerEn,
+        },
+  );
+}
 
 export const categories: { id: string; labelAr: string; labelEn: string }[] = [
   { id: "all", labelAr: "الجميع", labelEn: "All" },

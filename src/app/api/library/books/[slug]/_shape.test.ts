@@ -92,7 +92,7 @@ test("TOC section ordering: a lookup failure (no map) keeps the old order_index 
 });
 
 test("route: TOC via selectAllPages ordered order_index,id; section loads scoped to the book; no empty 200", () => {
-  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(src, /selectAllPages/);
   assert.match(src, /from\('feqh_chapters'\)[\s\S]*?\.order\('order_index', \{ ascending: true \}\)\s*\.order\('id', \{ ascending: true \}\)\s*\.range\(from, to\)/);
   assert.match(src, /toc\.error/);
@@ -102,7 +102,7 @@ test("route: TOC via selectAllPages ordered order_index,id; section loads scoped
 });
 
 test("route: TOC section order comes from a per-book first-block lookup, passed into shapeToc, never a 500 on its own failure", () => {
-  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(src, /firstBlockOrderBySection/);
   assert.match(src, /shapeToc\(chapters, firstBlockOrder\)/);
   // Best-effort: a failed lookup only warns and leaves firstBlockOrder
@@ -144,7 +144,7 @@ test("note ٠٢: ?at_page= (with an optional ?at_vol=) is a page jump — intege
 });
 
 test("route: at_page resolves on public columns to a from_order cursor; no page is a 404, a failure a 500", () => {
-  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const block = src.slice(src.indexOf("if (plan.selection.mode === 'at_page')"), src.indexOf("const isCursor"));
   assert.ok(block.length > 0);
   // The request client, never the service role; public columns only.
@@ -159,7 +159,7 @@ test("route: at_page resolves on public columns to a from_order cursor; no page 
 });
 
 test("route: 400 on a bad request, head count past the end, cursors via gte/lte", () => {
-  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(src, /planBlocksRequest\(searchParams\)[\s\S]*?status: 400/);
   // PGRST103 counts the same scope instead of reporting total 0.
   assert.match(src, /PGRST103[\s\S]*?countBlocks\(s\.scope\)[\s\S]*?totalBlocks = head\.count/);
@@ -170,7 +170,7 @@ test("route: 400 on a bad request, head count past the end, cursors via gte/lte"
 });
 
 test("route: the volume series (T28-24) is read only with the TOC, best-effort, and returned as `series`", () => {
-  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   // Section and cursor loads (toc=0) never re-read feqh_books.
   assert.match(src, /const seriesPromise: Promise<BookSeriesInfo \| null> = includeToc\s*\?/);
   // Owner ٢٦٢: the catalogue columns, plus series_id / volume_number once 20261026_51 ran.
