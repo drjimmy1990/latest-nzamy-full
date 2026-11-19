@@ -7793,3 +7793,49 @@ select 'Free questions: the library-open rule only for the library assistant; th
                 and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
                 false) as ok;
 -- <<< verify:l9_public
+-- >>> verify:l10_regref
+-- Batch l10-relations (owner file 19 Nov §1.9): run 20261130_30 BEFORE the next library load.
+select 'Merged regulations: articles.regulation_ref (server-only like the table) and chapters.regulation_ref (run 20261130_30)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute
+         where attrelid in ('library.articles'::regclass, 'library.chapters'::regclass)
+           and attname = 'regulation_ref' and not attisdropped
+           and pg_catalog.format_type(atttypid, atttypmod) = 'text' and not attnotnull) = 2
+       and not has_table_privilege('anon', 'library.articles', 'SELECT')
+       and not has_table_privilege('authenticated', 'library.articles', 'SELECT')
+       and case when exists (select 1 from pg_catalog.pg_attribute
+                              where attrelid = 'library.articles'::regclass and attname = 'regulation_ref' and not attisdropped)
+                then not has_column_privilege('anon', 'library.articles', 'regulation_ref', 'SELECT')
+                     and not has_column_privilege('authenticated', 'library.articles', 'regulation_ref', 'SELECT')
+                     and has_column_privilege('service_role', 'library.articles', 'regulation_ref', 'UPDATE')
+                     and has_column_privilege('service_role', 'library.chapters', 'regulation_ref', 'UPDATE')
+                else false end
+       as ok;
+-- <<< verify:l10_regref
+-- >>> verify:l10_owner_edges
+-- Batch l10-relations (owner file 19 Nov §2/§3): run 20261130_40 AFTER 20261130_30.
+select 'Owner edges: library_graph.owner_edges + owner_edges_deleted server-only (RLS forced, no anon/authenticated privilege) (run 20261130_40)' as check,
+       case when to_regclass('library_graph.owner_edges') is null or to_regclass('library_graph.owner_edges_deleted') is null then false else
+       (select pg_catalog.bool_and(c.relrowsecurity and c.relforcerowsecurity) from pg_catalog.pg_class c
+         where c.oid in (to_regclass('library_graph.owner_edges'), to_regclass('library_graph.owner_edges_deleted')))
+       and not has_table_privilege('anon', 'library_graph.owner_edges', 'SELECT')
+       and not has_table_privilege('authenticated', 'library_graph.owner_edges', 'SELECT')
+       and not has_table_privilege('anon', 'library_graph.owner_edges_deleted', 'SELECT')
+       and not has_table_privilege('authenticated', 'library_graph.owner_edges_deleted', 'SELECT')
+       and has_table_privilege('service_role', 'library_graph.owner_edges', 'INSERT')
+       end as ok;
+select 'Owner edges: resolver + importer functions are security definer, service_role only (run 20261130_40)' as check,
+       case when to_regprocedure('public.graph_rag_resolve_owner_edges()') is null
+              or to_regprocedure('public.graph_rag_owner_edges_load(jsonb, text)') is null
+              or to_regprocedure('public.graph_rag_owner_edges_retire(text)') is null
+              or to_regprocedure('public.graph_rag_owner_edges_mark_deleted(jsonb)') is null then false else
+       (select pg_catalog.bool_and(p.prosecdef and p.proconfig @> array['search_path=""']
+                                   and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                   and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                   and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+          from pg_catalog.pg_proc p
+         where p.oid in (to_regprocedure('public.graph_rag_resolve_owner_edges()'),
+                         to_regprocedure('public.graph_rag_owner_edges_load(jsonb, text)'),
+                         to_regprocedure('public.graph_rag_owner_edges_retire(text)'),
+                         to_regprocedure('public.graph_rag_owner_edges_mark_deleted(jsonb)')))
+       end as ok;
+-- <<< verify:l10_owner_edges

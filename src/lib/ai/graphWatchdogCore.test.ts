@@ -82,6 +82,7 @@ test("runGraphSyncPass builds nodes & edges across all corpora, relinks vault, d
   const embeddedNodeKeys = new Set<string>();
   let embedApiCalls = 0;
   const finishPayloads: Array<Record<string, unknown>> = [];
+  const order: string[] = [];
 
   const mockBackend: GraphWatchdogBackend = {
     async getStatus() {
@@ -166,9 +167,15 @@ test("runGraphSyncPass builds nodes & edges across all corpora, relinks vault, d
       return rows.length;
     },
     async pruneStale() {
+      order.push("prune");
       return { deleted_nodes: 0, deleted_edges: 0 };
     },
+    async resolveOwnerEdges() {
+      order.push("owner_edges");
+      return { owner_edges: 3, by_status: { resolved: 2, held_flagged: 1 }, graph_edges: 2, upserted: 2, removed: 0, status_changed: 3 };
+    },
     async relinkVault() {
+      order.push("relink");
       // Simulate 1 cached node relinked directly from embedding_vault at $0!
       const firstEmbeddable = [...storedNodes.values()].find((n) => n.is_embeddable);
       if (firstEmbeddable) embeddedNodeKeys.add(firstEmbeddable.node_key);
@@ -228,6 +235,31 @@ test("runGraphSyncPass builds nodes & edges across all corpora, relinks vault, d
   assert.equal(summary.vaultRelinked, 1);
   assert.ok(embedApiCalls > 0);
   assert.equal(finishPayloads[0]?.status, "succeeded");
+
+  // 20261130_40: the owner's links are re-resolved after the prune (a re-keyed
+  // node's edge comes back), and the counts land in the run's details.
+  assert.deepEqual(order, ["prune", "relink", "owner_edges"]);
+  assert.deepEqual((finishPayloads[0]?.details as Record<string, unknown>)?.owner_edges, {
+    owner_edges: 3, by_status: { resolved: 2, held_flagged: 1 }, graph_edges: 2, upserted: 2, removed: 0, status_changed: 3,
+  });
+
+  // A failing resolver never fails the graph pass: logged, retried next pass.
+  mockBackend.resolveOwnerEdges = async () => {
+    throw new Error("statement timeout");
+  };
+  const again = await runGraphSyncPass(mockBackend, {
+    triggerSource: "unit_test",
+    allowSmallCorpus: true,
+    env: { GEMINI_EMBEDDING_API_KEY: "fake-key" },
+    embedFn: async (texts) => texts.map(() => [1, 0, 0, 0]),
+  });
+  assert.equal(again.status, "succeeded");
+  assert.deepEqual((finishPayloads.at(-1)?.details as Record<string, unknown>)?.owner_edges, { error: "statement timeout" });
+
+  // Before the migration the backend answers null: nothing recorded.
+  mockBackend.resolveOwnerEdges = async () => null;
+  await runGraphSyncPass(mockBackend, { triggerSource: "unit_test", allowSmallCorpus: true, env: {}, embedFn: async (t) => t.map(() => [1, 0, 0, 0]) });
+  assert.equal("owner_edges" in ((finishPayloads.at(-1)?.details as Record<string, unknown>) ?? {}), false);
 });
 
 // ─── Free-tier quota resilience ───────────────────────────────────────────────

@@ -480,6 +480,16 @@ function createSupabaseWatchdogBackend() {
       }
       return { changed_laws: Number(data?.changed_laws ?? 0), reset: Number(data?.reset ?? 0) };
     },
+
+    async resolveOwnerEdges() {
+      const { data, error } = await admin.rpc("graph_rag_resolve_owner_edges");
+      if (error) {
+        // Before 20261130_40 the function does not exist: no owner edges yet.
+        if (error.code === "PGRST202" || error.code === "42883") return null;
+        throw new Error(`graph_rag_resolve_owner_edges: ${error.message}`);
+      }
+      return data ?? null;
+    },
   };
 }
 
