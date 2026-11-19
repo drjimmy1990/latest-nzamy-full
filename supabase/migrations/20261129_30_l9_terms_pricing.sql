@@ -14,8 +14,8 @@
 --      of the code (src/lib/points/pointsSettings.ts DEFAULT_MIN_TOPUP_SAR),
 --      becomes 50. A missing row is inserted with the full map.
 --      The code sells a 50-point pack (topup-50) to every account type from
---      this batch on; until this file runs, checkout refuses that pack for a
---      professional («الحد الأدنى للشحن لحسابك ٥٠٠ …») — see RUN ORDER.
+--      this batch on; until this file runs, checkout refuses that pack for every
+--      type (the stored minimum is still 500 / 100) — see RUN ORDER.
 --
 --   2. founder_topup_discount_bps / founder_topup_discount_expires — register
 --      14 items 29 / 32 / 55: the founder's 15 % now applies to point top-ups
@@ -36,10 +36,10 @@
 --   - This file first: the old code sells no pack under 100 / 500, so a
 --     50 minimum changes nothing it sells; the old founder code reads the
 --     same values.
---   - The deploy first: the new 50-point pack is listed for everyone, and a
---     professional who tries it is refused honestly with the old minimum
---     (500) until this file runs; an individual can buy it at once (100 →
---     refused too: 50 < 100). Nothing is charged on a refusal.
+--   - The deploy first: the new 50-point pack is listed for everyone, and
+--     anyone who tries it is refused honestly with the old minimum (500 for
+--     a professional, 100 for an individual) until this file runs. Nothing
+--     is charged on a refusal.
 --   Idempotent: the UPDATE writes the same map on a re-run; the description
 --   updates are fixed texts guarded by «is distinct from».
 --
