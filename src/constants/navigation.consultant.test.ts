@@ -172,7 +172,7 @@ test("each court tab of the case page shows the Art. 18 note to a consultant", (
 // the «جدول الجلسات» quick action are hearings tools on the consultant's own
 // dashboard; the case list links to the hearings diary and the wargaming tool.
 
-const read = (...parts: string[]) => readFileSync(path.join(process.cwd(), "src", "app", ...parts), "utf8");
+const read = (...parts: string[]) => readFileSync(path.join(process.cwd(), "src", "app", ...parts), "utf8").replace(/\r\n/g, "\n");
 
 test("the lawyer dashboard hides the hearings and deadlines cards and the urgent banner from a consultant", () => {
   const page = read("dashboard", "lawyer", "page.tsx");
