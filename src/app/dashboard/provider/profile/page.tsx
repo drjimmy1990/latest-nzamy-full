@@ -10,6 +10,8 @@ import { useState, useEffect } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 
 import { useUser } from "@/hooks/useUser";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,7 +62,7 @@ const tabs: { id: Tab; labelAr: string; icon: React.ElementType }[] = [
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
-export default function ProviderProfilePage() {
+function ProviderProfilePageDemo() {
   const { isDark } = useTheme();
   const user = useUser();
   const [activeTab, setActiveTab] = useState<Tab>("basic");
@@ -396,4 +398,21 @@ export default function ProviderProfilePage() {
         </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (الاسم والنبذة والتخصصات والشهادات والمواعيد والأسعار (ملف شخص مُختلَق)) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ProviderProfilePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الملف المهني لمزوّد الخدمة"
+        description="هذه الصفحة غير متاحة حالياً. الاسم والنبذة والتخصصات والشهادات والمواعيد والأسعار (ملف شخص مُختلَق) التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ProviderProfilePageDemo />;
 }

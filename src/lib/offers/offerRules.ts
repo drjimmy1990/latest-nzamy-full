@@ -152,16 +152,34 @@ export interface OfferViewer {
   audience: OfferAudienceKey | null;
   /** true / false when read; null when the read failed (a verification-bound offer then stays hidden). */
   verified: boolean | null;
+  /**
+   * A lawyer whose licence is still being checked (lawyer_profiles
+   * .verification_status 'pending'). Optional: only the founder offer reads it.
+   */
+  pendingVerification?: boolean;
   /** plan_refs this user has a PAID order of. */
   boughtPlanRefs: ReadonlySet<string>;
   /** An active or pending-verification founder seat (the founder offer's own "bought"). */
   founderSeat: boolean;
 }
 
-/** Is this offer meant for this viewer? (status / window / seats are offerAvailability's.) */
+/**
+ * Is this offer meant for this viewer? (status / window / seats are offerAvailability's.)
+ *
+ * File 15 row 24 / file 12 item 2 (batch l9): «أي محامٍ يسجّل يظهر له بوب أب
+ * عرض المؤسس». Since l7 (decision 1) a lawyer whose licence is still PENDING
+ * may pay for the founder seat (it waits as pending_verification), so the
+ * founder offer's "verified" audience also reaches a pending advocate lawyer.
+ * A rejected / unverified lawyer and the consultant stay outside it; every
+ * other offer keeps the plain verified rule.
+ */
+export function founderAudienceAdmits(row: Pick<OfferRow, "campaign_id">, viewer: OfferViewer): boolean {
+  return row.campaign_id === FOUNDER_CAMPAIGN_ID && viewer.audience === "lawyer" && viewer.pendingVerification === true;
+}
+
 export function offerMatchesViewer(row: Pick<OfferRow, "audience_account_types" | "audience_verification" | "exclude_buyers" | "plan_ref" | "campaign_id">, viewer: OfferViewer): boolean {
   if (!viewer.audience || !row.audience_account_types.includes(viewer.audience)) return false;
-  if (row.audience_verification === "verified" && viewer.verified !== true) return false;
+  if (row.audience_verification === "verified" && viewer.verified !== true && !founderAudienceAdmits(row, viewer)) return false;
   if (row.audience_verification === "unverified" && viewer.verified !== false) return false;
   if (row.exclude_buyers) {
     if (row.plan_ref && viewer.boughtPlanRefs.has(row.plan_ref)) return false;
@@ -452,7 +470,10 @@ export type OfferInputResult =
 const BAD = (error: string): OfferInputResult => ({ ok: false, error });
 
 export const FOUNDER_LOCKED_AR =
-  "عرض المؤسس مرتبط بالحملة: جمهوره (المحامي المترافع الموثَّق) ومقاعده وبنده ثابتة، ويُعدَّل نصه وصورته وأولويته وحالته فقط.";
+  "عرض المؤسس مرتبط بالحملة: جمهوره (المحامي المترافع الموثَّق أو الذي ينتظر توثيق رخصته) ومقاعده وبنده ثابتة، ويُعدَّل نصه وصورته وأولويته وحالته فقط.";
+
+/** The admin list's audience line for the founder offer (its stored value is 'verified'). */
+export const FOUNDER_AUDIENCE_NOTE_AR = "الموثَّقون ومن ينتظر توثيق رخصته";
 
 const LOCKED_ON_CAMPAIGN = ["audience", "verification", "excludeBuyers", "planRef", "seatsTotal", "seatsUsed"] as const;
 

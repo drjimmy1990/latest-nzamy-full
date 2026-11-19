@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   ChatCircleDots, CaretLeft, Sparkle, ArrowCounterClockwise,
@@ -79,6 +79,16 @@ function QuickAnswerTool() {
     const q = draftText(d, "question");
     if (q) setQuestion((cur) => cur || q);
   });
+  // File 15 row 30 (l9): the client dashboard's «لديك سؤال قانوني؟» box opens
+  // this page with ?q=; the question is only put in the box, never sent.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("q")?.trim();
+      if (q) setQuestion((cur) => cur || q.slice(0, QUICK_ANSWER_QUESTION_MAX));
+    } catch {
+      // no URL to read: the box stays empty
+    }
+  }, []);
   const asking = run.busy;
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
   const cites = asCitations(run.citations);

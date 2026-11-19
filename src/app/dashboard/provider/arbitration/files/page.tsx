@@ -8,6 +8,8 @@ import {
   FunnelSimple, Upload,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 type FileType = "pdf" | "docx" | "xlsx" | "img";
 type Category = "memo" | "contract" | "evidence" | "award" | "correspondence";
@@ -72,7 +74,7 @@ const FILE_ICON: Record<FileType, React.ElementType> = {
   img:  FileText,
 };
 
-export default function ArbitrationFilesPage() {
+function ArbitrationFilesPageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
@@ -197,4 +199,21 @@ export default function ArbitrationFilesPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (ملفات قضايا التحكيم ومستنداتها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ArbitrationFilesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="ملفات التحكيم"
+        description="هذه الصفحة غير متاحة حالياً. ملفات قضايا التحكيم ومستنداتها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ArbitrationFilesPageDemo />;
 }

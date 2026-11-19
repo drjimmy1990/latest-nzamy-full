@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { Globe, Users, Eye, ShieldCheck, Bell, ArrowUpRight } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // Client portal — allows clients to view their cases, download docs, and communicate
 const PORTAL_FEATURES = [
@@ -21,7 +23,7 @@ const ACTIVE_CLIENTS = [
   { id: "4", name: "سارة الدوسري",            lastLogin: "منذ ٤ أيام",    cases: 1, docs: 4 },
 ];
 
-export default function FirmClientPortalPage() {
+function FirmClientPortalPageDemo() {
   const { isDark } = useTheme();
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -93,4 +95,21 @@ export default function FirmClientPortalPage() {
       </motion.div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (الموكلون ومرات دخولهم وقضاياهم ومستنداتهم) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function FirmClientPortalPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="بوابة العميل"
+        description="هذه الصفحة غير متاحة حالياً. الموكلون ومرات دخولهم وقضاياهم ومستنداتهم التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmClientPortalPageDemo />;
 }

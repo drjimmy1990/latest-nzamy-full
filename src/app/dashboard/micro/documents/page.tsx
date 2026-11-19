@@ -10,6 +10,8 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { DocumentsTrashPanel } from "@/components/documents/DocumentsTrashPanel";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Types & Mock Data ──────────────────────────────────────────────────────
 
@@ -58,7 +60,7 @@ const fadeUp = {
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.06, duration: 0.3 } }),
 };
 
-export default function MicroDocumentsPage() {
+function MicroDocumentsPageDemo() {
   const { isDark } = useTheme();
   const [category, setCategory] = useState<DocCategory>("all");
   const [search, setSearch] = useState("");
@@ -327,4 +329,21 @@ export default function MicroDocumentsPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (المستندات وتواريخ انتهائها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function MicroDocumentsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="مستنداتي"
+        description="هذه الصفحة غير متاحة حالياً. المستندات وتواريخ انتهائها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/micro"
+      />
+    );
+  }
+  return <MicroDocumentsPageDemo />;
 }

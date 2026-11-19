@@ -8,6 +8,8 @@ import {
   Clock, Storefront, Eye, Download, ArrowLeft,
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const CONTRACTS = [
   { id: 'C-2026-001', title: 'عقد توريد مستلزمات طبية',          vendor: 'شركة المستلزمات الصحية',   value: 850000,  status: 'ساري',       date: '٢٠٢٦/٠١/١٥', end: '٢٠٢٧/٠١/١٤' },
@@ -23,7 +25,7 @@ const STATUS_CONFIG = {
   'مناقصة': { text: 'text-sky-500',     bg: 'bg-sky-500/10',     border: 'border-sky-500/20',     icon: Storefront },
 };
 
-export default function GovernmentContractsPage() {
+function GovernmentContractsPageDemo() {
   const { isDark } = useTheme();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'الكل' | 'ساري' | 'منتهٍ' | 'مناقصة'>('الكل');
@@ -133,4 +135,21 @@ export default function GovernmentContractsPage() {
 
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (عقود الجهة واتفاقياتها وقيمها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function GovernmentContractsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="العقود والاتفاقيات"
+        description="هذه الصفحة غير متاحة حالياً. عقود الجهة واتفاقياتها وقيمها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/government"
+      />
+    );
+  }
+  return <GovernmentContractsPageDemo />;
 }

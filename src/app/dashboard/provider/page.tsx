@@ -28,12 +28,14 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import ArbitratorDashboard from "./components/ArbitratorDashboard";
 import { OnboardingBanner } from "@/components/OnboardingBanner";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import {
   MY_OFFERS, MARKET_REQUESTS, REVIEWS, UPCOMING,
   OFFER_STATUS_CONFIG, URGENCY_CONFIG, fadeUp,
 } from "./_data";
 
-export default function ProviderDashboardPage() {
+function ProviderDashboardPageDemo() {
   const { isDark, isRTL } = useTheme();
   const user = useUser();
   const [mounted, setMounted] = useState(false);
@@ -509,4 +511,20 @@ export default function ProviderDashboardPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (العروض الجارية وطلبات السوق والتقييمات والمواعيد القادمة وإحصاءات الأعمال) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ProviderDashboardPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="لوحة مزوّد الخدمة"
+        description="هذه الصفحة غير متاحة حالياً. العروض الجارية وطلبات السوق والتقييمات والمواعيد القادمة وإحصاءات الأعمال التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+      />
+    );
+  }
+  return <ProviderDashboardPageDemo />;
 }

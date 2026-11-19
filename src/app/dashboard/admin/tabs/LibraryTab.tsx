@@ -2,6 +2,7 @@
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { BookOpen, Plus, Check, X, MagnifyingGlass, Funnel, Eye, PencilSimple, Trash, ArrowUpRight, Lock, LockOpen } from "@phosphor-icons/react";
+import { adminToast } from "@/components/admin/adminToast";
 
 // Must match the CATEGORY_MAP keys in src/app/api/v1/admin/library/route.ts.
 const CATS = [
@@ -145,11 +146,11 @@ export default function LibraryTab() {
         fetchData();
       } else {
         const err = await res.json();
-        alert(`خطأ: ${err.error || "فشل في الحذف"}`);
+        adminToast(`خطأ: ${err.error || "فشل في الحذف"}`);
       }
     } catch (err) {
       console.error("Delete error:", err);
-      alert("حدث خطأ أثناء محاولة الحذف");
+      adminToast("حدث خطأ أثناء محاولة الحذف");
     }
   };
 
@@ -168,11 +169,11 @@ export default function LibraryTab() {
         setFreeItems(data.freeItems || freeItems);
       } else {
         const err = await res.json();
-        alert(`خطأ: ${err.error || "فشل في تحديث حالة الوصول"}`);
+        adminToast(`خطأ: ${err.error || "فشل في تحديث حالة الوصول"}`);
       }
     } catch (err) {
       console.error("Toggle free error:", err);
-      alert("حدث خطأ أثناء تحديث حالة الوصول");
+      adminToast("حدث خطأ أثناء تحديث حالة الوصول");
     } finally {
       setTogglingId(null);
     }

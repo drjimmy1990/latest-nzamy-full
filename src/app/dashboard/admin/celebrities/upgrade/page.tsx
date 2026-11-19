@@ -7,6 +7,8 @@ import {
   CheckCircle, ArrowRight, QrCode, Gift, Warning,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Mock Users (بحث عن مستخدم قبل الترقية) ─────────────────────────────────
 const MOCK_USERS = [
@@ -18,7 +20,7 @@ const MOCK_USERS = [
 
 type Step = "search" | "configure" | "confirm" | "done";
 
-export default function CelebrityUpgradePage() {
+function CelebrityUpgradePageDemo() {
   const [step, setStep] = useState<Step>("search");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<typeof MOCK_USERS[0] | null>(null);
@@ -265,4 +267,21 @@ export default function CelebrityUpgradePage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (نموذج ترقية لا يحفظ شيئًا) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function CelebrityUpgradePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="ترقية مستخدم لسفير"
+        description="هذه الصفحة غير متاحة حالياً. نموذج الترقية الذي كان يظهر هنا لم يكن يحفظ شيئًا، ولا يوجد برنامج سفراء فعلي بعد. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/admin/celebrities"
+      />
+    );
+  }
+  return <CelebrityUpgradePageDemo />;
 }

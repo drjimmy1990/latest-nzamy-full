@@ -112,10 +112,14 @@ export default function AdminSubscriptionsPage() {
       {/* Top KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "إجمالي MRR",  value: `${totalMRR.toLocaleString()} ر.س`, icon: CurrencyCircleDollar, color: "text-emerald-500", bg: "bg-emerald-500/8", trend: "+12% هذا الشهر" },
-          { label: "مشتركون",     value: totalUsers,                        icon: Users,               color: "text-royal",       bg: "bg-royal/8",       trend: "+٥ هذا الأسبوع" },
-          { label: "متوسط ARPU", value: `${Math.round(totalMRR / (totalUsers - 42))} ر.س`, icon: ChartLine, color: "text-violet-500", bg: "bg-violet-500/8", trend: null },
-          { label: "معدل الإلغاء", value: "٦.٢%",                          icon: TrendDown,           color: "text-red-500",     bg: "bg-red-500/8",     trend: "↓ تحسن" },
+          // File 15 row 27 (l9): the monthly and weekly growth trends, the churn
+          // rate and its «improving» arrow were literals, and ARPU divided by the
+          // user count minus a constant 42.
+          // No trend or churn is measured, so none is shown; ARPU is MRR ÷ users.
+          { label: "إجمالي MRR",  value: `${totalMRR.toLocaleString()} ر.س`, icon: CurrencyCircleDollar, color: "text-emerald-500", bg: "bg-emerald-500/8", trend: null },
+          { label: "مشتركون",     value: totalUsers,                        icon: Users,               color: "text-royal",       bg: "bg-royal/8",       trend: null },
+          { label: "متوسط ARPU", value: totalUsers > 0 ? `${Math.round(totalMRR / totalUsers).toLocaleString()} ر.س` : "—", icon: ChartLine, color: "text-violet-500", bg: "bg-violet-500/8", trend: null },
+          { label: "معدل الإلغاء", value: "غير مقيس",                      icon: TrendDown,           color: "text-red-500",     bg: "bg-red-500/8",     trend: null },
         ].map((k, i) => {
           const Icon = k.icon;
           return (

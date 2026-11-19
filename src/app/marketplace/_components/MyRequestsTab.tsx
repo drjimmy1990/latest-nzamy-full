@@ -68,11 +68,14 @@ export function MyRequestsTab({
         <div className={`${card} px-5 py-4 flex items-center justify-between`}>
           <div>
             <p className={`text-[11px] uppercase tracking-wider font-bold mb-1 ${muted}`}>إجمالي الأرباح (هذا الشهر)</p>
-            <p className={`text-2xl font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>١٬٢٥٠ ر.س</p>
+            {/* l9 row 27: «١٬٢٥٠ ر.س» and «4.9 ★» were literals for every provider. */}
+            <p className={`text-2xl font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>—</p>
+            <p className={`text-[11px] ${muted}`}>لا تُحسب الأرباح هنا بعد</p>
           </div>
           <div className="text-left">
             <p className={`text-[11px] uppercase tracking-wider font-bold mb-1 ${muted}`}>تقييمك</p>
-            <p className={`text-2xl font-black text-amber-400`}>4.9 ★</p>
+            <p className={`text-2xl font-black text-amber-400`}>—</p>
+            <p className={`text-[11px] ${muted}`}>لا تقييمات محسوبة بعد</p>
           </div>
           <Link href="/dashboard/provider/profile"
             className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold transition ${isDark ? "border-[#2d3748] text-gray-300 hover:bg-[#161b22]" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>

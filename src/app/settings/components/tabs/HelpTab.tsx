@@ -201,6 +201,19 @@ export function HelpTab() {
                   </span>
                   {t.category && <span>· {TICKET_CATEGORY_AR[t.category as TicketCategory] ?? t.category}</span>}
                 </div>
+                {/* l9 row 53: the support team's replies (text and time only). */}
+                {t.replies && t.replies.length > 0 && (
+                  <div className="mt-3 space-y-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                    {t.replies.map((r, i) => (
+                      <div key={`${r.at}-${i}`} className="rounded-xl bg-emerald-50 px-3 py-2 dark:bg-emerald-500/10">
+                        <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                          ردّ فريق الدعم · {new Date(r.at).toLocaleDateString("ar-SA", { year: "numeric", month: "short", day: "numeric" })}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-xs text-gray-700 dark:text-gray-300">{r.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

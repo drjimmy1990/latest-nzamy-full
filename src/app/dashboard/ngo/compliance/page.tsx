@@ -60,7 +60,7 @@ export default function NGOCompliancePage() {
           </div>
           <Link href="/ai/ngo/governance-checker"
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition ${isDark ? "bg-teal-500/10 border border-teal-500/20 hover:bg-teal-500/20 text-teal-400" : "bg-teal-50 border border-teal-200 hover:bg-teal-100 text-teal-700"}`}>
-            <Buildings size={14} /> مدقق الحوكمة بالذكاء الاصطناعي
+            <Buildings size={14} /> مدقق الحوكمة بالذكاء الاصطناعي <span className="text-[10px] opacity-70">قريباً</span>
           </Link>
         </div>
 

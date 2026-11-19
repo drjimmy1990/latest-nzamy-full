@@ -2,6 +2,7 @@ import type { SidebarGroup } from "./navigation.types";
 // Relative with `.ts` so `node --test` can load this chain (see navigation.sidebars.ts).
 import type { StaffRole } from "../lib/auth/staffRoles.ts";
 import { filterNavGroupsByRole } from "../lib/auth/adminNavAccess.ts";
+import { ADMIN_NAV_SECTIONS } from "./adminNavItems.ts";
 
 export * from "./navigation.sidebars.legal.ts";
 export * from "./navigation.sidebars.business.ts";
@@ -131,100 +132,16 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
 ];
 
 // ── Admin Sidebar (مدير النظام) ───────────────────────────────────────────────
+// File 15 row 54 (batch l9): built from the ONE admin list
+// (./adminNavItems.ts) that the console's own sidebar (AdminSidebar → NAV)
+// is built from too. The mock «طلبات السحب» / «النزاعات» links and the
+// «قريباً» pages are no longer offered; «بروفيلات الشركات» is.
 export const ADMIN_SIDEBAR: SidebarGroup[] = [
-  {
-    items: [
-      { label: "لوحة التحكم",      labelEn: "Dashboard",      href: "/dashboard/admin",               icon: "SquaresFour" },
-    ],
-  },
-  {
-    title: "إدارة المستخدمين", titleEn: "User Management",
-    items: [
-      { label: "كل المستخدمين",     labelEn: "All Users",       href: "/dashboard/admin/users",                  icon: "Users" },
-      { label: "إضافة مستخدم",      labelEn: "Add User",        href: "/dashboard/admin/users/new",              icon: "UserCirclePlus" },
-      { label: "الأدوار والصلاحيات",labelEn: "Roles & Perms",   href: "/dashboard/admin/users/roles",            icon: "Key" },
-      { label: "تحقق المزودين",     labelEn: "Provider KYC",    href: "/dashboard/admin/provider-verification",  icon: "SealCheck",          badge: "جديد" },
-      { label: "شركات المحاماة",     labelEn: "Law Firm Providers", href: "/dashboard/admin/provider-verification/firms", icon: "Scales", badge: "تجريبي" },
-      { label: "بروفيلات القطاعات",  labelEn: "Sector Profiles", href: "/dashboard/admin/sector-profiles",        icon: "Globe", badge: "تجريبي" },
-    ],
-  },
-  {
-    title: "الاشتراكات والإيرادات", titleEn: "Subscriptions & Revenue",
-    items: [
-      { label: "الاشتراكات النشطة",  labelEn: "Active Subs",     href: "/dashboard/admin/subscriptions",          icon: "CreditCard" },
-      { label: "الكوبونات والخصومات",labelEn: "Coupons",         href: "/dashboard/admin/subscriptions/coupons",  icon: "Tag" },
-      { label: "سجل المدفوعات",      labelEn: "Payment History", href: "/dashboard/admin/subscriptions/payments",  icon: "Money" },
-      { label: "تقارير الإيرادات",   labelEn: "Revenue Reports", href: "/dashboard/admin/revenue",                icon: "ChartLine" },
-      { label: "إدارة الأسعار",      labelEn: "Pricing Manager", href: "/dashboard/admin/pricing",                icon: "CurrencyCircleDollar", badge: "جديد" },
-    ],
-  },
-  {
-    title: "العمليات المالية", titleEn: "Financial Operations",
-    items: [
-      { label: "الدفع والاسترداد", labelEn: "Payments and Refunds", href: "/dashboard/admin/subscriptions/orders", icon: "CreditCard" },
-      // No «إدارة الضمان / Escrow» link (owner ٢٨٩): the platform holds no
-      // funds and no Split Payment is built. /dashboard/admin/escrow is a mock
-      // page kept only behind its URL until the owner decides to delete it.
-      { label: "طلبات السحب",        labelEn: "Payouts",         href: "/dashboard/admin/payouts",                icon: "ArrowSquareOut",     badge: "جديد" },
-      { label: "النزاعات",           labelEn: "Disputes",        href: "/dashboard/admin/disputes",               icon: "Scales",             badge: "جديد" },
-    ],
-  },
-  {
-    title: "سوق المهنيين", titleEn: "Marketplace",
-    items: [
-      { label: "طلبات السوق",        labelEn: "Orders",          href: "/dashboard/admin/marketplace/orders",     icon: "Storefront",         badge: "جديد" },
-    ],
-  },
-  {
-    title: "استخدام الذكاء الاصطناعي", titleEn: "AI Usage",
-    items: [
-      { label: "تشغيلات AI",         labelEn: "AI Runs",         href: "/dashboard/admin/ai-usage",              icon: "Robot" },
-      { label: "مستكشف الجراف القانوني", labelEn: "Legal Graph Explorer", href: "/dashboard/admin/graph-explorer", icon: "TreeStructure" },
-      { label: "استهلاك الذكاء الاصطناعي",labelEn: "AI Usage",      href: "/dashboard/admin/ai-usage/credits",       icon: "Coins", badge: "قريباً" },
-      { label: "تقارير الجودة",       labelEn: "Quality",           href: "/dashboard/admin/ai-usage/reports",       icon: "ChartLineUp", badge: "قريباً" },
-    ],
-  },
-  {
-    title: "الدعم والتواصل", titleEn: "Support & Comms",
-    items: [
-      { label: "تذاكر الدعم",          labelEn: "Support Tickets", href: "/dashboard/admin/tickets",                icon: "Ticket" },
-      { label: "رسائل البث",           labelEn: "Broadcasts",      href: "/dashboard/admin/broadcasts",             icon: "Megaphone" },
-      { label: "تقييمات المستخدمين",   labelEn: "Reviews",         href: "/dashboard/admin/reviews",                icon: "Star" },
-    ],
-  },
-  {
-    title: "النظام والأمان", titleEn: "System & Security",
-    items: [
-      { label: "مركز تحكم المنصة",      labelEn: "Platform Control", href: "/dashboard/admin/platform",             icon: "Globe" },
-      { label: "إعدادات المنصة",        labelEn: "Platform Settings", href: "/dashboard/admin/settings",            icon: "Gear",                   badge: "جديد" },
-      { label: "سجل التدقيق",          labelEn: "Audit Log",       href: "/dashboard/admin/audit-log",             icon: "ClockCounterClockwise", badge: "مُطوَّر" },
-      { label: "الأمان والحماية",      labelEn: "Security",        href: "/dashboard/admin/security",              icon: "ShieldCheck",            badge: "مُطوَّر" },
-      // P3 Task 10: seats, members, refunds, pause / resume, capacity, retry activation
-      { label: "حملة المؤسس",          labelEn: "Founder Campaign", href: "/dashboard/admin/founder",              icon: "Crown",                  badge: "جديد" },
-      // l8 (owner item 5): offers — create / edit / preview / stop + stats
-      { label: "العروض",               labelEn: "Offers",          href: "/dashboard/admin/offers",               icon: "Gift",                   badge: "جديد" },
-      // Owner answer ١١٥ — all three showed fixed logs, backups and figures and
-      // render DashboardComingSoon now.
-      { label: "سجل النظام",           labelEn: "System Log",      href: "/dashboard/admin/system",                icon: "Terminal",               badge: "قريباً" },
-      { label: "النسخ الاحتياطي",      labelEn: "Backup",          href: "/dashboard/admin/system/backup",          icon: "Database",               badge: "قريباً" },
-      { label: "مركز التقارير",        labelEn: "Reports Center",  href: "/dashboard/admin/reports",                icon: "ChartBar",               badge: "قريباً" },
-    ],
-  },
-
-  {
-    title: "المحتوى", titleEn: "Content",
-    items: [
-      { label: "المكتبة القانونية",  labelEn: "Library",         href: "/dashboard/admin/content/laws",            icon: "BookOpen" },
-      { label: "المقالات",           labelEn: "Articles",        href: "/dashboard/admin/content/articles",        icon: "Article" },
-    ],
-  },
-  {
-    title: "فريق نظامي", titleEn: "Nezamy Team",
-    items: [
-      { label: "إدارة الفريق",       labelEn: "Team",            href: "/dashboard/admin/team",                    icon: "UsersFour" },
-      { label: "مفاتيح الميزات",     labelEn: "Feature Flags",   href: "/dashboard/admin/features",                icon: "ToggleRight" },
-    ],
-  },
+  ...ADMIN_NAV_SECTIONS.map((s): SidebarGroup => ({
+    title: s.section,
+    titleEn: s.sectionEn,
+    items: s.items.map((i) => ({ label: i.label, labelEn: i.labelEn, href: i.href, icon: i.icon })),
+  })),
   {
     items: [
       { label: "إعدادات النظام",       labelEn: "System Settings", href: "/settings",                              icon: "GearSix", divider: true },

@@ -7,6 +7,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
 import { FirmProfileReadinessPanel } from "@/components/dashboard/firm/FirmProfileReadinessPanel";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const CHECKS = [
   { label: "الأدوار والصلاحيات", score: 82, status: "قريباً", icon: ShieldCheck },
@@ -15,7 +17,7 @@ const CHECKS = [
   { label: "الإدارات والتعاون", score: 88, status: "قريباً", icon: CheckCircle },
 ];
 
-export default function FirmHealthCheckPage() {
+function FirmHealthCheckPageDemo() {
   const { isDark } = useTheme();
   const { currentFirmFeatures } = useAdminSettings();
   const [toast, setToast] = useState("الفحص الشامل غير مفعّل بعد: الأرقام أدناه أمثلة توضيحية وليست تحليلاً لمكتبك. قريباً.");
@@ -73,4 +75,21 @@ export default function FirmHealthCheckPage() {
       </div>
     </SubscriptionGuard>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (نِسَب الفحص الشامل ٣٦٠° للمكتب) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function FirmHealthCheckPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الفحص الشامل للمكتب"
+        description="هذه الصفحة غير متاحة حالياً. نِسَب الفحص الشامل ٣٦٠° للمكتب التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmHealthCheckPageDemo />;
 }

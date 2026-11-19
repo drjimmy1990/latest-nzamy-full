@@ -2,6 +2,7 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { ChatTeardrop, Check, X, MagnifyingGlass, Flag, UsersThree } from "@phosphor-icons/react";
+import { adminToast } from "@/components/admin/adminToast";
 
 const TYPE_LABELS: Record<string, string> = {
   lawyer: "محامي",
@@ -62,11 +63,11 @@ export default function CommunityTab() {
         fetchData();
       } else {
         const err = await res.json();
-        alert(`خطأ: ${err.error || "فشل الإجراء"}`);
+        adminToast(`خطأ: ${err.error || "فشل الإجراء"}`);
       }
     } catch (err) {
       console.error("Action error:", err);
-      alert("حدث خطأ أثناء تنفيذ الإجراء");
+      adminToast("حدث خطأ أثناء تنفيذ الإجراء");
     }
   };
 

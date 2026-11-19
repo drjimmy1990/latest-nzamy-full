@@ -247,9 +247,8 @@ export default function RolesPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-[13px] font-bold ${isDark ? "text-zinc-200" : "text-slate-700"}`}>{role.name}</p>
-                  <p className={`text-[10px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
-                    {role.memberCount} {role.memberCount > 1 ? "أعضاء" : "عضو"}
-                  </p>
+                  {/* l9 row 27: the per-role member count was MEMBER_COUNTS, a literal
+                      (1 / 2 / 3 / 7 …) for every firm; the real roster is «الفريق». */}
                 </div>
               </div>
             </motion.button>

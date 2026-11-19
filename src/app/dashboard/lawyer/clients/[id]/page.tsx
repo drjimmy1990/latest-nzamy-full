@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { latinAmountInput } from "@/lib/forms/latinDigits";
 import { motion } from "framer-motion";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   User, Buildings, ArrowRight, Gavel, ChatDots,
@@ -130,6 +130,10 @@ export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
   const clientId = params.id as string;
+  // File 15 row 30 (l9): the firm's client cards open THIS page at
+  // /dashboard/firm/clients/[id] (the API already serves lawyer and firm, RLS
+  // scopes the rows), so every link stays inside the dashboard the reader is in.
+  const base = usePathname()?.startsWith("/dashboard/firm/") ? "/dashboard/firm" : "/dashboard/lawyer";
 
   // ── The client card itself ────────────────────────────────────────────────
   const [client, setClient] = useState<LawyerClient | null>(null);
@@ -248,7 +252,7 @@ export default function ClientDetailPage() {
         email: client.email ?? undefined,
         clientUserId: client.clientUserId ?? client.id,
       });
-      router.push(`/dashboard/lawyer/clients/${created.id}`);
+      router.push(`${base}/clients/${created.id}`);
     } catch (e) {
       setCreateCardError(e instanceof Error ? e.message : "تعذّر إنشاء بطاقة الموكّل.");
       setCreatingCard(false);
@@ -590,7 +594,7 @@ export default function ClientDetailPage() {
         <button onClick={loadClient} className="flex items-center gap-1.5 text-sm font-bold text-royal hover:underline">
           <ArrowClockwise size={14} /> إعادة المحاولة
         </button>
-        <Link href="/dashboard/lawyer/clients" className="text-sm text-royal hover:underline flex items-center gap-1">
+        <Link href={`${base}/clients`} className="text-sm text-royal hover:underline flex items-center gap-1">
           <CaretLeft size={12} /> العودة لدليل الموكّلين
         </Link>
       </div>
@@ -602,7 +606,7 @@ export default function ClientDetailPage() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3" dir="rtl">
         <User size={40} className={isDark ? "text-zinc-700" : "text-slate-300"} />
         <p className={`text-lg font-bold ${isDark ? "text-zinc-300" : "text-slate-700"}`}>الموكّل غير موجود</p>
-        <Link href="/dashboard/lawyer/clients" className="text-sm text-royal hover:underline flex items-center gap-1">
+        <Link href={`${base}/clients`} className="text-sm text-royal hover:underline flex items-center gap-1">
           <CaretLeft size={12} /> العودة لدليل الموكّلين
         </Link>
       </div>
@@ -629,7 +633,7 @@ export default function ClientDetailPage() {
       {/* Breadcrumb */}
       <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-1.5 text-[12px]">
-        <Link href="/dashboard/lawyer/clients" className={`hover:underline ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
+        <Link href={`${base}/clients`} className={`hover:underline ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-slate-600"}`}>
           الموكّلون
         </Link>
         <CaretLeft size={10} className={isDark ? "text-zinc-700" : "text-slate-300"} />
@@ -953,7 +957,7 @@ export default function ClientDetailPage() {
                   {casesView === "ready" || casesView === "empty" ? relatedCases.length : "—"}
                 </span>
               </div>
-              <Link href={`/dashboard/lawyer/cases?client=${clientId}`}
+              <Link href={`${base}/cases?client=${clientId}`}
                 className={`text-[11px] font-semibold flex items-center gap-0.5 ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-400 hover:text-royal"}`}>
                 عرض الكل <ArrowRight size={10} />
               </Link>
@@ -981,7 +985,7 @@ export default function ClientDetailPage() {
                 {relatedCases.map(c => {
                   const st = STATUS_CASE[c.status];
                   return (
-                    <Link key={c.id} href={`/dashboard/lawyer/cases/${c.id}`}
+                    <Link key={c.id} href={`${base}/cases/${c.id}`}
                       className={`flex items-center gap-3 px-4 py-3 hover:bg-royal/[0.03] transition-colors group`}>
                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${st.dot}`} />
                       <div className="flex-1 min-w-0">
@@ -1047,7 +1051,7 @@ export default function ClientDetailPage() {
           </motion.div>
 
           {/* N01-7: عقود هذا الموكّل (contracts.lawyer_client_id) — read-only */}
-          <LinkedContractsList lawyerClientId={clientId} isDark={isDark} />
+          <LinkedContractsList lawyerClientId={clientId} isDark={isDark} basePath={base} />
         </div>
 
         {/* Right column: Financial position + Notes */}

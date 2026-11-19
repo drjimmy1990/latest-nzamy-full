@@ -6,6 +6,8 @@ import { ClipboardText, FileText, DownloadSimple } from "@phosphor-icons/react";
 import Link from "next/link";
 import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const REPORTS = [
   { id: "NGO-2026-Q1", title: "التقرير الربعي الأول 2026",           period: "يناير – مارس 2026",  type: "ربعي", status: "منشور" },
@@ -14,7 +16,7 @@ const REPORTS = [
   { id: "NGO-FUND-26", title: "تقرير التبرعات — رمضان 1447هـ",       period: "مارس – أبريل 2026",   type: "خاص",  status: "قيد المراجعة" },
 ];
 
-export default function NGOReportsPage() {
+function NGOReportsPageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -80,4 +82,21 @@ export default function NGOReportsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (التقارير الدورية ومواعيدها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function NGOReportsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="التقارير الدورية"
+        description="هذه الصفحة غير متاحة حالياً. التقارير الدورية ومواعيدها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/ngo"
+      />
+    );
+  }
+  return <NGOReportsPageDemo />;
 }

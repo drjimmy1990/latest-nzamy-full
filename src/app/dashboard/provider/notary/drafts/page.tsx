@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { PencilSimple, Stamp, Plus, Trash, FloppyDisk, Warning, Robot, Clock } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 interface Draft {
   id: number; title: string; type: string;
@@ -14,7 +16,7 @@ const DRAFTS: Draft[] = [
   { id: 1, title: "عقد بيع عقاري — أرض الرياض",    type: "بيع عقاري",    status: "مسودة",            lastEdited: "منذ ساعتين", progress: 65 },
   { id: 2, title: "وكالة عامة — أ. محمد الشهراني", type: "وكالة عامة",   status: "جاهز للتوثيق",   lastEdited: "أمس ٣:٠٠م",  progress: 100 },
 ];
-export default function NotaryDraftsPage() {
+function NotaryDraftsPageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -105,4 +107,21 @@ export default function NotaryDraftsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (مسودات العقود والوكالات) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function NotaryDraftsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="مسودات التوثيق"
+        description="هذه الصفحة غير متاحة حالياً. مسودات العقود والوكالات التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <NotaryDraftsPageDemo />;
 }

@@ -22,8 +22,11 @@
 // Relative import (not the `@/` alias) so this module — and its test — run
 // under plain `node --test` with no path-alias loader configured.
 import { TICKET_CATEGORIES, TICKET_PRIORITIES, isTicketCategory, isTicketPriority, type TicketCategory, type TicketPriority } from "../../../../lib/services/ticketVocabulary.ts";
+import { replyDtos, type TicketReplyDto } from "../../../../lib/services/ticketReplies.ts";
 
-export const TICKET_SELECT = "id, subject, body, category, priority, status, created_at, updated_at";
+// l9 row 53: metadata is read for the support team's replies only — toTicketDto
+// returns { body, at } per reply and nothing else from it.
+export const TICKET_SELECT = "id, subject, body, category, priority, status, metadata, created_at, updated_at";
 
 export interface TicketRow {
   id: string;
@@ -32,6 +35,8 @@ export interface TicketRow {
   category: string | null;
   priority: string;
   status: string;
+  /** Read for metadata.replies only (never returned as is). */
+  metadata?: unknown;
   created_at: string;
   updated_at: string;
 }
@@ -45,6 +50,8 @@ export interface TicketDto {
   status: string;
   createdAt: string;
   updatedAt: string;
+  /** The support team's replies, oldest first (text and time only). */
+  replies: TicketReplyDto[];
 }
 
 /** Pure row → DTO mapping. `body` (the DB column) becomes `message` (the API field) both ways. */
@@ -58,6 +65,7 @@ export function toTicketDto(row: TicketRow): TicketDto {
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    replies: replyDtos(row.metadata),
   };
 }
 

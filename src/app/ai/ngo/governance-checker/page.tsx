@@ -1,4 +1,6 @@
 "use client";
+import GatedToolScreen from "@/components/GatedToolScreen";
+import BetaReviewGate from "@/components/BetaReviewGate";
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -55,7 +57,7 @@ const PRIORITY_LABELS = { critical:"حرجة", high:"عالية", medium:"متو
 
 type FilterStatus = "all" | "compliant" | "violation" | "partial" | "pending";
 
-export default function NGOGovernanceCheckerPage() {
+function NGOGovernanceCheckerInner() {
   const [checks, setChecks] = useState<CheckItem[]>(INITIAL_CHECKS);
   const [filter, setFilter] = useState<FilterStatus>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -131,6 +133,7 @@ export default function NGOGovernanceCheckerPage() {
         حساب مؤقت: لا تُحفظ إجاباتك ولا النسبة، وتعود الصفحة فارغة إذا حدّثتها أو غادرتها. انسخ النتيجة بزر «نسخ النتيجة» قبل الخروج.
       </div>
 
+      <BetaReviewGate toolId="ngo.governance-checker" toolName="مدقق حوكمة الجمعية" reviewScope="legal-data">
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
         <div className="col-span-2 sm:col-span-1 rounded-2xl border border-white/[0.07] bg-gradient-to-br from-emerald-900/40 to-slate-900/80 p-4 flex flex-col items-center justify-center gap-1">
@@ -247,6 +250,18 @@ export default function NGOGovernanceCheckerPage() {
           <p className="text-[13px]">لا توجد بنود بهذا الفلتر</p>
         </div>
       )}
+      </BetaReviewGate>
     </div>
+  );
+}
+
+// File 15 row 59 (batch l9): the last ungated sector AI page. Its checklist
+// cites statutory articles no one has checked against the library, so the
+// gate comes first, as on every other /ai/ngo and /ai/gov tool.
+export default function NGOGovernanceCheckerPage() {
+  return (
+    <GatedToolScreen toolId="ngo.governance-checker" toolName="مدقق حوكمة الجمعية">
+      <NGOGovernanceCheckerInner />
+    </GatedToolScreen>
   );
 }

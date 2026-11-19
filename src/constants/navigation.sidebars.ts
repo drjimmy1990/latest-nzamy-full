@@ -44,24 +44,24 @@ try {
 export const GOV_REVIEWER_SIDEBAR: SidebarGroup[] = [
   {
     items: [
-      { label: "لوحة التحكم",   labelEn: "Overview",     href: "/dashboard/provider",              icon: "SquaresFour" },
+      { label: "لوحة التحكم",   labelEn: "Overview",     href: "/dashboard/provider",              icon: "SquaresFour", badge: "قريباً" },
     ],
   },
   {
     title: "الطلبات والمعاملات", titleEn: "Requests & Transactions",
     items: [
-      { label: "طلبات جديدة",     labelEn: "New Requests",    href: "/dashboard/provider/bailiff/requests",           icon: "Storefront", badge: "جديد" },
-      { label: "معاملات جارية",    labelEn: "In Progress",     href: "/dashboard/provider/bailiff/requests?status=active", icon: "ClipboardText" },
-      { label: "معاملات مكتملة",   labelEn: "Completed",       href: "/dashboard/provider/bailiff/requests?status=done",   icon: "CheckCircle" },
-      { label: "المواعيد",          labelEn: "Calendar",        href: "/dashboard/provider/calendar",           icon: "CalendarCheck" },
+      { label: "طلبات جديدة",     labelEn: "New Requests",    href: "/dashboard/provider/bailiff/requests",           icon: "Storefront", badge: "قريباً" },
+      { label: "معاملات جارية",    labelEn: "In Progress",     href: "/dashboard/provider/bailiff/requests?status=active", icon: "ClipboardText", badge: "قريباً" },
+      { label: "معاملات مكتملة",   labelEn: "Completed",       href: "/dashboard/provider/bailiff/requests?status=done",   icon: "CheckCircle", badge: "قريباً" },
+      { label: "المواعيد",          labelEn: "Calendar",        href: "/dashboard/provider/calendar",           icon: "CalendarCheck", badge: "قريباً" },
     ],
   },
   {
     title: "ملفي المهني", titleEn: "My Profile",
     items: [
-      { label: "الملف المهني",     labelEn: "Profile",      href: "/dashboard/provider/profile",    icon: "UserCircle" },
-      { label: "الأرباح",           labelEn: "Earnings",     href: "/dashboard/provider/earnings",   icon: "Money" },
-      { label: "التقييمات",         labelEn: "Reviews",      href: "/dashboard/provider/reviews",    icon: "Star" },
+      { label: "الملف المهني",     labelEn: "Profile",      href: "/dashboard/provider/profile",    icon: "UserCircle", badge: "قريباً" },
+      { label: "الأرباح",           labelEn: "Earnings",     href: "/dashboard/provider/earnings",   icon: "Money", badge: "قريباً" },
+      { label: "التقييمات",         labelEn: "Reviews",      href: "/dashboard/provider/reviews",    icon: "Star", badge: "قريباً" },
     ],
   },
   {
@@ -95,23 +95,23 @@ export const GOV_REVIEWER_SIDEBAR: SidebarGroup[] = [
 export const ARBITRATOR_SIDEBAR: SidebarGroup[] = [
   {
     items: [
-      { label: "نظرة عامة",      labelEn: "Overview",   href: "/dashboard/provider",                        icon: "SquaresFour" },
+      { label: "نظرة عامة",      labelEn: "Overview",   href: "/dashboard/provider",                        icon: "SquaresFour", badge: "قريباً" },
     ],
   },
   {
     title: "قضايا التحكيم", titleEn: "Arbitration Cases",
     items: [
-      { label: "كل القضايا",       labelEn: "All Cases",      href: "/dashboard/provider/arbitration/cases",    icon: "Scales",        badge: "جديد" },
-      { label: "جلسات التحكيم",   labelEn: "Hearings",       href: "/dashboard/provider/arbitration/hearings",  icon: "CalendarCheck" },
-      { label: "الأطراف والوكلاء",labelEn: "Parties",        href: "/dashboard/provider/arbitration/parties",   icon: "Users" },
-      { label: "مذكرات وملفات",   labelEn: "Memos & Files",  href: "/dashboard/provider/arbitration/files",     icon: "FolderOpen" },
+      { label: "كل القضايا",       labelEn: "All Cases",      href: "/dashboard/provider/arbitration/cases",    icon: "Scales",        badge: "قريباً" },
+      { label: "جلسات التحكيم",   labelEn: "Hearings",       href: "/dashboard/provider/arbitration/hearings",  icon: "CalendarCheck", badge: "قريباً" },
+      { label: "الأطراف والوكلاء",labelEn: "Parties",        href: "/dashboard/provider/arbitration/parties",   icon: "Users", badge: "قريباً" },
+      { label: "مذكرات وملفات",   labelEn: "Memos & Files",  href: "/dashboard/provider/arbitration/files",     icon: "FolderOpen", badge: "قريباً" },
     ],
   },
   {
     title: "الأحكام والقرارات", titleEn: "Awards & Decisions",
     items: [
-      { label: "أحكامي الصادرة",   labelEn: "Issued Awards",  href: "/dashboard/provider/arbitration/awards",    icon: "Gavel" },
-      { label: "مسودات الأحكام",  labelEn: "Draft Awards",   href: "/dashboard/provider/arbitration/drafts",    icon: "PencilSimple" },
+      { label: "أحكامي الصادرة",   labelEn: "Issued Awards",  href: "/dashboard/provider/arbitration/awards",    icon: "Gavel", badge: "قريباً" },
+      { label: "مسودات الأحكام",  labelEn: "Draft Awards",   href: "/dashboard/provider/arbitration/drafts",    icon: "PencilSimple", badge: "قريباً" },
     ],
   },
   {
@@ -129,9 +129,9 @@ export const ARBITRATOR_SIDEBAR: SidebarGroup[] = [
   {
     title: "ملفي المهني", titleEn: "My Profile",
     items: [
-      { label: "الملف المهني",    labelEn: "Profile",    href: "/dashboard/provider/profile",  icon: "UserCircle" },
-      { label: "الأرباح والأتعاب",labelEn: "Earnings",   href: "/dashboard/provider/earnings", icon: "Money" },
-      { label: "التقييمات",       labelEn: "Reviews",    href: "/dashboard/provider/reviews",  icon: "Star" },
+      { label: "الملف المهني",    labelEn: "Profile",    href: "/dashboard/provider/profile",  icon: "UserCircle", badge: "قريباً" },
+      { label: "الأرباح والأتعاب",labelEn: "Earnings",   href: "/dashboard/provider/earnings", icon: "Money", badge: "قريباً" },
+      { label: "التقييمات",       labelEn: "Reviews",    href: "/dashboard/provider/reviews",  icon: "Star", badge: "قريباً" },
     ],
   },
   {
@@ -160,8 +160,8 @@ export const NOTARY_ADDON_SECTIONS: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,   // مطوية بالافتراضي — الأدوات الأساسية للموثق فقط
     items: [
-      { label: "طلبات التوثيق",    labelEn: "Notary Requests",    href: "/dashboard/provider/notary/requests",  icon: "Stamp",        badge: "موثّق" },
-      { label: "مسودات التوثيق",   labelEn: "Notary Drafts",      href: "/dashboard/provider/notary/drafts",   icon: "PencilSimple",  badge: "موثّق" },
+      { label: "طلبات التوثيق",    labelEn: "Notary Requests",    href: "/dashboard/provider/notary/requests",  icon: "Stamp",        badge: "قريباً" },
+      { label: "مسودات التوثيق",   labelEn: "Notary Drafts",      href: "/dashboard/provider/notary/drafts",   icon: "PencilSimple",  badge: "قريباً" },
       { label: "صائغ عقد التوثيق",labelEn: "Notary Drafter",    href: "/ai/draft?mode=notary",                icon: "Robot",         badge: "AI" },
     ],
   },
@@ -174,7 +174,7 @@ export const BAILIFF_ADDON_SECTIONS: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,   // مطوية بالافتراضي — الأدوات الأساسية للمراجع فقط
     items: [
-      { label: "طلبات التعقيب",     labelEn: "Review Requests",    href: "/dashboard/provider/bailiff/requests",   icon: "ClipboardText", badge: "معقّب" },
+      { label: "طلبات التعقيب",     labelEn: "Review Requests",    href: "/dashboard/provider/bailiff/requests",   icon: "ClipboardText", badge: "قريباً" },
       { label: "مساعد المعاملات",   labelEn: "Transaction Assist", href: "/ai/consult",                            icon: "Robot",         badge: "قريباً" },
       { label: "دليل الإجراءات",    labelEn: "Procedure Guide",    href: "/ai/procedures",                         icon: "MapTrifold",    badge: "معقّب" },
     ],
@@ -188,8 +188,8 @@ export const ARBITRATOR_ADDON_SECTIONS: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,   // مطوية بالافتراضي — تفتحها عند الحاجة
     items: [
-      { label: "قضايا التحكيم",     labelEn: "Arb. Cases",        href: "/dashboard/provider/arbitration/cases",    icon: "Scales",       badge: "محكّم" },
-      { label: "جلسات التحكيم",    labelEn: "Arb. Hearings",     href: "/dashboard/provider/arbitration/hearings", icon: "CalendarCheck",  badge: "محكّم" },
+      { label: "قضايا التحكيم",     labelEn: "Arb. Cases",        href: "/dashboard/provider/arbitration/cases",    icon: "Scales",       badge: "قريباً" },
+      { label: "جلسات التحكيم",    labelEn: "Arb. Hearings",     href: "/dashboard/provider/arbitration/hearings", icon: "CalendarCheck",  badge: "قريباً" },
       { label: "صياغة حكم تحكيم",   labelEn: "Draft Arb. Award",  href: "/ai/draft?mode=arbitration",                icon: "Robot",         badge: "AI" },
     ],
   },
@@ -325,9 +325,9 @@ function getCorporateSidebar(businessRole?: string | null): SidebarGroup[] {
 // and in_house_counsel listed «مراجع العقود», a 301 to /ai/contracts (N06-26
 // removed that duplicate row), so they keep /ai/contracts instead.
 export const FIRM_ROLE_ALLOWED_HREFS: Record<AffiliationRole | "default", readonly string[]> = {
-  managing_partner: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/hearings", "/dashboard/firm/cases/assign", "/dashboard/firm/tasks", "/dashboard/firm/activity", "/dashboard/firm/contracts", "/dashboard/firm/templates", "/dashboard/firm/documents", "/dashboard/firm/archive", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/dashboard/firm/client-portal", "/dashboard/firm/team", "/dashboard/firm/team/roles", "/dashboard/firm/team/timesheets", "/dashboard/firm/team/trainees", "/dashboard/firm/team/attendance", "/dashboard/firm/achievements", "/dashboard/firm/departments", "/dashboard/firm/branches", "/dashboard/firm/departments/permissions", "/dashboard/firm/compliance/kyc", "/dashboard/firm/compliance/walls", "/dashboard/firm/health-check", "/dashboard/firm/governance", "/dashboard/firm/governance?tab=matrix", "/dashboard/firm/finance", "/dashboard/firm/fees", "/dashboard/firm/finance/reports", "/dashboard/firm/analytics", "/ai/analyze", "/ai/quick-answer", "/ai/draft", "/ai/collector", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/analyze-strength", "/ai/contract-negotiator", "/ai/legal-opinion", "/ai/najiz-optimizer", "/ai/wargaming", "/ai/procedures", "/ai/monitor", "/ai/secretary", "/ai/fee-calculator", "/ai/report-generator", "/ai/direction-support", "/ai/legal-translate", "/ai/transcriber", "/ai/compare", "/dashboard/firm/circuits-emails", "/dashboard/firm/of-counsel", "/dashboard/firm/secondment/new", "/dashboard/firm/shared-rooms", "/dashboard/firm/marketplace", "/marketplace", "/marketplace/post", "/marketplace/collaborate", "/services/lawyers/vault", "/dashboard/firm/profile", "/community", "/blog", "/laws", "/academy", "/notifications", "/settings"],
-  partner: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/hearings", "/dashboard/firm/cases/assign", "/dashboard/firm/tasks", "/dashboard/firm/activity", "/dashboard/firm/contracts", "/dashboard/firm/templates", "/dashboard/firm/documents", "/dashboard/firm/archive", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/dashboard/firm/client-portal", "/dashboard/firm/team/timesheets", "/dashboard/firm/departments", "/dashboard/firm/compliance/kyc", "/dashboard/firm/health-check", "/dashboard/firm/governance", "/dashboard/firm/finance", "/dashboard/firm/finance/reports", "/dashboard/firm/analytics", "/ai/analyze", "/ai/quick-answer", "/ai/draft", "/ai/collector", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/analyze-strength", "/ai/contract-negotiator", "/ai/legal-opinion", "/ai/najiz-optimizer", "/ai/wargaming", "/ai/procedures", "/ai/monitor", "/ai/secretary", "/ai/fee-calculator", "/ai/report-generator", "/dashboard/firm/circuits-emails", "/dashboard/firm/of-counsel", "/dashboard/firm/shared-rooms", "/dashboard/firm/marketplace", "/marketplace", "/services/lawyers/vault", "/dashboard/firm/profile", "/community", "/blog", "/laws", "/academy", "/notifications", "/settings"],
-  senior_lawyer: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/hearings", "/dashboard/firm/tasks", "/dashboard/firm/activity", "/dashboard/firm/contracts", "/dashboard/firm/templates", "/dashboard/firm/documents", "/dashboard/firm/archive", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/dashboard/firm/compliance/kyc", "/ai/analyze", "/ai/quick-answer", "/ai/draft", "/ai/collector", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/analyze-strength", "/ai/contract-negotiator", "/ai/legal-opinion", "/ai/najiz-optimizer", "/ai/wargaming", "/ai/procedures", "/ai/monitor", "/ai/secretary", "/ai/fee-calculator", "/ai/direction-support", "/ai/legal-translate", "/ai/transcriber", "/ai/compare", "/dashboard/firm/circuits-emails", "/dashboard/firm/shared-rooms", "/dashboard/firm/marketplace", "/marketplace", "/services/lawyers/vault", "/blog", "/laws", "/academy", "/notifications", "/settings"],
+  managing_partner: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/hearings", "/dashboard/firm/cases/assign", "/dashboard/firm/tasks", "/dashboard/firm/activity", "/dashboard/firm/contracts", "/dashboard/firm/templates", "/dashboard/firm/documents", "/dashboard/firm/archive", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/dashboard/firm/client-portal", "/dashboard/firm/team", "/dashboard/firm/team/roles", "/dashboard/firm/team/timesheets", "/dashboard/firm/team/trainees", "/dashboard/firm/team/attendance", "/dashboard/firm/achievements", "/dashboard/firm/departments", "/dashboard/firm/branches", "/dashboard/firm/departments/permissions", "/dashboard/firm/compliance/kyc", "/dashboard/firm/compliance/walls", "/dashboard/firm/health-check", "/dashboard/firm/governance", "/dashboard/firm/governance?tab=matrix", "/dashboard/firm/finance", "/dashboard/firm/fees", "/dashboard/firm/finance/reports", "/dashboard/firm/analytics", "/ai/analyze", "/ai/quick-answer", "/ai/draft", "/ai/collector", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/analyze-strength", "/ai/contract-negotiator", "/ai/legal-opinion", "/ai/najiz-optimizer", "/ai/wargaming", "/ai/procedures", "/ai/monitor", "/ai/secretary", "/ai/fee-calculator", "/ai/report-generator", "/ai/direction-support", "/ai/legal-translate", "/ai/transcriber", "/ai/compare", "/dashboard/firm/circuits-emails", "/dashboard/firm/of-counsel", "/dashboard/firm/secondment/new", "/dashboard/firm/shared-rooms", "/dashboard/firm/marketplace", "/marketplace", "/marketplace/post", "/marketplace/collaborate", "/dashboard/firm/profile", "/community", "/blog", "/laws", "/academy", "/notifications", "/settings"],
+  partner: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/hearings", "/dashboard/firm/cases/assign", "/dashboard/firm/tasks", "/dashboard/firm/activity", "/dashboard/firm/contracts", "/dashboard/firm/templates", "/dashboard/firm/documents", "/dashboard/firm/archive", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/dashboard/firm/client-portal", "/dashboard/firm/team/timesheets", "/dashboard/firm/departments", "/dashboard/firm/compliance/kyc", "/dashboard/firm/health-check", "/dashboard/firm/governance", "/dashboard/firm/finance", "/dashboard/firm/finance/reports", "/dashboard/firm/analytics", "/ai/analyze", "/ai/quick-answer", "/ai/draft", "/ai/collector", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/analyze-strength", "/ai/contract-negotiator", "/ai/legal-opinion", "/ai/najiz-optimizer", "/ai/wargaming", "/ai/procedures", "/ai/monitor", "/ai/secretary", "/ai/fee-calculator", "/ai/report-generator", "/dashboard/firm/circuits-emails", "/dashboard/firm/of-counsel", "/dashboard/firm/shared-rooms", "/dashboard/firm/marketplace", "/marketplace", "/dashboard/firm/profile", "/community", "/blog", "/laws", "/academy", "/notifications", "/settings"],
+  senior_lawyer: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/hearings", "/dashboard/firm/tasks", "/dashboard/firm/activity", "/dashboard/firm/contracts", "/dashboard/firm/templates", "/dashboard/firm/documents", "/dashboard/firm/archive", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/dashboard/firm/compliance/kyc", "/ai/analyze", "/ai/quick-answer", "/ai/draft", "/ai/collector", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/analyze-strength", "/ai/contract-negotiator", "/ai/legal-opinion", "/ai/najiz-optimizer", "/ai/wargaming", "/ai/procedures", "/ai/monitor", "/ai/secretary", "/ai/fee-calculator", "/ai/direction-support", "/ai/legal-translate", "/ai/transcriber", "/ai/compare", "/dashboard/firm/circuits-emails", "/dashboard/firm/shared-rooms", "/dashboard/firm/marketplace", "/marketplace", "/blog", "/laws", "/academy", "/notifications", "/settings"],
   lawyer: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/hearings", "/dashboard/firm/tasks", "/dashboard/firm/contracts", "/dashboard/firm/templates", "/dashboard/firm/documents", "/dashboard/firm/archive", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/ai/analyze", "/ai/quick-answer", "/ai/draft", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/brief-check", "/ai/procedures", "/ai/secretary", "/ai/fee-calculator", "/ai/direction-support", "/ai/legal-translate", "/ai/compare", "/dashboard/firm/circuits-emails", "/dashboard/firm/shared-rooms", "/blog", "/laws", "/academy", "/notifications", "/settings"],
   legal_consultant: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/tasks", "/dashboard/firm/contracts", "/dashboard/firm/documents", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/ai/quick-answer", "/ai/draft", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/analyze", "/laws", "/notifications", "/settings"],
   in_house_counsel: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/graph", "/dashboard/firm/tasks", "/dashboard/firm/contracts", "/dashboard/firm/documents", "/dashboard/firm/clients", "/dashboard/firm/consultations", "/ai/quick-answer", "/ai/draft", "/ai/contracts", "/ai/contract-drafter", "/ai/communicate", "/ai/analyze", "/laws", "/notifications", "/settings"],

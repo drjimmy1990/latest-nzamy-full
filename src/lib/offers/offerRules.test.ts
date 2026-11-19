@@ -103,10 +103,16 @@ test("the account type → audience key: the consultant is his own key, admins a
   for (const t of ["admin", "provider", "micro", "government", "ngo", null, undefined, 42]) assert.equal(audienceKeyFor(t, null), null);
 });
 
-test("the founder offer reaches a verified advocate lawyer only — never a consultant, an unverified lawyer, an individual, a firm or a company", () => {
+test("the founder offer reaches a verified or pending advocate lawyer only — never a consultant, a rejected / unverified lawyer, an individual, a firm or a company", () => {
   assert.equal(offerMatchesViewer(FOUNDER, viewer()), true);
   assert.equal(offerMatchesViewer(FOUNDER, viewer({ audience: "consultant" })), false);
   assert.equal(offerMatchesViewer(FOUNDER, viewer({ verified: false })), false);
+  // l9 row 24: a pending licence may pay for the seat (l7 decision 1), so he sees the popup
+  assert.equal(offerMatchesViewer(FOUNDER, viewer({ verified: false, pendingVerification: true })), true);
+  assert.equal(offerMatchesViewer(FOUNDER, viewer({ audience: "consultant", verified: false, pendingVerification: true })), false);
+  assert.equal(offerMatchesViewer(FOUNDER, viewer({ verified: false, pendingVerification: true, founderSeat: true })), false, "a held seat is already bought");
+  // only the founder offer widens: another verified-only offer stays verified-only
+  assert.equal(offerMatchesViewer({ ...FOUNDER, campaign_id: null }, viewer({ verified: false, pendingVerification: true })), false);
   assert.equal(offerMatchesViewer(FOUNDER, viewer({ verified: null })), false, "an unreadable verification never shows a verified-only offer");
   for (const a of ["individual", "firm", "corporate"] as const) assert.equal(offerMatchesViewer(FOUNDER, viewer({ audience: a })), false, a);
   assert.equal(offerMatchesViewer(FOUNDER, viewer({ audience: null })), false);
