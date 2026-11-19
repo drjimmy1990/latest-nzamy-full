@@ -35,6 +35,8 @@ export const GATE_ONLY_TOOL_ROUTES = [
   "/ai/corp/risk-assessment",
   "/ai/corp/deal-intel",
   "/ai/ngo/donation-analyzer",
+  // File 15 row 59 (l9): its checklist cites unchecked statutory articles.
+  "/ai/ngo/governance-checker",
   "/ai/ngo/report-generator",
   "/ai/gov/judgment-drafter",
   "/ai/gov/jurisdiction-analyzer",

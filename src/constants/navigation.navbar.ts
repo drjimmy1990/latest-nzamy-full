@@ -240,7 +240,7 @@ export const NGO_NAV: NavItem[] = [
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
       // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود» is a lawyer and firm tool — not in an NGO's menu.
-      { label: "مدقق الحوكمة",       labelEn: "Governance Checker",  href: "/ai/ngo/governance-checker",  icon: "ShieldCheck" },
+      { label: "مدقق الحوكمة",       labelEn: "Governance Checker",  href: "/ai/ngo/governance-checker",  icon: "ShieldCheck", badge: "قريباً" },
       { label: "محلل التبرعات",      labelEn: "Donation Analyzer",   href: "/ai/ngo/donation-analyzer",   icon: "ChartBar", badge: "قريباً" },
       { label: "مُعد التقارير",      labelEn: "Report Generator",    href: "/ai/ngo/report-generator",    icon: "FileText", badge: "قريباً" },
     ],
