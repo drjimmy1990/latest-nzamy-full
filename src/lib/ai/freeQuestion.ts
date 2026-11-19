@@ -1,9 +1,15 @@
 /**
  * freeQuestion.ts — owner ٣٠ (18 Nov 2026, batch l7 decision 6): the free
  * questions are given ONCE per account — 10 for a lawyer, 5 for an individual —
- * on the LIBRARY ASSISTANT only, from platform_settings
- * free_questions_by_account_type. They replace owner ٤١٢'s daily free quick
- * question (one a day per verified phone, inert since no phone OTP exists).
+ * from platform_settings free_questions_by_account_type. They replace owner
+ * ٤١٢'s daily free quick question (one a day per verified phone, inert since
+ * no phone OTP exists).
+ *
+ * Each account type has ONE tool for them (owner register 14 rows 4 / 36,
+ * batch l9; SQL 20261129_60): an individual's are on the GENERAL assistant
+ * (quick-answer, «المجيب القانوني السريع»), every other type's on the LIBRARY
+ * assistant — freeQuestionToolFor(). The library being locked for a type
+ * takes away only library-assistant questions.
  *
  *   * The allowance and the count are the database's
  *     (public.ai_free_question_status, 20261127_40): the allowance by
@@ -24,6 +30,24 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const FREE_QUESTION_TOOL = "library-assistant";
+/** The individual's free-question tool (register 4 / 36): the general assistant. */
+export const GENERAL_FREE_QUESTION_TOOL = "quick-answer";
+
+export type FreeQuestionTool = typeof FREE_QUESTION_TOOL | typeof GENERAL_FREE_QUESTION_TOOL;
+
+/**
+ * The one tool that gives this account type its free questions — the same
+ * rule as public.ai_start_free_question (20261129_60): individual →
+ * quick-answer, every other type → library-assistant.
+ */
+export function freeQuestionToolFor(userType: unknown): FreeQuestionTool {
+  return userType === "individual" ? GENERAL_FREE_QUESTION_TOOL : FREE_QUESTION_TOOL;
+}
+
+/** A ?tool= value of GET /api/v1/ai/free-question, or null. */
+export function parseFreeQuestionTool(value: unknown): FreeQuestionTool | null {
+  return value === FREE_QUESTION_TOOL || value === GENERAL_FREE_QUESTION_TOOL ? value : null;
+}
 
 export interface FreeQuestionStatus {
   available: boolean;

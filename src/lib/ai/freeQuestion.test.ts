@@ -22,6 +22,8 @@ import {
   freeQuestionFallsBack,
   freeQuestionStatusFrom,
   freeQuestionStatusWith,
+  freeQuestionToolFor,
+  parseFreeQuestionTool,
 } from "./freeQuestion.ts";
 
 const USER = "00000000-0000-0000-0000-00000000d001";
@@ -96,8 +98,15 @@ const ask = (over: Record<string, unknown> = {}) => ({
 });
 const starts = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc" && q.table.startsWith("ai_start"));
 
-test("the registry: the library assistant has the free questions, and only it (quick-answer lost its daily one)", () => {
-  assert.deepEqual(Object.values(AI_TOOLS).filter((t) => t.freeQuestions).map((t) => t.id), ["library-assistant"]);
+test("the registry: the library assistant (lawyer's 10) and quick-answer (individual's 5, register 4 / 36) have the free questions, and only they", () => {
+  assert.deepEqual(Object.values(AI_TOOLS).filter((t) => t.freeQuestions).map((t) => t.id).sort(), ["library-assistant", "quick-answer"]);
+  assert.equal(freeQuestionToolFor("individual"), "quick-answer");
+  for (const t of ["lawyer", "firm", "corporate", "micro", "provider", "government", "ngo", "", null, undefined]) {
+    assert.equal(freeQuestionToolFor(t), "library-assistant", String(t));
+  }
+  assert.equal(parseFreeQuestionTool("quick-answer"), "quick-answer");
+  assert.equal(parseFreeQuestionTool("library-assistant"), "library-assistant");
+  assert.equal(parseFreeQuestionTool("assistant"), null);
   assert.equal(AI_TOOLS["library-assistant"].price({}, { pages: null }), 5);
   assert.equal(AI_TOOLS["quick-answer"].price({}, { pages: null }), 10);
 });
@@ -160,7 +169,10 @@ test("source contract: the runs route wires the status; the status route signs t
   assert.match(src, /freeQuestionStatusWith\(admin, auth\.user\.id\)/);
   // ٥٨ (l8): none for an unverified e-mail, none while the library is locked for the account
   assert.match(src, /if \(!auth\.user\.email_confirmed_at\) return NextResponse\.json\(NONE/);
-  assert.match(src, /if \(!\(await readLibraryAccountAccess\(auth\.user\.id\)\)\.allowed\) return NextResponse\.json\(NONE/);
+  // register 4 / 36 (l9): the library lock only for the library assistant's questions;
+  // a tool that is not the account's own free tool answers NONE
+  assert.match(src, /if \(asked === FREE_QUESTION_TOOL && !\(await readLibraryAccountAccess\(auth\.user\.id\)\)\.allowed\) \{\s*return NextResponse\.json\(NONE/);
+  assert.match(src, /if \(asked !== freeQuestionToolFor\(profile\?\.user_type\)\) return NextResponse\.json\(NONE/);
   assert.match(src, /const NONE = \{ available: false, left: 0, total: 0 \}/);
 });
 
@@ -169,4 +181,39 @@ test("source contract: the library AI tab shows the count only when the server s
   assert.match(src, /fetch\("\/api\/v1\/ai\/free-question"/);
   assert.match(src, /s\.available === true/);
   assert.match(src, /\{free && <>/);
+});
+
+// ── register 4 / 36 (batch l9): each account type on its own free tool ──────
+
+const INDIVIDUAL: RunActor = { userId: USER, userType: "individual", practiceKind: "advocate", displayName: null };
+const quick = () => ({ tool: "quick-answer", input: { question: "ما مدة الاعتراض على الحكم؟" }, idempotencyKey: "key-free-qa-01" });
+
+test("an individual's question on quick-answer starts free; on the library assistant it does not", async () => {
+  const one = db();
+  await startRunWith(one.client as never, deps({ freeQuestions: async () => true }), INDIVIDUAL, quick());
+  assert.equal(starts(one.log)[0]?.table, "ai_start_free_question");
+  assert.equal((starts(one.log)[0].payload as Record<string, unknown>).p_tool, "quick-answer");
+
+  const two = db();
+  let asked = false;
+  await startRunWith(two.client as never, deps({ freeQuestions: async () => { asked = true; return true; } }), INDIVIDUAL, ask({ idempotencyKey: "key-free-ind-lib" }));
+  assert.equal(asked, false, "the status is not even asked on another tool");
+  assert.notEqual(starts(two.log)[0]?.table, "ai_start_free_question");
+});
+
+test("a lawyer's question on quick-answer is never free (his are on the library assistant)", async () => {
+  const { client, log } = db();
+  let asked = false;
+  await startRunWith(client as never, deps({ freeQuestions: async () => { asked = true; return true; } }), LAWYER, quick());
+  assert.equal(asked, false);
+  assert.equal(starts(log)[0]?.table, "ai_start_run");
+});
+
+test("source contract (l9): an individual's free questions open quick-answer's Pro rule, nothing else; the library switch still applies", () => {
+  const runs = readFileSync("src/app/api/v1/ai/runs/route.ts", "utf8").replace(/\r\n/g, "\n");
+  assert.match(runs, /const gateRefused = await libraryGate\(\{ accountLock: isLibraryAiTool\(toolId\) \}\);/);
+  assert.match(runs, /const refused = gateRefused \?\? \(\(freeOpensTier && \(await freeOpensTier\(toolId\)\)\) \? null : await libraryAiAccess\(toolId\)\);/);
+  assert.match(runs, /if \(toolId !== GENERAL_FREE_QUESTION_TOOL \|\| freeQuestionToolFor\(userType\) !== toolId\) return false;/);
+  assert.match(runs, /if \(!user\.email_confirmed_at\) return false;/);
+  assert.match(runs, /return \(await freeQuestionStatusWith\(admin, user\.id\)\)\.available;/);
 });

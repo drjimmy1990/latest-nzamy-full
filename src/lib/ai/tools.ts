@@ -1790,8 +1790,12 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     roles: REGISTERED_ROLES,
     consultantBlocked: false,
     // Owner ٤١٢ (7 Nov 2026): 10 points. Its daily free question was replaced
-    // by the library assistant's free questions (owner ٣٠, 18 Nov; batch l7).
+    // by the once-per-account free questions (owner ٣٠, 18 Nov; batch l7).
     price: () => 10,
+    // Register 4 / 36 (batch l9): an INDIVIDUAL's 5 free questions are here,
+    // on the general assistant (freeQuestion.freeQuestionToolFor); a lawyer's
+    // stay on the library assistant.
+    freeQuestions: true,
     dailyLimit: 30,
     defaultMode: "off",
     // Owner ٤١٣ option A: an answer that cites none of the texts is kept,
@@ -1812,7 +1816,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // Owner ٢٥٧: 5 points flat, the chat and «اشرح لي» alike.
     price: () => 5,
     // Owner ٣٠ (18 Nov, batch l7): the account's free questions, once —
-    // 10 for a lawyer, 5 for an individual (freeQuestion.ts).
+    // 10 for a lawyer (an individual's 5 are on quick-answer since l9;
+    // freeQuestion.ts).
     freeQuestions: true,
     dailyLimit: 60,
     defaultMode: "off",
