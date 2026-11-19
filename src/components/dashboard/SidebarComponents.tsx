@@ -22,7 +22,7 @@ import {
   ChartLineUp, ClipboardText, ChatsCircle, Gear,
   TreeStructure, Fingerprint, Timer, HandHeart, Files, UsersFour,
   Warning, LockKey, PlayCircle, UsersThree,
-  QrCode,
+  QrCode, Flag, ToggleRight,
 } from "@phosphor-icons/react";
 
 import { useTheme } from "@/components/ThemeProvider";
@@ -48,7 +48,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   ChartLineUp, ClipboardText, ChatsCircle, Gear,
   TreeStructure, Fingerprint, Timer, HandHeart, Files, UsersFour,
   Warning, LockKey, PlayCircle, UsersThree,
-  QrCode,
+  QrCode, Flag, ToggleRight,
   FileWarning: Warning,
   HandCuffs: LockKey,
   ClipboardList: ClipboardText,
