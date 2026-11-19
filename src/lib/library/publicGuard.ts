@@ -9,10 +9,12 @@
  *      page) and on consecutive pages (paged requests in a short window);
  *   3. the three admin settings behind them (platform_settings):
  *        library_public_protection            — the numbers of 1 and 2;
- *        public_full_rulings_per_collection   — full rulings a non-subscriber
- *                                               sees per collection (owner: 0;
- *                                               every ruling shows ONE short
- *                                               paragraph, ~1.5 lines);
+ *        public_full_rulings_per_collection   — the items a non-subscriber
+ *                                               reads in full per collection
+ *                                               (owner register 14 item 13:
+ *                                               2, at most 3; the rest are
+ *                                               titles and a subscribe card —
+ *                                               no excerpt, no «3 أو 5»);
  *        library_feqh_free_pages              — fiqh text is subscribers only
  *                                               (owner: 0 free pages);
  *   4. publicExcerpt(): the excerpt a locked item shows — cut at a word,
@@ -109,40 +111,56 @@ export function libraryPublicProtectionIssue(value: unknown): string | null {
   return null;
 }
 
+/**
+ * Owner register 14 item 13 / file 16 §9.5 (19 Nov 2026): «يرى الزائر النص
+ * الكامل لحكمين لكل مجموعة (إعداد، حد أقصى 3)، والباقي مقفول حتى الاشتراك مع
+ * بطاقة اشتراك … (يلغي «مقتطف 180 حرفاً» و«3 أو 5»)».
+ */
 export interface PublicRulingsSetting {
-  /** Rulings per collection a non-subscriber reads in full (owner: 0). */
+  /** Items per collection a non-subscriber reads in full (owner: 2, at most PUBLIC_RULINGS_FULL_MAX). */
   full: number;
-  /** The one-paragraph excerpt every other ruling shows, in characters (~1.5 lines). */
-  excerptChars: number;
 }
 
-export const PUBLIC_RULINGS_DEFAULTS: Readonly<PublicRulingsSetting> = Object.freeze({ full: 0, excerptChars: 180 });
-const EXCERPT_MIN = 60;
-const EXCERPT_MAX = 600;
-const FULL_MAX = 20;
+export const PUBLIC_RULINGS_FULL_MAX = 3;
+export const PUBLIC_RULINGS_DEFAULTS: Readonly<PublicRulingsSetting> = Object.freeze({ full: 2 });
 
+/** The stored value; an old `excerpt_chars` key (batch l8) is read past — the excerpt is cancelled. */
 export function parsePublicRulings(value: unknown): PublicRulingsSetting {
   const out: PublicRulingsSetting = { ...PUBLIC_RULINGS_DEFAULTS };
   const obj = plainObject(value);
   if (!obj) return out;
-  if (typeof obj.full === "number" && Number.isInteger(obj.full) && obj.full >= 0 && obj.full <= FULL_MAX) out.full = obj.full;
-  if (typeof obj.excerpt_chars === "number" && Number.isInteger(obj.excerpt_chars) && obj.excerpt_chars >= EXCERPT_MIN && obj.excerpt_chars <= EXCERPT_MAX) {
-    out.excerptChars = obj.excerpt_chars;
-  }
+  if (typeof obj.full === "number" && Number.isInteger(obj.full) && obj.full >= 0 && obj.full <= PUBLIC_RULINGS_FULL_MAX) out.full = obj.full;
   return out;
 }
 
 export function publicRulingsIssue(value: unknown): string | null {
   const obj = plainObject(value);
-  if (!obj) return 'قيمة public_full_rulings_per_collection يجب أن تكون كائناً بالشكل {"full":0,"excerpt_chars":180}';
-  for (const k of Object.keys(obj)) if (k !== "full" && k !== "excerpt_chars") return `حقل غير معروف: ${k}`;
-  if ("full" in obj && (typeof obj.full !== "number" || !Number.isInteger(obj.full) || obj.full < 0 || obj.full > FULL_MAX)) {
-    return `عدد الأحكام الكاملة المجانية بين 0 و${FULL_MAX}`;
-  }
-  if ("excerpt_chars" in obj && (typeof obj.excerpt_chars !== "number" || !Number.isInteger(obj.excerpt_chars) || obj.excerpt_chars < EXCERPT_MIN || obj.excerpt_chars > EXCERPT_MAX)) {
-    return `طول المقتطف بين ${EXCERPT_MIN} و${EXCERPT_MAX} حرفاً`;
+  if (!obj) return 'قيمة public_full_rulings_per_collection يجب أن تكون كائناً بالشكل {"full":2}';
+  for (const k of Object.keys(obj)) if (k !== "full") return `حقل غير معروف: ${k} (المقتطف أُلغي بقرار المالك)`;
+  if (!("full" in obj) || typeof obj.full !== "number" || !Number.isInteger(obj.full) || obj.full < 0 || obj.full > PUBLIC_RULINGS_FULL_MAX) {
+    return `عدد الأحكام الكاملة المجانية لكل مجموعة بين 0 و${PUBLIC_RULINGS_FULL_MAX}`;
   }
   return null;
+}
+
+/**
+ * How many items of a judicial collection a viewer reads in full, by position
+ * (order_index, then id): -1 = all (full library access, or a collection the
+ * admin opened); an admin per-collection override wins; otherwise the setting
+ * (register 14 item 13), never more than the collection holds. One rule for
+ * the API (precedents/[slug]/route.ts) and the server-rendered page
+ * (precedents/[slug]/layout.tsx), so the HTML never holds more than a guest's
+ * API answer.
+ */
+export function collectionFreeCount(
+  access: { freeLimit: number; freeLimitSource?: "override" | "default" },
+  total: number,
+  rulings: PublicRulingsSetting,
+): number {
+  if (access.freeLimit === -1) return -1;
+  const n = access.freeLimitSource === "override" ? access.freeLimit : rulings.full;
+  const safe = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  return Number.isFinite(total) && total >= 0 ? Math.min(safe, total) : safe;
 }
 
 /** Owner decision: fiqh text is for subscribers only — 0 free pages by default. */

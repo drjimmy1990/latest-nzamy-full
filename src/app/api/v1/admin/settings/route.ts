@@ -74,7 +74,7 @@ const ALLOWED_SETTINGS_KEYS = [
   // (per-session / per-address budgets, Turnstile threshold, consecutive
   // pages, browsing depth, pass minutes);
   "library_public_protection",
-  // {"full": n, "excerpt_chars": n} — full rulings per collection for a non-subscriber (owner: 0, ~1.5 lines);
+  // {"full": n} — items per collection a non-subscriber reads in full (owner register 14 item 13: 2, at most 3; no excerpt);
   "public_full_rulings_per_collection",
   // {"pages": n} — fiqh free pages (owner: 0, subscribers only).
   "library_feqh_free_pages",

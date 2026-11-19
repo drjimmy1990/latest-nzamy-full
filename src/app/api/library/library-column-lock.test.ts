@@ -847,8 +847,9 @@ test("routes that need locked columns read them with the service role and keep m
   // service role; the per-principle mask is the paywall.
   assert.match(precedent, /const serverOnly = await createServiceClient\(\);\s*const principlesQuery = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
   assert.match(precedent, /const head = await serverOnly\s*\.schema\('library'\)\s*\.from\('principles'\)/);
-  // Batch l8-libguard: cut at a word and never whole (audit م-1); 150 for a principle, the setting for a ruling.
-  assert.match(precedent, /return isLocked \? publicExcerpt\(text, excerptChars\) : text;/);
+  // Register 14 item 13 (batch l9): a locked item sends no text at all (the excerpt is cancelled).
+  assert.match(precedent, /text: isLocked \? '' : typeof p\.text === 'string' \? withCleanCardRows\(p\.text\) : p\.text,/);
+  assert.doesNotMatch(precedent, /publicExcerpt/);
   assert.match(precedent, /paragraphs: isLocked\s*\? \[\]/);
   assert.match(precedent, /details: isLocked \? null : \{/);
 });
