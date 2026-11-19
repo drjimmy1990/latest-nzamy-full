@@ -103,7 +103,7 @@ function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly un
 
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
-  const { userType, isLoggedIn, loading: authLoading } = useUser();
+  const { isLoggedIn, loading: authLoading } = useUser();
 
   // ── Phase 6: reading activity + recent sessions ride the server for
   // signed-in users (getPreferences/patchPreferences); guests keep the
@@ -149,6 +149,10 @@ function LawSystemPageContent() {
   // Pro+ tier, an active library grant, or an admin) or a whitelisted law.
   // ArticleBlock locks an article on it, never on the client's tier.
   const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
+  // File 16 §2 (batch l9): the viewer's own library entitlement
+  // (`paywall.isSubscriber`), null until THIS law's response arrives — so no
+  // «اشترك» card is ever drawn on a guess (the sidebar shows it on false only).
+  const [viewerIsSubscriber, setViewerIsSubscriber] = useState<boolean | null>(null);
   // T28-22/23/26: official-publication fields (lock flag, official URL, Umm
   // al-Qura issue, the law that replaced a repealed one). Held beside `law`
   // rather than inside it — the LawSystem mapping below is a shared whitelist.
@@ -259,6 +263,7 @@ function LawSystemPageContent() {
         setOfficialMeta(EMPTY_OFFICIAL_META);
         setPreambleLocked(false);
         setViewerHasFullAccess(false);
+        setViewerIsSubscriber(null);
         setLawNotice("");
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
         if (cancelled) return;
@@ -287,6 +292,7 @@ function LawSystemPageContent() {
           typeof data?.paywall?.freeLimit === "number" ? data.paywall.freeLimit : null,
         );
         setViewerHasFullAccess(data?.paywall?.hasFullAccess === true);
+        setViewerIsSubscriber(typeof data?.paywall?.isSubscriber === "boolean" ? data.paywall.isSubscriber : null);
         setOfficialMeta(parseOfficialMeta(data));
         setPreambleLocked(data?.preambleLocked === true);
         setLawNotice(typeof data?.notice === "string" ? data.notice.trim() : "");
@@ -1093,7 +1099,7 @@ function LawSystemPageContent() {
                 isScrolling={isScrolling}
                 setShowFolderModal={setShowFolderModal}
                 setShowPaywall={setShowPaywall}
-                userType={userType}
+                viewerIsSubscriber={viewerIsSubscriber}
                 mode="identity"
                 viewMode={viewMode as any}
                 officialMeta={officialMeta}
@@ -1114,7 +1120,7 @@ function LawSystemPageContent() {
                 isScrolling={isScrolling}
                 setShowFolderModal={setShowFolderModal}
                 setShowPaywall={setShowPaywall}
-                userType={userType}
+                viewerIsSubscriber={viewerIsSubscriber}
                 mode="index"
                 viewMode={viewMode as any}
                 regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
@@ -1742,7 +1748,7 @@ function LawSystemPageContent() {
                   jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
                   filteredArticles={jumpArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
-                  userType={userType} mode="identity" viewMode={viewMode as any}
+                  viewerIsSubscriber={viewerIsSubscriber} mode="identity" viewMode={viewMode as any}
                   officialMeta={officialMeta}
                 />
                 <SidebarPanel
@@ -1751,7 +1757,7 @@ function LawSystemPageContent() {
                   jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
                   filteredArticles={jumpArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
-                  userType={userType} mode="index" viewMode={viewMode as any}
+                  viewerIsSubscriber={viewerIsSubscriber} mode="index" viewMode={viewMode as any}
                   regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                 />
               </div>

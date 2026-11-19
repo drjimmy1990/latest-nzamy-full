@@ -458,6 +458,11 @@ export async function GET(
         isWhitelisted,
         freeLimit,
         hasFullAccess,
+        // File 16 §2 (batch l9): the viewer's OWN library entitlement (admin,
+        // Pro+ tier, an active library grant — the founder's included), apart
+        // from a whitelisted law. The sidebar's «اشترك الآن» card keys on it,
+        // never on the account type.
+        isSubscriber,
         totalArticles: articles?.length ?? 0,
       },
       // LIB-04b (2026-09-25): chapters are ordered by where their articles

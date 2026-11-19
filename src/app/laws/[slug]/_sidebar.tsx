@@ -47,7 +47,13 @@ interface SidebarPanelProps {
   isScrolling: React.MutableRefObject<boolean>;
   setShowFolderModal: (show: boolean) => void;
   setShowPaywall: (show: boolean) => void;
-  userType: string | null;
+  /**
+   * File 16 §2 (batch l9): the viewer's own library entitlement from the law
+   * API (`paywall.isSubscriber`): true = entitled (admin, team, subscriber,
+   * founder), false = not, null = not known yet (the response has not come).
+   * The «اشترك الآن» card shows only on `false` — never on the account type.
+   */
+  viewerIsSubscriber: boolean | null;
   mode?: "identity" | "index" | "all";
   viewMode?: "all" | "law" | "regulation";
   /** T28-22/26: lock flag, official URL and Umm al-Qura issue from the detail API. */
@@ -76,7 +82,7 @@ export default function SidebarPanel({
   isScrolling,
   setShowFolderModal,
   setShowPaywall,
-  userType,
+  viewerIsSubscriber,
   mode = "all",
   viewMode = "all",
   officialMeta,
@@ -937,8 +943,11 @@ export default function SidebarPanel({
         </div>
       </div>
 
-      {/* CTA */}
-      {userType !== "lawyer" && userType !== "firm" && (
+      {/* CTA — file 16 §2: only when the server said this viewer has no
+          library entitlement. It was keyed on the account type: an admin, a
+          subscribed non-lawyer, and a lawyer while the session was still
+          loading (useUser serves a guest until then) all saw «اشترك الآن». */}
+      {viewerIsSubscriber === false && (
         <div className={`${card} ${border} p-3 text-center`}>
           <Crown size={20} color="#C8A762" weight="fill" className="mx-auto mb-1.5" />
           <p className={`text-[11px] font-bold mb-2 ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>{isRTL ? "وصول كامل للمكتبة" : "Full library access"}</p>
