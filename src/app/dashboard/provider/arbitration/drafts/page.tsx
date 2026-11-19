@@ -9,6 +9,8 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 type DraftStatus = "draft" | "review" | "finalized";
 
@@ -46,7 +48,7 @@ const STATUS_CONFIG: Record<DraftStatus, { label: string; bg: string; color: str
   finalized: { label: "نهائي",           bg: "bg-emerald-500/10", color: "text-emerald-500", icon: <Gavel size={11} weight="fill" /> },
 };
 
-export default function ArbitrationDraftsPage() {
+function ArbitrationDraftsPageDemo() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -197,4 +199,21 @@ export default function ArbitrationDraftsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (مسودات الأحكام التحكيمية) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ArbitrationDraftsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="مسودات الأحكام"
+        description="هذه الصفحة غير متاحة حالياً. مسودات الأحكام التحكيمية التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ArbitrationDraftsPageDemo />;
 }

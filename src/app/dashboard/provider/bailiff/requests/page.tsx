@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { ClipboardText, MagnifyingGlass, CheckCircle, Clock, Warning, ArrowRight, Storefront } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 interface BailiffRequest {
   id: string; client: string; type: string;
@@ -22,7 +24,7 @@ const STATUS_CONF = {
   "مكتمل": { bg: "bg-emerald-500/10", color: "text-emerald-500", icon: CheckCircle },
   "معلّق":  { bg: "bg-rose-500/10",    color: "text-rose-500",    icon: Warning },
 };
-export default function BailiffRequestsPage() {
+function BailiffRequestsPageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
@@ -108,4 +110,21 @@ export default function BailiffRequestsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (طلبات التعقيب وأصحابها ومبالغها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function BailiffRequestsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="طلبات التعقيب"
+        description="هذه الصفحة غير متاحة حالياً. طلبات التعقيب وأصحابها ومبالغها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <BailiffRequestsPageDemo />;
 }

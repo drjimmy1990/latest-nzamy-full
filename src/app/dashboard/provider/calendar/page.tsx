@@ -3,6 +3,8 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import {
   CaretLeft, CaretRight, Clock, CheckCircle, X, CalendarBlank,
   VideoCamera, Phone, ChatText, MapPin, ArrowCounterClockwise,
@@ -71,7 +73,7 @@ const DAY_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأرب�
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
-export default function ProviderCalendarPage() {
+function ProviderCalendarPageDemo() {
   const { isDark } = useTheme();
   const [weekOffset, setWeekOffset] = useState(0);
   const [selected, setSelected] = useState<Booking | null>(null);
@@ -294,4 +296,21 @@ export default function ProviderCalendarPage() {
         </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (المواعيد والخدمات القادمة) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ProviderCalendarPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="المواعيد"
+        description="هذه الصفحة غير متاحة حالياً. المواعيد والخدمات القادمة التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ProviderCalendarPageDemo />;
 }

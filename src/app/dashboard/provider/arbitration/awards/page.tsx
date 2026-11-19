@@ -8,6 +8,8 @@ import {
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 interface Award {
   id: number;
@@ -65,7 +67,7 @@ const OUTCOME_CONFIG = {
   settlement:     { label: "تسوية ودّية",         bg: "bg-emerald-500/10", color: "text-emerald-500" },
 };
 
-export default function ArbitrationAwardsPage() {
+function ArbitrationAwardsPageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -170,4 +172,21 @@ export default function ArbitrationAwardsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (الأحكام التحكيمية وأطرافها ومبالغها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ArbitrationAwardsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الأحكام التحكيمية"
+        description="هذه الصفحة غير متاحة حالياً. الأحكام التحكيمية وأطرافها ومبالغها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ArbitrationAwardsPageDemo />;
 }

@@ -3,6 +3,8 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import {
   Star, ThumbsUp, ChatText, Flag, SmileyMeh, SmileyWink,
   SmileySad, ArrowRight, Funnel,
@@ -85,7 +87,7 @@ function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
-export default function ProviderReviewsPage() {
+function ProviderReviewsPageDemo() {
   const { isDark } = useTheme();
   const [filter, setFilter] = useState<number | null>(null);
   const [replyOpen, setReplyOpen] = useState<number | null>(null);
@@ -264,4 +266,21 @@ export default function ProviderReviewsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (تقييمات العملاء وتعليقاتهم) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ProviderReviewsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="التقييمات"
+        description="هذه الصفحة غير متاحة حالياً. تقييمات العملاء وتعليقاتهم التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ProviderReviewsPageDemo />;
 }

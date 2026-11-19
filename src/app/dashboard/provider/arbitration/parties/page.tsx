@@ -7,6 +7,8 @@ import {
   Buildings, MapPin, Scales, ArrowLeft, MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 interface Party {
   id: number;
@@ -53,7 +55,7 @@ const ROLE_MAP = {
   respondent:{ label: "مدّعى عليه", bg: "bg-rose-500/10", color: "text-rose-500" },
 };
 
-export default function ArbitrationPartiesPage() {
+function ArbitrationPartiesPageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
@@ -167,4 +169,21 @@ export default function ArbitrationPartiesPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (أطراف النزاعات التحكيمية وبيانات تواصلهم) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ArbitrationPartiesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="أطراف التحكيم"
+        description="هذه الصفحة غير متاحة حالياً. أطراف النزاعات التحكيمية وبيانات تواصلهم التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ArbitrationPartiesPageDemo />;
 }
