@@ -1,10 +1,11 @@
 /**
- * l10 (gap 1.5, option A): end to end through seedLibrary's dry-run JSONL
- * export (the rows the owner loader loads). A law file and a decree file
- * flagged needs_human_review are ABSENT from the JSONL — no law row, no
- * article row, no decree row, no page row — and PRESENT in
- * needs-human-review-report.json as held_back; with allowReviewFlagged they
- * are built as before. No DB, no network: dryRun only, into a fresh tmp folder.
+ * l10 (gap 1.5, option A, OPT-IN): end to end through seedLibrary's dry-run
+ * JSONL export (the rows the owner loader loads). By default a law file and a
+ * decree file flagged needs_human_review are PRESENT in the JSONL and listed
+ * as published_flagged («موسوم للمراجعة — يُنشر لأن البوابة غير مفعّلة»); with
+ * holdReviewFlagged they are ABSENT — no law row, no article row, no decree
+ * row, no page row — and listed as held_back. No DB, no network: dryRun only,
+ * into a fresh tmp folder.
  *
  * Run: node --import tsx --test scripts/seed-library.review-gate.test.ts
  */
@@ -64,17 +65,17 @@ function readJsonl(dir: string, table: string): Record<string, unknown>[] {
   return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 
-async function run(allowReviewFlagged: boolean) {
+async function run(holdReviewFlagged: boolean) {
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "nzamy-l10-gate-out-")), "rows");
   const result = await seedLibrary({
-    dir: fixtureDir(), dryRun: true, types: ["laws", "decrees"], drySeedJsonlDir: out, allowReviewFlagged,
+    dir: fixtureDir(), dryRun: true, types: ["laws", "decrees"], drySeedJsonlDir: out, holdReviewFlagged,
   });
   const report = JSON.parse(fs.readFileSync(path.join(out, "needs-human-review-report.json"), "utf8"));
   return { out, result, report };
 }
 
-test("gate on (default): the flagged law and decree are absent from the JSONL and listed as held_back", async () => {
-  const { out, result, report } = await run(false);
+test("--hold-review-flagged: the flagged law and decree are absent from the JSONL and listed as held_back", async () => {
+  const { out, result, report } = await run(true);
   assert.deepEqual(result.errors, []);
   assert.deepEqual(readJsonl(out, "laws").map((r) => r.slug), ["gate-clean"]);
   const articleLaws = new Set(readJsonl(out, "articles").map((r) => r.law_slug));
@@ -89,6 +90,7 @@ test("gate on (default): the flagged law and decree are absent from the JSONL an
   ]);
   assert.match(report.note, /NOT deleted/);
   assert.match(report.note, /NOT a FULL load/);
+  assert.equal(report.published_flagged_count, 0);
   assert.equal(report.count, 2, "the flag report still lists every flagged record");
   assert.equal(result.review_gate?.held_back.length, 2);
   // the raised cap: the 120-character number_text reaches the row whole
@@ -97,12 +99,19 @@ test("gate on (default): the flagged law and decree are absent from the JSONL an
   assert.equal(result.value_report?.truncated.filter((t) => t.field === "number_text").length, 0);
 });
 
-test("--allow-review-flagged: the flagged files are built as before; nothing held back", async () => {
-  const { out, report } = await run(true);
+test("default (hold off): the flagged files are built as before and listed loudly; nothing held back", async () => {
+  const { out, result, report } = await run(false);
   assert.deepEqual(readJsonl(out, "laws").map((r) => r.slug).sort(), ["gate-clean", "gate-flagged"]);
   assert.ok(readJsonl(out, "articles").some((r) => r.law_slug === "gate-flagged"));
   assert.equal(readJsonl(out, "decrees_circulars").length, 2);
   assert.equal(report.gate, "off");
   assert.equal(report.held_back_count, 0);
   assert.equal(report.count, 2);
+  assert.equal(report.published_flagged_count, 2);
+  assert.deepEqual(report.published_flagged.map((p: { id: string; status: string }) => [p.id, p.status]), [
+    ["gate-flagged", "موسوم للمراجعة — يُنشر لأن البوابة غير مفعّلة"],
+    ["تعميم-معلم", "موسوم للمراجعة — يُنشر لأن البوابة غير مفعّلة"],
+  ]);
+  assert.doesNotMatch(report.note, /NOT a FULL load/, "the cleanup warning is only for a held load");
+  assert.equal(result.review_gate?.published_flagged.length, 2);
 });
