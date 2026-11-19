@@ -81,3 +81,27 @@ test("a wrong passcode is still a 401 with the old Arabic message", () => {
   assert.ok(code.includes('const WRONG_PASSCODE_MESSAGE = "الرجاء إدخال باسكود صحيح مكون من 6 أرقام";'));
   assert.ok(/if \(!matches\) \{\s*return NextResponse\.json\(\{ error: WRONG_PASSCODE_MESSAGE \}, \{ status: 401 \}\);/.test(code));
 });
+
+test("#48: a share revoked after 20 wrong passcodes answers one 410, before the lock and any compare", () => {
+  assert.ok(/const REVOKED_MESSAGE =\s*"[^"]*نهائياً[^"]*"/.test(code), "the revoked message is Arabic and says it is final");
+  assert.ok(
+    /if \(verdict === "revoked"\) \{\s*return NextResponse\.json\(\{ error: REVOKED_MESSAGE \}, \{ status: 410 \}\);/.test(code),
+    "revoked → 410 with the fixed message",
+  );
+  const revokedAt = code.indexOf('if (verdict === "revoked")');
+  assert.ok(revokedAt > -1 && revokedAt < code.indexOf('if (verdict === "locked")'), "revoked is answered first");
+  const helper = fnBody("checkPasscodeInDb");
+  assert.ok(helper.includes('result === "revoked"'), "the function's revoked answer is accepted, not a 500");
+});
+
+test("#48: one view counted per successful open, after the signed URL, never failing the open", () => {
+  const helper = fnBody("countShareView");
+  assert.ok(helper.includes('supabase.rpc("share_count_view", { p_token_hash: tokenHash })'));
+  assert.ok(/error\.code === "PGRST202" \|\| error\.code === "42883"/.test(helper), "missing function → not counted, logged once");
+  assert.ok(!/return NextResponse/.test(helper), "the count never answers the request");
+  const signedAt = code.indexOf("createSignedUrl(documentPath, 300)");
+  const countAt = code.indexOf("await countShareView(supabase, sha256Hex(token));");
+  const okAt = code.indexOf("success: true");
+  assert.ok(signedAt > -1 && countAt > signedAt && okAt > countAt, "counted after signing, before the 200");
+  assert.equal(code.split("countShareView(").length - 1, 2, "one definition, one call");
+});
