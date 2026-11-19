@@ -165,3 +165,28 @@ test("riyadhDayPlus: Riyadh calendar days (UTC+3)", () => {
   assert.equal(riyadhDayPlus(new Date("2026-11-19T21:00:00Z"), 1), "2026-11-21");
   assert.equal(riyadhDayPlus(new Date("2026-12-31T22:00:00Z"), 30), "2027-01-31");
 });
+
+test("a test account's reminder (l9 testinfra): sunk once, recorded 'sent' / last_error 'sunk', never retried", async () => {
+  const tables: Record<string, Row[]> = { email_reminder_log: [] };
+  const admin = fakeAdmin(tables);
+  const f = okFetch();
+  const asked: string[][] = [];
+  const deps = {
+    env: ENV,
+    fetchImpl: f.impl,
+    sinkCheck: async (i: { userIds: string[] }) => { asked.push(i.userIds); return { sink: true, reason: "test_recipient" }; },
+  };
+  const info = console.info;
+  console.info = () => {};
+  try {
+    const key = { ...KEY, recipientUserId: "00000000-0000-0000-0000-00000000a003" };
+    assert.equal(await sendReminderOnce(admin, key, MSG, deps), "sent");
+    assert.equal(await sendReminderOnce(admin, key, MSG, deps), "already");
+  } finally {
+    console.info = info;
+  }
+  assert.equal(f.calls.length, 0, "Resend is never called");
+  assert.deepEqual(asked, [["00000000-0000-0000-0000-00000000a003"]], "the recipient's id is passed to the sink");
+  assert.equal(tables.email_reminder_log[0].status, "sent");
+  assert.equal(tables.email_reminder_log[0].last_error, "sunk");
+});
