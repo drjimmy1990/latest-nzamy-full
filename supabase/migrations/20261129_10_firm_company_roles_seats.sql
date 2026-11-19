@@ -48,6 +48,14 @@
 --         contract_parties, contract_obligations, contract_payments) through
 --         public.contract_scope_visible(contract) — they read through the
 --         SECURITY DEFINER can_access_contract, which is NOT changed here.
+--      5. The writer keeps his own work record: on time_entries, lawyer_expenses
+--         and client_trust_ledger (20261126_40) the «restricted case rows:
+--         case team only» policy is re-created as
+--           (case_request_id is null or created_by = auth.uid()
+--            or case_visible(case_request_id))
+--         so a secretary's own timesheet line on a case he is not assigned to
+--         (or no longer is) stays his — the owner's «a secretary reads only his
+--         own» rule of l6. It reveals nothing he did not write himself.
 --      SELECT only, TO authenticated only (the 20261125_40 reasons: a hidden
 --      row cannot be updated or deleted either, and anon holds no EXECUTE on
 --      these helpers). can_access_case_row is NOT changed: it is also called
@@ -102,9 +110,10 @@
 --   present). Before or after the l9-secroles deploy: the new code only maps
 --   the 'business_seats_full' token and hides e-mails in the API.
 --   RE-RUN HAZARD: re-running 20261125_40 puts back the old case_visible
---   (trainees and secretaries read every firm case again), and re-running
---   20260914 or 20260921_03 puts back the role-blind business policies —
---   re-run THIS file after any of them. This file itself is idempotent.
+--   (trainees and secretaries read every firm case again), re-running
+--   20261126_40 drops the writer's arm of A5, and re-running 20260914 or
+--   20260921_03 puts back the role-blind business policies — re-run THIS
+--   file after any of them. This file itself is idempotent.
 --   No setting is changed (max_seats is a new column with its default).
 --
 -- ROLLBACK (manual, in this order):
@@ -296,6 +305,28 @@ $fn$;
   end if;
 end
 $cc$;
+
+-- A5: the writer keeps his own time / expense / trust rows
+do $own$
+declare
+  t text;
+begin
+  foreach t in array array['time_entries', 'lawyer_expenses', 'client_trust_ledger'] loop
+    if to_regclass('public.' || t) is null
+       or not exists (select 1 from information_schema.columns
+                       where table_schema = 'public' and table_name = t and column_name = 'created_by')
+       or not exists (select 1 from information_schema.columns
+                       where table_schema = 'public' and table_name = t and column_name = 'case_request_id') then
+      raise notice '20261129_10: public.% (created_by, case_request_id) is not here — skipped', t;
+      continue;
+    end if;
+    execute pg_catalog.format('drop policy if exists %I on public.%I', 'restricted case rows: case team only', t);
+    execute pg_catalog.format(
+      'create policy %I on public.%I as restrictive for select to authenticated using (case_request_id is null or created_by = auth.uid() or public.case_visible(case_request_id))',
+      'restricted case rows: case team only', t);
+  end loop;
+end
+$own$;
 
 -- firm-wide rows that carry an owner, a case and a client card
 do $rows$
@@ -765,10 +796,18 @@ begin
                     where tgrelid = 'public.business_members'::regclass and tgname = 'trg_business_seat_cap' and not tgisinternal) then
       missing := missing || ' trg_business_seat_cap;';
     end if;
-    if exists (select 1 from pg_roles where rolname = 'authenticated')
-       and (has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'UPDATE')
-            or has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'INSERT')) then
-      missing := missing || ' a session can write business_profiles.max_seats (a table-level UPDATE/INSERT grant is back — re-run 20260922_03);';
+    -- max_seats carries no column grant of its own. A session can write it
+    -- only through a TABLE-level UPDATE/INSERT grant, which 20260922_03
+    -- revoked (its own _verify block guards that); on a database without
+    -- 20260922_03 this only reports.
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+      if has_table_privilege('authenticated', 'public.business_profiles', 'UPDATE')
+         or has_table_privilege('authenticated', 'public.business_profiles', 'INSERT') then
+        raise notice '20261129_10: authenticated holds a table-level write grant on business_profiles (20260922_03 not applied here) — max_seats is session-writable until it is';
+      elsif has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'UPDATE')
+            or has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'INSERT') then
+        missing := missing || ' a session holds a column grant on business_profiles.max_seats;';
+      end if;
     end if;
     if exists (select 1 from pg_roles where rolname = 'authenticated')
        and has_function_privilege('authenticated', 'public.business_seat_cap(uuid)', 'EXECUTE') then

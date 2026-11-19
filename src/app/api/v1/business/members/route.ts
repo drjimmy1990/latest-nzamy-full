@@ -5,12 +5,14 @@ import { createServiceClient } from "@/lib/supabase/server";
 import {
   BUSINESS_INVITE_ROLE_VALUES,
   BUSINESS_ROLE_LABEL,
+  canReadBusinessRoster,
   isInvitableBusinessRole,
   type BusinessRole,
 } from "@/lib/auth/businessMembershipAccess";
 import { resolveBusinessProfileScope } from "@/lib/auth/businessProfileScope";
 import { escapeLikePattern } from "@/lib/services/likePattern";
 import { recordNotification } from "@/lib/notify";
+import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 
 /**
  * /api/v1/business/members — the company roster (WP-6 B-5, plan §5 Q7 = yes,
@@ -26,7 +28,13 @@ import { recordNotification } from "@/lib/notify";
  *
  * ── CONTRACT ────────────────────────────────────────────────────────────────
  * GET  /api/v1/business/members
- *   200 `{ data: BusinessMember[], total: number, canManage: boolean }`
+ *   200 `{ data: BusinessMember[], total: number, canManage: boolean, canSeeRoster: boolean }`
+ *        — owner file 15 row 3 (20261129_10): the roster is read through
+ *          RLS, which since that file gives the whole roster only to the
+ *          owner and an active legal_manager / hr_manager
+ *          (public.business_roster_reader); any other member gets his own
+ *          row. E-mails are shown to those roster readers only (a member
+ *          always sees his own) — `canSeeRoster`.
  *        — active rows first, then `created_at` ascending (the owner's row,
  *          written at company creation, sorts first among actives).
  *        — `canManage` is true only for the owner; the UI hides its write
@@ -137,7 +145,7 @@ interface ProfileLite {
   email: string | null;
 }
 
-function toDto(row: BusinessMemberRow, profile: ProfileLite | undefined, ownerUserId: string | null) {
+function toDto(row: BusinessMemberRow, profile: ProfileLite | undefined, ownerUserId: string | null, emailVisible = true) {
   return {
     id: row.id,
     businessId: row.business_id,
@@ -149,7 +157,8 @@ function toDto(row: BusinessMemberRow, profile: ProfileLite | undefined, ownerUs
     // the service-client projection in place this is now rare — it means the
     // projection itself failed, not that RLS refused.
     displayName: profile?.display_name ?? null,
-    email: profile?.email ?? null,
+    // Owner file 15 row 3: a colleague's e-mail only for a roster reader.
+    email: emailVisible ? (profile?.email ?? null) : null,
     isOwner: ownerUserId !== null && row.user_id === ownerUserId,
     acceptedAt: row.accepted_at,
     createdAt: row.created_at,
@@ -322,11 +331,19 @@ export async function GET(_request: NextRequest) {
       return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
     });
 
-    const data = sorted.map((row) => toDto(row, profileById.get(row.user_id), ownerUserId));
+    // Owner file 15 row 3 (20261129_10): RLS already limits the rows; the
+    // e-mails are limited here too, in case a roster ever reaches this route
+    // some other way.
+    const ownRow = memberRows.find((r) => r.user_id === user.id) ?? null;
+    const canSeeRoster = canReadBusinessRoster(scope.scope === "owner", ownRow);
+    const data = sorted.map((row) =>
+      toDto(row, profileById.get(row.user_id), ownerUserId, canSeeRoster || row.user_id === user.id),
+    );
     return NextResponse.json({
       data,
       total: count ?? data.length,
       canManage: scope.scope === "owner",
+      canSeeRoster,
     });
   } catch (err) {
     console.error("[business/members GET] Unexpected error:", err);
@@ -435,6 +452,9 @@ export async function POST(request: NextRequest) {
           reinvite.error.message,
           reinvite.error.code,
         );
+        // Company seat cap (20261129_10): a removed member back into a full company.
+        const full = limitRefusal(reinvite.error);
+        if (full) return NextResponse.json(limitRefusalBody(full), { status: full.status });
         return NextResponse.json(
           { error: reinvite.error.code === "42501" ? AR.ownerOnly : AR.addFailed },
           { status: reinvite.error.code === "42501" ? 403 : 500 },
@@ -449,6 +469,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (error || !data) {
+      // Company seat cap (20261129_10): «اكتملت مقاعد الشركة» + «لزيادة المقاعد تواصل معنا».
+      const full = limitRefusal(error);
+      if (full) return NextResponse.json(limitRefusalBody(full), { status: full.status });
       if (error?.code === "23514") {
         return NextResponse.json(
           { error: `الدور يجب أن يكون واحدًا من: ${BUSINESS_INVITE_ROLE_VALUES.join(", ")}` },

@@ -54,6 +54,44 @@ export function isInvitableBusinessRole(value: unknown): value is BusinessRole {
   return isBusinessRole(value) && value !== "owner";
 }
 
+/**
+ * Owner file 15 row 3 (20261129_10) — the company roles checked ON THE SERVER.
+ *
+ * `BUSINESS_CASE_READER_ROLES`: an active member in one of these reads every
+ * request and case of the company (public.business_case_reader; the same list
+ * as BUSINESS_CASE_ROLES in src/constants/entityRouteAccess.ts). Everyone else
+ * — department_head, hr_manager, finance_manager, employee — reads the
+ * requests he filed or that are assigned to him.
+ *
+ * `BUSINESS_ROSTER_READER_ROLES`: an active member in one of these reads the
+ * whole roster and its e-mails (public.business_roster_reader; the roles of
+ * /dashboard/business/team). Everyone else reads his own row only.
+ *
+ * businessRoleScope.test.ts holds both lists equal to the SQL.
+ */
+export const BUSINESS_CASE_READER_ROLES: readonly BusinessRole[] = [
+  "owner",
+  "legal_manager",
+  "legal_staff",
+  "compliance_officer",
+  "seconded",
+];
+
+export const BUSINESS_ROSTER_READER_ROLES: readonly BusinessRole[] = ["owner", "legal_manager", "hr_manager"];
+
+/**
+ * May this caller read the whole roster? The company owner always; a member
+ * only while ACTIVE in a roster role. Deny by default (no row, a failed read).
+ */
+export function canReadBusinessRoster(
+  isOwner: boolean,
+  ownRow: { role: string | null; status: string | null } | null | undefined,
+): boolean {
+  if (isOwner) return true;
+  if (!ownRow || ownRow.status !== "active" || !ownRow.role) return false;
+  return (BUSINESS_ROSTER_READER_ROLES as readonly string[]).includes(ownRow.role);
+}
+
 export type BusinessMemberStatus = "invited" | "active" | "suspended" | "removed";
 
 /** The `status` CHECK on business_members (20260603_phase1_002_entities.sql:311-312). */
