@@ -107,21 +107,10 @@ export default function MicroDocumentsPage() {
         </motion.button>
       </motion.div>
 
-      {/* Storage Summary */}
+      {/* File counts. No storage meter: storage quotas are cancelled (owner file 15 row 76). */}
       <motion.div variants={fadeUp} initial="hidden" animate="show" custom={1}>
         <div className={`${card} p-4`}>
-          <div className="flex items-center justify-between mb-2">
-            <p className={`text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>مساحة التخزين</p>
-            <p className={`text-[11px] font-mono ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>٦.٥ م.ب / ١٠٠ م.ب</p>
-          </div>
-          <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}>
-            <motion.div
-              className="h-full rounded-full bg-gradient-to-l from-[#0B3D2E] to-emerald-500"
-              initial={{ width: 0 }}
-              animate={{ width: "6.5%" }}
-              transition={{ duration: 1, ease: "easeOut", delay: 0.4 }}
-            />
-          </div>
+          <p className={`text-[12px] font-bold mb-2 ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>ملخص الملفات</p>
           <div className="flex gap-4 mt-3">
             {[
               { label: "إجمالي الملفات", val: DOCUMENTS.length },

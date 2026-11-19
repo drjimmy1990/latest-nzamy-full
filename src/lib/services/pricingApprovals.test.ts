@@ -227,7 +227,9 @@ test("task 4: the /pricing price list prints the registry's charge, «قريبا
   }
   // The archive is not a free row: it is a note.
   assert.ok(![...rows.keys()].some((n) => n.includes("الأرشيف")), "the archive must not be a free row");
-  assert.match(lawyers, /"الأرشيف السحابي: ضمن سعة الباقة"/);
+  // File 15 row 76: storage quotas are cancelled, so no «سعة» is promised.
+  assert.match(lawyers, /"الأرشيف السحابي: بلا نقاط"/);
+  assert.doesNotMatch(lawyers, /سعة الباقة/);
   assert.match(pricingCards, /LAWYER_ARCHIVE_NOTE/);
   // The table renders the registry's label and «قريباً», never a row's own number.
   assert.match(pricingCards, /aiToolPointsLabel\(aiTool, "ar"\)/);

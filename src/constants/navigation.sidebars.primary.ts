@@ -163,8 +163,8 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "الدفع والاسترداد", labelEn: "Payments and Refunds", href: "/dashboard/admin/subscriptions/orders", icon: "CreditCard" },
       // No «إدارة الضمان / Escrow» link (owner ٢٨٩): the platform holds no
-      // funds and no Split Payment is built. /dashboard/admin/escrow is a mock
-      // page kept only behind its URL until the owner decides to delete it.
+      // funds and no Split Payment is built. The mock page /dashboard/admin/escrow
+      // was deleted in batch l9 (file 15 row 75).
       { label: "طلبات السحب",        labelEn: "Payouts",         href: "/dashboard/admin/payouts",                icon: "ArrowSquareOut",     badge: "جديد" },
       { label: "النزاعات",           labelEn: "Disputes",        href: "/dashboard/admin/disputes",               icon: "Scales",             badge: "جديد" },
     ],
