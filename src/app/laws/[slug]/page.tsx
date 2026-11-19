@@ -51,7 +51,6 @@ import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 import { CitationProvider, type CitationReaderContext } from "./_citation-popover";
 import { articlesByNumber } from "./_cite-status";
-import { LawMapButton } from "./_law-map-button";
 import { RefBox, RefBoxProvider, type RefBoxPageContext } from "./_ref-box";
 import { isPageNumberedDocument } from "@/lib/library/pageLocator";
 
@@ -1191,13 +1190,6 @@ function LawSystemPageContent() {
 
             {/* N2.6: search inside this law with the library's operators; the
                 matching articles stack here in full (paywall applied by the route). */}
-            {/* N06-40..43: the law's links map — the map and its data load only when opened. */}
-            {viewMode !== "appendix" && citationContext && (
-              <div className="flex justify-end">
-                <LawMapButton slug={citationContext.lawSlug} lawTitle={law.title} lawStatus={law.law_status ?? null} isDark={isDark} isRTL={isRTL} />
-              </div>
-            )}
-
             {viewMode !== "appendix" && (
               <ScopedSearchPanel
                 key={`law:${law.slug || slug}`}

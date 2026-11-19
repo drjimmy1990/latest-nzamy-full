@@ -646,7 +646,7 @@ test("the explorer client asks for meaning links by naming every type, and never
   assert.ok(api.includes('edges: edges.join(",")'));
   assert.ok(api.includes("normalizeEdges(n.edges)"));
   const ge = readFileSync(join(dir, "GraphExplorer.tsx"), "utf8");
-  assert.ok(ge.includes("named ? EXPLORER_SHOWN_EDGE_TYPES : []"), "named types are the shown ones only (decision ٦٠)");
+  assert.ok(ge.includes("named ? EXPLORER_SHOWN_EDGE_TYPES : []"), "named types are the classified ones (register 14 item 17)");
   for (const f of ["GraphExplorer.tsx", "NodeInspector.tsx", "ExplorerSidebar.tsx", "canvasElements.tsx"]) {
     const src = readFileSync(join(dir, f), "utf8");
     assert.doesNotMatch(src, /NODE_TYPE_META\[(?:node\.node_type|r\.node_type|h\.kind|n\.node_type)\]/, `${f}: node meta through nodeMetaFor`);
@@ -655,42 +655,40 @@ test("the explorer client asks for meaning links by naming every type, and never
   assert.ok(readFileSync(join(dir, "canvasElements.tsx"), "utf8").includes('node.node_type === "query" ? null : nodeMetaFor(node.node_type)'));
 });
 
-// ─── Owner decision ٦٠: only the link types matching his graph file ─────────
+// ─── Register 14 item 17 (reverses decision ٦٠): every link type is shown ───
 
-test("٦٠: the explorer hides the unreviewed link types on the server and in its lists", async () => {
+test("register 17: the explorer shows every classified link type, «إحالة» included; only an unclassified one is dropped", async () => {
   const core = await import("./graphExplorerCore.ts");
   const shown = core.EXPLORER_SHOWN_EDGE_TYPES;
+  assert.deepEqual([...shown], [...core.EXPLORER_EDGE_TYPES], "nothing hidden for not matching the owner's file");
   for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "CITES_ARTICLE", "IMPLEMENTED_BY", "REPLACED_BY", "SIMILAR_TO"]) {
-    assert.ok(!shown.includes(t as never), `${t} hidden`);
-    assert.equal(core.edgeMetaFor(t).label, "رابط قيد المراجعة", `${t} is never named`);
+    assert.equal(core.edgeMetaFor(t), core.EDGE_TYPE_META[t as keyof typeof core.EDGE_TYPE_META], `${t} named by its own label`);
   }
-  for (const t of ["INTERPRETS_ARTICLE", "AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "PART_OF", "NEXT_ARTICLE", "HAS_CONCEPT"]) {
-    assert.ok(shown.includes(t as never), `${t} shown`);
-  }
+  assert.equal(core.edgeMetaFor("CITES_ARTICLE").label, "إحالة");
   assert.equal(core.edgeMetaFor("NEW_LINK").label, "رابط غير معروف");
 
-  assert.equal(core.explorerEdgeFilter([]), null, "no names: every type, filtered after");
-  assert.deepEqual(core.explorerEdgeFilter(["CITES_ARTICLE", "PARENT_LAW"]), ["PARENT_LAW"]);
-  assert.deepEqual(core.explorerEdgeFilter(["CITES_ARTICLE"]), [...shown], "only hidden names: the shown types, never all");
+  assert.equal(core.explorerEdgeFilter([]), null, "no names: every type");
+  assert.deepEqual(core.explorerEdgeFilter(["CITES_ARTICLE", "PARENT_LAW"]), ["CITES_ARTICLE", "PARENT_LAW"]);
+  assert.deepEqual(core.explorerEdgeFilter(["NEW_LINK"]), [...shown], "only unknown names: the classified types, never all");
 
   const n = core.hideUnreviewedLinks({
     found: true,
     center_key: "article:a",
     total_center_edges: 4,
-    center_edge_counts: { CITES_ARTICLE: { out: 2, in: 0 }, PARENT_LAW: { out: 1, in: 0 }, PART_OF: { out: 1, in: 0 } },
+    center_edge_counts: { CITES_ARTICLE: { out: 2, in: 0 }, NEW_LINK: { out: 1, in: 0 }, PART_OF: { out: 1, in: 0 } },
     nodes: [{ node_key: "article:a" }, { node_key: "article:b" }, { node_key: "law:p" }, { node_key: "chapter:c" }],
     edges: [
       { source: "article:a", target: "article:b", edge_type: "CITES_ARTICLE" },
-      { source: "article:a", target: "law:p", edge_type: "PARENT_LAW" },
+      { source: "article:a", target: "law:p", edge_type: "NEW_LINK" },
       { source: "article:a", target: "chapter:c", edge_type: "PART_OF" },
     ],
   }) as { nodes: Array<{ node_key: string }>; edges: Array<{ edge_type: string }>; center_edge_counts: Record<string, unknown>; total_center_edges: number };
-  assert.deepEqual(n.edges.map((e) => e.edge_type), ["PARENT_LAW", "PART_OF"]);
-  assert.deepEqual(n.nodes.map((x) => x.node_key), ["article:a", "law:p", "chapter:c"], "a node only a hidden link reached goes");
-  assert.deepEqual(Object.keys(n.center_edge_counts).sort(), ["PARENT_LAW", "PART_OF"]);
-  assert.equal(n.total_center_edges, 2);
+  assert.deepEqual(n.edges.map((e) => e.edge_type), ["CITES_ARTICLE", "PART_OF"]);
+  assert.deepEqual(n.nodes.map((x) => x.node_key), ["article:a", "article:b", "chapter:c"], "a node only an unclassified link reached goes");
+  assert.deepEqual(Object.keys(n.center_edge_counts).sort(), ["CITES_ARTICLE", "PART_OF"]);
+  assert.equal(n.total_center_edges, 3);
   assert.deepEqual(core.hideUnreviewedLinks({ found: false }), { found: false });
-  assert.deepEqual(core.shownEdgeCounts({ CITES_ARTICLE: 9, AMENDS_ARTICLE: 3 }), { AMENDS_ARTICLE: 3 });
+  assert.deepEqual(core.shownEdgeCounts({ CITES_ARTICLE: 9, NEW_LINK: 3 }), { CITES_ARTICLE: 9 });
 
   const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "admin", "graph-explorer", "route.ts"), "utf8");
   assert.ok(route.includes("p_edge_types: explorerEdgeFilter(req.edges)"));

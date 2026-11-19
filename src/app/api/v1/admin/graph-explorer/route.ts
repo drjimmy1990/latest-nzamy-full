@@ -63,7 +63,7 @@ function explorerSchemaMissing(error: RpcError): boolean {
   return /graph_rag_explore|library_graph/i.test(error.message ?? "") && /does not exist|could not find/i.test(error.message ?? "");
 }
 
-/** An overview / node answer whose `edge_counts` lists only the shown link types (owner decision ٦٠). */
+/** An overview / node answer whose `edge_counts` lists the classified link types only (register 14 item 17: all of them). */
 function withShownEdgeCounts(data: unknown): unknown {
   if (!data || typeof data !== "object" || Array.isArray(data)) return data;
   const d = data as Record<string, unknown>;
@@ -119,7 +119,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await admin.rpc("graph_rag_explore_neighborhood", {
         p_node_key: req.key,
         p_depth: req.depth,
-        // Owner decision ٦٠: only the link types matching his graph file (and the outline).
+        // Register 14 item 17: every classified link type (decision ٦٠'s filter is reversed).
         p_edge_types: explorerEdgeFilter(req.edges),
         p_limit: req.limit,
       });

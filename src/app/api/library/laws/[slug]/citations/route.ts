@@ -6,7 +6,6 @@ import { stripArticleAuditNotes } from '@/lib/library/lawPreambleBlocks';
 import { articleStatusForDetail } from '../_article-status';
 import {
   NEIGHBORHOOD_LIMIT,
-  READER_LINK_TYPES,
   READER_SECTION_QUERIES,
   applyLiveRows,
   capTitle,
@@ -15,7 +14,6 @@ import {
   parseNumbers,
   refIds,
   shapeArticleRefs,
-  shapeLawLinks,
   validArticleId,
   withHrefs,
 } from './_shape';
@@ -23,12 +21,13 @@ import {
 /**
  * GET /api/library/laws/[slug]/citations — the law reader's citation data
  * (batch l6-reader, owner TODO N02-15/16, N06-40..43; batch l8-refbox, owner
- * item 6 + decision ٦٠). Loaded on demand only: a chip's popover, the links
- * box of the article in view, or the map, never on first paint.
+ * item 6 + decision ٦٠; batch l9-reader: register 14 items 14 and 17). Loaded
+ * on demand only: a chip's popover or the links box of the article in view,
+ * never on first paint. The law map («خريطة التشابك التشريعي», ?map=1) is gone
+ * (register 14 item 14): no button, no panel, no route branch.
  *
  *   ?article=<id>          the links box of one article: three sections
- *                          (legislation / judicial / fiqh), shown types only
- *   ?map=1                 the laws this law is linked with (graph, 20261128_60)
+ *                          (legislation / judicial / fiqh), every legal link type
  *   ?name=<title>&n=1,2    a law named in the text, and its articles by number
  *   ?law=<slug>&n=1,2      the same for a known law (a regulation's parent)
  *
@@ -75,9 +74,9 @@ export async function GET(
     if (url.searchParams.has('article')) {
       const id = validArticleId(url.searchParams.get('article'));
       if (!id) return json({ error: 'bad article' }, 400);
-      // One call per section, each with that section's types only (all of them
-      // the owner-matched READER_LINK_TYPES, graphLinkTypes.ts): hundreds of
-      // principles citing an article never crowd out its legislation links.
+      // One call per query group (READER_SECTION_QUERIES, graphLinkTypes.ts):
+      // hundreds of principles citing an article, or its many «إحالة» links,
+      // never crowd out its amendment and regulation links.
       const answers = await Promise.all(
         READER_SECTION_QUERIES.map((q) =>
           serverOnly.rpc('graph_rag_explore_neighborhood', {
@@ -95,18 +94,19 @@ export async function GET(
         return json({ error: 'تعذّر تحميل الإحالات' }, 500);
       }
       const shaped = mergeSectionRefs(
-        READER_SECTION_QUERIES.map((q, i) => ({ section: q.section, refs: shapeArticleRefs(answers[i].data, id, slug) })),
+        READER_SECTION_QUERIES.map((q, i) => ({ section: q.section, refs: shapeArticleRefs(answers[i].data, id, slug, q.types) })),
       );
       // Statuses from library.* now, not the graph's copy. A vanished anchor
-      // links to its document; a vanished document is dropped (applyLiveRows).
+      // links to its document and is named by it (never a confirmed article);
+      // a vanished document is dropped (applyLiveRows).
       const ids = refIds(shaped);
       const none = Promise.resolve({ data: [], error: null });
       const lib = serverOnly.schema('library');
       const [arts, laws, principles, collections, decrees] = await Promise.all([
         ids.articles.length ? lib.from('articles').select('id, status').in('id', ids.articles) : none,
-        ids.laws.length ? lib.from('laws').select('slug, status').in('slug', ids.laws) : none,
+        ids.laws.length ? lib.from('laws').select('slug, status, title').in('slug', ids.laws) : none,
         ids.principles.length ? lib.from('principles').select('id').in('id', ids.principles) : none,
-        ids.collections.length ? lib.from('judicial_collections').select('id').in('id', ids.collections) : none,
+        ids.collections.length ? lib.from('judicial_collections').select('id, title').in('id', ids.collections) : none,
         ids.decrees.length ? lib.from('decrees_circulars').select('id').in('id', ids.decrees) : none,
       ]);
       for (const r of [arts, laws, principles, collections, decrees]) if (r.error) throw r.error;
@@ -114,32 +114,15 @@ export async function GET(
         shaped,
         {
           articles: (arts.data ?? []) as Array<{ id: unknown; status: unknown }>,
-          laws: (laws.data ?? []) as Array<{ slug: unknown; status: unknown }>,
+          laws: (laws.data ?? []) as Array<{ slug: unknown; status: unknown; title: unknown }>,
           principles: (principles.data ?? []) as Array<{ id: unknown }>,
-          collections: (collections.data ?? []) as Array<{ id: unknown }>,
+          collections: (collections.data ?? []) as Array<{ id: unknown; title: unknown }>,
           decrees: (decrees.data ?? []) as Array<{ id: unknown }>,
         },
         safeArticleStatus,
         lawStatusForDetail,
       );
       return json({ available: true, ...withHrefs(live) });
-    }
-
-    // ── The law's linked laws (the map): shown types only (20261128_60) ─────
-    if (url.searchParams.get('map') === '1') {
-      const { data, error } = await serverOnly.rpc('library_reader_law_links_typed', {
-        p_law_slug: slug,
-        p_types: [...READER_LINK_TYPES],
-        p_limit: 24,
-      });
-      if (error) {
-        // Before 20261128_60 runs, the map says «غير متاحة بعد»: the older
-        // function counts the link types decision ٦٠ hides.
-        if (graphFunctionMissing(error.code)) return json({ available: false });
-        console.error('[citations] law links failed:', error.code ?? 'no-code', error.message);
-        return json({ error: 'تعذّر تحميل خريطة التشابك' }, 500);
-      }
-      return json({ available: true, ...shapeLawLinks(data) });
     }
 
     // ── A named law (or a known one) and its articles ────────────────────────

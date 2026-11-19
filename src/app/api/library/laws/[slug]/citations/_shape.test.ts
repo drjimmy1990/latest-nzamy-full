@@ -1,8 +1,9 @@
 /**
  * _shape.test.ts — the citation route sends titles, statuses and links, never
  * article text (20260929_01), whatever the graph function returns; the links
- * box shows only the link types matching the owner's file (decision ٦٠), in
- * three sections (owner item 6), and a missing anchor links to its document.
+ * box shows every legal link type, «إحالة» included (register 14 item 17), in
+ * three sections (owner item 6); a missing anchor links to its document and is
+ * never presented as a confirmed article; the law map is gone (item 14).
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -13,13 +14,13 @@ import {
   READER_SECTION_QUERIES,
   applyLiveRows,
   docNameCandidates,
+  documentName,
   mergeSectionRefs,
   parseNumbers,
   parseRefKey,
   refHrefs,
   refIds,
   shapeArticleRefs,
-  shapeLawLinks,
   validArticleId,
 } from "./_shape.ts";
 
@@ -50,21 +51,35 @@ const neighborhood = {
   ],
 };
 
-test("٦٠: the route asks only for the types matching the owner's file", () => {
-  assert.deepEqual([...READER_LINK_TYPES].sort(), ["AMENDS_ARTICLE", "INTERPRETS_ARTICLE", "PARENT_LAW", "SUPERSEDES_LAW"]);
+test("register 14 item 17: the route asks for every legal link type, «إحالة» included", () => {
+  assert.deepEqual([...READER_LINK_TYPES].sort(), [
+    "AMENDS_ARTICLE",
+    "CITES_ARTICLE",
+    "EXEMPTS_FROM",
+    "IMPLEMENTED_BY",
+    "INTERPRETS_ARTICLE",
+    "PARENT_LAW",
+    "PENALIZES",
+    "REPLACED_BY",
+    "SUBJECT_TO",
+    "SUPERSEDES_LAW",
+  ]);
 });
 
-test("sections: legislation and judicial filled, fiqh empty; hidden types dropped even if the function returns them", () => {
+test("sections: legislation and judicial filled, fiqh empty; computed and outline types dropped even if the function returns them", () => {
   const out = shapeArticleRefs(neighborhood, "a5", "labor");
   assert.equal(out.found, true);
   assert.deepEqual(
     out.sections.legislation.items.map((i) => [i.key, i.kind, i.linkType, i.direction, i.docKind, i.docId, i.anchorId]),
     [
+      ["article:a7", "article", "CITES_ARTICLE", "out", "law", "labor", "a7"],
+      ["article:x1", "article", "EXEMPTS_FROM", "in", "law", "civil", "x1"],
       ["law:old", "law", "SUPERSEDES_LAW", "in", "law", "old", null],
       ["law:parent", "law", "PARENT_LAW", "out", "law", "parent", null],
       ["decree:d1", "decree", "AMENDS_ARTICLE", "in", "order", "d1", null],
     ],
   );
+  assert.equal(out.sections.legislation.items[0].relation, "إحالة: تُحيل إليها هذه المادة");
   assert.deepEqual(
     out.sections.judicial.items.map((i) => [i.key, i.docKind, i.docId, i.anchorId, i.relation]),
     [["principle:p1", "collection", "high-court", "p1", "مبدأ قضائي يستند إليها"]],
@@ -72,7 +87,7 @@ test("sections: legislation and judicial filled, fiqh empty; hidden types droppe
   );
   assert.equal(out.sections.fiqh.items.length, 0);
   assert.ok(!JSON.stringify(out).includes(SECRET), "no snippet, no evidence");
-  assert.ok(!JSON.stringify(out).includes("CITES_ARTICLE") && !JSON.stringify(out).includes("EXEMPTS_FROM") && !JSON.stringify(out).includes("SIMILAR_TO"));
+  assert.ok(!JSON.stringify(out).includes("SIMILAR_TO") && !JSON.stringify(out).includes("NEXT_ARTICLE"), "not legal links: never in the box");
   for (const s of ["legislation", "judicial", "fiqh"] as const) {
     for (const i of out.sections[s].items) {
       assert.deepEqual(
@@ -101,21 +116,25 @@ test("a section lists at most MAX_ITEMS_PER_SECTION, and its total says how many
     ],
     edges: Array.from({ length: n }, (_, i) => ({ source: `principle:p${i}`, target: "article:c", edge_type: "INTERPRETS_ARTICLE" })),
   };
-  const out = shapeArticleRefs(many, "c", "l");
+  const out = shapeArticleRefs(many, "c", "l", ["INTERPRETS_ARTICLE"]);
   assert.equal(out.sections.judicial.items.length, MAX_ITEMS_PER_SECTION);
   assert.equal(out.sections.judicial.total, n + 40, "from the centre's edge counts when the list was cut");
-  assert.equal(out.sections.legislation.total, 0, "a hidden type's count never reaches a section");
+  assert.equal(out.sections.legislation.total, 0, "a type the call did not ask for never reaches a section (another group counts it)");
 });
 
-test("one query per section: 200 principles never crowd out a legislation link", () => {
+test("one query per group: 200 principles or 200 «إحالة» links never crowd out an amendment or regulation link", () => {
   assert.deepEqual(
     READER_SECTION_QUERIES.map((q) => [q.section, [...q.types].sort()]),
     [
-      ["legislation", ["AMENDS_ARTICLE", "PARENT_LAW", "SUPERSEDES_LAW"]],
+      ["legislation", ["AMENDS_ARTICLE", "EXEMPTS_FROM", "IMPLEMENTED_BY", "PARENT_LAW", "PENALIZES", "REPLACED_BY", "SUBJECT_TO", "SUPERSEDES_LAW"]],
+      ["legislation", ["CITES_ARTICLE"]],
       ["judicial", ["INTERPRETS_ARTICLE"]],
     ],
-    "fiqh has no shown type, so it is not asked for",
+    "fiqh has no type, so it is not asked for",
   );
+  const asked = READER_SECTION_QUERIES.flatMap((q) => q.types);
+  assert.equal(new Set(asked).size, asked.length, "a type is asked once");
+  assert.deepEqual([...asked].sort(), [...READER_LINK_TYPES].sort(), "every reader type is asked");
   const center = { node_key: "article:c", node_type: "article", law_slug: "l" };
   // What the function returns when asked for everything at once: 200 principles fill the limit.
   const crowded = {
@@ -130,22 +149,39 @@ test("one query per section: 200 principles never crowd out a legislation link",
     nodes: [center, { node_key: "law:parent", node_type: "law", law_slug: "parent", title: "النظام الأصل" }],
     edges: [{ source: "article:c", target: "law:parent", edge_type: "PARENT_LAW" }],
   };
+  // 200 «إحالة» links from the CITES_ARTICLE group, one of them also reached by the first group.
+  const cites = {
+    found: true,
+    truncated: true,
+    center_edge_counts: { CITES_ARTICLE: { out: 300, in: 0 }, PARENT_LAW: { out: 1, in: 0 } },
+    nodes: [center, { node_key: "law:parent", node_type: "law", law_slug: "parent", title: "النظام الأصل" }, ...Array.from({ length: 200 }, (_, i) => ({ node_key: `article:z${i}`, node_type: "article", law_slug: "other", title: `z${i}` }))],
+    edges: [
+      { source: "article:c", target: "law:parent", edge_type: "CITES_ARTICLE" },
+      ...Array.from({ length: 200 }, (_, i) => ({ source: "article:c", target: `article:z${i}`, edge_type: "CITES_ARTICLE" })),
+    ],
+  };
+  const [g1, g2, g3] = READER_SECTION_QUERIES;
   const merged = mergeSectionRefs([
-    { section: "legislation", refs: shapeArticleRefs(legislationOnly, "c", "l") },
-    { section: "judicial", refs: shapeArticleRefs(crowded, "c", "l") },
+    { section: g1.section, refs: shapeArticleRefs(legislationOnly, "c", "l", g1.types) },
+    { section: g2.section, refs: shapeArticleRefs(cites, "c", "l", g2.types) },
+    { section: g3.section, refs: shapeArticleRefs(crowded, "c", "l", g3.types) },
   ]);
-  assert.deepEqual(merged.sections.legislation.items.map((i) => i.key), ["law:parent"]);
-  assert.equal(merged.sections.legislation.total, 1);
+  const leg = merged.sections.legislation;
+  assert.equal(leg.items[0].key, "law:parent", "the regulation link comes first");
+  assert.equal(leg.items[0].linkType, "PARENT_LAW");
+  assert.equal(leg.items.filter((i) => i.key === "law:parent").length, 1, "an item two groups reached is listed once");
+  assert.equal(leg.items.length, MAX_ITEMS_PER_SECTION);
+  assert.equal(leg.total, 1 + 300 - 1, "the groups' totals, less the repeat");
   assert.equal(merged.sections.judicial.items.length, MAX_ITEMS_PER_SECTION);
   assert.equal(merged.sections.judicial.total, 250);
   assert.equal(merged.found, true);
 });
 
-test("live rows: statuses from library.*; a missing anchor links to its document; a missing document is dropped", () => {
+test("live rows: statuses from library.*; a missing anchor links to its document and is never a confirmed article; a missing document is dropped", () => {
   const shaped = shapeArticleRefs(
     {
       ...neighborhood,
-      nodes: [...neighborhood.nodes, { node_key: "article:gone", node_type: "article", law_slug: "civil", title: "مادة حُذفت", url: "" }],
+      nodes: [...neighborhood.nodes, { node_key: "article:gone", node_type: "article", law_slug: "civil", title: "نظام المعاملات — المادة 99", url: "" }],
       edges: [
         ...neighborhood.edges,
         { source: "article:a5", target: "article:gone", edge_type: "PARENT_LAW" },
@@ -156,30 +192,41 @@ test("live rows: statuses from library.*; a missing anchor links to its document
     "labor",
   );
   const ids = refIds(shaped);
-  assert.deepEqual(ids.articles, ["gone"]);
+  assert.deepEqual(ids.articles.sort(), ["a7", "gone", "x1"]);
   assert.deepEqual(ids.principles, ["p1"]);
   const live = applyLiveRows(
     shaped,
     {
-      articles: [],
-      laws: [{ slug: "old", status: "repealed" }, { slug: "civil", status: "active" }],
+      articles: [{ id: "a7", status: "active" }, { id: "x1", status: "amended" }],
+      laws: [{ slug: "old", status: "repealed" }, { slug: "civil", status: "active", title: "نظام المعاملات المدنية" }, { slug: "labor", status: "active" }],
       principles: [],
-      collections: [{ id: "high-court" }],
+      collections: [{ id: "high-court", title: "مبادئ المحكمة العليا" }],
       decrees: [{ id: "d1" }],
     },
     (raw) => (raw == null || raw === "" ? "status_undeclared" : String(raw)),
     (raw) => String(raw ?? "status_undeclared"),
   );
   const leg = live.sections.legislation.items;
-  assert.deepEqual(leg.map((i) => i.key), ["law:old", "decree:d1", "article:gone"], "law:parent has no library row: dropped");
+  assert.deepEqual(leg.map((i) => i.key), ["article:a7", "article:x1", "law:old", "decree:d1", "article:gone"], "law:parent has no library row: dropped");
   const gone = leg.find((i) => i.key === "article:gone")!;
   assert.equal(gone.anchorMissing, true);
+  assert.equal(gone.title, "نظام المعاملات المدنية", "the document's name, never «المادة 99»");
+  assert.equal(gone.status, null, "no article status for an unconfirmed article");
   assert.deepEqual(refHrefs(gone), { href: "/laws/civil", docHref: "/laws/civil" }, "the law, never a 404");
-  assert.equal(leg[0].status, "repealed");
+  assert.equal(leg.find((i) => i.key === "law:old")!.status, "repealed");
+  assert.equal(leg.find((i) => i.key === "article:x1")!.status, "amended");
   const p1 = live.sections.judicial.items[0];
   assert.equal(p1.anchorMissing, true, "principle row gone");
+  assert.equal(p1.title, "مبادئ المحكمة العليا");
+  assert.equal(p1.status, null);
   assert.deepEqual(refHrefs(p1), { href: "/precedents/high-court", docHref: "/precedents/high-court" });
-  assert.equal(live.sections.legislation.total, 3);
+  assert.equal(live.sections.legislation.total, 5);
+});
+
+test("a missing anchor with no library title: the graph title without its anchor part, else the document id", () => {
+  assert.equal(documentName(undefined, "نظام العمل — المادة 7", "labor"), "نظام العمل");
+  assert.equal(documentName("", "مادة حُذفت", "labor"), "labor");
+  assert.equal(documentName("نظام العمل", "x — y", "labor"), "نظام العمل");
 });
 
 test("hrefs: the exact anchor when it exists", () => {
@@ -189,18 +236,6 @@ test("hrefs: the exact anchor when it exists", () => {
   });
   assert.equal(refHrefs({ docKind: "collection", docId: "c", anchorId: "p", anchorMissing: false }).href, "/precedents/c#p");
   assert.equal(refHrefs({ docKind: "order", docId: "d", anchorId: null, anchorMissing: false }).href, "/laws/orders/d");
-});
-
-test("law links (map): only shown types; a law linked by hidden types only is dropped", () => {
-  const out = shapeLawLinks({
-    links: [
-      { slug: "civil", title: "نظام المعاملات المدنية", status: "active", out: 3, in: 1, types: ["PARENT_LAW", "CITES_ARTICLE"], evidence: SECRET },
-      { slug: "penal", title: "نظام العقوبات", status: "active", out: 2, in: 0, types: ["PENALIZES"] },
-      { title: "no slug" },
-    ],
-    truncated: true,
-  });
-  assert.deepEqual(out, { links: [{ slug: "civil", title: "نظام المعاملات المدنية", status: "active", out: 3, in: 1, types: ["PARENT_LAW"] }], truncated: true });
 });
 
 test("params: ids, numbers, name candidates, preview keys", () => {
@@ -219,16 +254,15 @@ test("params: ids, numbers, name candidates, preview keys", () => {
   assert.equal(parseRefKey("article:a\u0000"), null);
 });
 
-test("route contract: libraryGate first, service role for graph and articles, no text column, typed map", () => {
+test("route contract: libraryGate first, service role for graph and articles, no text column, no map (register 14 item 14)", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(route, /const gate = await libraryGate\(\);\s*if \(gate\) return gate;/);
   assert.match(route, /const ARTICLE_COLUMNS = 'id, number, title, status, instrument';/);
-  assert.doesNotMatch(route, /select\([^)]*\btext\b/);
+  assert.doesNotMatch(route, /select\([^)]*text/);
   assert.doesNotMatch(route, /spendLibraryDocument/);
-  assert.match(route, /shapeArticleRefs\(answers\[i\]\.data, id, slug\)/);
-  assert.match(route, /READER_SECTION_QUERIES\.map\(\(q\) =>/, "one graph call per section");
+  assert.match(route, /shapeArticleRefs\(answers\[i\]\.data, id, slug, q\.types\)/);
+  assert.match(route, /READER_SECTION_QUERIES\.map\(\(q\) =>/, "one graph call per group");
   assert.match(route, /p_edge_types: q\.types,/);
-  assert.match(route, /p_types: \[\.\.\.READER_LINK_TYPES\]/, "the map passes the same allow-list");
-  assert.match(route, /rpc\('library_reader_law_links_typed'/);
-  assert.doesNotMatch(route, /rpc\('library_reader_law_links'/, "the untyped map counts hidden types");
+  assert.match(route, /select\('slug, status, title'\)/, "the law's name for a missing anchor");
+  assert.doesNotMatch(route, /searchParams\.get\('map'\)|library_reader_law_links/, "the law map route branch is gone");
 });

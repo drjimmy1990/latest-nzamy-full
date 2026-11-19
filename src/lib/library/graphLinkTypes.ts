@@ -1,42 +1,49 @@
 /**
- * graphLinkTypes.ts — which graph link types a person may see, and where
- * (owner decision ٦٠, 18 Nov 2026, and owner message item 6 «الإحالات المرتبطة»).
+ * graphLinkTypes.ts — which graph link types a person sees, and where.
  *
- * ٦٠: «تظهر فقط الأنواع المتطابقة مع ملف المالك، وتُخفى الباقية من المستكشف
- * وشريط القارئ حتى المراجعة». The owner's file (LEGAL_GRAPH_EDGES_CLEAN.json)
- * has 14 raw types. Our graph has 17. A type of ours is SHOWN when it maps onto
- * one of his — the mapping is the one the comparison export uses
- * (src/lib/ai/graphOwnerCompareCore.ts `mapOurEdge`; the unit test pins this
- * list to it, so the two can never drift apart):
+ * Owner register 14, item 17 (19 Nov 2026, overrides decision ٦٠): «"إحالة"
+ * (مادة إلى مادة) تُعاد الآن وتظهر كل أنواع علاقات الجراف المتاحة في المربع
+ * الجانبي، ولا يُخفى شيء بحجة مطابقة الملف». So the reader's links box shows
+ * every LEGAL link between two documents our graph holds — whether or not the
+ * owner's graph file (LEGAL_GRAPH_EDGES_CLEAN.json) has a matching type — and
+ * the staff explorer shows every type.
  *
- *   INTERPRETS_ARTICLE → cites_article                 (مبدأ قضائي يستند لمادة)
- *   AMENDS_ARTICLE     → amended_by                    (يعدّل)
- *   SUPERSEDES_LAW     → superseded_by                 (يحلّ محل / يُستبدل)
- *   PARENT_LAW         → regulation_of / regulated_by  (لائحة / تنظيم)
+ * Decision ٦٠ (batch l8) showed only the four types the comparison export maps
+ * onto one of his 14; that mapping (OUR_TO_OWNER_TYPES below, pinned to
+ * src/lib/ai/graphOwnerCompareCore.ts `mapOurEdge` by the unit test) is now
+ * documentation of the comparison only. It never decides what is shown.
  *
- * HIDDEN until the owner reviews them: the six our question ٦٠ named
- * (EXEMPTS_FROM استثناء، SUBJECT_TO مع مراعاة، PENALIZES عقوبة، CITES_ARTICLE
- * إحالة، IMPLEMENTED_BY لائحتها التنفيذية، REPLACED_BY المقابل الساري) and
- * SIMILAR_TO (a link between two documents computed from vectors; his file
- * has no inferred link at all).
+ * The buckets (every type of the graph is in exactly one — the unit test pins
+ * them against the explorer's full list, so a new type cannot slip through):
  *
- * OUTLINE / MEANING types are not links between two legal documents: an
- * article inside its chapter (PART_OF), the next article (NEXT_ARTICLE), an
- * article and a concept or a defined term (HAS_CONCEPT, DEFINES_TERM,
- * DECONSTRUCTS_CONCEPT, ESTABLISHES_RULE). The staff explorer keeps them — it
- * cannot walk a law without them — and the reader never shows them. That
- * bucket is an interpretation of ٦٠; moving a type is one line here.
+ *   READER (the box, and the explorer): links between two legal documents —
+ *     INTERPRETS_ARTICLE  مبدأ قضائي يستند لمادة          → judicial
+ *     CITES_ARTICLE       إحالة (مادة تحيل إلى مادة)       → legislation
+ *     AMENDS_ARTICLE      تعديل                           → legislation
+ *     SUPERSEDES_LAW      إحلال نظام محل نظام             → legislation
+ *     PARENT_LAW          النظام الأصل / لائحة تابعة       → legislation
+ *     IMPLEMENTED_BY      مادة لائحية تنفّذ مادة نظامية    → legislation
+ *     REPLACED_BY         المقابل الساري لمادة ملغاة       → legislation
+ *     EXEMPTS_FROM        استثناء                         → legislation
+ *     SUBJECT_TO          مع مراعاة                       → legislation
+ *     PENALIZES           عقوبة المخالفة                  → legislation
+ *   EXPLORER ONLY: SIMILAR_TO — computed from vectors, not a legal link. Shown
+ *     to staff, never presented to a reader as a legal relation (an open owner
+ *     question in the batch l9 report).
+ *   OUTLINE / MEANING (explorer only): an article inside its chapter (PART_OF),
+ *     the next article (NEXT_ARTICLE), concepts and defined terms (HAS_CONCEPT,
+ *     DEFINES_TERM, DECONSTRUCTS_CONCEPT, ESTABLISHES_RULE). The explorer needs
+ *     them to walk a law; they are not links between two documents.
  *
- * Sections of the reader's links box (owner item 6, his graph report §4):
- * التشريعات (green), المبادئ والأحكام القضائية (blue), الآراء الفقهية (amber).
- * No shown type is fiqh today — his file has no fiqh link — so that section
- * stays empty and hidden until a fiqh type is added here.
+ * Sections of the reader's box (owner item 6): التشريعات (green), المبادئ
+ * والأحكام القضائية (blue), الآراء الفقهية (amber). No type is fiqh today, so
+ * that section stays empty — and an empty section is hidden.
  *
  * Pure (no imports): the reader route, the explorer route, the explorer's
  * client components and `node --test` all load it.
  */
 
-/** His 14 raw types (graph report §4) and the section each belongs to. */
+/** His 14 raw types (graph report §4) and the section each belongs to — the comparison's vocabulary. */
 export const OWNER_GRAPH_TYPES = {
   cites_article: { category: "مبدأ قضائي يستند لمادة", section: "judicial" },
   cites_precedent: { category: "مبدأ قضائي يحيل لمبدأ", section: "judicial" },
@@ -58,7 +65,11 @@ export type OwnerGraphType = keyof typeof OWNER_GRAPH_TYPES;
 export const LINK_SECTIONS = ["legislation", "judicial", "fiqh"] as const;
 export type LinkSection = (typeof LINK_SECTIONS)[number];
 
-/** Our type → the owner's type(s) it is exported as. Only these are shown. */
+/**
+ * Our type → the owner's type(s) the comparison export writes it as
+ * (graphOwnerCompareCore.mapOurEdge). Comparison only: since register 14
+ * item 17 it no longer decides what is shown.
+ */
 export const OUR_TO_OWNER_TYPES = {
   INTERPRETS_ARTICLE: ["cites_article"],
   AMENDS_ARTICLE: ["amended_by"],
@@ -66,20 +77,26 @@ export const OUR_TO_OWNER_TYPES = {
   PARENT_LAW: ["regulation_of", "regulated_by"],
 } as const satisfies Record<string, readonly OwnerGraphType[]>;
 
-/** The link types a reader or a staff member sees: the ones matching his file. */
-export const SHOWN_LINK_TYPES = Object.keys(OUR_TO_OWNER_TYPES) as Array<keyof typeof OUR_TO_OWNER_TYPES>;
+/** The reader's link types and the box section of each (register 14 item 17: all legal links). */
+export const READER_LINK_SECTIONS = {
+  INTERPRETS_ARTICLE: "judicial",
+  CITES_ARTICLE: "legislation",
+  AMENDS_ARTICLE: "legislation",
+  SUPERSEDES_LAW: "legislation",
+  PARENT_LAW: "legislation",
+  IMPLEMENTED_BY: "legislation",
+  REPLACED_BY: "legislation",
+  EXEMPTS_FROM: "legislation",
+  SUBJECT_TO: "legislation",
+  PENALIZES: "legislation",
+} as const satisfies Record<string, LinkSection>;
+
+/** The link types a reader sees (the box) — every legal link between two documents. */
+export const SHOWN_LINK_TYPES = Object.keys(READER_LINK_SECTIONS) as Array<keyof typeof READER_LINK_SECTIONS>;
 export type ShownLinkType = (typeof SHOWN_LINK_TYPES)[number];
 
-/** Links between documents his file does not have: hidden everywhere until reviewed. */
-export const UNREVIEWED_LINK_TYPES = [
-  "EXEMPTS_FROM",
-  "SUBJECT_TO",
-  "PENALIZES",
-  "CITES_ARTICLE",
-  "IMPLEMENTED_BY",
-  "REPLACED_BY",
-  "SIMILAR_TO",
-] as const;
+/** Computed links (not legal ones): the staff explorer only. */
+export const EXPLORER_ONLY_LINK_TYPES = ["SIMILAR_TO"] as const;
 
 /** Outline and meaning links (not between two documents): the staff explorer only. */
 export const OUTLINE_LINK_TYPES = [
@@ -92,40 +109,62 @@ export const OUTLINE_LINK_TYPES = [
 ] as const;
 
 export function isShownLinkType(t: unknown): t is ShownLinkType {
-  return typeof t === "string" && Object.prototype.hasOwnProperty.call(OUR_TO_OWNER_TYPES, t);
+  return typeof t === "string" && Object.prototype.hasOwnProperty.call(READER_LINK_SECTIONS, t);
 }
 
 /**
- * The staff explorer: the shown types and the outline / meaning types. Anything
- * else — the unreviewed types, and a type nobody has classified yet — is hidden.
+ * The staff explorer: every classified type (register 14 item 17 — nothing is
+ * hidden for not matching the owner's file). Only a type nobody has classified
+ * yet (a newer server) is left out.
  */
 export function isExplorerVisibleLinkType(t: unknown): boolean {
-  return isShownLinkType(t) || (OUTLINE_LINK_TYPES as readonly string[]).includes(String(t));
+  return (
+    isShownLinkType(t) ||
+    (EXPLORER_ONLY_LINK_TYPES as readonly string[]).includes(String(t)) ||
+    (OUTLINE_LINK_TYPES as readonly string[]).includes(String(t))
+  );
 }
 
-/** The box section of a shown type (from the owner's category of its mapping); null when not shown. */
+/** The box section of a reader type; null when the reader never shows it. */
 export function sectionOfLinkType(t: unknown): LinkSection | null {
-  if (!isShownLinkType(t)) return null;
-  const owner = OUR_TO_OWNER_TYPES[t][0] as OwnerGraphType;
-  return OWNER_GRAPH_TYPES[owner].section;
+  return isShownLinkType(t) ? READER_LINK_SECTIONS[t] : null;
 }
 
 /**
- * The words of one link, read from the article on the page: `out` when the
- * page's article is the link's source, `in` when it is the target.
+ * The words of one link, describing the OTHER item from the page's article:
+ * `out` when the page's article is the link's source, `in` when it is the target.
  */
 export const SHOWN_LINK_LABELS: Readonly<Record<ShownLinkType, { out: string; in: string }>> = {
   INTERPRETS_ARTICLE: { out: "مبدأ قضائي يستند إليه", in: "مبدأ قضائي يستند إليها" },
+  CITES_ARTICLE: { out: "إحالة: تُحيل إليها هذه المادة", in: "إحالة: تُحيل إلى هذه المادة" },
   AMENDS_ARTICLE: { out: "تعدّلها", in: "معدِّل لها" },
   SUPERSEDES_LAW: { out: "حلّ محله", in: "حلّ محلها" },
   PARENT_LAW: { out: "النظام الأصل", in: "لائحة أو نظام تابع" },
+  IMPLEMENTED_BY: { out: "مادة لائحية تنفّذها", in: "المادة النظامية التي تنفّذها" },
+  REPLACED_BY: { out: "المقابل الساري لها", in: "مادة ملغاة تقابلها" },
+  EXEMPTS_FROM: { out: "تستثني منها هذه المادة", in: "استثناء من هذه المادة" },
+  SUBJECT_TO: { out: "تُطبَّق هذه المادة مع مراعاتها", in: "تُطبَّق مع مراعاة هذه المادة" },
+  PENALIZES: { out: "تعاقب هذه المادة على مخالفتها", in: "عقوبة مخالفة هذه المادة" },
 };
 
 export function linkLabel(t: unknown, direction: "out" | "in"): string {
   return isShownLinkType(t) ? SHOWN_LINK_LABELS[t][direction] : "";
 }
 
-/** The shown types of one section (the reader asks the graph per section, so one section never starves another). */
+/** The reader types of one section. */
 export function linkTypesOfSection(s: LinkSection): ShownLinkType[] {
   return SHOWN_LINK_TYPES.filter((t) => sectionOfLinkType(t) === s);
 }
+
+/**
+ * How the reader asks the graph: one call per group, each with its own node
+ * limit, so a heavy type never crowds out a light one. An article cited by
+ * hundreds of principles keeps its legislation links; an article with dozens
+ * of «إحالة» links keeps its amendment and regulation links (they are listed
+ * first in the section). Groups of one section are merged in this order.
+ */
+export const READER_QUERY_GROUPS: ReadonlyArray<{ section: LinkSection; types: readonly ShownLinkType[] }> = [
+  { section: "legislation", types: ["AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "IMPLEMENTED_BY", "REPLACED_BY", "EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES"] },
+  { section: "legislation", types: ["CITES_ARTICLE"] },
+  { section: "judicial", types: ["INTERPRETS_ARTICLE"] },
+];
