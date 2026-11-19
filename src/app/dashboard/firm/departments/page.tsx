@@ -7,6 +7,8 @@ import { Buildings, Coins, Gavel, Gear, Plus, ShieldCheck, Users } from "@phosph
 import { useTheme } from "@/components/ThemeProvider";
 import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
 import { useAdminSettings } from "@/hooks/useAdminSettings";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const PRACTICE_DEPARTMENTS = [
   { name: "التقاضي", manager: "محام أول", people: 6, points: 50000, spent: 31300, icon: Gavel },
@@ -20,7 +22,7 @@ const OPERATIONS_DEPARTMENTS = [
   { name: "السكرتارية القانونية", role: "سكرتير قانوني", access: "يرى الجلسات والمستندات المعيّنة" },
 ];
 
-export default function FirmDepartmentsPage() {
+function FirmDepartmentsPageDemo() {
   const { isDark } = useTheme();
   const { currentFirmFeatures } = useAdminSettings();
   const [toast, setToast] = useState("الأقسام للعرض فقط حالياً: البيانات أدناه أمثلة ولا يُحفظ ما تغيّره بعد. إدارة الأقسام قريباً.");
@@ -122,4 +124,21 @@ export default function FirmDepartmentsPage() {
       </div>
     </SubscriptionGuard>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (الأقسام ومديروها وأعضاؤها ونقاطها ومصروفها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function FirmDepartmentsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="أقسام المكتب"
+        description="هذه الصفحة غير متاحة حالياً. الأقسام ومديروها وأعضاؤها ونقاطها ومصروفها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmDepartmentsPageDemo />;
 }

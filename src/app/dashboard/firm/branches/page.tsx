@@ -6,6 +6,8 @@ import { motion } from "framer-motion";
 import { Buildings, ChartBar, Coins, MapPin, Plus, Users, WarningCircle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const BRANCHES = [
   { city: "الرياض", manager: "سارة المنصور", people: 18, activeCases: 42, revenue: 720000, points: 180000, risk: "مستقر" },
@@ -13,7 +15,7 @@ const BRANCHES = [
   { city: "الخبر", manager: "نورة الشمري", people: 6, activeCases: 14, revenue: 180000, points: 60000, risk: "جاهز للتوسع" },
 ];
 
-export default function FirmBranchesPage() {
+function FirmBranchesPageDemo() {
   const { isDark } = useTheme();
   const [toast, setToast] = useState("فروع المكتب للعرض فقط حالياً: البيانات أدناه أمثلة ولا يُحفظ ما تغيّره بعد. إدارة الفروع قريباً.");
 
@@ -96,4 +98,21 @@ function Metric({ icon: Icon, label, value, isDark }: { icon: React.ElementType;
       <p className={`mt-1 font-black ${isDark ? "text-white" : "text-slate-800"}`}>{value}</p>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (الفروع ومدنها وأعضاؤها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function FirmBranchesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="فروع المكتب"
+        description="هذه الصفحة غير متاحة حالياً. الفروع ومدنها وأعضاؤها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <FirmBranchesPageDemo />;
 }
