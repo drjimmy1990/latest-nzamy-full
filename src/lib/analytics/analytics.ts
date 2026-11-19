@@ -236,6 +236,8 @@ export interface PurchaseInput {
 
 /** The Measurement Protocol body, or null when the order carries no consented client id. */
 export function buildPurchasePayload(input: PurchaseInput): Record<string, unknown> | null {
+  // l9 testinfra (owner file 19 §1ج.2): a test account's order is never a purchase
+  if (input.metadata?.test_account === true) return null;
   const ids = orderAnalyticsFromMetadata(input.metadata);
   if (!ids) return null;
   if (!Number.isFinite(input.totalHalalas) || input.totalHalalas < 0) return null;
