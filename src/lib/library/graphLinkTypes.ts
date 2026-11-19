@@ -10,20 +10,13 @@
  * list to it, so the two can never drift apart):
  *
  *   INTERPRETS_ARTICLE → cites_article                 (مبدأ قضائي يستند لمادة)
- *   CITES_ARTICLE      → cites_article                 (إحالة: نظام → مادة في نظام آخر)
  *   AMENDS_ARTICLE     → amended_by                    (يعدّل)
  *   SUPERSEDES_LAW     → superseded_by                 (يحلّ محل / يُستبدل)
  *   PARENT_LAW         → regulation_of / regulated_by  (لائحة / تنظيم)
  *
- * CITES_ARTICLE was first hidden (batch 8) because his graph report labels
- * cites_article «مبدأ قضائي يستند لمادة». His DATA says otherwise: 11,062 of his
- * 12,296 cites_article edges go LAW → LAW article (graph compare, 19 Nov) —
- * exactly our «إحالة». So it matches his file and is shown, in the
- * legislation section (OUR_SECTION below), not the judicial one.
- *
- * HIDDEN until the owner reviews them: the five left of those our question ٦٠
- * named (EXEMPTS_FROM استثناء، SUBJECT_TO مع مراعاة، PENALIZES عقوبة،
- * IMPLEMENTED_BY لائحتها التنفيذية، REPLACED_BY المقابل الساري) and
+ * HIDDEN until the owner reviews them: the six our question ٦٠ named
+ * (EXEMPTS_FROM استثناء، SUBJECT_TO مع مراعاة، PENALIZES عقوبة، CITES_ARTICLE
+ * إحالة، IMPLEMENTED_BY لائحتها التنفيذية، REPLACED_BY المقابل الساري) and
  * SIMILAR_TO (a link between two documents computed from vectors; his file
  * has no inferred link at all).
  *
@@ -68,7 +61,6 @@ export type LinkSection = (typeof LINK_SECTIONS)[number];
 /** Our type → the owner's type(s) it is exported as. Only these are shown. */
 export const OUR_TO_OWNER_TYPES = {
   INTERPRETS_ARTICLE: ["cites_article"],
-  CITES_ARTICLE: ["cites_article"],
   AMENDS_ARTICLE: ["amended_by"],
   SUPERSEDES_LAW: ["superseded_by"],
   PARENT_LAW: ["regulation_of", "regulated_by"],
@@ -83,6 +75,7 @@ export const UNREVIEWED_LINK_TYPES = [
   "EXEMPTS_FROM",
   "SUBJECT_TO",
   "PENALIZES",
+  "CITES_ARTICLE",
   "IMPLEMENTED_BY",
   "REPLACED_BY",
   "SIMILAR_TO",
@@ -110,18 +103,9 @@ export function isExplorerVisibleLinkType(t: unknown): boolean {
   return isShownLinkType(t) || (OUTLINE_LINK_TYPES as readonly string[]).includes(String(t));
 }
 
-/**
- * Where one of our types sits when his category would put it elsewhere: his
- * cites_article category is judicial, but our CITES_ARTICLE is a law citing a
- * law — legislation.
- */
-const OUR_SECTION: Partial<Record<ShownLinkType, LinkSection>> = { CITES_ARTICLE: "legislation" };
-
-/** The box section of a shown type (OUR_SECTION, else the owner's category of its mapping); null when not shown. */
+/** The box section of a shown type (from the owner's category of its mapping); null when not shown. */
 export function sectionOfLinkType(t: unknown): LinkSection | null {
   if (!isShownLinkType(t)) return null;
-  const own = OUR_SECTION[t];
-  if (own) return own;
   const owner = OUR_TO_OWNER_TYPES[t][0] as OwnerGraphType;
   return OWNER_GRAPH_TYPES[owner].section;
 }
@@ -132,7 +116,6 @@ export function sectionOfLinkType(t: unknown): LinkSection | null {
  */
 export const SHOWN_LINK_LABELS: Readonly<Record<ShownLinkType, { out: string; in: string }>> = {
   INTERPRETS_ARTICLE: { out: "مبدأ قضائي يستند إليه", in: "مبدأ قضائي يستند إليها" },
-  CITES_ARTICLE: { out: "تُحيل إليها", in: "تُحيل إلى هذه المادة" },
   AMENDS_ARTICLE: { out: "تعدّلها", in: "معدِّل لها" },
   SUPERSEDES_LAW: { out: "حلّ محله", in: "حلّ محلها" },
   PARENT_LAW: { out: "النظام الأصل", in: "لائحة أو نظام تابع" },
