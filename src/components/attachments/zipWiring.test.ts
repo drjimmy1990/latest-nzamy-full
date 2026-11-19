@@ -73,7 +73,12 @@ test("the route: request gate shared with the per-file routes, soft-delete filte
   assert.match(route, /\.is\("deleted_at", null\)/);
   assert.match(route, /visibleRequestFiles\(rows, requestId\)/);
   assert.match(route, /assertRole\(\["lawyer", "firm"\]\)/);
-  assert.match(route, /\.eq\("client_user_id", auth\.user\.id\)/);
+  // client_contract (owner #4, l9-secleak): the client's own NON-DRAFT contract, read
+  // through the definer function / its whitelisted fallback — never the RLS tables directly.
+  assert.match(route, /clientContractVersions\(auth\.supabase, auth\.user\.id, contractId\)/);
+  const clientRead = read("src/app/api/v1/client/contracts/_clientRead.ts");
+  assert.match(clientRead, /supabase\.rpc\("client_contract_versions", \{ p_contract: contractId \}\)/);
+  assert.match(clientRead, /\.eq\("client_user_id", userId\)\s*\.neq\("status", CLIENT_HIDDEN_STATUS\)/);
   assert.match(route, /visibleContractFiles\(rows, contractId\)/);
   const caps = route.indexOf("checkZipCaps(");
   const stream = route.indexOf("buildZipStream(\n");
@@ -119,6 +124,16 @@ test("the routes that SERVE a file check the folder it was written in, so a docu
   ] as const) {
     const src = read(f);
     assert.ok(src.includes(call), `${f} checks ${call}`);
+    if (f.startsWith("src/app/api/v1/client/contracts/")) {
+      // owner #4 (l9-secleak): the client's versions come from _clientRead.ts — the
+      // definer function's columns and the fallback's whitelist both carry folder_owner_id.
+      const clientRead = read("src/app/api/v1/client/contracts/_clientRead.ts");
+      assert.match(src, /clientContractVersions\(supabase, user\.id, id\)/, `${f} reads through _clientRead.ts`);
+      assert.match(clientRead, /CLIENT_VERSION_COLUMNS =\s*"[^"]*folder_owner_id[^"]*"/, "the client whitelist carries folder_owner_id");
+      assert.match(clientRead, /\.select\(CLIENT_VERSION_COLUMNS\)/);
+      assert.match(read("supabase/migrations/20261129_20_secleak_contracts_shares_licences.sql"), /v\.uploaded_by, v\.folder_owner_id, v\.created_at/);
+      continue;
+    }
     assert.match(src, /\.select\("[^"]*folder_owner_id[^"]*"\)/, `${f} selects folder_owner_id`);
   }
   assert.match(read("src/app/api/v1/share/[token]/verify/route.ts"), /select\("id, owner_user_id, folder_owner_id, storage_path, deleted_at"\)/);

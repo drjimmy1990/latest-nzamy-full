@@ -28,7 +28,7 @@ import { useTheme } from '@/components/ThemeProvider';
 import { itemsOf, listViewState, type ListRead } from '@/lib/services/listRead';
 import {
   getClientContracts, getClientContract, getClientContractVersionUrl,
-  type Contract, type ContractDetail, type ContractVersion,
+  type ClientContract, type ClientContractDetail, type ClientContractVersion,
 } from '@/lib/services/contractsService';
 import {
   CONTRACT_STATUSES, CONTRACT_STATUS_AR, CONTRACT_TYPE_AR,
@@ -87,7 +87,8 @@ function expiryBadge(endsOn: string | null, today: Date | null, isDark: boolean)
 
 const TABS: { key: ContractStatus | 'all'; label: string }[] = [
   { key: 'all', label: 'الكل' },
-  ...CONTRACT_STATUSES.map((s) => ({ key: s, label: CONTRACT_STATUS_AR[s] })),
+  // A draft never reaches the client (owner #4): no «مسودة» tab.
+  ...CONTRACT_STATUSES.filter((s) => s !== 'draft').map((s) => ({ key: s, label: CONTRACT_STATUS_AR[s] })),
 ];
 
 type DetailTab = 'overview' | 'versions' | 'obligations' | 'payments';
@@ -102,7 +103,7 @@ const DETAIL_TABS: { key: DetailTab; label: string; icon: typeof FileText }[] = 
 
 function ContractCard({
   c, isSelected, onClick, isDark, today,
-}: { c: Contract; isSelected: boolean; onClick: () => void; isDark: boolean; today: Date | null }) {
+}: { c: ClientContract; isSelected: boolean; onClick: () => void; isDark: boolean; today: Date | null }) {
   const chip = STATUS_CHIP_CLS[c.status];
   const badge = expiryBadge(c.endsOn, today, isDark);
   return (
@@ -160,7 +161,7 @@ export default function ClientContractsPage() {
   useEffect(() => { setToday(new Date()); }, []);
 
   // ── List ──
-  const [read, setRead] = useState<ListRead<Contract> | null>(null);
+  const [read, setRead] = useState<ListRead<ClientContract> | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -188,7 +189,7 @@ export default function ClientContractsPage() {
   }, [filtered, selectedId]);
 
   // ── Detail (throws — loading/error/ready, not a ListRead) ──
-  const [detail, setDetail] = useState<ContractDetail | null>(null);
+  const [detail, setDetail] = useState<ClientContractDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
@@ -214,7 +215,7 @@ export default function ClientContractsPage() {
   const [versionBusy, setVersionBusy] = useState<Record<string, boolean>>({});
   const [versionError, setVersionError] = useState<Record<string, string>>({});
 
-  async function handleDownloadVersion(contractId: string, version: ContractVersion) {
+  async function handleDownloadVersion(contractId: string, version: ClientContractVersion) {
     setVersionBusy((b) => ({ ...b, [version.id]: true }));
     setVersionError((e) => { const n = { ...e }; delete n[version.id]; return n; });
     const url = await getClientContractVersionUrl(contractId, version.id);
@@ -500,12 +501,8 @@ export default function ClientContractsPage() {
                           </div>
                         )}
                       </div>
-                      {detail.notes.trim() && (
-                        <div className={`p-4 rounded-xl border text-[12.5px] leading-relaxed whitespace-pre-wrap ${isDark ? 'bg-white/[0.02] border-white/5 text-zinc-300' : 'bg-zinc-50 border-zinc-100 text-zinc-700'}`}>
-                          {detail.notes}
-                        </div>
-                      )}
-                      {detail.valueSar === null && !detail.counterpartyName && !dateAr(detail.startsOn) && !dateAr(detail.endsOn) && !dateAr(detail.signedOn) && !detail.notes.trim() && (
+                      {/* The lawyer's notes are internal: the client never receives them (owner #4). */}
+                      {detail.valueSar === null && !detail.counterpartyName && !dateAr(detail.startsOn) && !dateAr(detail.endsOn) && !dateAr(detail.signedOn) && (
                         <p className={`text-[12.5px] text-center py-8 ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>لا تفاصيل إضافية مسجَّلة على هذا العقد.</p>
                       )}
                     </div>

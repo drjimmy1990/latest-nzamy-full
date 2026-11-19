@@ -143,6 +143,22 @@ export interface ContractDetail extends Contract {
   payments: ContractPayment[];
 }
 
+// ─── What the CLIENT receives (owner #4, l9-secleak) ────────────────────────
+// Never the lawyer's notes (on the contract, a version, an obligation or a
+// payment) and never contracts.metadata (the counterparty's phone / id
+// number). The keys are absent, not empty: GET /api/v1/client/contracts*
+// answers these shapes (src/app/api/v1/client/contracts/_clientRead.ts).
+export type ClientContract = Omit<Contract, "notes" | "counterpartyPhone" | "counterpartyIdNo">;
+export type ClientContractVersion = Omit<ContractVersion, "notes">;
+export type ClientContractObligation = Omit<ContractObligation, "notes">;
+export type ClientContractPayment = Omit<ContractPayment, "notes">;
+export interface ClientContractDetail extends ClientContract {
+  versions: ClientContractVersion[];
+  parties: ContractParty[];
+  obligations: ClientContractObligation[];
+  payments: ClientContractPayment[];
+}
+
 export interface CreateContractInput {
   title: string;
   contractType: ContractType;
@@ -382,20 +398,20 @@ export async function deleteContractPayment(contractId: string, paymentId: strin
 
 // ─── client side (read-only) ─────────────────────────────────────────────────
 
-export async function getClientContracts(): Promise<ListRead<Contract>> {
+export async function getClientContracts(): Promise<ListRead<ClientContract>> {
   if (!isSupabaseMode) return listOk([]);
   try {
-    const body = await apiGet<{ data: Contract[]; total?: number }>(CLIENT_BASE);
+    const body = await apiGet<{ data: ClientContract[]; total?: number }>(CLIENT_BASE);
     return listFromApi(body);
   } catch (error) {
     console.error("[contractsService] getClientContracts failed:", error);
-    return listFailed<Contract>();
+    return listFailed<ClientContract>();
   }
 }
 
-export async function getClientContract(id: string): Promise<ContractDetail> {
+export async function getClientContract(id: string): Promise<ClientContractDetail> {
   if (!isSupabaseMode) throw new Error(DEMO);
-  const res = await apiGet<{ data: ContractDetail }>(`${CLIENT_BASE}/${encodeURIComponent(id)}`);
+  const res = await apiGet<{ data: ClientContractDetail }>(`${CLIENT_BASE}/${encodeURIComponent(id)}`);
   if (!res?.data) throw new Error("العقد غير موجود");
   return res.data;
 }
