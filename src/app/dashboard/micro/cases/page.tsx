@@ -10,6 +10,8 @@ import {
   FileText, CalendarBlank, Plus,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
@@ -77,7 +79,7 @@ const fadeUp = {
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.07, duration: 0.35 } }),
 };
 
-export default function MicroCasesPage() {
+function MicroCasesPageDemo() {
   const { isDark } = useTheme();
   const [filter, setFilter] = useState<FilterKey>("all");
   const [search, setSearch] = useState("");
@@ -249,4 +251,21 @@ export default function MicroCasesPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (القضايا والمحامون والجلسات) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function MicroCasesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="قضاياي"
+        description="هذه الصفحة غير متاحة حالياً. القضايا والمحامون والجلسات التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/micro"
+      />
+    );
+  }
+  return <MicroCasesPageDemo />;
 }

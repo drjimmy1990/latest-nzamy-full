@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Briefcase, ArrowDown, ArrowUp, DownloadSimple } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 type Entry = { label: string; amount: string; type: "وارد" | "صادر"; date: string; note: string };
 const ENTRIES: Entry[] = [
@@ -14,7 +16,7 @@ const ENTRIES: Entry[] = [
   { label: "هبة حكومية — وزارة الموارد",        amount: "50,000", type: "وارد", date: "2026-03-28", note: "برنامج التأهيل المهني" },
 ];
 
-export default function NGOFinancePage() {
+function NGOFinancePageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -91,4 +93,21 @@ export default function NGOFinancePage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (التبرعات والمصروفات والأرصدة) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function NGOFinancePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الماليات والتبرعات"
+        description="هذه الصفحة غير متاحة حالياً. التبرعات والمصروفات والأرصدة التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/ngo"
+      />
+    );
+  }
+  return <NGOFinancePageDemo />;
 }

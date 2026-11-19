@@ -5,6 +5,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChartBar, ClipboardText, HandHeart, Plus, Target, WarningCircle } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const PROGRAMS = [
   { id: "PRG-001", name: "كفالة الأسر", budget: "320,000 ر.س", beneficiaries: 180, status: "نشط", report: "ربع سنوي" },
@@ -12,7 +14,7 @@ const PROGRAMS = [
   { id: "PRG-003", name: "السلال الغذائية", budget: "95,000 ر.س", beneficiaries: 420, status: "مراجعة", report: "ربع سنوي" },
 ];
 
-export default function NgoProgramsPage() {
+function NgoProgramsPageDemo() {
   const { isDark } = useTheme();
   const [notice, setNotice] = useState("إدارة البرامج للعرض فقط حالياً: ما تضيفه أو تعتمده هنا لا يُحفظ بعد. قريباً.");
   const card = isDark ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60" : "rounded-2xl border border-slate-100 bg-white shadow-sm";
@@ -106,4 +108,21 @@ export default function NgoProgramsPage() {
       </Link>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (برامج الجمعية وحملاتها ومستفيديها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function NgoProgramsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="البرامج والحملات"
+        description="هذه الصفحة غير متاحة حالياً. برامج الجمعية وحملاتها ومستفيديها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/ngo"
+      />
+    );
+  }
+  return <NgoProgramsPageDemo />;
 }

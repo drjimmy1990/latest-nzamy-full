@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { FileText, Plus, Handshake } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const CONTRACTS = [
   { id: "NC-001", title: "عقد تطوع — برنامج التعليم المجتمعي",    party: "ريم الحربي",             value: "—",       status: "ساري",   expire: "2026-12-31" },
@@ -13,7 +15,7 @@ const CONTRACTS = [
   { id: "NC-004", title: "عقد تطوع — برنامج الصحة النفسية",         party: "نورة القحطاني",          value: "—",       status: "معلق",   expire: "—" },
 ];
 
-export default function NGOContractsPage() {
+function NGOContractsPageDemo() {
   const { isDark } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -71,4 +73,21 @@ export default function NGOContractsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (عقود الجمعية واتفاقياتها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function NGOContractsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="العقود والاتفاقيات"
+        description="هذه الصفحة غير متاحة حالياً. عقود الجمعية واتفاقياتها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/ngo"
+      />
+    );
+  }
+  return <NGOContractsPageDemo />;
 }
