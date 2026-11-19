@@ -35,7 +35,7 @@ import {
 } from "./seed-library.live-preflight";
 import { stripInternalContentKeys } from "../src/lib/library/internalContentFields";
 import { joinStoredPreamble } from "../src/lib/library/splitPreamble";
-import { holdBackReviewFlagged, isReviewFlagged, type HeldBackItem } from "../src/lib/library/reviewGate";
+import { HELD_BACK_NOT_FULL_LOAD, holdBackReviewFlagged, isReviewFlagged, type HeldBackItem } from "../src/lib/library/reviewGate";
 import {
   createSeedValueReport,
   LIBRARY_RAISED_CAPS,
@@ -1911,6 +1911,7 @@ export async function seedLibrary(options: {
   if (!allowReviewFlagged && heldBack.length > 0) {
     for (const h of heldBack.slice(0, 20)) console.log(`  held back: ${h.table} ${h.id} — ${h.reason.split("\n")[0]}`);
     if (heldBack.length > 20) console.log(`  … and ${heldBack.length - 20} more (see the report)`);
+    console.log(`  ⚠ ${HELD_BACK_NOT_FULL_LOAD}`);
   }
   // An inspection snapshot must not mutate its parser-input directory. The
   // normal dry-run keeps the historical report location; the explicit JSONL
@@ -1928,7 +1929,8 @@ export async function seedLibrary(options: {
         gate: allowReviewFlagged ? "off" : "on",
         held_back_count: heldBack.length,
         held_back: heldBack,
-        note: "held_back files got no rows in this run. Rows already live are NOT deleted: the loader only upserts. --allow-review-flagged turns the gate off.",
+        note: "held_back files got no rows in this run. Rows already live are NOT deleted: the loader only upserts. --allow-review-flagged turns the gate off."
+          + (heldBack.length > 0 ? ` ${HELD_BACK_NOT_FULL_LOAD}` : ""),
       }, null, 2),
       "utf-8",
     );

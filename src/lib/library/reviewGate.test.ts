@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { holdBackReviewFlagged, isReviewFlagged, reviewReasonOf } from "./reviewGate.ts";
+import { HELD_BACK_NOT_FULL_LOAD, holdBackReviewFlagged, isReviewFlagged, reviewReasonOf } from "./reviewGate.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SEEDER = readFileSync(path.join(here, "../../../scripts/seed-library.ts"), "utf8").replace(/\r\n/g, "\n");
@@ -60,4 +60,13 @@ test("the seeder: the gate runs before seedLaws / seedDecrees, has an escape fla
   assert.match(SEEDER, /held_back: heldBack,/);
   assert.match(SEEDER, /HELD BACK/);
   assert.match(SEEDER, /Already-live rows are NOT deleted/);
+});
+
+test("a gated load is not a full load: the screen and the report forbid the l9 cleanup after it", () => {
+  assert.match(HELD_BACK_NOT_FULL_LOAD, /NOT a FULL load/);
+  assert.match(HELD_BACK_NOT_FULL_LOAD, /20261129_70 «position is null» cleanup/);
+  assert.match(HELD_BACK_NOT_FULL_LOAD, /library:diff/);
+  assert.match(HELD_BACK_NOT_FULL_LOAD, /--allow-review-flagged/);
+  assert.match(SEEDER, /console\.log\(`  ⚠ \$\{HELD_BACK_NOT_FULL_LOAD\}`\);/);
+  assert.match(SEEDER, /\(heldBack\.length > 0 \? ` \$\{HELD_BACK_NOT_FULL_LOAD\}` : ""\)/);
 });

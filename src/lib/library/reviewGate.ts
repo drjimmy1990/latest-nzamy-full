@@ -21,6 +21,19 @@
  * Pure and import-free: node:test and the seeder both load it.
  */
 
+/**
+ * A load from rows built with the gate on is NOT a full load: the held-back
+ * documents keep their live rows, untouched. So the one-time cleanup after
+ * the first full l9 load (20261129_70 header: `delete … where position is
+ * null`, and deleting what library:diff lists as left behind) must not follow
+ * it — it would delete the held-back documents' amendment cards and, through
+ * the diff, the documents themselves.
+ */
+export const HELD_BACK_NOT_FULL_LOAD =
+  "Rows built with held-back files are NOT a FULL load: do not run the 20261129_70 «position is null» cleanup, " +
+  "and do not delete what library:diff lists as left behind — the held-back documents would lose their live rows. " +
+  "Do the first full l9 load and its cleanup from rows built with --allow-review-flagged.";
+
 /** The parser writes `needsHumanReview`; an older parse may carry the frontmatter key. */
 export function isReviewFlagged(o: unknown): boolean {
   if (!o || typeof o !== "object") return false;

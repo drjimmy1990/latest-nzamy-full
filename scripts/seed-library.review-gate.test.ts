@@ -88,6 +88,7 @@ test("gate on (default): the flagged law and decree are absent from the JSONL an
     { table: "decrees_circulars", id: "تعميم-معلم", reason: "تاريخ غير مؤكد" },
   ]);
   assert.match(report.note, /NOT deleted/);
+  assert.match(report.note, /NOT a FULL load/);
   assert.equal(report.count, 2, "the flag report still lists every flagged record");
   assert.equal(result.review_gate?.held_back.length, 2);
   // the raised cap: the 120-character number_text reaches the row whole
