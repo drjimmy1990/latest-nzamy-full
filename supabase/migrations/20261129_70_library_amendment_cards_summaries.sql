@@ -68,6 +68,17 @@
 --   * SQL first with the old code: the old loader never names the new
 --     columns; summary_brief gives the same text as before until a reviewed
 --     summary is loaded.
+--   AFTER THE FIRST LOAD WITH THE l9 LOADER (one time): amendment ids are
+--   positional (<article id>__amd-<n>) and the loader only upserts, so an
+--   article that now has fewer cards keeps its old extra rows (the 5 → 2 of
+--   نظام القضاء art. 1 would still show 5). `npm run library:diff` lists them
+--   as article_amendments «left behind» (≈ 440 on the 10-03 corpus), with the
+--   «مكرر» articles' old `__art-i<n>` ids. Every row this loader writes has a
+--   position, so after a FULL laws load (not --table / --limit / --from):
+--     select count(*) from library.article_amendments where position is null;  -- ≈ the diff's count
+--     delete from library.article_amendments where position is null;
+--   and delete the left-behind `articles` ids the diff lists (their
+--   amendments go with them, on delete cascade).
 --   RE-RUN HAZARD: none. Re-running 20261025_20 after this file keeps the new
 --   column (its `add column if not exists` skips, and its verify still finds
 --   law_summary_brief(preamble) in the expression). This file is safe to run
@@ -204,6 +215,20 @@ begin
     left join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
    where a.attrelid = 'library.laws'::regclass and a.attname = 'summary_brief' and not a.attisdropped;
   if expr is null or expr !~ 'law_reviewed_summary_card\(summary_card, summary_status\)' then
+    -- A view built on summary_brief would make the drop fail: name it.
+    if exists (select 1
+                 from pg_catalog.pg_depend dep
+                 join pg_catalog.pg_attribute att on att.attrelid = dep.refobjid and att.attnum = dep.refobjsubid
+                where dep.refobjid = 'library.laws'::regclass and att.attname = 'summary_brief'
+                  and dep.classid = 'pg_catalog.pg_rewrite'::regclass) then
+      raise exception '20261129_70: a view depends on library.laws.summary_brief (%) — nothing changed; drop / re-create that view around this file',
+        (select pg_catalog.string_agg(distinct r.ev_class::regclass::text, ', ')
+           from pg_catalog.pg_depend dep
+           join pg_catalog.pg_attribute att on att.attrelid = dep.refobjid and att.attnum = dep.refobjsubid
+           join pg_catalog.pg_rewrite r on r.oid = dep.objid
+          where dep.refobjid = 'library.laws'::regclass and att.attname = 'summary_brief'
+            and dep.classid = 'pg_catalog.pg_rewrite'::regclass);
+    end if;
     alter table library.laws drop column if exists summary_brief;
     alter table library.laws
       add column summary_brief text
