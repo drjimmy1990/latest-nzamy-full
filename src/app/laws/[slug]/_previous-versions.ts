@@ -14,11 +14,15 @@
  *   • the date is not printed twice: when the instrument already names it
  *     («… وتاريخ 1443/11/09هـ»), `date` is left out;
  *   • no empty card: an instrument with no text left says so (`textMissing`,
- *     the reader prints «نص ما قبل التعديل غير متوفر») — never a blank frame.
+ *     the reader prints «نص غير متوفر») — never a blank frame. Once l9-parser's
+ *     20261129_70 has run, `textStatus: 'unavailable'` says the same for a
+ *     card the source itself marks as having no prior text.
  *     Which text belongs to which instrument is the corpus's to say (the
  *     parser pairs them, batch l9-parser); the reader never guesses a pairing;
- *   • newest first: dated cards by their Hijri date, newest to oldest; cards
- *     with no date keep their order after them;
+ *   • order: by `position` (the parser's card order, 20261129_70) when every
+ *     card carries one; else (older data) newest first — dated cards by their
+ *     Hijri date, newest to oldest, cards with no date after them in their
+ *     own order;
  *   • the count is the number of cards.
  *
  * Fields are trimmed; a whitespace-only field is empty.
@@ -32,6 +36,10 @@ export interface AmendmentLike {
   sourceLocked?: boolean;
   summary?: string | null;
   fullText?: string | null;
+  /** 20261129_70: the card's place in its article; absent before that SQL. */
+  position?: number | null;
+  /** 20261129_70: 'unavailable' = the source keeps no prior text. */
+  textStatus?: string | null;
 }
 
 export interface PreviousVersionCard {
@@ -88,10 +96,10 @@ export function hijriDateKey(value: string): number {
   return m ? Number(`${m[1]}${m[2].padStart(2, "0")}${m[3].padStart(2, "0")}`) : 0;
 }
 
-/** The cards worth showing, newest first. Never throws. */
+/** The cards worth showing, in the parser's order when it gives one, else newest first. Never throws. */
 export function visibleAmendments(list: ReadonlyArray<AmendmentLike> | null | undefined): PreviousVersionCard[] {
   if (!Array.isArray(list)) return [];
-  const cards: Array<PreviousVersionCard & { key: number; at: number }> = [];
+  const cards: Array<PreviousVersionCard & { key: number; at: number; position: number | null }> = [];
   list.forEach((entry, at) => {
     if (!entry || typeof entry !== "object") return;
     const sourceLocked = entry.sourceLocked === true;
@@ -104,10 +112,18 @@ export function visibleAmendments(list: ReadonlyArray<AmendmentLike> | null | un
     const fullText = cleanVersionText(entry.fullText);
     const hasBody = summary !== "" || fullText !== "";
     const hasInstrument = source !== "" || date !== "";
-    if (!hasBody && !hasInstrument) return;
-    cards.push({ source, date, summary, fullText, sourceLocked, textMissing: !hasBody, key, at });
+    const unavailable = entry.textStatus === "unavailable";
+    // A card the source marks «no prior text» is kept when it names (or withholds) its instrument.
+    if (!hasBody && !hasInstrument && !(unavailable && sourceLocked)) return;
+    const position = typeof entry.position === "number" && Number.isFinite(entry.position) ? entry.position : null;
+    cards.push({ source, date, summary, fullText, sourceLocked, textMissing: unavailable ? fullText === "" : !hasBody, key, at, position });
   });
-  // Newest first by date; undated cards after the dated ones, in their own order.
-  cards.sort((a, b) => (a.key && b.key ? b.key - a.key || a.at - b.at : a.key ? -1 : b.key ? 1 : a.at - b.at));
+  if (cards.length > 0 && cards.every((c) => c.position !== null)) {
+    // 20261129_70: the parser's own card order.
+    cards.sort((a, b) => a.position! - b.position! || a.at - b.at);
+  } else {
+    // Older data: newest first by date; undated cards after the dated ones, in their own order.
+    cards.sort((a, b) => (a.key && b.key ? b.key - a.key || a.at - b.at : a.key ? -1 : b.key ? 1 : a.at - b.at));
+  }
   return cards.map((c) => ({ source: c.source, date: c.date, summary: c.summary, fullText: c.fullText, sourceLocked: c.sourceLocked, textMissing: c.textMissing }));
 }

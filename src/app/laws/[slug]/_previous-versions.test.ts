@@ -87,9 +87,36 @@ test("no list or a malformed list is no card, never a throw", () => {
   assert.deepEqual(visibleAmendments([null, "x"]), []);
 });
 
-test("the reader prints «نص ما قبل التعديل غير متوفر» and counts the cards it shows", () => {
+test("l9-parser 20261129_70: cards follow `position` when every card has one; else today's order", () => {
+  const withPos = visibleAmendments([
+    { source: "م/113", date: "1443/11/09هـ", fullText: "نص 1443", position: 1 },
+    { source: "م/6", date: "1440/01/02هـ", fullText: "نص 1440", position: 0 },
+  ]);
+  assert.deepEqual(withPos.map((c) => c.fullText), ["نص 1440", "نص 1443"], "the parser's order wins over the date");
+  const mixed = visibleAmendments([
+    { source: "م/6", date: "1440/01/02هـ", fullText: "نص 1440", position: 0 },
+    { source: "م/113", date: "1443/11/09هـ", fullText: "نص 1443" },
+  ]);
+  assert.deepEqual(mixed.map((c) => c.fullText), ["نص 1443", "نص 1440"], "a card without position: newest first, as before the SQL");
+});
+
+test("l9-parser 20261129_70: text_status 'unavailable' is «نص غير متوفر», never an empty card", () => {
+  const cards = visibleAmendments([
+    { source: "المرسوم الملكي م/113", date: null, fullText: "", textStatus: "unavailable", position: 0 },
+    { source: null, date: null, sourceLocked: true, fullText: "", textStatus: "unavailable", position: 1 },
+    { source: null, date: null, fullText: "", textStatus: "unavailable", position: 2 },
+  ]);
+  assert.equal(cards.length, 2, "a card with no instrument and no text at all is still dropped");
+  assert.ok(cards.every((c) => c.textMissing));
+  assert.equal(visibleAmendments([{ source: "م/1", fullText: "نص", textStatus: "available" }])[0].textMissing, false);
+});
+
+test("the reader prints «نص غير متوفر» and counts the cards it shows", () => {
   const src = readFileSync(new URL("./_article-components.tsx", import.meta.url), "utf8");
   assert.match(src, /\{amend\.textMissing && \(/);
-  assert.ok(src.includes("نص ما قبل التعديل غير متوفر"));
+  assert.ok(src.includes('"نص غير متوفر"'));
+  const route = readFileSync(new URL("../../api/library/laws/[slug]/route.ts", import.meta.url), "utf8");
+  assert.match(route, /\.\.\.\(typeof a\.position === 'number' \? \{ position: a\.position \} : \{\}\),/);
+  assert.match(route, /a\.text_status === 'available' \|\| a\.text_status === 'unavailable' \? \{ textStatus: a\.text_status \} : \{\}/);
   assert.match(src, /الإصدارات السابقة \(\$\{previousVersions\.length\}\)/);
 });

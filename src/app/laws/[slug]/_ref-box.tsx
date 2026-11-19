@@ -301,14 +301,15 @@ function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefI
 
 /**
  * The box beside the article in view. Waits 350 ms after the article changes,
- * so scrolling past fetches nothing. Shown only when the article has at least
- * one link (or the load failed): file 16 §8 — no empty box, no «لا توجد».
+ * so scrolling past fetches nothing. Hidden once the answer says the article
+ * has no link (file 16 §8 — no empty box, no «لا توجد»); while loading it keeps
+ * its frame, so the cards under it in the sticky column do not jump.
  */
 export function RefBox({ articleId }: { articleId: string | null }) {
   const ctx = useRefBox();
   const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, 350);
   if (!ctx || !articleId) return null;
-  if (state.status !== "failed" && shownSections(state).length === 0) return null;
+  if (state.status === "done" && shownSections(state).length === 0) return null;
   const { isDark } = ctx;
   return (
     <div className={`p-3.5 rounded-2xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>

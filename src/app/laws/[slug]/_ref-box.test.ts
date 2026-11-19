@@ -54,7 +54,7 @@ test("the preview: text first, then copy / add to draft / go to / open whole; su
 });
 
 test("file 16 §8: the side box is hidden when the article has no link; the dialog never opens on an empty tab", () => {
-  assert.match(BOX, /if \(state\.status !== "failed" && shownSections\(state\)\.length === 0\) return null;/);
+  assert.match(BOX, /if \(state\.status === "done" && shownSections\(state\)\.length === 0\) return null;/, "hidden on an empty answer, framed while loading");
   assert.match(BOX, /const tab = tabs\.includes\(picked\) \? picked : \(tabs\[0\] \?\? picked\);/);
 });
 

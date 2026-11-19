@@ -1299,6 +1299,7 @@ function LawSystemPageContent() {
                   // empty and every instrument was withheld by the paywall (F13).
                   const instruments = ((law as any).regulationInstruments ?? []) as Array<{
                     ref: string;
+                    label?: string;
                     articles: { regNum: string | null; text: string; status: string; systemArticleNumber: string | null }[];
                   }>;
                   const visible = selectedRegName
@@ -1337,7 +1338,7 @@ function LawSystemPageContent() {
                                   : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
                               }`}
                             >
-                              {inst.ref}
+                              {inst.label || inst.ref}
                             </button>
                           ))}
                           {!showAllRegChips && instruments.length > REG_CHIPS_SHOWN && (

@@ -1212,7 +1212,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                       {amend.summary && <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}><Hl text={amend.summary} /></p>}
                       {/* File 16 §4: never an empty card — an instrument whose previous text the corpus does not hold says so. */}
                       {amend.textMissing && (
-                        <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{isRTL ? "نص ما قبل التعديل غير متوفر" : "Previous text not available"}</p>
+                        <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{isRTL ? "نص غير متوفر" : "Text not available"}</p>
                       )}
                       {/* Owner note ١٢ §٣: «إظهار الفروق الملونة» — this version against the current text (_word-diff.tsx). */}
                       {amend.fullText && (

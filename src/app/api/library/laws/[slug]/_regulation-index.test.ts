@@ -69,3 +69,10 @@ test("the reader lists the index in the regulation view: names, numbers, a lock 
   assert.match(page, /regulationIndex: Array\.isArray\(data\.regulationIndex\) \? data\.regulationIndex : \[\],/);
   assert.equal((page.match(/onRegulationCardJump=\{flatRegulationView \? onRegulationCardJump : undefined\}/g) ?? []).length, 2);
 });
+
+test("the flat view's chips show the viewer's cleaned name, never the raw ref (٤٢٤)", () => {
+  const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../../../../laws/[slug]/page.tsx", import.meta.url), "utf8");
+  assert.match(route, /label: regulationRefForViewer\(ref, officialMeta\.officialMetaLocked\) \|\| `التشريع الفرعي \(\$\{i \+ 1\}\)`,/);
+  assert.match(page, /\{inst\.label \|\| inst\.ref\}/);
+});

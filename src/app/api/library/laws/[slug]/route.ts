@@ -20,6 +20,7 @@ import { stripArticleAuditNotes, stripAuditNotes, stripPipelineNotes } from '@/l
 import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
 import { isPreambleEmpty } from '@/app/laws/[slug]/_preamble';
 import { buildRegulationIndex, compareRegulationSortKey, type RegulationIndexRow } from './_regulation-index';
+import { LAW_REVIEWED_SUMMARY_COLUMNS, reviewedSummaryFor } from './_reviewed-summary';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -313,6 +314,19 @@ export async function GET(
     // Owner note ٠١ item ٥: the regulation part's own card goes to the
     // sidebar's regulation group (cardForViewer per viewer); its ديباجة stays.
     const regulationExtras = regulationReaderExtras(regulationPreamble, isSubscriber);
+    // File 16 §6 (l9; columns of l9-parser's 20261129_70): the frontmatter موجز,
+    // shown only once reviewed. Its own read, so the columns not existing yet
+    // (or any error) leave today's موجز as it is (_reviewed-summary.ts).
+    const reviewedSummary = await serverOnly
+      .schema('library')
+      .from('laws')
+      .select(LAW_REVIEWED_SUMMARY_COLUMNS)
+      .eq('slug', law.slug)
+      .maybeSingle()
+      .then(
+        (r) => reviewedSummaryFor(r.error ? null : r.data, isSubscriber),
+        () => null,
+      );
 
     // Owner ٣١٧ / ٣١٨: the ONE public date — the latest official legislative
     // event (the later of latest_update's date and the issue date; the key
@@ -367,8 +381,11 @@ export async function GET(
         regulationsByRef.get(ref)!.push(r);
       });
     });
-    const regulationInstruments = Array.from(regulationsByRef.entries()).map(([ref, rows]) => ({
+    const regulationInstruments = Array.from(regulationsByRef.entries()).map(([ref, rows], i) => ({
       ref,
+      // l9: the chip's name for this viewer — cleaned of decree numbers and
+      // dates when official data is withheld (owner ٤٢٤), as the index's is.
+      label: regulationRefForViewer(ref, officialMeta.officialMetaLocked) || `التشريع الفرعي (${i + 1})`,
       articles: [...rows]
         .sort((a, b) => compareRegulationSortKey(a.sort_key, b.sort_key))
         .map((r) => ({
@@ -459,7 +476,9 @@ export async function GET(
       // (the reader hides such a preamble for a subscriber too).
       preambleLocked: officialMeta.officialMetaLocked && !(isPreambleEmpty(readerExtras.preamble) && isPreambleEmpty(regulationExtras.preamble)),
       // N2.1: omitted (not empty) for a viewer the flag does not admit.
-      ...(readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
+      ...(reviewedSummary !== null
+        ? (reviewedSummary ? { summary: reviewedSummary } : {})
+        : readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
       ...(readerExtras.metadata_card ? { metadata_card: readerExtras.metadata_card } : {}),
       // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.
       regulationInstruments,
@@ -717,6 +736,11 @@ function formatArticleWithPaywall(
         // reach the browser — nor the reader's in-page search.
         summary: stripAuditNotes(a.summary as string | null, 'summary'),
         fullText: stripAuditNotes(a.full_text as string | null, 'fullText'),
+        // l9-parser 20261129_70 (one amendment = one card): the card's place and
+        // whether its prior text exists. `*` above reads them once the SQL has
+        // run; before it they are absent and the reader keeps its own order.
+        ...(typeof a.position === 'number' ? { position: a.position } : {}),
+        ...(a.text_status === 'available' || a.text_status === 'unavailable' ? { textStatus: a.text_status } : {}),
       }));
     }
   }
