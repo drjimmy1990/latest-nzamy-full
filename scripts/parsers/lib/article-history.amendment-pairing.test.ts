@@ -180,3 +180,26 @@ test("an anchor whose JSON does not parse still bounds its card (flagged), so it
   assert.equal(records[1].anchorUnreadable, true);
   assert.deepEqual(records[1].texts.map((t) => t.original_text), ["النص الثاني."]);
 });
+
+test("an unknown bold label right under an anchor keeps its text in that card (it used to ride in the previous slice)", () => {
+  const body = [
+    "<details>",
+    "<summary>📜 الإصدارات السابقة</summary>",
+    "📄 **النص قبل الإلغاء (آخر نص ساري):**",
+    "> آخر نص ساري.",
+    "📝 **وكانت هذه المادة قد عُدّلت قبل الإلغاء بموجب:**",
+    "- قرار مجلس الوزراء رقم (291)",
+    anchor({ decree: "قرار مجلس الوزراء رقم (291)", date: "1441/04/27هـ", type: "تعديل النظام" }),
+    "**نصها وفق قرار مجلس الوزراء رقم (291):**",
+    "> النص النافذ بعد 291.",
+    "**النص الأصلي (1406هـ):**",
+    "> النص الأصلي.",
+    "</details>",
+  ].join("\n");
+  const { records } = extractArticleHistory(body, "repealed");
+  assert.equal(records.length, 2);
+  assert.equal(records[0].anchor, null);
+  assert.ok(records[0].texts[0].original_text.startsWith("آخر نص ساري."));
+  assert.deepEqual(records[1].texts.map((t) => t.original_text), ["النص النافذ بعد 291.", "النص الأصلي."]);
+  assert.equal(records[1].texts[0].label, "نصها وفق قرار مجلس الوزراء رقم (291)");
+});

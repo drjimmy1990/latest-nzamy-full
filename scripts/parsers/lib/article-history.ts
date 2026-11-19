@@ -438,9 +438,32 @@ function readSegment(
   // reads the stretch as prose.
   const referenceSpans: Array<[number, number]> = [];
 
+  // In an anchor's stretch, a bolded label this file does not know, standing
+  // before the first before-label («**نصها وفق قرار مجلس الوزراء رقم (291) …:**»
+  // right under the anchor), still heads real prior text. Before the pairing
+  // that text rode inside the previous before-label's slice; cut at the
+  // anchor it would be lost, so it is kept as one more text of this card,
+  // under its own label. (Older blocks are read exactly as before.)
+  const firstBefore = labels.findIndex((l) => classifyLabel(l.raw) === "before");
+  let leadOtherTaken = !anchored || firstBefore === -1;
+
   for (let i = 0; i < labels.length; i++) {
     const kindOfLabel = classifyLabel(labels[i].raw);
-    if (kindOfLabel === "other") continue;
+    if (kindOfLabel === "other") {
+      if (leadOtherTaken || i > firstBefore) continue;
+      leadOtherTaken = true;
+      let k = i + 1;
+      while (k < labels.length && classifyLabel(labels[k].raw) === "other") k++;
+      const text = unquote(body.slice(labels[i].end, k < labels.length ? labels[k].start : body.length).replace(/<!--[\s\S]*?-->/g, ""));
+      if (text && !isUnavailableMarker(text)) {
+        items.push({
+          entry: { original_text: text, label: normalizeLabel(labels[i].raw), source_summary: summary, kind: inferKind(labels[i].raw) },
+          notes: pendingNotes,
+        });
+        pendingNotes = [];
+      }
+      continue;
+    }
     if (kindOfLabel === "reference") {
       const note = noteOf(labels[i].raw, body.slice(labels[i].end, labels[i].lineEnd).replace(/<!--[\s\S]*?-->/g, ""));
       if (note) pendingNotes.push(note);
