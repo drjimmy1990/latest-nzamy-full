@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import {
   AddressBook, MagnifyingGlass, Buildings, Warning,
   Star, ArrowClockwise, Phone, Plus,
@@ -203,9 +204,14 @@ export default function FirmClientsPage() {
           const outstanding = hasTotal && hasPaid ? (c.feeTotalSar as number) - (c.feePaidSar as number) : null;
 
           return (
-          <motion.div key={c.id}
+          // File 15 row 30 (l9): the card opens the client file (the lawyer's
+          // page, served at /dashboard/firm/clients/[id]).
+          <Link key={c.id} href={`/dashboard/firm/clients/${encodeURIComponent(c.id)}`}
+            aria-label={`ملف الموكّل ${c.name}`}
+            className="block rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C8A762]/60">
+          <motion.div
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-            className={`group ${card} p-4 transition-all`}>
+            className={`group ${card} p-4 transition-all cursor-pointer hover:border-[#C8A762]/40`}>
 
             <div className="flex items-start gap-3 mb-3">
               {/* Avatar */}
@@ -275,6 +281,7 @@ export default function FirmClientsPage() {
               </span>
             </div>
           </motion.div>
+          </Link>
           );
         })}
       </div>

@@ -1274,7 +1274,7 @@ export default function ClientDashboard() {
             <div>
               <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>لديك سؤال قانوني؟</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                اسأل بالكلام العادي — ذكاء نظامي يجيبك فوراً
+                اسأل بالكلام العادي — إجابة مختصرة من نصوص الأنظمة مع رابط كل نص
               </p>
             </div>
           </div>
@@ -1290,7 +1290,10 @@ export default function ClientDashboard() {
                   : "bg-zinc-50 border-zinc-200 text-zinc-800 placeholder:text-zinc-400 focus:border-royal/40"
               }`}
             />
-            <Link href={`/ai/consult${aiInput ? `?q=${encodeURIComponent(aiInput)}` : ""}`}>
+            {/* File 15 row 30 (l9): /ai/consult is the beta gate, so «اسأل» landed
+                on «قريباً». The live general tool every account runs is the quick
+                question (tools.ts REGISTERED_ROLES); it reads ?q= into its box. */}
+            <Link href={`/ai/quick-answer${aiInput.trim() ? `?q=${encodeURIComponent(aiInput.trim().slice(0, 1000))}` : ""}`}>
               <motion.div
                 whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 className="h-full px-4 flex items-center gap-2 bg-[#0B3D2E] hover:bg-[#1a6b4e] text-white text-[13px] font-bold rounded-xl transition-colors cursor-pointer whitespace-nowrap"
