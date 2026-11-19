@@ -303,7 +303,9 @@ test("every nav row to a gated page is badged «قريباً» — the files nav
   // 17, not 19: N06-30 (13 Nov 2026) took the firm sidebar's /ai/corp/clm and /ai/corp/hr rows out.
   // 14, not 17: l9 row 54 took the three admin «قريباً» rows (system, backup,
   // reports) out of ADMIN_SIDEBAR (it is built from adminNavItems.ts now).
-  assert.ok(seen >= 14, `found only ${seen} rows — the parser broke`);
+  // 11, not 14: l9 row 70 took the lawyer's /ai/legal-translate, /ai/transcriber
+  // and /ai/compare rows (DashboardComingSoon pages) out of his menu.
+  assert.ok(seen >= 11, `found only ${seen} rows — the parser broke`);
   assert.deepEqual(wrong, []);
   // /ai/analyze is the live case brief for lawyer and firm (S3-01, S3-02): one
   // unbadged row in each of the two sidebars this file holds.

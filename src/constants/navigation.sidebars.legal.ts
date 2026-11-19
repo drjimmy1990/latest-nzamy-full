@@ -97,16 +97,10 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "المرشد القضائي",    labelEn: "Court Guide",       href: "/ai/procedures",       icon: "MapTrifold" },
       { label: "الحاسبة القانونية",  labelEn: "Legal Calculator",  href: "/ai/fee-calculator",   icon: "Calculator" },
       { label: "منقح ناجز",          labelEn: "Najiz Optimizer",   href: "/ai/najiz-optimizer",  icon: "Broom" },
-      // ٢: دوري أو عند الحاجة
-      // UAT-LIVE-AI-001 — badge «جديد» → «قريباً»: /ai/direction-support renders
-      // DashboardComingSoon now (its results were module constants), and a nav
-      // entry is a promise about the page under it.
-      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",       badge: "قريباً", divider: true },
-      // Owner answer ١١٥ — these three printed canned output and render
-      // DashboardComingSoon now, so each row is badged «قريباً».
-      { label: "المترجم القانوني",  labelEn: "Legal Translator",  href: "/ai/legal-translate",  icon: "Translate",     badge: "قريباً" },
-      { label: "المفرّغ الذكي",      labelEn: "Transcriber",       href: "/ai/transcriber",      icon: "Microphone",    badge: "قريباً" },
-      { label: "المقارن الذكي",      labelEn: "Smart Comparator",  href: "/ai/compare",          icon: "ArrowsLeftRight", badge: "قريباً" },
+      // File 15 row 70 (l9): «داعم الاتجاه», «المترجم القانوني», «المفرّغ الذكي»
+      // and «المقارن الذكي» left the menu. Each page renders DashboardComingSoon
+      // (UAT-LIVE-AI-001, owner ١١٥), so four rows opened nothing; the pages
+      // stay reachable by URL. Re-add a row when its tool works.
     ],
   },
 
@@ -141,19 +135,10 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     ],
   },
 
-  // ── ⑩ خدمات متقدمة ───────────────────────────────────────────────────────
-  {
-    title: "خدمات متقدمة", titleEn: "Advanced Services",
-    collapsible: true,
-    defaultOpen: false,
-    items: [
-      // badge «جديد» → «قريباً» (owner ١٣٦). The vault WORKSPACE is deferred;
-      // the page behind this link presents the service, it does not open a
-      // vault. A «جديد» pill sold the deferred half as already shipped. The
-      // entry stays — the page it reaches is real — only the pill was untrue.
-      { label: "الخزنة القانونية",  labelEn: "Legal Vault",  href: "/services/lawyers/vault",       icon: "Vault",           badge: "قريباً" },
-    ],
-  },
+  // ── ⑩ خدمات متقدمة — removed (file 15 row 70, l9) ───────────────────────
+  // Its one row, «الخزنة القانونية» (/services/lawyers/vault, «قريباً»: a page
+  // presenting the deferred vault service), was the menu's SECOND «الخزنة»;
+  // the lawyer's real vault is «الخزنة» under «العقود والمستندات» above.
 
   // ── ⑪ الذيل الثابت ───────────────────────────────────────────────────────
   {
@@ -198,7 +183,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     title: "العقود", titleEn: "Contracts",
     items: [
       { label: "مدير العقود",     labelEn: "Contract Manager", href: "/dashboard/firm/contracts",  icon: "FileText" },
-      { label: "الخزنة",          labelEn: "Letterhead",       href: "/dashboard/firm/vault?tab=branding", icon: "Vault" },
+      { label: "الخزنة والترويسة", labelEn: "Vault & Letterhead", href: "/dashboard/firm/vault?tab=branding", icon: "Vault" },
       { label: "النماذج القياسية",labelEn: "Templates",         href: "/dashboard/firm/templates", badge: "قريباً",  icon: "CopySimple" },
       { label: "المستندات",        labelEn: "Documents",         href: "/dashboard/firm/documents", badge: "قريباً",  icon: "FolderOpen" },
       { label: "الأرشيف الموحّد",   labelEn: "Unified Archive",   href: "/dashboard/firm/archive", badge: "قريباً",    icon: "Archive" },
@@ -333,8 +318,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      // badge «جديد» → «قريباً» — same reason as the lawyer sidebar (owner ١٣٦).
-      { label: "الخزنة القانونية", labelEn: "Legal Vault",    href: "/services/lawyers/vault",  icon: "Vault", badge: "قريباً" },
+      // l9 row 70: «الخزنة القانونية» (/services/lawyers/vault, «قريباً») left
+      // this menu — the firm's real vault is «الخزنة والترويسة» under «العقود».
       { label: "الملف المهني للمكتب", labelEn: "Firm Profile",   href: "/dashboard/firm/profile",  icon: "UserCircle" },
       // Owner decision ٢٠ — the firm's real reviews and the manager's opt-in to
       // show them publicly (20261017_31). No role list entry: the firm account
