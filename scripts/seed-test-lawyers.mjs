@@ -10,10 +10,19 @@
  * marketplace_visible = false, so none of them reaches the public directory,
  * a public lawyer page or the community contributors list.
  *
+ * LOCAL / TEST DATABASES ONLY (owner file 19, batch l9-secleak, 2026-11-20)
+ *   The owner deleted lawyer1@…lawyer10@ from the live database. The script
+ *   refuses every host that is not local (localhost, 127.x.x.x, ::1,
+ *   *.localhost, *.test) AND named with --confirm-local-host=<host>, before any
+ *   client is created (scripts/lib/seedTargetGuard.mjs). No override exists.
+ *   Note: since 20261129_20 the database refuses `verified` for a 1448-LAW-
+ *   licence, so on a local database with that migration the lawyer_profiles
+ *   step reports an error for each account (the accounts stay unverified).
+ *
  * Usage:
- *   node scripts/seed-test-lawyers.mjs                # dry-run (preview only)
- *   node scripts/seed-test-lawyers.mjs --execute      # creates the accounts
- *   SEED_LAWYER_PASSWORD='<16+ random characters>' node scripts/seed-test-lawyers.mjs --execute
+ *   node scripts/seed-test-lawyers.mjs --confirm-local-host=localhost            # dry-run (preview only)
+ *   node scripts/seed-test-lawyers.mjs --confirm-local-host=localhost --execute  # creates the accounts
+ *   SEED_LAWYER_PASSWORD='<16+ random characters>' node scripts/seed-test-lawyers.mjs --confirm-local-host=localhost --execute
  *   (--password=… also works, but it stays in the shell history)
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -22,6 +31,7 @@ import { createClient } from "@supabase/supabase-js";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { refuseUnlessLocalSeedTarget } from "./lib/seedTargetGuard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -58,6 +68,10 @@ if (HOST === "supabase.co" || HOST.endsWith(".supabase.co") || HOST.endsWith(".s
   console.error(`⛔ Refusing to run: target host ${HOST} is cloud Supabase.`);
   process.exit(2);
 }
+
+// Owner file 19 (l9-secleak): never a live or shared database — only an explicit
+// local / test target named with --confirm-local-host=<host> (scripts/lib/seedTargetGuard.mjs).
+refuseUnlessLocalSeedTarget(SUPABASE_URL, process.argv.slice(2), "seed-test-lawyers.mjs");
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },

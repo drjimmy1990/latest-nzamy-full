@@ -5,6 +5,14 @@
  * Reconciles the 12 NZAMY test accounts (…@nezamy.sa) on the SELF-HOSTED
  * Supabase so that each one is exactly what the app expects for its role.
  *
+ * LOCAL / TEST DATABASES ONLY (owner file 19, batch l9-secleak, 2026-11-20)
+ *   The owner deleted these accounts from the live database and their shared
+ *   password is burned. The script refuses every host that is not local
+ *   (localhost, 127.x.x.x, ::1, *.localhost, *.test) AND named on the command
+ *   line with --confirm-local-host=<host> — dry-run and --verify included,
+ *   before any client is created (scripts/lib/seedTargetGuard.mjs). There is
+ *   no override for a live host.
+ *
  * SAFE BY DEFAULT
  *   - DRY-RUN unless --execute is passed: it reads the current state and prints,
  *     per account, every create / update / delete it WOULD perform.
@@ -69,6 +77,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { refuseUnlessLocalSeedTarget } from "./lib/seedTargetGuard.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -84,10 +93,10 @@ const KNOWN_FLAGS = new Set([
 ]);
 const argv = process.argv.slice(2);
 for (const a of argv) {
-  if (!KNOWN_FLAGS.has(a) && !a.startsWith("--only=")) {
+  if (!KNOWN_FLAGS.has(a) && !a.startsWith("--only=") && !a.startsWith("--confirm-local-host=")) {
     console.error(`Unknown argument: ${a}`);
     console.error(
-      "Allowed: --execute --verify --reset-passwords --random-passwords --only=<key>[,<key>]. " +
+      "Allowed: --execute --verify --reset-passwords --random-passwords --only=<key>[,<key>] --confirm-local-host=<host>. " +
         "URL/key/password are read from the environment / .env.local only.",
     );
     process.exit(2);
@@ -95,7 +104,8 @@ for (const a of argv) {
 }
 if (argv.includes("--help") || argv.includes("-h")) {
   console.log(
-    "node scripts/seed-clean-test-accounts.mjs [--execute] [--verify] [--reset-passwords] [--random-passwords] [--only=<key>[,<key>]]\n" +
+    "node scripts/seed-clean-test-accounts.mjs --confirm-local-host=<host> [--execute] [--verify] [--reset-passwords] [--random-passwords] [--only=<key>[,<key>]]\n" +
+      "  LOCAL / TEST databases only (localhost, 127.x, ::1, *.localhost, *.test) — never the live site.\n" +
       "  --only=admin  limit the run to these account keys (e.g. give admin@ its own password:\n" +
       "                --execute --reset-passwords --random-passwords --only=admin)",
   );
@@ -145,6 +155,10 @@ if (HOST === "supabase.co" || HOST.endsWith(".supabase.co") || HOST.endsWith(".s
   );
   process.exit(2);
 }
+
+// Owner file 19 (l9-secleak): never a live or shared database — only an explicit
+// local / test target named with --confirm-local-host=<host> (scripts/lib/seedTargetGuard.mjs).
+refuseUnlessLocalSeedTarget(SUPABASE_URL, process.argv.slice(2), "seed-clean-test-accounts.mjs");
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
