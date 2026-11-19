@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, Flask, Trash, EnvelopeSimple } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
-import { onDeleteAr, purgeSummaryAr, validBatchId, type PurgeResult } from "@/lib/testBatches/testBatches";
+import { blockerHintAr, onDeleteAr, purgeSummaryAr, validBatchId, type PurgeResult } from "@/lib/testBatches/testBatches";
 
 /**
  * «دفعات الاختبار» (owner file 19 §1ج, batch l9-testinfra; SQL 20261129_90).
@@ -284,7 +284,7 @@ export default function TestBatchesPage() {
                     <tr className="text-zinc-500">
                       <th className="py-1 text-right font-normal">الجدول</th>
                       <th className="py-1 text-right font-normal">سيُحذف</th>
-                      <th className="py-1 text-right font-normal">يبقى (مرتبط بحساب حقيقي)</th>
+                      <th className="py-1 text-right font-normal">يبقى (حساب حقيقي أو سجل يُحفظ)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -292,7 +292,7 @@ export default function TestBatchesPage() {
                       <tr key={t} className="border-t border-white/[0.05]">
                         <td className="py-1 font-mono" dir="ltr">{t}</td>
                         <td className="py-1">{c.delete ?? 0}</td>
-                        <td className="py-1">{c.kept_real_link ?? 0}</td>
+                        <td className="py-1">{c.kept ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -314,6 +314,7 @@ export default function TestBatchesPage() {
                       <li key={i}>
                         {b.rows} صف في <span className="font-mono" dir="ltr">{b.table}</span> يشير إلى{" "}
                         <span className="font-mono" dir="ltr">{b.references}</span> — {onDeleteAr((b as { on_delete?: string }).on_delete)}
+                        {blockerHintAr(b.table) ? <span className="block text-amber-200">{blockerHintAr(b.table)}</span> : null}
                       </li>
                     ))}
                   </ul>

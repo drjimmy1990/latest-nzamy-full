@@ -23,8 +23,9 @@
 --      list: the purge never deletes an account or its security records —
 --      see the list). One trigger, trg_test_tag → public.test_tag_row():
 --        * INSERT: both values are COMPUTED on the server from the row's
---          owner columns (an account's id) and, failing that, from the parent
---          row it references (a foreign key to another tagged table). What
+--          owner columns (an account's id); a row with NO owner value takes
+--          the tag of the parent row it references (a foreign key to another
+--          tagged table) — a row of a real account never does. What
 --          the client sent is overwritten: a real user who posts
 --          is_test=true gets false.
 --        * UPDATE of either column: the old values are put back. Nobody —
@@ -35,7 +36,9 @@
 --      (users.delete) and a FRESH TOTP code.
 --        * deletes ONLY rows tagged is_test AND test_batch = batch;
 --        * keeps a tagged row that also names a REAL account in one of its
---          owner columns (reported as "kept: linked to a real account");
+--          owner columns, and a row its table's keep rule protects (a live
+--          tax invoice; a founder seat still reserved / active and its
+--          credits) — reported as "kept";
 --        * refuses the whole purge when any row outside the delete set
 --          references a row in it through a foreign key (a cascade, a set
 --          null or a refusal would touch an untagged row) — the "blockers";
@@ -75,7 +78,8 @@
 -- RUN ORDER: any time after 20261127_80 (batch 7, live) — the file refuses
 --   to run without it. Before or after the l9 deploy:
 --   * code first: sendEmail treats a missing test_mail_sink_check as "no
---     sink" (only the reserved test domains are held back, in code); the
+--     sink" (nothing is held back until this runs; the reserved domains are
+--     undeliverable anyway); the
 --     admin page «مسح دفعة الاختبار» says the SQL has not run; the analytics
 --     exclusion works without the SQL (it reads test_accounts / is_demo);
 --   * SQL first: the old code never calls the new functions; the new
@@ -253,8 +257,10 @@ create table if not exists public.test_tag_tables (
   table_name    text primary key,
   owner_columns text[] not null default '{}',
   parent_refs   text[] not null default '{}',
+  keep_when     text,
   updated_at    timestamptz not null default now()
 );
+alter table public.test_tag_tables add column if not exists keep_when text;
 alter table public.test_tag_tables enable row level security;
 
 comment on table public.test_tag_tables is
@@ -276,6 +282,7 @@ declare
   v_pcol  text;
   v_t     boolean;
   v_b     text;
+  v_real  boolean := false;
   i       int;
 begin
   if tg_op = 'UPDATE' then
@@ -301,9 +308,15 @@ begin
       new.test_batch := v_batch;
       return new;
     end if;
+    v_real := true;
   end loop;
 
-  -- no owner is a test account: inherit from a tagged parent row ('@col=table.pcol')
+  -- a row of a REAL account (staff included) never inherits a test tag
+  if v_real then
+    return new;
+  end if;
+
+  -- no owner at all: inherit from a tagged parent row ('@col=table.pcol')
   for i in 0 .. tg_nargs - 1 loop
     v_spec := tg_argv[i];
     continue when pg_catalog.left(v_spec, 1) <> '@';
@@ -331,7 +344,7 @@ end
 $fn$;
 
 comment on function public.test_tag_row() is
-  'l9 testinfra (20261129_90): trg_test_tag. INSERT: is_test / test_batch computed from the owner columns (test_batch_of) or a tagged parent row (''@col=table.pcol'' arguments); the client''s values are ignored. UPDATE: the tag is put back — immutable for everybody.';
+  'l9 testinfra (20261129_90): trg_test_tag. INSERT: is_test / test_batch computed from the owner columns (test_batch_of); a row with no owner value inherits a tagged parent row (''@col=table.pcol'' arguments); a row of a real account never does. The client''s values are ignored. UPDATE: the tag is put back — immutable for everybody.';
 
 create or replace function public.test_tag_attach(p_table text, p_cols text[])
 returns boolean
@@ -420,9 +433,8 @@ $fn$;
 -- lawyer_signup_verifications, lawyer_licence_images, lawyer_otp_challenges,
 -- test_accounts, test_account_batches, platform_staff, admin_mfa_*,
 -- admin_audit_events, terms_acceptances, account_deletion_requests,
--- account_suspension_freezes, firm_asset_transfers, founder_seats,
--- membership_credits, founder_badge_removals (founder seats: «تحرير المقاعد
--- التجريبية»), every library_* table (grants, overrides, read quota, locks,
+-- account_suspension_freezes, firm_asset_transfers, founder_badge_removals,
+-- every library_* table (grants, overrides, read quota, locks,
 -- monitor: purging them would reset the read caps — file 19: no bypass;
 -- library_access_grants IS listed: a grant bought by a test account is an
 -- output of its test payment),
@@ -482,6 +494,7 @@ begin
       ('entitlement_requests',     array['user_id']),
       ('escrow_transactions',      array['buyer_id', 'seller_id']),
       ('feature_requests',         array['user_id']),
+      ('founder_seats',            array['user_id']),
       ('group_invitations',        array['inviter_id']),
       ('group_members',            array['user_id']),
       ('groups',                   array['owner_id']),
@@ -501,6 +514,7 @@ begin
       ('marketplace_offers',       array['offeror_id']),
       ('marketplace_workspaces',   array['buyer_id', 'seller_id']),
       ('membership_credit_uses',   array[]::text[]),
+      ('membership_credits',       array['user_id']),
       ('messages',                 array['sender_user_id', 'receiver_user_id']),
       ('notification_outbox',      array['recipient_user_id']),
       ('notifications',            array['user_id']),
@@ -541,6 +555,23 @@ begin
   raise notice '20261129_90: % table(s) carry is_test / test_batch', v_n;
 end
 $list$;
+
+-- rows the purge KEEPS even when tagged ($t. = the row): records the platform
+-- must keep, and seats still in use
+--   * payment_orders: a paid / refunded order that is not test mode is a tax
+--     invoice — the exact condition of payment_orders_keep_tax_invoice
+--     (20261030_12), which would refuse the delete anyway;
+--   * founder_seats: a reserved / active seat — free it first with «تحرير
+--     المقاعد التجريبية» (founder_revoke); until then it blocks its order;
+--   * membership_credits: the credits of such a seat.
+update public.test_tag_tables set keep_when = v.keep
+  from (values
+    ('payment_orders',     '($t.status in (''paid'', ''refunded'') and $t.live is distinct from false)'),
+    ('founder_seats',      '($t.status in (''reserved'', ''active''))'),
+    ('membership_credits', '(exists (select 1 from public.founder_seats s where s.id = $t.seat_id and s.status in (''reserved'', ''active'')))')
+  ) v(t, keep)
+ where test_tag_tables.table_name = v.t
+   and test_tag_tables.keep_when is distinct from v.keep;
 
 -- ── 3. the mail sink (a tagged table like the others) ────────────────────────
 create table if not exists public.test_mail_sink (
@@ -620,16 +651,20 @@ begin
   -- children of tagged rows (a few passes for chains)
   for v_pass in 1 .. 4 loop
     v_n := 0;
-    for r in select t.table_name, t.parent_refs from public.test_tag_tables t
+    for r in select t.table_name, t.parent_refs, t.owner_columns from public.test_tag_tables t
               where pg_catalog.cardinality(t.parent_refs) > 0 loop
       continue when to_regclass('public.' || pg_catalog.quote_ident(r.table_name)) is null;
       foreach v_ref in array r.parent_refs loop
         v_col  := pg_catalog.split_part(pg_catalog.substr(v_ref, 2), '=', 1);
         v_ptab := pg_catalog.split_part(pg_catalog.split_part(v_ref, '=', 2), '.', 1);
         v_pcol := pg_catalog.split_part(pg_catalog.split_part(v_ref, '=', 2), '.', 2);
+        -- only a row with no owner value inherits (as in test_tag_row)
+        select coalesce(pg_catalog.string_agg(pg_catalog.format('c.%I is null', oc), ' and '), 'true')
+          into v_where
+          from pg_catalog.unnest(r.owner_columns) oc;
         execute pg_catalog.format(
           'update public.%I c set is_test = true, test_batch = p.test_batch from public.%I p '
-          'where p.%I = c.%I and p.is_test and not c.is_test', r.table_name, v_ptab, v_pcol, v_col);
+          'where p.%I = c.%I and p.is_test and not c.is_test and %s', r.table_name, v_ptab, v_pcol, v_col, v_where);
         get diagnostics v_rc = row_count;
         v_n := v_n + v_rc;
       end loop;
@@ -700,13 +735,16 @@ stable
 security definer
 set search_path = ''
 as $fn$
-  select pg_catalog.format('(%1$s.is_test and %1$s.test_batch = $1 and not (%2$s))',
+  select pg_catalog.format('(%1$s.is_test and %1$s.test_batch = $1 and not (%2$s) and not (%3$s))',
            pg_catalog.quote_ident(p_alias),
            coalesce((select pg_catalog.string_agg(
                               pg_catalog.format('(%1$s.%2$I is not null and not public.is_test_account(%1$s.%2$I))',
                                                 pg_catalog.quote_ident(p_alias), c), ' or ')
                        from public.test_tag_tables r, pg_catalog.unnest(r.owner_columns) c
-                      where r.table_name = p_table), 'false'))
+                      where r.table_name = p_table), 'false'),
+           coalesce((select pg_catalog.replace(r.keep_when, '$t.', pg_catalog.quote_ident(p_alias) || '.')
+                       from public.test_tag_tables r
+                      where r.table_name = p_table and nullif(pg_catalog.btrim(r.keep_when), '') is not null), 'false'))
 $fn$;
 
 create or replace function public.test_batch_actor_email(p_actor uuid)
@@ -776,7 +814,7 @@ begin
       v_pred, r.table_name) into v_tagged, v_n using p_batch;
     if v_tagged > 0 then
       v_tables := v_tables || jsonb_build_object(r.table_name,
-        jsonb_build_object('tagged', v_tagged, 'delete', v_n, 'kept_real_link', v_tagged - v_n));
+        jsonb_build_object('tagged', v_tagged, 'delete', v_n, 'kept', v_tagged - v_n));
     end if;
   end loop;
 
@@ -1152,6 +1190,11 @@ begin
   end loop;
   if not exists (select 1 from public.test_tag_tables where table_name = 'test_mail_sink') then
     v_missing := v_missing || ' test_mail_sink is not tagged;';
+  end if;
+  if exists (select 1 from public.test_tag_tables where table_name = 'payment_orders')
+     and coalesce((select pg_catalog.strpos(keep_when, 'live is distinct from false') from public.test_tag_tables
+                    where table_name = 'payment_orders'), 0) = 0 then
+    v_missing := v_missing || ' payment_orders lost its tax-invoice keep rule;';
   end if;
   foreach fn in array array['public.test_account_batches', 'public.test_tag_tables',
                             'public.test_mail_sink', 'public.test_batch_purge_audit'] loop

@@ -99,6 +99,14 @@ export const TEST_BATCH_ERRORS_AR = {
   failed: "تعذّر تنفيذ العملية الآن — حاول مجدداً.",
 } as const;
 
+/** What the admin does about a blocker, when there is a known way. */
+export function blockerHintAr(table: unknown): string | null {
+  if (table === "founder_seats") {
+    return "مقعد مؤسس ما زال محجوزاً أو فعّالاً: حرّره أولاً من «حملة المؤسس» ← «تحرير المقاعد التجريبية»، ثم أعد التجريب.";
+  }
+  return null;
+}
+
 /** The reason a row was not deleted, in Arabic. */
 export function onDeleteAr(code: unknown): string {
   switch (code) {
@@ -117,16 +125,17 @@ export interface PurgeResult {
   would_purge?: boolean;
   error?: string | null;
   blockers?: Array<{ table?: string; references?: string; rows?: number }>;
-  tables?: Record<string, { tagged?: number; delete?: number; kept_real_link?: number }>;
+  /** kept = tagged but not deleted: it names a real account, or its table's keep rule holds it (a live tax invoice, a seat in use). */
+  tables?: Record<string, { tagged?: number; delete?: number; kept?: number }>;
   files?: { count?: number };
 }
 
 /** One line for the admin after a dry-run or a purge. */
 export function purgeSummaryAr(r: PurgeResult, filesRemoved?: number, filesFailed?: number): string {
   const rows = Object.values(r.tables ?? {}).reduce((n, t) => n + (Number(t.delete) || 0), 0);
-  const kept = Object.values(r.tables ?? {}).reduce((n, t) => n + (Number(t.kept_real_link) || 0), 0);
+  const kept = Object.values(r.tables ?? {}).reduce((n, t) => n + (Number(t.kept) || 0), 0);
   const files = Number(r.files?.count) || 0;
-  const keptLine = kept > 0 ? ` ويبقى ${kept} صفاً مرتبطاً بحساب حقيقي.` : "";
+  const keptLine = kept > 0 ? ` ويبقى ${kept} صفاً (مرتبطاً بحساب حقيقي أو سجلاً يُحفظ).` : "";
   switch (r.status) {
     case "dry_run":
       if ((r.blockers ?? []).length > 0) {

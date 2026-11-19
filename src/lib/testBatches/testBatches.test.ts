@@ -16,6 +16,7 @@ import {
   FRESH_TOTP_MAX_AGE_S,
   TOTP_NOT_ENROLLED_AR,
   TOTP_STALE_AR,
+  blockerHintAr,
   chunkFilesByBucket,
   freshTotpDecision,
   lastTotpAt,
@@ -89,10 +90,10 @@ test("files: per bucket, at most N paths per Storage call, junk dropped", () => 
 });
 
 test("wording: dry-run, blocked, failed, purged — counts and kept rows named", () => {
-  const tables = { service_requests: { tagged: 2, delete: 2, kept_real_link: 0 }, reviews: { tagged: 1, delete: 0, kept_real_link: 1 } };
+  const tables = { service_requests: { tagged: 2, delete: 2, kept: 0 }, reviews: { tagged: 1, delete: 0, kept: 1 } };
   assert.equal(
     purgeSummaryAr({ status: "dry_run", tables, files: { count: 3 }, blockers: [] }),
-    "تشغيل تجريبي: سيُحذف 2 صفاً و3 ملفاً، ولم يُحذف شيء الآن. ويبقى 1 صفاً مرتبطاً بحساب حقيقي.",
+    "تشغيل تجريبي: سيُحذف 2 صفاً و3 ملفاً، ولم يُحذف شيء الآن. ويبقى 1 صفاً (مرتبطاً بحساب حقيقي أو سجلاً يُحفظ).",
   );
   assert.match(purgeSummaryAr({ status: "dry_run", tables, blockers: [{ table: "community_answers", rows: 1 }] }), /المسح ممنوع الآن/);
   assert.match(purgeSummaryAr({ status: "blocked" }), /لم يُمسح شيء/);
@@ -101,6 +102,8 @@ test("wording: dry-run, blocked, failed, purged — counts and kept rows named",
   assert.match(purgeSummaryAr({ status: "purged", tables }, 2, 1), /تعذّر حذف 1/);
   assert.equal(onDeleteAr("c"), "سيُحذف معه تلقائياً");
   assert.equal(onDeleteAr("a"), "يمنع الحذف");
+  assert.match(blockerHintAr("founder_seats") ?? "", /تحرير المقاعد التجريبية/);
+  assert.equal(blockerHintAr("community_answers"), null);
 });
 
 // ── wiring ───────────────────────────────────────────────────────────────────

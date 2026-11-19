@@ -297,6 +297,37 @@ insert into storage.objects (bucket_id, name, owner, created_at) values
 -- a REAL user answers the test client's post: deleting the post would cascade into it
 insert into public.community_answers (post_id, author_id, body)
   values ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-00000000a005', 'جواب محامٍ حقيقي');
+do $$
+begin
+  if (select is_test or test_batch is not null from public.community_answers
+       where author_id = '00000000-0000-0000-0000-00000000a005') then
+    raise exception 'T32 FAIL: a real user''s answer inherited the test post''s tag';
+  end if;
+end $$;
+
+-- money: the test client's TEST-mode order with an ACTIVE founder seat and its
+-- credits (qa-b1); the demo account's historic LIVE paid order (legacy: a tax invoice)
+set role service_role;
+insert into public.payment_orders (id, user_id, kind, item_id, billing, net_halalas, vat_halalas, total_halalas, vat_mode, metadata)
+values
+  ('00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-00000000a003', 'plan', 'founder', 'yearly', 1000, 150, 1150, 'exclusive', '{"gateway_mode": "test"}'),
+  ('00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-00000000a004', 'plan', 'pro', 'monthly', 1000, 150, 1150, 'exclusive', '{"gateway_mode": "test"}');
+update public.payment_orders set status = 'paid', live = false where id = '00000000-0000-0000-0000-0000000000c1';
+update public.payment_orders set status = 'paid', live = true where id = '00000000-0000-0000-0000-0000000000c2';
+insert into public.founder_seats (id, user_id, order_id, status)
+  values ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-00000000a003', '00000000-0000-0000-0000-0000000000c1', 'active');
+insert into public.membership_credits (seat_id, user_id, kind, total, remaining, ends_at)
+  values ('00000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-00000000a003', 'drafting_work', 6, 6, now() + interval '1 year');
+reset role;
+do $$
+begin
+  if not (select is_test and test_batch = 'qa-b1' from public.payment_orders where id = '00000000-0000-0000-0000-0000000000c1')
+     or not (select is_test and test_batch = 'qa-b1' from public.founder_seats where id = '00000000-0000-0000-0000-0000000000d1')
+     or not (select is_test and test_batch = 'qa-b1' from public.membership_credits where seat_id = '00000000-0000-0000-0000-0000000000d1')
+     or not (select is_test and test_batch = 'legacy' from public.payment_orders where id = '00000000-0000-0000-0000-0000000000c2') then
+    raise exception 'T32 FAIL: an order, a seat or its credits is not tagged';
+  end if;
+end $$;
 
 -- T34 dry-run (with a blocker), then the real purge is refused (T35a)
 create temp table _before as select pg_temp.row_total() as n;
@@ -308,8 +339,13 @@ do $$
 declare j jsonb := (select res from _dry1); b jsonb := (select res from _blocked);
 begin
   if j ->> 'status' <> 'dry_run' or (j ->> 'would_purge')::boolean
-     or j -> 'blockers' -> 0 ->> 'table' <> 'community_answers' or (j -> 'blockers' -> 0 ->> 'rows')::int <> 1 then
-    raise exception 'T34 FAIL: the dry-run did not report the real answer as a blocker (%)', j -> 'blockers';
+     or jsonb_array_length(j -> 'blockers') <> 2
+     or not (j -> 'blockers') @> '[{"table": "community_answers", "references": "community_posts", "rows": 1}]'
+     or not (j -> 'blockers') @> '[{"table": "founder_seats", "references": "payment_orders", "rows": 1}]' then
+    raise exception 'T34 FAIL: the dry-run did not report the real answer and the active seat as blockers (%)', j -> 'blockers';
+  end if;
+  if (j -> 'tables' -> 'founder_seats' ->> 'kept')::int <> 1 or (j -> 'tables' -> 'membership_credits' ->> 'kept')::int <> 1 then
+    raise exception 'T34 FAIL: an active seat and its credits must be kept (%)', j -> 'tables';
   end if;
   if b ->> 'status' <> 'blocked' or jsonb_array_length(b -> 'file_list') <> 0 then
     raise exception 'T35 FAIL: the purge was not refused (%)', b ->> 'status';
@@ -317,11 +353,12 @@ begin
   if pg_temp.row_total() <> (select n from _before) then
     raise exception 'T34 FAIL: a dry-run or a refused purge deleted rows';
   end if;
-  raise notice 'T35a PASS: a real row hanging off a test row blocks the purge; nothing deleted';
+  raise notice 'T35a PASS: a real row hanging off a test row, and an active founder seat on a test order, block the purge; nothing deleted';
 end $$;
 
--- the moderator removes the real answer; dry-run again
+-- the moderator removes the real answer; «تحرير المقاعد التجريبية» revokes the seat; dry-run again
 delete from public.community_answers where author_id = '00000000-0000-0000-0000-00000000a005';
+update public.founder_seats set status = 'revoked' where id = '00000000-0000-0000-0000-0000000000d1';
 drop table _before;
 create temp table _before as select pg_temp.row_total() as n;
 set role service_role;
@@ -339,7 +376,9 @@ begin
      or (t -> 'research_items' ->> 'delete')::int <> 1 or (t -> 'community_posts' ->> 'delete')::int <> 1
      or (t -> 'test_mail_sink' ->> 'delete')::int <> 2
      or (t -> 'reviews' ->> 'tagged')::int <> 1 or (t -> 'reviews' ->> 'delete')::int <> 0
-     or (t -> 'reviews' ->> 'kept_real_link')::int <> 1
+     or (t -> 'reviews' ->> 'kept')::int <> 1
+     or (t -> 'payment_orders' ->> 'delete')::int <> 1 or (t -> 'founder_seats' ->> 'delete')::int <> 1
+     or (t -> 'membership_credits' ->> 'delete')::int <> 1
      or t ? 'lawyer_clients' then
     raise exception 'T34 FAIL: dry-run counts %', t;
   end if;
@@ -380,7 +419,9 @@ begin
      or exists (select 1 from public.research_sessions) or exists (select 1 from public.research_items)
      or exists (select 1 from public.community_posts where id = '00000000-0000-0000-0000-0000000000f1')
      or exists (select 1 from public.test_mail_sink where test_batch = 'qa-b1')
-     or exists (select 1 from public.notifications where title = 'إشعار جديد') then
+     or exists (select 1 from public.notifications where title = 'إشعار جديد')
+     or exists (select 1 from public.payment_orders where id = '00000000-0000-0000-0000-0000000000c1')
+     or exists (select 1 from public.founder_seats where id = '00000000-0000-0000-0000-0000000000d1') or exists (select 1 from public.membership_credits where seat_id = '00000000-0000-0000-0000-0000000000d1') then
     raise exception 'T35 FAIL: a qa-b1 row survived';
   end if;
   if not exists (select 1 from public.service_requests where id = 'r-old')
@@ -418,7 +459,7 @@ begin
                     and actor_email = 'admin@nezamy.example.sa' and ip = '203.0.113.7'
                     and (counts_before -> 'service_requests' ->> 'delete')::int = 1
                     and (counts_after ->> 'reviews')::int = 1 and (files ->> 'count')::int = 1)
-     or not exists (select 1 from public.test_batch_purge_audit where status = 'blocked' and jsonb_array_length(blockers) = 1) then
+     or not exists (select 1 from public.test_batch_purge_audit where status = 'blocked' and jsonb_array_length(blockers) = 2) then
     raise exception 'T36 FAIL: the audit row lacks who / batch / before / after / files / IP / blockers';
   end if;
 end $$;
@@ -449,6 +490,8 @@ begin
     raise exception 'T37 FAIL: qa-b2 %', b;
   end if;
   if l ->> 'status' <> 'purged'
+     or (l -> 'tables' -> 'payment_orders' ->> 'kept')::int <> 1
+     or not exists (select 1 from public.payment_orders where id = '00000000-0000-0000-0000-0000000000c2')
      or exists (select 1 from public.service_requests where id = 'c-old')
      or exists (select 1 from public.payments where id = 'pay-c-old')
      or jsonb_array_length(l -> 'file_list') <> 1
@@ -461,7 +504,7 @@ begin
      or (select count(*) from public.notifications) <> 4 then
     raise exception 'T37 FAIL: real rows after every purge';
   end if;
-  raise notice 'T37 PASS: each batch purges only itself (rows and files by the account''s batch interval); real rows remain';
+  raise notice 'T37 PASS: each batch purges only itself (rows and files by the account''s batch interval); real rows and a live tax invoice remain';
 end $$;
 
 -- the admin page's overview
