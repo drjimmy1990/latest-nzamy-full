@@ -190,7 +190,7 @@ export default function PricingPage() {
     ["بنود خدمات العملاء", ready ? rows.length.toLocaleString("ar-SA") : "—", CurrencyCircleDollar],
     ["مخفية عن العملاء", ready ? hiddenCount.toLocaleString("ar-SA") : "—", EyeSlash],
     ["قديمة (يُعرض سعر الكود)", ready ? legacyCount.toLocaleString("ar-SA") : "—", Warning],
-    ["أدوات AI مجانية في البيتا", betaFreeTools.toLocaleString("ar-SA"), Robot],
+    ["أدوات ذكاء اصطناعي مجانية في المرحلة التجريبية", betaFreeTools.toLocaleString("ar-SA"), Robot],
   ];
 
   return (

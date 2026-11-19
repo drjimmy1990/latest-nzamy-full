@@ -195,9 +195,9 @@ export default function AdminPlatformPage() {
 
       <div className={`rounded-2xl border overflow-hidden ${isDark ? "bg-[#0d1117] border-white/10" : "bg-white border-gray-200 shadow-sm"}`}>
         <div className={`px-5 py-4 border-b ${isDark ? "border-white/10" : "border-gray-100"}`}>
-          <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>جاهزية الأدمن للباك إند</h2>
+          <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>جاهزية لوحة الإدارة للربط بالخادم</h2>
           <p className={`text-xs mt-1 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-            هذا التصنيف يفصل بين عمل الواجهة الآن وبين ما ينتظر API أو قاعدة بيانات لاحقاً.
+            هذا التصنيف يفصل بين ما يعمل في الواجهة الآن وما ينتظر الربط بالخادم أو قاعدة البيانات.
           </p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x lg:divide-x-reverse divide-white/5">

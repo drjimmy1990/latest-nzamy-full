@@ -87,7 +87,7 @@ const FEATURE_TOGGLES: Array<{ key: BooleanFeatureKey; label: string; desc: stri
   { key: "hasLegalAdvisor", label: "مستشار قانوني", desc: "يظهر أن الشركة لديها مسؤول قانوني، داخلي أو خارجي." },
   { key: "hasDepartments", label: "إدارات داخلية", desc: "يفتح الأقسام ورؤساء الإدارات ومسارات الموافقة." },
   { key: "hasHrFinanceAccess", label: "HR/Finance", desc: "يفتح عقود الموظفين والتقارير المالية حسب الدور." },
-  { key: "hasAiCorpTools", label: "AI للشركات", desc: "CorpMind، تحليل الصفقات، ومساعد HR ضمن قيود البيتا." },
+  { key: "hasAiCorpTools", label: "AI للشركات", desc: "CorpMind، تحليل الصفقات، ومساعد الموارد البشرية ضمن قيود المرحلة التجريبية." },
   { key: "hasLegalLibrary", label: "المكتبة القانونية", desc: "وصول معرفي، ومصدر الإنتاج ينتظر CMS/DB." },
   { key: "hasSecondment", label: "انتداب مستشار", desc: "يفتح المستشار المنتدب وساعات الانتداب." },
   { key: "hasLitigation", label: "تقاضي وقضايا", desc: "يفتح القضايا والجلسات كمسار واجهة." },
@@ -110,7 +110,7 @@ export default function AdminBusinessProfilesPage() {
   const [search, setSearch] = useState("");
   const [companiesState, setCompaniesState] = useState<CompaniesState>({ status: "loading" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [toast, setToast] = useState("قائمة الشركات من قاعدة البيانات. إعدادات البروفيل أدناه محلية في هذا المتصفح فقط حتى ربط CompanyProfile API.");
+  const [toast, setToast] = useState("قائمة الشركات من قاعدة البيانات. إعدادات ملف الشركة أدناه تُحفظ في هذا المتصفح فقط، ولا تصل إلى الخادم بعد.");
 
   useEffect(() => {
     let cancelled = false;
@@ -170,7 +170,7 @@ export default function AdminBusinessProfilesPage() {
     // The whole object, not just the delta: a company edited for the first
     // time has no stored entry for the store to merge the delta into.
     updateCompanyFeatures(selectedCompany.id, { ...selectedFeatures, ...derivedUpdates });
-    setToast("تم تحديث واجهة بروفيل الشركة محلياً. الربط الحقيقي ينتظر CompanyProfile API وAdminAuditEvent.");
+    setToast("حُدِّث ملف الشركة في هذا المتصفح فقط؛ لا يُحفظ على الخادم ولا يُسجَّل في سجل الإدارة بعد.");
   }
 
   function toggleFeature(key: BooleanFeatureKey) {
@@ -182,7 +182,7 @@ export default function AdminBusinessProfilesPage() {
       return;
     }
     updateCompanyFeatures(selectedCompany.id, { ...selectedFeatures, [key]: !selectedFeatures[key] });
-    setToast(`تم تغيير ${key} محلياً فقط. لا يوجد حفظ خادمي في مرحلة البيتا.`);
+    setToast("تغيّرت الميزة في هذا المتصفح فقط؛ لا يُحفظ التغيير على الخادم في المرحلة التجريبية.");
   }
 
   function serviceEnabled(serviceKey: BusinessServiceKey) {
@@ -228,7 +228,7 @@ export default function AdminBusinessProfilesPage() {
             التسعير والباقات
           </Link>
           <button
-            onClick={() => setToast("عقد BusinessProfileContract جاهز للتوثيق فقط. التصدير/الحفظ الخادمي مؤجل للباك إند.")}
+            onClick={() => setToast("نموذج ملف الشركة جاهز للتوثيق فقط؛ التصدير والحفظ على الخادم لم يُبنيا بعد.")}
             className="inline-flex items-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2.5 text-xs font-black text-[#0B3D2E]"
           >
             <Database size={15} />
@@ -381,7 +381,7 @@ export default function AdminBusinessProfilesPage() {
             <div className={`rounded-2xl border overflow-hidden ${card}`}>
               <div className={`px-5 py-4 border-b ${isDark ? "border-white/[0.07]" : "border-zinc-100"}`}>
                 <h3 className={`font-black ${isDark ? "text-white" : "text-zinc-900"}`}>خدمات وصلاحيات الشركة</h3>
-                <p className={`mt-1 text-xs ${muted}`}>كل Toggle يغير واجهة الشركة محلياً ويحتاج لاحقاً ServiceEntitlement API.</p>
+                <p className={`mt-1 text-xs ${muted}`}>كل مفتاح هنا يغيّر واجهة الشركة في هذا المتصفح فقط، ولا يُحفظ على الخادم بعد.</p>
                 <p className={`mt-1 text-xs ${muted}`}>انتداب مستشار، والتقاضي، وسوق المهنيين، والحوكمة محفوظة فعلياً على الخادم: تبدأ هنا من قيمها المحفوظة، لكن تغييرها من هذه الصفحة محلي فقط. التغيير الفعلي من تبويب «إدارة الشركات» في لوحة الأدمن.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
@@ -468,7 +468,7 @@ export default function AdminBusinessProfilesPage() {
 
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setToast("تم تثبيت حالة الواجهة محلياً. عند حذف البيتا نربطها بـ CompanyProfile API ونضيف AdminAuditEvent.")}
+                onClick={() => setToast("ثُبّتت حالة الواجهة في هذا المتصفح فقط؛ الحفظ على الخادم وتسجيله في سجل الإدارة لم يُبنيا بعد.")}
                 className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-xs font-black text-[#C8A762]"
               >
                 <Gear size={15} />
