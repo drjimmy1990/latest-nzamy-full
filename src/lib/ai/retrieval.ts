@@ -409,7 +409,7 @@ const EDGE_PROVENANCE_AR: Record<string, string> = {
   // H8 (owner decision 17): his category name; the key is unchanged.
   INTERPRETS_ARTICLE: "مبدأ قضائي يستند لمادة",
   PARENT_LAW: "النظام الأساسي المرتبط",
-  CITES_ARTICLE: "إحالة نظامية مرتبطة",
+  CITES_ARTICLE: "مادة يحيل إليها النص أو تحيل إليه (يحيل إلى مادة)",
   ESTABLISHES_RULE: "قاعدة نظامية مرتبطة",
   NEXT_ARTICLE: "مادة مجاورة في النظام نفسه",
   SUBJECT_TO: "قيد نظامي مرتبط (مع مراعاة)",

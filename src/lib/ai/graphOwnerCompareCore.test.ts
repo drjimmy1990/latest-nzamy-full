@@ -232,7 +232,12 @@ test("type mapping: his names, his direction, document level", () => {
   assert.deepEqual([ib.from, ib.to], [{ doc: "LAW-01-0001" }, { doc: "LAW-01-0002" }]);
   assert.equal(ib.provenance, "article_regulations");
 
-  for (const t of ["CITES_ARTICLE", "EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "PART_OF", "NEXT_ARTICLE", "HAS_CONCEPT", "DEFINES_TERM", "DECONSTRUCTS_CONCEPT", "ESTABLISHES_RULE", "SIMILAR_TO", "REPLACED_BY"]) {
+  // Owner decision 19 Nov: article → article is his new refers_to_article, both article numbers kept.
+  const [ra] = mapOurEdge(bridge, edge("CITES_ARTICLE", art(SLUG_LABOR, 5), art(SLUG_REG, 9)));
+  assert.equal(ra.type, "refers_to_article");
+  assert.deepEqual([ra.from, ra.to], [{ doc: "LAW-01-0001", article: "5" }, { doc: "LAW-01-0002", article: "9" }]);
+
+  for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "PART_OF", "NEXT_ARTICLE", "HAS_CONCEPT", "DEFINES_TERM", "DECONSTRUCTS_CONCEPT", "ESTABLISHES_RULE", "SIMILAR_TO", "REPLACED_BY"]) {
     assert.deepEqual(mapOurEdge(bridge, edge(t, art(SLUG_LABOR, 1), art(SLUG_REG, 2))), [], t);
   }
 });
@@ -397,6 +402,14 @@ test("annotate: every reason code on the right side", () => {
 
 test("annotate: kind_not_in_his for our own label with no pair on his side", () => {
   const ours = rollUpEdges(mapOurEdge(bridge, edge("IMPLEMENTED_BY", art(SLUG_LABOR, 3), art(SLUG_REG, 9))));
+  const idx = buildIndex([], ours);
+  const input = { ownerEdges: [], ourEdges: ours, ownerUnmapped: new Set<string>(), ownerIds: new Set(NODES.map((n) => n.id)) };
+  const [k] = expectedDiff(idx).oursOnly;
+  assert.equal(annotateRow(idx, input, "ours_only", k).reason, "kind_not_in_his");
+});
+
+test("annotate: refers_to_article (owner decision 19 Nov) is a kind his file does not carry", () => {
+  const ours = rollUpEdges(mapOurEdge(bridge, edge("CITES_ARTICLE", art(SLUG_LABOR, 3), art(SLUG_REG, 9))));
   const idx = buildIndex([], ours);
   const input = { ownerEdges: [], ourEdges: ours, ownerUnmapped: new Set<string>(), ownerIds: new Set(NODES.map((n) => n.id)) };
   const [k] = expectedDiff(idx).oursOnly;

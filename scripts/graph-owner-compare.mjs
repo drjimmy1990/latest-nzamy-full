@@ -31,6 +31,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
+  EXPORTED_OUR_TYPES,
   REASONS,
   REASON_AR,
   annotateRow,
@@ -155,7 +156,7 @@ function cmdExport(args) {
 
   const excluded = {};
   for (const c of db.snapshot.edge_counts ?? []) {
-    if (["INTERPRETS_ARTICLE", "AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "IMPLEMENTED_BY"].includes(c.edge_type)) continue;
+    if (EXPORTED_OUR_TYPES.includes(c.edge_type)) continue;
     excluded[c.edge_type] = (excluded[c.edge_type] ?? 0) + Number(c.n);
   }
   const exportedByType = {};

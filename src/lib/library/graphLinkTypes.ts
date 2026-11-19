@@ -18,7 +18,7 @@
  *
  *   READER (the box, and the explorer): links between two legal documents —
  *     INTERPRETS_ARTICLE  مبدأ قضائي يستند لمادة          → judicial
- *     CITES_ARTICLE       إحالة (مادة تحيل إلى مادة)       → legislation
+ *     CITES_ARTICLE       يحيل إلى مادة (مادة ← مادة)      → legislation
  *     AMENDS_ARTICLE      تعديل                           → legislation
  *     SUPERSEDES_LAW      إحلال نظام محل نظام             → legislation
  *     PARENT_LAW          النظام الأصل / لائحة تابعة       → legislation
@@ -59,6 +59,9 @@ export const OWNER_GRAPH_TYPES = {
   regulated_by: { category: "لائحة/تنظيم", section: "legislation" },
   contains_merged_regulation: { category: "لائحة/تنظيم", section: "legislation" },
   related_to: { category: "يحيل إلى", section: "legislation" },
+  // Owner decision (19 Nov 2026, his file §3/§5): article → article, our
+  // automatic graph (CITES_ARTICLE). Distinct from related_to (law → law).
+  refers_to_article: { category: "يحيل إلى مادة", section: "legislation" },
 } as const satisfies Record<string, { category: string; section: LinkSection }>;
 export type OwnerGraphType = keyof typeof OWNER_GRAPH_TYPES;
 
@@ -72,6 +75,7 @@ export type LinkSection = (typeof LINK_SECTIONS)[number];
  */
 export const OUR_TO_OWNER_TYPES = {
   INTERPRETS_ARTICLE: ["cites_article"],
+  CITES_ARTICLE: ["refers_to_article"],
   AMENDS_ARTICLE: ["amended_by"],
   SUPERSEDES_LAW: ["superseded_by"],
   PARENT_LAW: ["regulation_of", "regulated_by"],
@@ -136,7 +140,8 @@ export function sectionOfLinkType(t: unknown): LinkSection | null {
  */
 export const SHOWN_LINK_LABELS: Readonly<Record<ShownLinkType, { out: string; in: string }>> = {
   INTERPRETS_ARTICLE: { out: "مبدأ قضائي يستند إليه", in: "مبدأ قضائي يستند إليها" },
-  CITES_ARTICLE: { out: "إحالة: تُحيل إليها هذه المادة", in: "إحالة: تُحيل إلى هذه المادة" },
+  // Owner decision 19 Nov (his name refers_to_article «يحيل إلى مادة»); the key stays CITES_ARTICLE.
+  CITES_ARTICLE: { out: "يحيل إلى مادة", in: "مادة تحيل إليها" },
   AMENDS_ARTICLE: { out: "تعدّلها", in: "معدِّل لها" },
   SUPERSEDES_LAW: { out: "حلّ محله", in: "حلّ محلها" },
   PARENT_LAW: { out: "النظام الأصل", in: "لائحة أو نظام تابع" },
