@@ -30,6 +30,8 @@ export interface Ticket {
   status: TicketStatus | string;
   createdAt: string;
   updatedAt: string;
+  /** l9 row 53: the support team's replies (text and time), oldest first. */
+  replies?: { body: string; at: string }[];
 }
 
 export interface TicketInput {

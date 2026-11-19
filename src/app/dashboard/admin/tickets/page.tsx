@@ -4,11 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Ticket, MagnifyingGlass, ArrowLeft, Clock, CheckCircle,
-  Warning, X, ChatCircle, User, Robot, Fire, SealCheck,
+  Warning, X, ChatCircle, User, Fire, SealCheck,
   CaretDown, ArrowsClockwise, ArrowClockwise,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { listFailed, listFromApi, listOk, listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
+import { replyDtos, TICKET_REPLY_MAX, type TicketReplyDto } from "@/lib/services/ticketReplies";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TicketStatus  = "open" | "inprogress" | "resolved" | "closed";
@@ -38,6 +39,8 @@ interface SupportTicket {
    */
   messages: number | null;
   assignee?: string;
+  /** l9 row 53: the team's replies (metadata.replies), oldest first. */
+  replies: TicketReplyDto[];
 }
 
 /* ── No mock queue ───────────────────────────────────────────────────────────
@@ -144,6 +147,7 @@ function rowToTicket(row: SupportTicketRow): SupportTicket {
     lastReply: timeAgo(row.updated_at ?? row.created_at),
     messages: null,
     ...(assignee ? { assignee } : {}),
+    replies: replyDtos(row.metadata),
   };
 }
 
@@ -158,6 +162,10 @@ export default function AdminTicketsPage() {
   // office that may well have an open critical ticket.
   const [loading, setLoading] = useState(true);
   const [actionErr, setActionErr] = useState("");
+  // l9 row 53 (A1): the reply box is bound and really sends.
+  const [replyText, setReplyText] = useState("");
+  const [replying, setReplying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -215,6 +223,61 @@ export default function AdminTicketsPage() {
     } catch {
       if (previous) apply(previous);
       setActionErr("تعذّر الاتصال بالخادم — لم يُحفظ تغيير الحالة.");
+    }
+  }
+
+  // POST …/reply: the reply is shown only once the server stored it.
+  async function sendReply() {
+    if (!selectedTicket || replying) return;
+    const text = replyText.trim();
+    if (text.length < 2) { setActionErr("اكتب نص الرد أولاً."); return; }
+    setReplying(true);
+    setActionErr("");
+    try {
+      const res = await fetch(`/api/v1/admin/tickets/${selectedTicket.id}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: text }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; data?: SupportTicketRow };
+      if (!res.ok || !json.data) {
+        setActionErr(json.error ?? "تعذّر إرسال الرد — لم يُحفظ.");
+        return;
+      }
+      const replies = replyDtos(json.data.metadata);
+      const status = DB_STATUS_TO_PAGE[json.data.status ?? "open"] ?? selectedTicket.status;
+      const patch = (t: SupportTicket) => (t.id === selectedTicket.id ? { ...t, replies, status, lastReply: "الآن" } : t);
+      setRead((cur) => (cur && cur.ok ? listOk(cur.items.map(patch), cur.total) : cur));
+      setSelectedTicket((cur) => (cur ? patch(cur) : cur));
+      setReplyText("");
+    } catch {
+      setActionErr("تعذّر الاتصال بالخادم — لم يُرسل الرد.");
+    } finally {
+      setReplying(false);
+    }
+  }
+
+  // DELETE (owner: «حذف 3 تذاكر وهمية»): typed confirmation, then gone for good.
+  async function deleteTicket() {
+    if (!selectedTicket || deleting) return;
+    const typed = window.prompt(`حذف التذكرة «${selectedTicket.subject}» نهائياً — لا يمكن التراجع. اكتب «حذف» للتأكيد:`);
+    if (typed?.trim() !== "حذف") return;
+    setDeleting(true);
+    setActionErr("");
+    try {
+      const res = await fetch(`/api/v1/admin/tickets/${selectedTicket.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setActionErr(json.error ?? "تعذّر حذف التذكرة.");
+        return;
+      }
+      const goneId = selectedTicket.id;
+      setRead((cur) => (cur && cur.ok ? listOk(cur.items.filter((t) => t.id !== goneId), Math.max(0, (cur.total ?? 1) - 1)) : cur));
+      setSelectedTicket(null);
+    } catch {
+      setActionErr("تعذّر الاتصال بالخادم — لم تُحذف التذكرة.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -315,7 +378,7 @@ export default function AdminTicketsPage() {
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.04 }}
-                onClick={() => setSelectedTicket(ticket)}
+                onClick={() => { setSelectedTicket(ticket); setReplyText(""); setActionErr(""); }}
                 className={`w-full grid grid-cols-[100px_1fr_100px_90px_90px_80px] gap-4 px-5 py-4 text-right transition-colors ${
                   isDark ? "hover:bg-white/[0.02]" : "hover:bg-zinc-50"
                 }`}
@@ -488,6 +551,15 @@ export default function AdminTicketsPage() {
                     </div>
                   </div>
                 )}
+
+                {selectedTicket.replies.map((r, i) => (
+                  <div key={`${r.at}-${i}`} className={`p-4 rounded-2xl border-s-4 border-emerald-500 ${isDark ? "bg-emerald-500/10" : "bg-emerald-50"}`}>
+                    <p className={`text-xs font-bold mb-1 ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+                      ردّ فريق الدعم · {new Date(r.at).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                    <p className={`text-sm whitespace-pre-wrap ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>{r.body}</p>
+                  </div>
+                ))}
               </div>
 
               {/* Reply area */}
@@ -500,7 +572,11 @@ export default function AdminTicketsPage() {
                 <div className="flex gap-3">
                   <textarea
                     rows={3}
-                    placeholder="اكتب ردك هنا..."
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    maxLength={TICKET_REPLY_MAX}
+                    disabled={replying}
+                    placeholder="اكتب ردك هنا... (يصل إلى صاحب التذكرة في صفحة «المساعدة» مع إشعار)"
                     className={`flex-1 rounded-xl border px-4 py-3 text-sm outline-none resize-none transition ${
                       isDark ? "bg-zinc-800 border-white/[0.08] text-zinc-200 placeholder-zinc-600 focus:border-royal/40" : "bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-royal/40"
                     }`}
@@ -518,12 +594,23 @@ export default function AdminTicketsPage() {
                       <option value="resolved">محلول</option>
                       <option value="closed">مغلق</option>
                     </select>
-                    <button className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition ${isDark ? "border-white/[0.08] text-zinc-400 hover:bg-white/[0.04]" : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"}`}>
-                      <Robot size={13} /> رد AI تلقائي
+                    {/* The automatic AI-reply button had no handler and is gone (l9 row 53). */}
+                    <button
+                      type="button"
+                      onClick={deleteTicket}
+                      disabled={deleting}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 transition disabled:opacity-50"
+                    >
+                      {deleting ? "جارٍ الحذف…" : "حذف التذكرة"}
                     </button>
                   </div>
-                  <button className="flex items-center gap-1.5 bg-[#0B3D2E] hover:bg-[#1a5c44] text-white text-xs font-bold px-4 py-2 rounded-xl transition">
-                    <ArrowLeft size={13} /> إرسال الرد
+                  <button
+                    type="button"
+                    onClick={sendReply}
+                    disabled={replying || replyText.trim().length < 2}
+                    className="flex items-center gap-1.5 bg-[#0B3D2E] hover:bg-[#1a5c44] text-white text-xs font-bold px-4 py-2 rounded-xl transition disabled:opacity-50"
+                  >
+                    <ArrowLeft size={13} /> {replying ? "جارٍ الإرسال…" : "إرسال الرد"}
                   </button>
                 </div>
               </div>
