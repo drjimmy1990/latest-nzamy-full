@@ -12,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
+import { useToolUsable } from "@/hooks/useToolUsable";
 import { CaseCard } from "./_components/CaseCard";
 import { DashboardPageSkeleton } from "./_components/DashboardSkeleton";
 import { getDashboardSummary, getDocuments } from "@/lib/services";
@@ -234,6 +235,9 @@ export default function ClientDashboard() {
   const { isDark } = useTheme();
   const user = useUser();
   const [aiInput, setAiInput] = useState("");
+  // l9 row 30: the box says «قريباً» while the admin's tool switch keeps the
+  // quick question closed for this account (null = not known yet).
+  const quickAnswerOpen = useToolUsable("quick-answer");
   /**
    * The summary read, in the same three-state shape the documents card below
    * uses. It was a `summary: DashboardSummary | null` that could never be
@@ -1274,7 +1278,9 @@ export default function ClientDashboard() {
             <div>
               <p className={`text-[14px] font-bold ${isDark ? "text-white" : "text-zinc-800"}`}>لديك سؤال قانوني؟</p>
               <p className={`text-[12px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-                اسأل بالكلام العادي — إجابة مختصرة من نصوص الأنظمة مع رابط كل نص
+                {quickAnswerOpen === false
+                  ? "قريباً — السؤال القانوني السريع لم يُتح لحسابك بعد"
+                  : "اسأل بالكلام العادي — إجابة مختصرة من نصوص الأنظمة مع رابط كل نص"}
               </p>
             </div>
           </div>
@@ -1293,6 +1299,11 @@ export default function ClientDashboard() {
             {/* File 15 row 30 (l9): /ai/consult is the beta gate, so «اسأل» landed
                 on «قريباً». The live general tool every account runs is the quick
                 question (tools.ts REGISTERED_ROLES); it reads ?q= into its box. */}
+            {quickAnswerOpen === false ? (
+              <span className="h-full px-4 flex items-center gap-2 bg-zinc-500/20 text-zinc-500 text-[13px] font-bold rounded-xl whitespace-nowrap cursor-not-allowed">
+                قريباً
+              </span>
+            ) : (
             <Link href={`/ai/quick-answer${aiInput.trim() ? `?q=${encodeURIComponent(aiInput.trim().slice(0, 1000))}` : ""}`}>
               <motion.div
                 whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
@@ -1301,6 +1312,7 @@ export default function ClientDashboard() {
                 <Sparkle size={14} weight="fill" /> اسأل
               </motion.div>
             </Link>
+            )}
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
