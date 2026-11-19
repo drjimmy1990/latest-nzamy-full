@@ -203,6 +203,8 @@ export const ADMIN_SIDEBAR: SidebarGroup[] = [
       { label: "حملة المؤسس",          labelEn: "Founder Campaign", href: "/dashboard/admin/founder",              icon: "Crown",                  badge: "جديد" },
       // l8 (owner item 5): offers — create / edit / preview / stop + stats
       { label: "العروض",               labelEn: "Offers",          href: "/dashboard/admin/offers",               icon: "Gift",                   badge: "جديد" },
+      // l9 testinfra (owner file 19 §1ج): tags, «مسح دفعة الاختبار», the test mail sink
+      { label: "دفعات الاختبار",       labelEn: "Test Batches",    href: "/dashboard/admin/test-batches",         icon: "Database",               badge: "جديد" },
       // Owner answer ١١٥ — all three showed fixed logs, backups and figures and
       // render DashboardComingSoon now.
       { label: "سجل النظام",           labelEn: "System Log",      href: "/dashboard/admin/system",                icon: "Terminal",               badge: "قريباً" },

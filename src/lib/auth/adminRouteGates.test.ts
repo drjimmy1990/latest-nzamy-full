@@ -336,6 +336,9 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   // l8 (owner item 5): offers — create, and edit / «إيقاف فوري» (one audit row each)
   { file: "offers/route.ts", method: "POST", action: "settings.write", logs: 1 },
   { file: "offers/[id]/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  // l9 testinfra (owner file 19 §1ج): move a test account to a batch; «مسح دفعة الاختبار» (super admin + fresh TOTP)
+  { file: "test-batches/route.ts", method: "POST", action: "settings.write", logs: 1 },
+  { file: "test-batches/purge/route.ts", method: "POST", action: "users.delete", logs: 1 },
 ];
 
 for (const { file, method, action, logs } of GATES) {

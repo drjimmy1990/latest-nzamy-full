@@ -52,6 +52,8 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   // l8 (owner item 5): «العروض» — the list and stats are requireStaff("read");
   // create / edit / stop are settings.write on the server.
   "/dashboard/admin/offers": "read",
+  // l9 testinfra (owner file 19 §1ج): «دفعات الاختبار» — its purge is users.delete (super admin)
+  "/dashboard/admin/test-batches": "users.delete",
 
   // ── Operations' day-to-day queues ──────────────────────────────────────────
   "/dashboard/admin/provider-verification": "verifications.decide",

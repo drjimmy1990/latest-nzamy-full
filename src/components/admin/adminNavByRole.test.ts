@@ -45,9 +45,9 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 37 items of the console sidebar", () => {
+test("super_admin sees all 38 items of the console sidebar", () => {
   const all = hrefsOf(NAV);
-  assert.equal(all.length, 37, "the console sidebar has 37 items (+ اشتراكات المكتبة, note ١٨ C03; + حملة المؤسس, P3 Task 10; + مستكشف الجراف القانوني; + العروض, l8 owner item 5; + المكتبة حسب نوع الحساب, l8 item 9)");
+  assert.equal(all.length, 38, "the console sidebar has 38 items (+ اشتراكات المكتبة, note ١٨ C03; + حملة المؤسس, P3 Task 10; + مستكشف الجراف القانوني; + العروض, l8 owner item 5; + المكتبة حسب نوع الحساب, l8 item 9; + دفعات الاختبار, l9 testinfra)");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });
@@ -218,9 +218,9 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-// 34 since the Escrow link went (owner ٢٨٩: the platform holds no funds); 35 with حملة المؤسس (P3 Task 10); 36 with مستكشف الجراف القانوني; 37 with العروض (l8, owner item 5).
-test("ADMIN_SIDEBAR: super_admin and a null role see all 37 items", () => {
-  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 37, "ADMIN_SIDEBAR has 37 items");
+// 34 since the Escrow link went (owner ٢٨٩: the platform holds no funds); 35 with حملة المؤسس (P3 Task 10); 36 with مستكشف الجراف القانوني; 37 with العروض (l8, owner item 5); 38 with دفعات الاختبار (l9 testinfra).
+test("ADMIN_SIDEBAR: super_admin and a null role see all 38 items", () => {
+  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 38, "ADMIN_SIDEBAR has 38 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
 });
