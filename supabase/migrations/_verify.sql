@@ -7568,3 +7568,62 @@ select 'Law summaries: laws.summary / summary_card / summary_status / summary_re
                       where a.attrelid = 'library.laws'::regclass and a.attname = 'summary_brief' and not a.attisdropped), false)
        end as ok;
 -- <<< verify:l9_parser
+-- >>> verify:l9_secroles
+-- Batch l9-secroles (owner file 15 rows 2, 3, 36): run 20261129_10 any time (before or after the deploy).
+select 'Firm trainee / legal secretary read only assigned cases and clients: case_visible scoped branch + restrictive policies (run 20261129_10)' as check,
+       case when to_regprocedure('public.firm_case_scoped_member(uuid)') is null then false else
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'firm_case_scoped_member') > 0, false)
+       and not has_function_privilege('anon', 'public.firm_case_scoped_member(uuid)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.firm_case_scoped_member(uuid)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_policy
+                    where polrelid = 'public.service_requests'::regclass
+                      and polname = 'firm case: trainee and secretary see assigned cases only'
+                      and not polpermissive and polcmd = 'r')
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polname = 'firm role scope: assigned only' and not polpermissive and polcmd = 'r'
+               and polrelid in ('public.lawyer_clients'::regclass, 'public.lawyer_client_notes'::regclass,
+                                'public.contracts'::regclass, 'public.consultations'::regclass)) = 4
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polname in ('firm case: trainee and secretary see assigned cases only', 'firm role scope: assigned only')
+                          and not (polroles @> array[(select oid from pg_catalog.pg_roles where rolname = 'authenticated')]))
+       and not exists (select 1 from (values ('time_entries'), ('lawyer_expenses'), ('client_trust_ledger')) v(t)
+                        where to_regclass('public.' || v.t) is not null
+                          and not exists (select 1 from pg_catalog.pg_policy p
+                                           where p.polrelid = to_regclass('public.' || v.t)
+                                             and p.polname = 'restricted case rows: case team only'
+                                             and pg_catalog.pg_get_expr(p.polqual, p.polrelid) ilike '%created_by%'))
+       end as ok;
+select 'Company requests and roster by role on the server: business_case_reader / business_roster_reader (run 20261129_10)' as check,
+       case when to_regprocedure('public.business_case_reader(uuid)') is null
+              or to_regprocedure('public.business_roster_reader(uuid)') is null then false else
+       exists (select 1 from pg_catalog.pg_policy
+                where polrelid = 'public.service_requests'::regclass
+                  and polname = 'business members read business service requests'
+                  and pg_catalog.pg_get_expr(polqual, polrelid) ilike '%business_case_reader%')
+       and exists (select 1 from pg_catalog.pg_policy
+                    where polrelid = 'public.business_members'::regclass
+                      and polname = 'business_members: own row, roster manager or admin can read'
+                      and pg_catalog.pg_get_expr(polqual, polrelid) ilike '%business_roster_reader%')
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid = 'public.business_members'::regclass
+                          and polname = 'business_members: own row, co-member, owner or admin can read')
+       and not has_function_privilege('anon', 'public.business_case_reader(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.business_roster_reader(uuid)', 'EXECUTE')
+       -- a policy naming a helper anon cannot execute must be TO authenticated (else every guest read is 42501)
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polname in ('business members read business service requests',
+                                          'business_members: own row, roster manager or admin can read')
+                          and not (polroles @> array[(select oid from pg_catalog.pg_roles where rolname = 'authenticated')]))
+       end as ok;
+select 'Company seat cap: business_profiles.max_seats (no session write) + trg_business_seat_cap (run 20261129_10)' as check,
+       case when to_regprocedure('public.business_seat_cap(uuid)') is null
+              or not exists (select 1 from information_schema.columns
+                              where table_schema = 'public' and table_name = 'business_profiles' and column_name = 'max_seats') then false else
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.business_members'::regclass and tgname = 'trg_business_seat_cap' and not tgisinternal)
+       and not has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'INSERT')
+       and not has_function_privilege('authenticated', 'public.business_seat_cap(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.business_seat_status(uuid)', 'EXECUTE')
+       end as ok;
+-- <<< verify:l9_secroles

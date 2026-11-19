@@ -53,6 +53,31 @@ export async function displayNames(ids: (string | null)[]): Promise<Map<string, 
   return names;
 }
 
+/**
+ * The membership rows (role, status) of the given delegates of ONE company,
+ * through the service client. Owner file 15 row 3 (20261129_10): RLS now gives
+ * the roster only to the owner, the legal manager and the HR manager, but every
+ * active member still reads the register (owner decision ٣٦) — and a
+ * delegation's state depends on its delegate still being active. Same rule as
+ * displayNames: called only AFTER the RLS-scoped register read, with exactly
+ * the delegate ids that read returned; two columns; never an open query.
+ */
+export async function delegateMembers(businessId: string, ids: string[]): Promise<MemberLite[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const service = await createServiceClient();
+  const { data, error } = await service
+    .from("business_members")
+    .select("user_id, role, status")
+    .eq("business_id", businessId)
+    .in("user_id", unique);
+  if (error) {
+    console.error("[business/delegations] delegate membership lookup failed:", error.message, error.code);
+    return [];
+  }
+  return (data ?? []) as MemberLite[];
+}
+
 export function toDelegationDto(
   row: DelegationRow,
   names: Map<string, string | null>,

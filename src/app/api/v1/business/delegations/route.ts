@@ -11,6 +11,7 @@ import {
 import { BUSINESS_ROLE_LABEL, type BusinessRole } from "@/lib/auth/businessMembershipAccess";
 import {
   DELEGATION_COLUMNS,
+  delegateMembers,
   displayNames,
   isMissingRelation,
   toDelegationDto,
@@ -109,6 +110,11 @@ export async function GET(_request: NextRequest) {
     const rows = (rowsRes.data ?? []) as DelegationRow[];
     const members = (membersRes.data ?? []) as MemberLite[];
     const memberByUser = new Map(members.map((m) => [m.user_id, m]));
+    // Owner file 15 row 3 (20261129_10): a member outside the roster roles
+    // reads only his own roster row through RLS; the delegates' standing comes
+    // from the register's own ids (see delegateMembers).
+    const unknownDelegates = rows.map((r) => r.delegate_user_id).filter((id) => !memberByUser.has(id));
+    for (const m of await delegateMembers(scope.businessId, unknownDelegates)) memberByUser.set(m.user_id, m);
     const isOwner = scope.scope === "owner";
     const ownerId = isOwner ? user.id : await readOwnerId(supabase, scope.businessId);
 

@@ -134,11 +134,14 @@ export const PLAN_LIMIT_AR: Readonly<Record<"cases" | "clients", string>> = Obje
 export const PLAN_LIMIT_LINK_AR = "ترقية الباقة";
 export const FIRM_SEATS_FULL_AR = "اكتملت مقاعد المكتب. لزيادة المقاعد تواصل معنا.";
 export const FIRM_SEATS_LINK_AR = "لزيادة المقاعد تواصل معنا";
+/** Company seat cap (20261129_10, owner file 15 row 36) — the firm's wording for a company. */
+export const BUSINESS_SEATS_CONTACT_HREF = "/contact?type=business-seats";
+export const BUSINESS_SEATS_FULL_AR = "اكتملت مقاعد الشركة. لزيادة المقاعد تواصل معنا.";
 
 export type LimitRefusal = {
   status: 403;
   message: string;
-  token: "plan_limit:cases" | "plan_limit:clients" | "firm_seats_full";
+  token: "plan_limit:cases" | "plan_limit:clients" | "firm_seats_full" | "business_seats_full";
   linkHref: string;
   linkLabel: string;
 };
@@ -146,7 +149,7 @@ export type LimitRefusal = {
 /**
  * The plan-limit / seat refusal carried by a database / PostgREST error, or
  * null. Reads only `message` and accepts only the exact tokens 20261126_50
- * raises.
+ * and 20261129_10 (business_seats_full) raise.
  */
 export function limitRefusal(err: unknown): LimitRefusal | null {
   const message = describeDbError(err).message?.trim();
@@ -157,6 +160,8 @@ export function limitRefusal(err: unknown): LimitRefusal | null {
       return { status: 403, message: PLAN_LIMIT_AR.clients, token: message, linkHref: PLAN_LIMIT_UPGRADE_HREF, linkLabel: PLAN_LIMIT_LINK_AR };
     case "firm_seats_full":
       return { status: 403, message: FIRM_SEATS_FULL_AR, token: message, linkHref: FIRM_SEATS_CONTACT_HREF, linkLabel: FIRM_SEATS_LINK_AR };
+    case "business_seats_full":
+      return { status: 403, message: BUSINESS_SEATS_FULL_AR, token: message, linkHref: BUSINESS_SEATS_CONTACT_HREF, linkLabel: FIRM_SEATS_LINK_AR };
     default:
       return null;
   }
@@ -178,5 +183,6 @@ export function limitLinkForMessage(message: string | null | undefined): { href:
     return { href: PLAN_LIMIT_UPGRADE_HREF, label: PLAN_LIMIT_LINK_AR };
   }
   if (message.includes(FIRM_SEATS_FULL_AR)) return { href: FIRM_SEATS_CONTACT_HREF, label: FIRM_SEATS_LINK_AR };
+  if (message.includes(BUSINESS_SEATS_FULL_AR)) return { href: BUSINESS_SEATS_CONTACT_HREF, label: FIRM_SEATS_LINK_AR };
   return null;
 }

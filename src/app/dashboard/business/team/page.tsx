@@ -76,6 +76,7 @@ import {
 import { BUSINESS_ROLE_LABEL } from "@/lib/auth/businessMembershipAccess";
 import { CORPORATE_INVITE_ROLES } from "@/constants/settingsReadiness";
 import { type ListRead, listViewState, itemsOf } from "@/lib/services/listRead";
+import LimitRefusalLink from "@/components/limits/LimitRefusalLink";
 
 // The eight invitable roles, straight from the settings policy so the tab and
 // this page can never offer different ones. `owner` is not among them: that
@@ -224,8 +225,8 @@ function AddMemberModal({
             </div>
 
             {error && (
-              <p className="text-[12px] text-red-400 flex items-center gap-1">
-                <Warning size={12} /> {error}
+              <p className="text-[12px] text-red-400 flex items-center gap-1 flex-wrap">
+                <Warning size={12} /> {error} <LimitRefusalLink message={error} />
               </p>
             )}
 
