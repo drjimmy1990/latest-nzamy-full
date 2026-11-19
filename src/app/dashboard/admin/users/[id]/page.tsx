@@ -27,6 +27,7 @@ import {
 import { apiErrorText } from "@/lib/services/apiErrorText";
 import { cyclePrice, cycleUnitAr, subscriptionCycleAr } from "@/lib/payments/planRowPrice";
 import UserLibraryDevicesCard from "./UserLibraryDevicesCard";
+import { adminToast } from "@/components/admin/adminToast";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 interface SubscriptionPlan {
@@ -672,7 +673,7 @@ export default function UserProfilePage() {
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل توثيق الحساب"));
       fetchUser();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
@@ -691,7 +692,7 @@ export default function UserProfilePage() {
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "تعذّر تغيير وضع الحساب التجريبي"));
       fetchUser();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setDemoLoading(false);
     }
@@ -709,7 +710,7 @@ export default function UserProfilePage() {
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل تعليق الحساب"));
       fetchUser();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
@@ -726,7 +727,7 @@ export default function UserProfilePage() {
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل تفعيل الحساب"));
       fetchUser();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
