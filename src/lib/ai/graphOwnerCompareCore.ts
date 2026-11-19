@@ -445,6 +445,7 @@ export function computeCoverage(bridge: Bridge, docs: readonly DbDocLine[]): Cov
 
 export const EXPORTED_OUR_TYPES = [
   "INTERPRETS_ARTICLE",
+  "CITES_ARTICLE",
   "AMENDS_ARTICLE",
   "SUPERSEDES_LAW",
   "PARENT_LAW",
@@ -511,6 +512,10 @@ export function mapOurEdge(bridge: Bridge, e: DbEdgeLine): ExportEdge[] {
   const end = (doc: string, article?: string): ExportEnd => (article ? { doc, article } : { doc });
   switch (e.edge_type) {
     case "INTERPRETS_ARTICLE": // principle → article  ⇒  cites_article principle doc → law (+ to.article)
+      return [{ type: "cites_article", from: end(s.doc), to: end(t.doc, tArt), ...base }];
+    case "CITES_ARTICLE": // law article → article of ANOTHER law  ⇒  cites_article law → law (+ to.article).
+      // His file never lists a law citing itself (0 of 12,296), so «المادة ٣ من هذا النظام» is not exported.
+      if (s.doc === t.doc) return [];
       return [{ type: "cites_article", from: end(s.doc), to: end(t.doc, tArt), ...base }];
     case "AMENDS_ARTICLE": // amender → amended article  ⇒  amended_by amended law (+ from.article) → amender (reversed)
       return [{ type: "amended_by", from: end(t.doc, tArt), to: end(s.doc), ...base }];

@@ -38,7 +38,7 @@ const neighborhood = {
     { node_key: "principle:p2", node_type: "principle", law_slug: null, title: "مبدأ بلا مجموعة", url: "", snippet: SECRET },
   ],
   edges: [
-    { source: "article:a5", target: "article:a7", edge_type: "CITES_ARTICLE", evidence: SECRET },
+    { source: "article:a5", target: "article:a7", edge_type: "PENALIZES", evidence: SECRET },
     { source: "article:x1", target: "article:a5", edge_type: "EXEMPTS_FROM", evidence: SECRET },
     { source: "article:a5", target: "article:x1", edge_type: "SIMILAR_TO", evidence: SECRET },
     { source: "law:old", target: "article:a5", edge_type: "SUPERSEDES_LAW", evidence: SECRET },
@@ -51,7 +51,7 @@ const neighborhood = {
 };
 
 test("٦٠: the route asks only for the types matching the owner's file", () => {
-  assert.deepEqual([...READER_LINK_TYPES].sort(), ["AMENDS_ARTICLE", "INTERPRETS_ARTICLE", "PARENT_LAW", "SUPERSEDES_LAW"]);
+  assert.deepEqual([...READER_LINK_TYPES].sort(), ["AMENDS_ARTICLE", "CITES_ARTICLE", "INTERPRETS_ARTICLE", "PARENT_LAW", "SUPERSEDES_LAW"]);
 });
 
 test("sections: legislation and judicial filled, fiqh empty; hidden types dropped even if the function returns them", () => {
@@ -72,7 +72,7 @@ test("sections: legislation and judicial filled, fiqh empty; hidden types droppe
   );
   assert.equal(out.sections.fiqh.items.length, 0);
   assert.ok(!JSON.stringify(out).includes(SECRET), "no snippet, no evidence");
-  assert.ok(!JSON.stringify(out).includes("CITES_ARTICLE") && !JSON.stringify(out).includes("EXEMPTS_FROM") && !JSON.stringify(out).includes("SIMILAR_TO"));
+  assert.ok(!JSON.stringify(out).includes("PENALIZES") && !JSON.stringify(out).includes("EXEMPTS_FROM") && !JSON.stringify(out).includes("SIMILAR_TO"));
   for (const s of ["legislation", "judicial", "fiqh"] as const) {
     for (const i of out.sections[s].items) {
       assert.deepEqual(
@@ -94,7 +94,7 @@ test("a section lists at most MAX_ITEMS_PER_SECTION, and its total says how many
   const many = {
     found: true,
     truncated: true,
-    center_edge_counts: { INTERPRETS_ARTICLE: { out: 0, in: n + 40 }, CITES_ARTICLE: { out: 999, in: 0 } },
+    center_edge_counts: { INTERPRETS_ARTICLE: { out: 0, in: n + 40 }, PENALIZES: { out: 999, in: 0 } },
     nodes: [
       { node_key: "article:c", node_type: "article", law_slug: "l" },
       ...Array.from({ length: n }, (_, i) => ({ node_key: `principle:p${i}`, node_type: "principle", title: `p${i}`, url: `/precedents/coll#p${i}` })),
@@ -111,7 +111,7 @@ test("one query per section: 200 principles never crowd out a legislation link",
   assert.deepEqual(
     READER_SECTION_QUERIES.map((q) => [q.section, [...q.types].sort()]),
     [
-      ["legislation", ["AMENDS_ARTICLE", "PARENT_LAW", "SUPERSEDES_LAW"]],
+      ["legislation", ["AMENDS_ARTICLE", "CITES_ARTICLE", "PARENT_LAW", "SUPERSEDES_LAW"]],
       ["judicial", ["INTERPRETS_ARTICLE"]],
     ],
     "fiqh has no shown type, so it is not asked for",
@@ -194,7 +194,7 @@ test("hrefs: the exact anchor when it exists", () => {
 test("law links (map): only shown types; a law linked by hidden types only is dropped", () => {
   const out = shapeLawLinks({
     links: [
-      { slug: "civil", title: "نظام المعاملات المدنية", status: "active", out: 3, in: 1, types: ["PARENT_LAW", "CITES_ARTICLE"], evidence: SECRET },
+      { slug: "civil", title: "نظام المعاملات المدنية", status: "active", out: 3, in: 1, types: ["PARENT_LAW", "PENALIZES"], evidence: SECRET },
       { slug: "penal", title: "نظام العقوبات", status: "active", out: 2, in: 0, types: ["PENALIZES"] },
       { title: "no slug" },
     ],
