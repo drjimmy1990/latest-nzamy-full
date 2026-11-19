@@ -660,27 +660,27 @@ test("the explorer client asks for meaning links by naming every type, and never
 test("٦٠: the explorer hides the unreviewed link types on the server and in its lists", async () => {
   const core = await import("./graphExplorerCore.ts");
   const shown = core.EXPLORER_SHOWN_EDGE_TYPES;
-  for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "CITES_ARTICLE", "IMPLEMENTED_BY", "REPLACED_BY", "SIMILAR_TO"]) {
+  for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "IMPLEMENTED_BY", "REPLACED_BY", "SIMILAR_TO"]) {
     assert.ok(!shown.includes(t as never), `${t} hidden`);
     assert.equal(core.edgeMetaFor(t).label, "رابط قيد المراجعة", `${t} is never named`);
   }
-  for (const t of ["INTERPRETS_ARTICLE", "AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "PART_OF", "NEXT_ARTICLE", "HAS_CONCEPT"]) {
+  for (const t of ["INTERPRETS_ARTICLE", "CITES_ARTICLE", "AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "PART_OF", "NEXT_ARTICLE", "HAS_CONCEPT"]) {
     assert.ok(shown.includes(t as never), `${t} shown`);
   }
   assert.equal(core.edgeMetaFor("NEW_LINK").label, "رابط غير معروف");
 
   assert.equal(core.explorerEdgeFilter([]), null, "no names: every type, filtered after");
-  assert.deepEqual(core.explorerEdgeFilter(["CITES_ARTICLE", "PARENT_LAW"]), ["PARENT_LAW"]);
-  assert.deepEqual(core.explorerEdgeFilter(["CITES_ARTICLE"]), [...shown], "only hidden names: the shown types, never all");
+  assert.deepEqual(core.explorerEdgeFilter(["PENALIZES", "PARENT_LAW"]), ["PARENT_LAW"]);
+  assert.deepEqual(core.explorerEdgeFilter(["PENALIZES"]), [...shown], "only hidden names: the shown types, never all");
 
   const n = core.hideUnreviewedLinks({
     found: true,
     center_key: "article:a",
     total_center_edges: 4,
-    center_edge_counts: { CITES_ARTICLE: { out: 2, in: 0 }, PARENT_LAW: { out: 1, in: 0 }, PART_OF: { out: 1, in: 0 } },
+    center_edge_counts: { PENALIZES: { out: 2, in: 0 }, PARENT_LAW: { out: 1, in: 0 }, PART_OF: { out: 1, in: 0 } },
     nodes: [{ node_key: "article:a" }, { node_key: "article:b" }, { node_key: "law:p" }, { node_key: "chapter:c" }],
     edges: [
-      { source: "article:a", target: "article:b", edge_type: "CITES_ARTICLE" },
+      { source: "article:a", target: "article:b", edge_type: "PENALIZES" },
       { source: "article:a", target: "law:p", edge_type: "PARENT_LAW" },
       { source: "article:a", target: "chapter:c", edge_type: "PART_OF" },
     ],
@@ -690,7 +690,7 @@ test("٦٠: the explorer hides the unreviewed link types on the server and in it
   assert.deepEqual(Object.keys(n.center_edge_counts).sort(), ["PARENT_LAW", "PART_OF"]);
   assert.equal(n.total_center_edges, 2);
   assert.deepEqual(core.hideUnreviewedLinks({ found: false }), { found: false });
-  assert.deepEqual(core.shownEdgeCounts({ CITES_ARTICLE: 9, AMENDS_ARTICLE: 3 }), { AMENDS_ARTICLE: 3 });
+  assert.deepEqual(core.shownEdgeCounts({ PENALIZES: 9, AMENDS_ARTICLE: 3 }), { AMENDS_ARTICLE: 3 });
 
   const route = readFileSync(join(ROOT, "src", "app", "api", "v1", "admin", "graph-explorer", "route.ts"), "utf8");
   assert.ok(route.includes("p_edge_types: explorerEdgeFilter(req.edges)"));

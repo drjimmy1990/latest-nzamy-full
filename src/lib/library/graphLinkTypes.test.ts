@@ -58,8 +58,8 @@ test("every explorer type is in exactly one bucket: shown, unreviewed, or outlin
   assert.equal(SHOWN_LINK_TYPES.length + UNREVIEWED_LINK_TYPES.length + OUTLINE_LINK_TYPES.length, EXPLORER_EDGE_TYPES.length);
 });
 
-test("the six types question ٦٠ named are hidden from the reader and the explorer", () => {
-  for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "CITES_ARTICLE", "IMPLEMENTED_BY", "REPLACED_BY"]) {
+test("the five types question ٦٠ named that his file lacks are hidden from the reader and the explorer", () => {
+  for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "IMPLEMENTED_BY", "REPLACED_BY"]) {
     assert.equal(isShownLinkType(t), false, t);
     assert.equal(isExplorerVisibleLinkType(t), false, t);
     assert.equal(sectionOfLinkType(t), null, t);
@@ -73,6 +73,11 @@ test("the six types question ٦٠ named are hidden from the reader and the explo
 test("sections follow his categories; no shown type is fiqh today", () => {
   assert.equal(sectionOfLinkType("INTERPRETS_ARTICLE"), "judicial");
   for (const t of ["AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW"]) assert.equal(sectionOfLinkType(t), "legislation", t);
+  // His cites_article is LAW → LAW in 11,062 of 12,296 edges (compare 19 Nov): our «إحالة» matches it,
+  // and sits with the legislation, not under his judicial category.
+  assert.equal(isShownLinkType("CITES_ARTICLE"), true);
+  assert.equal(isExplorerVisibleLinkType("CITES_ARTICLE"), true);
+  assert.equal(sectionOfLinkType("CITES_ARTICLE"), "legislation");
   assert.equal(SHOWN_LINK_TYPES.some((t) => sectionOfLinkType(t) === "fiqh"), false);
   assert.deepEqual([...LINK_SECTIONS], ["legislation", "judicial", "fiqh"]);
 });
@@ -82,5 +87,6 @@ test("labels: every shown type has both directions, no «يفسّر» anywhere",
     assert.ok(SHOWN_LINK_LABELS[t].out && SHOWN_LINK_LABELS[t].in, t);
     assert.doesNotMatch(SHOWN_LINK_LABELS[t].out + SHOWN_LINK_LABELS[t].in, /يفسّر|يفسر|تفسير/);
   }
-  assert.equal(linkLabel("CITES_ARTICLE", "out"), "");
+  assert.equal(linkLabel("PENALIZES", "out"), "");
+  assert.equal(linkLabel("CITES_ARTICLE", "out"), "تُحيل إليها");
 });

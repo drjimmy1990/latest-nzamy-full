@@ -232,7 +232,12 @@ test("type mapping: his names, his direction, document level", () => {
   assert.deepEqual([ib.from, ib.to], [{ doc: "LAW-01-0001" }, { doc: "LAW-01-0002" }]);
   assert.equal(ib.provenance, "article_regulations");
 
-  for (const t of ["CITES_ARTICLE", "EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "PART_OF", "NEXT_ARTICLE", "HAS_CONCEPT", "DEFINES_TERM", "DECONSTRUCTS_CONCEPT", "ESTABLISHES_RULE", "SIMILAR_TO", "REPLACED_BY"]) {
+  const [ca] = mapOurEdge(bridge, edge("CITES_ARTICLE", art(SLUG_REG, 4), art(SLUG_LABOR, 9)));
+  assert.equal(ca.type, "cites_article", "our «إحالة» is his law → law cites_article");
+  assert.deepEqual([ca.from, ca.to], [{ doc: "LAW-01-0002" }, { doc: "LAW-01-0001", article: "9" }]);
+  assert.deepEqual(mapOurEdge(bridge, edge("CITES_ARTICLE", art(SLUG_LABOR, 4), art(SLUG_LABOR, 9))), [], "a law citing itself is not exported (his file has none)");
+
+  for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "PART_OF", "NEXT_ARTICLE", "HAS_CONCEPT", "DEFINES_TERM", "DECONSTRUCTS_CONCEPT", "ESTABLISHES_RULE", "SIMILAR_TO", "REPLACED_BY"]) {
     assert.deepEqual(mapOurEdge(bridge, edge(t, art(SLUG_LABOR, 1), art(SLUG_REG, 2))), [], t);
   }
 });
@@ -328,7 +333,7 @@ test("the SQL file is read-only, ends with ROLLBACK, and emits kind-tagged JSON 
   assert.match(code.trimEnd(), /\nrollback;$/);
   assert.doesNotMatch(code, /\b(insert|update|delete|truncate|drop|alter|create|grant|revoke|commit)\b/i);
   for (const kind of ["snapshot", "doc", "edge"]) assert.match(code, new RegExp(`'kind', '${kind}'`));
-  for (const t of ["INTERPRETS_ARTICLE", "AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "IMPLEMENTED_BY"]) assert.ok(code.includes(`'${t}'`), t);
+  for (const t of ["INTERPRETS_ARTICLE", "CITES_ARTICLE", "AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "IMPLEMENTED_BY"]) assert.ok(code.includes(`'${t}'`), t);
   assert.match(code, /\\pset format unaligned/);
   assert.match(code, /\\pset tuples_only on/);
 });
