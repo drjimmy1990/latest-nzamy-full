@@ -60,6 +60,21 @@ export const IDENTITY_FIELDS: ReadonlySet<string> = new Set([
   "id", "slug", "law_slug", "collection_id", "book_id",
 ]);
 
+/**
+ * The three caps the owner's upload report saw cutting (l10 gap 1.6:
+ * articles.number_text > 50 ×1506, laws.official_source_url > 500 ×12,
+ * laws.issuing_instrument > 200 ×2). The columns are `text` once
+ * 20261130_10_library_wide_text_columns.sql has run (official_source_url always
+ * was); the seeder still caps, now this high, and still reports every cut.
+ * The owner loader's preflight (ownerLoaderTables.ts, preflightColumnWidths)
+ * refuses a load while one of these columns is narrower than its cap here.
+ */
+export const LIBRARY_RAISED_CAPS = {
+  "articles.number_text": 1000,
+  "laws.official_source_url": 2000,
+  "laws.issuing_instrument": 2000,
+} as const;
+
 export interface TruncationEntry {
   table: string;
   field: string;

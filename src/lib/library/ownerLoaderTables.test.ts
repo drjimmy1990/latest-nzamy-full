@@ -4,7 +4,18 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { OWNER_LOADER_TABLES, preflightRequiredColumns, rpcBatchStored } from "./ownerLoaderTables.ts";
+import {
+  codePointLength,
+  COLUMN_WIDTHS_RPC,
+  createLongestValueTracker,
+  findNarrowColumns,
+  limitedColumns,
+  OWNER_LOADER_TABLES,
+  preflightColumnWidths,
+  preflightRequiredColumns,
+  rpcBatchStored,
+  type ColumnWidth,
+} from "./ownerLoaderTables.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const LOADER = readFileSync(path.join(here, "../../../scripts/seed-library-from-owner.mjs"), "utf8").replace(/\r\n/g, "\n");
@@ -106,4 +117,93 @@ test("20261129_70 (owner file 18 items 3 + 4): the amendment card and law summar
   const amendments = OWNER_LOADER_TABLES.find((t) => t.name === "article_amendments");
   assert.deepEqual(amendments?.requiredColumns, ["decree_id", "paragraphs", "text_status", "position"]);
   assert.deepEqual(amendments?.stripKeys, []);
+});
+
+// ── l10 (gap 1.6): the column-width preflight ────────────────────────────────
+const widths = (numberText: string, numberTextMax: number | null, instrument = "text", instrumentMax: number | null = null): ColumnWidth[] => [
+  { table_name: "articles", column_name: "id", data_type: "character varying(150)", max_chars: 150 },
+  { table_name: "articles", column_name: "number", data_type: "character varying(20)", max_chars: 20 },
+  { table_name: "articles", column_name: "number_text", data_type: numberText, max_chars: numberTextMax },
+  { table_name: "articles", column_name: "text", data_type: "text", max_chars: null },
+  { table_name: "laws", column_name: "slug", data_type: "character varying(200)", max_chars: 200 },
+  { table_name: "laws", column_name: "issuing_instrument", data_type: instrument, max_chars: instrumentMax },
+  { table_name: "laws", column_name: "official_source_url", data_type: "text", max_chars: null },
+];
+
+test("l10 width preflight: number_text still varchar(50) stops the load and names 20261130_10", () => {
+  const problems = findNarrowColumns(widths("character varying(50)", 50), OWNER_LOADER_TABLES);
+  assert.equal(problems.length, 1);
+  assert.equal(`${problems[0].table}.${problems[0].column}`, "articles.number_text");
+  assert.match(problems[0].reason, /narrower than the seeder's cap of 1000/);
+  assert.match(problems[0].reason, /20261130_10_library_wide_text_columns\.sql/);
+  // issuing_instrument still varchar(200) too
+  assert.deepEqual(
+    findNarrowColumns(widths("text", null, "character varying(200)", 200), OWNER_LOADER_TABLES).map((p) => p.column),
+    ["issuing_instrument"],
+  );
+});
+
+test("l10 width preflight: all three text passes; a table not being loaded is not judged", () => {
+  assert.deepEqual(findNarrowColumns(widths("text", null), OWNER_LOADER_TABLES), []);
+  const onlyFeqh = OWNER_LOADER_TABLES.filter((t) => t.name.startsWith("feqh_"));
+  assert.deepEqual(findNarrowColumns(widths("character varying(50)", 50), onlyFeqh), []);
+});
+
+test("l10 width preflight: a row longer than its column stops the load, naming the row", () => {
+  const problems = findNarrowColumns(widths("text", null), OWNER_LOADER_TABLES, [
+    { table: "articles", column: "number", length: 21, key: "law__art-9" },
+    { table: "articles", column: "number", length: 20, key: "law__art-8" },
+    { table: "laws", column: "slug", length: 200, key: "x" },
+  ]);
+  assert.deepEqual(problems.map((p) => [p.table, p.column]), [["articles", "number"]]);
+  assert.match(problems[0].reason, /row law__art-9 carries 21 characters/);
+});
+
+test("l10 width preflight: a missing RPC, an error, an empty answer or a throw each stop the load", async () => {
+  const none = async () => [];
+  const missing = await preflightColumnWidths(OWNER_LOADER_TABLES,
+    async () => ({ data: null, error: { code: "PGRST202", message: "Could not find the function library.library_column_widths" } }), none);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0].reason, /library_column_widths\(\): Could not find the function/);
+  assert.match(missing[0].reason, /run supabase\/migrations\/20261130_10_library_wide_text_columns\.sql/);
+  assert.equal((await preflightColumnWidths(OWNER_LOADER_TABLES, async () => ({ data: [], error: null }), none)).length, 1);
+  const thrown = await preflightColumnWidths(OWNER_LOADER_TABLES, async () => { throw new Error("socket hang up"); }, none);
+  assert.match(thrown[0].reason, /socket hang up/);
+  const scanFails = await preflightColumnWidths(OWNER_LOADER_TABLES, async () => ({ data: widths("text", null), error: null }),
+    async () => { throw new Error("EACCES"); });
+  assert.match(scanFails[0].reason, /could not measure the rows: EACCES/);
+  // all well: no problem, and the scan was asked only for the limited columns
+  let asked: Map<string, string[]> | undefined;
+  const ok = await preflightColumnWidths(OWNER_LOADER_TABLES, async () => ({ data: widths("text", null), error: null }),
+    async (w) => { asked = w; return []; });
+  assert.deepEqual(ok, []);
+  assert.deepEqual(asked, new Map([["articles", ["id", "number"]], ["laws", ["slug"]]]));
+  assert.equal(COLUMN_WIDTHS_RPC, "library_column_widths");
+});
+
+test("l10 longest-value tracker: code points (what varchar counts), the longest per column with its row key", () => {
+  assert.equal(codePointLength("مادة"), 4);
+  assert.equal(codePointLength("x😀"), 2, "an emoji pair is one character for Postgres");
+  const t = createLongestValueTracker(limitedColumns(widths("character varying(50)", 50), OWNER_LOADER_TABLES));
+  t.observe("articles", { id: "a1", number: "1", number_text: "قصير" }, "a1");
+  t.observe("articles", { id: "a2", number: "2", number_text: "م".repeat(120) }, "a2");
+  t.observe("articles", { id: "a3", number: null, number_text: 7 }, "a3");
+  t.observe("feqh_blocks", { id: "b1", topic: "z".repeat(999) }, "b1");
+  const snap = t.snapshot();
+  assert.deepEqual(snap.find((l) => l.column === "number_text"), { table: "articles", column: "number_text", length: 120, key: "a2" });
+  assert.equal(snap.some((l) => l.table === "feqh_blocks"), false);
+  // and the judgement: 120 > varchar(50), plus the cap problem
+  const problems = findNarrowColumns(widths("character varying(50)", 50), OWNER_LOADER_TABLES, snap);
+  assert.equal(problems.filter((p) => p.column === "number_text").length, 2);
+});
+
+test("the loader runs the width preflight before the first write, live only, and exits 1", () => {
+  const guard = LOADER.indexOf("preflightColumnWidths(");
+  const required = LOADER.indexOf("preflightRequiredColumns(tablesToSeed");
+  const firstSeed = LOADER.indexOf("tableStats.push(await seedTable(t))");
+  assert.ok(guard > required && firstSeed > guard, "after the required-column probe, before the first seedTable");
+  assert.match(LOADER.slice(guard, firstSeed), /\(\) => supabase\.rpc\(COLUMN_WIDTHS_RPC\)/);
+  assert.match(LOADER.slice(guard, firstSeed), /scanLongestValues\(tablesToSeed, watch\)/);
+  assert.match(LOADER.slice(guard, firstSeed), /process\.exit\(1\)/);
+  assert.match(LOADER.slice(required - 200, guard), /if \(!isDry\) \{/);
 });

@@ -35,8 +35,10 @@ import {
 } from "./seed-library.live-preflight";
 import { stripInternalContentKeys } from "../src/lib/library/internalContentFields";
 import { joinStoredPreamble } from "../src/lib/library/splitPreamble";
+import { holdBackReviewFlagged, isReviewFlagged, type HeldBackItem } from "../src/lib/library/reviewGate";
 import {
   createSeedValueReport,
+  LIBRARY_RAISED_CAPS,
   seedValueReportJson,
   summarizeSeedValueReport,
   type SeedValueReport,
@@ -67,6 +69,8 @@ interface SeedResult {
   errors: string[];
   /** N2.7: every varchar cut and every refused integer of this run. */
   value_report?: ReturnType<typeof seedValueReportJson>;
+  /** l10 (gap 1.5): flagged law / decree files left out of this run's rows. */
+  review_gate?: { gate: "on" | "off"; held_back: HeldBackItem[] };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -783,7 +787,7 @@ export async function seedLaws(
       section_code: cap("laws", "section_code", lawId, String(law.section_code || ""), 20),
       section_name: cap("laws", "section_name", lawId, String(law.section_name || ""), 200),
       issuing_body: cap("laws", "issuing_body", lawId, String(law.issuing_body || ""), 200),
-      issuing_instrument: cap("laws", "issuing_instrument", lawId, String(law.issuance_decree || ""), 200),
+      issuing_instrument: cap("laws", "issuing_instrument", lawId, String(law.issuance_decree || ""), LIBRARY_RAISED_CAPS["laws.issuing_instrument"]),
       issue_date_hijri: cap("laws", "issue_date_hijri", lawId, String(law.issuance_date || ""), 20),
       issue_date_gregorian: cap("laws", "issue_date_gregorian", lawId, String(law.issue_date_gregorian || ""), 20),
       // ك-12 (2026-08-24): the parser now extracts all 5 effective-date-family
@@ -822,7 +826,7 @@ export async function seedLaws(
       owner_links: Array.isArray(law.owner_links) && law.owner_links.length ? law.owner_links : null,
       status: cap("laws", "status", lawId, law.law_status || "status_undeclared", 30),
       boe_source_url: cap("laws", "boe_source_url", lawId, String(law.boe_source_url || law.boe_url || ""), 500),
-      official_source_url: cap("laws", "official_source_url", lawId, String(law.official_source_url || ""), 500),
+      official_source_url: cap("laws", "official_source_url", lawId, String(law.official_source_url || ""), LIBRARY_RAISED_CAPS["laws.official_source_url"]),
       // ب-114: jsonb column — pass the structured object through as-is. The prior
       // String(...).substring(500) both stringified it to "[object Object]" and could
       // truncate mid-structure, corrupting the JSON; article_status_summary is only
@@ -905,7 +909,7 @@ export async function seedLaws(
           law_slug: cap("articles", "law_slug", artId, lawId, 200),
           chapter_id: chapterId,
           number: cap("articles", "number", artId, articleNumberText(art), 20),
-          number_text: cap("articles", "number_text", artId, art.number_text || "", 50),
+          number_text: cap("articles", "number_text", artId, art.number_text || "", LIBRARY_RAISED_CAPS["articles.number_text"]),
           title: art.title || "",
           status: cap("articles", "status", artId, resolveSeedArticleStatus(art.status), 30),
           text: art.text || "",
@@ -1694,6 +1698,8 @@ export async function seedLibrary(options: {
   approvedManifestPath?: string;
   confirmHost?: string;
   confirmSchema?: string;
+  /** l10 (gap 1.5): build flagged law / decree files too (the gate is on by default). */
+  allowReviewFlagged?: boolean;
 }): Promise<SeedResult> {
   // A parser preflight cannot make destructive deletion safe. Keep this guard
   // here too, so direct programmatic callers cannot bypass the CLI refusal.
@@ -1731,6 +1737,10 @@ export async function seedLibrary(options: {
   // invisible for a second time, this time behind "you'd have to think to
   // look for it" instead of "it was never wired at all."
   const reviewFlagged: Array<{ table: string; id: string; reason: string }> = [];
+  // l10 (gap 1.5, option A): flagged law / decree files are held back from the
+  // rows unless --allow-review-flagged (src/lib/library/reviewGate.ts).
+  const allowReviewFlagged = options.allowReviewFlagged === true;
+  const heldBack: HeldBackItem[] = [];
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -1784,13 +1794,21 @@ export async function seedLibrary(options: {
     const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
 
     let stats: SeedStats[] = [];
+    // The gate drops the whole parsed document before any row is built, so its
+    // children go with it. `data` itself stays whole for the flag report below.
+    const gated = (key: "laws" | "decrees", table: HeldBackItem["table"], idOf: (o: any) => string) => {
+      if (!Array.isArray(data[key])) return data;
+      const { kept, held } = holdBackReviewFlagged(data[key] as any[], table, idOf, allowReviewFlagged);
+      heldBack.push(...held);
+      return { ...data, [key]: kept };
+    };
 
     switch (type) {
       case "laws":
-        stats = await seedLaws(client, data, options.dryRun, errors, options.clean ?? false, drySeedExporter);
+        stats = await seedLaws(client, gated("laws", "laws", (o) => String(o.slug || o.id || "")), options.dryRun, errors, options.clean ?? false, drySeedExporter);
         break;
       case "decrees":
-        stats = await seedDecrees(client, data, options.dryRun, errors, options.clean ?? false, drySeedExporter);
+        stats = await seedDecrees(client, gated("decrees", "decrees_circulars", (o) => String(o.id || "")), options.dryRun, errors, options.clean ?? false, drySeedExporter);
         break;
       case "precedents":
         stats = await seedPrecedents(client, data, options.dryRun, errors, options.clean ?? false, drySeedExporter);
@@ -1805,8 +1823,7 @@ export async function seedLibrary(options: {
     // ب-139: scan the SOURCE data directly, independent of row-building —
     // this must keep working even if a future refactor changes how rows are
     // assembled inside seedLaws/seedDecrees/seedPrecedents.
-    const flagOf = (o: Record<string, unknown>): boolean =>
-      o.needsHumanReview === true || o.needs_human_review === true;
+    const flagOf = (o: Record<string, unknown>): boolean => isReviewFlagged(o);
     const reasonOf = (o: Record<string, unknown>): string =>
       String(o.reviewReason ?? o.review_reason ?? "").trim() || "(بلا سبب مسجَّل)";
     if (type === "laws") {
@@ -1878,10 +1895,23 @@ export async function seedLibrary(options: {
   console.log("║   ⚠️  needs_human_review — INTERNAL AUDIT ONLY   ║");
   console.log("╠══════════════════════════════════════════════════╣");
   console.log(`  ${reviewFlagged.length} flagged record(s) this run.`);
+  if (allowReviewFlagged) {
+    console.log(`  Publish gate OFF (--allow-review-flagged): flagged law / decree`);
+    console.log(`  files were built like any other.`);
+  } else {
+    console.log(`  Publish gate ON: ${heldBack.length} flagged law / decree file(s) HELD BACK`);
+    console.log(`  (no rows built for them; listed as held_back in the report).`);
+    console.log(`  Already-live rows are NOT deleted (the loader only upserts).`);
+    console.log(`  --allow-review-flagged builds them as before.`);
+  }
   console.log(`  A dry seed is NOT publication acceptance. Flags may be stale`);
   console.log(`  or substantive; classify each against source evidence before`);
   console.log(`  declaring this library or its user-facing output ready.`);
   console.log("╚══════════════════════════════════════════════════╝");
+  if (!allowReviewFlagged && heldBack.length > 0) {
+    for (const h of heldBack.slice(0, 20)) console.log(`  held back: ${h.table} ${h.id} — ${h.reason.split("\n")[0]}`);
+    if (heldBack.length > 20) console.log(`  … and ${heldBack.length - 20} more (see the report)`);
+  }
   // An inspection snapshot must not mutate its parser-input directory. The
   // normal dry-run keeps the historical report location; the explicit JSONL
   // mode directs every generated audit artefact to its fresh external folder.
@@ -1890,7 +1920,16 @@ export async function seedLibrary(options: {
   try {
     fs.writeFileSync(
       reviewReportPath,
-      JSON.stringify({ generated_at: finishedAt.toISOString(), count: reviewFlagged.length, items: reviewFlagged }, null, 2),
+      JSON.stringify({
+        generated_at: finishedAt.toISOString(),
+        count: reviewFlagged.length,
+        items: reviewFlagged,
+        // l10 (gap 1.5): the publish gate.
+        gate: allowReviewFlagged ? "off" : "on",
+        held_back_count: heldBack.length,
+        held_back: heldBack,
+        note: "held_back files got no rows in this run. Rows already live are NOT deleted: the loader only upserts. --allow-review-flagged turns the gate off.",
+      }, null, 2),
       "utf-8",
     );
     console.log(`  Full list (comparable across runs): ${reviewReportPath}\n`);
@@ -1935,6 +1974,7 @@ export async function seedLibrary(options: {
     stats: allStats,
     errors,
     value_report: seedValueReportJson(valueReport, finishedAt.toISOString()),
+    review_gate: { gate: allowReviewFlagged ? "off" : "on", held_back: heldBack },
   };
 }
 
@@ -1946,6 +1986,8 @@ if (require.main === module) {
     "  npx tsx scripts/seed-library.ts --dir <parsed-output> --dry-run --dry-seed-jsonl-dir <fresh-absolute-external-dir> [--type <type>]",
     "  npx tsx scripts/seed-library.ts --dir <parsed-output> --apply-live --approved-manifest <absolute-independent-contract> --confirm-host <hostname> --confirm-schema <schema> [--type <type>]",
     "  Add --preflight-only to verify live inputs offline and exit before credentials or DB (not publication acceptance).",
+    "  Law / decree files with needs_human_review: true are HELD BACK (no rows; listed in needs-human-review-report.json).",
+    "  Add --allow-review-flagged to build them as before.",
     "  Live --clean and --allow-clean are disabled in this test package.",
     "  --help only prints this message; no mode is selected implicitly.",
   ].join("\n");
@@ -1965,6 +2007,7 @@ if (require.main === module) {
   const preflightOnly = args.includes("--preflight-only");
   const clean = args.includes("--clean");
   const allowClean = args.includes("--allow-clean");
+  const allowReviewFlagged = args.includes("--allow-review-flagged");
   const valueAt = (index: number) => index >= 0 && args[index + 1] && !args[index + 1].startsWith("-")
     ? args[index + 1] : null;
   const dir = valueAt(dirIdx);
@@ -1973,7 +2016,7 @@ if (require.main === module) {
   const drySeedJsonlDir = valueAt(drySeedJsonlDirIdx);
   const approvedManifest = valueAt(approvedManifestIdx);
 
-  const allowedFlags = new Set(["--dir", "--type", "--dry-run", "--apply-live", "--clean", "--allow-clean", "--confirm-host", "--confirm-schema", "--dry-seed-jsonl-dir", "--approved-manifest", "--preflight-only"]);
+  const allowedFlags = new Set(["--dir", "--type", "--dry-run", "--apply-live", "--clean", "--allow-clean", "--confirm-host", "--confirm-schema", "--dry-seed-jsonl-dir", "--approved-manifest", "--preflight-only", "--allow-review-flagged"]);
   const valueFlags = new Set(["--dir", "--type", "--confirm-host", "--confirm-schema", "--dry-seed-jsonl-dir", "--approved-manifest"]);
   for (let i = 0; i < args.length; i++) {
     if (!allowedFlags.has(args[i])) {
@@ -2058,7 +2101,7 @@ if (require.main === module) {
 
   seedLibrary({ dir: path.resolve(dir), dryRun, types, clean, drySeedJsonlDir: drySeedJsonlDir ?? undefined,
     approvedManifestPath: approvedManifest ?? undefined, confirmHost: confirmHost ?? undefined,
-    confirmSchema: confirmSchema ?? undefined })
+    confirmSchema: confirmSchema ?? undefined, allowReviewFlagged })
     .then((result) => {
       const logDir = result.dry_seed_jsonl_dir ?? path.resolve(dir);
       fs.mkdirSync(logDir, { recursive: true });
