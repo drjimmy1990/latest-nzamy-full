@@ -23,9 +23,9 @@
 --        family=principle  id, collection_id, meta_id — standalone rulings
 --                          (synthetic 'prec-…' collections) and any principle
 --                          whose metadata carries an id
---   3. kind=edge: every edge of the six types that have a counterpart in his
---      file (INTERPRETS_ARTICLE, CITES_ARTICLE, AMENDS_ARTICLE, SUPERSEDES_LAW,
---      PARENT_LAW, IMPLEMENTED_BY) with, for both ends: node_type, law_slug,
+--   3. kind=edge: every edge of the five types that have a counterpart in his
+--      file (INTERPRETS_ARTICLE, AMENDS_ARTICLE, SUPERSEDES_LAW, PARENT_LAW,
+--      IMPLEMENTED_BY) with, for both ends: node_type, law_slug,
 --      article_number, source_id, collection_id, laws.instrument_id,
 --      principles.metadata->>'id', judicial_collections.metadata->>'id'.
 --      The other twelve types are only counted (part 1).
@@ -119,7 +119,7 @@ select json_build_object(
     or nullif(btrim(p.metadata ->> 'id'), '') is not null
  order by p.id;
 
--- ── 3. edges of the six exported types, with both ends' identities ──────────
+-- ── 3. edges of the five exported types, with both ends' identities ──────────
 select json_build_object(
   'kind', 'edge',
   'edge_type', e.edge_type,
@@ -156,7 +156,7 @@ select json_build_object(
   left join library.principles tp on t.node_type = 'principle' and tp.id = t.source_id
   left join library.judicial_collections sc on s.node_type = 'principle' and sc.id = s.collection_id
   left join library.judicial_collections tc on t.node_type = 'principle' and tc.id = t.collection_id
- where e.edge_type in ('INTERPRETS_ARTICLE', 'CITES_ARTICLE', 'AMENDS_ARTICLE', 'SUPERSEDES_LAW', 'PARENT_LAW', 'IMPLEMENTED_BY')
+ where e.edge_type in ('INTERPRETS_ARTICLE', 'AMENDS_ARTICLE', 'SUPERSEDES_LAW', 'PARENT_LAW', 'IMPLEMENTED_BY')
  order by e.edge_type, e.source_key, e.target_key;
 
 rollback;
