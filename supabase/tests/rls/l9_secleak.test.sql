@@ -8,8 +8,6 @@
 --      the total), view_count, the counters guard, the grants.
 --   L  file 19 §1ب.2: rows already verified with a 1448-LAW- licence are
 --      un-verified; nobody can verify one again; real licences still verify.
---   A  file 19 §3: the admin is counted by library_read_quota_hit like
---      everyone (no 'exempt').
 -- The migration runs TWICE (re-runnable) and the l9_secleak block of
 -- _verify.sql runs after it.
 --
@@ -31,9 +29,6 @@
 --     $M/20261026_66_document_shares_path_ownership.sql \
 --     $M/20261026_72_file_folder_owner.sql \
 --     $M/20261109_11_share_passcode_lockout.sql \
---     $M/20261030_80_library_read_quota.sql \
---     $M/20261031_10_library_activity_monitor.sql \
---     $M/20261103_10_library_auto_lock_hours.sql \
 --     $R/prelude_l9_secleak.sql \
 --     $M/20261129_20_secleak_contracts_shares_licences.sql \
 --     $M/20261129_20_secleak_contracts_shares_licences.sql \
@@ -46,8 +41,13 @@
 --
 -- NEGATIVE CONTROL (must FAIL): the same chain without the two 20261129_20
 -- files and the verify block → "T0 FAIL: client_contract_detail does not
--- exist". With only the CONTRACTS section of 20261129_20 undone (re-run
--- 20260905_phase3 after it): C1 fails (the client reads the notes directly).
+-- exist". More negative controls (each must FAIL where named):
+--   * 20260905_phase3 re-run after 20261129_20 → C1 (the client reads the notes);
+--   * 20261109_11 re-run after it → S1 (no cumulative counter);
+--   * the two licence triggers dropped after it → L2;
+--   * $R/prelude_l9_secleak_foreign_contracts_policy.sql right before the
+--     FIRST 20261129_20 → the migration itself stops («"contracts select" was
+--     changed since 20260905_phase3 … merge … by hand»), nothing replaced.
 --
 -- Every assertion RAISES.
 
@@ -63,14 +63,12 @@ insert into auth.users (id) values
   ('a1000000-0000-0000-0000-0000000000a1'),   -- L  the lawyer, owner of the contracts
   ('a2000000-0000-0000-0000-0000000000a2'),   -- F  his firm colleague
   ('a3000000-0000-0000-0000-0000000000a3'),   -- C  the client
-  ('a4000000-0000-0000-0000-0000000000a4'),   -- X  another client
-  ('a5000000-0000-0000-0000-0000000000a5');   -- AD an admin
+  ('a4000000-0000-0000-0000-0000000000a4');   -- X  another client
 insert into public.profiles (id, user_type, display_name) values
   ('a1000000-0000-0000-0000-0000000000a1', 'lawyer', 'L'),
   ('a2000000-0000-0000-0000-0000000000a2', 'lawyer', 'F'),
   ('a3000000-0000-0000-0000-0000000000a3', 'individual', 'C'),
-  ('a4000000-0000-0000-0000-0000000000a4', 'individual', 'X'),
-  ('a5000000-0000-0000-0000-0000000000a5', 'admin', 'AD');
+  ('a4000000-0000-0000-0000-0000000000a4', 'individual', 'X');
 insert into public.firm_profiles (id, owner_user_id, name_ar) values
   ('af000000-0000-0000-0000-0000000000af', 'a1000000-0000-0000-0000-0000000000a1', 'مكتب');
 insert into public.firm_members (firm_id, user_id, role, status) values
@@ -430,36 +428,4 @@ begin
   raise notice 'L3 PASS: pending fake rows allowed, a real licence verifies';
 end $$;
 
--- ═════════════════════════════════════════════════════════════════════════════
--- A — the admin is counted by the library read quota (file 19 §3)
--- ═════════════════════════════════════════════════════════════════════════════
-update public.library_monitor_settings set daily_docs = 2, member_daily_docs = 2, hourly_docs = 50, lock_after_refused = 0;
-do $$
-declare
-  u uuid := 'a5000000-0000-0000-0000-0000000000a5';
-  s text;
-begin
-  select status into s from public.library_read_quota_hit(u, 'law:1', 2, 2, 50, 0);
-  if s = 'exempt' then raise exception 'A1 FAIL: the admin is still exempt from the library read quota'; end if;
-  if s <> 'ok' then raise exception 'A1 FAIL: the admin''s first document answered %', s; end if;
-  select status into s from public.library_read_quota_hit(u, 'law:2', 2, 2, 50, 0);
-  if s <> 'ok' then raise exception 'A1 FAIL: the admin''s second document answered %', s; end if;
-  select status into s from public.library_read_quota_hit(u, 'law:3', 2, 2, 50, 0);
-  if s <> 'over_daily' then raise exception 'A1 FAIL: the admin''s third document (cap 2) answered %', s; end if;
-  if (select count(*) from public.library_read_quota_docs where user_id = u and allowed) <> 2 then
-    raise exception 'A1 FAIL: the admin''s reads were not written';
-  end if;
-  raise notice 'A1 PASS: the admin is counted and refused at the cap like everyone';
-end $$;
-
--- A2 a lawyer is still counted the same way (unchanged behaviour)
-do $$
-declare
-  s text;
-begin
-  select status into s from public.library_read_quota_hit('a1000000-0000-0000-0000-0000000000a1', 'law:1', 2, 2, 50, 0);
-  if s <> 'ok' then raise exception 'A2 FAIL: a lawyer''s first document answered %', s; end if;
-  raise notice 'A2 PASS';
-end $$;
-
-do $$ begin raise notice 'l9_secleak: ALL PASS (C1–C7, S1–S5, L1–L3, A1–A2)'; end $$;
+do $$ begin raise notice 'l9_secleak: ALL PASS (C1–C7, S1–S5, L1–L3)'; end $$;

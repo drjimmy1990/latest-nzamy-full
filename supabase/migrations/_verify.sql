@@ -7540,7 +7540,7 @@ select 'Reader law map by link type: library_reader_law_links_typed, service rol
 -- <<< verify:l8_refbox
 
 -- >>> verify:l9_secleak
--- Batch l9-secleak (owner file 15 #4 + #48, file 19 §1ب.2 + §3): run 20261129_20 after the deploy (before it, «عقودي» is empty for the old code).
+-- Batch l9-secleak (owner file 15 #4 + #48, file 19 §1ب.2): run 20261129_20 after the deploy (before it, «عقودي» is empty for the old code).
 select 'Contracts (#4): no client arm on "contracts select" nor can_access_contract; client_contracts_list / client_contract_detail / client_contract_versions definer, authenticated only, no notes/metadata (run 20261129_20)' as check,
        case when to_regprocedure('public.client_contract_detail(text)') is null
               or to_regprocedure('public.client_contracts_list()') is null
@@ -7583,7 +7583,4 @@ select 'Fake licences (file 19): no 1448-LAW- licence verified, trigger refuses 
                         where lp.verification_status = 'verified'
                           and pg_catalog.upper(pg_catalog.regexp_replace(coalesce(lp.license_number, ''), '[^0-9A-Za-z]+', '', 'g')) like '1448LAW%')
        end as ok;
-select 'Library read quota (file 19 §3): no admin exemption in library_read_quota_hit (20261103_10 or a later re-creation must not bring it back; run 20261129_20)' as check,
-       coalesce((select p.prosrc !~ 'v_type = ''admin''' from pg_catalog.pg_proc p
-                  where p.oid = to_regprocedure('public.library_read_quota_hit(uuid, text, integer, integer, integer, integer)')), false) as ok;
 -- <<< verify:l9_secleak

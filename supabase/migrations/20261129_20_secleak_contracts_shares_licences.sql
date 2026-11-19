@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Migration: 20261129_20_secleak_contracts_shares_licences.sql
 -- =============================================================================
--- PURPOSE (owner file 15 rows #4 and #48, file 19 §1ب.2 and §3; batch l9-secleak)
+-- PURPOSE (owner file 15 rows #4 and #48, file 19 §1ب.2; batch l9-secleak)
 --
 --   1. #4 — the lawyer's internal notes and his DRAFT contracts never reach
 --      the client, through the API or through a direct PostgREST read.
@@ -25,6 +25,10 @@
 --        * "Draft" = contracts.status 'draft'. A version's label ('draft',
 --          'revised', …) does not hide it: a contract the lawyer moved out of
 --          draft is shared with its files.
+--        * Both objects are replaced only while they still have their
+--          20260905_phase3 shape (or this file's): a migration that changed
+--          either since stops this file («merge … by hand») instead of being
+--          silently undone. (l9-secroles adds RESTRICTIVE policies only.)
 --
 --   2. #48 — share links (public.document_shares):
 --        wrong_total int  — EVERY wrong passcode, never reset (failed_attempts
@@ -49,13 +53,9 @@
 --      THE ROWS ALREADY VERIFIED with such a number (the 10 test lawyers) are
 --      moved to 'rejected' — no account is deleted. T28: zero verified rows.
 --
---   4. File 19 §3 — the admin is no longer exempt from the library read
---      quota: the `if v_type = 'admin' then return 'exempt'` branch is cut
---      out of the LIVE definition of public.library_read_quota_hit (read with
---      pg_get_functiondef, the branch removed, the result executed). Nothing
---      else of the function changes, so the read limits of batch l9-read
---      (whichever runs first) are kept. The branch present twice raises; absent
---      → NOTICE only. Owner of the read limits: l9-read.
+--   NOT HERE: file 19 §3 (no admin exemption from the library read quota) is
+--   done by batch l9-read's 20261129_40, which drops and re-creates
+--   public.library_read_quota_hit. This file does not touch that function.
 --
 -- WHO CAN DO WHAT
 --   client_contracts_list / client_contract_detail / client_contract_versions:
@@ -67,7 +67,7 @@
 --   docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/migrations/20261129_20_secleak_contracts_shares_licences.sql
 --   Expect: NOTICE  l9_secleak verify: OK  and a row with `t`.
 --
--- RUN ORDER: any time after 20261109_11 and 20261103_10 (both live); before
+-- RUN ORDER: any time after 20261109_11 (live); before
 --   or after the l9-secleak deploy.
 --   * Code first: the client contract routes call the three functions and,
 --     while they are missing (PGRST202 / 42883), read the tables through the
@@ -79,13 +79,9 @@
 --   * SQL first with the OLD code: the old client routes read the tables
 --     directly, which this file closes — «عقودي» is EMPTY until the deploy.
 --     So prefer: deploy, then this file.
---   * If l9-read's migration re-creates library_read_quota_hit AFTER this
---     file, it must not bring the admin branch back (the l9_secleak block of
---     _verify.sql reports it). Re-running this file removes it again.
 --   RE-RUN HAZARD: re-running 20260905_phase3 brings back the client arm;
 --   re-running 20261109_11 brings back the old share_passcode_check (no 20th
---   revoke); re-running 20261103_10 brings back the admin exemption. Re-run
---   this file after any of them. This file itself is idempotent.
+--   revoke). Re-run this file after either of them. This file itself is idempotent.
 --
 -- ROLLBACK (in one transaction):
 --   1. contracts: re-run section 2g of 20260905_phase3 («contracts select» and
@@ -103,8 +99,6 @@
 --      drop function if exists public.refuse_fake_test_licence_verification();
 --      drop function if exists public.is_fake_test_licence(text);
 --      (the 10 rows moved to 'rejected' stay rejected — on purpose)
---   4. admin exemption: re-run section 2 of 20261103_10 — only if the admin
---      must be exempt again (owner file 19 says no).
 --   notify pgrst, 'reload schema';
 -- =============================================================================
 
@@ -133,15 +127,40 @@ begin
   if to_regclass('public.lawyer_profiles') is null then
     raise exception '20261129_20: public.lawyer_profiles is missing';
   end if;
-  if to_regprocedure('public.library_read_quota_hit(uuid, text, integer, integer, integer, integer)') is null then
-    raise exception '20261129_20: library_read_quota_hit is missing — run 20261103_10_library_auto_lock_hours.sql first';
-  end if;
 end $$;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- 1. #4 — contracts: no client arm on the tables; whitelisted reads for him
 -- ═════════════════════════════════════════════════════════════════════════════
+-- Both objects are re-created from their 20260905_phase3 shape. If another
+-- migration has changed either since (other than this file), stop: replacing
+-- it would silently erase that change — merge by hand. (Batch l9-secroles
+-- adds RESTRICTIVE policies and does not touch either.)
+do $$
+declare
+  q   text;
+  src text;
+begin
+  select pg_catalog.regexp_replace(pg_catalog.lower(pg_catalog.pg_get_expr(p.polqual, p.polrelid)),
+                                   '(public\.|auth\.|\s|\(|\))', '', 'g')
+    into q
+    from pg_catalog.pg_policy p
+   where p.polrelid = 'public.contracts'::regclass and p.polname = 'contracts select';
+  if q is not null and q not in (
+       'can_access_case_rowowner_user_id,firm_idorclient_user_idisnotnullandclient_user_id=uid',   -- 20260905_phase3
+       'can_access_case_rowowner_user_id,firm_id') then                                            -- this file
+    raise exception '20261129_20: "contracts select" was changed since 20260905_phase3 (%) — merge the client-arm removal by hand', q;
+  end if;
+  select pg_catalog.regexp_replace(p.prosrc, '\s', '', 'g') into src
+    from pg_catalog.pg_proc p where p.oid = 'public.can_access_contract(text)'::regprocedure;
+  if src not in (
+       'selectexists(select1frompublic.contractscwherec.id=p_contractand(public.can_access_case_row(c.owner_user_id,c.firm_id)or(c.client_user_idisnotnullandc.client_user_id=auth.uid())));',
+       'selectexists(select1frompublic.contractscwherec.id=p_contractandpublic.can_access_case_row(c.owner_user_id,c.firm_id));') then
+    raise exception '20261129_20: can_access_contract was changed since 20260905_phase3 — merge the client-arm removal by hand: %', src;
+  end if;
+end $$;
+
 drop policy if exists "contracts select" on public.contracts;
 create policy "contracts select" on public.contracts for select
   using (public.can_access_case_row(owner_user_id, firm_id));
@@ -569,37 +588,7 @@ begin
 end $$;
 
 
--- ═════════════════════════════════════════════════════════════════════════════
--- 4. File 19 §3 — no admin exemption from the library read quota
--- ═════════════════════════════════════════════════════════════════════════════
-do $$
-declare
-  fn    constant regprocedure := 'public.library_read_quota_hit(uuid, text, integer, integer, integer, integer)'::regprocedure;
-  re    constant text := '\n[[:blank:]]*if v_type = ''admin'' then\s+return query select ''exempt''::text[^;]*;\s+return;\s+end if;';
-  def   text;
-  hits  int;
-begin
-  def := pg_catalog.pg_get_functiondef(fn);
-  select count(*) into hits from pg_catalog.regexp_matches(def, re, 'g');
-  if hits > 1 then
-    raise exception '20261129_20: library_read_quota_hit carries the admin branch % times — fix by hand', hits;
-  end if;
-  if hits = 0 then
-    if def ~ 'v_type = ''admin''' then
-      raise exception '20261129_20: library_read_quota_hit still names v_type = ''admin'' in a shape this file does not know — remove the admin exemption by hand';
-    end if;
-    raise notice '20261129_20: library_read_quota_hit has no admin exemption already — nothing to do';
-    return;
-  end if;
-  execute pg_catalog.regexp_replace(def, re, '');
-  execute 'comment on function public.library_read_quota_hit(uuid, text, integer, integer, integer, integer) is '
-       || pg_catalog.quote_literal(
-            'Counts one distinct library document per user per Riyadh day and answers ok / over_daily / over_hourly / locked (exempt is no longer answered: since 20261129_20, owner file 19 §3, the admin has no bypass). Limits: the user''s override → library_monitor_settings → the arguments (20261031_10). Counts new documents into library_activity_hourly; notifies admins on an automatic lock, which ends after library_monitor_settings.auto_lock_hours (0 = until an admin lifts it; 20261103_10). Service role only.');
-  raise notice '20261129_20: the admin exemption was removed from library_read_quota_hit';
-end $$;
-
-
--- ── 5. verify ────────────────────────────────────────────────────────────────
+-- ── 4. verify ────────────────────────────────────────────────────────────────
 do $verify$
 declare
   fn  text;
@@ -681,12 +670,6 @@ begin
     raise exception 'l9_secleak verify: a lawyer is still verified with a 1448-LAW- licence';
   end if;
 
-  -- admin exemption
-  if (select p.prosrc from pg_catalog.pg_proc p
-       where p.oid = 'public.library_read_quota_hit(uuid, text, integer, integer, integer, integer)'::regprocedure)
-     ~ 'v_type = ''admin''' then
-    raise exception 'l9_secleak verify: library_read_quota_hit still exempts the admin';
-  end if;
 
   raise notice 'l9_secleak verify: OK';
 end
@@ -696,13 +679,10 @@ commit;
 
 notify pgrst, 'reload schema';
 
-select '20261129_20 secleak: contracts without client arm + client functions, share revoke at 20 + view_count, no 1448-LAW- verified, no admin quota exemption' as step,
+select '20261129_20 secleak: contracts without client arm + client functions, share revoke at 20 + view_count, no 1448-LAW- verified' as step,
        (to_regprocedure('public.client_contract_detail(text)') is not null
         and (select p.prosrc from pg_catalog.pg_proc p where p.oid = 'public.can_access_contract(text)'::regprocedure) !~ 'client_user_id'
         and pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.share_passcode_check(text, text)'::regprocedure), 'revoked') > 0
         and to_regprocedure('public.share_count_view(text)') is not null
         and not exists (select 1 from public.lawyer_profiles lp
-                         where lp.verification_status = 'verified' and public.is_fake_test_licence(lp.license_number))
-        and (select p.prosrc from pg_catalog.pg_proc p
-              where p.oid = 'public.library_read_quota_hit(uuid, text, integer, integer, integer, integer)'::regprocedure)
-            !~ 'v_type = ''admin''') as ok;
+                         where lp.verification_status = 'verified' and public.is_fake_test_licence(lp.license_number))) as ok;
