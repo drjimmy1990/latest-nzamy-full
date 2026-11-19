@@ -163,3 +163,94 @@ test("resendEmailAdapter: its LAWYER_OTP_EMAIL gate still holds, and a send goes
   assert.equal(result, "failed");
   assert.ok(!logged.includes("654321"), "the code is never logged");
 });
+
+// ── the test mail sink (l9 testinfra, owner file 19 §1ج.2; 20261129_90) ──────
+
+const SINK_ENV = { ...ENV, NEXT_PUBLIC_SUPABASE_URL: "https://db.example.test/", SUPABASE_SERVICE_ROLE_KEY: "service-key" };
+const TEST_ID = "0000000A-0000-0000-0000-00000000a003";
+
+function routedFetch(rpc: { status?: number; body?: unknown; throws?: boolean }) {
+  const calls: Call[] = [];
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init ?? {} });
+    if (String(url).includes("/rest/v1/rpc/")) {
+      if (rpc.throws) throw new Error("db down");
+      return new Response(JSON.stringify(rpc.body ?? {}), { status: rpc.status ?? 200 });
+    }
+    return new Response(JSON.stringify({ id: "x" }), { status: 200 });
+  }) as typeof fetch;
+  return { impl, calls };
+}
+
+test("sink: the database says sink → 'sunk', Resend is never called, the address is not logged", async () => {
+  const f = routedFetch({ body: { sink: true, reason: "test_account", id: 1, test_batch: "qa-b1" } });
+  const lines: string[] = [];
+  const orig = console.info;
+  console.info = (...a: unknown[]) => { lines.push(a.map(String).join(" ")); };
+  try {
+    const r = await sendEmail(
+      { to: "real.client@mail.example.sa", subject: "بيان أتعاب", text: "نص", tag: "fee_statement", userIds: [TEST_ID, TEST_ID, "not-a-uuid", null] },
+      { env: SINK_ENV, fetchImpl: f.impl },
+    );
+    assert.equal(r, "sunk");
+  } finally {
+    console.info = orig;
+  }
+  assert.equal(f.calls.length, 1, "only the sink check, no Resend request");
+  assert.equal(f.calls[0].url, "https://db.example.test/rest/v1/rpc/test_mail_sink_check");
+  const h = f.calls[0].init.headers as Record<string, string>;
+  assert.equal(h.apikey, "service-key");
+  assert.equal(h.Authorization, "Bearer service-key");
+  const body = JSON.parse(String(f.calls[0].init.body));
+  assert.deepEqual(body.p_user_ids, [TEST_ID.toLowerCase()], "ids cleaned: valid uuids only, once, lower-case");
+  assert.equal(body.p_to, "real.client@mail.example.sa");
+  assert.equal(body.p_tag, "fee_statement");
+  assert.ok(lines.some((l) => l.includes("sunk") && l.includes("test_account")));
+  assert.ok(!lines.join("\n").includes("real.client@"), "never the full address");
+});
+
+test("sink: { sink: false } → sent through Resend after the check", async () => {
+  const f = routedFetch({ body: { sink: false } });
+  assert.equal(await sendEmail({ to: "u@mail.example.sa", subject: "s", text: "t" }, { env: SINK_ENV, fetchImpl: f.impl }), "sent");
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[1].url, RESEND_ENDPOINT);
+  assert.equal(JSON.parse(String(f.calls[0].init.body)).p_user_ids, null, "no ids → null, not []");
+});
+
+test("sink: function missing (404), an error status, a throw or no service env → fail-open, the mail is sent", async () => {
+  for (const rpc of [{ status: 404 }, { status: 500 }, { throws: true }, { body: "not json" }, { body: { sink: "true" } }]) {
+    const f = routedFetch(rpc);
+    const { result } = await captureErrors(() =>
+      sendEmail({ to: "u@mail.example.sa", subject: "s", text: "t" }, { env: SINK_ENV, fetchImpl: f.impl }),
+    );
+    assert.equal(result, "sent", JSON.stringify(rpc));
+  }
+  const f = routedFetch({ body: { sink: true } });
+  assert.equal(await sendEmail({ to: "u@mail.example.sa", subject: "s", text: "t" }, { env: ENV, fetchImpl: f.impl }), "sent");
+  assert.equal(f.calls.length, 1, "without the service env nothing is asked");
+});
+
+test("sink: an injected sinkCheck replaces the lookup; 'unavailable' still comes first", async () => {
+  const f = fakeFetch();
+  const seen: unknown[] = [];
+  const r = await sendEmail(
+    { to: "qa@team.example.sa", subject: "s", text: "t", userIds: [TEST_ID] },
+    { env: ENV, fetchImpl: f.impl, sinkCheck: async (i) => { seen.push(i); return { sink: true, reason: "test_recipient" }; } },
+  );
+  assert.equal(r, "sunk");
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual(seen, [{ to: "qa@team.example.sa", userIds: [TEST_ID.toLowerCase()], subject: "s", text: "t", tag: null }]);
+  let asked = false;
+  assert.equal(
+    await sendEmail({ to: "qa@team.example.sa", subject: "s", text: "t" }, { env: {}, sinkCheck: async () => { asked = true; return { sink: true }; } }),
+    "unavailable",
+  );
+  assert.equal(asked, false, "no e-mail configured → nothing to sink");
+});
+
+test("sink: the lawyer-signup channel reports a sunk code as delivered (it waits in the admin's sink)", async () => {
+  const f = routedFetch({ body: { sink: true, reason: "reserved_domain" } });
+  const adapter = resendEmailAdapter(SINK_ENV, { email: true } as never, f.impl);
+  assert.equal(await adapter.sendOtp("new@persona.test", "123456", "ar"), "sent");
+  assert.equal(f.calls.length, 1, "no Resend request");
+});

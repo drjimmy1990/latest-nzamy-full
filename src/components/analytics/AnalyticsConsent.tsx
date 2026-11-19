@@ -41,6 +41,7 @@ import {
   type ConsentChoice,
 } from "@/lib/analytics/analytics";
 import { trackEvent } from "@/lib/analytics/track";
+import { useTestAccountGate } from "@/components/analytics/useTestAccountGate";
 
 // Literal references: Next inlines NEXT_PUBLIC_* at build time only this way.
 export const ANALYTICS = analyticsIds(process.env.NEXT_PUBLIC_GA4_ID, process.env.NEXT_PUBLIC_CLARITY_ID);
@@ -174,6 +175,8 @@ export default function AnalyticsConsent() {
   const [choice, setChoice] = useState<ConsentChoice | null | "unknown">("unknown");
   const lastPageView = useRef<string | null>(null);
   const allowed = isAnalyticsRoute(pathname);
+  // l9 testinfra (owner file 19 §1ج.2): never for a test account or a tester's browser
+  const testGate = useTestAccountGate(allowed && choice === "granted", pathname);
 
   // Read the stored choice in the browser only; follow later changes.
   useEffect(() => {
@@ -187,10 +190,11 @@ export default function AnalyticsConsent() {
   // Load / switch off per route.
   useEffect(() => {
     if (!ANALYTICS.enabled || choice === "unknown") return;
+    if (allowed && choice === "granted" && testGate === "pending") return;
     const w = window as unknown as W;
     const loaded = w.__nzAnalyticsLoaded;
 
-    if (!allowed || choice !== "granted") {
+    if (!allowed || choice !== "granted" || testGate === "excluded") {
       if (loaded) {
         if (loaded.ga4Id) w[`ga-disable-${loaded.ga4Id}`] = true;
         if (loaded.clarity) {
@@ -219,7 +223,7 @@ export default function AnalyticsConsent() {
       if (ANALYTICS.ga4Id && typeof w.gtag === "function") w.gtag("set", { page_location: location });
       trackEvent(ANALYTICS_EVENTS.pageView, { page_location: location, page_title: document.title.slice(0, 100) });
     }
-  }, [allowed, choice, pathname]);
+  }, [allowed, choice, pathname, testGate]);
 
   // While loaded: mask new inputs, record tagged clicks, full-load links that leave the routes.
   const onClick = useCallback((e: MouseEvent) => {
@@ -248,7 +252,7 @@ export default function AnalyticsConsent() {
   }, []);
 
   useEffect(() => {
-    if (!ANALYTICS.enabled || choice !== "granted" || !allowed) return;
+    if (!ANALYTICS.enabled || choice !== "granted" || !allowed || testGate !== "ok") return;
     document.addEventListener("click", onClick, true);
     const observer = new MutationObserver((records) => {
       for (const r of records) r.addedNodes.forEach((n) => {
@@ -263,7 +267,7 @@ export default function AnalyticsConsent() {
       document.removeEventListener("click", onClick, true);
       observer.disconnect();
     };
-  }, [allowed, choice, onClick]);
+  }, [allowed, choice, onClick, testGate]);
 
   if (!ANALYTICS.enabled || choice !== null || !allowed) return null;
 

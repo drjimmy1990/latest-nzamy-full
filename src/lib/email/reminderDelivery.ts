@@ -228,15 +228,19 @@ export async function sendReminderOnce(
         ...message,
         tag: key.kind,
         idempotencyKey: `nezamy-${key.kind}-${key.subjectId}-${key.recipientUserId}-${key.dueOn}`,
+        // l9 testinfra: a test account's reminder goes to the test mail sink
+        userIds: [key.recipientUserId],
       },
       deps,
     );
-    const sent = result === "sent";
+    // 'sunk' (a test account, 20261129_90) is done, never retried: the row
+    // is 'sent' with last_error 'sunk' so the log says where it went.
+    const sent = result === "sent" || result === "sunk";
     const { error } = await admin
       .from(EMAIL_LOG_TABLE)
       .update({
         status: sent ? "sent" : "failed",
-        last_error: sent ? null : result,
+        last_error: result === "sunk" ? "sunk" : sent ? null : result,
         updated_at: new Date().toISOString(),
       })
       .match(keyColumns(key))

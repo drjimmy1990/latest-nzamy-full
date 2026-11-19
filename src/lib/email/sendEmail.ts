@@ -11,7 +11,18 @@
  *                     missing) — nothing was attempted
  *     → 'failed'      an attempt was made (or the input was unusable) and it
  *                     did not succeed
+ *     → 'sunk'        NOT sent: the mail went to a test account, was caused by
+ *                     one (`userIds`), or went to a reserved test domain — the
+ *                     database stored it in its test mail sink instead
+ *                     (owner file 19 §1ج.2, l9 testinfra; 20261129_90)
  *   It NEVER throws.
+ *
+ * The test mail sink: before every send, public.test_mail_sink_check is asked
+ * through PostgREST with the service role (NEXT_PUBLIC_SUPABASE_URL +
+ * SUPABASE_SERVICE_ROLE_KEY). No such env, the function missing (before
+ * 20261129_90) or any error → the mail is sent as before (fail-open, logged):
+ * silently dropping a real user's mail is the worse failure. Staff are never
+ * test accounts. `deps.sinkCheck` replaces the lookup in tests.
  *
  * Environment (names only, never logged):
  *   RESEND_API_KEY   the Resend API key
@@ -25,7 +36,7 @@
  * (sendEmail.test.ts). `env` and `fetchImpl` are injectable for the tests.
  */
 
-export type EmailSendResult = "sent" | "unavailable" | "failed";
+export type EmailSendResult = "sent" | "unavailable" | "failed" | "sunk";
 export type EmailEnv = Record<string, string | undefined>;
 
 export interface EmailMessage {
@@ -40,12 +51,35 @@ export interface EmailMessage {
   tag?: string;
   /** Resend's Idempotency-Key header: a retry with the same key is not sent twice (24 h). */
   idempotencyKey?: string;
+  /**
+   * The accounts this mail is about — the recipient's id and/or the id of
+   * the account whose action caused it. Any test account among them → the
+   * mail is sunk, never sent (a test lawyer's statement never reaches a real
+   * address). The recipient's address is checked as well.
+   */
+  userIds?: readonly (string | null | undefined)[];
+}
+
+export interface TestMailSinkInput {
+  to: string;
+  userIds: string[];
+  subject: string;
+  text: string;
+  tag: string | null;
+}
+
+/** sink: true → stored in the test mail sink, do not send. */
+export interface TestMailSinkDecision {
+  sink: boolean;
+  reason?: string;
 }
 
 export interface SendEmailDeps {
   env?: EmailEnv;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Replaces the database lookup of the test mail sink (tests). */
+  sinkCheck?: (input: TestMailSinkInput) => Promise<TestMailSinkDecision>;
 }
 
 export const RESEND_ENDPOINT = "https://api.resend.com/emails";
@@ -112,6 +146,14 @@ export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {})
       console.error("[email] not sent: empty subject or text", tag || "-", maskEmail(to));
       return "failed";
     }
+    const fetchImpl = deps.fetchImpl ?? fetch;
+    const sinkInput: TestMailSinkInput = { to, userIds: cleanUserIds(message.userIds), subject, text, tag: tag || null };
+    const sink = await (deps.sinkCheck ?? ((i: TestMailSinkInput) => checkTestMailSink(i, env, fetchImpl)))(sinkInput);
+    if (sink.sink) {
+      console.info("[email] sunk (test mail sink):", sink.reason || "-", tag || "-", maskEmail(to));
+      return "sunk";
+    }
+
     const body: Record<string, unknown> = { from: fromHeader(env), to: [to], subject, text };
     if (typeof message.html === "string" && message.html.trim()) body.html = message.html;
     if (tag) body.tags = [{ name: "category", value: tag }];
@@ -122,7 +164,7 @@ export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {})
     };
     if (message.idempotencyKey) headers["Idempotency-Key"] = oneLine(message.idempotencyKey).slice(0, 256);
 
-    const res = await (deps.fetchImpl ?? fetch)(RESEND_ENDPOINT, {
+    const res = await fetchImpl(RESEND_ENDPOINT, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
@@ -136,6 +178,65 @@ export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {})
     const name = err instanceof Error ? err.name : "error";
     console.error("[email] send threw:", name, tag || "-", maskEmail(message?.to));
     return "failed";
+  }
+}
+
+// ── the test mail sink (20261129_90) ────────────────────────────────────────
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const SINK_CHECK_TIMEOUT_MS = 4000;
+let sinkMissingLogged = false;
+
+function cleanUserIds(ids: EmailMessage["userIds"]): string[] {
+  const out = new Set<string>();
+  for (const id of ids ?? []) if (typeof id === "string" && UUID_RE.test(id.trim())) out.add(id.trim().toLowerCase());
+  return [...out];
+}
+
+/**
+ * Asks public.test_mail_sink_check (service role, PostgREST). The database
+ * decides — a test recipient, a test account among `userIds`, or a reserved
+ * test domain — and stores the sunk mail itself. Never throws; anything
+ * other than an explicit { sink: true } means "send".
+ */
+export async function checkTestMailSink(
+  input: TestMailSinkInput,
+  env: EmailEnv,
+  fetchImpl: typeof fetch,
+  timeoutMs = SINK_CHECK_TIMEOUT_MS,
+): Promise<TestMailSinkDecision> {
+  const base = (env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+  const key = (env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  if (!/^https?:\/\//.test(base) || !key) return { sink: false };
+  try {
+    const res = await fetchImpl(`${base}/rest/v1/rpc/test_mail_sink_check`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        p_to: input.to,
+        p_user_ids: input.userIds.length ? input.userIds : null,
+        p_subject: input.subject,
+        p_text: input.text,
+        p_tag: input.tag,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      if (res.status === 404) {
+        if (!sinkMissingLogged) {
+          sinkMissingLogged = true;
+          console.warn("[email] test_mail_sink_check is missing (20261129_90 not run yet): no test mail sink");
+        }
+      } else {
+        console.error("[email] test mail sink check failed: status", res.status, "— sending");
+      }
+      return { sink: false };
+    }
+    const json = (await res.json().catch(() => null)) as { sink?: unknown; reason?: unknown } | null;
+    return json?.sink === true ? { sink: true, reason: typeof json.reason === "string" ? json.reason : undefined } : { sink: false };
+  } catch (err) {
+    console.error("[email] test mail sink check threw:", err instanceof Error ? err.name : "error", "— sending");
+    return { sink: false };
   }
 }
 

@@ -25,6 +25,8 @@ import { headers } from "next/headers";
  */
 export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store" };
+/** Where a test account's code went (shown after «أرسلنا الرمز إلى …»). */
+const TEST_SINK_LABEL_AR = "صندوق بريد الاختبار لدى الإدارة (حساب اختبار: لا يصله بريد حقيقي)";
 
 export async function POST() {
   try {
@@ -89,7 +91,13 @@ export async function POST() {
       text: rendered.text,
       html: rendered.html,
       tag: "library_device_code",
+      userIds: [user.id],
     });
+    // l9 testinfra: a test account never receives real e-mail — the code is in
+    // the admin's test mail sink (/dashboard/admin/test-batches).
+    if (sent === "sunk") {
+      return NextResponse.json({ sent: true, sunk: true, to: TEST_SINK_LABEL_AR }, { headers: NO_STORE });
+    }
     if (sent !== "sent") {
       return NextResponse.json(
         { error: "تعذّر إرسال البريد الآن. حاول بعد دقيقة.", code: "unavailable" },

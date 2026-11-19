@@ -107,6 +107,8 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
       { href: "/dashboard/admin/library-invitations", label: "أكواد دعوة المكتبة", labelEn: "Library Invite Codes", icon: "Ticket" },
       { href: "/dashboard/admin/library-subscriptions", label: "اشتراكات المكتبة", labelEn: "Library Subscriptions", icon: "BookOpen" },
       { href: "/dashboard/admin/library-access", label: "المكتبة حسب نوع الحساب", labelEn: "Library by Account Type", icon: "BookOpen" },
+      // l9 testinfra (owner file 19 §1ج): tags, «مسح دفعة الاختبار», the test mail sink
+      { href: "/dashboard/admin/test-batches", label: "دفعات الاختبار", labelEn: "Test Batches", icon: "ClipboardText" },
     ],
   },
 ];
