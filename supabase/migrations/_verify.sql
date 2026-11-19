@@ -7538,3 +7538,31 @@ select 'Reader law map by link type: library_reader_law_links_typed, service rol
                           where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
        as ok;
 -- <<< verify:l8_refbox
+
+-- >>> verify:l9_read
+-- Batch l9 read (owner register 14 items 8 / 9 / 44 / 48): run 20261129_40 before or after the deploy.
+select 'Library read log: full_text_reads (RLS on, service role only) + read limits 30 / 150 columns (run 20261129_40)' as check,
+       case when to_regclass('public.full_text_reads') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.full_text_reads')), false)
+       and not has_table_privilege('anon', 'public.full_text_reads', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.full_text_reads', 'SELECT')
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_monitor_settings'::regclass
+                    and attname = 'daily_full_read_limit' and not attisdropped)
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_monitor_settings'::regclass
+                    and attname = 'weekly_full_read_limit' and not attisdropped)
+       end as ok;
+select 'library_read_quota_hit is the 20261129_40 version: logs full text, weekly cap, no admin exemption, one overload (re-run 20261129_40 after any older library quota file)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_read_quota_hit(uuid,text,int,int,int,int)')), 'over_weekly') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_read_quota_hit(uuid,text,int,int,int,int)')), 'full_text_reads') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_read_quota_hit(uuid,text,int,int,int,int)')), '''exempt''') = 0
+                and (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'library_read_quota_hit') = 1
+                and not has_function_privilege('authenticated', 'public.library_read_quota_hit(uuid,text,int,int,int,int)', 'EXECUTE'),
+                false) as ok;
+select 'Library devices never end a platform session: library_device_gate / library_device_code_verify without auth.sessions (re-run 20261129_40 after 20261127_60)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_device_gate(uuid,text,text,uuid,boolean)')), 'auth.sessions') = 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_device_code_verify(uuid,text,text,uuid)')), 'auth.sessions') = 0,
+                false) as ok;
+select 'The 50-point library gate setting library_min_points_to_browse exists (run 20261129_40)' as check,
+       exists (select 1 from public.platform_settings where key = 'library_min_points_to_browse') as ok;
+-- <<< verify:l9_read
