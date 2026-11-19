@@ -3,21 +3,21 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { instantBoxItems, type InstantItem } from "./instantBox";
-import type { SaveToFolderDoc } from "./saveToFolder";
+import { instantBoxItems, type InstantItem } from "../instantBox";
+import type { SaveToFolderDoc } from "../saveToFolder";
 import type { TitleSuggestion } from "@/app/api/library/search/suggest/suggestions";
 import Link from "next/link";
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import { normalizeArabic, normalizeSearch } from "@/utils/normalizeArabic";
 import { stripMarkdownMarks } from "@/lib/text/stripMarkdownMarks";
-import { withoutLeadingHeadings } from "./components/summaryClamp";
-import { groupLawSearchCards } from "./lawSearchGroups";
-import { catalogueMatches } from "./catalogueMatch";
+import { withoutLeadingHeadings } from "../components/summaryClamp";
+import { groupLawSearchCards } from "../lawSearchGroups";
+import { catalogueMatches } from "../catalogueMatch";
 import SearchSyntaxHelp from "@/components/library/SearchSyntaxHelp";
-import { courtBadge } from "./principleCardFields";
+import { courtBadge } from "../principleCardFields";
 import { collectionCardExcerpt } from "@/lib/library/precedentVolumes";
-import { realPrincipleNumber } from "./principleLink";
-import { highlightSearchHtml as highlightText } from "./highlightSearchHtml";
+import { realPrincipleNumber } from "../principleLink";
+import { highlightSearchHtml as highlightText } from "../highlightSearchHtml";
 import {
   MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
@@ -27,7 +27,7 @@ import Footer from "@/components/Footer";
 import InvitationBanner from "@/components/InvitationBanner";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
-import { PaywallModal, AdvancedSearchModal } from "./components/PaywallModal";
+import { PaywallModal, AdvancedSearchModal } from "../components/PaywallModal";
 import {
   DEMO_PRINCIPLES,
   DEMO_PRECEDENTS,
@@ -36,14 +36,14 @@ import {
   DEMO_PRECEDENTS_COLLECTIONS,
   ORDER_ISSUERS,
   type PrincipleSourceId,
-} from "./demo-data-access";
+} from "../demo-data-access";
 import { isSupabaseMode } from "@/lib/services/api";
-import RecentSessions from "./components/RecentSessions";
-import SmartFolders from "./components/SmartFolders";
-import { MyNotesSection } from "./components/MyNotesSection";
-import { GamificationCard } from "./components/GamificationCard";
-import EnactmentCountdownWidget from "./components/EnactmentCountdownWidget";
-import LegislativeUpdates from "./components/LegislativeUpdates";
+import RecentSessions from "../components/RecentSessions";
+import SmartFolders from "../components/SmartFolders";
+import { MyNotesSection } from "../components/MyNotesSection";
+import { GamificationCard } from "../components/GamificationCard";
+import EnactmentCountdownWidget from "../components/EnactmentCountdownWidget";
+import LegislativeUpdates from "../components/LegislativeUpdates";
 
 import {
   type Cat,
@@ -61,14 +61,14 @@ import {
   LAW_DOC_TYPES,
 } from "@/constants/lawsLibraryData";
 
-import { LibraryHero } from "./components/LibraryHero";
-import { AiTabContent } from "./components/AiTabContent";
-import { PrecedentsTabContent } from "./components/PrecedentsTabContent";
-import { OrdersTabContent } from "./components/OrdersTabContent";
-import { LawsTabContent } from "./components/LawsTabContent";
-import { FeqhTabContent } from "./components/FeqhTabContent";
-import { ISSUER_MAP } from "./components/ListItems";
-import { ResultsSkeleton } from "./components/ResultsSkeleton";
+import { LibraryHero } from "../components/LibraryHero";
+import { AiTabContent } from "../components/AiTabContent";
+import { PrecedentsTabContent } from "../components/PrecedentsTabContent";
+import { OrdersTabContent } from "../components/OrdersTabContent";
+import { LawsTabContent } from "../components/LawsTabContent";
+import { FeqhTabContent } from "../components/FeqhTabContent";
+import { ISSUER_MAP } from "../components/ListItems";
+import { ResultsSkeleton } from "../components/ResultsSkeleton";
 import { HighlightProvider } from "@/components/search/MultiColorHighlight";
 import {
   type LawFacets,
@@ -79,7 +79,7 @@ import {
   lawsFilterParams,
   toSectionCode,
   toTaxonomyId,
-} from "./lawsIndexFacets";
+} from "../lawsIndexFacets";
 import {
   type SearchCountsInfo,
   type SearchSection,
@@ -101,7 +101,7 @@ import {
   sectionCountDisplay,
   totalCountDisplay,
   viewAllLabel,
-} from "./searchCounts";
+} from "../searchCounts";
 
 /**
  * A single-section search's paging: the request that produced page 1 (same

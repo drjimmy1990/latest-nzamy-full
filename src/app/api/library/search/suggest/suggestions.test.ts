@@ -38,7 +38,7 @@ test("source: the route calls the title function with the service role and degra
   // titles only: no article / principle / passage table, no locked column
   assert.doesNotMatch(sql, /library\.(articles|principles|feqh_blocks|decrees_circulars)\b/);
   assert.doesNotMatch(sql, /summary_brief|latest_update|issue_date|official_source_url/);
-  const page = readFileSync(new URL("../../../../laws/page.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../../../../laws/(index)/page.tsx", import.meta.url), "utf8");
   assert.match(page, /fetch\(`\/api\/library\/search\/suggest\?q=\$\{encodeURIComponent\(search\.trim\(\)\)\}`/);
   assert.match(page, /data-testid="did-you-mean"/);
   // the hook sits above the page's `if (!mounted) return null;` (rules of hooks)
