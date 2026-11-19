@@ -20,6 +20,7 @@ import {
   paymentsGatewaySettingIssue,
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
+import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -78,6 +79,12 @@ const ALLOWED_SETTINGS_KEYS = [
   "public_full_rulings_per_collection",
   // {"pages": n} — fiqh free pages (owner: 0, subscribers only).
   "library_feqh_free_pages",
+  // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
+  // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
+  // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
+  // the footer, the Organization JSON-LD and /llms.txt.
+  "license_number",
+  "license_issuer",
 ] as const;
 
 /**
@@ -158,6 +165,9 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_public_protection: libraryPublicProtectionIssue,
   public_full_rulings_per_collection: publicRulingsIssue,
   library_feqh_free_pages: feqhFreePagesIssue,
+  // Batch l9 public: pure, covered by src/lib/publicSeo/platformRegistry.test.ts.
+  license_number: (value) => licenceSettingIssue("license_number", value),
+  license_issuer: (value) => licenceSettingIssue("license_issuer", value),
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

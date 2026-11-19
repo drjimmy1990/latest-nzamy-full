@@ -50,18 +50,24 @@ test("/faq: FAQPage carries the 17 Arabic pairs word for word", () => {
   assert.equal(buildFaqPageJsonLd([{ question: "س", answer: " " }], "x"), null, "no empty answers, no empty schema");
 });
 
-test("/faq layout prints the FAQPage from faqData; the page keeps every answer in its HTML", () => {
-  const layout = read("../../app/faq/layout.tsx");
-  assert.doesNotMatch(layout, /^\s*["']use client["']/m);
-  assert.match(layout, /faqData\.map\(\(item\) => \(\{ question: item\.questionAr, answer: item\.answerAr \}\)\)/);
-  assert.match(layout, /type="application\/ld\+json" dangerouslySetInnerHTML=\{\{ __html: serializeJsonLd\(FAQ_JSON_LD\) \}\}/);
+test("/faq page prints the FAQPage from the items it shows (licence line included); the view keeps every answer in its HTML", () => {
+  // Batch l9: the server page reads the licence settings and passes the same
+  // items to the JSON-LD and to the client view.
   const page = read("../../app/faq/page.tsx");
-  assert.match(page, /import \{ categories, faqData \} from "\.\/faqData";/);
+  assert.doesNotMatch(page, /^\s*["']use client["']/m);
+  assert.match(page, /const items = faqWithLicence\(faqData, licenceLineAr\(registry\), licenceLineEn\(registry\)\);/);
+  assert.match(page, /items\.map\(\(item\) => \(\{ question: item\.questionAr, answer: item\.answerAr \}\)\)/);
+  assert.match(page, /type="application\/ld\+json" dangerouslySetInnerHTML=\{\{ __html: serializeJsonLd\(faqJsonLd\) \}\}/);
+  assert.match(page, /<FaqView items=\{items\} \/>/);
+  assert.doesNotMatch(read("../../app/faq/layout.tsx"), /ld\+json/, "one FAQPage only");
+  const view = read("../../app/faq/FaqView.tsx");
+  assert.match(view, /^"use client";/);
+  assert.match(view, /import \{ categories, faqData, type FAQItem \} from "\.\/faqData";/);
   // The answer is always rendered; closing it only hides it.
-  assert.match(page, /hidden=\{openId !== item\.id\}/);
-  assert.match(page, /\{isRTL \? item\.answerAr : item\.answerEn\}/);
-  assert.doesNotMatch(page, /openId === item\.id && \(/, "no answer mounted only while open");
-  assert.doesNotMatch(page, /AnimatePresence/);
+  assert.match(view, /hidden=\{openId !== item\.id\}/);
+  assert.match(view, /\{isRTL \? item\.answerAr : item\.answerEn\}/);
+  assert.doesNotMatch(view, /openId === item\.id && \(/, "no answer mounted only while open");
+  assert.doesNotMatch(view, /AnimatePresence/);
 });
 
 test("serializeJsonLd: no text can close the <script>", () => {
@@ -110,7 +116,10 @@ test("Organization: once filled, legalName and the two identifiers appear", () =
 
 test("the home page prints the Organization from the builder (escaped)", () => {
   const home = read("../../app/page.tsx");
-  assert.match(home, /const organizationJsonLd = buildOrganizationJsonLd\(\);/);
+  // Batch l9: from the admin settings (platformRegistryServer), not constants.
+  assert.match(home, /const registry = await loadPlatformRegistry\(\);/);
+  assert.match(home, /const organizationJsonLd = buildOrganizationJsonLd\(registry\);/);
+  assert.match(home, /<Hero licenceIssuer=\{registry\.licenceIssuer\} \/>/);
   assert.match(home, /__html: serializeJsonLd\(organizationJsonLd\)/);
 });
 

@@ -13,12 +13,24 @@
 
 import { LEGAL_IDENTITY_AR, NO_DIRECT_CONSULTATION_AR } from "../../constants/legalIdentity.ts";
 import { SERVICE_PAGES } from "./servicePages.ts";
+import { EMPTY_REGISTRY, licenceLineAr, type PlatformRegistry } from "./platformRegistry.ts";
 
 const SITE = "https://nezamy.sa";
 
 const line = (path: string, name: string, note?: string) => `- [${name}](${SITE}${path})${note ? `: ${note}` : ""}`;
 
-export function buildLlmsTxt(): string {
+/**
+ * `registry`: the admin settings (platformRegistry.ts, batch l9 — file 15 row
+ * 45). The «بيانات المنشأة» section is printed only with what is filled; the
+ * licence line only once the number is set. Empty → no section at all.
+ */
+export function buildLlmsTxt(registry: PlatformRegistry = EMPTY_REGISTRY): string {
+  const identity = [
+    registry.legalName ? `- الاسم النظامي: ${registry.legalName}` : null,
+    registry.commercialRegistration ? `- السجل التجاري: ${registry.commercialRegistration}` : null,
+    licenceLineAr(registry) ? `- ${licenceLineAr(registry)}` : null,
+  ].filter((l): l is string => l !== null);
+
   const services = Object.entries(SERVICE_PAGES)
     .filter(([, s]) => !s.noIndex)
     .map(([path, s]) => line(path, s.titleAr, s.descriptionAr));
@@ -30,6 +42,7 @@ export function buildLlmsTxt(): string {
     "",
     "منصة سعودية باللغة العربية: خدمات قانونية للأفراد والشركات عبر محامين مرخّصين، وأدوات عمل للمحامين ومكاتب المحاماة، ومكتبة قانونية للأنظمة السعودية والأحكام القضائية، ومدونة قانونية.",
     "",
+    ...(identity.length ? ["## بيانات المنشأة", ...identity, ""] : []),
     "## عن المنصة",
     line("/about", "من نحن"),
     line("/faq", "الأسئلة الشائعة", "أسئلة وأجوبة عن المنصة وخدماتها"),

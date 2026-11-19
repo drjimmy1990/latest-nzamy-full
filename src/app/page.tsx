@@ -11,6 +11,7 @@ import CommunityHighlights from "@/components/CommunityHighlights";
 import FAQ from "@/components/FAQ";
 import Footer from "@/components/Footer";
 import { buildOrganizationJsonLd, serializeJsonLd } from "@/lib/publicSeo/structuredData";
+import { loadPlatformRegistry } from "@/lib/publicSeo/platformRegistryServer";
 
 const HOME_DESCRIPTION =
   "نظامي — المنصة القانونية الأولى في المملكة العربية السعودية: استشارات فورية، صياغة عقود بالذكاء الاصطناعي، تمثيل قضائي، وإدارة مكاتب المحاماة في منصة واحدة.";
@@ -20,8 +21,11 @@ const HOME_DESCRIPTION =
 // LegalService (the type for law firms). Built in
 // src/lib/publicSeo/structuredData.ts (owner 18 Nov, item 4.5): contact,
 // address, sameAs, and the commercial-registration / licence fields, which
-// stay out of the JSON-LD until the owner sends them.
-const organizationJsonLd = buildOrganizationJsonLd();
+// stay out of the JSON-LD until they are filled. Batch l9 (file 15 row 45):
+// they are admin settings now — license_number / license_issuer, and the CR
+// and legal name of billing_company — read through Next's cache, so the page
+// revalidates every 5 minutes instead of being built once.
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: "نظامي | منصة الخدمات القانونية الذكية في السعودية",
@@ -43,7 +47,9 @@ export const metadata: Metadata = {
 
 import HomeRedirectGuard from "@/components/HomeRedirectGuard";
 
-export default function Home() {
+export default async function Home() {
+  const registry = await loadPlatformRegistry();
+  const organizationJsonLd = buildOrganizationJsonLd(registry);
   return (
     <>
       <script
@@ -54,7 +60,7 @@ export default function Home() {
       <HomeRedirectGuard />
       <Navbar />
       <div className="flex flex-col">
-        <Hero />
+        <Hero licenceIssuer={registry.licenceIssuer} />
         {/* A dated campaign only (owner ١٧٩); renders nothing today. */}
         <PromotionalCampaignBanner />
         <UserTypeSelector />
