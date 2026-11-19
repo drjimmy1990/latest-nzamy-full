@@ -34,15 +34,18 @@ test("the code defaults are what the migration seeds", () => {
   assert.match(sql, /'gift_valid_days', '90'::jsonb/);
   assert.deepEqual(DEFAULT_FREE_QUESTIONS, { lawyer: 10, individual: 5 });
   assert.match(sql, /'free_questions_by_account_type', '\{"lawyer": 10, "individual": 5\}'::jsonb/);
+  // l9 (owner register 14 item 7): 50 for every account type — 20261129_30
+  // UPDATEs the stored map (it overwrites on purpose: the owner's decision)
+  // and inserts the same full map when the row is missing.
+  const l9 = readFileSync(join(ROOT, "supabase", "migrations", "20261129_30_l9_terms_pricing.sql"), "utf8");
+  assert.equal(Object.keys(DEFAULT_MIN_TOPUP_SAR).length, 8);
   for (const [t, n] of Object.entries(DEFAULT_MIN_TOPUP_SAR)) {
-    if (t === "individual") continue;
-    assert.match(sql, new RegExp(`"${t}": ${n}`), t);
+    assert.equal(n, 50, t);
+    assert.match(l9, new RegExp(`"${t}": 50`), t);
+    assert.match(l9, new RegExp(`'${t}'`), `${t} is in the UPDATE's key list`);
   }
-  // ٥٦ (owner 18 Nov, l8): individual 100 — added to the stored map by 20261128_10 when the key is absent
-  assert.equal(DEFAULT_MIN_TOPUP_SAR.individual, 100);
-  const l8 = readFileSync(join(ROOT, "supabase", "migrations", "20261128_10_payref_settings.sql"), "utf8");
-  assert.match(l8, /'\{"individual": 100\}'::jsonb/);
-  assert.match(l8, /not \(value \? 'individual'\)/, "never overwrites an admin's own individual minimum");
+  assert.match(l9, /jsonb_object_agg\(k\.key, 50\)/);
+  assert.match(l9, /where ps\.key = 'min_topup_by_account_type'/);
 });
 
 test("validators refuse what would silently misprice", () => {

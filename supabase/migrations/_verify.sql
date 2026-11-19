@@ -7538,3 +7538,15 @@ select 'Reader law map by link type: library_reader_law_links_typed, service rol
                           where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
        as ok;
 -- <<< verify:l8_refbox
+
+-- >>> verify:l9_terms
+-- Batch l9 terms (owner register 14 items 7 / 29 / 32 / 55): run 20261129_30 before the deploy (either order is safe).
+select 'Minimum top-up 50 for every account type (register 14 item 7; run 20261129_30)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object'
+                        and value ?& array['lawyer', 'firm', 'corporate', 'micro', 'government', 'ngo', 'provider', 'individual']
+                        and not exists (select 1 from pg_catalog.jsonb_each_text(value) e where e.value <> '50')
+                   from public.platform_settings where key = 'min_topup_by_account_type'), false) as ok;
+select 'Founder discount described as top-ups AND any plan, never «الشحن وحده» (register 14 items 29 / 32; run 20261129_30)' as check,
+       not exists (select 1 from public.platform_settings
+                    where key like 'founder_topup_discount%' and pg_catalog.strpos(coalesce(description, ''), 'الشحن وحده') > 0) as ok;
+-- <<< verify:l9_terms

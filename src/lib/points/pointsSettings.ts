@@ -34,19 +34,21 @@ export const DEFAULT_LIBRARY_PLAN_POINTS: Readonly<Record<string, number>> = Obj
 });
 export const DEFAULT_GIFT_VALID_DAYS = 90;
 /**
- * Decision 5: lawyer, firm and every business type 500; ٥٦ (owner 18 Nov,
- * l8): individual 100 (the individuals' 100 / 250 packs, valid 3 months).
- * 20261127_40 seeded the map without `individual`; 20261128_10 adds it.
+ * Batch l9 (owner register 14 item 7, 19 Nov 2026): 50 for EVERY account
+ * type, the founder and the individual included (1 point = 1 SAR; the
+ * topup-50 pack is sold to every type). It was 500 for the professional types
+ * (l7 decision 5) and 100 for individuals (٥٦, l8); 20261129_30 UPDATEs the
+ * stored map to 50 for every key.
  */
 export const DEFAULT_MIN_TOPUP_SAR: Readonly<Record<string, number>> = Object.freeze({
-  lawyer: 500,
-  firm: 500,
-  corporate: 500,
-  micro: 500,
-  government: 500,
-  ngo: 500,
-  provider: 500,
-  individual: 100,
+  lawyer: 50,
+  firm: 50,
+  corporate: 50,
+  micro: 50,
+  government: 50,
+  ngo: 50,
+  provider: 50,
+  individual: 50,
 });
 export const DEFAULT_FREE_QUESTIONS: Readonly<Record<string, number>> = Object.freeze({ lawyer: 10, individual: 5 });
 

@@ -25,8 +25,10 @@ const soldCycles = (id: string, lang: "ar" | "en"): string => {
 // 2. ind-ai: الباقة الذكية الذاتية — ٢٤٩ ر.س سنوياً قبل الضريبة، سنوي فقط
 //    (owner package of 1 Nov 2026 §6.2.1, q329: the 29 / 79 / 149 cycles and
 //    the 199 launch price are retired in the price book).
-// 3. topup-100 / topup-250: point top-ups for individuals only, valid 3
-//    months (owner ٣٠٢, conflict ١١); the professionals' packs start at 500.
+// 3. topup-50 (batch l9, owner register 14 item 7: the minimum top-up is 50
+//    points for every account type; sold to every type) and topup-100 /
+//    topup-250: point top-ups for individuals, valid 3 months (owner ٣٠٢,
+//    conflict ١١); the professionals' bonus packs start at 500.
 // Retired (q329, Wave 1 task 5): «الباقة الوقائية» (ind-preventive) and the
 // 399 plan ind-litigation are not sold in any cycle, so they have no card and
 // no comparison column. Their ids stay in the price book for the orders and
@@ -114,6 +116,13 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
       },
     },
     {
+      id: "topup-50", name: "شحن ٥٠", badge: null,
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "٥٠ نقطة · صالحة ٣ أشهر", target: "أقل شحنة",
+      cta: "اشحن الآن", ctaHref: "/register/client?type=individual&plan=topup-50", highlighted: false, color: "border-zinc-200/60 dark:border-white/10",
+      features: { ai: [topupPointsTextById("topup-50", "ar"), "لأدوات الذكاء الاصطناعي للأفراد بالنقاط"], platform: [], support: [] },
+    },
+    {
       id: "topup-100", name: "شحن ١٠٠", badge: null,
       periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
       desc: "١٠٠ نقطة · صالحة ٣ أشهر", target: "شحن نقاط للأفراد",
@@ -194,6 +203,13 @@ export const plansIndividuals: { ar: Plan[]; en: Plan[] } = {
         ],
         support: ["Platform & email technical support"],
       },
+    },
+    {
+      id: "topup-50", name: "Top-up 50", badge: null,
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "50 points · valid for 3 months", target: "Smallest top-up",
+      cta: "Top up", ctaHref: "/register/client?type=individual&plan=topup-50", highlighted: false, color: "border-zinc-200/60 dark:border-white/10",
+      features: { ai: [topupPointsTextById("topup-50", "en"), "For the individuals' AI tools priced in points"], platform: [], support: [] },
     },
     {
       id: "topup-100", name: "Top-up 100", badge: null,

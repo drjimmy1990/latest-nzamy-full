@@ -47,7 +47,7 @@ test("a book card's price is the book's, in each cycle it is sold", () => {
 test("a one-payment card (top-up, library pass) shows its price in every cycle", () => {
   for (const cycle of ["monthly", "quarterly", "semiannual", "yearly"] as Cycle[]) {
     assert.deepEqual(cardPrice(card("topup-250", { periodMonthly: "ر.س / الشحنة" }), cycle, "ar"), { price: "٢٥٠", period: "ر.س / الشحنة" });
-    assert.deepEqual(cardPrice(card("lib-q2", { periodMonthly: "SAR / 6 months" }), cycle, "en"), { price: "1,920", period: "SAR / 6 months" });
+    assert.deepEqual(cardPrice(card("lib-q2", { periodMonthly: "SAR / 6 months" }), cycle, "en"), { price: "3,790", period: "SAR / 6 months" });
   }
 });
 
@@ -136,7 +136,8 @@ test("derivation: no card of a price-book id carries a price string in src/const
     }
   }
   // ind-preventive / ind-litigation have no card since q329 (retired in the book)
-  assert.equal(cards, 30, "15 book items, once in Arabic and once in English");
+  // l9: topup-50 is on the lawyers' AND the individuals' tab (sold to both)
+  assert.equal(cards, 34, "16 book items once in Arabic and once in English, topup-50 on two tabs");
 });
 
 test("derivation: the price tables read the book too (firms, individuals comparison rows)", () => {
@@ -194,7 +195,7 @@ test("UX14: the total with VAT is checkout's own arithmetic, in the card's billi
   assert.equal(cardTotalWithVat({ id: "ind-ai" }, "yearly", null, "ar"), "الإجمالي شامل الضريبة ٢٨٦٫٣٥ ر.س · سنوي");
   assert.equal(cardTotalWithVat({ id: "ind-ai" }, "monthly", null, "ar"), null, "q329: not sold monthly");
   assert.equal(cardTotalWithVat({ id: "lawyer-pro" }, "yearly", null, "en"), "Total incl. VAT: SAR 4,588.50 · Yearly");
-  assert.equal(cardTotalWithVat({ id: "lib-annual" }, "monthly", null, "en"), "Total incl. VAT: SAR 4,013.50 · One payment");
+  assert.equal(cardTotalWithVat({ id: "lib-annual" }, "monthly", null, "en"), "Total incl. VAT: SAR 8,038.50 · One payment");
   // a launch price is what the total is computed from
   assert.equal(cardTotalWithVat({ id: "firm-basic" }, "yearly", DURING, "en"), "Total incl. VAT: SAR 9,677.25 · Yearly");
   // nothing for a card the book does not price, or a cycle it does not sell

@@ -44,6 +44,7 @@ const EXPECTED_IDS = [
   "lib-q1",
   "lib-q2",
   "lib-annual",
+  "topup-50",
   "topup-100",
   "topup-250",
   "topup-500",
@@ -121,9 +122,9 @@ test("٢٥٨: the library is VAT-exclusive for every buyer (no more buyer-depend
   const q = quote("lib-q1", "once");
   assert.ok(q.ok);
   assert.equal(q.vatMode, "exclusive");
-  assert.equal(q.netHalalas, 105000);
-  assert.equal(q.vatHalalas, 15750);
-  assert.equal(q.totalHalalas, 120750);
+  assert.equal(q.netHalalas, 199000);
+  assert.equal(q.vatHalalas, 29850);
+  assert.equal(q.totalHalalas, 228850);
 });
 
 test("٢٥٨: nothing sold today is quoted inclusive; the listed price is always the net", () => {
@@ -224,9 +225,10 @@ test("prices and grants as the owner set them (net halalas)", () => {
     "ind-ai":                 { prices: { yearly: 24900 }, tier: "ai", retiredMonthly: 2900, retired: { quarterly: 7900, semiannual: 14900 } },
     "ind-preventive":         { prices: {},   tier: "pro", retiredMonthly: 14900, retired: { yearly: 149000 } },
     "ind-litigation":         { prices: {},   tier: "max", retiredMonthly: 39900, retired: { yearly: 399000 } },
-    "lib-q1":                 { prices: { once: 105000 } },
-    "lib-q2":                 { prices: { once: 192000 } },
-    "lib-annual":             { prices: { once: 349000 } },
+    "lib-q1":                 { prices: { once: 199000 } },
+    "lib-q2":                 { prices: { once: 379000 } },
+    "lib-annual":             { prices: { once: 699000 } },
+    "topup-50":               { prices: { once: 5000 } },
     "topup-100":              { prices: { once: 10000 } },
     "topup-250":              { prices: { once: 25000 } },
     "topup-500":              { prices: { once: 50000 } },
@@ -319,6 +321,7 @@ test("each item's buyers: plans to their own audience, the library to profession
     "lib-q1": LIB,
     "lib-q2": LIB,
     "lib-annual": LIB,
+    "topup-50": [...PRO, "individual"],
     "topup-100": ["individual"],
     "topup-250": ["individual"],
     "topup-500": PRO,

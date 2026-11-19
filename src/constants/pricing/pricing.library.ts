@@ -8,9 +8,9 @@ import { Plan } from "./pricing.types";
  *
  * Pricing: the price book (src/lib/pricing/priceBook.ts) is the source of
  * truth — the cards carry no typed price for the individual plans:
- *   lib-q1:     1,050 SAR / 3 months
- *   lib-q2:     1,920 SAR / 6 months
- *   lib-annual: 3,490 SAR / year (owner 18 Nov 2026: confirmed 3,490)
+ *   lib-q1:     1,990 SAR / 3 months
+ *   lib-q2:     3,790 SAR / 6 months
+ *   lib-annual: 6,990 SAR / year (batch l9: owner register 14 item 1, 19 Nov 2026)
  *
  * No `priceOriginal` and no «خصم ٥٠٪ لفترة الإطلاق» pill: the struck-through
  * "was" prices (2,000 / 3,500 / 6,000, and 2× every firm-library price) were

@@ -5,7 +5,7 @@
  * on 18 Nov 2026 (batch l8 payref). Every number is a platform_settings row
  * written through PATCH /api/v1/admin/settings, which validates and audits
  * each write; nothing here is a code constant:
- *   - min_topup_by_account_type   (٥٦: lawyer / firm / business 500, individual 100)
+ *   - min_topup_by_account_type   (l9, register 14 item 7: 50 for every account type)
  *   - founder_topup_discount_bps  (the founder's top-up discount rate, 1500 = 15 %)
  *   - founder_topup_discount_expires (how long it runs: the membership year by default)
  *   - firm_extra_seat_price_sar   (٥٣: stored only, never sold or shown publicly)
