@@ -81,8 +81,9 @@ const LAW_ANCHOR_KINDS: readonly AnchorKind[] = [
 const anchorJoins: string[] = [];
 /**
  * The anchor gate: an anchor the parser cannot read (JSON that does not parse,
- * no JSON, not closed on its line) and any file where fewer articles or
- * chapters were parsed than its anchors open. GATES the exit code, like
+ * no JSON, not closed on its line) and any file where fewer (or more)
+ * articles, chapters, amendment cards or regulations were parsed than its
+ * anchors open. GATES the exit code, like
  * malformedAnchorFiles: each line is text that would vanish from the site.
  */
 const anchorProblems: string[] = [];
@@ -95,6 +96,8 @@ const totalArticlesMismatches: string[] = [];
 const ownerLinkCuts: string[] = [];
 /** Latent-recovered articles suppressed by parseArticlesInBlock (merged into a regulation on purpose), per file. */
 let latentArticlesSuppressed = 0;
+/** AMENDMENT anchors that became an amendment record (readable or not), per file. */
+let amendmentAnchorsRead = 0;
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -1102,6 +1105,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   const anchors = prepareAnchors(writtenBody, LAW_ANCHOR_KINDS);
   const body = anchors.body;
   latentArticlesSuppressed = 0;
+  amendmentAnchorsRead = 0;
   let syntheticArticleUsed = false;
   let chapterAnchorsRead = 0;
 
@@ -1245,6 +1249,9 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   // ── The anchor gate: what the body opens vs what was parsed ─────────────
   // An ARTICLE_START becomes one article, or (latent_recovered) the text of the
   // regulation before it; the whole-document article has no anchor at all.
+  // Every AMENDMENT becomes a card record of its article, every REGULATION a
+  // regulation of an emitted article (measured on the 10-03 corpus: 0 files
+  // differ for either) — one outside any article is lost, so it is counted.
   {
     const where = path.basename(filePath);
     const lineOffset = bodyLineOffset(raw, writtenBody);
@@ -1255,6 +1262,13 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     for (const line of [
       anchorShortfall(where, "ARTICLE_START", articleOpeners, articlesFromAnchors),
       anchorShortfall(where, "CHAPTER_START", anchors.counts.CHAPTER_START.openers, chapterAnchorsRead),
+      anchorShortfall(where, "AMENDMENT", anchors.counts.AMENDMENT.openers, amendmentAnchorsRead),
+      anchorShortfall(
+        where,
+        "REGULATION",
+        anchors.counts.REGULATION.openers,
+        chapters.reduce((n, ch) => n + ch.articles.reduce((m, a) => m + a.regulations.length, 0), 0),
+      ),
     ]) if (line) anchorProblems.push(line);
     const headerLine = totalArticlesMismatch(where, meta.total_articles, articleOpeners, totalArticles);
     if (headerLine) totalArticlesMismatches.push(headerLine);
@@ -1743,6 +1757,7 @@ function parseArticlesInBlock(
     // first, then removed from the live text — previously it was never read and
     // never stripped, so it ended up concatenated into `text`.
     const history = extractArticleHistory(articleBody, status);
+    amendmentAnchorsRead += history.records.filter((r) => r.anchor || r.anchorUnreadable).length;
     // ── One amendment = one card (owner file 18, item 3; «خامساً» 1) ───────
     // Each AMENDMENT anchor comes paired with the text after it; a before-text
     // with no anchor (the older files) is a card of its own, as before.
@@ -2427,7 +2442,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     anchorJoins,
   );
   printCapped(
-    "🛑 anchor problem(s) — an anchor the parser cannot read, or fewer/more articles or chapters parsed than the file opens (item 1.4)",
+    "🛑 anchor problem(s) — an anchor the parser cannot read, or fewer/more articles, chapters, amendment cards or regulations parsed than the file opens (item 1.4)",
     anchorProblems,
   );
   printCapped(

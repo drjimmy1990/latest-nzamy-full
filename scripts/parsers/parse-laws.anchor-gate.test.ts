@@ -90,6 +90,12 @@ test("a CHAPTER_START with no CHAPTER_END is a lost chapter: the run is refused"
   assert.deepEqual(report(reportDir, "laws").notes.anchorProblems, ["law.md — CHAPTER_START: 2 in the source, 1 parsed (1 lost)"]);
 });
 
+test("an AMENDMENT outside any article is a lost card: the run is refused", () => {
+  const { file, reportDir } = lawFile(`<!-- AMENDMENT {"decree": "م/1"} -->\nخارج المواد.\n` + ONE_LINE("1", "أ"));
+  assert.throws(() => parseLaws(file, reportDir), /Law parse rejected/);
+  assert.deepEqual(report(reportDir, "laws").notes.anchorProblems, ["law.md — AMENDMENT: 1 in the source, 0 parsed (1 lost)"]);
+});
+
 test("a latent-recovered article and the whole-document article are not shortfalls", () => {
   const latent = lawFile(
     `<!-- ARTICLE_START {"number":"5","number_text":"المادة الخامسة"} -->\nمتن.\n` +
