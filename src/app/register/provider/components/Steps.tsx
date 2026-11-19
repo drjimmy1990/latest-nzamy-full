@@ -677,6 +677,17 @@ export function Step5({ isAr, providerType, selectedPlan, verificationOwnsStatus
         {isAr ? "انتقل للوحة التحكم" : "Go to Dashboard"}
         {isAr ? <ArrowLeft size={16} /> : <ArrowRight size={16} />}
       </motion.a>
+
+      {/* File 15 row 24 (l9): the founder offer right after signup. Advocate
+          lawyers only (the consultant is outside it); /founder itself says
+          whether the campaign is open and what a pending licence means. */}
+      {providerType === "lawyer" && (
+        <div className="mt-4">
+          <a href="/founder" className="text-sm font-semibold text-royal underline-offset-4 hover:underline dark:text-[#C8A762]">
+            {isAr ? "تعرّف على العضوية المؤسِّسة للمحامين" : "See the founding membership for lawyers"}
+          </a>
+        </div>
+      )}
     </motion.div>
   );
 }

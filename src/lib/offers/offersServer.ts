@@ -80,6 +80,7 @@ export async function readViewer(db: Db, userId: string, planRefs: readonly stri
 
   let practiceKind: unknown = null;
   let verified: boolean | null = null;
+  let pendingVerification = false;
   if (p.user_type === "lawyer") {
     const lp = await db.from("lawyer_profiles").select("practice_kind, verification_status").eq("user_id", userId).maybeSingle();
     // Fail closed: an unread practice kind would read a consultant as an advocate.
@@ -87,6 +88,8 @@ export async function readViewer(db: Db, userId: string, planRefs: readonly stri
     const row = (lp.data ?? null) as { practice_kind?: unknown; verification_status?: unknown } | null;
     practiceKind = row?.practice_kind ?? null;
     verified = row ? row.verification_status === "verified" : false;
+    // l9 row 24: a pending licence may still be offered the founder seat (offerMatchesViewer).
+    pendingVerification = row?.verification_status === "pending";
   } else if (p.user_type === "firm") {
     verified = await verificationOf(db, "firm_profiles", "owner_user_id", userId);
   } else if (p.user_type === "corporate") {
@@ -121,7 +124,7 @@ export async function readViewer(db: Db, userId: string, planRefs: readonly stri
     if (seat.error && !isMissingTable(seat.error.code)) throw new OffersReadError(`founder seat: ${seat.error.code}`);
     founderSeat = !seat.error && Array.isArray(seat.data) && seat.data.length > 0;
   }
-  return { audience, verified, boughtPlanRefs: bought, founderSeat };
+  return { audience, verified, pendingVerification, boughtPlanRefs: bought, founderSeat };
 }
 
 /** Paid orders of `planRef` since `sinceIso` (all buyers) — an offer's own seats and its purchases stat. */

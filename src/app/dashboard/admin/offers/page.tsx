@@ -10,6 +10,7 @@ import {
   OFFER_AUDIENCE_LABELS_AR,
   OFFER_STATUS_LABELS_AR,
   OFFER_VERIFICATION_LABELS_AR,
+  FOUNDER_AUDIENCE_NOTE_AR,
   OFFER_VERIFICATIONS,
   type AdminOfferDto,
   type OfferAudienceKey,
@@ -412,7 +413,7 @@ export default function AdminOffersPage() {
                   </td>
                   <td className={td}>
                     {o.audience.map((a) => OFFER_AUDIENCE_LABELS_AR[a as OfferAudienceKey] ?? a).join("، ")}
-                    <p className="mt-1 text-[11px] text-zinc-400">{OFFER_VERIFICATION_LABELS_AR[o.verification]}</p>
+                    <p className="mt-1 text-[11px] text-zinc-400">{o.campaignLinked ? FOUNDER_AUDIENCE_NOTE_AR : OFFER_VERIFICATION_LABELS_AR[o.verification]}</p>
                   </td>
                   <td className={td}>{o.priority}</td>
                   <td className={`${td} whitespace-nowrap`}>
