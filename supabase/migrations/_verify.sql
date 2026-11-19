@@ -7627,3 +7627,49 @@ select 'Company seat cap: business_profiles.max_seats (no session write) + trg_b
        and not has_function_privilege('anon', 'public.business_seat_status(uuid)', 'EXECUTE')
        end as ok;
 -- <<< verify:l9_secroles
+
+-- >>> verify:l9_secleak
+-- Batch l9-secleak (owner file 15 #4 + #48, file 19 §1ب.2): run 20261129_20 after the deploy (before it, «عقودي» is empty for the old code).
+select 'Contracts (#4): no client arm on "contracts select" nor can_access_contract; client_contracts_list / client_contract_detail / client_contract_versions definer, authenticated only, no notes/metadata (run 20261129_20)' as check,
+       case when to_regprocedure('public.client_contract_detail(text)') is null
+              or to_regprocedure('public.client_contracts_list()') is null
+              or to_regprocedure('public.client_contract_versions(text)') is null then false else
+       not exists (select 1 from pg_catalog.pg_policy p
+                    where p.polrelid = 'public.contracts'::regclass and p.polcmd in ('r', '*')
+                      and pg_catalog.pg_get_expr(p.polqual, p.polrelid) ~ 'client_user_id')
+       and (select p.prosrc from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.can_access_contract(text)')) !~ 'client_user_id'
+       and not exists (select 1 from pg_catalog.pg_proc p
+                        where p.oid in (to_regprocedure('public.client_contract_detail(text)'),
+                                        to_regprocedure('public.client_contracts_list()'),
+                                        to_regprocedure('public.client_contract_versions(text)'))
+                          and (not p.prosecdef or not p.proconfig @> array['search_path=""'] or p.prosrc ~ '(notes|metadata)'))
+       and not has_function_privilege('anon', 'public.client_contract_detail(text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.client_contracts_list()', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.client_contract_versions(text)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.client_contract_detail(text)', 'EXECUTE')
+       end as ok;
+select 'Share links (#48): revoked for good at the 20th wrong passcode, view_count, counters guard; service role only (run 20261129_20)' as check,
+       case when to_regprocedure('public.share_count_view(text)') is null
+              or to_regprocedure('public.share_passcode_check(text, text)') is null then false else
+       (select count(*) = 4 from information_schema.columns
+         where table_schema = 'public' and table_name = 'document_shares'
+           and column_name in ('wrong_total', 'revoked_at', 'view_count', 'last_viewed_at'))
+       and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.share_passcode_check(text, text)')), 'revoked') > 0
+       and not has_function_privilege('anon', 'public.share_count_view(text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.share_count_view(text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.share_passcode_check(text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.share_passcode_check(text, text)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = 'public.document_shares'::regclass
+                      and t.tgname = 'trg_01_document_shares_counters_guard' and t.tgenabled <> 'D')
+       end as ok;
+select 'Fake licences (file 19): no 1448-LAW- licence verified, trigger refuses it (run 20261129_20)' as check,
+       case when to_regprocedure('public.is_fake_test_licence(text)') is null then false else
+       exists (select 1 from pg_catalog.pg_trigger t
+                where t.tgrelid = 'public.lawyer_profiles'::regclass
+                  and t.tgname = 'trg_lawyer_profiles_no_fake_licence' and t.tgenabled <> 'D')
+       and not exists (select 1 from public.lawyer_profiles lp
+                        where lp.verification_status = 'verified'
+                          and pg_catalog.upper(pg_catalog.regexp_replace(coalesce(lp.license_number, ''), '[^0-9A-Za-z]+', '', 'g')) like '1448LAW%')
+       end as ok;
+-- <<< verify:l9_secleak

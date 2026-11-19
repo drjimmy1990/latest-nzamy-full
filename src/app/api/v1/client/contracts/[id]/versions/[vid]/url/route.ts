@@ -2,15 +2,19 @@ import { NextResponse, NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
 import { fileFolderOwner, isPathInOwnerFolder } from "@/lib/storagePathOwnership";
+import { clientContractVersions } from "../../../../_clientRead";
 
 /**
  * GET /api/v1/client/contracts/[id]/versions/[vid]/url — a 5-minute signed
  * download link for one file version of a contract shared with this client
  * (contractsService.ts's `getClientContractVersionUrl`).
  *
- * Two RLS-scoped reads bind the version to a contract this client account
- * owns (`client_user_id = auth.uid()`) BEFORE anything is signed — the same
- * "belongs to this named parent, not just independently readable" pattern as
+ * The version is bound to a NON-DRAFT contract this client account owns
+ * (`client_user_id = auth.uid()`, owner file 15 #4) BEFORE anything is signed:
+ * public.client_contract_versions() (20261129_20 — the client no longer reads
+ * the contract tables through RLS), or its whitelisted fallback while the
+ * function is missing (_clientRead.ts) — the same "belongs to this named
+ * parent, not just independently readable" pattern as
  * service-requests/[id]/attachments/[attachmentId]/route.ts. Signing itself
  * goes through the SERVICE client only after that check, per house rules
  * (storage.createSignedUrl needs a role Storage RLS on `documents` does not
@@ -26,27 +30,16 @@ export async function GET(
     const { user, supabase } = auth;
     const { id, vid } = await context.params;
 
-    const { data: contract, error: contractError } = await supabase
-      .from("contracts")
-      .select("id")
-      .eq("id", id)
-      .eq("client_user_id", user.id)
-      .maybeSingle();
-    if (contractError) {
-      console.error("[client/contracts/versions/url GET] contract lookup failed:", contractError.message, contractError.code);
+    const files = await clientContractVersions(supabase, user.id, id);
+    if (!files.ok) {
+      return NextResponse.json({ url: null });
     }
-    if (!contract) {
+    if (files.data.length === 0) {
+      // not his contract, a draft, or a contract without files: one answer
       return NextResponse.json({ error: "العقد غير موجود" }, { status: 404 });
     }
 
-    const { data: version, error: versionError } = await supabase
-      .from("contract_versions")
-      .select("id, contract_id, storage_path, uploaded_by, folder_owner_id")
-      .eq("id", vid)
-      .maybeSingle();
-    if (versionError) {
-      console.error("[client/contracts/versions/url GET] version lookup failed:", versionError.message, versionError.code);
-    }
+    const version = files.data.find((v) => v.id === vid) ?? null;
     // Bound to THIS contract, not merely readable in isolation — vid is a
     // freely client-chosen URL param, so a mismatch (tampering, or a stale
     // link after the version moved) gets the identical 404 rather than

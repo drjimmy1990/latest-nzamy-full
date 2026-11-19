@@ -6,6 +6,7 @@ import { assertRole } from "@/lib/auth/assertRole";
 import { mayDownloadRequestFiles } from "@/lib/requestFileAccess";
 import { checkZipCaps, isZipScope, type ZipScope } from "@/lib/attachmentsZipShared";
 import { staffMfaGate } from "@/lib/auth/staffMfaServer";
+import { clientContractVersions } from "../../client/contracts/_clientRead";
 import {
   archiveFileName,
   buildZipStream,
@@ -49,8 +50,11 @@ import {
  *       firm), then the versions the caller's RLS client can read
  *       (`can_access_contract`), bound to this contract.
  *   client_contract
- *     = client/contracts/[id]/versions/[vid]/url/route.ts — assertRole(), the
- *       contract read with `client_user_id = auth.uid()`, then its versions.
+ *     = client/contracts/[id]/versions/[vid]/url/route.ts — assertRole(), then
+ *       the versions of a NON-DRAFT contract with `client_user_id = auth.uid()`
+ *       through public.client_contract_versions() (owner #4, 20261129_20: the
+ *       client reads no contract table through RLS any more; whitelisted
+ *       fallback while the function is missing — client/contracts/_clientRead.ts).
  *
  * OWN FOLDER ONLY — a row goes in only when its file sits in its uploader's
  * folder (`owner_user_id/…`; contract versions `uploaded_by/…`;
@@ -154,21 +158,14 @@ async function listLawyerContractFiles(contractId: string): Promise<Listing> {
   return readContractVersions(auth.supabase, contractId, auth.user.id);
 }
 
-/** client_contract — the client's own share, see the header. */
+/** client_contract — the client's own share, never a draft (owner #4), see the header. */
 async function listClientContractFiles(contractId: string): Promise<Listing> {
   const auth = await assertRole();
   if (!auth.ok) return { response: auth.response };
-  const { data: contract, error } = await auth.supabase
-    .from("contracts")
-    .select("id")
-    .eq("id", contractId)
-    .eq("client_user_id", auth.user.id)
-    .maybeSingle();
-  if (error) {
-    console.error("[attachments/zip] client contract lookup failed:", error.message, error.code);
-  }
-  if (!contract) return { response: NextResponse.json({ error: "العقد غير موجود" }, { status: 404 }) };
-  return readContractVersions(auth.supabase, contractId, auth.user.id);
+  const read = await clientContractVersions(auth.supabase, auth.user.id, contractId);
+  if (!read.ok) return { response: NextResponse.json({ error: "تعذّر تحميل نسخ العقد." }, { status: 500 }) };
+  if (read.data.length === 0) return { response: NextResponse.json({ error: "العقد غير موجود" }, { status: 404 }) };
+  return { files: visibleContractFiles(read.data, contractId), userId: auth.user.id };
 }
 
 function listFiles(scope: ZipScope, id: string): Promise<Listing> {

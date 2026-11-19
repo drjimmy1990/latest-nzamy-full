@@ -35,10 +35,18 @@ import { isValidAttachmentId } from "../../../documents/_shared";
  * route keeps the old in-app constant-time compare (logged once); any other
  * database error fails closed (500), never falls back.
  *
+ * PERMANENT REVOKE + VIEWS (owner file 15 #48 — 20261129_20): the 20th wrong
+ * passcode in the share's life revokes it for good — the function answers
+ * 'revoked' from then on (the right passcode too) and the route a 410. Each
+ * successful open (a signed URL handed out) adds one to view_count through
+ * public.share_count_view; while that function is missing nothing is counted
+ * and the open is not affected.
+ *
  * Responses:
  *   404 { error } — no share row for this token, or its document was never
  *        attached to a storage object, or is no longer servable (see below)
- *   410 { error } — link has expired
+ *   410 { error } — link has expired, or revoked for good after 20 wrong
+ *        passcodes (#48)
  *   401 { error } — passcode mismatch
  *   429 { error } — the share is locked after repeated wrong passcodes
  *   500 { error } — the storage sign step itself failed
@@ -93,6 +101,9 @@ export async function POST(
     const storedHash = share.passcode_hash as string | null;
     if (storedHash) {
       const verdict = await checkPasscodeInDb(supabase, sha256Hex(token), sha256Hex(passcode));
+      if (verdict === "revoked") {
+        return NextResponse.json({ error: REVOKED_MESSAGE }, { status: 410 });
+      }
       if (verdict === "locked") {
         return NextResponse.json({ error: LOCKED_MESSAGE }, { status: 429 });
       }
@@ -144,6 +155,8 @@ export async function POST(
       return NextResponse.json({ error: "تعذر فتح المستند" }, { status: 500 });
     }
 
+    await countShareView(supabase, sha256Hex(token));
+
     return NextResponse.json({
       success: true,
       data: {
@@ -163,10 +176,14 @@ const WRONG_PASSCODE_MESSAGE = "الرجاء إدخال باسكود صحيح م
 const LOCKED_MESSAGE =
   "تم إيقاف إدخال الباسكود لهذا الرابط مؤقتاً بعد محاولات خاطئة متكررة. حاول مرة أخرى بعد ١٥ دقيقة.";
 
+/** #48: the same answer whatever passcode was sent; nothing reopens it. */
+const REVOKED_MESSAGE =
+  "أُبطل هذا الرابط نهائياً بعد محاولات خاطئة متكررة لإدخال الباسكود. اطلب من صاحب المستند رابطاً جديداً.";
+
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
 
 /** "missing" = 20261109_11 has not run here yet; the caller then compares in the app. */
-type PasscodeVerdict = "ok" | "denied" | "locked" | "none" | "missing" | "error";
+type PasscodeVerdict = "ok" | "denied" | "locked" | "revoked" | "none" | "missing" | "error";
 
 let inAppCompareLogged = false;
 
@@ -198,7 +215,7 @@ async function checkPasscodeInDb(
       return "error";
     }
     const result = (data as { result?: unknown } | null)?.result;
-    if (result === "ok" || result === "denied" || result === "locked" || result === "none") return result;
+    if (result === "ok" || result === "denied" || result === "locked" || result === "revoked" || result === "none") return result;
     console.error("[share verify POST] share_passcode_check answered an unexpected shape:", JSON.stringify(data));
     return "error";
   } catch (err) {
@@ -217,4 +234,28 @@ function passcodeMatchesInApp(passcode: string, storedHash: string): boolean {
   const submittedHash = Buffer.from(sha256Hex(passcode), "utf8");
   const stored = Buffer.from(storedHash, "utf8");
   return submittedHash.length === stored.length && timingSafeEqual(submittedHash, stored);
+}
+
+let viewCountMissingLogged = false;
+
+/**
+ * #48 (20261129_20): one successful open of the share. Best effort — never
+ * throws, never changes the answer; while public.share_count_view is missing
+ * (PGRST202 / 42883) nothing is counted (logged once).
+ */
+async function countShareView(supabase: ServiceClient, tokenHash: string): Promise<void> {
+  try {
+    const { error } = await supabase.rpc("share_count_view", { p_token_hash: tokenHash });
+    if (!error) return;
+    if (error.code === "PGRST202" || error.code === "42883") {
+      if (!viewCountMissingLogged) {
+        viewCountMissingLogged = true;
+        console.warn("[share verify POST] public.share_count_view is missing (20261129_20 not applied): opens are not counted");
+      }
+      return;
+    }
+    console.error("[share verify POST] share_count_view failed:", error.code, error.message);
+  } catch (err) {
+    console.error("[share verify POST] share_count_view threw:", err instanceof Error ? err.message : err);
+  }
 }
