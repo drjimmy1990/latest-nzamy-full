@@ -22,9 +22,17 @@
  *     malformed or unreadable → FOUNDER_DISCOUNT_DEFAULT_BPS.
  *   - ٤٨: the top-up keeps every point of its pack (the bonus included).
  *
- * Eligible items: point top-ups only (kind "topup"; ٤٩ — never platform fees
- * nor a plan renewal). Plans, the library and the founder membership itself:
- * never.
+ * Batch l9 (owner register 14 items 29 / 32 / 55, 19 Nov 2026) widens it:
+ * eligible items are point top-ups AND any plan or library subscription he
+ * buys (kinds "topup", "plan", "library"), while his yearly founder
+ * subscription is active — the window above (the membership year; a future
+ * founder-renewal product must extend it, nothing renews yet). Never the
+ * founder membership itself (kind "membership": its first-year price is
+ * excluded, register 55). Never combined with another discount: checkout
+ * takes the founder discount off the LISTED price and compares it with what
+ * the other path saves (a launch price's saving plus any coupon on it) —
+ * the larger wins, never both (bestDiscount). Lost for good when the seat is
+ * no longer active (refund, violation) or the window ends.
  *
  * Founder member = a founder_seats row of the founder campaign with status
  * 'active' whose discount window (above) has not ended at `now`.
@@ -47,8 +55,8 @@ export const FOUNDER_DISCOUNT_DEFAULT_BPS = 1500;
 export const FOUNDER_DISCOUNT_PCT = FOUNDER_DISCOUNT_DEFAULT_BPS / 100;
 /** platform_settings key of the rate (20261127_10). */
 export const FOUNDER_DISCOUNT_SETTING_KEY = "founder_topup_discount_bps";
-/** The kinds the founder discount applies to (F12). */
-export const FOUNDER_DISCOUNT_KINDS: readonly ItemKind[] = Object.freeze(["topup"] as ItemKind[]);
+/** The kinds the founder discount applies to (F12; l9 adds every plan and library subscription — never "membership"). */
+export const FOUNDER_DISCOUNT_KINDS: readonly ItemKind[] = Object.freeze(["topup", "plan", "library"] as ItemKind[]);
 /** src/lib/membership/founderPlan.ts FOUNDER_CAMPAIGN_ID (founderDiscount.test.ts holds them equal). */
 export const FOUNDER_DISCOUNT_CAMPAIGN_ID = "founder-2026";
 

@@ -448,7 +448,8 @@ test("P1 item 2: /services/individuals counts its own service cards", () => {
 
 test("P1 item 2 + l8 (٦٤): the CTA's refund line states the refund page's conditions — no AI for subscriptions, 5 % for top-ups only", () => {
   const cta = code("components/pricing/PricingCTA.tsx");
-  assert.match(cta, /استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه/);
+  // l9 (register 16): plus the 5-full-text rule of the library-including plans
+  assert.match(cta, /استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي ولم يُقرأ أكثر من ٥ ملفات نصاً كاملاً في المكتبة، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه/);
   assert.doesNotMatch(cta, /ما لم يُستهلك أكثر من ٥٪ من النقاط/);
 });
 
@@ -702,7 +703,7 @@ function validityAr(months: number): string {
 
 test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   const topups = Object.values(PAYABLE_ITEMS).filter((item) => item.kind === "topup");
-  assert.equal(topups.length, 7, "seven top-ups in the catalog (owner ٣٠٢)");
+  assert.equal(topups.length, 8, "eight top-ups in the catalog (owner ٣٠٢ + l9's 50-point pack)");
   const lawyers = planLists("constants/pricing/pricing.lawyers.ts").find((l) => l.name === "plansLawyers");
   const individuals = planLists("constants/pricing/pricing.individuals.ts").find((l) => l.name === "plansIndividuals");
   assert.ok(lawyers, "plansLawyers was not found");
@@ -710,15 +711,18 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   for (const item of topups) {
     const months = item.pointsValidityMonths;
     assert.ok(months, `${item.id} has no validity in the catalog`);
-    // ٣٠٢: 100 / 250 are the individuals' cards, 500 and up the lawyers'
+    // ٣٠٢: 100 / 250 are the individuals' cards, 500 and up the lawyers';
+    // l9: the 50-point pack is sold to both, so it is on both tabs
     const forIndividuals = Array.isArray(item.buyers) && item.buyers.includes("individual");
-    const list = forIndividuals ? individuals : lawyers;
-    const other = forIndividuals ? lawyers : individuals;
-    assert.ok(!other.ar.includes(`id: "${item.id}"`) && !other.en.includes(`id: "${item.id}"`), `${item.id}: not on the other audience's tab`);
-    for (const [lang, seg, expected] of [
+    const forLawyers = Array.isArray(item.buyers) && item.buyers.includes("lawyer");
+    const tabs = [...(forIndividuals ? [individuals] : []), ...(forLawyers ? [lawyers] : [])];
+    for (const other of [individuals, lawyers].filter((l) => !tabs.includes(l))) {
+      assert.ok(!other.ar.includes(`id: "${item.id}"`) && !other.en.includes(`id: "${item.id}"`), `${item.id}: not on the other audience's tab`);
+    }
+    for (const [lang, seg, expected] of tabs.flatMap((list) => [
       ["ar", list.ar, validityAr(months)],
       ["en", list.en, `valid for ${months} month${months === 1 ? "" : "s"}`],
-    ] as const) {
+    ] as const)) {
       const block = seg.slice(seg.indexOf(`id: "${item.id}"`));
       const desc = block.match(/desc: "([^"]*)"/);
       assert.ok(seg.includes(`id: "${item.id}"`) && desc, `${item.id}.${lang}: card not found`);

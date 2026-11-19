@@ -189,8 +189,13 @@ export const FOUNDER_NO_COUPON_AR = "لا تُطبَّق القسائم على �
 export const FOUNDER_NOT_VERIFIED_AR = "يُتاح اشتراك المؤسس بعد توثيق رخصتك المهنية";
 export const FOUNDER_ALREADY_MEMBER_AR = "أنت عضو مؤسس بالفعل";
 export const FOUNDER_FULL_AR = "اكتملت مقاعد المؤسسين";
-/** 20261122_10 (owner, 17 Nov): the founder plan is for a licensed advocate only. */
-export const FOUNDER_NOT_ADVOCATE_AR = "باقة المؤسس للمحامي المرخّص للترافع فقط، ولا تُتاح لحساب المستشار";
+/**
+ * 20261122_10 (owner, 17 Nov): the founder plan is for a licensed advocate
+ * only. Batch l9 (owner file 15 row 63, file 09 أ-9 / ب-4): the corrected
+ * wording «للمحامي المرخص فقط» — the same sentence the /founder button shows
+ * a consultant (joinButton.ts JOIN_LABELS.advocate_only), never «للترافع».
+ */
+export const FOUNDER_NOT_ADVOCATE_AR = "هذه الباقة للمحامي المرخص فقط";
 
 /** founder_reserve_seat's refusals (20261101_10) → the checkout's reply. 'reserved' goes on; any other answer is a 503. */
 const SEAT_REFUSALS: Readonly<Record<string, { status: 403 | 409 | 410; error: string }>> = {
@@ -566,9 +571,14 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     couponLimited = priced.coupon.limited === true;
   }
 
-  // 3c (l6-pay, F12). a founder member: 15 % (the setting) off a top-up, never
-  // combined with a better offer — the larger of coupon and founder discount
-  // wins (a tie keeps the coupon unused)
+  // 3c (l6-pay, F12; l9 register 14 items 29 / 32 / 55). a founder member:
+  // 15 % (the setting) off a top-up AND off any plan or library subscription
+  // (never the founder membership itself — founderDiscountApplies), never
+  // combined with another discount. It is taken off the LISTED price and
+  // compared with what the other path saves (a launch price's saving plus
+  // any coupon on it): the larger wins, a tie goes to the founder discount
+  // (the coupon stays unused). An upgrade credit (3d) is not a discount —
+  // it is what the buyer already paid — and still comes off after.
   let founderMeta: Record<string, unknown> | null = null;
   let founderQuote: { listNet: number; founderDiscount: number } | null = null;
   if (founderDiscountApplies(q.item.kind)) {
@@ -577,15 +587,17 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     if (founder) {
       // l7 (decision 4): the rate is the founder_topup_discount_bps setting (default 1500)
       const bps = await founderDiscountBps(admin);
-      const fd = founderDiscountHalalas(q.netHalalas, bps);
-      if (bestDiscount(couponQuote?.discount ?? null, fd).source === "founder") {
-        const d = applyDiscount(q.netHalalas, fd);
+      const listNet = q.launch ? q.launch.listNetHalalas : q.netHalalas;
+      const fd = founderDiscountHalalas(listNet, bps);
+      const otherSaving = listNet - q.netHalalas + (couponQuote?.discount ?? 0);
+      if (bestDiscount(otherSaving, fd).source === "founder") {
+        const d = applyDiscount(listNet, fd);
         ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = d);
         couponMeta = null;
         couponQuote = null;
         couponLimited = false;
-        founderMeta = founderDiscountMetadata(q.netHalalas, d.discountHalalas, bps);
-        founderQuote = { listNet: q.netHalalas, founderDiscount: d.discountHalalas };
+        founderMeta = founderDiscountMetadata(listNet, d.discountHalalas, bps);
+        founderQuote = { listNet, founderDiscount: d.discountHalalas };
       }
     }
   }
@@ -633,7 +645,8 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       ...(input.attribution ? { attribution: input.attribution } : {}),
       ...(input.analytics ? { analytics: input.analytics } : {}),
       ...(input.gatewayMode ? { gateway_mode: input.gatewayMode } : {}),
-      ...(q.launch
+      // l9: a founder discount that beat the launch price replaces it (never both)
+      ...(q.launch && !founderMeta
         ? { launch: { campaign_id: q.launch.campaignId, list_net_halalas: q.launch.listNetHalalas } }
         : {}),
     },
@@ -745,7 +758,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
         ...(couponQuote ?? {}),
         ...(founderQuote ?? {}),
         ...(prorationQuote ?? {}),
-        ...(q.launch ? { launchListNet: q.launch.listNetHalalas } : {}),
+        ...(q.launch && !founderQuote ? { launchListNet: q.launch.listNetHalalas } : {}),
       },
       callbackUrl,
       expiresAt: intent.data.expiresAt,

@@ -15,7 +15,13 @@
  *     founder plan, the library, the bundles and the other subscriptions
  *     only when no AI feature was used (the founder plan's text is
  *     /founder-terms item ٧ word for word); a point top-up when at most 5 %
- *     of its own points was used. refundEligibility.ts checks the same;
+ *     of its own points was used. refundEligibility.ts checks the same.
+ *     Batch l9 (owner register 14 items 16 / 44): where the plan includes the
+ *     library, also no more than LIBRARY_REFUND_MAX_FULL_TEXTS (5) files read
+ *     in full text — counted on the server only, never shown to the client
+ *     (the count and its enforcement belong to the library reader's log);
+ *     and the individuals' AI plan (ind-ai) says plainly that it has no
+ *     refund in practice: it is AI tools only;
  *   - scheduled consultations: full cancellation up to 24 hours before;
  *   - paid top-up points: valid per pack AS THE PRICE BOOK SELLS THEM
  *     (P7 review, finding 3) — the sentence is built from the book's on-sale
@@ -38,6 +44,8 @@ import { FOUNDER_REFUND_CLAUSE } from "../founder/founderTerms.ts";
 
 export const INSTANT_CANCEL_MINUTES = 90;
 export const WITHDRAWAL_DAYS = 14;
+/** l9 (register 16 / 44): a plan that includes the library is refundable only with at most this many files read in full text. */
+export const LIBRARY_REFUND_MAX_FULL_TEXTS = 5;
 export const WITHDRAWAL_MAX_POINTS_USED_PCT = 5;
 export const CONSULTATION_CANCEL_HOURS = 24;
 export const PROMO_POINTS_VALIDITY_DAYS = 90;
@@ -192,13 +200,23 @@ export function upgradeProrationLinesEn(show: boolean = SHOW_UPGRADE_PRORATION):
  */
 export const FOUNDER_REFUND_LINE_AR = `**باقة المحامي المؤسس**: ${FOUNDER_REFUND_CLAUSE}`;
 export const FOUNDER_REFUND_LINE_EN =
-  `**The founding lawyer plan**: you may get a refund within **${WITHDRAWAL_DAYS} days** of purchase provided **you have not used any AI feature of the plan**: the legal drafter, the professional tools, or the library's smart assistant and points. Browsing the ordinary legal library does not prevent a refund. The full amount, VAT included, is returned to the same payment method with no fee deducted, and a credit note is issued. Your card issuer decides how long the amount takes to appear in your account.`;
+  `**The founding lawyer plan**: you may get a refund within **${WITHDRAWAL_DAYS} days** of purchase provided **you have not used any AI feature of the plan**: the legal drafter, the professional tools, or the library's smart assistant and points, **and you have not read more than ${LIBRARY_REFUND_MAX_FULL_TEXTS} files in full text in the legal library**. Ordinary browsing of the legal library within these limits does not prevent a refund. The full amount, VAT included, is returned to the same payment method with no fee deducted, and a credit note is issued. Your card issuer decides how long the amount takes to appear in your account.`;
 
-/** ٦٤: the library, the bundles and every other digital subscription follow the founder's rule. */
+/**
+ * ٦٤: the library, the bundles and every other digital subscription follow
+ * the founder's rule; l9 (register 16): where the subscription includes the
+ * library, no more than 5 files read in full text either.
+ */
 export const SUBSCRIPTION_REFUND_LINE_AR =
-  `**اشتراك المكتبة القانونية والباقات المدمجة وسائر الاشتراكات الرقمية**: القاعدة نفسها وفق نظام التجارة الإلكترونية ولائحته، فيحق لك الاسترداد خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء بشرط ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي في الاشتراك، ومنها مساعد المكتبة الذكي ونقاطه. ولا يمنع الاسترداد تصفح المكتبة القانونية العادية، ويُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة.`;
+  `**اشتراك المكتبة القانونية والباقات المدمجة وسائر الاشتراكات الرقمية**: القاعدة نفسها وفق نظام التجارة الإلكترونية ولائحته، فيحق لك الاسترداد خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء بشرط ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي في الاشتراك، ومنها مساعد المكتبة الذكي ونقاطه، وألا تكون قد قرأت أكثر من (${arNumber(LIBRARY_REFUND_MAX_FULL_TEXTS)}) ملفات نصاً كاملاً في المكتبة القانونية إن كان الاشتراك يشمل المكتبة. ولا يمنع الاسترداد تصفح المكتبة القانونية العادية في هذه الحدود، ويُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة.`;
 export const SUBSCRIPTION_REFUND_LINE_EN =
-  `**The legal library, the bundles and every other digital subscription**: the same rule, under the E-Commerce Law and its Regulation — you may get a refund within (${WITHDRAWAL_DAYS}) days of purchase provided you have not used any AI feature of the subscription, including the library's smart assistant and its points. Browsing the ordinary legal library does not prevent a refund, and the full amount is returned, VAT included.`;
+  `**The legal library, the bundles and every other digital subscription**: the same rule, under the E-Commerce Law and its Regulation — you may get a refund within (${WITHDRAWAL_DAYS}) days of purchase provided you have not used any AI feature of the subscription, including the library's smart assistant and its points, and, where the subscription includes the library, you have not read more than (${LIBRARY_REFUND_MAX_FULL_TEXTS}) files in full text in the legal library. Ordinary browsing of the legal library within these limits does not prevent a refund, and the full amount is returned, VAT included.`;
+
+/** l9 (register 16): the individuals' AI plan is AI tools only — no refund in practice, said plainly. */
+export const IND_AI_REFUND_LINE_AR =
+  "**الباقة الذكية للأفراد**: لا استرداد لها فعلياً، لأنها كلها أدوات ذكاء اصطناعي، واستعمال أي أداة منها يُسقط حق الاسترداد وفق القاعدة السابقة.";
+export const IND_AI_REFUND_LINE_EN =
+  "**The individuals' smart (AI) plan**: in practice it has no refund, because it consists entirely of AI tools, and using any of them ends the right to a refund under the rule above.";
 
 /** ٦٤: the 5 % rule now belongs to point top-ups alone, measured on that top-up's own points. */
 export const TOPUP_REFUND_LINE_AR =

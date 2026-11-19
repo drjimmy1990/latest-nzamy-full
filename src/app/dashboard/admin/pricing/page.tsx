@@ -69,6 +69,7 @@ const API = "/api/v1/admin/pricing-catalog";
  */
 const BOOK_ROWS: Array<{ id: string; yearly: boolean; price: number }> = [
   { id: "lawyer-pro", yearly: true, price: bookSar("lawyer-pro", "yearly") },
+  { id: "topup-50", yearly: false, price: bookSar("topup-50", "once") },
   { id: "topup-500", yearly: false, price: bookSar("topup-500", "once") },
   { id: "topup-1000", yearly: false, price: bookSar("topup-1000", "once") },
   { id: "topup-2500", yearly: false, price: bookSar("topup-2500", "once") },

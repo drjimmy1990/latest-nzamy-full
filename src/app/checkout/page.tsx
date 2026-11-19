@@ -5,6 +5,7 @@ import { ACCOUNT_FROZEN_PATH, freezeStateFromUser } from "@/lib/auth/accountFree
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MoyasarCheckout from "@/components/payments/MoyasarCheckout";
+import { OffersList } from "@/components/offers/OffersList";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getPaymentGatewayStatus, TIER_RANK } from "@/lib/access-control";
 import { viewerGatewayState } from "@/lib/payments/testModeAccess";
@@ -144,8 +145,8 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   // The price the POST will charge now: the launch price while its campaign
   // runs today in Riyadh (owner ٣٠٣), else the listed one. Per request, never cached.
   const priced = quote(item.id, parsed.billing, undefined, new Date());
-  const listed = priced.ok ? priced.netHalalas : item.prices[parsed.billing];
-  const launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
+  let listed = priced.ok ? priced.netHalalas : item.prices[parsed.billing];
+  let launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
   const notes = checkoutItemNotes(item);
 
   // l6-pay: before paying, what the POST will take off — the same server
@@ -169,9 +170,17 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     try {
       const svc = await createServiceClient();
       if ((await isActiveFounder(svc, user.id, new Date())) === true) {
-        // the founder_topup_discount_bps rate, within founder_topup_discount_expires (l8: the membership year)
+        // the founder_topup_discount_bps rate, within founder_topup_discount_expires (l8: the membership year).
+        // l9 (register 14 items 29 / 32): top-ups AND plans / library; off the LISTED price, and only when it
+        // saves more than a running launch price — never both (checkoutCore 3c does the same)
         founderBps = await founderDiscountBps(svc);
-        founderHalalas = founderDiscountHalalas(priced.netHalalas, founderBps);
+        const listNet = priced.launch ? priced.launch.listNetHalalas : priced.netHalalas;
+        const fd = founderDiscountHalalas(listNet, founderBps);
+        if (fd > listNet - priced.netHalalas) {
+          founderHalalas = fd;
+          listed = listNet;
+          launchList = null;
+        }
       }
     } catch {
       console.warn("[checkout] reading the founder seat threw");
@@ -190,6 +199,10 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
 
   return (
     <Shell>
+      {/* l9 (owner register 14 item 20, file 16): the active offer at the top
+          of the payment page, as on /pricing — only where checkout is open
+          (never on the gateway-off or refusal notices above). */}
+      <OffersList variant="checkout" />
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 sm:p-8">
         <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">إتمام الدفع</p>
         <h1 className="mt-1 text-xl font-bold sm:text-2xl">{item.labelAr}</h1>

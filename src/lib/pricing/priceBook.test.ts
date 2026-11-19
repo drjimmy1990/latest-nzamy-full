@@ -65,10 +65,12 @@ test("owner package 30 Oct 2026 (٢٩٩–٣٠٢): the book holds the revised do
     "ind-ai": { monthly: 29, quarterly: 79, semiannual: 149, yearly: 249 },
     "ind-preventive": { monthly: 149, yearly: 1490 },
     "ind-litigation": { monthly: 399, yearly: 3990 },
-    // §4ج + conflict ٢ / ٣٠٠: 3,490 a year — never 3,790 or 5,000
-    "lib-q1": { once: 1050 },
-    "lib-q2": { once: 1920 },
-    "lib-annual": { once: 3490 },
+    // l9 (owner register 14 item 1): 1,990 / 3,790 / 6,990 before VAT
+    "lib-q1": { once: 1990 },
+    "lib-q2": { once: 3790 },
+    "lib-annual": { once: 6990 },
+    // l9 (register 14 items 7 / 48): the 50-point pack, every account type
+    "topup-50": { once: 50 },
     "topup-100": { once: 100 },
     "topup-250": { once: 250 },
     "topup-500": { once: 500 },
@@ -204,6 +206,8 @@ test("quarterly / half-yearly prices only on ind-ai (listed, retired) and the tw
 
 test("٣٠٢ / conflict ١١: 100 and 250 for individuals only (3 months); 500 and up for professionals only", () => {
   const want: Record<string, [number, number, readonly string[]]> = {
+    // l9 (register 14 items 7 / 48): 50 points, 3 months, every account type
+    "topup-50": [50, 3, [...PROFESSIONAL_BUYERS, ...INDIVIDUAL_BUYERS]],
     "topup-100": [100, 3, INDIVIDUAL_BUYERS],
     "topup-250": [250, 3, INDIVIDUAL_BUYERS],
     // owner ٤٢٢ (3 Nov 2026): the bonus balances, validity unchanged
@@ -348,7 +352,7 @@ test("formatSarAmount: Arabic digits with «٬», English with commas", () => {
 
 test("bookPriceText / bookSar read a sold price and throw for anything else", () => {
   assert.equal(bookPriceText("lawyer-pro", "yearly", "ar"), "٣٬٩٩٠");
-  assert.equal(bookPriceText("lib-q2", "once", "en"), "1,920");
+  assert.equal(bookPriceText("lib-q2", "once", "en"), "3,790");
   assert.equal(bookSar("ind-ai", "yearly"), 249);
   assert.throws(() => bookSar("ind-ai", "monthly"), "q329: individuals are not sold monthly");
   assert.throws(() => bookPriceText("lawyer-pro", "quarterly", "ar"));
@@ -359,7 +363,7 @@ test("bookPriceText / bookSar read a sold price and throw for anything else", ()
 
 test("owner ٤٢٢ / R2: each top-up's bonus is points − price, and its label and card text come from those numbers", () => {
   const bonus: Record<string, number> = {
-    "topup-100": 0, "topup-250": 0,
+    "topup-50": 0, "topup-100": 0, "topup-250": 0,
     "topup-500": 200, "topup-1000": 500, "topup-2500": 2500, "topup-5000": 7500, "topup-10000": 20000,
   };
   for (const e of Object.values(PRICE_BOOK).filter((x) => x.kind === "topup")) {
@@ -368,6 +372,7 @@ test("owner ٤٢٢ / R2: each top-up's bonus is points − price, and its label 
     assert.equal(e.labelAr, topupLabelAr(e), e.id);
   }
   assert.equal(PRICE_BOOK["topup-100"].labelAr, "شحن ١٠٠ (١٠٠ نقطة)");
+  assert.equal(PRICE_BOOK["topup-50"].labelAr, "شحن ٥٠ (٥٠ نقطة)");
   assert.equal(PRICE_BOOK["topup-1000"].labelAr, "شحن ١٬٠٠٠ — ١٬٥٠٠ نقطة (منها ٥٠٠ نقطة مكافأة)");
   assert.equal(topupPointsText(PRICE_BOOK["topup-500"], "ar"), "٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)");
   assert.equal(topupPointsText(PRICE_BOOK["topup-10000"], "en"), "30,000 points (20,000 bonus)");

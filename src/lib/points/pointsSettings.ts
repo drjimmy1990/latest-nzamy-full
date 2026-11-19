@@ -34,19 +34,21 @@ export const DEFAULT_LIBRARY_PLAN_POINTS: Readonly<Record<string, number>> = Obj
 });
 export const DEFAULT_GIFT_VALID_DAYS = 90;
 /**
- * Decision 5: lawyer, firm and every business type 500; ٥٦ (owner 18 Nov,
- * l8): individual 100 (the individuals' 100 / 250 packs, valid 3 months).
- * 20261127_40 seeded the map without `individual`; 20261128_10 adds it.
+ * Batch l9 (owner register 14 item 7, 19 Nov 2026): 50 for EVERY account
+ * type, the founder and the individual included (1 point = 1 SAR; the
+ * topup-50 pack is sold to every type). It was 500 for the professional types
+ * (l7 decision 5) and 100 for individuals (٥٦, l8); 20261129_30 UPDATEs the
+ * stored map to 50 for every key.
  */
 export const DEFAULT_MIN_TOPUP_SAR: Readonly<Record<string, number>> = Object.freeze({
-  lawyer: 500,
-  firm: 500,
-  corporate: 500,
-  micro: 500,
-  government: 500,
-  ngo: 500,
-  provider: 500,
-  individual: 100,
+  lawyer: 50,
+  firm: 50,
+  corporate: 50,
+  micro: 50,
+  government: 50,
+  ngo: 50,
+  provider: 50,
+  individual: 50,
 });
 export const DEFAULT_FREE_QUESTIONS: Readonly<Record<string, number>> = Object.freeze({ lawyer: 10, individual: 5 });
 
@@ -68,6 +70,18 @@ function countMapIssue(name: string, value: unknown, max: number, keys?: readonl
     }
   }
   return null;
+}
+
+/**
+ * Batch l9 (owner file 15 row 13): the plan cards (/pricing library mode and
+ * /laws/subscribe) state the points a library plan includes — the code
+ * default of library_plan_points (what 20261127_40 seeded; an admin's change
+ * of the setting must be followed by this default). Arabic-Indic digits.
+ */
+export function libraryPlanPointsLine(planId: string, lang: "ar" | "en"): string {
+  const n = Object.hasOwn(DEFAULT_LIBRARY_PLAN_POINTS, planId) ? DEFAULT_LIBRARY_PLAN_POINTS[planId] : 0;
+  if (lang === "en") return `${n} points for the library's smart assistant, ending with the plan`;
+  return `${n.toLocaleString("ar-SA-u-nu-arab")} نقطة لمساعد المكتبة الذكي، تنتهي بانتهاء الاشتراك`;
 }
 
 // ── validators for /api/v1/admin/settings (null = acceptable) ──────────────

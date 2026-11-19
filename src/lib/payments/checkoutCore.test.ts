@@ -180,7 +180,7 @@ test("happy path: the quote's price, a created order, the intent, the guarded st
 });
 
 test("٢٥٨: the library is VAT-exclusive for every buyer — a company pays VAT on top like a lawyer", async () => {
-  for (const [type, total, mode] of [["corporate", 120750, "exclusive"], ["lawyer", 120750, "exclusive"]] as const) {
+  for (const [type, total, mode] of [["corporate", 228850, "exclusive"], ["lawyer", 228850, "exclusive"]] as const) {
     const { client: admin, log } = db(type);
     const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW }, input({ itemId: "lib-q1", billing: "once" }));
     assert.equal(r.status, 200, type);
@@ -1137,7 +1137,8 @@ test("founder: `reserved` goes on to the Moyasar form — 2,996 + VAT, billed on
 test("founder: every answer but `reserved` cancels the order, opens no intent, and answers in Arabic", async () => {
   const cases: Array<[string, number, string]> = [
     ["not_verified", 403, "يُتاح اشتراك المؤسس بعد توثيق رخصتك المهنية"],
-    ["not_advocate", 403, "باقة المؤسس للمحامي المرخّص للترافع فقط، ولا تُتاح لحساب المستشار"],
+    // l9 (owner file 15 row 63): the corrected wording, the /founder button's own sentence
+    ["not_advocate", 403, "هذه الباقة للمحامي المرخص فقط"],
     ["already_member", 409, "أنت عضو مؤسس بالفعل"],
     ["full", 409, "اكتملت مقاعد المؤسسين"],
     ["closed", 410, "باب الاشتراك مغلق حاليًا"],

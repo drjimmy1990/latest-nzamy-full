@@ -217,6 +217,8 @@ export const PROFESSIONAL_BUYERS: readonly string[] = Object.freeze([
   "provider",
 ]);
 export const INDIVIDUAL_BUYERS: readonly string[] = Object.freeze(["individual"]);
+/** Batch l9: the 50-point pack is sold to every account type (professionals and individuals). */
+export const ALL_TOPUP_BUYERS: readonly string[] = Object.freeze([...PROFESSIONAL_BUYERS, ...INDIVIDUAL_BUYERS]);
 
 function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number): BookEntry {
   return freezeEntry({
@@ -276,7 +278,9 @@ function membership(id: string, labelAr: string, sar: number, buyers: readonly s
  * Owner package of 30 Oct 2026 (answer ٢٩٩: the revised pricing doc of 26 Oct
  * is final; its 14 conflicts are settled in the 28-Oct handover §١/٣, which
  * wins where the two differ) — docs/audits/2026-10-30-owner-package-pricing.md:
- *   - the library (doc §4ج, conflict ٢, answer ٣٠٠): 1,050 / 1,920 / 3,490;
+ *   - the library (doc §4ج, conflict ٢, answer ٣٠٠): 1,050 / 1,920 / 3,490 —
+ *     since batch l9 (owner register 14 item 1, 19 Nov 2026) 1,990 / 3,790 /
+ *     6,990 before VAT;
  *   - ind-ai, the doc's «الباقة الذكية الذاتية» `ind-smart` (§7أ.2, answer
  *     ٣٠١): 29 / 79 / 149 / 249 a year, launch 199 a year (all but the
  *     yearly 249 retired on 1 Nov, below); the id stays ind-ai so orders
@@ -345,9 +349,16 @@ export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
     plan("ind-litigation", "عضوية الحماية القانونية", { monthly: 399, yearly: 3990 }, "max", ["individual"], ["monthly", "yearly"]),
     "التأمين القانوني",
   ),
-  "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1050, 90),
-  "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 1920, 180),
-  "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 3490, 365),
+  // Batch l9 (owner register 14 items 1 / 28, 19 Nov 2026): 1,990 / 3,790 /
+  // 6,990 before VAT (was 1,050 / 1,920 / 3,490).
+  "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1990, 90),
+  "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 3790, 180),
+  "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 6990, 365),
+  // Batch l9 (owner register 14 items 7 / 48): the minimum top-up is 50 points
+  // for EVERY account type, so a 50-point pack is sold to every buyer type —
+  // 50 points for 50 SAR (1 point = 1 SAR), no bonus, valid 3 months (packs
+  // below 500 are valid 3 months).
+  "topup-50": topup("topup-50", "شحن ٥٠ (٥٠ نقطة)", 50, 50, 3, ALL_TOPUP_BUYERS),
   "topup-100": topup("topup-100", "شحن ١٠٠ (١٠٠ نقطة)", 100, 100, 3, INDIVIDUAL_BUYERS),
   "topup-250": topup("topup-250", "شحن ٢٥٠ (٢٥٠ نقطة)", 250, 250, 3, INDIVIDUAL_BUYERS),
   // Owner ٤٢٢ (3 Nov 2026), applied now: the professionals' packs grant the

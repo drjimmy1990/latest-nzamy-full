@@ -369,10 +369,10 @@ function S1({
           route refuses a lawyer or a firm without it (claimKinds.ts). */}
       {selected === "lawyer" && (
         <KindChoice
-          title={isAr ? PRACTICE_KIND_QUESTION_AR : "Advocate or legal consultant?"}
+          title={isAr ? PRACTICE_KIND_QUESTION_AR : "Are you a lawyer or a legal consultant?"}
           options={(["advocate", "consultant"] as const).map((id) => ({
             id,
-            label: isAr ? PRACTICE_KIND_OPTIONS_AR[id].label : id === "advocate" ? "Advocate (pleads in court)" : "Legal consultant",
+            label: isAr ? PRACTICE_KIND_OPTIONS_AR[id].label : id === "advocate" ? "Lawyer" : "Legal consultant",
             desc: isAr ? PRACTICE_KIND_OPTIONS_AR[id].desc : id === "advocate" ? "Licensed to plead before the courts" : "Consultations, contracts and studies — no pleading (Art. 18)",
           }))}
           value={practiceKind}

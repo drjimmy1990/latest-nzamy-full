@@ -42,6 +42,10 @@ import { quote } from "./catalog.ts";
 import { refundDecision, VOID_WINDOW_MS } from "./refundDecision.ts";
 import {
   FOUNDER_REFUND_LINE_AR,
+  FOUNDER_REFUND_LINE_EN,
+  IND_AI_REFUND_LINE_AR,
+  IND_AI_REFUND_LINE_EN,
+  LIBRARY_REFUND_MAX_FULL_TEXTS,
   SUBSCRIPTION_REFUND_LINE_AR,
   SUBSCRIPTION_REFUND_LINE_EN,
   TOPUP_REFUND_LINE_AR,
@@ -67,7 +71,7 @@ test("the owner's numbers", () => {
 
 test("finding 3: the top-up validity is the price book's on-sale packs — what checkout sells today", () => {
   const packs = topupValidityMonths();
-  assert.deepEqual(packs.map((t) => [t.sar, t.months]), [[100, 3], [250, 3], [500, 3], [1000, 6], [2500, 12], [5000, 12], [10000, 12]]);
+  assert.deepEqual(packs.map((t) => [t.sar, t.months]), [[50, 3], [100, 3], [250, 3], [500, 3], [1000, 6], [2500, 12], [5000, 12], [10000, 12]]);
   for (const { sar } of packs) {
     const entry = Object.values(PRICE_BOOK).find((e) => e.kind === "topup" && e.prices.once?.sar === sar)!;
     const q = quote(entry.id, "once");
@@ -151,8 +155,8 @@ test("the page agrees with refundPolicy.ts: new sentences built from it, the own
 });
 
 test("the sentences the page shows", () => {
-  assert.equal(topupValidityAr(), "حزم ١٠٠ و٢٥٠ و٥٠٠ ر.س: ٣ أشهر؛ حزمة ١٬٠٠٠ ر.س: ٦ أشهر؛ حزم ٢٬٥٠٠ و٥٬٠٠٠ و١٠٬٠٠٠ ر.س: ١٢ شهراً");
-  assert.equal(topupValidityEn(), "SAR 100, 250 and 500: 3 months; SAR 1,000: 6 months; SAR 2,500, 5,000 and 10,000: 12 months");
+  assert.equal(topupValidityAr(), "حزم ٥٠ و١٠٠ و٢٥٠ و٥٠٠ ر.س: ٣ أشهر؛ حزمة ١٬٠٠٠ ر.س: ٦ أشهر؛ حزم ٢٬٥٠٠ و٥٬٠٠٠ و١٠٬٠٠٠ ر.س: ١٢ شهراً");
+  assert.equal(topupValidityEn(), "SAR 50, 100, 250 and 500: 3 months; SAR 1,000: 6 months; SAR 2,500, 5,000 and 10,000: 12 months");
   assert.deepEqual([1, 2, 3, 10, 11, 12].map(monthsAr), ["شهر واحد", "شهران", "٣ أشهر", "١٠ أشهر", "١١ شهراً", "١٢ شهراً"]);
   assert.equal(renewalRemindersAr(), "تذكيراً أول قبل ٧ أيام، وتذكيراً ثانياً قبل ٣ أيام من موعد التجديد");
   assert.equal(arNumber(10000), "١٠٬٠٠٠");
@@ -218,5 +222,20 @@ test("l8 (owner 18 Nov, 1.2 / ج8): ONE founder refund text — /founder-terms i
   const text = visible(PAGE);
   assert.ok(!text.includes("رصيد وحدات الاستخدام"));
   assert.ok(!text.includes("usage units"));
-  assert.ok(text.includes("٢٠ نوفمبر ٢٠٢٦"), "the last-update date moved");
+  assert.ok(text.includes("٢١ نوفمبر ٢٠٢٦"), "the last-update date moved (l9: the one new terms version)");
+});
+
+test("l9 (register 16 / 44): the 5-full-text rule on the founder and library-including lines; ind-ai says «no refund in practice»; the page shows all three", () => {
+  assert.equal(LIBRARY_REFUND_MAX_FULL_TEXTS, 5);
+  assert.ok(FOUNDER_REFUND_CLAUSE.includes("**وألا تكون قد قرأت أكثر من 5 ملفات نصاً كاملاً في المكتبة القانونية**"));
+  assert.ok(FOUNDER_REFUND_CLAUSE.includes("ولا يمنع الاسترداد تصفح المكتبة القانونية العادية في هذه الحدود"));
+  assert.ok(FOUNDER_REFUND_LINE_EN.includes("you have not read more than 5 files in full text in the legal library"));
+  assert.ok(SUBSCRIPTION_REFUND_LINE_AR.includes("وألا تكون قد قرأت أكثر من (٥) ملفات نصاً كاملاً في المكتبة القانونية إن كان الاشتراك يشمل المكتبة"));
+  assert.ok(SUBSCRIPTION_REFUND_LINE_EN.includes("you have not read more than (5) files in full text"));
+  assert.ok(IND_AI_REFUND_LINE_AR.includes("لا استرداد لها فعلياً"));
+  assert.ok(IND_AI_REFUND_LINE_EN.includes("in practice it has no refund"));
+  for (const name of ["IND_AI_REFUND_LINE_AR", "IND_AI_REFUND_LINE_EN"]) assert.ok(PAGE.includes(name), name);
+  // the CTA under /pricing says the same (the third refund text, l8)
+  const cta = readFileSync(join(ROOT, "src", "components", "pricing", "PricingCTA.tsx"), "utf8");
+  assert.ok(cta.includes("ولم يُقرأ أكثر من ٥ ملفات نصاً كاملاً في المكتبة"));
 });

@@ -2,7 +2,8 @@
  * claimKinds.ts — R9 (owner TODO 17 Nov 2026): what a Google sign-up must
  * answer beside its account type, before the account is usable.
  *
- *   lawyer → «محامٍ مترافع أم مستشار قانوني؟» (Art. 18):
+ *   lawyer → «هل أنت محامٍ أم مستشار قانوني؟» (Art. 18; owner register 14
+ *            item 15, batch l9 — it was «محامٍ مترافع أم مستشار قانوني؟»):
  *            lawyer_profiles.practice_kind 'advocate' | 'consultant'.
  *   firm   → «شركة / مكتب محاماة» or «مكتب استشارات مرخص (م١٨)»:
  *            firm_profiles.firm_kind 'law_firm' | 'consulting_office'.
@@ -68,15 +69,19 @@ export function resolveClaimKinds(userType: string, practiceKind: unknown, firmK
 
 /** Arabic, one sentence per refusal (the claim route answers 400 with it). */
 export const CLAIM_KIND_REFUSAL_AR: Readonly<Record<ClaimKindRefusal, string>> = Object.freeze({
-  practice_kind_missing: "حدّد صفتك المهنية: محامٍ مترافع أم مستشار قانوني.",
+  practice_kind_missing: "حدّد صفتك المهنية: محامٍ أم مستشار قانوني.",
   firm_kind_missing: "حدّد نوع المنشأة: شركة / مكتب محاماة أم مكتب استشارات مرخص.",
   kind_invalid: "الصفة المهنية المُرسلة لا تناسب نوع الحساب المختار. اختر من الخيارات المتاحة.",
 });
 
-/** The labels the onboarding question and /onboarding/practice-kind show. */
-export const PRACTICE_KIND_QUESTION_AR = "محامٍ مترافع أم مستشار قانوني؟";
+/**
+ * The labels the onboarding question and /onboarding/practice-kind show.
+ * Owner register 14 item 15 (batch l9): «هل أنت محامٍ أم مستشار قانوني؟»
+ * instead of «مترافع أم مستشار»; the stored value stays 'advocate'.
+ */
+export const PRACTICE_KIND_QUESTION_AR = "هل أنت محامٍ أم مستشار قانوني؟";
 export const PRACTICE_KIND_OPTIONS_AR: Readonly<Record<PracticeKind, { label: string; desc: string }>> = Object.freeze({
-  advocate: { label: "محامٍ مترافع", desc: "مرخّص بالمرافعة أمام المحاكم" },
+  advocate: { label: "محامٍ", desc: "مرخّص بالمرافعة أمام المحاكم" },
   consultant: { label: "مستشار قانوني", desc: "الاستشارات والعقود والدراسات — دون ترافع (المادة ١٨)" },
 });
 export const FIRM_KIND_OPTIONS_AR: Readonly<Record<FirmKind, { label: string; desc: string }>> = Object.freeze({

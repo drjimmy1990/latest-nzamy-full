@@ -12,7 +12,7 @@ import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
 /**
  * The subscribe card a non-subscriber sees on locked library content (owner
  * message 18 Nov, item 2.4; audit م-3): the button «اشترك في المكتبة», the
- * library's price (the catalogue's annual price — priceBook, 3,490) and, while
+ * library's price (the catalogue's annual price — priceBook, 6,990) and, while
  * the founder campaign is on sale, its banner (GET /api/v1/campaigns/active,
  * the same source as PromotionalCampaignBanner; nothing when it is off).
  *

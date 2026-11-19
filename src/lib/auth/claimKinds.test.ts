@@ -51,7 +51,10 @@ test("every other type takes no kind, and refuses one sent", () => {
 });
 
 test("the owner's words", () => {
-  assert.equal(PRACTICE_KIND_QUESTION_AR, "محامٍ مترافع أم مستشار قانوني؟");
+  // l9 (owner register 14 item 15): «هل أنت محامٍ أم مستشار قانوني؟», never «مترافع»
+  assert.equal(PRACTICE_KIND_QUESTION_AR, "هل أنت محامٍ أم مستشار قانوني؟");
+  assert.equal(PRACTICE_KIND_OPTIONS_AR.advocate.label, "محامٍ");
+  assert.doesNotMatch(CLAIM_KIND_REFUSAL_AR.practice_kind_missing, /مترافع/);
   assert.equal(PRACTICE_KIND_OPTIONS_AR.consultant.label, "مستشار قانوني");
   assert.equal(FIRM_KIND_OPTIONS_AR.consulting_office.label, "مكتب استشارات مرخص (م١٨)");
   for (const m of Object.values(CLAIM_KIND_REFUSAL_AR)) assert.match(m, /[؀-ۿ]/);

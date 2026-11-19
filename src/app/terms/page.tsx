@@ -19,6 +19,20 @@ import {
   TERMS_LAST_UPDATED_AR,
   TERMS_LAST_UPDATED_EN,
 } from "@/lib/legal/termsVersion";
+import { ANTI_SCRAPING_CLAUSE_AR, CRAWLER_EXCEPTION_AR, TDM_RESERVATION_AR } from "@/lib/founder/founderTerms";
+
+// Batch l9 (owner register 14 items 31 / 57–60, TERMS-founder-draft.md of 19
+// Nov): clauses 14, 14-A and 15 join the general terms in the same version as
+// /founder-terms (CURRENT_TERMS_VERSION). The Arabic is the founder terms'
+// own constants (one text); the English of 14-A and 15 is the owner's own
+// English (the draft's «English text for the general site terms»), and 14 is
+// a faithful rendering of his Arabic clause 14.
+const ANTI_SCRAPING_CLAUSE_EN =
+  "Reverse engineering of the Nezamy platform, and any scraping, automated extraction or systematic collection of its content, data or library texts — whether by robots, software or **AI tools and their agents** (such as Claude, Codex, ChatGPT, Antigravity, Gemini and others) — is strictly prohibited, and whoever runs the tool or instructs it bears full legal responsibility. Any attempt to circumvent technical restrictions (view, request, device or verification limits) is prohibited. Nezamy may suspend the account and end the service immediately, claim compensation and take statutory action.";
+const CRAWLER_EXCEPTION_EN =
+  "The only exception to Clause 14 is this: search and answer-engine crawlers **named in the robots.txt file published on the platform**, once Nezamy has verified their identity through their operator's officially published IP ranges or reverse DNS, may index the **public pages** allowed in that file and display their title, public summary and a short excerpt in search results and AI answers, with attribution to \"Nezamy\" and a direct link to the source page. The exception is construed narrowly and does not cover: (1) the full text of any library document, any content behind login, subscription or a view cap, or any API; (2) bulk or systematic copying, or mapping the library's content, structure or link graph; (3) building databases or datasets, or training, fine-tuning or evaluating models, except within Clause 15; (4) republishing, selling, licensing or supplying content to third parties, or any output that substitutes for visiting the source page; (5) any AI tool, agent or automated browser acting on a user's request, which is treated as an ordinary visitor subject to all restrictions, with responsibility on whoever operates or instructs it; (6) any circumvention of technical restrictions. No one may rely on this exception, or on describing an activity as \"SEO\", \"GEO\", \"search\" or \"answering a user\", to justify a prohibited act. Nezamy alone decides who qualifies and verifies it, and may change the crawler list or withdraw the exception from anyone at any time; its server logs are admissible evidence of a breach. A subscriber gains no right under this exception and may not give any tool or third party access to subscription content. In case of doubt, the prohibition prevails.";
+const TDM_RESERVATION_EN =
+  "All rights reserved. Text and data mining, and use of platform content to train, fine-tune or evaluate AI models, require prior written permission. **The only permission in force** is what robots.txt allows to the crawlers named in it on the public pages it specifies; it is non-exclusive, revocable at any time, and never extends to full library texts or gated content.";
 
 // ─── Sections ────────────────────────────────────────────────────────────────
 
@@ -161,6 +175,21 @@ const sections = {
         "العنوان: نظامي، مكة المكرمة — بطحاء قريش، المملكة العربية السعودية.",
       ],
     },
+    {
+      id: "anti-scraping",
+      title: "١٤. منع الهندسة العكسية والسحب الآلي",
+      content: [ANTI_SCRAPING_CLAUSE_AR],
+    },
+    {
+      id: "crawler-exception",
+      title: "١٤-أ. الاستثناء الوحيد وحدوده",
+      content: [CRAWLER_EXCEPTION_AR.intro, ...CRAWLER_EXCEPTION_AR.limits, CRAWLER_EXCEPTION_AR.closing],
+    },
+    {
+      id: "tdm",
+      title: "١٥. حجز التنقيب في النصوص والبيانات (TDM) واستعمال الذكاء الاصطناعي",
+      content: [TDM_RESERVATION_AR],
+    },
   ],
   en: [
     {
@@ -297,6 +326,21 @@ const sections = {
         "For any legal inquiries or complaints related to these terms, please contact: legal@nezamy.sa",
         "Address: Nezamy, Makkah — Batha Quraish, Kingdom of Saudi Arabia.",
       ],
+    },
+    {
+      id: "anti-scraping",
+      title: "14. No Reverse Engineering or Automated Scraping",
+      content: [ANTI_SCRAPING_CLAUSE_EN],
+    },
+    {
+      id: "crawler-exception",
+      title: "14-A. Sole Exception and Its Limits",
+      content: [CRAWLER_EXCEPTION_EN],
+    },
+    {
+      id: "tdm",
+      title: "15. TDM and Training Reservation",
+      content: [TDM_RESERVATION_EN],
     },
   ],
 };
