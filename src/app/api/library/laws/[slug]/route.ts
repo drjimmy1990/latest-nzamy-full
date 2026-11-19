@@ -18,6 +18,9 @@ import { latestLegislativeEvent } from '@/lib/library/legislativeEvent';
 import { lawArticleCounts } from '@/lib/library/lawCardFields';
 import { stripArticleAuditNotes, stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
 import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
+import { isPreambleEmpty } from '@/app/laws/[slug]/_preamble';
+import { buildRegulationIndex, compareRegulationSortKey, type RegulationIndexRow } from './_regulation-index';
+import { LAW_REVIEWED_SUMMARY_COLUMNS, reviewedSummaryFor } from './_reviewed-summary';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -311,6 +314,19 @@ export async function GET(
     // Owner note ٠١ item ٥: the regulation part's own card goes to the
     // sidebar's regulation group (cardForViewer per viewer); its ديباجة stays.
     const regulationExtras = regulationReaderExtras(regulationPreamble, isSubscriber);
+    // File 16 §6 (l9; columns of l9-parser's 20261129_70): the frontmatter موجز,
+    // shown only once reviewed. Its own read, so the columns not existing yet
+    // (or any error) leave today's موجز as it is (_reviewed-summary.ts).
+    const reviewedSummary = await serverOnly
+      .schema('library')
+      .from('laws')
+      .select(LAW_REVIEWED_SUMMARY_COLUMNS)
+      .eq('slug', law.slug)
+      .maybeSingle()
+      .then(
+        (r) => reviewedSummaryFor(r.error ? null : r.data, isSubscriber),
+        () => null,
+      );
 
     // Owner ٣١٧ / ٣١٨: the ONE public date — the latest official legislative
     // event (the later of latest_update's date and the issue date; the key
@@ -338,6 +354,8 @@ export async function GET(
     // not the rows: it renders the same lock/upgrade affordance the article
     // view renders, instead of an empty tab that reads as "no regulation".
     let regulationInstrumentsLocked = 0;
+    // File 16 §2: every row of this view, locked or not, for the index (names and numbers only).
+    const regulationIndexRows: RegulationIndexRow[] = [];
     articles?.forEach((article: Record<string, unknown>) => {
       const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
       // F13: this view used to emit the FULL r.text of every regulation row for
@@ -352,6 +370,7 @@ export async function GET(
         if (!ref) return;
         // #26: a row with no text (once the audit notes are out) is no article of this view.
         if (!regulationRowText(r)) return;
+        regulationIndexRows.push({ ref, regNum: r.reg_num, sortKey: r.sort_key, locked: parentLocked });
         // Counted after the exclusions above: a dual-linked duplicate, a
         // ref-less row and an empty one are not "withheld", they are not part of this view at all.
         if (parentLocked) {
@@ -362,10 +381,13 @@ export async function GET(
         regulationsByRef.get(ref)!.push(r);
       });
     });
-    const regulationInstruments = Array.from(regulationsByRef.entries()).map(([ref, rows]) => ({
+    const regulationInstruments = Array.from(regulationsByRef.entries()).map(([ref, rows], i) => ({
       ref,
+      // l9: the chip's name for this viewer — cleaned of decree numbers and
+      // dates when official data is withheld (owner ٤٢٤), as the index's is.
+      label: regulationRefForViewer(ref, officialMeta.officialMetaLocked) || `التشريع الفرعي (${i + 1})`,
       articles: [...rows]
-        .sort((a, b) => String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999')))
+        .sort((a, b) => compareRegulationSortKey(a.sort_key, b.sort_key))
         .map((r) => ({
           regNum: r.reg_num ?? null,
           text: regulationRowText(r),
@@ -373,6 +395,13 @@ export async function GET(
           systemArticleNumber: r.system_article_number ?? null,
         })),
     }));
+
+    // File 16 §2: the sub-legislation index for every viewer — names (cleaned
+    // like the per-article regulation names, owner ٤٢٤) and article numbers,
+    // never text. Built from the same rows, in the same order, as above.
+    const regulationIndex = buildRegulationIndex(regulationIndexRows, (ref) =>
+      regulationRefForViewer(ref, officialMeta.officialMetaLocked),
+    );
 
     // Owner note ١١: a document whose rows never name an article or item
     // (a guide split by topical headings) gets no invented «المادة N».
@@ -443,9 +472,13 @@ export async function GET(
       // Owner ٢٦٠: the card and the موجز are lifted out for every viewer now,
       // so a lock row is promised only for the ديباجة text left after them —
       // never for a preamble that was only the card and the law's title.
-      preambleLocked: officialMeta.officialMetaLocked && !!(readerExtras.preamble.trim() || regulationExtras.preamble.trim()),
+      // File 16 §5: no lock row over a preamble of headings and empty toggles
+      // (the reader hides such a preamble for a subscriber too).
+      preambleLocked: officialMeta.officialMetaLocked && !(isPreambleEmpty(readerExtras.preamble) && isPreambleEmpty(regulationExtras.preamble)),
       // N2.1: omitted (not empty) for a viewer the flag does not admit.
-      ...(readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
+      ...(reviewedSummary !== null
+        ? (reviewedSummary ? { summary: reviewedSummary } : {})
+        : readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
       ...(readerExtras.metadata_card ? { metadata_card: readerExtras.metadata_card } : {}),
       // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.
       regulationInstruments,
@@ -453,11 +486,17 @@ export async function GET(
       // An instrument whose every article is locked never appears in
       // regulationInstruments at all, so this is the only signal the page has.
       regulationInstrumentsLocked,
+      regulationIndex,
       // Paywall metadata for frontend
       paywall: {
         isWhitelisted,
         freeLimit,
         hasFullAccess,
+        // File 16 §2 (batch l9): the viewer's OWN library entitlement (admin,
+        // Pro+ tier, an active library grant — the founder's included), apart
+        // from a whitelisted law. The sidebar's «اشترك الآن» card keys on it,
+        // never on the account type.
+        isSubscriber,
         totalArticles: articles?.length ?? 0,
       },
       // LIB-04b (2026-09-25): chapters are ordered by where their articles
@@ -697,6 +736,11 @@ function formatArticleWithPaywall(
         // reach the browser — nor the reader's in-page search.
         summary: stripAuditNotes(a.summary as string | null, 'summary'),
         fullText: stripAuditNotes(a.full_text as string | null, 'fullText'),
+        // l9-parser 20261129_70 (one amendment = one card): the card's place and
+        // whether its prior text exists. `*` above reads them once the SQL has
+        // run; before it they are absent and the reader keeps its own order.
+        ...(typeof a.position === 'number' ? { position: a.position } : {}),
+        ...(a.text_status === 'available' || a.text_status === 'unavailable' ? { textStatus: a.text_status } : {}),
       }));
     }
   }

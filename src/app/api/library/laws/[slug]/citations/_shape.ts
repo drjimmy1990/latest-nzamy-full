@@ -10,23 +10,24 @@
  * direction, section, links. No text field is ever copied through. The text of
  * an item is served only by ./preview/route.ts, behind the reader's paywall.
  *
- * Only the link types matching the owner's graph file are shown
- * (src/lib/library/graphLinkTypes.ts, decision ٦٠).
+ * Every legal link type is shown (src/lib/library/graphLinkTypes.ts, register 14
+ * item 17 — decision ٦٠'s «matching types only» is reversed). A link whose
+ * anchor is gone is never shown as a confirmed article (applyLiveRows).
  *
  * Pure: `node --test` runs _shape.test.ts.
  */
 import {
   LINK_SECTIONS,
+  READER_QUERY_GROUPS,
   SHOWN_LINK_TYPES,
   isShownLinkType,
-  linkTypesOfSection,
   linkLabel,
   sectionOfLinkType,
   type LinkSection,
   type ShownLinkType,
 } from "../../../../../../lib/library/graphLinkTypes.ts";
 
-/** The links the reader shows: the ones matching the owner's file (٦٠). */
+/** The links the reader shows: every legal link type (register 14 item 17). */
 export const READER_LINK_TYPES: readonly ShownLinkType[] = SHOWN_LINK_TYPES;
 export type ReaderLinkType = ShownLinkType;
 
@@ -56,7 +57,11 @@ export interface RefItem {
   docKind: RefDocKind;
   docId: string;
   anchorId: string | null;
-  /** The anchor no longer exists (row gone): the links go to the document, never a 404. */
+  /**
+   * The anchor no longer exists (row gone): the item is NOT a confirmed article
+   * or principle — its title is the document's name, it carries no status, and
+   * its links go to the document, never a 404.
+   */
   anchorMissing: boolean;
 }
 
@@ -175,14 +180,21 @@ function kindOf(nodeType: unknown): RefKind | null {
 }
 
 /**
- * graph_rag_explore_neighborhood(article:<id>, 1, READER_LINK_TYPES) → the
- * reader's links box, in its three sections. `found` is false when the article
- * is not in the graph or the graph's article belongs to another law (the URL's
- * slug is the authority). A type outside the allow-list is dropped here too,
- * whatever the function returned. `total` counts the section's links from the
- * centre's own edge counts when the function cut the list short.
+ * graph_rag_explore_neighborhood(article:<id>, 1, types) → the reader's links
+ * box, in its three sections. `found` is false when the article is not in the
+ * graph or the graph's article belongs to another law (the URL's slug is the
+ * authority). A type outside `types` (the asked group, else every reader type)
+ * is dropped here too, whatever the function returned. `total` counts the
+ * section's links from the centre's own edge counts — of the asked types only —
+ * when the function cut the list short.
  */
-export function shapeArticleRefs(raw: unknown, articleId: string, lawSlug: string): ArticleRefs {
+export function shapeArticleRefs(
+  raw: unknown,
+  articleId: string,
+  lawSlug: string,
+  types: readonly ShownLinkType[] = SHOWN_LINK_TYPES,
+): ArticleRefs {
+  const asked = new Set<ShownLinkType>(types.filter((t) => isShownLinkType(t)));
   const empty: ArticleRefs = { found: false, sections: emptySections() };
   if (!raw || typeof raw !== "object") return empty;
   const r = raw as { found?: unknown; nodes?: unknown; edges?: unknown; truncated?: unknown; center_edge_counts?: unknown };
@@ -197,7 +209,7 @@ export function shapeArticleRefs(raw: unknown, articleId: string, lawSlug: strin
   const out: ArticleRefs = { found: true, sections: emptySections() };
   const seen = new Set<string>();
   for (const e of Array.isArray(r.edges) ? (r.edges as RawEdge[]) : []) {
-    if (!isShownLinkType(e?.edge_type)) continue;
+    if (!isShownLinkType(e?.edge_type) || !asked.has(e.edge_type)) continue;
     const direction = e.source === center ? "out" : e.target === center ? "in" : null;
     if (!direction) continue;
     const otherKey = String(direction === "out" ? e.target : e.source);
@@ -233,7 +245,7 @@ export function shapeArticleRefs(raw: unknown, articleId: string, lawSlug: strin
     const counts = r.center_edge_counts as Record<string, { out?: unknown; in?: unknown }>;
     for (const s of LINK_SECTIONS) {
       let n = 0;
-      for (const t of SHOWN_LINK_TYPES) {
+      for (const t of asked) {
         if (sectionOfLinkType(t) !== s) continue;
         const c = counts[t];
         n += (Number.isInteger(c?.out) ? (c!.out as number) : 0) + (Number.isInteger(c?.in) ? (c!.in as number) : 0);
@@ -245,17 +257,37 @@ export function shapeArticleRefs(raw: unknown, articleId: string, lawSlug: strin
 }
 
 /**
- * The graph is asked once per section (with that section's types only), so a
- * heavily cited article's hundreds of principles never use up the slots of its
- * legislation links. Each section is taken from its own answer; found = any.
+ * The graph is asked once per group (graphLinkTypes.ts READER_QUERY_GROUPS),
+ * each with its own types and node limit, so a heavily cited article's hundreds
+ * of principles — or its many «إحالة» links — never use up the slots of its
+ * amendment and regulation links.
  */
-export const READER_SECTION_QUERIES: ReadonlyArray<{ section: LinkSection; types: ShownLinkType[] }> = LINK_SECTIONS
-  .map((section) => ({ section, types: linkTypesOfSection(section) }))
-  .filter((q) => q.types.length > 0);
+export const READER_SECTION_QUERIES: ReadonlyArray<{ section: LinkSection; types: ShownLinkType[] }> =
+  READER_QUERY_GROUPS.map((g) => ({ section: g.section, types: [...g.types] }));
 
+/**
+ * The groups' answers in one box: a section's items are its groups' items in
+ * group order (an item two groups both reached is listed once, under the first),
+ * at most MAX_ITEMS_PER_SECTION; its total is the groups' totals less those
+ * repeats. found = any.
+ */
 export function mergeSectionRefs(parts: ReadonlyArray<{ section: LinkSection; refs: ArticleRefs }>): ArticleRefs {
   const out: ArticleRefs = { found: parts.some((p) => p.refs.found), sections: emptySections() };
-  for (const p of parts) out.sections[p.section] = p.refs.sections[p.section];
+  const seen: Record<LinkSection, Set<string>> = { legislation: new Set(), judicial: new Set(), fiqh: new Set() };
+  for (const p of parts) {
+    const src = p.refs.sections[p.section];
+    const dst = out.sections[p.section];
+    let repeats = 0;
+    for (const it of src.items) {
+      if (seen[p.section].has(it.key)) {
+        repeats++;
+        continue;
+      }
+      seen[p.section].add(it.key);
+      if (dst.items.length < MAX_ITEMS_PER_SECTION) dst.items.push(it);
+    }
+    dst.total = Math.max(dst.total + Math.max(0, src.total - repeats), dst.items.length);
+  }
   return out;
 }
 
@@ -282,10 +314,22 @@ export function refIds(refs: ArticleRefs): { articles: string[]; laws: string[];
 
 export interface LiveRows {
   articles: ReadonlyArray<{ id: unknown; status: unknown }>;
-  laws: ReadonlyArray<{ slug: unknown; status: unknown }>;
+  laws: ReadonlyArray<{ slug: unknown; status: unknown; title?: unknown }>;
   principles: ReadonlyArray<{ id: unknown }>;
-  collections: ReadonlyArray<{ id: unknown }>;
+  collections: ReadonlyArray<{ id: unknown; title?: unknown }>;
   decrees: ReadonlyArray<{ id: unknown }>;
+}
+
+/**
+ * The document's name for an item whose anchor is gone: the library's own title,
+ * else the graph title without its anchor part («نظام العمل — المادة 7» →
+ * «نظام العمل»), else the document id. Never the article or principle number.
+ */
+export function documentName(docTitle: unknown, graphTitle: string, docId: string): string {
+  const own = capTitle(docTitle);
+  if (own) return own;
+  const cut = (graphTitle.split(/\s+[—–]\s+/)[0] ?? "").trim();
+  return cut && cut !== graphTitle.trim() ? capTitle(cut) : capTitle(docId);
 }
 
 /**
@@ -295,11 +339,13 @@ export interface LiveRows {
  * an article's from library.articles (unknown → undeclared, never «active»), a
  * law's from library.laws.
  *
- * Owner item 6 (the 308 of his file): an item whose ANCHOR is gone — the
- * article or principle row no longer exists — is kept and links to its law or
- * collection (`anchorMissing`), never to a 404. An item whose DOCUMENT is gone
- * is dropped: there is nothing left to link to. Kinds the route did not check
- * (a fiqh book) pass as they are.
+ * Owner item 6 and file 16 §9.7 (the 308 of his file): an item whose ANCHOR is
+ * gone — the article or principle row no longer exists — is kept and links to
+ * its law or collection (`anchorMissing`), never to a 404, and it is never
+ * presented as a confirmed article: its title becomes the document's name and
+ * it carries no status. An item whose DOCUMENT is gone is dropped: there is
+ * nothing left to link to. Kinds the route did not check (a fiqh book) pass as
+ * they are.
  */
 export function applyLiveRows(
   refs: ArticleRefs,
@@ -309,8 +355,10 @@ export function applyLiveRows(
 ): ArticleRefs {
   const art = new Map(rows.articles.map((r) => [String(r.id), r.status]));
   const law = new Map(rows.laws.map((r) => [String(r.slug), r.status]));
+  const lawTitle = new Map(rows.laws.map((r) => [String(r.slug), r.title]));
   const principles = new Set(rows.principles.map((r) => String(r.id)));
   const collections = new Set(rows.collections.map((r) => String(r.id)));
+  const collectionTitle = new Map(rows.collections.map((r) => [String(r.id), r.title]));
   const decrees = new Set(rows.decrees.map((r) => String(r.id)));
   const sections = emptySections();
   for (const s of LINK_SECTIONS) {
@@ -323,11 +371,11 @@ export function applyLiveRows(
       if (it.docKind === "order" && !decrees.has(it.docId)) { dropped++; continue; }
       if (it.kind === "article") {
         const present = !!it.anchorId && art.has(it.anchorId);
-        items.push({
-          ...it,
-          anchorMissing: !present,
-          status: present ? articleStatus(art.get(it.anchorId!)) : "status_undeclared",
-        });
+        items.push(
+          present
+            ? { ...it, anchorMissing: false, status: articleStatus(art.get(it.anchorId!)) }
+            : { ...it, anchorMissing: true, status: null, title: documentName(lawTitle.get(it.docId), it.title, it.docId) },
+        );
         continue;
       }
       if (it.kind === "law") {
@@ -335,7 +383,12 @@ export function applyLiveRows(
         continue;
       }
       if (it.kind === "principle") {
-        items.push({ ...it, anchorMissing: !it.anchorId || !principles.has(it.anchorId) });
+        const present = !!it.anchorId && principles.has(it.anchorId);
+        items.push(
+          present
+            ? { ...it, anchorMissing: false }
+            : { ...it, anchorMissing: true, status: null, title: documentName(collectionTitle.get(it.docId), it.title, it.docId) },
+        );
         continue;
       }
       items.push(it);
@@ -361,35 +414,4 @@ export function withHrefs(refs: ArticleRefs): { found: boolean; sections: Record
     sections[s] = { total: refs.sections[s].total, items: refs.sections[s].items.map((it) => ({ ...it, ...refHrefs(it) })) };
   }
   return { found: refs.found, sections };
-}
-
-export interface LawLink {
-  slug: string;
-  title: string;
-  status: string | null;
-  /** Links from this law's articles to it, and from its articles to this law. */
-  out: number;
-  in: number;
-  types: ReaderLinkType[];
-}
-
-/** library_reader_law_links_typed(slug, READER_LINK_TYPES) → the map's nodes; anything malformed is dropped. */
-export function shapeLawLinks(raw: unknown): { links: LawLink[]; truncated: boolean } {
-  const r = (raw && typeof raw === "object" ? raw : {}) as { links?: unknown; truncated?: unknown };
-  const links: LawLink[] = [];
-  for (const l of Array.isArray(r.links) ? (r.links as Record<string, unknown>[]) : []) {
-    const slug = typeof l?.slug === "string" ? l.slug : "";
-    if (!slug) continue;
-    const types = (Array.isArray(l.types) ? l.types : []).filter(isShownLinkType);
-    if (types.length === 0) continue;
-    links.push({
-      slug,
-      title: capTitle(l.title) || slug,
-      status: typeof l.status === "string" ? l.status : null,
-      out: Number.isInteger(l.out) ? (l.out as number) : 0,
-      in: Number.isInteger(l.in) ? (l.in as number) : 0,
-      types,
-    });
-  }
-  return { links, truncated: r.truncated === true };
 }

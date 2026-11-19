@@ -36,10 +36,10 @@ const Paragraphs = memo(function Paragraphs({ text, className }: { text: string 
   );
 });
 
-/** The API marks a principle past the free first N as locked (text cut at 150 chars, no paragraphs or details). */
+/** The API marks an item past the free first N as locked: no text, no paragraphs, no details (register 14 item 13). */
 type MaybeLocked = JudicialPrincipleItem & { locked?: boolean; lockedMessage?: string };
 
-const DEFAULT_LOCKED_MESSAGE = "يُعرض جزء من هذا المبدأ فقط؛ النص الكامل متاح لمشتركي المكتبة القانونية أو الباقة الاحترافية.";
+const DEFAULT_LOCKED_MESSAGE = "نص هذا الحكم أو المبدأ لمشتركي المكتبة القانونية؛ اشترك لقراءته كاملاً.";
 
 interface PrincipleBlockProps {
   p: JudicialPrincipleItem;

@@ -7713,3 +7713,11 @@ select 'Library devices never end a platform session: library_device_gate / libr
 select 'The 50-point library gate setting library_min_points_to_browse exists (run 20261129_40)' as check,
        exists (select 1 from public.platform_settings where key = 'library_min_points_to_browse') as ok;
 -- <<< verify:l9_read
+
+-- >>> verify:l9_reader
+-- Batch l9-reader (owner register 14 item 13: 2 full rulings per collection, no excerpt): run 20261129_50 any time (best before the deploy).
+select 'Public rulings: public_full_rulings_per_collection = {"full":2} (run 20261129_50)' as check,
+       exists (select 1 from public.platform_settings
+                where key = 'public_full_rulings_per_collection'
+                  and value = '{"full":2}'::jsonb) as ok;
+-- <<< verify:l9_reader

@@ -35,6 +35,10 @@ export interface AmendmentEntry {
   type?: string | null;
   summary: string;
   fullText: string;
+  /** l9-parser 20261129_70: the card's place in its article (0 first); absent before that SQL runs. */
+  position?: number;
+  /** l9-parser 20261129_70: 'unavailable' = the source keeps no prior text («نص غير متوفر»). */
+  textStatus?: "available" | "unavailable";
 }
 
 export interface ExecutiveRegulation {
@@ -50,6 +54,8 @@ export interface ExecutiveRegulation {
 // is_secondary_display duplicates) — powers the "اللائحة وحدها" flat view.
 export interface RegulationInstrument {
   ref: string;
+  /** l9: the name this viewer may see (cleaned for a non-subscriber, ٤٢٤); `ref` stays the key. */
+  label?: string;
   articles: {
     regNum: string | null;
     text: string;
@@ -184,6 +190,12 @@ export interface LawSystem {
   regulationInstruments?: RegulationInstrument[]; // العرض المسطَّح "اللائحة وحدها"
   /** F13 — regulation articles withheld by the paywall */
   regulationInstrumentsLocked?: number;
+  /**
+   * File 16 §2 — the sub-legislation index for every viewer: each instrument's
+   * name and its articles' numbers, no text; `card` = [instrument, row] in
+   * regulationInstruments, null when the text is locked.
+   */
+  regulationIndex?: Array<{ name: string; entries: Array<{ label: string; locked: boolean; card: [number, number] | null }> }>;
   appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
   /** Registry identity of the parent instrument, not a BOE law_guid. */
   parentLawId?: string;

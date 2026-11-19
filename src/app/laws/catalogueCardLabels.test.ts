@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { lawCardDates, MERGED_INCLUDES_MAX, mergedFileBadge, mergedFileName, mergedIncludesLine } from "./catalogueCardLabels.ts";
+import { lawCardDates, MERGED_INCLUDES_MAX, mergedFileBadge, mergedFileName, mergedIncludesLine, mergedMoreLabel } from "./catalogueCardLabels.ts";
 
 const cards = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
@@ -34,10 +34,22 @@ test("owner 2026-11-07: «يشتمل على: A • B» — at most two names, th
     mergedIncludesLine(base, ["اللائحة التنفيذية لنظام المرافعات الشرعية", "اللائحة التنفيذية لطرق الاعتراض على الأحكام"]),
     "يشتمل على: اللائحة التنفيذية • اللائحة التنفيذية لطرق الاعتراض على الأحكام",
   );
-  // A third name is not shown, and no «+ N أخرى» is added (his wording names two).
+  // A third name is not on this line: the count is a line of its own (mergedMoreLabel).
   assert.equal(mergedIncludesLine(base, ["أ", "ب", "ج", "أ"]), "يشتمل على: أ • ب");
   assert.equal(mergedIncludesLine("", ["قواعد الإحالة"]), "يشتمل على: قواعد الإحالة");
   assert.doesNotMatch(mergedIncludesLine(base, ["أ", "ب", "ج"]), /\+|أخرى/);
+});
+
+test("file 16 §7: «+N تشريعات فرعية» counts the sub-legislation the card does not name", () => {
+  const base = "نظام القضاء";
+  assert.equal(mergedMoreLabel(base, []), "");
+  assert.equal(mergedMoreLabel(base, ["أ", "ب"]), "", "both names are on the card");
+  assert.equal(mergedMoreLabel(base, ["أ", "ب", "ج", "أ"]), "+1 تشريع فرعي", "a repeated name counts once");
+  assert.equal(mergedMoreLabel(base, ["أ", "ب", "ج", "د"]), "+2 تشريعان فرعيان");
+  assert.equal(mergedMoreLabel(base, ["أ", "ب", "ج", "د", "هـ", "و"]), "+4 تشريعات فرعية");
+  assert.equal(mergedMoreLabel(base, Array.from({ length: 14 }, (_, i) => `ل${i}`)), "+12 تشريعًا فرعيًا");
+  assert.match(cards, /const mergedMore = mergedIncludes \? mergedMoreLabel\(sys\.title, sys\.mergedNames \?\? \[\]\) : "";/);
+  assert.match(cards, /data-testid="law-card-merged-more"/);
 });
 
 test("١٢-٦: «آخر تحديث تشريعي» for everyone; «صدر» only for an open viewer and only when it differs", () => {
