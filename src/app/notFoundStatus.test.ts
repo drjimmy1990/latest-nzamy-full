@@ -14,7 +14,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,4 +41,60 @@ test("no catch-all page can answer 200 for an address that has no route", () => 
 
 test("an unmatched address has the site's own not-found page to land on", () => {
   assert.ok(existsSync(path.join(APP_DIR, "not-found.tsx")));
+});
+
+/* ── Dynamic routes (owner file 20 §2, file 15 row 42; batch l9) ───────────
+ * A missing blog article answered 200 + index,follow + /blog's canonical: the
+ * blog's loading.tsx wrapped /blog/[slug], so a 200 streamed before notFound()
+ * ran. The status itself is pinned by the MISSING list of
+ * scripts/smoke-routes.mjs (run against a build with a database). */
+
+const readApp = (rel: string) => readFileSync(path.join(APP_DIR, rel), "utf8").replace(/\r\n/g, "\n");
+
+/** loading.tsx files in the folders ABOVE a route (its own folder included). */
+function loadingAbove(routeDir: string): string[] {
+  const found: string[] = [];
+  let dir = path.join(APP_DIR, routeDir);
+  while (dir.startsWith(APP_DIR)) {
+    if (existsSync(path.join(dir, "loading.tsx"))) found.push(path.relative(APP_DIR, dir) || ".");
+    if (dir === APP_DIR) break;
+    dir = path.dirname(dir);
+  }
+  return found;
+}
+
+test("no loading boundary sits above a blog article or a blog category page", () => {
+  assert.deepEqual(loadingAbove("blog/[slug]"), []);
+  assert.deepEqual(loadingAbove("blog/category/[slug]"), []);
+  // the list keeps its shimmer, inside the (list) route group (URL unchanged: /blog)
+  assert.ok(existsSync(path.join(APP_DIR, "blog", "(list)", "loading.tsx")));
+  assert.ok(existsSync(path.join(APP_DIR, "blog", "(list)", "page.tsx")));
+  assert.ok(!existsSync(path.join(APP_DIR, "blog", "page.tsx")));
+});
+
+test("a missing blog article is a real 404 from the metadata; a failed read is not a 404", () => {
+  const page = readApp("blog/[slug]/page.tsx");
+  assert.match(page, /if \(!data\) return \{ status: "not_found" \};/);
+  assert.match(page, /if \(error\) \{[^}]*return \{ status: "error" \}; \}/);
+  // generateMetadata, then the page: notFound() on a definite miss only
+  assert.equal(page.match(/if \(load\.status === "not_found"\) notFound\(\);/g)?.length, 2);
+  assert.match(page, /if \(load\.status === "error"\) throw new Error/);
+  assert.doesNotMatch(page, /المقال غير موجود/, "no 200 «not found» page with an inherited canonical");
+  const category = readApp("blog/category/[slug]/page.tsx");
+  assert.match(category, /if \(!category\) notFound\(\);\n  return buildMetadata/);
+});
+
+test("library readers: a document that does not exist is a real 404 from the metadata (never on closed / error / legacy slugs)", () => {
+  const seo = readFileSync(path.join(APP_DIR, "../lib/library/libraryDocumentSeo.ts"), "utf8").replace(/\r\n/g, "\n");
+  assert.match(seo, /if \(load\.status === "not_found" && !isLegacySlug\(kind, rawSlug\)\) notFound\(\);/);
+  for (const layout of ["laws/[slug]/layout.tsx", "laws/orders/[slug]/layout.tsx", "precedents/[slug]/layout.tsx", "book/[slug]/layout.tsx"]) {
+    assert.match(readApp(layout), /export async function generateMetadata[\s\S]*libraryDocMetadata\(/, layout);
+  }
+});
+
+test("the smoke run checks the three addresses the owner tried", () => {
+  const smoke = readFileSync(path.join(APP_DIR, "../../scripts/smoke-routes.mjs"), "utf8");
+  for (const p of ["/blog/no-such-article-xyz", "/laws/no-such-law-xyz", "/blog/category/no-such-xyz"]) {
+    assert.ok(smoke.includes(`"${p}"`), p);
+  }
 });

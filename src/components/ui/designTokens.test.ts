@@ -102,7 +102,7 @@ test("Navbar wires the chrome to usePathname() and the scroll position", () => {
 
 const LOADING = [
   "app/laws/loading.tsx",
-  "app/blog/loading.tsx",
+  "app/blog/(list)/loading.tsx",
   "app/lawyers/browse/loading.tsx",
   "app/dashboard/loading.tsx",
 ];

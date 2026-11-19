@@ -15,6 +15,7 @@
 
 import { cache } from "react";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { buildLibraryFallbackMetadata, buildLibraryMetadata } from "@/lib/seo";
 import { createServiceClient } from "@/lib/supabase/server";
 import { checkLibraryAccess, getLibraryStatus } from "@/lib/access-control";
@@ -30,6 +31,7 @@ import {
 import { isMissingColumnError } from "./optionalColumn.ts";
 import { effectiveFreeLimit } from "./previewLimit.ts";
 import { lawPublicExcerpt } from "./lawPublicExcerpt.ts";
+import { legacyTarget } from "./legacyLibrarySlugs.ts";
 
 export type LibraryDocLoad =
   | { status: "ok"; doc: LibraryDocSeo; shell?: LibraryDocShell }
@@ -251,14 +253,29 @@ export const loadLibraryDocSeo = cache(async (kind: LibraryDocKind, rawSlug: str
   }
 });
 
+/** A legacy collection / book slug: the reader redirects or explains it (legacyLibrarySlugs.ts). */
+function isLegacySlug(kind: LibraryDocKind, rawSlug: string): boolean {
+  if (kind !== "collection" && kind !== "book") return false;
+  return legacyTarget(kind, decodeRouteSlug(rawSlug)) !== null;
+}
+
 /**
  * generateMetadata for a reader route: the document's own <head> when it
- * reads; noindex with no database value when the library is closed or the
- * document does not exist; the section's generic, indexable <head> when the
- * read failed (a passing outage must not de-index a real page).
+ * reads; noindex with no database value when the library is closed; the
+ * section's generic, indexable <head> when the read failed (a passing outage
+ * must not de-index a real page).
+ *
+ * A document that does not exist answers a REAL 404 (owner file 20 §2, file
+ * 15 row 42; batch l9): metadata blocks the first byte for every user agent
+ * (htmlLimitedBots), so notFound() here sets the status before the section's
+ * loading.tsx can stream a 200. Only a definite miss: the read is the same
+ * exact-id match the reader's API makes (which answers 404 too), "closed" and
+ * "error" never 404, and a legacy collection / book slug the reader redirects
+ * or explains (legacyLibrarySlugs.ts) keeps its page.
  */
 export async function libraryDocMetadata(kind: LibraryDocKind, rawSlug: string): Promise<Metadata> {
   const load = await loadLibraryDocSeo(kind, rawSlug);
+  if (load.status === "not_found" && !isLegacySlug(kind, rawSlug)) notFound();
   if (load.status === "ok") {
     return buildLibraryMetadata({ kind, id: load.doc.id, name: load.doc.name, description: load.doc.description });
   }
