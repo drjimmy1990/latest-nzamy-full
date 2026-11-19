@@ -25,7 +25,7 @@ import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
-import { lawCardDates, mergedFileBadge, mergedIncludesLine, mergedMoreLabel } from "../catalogueCardLabels";
+import { lawCardDates, mergedFileBadge, mergedIncludesLine, subLegislationCountLabel } from "../catalogueCardLabels";
 import { withSearchQuery } from "@/lib/search/multiColorSearch";
 import { apiSlug } from "@/utils/apiSlug";
 import { Hl } from "@/components/search/MultiColorHighlight";
@@ -411,22 +411,29 @@ export function LawsTabContent({
                 // line under the title — at most two names, none → no line.
                 // Arabic only: the names are Arabic (an English card shows no line).
                 const mergedIncludes = mergedLabel && isRTL ? mergedIncludesLine(sys.title, sys.mergedNames ?? []) : "";
-                // Owner file 16 §7: «+N تشريعات فرعية» counts the names not on the card.
-                const mergedMore = mergedIncludes ? mergedMoreLabel(sys.title, sys.mergedNames ?? []) : "";
-                const mergedIncludesRow = mergedIncludes ? (
+                // Library agent §1.8 (l10): «+N تشريعات فرعية» counts the documents
+                // whose parent_law_id names this law (sub_legislation_count from
+                // /api/library/init) — on every card that has any, merged or not.
+                const subLegislationCount = typeof sys.subLegislationCount === "number" ? sys.subLegislationCount : 0;
+                const subLegislationMore = isRTL
+                  ? subLegislationCountLabel(subLegislationCount)
+                  : subLegislationCount > 0 ? `+${subLegislationCount} sub-legislation` : "";
+                const mergedIncludesRow = mergedIncludes || subLegislationMore ? (
                   <div className="mb-2">
-                    <p
-                      className={`text-[11px] font-semibold leading-snug line-clamp-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}
-                      data-testid="law-card-merged-includes"
-                    >
-                      {mergedIncludes}
-                    </p>
-                    {mergedMore && (
+                    {mergedIncludes && (
+                      <p
+                        className={`text-[11px] font-semibold leading-snug line-clamp-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}
+                        data-testid="law-card-merged-includes"
+                      >
+                        {mergedIncludes}
+                      </p>
+                    )}
+                    {subLegislationMore && (
                       <p
                         className={`mt-0.5 text-[10.5px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
-                        data-testid="law-card-merged-more"
+                        data-testid="law-card-sub-legislation"
                       >
-                        {mergedMore}
+                        {subLegislationMore}
                       </p>
                     )}
                   </div>

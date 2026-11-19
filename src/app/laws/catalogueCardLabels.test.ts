@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { lawCardDates, MERGED_INCLUDES_MAX, mergedFileBadge, mergedFileName, mergedIncludesLine, mergedMoreLabel } from "./catalogueCardLabels.ts";
+import { lawCardDates, MERGED_INCLUDES_MAX, mergedFileBadge, mergedFileName, mergedIncludesLine, subLegislationCountLabel } from "./catalogueCardLabels.ts";
 
 const cards = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
 const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
@@ -34,22 +34,29 @@ test("owner 2026-11-07: «يشتمل على: A • B» — at most two names, th
     mergedIncludesLine(base, ["اللائحة التنفيذية لنظام المرافعات الشرعية", "اللائحة التنفيذية لطرق الاعتراض على الأحكام"]),
     "يشتمل على: اللائحة التنفيذية • اللائحة التنفيذية لطرق الاعتراض على الأحكام",
   );
-  // A third name is not on this line: the count is a line of its own (mergedMoreLabel).
-  assert.equal(mergedIncludesLine(base, ["أ", "ب", "ج", "أ"]), "يشتمل على: أ • ب");
+  // Batch l10: merged names past the first two are counted on the same line,
+  // «+ N أخرى» — «+N تشريعات فرعية» is the parent_law_id counter now.
+  assert.equal(mergedIncludesLine(base, ["أ", "ب"]), "يشتمل على: أ • ب");
+  assert.equal(mergedIncludesLine(base, ["أ", "ب", "ج", "أ"]), "يشتمل على: أ • ب + 1 أخرى", "a repeated name counts once");
+  assert.equal(mergedIncludesLine(base, ["أ", "ب", "ج", "د", "هـ", "و"]), "يشتمل على: أ • ب + 4 أخرى");
   assert.equal(mergedIncludesLine("", ["قواعد الإحالة"]), "يشتمل على: قواعد الإحالة");
-  assert.doesNotMatch(mergedIncludesLine(base, ["أ", "ب", "ج"]), /\+|أخرى/);
+  assert.doesNotMatch(mergedIncludesLine(base, ["أ", "ب", "ج"]), /تشريع/);
 });
 
-test("file 16 §7: «+N تشريعات فرعية» counts the sub-legislation the card does not name", () => {
-  const base = "نظام القضاء";
-  assert.equal(mergedMoreLabel(base, []), "");
-  assert.equal(mergedMoreLabel(base, ["أ", "ب"]), "", "both names are on the card");
-  assert.equal(mergedMoreLabel(base, ["أ", "ب", "ج", "أ"]), "+1 تشريع فرعي", "a repeated name counts once");
-  assert.equal(mergedMoreLabel(base, ["أ", "ب", "ج", "د"]), "+2 تشريعان فرعيان");
-  assert.equal(mergedMoreLabel(base, ["أ", "ب", "ج", "د", "هـ", "و"]), "+4 تشريعات فرعية");
-  assert.equal(mergedMoreLabel(base, Array.from({ length: 14 }, (_, i) => `ل${i}`)), "+12 تشريعًا فرعيًا");
-  assert.match(cards, /const mergedMore = mergedIncludes \? mergedMoreLabel\(sys\.title, sys\.mergedNames \?\? \[\]\) : "";/);
-  assert.match(cards, /data-testid="law-card-merged-more"/);
+test("library agent §1.8 (l10): «+N تشريعات فرعية» counts the documents linked by parent_law_id", () => {
+  for (const v of [0, -1, 1.5, NaN, "3", null, undefined]) assert.equal(subLegislationCountLabel(v), "", String(v));
+  assert.equal(subLegislationCountLabel(1), "+1 تشريع فرعي");
+  assert.equal(subLegislationCountLabel(2), "+2 تشريعان فرعيان");
+  assert.equal(subLegislationCountLabel(4), "+4 تشريعات فرعية");
+  assert.equal(subLegislationCountLabel(10), "+10 تشريعات فرعية");
+  assert.equal(subLegislationCountLabel(12), "+12 تشريعًا فرعيًا");
+  // the card reads /api/library/init's sub_legislation_count on EVERY card, merged or not
+  assert.match(page, /subLegislationCount: typeof law\.sub_legislation_count === "number" \? law\.sub_legislation_count : 0,/);
+  assert.match(cards, /const subLegislationCount = typeof sys\.subLegislationCount === "number" \? sys\.subLegislationCount : 0;/);
+  assert.match(cards, /\? subLegislationCountLabel\(subLegislationCount\)/);
+  assert.match(cards, /const mergedIncludesRow = mergedIncludes \|\| subLegislationMore \? \(/);
+  assert.match(cards, /data-testid="law-card-sub-legislation"/);
+  assert.doesNotMatch(cards, /mergedMoreLabel|law-card-merged-more/);
 });
 
 test("١٢-٦: «آخر تحديث تشريعي» for everyone; «صدر» only for an open viewer and only when it differs", () => {
