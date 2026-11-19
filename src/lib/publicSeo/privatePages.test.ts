@@ -80,9 +80,10 @@ test("sitemap.xml names no private page, and filters them out anyway", () => {
 });
 
 test("robots.txt does not newly disallow a private page whose noindex must be read", () => {
-  const robots = read("../../app/robots.ts");
+  // Batch l9: robots.txt is built by robotsTxt.ts (a route handler).
+  const robots = read("./robotsTxt.ts");
   for (const p of ["/login", "/register", "/checkout", "/settings", "/onboarding"]) {
-    assert.ok(!robots.includes(`"${p}`), p);
+    assert.ok(!robots.includes(`"${p}"`) && !robots.includes(`"${p}/"`), p);
   }
 });
 

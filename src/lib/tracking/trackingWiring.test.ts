@@ -62,7 +62,7 @@ test("the lawyer routes use the session (RLS), never read the hash, and the pane
 });
 
 test("robots disallows /track/, the proxy rate-limits it, and the old /cases/[id] is still a 404", () => {
-  assert.match(read("app/robots.ts"), /"\/track\/",/);
+  assert.match(read("lib/publicSeo/robotsTxt.ts"), /"\/track\/",/);
   const proxy = read("proxy.ts");
   assert.match(proxy, /const isTrackingMatch = isTrackingPageRoute\(method, pathname\);/);
   assert.match(proxy, /rateLimiter\.check\("tracking-page", key, TRACKING_PAGE_RATE_LIMIT\)/);

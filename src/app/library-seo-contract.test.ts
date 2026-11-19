@@ -33,7 +33,11 @@ test("/precedents/judgment/[slug] (a «قريباً» screen) is noindex", () =>
   const src = read("./precedents/judgment/[slug]/layout.tsx");
   assert.match(src, /robots: \{ index: false, follow: false/);
   assert.match(src, /alternates: \{ canonical: null \}/, "not the section's /precedents canonical");
-  assert.doesNotMatch(read("./robots.ts"), /"\/precedents\/judgment/, "robots.txt must not hide the noindex tag");
+  // Batch l9: only the training crawlers' group (tier 2) closes it — they do
+  // not index; search crawlers and * must read the noindex tag.
+  const robots = read("../lib/publicSeo/robotsTxt.ts");
+  assert.doesNotMatch(robots, /PRIVATE_DISALLOW = \[[^\]]*precedents\/judgment/, "robots.txt must not hide the noindex tag from search");
+  assert.match(robots, /FULL_TEXT_DISALLOW = \["\/precedents\/judgment\/", "\/library\/"\]/);
   // Not a sitemap kind: no route base points at it.
   assert.doesNotMatch(read("../lib/library/libraryMetadata.ts"), /:\s*"\/precedents\/judgment/);
 });
