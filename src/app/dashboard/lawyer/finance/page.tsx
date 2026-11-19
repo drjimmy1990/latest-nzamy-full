@@ -7,6 +7,7 @@ import {
   ChartLine, Wallet, TrendUp, ChartBar, Scales, ArrowClockwise,
   X, Coins, FileText, CalendarBlank, Bank
 } from "@phosphor-icons/react";
+import { usePathname } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import confetti from "canvas-confetti";
 
@@ -132,6 +133,12 @@ type FinanceRead = {
 
 export default function FinancePage() {
   const { isDark } = useTheme();
+  // File 15 row 49 (l9): the firm's «الأتعاب» (/dashboard/firm/fees) renders
+  // this page — the routes already serve lawyer and firm — so its own address
+  // and the statement link follow the dashboard it is opened in.
+  const firmView = usePathname()?.startsWith("/dashboard/firm/") === true;
+  const invoicePage = firmView ? "/dashboard/firm/fees" : INVOICE_PAGE;
+  const statementHref = firmView ? "/dashboard/firm/finance/statement" : `${INVOICE_PAGE}/statement`;
   const payments = usePaymentsStatus();
   const [activeTab, setActiveTab] = useState<FinanceTab>("overview");
   const [period,    setPeriod]    = useState<Period>("monthly");
@@ -474,7 +481,7 @@ export default function FinancePage() {
     invoiceIntentRead.current = true;
     const intent = readInvoiceIntent(window.location.search);
     if (!intent) return;
-    window.history.replaceState(null, "", INVOICE_PAGE);
+    window.history.replaceState(null, "", invoicePage);
     openInvoiceModal();
     getContract(intent.contractId)
       .then((k) => {
@@ -1452,7 +1459,7 @@ export default function FinancePage() {
             {/* ── l6-ledger: الوقت · الأمانات · المصروفات (components/dashboard/financeLedger) ── */}
             {(activeTab === "time" || activeTab === "trust" || activeTab === "lawyerExpenses") && (
               <motion.div key={activeTab} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                <LedgerTabBody kind={activeTab === "lawyerExpenses" ? "expenses" : activeTab} isDark={isDark} statementHref={`${INVOICE_PAGE}/statement`} />
+                <LedgerTabBody kind={activeTab === "lawyerExpenses" ? "expenses" : activeTab} isDark={isDark} statementHref={statementHref} />
               </motion.div>
             )}
 

@@ -51,8 +51,7 @@ export const SECTOR_UNFINISHED: Record<UnfinishedSector, SectorUnfinishedCopy> =
     intro: "القضايا والعملاء والفريق والملاحظات والمكتبة القانونية تعمل على بيانات مكتبك الفعلية. الوحدات التالية لم تكتمل، فلا تعتمد عليها في عمل حقيقي:",
     modules: [
       { name: "محفظة نقاط المكتب", state: "غير مكتملة — لا رصيد ولا خصم فعلي.", hrefs: ["/dashboard/firm/wallet"] },
-      { name: "المالية والفوترة", state: "غير مكتملة — لا تُصدر فواتير ولا تُسجّل مدفوعات.", hrefs: ["/dashboard/firm/finance"] },
-      { name: "الأتعاب", state: "صفحة عرض بأرقام ثابتة — لا يُحفظ شيء.", hrefs: ["/dashboard/firm/fees"] },
+      { name: "لوحة الإيرادات", state: "غير مكتملة — لا تجمع إيرادات المكتب كله؛ بيانات الأتعاب تُصدَر من صفحة «الأتعاب».", hrefs: ["/dashboard/firm/finance"] },
       { name: "الأدوار والصلاحيات التفصيلية", state: "للعرض فقط — لا تقيّد الوصول على الخادم بعد.", hrefs: ["/dashboard/firm/team/roles"] },
       { name: "الحوكمة والأسوار الصينية والتحقق من العملاء (KYC)", state: "غير مكتملة — لا سجل تدقيق ولا حجب فعلي.", hrefs: ["/dashboard/firm/governance", "/dashboard/firm/compliance/walls", "/dashboard/firm/compliance/kyc"] },
       { name: "الأقسام والفروع", state: "صفحات عرض — لا تُحفظ الأقسام ولا الفروع.", hrefs: ["/dashboard/firm/departments", "/dashboard/firm/branches"] },
