@@ -171,10 +171,15 @@ export async function POST(request: NextRequest) {
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
         // Register 4 / 36 (l9): an e-mail-verified individual with free
         // questions left passes quick-answer's Pro rule (any read error: no).
+        // Only while points_enforcement is on: when it is off,
+        // ai_start_free_question starts a plain run and spends none of the
+        // allowance, so the opener would never close.
         libraryAccess: libraryAccessFor(user.id, async (toolId) => {
           if (toolId !== GENERAL_FREE_QUESTION_TOOL || freeQuestionToolFor(userType) !== toolId) return false;
           if (!user.email_confirmed_at) return false;
           try {
+            const enforcement = await admin.from("platform_settings").select("value").eq("key", "points_enforcement").maybeSingle();
+            if (enforcement.error || (enforcement.data as { value?: unknown } | null)?.value !== true) return false;
             return (await freeQuestionStatusWith(admin, user.id)).available;
           } catch {
             return false;

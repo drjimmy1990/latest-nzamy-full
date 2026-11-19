@@ -215,5 +215,7 @@ test("source contract (l9): an individual's free questions open quick-answer's P
   assert.match(runs, /const refused = gateRefused \?\? \(\(freeOpensTier && \(await freeOpensTier\(toolId\)\)\) \? null : await libraryAiAccess\(toolId\)\);/);
   assert.match(runs, /if \(toolId !== GENERAL_FREE_QUESTION_TOOL \|\| freeQuestionToolFor\(userType\) !== toolId\) return false;/);
   assert.match(runs, /if \(!user\.email_confirmed_at\) return false;/);
+  // only while points are enforced (off: no use row is written, the opener would never close)
+  assert.match(runs, /if \(enforcement\.error \|\| \(enforcement\.data as \{ value\?: unknown \} \| null\)\?\.value !== true\) return false;/);
   assert.match(runs, /return \(await freeQuestionStatusWith\(admin, user\.id\)\)\.available;/);
 });
