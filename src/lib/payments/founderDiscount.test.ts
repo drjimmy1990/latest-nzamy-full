@@ -29,9 +29,9 @@ test("the campaign id is founderPlan's", () => {
   assert.equal(FOUNDER_DISCOUNT_CAMPAIGN_ID, FOUNDER_CAMPAIGN_ID);
 });
 
-test("only top-ups are eligible (plans, library, membership are not)", () => {
-  assert.equal(founderDiscountApplies("topup"), true);
-  for (const k of ["plan", "library", "membership", "service"]) assert.equal(founderDiscountApplies(k), false, k);
+test("l9 (register 14 items 29 / 32 / 55): top-ups AND any plan or library subscription are eligible; the founder membership never", () => {
+  for (const k of ["topup", "plan", "library"]) assert.equal(founderDiscountApplies(k), true, k);
+  for (const k of ["membership", "service"]) assert.equal(founderDiscountApplies(k), false, k);
 });
 
 test("15 % in exact halalas on every professional top-up the book sells, VAT on the rest, points untouched", () => {

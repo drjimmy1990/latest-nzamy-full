@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { founderCta, FOUNDER_CONSULTANT_NOTE, FOUNDER_PAUSED_TEXT } from "../pricing/founderCard.ts";
 import { founderJoinButton, JOIN_LABELS, preLabel } from "./joinButton.ts";
+import { FOUNDER_NOT_ADVOCATE_AR } from "../payments/checkoutCore.ts";
 
 const lawyerCta = (practiceKind: "advocate" | "consultant") =>
   founderCta({
@@ -80,4 +81,8 @@ test("live (l7, decision 1): a pending lawyer may buy, and the owner's sentence 
   const b = founderJoinButton({ ...base, cta, phase: "live" });
   assert.equal(b.kind === "cta" && b.cta.kind, "checkout");
   assert.equal(b.kind === "cta" && b.cta.note, "تُفعَّل الباقة بعد توثيق رخصتك، وإن لم تُوثَّق يُردّ المبلغ كاملاً.");
+});
+test("l9 (owner file 15 row 63): checkout refuses a consultant with the very sentence the /founder button shows", () => {
+  assert.equal(FOUNDER_NOT_ADVOCATE_AR, JOIN_LABELS.advocate_only);
+  assert.doesNotMatch(FOUNDER_NOT_ADVOCATE_AR, /للترافع/);
 });
