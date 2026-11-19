@@ -7,6 +7,7 @@ import { toStaffRole, type StaffRole } from "@/lib/auth/staffRoles";
 import { DEFAULT_INVITE_ROLE, STAFF_ROLES_IN_ORDER, STAFF_ROLE_LABELS_AR, STAFF_ROLE_SUMMARY_AR } from "@/lib/auth/staffManagement";
 import { staffMaySee } from "@/lib/auth/adminNavAccess";
 import { apiErrorText } from "@/lib/services/apiErrorText";
+import { adminToast } from "@/components/admin/adminToast";
 
 const DEPT_ICON: Record<string, React.ElementType> = {
   "الإدارة": Shield,
@@ -93,11 +94,11 @@ export default function TeamTab() {
         fetchData();
       } else {
         const err = await res.json().catch(() => null);
-        alert(`خطأ: ${apiErrorText(res.status, err, "فشل إرسال الدعوة")}`);
+        adminToast(`خطأ: ${apiErrorText(res.status, err, "فشل إرسال الدعوة")}`);
       }
     } catch (err) {
       console.error("Invite error:", err);
-      alert("حدث خطأ أثناء محاولة إرسال الدعوة");
+      adminToast("حدث خطأ أثناء محاولة إرسال الدعوة");
     } finally {
       setInviting(false);
     }
@@ -123,11 +124,11 @@ export default function TeamTab() {
         fetchData();
       } else {
         const err = await res.json().catch(() => null);
-        alert(`خطأ: ${apiErrorText(res.status, err, "فشل التحديث")}`);
+        adminToast(`خطأ: ${apiErrorText(res.status, err, "فشل التحديث")}`);
       }
     } catch (err) {
       console.error("Toggle status error:", err);
-      alert("حدث خطأ أثناء تحديث حالة العضو");
+      adminToast("حدث خطأ أثناء تحديث حالة العضو");
     }
   };
 

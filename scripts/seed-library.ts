@@ -498,10 +498,32 @@ export function resolveArticleIdentityStatus(article: Record<string, unknown>): 
 }
 
 /**
+ * «مكرر» (owner file 18, «خامساً» 4): the parser's `number_label` («23 مكرر»,
+ * «9 مكرر 2») → the id part `23-mukarrar` / `9-mukarrar-2`. ASCII on purpose:
+ * article ids travel in URLs and graph keys. null for any other label.
+ */
+export function mukarrarIdPart(label: unknown): string | null {
+  if (typeof label !== "string") return null;
+  const m = label.trim().match(/^(\d+) مكرر(?: (\d+))?$/u);
+  if (!m) return null;
+  return m[2] ? `${m[1]}-mukarrar-${m[2]}` : `${m[1]}-mukarrar`;
+}
+
+/** The article's printed number as stored in articles.number: the «مكرر» label, else the number ("0" = none). */
+export function articleNumberText(article: Record<string, unknown>): string {
+  return mukarrarIdPart(article.number_label) ? String(article.number_label) : String(article.number || "0");
+}
+
+/**
  * The number part of an article id: the printed number, or `i<index in its
  * chapter>` for an article without one (parse-laws.ts uses 0 as "no number").
+ * A «مكرر» article is keyed by its label (`23-mukarrar`), not by its position:
+ * until 2026-11-20 it had no number and took `i<index>`, so its id moved
+ * whenever an article was added before it (one-time id change, file 18).
  */
 export function articleBaseNum(article: Record<string, unknown>, chapterArticles: readonly unknown[]): string {
+  const mukarrar = mukarrarIdPart(article.number_label);
+  if (mukarrar) return mukarrar;
   const n = article.number;
   const hasRealNumber = n !== null && n !== undefined && n !== 0;
   return hasRealNumber ? String(n) : `i${chapterArticles.indexOf(article)}`;
@@ -821,6 +843,18 @@ export async function seedLaws(
       parent_law_id: cap("laws", "parent_law_id", lawId, String(law.parent_law_id || "").trim(), 100) || null,
       parent_law: String(law.parent_law || "").trim() || null,
       enabling_article: String(law.enabling_article || "").trim() || null,
+      // Owner file 18, item 4: the frontmatter summaries. REQUIRES migration
+      // 20261129_70 (the owner loader's preflight stops before the first write
+      // without it). The frontmatter's summary_brief goes to summary_card:
+      // summary_brief itself is GENERATED (the card's موجز — the reviewed
+      // summary_card first, else the 📝 block of the preamble) and refuses a
+      // value. Written on every load, so a removed summary leaves on the next.
+      summary: typeof law.summary === "string" && law.summary.trim() ? law.summary : null,
+      summary_card: typeof law.summary_brief === "string" && law.summary_brief.trim() ? law.summary_brief : null,
+      summary_status: law.summary_status === "draft" || law.summary_status === "reviewed" ? law.summary_status : null,
+      summary_reviewed_at: typeof law.summary_reviewed_at === "string" && /^\d{4}-\d{2}-\d{2}$/.test(law.summary_reviewed_at)
+        ? law.summary_reviewed_at
+        : null,
       // needs_human_review / review_reason are no longer written as columns
       // (2026-10-04): internal by library contract 1.6, and a column on a
       // public table is readable with the anon key. The ب-139 audit report
@@ -870,7 +904,7 @@ export async function seedLaws(
           id: artId,
           law_slug: cap("articles", "law_slug", artId, lawId, 200),
           chapter_id: chapterId,
-          number: cap("articles", "number", artId, String(art.number || "0"), 20),
+          number: cap("articles", "number", artId, articleNumberText(art), 20),
           number_text: cap("articles", "number_text", artId, art.number_text || "", 50),
           title: art.title || "",
           status: cap("articles", "status", artId, resolveSeedArticleStatus(art.status), 30),
@@ -908,6 +942,14 @@ export async function seedLaws(
             type: cap("article_amendments", "type", `${artId}#amd-${ai}`, amends[ai].type || "تعديل", 50),
             summary: amends[ai].summary || "",
             full_text: amends[ai].original_text || null,
+            // Owner file 18, item 3 — REQUIRES migration 20261129_70 (the
+            // owner loader's preflight stops before the first write without it).
+            // position: the card's place in the article (the source order), so
+            // the reader sorts by it and the count is the number of cards.
+            decree_id: String(amends[ai].decree_id || "").trim() || null,
+            paragraphs: String(amends[ai].paragraphs || "").trim() || null,
+            text_status: amends[ai].text_status === "available" || amends[ai].text_status === "unavailable" ? amends[ai].text_status : null,
+            position: ai,
           });
         }
 
@@ -918,7 +960,7 @@ export async function seedLaws(
             id: toUuid(`${artId}__reg-${ri}`),
             article_id: artId,
             law_slug: cap("article_regulations", "law_slug", `${artId}#reg-${ri}`, lawId, 200),
-            system_article_number: cap("article_regulations", "system_article_number", `${artId}#reg-${ri}`, String(art.number || "0"), 20),
+            system_article_number: cap("article_regulations", "system_article_number", `${artId}#reg-${ri}`, articleNumberText(art), 20),
             ref: cap("article_regulations", "ref", `${artId}#reg-${ri}`, String(r.ref || ""), 300),
             reg_num: r.regNum != null ? cap("article_regulations", "reg_num", `${artId}#reg-${ri}`, String(r.regNum), 50) : null,
             sort_key: cap("article_regulations", "sort_key", `${artId}#reg-${ri}`, String(r.sortKey || "99999"), 50),

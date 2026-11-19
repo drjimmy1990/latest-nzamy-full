@@ -68,19 +68,23 @@ test("the landing page keeps the owner's required lines", () => {
   assert.doesNotMatch(page, /<Navbar|<Footer/, "the site-wide navbar/footer name removed products");
 });
 
-test("owner 17 Nov (١٢، ١٥، ١٧، ١٨): the library year, the 100 founding points, the 14-day refund, «ساعات لا أيام»", () => {
+test("owner 17 Nov (١٢، ١٥، ١٧، ١٨) + l9 (register 14 items 16 / 48 / 62 / 63): the library year while the balance is 50+, the 100 founding points, the 14-day refund, «ساعات لا أيام»", () => {
   const page = code(join(SRC, "app", "founder", "page.tsx"));
   for (const s of [
-    "مكتبة قانونية ضخمة لسنة كاملة من تفعيلك، تغذّي الصائغ بالنص ولائحته",
+    // R63: his h2, word for word
+    "مكتبة قانونية ضخمة مفتوحة لسنة كاملة بشرط ألا ينزل رصيدك عن 50 نقطة، تغذّي الصائغ بالنص ولائحته",
     "<li>١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي.</li>",
     "والشحن لا يجدّد السنة",
-    "ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم ٥ نقاط، فإذا نفدت أُغلق المساعد الذكي وحده",
-    "وتبقى المكتبة مفتوحة طوال السنة",
-    "نعم، خلال ١٤ يوماً من الشراء إن لم تستخدم أي ميزة ذكاء اصطناعي في الباقة، ولا يمنع الاسترداد تصفح المكتبة، ويُردّ المبلغ كاملاً شاملاً الضريبة، وفق",
+    "مفتوحة لك طوال سنة العضوية بشرط ألا ينزل رصيدك عن ٥٠ نقطة",
+    "والسؤال الواحد عليه يخصم ٥ نقاط، ويقف المساعد إذا قلّ رصيدك عن كلفة السؤال",
+    "نعم، خلال ١٤ يوماً من الشراء إن لم تستخدم أي ميزة ذكاء اصطناعي في الباقة ولم تقرأ أكثر من ٥ ملفات نصاً كاملاً في المكتبة، ولا يمنع الاسترداد تصفح المكتبة في هذه الحدود، ويُردّ المبلغ كاملاً شاملاً الضريبة، وفق",
+    "خصم المؤسس ١٥٪ على شحنات النقاط وعلى أي باقة تشتريها من نظامي",
     "في ساعات لا في أيام",
   ]) {
     assert.ok(page.includes(s), s);
   }
+  // l9: the old «always open» and «top-ups only» lines are gone; R62: no «other tool» output on the page
+  assert.doesNotMatch(page, /وتبقى المكتبة مفتوحة طوال السنة|شحنات النقاط وحدها|مخرج مستقل|ToolsShowcase/);
   assert.doesNotMatch(page, /٣٦٥ يوماً/, "the library is a year from activation, not a fixed 365 days");
   // the refund answer links item ٧ of the terms page; so does the footer's «سياسة الاسترداد» (file 09 أ-11)
   assert.match(page, /وفق\{" "\}\s*<Link href=\{FOUNDER_TERMS_REFUND_PATH\}/);

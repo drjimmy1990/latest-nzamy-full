@@ -4,14 +4,14 @@ import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-contro
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
-import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { isPrincipleLocked, parsePrincipleTarget, planPrincipleWindow, targetWindowOffset } from './_window';
 import { buildCollectionSeries, type CollectionSeriesInfo } from '@/lib/library/precedentVolumes';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
-// Owner item 2 (batch l8): browsing depth, rulings for the public, excerpts.
-import { isBeyondPublicDepth, isRulingRow, libraryDepthMessageAr, publicExcerpt } from '@/lib/library/publicGuard';
+// Owner item 2 (batch l8): browsing depth. Register 14 item 13 (batch l9): the
+// public reads N full items per collection, the rest are titles — no excerpt.
+import { collectionFreeCount, isBeyondPublicDepth, libraryDepthMessageAr } from '@/lib/library/publicGuard';
 import { loadLibraryGuardSettings } from '@/lib/library/publicGuardServer';
 
 /** A runaway guard for one series' volumes (the largest today: 30). */
@@ -82,8 +82,8 @@ async function principlePosition(serverOnly: ServiceClient, slug: string, target
  * Owner decision ١٧١ (migration 20261016_01): a principle's text, ruling basis,
  * facts, reasons and ruling, its `fts`, and every principle_paragraphs row are
  * SERVER-ONLY — the anon key holds no privilege on them. The window below is
- * read with the service role, and this route's masking (150 characters of a
- * locked principle, no paragraphs, no details) is the paywall.
+ * read with the service role, and this route's masking (a locked item sends
+ * no text, no paragraphs, no details — register 14 item 13) is the paywall.
  */
 export async function GET(
   request: Request,
@@ -189,10 +189,11 @@ export async function GET(
         { status: 403, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } },
       );
     }
-    // Owner item 2.3: a ruling (a principle row carrying facts / reasons /
-    // operative part) is read in full by a non-subscriber only within the
-    // first public_full_rulings_per_collection.full of the collection (owner:
-    // 0); every other ruling shows one paragraph of excerpt_chars (~1.5 lines).
+    // Owner register 14 item 13 / file 16 §9.5 (19 Nov): a non-subscriber
+    // reads the first public_full_rulings_per_collection.full items of the
+    // collection in full (owner: 2, at most 3); every other item is its title
+    // and a subscribe card, cut HERE — no text, no excerpt (the 180-character
+    // excerpt and the «3 أو 5» preview are cancelled).
     const publicRulings = guard.rulings;
 
     // Fetch one window of principles with paragraphs. Explicit columns: `*`
@@ -235,9 +236,10 @@ export async function GET(
       }
     }
     const totalCount = total ?? offset + (principles?.length ?? 0);
-    // Owner answer ١٨٤: the free first principles are 5% of the collection or
-    // 5, whichever is less, never below 3; -1 = unlimited (Pro+).
-    const freeLimit = effectiveFreeLimit(probe, totalCount);
+    // Register 14 item 13: the free first items are the setting's N (an admin
+    // per-collection override still wins); -1 = unlimited (full access). The
+    // server-rendered page (precedents/[slug]/layout.tsx) prints the same N.
+    const freeLimit = collectionFreeCount(probe, totalCount, publicRulings);
 
     // Format response matching frontend interface
     const response = {
@@ -259,7 +261,7 @@ export async function GET(
         freeLimit,
         // Owner item 2 (l8): full rulings a non-subscriber reads here, and how
         // far into the collection he may page.
-        freeRulings: hasFullAccess ? -1 : publicRulings.full,
+        freeRulings: hasFullAccess ? -1 : freeLimit,
         maxPublicOffset: hasFullAccess || collection.free === true ? null : maxPublicOffset,
         hasFullAccess,
         totalItems: totalCount,
@@ -281,14 +283,8 @@ export async function GET(
           whitelistedLawSlugs: whitelistedSlugs,
         });
         // The GLOBAL position in the collection, not the index in this window.
-        const isRuling = isRulingRow(p);
-        const isLocked =
-          isPrincipleLocked(isFree, freeLimit, offset + idx) ||
-          (!isFree && isRuling && offset + idx >= publicRulings.full);
+        const isLocked = isPrincipleLocked(isFree, freeLimit, offset + idx);
         const paragraphs = p.principle_paragraphs as Record<string, unknown>[];
-        // Audit م-1 (l8): cut at a word and never the whole text, even when
-        // the item is shorter than the cap (publicGuard.ts publicExcerpt).
-        const excerptChars = isRuling ? publicRulings.excerptChars : 150;
         return {
           id: p.id,
           number: p.principle_number,
@@ -297,12 +293,10 @@ export async function GET(
           decision_number: p.decision_number,
           reference: p.reference,
           // Owner ٢٥٩ (أ): the card table a court precedent's text opens with
-          // («بطاقة تعريف السابقة القضائية») without its «غير متوفر» rows, for
-          // every viewer — cleaned first, then cut: the 150-character rule stands.
-          text: (() => {
-            const text = typeof p.text === 'string' ? withCleanCardRows(p.text) : p.text;
-            return isLocked ? publicExcerpt(text, excerptChars) : text;
-          })(),
+          // («بطاقة تعريف السابقة القضائية») without its «غير متوفر» rows.
+          // Register 14 item 13: a locked item sends NO text — its title
+          // (number, court, date, reference) and the subscribe card only.
+          text: isLocked ? '' : typeof p.text === 'string' ? withCleanCardRows(p.text) : p.text,
           // The page indexes and searches on this; it was never sent, so the
           // page threw on `.slice` of undefined.
           classification_keywords: Array.isArray(p.classification_keywords)
@@ -310,9 +304,7 @@ export async function GET(
             : [],
           locked: isLocked,
           lockedMessage: isLocked
-            ? (isRuling
-                ? 'يُعرض مقتطف من هذا الحكم فقط؛ نصه الكامل لمشتركي المكتبة القانونية'
-                : 'للاطلاع على المبدأ كاملاً، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية')
+            ? 'نص هذا الحكم أو المبدأ لمشتركي المكتبة القانونية؛ اشترك لقراءته كاملاً'
             : undefined,
           // Locked principles: paragraphs & details are withheld from the payload.
           paragraphs: isLocked

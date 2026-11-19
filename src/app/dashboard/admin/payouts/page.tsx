@@ -8,6 +8,8 @@ import {
   Check, Prohibit, Users,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 /* ── Mock ──────────────────────────────────────────────────────────────────── */
 const PAYOUTS = [
@@ -27,7 +29,7 @@ const STATUS_CFG: Record<string,{label:string;cls:string}> = {
   failed:      { label:"فشل",        cls:"bg-red-500/10 border-red-500/20 text-red-400" },
 };
 
-export default function PayoutsPage() {
+function PayoutsPageDemo() {
   const { isDark } = useTheme();
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
@@ -215,4 +217,21 @@ export default function PayoutsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (طلبات سحب أرباح المحامين ومبالغها (والمنصة لا تحتفظ بأموال)) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function PayoutsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="طلبات السحب"
+        description="هذه الصفحة غير متاحة حالياً. طلبات سحب أرباح المحامين ومبالغها (والمنصة لا تحتفظ بأموال) التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/admin"
+      />
+    );
+  }
+  return <PayoutsPageDemo />;
 }

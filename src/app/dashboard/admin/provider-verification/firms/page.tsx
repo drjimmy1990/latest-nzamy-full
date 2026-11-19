@@ -254,7 +254,7 @@ export default function AdminFirmProviderProfilesPage() {
             <div className="flex items-center justify-between">
               <p className={`text-sm font-black ${isDark ? "text-white" : "text-slate-800"}`}>مميزات الشركة المفعلة</p>
               <button
-                onClick={() => setToast("تم تجهيز مصفوفة المميزات محليا فقط. عند الإنتاج يلزم Entitlements API وسجل AuditEvent.")}
+                onClick={() => setToast("جُهّزت قائمة المميزات في هذا المتصفح فقط؛ حفظها على الخادم وتسجيلها في سجل الإدارة لم يُبنيا بعد.")}
                 className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${isDark ? "border-white/10 text-zinc-300" : "border-slate-200 text-slate-700"}`}
               >
                 <FloppyDisk size={14} />

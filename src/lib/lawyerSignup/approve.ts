@@ -18,16 +18,19 @@
  *     decided_at), written by the caller;
  *   - R6 (20261122_40): another VERIFIED account on the same licence makes the
  *     update fail with 23505 → 'claimed' → the caller holds the account.
+ *   - file 19 §1ب.2 (20261129_20): a 1448-LAW- test licence makes the update
+ *     fail with 23514 fake_test_licence → 'fake_licence' → the caller holds it.
  */
 
 import type { createServiceClient } from "@/lib/supabase/server";
 import { recordNotification } from "@/lib/notify";
 import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
 import { dispatchVerificationToN8n } from "@/lib/n8n/dispatch";
+import { isFakeLicenceDbError } from "./fakeLicence.ts";
 
 type Svc = Awaited<ReturnType<typeof createServiceClient>>;
 
-export type ApproveResult = "approved" | "claimed" | "not_pending" | "error";
+export type ApproveResult = "approved" | "claimed" | "fake_licence" | "not_pending" | "error";
 
 export const APPROVED_TITLE = "تم اعتماد حسابك";
 export const APPROVED_BODY = "تهانينا! تم توثيق حسابك ويمكنك الآن استخدام كامل المزايا.";
@@ -41,6 +44,7 @@ export async function approveLawyerInstantly(svc: Svc, userId: string): Promise<
     .select("user_id")
     .maybeSingle();
   if (error?.code === "23505") return "claimed";
+  if (isFakeLicenceDbError(error)) return "fake_licence";
   if (error) {
     console.error("[lawyerSignup/approve] update failed:", error.code);
     return "error";

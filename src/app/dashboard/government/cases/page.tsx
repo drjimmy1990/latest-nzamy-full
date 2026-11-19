@@ -9,6 +9,8 @@ import {
 } from '@phosphor-icons/react';
 import { useTheme } from '@/components/ThemeProvider';
 import EmptyState from '@/components/ui/EmptyState';
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const MOCK_CASES = [
   { id: 'GOV-001', title: 'نزاع تعاقدي مع مورد معدات طبية', type: 'تعاقدي', status: 'نشط',   date: '٢٠٢٦/٠٤/١٠', court: 'المحكمة التجارية — الرياض' },
@@ -30,7 +32,7 @@ const TYPE_COLOR: Record<string, string> = {
   'مدني':   'text-teal-500 bg-teal-500/10 border-teal-500/20',
 };
 
-export default function GovernmentCasesPage() {
+function GovernmentCasesPageDemo() {
   const { isDark } = useTheme();
   const [search, setSearch] = useState('');
 
@@ -135,4 +137,21 @@ export default function GovernmentCasesPage() {
 
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (قضايا الجهة ونزاعاتها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function GovernmentCasesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="القضايا والنزاعات"
+        description="هذه الصفحة غير متاحة حالياً. قضايا الجهة ونزاعاتها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/government"
+      />
+    );
+  }
+  return <GovernmentCasesPageDemo />;
 }

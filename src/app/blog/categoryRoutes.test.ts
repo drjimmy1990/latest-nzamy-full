@@ -90,7 +90,7 @@ test("the pills link to the category pages, «الكل» to /blog", () => {
   assert.match(code, /<Link key=\{cat\.id\} href=\{cat\.href\}/);
   assert.doesNotMatch(code, /setCategory\(/);
   // /blog keeps its route, rendering the same list.
-  const page = read("./page.tsx");
+  const page = read("./(list)/page.tsx");
   assert.match(page, /<BlogList \/>/);
 });
 

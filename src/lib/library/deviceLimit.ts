@@ -117,7 +117,11 @@ export interface DeviceCheckRow {
   limit: number;
   deviceId: string | null;
   devices: AuthorisedDevice[];
-  /** library_device_gate only: the other sessions of the account it ended (owner ٤٠, «لا يُفتحان معاً»). */
+  /**
+   * library_device_gate only: the other sessions of the account it ended
+   * (owner ٤٠). Always 0 since 20261129_40: the device rule is the library's
+   * only (register 14 item 9) and never signs the account out elsewhere.
+   */
   sessionsEnded?: number;
 }
 
@@ -213,7 +217,7 @@ export const DEVICE_COOKIE_REQUIRED_AR =
 export const DEVICE_CODE_REQUIRED_CODE = "device_code_required";
 export const DEVICE_CODE_REQUIRED_AR =
   "هذا جهاز جديد على حسابك. أرسلنا — أو نرسل عند طلبك — رمز تحقق إلى بريدك الإلكتروني المسجّل؛ أدخله لتفتح المكتبة من هذا الجهاز. " +
-  "عند تأكيده يُسجَّل خروج حسابك من أي جهاز آخر، لأن المكتبة لا تُفتح على جهازين معاً.";
+  "حد الأجهزة خاص بالمكتبة وحدها، ولا يُسجَّل خروجك من أي جهاز آخر.";
 
 export interface DeviceLimitRefusalBody {
   error: string;
@@ -405,7 +409,7 @@ export function deviceCodeEmail(code: string, label: string): { subject: string;
       `طُلب فتح المكتبة القانونية في حسابك من جهاز جديد (${label}).`,
       `رمز التحقق: ${code}`,
       `الرمز صالح ${DEVICE_CODE_TTL_MINUTES} دقائق. لا تشاركه مع أحد.`,
-      "عند تأكيده يُسجَّل خروج حسابك من الأجهزة الأخرى، لأن المكتبة لا تُفتح على جهازين معاً.",
+      "حد الأجهزة خاص بالمكتبة وحدها، ولا يُسجَّل خروجك من أي جهاز آخر.",
       "إن لم تكن أنت من طلبه فلا تُدخله، وغيّر كلمة المرور فوراً.",
     ],
   };

@@ -16,16 +16,24 @@ import { DEFAULT_MIN_TOPUP_SAR, minTopupIssue, parseMinTopup } from "../points/p
 const USER = "00000000-0000-0000-0000-00000000u001";
 const audits = (log: FakeQuery[]) => log.filter((q) => q.table === "admin_audit_events" && q.op === "insert");
 
-test("the refusal names the limit in Arabic digits", () => {
-  assert.equal(minTopupRefusalAr(500), "الحد الأدنى للشحن لحسابك ٥٠٠ ريال");
+test("the refusal names the limit in points (1 point = 1 SAR), Arabic digits", () => {
+  assert.equal(minTopupRefusalAr(50), "الحد الأدنى للشحن لحسابك ٥٠ نقطة (٥٠ ريال)");
+  assert.equal(minTopupRefusalAr(500), "الحد الأدنى للشحن لحسابك ٥٠٠ نقطة (٥٠٠ ريال)");
 });
 
-test("defaults: lawyer, firm and the business types 500; individual 100 (٥٦, l8)", () => {
-  for (const t of ["lawyer", "firm", "corporate", "micro", "government", "ngo", "provider"]) {
-    assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, t), 500, t);
+test("l9 (register 14 item 7): the default minimum is 50 for EVERY account type", () => {
+  for (const t of ["lawyer", "firm", "corporate", "micro", "government", "ngo", "provider", "individual"]) {
+    assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, t), 50, t);
   }
-  assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, "individual"), 100);
   assert.equal(minTopupFor(DEFAULT_MIN_TOPUP_SAR, null), null);
+});
+
+test("l9: the 50-point pack passes the default minimum for a lawyer and an individual alike", async () => {
+  for (const userType of ["lawyer", "individual", "firm"]) {
+    const { client, log } = fakeDb(() => ({ data: null }));
+    assert.deepEqual(await checkMinTopup(client, { userId: USER, userType, itemId: "topup-50", baseNetHalalas: 5_000 }), { ok: true }, userType);
+    assert.equal(audits(log).length, 0, userType);
+  }
 });
 
 test("a stored map replaces the defaults; a malformed one falls back to them", () => {
@@ -37,16 +45,17 @@ test("a stored map replaces the defaults; a malformed one falls back to them", (
 });
 
 test("below the minimum: refused with the audit row (actor_type user); at the minimum: ok, no row", async () => {
-  const { client, log } = fakeDb(() => ({ data: null }));
+  const stored = (q: FakeQuery) => (q.table === "platform_settings" ? { data: { value: { lawyer: 500 } } } : { data: null });
+  const { client, log } = fakeDb(stored);
   const low = await checkMinTopup(client, { userId: USER, userType: "lawyer", itemId: "topup-100", baseNetHalalas: 10_000 });
-  assert.deepEqual(low, { ok: false, status: 403, error: "الحد الأدنى للشحن لحسابك ٥٠٠ ريال", code: "topup_below_minimum" });
+  assert.deepEqual(low, { ok: false, status: 403, error: "الحد الأدنى للشحن لحسابك ٥٠٠ نقطة (٥٠٠ ريال)", code: "topup_below_minimum" });
   const row = audits(log)[0]?.payload as Record<string, unknown>;
   assert.equal(row.actor_id, USER);
   assert.equal(row.actor_type, "user");
   assert.equal(row.action, "topup_below_minimum");
   assert.deepEqual(row.metadata, { user_type: "lawyer", min_sar: 500, price_halalas: 10_000 });
 
-  const { client: c2, log: l2 } = fakeDb(() => ({ data: null }));
+  const { client: c2, log: l2 } = fakeDb(stored);
   assert.deepEqual(await checkMinTopup(c2, { userId: USER, userType: "lawyer", itemId: "topup-500", baseNetHalalas: 50_000 }), { ok: true });
   assert.equal(audits(l2).length, 0);
 });
@@ -59,11 +68,17 @@ test("the admin's setting is read (a firm raised to 1,000) and a failed audit wr
   });
   const r = await checkMinTopup(client, { userId: USER, userType: "firm", itemId: "topup-500", baseNetHalalas: 50_000 });
   assert.equal(r.ok, false);
-  if (!r.ok) assert.equal(r.error, "الحد الأدنى للشحن لحسابك ١٬٠٠٠ ريال");
+  if (!r.ok) assert.equal(r.error, "الحد الأدنى للشحن لحسابك ١٬٠٠٠ نقطة (١٬٠٠٠ ريال)");
 });
 
-test("checkout: a lawyer sent to a 100 pack gets the minimum, not the generic audience refusal", async () => {
-  const { client, log } = fakeDb((q) => (q.table === "profiles" ? { data: { user_type: "lawyer" } } : { data: null }));
+test("checkout: a lawyer below his stored minimum gets the minimum, not the generic audience refusal", async () => {
+  const { client, log } = fakeDb((q) =>
+    q.table === "profiles"
+      ? { data: { user_type: "lawyer" } }
+      : q.table === "platform_settings"
+        ? { data: { value: { lawyer: 500 } } }
+        : { data: null },
+  );
   const deps = {
     admin: client,
     client: {} as CheckoutDeps["client"],
@@ -71,7 +86,7 @@ test("checkout: a lawyer sent to a 100 pack gets the minimum, not the generic au
   } as CheckoutDeps;
   const r = await startCheckoutWith(deps, { user: { id: USER }, itemId: "topup-100", billing: "once", origin: "https://example.test", publishableKey: "pk_test" });
   assert.equal(r.status, 403);
-  assert.deepEqual(r.body, { error: "الحد الأدنى للشحن لحسابك ٥٠٠ ريال", code: "topup_below_minimum" });
+  assert.deepEqual(r.body, { error: "الحد الأدنى للشحن لحسابك ٥٠٠ نقطة (٥٠٠ ريال)", code: "topup_below_minimum" });
   assert.equal(audits(log).length, 1);
   assert.equal(log.some((q) => q.table === "payment_orders"), false, "nothing written for the order");
 });

@@ -37,7 +37,7 @@ export function PricingCTA({ isAr }: PricingCTAProps) {
             </a>
           </div>
           <p className="mt-5 text-xs text-white/40">
-            {isAr ? "استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه · بدون عقود طويلة" : "Subscriptions refundable within 14 days if no AI feature was used, point top-ups if no more than 5% was used · No long-term contracts"}
+            {isAr ? "استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي ولم يُقرأ أكثر من ٥ ملفات نصاً كاملاً في المكتبة، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه · بدون عقود طويلة" : "Subscriptions refundable within 14 days if no AI feature was used and no more than 5 library files were read in full text, point top-ups if no more than 5% was used · No long-term contracts"}
           </p>
         </motion.div>
       </div>

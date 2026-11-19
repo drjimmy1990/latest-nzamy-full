@@ -4,8 +4,10 @@ import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedMo
 import { motion } from "framer-motion";
 import { UserCircle, ShieldCheck, Handshake, Link, Scales, Star, CaretRight } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
-export default function OfCounselPage() {
+function OfCounselPageDemo() {
   const { isDark, lang } = useTheme();
   const isAr = lang === "ar";
   const card = isDark ? "bg-zinc-900 border border-white/[0.06] rounded-2xl" : "bg-white border border-slate-100 rounded-2xl shadow-sm";
@@ -76,4 +78,21 @@ export default function OfCounselPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (المستشارون المتعاونون وتخصصاتهم وقضاياهم) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function OfCounselPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="المستشارون المتعاونون"
+        description="هذه الصفحة غير متاحة حالياً. المستشارون المتعاونون وتخصصاتهم وقضاياهم التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <OfCounselPageDemo />;
 }

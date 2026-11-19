@@ -5,9 +5,9 @@
  * 
  * 1. Legal Library Standalone Subscription (owner ٣٠٠ / conflict ٢, 30 Oct
  *    2026 — the price book holds the numbers):
- *    - Annual: 3,490 SAR / year (3,790 and 5,000 are cancelled)
- *    - Half-year: 1,920 SAR / 6 months
- *    - Quarterly: 1,050 SAR / quarter
+ *    - Annual: 6,990 SAR / year (batch l9, owner register 14 item 1)
+ *    - Half-year: 3,790 SAR / 6 months
+ *    - Quarterly: 1,990 SAR / quarter
  *    - (The 2,500 SAR/year "AI Researcher Add-on" is withdrawn: AI points
  *      replaced it — gap analysis 2026-10-16 §2. No plan offers it.)
  * 

@@ -48,6 +48,16 @@ export const LIBRARY_READ_QUOTA = Object.freeze({
    * library lock (C09). Reaching the cap alone never locks anyone.
    */
   lockAfterRefused: 60,
+  /**
+   * Owner register 14 item 8 (batch l9, 20261129_40): the daily WARNING
+   * (daily_full_read_limit = 30; no refusal) and the block over the last 7
+   * Riyadh days (weekly_full_read_limit = 150). The admin row
+   * (library_monitor_settings.daily_full_read_limit / weekly_full_read_limit)
+   * holds the live values; these are what the app shows when an answer does
+   * not carry them (the SQL not run yet).
+   */
+  warnDailyDocs: 30,
+  weeklyDocs: 150,
 });
 
 export type LibraryDocKind = "law" | "book" | "precedent" | "decree";
@@ -158,7 +168,12 @@ export function hasSupabaseAuthCookie(cookieNames: readonly string[]): boolean {
   return cookieNames.some((name) => /^sb-.+-auth-token(\.\d+)?$/.test(name));
 }
 
-export type QuotaStatus = "exempt" | "ok" | "over_daily" | "over_hourly" | "locked";
+/**
+ * "exempt" is no longer answered since 20261129_40 (file 19: no bypass for an
+ * admin or a test account); it stays readable so an older database's answer
+ * still parses. "over_weekly" is the 7-day cap (20261129_40).
+ */
+export type QuotaStatus = "exempt" | "ok" | "over_daily" | "over_weekly" | "over_hourly" | "locked";
 
 /** One row of public.library_read_quota_hit, as the app uses it. */
 export interface QuotaRow {
@@ -171,9 +186,24 @@ export interface QuotaRow {
   lockReference: string | null;
   lockedUntil: string | null;
   resetsAt: string | null;
+  /**
+   * 20261129_40: full-text opens over the last 7 Riyadh days (today
+   * included), the weekly cap, the daily warning threshold and when the
+   * 7-day window lets one more in (null unless it is full). null when the
+   * database answered without them (the SQL not run yet). Optional so a
+   * hand-built row (tests, older callers) stays a QuotaRow.
+   */
+  weekUsed?: number | null;
+  weekLimit?: number | null;
+  warnAt?: number | null;
+  weekResetsAt?: string | null;
 }
 
-const STATUSES: ReadonlySet<string> = new Set(["exempt", "ok", "over_daily", "over_hourly", "locked"]);
+const STATUSES: ReadonlySet<string> = new Set(["exempt", "ok", "over_daily", "over_weekly", "over_hourly", "locked"]);
+
+function optInt(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
+}
 
 function int(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 0;
@@ -203,6 +233,10 @@ export function parseQuotaRow(json: unknown): QuotaRow | null {
     lockReference: str(r.lock_reference),
     lockedUntil: str(r.locked_until),
     resetsAt: str(r.resets_at),
+    weekUsed: optInt(r.week_used),
+    weekLimit: optInt(r.week_limit),
+    warnAt: optInt(r.warn_at),
+    weekResetsAt: str(r.week_resets_at),
   };
 }
 
@@ -236,6 +270,31 @@ export function libraryDailyLimitMessageAr(limit: number): string {
   );
 }
 
+/**
+ * Owner register 14 item 8: the 7-day block (150 full-text opens over the last
+ * 7 days, Riyadh). The reset time is added on the client (readerRefusal.ts
+ * weeklyResetLineAr), never in this string (the nginx cached-date trap).
+ */
+export function libraryWeeklyLimitMessageAr(limit: number): string {
+  return (
+    `بلغت الحد الأسبوعي لفتح النص الكامل في المكتبة (${limit} وثيقة خلال آخر ٧ أيام بتوقيت الرياض). ` +
+    "الوثائق التي فتحتها اليوم تبقى متاحة لك، ويتجدد المجال كلما خرج يوم قديم من نافذة الأيام السبعة عند منتصف الليل بتوقيت الرياض. " +
+    "إن كان عملك يحتاج أكثر من ذلك فتواصل مع الدعم."
+  );
+}
+
+/**
+ * Owner register 14 item 8: the warning at daily_full_read_limit (30) — no
+ * refusal; the reader learns how many opens are left before the hard cap.
+ */
+export function libraryDailyWarningMessageAr(used: number, hardCap: number): string {
+  const left = Math.max(0, hardCap - used);
+  return (
+    `تنبيه: فتحت اليوم النص الكامل لـ${used} وثيقة في المكتبة، ` +
+    `ويبقى لك ${left} قبل بلوغ الحد اليومي (${hardCap} وثيقة). يتجدد الحد عند منتصف الليل بتوقيت الرياض.`
+  );
+}
+
 export function libraryHourlyLimitMessageAr(limit: number): string {
   return (
     `فتحت ${limit} وثيقة مختلفة خلال ساعة، وهو أعلى من وتيرة القراءة المعتادة. ` +
@@ -247,7 +306,7 @@ export interface QuotaRefusal {
   status: 423 | 429;
   body: {
     error: string;
-    code: "library_security_lock" | "library_daily_limit" | "library_hourly_limit";
+    code: "library_security_lock" | "library_daily_limit" | "library_weekly_limit" | "library_hourly_limit";
     reference?: string;
     support?: string;
     /** A lock's end (ISO, from the database row); absent for a lock until an admin lifts it. */
@@ -297,6 +356,20 @@ export function quotaRefusal(row: QuotaRow | null, now: number): QuotaRefusal | 
         ...(row.resetsAt ? { resetsAt: row.resetsAt } : {}),
       },
       retryAfterSeconds: secondsUntil(row.resetsAt, now),
+    };
+  }
+  if (row.status === "over_weekly") {
+    const limit = row.weekLimit ?? LIBRARY_READ_QUOTA.weeklyDocs;
+    const resetsAt = row.weekResetsAt ?? row.resetsAt;
+    return {
+      status: 429,
+      body: {
+        error: libraryWeeklyLimitMessageAr(limit),
+        code: "library_weekly_limit",
+        limit,
+        ...(resetsAt ? { resetsAt } : {}),
+      },
+      retryAfterSeconds: secondsUntil(resetsAt, now),
     };
   }
   if (row.status === "over_hourly") {

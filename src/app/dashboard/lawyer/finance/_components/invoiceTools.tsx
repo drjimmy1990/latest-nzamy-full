@@ -462,6 +462,7 @@ function sendSummaryAr(r: SendResult, copied: boolean): string {
   if (r.email === "sent") parts.push("أُرسل البيان إلى بريد الموكّل.");
   else if (r.email === "unavailable") parts.push("البريد الإلكتروني غير مفعّل على المنصة بعد، فلم يُرسل بريد.");
   else if (r.email === "failed") parts.push("تعذّر إرسال البريد الإلكتروني.");
+  else if (r.email === "sunk") parts.push("حساب اختبار: لم يُرسل بريد حقيقي، وحُفظت الرسالة في صندوق بريد الاختبار.");
   else parts.push("لا يوجد بريد إلكتروني في بطاقة الموكّل.");
   return parts.join(" ");
 }

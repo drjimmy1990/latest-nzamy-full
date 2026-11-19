@@ -162,6 +162,11 @@ const MISSING = [
   "/zzz-not-a-real-image.png",
   "/zzz-not-a-real-script.js",
   "/blog/category/zzz-not-a-real-category",
+  // Owner file 20 §2 (batch l9): the addresses he tried. These need the
+  // database, so they pass only against a build that can read it.
+  "/blog/no-such-article-xyz",
+  "/laws/no-such-law-xyz",
+  "/blog/category/no-such-xyz",
 ];
 
 const headers = {

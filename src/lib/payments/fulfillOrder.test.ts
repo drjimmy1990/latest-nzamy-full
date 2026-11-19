@@ -11,9 +11,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const fulfill = readFileSync(join(import.meta.dirname, "fulfillCore.ts"), "utf8");
-const wrapper = readFileSync(join(import.meta.dirname, "fulfillOrder.ts"), "utf8");
-const grant = readFileSync(join(import.meta.dirname, "grantPurchase.ts"), "utf8");
+const fulfill = readFileSync(join(import.meta.dirname, "fulfillCore.ts"), "utf8").replace(/\r\n/g, "\n");
+const wrapper = readFileSync(join(import.meta.dirname, "fulfillOrder.ts"), "utf8").replace(/\r\n/g, "\n");
+const grant = readFileSync(join(import.meta.dirname, "grantPurchase.ts"), "utf8").replace(/\r\n/g, "\n");
 
 function body(src: string, signature: string): string {
   const at = src.indexOf(signature);

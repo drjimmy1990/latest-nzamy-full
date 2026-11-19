@@ -28,7 +28,14 @@ test("toTicketDto maps the DB row to the API DTO — body becomes message, camel
     status: "open",
     createdAt: ROW.created_at,
     updatedAt: ROW.updated_at,
+    replies: [],
   });
+});
+
+test("l9 row 53: the support team's replies reach the ticket's owner as text and time only", () => {
+  const dto = toTicketDto({ ...ROW, metadata: { user_name: "x", replies: [{ body: "تم الحل", at: "2026-11-19T10:00:00.000Z", by: "staff-1" }] } });
+  assert.deepEqual(dto.replies, [{ body: "تم الحل", at: "2026-11-19T10:00:00.000Z" }]);
+  assert.ok(!JSON.stringify(dto).includes("staff-1") && !JSON.stringify(dto).includes("user_name"));
 });
 
 test("toTicketDto turns a null body into an empty message rather than null", () => {

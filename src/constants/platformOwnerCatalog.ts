@@ -150,7 +150,7 @@ export const PLATFORM_OWNER_SURFACES: PlatformOwnerSurface[] = [
     titleEn: "SEO and Discovery",
     publicRoutes: ["/robots.txt", "/sitemap.xml"],
     adminRoutes: ["/dashboard/admin/platform"],
-    sourceOfTruth: "src/app/sitemap.ts + src/app/robots.ts + metadata",
+    sourceOfTruth: "src/app/sitemap.ts + src/lib/publicSeo/robotsTxt.ts + metadata",
     status: "live",
     ownerControl: "backend-ready",
     betaNotes: "الفهرسة تمنع الداشبورد والـ API، وتغطي أهم الصفحات العامة.",

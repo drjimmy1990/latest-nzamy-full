@@ -25,6 +25,8 @@ import {
   newLibraryId,
   parseLibraryPublicProtection,
   parsePublicRulings,
+  PUBLIC_RULINGS_FULL_MAX,
+  collectionFreeCount,
   passBinding,
   publicExcerpt,
   publicRulingsIssue,
@@ -38,8 +40,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = path.resolve(HERE, "..", "..");
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
-test("owner defaults: 0 full rulings with a ~1.5-line excerpt, fiqh 0 free pages, a depth cap", () => {
-  assert.deepEqual(PUBLIC_RULINGS_DEFAULTS, { full: 0, excerptChars: 180 });
+test("owner defaults: 2 full rulings per collection (at most 3, no excerpt), fiqh 0 free pages, a depth cap", () => {
+  assert.deepEqual(PUBLIC_RULINGS_DEFAULTS, { full: 2 });
+  assert.equal(PUBLIC_RULINGS_FULL_MAX, 3);
   assert.equal(FEQH_FREE_PAGES_DEFAULT, 0);
   assert.equal(LIBRARY_PUBLIC_PROTECTION_DEFAULTS.maxPublicOffset, 250);
   assert.ok(LIBRARY_PUBLIC_PROTECTION_DEFAULTS.sessionHardPer10Min > LIBRARY_PUBLIC_PROTECTION_DEFAULTS.sessionChallengeAfter);
@@ -52,8 +55,10 @@ test("settings parse: a stored value wins, an odd field keeps its default", () =
   assert.equal(p.sessionChallengeAfter, 200);
   assert.equal(p.maxPublicOffset, 250);
   assert.equal(p.passMinutes, 30, "below the minimum keeps the default");
-  assert.deepEqual(parsePublicRulings({ full: 1, excerpt_chars: 240 }), { full: 1, excerptChars: 240 });
-  assert.deepEqual(parsePublicRulings(null), { full: 0, excerptChars: 180 });
+  assert.deepEqual(parsePublicRulings({ full: 1, excerpt_chars: 240 }), { full: 1 }, "an old excerpt key is read past");
+  assert.deepEqual(parsePublicRulings({ full: 0, excerpt_chars: 180 }), { full: 0 }, "the l8 row, before 20261129_50 runs");
+  assert.deepEqual(parsePublicRulings({ full: 4 }), { full: 2 }, "above the maximum keeps the default");
+  assert.deepEqual(parsePublicRulings(null), { full: 2 });
   const all = guardSettingsFromRows([
     { key: "library_public_protection", value: { pages_challenge_after: 9 } },
     { key: "library_feqh_free_pages", value: { pages: 2 } },
@@ -70,9 +75,12 @@ test("admin validators: refuse unknown fields, wrong types and out-of-range numb
   assert.match(libraryPublicProtectionIssue({ pass_minutes: 2 }) ?? "", /بين/);
   assert.match(libraryPublicProtectionIssue({ session_challenge_after: 500, session_hard_per_10min: 100 }) ?? "", /يجب ألا يقل/);
   assert.notEqual(libraryPublicProtectionIssue([]), null);
-  assert.equal(publicRulingsIssue({ full: 0, excerpt_chars: 180 }), null);
+  assert.equal(publicRulingsIssue({ full: 2 }), null);
+  assert.equal(publicRulingsIssue({ full: 3 }), null);
+  assert.match(publicRulingsIssue({ full: 4 }) ?? "", /بين 0 و3/);
   assert.notEqual(publicRulingsIssue({ full: -1 }), null);
-  assert.notEqual(publicRulingsIssue({ excerpt_chars: 5000 }), null);
+  assert.notEqual(publicRulingsIssue({}), null);
+  assert.match(publicRulingsIssue({ full: 2, excerpt_chars: 180 }) ?? "", /حقل غير معروف/, "the excerpt is cancelled");
   assert.equal(feqhFreePagesIssue({ pages: 0 }), null);
   assert.notEqual(feqhFreePagesIssue({ pages: 2.5 }), null);
 });
@@ -197,12 +205,22 @@ test("wiring: the challenge route verifies Turnstile and sets an HttpOnly pass o
   assert.match(src, /path: "\/api"/);
 });
 
-test("wiring: precedents — depth cap, rulings excerpt, publicExcerpt instead of a 150-char slice", () => {
+test("register 14 item 13: N full items per collection — the setting, an override, full access, never more than the collection", () => {
+  const r = { full: 2 };
+  assert.equal(collectionFreeCount({ freeLimit: 5, freeLimitSource: "default" }, 40, r), 2, "the setting, not «3 أو 5»");
+  assert.equal(collectionFreeCount({ freeLimit: 5, freeLimitSource: "default" }, 1, r), 1);
+  assert.equal(collectionFreeCount({ freeLimit: 7, freeLimitSource: "override" }, 40, r), 7, "an admin per-collection override wins");
+  assert.equal(collectionFreeCount({ freeLimit: -1 }, 40, r), -1, "full access");
+  assert.equal(collectionFreeCount({ freeLimit: 5, freeLimitSource: "default" }, 40, { full: 0 }), 0);
+});
+
+test("wiring: precedents — depth cap, N full items, no text for a locked item (no excerpt)", () => {
   const src = read("app/api/library/precedents/[slug]/route.ts");
   assert.match(src, /isBeyondPublicDepth\(offset, hasFullAccess, maxPublicOffset\)/);
   assert.match(src, /code: 'library_depth_limit'/);
-  assert.match(src, /!isFree && isRuling && offset \+ idx >= publicRulings\.full/);
-  assert.match(src, /publicExcerpt\(text, excerptChars\)/);
+  assert.match(src, /const freeLimit = collectionFreeCount\(probe, totalCount, publicRulings\);/);
+  assert.match(src, /text: isLocked \? '' :/);
+  assert.ok(!src.includes("publicExcerpt"));
   assert.ok(!src.includes("substring(0, len)"));
   const page = read("app/precedents/[slug]/page.tsx");
   assert.match(page, /body\?\.code === "library_depth_limit"/);

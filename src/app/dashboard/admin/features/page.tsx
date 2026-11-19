@@ -34,7 +34,7 @@ const CATEGORY_ICON: Record<AdminFeatureCategory, React.ElementType> = {
 const CATEGORY_LABEL: Record<AdminFeatureCategory, string> = {
   AI: "AI",
   Marketplace: "السوق",
-  Beta: "البيتا",
+  Beta: "المرحلة التجريبية",
   Core: "النظام",
   Billing: "الفوترة",
   Content: "المحتوى",
@@ -61,10 +61,10 @@ const INITIAL_FLAGS: AdminFeatureFlag[] = [
   },
   {
     id: "F003",
-    name: "Beta Monopoly",
+    name: "الإطلاق التجريبي المحصور",
     key: "BETA_MONOPOLY_MODE",
     category: "Beta",
-    description: "إدارة إغلاق/فتح أسطح السوق أثناء مرحلة البيتا.",
+    description: "إدارة إغلاق صفحات السوق وفتحها أثناء المرحلة التجريبية.",
     environments: { production: true, staging: true, beta: true },
     teardownNote: "إزالته تتبع BETA_TEARDOWN_REGISTRY ولا تتم من الواجهة فقط.",
   },
@@ -157,13 +157,13 @@ export default function AdminFeatureFlagsPage() {
             <div className={`p-2 rounded-xl ${isDark ? "bg-[#0B3D2E]/20 text-[#00E5FF]" : "bg-cyan-100 text-cyan-700"}`}>
               <ToggleRight size={24} weight="duotone" />
             </div>
-            <h1 className={`text-3xl font-black ${isDark ? "text-white" : "text-gray-900"}`}>إدارة الميزات والبيتا</h1>
+            <h1 className={`text-3xl font-black ${isDark ? "text-white" : "text-gray-900"}`}>إدارة الميزات والمرحلة التجريبية</h1>
           </div>
-          <p className={`text-sm ${muted}`}>تحكم محلي في feature flags مع توثيق واضح لمسار الإزالة عند live.</p>
+          <p className={`text-sm ${muted}`}>تحكّم في مفاتيح الميزات من هذا المتصفح، مع بيان متى يُزال كل مفتاح عند الإطلاق.</p>
         </div>
         <button onClick={openNewFlag} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-[#0B3D2E] text-white hover:bg-[#0a3328]">
           <Plus size={16} weight="bold" />
-          إضافة Feature Flag
+          إضافة مفتاح ميزة
         </button>
       </div>
 
@@ -175,9 +175,9 @@ export default function AdminFeatureFlagsPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { label: "إجمالي المفاتيح", value: stats.total, icon: ToggleRight },
-          { label: "Beta controls", value: stats.beta, icon: RocketLaunch },
-          { label: "Production on", value: stats.productionOn, icon: ShieldCheck },
-          { label: "Teardown tracked", value: stats.gated, icon: Info },
+          { label: "مفاتيح المرحلة التجريبية", value: stats.beta, icon: RocketLaunch },
+          { label: "مفعّلة على الموقع", value: stats.productionOn, icon: ShieldCheck },
+          { label: "لها خطة إزالة", value: stats.gated, icon: Info },
         ].map((stat) => (
           <div key={stat.label} className={`${card} p-5 flex items-center justify-between`}>
             <div>

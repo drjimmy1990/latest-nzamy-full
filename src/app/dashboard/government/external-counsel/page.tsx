@@ -4,6 +4,8 @@ import { UnfinishedModuleNote } from "@/components/dashboard/sector/UnfinishedMo
 import { User, Briefcase, Star, ArrowLeft, Plus, MagnifyingGlass } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 type Counsel = {
   name: string;
@@ -21,7 +23,7 @@ const COUNSELS: Counsel[] = [
   { name: "أ. هند القحطاني",   specialty: "حوكمة + PDPL",     firm: "مؤسسة القحطاني القانونية", rating: 4.6, cases: 15, status: "متاح" },
 ];
 
-export default function GovernmentExternalCounselPage() {
+function GovernmentExternalCounselPageDemo() {
   const { isDark } = useTheme();
 
   const textPri = isDark ? "text-white" : "text-slate-900";
@@ -113,3 +115,19 @@ export default function GovernmentExternalCounselPage() {
   );
 }
 
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (المستشارون الخارجيون وأتعابهم) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function GovernmentExternalCounselPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="المستشارون الخارجيون"
+        description="هذه الصفحة غير متاحة حالياً. المستشارون الخارجيون وأتعابهم التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/government"
+      />
+    );
+  }
+  return <GovernmentExternalCounselPageDemo />;
+}

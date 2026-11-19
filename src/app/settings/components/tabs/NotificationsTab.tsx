@@ -87,7 +87,7 @@ export function getNotificationCategories(userType: string | null): NotifCategor
   const shared: NotifCategory[] = [
     legalUpdateCategory(userType),
     { key: "platform_updates", label: "تحديثات المنصة",           description: "ميزات جديدة ونشرات نظامي",      defaultOn: true  },
-    { key: "payment_done",     label: "المدفوعات",                description: "فاتورة مدفوعة أو رصيد محتجز", defaultOn: true  },
+    { key: "payment_done",     label: "المدفوعات",                description: "فاتورة مدفوعة أو نقاط مشحونة", defaultOn: true  },
     { key: "reminders",        label: "التذكيرات العامة",          description: "تواريخ مهمة ومواعيد نهائية",   defaultOn: true  },
   ];
 

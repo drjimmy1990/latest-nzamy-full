@@ -31,8 +31,13 @@ function text(v: unknown): string {
 
 export function decreeSummaries(meta: Record<string, unknown>, body: unknown): DecreeSummaries {
   const fromBlock = lawSummaryBrief(body);
+  // Owner file 18, item 4: a front-matter summary the library agent marks
+  // `summary_status: draft` is not published (the laws store drafts and hide
+  // them; the decree tables have no status column, so a draft is not loaded).
+  // A file with no summary_status reads exactly as before.
+  const draft = text(meta.summary_status).trim().toLowerCase() === "draft";
   return {
-    summary: text(meta.summary),
-    summary_brief: fromBlock ?? text(meta.summary_brief),
+    summary: draft ? "" : text(meta.summary),
+    summary_brief: fromBlock ?? (draft ? "" : text(meta.summary_brief)),
   };
 }

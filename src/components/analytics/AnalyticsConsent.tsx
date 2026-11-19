@@ -37,10 +37,12 @@ import {
   consentFromCookieHeader,
   isAnalyticsCookieName,
   isAnalyticsRoute,
+  isClarityRoute,
   isFullMaskRoute,
   type ConsentChoice,
 } from "@/lib/analytics/analytics";
 import { trackEvent } from "@/lib/analytics/track";
+import { useTestAccountGate } from "@/components/analytics/useTestAccountGate";
 
 // Literal references: Next inlines NEXT_PUBLIC_* at build time only this way.
 export const ANALYTICS = analyticsIds(process.env.NEXT_PUBLIC_GA4_ID, process.env.NEXT_PUBLIC_CLARITY_ID);
@@ -102,10 +104,16 @@ function injectScript(src: string): void {
   document.head.appendChild(s);
 }
 
-function loadScripts(w: W): void {
-  if (w.__nzAnalyticsLoaded) return;
+/**
+ * GA4 once per page load; Clarity once, and only when `withClarity` (a
+ * CLARITY_ROUTES page: never sign-up or payment — batch l9). A visit that
+ * starts on /register loads GA4 only, and Clarity joins if it moves on to
+ * /pricing.
+ */
+function loadScripts(w: W, withClarity: boolean): void {
   const { ga4Id, clarityId } = ANALYTICS;
-  if (ga4Id) {
+  const loaded = w.__nzAnalyticsLoaded;
+  if (!loaded && ga4Id) {
     w[`ga-disable-${ga4Id}`] = false;
     w.dataLayer = w.dataLayer || [];
     // gtag.js reads the Arguments object, not an array.
@@ -127,7 +135,7 @@ function loadScripts(w: W): void {
     });
     injectScript(`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(ga4Id)}`);
   }
-  if (clarityId) {
+  if (clarityId && withClarity && !loaded?.clarity) {
     const q: ((...args: unknown[]) => void) & { q?: unknown[] } = function clarity() {
       // eslint-disable-next-line prefer-rest-params
       (q.q = q.q || []).push(arguments);
@@ -136,7 +144,7 @@ function loadScripts(w: W): void {
     injectScript(`https://www.clarity.ms/tag/${encodeURIComponent(clarityId)}`);
     w.clarity("consent");
   }
-  w.__nzAnalyticsLoaded = { ga4Id, clarity: Boolean(clarityId) };
+  w.__nzAnalyticsLoaded = { ga4Id, clarity: Boolean(loaded?.clarity || (clarityId && withClarity)) };
 }
 
 /**
@@ -153,9 +161,14 @@ function patchHistory(w: W): void {
     history[method] = (data: unknown, unused: string, url?: string | URL | null) => {
       try {
         if (url != null) {
-          const leaving = !isAnalyticsRoute(new URL(String(url), window.location.href).pathname);
+          const nextPath = new URL(String(url), window.location.href).pathname;
+          const leaving = !isAnalyticsRoute(nextPath);
           if (flag) w[flag] = leaving;
-          if (leaving) document.body.setAttribute(MASK_ATTR, MASK_VALUE);
+          // Clarity stops at sign-up and payment too (batch l9), not only at
+          // a non-analytics page.
+          if (leaving || (w.__nzAnalyticsLoaded?.clarity && !isClarityRoute(nextPath))) {
+            document.body.setAttribute(MASK_ATTR, MASK_VALUE);
+          }
         }
       } catch {
         // never break navigation
@@ -174,6 +187,8 @@ export default function AnalyticsConsent() {
   const [choice, setChoice] = useState<ConsentChoice | null | "unknown">("unknown");
   const lastPageView = useRef<string | null>(null);
   const allowed = isAnalyticsRoute(pathname);
+  // l9 testinfra (owner file 19 §1ج.2): never for a test account or a tester's browser
+  const testGate = useTestAccountGate(allowed && choice === "granted", pathname);
 
   // Read the stored choice in the browser only; follow later changes.
   useEffect(() => {
@@ -187,10 +202,11 @@ export default function AnalyticsConsent() {
   // Load / switch off per route.
   useEffect(() => {
     if (!ANALYTICS.enabled || choice === "unknown") return;
+    if (allowed && choice === "granted" && testGate === "pending") return;
     const w = window as unknown as W;
     const loaded = w.__nzAnalyticsLoaded;
 
-    if (!allowed || choice !== "granted") {
+    if (!allowed || choice !== "granted" || testGate === "excluded") {
       if (loaded) {
         if (loaded.ga4Id) w[`ga-disable-${loaded.ga4Id}`] = true;
         if (loaded.clarity) {
@@ -205,11 +221,21 @@ export default function AnalyticsConsent() {
       return;
     }
 
+    const clarityHere = isClarityRoute(pathname);
+    if (loaded?.clarity && !clarityHere) {
+      // Clarity has no documented pause, and it may not record sign-up or
+      // payment (batch l9): stay masked, and a fresh load of this page
+      // brings GA4 back without Clarity.
+      document.body.setAttribute(MASK_ATTR, MASK_VALUE);
+      window.location.reload();
+      return;
+    }
+
     if (isFullMaskRoute(pathname)) document.body.setAttribute(MASK_ATTR, MASK_VALUE);
     else document.body.removeAttribute(MASK_ATTR);
     maskInputs(document);
     patchHistory(w);
-    loadScripts(w);
+    loadScripts(w, clarityHere);
     if (ANALYTICS.ga4Id) w[`ga-disable-${ANALYTICS.ga4Id}`] = false;
 
     const location = cleanPageLocation(window.location.origin, window.location.pathname, window.location.search);
@@ -219,7 +245,7 @@ export default function AnalyticsConsent() {
       if (ANALYTICS.ga4Id && typeof w.gtag === "function") w.gtag("set", { page_location: location });
       trackEvent(ANALYTICS_EVENTS.pageView, { page_location: location, page_title: document.title.slice(0, 100) });
     }
-  }, [allowed, choice, pathname]);
+  }, [allowed, choice, pathname, testGate]);
 
   // While loaded: mask new inputs, record tagged clicks, full-load links that leave the routes.
   const onClick = useCallback((e: MouseEvent) => {
@@ -238,7 +264,9 @@ export default function AnalyticsConsent() {
     if (a.target && a.target !== "_self") return;
     try {
       const next = new URL(a.href, window.location.href);
-      if (next.origin !== window.location.origin || isAnalyticsRoute(next.pathname)) return;
+      if (next.origin !== window.location.origin) return;
+      const clarityOn = Boolean(w.__nzAnalyticsLoaded?.clarity);
+      if (isAnalyticsRoute(next.pathname) && (!clarityOn || isClarityRoute(next.pathname))) return;
       e.preventDefault();
       e.stopPropagation();
       window.location.assign(next.href);
@@ -248,7 +276,7 @@ export default function AnalyticsConsent() {
   }, []);
 
   useEffect(() => {
-    if (!ANALYTICS.enabled || choice !== "granted" || !allowed) return;
+    if (!ANALYTICS.enabled || choice !== "granted" || !allowed || testGate !== "ok") return;
     document.addEventListener("click", onClick, true);
     const observer = new MutationObserver((records) => {
       for (const r of records) r.addedNodes.forEach((n) => {
@@ -263,7 +291,7 @@ export default function AnalyticsConsent() {
       document.removeEventListener("click", onClick, true);
       observer.disconnect();
     };
-  }, [allowed, choice, onClick]);
+  }, [allowed, choice, onClick, testGate]);
 
   if (!ANALYTICS.enabled || choice !== null || !allowed) return null;
 

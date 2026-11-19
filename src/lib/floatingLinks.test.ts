@@ -89,7 +89,9 @@ async function hasPageOrRoute(dir: string): Promise<boolean> {
  *   file "resolve", which defeats the point of a dead-link test.
  */
 async function routeExists(segments: string[], dir: string = APP_DIR, index = 0): Promise<boolean> {
-  if (index === segments.length) return hasPageOrRoute(dir);
+  // The last segment may also resolve through a route group inside it
+  // (`/laws` → app/laws/(index)/page.tsx), so fall through to the loop.
+  if (index === segments.length && (await hasPageOrRoute(dir))) return true;
 
   let entries;
   try {
@@ -98,7 +100,7 @@ async function routeExists(segments: string[], dir: string = APP_DIR, index = 0)
     return false;
   }
 
-  const segment = segments[index];
+  const segment = segments[index]; // undefined at the end: only a group can match
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -111,7 +113,7 @@ async function routeExists(segments: string[], dir: string = APP_DIR, index = 0)
 
     if (name.startsWith("[") && name.endsWith("]")) {
       const inner = name.slice(1, -1);
-      if (inner.startsWith("...") || inner.startsWith("[...")) continue; // catch-all: not a match, see doc above
+      if (index === segments.length || inner.startsWith("...") || inner.startsWith("[...")) continue; // catch-all: not a match, see doc above
       if (await routeExists(segments, path.join(dir, name), index + 1)) return true;
       continue;
     }

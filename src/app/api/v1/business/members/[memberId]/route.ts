@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { createServiceClient } from "@/lib/supabase/server";
+import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 import {
   decideBusinessMemberPatch,
   type BusinessRole,
@@ -155,6 +156,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ m
       .single();
 
     if (error || !data) {
+      // Company seat cap (20261129_10): bringing a removed member back into a full company.
+      const full = limitRefusal(error);
+      if (full) return NextResponse.json(limitRefusalBody(full), { status: full.status });
       if (error?.code === "23514") {
         return NextResponse.json({ error: AR.patchFailed }, { status: 400 });
       }

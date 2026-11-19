@@ -8,6 +8,8 @@ import {
   CaretLeft, CaretRight, Warning,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Mock hearings ────────────────────────────────────────────────────────────
 const MOCK_HEARINGS = [
@@ -19,7 +21,7 @@ const MOCK_HEARINGS = [
 ];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function ArbitrationHearingsPage() {
+function ArbitrationHearingsPageDemo() {
   const { lang } = useTheme();
   const isAr = lang === "ar";
   const [view, setView] = useState<"upcoming" | "done">("upcoming");
@@ -168,4 +170,21 @@ export default function ArbitrationHearingsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (مواعيد جلسات التحكيم وأطرافها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ArbitrationHearingsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="جلسات التحكيم"
+        description="هذه الصفحة غير متاحة حالياً. مواعيد جلسات التحكيم وأطرافها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ArbitrationHearingsPageDemo />;
 }

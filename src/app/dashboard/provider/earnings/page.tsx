@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 import { COMMISSION_PCT, commissionPctText } from "@/lib/pricing/commission";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import {
   CurrencyDollar, ArrowDown, ArrowUp, Clock, Bank,
   Receipt, ChartBar, CheckCircle, Warning, ArrowRight,
@@ -62,7 +64,7 @@ function BarChart({ data, isDark }: { data: typeof MONTHLY_CHART; isDark: boolea
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
-export default function ProviderEarningsPage() {
+function ProviderEarningsPageDemo() {
   const { isDark } = useTheme();
   const [period, setPeriod] = useState<"week" | "month" | "all">("month");
 
@@ -186,4 +188,21 @@ export default function ProviderEarningsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (الأرباح والتحويلات والمبالغ المعلّقة) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function ProviderEarningsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الأرباح والمالية"
+        description="هذه الصفحة غير متاحة حالياً. الأرباح والتحويلات والمبالغ المعلّقة التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <ProviderEarningsPageDemo />;
 }

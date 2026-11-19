@@ -6,6 +6,7 @@ import {
   parseFeqhFreePages,
   parseLibraryPublicProtection,
   parsePublicRulings,
+  PUBLIC_RULINGS_FULL_MAX,
   type LibraryPublicProtection,
   type PublicRulingsSetting,
 } from "@/lib/library/publicGuard";
@@ -64,7 +65,7 @@ export function LibraryPublicGuardSettings({ isDark }: { isDark: boolean }) {
       for (const f of LIBRARY_PUBLIC_PROTECTION_FIELDS) protectionJson[f.json] = protection[f.key];
       const errors = [
         await patch("library_public_protection", protectionJson),
-        await patch("public_full_rulings_per_collection", { full: rulings.full, excerpt_chars: rulings.excerptChars }),
+        await patch("public_full_rulings_per_collection", { full: rulings.full }),
         await patch("library_feqh_free_pages", { pages: feqhPages }),
       ].filter((e): e is string => e !== null);
       setStatus(errors.length ? { ok: false, text: errors.join(" — ") } : { ok: true, text: "حُفظت إعدادات حماية المكتبة. تسري خلال دقيقة." });
@@ -85,7 +86,7 @@ export function LibraryPublicGuardSettings({ isDark }: { isDark: boolean }) {
       <h3 className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>حماية المكتبة العامة</h3>
       <p className={`text-xs mb-4 ${muted}`}>
         حدود التصفح للزائر والجلسة، والتحقق البشري (Turnstile) بعد العتبة، وعمق التصفح لغير المشترك، وما يُعرض مجاناً من الأحكام والفقه.
-        حد القراءة اليومي للنص الكامل (daily_full_read_limit) في صفحة «نشاط المكتبة».
+        حدود القراءة للنص الكامل (التحذير daily_full_read_limit، والحد اليومي الصلب daily_full_read_hard_cap، والحد الأسبوعي weekly_full_read_limit) في صفحة «نشاط المكتبة».
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {LIBRARY_PUBLIC_PROTECTION_FIELDS.map((f) => (
@@ -102,12 +103,8 @@ export function LibraryPublicGuardSettings({ isDark }: { isDark: boolean }) {
           </label>
         ))}
         <label className="block">
-          <span className={label}>الأحكام الكاملة المجانية لكل مجموعة (public_full_rulings_per_collection)</span>
-          <input type="number" min={0} max={20} value={Number.isFinite(rulings.full) ? rulings.full : ""} onChange={(e) => setRulings({ ...rulings, full: num(e.target.value) })} className={input} />
-        </label>
-        <label className="block">
-          <span className={label}>طول مقتطف الحكم لغير المشترك (حرفاً — نحو سطر ونصف)</span>
-          <input type="number" min={60} max={600} value={Number.isFinite(rulings.excerptChars) ? rulings.excerptChars : ""} onChange={(e) => setRulings({ ...rulings, excerptChars: num(e.target.value) })} className={input} />
+          <span className={label}>الأحكام الكاملة المجانية لكل مجموعة (public_full_rulings_per_collection، من ٠ إلى ٣؛ الباقي عناوين وبطاقة اشتراك)</span>
+          <input type="number" min={0} max={PUBLIC_RULINGS_FULL_MAX} value={Number.isFinite(rulings.full) ? rulings.full : ""} onChange={(e) => setRulings({ ...rulings, full: num(e.target.value) })} className={input} />
         </label>
         <label className="block">
           <span className={label}>صفحات الفقه المجانية لغير المشترك (٠ = للمشتركين فقط)</span>

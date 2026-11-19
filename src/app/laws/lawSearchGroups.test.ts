@@ -84,7 +84,7 @@ test("a hit with no law slug stays its own card, unchanged", () => {
 });
 
 test("the page groups the loaded hits and both card layouts list the matching articles", () => {
-  const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
   const cards = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
   const route = readFileSync(new URL("../api/library/search/route.ts", import.meta.url), "utf8");
   assert.match(page, /const lawCards = isSearchActive \? groupLawSearchCards\(filteredLaws\) : filteredLaws;/);

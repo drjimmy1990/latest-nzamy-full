@@ -7,6 +7,8 @@ import {
   ArrowUpRight,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 const MONTHLY = [
@@ -26,7 +28,7 @@ const TOP_AMB = [
 
 const maxRefs = Math.max(...MONTHLY.map(m => m.referrals));
 
-export default function AdminCelebrityReferralsPage() {
+function AdminCelebrityReferralsPageDemo() {
   const totalReferrals = MONTHLY.reduce((s, m) => s + m.referrals, 0);
   const totalEarned    = MONTHLY.reduce((s, m) => s + m.earned, 0);
   const totalPaid      = MONTHLY.reduce((s, m) => s + m.paidOut, 0);
@@ -175,4 +177,21 @@ export default function AdminCelebrityReferralsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (إحالات السفراء وأرقامها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function AdminCelebrityReferralsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="تقرير الإحالات"
+        description="هذه الصفحة غير متاحة حالياً. إحالات السفراء وأرقامها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/admin/celebrities"
+      />
+    );
+  }
+  return <AdminCelebrityReferralsPageDemo />;
 }

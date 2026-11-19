@@ -24,6 +24,7 @@ const IDENTITY_PAGES = [
   "app/refund-policy/page.tsx",
   "app/contact/page.tsx",
   "app/faq/page.tsx",
+  "app/faq/FaqView.tsx",
   "app/faq/faqData.ts",
 ];
 
@@ -67,7 +68,7 @@ test("Q27: client screens call the platform «فريق نظامي», not «مك�
 
 test("Q27: the home page's structured data is an Organization, not a schema.org LegalService (a law firm)", () => {
   // Built in src/lib/publicSeo/structuredData.ts since 18 Nov (owner item 4.5).
-  assert.match(src("app/page.tsx"), /buildOrganizationJsonLd\(\)/);
+  assert.match(src("app/page.tsx"), /buildOrganizationJsonLd\(registry\)/);
   const text = src("lib/publicSeo/structuredData.ts");
   assert.doesNotMatch(text, /"@type":\s*"LegalService"/);
   assert.match(text, /"@type":\s*"Organization"/);

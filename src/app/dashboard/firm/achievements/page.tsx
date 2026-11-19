@@ -10,6 +10,8 @@ import {
   GraduationCap, UserCircle, Gift,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ── Types ─────────────────────────────────────────────────
 type Tab = "overview" | "leaderboard" | "rewards";
@@ -73,7 +75,7 @@ const REWARDS = [
   { name: "لقب شريك مبتدئ", xpCost: 25000, icon: "👑", claimed: false },
 ];
 
-export default function AchievementsPage() {
+function AchievementsPageDemo() {
   const { isDark } = useTheme();
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -359,4 +361,21 @@ export default function AchievementsPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (النقاط والأوسمة والترتيب بين زملاء مُختلَقين) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function AchievementsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="إنجازاتي ومكافآتي"
+        description="هذه الصفحة غير متاحة حالياً. النقاط والأوسمة والترتيب بين زملاء مُختلَقين التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/firm"
+      />
+    );
+  }
+  return <AchievementsPageDemo />;
 }

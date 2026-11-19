@@ -18,12 +18,16 @@
  *      decides, server-side).
  *   5. Phone (and reading mode): the same sections in a bottom sheet, opened
  *      from the article's own «الإحالات» button.
- *   6. A link whose anchor is gone goes to its law or collection, never a 404.
- *   7. The fiqh section is hidden while it is empty.
+ *   6. A link whose anchor is gone goes to its law or collection, never a 404,
+ *      and is never presented as a confirmed article (file 16 §9.7): it is
+ *      named by its document, with no status and «غير مؤكَّدة».
+ *   7. File 16 §8 / register 14 item 17: an empty section is hidden — never
+ *      «لا توجد إحالات» — and the side box is hidden when the article has no
+ *      link at all (or is not in the graph yet).
  *
- * Data: GET /api/library/laws/[slug]/citations?article=<id> — only the link
- * types matching the owner's graph file (decision ٦٠). Fetched for the article
- * in view after it settles (no request per scrolled article), cached per page.
+ * Data: GET /api/library/laws/[slug]/citations?article=<id> — every legal link
+ * type, «إحالة» included (register 14 item 17). Fetched for the article in
+ * view after it settles (no request per scrolled article), cached per page.
  */
 
 import { createContext, useContext, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
@@ -207,8 +211,15 @@ function arDigits(n: number): string {
 // ─── Sections (box, sheet) ───────────────────────────────────────────────────
 
 function visibleSections(data: Extract<Refs, { available: true }>): Section[] {
-  // Owner item 6: the fiqh section is hidden while it is empty.
-  return SECTIONS.filter((s) => s !== "fiqh" || data.sections.fiqh.total > 0);
+  // File 16 §8 (register 14 item 17): every empty section is hidden, never «لا توجد إحالات».
+  return SECTIONS.filter((s) => data.sections[s].total > 0 && data.sections[s].items.length > 0);
+}
+
+/** The sections an article shows; [] when it has none (not in the graph, the graph not ready, or no link). */
+function shownSections(state: LoadState): Section[] {
+  const data = state.data;
+  if (state.status !== "done" || !data || !data.available || !data.found) return [];
+  return visibleSections(data);
 }
 
 function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; articleId: string; state: LoadState; max: number }) {
@@ -217,8 +228,9 @@ function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; 
   const data = state.data;
   if (state.status === "loading" || state.status === "idle") return <p className={`text-[11px] ${muted}`}>جارٍ تحميل الإحالات…</p>;
   if (state.status === "failed") return <p className={`text-[11px] ${muted}`}>تعذّر تحميل الإحالات الآن.</p>;
-  if (!data || !data.available) return <p className={`text-[11px] ${muted}`}>شبكة الإحالات غير متاحة بعد.</p>;
-  if (!data.found) return <p className={`text-[11px] ${muted}`}>هذه المادة لم تُفهرس في شبكة الإحالات بعد.</p>;
+  if (!data || !data.available || !data.found || shownSections(state).length === 0) {
+    return <p className={`text-[11px] ${muted}`}>لا توجد إحالات مرتبطة بهذه المادة.</p>;
+  }
   return (
     <div className="space-y-3">
       {visibleSections(data).map((s, i) => {
@@ -234,17 +246,13 @@ function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; 
               <h4 className={`flex-1 text-[11px] font-black ${meta.text(isDark)}`}>{meta.title}</h4>
               <span className={`rounded-md px-1.5 text-[10px] font-bold ${meta.chip(isDark)}`}>{arDigits(sec.total)}</span>
             </div>
-            {sec.items.length === 0 ? (
-              <p className={`text-[10.5px] ${muted}`}>لا توجد إحالات مسجّلة في هذا القسم.</p>
-            ) : (
-              <ul className="space-y-1">
-                {sec.items.slice(0, max).map((it) => (
-                  <li key={it.key}>
-                    <ItemButton ctx={ctx} item={it} locked={locked} />
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ul className="space-y-1">
+              {sec.items.slice(0, max).map((it) => (
+                <li key={it.key}>
+                  <ItemButton ctx={ctx} item={it} locked={locked} />
+                </li>
+              ))}
+            </ul>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               {sec.total > max && (
                 <button type="button" onClick={() => ctx.openAll(articleId, s)} className={`text-[10.5px] font-bold underline-offset-2 hover:underline ${meta.text(isDark)}`}>
@@ -266,7 +274,8 @@ function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; 
 
 function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefItem; locked: boolean }) {
   const { isDark } = ctx;
-  const pill = pillOf(item);
+  // An unconfirmed anchor (file 16 §9.7) carries no status: it is not a confirmed article.
+  const pill = item.anchorMissing ? null : pillOf(item);
   return (
     <button
       type="button"
@@ -281,7 +290,7 @@ function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefI
       {(item.relation || item.anchorMissing) && (
         <span className={`mt-0.5 block text-[9.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
           {item.relation}
-          {item.anchorMissing && " · الموضع الدقيق غير متاح، يفتح المستند كاملاً"}
+          {item.anchorMissing && ` · ${item.kind === "principle" ? "مبدأ غير مؤكَّد" : "مادة غير مؤكَّدة"}، يفتح المستند كاملاً`}
         </span>
       )}
     </button>
@@ -290,24 +299,26 @@ function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefI
 
 // ─── The side box (desktop) ───────────────────────────────────────────────────
 
-/** The box beside the article in view. Waits 350 ms after the article changes, so scrolling past fetches nothing. */
+/**
+ * The box beside the article in view. Waits 350 ms after the article changes,
+ * so scrolling past fetches nothing. Hidden once the answer says the article
+ * has no link (file 16 §8 — no empty box, no «لا توجد»); while loading it keeps
+ * its frame, so the cards under it in the sticky column do not jump.
+ */
 export function RefBox({ articleId }: { articleId: string | null }) {
   const ctx = useRefBox();
   const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, 350);
-  if (!ctx) return null;
+  if (!ctx || !articleId) return null;
+  if (state.status === "done" && shownSections(state).length === 0) return null;
   const { isDark } = ctx;
   return (
     <div className={`p-3.5 rounded-2xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
       <h3 className={`mb-2.5 flex items-center gap-1.5 text-xs font-black ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
         <LinkSimple size={14} className="text-[#C8A762]" />
         <span className="flex-1">الإحالات المرتبطة</span>
-        {articleId && <span className={`truncate max-w-[45%] text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{ctx.articleLabel(articleId)}</span>}
+        <span className={`truncate max-w-[45%] text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{ctx.articleLabel(articleId)}</span>
       </h3>
-      {articleId ? (
-        <RefSections ctx={ctx} articleId={articleId} state={state} max={2} />
-      ) : (
-        <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>انتقل إلى مادة لتظهر إحالاتها هنا.</p>
-      )}
+      <RefSections ctx={ctx} articleId={articleId} state={state} max={2} />
     </div>
   );
 }
@@ -387,11 +398,13 @@ function Modal({ isDark, label, onClose, children, wide }: { isDark: boolean; la
 
 function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxContextValue; articleId: string; initialTab: Section; onClose: () => void }) {
   const state = useArticleRefs(ctx.lawSlug, articleId);
-  const [tab, setTab] = useState<Section>(initialTab);
+  const [picked, setTab] = useState<Section>(initialTab);
   const { isDark } = ctx;
   const data = state.data && state.data.available ? state.data : null;
   const tabs = data ? visibleSections(data) : [initialTab];
-  const sec = data?.sections[tab];
+  // An empty section has no tab (file 16 §8): fall back to the first one shown.
+  const tab = tabs.includes(picked) ? picked : (tabs[0] ?? picked);
+  const sec = data && tabs.includes(tab) ? data.sections[tab] : undefined;
   const locked = SUBSCRIBER_SECTIONS.has(tab) && !ctx.viewerHasFullAccess;
   return (
     <Modal isDark={isDark} label="كل الإحالات المرتبطة" onClose={onClose} wide>
@@ -425,8 +438,6 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
       <div className="flex-1 overflow-y-auto p-4">
         {!data || !sec ? (
           <RefSections ctx={ctx} articleId={articleId} state={state} max={0} />
-        ) : sec.items.length === 0 ? (
-          <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>لا توجد إحالات مسجّلة في هذا القسم.</p>
         ) : (
           <>
             {locked && (
@@ -577,7 +588,9 @@ function RefPreview({ ctx, item, onClose }: { ctx: RefBoxContextValue; item: Ref
         )}
         {state.status === "done" && p && !p.found && (
           <p className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-            تعذّر تحديد الموضع الدقيق لهذه الإحالة في المكتبة؛ يفتح الرابط المستند كاملاً.
+            {item.anchorMissing
+              ? `لم نتحقق من ${item.kind === "principle" ? "المبدأ المحال إليه" : "المادة المحال إليها"} في المكتبة؛ فلا تُعرض هنا ${item.kind === "principle" ? "مبدأً مؤكَّداً" : "مادةً مؤكَّدة"}. يفتح الرابط المستند كاملاً.`
+              : "تعذّر تحديد الموضع الدقيق لهذه الإحالة في المكتبة؛ يفتح الرابط المستند كاملاً."}
           </p>
         )}
         {state.status === "done" && p?.found && p.locked === "subscribe" && (

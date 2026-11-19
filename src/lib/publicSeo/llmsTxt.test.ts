@@ -45,5 +45,6 @@ test("the route serves it as text/plain UTF-8, statically", () => {
   const src = readFileSync(new URL("../../app/llms.txt/route.ts", import.meta.url), "utf8");
   assert.match(src, /"Content-Type": "text\/plain; charset=utf-8"/);
   assert.match(src, /export const dynamic = "force-static";/);
-  assert.match(src, /new Response\(buildLlmsTxt\(\)/);
+  assert.match(src, /new Response\(buildLlmsTxt\(await loadPlatformRegistry\(\)\)/);
+  assert.match(src, /export const revalidate = 300;/);
 });

@@ -117,3 +117,21 @@ test("an editorial note or a bracketed aside never reaches the stored name; a de
     ],
   );
 });
+
+test("owner file 18 («خامساً» 5): affected_laws reads `law_id` — the target's registry id, stated outright", () => {
+  const links = extractOwnerLinks({
+    affected_laws: [
+      { name: "نظام القضاء", law_id: "LAW-00-0897", affected_articles: ["5"] },
+      { law_id: "LAW-00-0114" },
+      { name: "LAW-09-0001 (عنوان)", law_id: "LAW-09-0002" },
+      { name: "نظام باء", law_id: "غير متوفر" },
+      { law_id: "null" },
+    ],
+  });
+  assert.deepEqual(links, [
+    { kind: "affects", name: "نظام القضاء", id: "LAW-00-0897", articles: ["5"] },
+    { kind: "affects", id: "LAW-00-0114" },
+    { kind: "affects", id: "LAW-09-0002" },
+    { kind: "affects", name: "نظام باء" },
+  ]);
+});

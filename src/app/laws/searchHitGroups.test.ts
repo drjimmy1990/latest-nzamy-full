@@ -86,7 +86,7 @@ test("source: the tabs render grouped search cards; links carry ?target= and ?q=
   assert.match(all, /<Hl text=\{a\.snippet\} \/>/);
   assert.match(all, /groupPrincipleSearchCards\(/);
   assert.match(all, /feqhGroups\.slice\(0, 3\)\.map\(/);
-  const page = read("./page.tsx");
+  const page = read("./(index)/page.tsx");
   assert.match(page, /<HighlightProvider query=\{isSearchActive \? search : ""\}>/);
   assert.match(page, /locked: r\.locked === true,\r?\n\s*\/\/ Shown only when the search sends a real principle number\./);
   assert.match(page, /collectionTitle: typeof r\.meta\?\.collectionTitle === 'string'/);

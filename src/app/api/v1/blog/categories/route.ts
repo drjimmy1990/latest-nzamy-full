@@ -9,7 +9,7 @@ import { createServiceClient } from "@/lib/supabase/server";
  * FAILURE IS A 500, NOT AN EMPTY LIST. The old comment claimed an empty `data`
  * made the page "fall back to its static category list" — it does not: the page
  * only assigns when the array is non-empty and returns early on `!res.ok`
- * (src/app/blog/page.tsx:213-216), so both paths lead to the same fallback and
+ * (src/app/blog/BlogList.tsx), so both paths lead to the same fallback and
  * nothing depends on the 200. What the empty array actually bought was an
  * unreadable taxonomy that looked exactly like a blog with no categories.
  *

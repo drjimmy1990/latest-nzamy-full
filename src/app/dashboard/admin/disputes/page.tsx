@@ -7,6 +7,8 @@ import {
   ArrowClockwise, User, ChartLine, X, ArrowSquareOut,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 const DISPUTES = [
   { id:"D-028", clientName:"مؤسسة النور التجارية", providerName:"أ. فهد القحطاني",
@@ -42,7 +44,7 @@ const REASONS = [
   { label:"أخرى", count:2, color:"#6b7280" },
 ];
 
-export default function DisputesPage() {
+function DisputesPageDemo() {
   const { isDark } = useTheme();
   const [filter, setFilter] = useState("all");
 
@@ -184,4 +186,21 @@ export default function DisputesPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (نزاعات بين عملاء ومحامين بمبالغها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function DisputesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="النزاعات"
+        description="هذه الصفحة غير متاحة حالياً. نزاعات بين عملاء ومحامين بمبالغها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/admin"
+      />
+    );
+  }
+  return <DisputesPageDemo />;
 }

@@ -47,7 +47,13 @@ import {
   resolvePathSurvivor,
   resolveSlugSurvivor,
 } from "./lib/entity-prescan";
-import { extractArticleHistory, stripDetails, stripArticleHeading, unwrapLiveAnnexes } from "./lib/article-history";
+import {
+  extractArticleHistory,
+  stripDetails,
+  stripArticleHeading,
+  unwrapLiveAnnexes,
+  type AmendmentRecord,
+} from "./lib/article-history";
 // Owner 2026-11-07: the corpus's own audit notes never reach an amendment summary.
 import { stripAuditNotes } from "../../src/lib/library/lawPreambleBlocks";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
@@ -199,6 +205,41 @@ const chapterLevelDiagnostics: string[] = [];
  * Informational, never gating.
  */
 const unpublishedTextNotices: string[] = [];
+/**
+ * Owner file 18, م4: an article whose `number_text` (or `number`) says «مكرر»
+ * but whose `number` is not the one format «23 مكرر» / «9 مكرر 2». Parsed as
+ * before (no number, position id); the list goes back to the library agent —
+ * a published article is never renumbered here (ع6). Informational.
+ */
+const mukarrarNumberProblems: string[] = [];
+/**
+ * Owner file 18, item 3: amendment cards whose anchor says
+ * `"text_status": "unavailable"` — the list the reply asks the agent to send
+ * back, kept from our side too. Informational.
+ */
+const amendmentTextUnavailable: string[] = [];
+/**
+ * Owner file 18, item 3: an AMENDMENT anchor whose JSON does not parse, an
+ * anchor with no text after it and no `text_status`, `"decree": ""`, a
+ * `text_status` outside available / unavailable, or one that disagrees with
+ * the text found. Each card is still loaded as read. Informational.
+ */
+const amendmentAnchorProblems: string[] = [];
+/**
+ * Owner file 18, item 4: frontmatter summary / summary_brief / summary_status /
+ * summary_reviewed_at that break the reply's rules (length, plain text, a
+ * status other than draft / reviewed, a date not YYYY-MM-DD). The text is
+ * loaded as written; a bad status or date is loaded as null. Informational.
+ */
+const lawSummaryProblems: string[] = [];
+/**
+ * Owner file 18, item 5: the link is read from the CHILD's frontmatter
+ * (parent_law_id = the parent file's id). Listed, never changed: a
+ * parent_law_id on a `type: نظام` file, one pointing at the file itself, and
+ * one that names no law of this run (no link is made — it used to drop
+ * silently). Informational.
+ */
+const parentLinkProblems: string[] = [];
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -269,6 +310,200 @@ export interface AmendmentEntry {
    * seed-library.ts fallback regardless of the amendment's actual nature.
    */
   type?: string;
+  /**
+   * Owner file 18, item 3: the amending instrument's own library id, as the
+   * anchor's `decree_id` states it (the reader can link it). Absent when the
+   * anchor states none.
+   */
+  decree_id?: string;
+  /** The paragraph(s) the amendment touched, as the anchor writes them («5، 7»). */
+  paragraphs?: string;
+  /**
+   * "unavailable": the source keeps no prior text for this amendment (the
+   * card says so instead of showing an empty box). "available" or absent
+   * otherwise — never inferred.
+   */
+  text_status?: "available" | "unavailable";
+}
+
+/**
+ * An AMENDMENT anchor INSIDE a `<details>` block becomes
+ * `<!-- AMENDMENT_IN_DETAILS … -->`, which no regulation boundary matches
+ * (`AMENDMENT\b` stops at the underscore). Used only where a regulation block
+ * is cut out of an article (its text, and its removal from the live text).
+ *
+ * Why (owner file 18, item 1; 2026-11-20): a regulation block ends at the
+ * next AMENDMENT anchor, so when the regulation's own «📜 الإصدارات السابقة»
+ * block holds one (نظام القضاء «سابعاً»; المرافعات (6/75)), the regulation
+ * ended mid-block — its text kept a dangling `<details>`, and the rest (the
+ * «🔄 تعديل» notes, the prior texts, even a following regulation article with
+ * no anchor of its own) stayed in the system article's LIVE text. The cards
+ * themselves still come from extractArticleHistory on the unmasked body.
+ */
+export function maskAnchorsInDetails(text: string): string {
+  return text.replace(/<details[^>]*>[\s\S]*?<\/details>/g, (block) =>
+    block.replace(/<!--(\s*)AMENDMENT(\s)/g, "<!--$1AMENDMENT_IN_DETAILS$2"),
+  );
+}
+
+/** «23 مكرر», «23مكرر», «9 مكرر 2», «9 مكرر (2)», «23 مكررا» — digits already Latin. */
+const MUKARRAR_NUMBER_RE = /^(\d+)\s*مكرر(?:ًا|اً|ا)?(?:\s*\(?\s*(\d+)\s*\)?)?$/u;
+
+/**
+ * An ARTICLE_START `number` (owner file 18, م4 and «خامساً» 4).
+ *
+ * «مكرر»: `"number": "23 مكرر"` (or «9 مكرر 2» for the second one) used to
+ * become NaN → no number: stored as "0" with an id built from its position in
+ * the chapter. Now `number` is the base (23) and `number_label` the label as
+ * written, normalised («23 مكرر», «9 مكرر 2»); the seeder stores the label and
+ * builds the id from it (`__art-23-mukarrar`). Everything else is read exactly
+ * as before (`Number(raw || 0)`), and a «مكرر» in another shape is reported,
+ * never guessed.
+ */
+export function readArticleNumber(raw: unknown, numberText?: unknown): { number: number; number_label?: string; problem?: string } {
+  const legacy = Number(raw || 0);
+  const written = typeof raw === "string" ? normalizeDigits(raw).replace(/\s+/g, " ").trim() : "";
+  const m = written.match(MUKARRAR_NUMBER_RE);
+  if (m) {
+    const base = Number(m[1]);
+    const nth = m[2] ? Number(m[2]) : 0;
+    if (Number.isSafeInteger(base) && base > 0) {
+      return { number: base, number_label: nth > 0 ? `${base} مكرر ${nth}` : `${base} مكرر` };
+    }
+  }
+  const saysMukarrar = /مكرر/u.test(written) || (typeof numberText === "string" && /مكرر/u.test(numberText));
+  return saysMukarrar
+    ? { number: legacy, problem: "«مكرر» not written as \"<n> مكرر\" or \"<n> مكرر <k>\" in `number` — parsed as before" }
+    : { number: legacy };
+}
+
+/** An anchor value as text: trimmed, a placeholder («غير متوفر», "null" …) counts as absent. */
+function anchorValue(v: unknown): string | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v !== "string") return undefined;
+  const s = v.trim();
+  if (!s || s.toLowerCase() === "null") return undefined;
+  return nullIfForbidden(s) ?? undefined;
+}
+
+/**
+ * One card from one paired record (lib/article-history.ts, AmendmentRecord).
+ * Several before-texts of ONE amendment (the decree changed paragraphs 5 and
+ * 7) become one card: each text under its own label. Nothing is guessed: no
+ * date or decree for a record with no anchor, no text where none was found.
+ */
+export function amendmentFromRecord(record: AmendmentRecord, where = "<unknown>"): AmendmentEntry {
+  const a = record.anchor ?? {};
+  const texts = record.texts;
+  const fromTexts = texts.length === 0
+    ? undefined
+    : texts.length === 1
+      ? texts[0].original_text
+      : texts.map((t) => `${t.label}:\n${t.original_text}`).join("\n\n");
+  // The anchor's own `original_text` (older files; the reply asks the agent
+  // not to write it any more) — still read when no label carries the text.
+  const original_text = fromTexts ?? (typeof a.original_text === "string" && a.original_text.trim() ? a.original_text : undefined);
+  const kind = texts[0]?.kind;
+  const type = anchorValue(a.type) ?? (kind === "amended" ? "تعديل" : kind === "repealed" ? "إلغاء" : undefined);
+  const summary = stripAuditNotes(anchorValue(a.summary) ?? record.notes.join("\n"), "summary");
+
+  const entry: AmendmentEntry = {
+    date: String(a.date || ""),
+    decree: String(a.decree || ""),
+    summary,
+    original_text,
+    type,
+  };
+  const decreeId = anchorValue(a.decree_id);
+  if (decreeId) entry.decree_id = decreeId;
+  const paragraphs = anchorValue(a.paragraphs);
+  if (paragraphs) entry.paragraphs = paragraphs;
+
+  const rawStatus = anchorValue(a.text_status);
+  if (rawStatus === "available" || rawStatus === "unavailable") entry.text_status = rawStatus;
+
+  if (record.anchorUnreadable) {
+    amendmentAnchorProblems.push(`${where} — AMENDMENT anchor JSON does not parse (one line, no "-->"); card kept with no date or decree`);
+  }
+  if (record.anchor) {
+    if (rawStatus && !entry.text_status) {
+      amendmentAnchorProblems.push(`${where} — text_status ${JSON.stringify(rawStatus)} is not available / unavailable; ignored`);
+    }
+    if (a.decree === "") amendmentAnchorProblems.push(`${where} — "decree": "" (write the instrument, or null)`);
+    if (entry.text_status === "unavailable") {
+      amendmentTextUnavailable.push(`${where} — ${entry.decree || "(no decree)"} ${entry.date}`.trim());
+      if (original_text) amendmentAnchorProblems.push(`${where} — text_status unavailable but a prior text follows the anchor; both kept`);
+    } else if (!original_text) {
+      amendmentAnchorProblems.push(
+        `${where} — anchor ${entry.decree || "(no decree)"} has no prior text after it` +
+          (entry.text_status === "available" ? " although text_status is available" : " and no text_status"),
+      );
+    }
+  }
+  return entry;
+}
+
+/** The plain-text rules of the reply (item 4): no heading, link, table, HTML or footnote. */
+const SUMMARY_MARKUP_RE = /<[a-z!/][^>]*>|\]\(|^\s*#{1,6}\s|^\s*\|.*\||\[\^/imu;
+
+/**
+ * Owner file 18, item 4: the document's summaries in the frontmatter —
+ * `summary` (300–1,200 characters, above the document), `summary_brief` (≤ 250,
+ * the /laws card), `summary_status` (draft | reviewed) and
+ * `summary_reviewed_at` (YYYY-MM-DD). `review_status` is NOT read: every
+ * `review_*` key is internal and dropped (src/lib/library/internalContentFields.ts).
+ * Texts are loaded as written (a rule broken is reported, never cut); a bad
+ * status or date is loaded as null. Only a `reviewed` brief reaches the card
+ * (migration 20261129_70).
+ */
+export function readLawSummaries(meta: Record<string, unknown>, where = "<unknown>"): {
+  summary: string | null;
+  summary_brief: string | null;
+  summary_status: "draft" | "reviewed" | null;
+  summary_reviewed_at: string | null;
+} {
+  const problems: string[] = [];
+  const text = (key: string): string | null => {
+    const v = meta[key];
+    if (v != null && typeof v !== "string" && typeof v !== "number") {
+      problems.push(`${key} is not text — ignored`);
+      return null;
+    }
+    const s = nullIfForbidden(v);
+    if (s == null || s.toLowerCase() === "null") return null;
+    return s.replace(/\r\n/g, "\n");
+  };
+  const summary = text("summary");
+  const summary_brief = text("summary_brief");
+
+  const rawStatus = text("summary_status");
+  const status = rawStatus ? rawStatus.toLowerCase() : null;
+  const summary_status = status === "draft" || status === "reviewed" ? status : null;
+  if (rawStatus && !summary_status) problems.push(`summary_status ${JSON.stringify(rawStatus)} is not draft / reviewed — loaded as null (not shown)`);
+
+  // YAML reads an unquoted 2026-11-20 as a Date.
+  const rawDate = meta.summary_reviewed_at;
+  let summary_reviewed_at: string | null = null;
+  if (rawDate instanceof Date && !Number.isNaN(rawDate.getTime())) {
+    summary_reviewed_at = rawDate.toISOString().slice(0, 10);
+  } else {
+    const d = text("summary_reviewed_at");
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`))) summary_reviewed_at = d;
+    else if (d) problems.push(`summary_reviewed_at ${JSON.stringify(d)} is not YYYY-MM-DD — loaded as null`);
+  }
+
+  if (summary != null && (summary.length < 300 || summary.length > 1200)) problems.push(`summary is ${summary.length} characters (300–1,200)`);
+  if (summary_brief != null && summary_brief.length > 250) problems.push(`summary_brief is ${summary_brief.length} characters (≤ 250)`);
+  for (const [key, value] of [["summary", summary], ["summary_brief", summary_brief]] as const) {
+    if (value != null && SUMMARY_MARKUP_RE.test(value)) problems.push(`${key} carries markup (heading, link, table, HTML or footnote) — plain text only`);
+  }
+  if ((summary != null || summary_brief != null) && !summary_status) problems.push("a summary with no summary_status — treated as a draft (not shown)");
+  if (summary_status === "reviewed" && !summary_reviewed_at) problems.push("summary_status reviewed with no summary_reviewed_at");
+  if (summary_status === "reviewed" && summary_brief == null && summary == null) problems.push("summary_status reviewed but both summaries are null");
+  if ("review_status" in meta) problems.push("review_status is internal and never loaded — write summary_status");
+
+  for (const p of problems) lawSummaryProblems.push(`${where} :: ${p}`);
+  return { summary, summary_brief, summary_status, summary_reviewed_at };
 }
 
 /** One entry of `merged_regulation_details`, as stored (owner item 4). */
@@ -337,6 +572,11 @@ export interface ParsedArticle {
   /** Absolute UTF-16 marker offset in the parsed body; used only for ordering. */
   source_index?: number;
   number: number;
+  /**
+   * «مكرر» only (owner file 18, م4): the printed number, normalised — «23 مكرر»,
+   * «9 مكرر 2». `number` is then its base (23). Absent for every other article.
+   */
+  number_label?: string;
   number_text: string;
   title: string;
   status: ArticleStatus;
@@ -493,6 +733,15 @@ export interface ParsedLaw {
   parent_law_id: string;
   parent_law: string;
   enabling_article: string;
+  /**
+   * Owner file 18, item 4 (readLawSummaries): the frontmatter summaries.
+   * Seeded into library.laws.summary / summary_card / summary_status /
+   * summary_reviewed_at (migration 20261129_70). null when absent.
+   */
+  summary: string | null;
+  summary_brief: string | null;
+  summary_status: "draft" | "reviewed" | null;
+  summary_reviewed_at: string | null;
   variant: "boe" | "qadha";
   chapters: ParsedChapter[];
   metadata: Record<string, unknown>;
@@ -1118,6 +1367,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     parent_law_id,
     parent_law,
     enabling_article,
+    ...readLawSummaries(meta, path.basename(filePath)),
     variant,
     chapters,
     metadata: meta,
@@ -1383,7 +1633,10 @@ function parseArticlesInBlock(
     let articleBody = match[2];
 
     // ── Extract regulation blocks ──────────────────────────────────────────
-    const regulations: ExecutiveRegulation[] = extractRegulationsFrom(articleBody);
+    // On the masked body: a regulation keeps its own «📜 الإصدارات السابقة»
+    // block (and any text after it) instead of ending at the AMENDMENT anchor
+    // inside it (2026-11-20; see maskAnchorsInDetails).
+    const regulations: ExecutiveRegulation[] = extractRegulationsFrom(maskAnchorsInDetails(articleBody));
 
     // Trailing REGULATION anchors: the gap between this article's END and the
     // next ARTICLE_START (or the end of the block/chapter, for the last article).
@@ -1392,27 +1645,14 @@ function parseArticlesInBlock(
     nextStartRe.lastIndex = gapStart;
     const nextStartMatch = nextStartRe.exec(block);
     const gapEnd = nextStartMatch ? nextStartMatch.index : block.length;
-    regulations.push(...extractRegulationsFrom(block.slice(gapStart, gapEnd)));
+    regulations.push(...extractRegulationsFrom(maskAnchorsInDetails(block.slice(gapStart, gapEnd))));
 
-    // ── Extract amendment blocks ──────────────────────────────────────────
-    const amendments: AmendmentEntry[] = [];
-    const amendRe = /<!--\s*AMENDMENT\s+(.*?)\s*-->/g;
-    let amendMatch: RegExpExecArray | null;
-    while ((amendMatch = amendRe.exec(articleBody)) !== null) {
-      const amendMeta = safeJsonParse(amendMatch[1], "amendment");
-      if (amendMeta) {
-        amendments.push({
-          date: String(amendMeta.date || ""),
-          decree: String(amendMeta.decree || ""),
-          summary: stripAuditNotes(String(amendMeta.summary || ""), "summary"),
-          original_text: (amendMeta.original_text as string) || undefined,
-          type: (amendMeta.type as string) || undefined,
-        });
-      }
-    }
-
-    const number = Number(artMeta.number || 0);
+    const numberRead = readArticleNumber(artMeta.number, artMeta.number_text);
+    const number = numberRead.number;
     const numberText = String(artMeta.number_text || artMeta.number || "");
+    if (numberRead.problem) {
+      mukarrarNumberProblems.push(`${sourceLabel} :: article ${JSON.stringify(artMeta.number ?? null)} «${numberText}» — ${numberRead.problem}`);
+    }
     const artTitle = String(artMeta.title || "");
 
     let status: ArticleStatus;
@@ -1436,18 +1676,12 @@ function parseArticlesInBlock(
     // first, then removed from the live text — previously it was never read and
     // never stripped, so it ended up concatenated into `text`.
     const history = extractArticleHistory(articleBody, status);
-    for (const h of history.entries) {
-      amendments.push({
-        date: "",
-        decree: "",
-        summary: stripAuditNotes(h.source_summary, "summary"),
-        original_text: h.original_text,
-        // Same Arabic vocabulary as real AMENDMENT anchors (تعديل/إلغاء) —
-        // "unknown" stays undefined rather than guessing a specific kind;
-        // seed-library.ts's own "تعديل" fallback covers that case.
-        type: h.kind === "amended" ? "تعديل" : h.kind === "repealed" ? "إلغاء" : undefined,
-      });
-    }
+    // ── One amendment = one card (owner file 18, item 3; «خامساً» 1) ───────
+    // Each AMENDMENT anchor comes paired with the text after it; a before-text
+    // with no anchor (the older files) is a card of its own, as before.
+    const amendments: AmendmentEntry[] = history.records.map((record) =>
+      amendmentFromRecord(record, `${sourceLabel} :: article ${numberText || number}`),
+    );
     // The primary prior wording: prefer a repeal over an amendment, since for a
     // repealed article it IS the article's substantive content.
     const primaryHistory =
@@ -1472,7 +1706,11 @@ function parseArticlesInBlock(
     );
     //    1b. Data-bearing regulation blocks — leading `REGULATION\s` so the
     //    preamble anchors (already handled above) are never re-matched here.
-    cleanText = cleanText.replace(
+    //    On the masked body (maskAnchorsInDetails): an AMENDMENT anchor inside
+    //    a regulation's own «📜 الإصدارات السابقة» no longer ends the
+    //    regulation here, so that block's notes and prior texts never stay
+    //    behind in the article's LIVE text (2026-11-20).
+    cleanText = maskAnchorsInDetails(cleanText).replace(
       /<!--\s*REGULATION\s[\s\S]*?(?=<!--\s*(?:REGULATION_PREAMBLE(?:_END)?|REGULATION|ARTICLE_START|ARTICLE_END|CHAPTER_START|CHAPTER_END|AMENDMENT)\b|$)/g,
       "",
     );
@@ -1543,6 +1781,7 @@ function parseArticlesInBlock(
     const parsedArticle: ParsedArticle = {
       source_index: blockOffset + match.index,
       number,
+      ...(numberRead.number_label ? { number_label: numberRead.number_label } : {}),
       number_text: numberText,
       title: artTitle,
       status,
@@ -1590,7 +1829,7 @@ function parseArticlesInBlock(
     const latent = articles[i + 1];
     if (!latentRecoveredArticles.has(latent) || !latent.text.trim()) continue;
 
-    const latentNumber = normalizeDigits(String(latent.number)).trim();
+    const latentNumber = latent.number_label ?? normalizeDigits(String(latent.number)).trim();
     const matchingEmptyRegulations = owner.regulations.filter((regulation) =>
       !regulation.text.trim() &&
       normalizeDigits(String(regulation.regNum ?? "")).trim() === latentNumber,
@@ -1642,6 +1881,8 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     orphanRegulationAnchors, unknownRegulationStatuses, emptyRegulationBlocks, supersededDuplicateSkipped, gateZeroExcluded,
     lowCoverageFiles, syntheticWholeDocumentArticles, malformedAnchorFiles,
     chapterLevelDiagnostics, unpublishedTextNotices,
+    mukarrarNumberProblems, amendmentTextUnavailable, amendmentAnchorProblems, lawSummaryProblems,
+    parentLinkProblems,
   ]) bucket.length = 0;
   for (const version of Object.keys(schemaVersionCounts)) delete schemaVersionCounts[version];
 
@@ -2097,6 +2338,22 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     "ℹ️  official_text_unpublished document(s) — notice kept as description, or flag disagreeing with the file",
     unpublishedTextNotices,
   );
+  printCapped(
+    "⚠️  «مكرر» article number(s) not in the one format «23 مكرر» / «9 مكرر 2» — parsed as before (file 18, م4)",
+    mukarrarNumberProblems,
+  );
+  printCapped(
+    "ℹ️  amendment card(s) marked text_status unavailable (file 18, item 3)",
+    amendmentTextUnavailable,
+  );
+  printCapped(
+    "⚠️  AMENDMENT anchor problem(s) — loaded as read (file 18, item 3)",
+    amendmentAnchorProblems,
+  );
+  printCapped(
+    "⚠️  frontmatter summary problem(s) — text loaded as written, bad status/date as null (file 18, item 4)",
+    lawSummaryProblems,
+  );
 
   // The owner's own links (20261118_10). Read after every drop, so a path
   // resolves to a law that is really in this output, by its final slug.
@@ -2116,6 +2373,17 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     const links = extractOwnerLinks(law.metadata ?? {}, lawOfPath);
     law.owner_links = links.length > 0 ? links : null;
   }
+  // Owner file 18, item 5: parent links as the children state them.
+  const lawIds = new Set(laws.map((law) => law.instrument_id).filter(Boolean));
+  for (const law of laws) {
+    if (!law.parent_law_id) continue;
+    const where = path.basename(lawSourceFile.get(law) || law.slug);
+    if (law.type === "نظام") parentLinkProblems.push(`${where} :: parent_law_id "${law.parent_law_id}" on a type: نظام file`);
+    if (law.parent_law_id === law.instrument_id) parentLinkProblems.push(`${where} :: parent_law_id points at the file itself`);
+    else if (!lawIds.has(law.parent_law_id)) parentLinkProblems.push(`${where} :: parent_law_id "${law.parent_law_id}" names no law of this run — no link (orphan list)`);
+  }
+  printCapped("ℹ️  parent_law_id problem(s) — kept as written (file 18, item 5)", parentLinkProblems);
+
   const ownerTally = tallyOwnerLinks(laws);
   console.log(`\nℹ️  ${ownerTally.summary}`);
   printCapped("ℹ️  owner links that name no single library law (kept, no graph link)", ownerTally.unresolved);
@@ -2162,6 +2430,11 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         lowCoverageFiles: lowCoverageFiles.length,
         chapterLevelDiagnostics: chapterLevelDiagnostics.length,
         unpublishedTextNotices: unpublishedTextNotices.length,
+        mukarrarNumberProblems: mukarrarNumberProblems.length,
+        amendmentTextUnavailable: amendmentTextUnavailable.length,
+        amendmentAnchorProblems: amendmentAnchorProblems.length,
+        lawSummaryProblems: lawSummaryProblems.length,
+        parentLinkProblems: parentLinkProblems.length,
         ownerLinks: ownerTally.links,
         ownerLinksResolved: ownerTally.resolved,
         ownerLinksUnresolved: ownerTally.unresolved.length,
@@ -2187,6 +2460,11 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         unverifiedEntityCollisions,
         chapterLevelDiagnostics,
         unpublishedTextNotices,
+        mukarrarNumberProblems,
+        amendmentTextUnavailable,
+        amendmentAnchorProblems,
+        lawSummaryProblems,
+        parentLinkProblems,
       },
       identityCollisions: collisions.map((c) => ({ key: c.slug, members: c.sources })),
       failed: failed.map((f) => `${f.file}: ${f.error}`),

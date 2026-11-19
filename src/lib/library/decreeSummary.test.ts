@@ -71,3 +71,11 @@ test("parse-decrees uses it for the markdown files and keeps the body unchanged"
   // the preamble is still the body's text before the first article, untouched
   assert.match(PARSER, /preamble = body\.slice\(0, firstArt\)\.trim\(\);/);
 });
+
+test("owner file 18 item 4: summary_status draft keeps the front-matter summaries off the site; the body's موجز block still reads", () => {
+  const meta = { summary: "موجز مسودة.", summary_brief: "سطر مسودة.", summary_status: "draft" };
+  assert.deepEqual(decreeSummaries(meta, "# بلا موجز"), { summary: "", summary_brief: "" });
+  assert.equal(decreeSummaries(meta, BODY).summary_brief, decreeSummaries({}, BODY).summary_brief);
+  assert.deepEqual(decreeSummaries({ ...meta, summary_status: "reviewed" }, "# بلا موجز"), { summary: "موجز مسودة.", summary_brief: "سطر مسودة." });
+  assert.deepEqual(decreeSummaries({ summary: "أ", summary_brief: "ب" }, "# بلا موجز"), { summary: "أ", summary_brief: "ب" }, "no status: as before");
+});

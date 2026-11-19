@@ -90,7 +90,7 @@ export function LibraryGifs() {
         height={294}
         alt="تسجيل حي للبحث في المكتبة القانونية ثم فتح المادة"
         bar="nezamy.sa/laws"
-        caption="بحث حي في المكتبة، ثم فتح المادة ولائحتها"
+        caption="البحث في المكتبة، ثم فتح المادة ولائحتها"
         aspectClass="aspect-[560/494] sm:aspect-[700/294]"
       />
       <Gif

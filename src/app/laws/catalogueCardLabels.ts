@@ -71,8 +71,8 @@ export const MERGED_INCLUDES_MAX = 2;
 /**
  * Owner 2026-11-07 (screenshot 1): the grey line under a merged law's title —
  * «يشتمل على: [اسم اللائحة الأولى] • [اسم اللائحة الثانية]». At most two
- * names, joined by « • », no «+ N أخرى» (his wording names two and nothing
- * more). The base title is not repeated (it is the card's title, just above),
+ * names, joined by « • ». The rest is counted on a line of its own
+ * (mergedMoreLabel, owner file 16 §7, 19 Nov: «+4 تشريعات فرعية»). The base title is not repeated (it is the card's title, just above),
  * and a name that ends with it drops the repetition, as in mergedFileName.
  * "" when there is no name — the card then shows no line. The names come from
  * library.laws.merged_regulation_names (migration 20261107_10), already
@@ -81,6 +81,20 @@ export const MERGED_INCLUDES_MAX = 2;
 export function mergedIncludesLine(baseTitle: unknown, subsidiaryNames: readonly unknown[] = []): string {
   const subs = subsidiaryNamesUnderBase(text(baseTitle), subsidiaryNames).slice(0, MERGED_INCLUDES_MAX);
   return subs.length > 0 ? `يشتمل على: ${subs.join(" • ")}` : "";
+}
+
+/**
+ * Owner file 16 §7 (19 Nov 2026, screenshot 06): the card counts the
+ * sub-legislation it does not name — «+4 تشريعات فرعية» — under the two names
+ * of mergedIncludesLine. "" when every name is already on the card. Arabic
+ * number agreement: 1 «تشريع فرعي», 2 «تشريعان فرعيان», 3–10 «تشريعات
+ * فرعية», 11+ «تشريعًا فرعيًا».
+ */
+export function mergedMoreLabel(baseTitle: unknown, subsidiaryNames: readonly unknown[] = []): string {
+  const more = subsidiaryNamesUnderBase(text(baseTitle), subsidiaryNames).length - MERGED_INCLUDES_MAX;
+  if (more <= 0) return "";
+  const noun = more === 1 ? "تشريع فرعي" : more === 2 ? "تشريعان فرعيان" : more <= 10 ? "تشريعات فرعية" : "تشريعًا فرعيًا";
+  return `+${more} ${noun}`;
 }
 
 /** «1448/01/08هـ» → 14480108 (digits only), for comparing two Hijri dates. */

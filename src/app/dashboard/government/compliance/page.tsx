@@ -5,6 +5,8 @@ import { ShieldCheck, CheckCircle, Warning, FileText, Plus } from "@phosphor-ico
 import Link from "next/link";
 import { COMING_SOON_BADGE_AR } from "@/constants/betaGatedRoutes";
 import { useTheme } from "@/components/ThemeProvider";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 type ComplianceItem = {
   title: string;
@@ -28,7 +30,7 @@ const STATUS_MAP = {
   "غير متوافق":   { cls: "text-rose-400 border-rose-400/20 bg-rose-400/10",       Icon: Warning },
 };
 
-export default function GovernmentCompliancePage() {
+function GovernmentCompliancePageDemo() {
   const { isDark } = useTheme();
 
   const counts = {
@@ -123,3 +125,19 @@ export default function GovernmentCompliancePage() {
   );
 }
 
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (بنود الامتثال ونِسَبه) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function GovernmentCompliancePage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="الامتثال القانوني"
+        description="هذه الصفحة غير متاحة حالياً. بنود الامتثال ونِسَبه التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/government"
+      />
+    );
+  }
+  return <GovernmentCompliancePageDemo />;
+}

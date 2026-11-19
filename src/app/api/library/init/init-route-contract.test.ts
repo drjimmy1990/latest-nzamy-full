@@ -154,7 +154,7 @@ test("the response tells the page whether this viewer has the full library", () 
 });
 
 test("/laws keeps the viewer flag from init and hands it to the three tabs", () => {
-  const page = readRepo("src/app/laws/page.tsx");
+  const page = readRepo("src/app/laws/(index)/page.tsx");
   assert.match(page, /const \[viewerHasFullAccess, setViewerHasFullAccess\] = useState\(false\)/);
   // The first load and the server-filtered laws pages both carry it.
   const reads = page.match(/setViewerHasFullAccess\((?:data\?|body)\.viewer\?\.hasFullAccess === true\)/g) ?? [];
@@ -207,7 +207,7 @@ test("none of the six sites gates library text on the tier-only can(\"library-fu
 });
 
 test("the assistant keeps its own rule: no full-library flag shows or hides it (owner ٢٠٧)", () => {
-  const files = [...LIBRARY_ACCESS_SITES, "src/app/laws/page.tsx", "src/app/laws/[slug]/page.tsx"];
+  const files = [...LIBRARY_ACCESS_SITES, "src/app/laws/(index)/page.tsx", "src/app/laws/[slug]/page.tsx"];
   const flag = /hasFullAccess|HasFullAccess|libraryAccess\./;
   for (const rel of files) {
     const lines = readRepo(rel).split(/\r?\n/);

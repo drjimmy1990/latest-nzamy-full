@@ -7538,3 +7538,258 @@ select 'Reader law map by link type: library_reader_law_links_typed, service rol
                           where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
        as ok;
 -- <<< verify:l8_refbox
+-- >>> verify:l9_parser
+-- Batch l9-parser (owner file 18, our reply «خامساً» 2 + 3): run 20261129_70 BEFORE the next library load.
+select 'Amendment cards: article_amendments.decree_id / paragraphs / text_status / position, still server-only (run 20261129_70)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute
+         where attrelid = 'library.article_amendments'::regclass and not attisdropped
+           and attname in ('decree_id', 'paragraphs', 'text_status', 'position')) = 4
+       and not has_table_privilege('anon', 'library.article_amendments', 'SELECT')
+       and not has_table_privilege('authenticated', 'library.article_amendments', 'SELECT')
+       as ok;
+select 'Law summaries: laws.summary / summary_card / summary_status / summary_reviewed_at locked for anon; summary_brief = reviewed card first, else the preamble block (run 20261129_70)' as check,
+       case when (select pg_catalog.count(*) from pg_catalog.pg_attribute
+                   where attrelid = 'library.laws'::regclass and not attisdropped
+                     and attname in ('summary', 'summary_card', 'summary_status', 'summary_reviewed_at')) <> 4
+              or to_regprocedure('library.law_reviewed_summary_card(text, text)') is null then false else
+       not has_column_privilege('anon', 'library.laws', 'summary', 'SELECT')
+       and not has_column_privilege('anon', 'library.laws', 'summary_card', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.laws', 'summary', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.laws', 'summary_card', 'SELECT')
+       and not has_function_privilege('anon', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and has_function_privilege('service_role', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and has_function_privilege('postgres', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and coalesce((select a.attgenerated = 's'
+                            and pg_catalog.pg_get_expr(d.adbin, d.adrelid) ~ 'law_reviewed_summary_card\(summary_card, summary_status\)'
+                            and pg_catalog.pg_get_expr(d.adbin, d.adrelid) ~ 'law_summary_brief\(preamble\)'
+                       from pg_catalog.pg_attribute a
+                       join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+                      where a.attrelid = 'library.laws'::regclass and a.attname = 'summary_brief' and not a.attisdropped), false)
+       end as ok;
+-- <<< verify:l9_parser
+-- >>> verify:l9_secroles
+-- Batch l9-secroles (owner file 15 rows 2, 3, 36): run 20261129_10 any time (before or after the deploy).
+select 'Firm trainee / legal secretary read only assigned cases and clients: case_visible scoped branch + restrictive policies (run 20261129_10)' as check,
+       case when to_regprocedure('public.firm_case_scoped_member(uuid)') is null then false else
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_visible(text)')), 'firm_case_scoped_member') > 0, false)
+       and not has_function_privilege('anon', 'public.firm_case_scoped_member(uuid)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.firm_case_scoped_member(uuid)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_policy
+                    where polrelid = 'public.service_requests'::regclass
+                      and polname = 'firm case: trainee and secretary see assigned cases only'
+                      and not polpermissive and polcmd = 'r')
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polname = 'firm role scope: assigned only' and not polpermissive and polcmd = 'r'
+               and polrelid in ('public.lawyer_clients'::regclass, 'public.lawyer_client_notes'::regclass,
+                                'public.contracts'::regclass, 'public.consultations'::regclass)) = 4
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polname in ('firm case: trainee and secretary see assigned cases only', 'firm role scope: assigned only')
+                          and not (polroles @> array[(select oid from pg_catalog.pg_roles where rolname = 'authenticated')]))
+       and not exists (select 1 from (values ('time_entries'), ('lawyer_expenses'), ('client_trust_ledger')) v(t)
+                        where to_regclass('public.' || v.t) is not null
+                          and not exists (select 1 from pg_catalog.pg_policy p
+                                           where p.polrelid = to_regclass('public.' || v.t)
+                                             and p.polname = 'restricted case rows: case team only'
+                                             and pg_catalog.pg_get_expr(p.polqual, p.polrelid) ilike '%created_by%'))
+       end as ok;
+select 'Company requests and roster by role on the server: business_case_reader / business_roster_reader (run 20261129_10)' as check,
+       case when to_regprocedure('public.business_case_reader(uuid)') is null
+              or to_regprocedure('public.business_roster_reader(uuid)') is null then false else
+       exists (select 1 from pg_catalog.pg_policy
+                where polrelid = 'public.service_requests'::regclass
+                  and polname = 'business members read business service requests'
+                  and pg_catalog.pg_get_expr(polqual, polrelid) ilike '%business_case_reader%')
+       and exists (select 1 from pg_catalog.pg_policy
+                    where polrelid = 'public.business_members'::regclass
+                      and polname = 'business_members: own row, roster manager or admin can read'
+                      and pg_catalog.pg_get_expr(polqual, polrelid) ilike '%business_roster_reader%')
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid = 'public.business_members'::regclass
+                          and polname = 'business_members: own row, co-member, owner or admin can read')
+       and not has_function_privilege('anon', 'public.business_case_reader(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.business_roster_reader(uuid)', 'EXECUTE')
+       -- a policy naming a helper anon cannot execute must be TO authenticated (else every guest read is 42501)
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polname in ('business members read business service requests',
+                                          'business_members: own row, roster manager or admin can read')
+                          and not (polroles @> array[(select oid from pg_catalog.pg_roles where rolname = 'authenticated')]))
+       end as ok;
+select 'Company seat cap: business_profiles.max_seats (no session write) + trg_business_seat_cap (run 20261129_10)' as check,
+       case when to_regprocedure('public.business_seat_cap(uuid)') is null
+              or not exists (select 1 from information_schema.columns
+                              where table_schema = 'public' and table_name = 'business_profiles' and column_name = 'max_seats') then false else
+       exists (select 1 from pg_catalog.pg_trigger
+                where tgrelid = 'public.business_members'::regclass and tgname = 'trg_business_seat_cap' and not tgisinternal)
+       and not has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.business_profiles', 'max_seats', 'INSERT')
+       and not has_function_privilege('authenticated', 'public.business_seat_cap(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.business_seat_status(uuid)', 'EXECUTE')
+       end as ok;
+-- <<< verify:l9_secroles
+
+-- >>> verify:l9_secleak
+-- Batch l9-secleak (owner file 15 #4 + #48, file 19 §1ب.2): run 20261129_20 after the deploy (before it, «عقودي» is empty for the old code).
+select 'Contracts (#4): no client arm on "contracts select" nor can_access_contract; client_contracts_list / client_contract_detail / client_contract_versions definer, authenticated only, no notes/metadata (run 20261129_20)' as check,
+       case when to_regprocedure('public.client_contract_detail(text)') is null
+              or to_regprocedure('public.client_contracts_list()') is null
+              or to_regprocedure('public.client_contract_versions(text)') is null then false else
+       not exists (select 1 from pg_catalog.pg_policy p
+                    where p.polrelid = 'public.contracts'::regclass and p.polcmd in ('r', '*')
+                      and pg_catalog.pg_get_expr(p.polqual, p.polrelid) ~ 'client_user_id')
+       and (select p.prosrc from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.can_access_contract(text)')) !~ 'client_user_id'
+       and not exists (select 1 from pg_catalog.pg_proc p
+                        where p.oid in (to_regprocedure('public.client_contract_detail(text)'),
+                                        to_regprocedure('public.client_contracts_list()'),
+                                        to_regprocedure('public.client_contract_versions(text)'))
+                          and (not p.prosecdef or not p.proconfig @> array['search_path=""'] or p.prosrc ~ '(notes|metadata)'))
+       and not has_function_privilege('anon', 'public.client_contract_detail(text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.client_contracts_list()', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.client_contract_versions(text)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.client_contract_detail(text)', 'EXECUTE')
+       end as ok;
+select 'Share links (#48): revoked for good at the 20th wrong passcode, view_count, counters guard; service role only (run 20261129_20)' as check,
+       case when to_regprocedure('public.share_count_view(text)') is null
+              or to_regprocedure('public.share_passcode_check(text, text)') is null then false else
+       (select count(*) = 4 from information_schema.columns
+         where table_schema = 'public' and table_name = 'document_shares'
+           and column_name in ('wrong_total', 'revoked_at', 'view_count', 'last_viewed_at'))
+       and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.share_passcode_check(text, text)')), 'revoked') > 0
+       and not has_function_privilege('anon', 'public.share_count_view(text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.share_count_view(text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.share_passcode_check(text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.share_passcode_check(text, text)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = 'public.document_shares'::regclass
+                      and t.tgname = 'trg_01_document_shares_counters_guard' and t.tgenabled <> 'D')
+       end as ok;
+select 'Fake licences (file 19): no 1448-LAW- licence verified, trigger refuses it (run 20261129_20)' as check,
+       case when to_regprocedure('public.is_fake_test_licence(text)') is null then false else
+       exists (select 1 from pg_catalog.pg_trigger t
+                where t.tgrelid = 'public.lawyer_profiles'::regclass
+                  and t.tgname = 'trg_lawyer_profiles_no_fake_licence' and t.tgenabled <> 'D')
+       and not exists (select 1 from public.lawyer_profiles lp
+                        where lp.verification_status = 'verified'
+                          and pg_catalog.upper(pg_catalog.regexp_replace(coalesce(lp.license_number, ''), '[^0-9A-Za-z]+', '', 'g')) like '1448LAW%')
+       end as ok;
+-- <<< verify:l9_secleak
+
+-- >>> verify:l9_terms
+-- Batch l9 terms (owner register 14 items 7 / 29 / 32 / 55): run 20261129_30 before the deploy (either order is safe).
+select 'Minimum top-up 50 for every account type (register 14 item 7; run 20261129_30)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object'
+                        and value ?& array['lawyer', 'firm', 'corporate', 'micro', 'government', 'ngo', 'provider', 'individual']
+                        and not exists (select 1 from pg_catalog.jsonb_each_text(value) e where e.value <> '50')
+                   from public.platform_settings where key = 'min_topup_by_account_type'), false) as ok;
+select 'Founder discount described as top-ups AND any plan, never «الشحن وحده» (register 14 items 29 / 32; run 20261129_30)' as check,
+       not exists (select 1 from public.platform_settings
+                    where key like 'founder_topup_discount%' and pg_catalog.strpos(coalesce(description, ''), 'الشحن وحده') > 0) as ok;
+-- <<< verify:l9_terms
+
+-- >>> verify:l9_read
+-- Batch l9 read (owner register 14 items 8 / 9 / 44 / 48): run 20261129_40 before or after the deploy.
+select 'Library read log: full_text_reads (RLS on, service role only) + read limits 30 / 150 columns (run 20261129_40)' as check,
+       case when to_regclass('public.full_text_reads') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.full_text_reads')), false)
+       and not has_table_privilege('anon', 'public.full_text_reads', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.full_text_reads', 'SELECT')
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_monitor_settings'::regclass
+                    and attname = 'daily_full_read_limit' and not attisdropped)
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_monitor_settings'::regclass
+                    and attname = 'weekly_full_read_limit' and not attisdropped)
+       end as ok;
+select 'library_read_quota_hit is the 20261129_40 version: logs full text, weekly cap, no admin exemption, one overload (re-run 20261129_40 after any older library quota file)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_read_quota_hit(uuid,text,int,int,int,int)')), 'over_weekly') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_read_quota_hit(uuid,text,int,int,int,int)')), 'full_text_reads') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_read_quota_hit(uuid,text,int,int,int,int)')), '''exempt''') = 0
+                and (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+                      where n.nspname = 'public' and p.proname = 'library_read_quota_hit') = 1
+                and not has_function_privilege('authenticated', 'public.library_read_quota_hit(uuid,text,int,int,int,int)', 'EXECUTE'),
+                false) as ok;
+select 'Library devices never end a platform session: library_device_gate / library_device_code_verify without auth.sessions (re-run 20261129_40 after 20261127_60)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_device_gate(uuid,text,text,uuid,boolean)')), 'auth.sessions') = 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_device_code_verify(uuid,text,text,uuid)')), 'auth.sessions') = 0,
+                false) as ok;
+select 'The 50-point library gate setting library_min_points_to_browse exists (run 20261129_40)' as check,
+       exists (select 1 from public.platform_settings where key = 'library_min_points_to_browse') as ok;
+-- <<< verify:l9_read
+
+-- >>> verify:l9_reader
+-- Batch l9-reader (owner register 14 item 13: 2 full rulings per collection, no excerpt): run 20261129_50 any time (best before the deploy).
+select 'Public rulings: public_full_rulings_per_collection = {"full":2} (run 20261129_50)' as check,
+       exists (select 1 from public.platform_settings
+                where key = 'public_full_rulings_per_collection'
+                  and value = '{"full":2}'::jsonb) as ok;
+-- <<< verify:l9_reader
+
+-- >>> verify:l9_dash
+-- Batch l9-dash (file 15 row 53, A1: support ticket replies): run 20261129_80 with the deploy (the code works without it; until it runs a session can plant a forged reply).
+select 'Support ticket replies: only the service role writes metadata.replies (trigger support_tickets_guard_replies, security invoker; run 20261129_80)' as check,
+       to_regprocedure('public.support_tickets_guard_replies()') is not null
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.support_tickets_guard_replies()')), true)
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = to_regclass('public.support_tickets')
+                      and t.tgname = 'support_tickets_guard_replies' and not t.tgisinternal and t.tgenabled <> 'D')
+       as ok;
+-- <<< verify:l9_dash
+
+-- >>> verify:l9_testinfra
+-- Batch l9-testinfra (owner file 19 §1ج: test tags, «مسح دفعة الاختبار», mail sink): run 20261129_90 before or after the deploy.
+select 'Test tags: is_test + test_batch with trg_test_tag on every listed table; none on profiles / test_accounts / admin_audit_events (run 20261129_90)' as check,
+       case when to_regclass('public.test_tag_tables') is null or to_regprocedure('public.test_tag_row()') is null then false else
+       not exists (select 1 from public.test_tag_tables t
+                    where to_regclass('public.' || quote_ident(t.table_name)) is not null
+                      and (cardinality(t.owner_columns) > 0 or cardinality(t.parent_refs) > 0)
+                      and not exists (select 1 from pg_catalog.pg_trigger g
+                                       where g.tgrelid = to_regclass('public.' || quote_ident(t.table_name))
+                                         and g.tgname = 'trg_test_tag' and not g.tgisinternal
+                                         and g.tgfoid = to_regprocedure('public.test_tag_row()')))
+       and exists (select 1 from public.test_tag_tables where table_name = 'service_requests')
+       and not exists (select 1 from information_schema.columns
+                        where table_schema = 'public' and column_name = 'is_test'
+                          and table_name in ('profiles', 'test_accounts', 'admin_audit_events', 'platform_staff', 'lawyer_profiles'))
+       end as ok;
+select 'Test batch purge + mail sink: service role only, definer; purge audit append-only (run 20261129_90)' as check,
+       case when to_regprocedure('public.test_batch_purge(text, boolean, uuid, text)') is null
+              or to_regprocedure('public.test_mail_sink_check(text, uuid[], text, text, text)') is null
+              or to_regclass('public.test_batch_purge_audit') is null then false else
+       not has_function_privilege('anon', 'public.test_batch_purge(text, boolean, uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_batch_purge(text, boolean, uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_mail_sink_check(text, uuid[], text, text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_account_set_batch(uuid, text, uuid)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.test_batch_purge(text, boolean, uuid, text)', 'EXECUTE')
+       and not has_table_privilege('authenticated', 'public.test_batch_purge_audit', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.test_mail_sink', 'SELECT')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                      where p.oid = to_regprocedure('public.test_batch_purge(text, boolean, uuid, text)')), false)
+       and (select count(*) from pg_catalog.pg_trigger
+             where tgrelid = 'public.test_batch_purge_audit'::regclass and not tgisinternal
+               and tgname in ('trg_test_batch_purge_audit_append_only', 'trg_test_batch_purge_audit_no_truncate')) = 2
+       end as ok;
+select 'Every test account has a current test batch (run 20261129_90)' as check,
+       case when to_regclass('public.test_account_batches') is null or to_regprocedure('public.is_test_account(uuid)') is null then false else
+       not exists (select 1 from (select p.id from public.profiles p where p.is_demo
+                                  union select t.user_id from public.test_accounts t) x
+                    where public.is_test_account(x.id)
+                      and not exists (select 1 from public.test_account_batches b where b.user_id = x.id and b.until is null))
+       end as ok;
+-- <<< verify:l9_testinfra
+
+-- >>> verify:l9_public
+-- Batch l9-public (owner register 4 / 36): an individual's free questions on the general assistant (quick-answer), every other type's on the library assistant. Run 20261129_60 any time after 20261128_20.
+select 'Free questions per account type: ai_start_free_question takes quick-answer for an individual, one overload, service role only (run 20261129_60)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''quick-answer''') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''library-assistant''') > 0
+                        and p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
+select 'Free questions: the library-open rule only for the library assistant; the e-mail rule for everyone (ai_free_question_status of 20261129_60)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'is distinct from ''individual''') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'library_access_for') > 0
+                and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
+                false) as ok;
+-- <<< verify:l9_public

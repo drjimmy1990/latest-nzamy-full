@@ -25,6 +25,7 @@ const CLAIM_SURFACES = [
   "app/security/page.tsx",
   "app/erp/page.tsx",
   "app/faq/page.tsx",
+  "app/faq/FaqView.tsx",
   "app/faq/faqData.ts",
   "components/FAQ.tsx",
   "app/ai-disclaimer/page.tsx",

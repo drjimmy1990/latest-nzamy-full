@@ -137,3 +137,16 @@ test("final review 2026-11-08 (9): the readers' later fetches and the feqh previ
   assert.match(feqh, /const device = deviceRefusalOf\(bookRes\.status, await bookRes\.json\(\)\.catch\(\(\) => null\)\);/);
   assert.match(feqh, /if \(deviceRefusal\) return <LibraryDeviceLimitPage refusal=\{deviceRefusal\} \/>;/);
 });
+
+// ── batch l9 (register 14 item 8): the 7-day cap names when it renews ───────
+test("429 library_weekly_limit: the server text + days/hours until the window lets one more in", async () => {
+  const { weeklyResetLineAr } = await import("./readerRefusal.ts");
+  const r = readerRefusalFrom(429, { code: "library_weekly_limit", error: "الحد الأسبوعي", resetsAt: at(2 * 24 * H + 3 * H) }, NOW);
+  assert.deepEqual(r, { kind: "limit", scope: "weekly", messageAr: "الحد الأسبوعي يتجدد حدّك الأسبوعي بعد يومين و3 ساعات." });
+  assert.equal(weeklyResetLineAr(at(24 * H), NOW), "يتجدد حدّك الأسبوعي بعد يوم واحد.");
+  assert.equal(weeklyResetLineAr(at(5 * H + 30 * M), NOW), "يتجدد حدّك الأسبوعي بعد 5 ساعة و30 دقيقة.");
+  assert.equal(weeklyResetLineAr(at(-M), NOW), null);
+  assert.equal(weeklyResetLineAr(null, NOW), null);
+  const bare = readerRefusalFrom(429, { code: "library_weekly_limit" }, NOW);
+  assert.ok(bare?.kind === "limit" && bare.scope === "weekly" && bare.messageAr.includes("الحد الأسبوعي"));
+});

@@ -66,6 +66,11 @@ function Item({ item }: { item: TermsItem }) {
           ))}
         </ul>
       )}
+      {item.after?.map((p) => (
+        <p key={p} className="mt-2 leading-loose">
+          <Rich text={p} />
+        </p>
+      ))}
     </section>
   );
 }

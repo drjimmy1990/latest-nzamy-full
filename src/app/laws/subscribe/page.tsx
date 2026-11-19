@@ -23,6 +23,7 @@ import { useLibraryFullAccess } from "@/lib/library/useLibraryFullAccess";
 import { LibraryGrantStatusCard, useMyLibraryGrant } from "@/components/library/LibraryGrantStatusCard";
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { bookPriceText } from "@/lib/pricing/priceBook";
+import { libraryPlanPointsLine } from "@/lib/points/pointsSettings";
 
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
@@ -77,6 +78,8 @@ const txt = {
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
         features: [
+          // l9 (file 15 row 13): the points the plan includes
+          libraryPlanPointsLine("lib-q1", "ar"),
           "نصوص الأنظمة واللوائح كاملة",
           "بحث غير محدود بالنص الكامل",
           "دعم البريد الإلكتروني",
@@ -93,6 +96,8 @@ const txt = {
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
+          // l9 (file 15 row 13): the points the plan includes
+          libraryPlanPointsLine("lib-q2", "ar"),
           "كل مزايا الربع سنوي",
           "السوابق والمبادئ القضائية",
           "بحث بالمواد والبنود",
@@ -110,6 +115,8 @@ const txt = {
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [
+          // l9 (file 15 row 13): the points the plan includes
+          libraryPlanPointsLine("lib-annual", "ar"),
           "كل مزايا النصف سنوي",
           "مقارنة التعديلات (diff)",
           "تصدير نصوص الأنظمة بصيغة PDF",
@@ -172,6 +179,8 @@ const txt = {
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
         features: [
+          // l9 (file 15 row 13): the points the plan includes
+          libraryPlanPointsLine("lib-q1", "en"),
           "Full law & regulation texts",
           "Unlimited full-text search",
           "Email support",
@@ -188,6 +197,8 @@ const txt = {
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
+          // l9 (file 15 row 13): the points the plan includes
+          libraryPlanPointsLine("lib-q2", "en"),
           "All Quarterly features",
           "Judicial precedents & principles",
           "Article & clause level search",
@@ -205,6 +216,8 @@ const txt = {
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [
+          // l9 (file 15 row 13): the points the plan includes
+          libraryPlanPointsLine("lib-annual", "en"),
           "All Semi-Annual features",
           "Amendment diff comparison",
           "Export laws to PDF",

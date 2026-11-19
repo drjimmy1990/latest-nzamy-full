@@ -45,9 +45,12 @@ const SUPER_ONLY = [
 
 // ─── The console's own sidebar (AdminSidebar.tsx) ─────────────────────────────
 
-test("super_admin sees all 37 items of the console sidebar", () => {
+test("super_admin sees all 41 items of the console sidebar", () => {
   const all = hrefsOf(NAV);
-  assert.equal(all.length, 37, "the console sidebar has 37 items (+ اشتراكات المكتبة, note ١٨ C03; + حملة المؤسس, P3 Task 10; + مستكشف الجراف القانوني; + العروض, l8 owner item 5; + المكتبة حسب نوع الحساب, l8 item 9)");
+  // l9 row 54: one list for both navs — 37, plus إضافة مستخدم, الأدوار والصلاحيات,
+  // سجل المدفوعات and إدارة الأسعار from the old ADMIN_SIDEBAR, minus the
+  // «قريباً» page «إعدادات النظام» (/dashboard/admin/system); + دفعات الاختبار (l9 testinfra).
+  assert.equal(all.length, 41, "the console sidebar has 41 items");
   assert.equal(new Set(all).size, all.length, "no href is listed twice");
   assert.deepEqual(adminNavForRole("super_admin"), NAV);
 });
@@ -218,9 +221,9 @@ test("filterNavGroupsByRole keeps the group's own fields", () => {
 
 // ─── ADMIN_SIDEBAR (SharedSidebar / GlobalSearch) ─────────────────────────────
 
-// 34 since the Escrow link went (owner ٢٨٩: the platform holds no funds); 35 with حملة المؤسس (P3 Task 10); 36 with مستكشف الجراف القانوني; 37 with العروض (l8, owner item 5).
-test("ADMIN_SIDEBAR: super_admin and a null role see all 37 items", () => {
-  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 37, "ADMIN_SIDEBAR has 37 items");
+// l9 row 54: ADMIN_SIDEBAR is the console list (41) plus the personal /settings.
+test("ADMIN_SIDEBAR: super_admin and a null role see all 42 items", () => {
+  assert.equal(hrefsOf(ADMIN_SIDEBAR).length, 42, "ADMIN_SIDEBAR has 42 items");
   assert.deepEqual(adminSidebarForRole("super_admin"), ADMIN_SIDEBAR);
   assert.deepEqual(adminSidebarForRole(null), ADMIN_SIDEBAR);
 });
@@ -248,4 +251,17 @@ test("getSidebarByUserType hands an admin's staff role to the filter", () => {
   assert.ok(sidebar("super_admin").includes("/dashboard/admin/pricing"));
   assert.ok(sidebar(null).includes("/dashboard/admin/pricing"), "null: today's full nav");
   assert.ok(sidebar(undefined).includes("/dashboard/admin/pricing"), "an older caller without the argument: today's full nav");
+});
+
+// ─── File 15 row 54 (l9): one admin list ─────────────────────────────────────
+
+test("row 54: both admin navs list the same pages, the companies list included, no mock payouts or disputes", () => {
+  const consoleNav = hrefsOf(NAV);
+  const shared = hrefsOf(ADMIN_SIDEBAR).filter((h) => h !== "/settings");
+  assert.deepEqual(shared, consoleNav);
+  for (const nav of [consoleNav, shared]) {
+    assert.ok(nav.includes("/dashboard/admin/business"), "the real companies list");
+    for (const mock of ["/dashboard/admin/payouts", "/dashboard/admin/disputes"]) assert.equal(nav.includes(mock), false, mock);
+  }
+  for (const g of ADMIN_SIDEBAR) for (const i of g.items) assert.notEqual(i.badge, "جديد", i.href);
 });

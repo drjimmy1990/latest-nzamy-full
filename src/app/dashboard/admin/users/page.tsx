@@ -27,6 +27,7 @@ import type { StaffRole } from "@/lib/auth/staffRoles";
 import { staffMaySee } from "@/lib/auth/adminNavAccess";
 import { apiErrorText } from "@/lib/services/apiErrorText";
 import { ADMIN_PURGE_CONFIRM_AR } from "@/lib/auth/accountFreeze";
+import { adminToast } from "@/components/admin/adminToast";
 
 // ─── Types & Data ─────────────────────────────────────────────────────────────
 
@@ -324,7 +325,7 @@ function UserRow({
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل التحقق من المستخدم"));
       onUpdate();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
@@ -342,7 +343,7 @@ function UserRow({
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل إيقاف المستخدم"));
       onUpdate();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
@@ -361,7 +362,7 @@ function UserRow({
       if (!res.ok) throw new Error(apiErrorText(res.status, await res.json().catch(() => null), "فشل رفع الإيقاف"));
       onUpdate();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
@@ -381,10 +382,10 @@ function UserRow({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(apiErrorText(res.status, json, fallback));
-      if (json && typeof json.message === "string") alert(json.message);
+      if (json && typeof json.message === "string") adminToast(json.message, "success");
       onUpdate();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "حدث خطأ");
+      adminToast(err instanceof Error ? err.message : "حدث خطأ");
     } finally {
       setActionLoading(false);
     }
@@ -675,7 +676,7 @@ export default function AdminUsersPage() {
       );
       const failed = results.filter(r => r.status === "rejected").length;
       if (failed > 0) {
-        alert(`تعذّر التحقق من ${toArabicDigits(failed)} من أصل ${toArabicDigits(ids.length)} حسابات محدَّدة`);
+        adminToast(`تعذّر التحقق من ${toArabicDigits(failed)} من أصل ${toArabicDigits(ids.length)} حسابات محدَّدة`);
       }
       setSelected(new Set());
       fetchUsers(1);

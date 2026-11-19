@@ -21,6 +21,8 @@ import {
 } from "./upgradeProration.ts";
 import { FOUNDER_DISCOUNT_FAILED_AR } from "./founderDiscount.ts";
 import { FOUNDER_TERMS_VERSION } from "../founder/founderTerms.ts";
+import { buildCatalog } from "./catalog.ts";
+import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
 
 const NOW = new Date("2026-10-22T08:00:00.000Z");
 const USER = "00000000-0000-0000-0000-00000000u001";
@@ -269,13 +271,101 @@ test("l8 (owner 18 Nov, ك): the founder discount ends with the membership year 
   assert.equal("founder_discount" in (inserted(old.log)!.payload as { metadata: Record<string, unknown> }).metadata, false);
 });
 
-test("F12: a plan, a library pass and the founder membership get no founder discount and never read the seat", async () => {
-  for (const [itemId, billing] of [["lawyer-pro", "yearly"], ["lib-q1", "once"]] as const) {
+test("l9 (register 14 items 29 / 32): an active founder pays 15 % less for a plan and a library pass too", async () => {
+  const cases: Array<[string, "yearly" | "once", number, number]> = [
+    // item, billing, list net, discount (15 %)
+    ["lawyer-pro", "yearly", 399000, 59850],
+    ["lib-q1", "once", 199000, 29850],
+    ["lib-annual", "once", 699000, 104850],
+  ];
+  for (const [itemId, billing, listNet, discount] of cases) {
     const a = db("lawyer", { founder: true });
-    const r = await startCheckoutWith({ admin: a.client, client: moyasar().client, now: () => NOW }, input({ itemId, billing }));
+    const m = moyasar();
+    const r = await startCheckoutWith({ admin: a.client, client: m.client, now: () => NOW }, input({ itemId, billing }));
     assert.equal(r.status, 200, itemId);
-    assert.equal(a.log.some((q) => q.table === "founder_seats"), false, itemId);
+    if (r.status !== 200) continue;
+    const net = listNet - discount;
+    const vat = Math.round(net * 0.15);
+    assert.deepEqual(r.body.quote, { net, vat, total: net + vat, vatMode: "exclusive", listNet, founderDiscount: discount }, itemId);
+    assert.equal(m.intents[0].amountHalalas, net + vat, itemId);
+    assert.deepEqual(
+      (inserted(a.log)!.payload as { metadata: Record<string, unknown> }).metadata.founder_discount,
+      { pct: 15, discount_halalas: discount, list_net_halalas: listNet },
+      itemId,
+    );
   }
+});
+
+test("l9: a non-founder, or a seat past its membership year, pays the list price for a plan", async () => {
+  const a = db("lawyer", { founder: false });
+  const r = await startCheckoutWith({ admin: a.client, client: moyasar().client, now: () => NOW }, input({ itemId: "lib-q1", billing: "once" }));
+  assert.equal(r.status, 200);
+  if (r.status === 200) assert.deepEqual(r.body.quote, { net: 199000, vat: 29850, total: 228850, vatMode: "exclusive" });
+  const old = db("lawyer", { founder: true }, (q) =>
+    q.table === "founder_seats" ? { data: [{ id: "seat", activated_at: "2025-09-22T08:00:00.000Z" }] } : undefined,
+  );
+  const r2 = await startCheckoutWith({ admin: old.client, client: moyasar().client, now: () => NOW }, input({ itemId: "lawyer-pro", billing: "yearly" }));
+  assert.equal(r2.status, 200);
+  assert.equal("founder_discount" in (inserted(old.log)!.payload as { metadata: Record<string, unknown> }).metadata, false);
+});
+
+test("l9: never combined — a smaller coupon is dropped for the founder discount; a larger one replaces it", async () => {
+  // LIMITED10 = 50 SAR off lib-q1 (1,990); the founder's 15 % = 298.50 is larger → founder only
+  const a = db("lawyer", { founder: true, coupon: LIMITED, reserve: "reserved" });
+  const r = await startCheckoutWith({ admin: a.client, client: moyasar().client, now: () => NOW }, input({ itemId: "lib-q1", billing: "once", couponCode: "LIMITED10" }));
+  assert.equal(r.status, 200);
+  const meta = (inserted(a.log)!.payload as { metadata: Record<string, unknown> }).metadata;
+  assert.deepEqual(meta.founder_discount, { pct: 15, discount_halalas: 29850, list_net_halalas: 199000 });
+  assert.equal("coupon" in meta, false, "the smaller coupon is not used");
+  assert.equal(a.log.some((q) => q.table === "coupon_reserve"), false, "nor reserved");
+  // a 400 SAR coupon beats the founder's 298.50 → the coupon only
+  const b = db("lawyer", { founder: true, coupon: { ...LIMITED, discount_value: "400.00" }, reserve: "reserved" });
+  const r2 = await startCheckoutWith({ admin: b.client, client: moyasar().client, now: () => NOW }, input({ itemId: "lib-q1", billing: "once", couponCode: "LIMITED10" }));
+  assert.equal(r2.status, 200);
+  const meta2 = (inserted(b.log)!.payload as { metadata: Record<string, unknown> }).metadata;
+  assert.equal("founder_discount" in meta2, false);
+  assert.equal((meta2.coupon as { discount_halalas: number }).discount_halalas, 40000);
+});
+
+test("l9: a launch price and the founder discount are never stacked — the larger saving wins", async () => {
+  const LAUNCH_NOW = new Date("2026-11-20T08:00:00.000Z"); // inside launch-2026 (25 Oct 2026 – 25 Jan 2027)
+  const catalogWith = (launchSar: number) =>
+    buildCatalog({
+      ...PRICE_BOOK,
+      "lib-q1": { ...PRICE_BOOK["lib-q1"], launchPrices: [{ campaignId: "launch-2026", prices: { once: launchSar } }] } as BookEntry,
+    });
+  // launch 1,900 saves 90 < the founder's 298.50 → the founder discount off the listed 1,990, no launch on the order
+  const a = db("lawyer", { founder: true });
+  const r = await startCheckoutWith(
+    { admin: a.client, client: moyasar().client, now: () => LAUNCH_NOW, catalog: catalogWith(1900) },
+    input({ itemId: "lib-q1", billing: "once" }),
+  );
+  assert.equal(r.status, 200);
+  if (r.status === 200) assert.deepEqual(r.body.quote, { net: 169150, vat: 25373, total: 194523, vatMode: "exclusive", listNet: 199000, founderDiscount: 29850 });
+  assert.equal("launch" in (inserted(a.log)!.payload as { metadata: Record<string, unknown> }).metadata, false);
+  // launch 1,500 saves 490 > 298.50 → the launch price alone
+  const b = db("lawyer", { founder: true });
+  const r2 = await startCheckoutWith(
+    { admin: b.client, client: moyasar().client, now: () => LAUNCH_NOW, catalog: catalogWith(1500) },
+    input({ itemId: "lib-q1", billing: "once" }),
+  );
+  assert.equal(r2.status, 200);
+  if (r2.status === 200) assert.equal(r2.body.quote.net, 150000);
+  const meta2 = (inserted(b.log)!.payload as { metadata: Record<string, unknown> }).metadata;
+  assert.equal("founder_discount" in meta2, false);
+  assert.ok("launch" in meta2);
+});
+
+test("l9: the upgrade credit is not a discount — it comes off after the founder discount", async () => {
+  // the Q511 fixture (firm-basic → firm-enterprise mid-quarter) for a buyer who also holds an active founder seat
+  const { client: admin } = db("firm", { founder: true, subs: [HELD], orders: [HELD_ORDER] });
+  const r = await startCheckoutWith({ admin, client: moyasar().client, now: () => NOW, ranks: RANKS }, input());
+  assert.equal(r.status, 200);
+  if (r.status !== 200) return;
+  // 4,490 − 15 % (673.50) = 3,816.50, then − the 2,307.50 credit
+  assert.equal(r.body.quote.founderDiscount, 67350);
+  assert.equal(r.body.quote.prorationCredit, 230750);
+  assert.equal(r.body.quote.net, 449000 - 67350 - 230750);
 });
 
 // ── founder membership untouched ───────────────────────────────────────────

@@ -23,6 +23,14 @@
  * guest, an admin, an open account). LibraryGuard then shows the owner's
  * message instead of any library page, /laws/subscribe included. The
  * enforcement is libraryGate() on every library route.
+ *
+ * Register 14 items 8 / 48 (batch l9, 20261129_40): `readQuota` also carries
+ * the daily warning (warnAt, 30 — `warn` once today's full-text opens reach
+ * it), the 7-day count and cap (weekUsed / weekLimit, 150; `overWeekly`) and
+ * when the 7-day window lets one more in (weekResetsAt). `pointsLock` —
+ * {code, message, balance, minPoints, topupHref} when this subscriber's
+ * balance is below library_min_points_to_browse (src/lib/library/
+ * pointsGate.ts), else null. Admins are counted like everyone (file 19).
  */
 
 import { NextResponse } from "next/server";
@@ -33,7 +41,9 @@ import {
 } from "@/lib/access-control";
 import { createClient } from "@/lib/supabase/server";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
-import { LIBRARY_LOCK_SUPPORT_PATH, libraryLockMessageAr } from "@/lib/library/readQuota";
+import { LIBRARY_LOCK_SUPPORT_PATH, LIBRARY_READ_QUOTA, libraryLockMessageAr } from "@/lib/library/readQuota";
+import { libraryFullAccessState } from "@/lib/access-control";
+import type { LibraryPointsLock } from "@/lib/library/pointsGate";
 import { viewerLibraryAccountLocked } from "@/lib/library/accountAccessServer";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
 
@@ -42,9 +52,13 @@ async function callerReadState() {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { securityLock: null, readQuota: null };
-    const row = await libraryReadQuotaHit(user.id, null);
-    if (!row || row.status === "exempt") return { securityLock: null, readQuota: null };
+    if (!user) return { securityLock: null, readQuota: null, pointsLock: null };
+    const [row, full] = await Promise.all([
+      libraryReadQuotaHit(user.id, null),
+      libraryFullAccessState(user.id).catch(() => null),
+    ]);
+    const pointsLock: LibraryPointsLock | null = full?.pointsLock ?? null;
+    if (!row || row.status === "exempt") return { securityLock: null, readQuota: null, pointsLock };
     if (row.status === "locked") {
       return {
         securityLock: {
@@ -54,8 +68,10 @@ async function callerReadState() {
           support: LIBRARY_LOCK_SUPPORT_PATH,
         },
         readQuota: null,
+        pointsLock,
       };
     }
+    const warnAt = row.warnAt ?? LIBRARY_READ_QUOTA.warnDailyDocs;
     return {
       securityLock: null,
       readQuota: {
@@ -63,10 +79,18 @@ async function callerReadState() {
         dailyLimit: row.dayLimit,
         resetsAt: row.resetsAt,
         overDaily: row.dayLimit > 0 && row.usedToday >= row.dayLimit,
+        warnAt,
+        // The warning needs the 20261129_40 answer (warn_at): without it no banner.
+        warn: row.warnAt != null && row.usedToday >= warnAt,
+        weekUsed: row.weekUsed ?? null,
+        weekLimit: row.weekLimit ?? null,
+        overWeekly: row.weekUsed != null && row.weekLimit != null && row.weekLimit > 0 && row.weekUsed >= row.weekLimit,
+        weekResetsAt: row.weekResetsAt ?? null,
       },
+      pointsLock,
     };
   } catch {
-    return { securityLock: null, readQuota: null };
+    return { securityLock: null, readQuota: null, pointsLock: null };
   }
 }
 
@@ -104,6 +128,8 @@ export async function GET() {
       readQuota: readState.readQuota,
       /** Owner item 9: this account's library is locked for its type, or null. */
       accountLock: accountLocked ? { message: LIBRARY_ACCOUNT_LOCKED_AR } : null,
+      /** Register 14 item 48: this subscriber's balance is below the library minimum, or null. */
+      pointsLock: accountLocked ? null : readState.pointsLock,
     },
     // Per caller now (the lock and the quota): never shared by a cache.
     { headers: { "Cache-Control": "private, no-store, must-revalidate" } },

@@ -115,3 +115,11 @@ test("the board and the case page share the moves and the write", () => {
   assert.match(detail, /nzamy-workflow-updated/);
   assert.match(detail, /aria-label="تغيير حالة القضية"/);
 });
+
+test("file 15 row 70 (l9): the case list pages on the server — «تحميل المزيد» reads the next page from the real total", () => {
+  assert.ok(page.includes('{ receiver: "lawyer", limit: LIST_LIMIT, offset }'));
+  assert.ok(page.includes("const truncated = rawTotal > rawLoaded;"));
+  assert.ok(page.includes("await fetchLawyerRows(rawLoaded)"));
+  assert.ok(page.includes("تحميل المزيد"));
+  assert.ok(!page.includes("تُعرض أحدث {LIST_LIMIT} سجل فقط"), "the dead-end note is gone");
+});

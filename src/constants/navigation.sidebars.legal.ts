@@ -97,16 +97,10 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "المرشد القضائي",    labelEn: "Court Guide",       href: "/ai/procedures",       icon: "MapTrifold" },
       { label: "الحاسبة القانونية",  labelEn: "Legal Calculator",  href: "/ai/fee-calculator",   icon: "Calculator" },
       { label: "منقح ناجز",          labelEn: "Najiz Optimizer",   href: "/ai/najiz-optimizer",  icon: "Broom" },
-      // ٢: دوري أو عند الحاجة
-      // UAT-LIVE-AI-001 — badge «جديد» → «قريباً»: /ai/direction-support renders
-      // DashboardComingSoon now (its results were module constants), and a nav
-      // entry is a promise about the page under it.
-      { label: "داعم الاتجاه",      labelEn: "Direction Support",  href: "/ai/direction-support", icon: "Compass",       badge: "قريباً", divider: true },
-      // Owner answer ١١٥ — these three printed canned output and render
-      // DashboardComingSoon now, so each row is badged «قريباً».
-      { label: "المترجم القانوني",  labelEn: "Legal Translator",  href: "/ai/legal-translate",  icon: "Translate",     badge: "قريباً" },
-      { label: "المفرّغ الذكي",      labelEn: "Transcriber",       href: "/ai/transcriber",      icon: "Microphone",    badge: "قريباً" },
-      { label: "المقارن الذكي",      labelEn: "Smart Comparator",  href: "/ai/compare",          icon: "ArrowsLeftRight", badge: "قريباً" },
+      // File 15 row 70 (l9): «داعم الاتجاه», «المترجم القانوني», «المفرّغ الذكي»
+      // and «المقارن الذكي» left the menu. Each page renders DashboardComingSoon
+      // (UAT-LIVE-AI-001, owner ١١٥), so four rows opened nothing; the pages
+      // stay reachable by URL. Re-add a row when its tool works.
     ],
   },
 
@@ -141,19 +135,10 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
     ],
   },
 
-  // ── ⑩ خدمات متقدمة ───────────────────────────────────────────────────────
-  {
-    title: "خدمات متقدمة", titleEn: "Advanced Services",
-    collapsible: true,
-    defaultOpen: false,
-    items: [
-      // badge «جديد» → «قريباً» (owner ١٣٦). The vault WORKSPACE is deferred;
-      // the page behind this link presents the service, it does not open a
-      // vault. A «جديد» pill sold the deferred half as already shipped. The
-      // entry stays — the page it reaches is real — only the pill was untrue.
-      { label: "الخزنة القانونية",  labelEn: "Legal Vault",  href: "/services/lawyers/vault",       icon: "Vault",           badge: "قريباً" },
-    ],
-  },
+  // ── ⑩ خدمات متقدمة — removed (file 15 row 70, l9) ───────────────────────
+  // Its one row, «الخزنة القانونية» (/services/lawyers/vault, «قريباً»: a page
+  // presenting the deferred vault service), was the menu's SECOND «الخزنة»;
+  // the lawyer's real vault is «الخزنة» under «العقود والمستندات» above.
 
   // ── ⑪ الذيل الثابت ───────────────────────────────────────────────────────
   {
@@ -198,7 +183,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     title: "العقود", titleEn: "Contracts",
     items: [
       { label: "مدير العقود",     labelEn: "Contract Manager", href: "/dashboard/firm/contracts",  icon: "FileText" },
-      { label: "الخزنة",          labelEn: "Letterhead",       href: "/dashboard/firm/vault?tab=branding", icon: "Vault" },
+      { label: "الخزنة والترويسة", labelEn: "Vault & Letterhead", href: "/dashboard/firm/vault?tab=branding", icon: "Vault" },
       { label: "النماذج القياسية",labelEn: "Templates",         href: "/dashboard/firm/templates", badge: "قريباً",  icon: "CopySimple" },
       { label: "المستندات",        labelEn: "Documents",         href: "/dashboard/firm/documents", badge: "قريباً",  icon: "FolderOpen" },
       { label: "الأرشيف الموحّد",   labelEn: "Unified Archive",   href: "/dashboard/firm/archive", badge: "قريباً",    icon: "Archive" },
@@ -209,7 +194,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "دليل العملاء",   labelEn: "Clients",       href: "/dashboard/firm/clients",       icon: "AddressBook" },
       { label: "الاستشارات",     labelEn: "Consultations", href: "/dashboard/firm/consultations", icon: "ChatDots" },
-      { label: "بوابة العميل",   labelEn: "Client Portal", href: "/dashboard/firm/client-portal", icon: "Globe", gateKey: "firm-client-portal" },
+      { label: "بوابة العميل",   labelEn: "Client Portal", href: "/dashboard/firm/client-portal", icon: "Globe", gateKey: "firm-client-portal", badge: "قريباً" },
     ],
   },
   {
@@ -218,16 +203,16 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "أعضاء الفريق",     labelEn: "Team",         href: "/dashboard/firm/team",             icon: "Users", gateKey: "firm-team" },
       { label: "الصلاحيات والأدوار",labelEn: "Roles",       href: "/dashboard/firm/team/roles",       icon: "Key", gateKey: "firm-team" },
       { label: "سجلات الساعات",     labelEn: "Timesheets",  href: "/dashboard/firm/team/timesheets",  icon: "Clock", badge: "قريباً" },
-      { label: "المتدربون",          labelEn: "Trainees",    href: "/dashboard/firm/team/trainees",    icon: "Student" },
-      { label: "الحضور والإجازات",   labelEn: "Attendance",  href: "/dashboard/firm/team/attendance",  icon: "CalendarBlank" },
-      { label: "الإنجازات والمكافآت",labelEn: "Achievements", href: "/dashboard/firm/achievements",    icon: "Trophy", badge: "جديد" },
+      { label: "المتدربون",          labelEn: "Trainees",    href: "/dashboard/firm/team/trainees",    icon: "Student", badge: "قريباً" },
+      { label: "الحضور والإجازات",   labelEn: "Attendance",  href: "/dashboard/firm/team/attendance",  icon: "CalendarBlank", badge: "قريباً" },
+      { label: "الإنجازات والمكافآت",labelEn: "Achievements", href: "/dashboard/firm/achievements",    icon: "Trophy", badge: "قريباً" },
     ],
   },
   {
     title: "الإدارات والأقسام", titleEn: "Departments",
     items: [
-      { label: "إدارة الأقسام",     labelEn: "Manage Departments",   href: "/dashboard/firm/departments",  icon: "TreeStructure", gateKey: "firm-departments" },
-      { label: "فروع المكتب",       labelEn: "Firm Branches",        href: "/dashboard/firm/branches",     icon: "MapPin", gateKey: "firm-branches" },
+      { label: "إدارة الأقسام",     labelEn: "Manage Departments",   href: "/dashboard/firm/departments",  icon: "TreeStructure", gateKey: "firm-departments", badge: "قريباً" },
+      { label: "فروع المكتب",       labelEn: "Firm Branches",        href: "/dashboard/firm/branches",     icon: "MapPin", gateKey: "firm-branches", badge: "قريباً" },
       { label: "إعدادات الصلاحيات", labelEn: "Dept Permissions",     href: "/dashboard/firm/departments/permissions", icon: "ShieldCheck", badge: "جديد", gateKey: "firm-departments" },
     ],
   },
@@ -238,7 +223,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "اعتماد العملاء (KYC)",labelEn: "Client KYC",     href: "/dashboard/firm/compliance/kyc", badge: "قريباً",        icon: "ShieldCheck" },
       { label: "الجدران الصينية",    labelEn: "Chinese Walls",  href: "/dashboard/firm/compliance/walls", badge: "قريباً",      icon: "Wall", gateKey: "firm-chinese-walls" },
-      { label: "الفحص الشامل ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/firm/health-check",     icon: "MagnifyingGlass", badge: "جديد", gateKey: "firm-health-check" },
+      { label: "الفحص الشامل ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/firm/health-check",     icon: "MagnifyingGlass", badge: "قريباً", gateKey: "firm-health-check" },
       { label: "الحوكمة المؤسسية",   labelEn: "Governance",         href: "/dashboard/firm/governance",            icon: "ShieldCheck", badge: "قريباً", gateKey: "firm-governance" },
       { label: "مصفوفة الحوكمة",     labelEn: "Governance Matrix",  href: "/dashboard/firm/governance?tab=matrix",  icon: "ListChecks", gateKey: "firm-governance" },
     ],
@@ -249,7 +234,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance", badge: "قريباً",           icon: "Money", gateKey: "firm-finance" },
       { label: "الأتعاب",          labelEn: "Fees",       href: "/dashboard/firm/fees",              icon: "Receipt", gateKey: "firm-finance" },
       { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance", badge: "قريباً" },
-      { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics" },
+      { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics", badge: "قريباً" },
     ],
   },
   {
@@ -312,9 +297,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "مستشارون خارجيون",  labelEn: "Of-Counsel",        href: "/dashboard/firm/of-counsel",     icon: "UserCircle",      badge: "جديد", gateKey: "firm-collaboration" },
+      { label: "مستشارون خارجيون",  labelEn: "Of-Counsel",        href: "/dashboard/firm/of-counsel",     icon: "UserCircle",      badge: "قريباً", gateKey: "firm-collaboration" },
       { label: "عرض إعارة محامٍ",    labelEn: "Post Secondment",   href: "/dashboard/firm/secondment/new", icon: "ArrowsLeftRight", badge: "جديد", gateKey: "firm-secondment" },
-      { label: "الغرف المشتركة",     labelEn: "Shared Rooms",      href: "/dashboard/firm/shared-rooms",   icon: "UsersThree",      badge: "جديد", gateKey: "firm-shared-rooms" },
+      { label: "الغرف المشتركة",     labelEn: "Shared Rooms",      href: "/dashboard/firm/shared-rooms",   icon: "UsersThree",      badge: "قريباً", gateKey: "firm-shared-rooms" },
     ],
   },
   {
@@ -333,8 +318,8 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      // badge «جديد» → «قريباً» — same reason as the lawyer sidebar (owner ١٣٦).
-      { label: "الخزنة القانونية", labelEn: "Legal Vault",    href: "/services/lawyers/vault",  icon: "Vault", badge: "قريباً" },
+      // l9 row 70: «الخزنة القانونية» (/services/lawyers/vault, «قريباً») left
+      // this menu — the firm's real vault is «الخزنة والترويسة» under «العقود».
       { label: "الملف المهني للمكتب", labelEn: "Firm Profile",   href: "/dashboard/firm/profile",  icon: "UserCircle" },
       // Owner decision ٢٠ — the firm's real reviews and the manager's opt-in to
       // show them publicly (20261017_31). No role list entry: the firm account

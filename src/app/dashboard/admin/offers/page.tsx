@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, Eye, Gift, Pause, PencilSimple, Play, Plus, X } from "@phosphor-icons/react";
 import { OfferCard } from "@/components/offers/OfferCard";
+import { OFFER_GUIDE_STEPS_AR, OFFER_GUIDE_TITLE_AR } from "@/lib/offers/offerGuide";
 import {
   CLOSED_REASON_AR,
   DEFAULT_RETURN_MINUTES,
@@ -10,6 +11,7 @@ import {
   OFFER_AUDIENCE_LABELS_AR,
   OFFER_STATUS_LABELS_AR,
   OFFER_VERIFICATION_LABELS_AR,
+  FOUNDER_AUDIENCE_NOTE_AR,
   OFFER_VERIFICATIONS,
   type AdminOfferDto,
   type OfferAudienceKey,
@@ -265,6 +267,21 @@ export default function AdminOffersPage() {
         </div>
       </div>
 
+      {/* File 15 row 25 / register 14 item 20 (l9): the owner's guide, field by field. */}
+      <details className={`${card} p-4`}>
+        <summary className="cursor-pointer text-[13px] font-bold text-[#C8A762]">{OFFER_GUIDE_TITLE_AR}</summary>
+        <div className="mt-3 space-y-3">
+          {OFFER_GUIDE_STEPS_AR.map((s) => (
+            <div key={s.title}>
+              <p className="text-[13px] font-bold text-white">{s.title}</p>
+              <ul className="mt-1 list-disc space-y-1 ps-5 text-[12px] leading-relaxed text-zinc-300">
+                {s.lines.map((l) => <li key={l}>{l}</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </details>
+
       {notice ? (
         <p role="status" className={`rounded-xl p-3 text-[13px] ${notice.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-rose-500/10 text-rose-300"}`}>{notice.msg}</p>
       ) : null}
@@ -412,7 +429,7 @@ export default function AdminOffersPage() {
                   </td>
                   <td className={td}>
                     {o.audience.map((a) => OFFER_AUDIENCE_LABELS_AR[a as OfferAudienceKey] ?? a).join("، ")}
-                    <p className="mt-1 text-[11px] text-zinc-400">{OFFER_VERIFICATION_LABELS_AR[o.verification]}</p>
+                    <p className="mt-1 text-[11px] text-zinc-400">{o.campaignLinked ? FOUNDER_AUDIENCE_NOTE_AR : OFFER_VERIFICATION_LABELS_AR[o.verification]}</p>
                   </td>
                   <td className={td}>{o.priority}</td>
                   <td className={`${td} whitespace-nowrap`}>

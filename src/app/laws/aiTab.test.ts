@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const tab = readFileSync(new URL("./components/AiTabContent.tsx", import.meta.url), "utf8");
-const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
 
 test("the tab asks the real assistant through askLibrary and shows the server's citations", () => {
   assert.match(tab, /import \{ askLibrary, LIBRARY_AI_SOON \} from "\.\.\/\[slug\]\/_library-assistant";/);

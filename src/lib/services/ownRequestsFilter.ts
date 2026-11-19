@@ -13,6 +13,8 @@
  *   requester_user_id = uid   — rows he filed
  *   assigned_to = uid         — rows assigned to him
  *   firm_id in (his firms)    — "firm members read firm service requests"
+ *                               (narrowed by RLS for a trainee or a legal
+ *                               secretary — FIRM_CASE_SCOPED_ROLES below)
  *   business_id in (his …)    — "business members read business service requests"
  * With `receiver`, every row he filed stays (whatever its receiver — the
  * route's earlier contract), and the other arms are limited to that receiver.
@@ -21,6 +23,18 @@
  * dropped, and a malformed uid or receiver throws: nothing user-supplied is
  * ever spliced into the filter syntax.
  */
+
+/**
+ * Owner file 15 row 2 (20261129_10): the firm roles that read only the cases
+ * and client cards ASSIGNED to them — public.firm_case_scoped_member. The
+ * database decides (a restrictive policy on service_requests, the case child
+ * tables through case_visible, lawyer_clients, client notes, contracts and
+ * consultations); the list is here so the app and the SQL can be held equal
+ * (src/lib/auth/entityRoleScope.test.ts). «Assigned» = the case's filer or
+ * lead, its case team, or the assignee of one of its hearings or tasks; a
+ * card he owns or one linked to such a case.
+ */
+export const FIRM_CASE_SCOPED_ROLES: readonly string[] = ["trainee", "legal_secretary"];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

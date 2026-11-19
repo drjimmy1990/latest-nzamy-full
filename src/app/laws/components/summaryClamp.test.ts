@@ -48,7 +48,7 @@ test("the law cards (grid and list) and the decree / precedent cards use it", ()
   assert.equal(laws.match(/lawCardSummaryText\(sys\.summaryBrief,/g)?.length, 2);
   const items = read("ListItems.tsx");
   assert.equal(items.match(/<ClampedSummary /g)?.length, 4);
-  const page = read("../page.tsx");
+  const page = read("../(index)/page.tsx");
   assert.match(page, /summaryBrief: stripMarkdownMarks\(withoutLeadingHeadings\(law\.summary_brief\)\),/);
 });
 

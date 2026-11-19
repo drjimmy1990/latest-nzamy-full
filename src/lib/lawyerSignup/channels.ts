@@ -45,7 +45,10 @@ export function resendEmailAdapter(
           : `Your Nezamy code: ${code}\nValid for ${OTP_TTL_MINUTES} minutes. Do not share it.`;
       // The one shared sender (src/lib/email/sendEmail.ts): never throws,
       // never logs the code or the full address.
-      return sendEmail({ to, subject, text, tag: "lawyer_signup_otp" }, { env, fetchImpl, timeoutMs: TIMEOUT_MS });
+      const r = await sendEmail({ to, subject, text, tag: "lawyer_signup_otp" }, { env, fetchImpl, timeoutMs: TIMEOUT_MS });
+      // 'sunk' (l9 testinfra): a test address — the code waits in the admin's
+      // test mail sink (/dashboard/admin/test-batches), which is its delivery.
+      return r === "sunk" ? "sent" : r;
     },
   };
 }

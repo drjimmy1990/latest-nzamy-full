@@ -6,7 +6,7 @@ import { orderCopyPrefix, orderHeaderLine, orderMetaShown } from "./orderMetaLab
 const reader = readFileSync(new URL("./orders/[slug]/page.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./orders/[slug]/_sidebar.tsx", import.meta.url), "utf8");
 const items = readFileSync(new URL("./components/ListItems.tsx", import.meta.url), "utf8");
-const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
 const decreeRoute = readFileSync(new URL("../api/library/decrees/[id]/route.ts", import.meta.url), "utf8");
 const searchRoute = readFileSync(new URL("../api/library/search/route.ts", import.meta.url), "utf8");
 

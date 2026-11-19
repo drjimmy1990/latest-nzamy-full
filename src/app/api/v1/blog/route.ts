@@ -20,7 +20,7 @@ import { createServiceClient } from "@/lib/supabase/server";
  *
  * FAILURE IS A 500, NOT AN EMPTY PAGE. The old branches returned
  * `{ data: [], total: 0, hasMore: false }` — and `total: 0` is what the page
- * keys its "is the DB seeded?" test on (`usingDb`, src/app/blog/page.tsx:260),
+ * keys its "is the DB seeded?" test on (`usingDb`, src/app/blog/BlogList.tsx),
  * so a failed query did not just show an empty blog: it made the page publish
  * the hardcoded ARTICLES catalog as if those were real posts. The page's
  * `!res.ok` branch (line 232) keeps whatever is already on screen instead,

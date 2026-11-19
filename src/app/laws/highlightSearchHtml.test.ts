@@ -73,8 +73,8 @@ test("harakat in the term are dropped, so a long run of marks cannot stall the r
 
 test("the laws page uses this module for its dangerouslySetInnerHTML suggestion label", () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const page = readFileSync(path.join(here, "page.tsx"), "utf8");
-  assert.match(page, /import \{ highlightSearchHtml as highlightText \} from "\.\/highlightSearchHtml"/);
+  const page = readFileSync(path.join(here, "(index)", "page.tsx"), "utf8");
+  assert.match(page, /import \{ highlightSearchHtml as highlightText \} from "\.\.\/highlightSearchHtml"/);
   assert.ok(!/function highlightText\(/.test(page), "no second, untested copy in the page");
   const sinks = page.match(/dangerouslySetInnerHTML=\{\{ __html: [^}]+\}\}/g) ?? [];
   // Owner note ١٢-٢: the instant box shows the law's name core and the

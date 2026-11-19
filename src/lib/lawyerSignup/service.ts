@@ -186,7 +186,12 @@ export async function evaluate(svc: Svc, user: User, opts: { fullName?: string |
     const result = await approveLawyerInstantly(svc, user.id);
     if (result !== "approved") {
       status = "review";
-      reasons = [result === "claimed" ? "licence_claimed" : result === "not_pending" ? "account_not_pending" : "approval_error"];
+      reasons = [
+        result === "claimed" ? "licence_claimed"
+          : result === "fake_licence" ? "licence_fake_test"
+            : result === "not_pending" ? "account_not_pending"
+              : "approval_error",
+      ];
     }
   }
 

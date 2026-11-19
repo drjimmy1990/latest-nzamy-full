@@ -26,7 +26,7 @@ test("٠٤: no id or no title → no button (null), never a dead folder entry", 
 
 test("source: the four card types carry the button; one modal on the page; never inside a <Link>", () => {
   const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
-  const page = read("./page.tsx");
+  const page = read("./(index)/page.tsx");
   assert.equal((page.match(/onSaveToFolder=\{setSaveDoc\}/g) ?? []).length, 4, "laws, precedents, orders, fiqh tabs");
   assert.match(page, /<FolderSelectionModal isOpen=\{true\} onClose=\{\(\) => setSaveDoc\(null\)\} currentDoc=\{saveDoc\} \/>/);
   const laws = read("./components/LawsTabContent.tsx");

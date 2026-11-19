@@ -20,6 +20,8 @@ import {
   paymentsGatewaySettingIssue,
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
+import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
+import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -74,10 +76,19 @@ const ALLOWED_SETTINGS_KEYS = [
   // (per-session / per-address budgets, Turnstile threshold, consecutive
   // pages, browsing depth, pass minutes);
   "library_public_protection",
-  // {"full": n, "excerpt_chars": n} — full rulings per collection for a non-subscriber (owner: 0, ~1.5 lines);
+  // {"full": n} — items per collection a non-subscriber reads in full (owner register 14 item 13: 2, at most 3; no excerpt);
   "public_full_rulings_per_collection",
   // {"pages": n} — fiqh free pages (owner: 0, subscribers only).
   "library_feqh_free_pages",
+  // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
+  // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
+  "library_min_points_to_browse",
+  // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
+  // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
+  // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
+  // the footer, the Organization JSON-LD and /llms.txt.
+  "license_number",
+  "license_issuer",
 ] as const;
 
 /**
@@ -158,6 +169,11 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_public_protection: libraryPublicProtectionIssue,
   public_full_rulings_per_collection: publicRulingsIssue,
   library_feqh_free_pages: feqhFreePagesIssue,
+  // Batch l9 read: pure, covered by src/lib/library/pointsGate.test.ts.
+  library_min_points_to_browse: libraryMinPointsIssue,
+  // Batch l9 public: pure, covered by src/lib/publicSeo/platformRegistry.test.ts.
+  license_number: (value) => licenceSettingIssue("license_number", value),
+  license_issuer: (value) => licenceSettingIssue("license_issuer", value),
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

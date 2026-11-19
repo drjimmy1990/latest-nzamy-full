@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, Play, Scales, ShieldCheck, Brain, Buildings, LockKey, CheckCircle, X } from "@phosphor-icons/react";
+import { EMPTY_REGISTRY, licenceBadge } from "@/lib/publicSeo/platformRegistry";
 import { useTheme } from "./ThemeProvider";
 import Link from "next/link";
 
@@ -45,7 +46,13 @@ function AnimatedStat({ value, label, delay }: { value: string; label: string; d
   );
 }
 
-export default function Hero() {
+/**
+ * `licenceIssuer`: the admin setting license_issuer, read by the server home
+ * page (src/lib/publicSeo/platformRegistryServer.ts). The badge says
+ * «منصة مرخّصة» and names an issuer only once one is set — it used to print
+ * «مرخّص من وزارة العدل», an issuer the owner never gave (batch l9).
+ */
+export default function Hero({ licenceIssuer = "" }: { licenceIssuer?: string }) {
   const { lang, theme } = useTheme();
   const isAr = lang === "ar";
   const isDark = theme === "dark";
@@ -253,7 +260,7 @@ export default function Hero() {
             <div className={`mt-10 flex flex-wrap items-center gap-4 text-[10px] sm:text-xs font-medium border-t pt-8 ${isDark ? "border-white/10 text-gray-400" : "border-slate-100 text-slate-500"}`}>
               <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <Buildings size={16} className="text-royal dark:text-emerald-400" />
-                {isAr ? "مرخّص من وزارة العدل" : "Ministry of Justice Licensed"}
+                {licenceBadge({ ...EMPTY_REGISTRY, licenceIssuer }, isAr)}
               </div>
               <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <LockKey size={16} className="text-royal dark:text-emerald-400" />

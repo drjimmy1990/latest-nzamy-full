@@ -30,14 +30,15 @@ test("the box sits in the side column for the article in view; the provider wrap
   assert.match(BOX, /useArticleRefs\(ctx\?\.lawSlug \?\? "", ctx \? articleId : null, 350\)/, "waits for the scroll to settle");
 });
 
-test("three coloured sections, two items each, «عرض الكل (n)», fiqh hidden when empty", () => {
+test("three coloured sections, two items each, «عرض الكل (n)», every empty section hidden (file 16 §8)", () => {
   for (const t of ["التشريعات", "المبادئ والأحكام القضائية", "الآراء الفقهية"]) assert.ok(BOX.includes(`title: "${t}"`), t);
   assert.match(BOX, /bar: "bg-emerald-500"/);
   assert.match(BOX, /bar: "bg-sky-500"/);
   assert.match(BOX, /bar: "bg-amber-500"/);
   assert.match(BOX, /<RefSections ctx=\{ctx\} articleId=\{articleId\} state=\{state\} max=\{2\} \/>/);
   assert.match(BOX, /عرض الكل \(\{arDigits\(sec\.total\)\}\)/);
-  assert.match(BOX, /SECTIONS\.filter\(\(s\) => s !== "fiqh" \|\| data\.sections\.fiqh\.total > 0\)/);
+  assert.match(BOX, /SECTIONS\.filter\(\(s\) => data\.sections\[s\]\.total > 0 && data\.sections\[s\]\.items\.length > 0\)/);
+  assert.doesNotMatch(BOX, /لا توجد إحالات مسجّلة في هذا القسم/, "never an empty section with «لا توجد»");
   assert.match(BOX, /role="tablist"/);
 });
 
@@ -50,4 +51,21 @@ test("the preview: text first, then copy / add to draft / go to / open whole; su
   assert.match(BOX, /onClick=\{ctx\.showPaywall\}/);
   assert.match(BOX, /\{!item\.anchorMissing && p\?\.found !== false && \(/, "no «انتقل إلى» to an anchor that is gone");
   assert.doesNotMatch(BOX, /dangerouslySetInnerHTML/, "the preview text is rendered as text");
+});
+
+test("file 16 §8: the side box is hidden when the article has no link; the dialog never opens on an empty tab", () => {
+  assert.match(BOX, /if \(state\.status === "done" && shownSections\(state\)\.length === 0\) return null;/, "hidden on an empty answer, framed while loading");
+  assert.match(BOX, /const tab = tabs\.includes\(picked\) \? picked : \(tabs\[0\] \?\? picked\);/);
+});
+
+test("file 16 §9.7: a link whose anchor is gone is never shown as a confirmed article", () => {
+  assert.match(BOX, /const pill = item\.anchorMissing \? null : pillOf\(item\);/, "no article status pill");
+  assert.match(BOX, /مادة غير مؤكَّدة/);
+  assert.match(BOX, /مبدأ غير مؤكَّد/);
+});
+
+test("register 14 item 14: the law map is gone from the law page", () => {
+  assert.equal(existsSync(new URL("./_law-map-button.tsx", import.meta.url)), false);
+  assert.equal(existsSync(new URL("./_law-map.tsx", import.meta.url)), false);
+  assert.doesNotMatch(PAGE, /LawMapButton|_law-map|خريطة التشابك/);
 });

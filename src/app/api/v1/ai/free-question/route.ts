@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
-import { freeQuestionStatusWith } from "@/lib/ai/freeQuestion";
+import { FREE_QUESTION_TOOL, freeQuestionStatusWith, freeQuestionToolFor, parseFreeQuestionTool } from "@/lib/ai/freeQuestion";
 import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
 /**
@@ -19,6 +19,12 @@ import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
  * ٥٨ (batch l8): none for an account whose e-mail is not verified, nor while
  * the library is locked for its type (owner item 9.7) — they come back when
  * it reopens. ai_free_question_status (20261128_20) applies the same two rules.
+ *
+ * Register 4 / 36 (batch l9, 20261129_60): `?tool=quick-answer` asks for the
+ * general assistant's questions (an individual's), the default
+ * `library-assistant` for the library's (everyone else's). The answer is
+ * NONE when the tool asked is not the account's own free tool; the library
+ * lock applies only to the library assistant's.
  */
 
 export const dynamic = "force-dynamic";
@@ -27,14 +33,20 @@ export const runtime = "nodejs";
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const NONE = { available: false, left: 0, total: 0 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient();
     const auth = await requireApiUser(supabase, { error: "سجّل الدخول لاستخدام أدوات الذكاء الاصطناعي" });
     if (auth instanceof NextResponse) return auth;
     if (!auth.user.email_confirmed_at) return NextResponse.json(NONE, { headers: NO_STORE });
-    if (!(await readLibraryAccountAccess(auth.user.id)).allowed) return NextResponse.json(NONE, { headers: NO_STORE });
+    const asked = parseFreeQuestionTool(new URL(request.url).searchParams.get("tool") ?? FREE_QUESTION_TOOL);
+    if (!asked) return NextResponse.json(NONE, { headers: NO_STORE });
     const admin = await createServiceClient();
+    const { data: profile } = await admin.from("profiles").select("user_type").eq("id", auth.user.id).maybeSingle();
+    if (asked !== freeQuestionToolFor(profile?.user_type)) return NextResponse.json(NONE, { headers: NO_STORE });
+    if (asked === FREE_QUESTION_TOOL && !(await readLibraryAccountAccess(auth.user.id)).allowed) {
+      return NextResponse.json(NONE, { headers: NO_STORE });
+    }
     const status = await freeQuestionStatusWith(admin, auth.user.id);
     return NextResponse.json(status, { headers: NO_STORE });
   } catch (err) {

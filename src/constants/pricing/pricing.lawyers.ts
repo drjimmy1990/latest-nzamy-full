@@ -7,8 +7,10 @@ import { topupBonusLabel, topupPointsTextById } from "../../lib/pricing/priceBoo
 // - «المحامي المحترف»: 3,990 SAR/year. The 399 monthly price is retired
 //   (owner, 26 Oct 2026: professionals never pay monthly), and the plan comes
 //   with NO points (owner ٢٩١: standard subscriptions open with 0 points).
-// - Points come from top-ups only. The professionals' packs start at 500
-//   (owner ٣٠٢ / conflict ١١ of 30 Oct 2026; pricing doc §4هـ) and, since
+// - Points come from top-ups only. Batch l9 (owner register 14 item 7): the
+//   minimum top-up is 50 points for every account type, so the 50-point pack
+//   (50 SAR, no bonus, 3 months) is sold to lawyers too. The professionals'
+//   bonus packs start at 500 (owner ٣٠٢ / conflict ١١ of 30 Oct 2026; pricing doc §4هـ) and, since
 //   owner ٤٢٢ (3 Nov 2026), grant 500→700, 1,000→1,500, 2,500→5,000,
 //   5,000→12,500, 10,000→30,000. The 100 and 250 packs are the
 //   individuals' only (pricing.individuals.ts).
@@ -43,6 +45,13 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
         platform: ["إدارة القضايا والجلسات والمهل", "الموكّلون والاستشارات والعقود"],
         support: [],
       },
+    },
+    {
+      id: "topup-50", name: "شحن ٥٠", badge: null,
+      periodMonthly: "ر.س / الشحنة", periodYearly: "ر.س / الشحنة",
+      desc: "٥٠ نقطة · صالحة ٣ أشهر", target: "أقل شحنة",
+      cta: "اشحن الآن", ctaHref: "/register/provider?plan=topup-50", highlighted: false, color: "border-zinc-200/60 dark:border-white/10",
+      features: { ai: [topupPointsTextById("topup-50", "ar")], platform: [], support: [] },
     },
     {
       id: "topup-500", name: "شحن ٥٠٠", badge: null,
@@ -95,6 +104,13 @@ export const plansLawyers: { ar: Plan[]; en: Plan[] } = {
         platform: ["Cases, hearings and deadlines", "Clients, consultations and contracts"],
         support: [],
       },
+    },
+    {
+      id: "topup-50", name: "Top-up 50", badge: null,
+      periodMonthly: "SAR / top-up", periodYearly: "SAR / top-up",
+      desc: "50 points · valid for 3 months", target: "Smallest top-up",
+      cta: "Top up", ctaHref: "/register/provider?plan=topup-50", highlighted: false, color: "border-zinc-200/60 dark:border-white/10",
+      features: { ai: [topupPointsTextById("topup-50", "en")], platform: [], support: [] },
     },
     {
       id: "topup-500", name: "Top-up 500", badge: null,
@@ -160,8 +176,8 @@ export interface ServiceRow {
 
 /** Shown under the price list (owner answer ٢١٦): the archive costs no points. */
 export const LAWYER_ARCHIVE_NOTE = {
-  ar: "الأرشيف السحابي: ضمن سعة الباقة",
-  en: "Cloud archive: within the plan's storage",
+  ar: "الأرشيف السحابي: بلا نقاط",
+  en: "Cloud archive: no points",
 };
 export interface ServiceCategory {
   category: string;

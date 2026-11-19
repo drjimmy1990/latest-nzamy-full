@@ -41,7 +41,7 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 const RECENT_MS = 10 * 60 * 1000;
 
-type EmailOutcome = "sent" | "unavailable" | "failed" | "no_address";
+type EmailOutcome = "sent" | "unavailable" | "failed" | "no_address" | "sunk";
 
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -165,6 +165,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
           html: rendered.html,
           tag: "fee_statement",
           idempotencyKey: `fee-statement-${String(p.id)}-${day}`,
+          // l9 testinfra: a test lawyer's statement never reaches a real address
+          userIds: [user.id, clientUserId],
         });
       }
     }

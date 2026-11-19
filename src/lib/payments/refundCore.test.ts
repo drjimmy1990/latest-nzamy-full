@@ -131,7 +131,8 @@ test("membership refund: claimed, money back, founder_revoke(order, 'refund') BE
   const { deps, events, log } = setupMember();
   assert.equal((await refundOrderWith(deps, "o", "admin", true)).status, 200);
   // l7: a membership is no longer skipped — its lots and usage are read like any order's
-  assert.deepEqual(events, ["payment_orders", "points_lots", "founder_seats", "ai_runs", "points_ledger", "claim_payment_refund", "gateway-refund", "founder_revoke", "finish_payment_refund", "issue_payment_credit_note", "notice"]);
+  // l9: a membership includes the library, so its full-text reads are read too
+  assert.deepEqual(events, ["payment_orders", "points_lots", "founder_seats", "ai_runs", "points_ledger", "full_text_reads", "claim_payment_refund", "gateway-refund", "founder_revoke", "finish_payment_refund", "issue_payment_credit_note", "notice"]);
   assert.deepEqual(log.find(q => q.table === "founder_revoke")?.payload, { p_order: "o", p_reason: "refund" });
   assert.ok(!events.includes("revoke_lot"));
   assert.ok(!events.includes("tier"), "a membership is not a plan: no tier sync");
@@ -142,7 +143,7 @@ test("membership refund preview: the super_admin gets a review with the founder 
   assert.equal(r.status, 200);
   assert.ok("warnings" in r.body && r.body.warnings?.some((w: string) => w.includes("المؤسس")));
   assert.equal((r.body as { eligibility?: { state: string; enforced: boolean } }).eligibility?.state, "eligible");
-  assert.deepEqual(events, ["payment_orders", "points_lots", "founder_seats", "ai_runs", "points_ledger"]);
+  assert.deepEqual(events, ["payment_orders", "points_lots", "founder_seats", "ai_runs", "points_ledger", "full_text_reads"]);
 });
 test("membership refund: a founder_revoke error answers 503 and never finishes; the retry revokes then finishes without refunding again", async () => {
   const { deps, events } = setupMember({}, { error: { code: "40001", message: "x" } });

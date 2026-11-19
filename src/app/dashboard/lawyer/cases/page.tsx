@@ -123,20 +123,34 @@ const LIST_LIMIT = 200;
  * unfiltered server count, so comparing it against the rows we received is an
  * honest test of whether the page was cut short.
  */
-async function fetchLawyerRows(): Promise<{ rows: WorkflowRequest[]; degraded: boolean; truncated: boolean }> {
+async function fetchLawyerRows(offset = 0): Promise<{ rows: WorkflowRequest[]; degraded: boolean; total: number }> {
   if (!isSupabaseMode) {
-    return { rows: await getWorkflowRequestsByReceiver("lawyer"), degraded: false, truncated: false };
+    const rows = offset === 0 ? await getWorkflowRequestsByReceiver("lawyer") : [];
+    return { rows, degraded: false, total: rows.length };
   }
+  // File 15 row 70 (l9): server paging — «تحميل المزيد» asks for the next
+  // LIST_LIMIT rows from `offset`; `total` is the server's own count.
   const response = await apiGet<{ data?: WorkflowRequest[]; total?: number; degraded?: boolean }>(
     "/api/v1/service-requests",
-    { receiver: "lawyer", limit: LIST_LIMIT },
+    { receiver: "lawyer", limit: LIST_LIMIT, offset },
   );
   const rows = response.data ?? [];
   return {
     rows,
     degraded: response.degraded === true,
-    truncated: (response.total ?? rows.length) > rows.length,
+    total: Math.max(response.total ?? 0, offset + rows.length),
   };
+}
+
+/** The case rows of one page and the client keys each carries (the GET route spreads the raw row). */
+function casePage(rows: WorkflowRequest[]): { cases: Case[]; keys: Record<string, CaseClientKeys> } {
+  const caseRows = rows.filter(isLawyerCaseRow);
+  const keys: Record<string, CaseClientKeys> = {};
+  for (const r of caseRows) {
+    const raw = r as WorkflowRequest & { lawyer_client_id?: string | null };
+    keys[r.id] = { lawyer_client_id: raw.lawyer_client_id ?? null, requester_user_id: raw.requester_user_id ?? null };
+  }
+  return { cases: caseRows.map(workflowToCase), keys };
 }
 
 // `isLawyerCaseRow` moved to ./_caseListRules.ts (CODE-F17): the add-hearing
@@ -167,7 +181,12 @@ export default function CasesPage() {
   const [cases,         setCases]         = useState<Case[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [loadError,     setLoadError]     = useState(false);
-  const [truncated,     setTruncated]     = useState(false);
+  // l9 row 70: how many raw rows were read so far, of how many the server has.
+  const [rawLoaded,     setRawLoaded]     = useState(0);
+  const [rawTotal,      setRawTotal]      = useState(0);
+  const [loadingMore,   setLoadingMore]   = useState(false);
+  const [moreError,     setMoreError]     = useState(false);
+  const truncated = rawTotal > rawLoaded;
   const [reloadKey,     setReloadKey]     = useState(0);
   // A write the server refused. The Kanban drag is optimistic, so without this
   // a rejected move just slid the card back with no explanation at all.
@@ -307,7 +326,7 @@ export default function CasesPage() {
     let cancelled = false;
     const syncCases = async () => {
       try {
-        const { rows, degraded, truncated } = await fetchLawyerRows();
+        const { rows, degraded, total } = await fetchLawyerRows();
         if (cancelled) return;
         if (degraded) {
           // The route answers a failed Supabase query with HTTP 200 and
@@ -316,16 +335,14 @@ export default function CasesPage() {
           setLoadError(true);
           return;
         }
-        const caseRows = rows.filter(isLawyerCaseRow);
-        setCases(caseRows.map(workflowToCase));
-        // The GET route spreads the raw row, so both columns travel with it.
-        const keys: Record<string, CaseClientKeys> = {};
-        for (const r of caseRows) {
-          const raw = r as WorkflowRequest & { lawyer_client_id?: string | null };
-          keys[r.id] = { lawyer_client_id: raw.lawyer_client_id ?? null, requester_user_id: raw.requester_user_id ?? null };
-        }
-        setClientKeysById(keys);
-        setTruncated(truncated);
+        // The GET route spreads the raw row, so both client columns travel with it.
+        const page = casePage(rows);
+        setCases(page.cases);
+        setClientKeysById(page.keys);
+        // A refresh starts again from the first page.
+        setRawLoaded(rows.length);
+        setRawTotal(total);
+        setMoreError(false);
         setLoadError(false);
       } catch {
         if (cancelled) return;
@@ -349,6 +366,31 @@ export default function CasesPage() {
       window.removeEventListener("nzamy-workflow-updated", handler);
     };
   }, [reloadKey]);
+
+  // «تحميل المزيد» (l9 row 70): the next server page, appended; a case already
+  // on screen is never listed twice.
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !truncated) return;
+    setLoadingMore(true);
+    setMoreError(false);
+    try {
+      const { rows, degraded, total } = await fetchLawyerRows(rawLoaded);
+      if (degraded) { setMoreError(true); return; }
+      const page = casePage(rows);
+      setCases((cur) => {
+        const seen = new Set(cur.map((c) => c.id));
+        return [...cur, ...page.cases.filter((c) => !seen.has(c.id))];
+      });
+      setClientKeysById((cur) => ({ ...cur, ...page.keys }));
+      setRawLoaded((n) => n + rows.length);
+      // An empty page means the count moved under us: stop offering more.
+      setRawTotal(rows.length === 0 ? rawLoaded : total);
+    } catch {
+      setMoreError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, truncated, rawLoaded]);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -1154,8 +1196,15 @@ export default function CasesPage() {
           {/* The server had more rows than it sent. Say so rather than let the
               lawyer read a cut-off list as their complete case file. */}
           {truncated && (
-            <div className={`mb-3 rounded-2xl border p-3 text-[12px] font-semibold ${isDark ? "border-white/[0.08] bg-white/[0.03] text-zinc-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
-              تُعرض أحدث {LIST_LIMIT} سجل فقط — قد تكون هناك قضايا أقدم غير معروضة في هذه القائمة.
+            <div className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-3 text-[12px] font-semibold ${isDark ? "border-white/[0.08] bg-white/[0.03] text-zinc-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+              <span>
+                قُرئ {rawLoaded.toLocaleString("ar-SA")} سجل من أصل {rawTotal.toLocaleString("ar-SA")} — القضايا الأقدم لم تُحمَّل بعد.
+                {moreError && <span className="text-rose-500"> تعذّر تحميل الصفحة التالية.</span>}
+              </span>
+              <button type="button" onClick={() => void loadMore()} disabled={loadingMore}
+                className="rounded-xl bg-[#0B3D2E] px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-60">
+                {loadingMore ? "جارٍ التحميل…" : "تحميل المزيد"}
+              </button>
             </div>
           )}
           <AnimatePresence mode="wait">

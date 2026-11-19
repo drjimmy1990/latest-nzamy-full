@@ -25,7 +25,7 @@ test("the decree route keeps its page paywall and its subscriber-only preamble",
 });
 
 test("the card falls back to the source summary; the decree page shows one box, none when both are empty", () => {
-  const page = read("src/app/laws/page.tsx");
+  const page = read("src/app/laws/(index)/page.tsx");
   assert.match(page, /summary_brief: stripMarkdownMarks\(d\.summary_brief \|\| d\.summary\),/);
   const reader = read("src/app/laws/orders/[slug]/page.tsx");
   assert.match(reader, /\{\(order\.summary \|\| order\.summary_brief\) && \(/);
@@ -33,7 +33,7 @@ test("the card falls back to the source summary; the decree page shows one box, 
 });
 
 test("the fiqh card and the book reader show the book's summary (feqh_books.description)", () => {
-  const page = read("src/app/laws/page.tsx");
+  const page = read("src/app/laws/(index)/page.tsx");
   assert.match(page, /desc: stripMarkdownMarks\(b\.description\),/);
   const model = read("src/app/book/[slug]/_reader-model.ts");
   assert.match(model, /description: str\(api\.description\)\.trim\(\),/);

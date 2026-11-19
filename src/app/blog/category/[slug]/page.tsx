@@ -24,7 +24,9 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const category = blogCategoryBySlug(slug);
-  if (!category) return {};
+  // No database read: an unknown slug is a definite miss, so a real 404
+  // (dynamicParams = false answers it first; this is the belt).
+  if (!category) notFound();
   return buildMetadata({
     titleAr: `${category.label} — المدونة القانونية`,
     descriptionAr: `مقالات المدونة القانونية في ${category.label}.`,

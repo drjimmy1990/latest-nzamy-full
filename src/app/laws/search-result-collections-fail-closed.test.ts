@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
 const collectionMapping = pageSource.slice(
   pageSource.indexOf("const filteredCollections = isSearchActive"),
   pageSource.indexOf("// ─── Filter: Orders"),

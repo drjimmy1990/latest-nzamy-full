@@ -3,6 +3,7 @@
 // interactive <ArticleView> client child. Converted from a "use client" page so
 // generateMetadata + structured data land in the initial HTML.
 
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -130,7 +131,18 @@ async function getBlogClient() {
   return createClient();
 }
 
-async function getArticle(slug: string): Promise<BlogRow | null> {
+type ArticleLoad = { status: "ok"; row: BlogRow } | { status: "not_found" } | { status: "error" };
+
+/**
+ * One read per request (React cache: generateMetadata and the page share it).
+ *
+ * Owner file 20 §2 / file 15 row 42 (batch l9): a slug with no published
+ * article must answer a REAL 404 — not a 200 page saying «غير موجود» with
+ * index,follow and /blog's canonical (a soft 404). So "not found" and "the
+ * read failed" are kept apart: only a definite miss is a 404; a read error
+ * throws (500), so a passing outage never 404s — or de-indexes — a live article.
+ */
+const loadArticle = cache(async (slug: string): Promise<ArticleLoad> => {
   try {
     const supabase = await getBlogClient();
     const { data, error } = await supabase
@@ -139,14 +151,14 @@ async function getArticle(slug: string): Promise<BlogRow | null> {
       .eq("slug", slug)
       .eq("status", "published")
       .maybeSingle();
-    if (error) { console.error("[blog] getArticle error:", error.message); return null; }
-    if (!data) return null;
-    return data as BlogRow;
+    if (error) { console.error("[blog] getArticle error:", error.message); return { status: "error" }; }
+    if (!data) return { status: "not_found" };
+    return { status: "ok", row: data as BlogRow };
   } catch (err) {
     console.error("[blog] getArticle crash:", err);
-    return null;
+    return { status: "error" };
   }
-}
+});
 
 async function getRelated(article: BlogRow): Promise<PlatformBlogArticle[]> {
   try {
@@ -183,8 +195,16 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const row = await getArticle(slug);
-  if (!row) return { title: "المقال غير موجود | " + SITE_NAME };
+  const load = await loadArticle(slug);
+  // A miss: noindex and no canonical here; the page body below answers the
+  // real 404 (a notFound() thrown from metadata streamed into a 200 page in a
+  // production build, so the status comes from the body).
+  if (load.status === "not_found") {
+    return { title: "الصفحة غير موجودة | " + SITE_NAME, robots: { index: false, follow: false }, alternates: { canonical: null } };
+  }
+  // A failed read keeps the article's OWN canonical, never /blog's.
+  if (load.status === "error") return { title: SITE_NAME, alternates: { canonical: `${BASE_URL}/blog/${slug}` } };
+  const row = load.row;
   const title = row.title;
   const description = row.excerpt || "";
   const url = row.canonical_url || `${BASE_URL}/blog/${slug}`;
@@ -221,8 +241,10 @@ export default async function BlogArticlePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const row = await getArticle(slug);
-  if (!row) notFound();
+  const load = await loadArticle(slug);
+  if (load.status === "not_found") notFound();
+  if (load.status === "error") throw new Error("[blog] the article could not be read");
+  const row = load.row;
   const related = await getRelated(row);
   const article = rowToDetail(row);
 

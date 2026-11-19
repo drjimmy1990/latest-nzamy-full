@@ -4,13 +4,16 @@
  *
  *   - founder membership (kind 'membership'): eligible only within
  *     WITHDRAWAL_DAYS (14) of paid_at AND with no AI use since paid_at — the
- *     drafter, the pro tools, the library assistant and points. Browsing the
- *     library is never read, so it never blocks. ENFORCED: the refund route
+ *     drafter, the pro tools, the library assistant and points — AND no more
+ *     than MAX_REFUND_FULL_TEXT_READS (5) library documents opened in full
+ *     text since paid_at (batch l9, register 14 items 16 / 44, spec 17.19:
+ *     counted in the server-only log public.full_text_reads, 20261129_40;
+ *     a preview or a list never counts). ENFORCED: the refund route
  *     refuses an ineligible founder refund unless the admin types a reason
  *     (MIN_OVERRIDE_REASON_CHARS), and that override is audited before any
  *     money moves (refundCore.ts).
- *   - library (batch l8, owner ٦٤: «موحَّد مع المؤسس»): the same no-AI rule,
- *     ENFORCED. The library subscription's AI feature is the library
+ *   - library (batch l8, owner ٦٤: «موحَّد مع المؤسس»): the same no-AI rule
+ *     and (l9) the same 5-full-text rule, ENFORCED. The library subscription's AI feature is the library
  *     assistant: its runs since paid_at and the points spent from THIS
  *     order's own (library_agent) lot count; a drafter run paid by another
  *     plan does not. Bundles (not built yet) are plans and will follow.
@@ -18,6 +21,8 @@
  *     lot used — ENFORCED since l8 (l7 only showed it).
  *   - plan: the no-AI rule, shown and NOT enforced — ٦٤ names the library and
  *     the bundles only; whether every plan is enforced is an owner question.
+ *     A plan whose tier includes the library (Pro and above) also shows the
+ *     5-full-text line, advisory like the rest of its verdict.
  *   - an order the platform owes back (metadata.already_entitled: paid, nothing
  *     granted — a duplicate, a rejected founder licence) is never blocked: the
  *     verdict is shown and no reason is required.
@@ -33,6 +38,16 @@
  */
 import { WITHDRAWAL_DAYS, WITHDRAWAL_MAX_POINTS_USED_PCT } from "./refundPolicy.ts";
 import { countPhraseAr } from "../services/arabicCount.ts";
+import { bookEntry } from "../pricing/priceBook.ts";
+
+/**
+ * Batch l9 (register 14 items 16 / 44, file 16 §9.10): at most this many
+ * library documents opened in full text since payment, for an order whose
+ * plan includes the library. The sixth refuses the refund (from this side).
+ */
+export const MAX_REFUND_FULL_TEXT_READS = 5;
+/** The plan tiers that include the full library (owner ٢٠٥: Pro and above). */
+const LIBRARY_PLAN_TIERS: readonly string[] = Object.freeze(["pro", "max", "corp", "enterprise"]);
 
 /** «مضى على الدفع …» — the subject, nominative: يوم واحد / يومان / ٣ أيام / ١١ يوماً. */
 const ELAPSED_DAYS = { zero: "أقل من يوم", one: "يوم واحد", two: "يومان", few: "أيام", many: "يوماً" };
@@ -54,9 +69,27 @@ export interface RefundEvidence {
   orderLotUsed: number;
   /** A read errored: the verdict cannot be «مؤهل». */
   readFailed: boolean;
+  /**
+   * Batch l9: distinct library documents the buyer opened in full text since
+   * paid_at (public.full_text_reads, server-only). null = the log is not
+   * there (20261129_40 not run): the 5-file rule cannot be checked.
+   */
+  fullTextReads: number | null;
 }
 
-export const NO_EVIDENCE: RefundEvidence = Object.freeze({ creditsUsed: {}, aiRuns: [], pointsDebited: 0, orderLotTotal: 0, orderLotUsed: 0, readFailed: false }) as RefundEvidence;
+export const NO_EVIDENCE: RefundEvidence = Object.freeze({ creditsUsed: {}, aiRuns: [], pointsDebited: 0, orderLotTotal: 0, orderLotUsed: 0, readFailed: false, fullTextReads: 0 }) as RefundEvidence;
+
+/**
+ * True when the order's plan includes the library, so the 5-full-text rule
+ * applies: the library pass, the founder membership (its lib-founder grant),
+ * and a plan whose tier is Pro or above.
+ */
+export function orderIncludesLibrary(order: { kind: string; item_id?: string | null }): boolean {
+  if (order.kind === "library" || order.kind === "membership") return true;
+  if (order.kind !== "plan" || typeof order.item_id !== "string") return false;
+  const tier = bookEntry(order.item_id)?.tier;
+  return typeof tier === "string" && LIBRARY_PLAN_TIERS.includes(tier);
+}
 
 export type RefundRule = "no_ai_use" | "points_5pct";
 export type RefundVerdictState = "eligible" | "ineligible" | "unverified";
@@ -108,7 +141,7 @@ const dateAr = (iso: string) => {
 };
 
 /** The verdict, or null when the order has no valid paid_at (the caller refuses it anyway). */
-export function refundEligibility(order: { kind: string; paid_at: string | null; metadata?: unknown }, now: Date, evidence: RefundEvidence): RefundVerdict | null {
+export function refundEligibility(order: { kind: string; paid_at: string | null; metadata?: unknown; item_id?: string | null }, now: Date, evidence: RefundEvidence): RefundVerdict | null {
   const paidAt = order.paid_at ? Date.parse(order.paid_at) : NaN;
   if (!Number.isFinite(paidAt)) return null;
   const elapsed = now.getTime() - paidAt;
@@ -133,7 +166,6 @@ export function refundEligibility(order: { kind: string; paid_at: string | null;
     lines.push(evidence.orderLotUsed > 0
       ? `نقاط مساعد المكتبة المستخدمة من نقاط هذا الاشتراك: ${ar(evidence.orderLotUsed)} من ${ar(evidence.orderLotTotal)}.`
       : "لم تُستخدم نقاط هذا الاشتراك.");
-    lines.push("تصفح المكتبة القانونية لا يُحتسب ولا يمنع الاسترداد.");
     if (runs.length || evidence.orderLotUsed > 0) reasons.push("استُخدمت ميزة ذكاء اصطناعي في الاشتراك منذ الدفع.");
   } else if (rule === "no_ai_use") {
     const credits = Object.entries(evidence.creditsUsed).filter(([, n]) => n > 0);
@@ -146,18 +178,32 @@ export function refundEligibility(order: { kind: string; paid_at: string | null;
       ? `تشغيلات الذكاء الاصطناعي منذ الدفع: ${ar(evidence.aiRuns.length)} (${[...byTool].map(([t, n]) => `${t} × ${ar(n)}`).join("، ")})، أولها في ${dateAr(evidence.aiRuns.map((r) => r.created_at).sort()[0])}.`
       : "لا تشغيلات للذكاء الاصطناعي منذ الدفع.");
     lines.push(evidence.pointsDebited > 0 ? `نقاط خُصمت منذ الدفع: ${ar(evidence.pointsDebited)}.` : "لم تُخصم نقاط منذ الدفع.");
-    lines.push("تصفح المكتبة القانونية لا يُحتسب ولا يمنع الاسترداد.");
     if (credits.length || evidence.aiRuns.length || evidence.pointsDebited > 0) reasons.push("استُخدمت ميزة ذكاء اصطناعي منذ الدفع.");
   } else {
     const pct = evidence.orderLotTotal ? (evidence.orderLotUsed * 100) / evidence.orderLotTotal : 0;
     lines.push(`نقاط هذه العملية: استُخدم ${ar(evidence.orderLotUsed)} من ${ar(evidence.orderLotTotal)} (${ar(Math.round(pct * 10) / 10)}٪)، والحد ${ar(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪.`);
     if (pct > WITHDRAWAL_MAX_POINTS_USED_PCT) reasons.push(`استُخدم أكثر من ${ar(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ من نقاط العملية.`);
   }
+  // Batch l9 (register 14 items 16 / 44): no more than 5 full texts read since
+  // payment where the plan includes the library. A line for the admin only —
+  // the count is never sent to the client.
+  let unverified = evidence.readFailed;
+  if (rule === "no_ai_use" && orderIncludesLibrary(order)) {
+    if (evidence.fullTextReads === null) {
+      lines.push(`سجل قراءة النصوص الكاملة غير متاح بعد؛ لا يمكن تأكيد شرط ألا تتجاوز القراءة ${ar(MAX_REFUND_FULL_TEXT_READS)} ملفات.`);
+      unverified = true;
+    } else {
+      lines.push(`ملفات المكتبة المقروءة نصاً كاملاً منذ الدفع: ${ar(evidence.fullTextReads)}، والحد ${ar(MAX_REFUND_FULL_TEXT_READS)} (المعاينة والقوائم لا تُحتسب).`);
+      if (evidence.fullTextReads > MAX_REFUND_FULL_TEXT_READS) {
+        reasons.push(`قُرئ نصاً كاملاً أكثر من ${ar(MAX_REFUND_FULL_TEXT_READS)} ملفات من المكتبة منذ الدفع.`);
+      }
+    }
+  }
   if (evidence.readFailed) {
     lines.push("تعذّرت قراءة بعض سجلات الاستخدام؛ لا يمكن تأكيد الأهلية.");
   }
 
-  const state: RefundVerdictState = reasons.length ? "ineligible" : evidence.readFailed ? "unverified" : "eligible";
+  const state: RefundVerdictState = reasons.length ? "ineligible" : unverified ? "unverified" : "eligible";
   const label = state === "eligible" ? "مؤهل للاسترداد" : state === "ineligible" ? "غير مؤهل للاسترداد" : "تعذّر التحقق من الأهلية";
   if (owed) lines.push("لم تمنح هذه العملية شيئاً (مستحقة الاسترداد)، فلا يمنع الحكم استردادها ولا يلزم سبب استثناء.");
   else if (!enforced && state !== "eligible") lines.push("الحكم إرشادي لهذا النوع من العمليات ولا يمنع الاسترداد.");

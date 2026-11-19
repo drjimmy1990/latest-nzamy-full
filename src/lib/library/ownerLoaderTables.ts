@@ -58,11 +58,22 @@ export const OWNER_LOADER_TABLES: readonly OwnerLoaderTable[] = [
     // written on every law row — REQUIRED before the first write.
     // owner_links (migration 20261118_10): the owner's own links, written on
     // every law row — REQUIRED before the first write, the same way.
-    requiredColumns: ["merged_regulations", "owner_links"],
+    // summary / summary_card / summary_status / summary_reviewed_at (owner
+    // file 18 item 4, migration 20261129_70): the frontmatter summaries,
+    // written on every law row — REQUIRED the same way.
+    requiredColumns: ["merged_regulations", "owner_links", "summary", "summary_card", "summary_status", "summary_reviewed_at"],
   },
   { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [] },
   { name: "articles", pkey: "id", batchSize: 100, stripKeys: [] },
-  { name: "article_amendments", pkey: "id", batchSize: 200, stripKeys: [] },
+  // decree_id / paragraphs / text_status / position (owner file 18 item 3,
+  // migration 20261129_70): written on every amendment row — REQUIRED.
+  {
+    name: "article_amendments",
+    pkey: "id",
+    batchSize: 200,
+    stripKeys: [],
+    requiredColumns: ["decree_id", "paragraphs", "text_status", "position"],
+  },
   { name: "article_regulations", pkey: "id", batchSize: 200, stripKeys: [] },
   // owner_links (migration 20261118_10): written on every decree row — REQUIRED.
   { name: "decrees_circulars", pkey: "id", batchSize: 100, stripKeys: ["needs_human_review", "review_reason"], requiredColumns: ["owner_links"] },

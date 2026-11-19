@@ -22,7 +22,7 @@ function StatementPage() {
         isDark={isDark}
         initialCaseId={params.get("caseId") ?? undefined}
         initialClientId={params.get("clientId") ?? undefined}
-        invoicesHref="/dashboard/lawyer/finance"
+        invoicesHref="/dashboard/firm/fees"
       />
     </div>
   );

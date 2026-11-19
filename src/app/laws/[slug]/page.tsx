@@ -40,7 +40,7 @@ import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
 import { LawSummaryBox } from "./_summary-box";
 import { buildChapterTree } from "./_chapter-tree";
-import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } from "./_reader-anchors";
+import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, jumpToReaderAnchor, regulationCardId } from "./_reader-anchors";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
@@ -51,7 +51,6 @@ import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 import { CitationProvider, type CitationReaderContext } from "./_citation-popover";
 import { articlesByNumber } from "./_cite-status";
-import { LawMapButton } from "./_law-map-button";
 import { RefBox, RefBoxProvider, type RefBoxPageContext } from "./_ref-box";
 import { isPageNumberedDocument } from "@/lib/library/pageLocator";
 
@@ -102,9 +101,12 @@ function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly un
   return null;
 }
 
+/** Owner file 16 §7: sub-legislation chips shown before «عرض المزيد» («بحد أقصى 2 أو 3»). */
+const REG_CHIPS_SHOWN = 3;
+
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
-  const { userType, isLoggedIn, loading: authLoading } = useUser();
+  const { isLoggedIn, loading: authLoading } = useUser();
 
   // ── Phase 6: reading activity + recent sessions ride the server for
   // signed-in users (getPreferences/patchPreferences); guests keep the
@@ -150,6 +152,10 @@ function LawSystemPageContent() {
   // Pro+ tier, an active library grant, or an admin) or a whitelisted law.
   // ArticleBlock locks an article on it, never on the client's tier.
   const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
+  // File 16 §2 (batch l9): the viewer's own library entitlement
+  // (`paywall.isSubscriber`), null until THIS law's response arrives — so no
+  // «اشترك» card is ever drawn on a guess (the sidebar shows it on false only).
+  const [viewerIsSubscriber, setViewerIsSubscriber] = useState<boolean | null>(null);
   // T28-22/23/26: official-publication fields (lock flag, official URL, Umm
   // al-Qura issue, the law that replaced a repealed one). Held beside `law`
   // rather than inside it — the LawSystem mapping below is a shared whitelist.
@@ -207,6 +213,8 @@ function LawSystemPageContent() {
   const initialViewMode = (searchParams?.get("viewMode") as "all" | "law" | "regulation" | "appendix") || "all";
   const [viewMode, setViewMode] = useState<"all" | "law" | "regulation" | "appendix">(initialViewMode);
   const [selectedRegName, setSelectedRegName] = useState<string | null>(null); // فلتر اللائحة المختارة عند تعددها
+  // Owner file 16 §7: the first REG_CHIPS_SHOWN sub-legislations, then «عرض المزيد».
+  const [showAllRegChips, setShowAllRegChips] = useState(false);
 
   useEffect(() => {
     const mode = searchParams?.get("viewMode");
@@ -260,6 +268,7 @@ function LawSystemPageContent() {
         setOfficialMeta(EMPTY_OFFICIAL_META);
         setPreambleLocked(false);
         setViewerHasFullAccess(false);
+        setViewerIsSubscriber(null);
         setLawNotice("");
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
         if (cancelled) return;
@@ -288,6 +297,7 @@ function LawSystemPageContent() {
           typeof data?.paywall?.freeLimit === "number" ? data.paywall.freeLimit : null,
         );
         setViewerHasFullAccess(data?.paywall?.hasFullAccess === true);
+        setViewerIsSubscriber(typeof data?.paywall?.isSubscriber === "boolean" ? data.paywall.isSubscriber : null);
         setOfficialMeta(parseOfficialMeta(data));
         setPreambleLocked(data?.preambleLocked === true);
         setLawNotice(typeof data?.notice === "string" ? data.notice.trim() : "");
@@ -361,6 +371,8 @@ function LawSystemPageContent() {
           // is a whitelist — omitting it here would silently discard the only
           // signal that the «اللائحة وحدها» tab is showing less than the law has.
           regulationInstrumentsLocked: data.regulationInstrumentsLocked || 0,
+          // File 16 §2: the full sub-legislation index (names and numbers, no text).
+          regulationIndex: Array.isArray(data.regulationIndex) ? data.regulationIndex : [],
         } as LawSystem);
       } catch (err) {
         if (cancelled) return;
@@ -614,6 +626,20 @@ function LawSystemPageContent() {
   );
   const regulationAnchorFor = useCallback(
     (articleId: string) => regulationAnchors.anchorByArticleId.get(articleId),
+    [regulationAnchors],
+  );
+  // File 16 §2: an index entry jumps to its card; a chip filter that hides it is cleared first.
+  const onRegulationCardJump = useCallback(
+    (cardId: string) => {
+      const owner = regulationAnchors.articleIdByCardId.get(cardId);
+      if (owner) setActiveId(owner);
+      if (document.getElementById(cardId)) {
+        jumpToReaderAnchor(isScrolling, cardId);
+        return;
+      }
+      setSelectedRegName(null);
+      window.setTimeout(() => jumpToReaderAnchor(isScrolling, cardId), 80);
+    },
     [regulationAnchors],
   );
 
@@ -1094,7 +1120,7 @@ function LawSystemPageContent() {
                 isScrolling={isScrolling}
                 setShowFolderModal={setShowFolderModal}
                 setShowPaywall={setShowPaywall}
-                userType={userType}
+                viewerIsSubscriber={viewerIsSubscriber}
                 mode="identity"
                 viewMode={viewMode as any}
                 officialMeta={officialMeta}
@@ -1115,10 +1141,11 @@ function LawSystemPageContent() {
                 isScrolling={isScrolling}
                 setShowFolderModal={setShowFolderModal}
                 setShowPaywall={setShowPaywall}
-                userType={userType}
+                viewerIsSubscriber={viewerIsSubscriber}
                 mode="index"
                 viewMode={viewMode as any}
                 regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
+                onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
               />
             </aside>
           )}
@@ -1191,13 +1218,6 @@ function LawSystemPageContent() {
 
             {/* N2.6: search inside this law with the library's operators; the
                 matching articles stack here in full (paywall applied by the route). */}
-            {/* N06-40..43: the law's links map — the map and its data load only when opened. */}
-            {viewMode !== "appendix" && citationContext && (
-              <div className="flex justify-end">
-                <LawMapButton slug={citationContext.lawSlug} lawTitle={law.title} lawStatus={law.law_status ?? null} isDark={isDark} isRTL={isRTL} />
-              </div>
-            )}
-
             {viewMode !== "appendix" && (
               <ScopedSearchPanel
                 key={`law:${law.slug || slug}`}
@@ -1279,6 +1299,7 @@ function LawSystemPageContent() {
                   // empty and every instrument was withheld by the paywall (F13).
                   const instruments = ((law as any).regulationInstruments ?? []) as Array<{
                     ref: string;
+                    label?: string;
                     articles: { regNum: string | null; text: string; status: string; systemArticleNumber: string | null }[];
                   }>;
                   const visible = selectedRegName
@@ -1304,7 +1325,10 @@ function LawSystemPageContent() {
                           >
                             {isRTL ? "الكل" : "All"}
                           </button>
-                          {instruments.map((inst) => (
+                          {instruments
+                            // File 16 §7: 2–3 sub-legislations, then «عرض المزيد»; a chosen one always stays visible.
+                            .filter((inst, i) => showAllRegChips || i < REG_CHIPS_SHOWN || inst.ref === selectedRegName)
+                            .map((inst) => (
                             <button
                               key={inst.ref}
                               onClick={() => setSelectedRegName(inst.ref)}
@@ -1314,9 +1338,18 @@ function LawSystemPageContent() {
                                   : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"
                               }`}
                             >
-                              {inst.ref}
+                              {inst.label || inst.ref}
                             </button>
                           ))}
+                          {!showAllRegChips && instruments.length > REG_CHIPS_SHOWN && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllRegChips(true)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                            >
+                              {isRTL ? `عرض المزيد (${instruments.length - REG_CHIPS_SHOWN})` : `Show more (${instruments.length - REG_CHIPS_SHOWN})`}
+                            </button>
+                          )}
                         </div>
                       )}
                       {visible.map((inst) => {
@@ -1750,7 +1783,7 @@ function LawSystemPageContent() {
                   jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
                   filteredArticles={jumpArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
-                  userType={userType} mode="identity" viewMode={viewMode as any}
+                  viewerIsSubscriber={viewerIsSubscriber} mode="identity" viewMode={viewMode as any}
                   officialMeta={officialMeta}
                 />
                 <SidebarPanel
@@ -1759,8 +1792,9 @@ function LawSystemPageContent() {
                   jumpQuery={jumpQuery} setJumpQuery={setJumpQuery}
                   filteredArticles={jumpArticles} cartMap={cartMap} isScrolling={isScrolling}
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
-                  userType={userType} mode="index" viewMode={viewMode as any}
+                  viewerIsSubscriber={viewerIsSubscriber} mode="index" viewMode={viewMode as any}
                   regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
+                  onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
                 />
               </div>
             </motion.div>

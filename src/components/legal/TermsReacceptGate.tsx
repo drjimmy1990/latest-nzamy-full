@@ -79,8 +79,8 @@ export default function TermsReacceptGate() {
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-ink-muted dark:text-gray-300">
           {isAr
-            ? "حُدِّثت الشروط والأحكام، وأُضيف إليها بند «حماية المنصة ومحتواها». للمتابعة في استخدام المنصة، اقرأها ثم أقرّ بها."
-            : "The Terms & Conditions have been updated, including a new “Platform and Content Protection” clause. To keep using the platform, please read them and confirm."}
+            ? "حُدِّثت الشروط والأحكام، وأُضيف إليها البند ١٤ «منع الهندسة العكسية والسحب الآلي» واستثناؤه الوحيد (١٤-أ)، والبند ١٥ «حجز التنقيب في النصوص والبيانات واستعمال الذكاء الاصطناعي». للمتابعة في استخدام المنصة، اقرأها ثم أقرّ بها."
+            : "The Terms & Conditions have been updated with Clause 14 “No reverse engineering or automated scraping”, its sole exception (14-A), and Clause 15 “Text and data mining and AI-training reservation”. To keep using the platform, please read them and confirm."}
         </p>
 
         <div className="mt-5">

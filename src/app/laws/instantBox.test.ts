@@ -65,7 +65,7 @@ test("instantBoxItems: a locked row carries no snippet; laws get their core", ()
 });
 
 test("source: the box opens the document; the route locks principle snippets per viewer", () => {
-  const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
   assert.match(page, /instantBoxItems\(data\.topMatches \|\| \[\], q\)/);
   assert.match(page, /if \(s\.href\) \{\s*router\.push\(s\.href\);/);
   const route = readFileSync(new URL("../api/library/autocomplete/route.ts", import.meta.url), "utf8");

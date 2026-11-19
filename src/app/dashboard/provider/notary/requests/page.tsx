@@ -4,6 +4,8 @@ import { motion } from "framer-motion";
 import { Stamp, MagnifyingGlass, CheckCircle, Clock, Warning, ArrowRight, ArrowLeft } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 interface NotaryRequest {
   id: string; client: string; type: string;
@@ -22,7 +24,7 @@ const STATUS_CONF = {
   "مكتمل":         { bg: "bg-emerald-500/10", color: "text-emerald-500", icon: CheckCircle },
   "مرفوض":         { bg: "bg-rose-500/10",    color: "text-rose-500",    icon: Warning },
 };
-export default function NotaryRequestsPage() {
+function NotaryRequestsPageDemo() {
   const { isDark, isRTL } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
@@ -101,4 +103,21 @@ export default function NotaryRequestsPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (طلبات التوثيق وأصحابها) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function NotaryRequestsPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="طلبات التوثيق"
+        description="هذه الصفحة غير متاحة حالياً. طلبات التوثيق وأصحابها التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/provider"
+      />
+    );
+  }
+  return <NotaryRequestsPageDemo />;
 }

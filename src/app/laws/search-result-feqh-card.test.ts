@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
 const cardSource = readFileSync(new URL("./components/FeqhTabContent.tsx", import.meta.url), "utf8");
 const routeSource = readFileSync(new URL("../api/library/search/route.ts", import.meta.url), "utf8");
 

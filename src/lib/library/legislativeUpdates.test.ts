@@ -67,5 +67,5 @@ test("the /laws card: no invented update is left, and it renders nothing without
   assert.match(code, /if \(items\.length === 0\) return null;/);
   assert.match(code, /href=\{`\/laws\/\$\{apiSlug\(u\.slug\)\}`\}/);
   // Mounted on /laws.
-  assert.match(readFileSync(new URL("../../app/laws/page.tsx", import.meta.url), "utf8"), /<LegislativeUpdates isDark=\{isDark\} isRTL=\{isRTL\} \/>/);
+  assert.match(readFileSync(new URL("../../app/laws/(index)/page.tsx", import.meta.url), "utf8"), /<LegislativeUpdates isDark=\{isDark\} isRTL=\{isRTL\} \/>/);
 });

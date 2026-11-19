@@ -15,7 +15,10 @@
  *      choice is remembered in the first-party cookie CONSENT_COOKIE.
  *   3. Public routes only: ANALYTICS_ROUTES (home, /founder, /pricing,
  *      /register/*, /checkout, /payments/result). Never a dashboard, /ai/*
- *      (the drafter), /dashboard/admin or any other page.
+ *      (the drafter), /dashboard/admin or any other page. Clarity (session
+ *      recordings) is narrower still — CLARITY_ROUTES: the public pages only,
+ *      never sign-up or payment (owner message 12 §10.7 / ك6; batch l9). GA4
+ *      keeps the sign-up and checkout events.
  *   4. Clarity sees no typed value: every input is masked, and on the
  *      signup, verification and payment pages the whole page is
  *      (FULL_MASK_ROUTES: the registry lookup shows the name, licence and
@@ -68,6 +71,13 @@ export function analyticsIds(ga4: string | undefined | null, clarity: string | u
  */
 export const ANALYTICS_ROUTES = ["/", "/founder", "/pricing", "/register", "/checkout", "/payments/result"] as const;
 
+/**
+ * Where Microsoft Clarity may record (owner message 12 §10.7 / ك6, batch l9):
+ * public pages only — NOT sign-up (/register/*) and NOT payment (/checkout,
+ * /payments/result), where GA4 alone runs. A subset of ANALYTICS_ROUTES.
+ */
+export const CLARITY_ROUTES = ["/", "/founder", "/pricing"] as const;
+
 /** Pages whose whole content Clarity masks (registry name / licence / expiry, masked e-mail, amounts). */
 export const FULL_MASK_ROUTES = ["/register", "/checkout", "/payments/result"] as const;
 
@@ -85,6 +95,10 @@ function underAny(pathname: string | null | undefined, routes: readonly string[]
 
 export function isAnalyticsRoute(pathname: string | null | undefined): boolean {
   return underAny(pathname, ANALYTICS_ROUTES);
+}
+
+export function isClarityRoute(pathname: string | null | undefined): boolean {
+  return underAny(pathname, CLARITY_ROUTES);
 }
 
 export function isFullMaskRoute(pathname: string | null | undefined): boolean {
@@ -236,6 +250,8 @@ export interface PurchaseInput {
 
 /** The Measurement Protocol body, or null when the order carries no consented client id. */
 export function buildPurchasePayload(input: PurchaseInput): Record<string, unknown> | null {
+  // l9 testinfra (owner file 19 §1ج.2): a test account's order is never a purchase
+  if (input.metadata?.test_account === true) return null;
   const ids = orderAnalyticsFromMetadata(input.metadata);
   if (!ids) return null;
   if (!Number.isFinite(input.totalHalalas) || input.totalHalalas < 0) return null;

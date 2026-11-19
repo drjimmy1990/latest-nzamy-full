@@ -220,27 +220,18 @@ export function nodeMetaFor(t: unknown): NodeMeta {
 }
 
 /**
- * Owner decision ٦٠: a link type that is not in the owner's graph file is
- * hidden until he reviews it (src/lib/library/graphLinkTypes.ts). The explorer
- * route drops those links; where one is still named — the retrieval lab shows
- * what the AI walked — it reads as this, never by its own name.
+ * The link types the explorer draws, lists and filters by. Owner register 14
+ * item 17 (19 Nov) reverses decision ٦٠: every classified type is shown —
+ * nothing is hidden for not matching the owner's graph file
+ * (src/lib/library/graphLinkTypes.ts). Only a type nobody has classified (a
+ * newer server) is left out.
  */
-const UNREVIEWED_EDGE_META: EdgeMeta = {
-  label: "رابط قيد المراجعة",
-  out: "رابط قيد المراجعة",
-  in: "رابط قيد المراجعة",
-  color: "#71717a",
-  dashed: true,
-  hint: "نوع رابط ليس في ملف المالك؛ مخفيّ في المستكشف والقارئ حتى يراجعه (القرار ٦٠).",
-};
-
-/** The link types the explorer draws, lists and filters by (decision ٦٠): the shown and the outline types. */
 export const EXPLORER_SHOWN_EDGE_TYPES: readonly ExplorerEdgeType[] = EXPLORER_EDGE_TYPES.filter((t) => isExplorerVisibleLinkType(t));
 
-/** A link type's label, phrases and colour; an unknown type gets a neutral grey entry, never «مطابقة». */
+/** A link type's label, phrases and colour; an unknown or unclassified type gets a neutral grey entry, never «مطابقة». */
 export function edgeMetaFor(t: unknown): EdgeMeta {
-  if (!isExplorerEdgeType(t)) return UNKNOWN_EDGE_META;
-  return isExplorerVisibleLinkType(t) ? EDGE_TYPE_META[t] : UNREVIEWED_EDGE_META;
+  if (!isExplorerEdgeType(t) || !isExplorerVisibleLinkType(t)) return UNKNOWN_EDGE_META;
+  return EDGE_TYPE_META[t];
 }
 
 /** The types to ask the neighbourhood for: the asked ones that are shown; null = every type (filtered after). */
@@ -250,15 +241,16 @@ export function explorerEdgeFilter(asked: readonly string[]): ExplorerEdgeType[]
   return shown.length > 0 ? shown : [...EXPLORER_SHOWN_EDGE_TYPES];
 }
 
-/** `{TYPE: n}` or `{TYPE: {out, in}}` without the hidden types (٦٠). */
+/** `{TYPE: n}` or `{TYPE: {out, in}}` without an unclassified type. */
 export function shownEdgeCounts<V>(counts: unknown): Record<string, V> {
   if (!counts || typeof counts !== "object" || Array.isArray(counts)) return {};
   return Object.fromEntries(Object.entries(counts as Record<string, V>).filter(([t]) => isExplorerVisibleLinkType(t)));
 }
 
 /**
- * A neighbourhood answer without the hidden link types (٦٠): their edges go,
- * a node only they reached goes, the centre's counts and total follow.
+ * A neighbourhood answer without an unclassified link type (a newer server):
+ * its edges go, a node only they reached goes, the centre's counts and total
+ * follow. Every classified type stays (register 14 item 17).
  */
 export function hideUnreviewedLinks(raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;

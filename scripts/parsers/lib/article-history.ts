@@ -55,8 +55,37 @@ export interface HistoryEntry {
   kind: "amended" | "repealed" | "unknown";
 }
 
+/**
+ * One amendment card (our reply to the owner's file 18, item 3 / «خامساً» 1):
+ * an `<!-- AMENDMENT {json} -->` anchor PAIRED with the text that follows it
+ * up to the next anchor or the end of its `<details>`, or — for the older
+ * files — a before-text with no anchor in front of it.
+ *
+ * Before 2026-11-20 the parser made one card from every anchor (date and
+ * decree, no text) and another from every bolded before-label (text, no date):
+ * نظام القضاء's «سابعاً» showed 5 cards, two of them empty, for 2 amendments.
+ */
+export interface AmendmentRecord {
+  /** Offset in the article body; records come out in source order. */
+  offset: number;
+  /** The anchor's JSON. null: a before-text with no anchor in front of it (older files). */
+  anchor: Record<string, unknown> | null;
+  /** An anchor was there but its JSON did not parse — reported, the record keeps its text. */
+  anchorUnreadable?: boolean;
+  /**
+   * The reference lines in the record's span («🔄 تعديل: عُدّلت الفقرة (5)
+   * بموجب …»), bold and emoji removed. Never the `<summary>` heading: that is
+   * the same «📜 الإصدارات السابقة» on every card.
+   */
+  notes: string[];
+  /** The superseded texts of this one amendment, in source order (one per before-label). */
+  texts: HistoryEntry[];
+}
+
 export interface HistoryResult {
   entries: HistoryEntry[];
+  /** The amendment cards, in source order (see AmendmentRecord). */
+  records: AmendmentRecord[];
   /**
    * Verbatim `<details>` blocks that could not be classified. Must be preserved
    * (a human reviews them later) and counted, never silently discarded.
@@ -275,11 +304,15 @@ function classifyLabel(raw: string): "before" | "reference" | "other" {
   return "other";
 }
 
-/** Remove leading `>` quote markers and normalise blank lines. */
+/**
+ * Remove leading `>` quote markers and normalise blank lines. Every level:
+ * a `<details>` inside a quoted regulation block writes its text as `> > …`
+ * (نظام القضاء, «سابعاً»), and one level left a `>` at the head of the card.
+ */
 function unquote(s: string): string {
   return s
     .split("\n")
-    .map((l) => l.replace(/^\s*>\s?/, ""))
+    .map((l) => l.replace(/^\s*(?:>\s?)+/, ""))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -313,8 +346,276 @@ const SUMMARY_RE = /<summary>([\s\S]*?)<\/summary>/;
  */
 const LABEL_RE = /^[ \t]*>?[ \t]*(?:[^\S\n]*\S{1,3}[^\S\n]*)?\*\*([^*\n]{2,300}?)\*\*[ \t]*/gm;
 
+/** An `<!-- AMENDMENT {json} -->` anchor: one line, like parse-laws.ts reads it. */
+const AMENDMENT_ANCHOR_RE = /<!--\s*AMENDMENT\s+(.*?)\s*-->/g;
+
+interface AnchorHit {
+  offset: number;
+  end: number;
+  json: Record<string, unknown> | null;
+}
+
+function findAmendmentAnchors(articleBody: string): AnchorHit[] {
+  const out: AnchorHit[] = [];
+  AMENDMENT_ANCHOR_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = AMENDMENT_ANCHOR_RE.exec(articleBody)) !== null) {
+    let json: Record<string, unknown> | null = null;
+    try {
+      const parsed = JSON.parse(m[1]);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) json = parsed as Record<string, unknown>;
+    } catch {
+      json = null;
+    }
+    out.push({ offset: m.index, end: m.index + m[0].length, json });
+  }
+  return out;
+}
+
 /**
- * Extract every historical text version from an article body.
+ * A reference line as a card description: «🔄 تعديل: عُدّلت الفقرة (5) بموجب …»
+ * → «عُدّلت الفقرة (5) بموجب …» (a bare type word adds nothing to the card's
+ * own type); «📝 عُدّلت هذه المادة بموجب: المرسوم …» keeps its label.
+ */
+const TYPE_ONLY_LABELS = new Set(["تعديل", "إلغاء", "الإلغاء", "إضافة", "معلومات الإضافة"].map(foldForMatch));
+function noteOf(label: string, rest: string): string {
+  const l = normalizeLabel(label);
+  const r = unquote(rest).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+  const base = foldForMatch(l).replace(/\s*[\d٠-٩]+\s*$/, "").trim();
+  if (TYPE_ONLY_LABELS.has(base)) return r; // "" for a bare «🔄 تعديل:» heading
+  return r ? `${l}: ${r}` : l;
+}
+
+/** What one stretch of a `<details>` block yields. */
+interface SegmentResult {
+  /** Each before-text with the reference lines that came before it. */
+  items: Array<{ entry: HistoryEntry; notes: string[] }>;
+  /** Reference lines with no before-text after them. */
+  trailingNotes: string[];
+}
+
+interface SegmentSinks {
+  unparsed: string[];
+  liveAnnexes: Array<{ summary: string; content: string }>;
+  englishBlocks: Array<{ whole: string; plain: string }>;
+}
+
+/**
+ * Read one stretch of a `<details>` block: the whole block (no anchor in it),
+ * or the part of it before the first anchor, or the part one anchor owns.
+ *
+ * @param body    the stretch, its `<summary>` already removed
+ * @param summary the block's `<summary>` text (for the fallbacks only)
+ * @param whole   what to quarantine verbatim when nothing is recognised
+ * @param anchored the stretch belongs to an AMENDMENT anchor: a bare notice
+ *                («عُدّلت بموجب …») then describes that anchor's card
+ */
+function readSegment(
+  body: string,
+  summary: string,
+  whole: string,
+  articleStatus: string | undefined,
+  sinks: SegmentSinks,
+  anchored = false,
+): SegmentResult {
+  const items: SegmentResult["items"] = [];
+  let pendingNotes: string[] = [];
+
+  // Collect every bolded label with its offset, then slice the text between
+  // consecutive labels. This handles both the inline and block shapes without
+  // needing a separate regex per shape.
+  const labels: Array<{ raw: string; start: number; end: number; lineEnd: number }> = [];
+  LABEL_RE.lastIndex = 0;
+  let lm: RegExpExecArray | null;
+  while ((lm = LABEL_RE.exec(body)) !== null) {
+    const end = lm.index + lm[0].length;
+    const nl = body.indexOf("\n", end);
+    labels.push({ raw: lm[1], start: lm.index, end, lineEnd: nl === -1 ? body.length : nl });
+  }
+
+  // Reference lines («🔄 تعديل: …», «عُدّلت هذه المادة بموجب: …») are the
+  // card's description, never its before-text: cut out before any fallback
+  // reads the stretch as prose.
+  const referenceSpans: Array<[number, number]> = [];
+
+  // In an anchor's stretch, a bolded label this file does not know, standing
+  // before the first before-label («**نصها وفق قرار مجلس الوزراء رقم (291) …:**»
+  // right under the anchor), still heads real prior text. Before the pairing
+  // that text rode inside the previous before-label's slice; cut at the
+  // anchor it would be lost, so it is kept as one more text of this card,
+  // under its own label. (Older blocks are read exactly as before.)
+  const firstBefore = labels.findIndex((l) => classifyLabel(l.raw) === "before");
+  let leadOtherTaken = !anchored || firstBefore === -1;
+
+  for (let i = 0; i < labels.length; i++) {
+    const kindOfLabel = classifyLabel(labels[i].raw);
+    if (kindOfLabel === "other") {
+      if (leadOtherTaken || i > firstBefore) continue;
+      leadOtherTaken = true;
+      let k = i + 1;
+      while (k < labels.length && classifyLabel(labels[k].raw) === "other") k++;
+      const text = unquote(body.slice(labels[i].end, k < labels.length ? labels[k].start : body.length).replace(/<!--[\s\S]*?-->/g, ""));
+      if (text && !isUnavailableMarker(text)) {
+        items.push({
+          entry: { original_text: text, label: normalizeLabel(labels[i].raw), source_summary: summary, kind: inferKind(labels[i].raw) },
+          notes: pendingNotes,
+        });
+        pendingNotes = [];
+      }
+      continue;
+    }
+    if (kindOfLabel === "reference") {
+      const note = noteOf(labels[i].raw, body.slice(labels[i].end, labels[i].lineEnd).replace(/<!--[\s\S]*?-->/g, ""));
+      if (note) pendingNotes.push(note);
+      referenceSpans.push([labels[i].start, labels[i].lineEnd]);
+      continue;
+    }
+
+    // The next RECOGNISED label ends this one's captured span. An
+    // "other"-classified match in between is not a second label — most often
+    // it is the superseded text's own bolded opening clause (a common Arabic
+    // drafting convention: bolding the chapeau before a numbered list) — so
+    // skip past it rather than let it prematurely truncate the capture.
+    // Discovered 2026-08-20 (ب-117) via a live run that returned an empty
+    // `entries[]` for an article whose full prior text was visibly present.
+    let j = i + 1;
+    while (j < labels.length && classifyLabel(labels[j].raw) === "other") j++;
+    const sliceEnd = j < labels.length ? labels[j].start : body.length;
+    const raw = body.slice(labels[i].end, sliceEnd);
+    // Drop any HTML comment anchors that sit inside the captured span.
+    const text = unquote(raw.replace(/<!--[\s\S]*?-->/g, ""));
+
+    if (!text) continue;
+    if (isUnavailableMarker(text)) continue; // absence is information, not text
+
+    items.push({
+      entry: {
+        original_text: text,
+        label: normalizeLabel(labels[i].raw),
+        source_summary: summary,
+        kind: inferKind(labels[i].raw),
+      },
+      notes: pendingNotes,
+    });
+    pendingNotes = [];
+  }
+
+  if (items.length > 0) {
+    // A reference line after the last text still describes this amendment.
+    items[items.length - 1].notes.push(...pendingNotes);
+    return { items, trailingNotes: [] };
+  }
+
+  // ── Fallbacks, in descending order of explicitness ──────────────────────
+  // Reached whenever no "before" label yielded captured text — even if a
+  // DIFFERENT label in the same block classified as "reference" (e.g. a bare
+  // "🔄 تعديل:" notice). Until 2026-08-21 this was gated on `recognised > 0`
+  // (any recognised label at all, "reference" included), which skipped this
+  // whole chain — including the HISTORIC_SUMMARY_RE check below — whenever a
+  // block mixed a reference notice with an unrecognised "before" quote right
+  // next to it (ب-119). Each step below requires a positive signal in the
+  // source; none infers text from silence. Since 2026-11-20 the reference
+  // lines are cut out first: «عُدّلت بموجب المرسوم …» is the card's
+  // description, and it used to come back here as the article's prior text.
+  let rest = body;
+  for (const [s, e] of [...referenceSpans].reverse()) rest = rest.slice(0, s) + rest.slice(e);
+  const plain = unquote(rest.replace(/<!--[\s\S]*?-->/g, ""));
+  const notes = pendingNotes;
+  const one = (entry: HistoryEntry): SegmentResult => ({ items: [{ entry, notes }], trailingNotes: [] });
+
+  if (!plain) return { items: [], trailingNotes: notes }; // decorative/empty — nothing to record or lose
+
+  // (1) Unbolded introducer line ending in a colon; text follows beneath it.
+  const ub = plain.match(UNBOLDED_BEFORE_RE);
+  if (ub) {
+    const after = plain.slice((ub.index ?? 0) + ub[0].length).trim();
+    if (after && !isUnavailableMarker(after)) {
+      return one({ original_text: after, label: normalizeLabel(ub[1]), source_summary: summary, kind: inferKind(ub[1]) });
+    }
+  }
+
+  // (2) A bare notice recording that the article was added/amended/repealed.
+  //     Understood, but contains no prior wording: nothing to quarantine. In
+  //     an anchor's stretch it is that card's description; in an older block
+  //     it made no card before 2026-11-20 and makes none now.
+  if (REFERENCE_NOTICE_RE.test(stripTashkeel(plain))) {
+    const notice = plain.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    return { items: [], trailingNotes: anchored ? [...notes, notice] : notes };
+  }
+
+  // (3) ب-114: <summary> is on the hand-verified live-annex allowlist — this
+  // block is CURRENT reference content (a schedule/requirements-guide
+  // section), not history, collapsed into <details> for display only. Only
+  // reached once (1) and (2) above have already ruled out any historical
+  // phrasing in the body itself — an allowlist hit never overrides real
+  // evidence of superseded text (council review: body evidence always wins).
+  if (LIVE_ANNEX_SUMMARY_ALLOWLIST.has(summary)) {
+    sinks.liveAnnexes.push({ summary, content: plain });
+    return { items: [], trailingNotes: notes };
+  }
+
+  // (3b) Bilingual courtesy translation: <summary> names it an English
+  // rendering AND the body is confirmed >70% Latin — both signals required
+  // together (council review), since the phrase alone is too weak and the
+  // content check alone could misfire on an incidental Latin quotation.
+  // Collected rather than pushed straight to `entries`/`liveAnnexes`: an
+  // article with more than one such block is ambiguous (which one is
+  // really this article's translation?) and must be quarantined below,
+  // never silently resolved by picking the first match.
+  if (ENGLISH_TEXT_SUMMARY_RE.test(summary) && isPredominantlyLatin(plain)) {
+    sinks.englishBlocks.push({ whole: whole.trim(), plain });
+    return { items: [], trailingNotes: notes };
+  }
+
+  // (4) The <summary> itself declares the block holds a previous or historic
+  //     version, and the body is prose rather than a citation. The document
+  //     states what the content is; taking it at its word is reading the
+  //     structure, not guessing. Provenance records that the summary — not a
+  //     label — is what identified it.
+  if (HISTORIC_SUMMARY_RE.test(summary) && !isUnavailableMarker(plain)) {
+    return one({ original_text: plain, label: `«${normalizeLabel(summary)}»`, source_summary: summary, kind: inferKind(summary) });
+  }
+
+  // (5) 2026-08-21 (تعاميم audit): the article's own anchor already declares
+  // it REPEALED, and nothing above recognised this block — no "before"
+  // label, no live-annex/English match, no historic-summary keyword. A
+  // repealed article's live text is legitimately empty; unlike an active
+  // article, unclassified substantive content here is overwhelmingly the
+  // article's own former wording kept "لأغراض الأرشفة القانونية" (verified
+  // against a real example: التنظيم الأساس للجنة الوطنية للتحول الرقمي,
+  // 7/7 articles). Matches this field's own documented contract in
+  // ParsedArticle.original_text: "For a REPEALED article this is usually
+  // the entire substantive content." Never applied to active/amended
+  // articles (council review: Codex + Antigravity — false-positive risk
+  // for a genuinely-repealed article is low and strictly less harmful than
+  // quarantining real archived text where no reader will ever see it).
+  if (articleStatus === "repealed" && !isUnavailableMarker(plain)) {
+    return one({
+      original_text: plain,
+      label: summary ? `«${normalizeLabel(summary)}» (أرشيف إلغاء)` : "نص تاريخي (ملغاة)",
+      source_summary: summary,
+      kind: "repealed",
+    });
+  }
+
+  // Nothing matched — preserve verbatim for human review, and count it.
+  sinks.unparsed.push(whole.trim());
+  return { items: [], trailingNotes: notes };
+}
+
+/**
+ * Extract every historical text version from an article body, and pair each
+ * AMENDMENT anchor with its text (one amendment = one card).
+ *
+ * PAIRING (2026-11-20, our reply to the owner's file 18, «خامساً» 1): inside a
+ * `<details>` block, an anchor owns everything after it up to the next anchor
+ * or the end of the block — its before-texts (one card, however many
+ * paragraphs) and its reference line («🔄 تعديل: …», the card's description).
+ * What comes before the first anchor of a block, and every block with no
+ * anchor at all, is read as before: one card per before-text, with no date or
+ * decree (the older files). An anchor outside any `<details>`, or in a block
+ * that holds a REGULATION anchor, stays a card of its own with no text, as
+ * before. The `<summary>` heading is never a card's description.
  *
  * @param articleBody raw body between ARTICLE_START and ARTICLE_END, already
  *                    newline-normalised.
@@ -323,10 +624,24 @@ const LABEL_RE = /^[ \t]*>?[ \t]*(?:[^\S\n]*\S{1,3}[^\S\n]*)?\*\*([^*\n]{2,300}?
  */
 export function extractArticleHistory(articleBody: string, articleStatus?: string): HistoryResult {
   const entries: HistoryEntry[] = [];
+  const records: AmendmentRecord[] = [];
   const unparsed: string[] = [];
   const regulationBlocks: string[] = [];
-  const liveAnnexes: Array<{ summary: string; content: string }> = [];
-  const englishBlocks: Array<{ whole: string; plain: string }> = [];
+  const sinks: SegmentSinks = { unparsed, liveAnnexes: [], englishBlocks: [] };
+
+  const anchors = findAmendmentAnchors(articleBody);
+  const pairedAnchors = new Set<AnchorHit>();
+
+  /** One card per before-text (no anchor): the older files. */
+  const pushLegacy = (seg: SegmentResult, offset: number) => {
+    for (const item of seg.items) {
+      entries.push(item.entry);
+      records.push({ offset, anchor: null, notes: item.notes, texts: [item.entry] });
+    }
+    // A description with no text and no anchor still says which instrument
+    // changed the article: kept as a card of its own, never as a before-text.
+    if (seg.trailingNotes.length > 0) records.push({ offset, anchor: null, notes: seg.trailingNotes, texts: [] });
+  };
 
   DETAILS_RE.lastIndex = 0;
   let d: RegExpExecArray | null;
@@ -334,6 +649,7 @@ export function extractArticleHistory(articleBody: string, articleStatus?: strin
   while ((d = DETAILS_RE.exec(articleBody)) !== null) {
     const whole = d[0];
     const inner = d[1];
+    const innerStart = d.index + whole.indexOf(">") + 1;
 
     // Historic executive-regulation text — real content, but not this article's
     // own history. Kept separately so it neither pollutes the live article text
@@ -344,166 +660,56 @@ export function extractArticleHistory(articleBody: string, articleStatus?: strin
     }
 
     const summary = (inner.match(SUMMARY_RE)?.[1] ?? "").trim();
-    // Work on the block minus its <summary> so the summary text is never
-    // mistaken for content.
-    const body = inner.replace(SUMMARY_RE, "");
+    const inside = anchors.filter((a) => a.offset >= innerStart && a.end <= innerStart + inner.length);
 
-    // Collect every bolded label with its offset, then slice the text between
-    // consecutive labels. This handles both the inline and block shapes without
-    // needing a separate regex per shape.
-    const labels: Array<{ raw: string; start: number; end: number }> = [];
-    LABEL_RE.lastIndex = 0;
-    let lm: RegExpExecArray | null;
-    while ((lm = LABEL_RE.exec(body)) !== null) {
-      labels.push({ raw: lm[1], start: lm.index, end: lm.index + lm[0].length });
+    if (inside.length === 0) {
+      // Work on the block minus its <summary> so the summary text is never
+      // mistaken for content.
+      pushLegacy(readSegment(inner.replace(SUMMARY_RE, ""), summary, whole, articleStatus, sinks), d.index);
+      continue;
     }
 
-    let capturedFromLabel = false;
+    // The part before the first anchor: read as an older block.
+    const lead = inner.slice(0, inside[0].offset - innerStart);
+    pushLegacy(readSegment(lead.replace(SUMMARY_RE, ""), summary, lead, articleStatus, sinks), d.index);
 
-    for (let i = 0; i < labels.length; i++) {
-      const kindOfLabel = classifyLabel(labels[i].raw);
-      if (kindOfLabel === "other") continue;
-      if (kindOfLabel !== "before") continue;
-
-      // The next RECOGNISED label ends this one's captured span. An
-      // "other"-classified match in between is not a second label — most often
-      // it is the superseded text's own bolded opening clause (a common Arabic
-      // drafting convention: bolding the chapeau before a numbered list) — so
-      // skip past it rather than let it prematurely truncate the capture.
-      // Discovered 2026-08-20 (ب-117) via a live run that returned an empty
-      // `entries[]` for an article whose full prior text was visibly present.
-      let j = i + 1;
-      while (j < labels.length && classifyLabel(labels[j].raw) === "other") j++;
-      const sliceEnd = j < labels.length ? labels[j].start : body.length;
-      const raw = body.slice(labels[i].end, sliceEnd);
-      // Drop any HTML comment anchors that sit inside the captured span.
-      const text = unquote(raw.replace(/<!--[\s\S]*?-->/g, ""));
-
-      if (!text) continue;
-      if (isUnavailableMarker(text)) continue; // absence is information, not text
-
-      capturedFromLabel = true;
-      entries.push({
-        original_text: text,
-        label: normalizeLabel(labels[i].raw),
-        source_summary: summary,
-        kind: inferKind(labels[i].raw),
+    for (let k = 0; k < inside.length; k++) {
+      const a = inside[k];
+      pairedAnchors.add(a);
+      const stop = k + 1 < inside.length ? inside[k + 1].offset - innerStart : inner.length;
+      const span = inner.slice(a.end - innerStart, stop);
+      const seg = readSegment(span.replace(SUMMARY_RE, ""), summary, span, articleStatus, sinks, true);
+      const texts = seg.items.map((item) => item.entry);
+      entries.push(...texts);
+      records.push({
+        offset: a.offset,
+        anchor: a.json,
+        ...(a.json ? {} : { anchorUnreadable: true }),
+        notes: [...seg.items.flatMap((item) => item.notes), ...seg.trailingNotes],
+        texts,
       });
     }
-
-    if (capturedFromLabel) continue;
-
-    // ── Fallbacks, in descending order of explicitness ──────────────────────
-    // Reached whenever no "before" label yielded captured text — even if a
-    // DIFFERENT label in the same block classified as "reference" (e.g. a bare
-    // "🔄 تعديل:" notice). Until 2026-08-21 this was gated on `recognised > 0`
-    // (any recognised label at all, "reference" included), which skipped this
-    // whole chain — including the HISTORIC_SUMMARY_RE check below — whenever a
-    // block mixed a reference notice with an unrecognised "before" quote right
-    // next to it (ب-119). A reference-only label carries no text worth losing;
-    // only a captured "before" label does, and that is what capturedFromLabel
-    // already tracks. Each step below requires a positive signal in the
-    // source; none infers text from silence.
-    const plain = unquote(body.replace(/<!--[\s\S]*?-->/g, ""));
-
-    if (!plain) continue; // decorative/empty block — nothing to record or lose
-
-    // (1) Unbolded introducer line ending in a colon; text follows beneath it.
-    const ub = plain.match(UNBOLDED_BEFORE_RE);
-    if (ub) {
-      const after = plain.slice((ub.index ?? 0) + ub[0].length).trim();
-      if (after && !isUnavailableMarker(after)) {
-        entries.push({
-          original_text: after,
-          label: normalizeLabel(ub[1]),
-          source_summary: summary,
-          kind: inferKind(ub[1]),
-        });
-        continue;
-      }
-    }
-
-    // (2) A bare notice recording that the article was added/amended/repealed.
-    //     Understood, but contains no prior wording — nothing to quarantine.
-    if (REFERENCE_NOTICE_RE.test(stripTashkeel(plain))) continue;
-
-    // (3) ب-114: <summary> is on the hand-verified live-annex allowlist — this
-    // block is CURRENT reference content (a schedule/requirements-guide
-    // section), not history, collapsed into <details> for display only. Only
-    // reached once (1) and (2) above have already ruled out any historical
-    // phrasing in the body itself — an allowlist hit never overrides real
-    // evidence of superseded text (council review: body evidence always wins).
-    if (LIVE_ANNEX_SUMMARY_ALLOWLIST.has(summary)) {
-      liveAnnexes.push({ summary, content: plain });
-      continue;
-    }
-
-    // (3b) Bilingual courtesy translation: <summary> names it an English
-    // rendering AND the body is confirmed >70% Latin — both signals required
-    // together (council review), since the phrase alone is too weak and the
-    // content check alone could misfire on an incidental Latin quotation.
-    // Collected rather than pushed straight to `entries`/`liveAnnexes`: an
-    // article with more than one such block is ambiguous (which one is
-    // really this article's translation?) and must be quarantined below,
-    // never silently resolved by picking the first match.
-    if (ENGLISH_TEXT_SUMMARY_RE.test(summary) && isPredominantlyLatin(plain)) {
-      englishBlocks.push({ whole: whole.trim(), plain });
-      continue;
-    }
-
-    // (4) The <summary> itself declares the block holds a previous or historic
-    //     version, and the body is prose rather than a citation. The document
-    //     states what the content is; taking it at its word is reading the
-    //     structure, not guessing. Provenance records that the summary — not a
-    //     label — is what identified it.
-    if (HISTORIC_SUMMARY_RE.test(summary) && !isUnavailableMarker(plain)) {
-      entries.push({
-        original_text: plain,
-        label: `«${normalizeLabel(summary)}»`,
-        source_summary: summary,
-        kind: inferKind(summary),
-      });
-      continue;
-    }
-
-    // (5) 2026-08-21 (تعاميم audit): the article's own anchor already declares
-    // it REPEALED, and nothing above recognised this block — no "before"
-    // label, no live-annex/English match, no historic-summary keyword. A
-    // repealed article's live text is legitimately empty; unlike an active
-    // article, unclassified substantive content here is overwhelmingly the
-    // article's own former wording kept "لأغراض الأرشفة القانونية" (verified
-    // against a real example: التنظيم الأساس للجنة الوطنية للتحول الرقمي,
-    // 7/7 articles). Matches this field's own documented contract in
-    // ParsedArticle.original_text: "For a REPEALED article this is usually
-    // the entire substantive content." Never applied to active/amended
-    // articles (council review: Codex + Antigravity — false-positive risk
-    // for a genuinely-repealed article is low and strictly less harmful than
-    // quarantining real archived text where no reader will ever see it).
-    if (articleStatus === "repealed" && !isUnavailableMarker(plain)) {
-      entries.push({
-        original_text: plain,
-        label: summary ? `«${normalizeLabel(summary)}» (أرشيف إلغاء)` : "نص تاريخي (ملغاة)",
-        source_summary: summary,
-        kind: "repealed",
-      });
-      continue;
-    }
-
-    // Nothing matched — preserve verbatim for human review, and count it.
-    unparsed.push(whole.trim());
   }
+
+  // An anchor outside any <details> (or inside a regulation block): a card
+  // with its date and decree and no text, exactly as before.
+  for (const a of anchors) {
+    if (pairedAnchors.has(a)) continue;
+    records.push({ offset: a.offset, anchor: a.json, ...(a.json ? {} : { anchorUnreadable: true }), notes: [], texts: [] });
+  }
+  records.sort((x, y) => x.offset - y.offset);
 
   // Exactly one candidate: accept it. Two or more: which one is genuinely
   // this article's translation is now ambiguous, so quarantine all of them
   // verbatim instead of guessing by picking the first (council review).
   let englishText: string | undefined;
-  if (englishBlocks.length === 1) {
-    englishText = englishBlocks[0].plain;
-  } else if (englishBlocks.length > 1) {
-    for (const b of englishBlocks) unparsed.push(b.whole);
+  if (sinks.englishBlocks.length === 1) {
+    englishText = sinks.englishBlocks[0].plain;
+  } else if (sinks.englishBlocks.length > 1) {
+    for (const b of sinks.englishBlocks) unparsed.push(b.whole);
   }
 
-  return { entries, unparsed, regulationBlocks, liveAnnexes, englishText };
+  return { entries, records, unparsed, regulationBlocks, liveAnnexes: sinks.liveAnnexes, englishText };
 }
 
 /**

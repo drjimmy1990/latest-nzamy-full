@@ -9,7 +9,7 @@ import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
-import { freeQuestionStatusWith } from "@/lib/ai/freeQuestion";
+import { freeQuestionStatusWith, freeQuestionToolFor, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
 import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
@@ -54,11 +54,16 @@ const SIGN_IN = { error: "سجّل الدخول لاستخدام أدوات ال
  * library assistant; an active library subscriber for the library assistant
  * only (owner ٥ / ١٥, 17 Nov 2026). Every run is still charged.
  */
-async function libraryAccess(toolId: string): Promise<RouteReply | null> {
+async function libraryAccess(toolId: string, freeOpensTier?: (toolId: string) => Promise<boolean>): Promise<RouteReply | null> {
   // Owner item 9.7 (batch l8): the per-account library lock applies to the
   // library assistant only, never to the drafter, contract review, legal
   // opinion or the other lawyers' tools that also read the library.
-  const refused = (await libraryGate({ accountLock: isLibraryAiTool(toolId) })) ?? (await libraryAiAccess(toolId));
+  // Register 4 / 36 (batch l9): an individual's free questions are on
+  // quick-answer, so while he has some left they open its Pro rule (the
+  // library's closed switch still applies) — otherwise a free-tier individual
+  // could never use them. Once they are gone the Pro rule is back.
+  const gateRefused = await libraryGate({ accountLock: isLibraryAiTool(toolId) });
+  const refused = gateRefused ?? ((freeOpensTier && (await freeOpensTier(toolId))) ? null : await libraryAiAccess(toolId));
   if (!refused) return null;
   const body = (await refused.json().catch(() => ({}))) as Record<string, unknown>;
   const code = typeof body.code === "string" ? body.code : body.libraryClosed ? "library_closed" : "library_tier";
@@ -72,9 +77,9 @@ async function libraryAccess(toolId: string): Promise<RouteReply | null> {
  * uncharged. The lock check fails open and exempts admins, as in the proxy
  * (readQuotaServer.ts). The branches are src/lib/ai/libraryRunAccess.ts.
  */
-function libraryAccessFor(userId: string) {
+function libraryAccessFor(userId: string, freeOpensTier?: (toolId: string) => Promise<boolean>) {
   return libraryRunAccess({
-    gate: libraryAccess,
+    gate: (toolId) => libraryAccess(toolId, freeOpensTier),
     lockRow: () => libraryReadQuotaHit(userId, null, { memoLockCheck: true }),
     now: () => Date.now(),
   });
@@ -164,11 +169,28 @@ export async function POST(request: NextRequest) {
       {
         callbackUrl: callbackUrl(),
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
-        libraryAccess: libraryAccessFor(user.id),
+        // Register 4 / 36 (l9): an e-mail-verified individual with free
+        // questions left passes quick-answer's Pro rule (any read error: no).
+        // Only while points_enforcement is on: when it is off,
+        // ai_start_free_question starts a plain run and spends none of the
+        // allowance, so the opener would never close.
+        libraryAccess: libraryAccessFor(user.id, async (toolId) => {
+          if (toolId !== GENERAL_FREE_QUESTION_TOOL || freeQuestionToolFor(userType) !== toolId) return false;
+          if (!user.email_confirmed_at) return false;
+          try {
+            const enforcement = await admin.from("platform_settings").select("value").eq("key", "points_enforcement").maybeSingle();
+            if (enforcement.error || (enforcement.data as { value?: unknown } | null)?.value !== true) return false;
+            return (await freeQuestionStatusWith(admin, user.id)).available;
+          } catch {
+            return false;
+          }
+        }),
         onRunCreated: libraryRunCreatedFor(user.id),
         // The founder's 100 library points (20 questions) pay for library-assistant first.
         founderLibraryCredit: (userId) => founderLibraryCredit(admin, userId),
-        // Owner ٣٠ (l7): the account's free library questions, once (10 lawyer / 5 individual).
+        // Owner ٣٠ (l7): the account's free questions, once (10 lawyer on the library
+        // assistant / 5 individual on quick-answer — register 4 / 36, l9; runCore
+        // asks only on the account's own free tool).
         // ٥٨ (batch l8): only for an e-mail-verified account (the SQL checks it
         // too, with the library being open for the account's type).
         freeQuestions: async (userId) =>
