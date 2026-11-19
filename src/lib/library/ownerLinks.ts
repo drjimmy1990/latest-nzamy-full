@@ -131,7 +131,7 @@ function articleTexts(...values: unknown[]): string[] {
   return out;
 }
 
-/** One object entry ({name, law_file, boe_guid, affected_articles, …}) → what it states. */
+/** One object entry ({name, law_id, law_file, boe_guid, affected_articles, …}) → what it states. */
 function refFromObject(o: Record<string, unknown>, resolvePath?: OwnerLinkPathResolver): Omit<OwnerLink, "kind"> | null {
   const name = [o.name, o.law_name].find((v) => typeof v === "string" && !isBlank(v)) as string | undefined;
   const base: Omit<OwnerLink, "kind"> = name ? refFromString(name, resolvePath) ?? {} : {};
@@ -140,6 +140,14 @@ function refFromObject(o: Record<string, unknown>, resolvePath?: OwnerLinkPathRe
     const hit = file.match(PATH_RE) ? resolvePath?.(file.match(PATH_RE)?.[0] as string) : undefined;
     if (hit?.slug && !base.slug) base.slug = hit.slug;
     if (hit?.id && !base.id) base.id = hit.id;
+  }
+  // Owner file 18 («خامساً» 5): `law_id` — the target file's own registry id,
+  // stated outright. It names the law exactly, so it wins over an id read
+  // out of the title text. Only a registry-shaped value (LAW-00-0897) counts.
+  const lawId = typeof o.law_id === "string" ? o.law_id.trim() : "";
+  if (lawId) {
+    const id = lawId.match(REGISTRY_ID_RE)?.[1];
+    if (id && id === lawId) base.id = id;
   }
   const guid = typeof o.boe_guid === "string" && GUID_RE.test(o.boe_guid.trim()) ? o.boe_guid.trim().toLowerCase() : undefined;
   if (guid && !base.guid) base.guid = guid;

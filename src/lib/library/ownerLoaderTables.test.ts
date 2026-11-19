@@ -94,3 +94,16 @@ test("the private details go through the RPC, all or nothing: a short count thro
   assert.match(rpcBlock, /throw new Error/);
   assert.match(rpcBlock, /stats\.rowsWritten \+= rows\.length;\n\s*return;\n\s*\}\s*$/);
 });
+
+test("20261129_70 (owner file 18 items 3 + 4): the amendment card and law summary columns are REQUIRED, never stripped", () => {
+  const laws = OWNER_LOADER_TABLES.find((t) => t.name === "laws");
+  for (const c of ["summary", "summary_card", "summary_status", "summary_reviewed_at"]) {
+    assert.ok(laws?.requiredColumns?.includes(c), c);
+    assert.ok(!laws?.stripKeys.includes(c), c);
+  }
+  // summary_brief stays stripped: it is GENERATED (reviewed summary_card first).
+  assert.ok(laws?.stripKeys.includes("summary_brief"));
+  const amendments = OWNER_LOADER_TABLES.find((t) => t.name === "article_amendments");
+  assert.deepEqual(amendments?.requiredColumns, ["decree_id", "paragraphs", "text_status", "position"]);
+  assert.deepEqual(amendments?.stripKeys, []);
+});
