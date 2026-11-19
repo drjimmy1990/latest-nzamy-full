@@ -106,7 +106,7 @@ test("labels: every reader type has both directions, distinct, no «يفسّر»
     assert.notEqual(SHOWN_LINK_LABELS[t].out, SHOWN_LINK_LABELS[t].in, t);
     assert.doesNotMatch(SHOWN_LINK_LABELS[t].out + SHOWN_LINK_LABELS[t].in, /يفسّر|يفسر|تفسير/);
   }
-  assert.equal(linkLabel("CITES_ARTICLE", "out"), "يحيل إلى مادة", "owner decision 19 Nov: refers_to_article");
+  assert.equal(linkLabel("CITES_ARTICLE", "out"), "تحيل إليها هذه المادة", "names the other article: the one this article refers to");
   assert.equal(linkLabel("CITES_ARTICLE", "in"), "مادة تحيل إليها");
   assert.equal(linkLabel("INTERPRETS_ARTICLE", "out"), "مبدأ قضائي يستند إليه", "cites_article keeps its words");
   assert.equal(linkLabel("SIMILAR_TO", "out"), "");

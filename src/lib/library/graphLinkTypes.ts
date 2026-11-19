@@ -140,8 +140,10 @@ export function sectionOfLinkType(t: unknown): LinkSection | null {
  */
 export const SHOWN_LINK_LABELS: Readonly<Record<ShownLinkType, { out: string; in: string }>> = {
   INTERPRETS_ARTICLE: { out: "مبدأ قضائي يستند إليه", in: "مبدأ قضائي يستند إليها" },
-  // Owner decision 19 Nov (his name refers_to_article «يحيل إلى مادة»); the key stays CITES_ARTICLE.
-  CITES_ARTICLE: { out: "يحيل إلى مادة", in: "مادة تحيل إليها" },
+  // Owner decision 19 Nov: his type refers_to_article «يحيل إلى مادة» (the category, OWNER_GRAPH_TYPES);
+  // the key stays CITES_ARTICLE. Like every label here these name the OTHER article: the one this
+  // article refers to (out), or one that refers to this article (in).
+  CITES_ARTICLE: { out: "تحيل إليها هذه المادة", in: "مادة تحيل إليها" },
   AMENDS_ARTICLE: { out: "تعدّلها", in: "معدِّل لها" },
   SUPERSEDES_LAW: { out: "حلّ محله", in: "حلّ محلها" },
   PARENT_LAW: { out: "النظام الأصل", in: "لائحة أو نظام تابع" },
