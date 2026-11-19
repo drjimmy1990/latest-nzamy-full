@@ -482,8 +482,11 @@ $fn$;
   if exists (select 1 from information_schema.columns
               where table_schema = 'public' and table_name = 'service_requests' and column_name = 'business_id') then
     execute 'drop policy if exists "business members read business service requests" on public.service_requests';
+    -- TO authenticated: anon holds no EXECUTE on the helper, and a policy
+    -- naming it would turn every guest read of service_requests into 42501.
     execute 'create policy "business members read business service requests" on public.service_requests
                for select
+               to authenticated
                using (business_id is not null and public.business_case_reader(business_id))';
   else
     raise notice '20261129_10: service_requests.business_id is not here — run 20260914 first; the company request policy is skipped';
@@ -493,6 +496,7 @@ $fn$;
   execute 'drop policy if exists "business_members: own row, roster manager or admin can read" on public.business_members';
   execute 'create policy "business_members: own row, roster manager or admin can read" on public.business_members
              for select
+             to authenticated
              using (user_id = auth.uid() or public.business_roster_reader(business_id) or public.is_admin())';
 end
 $biz$;
@@ -766,7 +770,9 @@ begin
   end loop;
   if exists (select 1 from pg_roles where rolname = 'authenticated')
      and exists (select 1 from pg_catalog.pg_policy
-                  where polname in ('firm case: trainee and secretary see assigned cases only', 'firm role scope: assigned only')
+                  where polname in ('firm case: trainee and secretary see assigned cases only', 'firm role scope: assigned only',
+                                    'business members read business service requests',
+                                    'business_members: own row, roster manager or admin can read')
                     and not (polroles @> array[(select oid from pg_catalog.pg_roles where rolname = 'authenticated')])) then
     missing := missing || ' a role-scope policy is not TO authenticated (guests would hit 42501);';
   end if;

@@ -249,4 +249,20 @@ begin
   raise notice 'B8 PASS: anon cannot execute the company helpers';
 end $$;
 
+-- ── B9 a guest read of service_requests / business_members is not broken by the
+--      new policies (they are TO authenticated; anon has no EXECUTE on the helpers) ─
+set role anon;
+select set_config('test.uid', '', false);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.service_requests;
+  select count(*) into n from public.business_members;
+  raise notice 'B9 PASS: guest reads of service_requests and business_members run (no 42501 from the helpers)';
+exception when insufficient_privilege then
+  if sqlerrm ilike '%business_%reader%' then raise exception 'B9 FAIL: a guest read hits a helper: %', sqlerrm; end if;
+  raise notice 'B9 PASS: guest refused by table grants only (%), not by the helpers', sqlerrm;
+end $$;
+reset role;
+
 select 'l9_secroles_business: ALL PASS';

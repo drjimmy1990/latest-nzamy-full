@@ -7579,6 +7579,11 @@ select 'Company requests and roster by role on the server: business_case_reader 
                           and polname = 'business_members: own row, co-member, owner or admin can read')
        and not has_function_privilege('anon', 'public.business_case_reader(uuid)', 'EXECUTE')
        and not has_function_privilege('anon', 'public.business_roster_reader(uuid)', 'EXECUTE')
+       -- a policy naming a helper anon cannot execute must be TO authenticated (else every guest read is 42501)
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polname in ('business members read business service requests',
+                                          'business_members: own row, roster manager or admin can read')
+                          and not (polroles @> array[(select oid from pg_catalog.pg_roles where rolname = 'authenticated')]))
        end as ok;
 select 'Company seat cap: business_profiles.max_seats (no session write) + trg_business_seat_cap (run 20261129_10)' as check,
        case when to_regprocedure('public.business_seat_cap(uuid)') is null
