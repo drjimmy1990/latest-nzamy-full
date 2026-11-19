@@ -1,9 +1,9 @@
 /**
  * founderTerms.ts — the text of /founder-terms and its publication switch.
  *
- * The text is the owner's founder terms (TERMS-founder-draft.md, 17 Nov
- * 2026, items ١–٩ and the live-search line, copied as is) plus the
- * platform-protection clause (owner file 11, part «ثالثاً — أ», revised
+ * The text is the owner's founder terms (TERMS-founder-draft.md — 17 Nov
+ * 2026 items ١–٩, his 19 Nov version adds ١٠–١٥; copied as is but for the
+ * two register-14 points named below) plus the platform-protection clause (owner file 11, part «ثالثاً — أ», revised
  * 16 Nov 2026), which the owner asked to be added to /founder-terms as well.
  *
  * Owner decision ١٦ (17 Nov 2026): the owner, a lawyer, reviewed and approved
@@ -16,14 +16,40 @@
  *     placeholder or the word «مسودة» is left in anything shown.
  *
  * Batch l8 (owner 18 Nov evening, message item 1.2 and decisions ٤٩/ك),
- * version 2026-11-20: item ٥ no longer says top-ups of «any amount» (the
- * minimum top-up is per account type), and the 15 % founder discount is on
- * point top-ups ONLY, for the membership year from activation — never
- * lifetime (src/lib/payments/founderDiscount.ts enforces the same).
+ * version 2026-11-20: item ٥ no longer said top-ups of «any amount», and the
+ * 15 % founder discount was on point top-ups only.
+ *
+ * Batch l9 (owner register 14 items 4, 6, 7, 12, 16, 28–32, 41, 44, 48, 49,
+ * 55, 57–62; his TERMS-founder-draft.md of 19 Nov, clauses 4, 5, 7 and 10–15),
+ * version 2026-11-21 — THE one new terms version before payment goes live
+ * (register 31; no paying customer before it, so no exception). The id is the
+ * deploy date: 2026-11-20 was already published, so the draft's own
+ * «2026-11-19» would go backwards (gap register C9).
+ *   - ٤: renewal at the price announced then, announced 60 days before the
+ *     year ends;
+ *   - ٥: the library stays open for the year while the balance is 50 points
+ *     or more (register 48; the gate itself is the library reader's); the
+ *     minimum top-up is 50 points (register 7); the 15 % founder discount is
+ *     on top-ups AND any plan, his own yearly renewal included, while his
+ *     yearly subscription is active — the larger discount only (register
+ *     29 / 32 / 55; src/lib/payments/founderDiscount.ts enforces it).
+ *     Two places where register 14 beats the draft: the «مخرج مستقل واحد من
+ *     أدوات المحترفين» bullet is NOT published (register 62: «لا يظهر في
+ *     الشروط وصفحة المؤسس»), and the assistant stops when the balance is
+ *     below one question's cost (register 6), not at 50;
+ *   - ٧: the refund also requires no more than 5 full texts read (register
+ *     16 / 44; the counter is the server's own, never shown to the client);
+ *   - ١٠–١٣: read limits, two devices, points validity, discount rules;
+ *   - ١٤، ١٤-أ، ١٥: anti-scraping, its one narrow exception, the TDM
+ *     reservation — the draft's text as is;
+ *   - the «البحث الحي على الإنترنت … 10 نقاط» item is removed (register 12,
+ *     file 15 row 81): live search is not built and not sold.
  *
  * FOUNDER_TERMS_VERSION names this text. The founder checkout requires the
  * buyer to accept exactly this version (founderConsent.ts) and stores it on
- * the order: change it whenever a word of the terms changes.
+ * the order: change it whenever a word of the terms changes. It equals
+ * CURRENT_TERMS_VERSION (src/lib/legal/termsVersion.ts): /terms gained the
+ * same clauses 14, 14-أ and 15 in the same version.
  *
  * `**…**` marks bold, rendered by the page. Pure: no imports.
  */
@@ -31,9 +57,9 @@
 export const FOUNDER_TERMS_PUBLISHED: boolean = true;
 
 /** The version of the text below, as recorded on each founder order (metadata.founder_terms_version). */
-export const FOUNDER_TERMS_VERSION = "2026-11-20";
+export const FOUNDER_TERMS_VERSION = "2026-11-21";
 /** FOUNDER_TERMS_VERSION as the page shows it (item ٩: the date of the last update). */
-export const FOUNDER_TERMS_UPDATED_AR = "20 نوفمبر 2026";
+export const FOUNDER_TERMS_UPDATED_AR = "21 نوفمبر 2026";
 
 export const FOUNDER_TERMS_TITLE = "شروط وأحكام باقة المحامي المؤسس";
 
@@ -44,20 +70,49 @@ export interface TermsItem {
   title: string;
   paragraphs?: readonly string[];
   bullets?: readonly string[];
+  /** Paragraphs shown AFTER the bullets (clause ١٤-أ's closing paragraph). */
+  after?: readonly string[];
   /** An anchor on the page (/founder-terms#refund). */
   id?: string;
 }
 
 /**
- * Item ٧ — the owner's refund wording: TERMS-founder-draft.md clause 7, copied
- * as is, after his 18-Nov decision (an urgent fix of the published text: no AI
- * feature used — drafter, pro tools, library assistant and points; browsing
- * the library never blocks it; full refund incl. VAT to the same method with
- * no fee, and a credit note). The admin refund screen checks exactly this
- * (src/lib/payments/refundEligibility.ts).
+ * Item ٧ — the owner's refund wording: TERMS-founder-draft.md clause 7 of
+ * 19 Nov, copied as is: no AI feature used (drafter, pro tools, library
+ * assistant and points) AND no more than 5 files read in full text in the
+ * library (register 16 / 44); ordinary browsing within these limits never
+ * blocks it; full refund incl. VAT to the same method with no fee, and a
+ * credit note. /refund-policy shows this text word for word
+ * (refundPolicy.ts FOUNDER_REFUND_LINE_AR); the admin refund screen checks it
+ * (src/lib/payments/refundEligibility.ts — the 5-file count is the library
+ * reader's server-side log).
  */
 export const FOUNDER_REFUND_CLAUSE =
-  "يحق لك الاسترداد خلال **14 يوماً** من الشراء بشرط **ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي في الباقة**: الصائغ القانوني، أو أدوات المحترفين، أو مساعد المكتبة الذكي والنقاط. ولا يمنع الاسترداد تصفح المكتبة القانونية العادية. ويُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة إلى وسيلة الدفع نفسها دون خصم أي رسوم، ويصدر بذلك إشعار دائن. وتحدد جهة إصدار بطاقتك مدة ظهور المبلغ في حسابك.";
+  "يحق لك الاسترداد خلال **14 يوماً** من الشراء بشرط **ألا تكون قد استخدمت أي ميزة ذكاء اصطناعي في الباقة**: الصائغ القانوني، أو أدوات المحترفين، أو مساعد المكتبة الذكي والنقاط، **وألا تكون قد قرأت أكثر من 5 ملفات نصاً كاملاً في المكتبة القانونية**. ولا يمنع الاسترداد تصفح المكتبة القانونية العادية في هذه الحدود. ويُردّ المبلغ كاملاً شاملاً ضريبة القيمة المضافة إلى وسيلة الدفع نفسها دون خصم أي رسوم، ويصدر بذلك إشعار دائن. وتحدد جهة إصدار بطاقتك مدة ظهور المبلغ في حسابك.";
+
+/** Clause ١٤ — anti-reverse-engineering and anti-scraping (draft clause 14, as is). */
+export const ANTI_SCRAPING_CLAUSE_AR =
+  "يُمنع منعاً باتاً الهندسة العكسية لمنصة نظامي، وأي سحب (scraping) أو استخراج آلي أو جمع منهجي لمحتواها أو بياناتها أو نصوص مكتبتها، سواء بالروبوتات أو البرمجيات أو **أدوات الذكاء الاصطناعي ووكلائها** (مثل Claude وCodex وChatGPT وAntigravity وGemini وغيرها)، ويتحمل المسؤولية القانونية كاملة من شغّل الأداة أو أمرها بذلك. وأي محاولة التفاف على القيود التقنية (حدود المشاهدة أو الطلبات أو الأجهزة أو التحقق) ممنوعة. ويحق لنظامي إيقاف الحساب وإنهاء الخدمة فوراً والمطالبة بالتعويض واتخاذ الإجراءات النظامية.";
+
+/** Clause ١٤-أ — the one exception and its limits (draft clause 14-أ, as is). */
+export const CRAWLER_EXCEPTION_AR: Readonly<{ intro: string; limits: readonly string[]; closing: string }> = Object.freeze({
+  intro:
+    "يُستثنى من المنع في البند 14 أمر واحد فقط: قيام زواحف محركات البحث ومحركات الإجابة **المسمّاة في ملف robots.txt المنشور على المنصة**، بعد تحقق نظامي من هويتها بنطاقات IP المنشورة رسمياً من مزوّدها أو بـreverse-DNS، بفهرسة **الصفحات العامة** المسموحة في ذلك الملف، وعرض عنوانها وملخصها العام ومقتطف قصير منها في نتائج البحث وإجابات الذكاء الاصطناعي، مع ذكر «نظامي» ورابط مباشر للصفحة المصدر. ويُفسَّر هذا الاستثناء تفسيراً ضيقاً، ولا يشمل:",
+  limits: Object.freeze([
+    "(1) النص الكامل لأي مستند في المكتبة، ولا أي محتوى خلف تسجيل دخول أو اشتراك أو سقف مشاهدة، ولا واجهات الـAPI؛",
+    "(2) النسخ الجماعي أو المنهجي، أو رسم خريطة محتوى المكتبة أو بنيتها أو روابطها؛",
+    "(3) بناء قواعد بيانات أو مجموعات بيانات، أو تدريب النماذج أو تحسينها أو تقييمها، إلا في الحدود الواردة في البند 15؛",
+    "(4) إعادة النشر أو البيع أو الترخيص أو تقديم المحتوى لطرف ثالث، أو أي عرض يغني عن زيارة الصفحة المصدر؛",
+    "(5) أي أداة أو وكيل ذكاء اصطناعي أو متصفح آلي يعمل بطلب مستخدم، فهو يُعامل كزائر عادي ويخضع لكل القيود، ويُسأل عنه من شغّله أو أمره؛",
+    "(6) أي التفاف على القيود التقنية.",
+  ]),
+  closing:
+    "ولا يجوز لأي شخص الاحتجاج بهذا الاستثناء أو بوصف نشاطه بأنه «تحسين محركات بحث» أو «GEO» أو «بحث» أو «إجابة لمستخدم» لتبرير فعل ممنوع. ونظامي وحدها تقرر من يشمله الاستثناء وتتحقق منه، ولها تعديل قائمة الزواحف أو سحب الاستثناء عن أي جهة في أي وقت، وسجلات خوادمها بيّنة معتبرة في إثبات المخالفة. والمشترك لا يكتسب بهذا الاستثناء أي حق، ولا يجوز له تمكين أي أداة أو طرف ثالث من محتوى اشتراكه. وعند الشك يُفسَّر النص لصالح المنع.",
+});
+
+/** Clause ١٥ — the TDM and AI-training reservation (draft clause 15, as is). */
+export const TDM_RESERVATION_AR =
+  "جميع الحقوق محفوظة لنظامي. لا يجوز التنقيب في نصوص المنصة وبياناتها ولا استعمال محتواها في تدريب نماذج الذكاء الاصطناعي أو تحسينها أو تقييمها دون إذن كتابي مسبق. **والإذن الوحيد القائم** هو ما يسمح به ملف robots.txt للزواحف المسمّاة فيه على الصفحات العامة المحددة فيه، وهو إذن غير حصري، قابل للسحب في أي وقت، ولا يمتد إلى نصوص المكتبة الكاملة ولا إلى أي محتوى مقفول.";
 
 export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
   {
@@ -80,16 +135,17 @@ export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
   },
   {
     title: "٤. مدة العضوية",
-    paragraphs: ["12 شهراً من تاريخ التفعيل، دون تجديد تلقائي ودون سحب لاحق من البطاقة."],
+    paragraphs: [
+      "12 شهراً من تاريخ التفعيل، دون تجديد تلقائي ودون سحب لاحق من البطاقة. **التجديد بالسعر المعلن وقتها ويُعلن قبل نهاية السنة بـ60 يوماً.**",
+    ],
   },
   {
     title: "٥. ما تشمله الباقة",
     bullets: [
       "**6 أعمال قانونية** عبر الصائغ، من الأنواع السبعة المؤهلة، متنوعة أو مكررة، خلال سنة العضوية. جولة التنقيح الثانية داخل الجلسة لا تخصم عملاً.",
-      "**مخرج مستقل واحد** إجمالاً تختاره من أدوات المحترفين الأربع.",
-      "**المكتبة القانونية** لسنة كاملة من تفعيل الباقة، و**الشحن لا يجدّد السنة**. استخدام المكتبة العادية لا يستهلك نقاطاً. ويصلك **100 نقطة تأسيسية** تُخصَّص لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم **5 نقاط** من أول سؤال. فإذا نفدت النقاط أُغلق المساعد الذكي وحده حتى **شحن النقاط** بما لا يقل عن الحد الأدنى للشحن لنوع حسابك، وتبقى المكتبة مفتوحة طوال مدة العضوية. وكل استخدام للذكاء الاصطناعي مرتبط بالنقاط، وأعمال الصائغ الستة مشمولة في السعر.",
+      "**المكتبة القانونية** مفتوحة طوال سنة العضوية **بشرط ألا ينزل رصيدك عن 50 نقطة**؛ فإذا نزل عنها أُقفل التصفح حتى تشحن فيعود فور بلوغ الرصيد 50. فتح المستند نفسه لا يخصم نقاطاً. و**الشحن لا يجدّد السنة**. ويصلك **100 نقطة تأسيسية** مع الباقة فتعمل المكتبة من اليوم الأول، وتُستعمل أيضاً في مساعد المكتبة الذكي، والسؤال الواحد عليه يخصم **5 نقاط** من أول سؤال، ويقف المساعد إذا قلّ رصيدك عن كلفة السؤال. ويعود التصفح والمساعد بعد **شحن النقاط بحد أدنى 50 نقطة**. وكل استخدام للذكاء الاصطناعي مرتبط بالنقاط، وأعمال الصائغ الستة مشمولة في السعر.",
       "إدارة المكتب قريباً: مدتها ضمن سنة العضوية من التفعيل، ولا تبدأ سنة جديدة عند إتاحتها.",
-      "خصم المؤسس **15%** على **شحنات النقاط وحدها** طوال **سنة العضوية من تاريخ التفعيل**، ثم ينتهي بانتهائها. ولا يشمل رسوم المنصة ولا تجديد الاشتراك ولا الرسوم الحكومية ولا مبالغ الأطراف الثالثة، وإذا وُجد عرض عام أقل سعراً يُطبَّق الأفضل فقط دون جمع الخصمين.",
+      "خصم المؤسس **15%** على شحنات النقاط وعلى أي باقة تشتريها من نظامي (**بما فيها تجديد اشتراكك السنوي**)، **ما دام اشتراكك السنوي ساريّاً**. وإذا انقطع الاشتراك فُقد الخصم نهائياً. ويُطبَّق **الأعلى خصم واحد فقط** دون جمعه مع كوبون أو عرض آخر، ولا يشمل الرسوم الحكومية ولا مبالغ الأطراف الثالثة (التفصيل في البند 13).",
       "**3 دعوات** تتجدد شهرياً لمحامين مرخصين جدد لم يسبق لهم التسجيل، ولا تتراكم.",
     ],
   },
@@ -115,10 +171,46 @@ export const FOUNDER_TERMS_ITEMS: readonly TermsItem[] = Object.freeze([
     ],
   },
   {
-    title: "البحث الحي على الإنترنت",
+    title: "١٠. حد القراءة (المكتبة القانونية)",
+    id: "read-limits",
     paragraphs: [
-      "**البحث الحي على الإنترنت** (حيث يتاح في باحث المكتبة والتشريع المقارن) اختياري وتكلفته 10 نقاط للسؤال، وتُعرض قبل الإرسال.",
+      "تُحتسب عند فتح **النص الكامل** فقط. يظهر **تحذير عند 30 فتحاً في اليوم**، ويُحجب الفتح عند **50 فتحاً في اليوم** أو **150 فتحاً في أسبوع** (أي 7 أيام متحركة) بتوقيت الرياض. الغرض حماية المحتوى من السحب الآلي.",
     ],
+  },
+  {
+    title: "١١. الأجهزة",
+    paragraphs: [
+      "يُسمح بجهازين لاستخدام المكتبة. الجهاز الثالث يُرفض ويختار المستخدم جهازاً يحذفه، ولا يُوقَف الحساب بسبب ذلك. ويُرسَل رمز تحقق إلى البريد عند أول دخول من جهاز جديد.",
+    ],
+  },
+  {
+    title: "١٢. صلاحية النقاط",
+    paragraphs: [
+      "النقاط المشحونة تنتهي بانتهاء صلاحية شحنتها وتُذكر عند الشراء: **ثلاثة أشهر** للشحنات الأقل من 500 وللشحنة 500، و**6 أشهر** لشحنة 1,000، و**12 شهراً** لشحنة 2,500 فأكثر. والبونص يتبع شحنته. وبما أن فتح المكتبة مشروط ببقاء رصيدك 50 نقطة فأكثر، فانتهاء صلاحية شحنة قد يُقفل التصفح حتى تشحن من جديد. أما الـ100 نقطة التأسيسية فصالحة طوال سنة العضوية. النقاط التي انتهت لا تُسترد نقداً ولا تُنقل.",
+    ],
+  },
+  {
+    title: "١٣. قواعد الخصم",
+    id: "discount",
+    paragraphs: [
+      "خصم المؤسس 15% على الشحن وعلى أي باقة تشتريها، **بما فيها تجديد اشتراكك السنوي نفسه بسعر التجديد المعلن وقتها**، ما دام اشتراكك السنوي ساريّاً وقت الشراء، وإذا لم تجدّد فقدته نهائياً. يُطبَّق **أعلى خصم واحد فقط** من بين خصم المؤسس والكوبونات والعروض، ولا يجتمع خصمان.",
+    ],
+  },
+  {
+    title: "١٤. منع الهندسة العكسية والسحب الآلي",
+    id: "anti-scraping",
+    paragraphs: [ANTI_SCRAPING_CLAUSE_AR],
+  },
+  {
+    title: "١٤-أ. الاستثناء الوحيد وحدوده",
+    paragraphs: [CRAWLER_EXCEPTION_AR.intro],
+    bullets: CRAWLER_EXCEPTION_AR.limits,
+    after: [CRAWLER_EXCEPTION_AR.closing],
+  },
+  {
+    title: "١٥. حجز التنقيب في النصوص والبيانات (TDM) واستعمال الذكاء الاصطناعي",
+    id: "tdm",
+    paragraphs: [TDM_RESERVATION_AR],
   },
 ]);
 
@@ -166,7 +258,7 @@ export const FOUNDER_PROTECTION_ITEMS: readonly TermsItem[] = Object.freeze([
 /** Every string the published page would render (for the placeholder test). */
 export function founderTermsText(): string {
   const items = [...FOUNDER_TERMS_ITEMS, ...FOUNDER_PROTECTION_ITEMS];
-  return items.flatMap((i) => [i.title, ...(i.paragraphs ?? []), ...(i.bullets ?? [])]).join("\n");
+  return items.flatMap((i) => [i.title, ...(i.paragraphs ?? []), ...(i.bullets ?? []), ...(i.after ?? [])]).join("\n");
 }
 
 /** `**bold**` → segments for rendering; odd indexes are bold. */

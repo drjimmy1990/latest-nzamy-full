@@ -13,7 +13,10 @@ import {
   arNumber,
   FOUNDER_REFUND_LINE_AR,
   FOUNDER_REFUND_LINE_EN,
+  IND_AI_REFUND_LINE_AR,
+  IND_AI_REFUND_LINE_EN,
   INSTANT_CANCEL_MINUTES,
+  LIBRARY_REFUND_MAX_FULL_TEXTS,
   promoPointsLinesAr,
   promoPointsLinesEn,
   renewalReminderLinesAr,
@@ -45,10 +48,16 @@ import {
 // remaining value is deducted at the upgrade. The owner's professional-fees
 // clause of ١٨٠ stays word for word (pricingHonesty.test.ts);
 // refundPolicy.test.ts pins the numbers to the constants and the refund code.
+// Batch l9 (owner register 14 items 16 / 31 / 44): the founder line is the
+// new /founder-terms item ٧ (no AI feature AND no more than 5 full texts
+// read); the subscriptions line adds the 5-file rule where the plan includes
+// the library; the individuals' AI plan says plainly it has no refund in
+// practice (IND_AI_REFUND_LINE_*).
 const AR = {
   minutes: arNumber(INSTANT_CANCEL_MINUTES),
   days: arNumber(WITHDRAWAL_DAYS),
   pct: arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT),
+  files: arNumber(LIBRARY_REFUND_MAX_FULL_TEXTS),
 };
 
 // ─── Sections ────────────────────────────────────────────────────────────────
@@ -90,6 +99,8 @@ const sections = {
         FOUNDER_REFUND_LINE_AR,
         // ٦٤: the library, the bundles and the other subscriptions follow the founder's rule.
         SUBSCRIPTION_REFUND_LINE_AR,
+        // l9 (register 16): the individuals' AI plan — no refund in practice, said plainly.
+        IND_AI_REFUND_LINE_AR,
         // ٦٤: the 5 % rule is the top-ups' alone.
         TOPUP_REFUND_LINE_AR,
         "يُرد المبلغ إلى وسيلة الدفع الأصلية، وبما لا يتجاوز المدد المبيّنة في القسم ٧ أدناه.",
@@ -184,6 +195,7 @@ const sections = {
         `**Instant cancellation of a purchase made by mistake** (requested from support): within (${INSTANT_CANCEL_MINUTES}) minutes of payment you may cancel the purchase for a full refund, provided no point has been used (0 points) and no file has been exported.`,
         FOUNDER_REFUND_LINE_EN,
         SUBSCRIPTION_REFUND_LINE_EN,
+        IND_AI_REFUND_LINE_EN,
         TOPUP_REFUND_LINE_EN,
         "Refunds go to the original payment method, within the periods set out in Section 7 below.",
         afterWithdrawalLineEn(),
@@ -271,12 +283,12 @@ export default function RefundPolicyPage() {
               {isRTL ? "سياسة الاسترجاع والاستبدال" : "Refund & Exchange Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ٢٠ نوفمبر ٢٠٢٦" : "Last updated: November 20, 2026"}
+              {isRTL ? "آخر تحديث: ٢١ نوفمبر ٢٠٢٦" : "Last updated: November 21, 2026"}
             </p>
             <div className={`mx-auto mt-4 max-w-lg rounded-xl border px-4 py-3 text-sm ${isDark ? "border-yellow-500/20 bg-yellow-500/5 text-yellow-300" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
               {isRTL
-                ? `إلغاء فوري خلال ${AR.minutes} دقيقة من الشراء بالخطأ (يُطلب من الدعم)، والاسترداد خلال ${AR.days} يوماً من الشراء بشرط عدم استخدام أي ميزة ذكاء اصطناعي (ولشحن النقاط: ألا يتجاوز المستخدم ${AR.pct}٪ من نقاط الشحنة)، واسترداد أتعاب الخدمات الفردية وفق الشروط أدناه.`
-                : `An instant cancel within ${INSTANT_CANCEL_MINUTES} minutes of a purchase made by mistake (requested from support), a refund within ${WITHDRAWAL_DAYS} days of purchase provided no AI feature was used (for point top-ups: at most ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of the top-up's points used), and refunds for individual service fees per the terms below.`}
+                ? `إلغاء فوري خلال ${AR.minutes} دقيقة من الشراء بالخطأ (يُطلب من الدعم)، والاسترداد خلال ${AR.days} يوماً من الشراء بشرط عدم استخدام أي ميزة ذكاء اصطناعي وألا تتجاوز القراءة ${AR.files} ملفات نصاً كاملاً في المكتبة إن شملها الاشتراك (ولشحن النقاط: ألا يتجاوز المستخدم ${AR.pct}٪ من نقاط الشحنة)، واسترداد أتعاب الخدمات الفردية وفق الشروط أدناه.`
+                : `An instant cancel within ${INSTANT_CANCEL_MINUTES} minutes of a purchase made by mistake (requested from support), a refund within ${WITHDRAWAL_DAYS} days of purchase provided no AI feature was used and, where the plan includes the library, no more than ${LIBRARY_REFUND_MAX_FULL_TEXTS} files were read in full text (for point top-ups: at most ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of the top-up's points used), and refunds for individual service fees per the terms below.`}
             </div>
           </motion.div>
         </div>

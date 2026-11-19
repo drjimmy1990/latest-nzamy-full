@@ -211,7 +211,7 @@ export function PaymentRulesCard() {
         </section>
 
         <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-          <p className={label}>نسبة خصم العضو المؤسس على شحن النقاط وحده (٪){notStored(FOUNDER_DISCOUNT_SETTING_KEY)}</p>
+          <p className={label}>نسبة خصم العضو المؤسس على شحن النقاط وعلى أي باقة أو اشتراك مكتبة (٪){notStored(FOUNDER_DISCOUNT_SETTING_KEY)}</p>
           <div className="mt-3 flex items-center gap-3">
             <input className={input} inputMode="decimal" value={bpsPct} onChange={(e) => setBpsPct(e.target.value)} aria-label="نسبة خصم المؤسس" />
             {saveButton(FOUNDER_DISCOUNT_SETTING_KEY, saveRate)}
@@ -220,9 +220,9 @@ export function PaymentRulesCard() {
         </section>
 
         <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-          <p className={label}>مدة خصم المؤسس على الشحن (founder_topup_discount_expires){notStored(FOUNDER_DISCOUNT_EXPIRES_KEY)}</p>
+          <p className={label}>مدة خصم المؤسس (founder_topup_discount_expires){notStored(FOUNDER_DISCOUNT_EXPIRES_KEY)}</p>
           <p className={`mt-1 ${hint}`}>
-            قرار المالك: سنة العضوية من التفعيل (١٢ شهراً)، وينتهي الخصم بانتهاء هذه المدة. وإن غيّرتها فحدّث نص شروط باقة المؤسس معها.
+            قرار المالك (السجل ١٤ البنود ٢٩ و٣٢ و٥٥): الخصم على الشحن وعلى أي باقة ما دام اشتراك المؤسس السنوي سارياً، أي سنة العضوية من التفعيل (١٢ شهراً) حتى يُبنى التجديد. وإن غيّرتها فحدّث نص شروط باقة المؤسس معها.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <label className={`flex items-center gap-2 ${hint}`}>

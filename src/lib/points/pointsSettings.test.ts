@@ -18,6 +18,7 @@ import {
   giftExpiry,
   giftValidDaysIssue,
   libraryPlanPointsIssue,
+  libraryPlanPointsLine,
   parseGiftValidDays,
   parseLibraryPlanPoints,
   readGiftValidDays,
@@ -91,5 +92,19 @@ test("the admin settings route accepts the four keys, each with its validator", 
   ]) {
     assert.ok(src.includes(`  "${key}",`), key);
     assert.ok(src.includes(`  ${key}: ${fn},`), fn);
+  }
+});
+
+test("l9 (owner file 15 row 13): every library plan card states the points it includes, from the code default", () => {
+  assert.equal(libraryPlanPointsLine("lib-q1", "ar"), "٥٠ نقطة لمساعد المكتبة الذكي، تنتهي بانتهاء الاشتراك");
+  assert.equal(libraryPlanPointsLine("lib-q2", "ar"), "١٢٠ نقطة لمساعد المكتبة الذكي، تنتهي بانتهاء الاشتراك");
+  assert.equal(libraryPlanPointsLine("lib-annual", "en"), "300 points for the library's smart assistant, ending with the plan");
+  for (const rel of [["src", "constants", "pricing", "pricing.library.ts"], ["src", "app", "laws", "subscribe", "page.tsx"]]) {
+    const src = readFileSync(join(ROOT, ...rel), "utf8");
+    for (const id of Object.keys(DEFAULT_LIBRARY_PLAN_POINTS)) {
+      for (const lang of ["ar", "en"]) {
+        assert.ok(src.includes(`libraryPlanPointsLine("${id}", "${lang}")`), `${rel.at(-1)} ${id} ${lang}`);
+      }
+    }
   }
 });

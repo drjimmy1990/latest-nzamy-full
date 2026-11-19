@@ -7,17 +7,23 @@
  * newest row in public.terms_acceptances is for an older version is then asked
  * again, once, on its next signed-in visit (TermsReacceptGate). Update the
  * modal's text in src/components/legal/TermsReacceptGate.tsx at the same
- * time: it names what changed in THIS version (the protection clause).
+ * time: it names what changed in THIS version.
+ *
+ * Batch l9 (owner register 14 items 31 / 58, 19 Nov 2026): 2026-11-21 — the
+ * ONE new terms version before payment goes live. /terms gains clauses 14
+ * (anti-scraping), 14-أ (its one narrow exception) and 15 (the TDM
+ * reservation), Arabic and English; /founder-terms gets the same version
+ * (FOUNDER_TERMS_VERSION, which must equal this — founderTerms.test.ts).
  *
  * Format: YYYY-MM-DD (the migration's CHECK refuses anything else).
  *
  * Pure: no imports, safe in client components and under `node --test`.
  */
-export const CURRENT_TERMS_VERSION = "2026-11-18";
+export const CURRENT_TERMS_VERSION = "2026-11-21";
 
 /** /terms «آخر تحديث» — the same day as CURRENT_TERMS_VERSION. */
-export const TERMS_LAST_UPDATED_AR = "١٨ نوفمبر ٢٠٢٦";
-export const TERMS_LAST_UPDATED_EN = "November 18, 2026";
+export const TERMS_LAST_UPDATED_AR = "٢١ نوفمبر ٢٠٢٦";
+export const TERMS_LAST_UPDATED_EN = "November 21, 2026";
 
 /** The /terms anchor of the «حماية المنصة ومحتواها» section. */
 export const PLATFORM_PROTECTION_ANCHOR = "platform-protection";

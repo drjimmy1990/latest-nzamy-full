@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => null)) as { practiceKind?: unknown } | null;
     const practiceKind = body?.practiceKind;
     if (!isPracticeKind(practiceKind)) {
-      return NextResponse.json({ error: "اختر: محامٍ مترافع أو مستشار قانوني." }, { status: 400 });
+      return NextResponse.json({ error: "اختر: محامٍ أو مستشار قانوني." }, { status: 400 });
     }
     const s = { user, ...(await readIsLawyer(supabase, user.id)) };
     if (s.failed) return NextResponse.json({ error: "تعذّر قراءة بيانات حسابك." }, { status: 500 });

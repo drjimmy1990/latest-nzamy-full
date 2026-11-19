@@ -1,4 +1,5 @@
 import { Plan } from "./pricing.types";
+import { libraryPlanPointsLine } from "../../lib/points/pointsSettings";
 
 /**
  * pricing.library.ts
@@ -46,6 +47,8 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-blue-200/60 dark:border-blue-500/20",
       features: {
         ai: [
+          // l9 (file 15 row 13): the points the plan includes (library_plan_points)
+          libraryPlanPointsLine("lib-q1", "ar"),
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات للزملاء لتجربة المكتبة",
@@ -72,6 +75,8 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-royal/20",
       features: {
         ai: [
+          // l9 (file 15 row 13): the points the plan includes (library_plan_points)
+          libraryPlanPointsLine("lib-q2", "ar"),
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات للزملاء لتجربة المكتبة",
@@ -101,6 +106,8 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-gold/20",
       features: {
         ai: [
+          // l9 (file 15 row 13): the points the plan includes (library_plan_points)
+          libraryPlanPointsLine("lib-annual", "ar"),
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
           "٣ دعوات للزملاء لتجربة المكتبة",
@@ -132,6 +139,8 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-blue-200/60 dark:border-blue-500/20",
       features: {
         ai: [
+          // l9 (file 15 row 13): the points the plan includes (library_plan_points)
+          libraryPlanPointsLine("lib-q1", "en"),
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
           "3 invitations for colleagues to try the library",
@@ -158,6 +167,8 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-royal/20",
       features: {
         ai: [
+          // l9 (file 15 row 13): the points the plan includes (library_plan_points)
+          libraryPlanPointsLine("lib-q2", "en"),
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
           "3 invitations for colleagues to try the library",
@@ -185,6 +196,8 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
       color: "border-gold/20",
       features: {
         ai: [
+          // l9 (file 15 row 13): the points the plan includes (library_plan_points)
+          libraryPlanPointsLine("lib-annual", "en"),
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
           "3 invitations for colleagues to try the library",

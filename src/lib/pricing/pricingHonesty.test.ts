@@ -448,7 +448,8 @@ test("P1 item 2: /services/individuals counts its own service cards", () => {
 
 test("P1 item 2 + l8 (٦٤): the CTA's refund line states the refund page's conditions — no AI for subscriptions, 5 % for top-ups only", () => {
   const cta = code("components/pricing/PricingCTA.tsx");
-  assert.match(cta, /استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه/);
+  // l9 (register 16): plus the 5-full-text rule of the library-including plans
+  assert.match(cta, /استرداد الاشتراك خلال ١٤ يوماً ما لم تُستخدم أي ميزة ذكاء اصطناعي ولم يُقرأ أكثر من ٥ ملفات نصاً كاملاً في المكتبة، وشحن النقاط ما لم يُستخدم أكثر من ٥٪ منه/);
   assert.doesNotMatch(cta, /ما لم يُستهلك أكثر من ٥٪ من النقاط/);
 });
 

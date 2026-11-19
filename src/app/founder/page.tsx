@@ -17,7 +17,6 @@ import { JoinButton } from "./_components/JoinButton";
 import { LibraryGifs } from "./_components/LibraryGifs";
 import { PulsePopup } from "./_components/PulsePopup";
 import { SampleMemos } from "./_components/SampleMemos";
-import { ToolsShowcase } from "./_components/ToolsShowcase";
 import { WindowLine } from "./_components/WindowLine";
 
 /**
@@ -39,8 +38,10 @@ import { WindowLine } from "./_components/WindowLine";
  * (FounderWindowProvider). Nothing time-dependent renders on the server.
  */
 
+// l9 (owner register 14 item 62): the «other tool» output stays an internal
+// entitlement and is not shown on this page nor in /founder-terms.
 const FOUNDER_DESCRIPTION =
-  "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، ومخرج مستقل من أدوات المحترفين، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.";
+  "عضوية تأسيسية محدودة للمحامي المرخص فقط: ستة أعمال قضائية بالصائغ القانوني، والمكتبة القانونية، لمدة اثني عشر شهراً من التفعيل.";
 
 // Owner 18 Nov, item 4.6: schema.org Product + Offer (price 2,996 SAR before
 // VAT from quote(), valid to the manifest's last day) — src/lib/publicSeo/structuredData.ts.
@@ -94,7 +95,8 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
   { q: "هل التنقيح يخصم عملاً آخر؟", a: "لا. جولة التنقيح الثانية داخل الجلسة نفسها لا تخصم من رصيد أعمالك." },
   {
     q: "ماذا يشمل السعر؟",
-    a: "يشمل ٦ أعمال قانونية. والمكتبة القانونية مفتوحة لك سنة كاملة من تفعيل الباقة، والشحن لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال الواحد عليه يخصم ٥ نقاط، فإذا نفدت أُغلق المساعد الذكي وحده حتى تشحن نقاطاً بما لا يقل عن الحد الأدنى للشحن لحسابك، وتبقى المكتبة مفتوحة طوال السنة.",
+    // l9 (register 14 items 6 / 48 / 63; /founder-terms item ٥): open for the year while the balance is 50 or more
+    a: "يشمل ٦ أعمال قانونية. والمكتبة القانونية مفتوحة لك طوال سنة العضوية بشرط ألا ينزل رصيدك عن ٥٠ نقطة، فإذا نزل عنها أُقفل التصفح حتى تشحن، والشحن لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية فتعمل المكتبة من اليوم الأول، وتُستعمل أيضاً في مساعد المكتبة الذكي، والسؤال الواحد عليه يخصم ٥ نقاط، ويقف المساعد إذا قلّ رصيدك عن كلفة السؤال، ويعود التصفح والمساعد بعد شحن النقاط بحد أدنى ٥٠ نقطة.",
   },
   { q: "هل السعر هو سعر كل مذكرة؟", a: "لا. ٢٬٩٩٦ ر.س قيمة الباقة كلها، وليست سعراً لعمل منفرد." },
   { q: "متى تبدأ مدة العضوية؟", a: "من لحظة تفعيل العضوية بعد توثيق الرخصة وإتمام السداد." },
@@ -103,11 +105,11 @@ const FAQ: Array<{ q: string; a: React.ReactNode }> = [
     a: "تحتفظ نظامي بحق تحديث عروضها وباقاتها في أي وقت بما يحفظ استمرارية الخدمة وجودتها، دون المساس بحقوق المشتركين المكتسبة في باقتهم. ويبقى ما اشتريته لك كاملاً طوال مدة عضويتك.",
   },
   {
-    // Owner 18 Nov (urgent fix of item ٧ of /founder-terms): 14 days, if no AI feature was used; browsing the library never blocks it.
+    // Owner 18 Nov (urgent fix of item ٧ of /founder-terms): 14 days, if no AI feature was used; l9 (register 16): and no more than 5 full texts read.
     q: "هل أستطيع الاسترداد؟",
     a: (
       <>
-        نعم، خلال ١٤ يوماً من الشراء إن لم تستخدم أي ميزة ذكاء اصطناعي في الباقة، ولا يمنع الاسترداد تصفح المكتبة، ويُردّ المبلغ كاملاً شاملاً الضريبة، وفق{" "}
+        نعم، خلال ١٤ يوماً من الشراء إن لم تستخدم أي ميزة ذكاء اصطناعي في الباقة ولم تقرأ أكثر من ٥ ملفات نصاً كاملاً في المكتبة، ولا يمنع الاسترداد تصفح المكتبة في هذه الحدود، ويُردّ المبلغ كاملاً شاملاً الضريبة، وفق{" "}
         <Link href={FOUNDER_TERMS_REFUND_PATH} className="font-bold text-[#0B3D2E] underline dark:text-[#E6CD8E]">
           صفحة الشروط
         </Link>
@@ -178,7 +180,6 @@ export default function FounderPage() {
                 </p>
                 <ul className="mt-5 space-y-2 text-[15px] text-[#E4EEE8]">
                   <li>✓ ستة أعمال قضائية كاملة بالصائغ القانوني</li>
-                  <li>✓ مخرج مستقل واحد تختاره من أدوات المحترفين</li>
                   <li>✓ مكتبة قانونية تغذّي الصائغ بالنص ولائحته</li>
                   <li>✓ ١٢ شهراً من التفعيل، دفعة واحدة بلا تجديد تلقائي</li>
                 </ul>
@@ -256,27 +257,14 @@ export default function FounderPage() {
           </div>
         </section>
 
-        {/* ── independent output ── */}
-        <section aria-labelledby="founder-h2b" className={darkSection}>
-          <div className={wrap}>
-            <h2 id="founder-h2b" className="font-brand text-[26px] font-extrabold leading-snug text-white md:text-[36px]">
-              مخرج مستقل واحد تختاره بنفسك من أدوات المحترفين
-            </h2>
-            <p className="mt-3.5 max-w-[44em] text-[#BFD3C9]">
-              يشمل عرض المؤسس مخرجاً واحداً إجمالياً تصرفه على أي أداة من هذه الأدوات. جرّب العينة قبل أن تقرر أين
-              تصرفه.
-            </p>
-            <div className="mt-9 rounded-3xl border border-white/10 bg-[#0B2B22] p-5 sm:p-7">
-              <ToolsShowcase />
-            </div>
-          </div>
-        </section>
+        {/* l9 (owner register 14 item 62): the «independent output» section is
+            removed — that entitlement stays internal, never shown here. */}
 
         {/* ── library ── */}
         <section aria-labelledby="founder-h2c" className={lightSection}>
           <div className={wrap}>
             <h2 id="founder-h2c" className={h2Light}>
-              مكتبة قانونية ضخمة لسنة كاملة من تفعيلك، تغذّي الصائغ بالنص ولائحته
+              مكتبة قانونية ضخمة مفتوحة لسنة كاملة بشرط ألا ينزل رصيدك عن 50 نقطة، تغذّي الصائغ بالنص ولائحته
             </h2>
             <p className={subLight}>ابحث، ثم افتح المادة، وستجد لائحتها التنفيذية تحتها مباشرة مع حالة السريان.</p>
             <LibraryGifs />
@@ -349,8 +337,8 @@ export default function FounderPage() {
                 <p className="mb-2.5 mt-1.5 text-sm font-bold text-[#7A5C16]">{FOUNDER_ONCE_LINE}</p>
                 <ul className="mb-3 list-disc space-y-1 ps-5 text-sm leading-relaxed">
                   <li>
-                    خصم المؤسس ١٥٪ على شحنات النقاط وحدها طوال سنة العضوية من تاريخ التفعيل، وإذا وُجد عرض عام أقل سعراً
-                    يُطبَّق عليك الأفضل فقط دون جمع الخصمين.
+                    خصم المؤسس ١٥٪ على شحنات النقاط وعلى أي باقة تشتريها من نظامي، بما فيها تجديد اشتراكك السنوي، ما دام
+                    اشتراكك السنوي سارياً، ويُفقد نهائياً إن انقطع. ويُطبَّق الأعلى خصم واحد فقط دون جمعه مع كوبون أو عرض آخر.
                   </li>
                   <li>١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي.</li>
                   <li>٣ دعوات تتجدد شهرياً لمحامين مرخصين جدد لم يسبق لهم التسجيل.</li>
@@ -374,9 +362,9 @@ export default function FounderPage() {
                   </table>
                 )}
                 <p className="text-sm leading-relaxed text-[#4B6158]">
-                  يشمل السعر ٦ أعمال قانونية. المكتبة مفتوحة سنة كاملة من تفعيل الباقة، والشحن
-                  لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية لمساعد المكتبة الذكي وحده، والسؤال عليه بـ٥ نقاط، وعند نفادها
-                  يُغلق المساعد وحده حتى تشحن نقاطاً بما لا يقل عن الحد الأدنى للشحن لحسابك، وتبقى المكتبة مفتوحة طوال السنة. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم التفعيل بعد
+                  يشمل السعر ٦ أعمال قانونية. المكتبة مفتوحة طوال سنة العضوية بشرط ألا ينزل رصيدك عن ٥٠ نقطة، والشحن
+                  لا يجدّد السنة. ويصلك ١٠٠ نقطة تأسيسية تُستعمل في المكتبة ومساعدها الذكي، والسؤال عليه بـ٥ نقاط، ويعود
+                  التصفح والمساعد بعد شحن النقاط بحد أدنى ٥٠ نقطة. دفعة سنوية واحدة، بلا تجديد تلقائي وبلا سحب لاحق من بطاقتك. يتم التفعيل بعد
                   توثيق الرخصة وإتمام السداد وحجز مقعدك، ويمكنك السداد قبل اكتمال التوثيق: {FOUNDER_PENDING_NOTE}
                 </p>
                 <p className="mt-3.5 rounded-xl border border-[#E8CF8A] bg-[#FFF3D6] px-3.5 py-2.5 text-[15px] font-bold text-[#5C4200]">

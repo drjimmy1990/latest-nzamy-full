@@ -72,6 +72,18 @@ function countMapIssue(name: string, value: unknown, max: number, keys?: readonl
   return null;
 }
 
+/**
+ * Batch l9 (owner file 15 row 13): the plan cards (/pricing library mode and
+ * /laws/subscribe) state the points a library plan includes — the code
+ * default of library_plan_points (what 20261127_40 seeded; an admin's change
+ * of the setting must be followed by this default). Arabic-Indic digits.
+ */
+export function libraryPlanPointsLine(planId: string, lang: "ar" | "en"): string {
+  const n = Object.hasOwn(DEFAULT_LIBRARY_PLAN_POINTS, planId) ? DEFAULT_LIBRARY_PLAN_POINTS[planId] : 0;
+  if (lang === "en") return `${n} points for the library's smart assistant, ending with the plan`;
+  return `${n.toLocaleString("ar-SA-u-nu-arab")} نقطة لمساعد المكتبة الذكي، تنتهي بانتهاء الاشتراك`;
+}
+
 // ── validators for /api/v1/admin/settings (null = acceptable) ──────────────
 export function libraryPlanPointsIssue(value: unknown): string | null {
   return countMapIssue(LIBRARY_PLAN_POINTS_KEY, value, MAX_POINTS, Object.keys(DEFAULT_LIBRARY_PLAN_POINTS));

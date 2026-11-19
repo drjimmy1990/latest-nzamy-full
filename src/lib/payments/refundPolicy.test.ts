@@ -42,6 +42,10 @@ import { quote } from "./catalog.ts";
 import { refundDecision, VOID_WINDOW_MS } from "./refundDecision.ts";
 import {
   FOUNDER_REFUND_LINE_AR,
+  FOUNDER_REFUND_LINE_EN,
+  IND_AI_REFUND_LINE_AR,
+  IND_AI_REFUND_LINE_EN,
+  LIBRARY_REFUND_MAX_FULL_TEXTS,
   SUBSCRIPTION_REFUND_LINE_AR,
   SUBSCRIPTION_REFUND_LINE_EN,
   TOPUP_REFUND_LINE_AR,
@@ -218,5 +222,20 @@ test("l8 (owner 18 Nov, 1.2 / ج8): ONE founder refund text — /founder-terms i
   const text = visible(PAGE);
   assert.ok(!text.includes("رصيد وحدات الاستخدام"));
   assert.ok(!text.includes("usage units"));
-  assert.ok(text.includes("٢٠ نوفمبر ٢٠٢٦"), "the last-update date moved");
+  assert.ok(text.includes("٢١ نوفمبر ٢٠٢٦"), "the last-update date moved (l9: the one new terms version)");
+});
+
+test("l9 (register 16 / 44): the 5-full-text rule on the founder and library-including lines; ind-ai says «no refund in practice»; the page shows all three", () => {
+  assert.equal(LIBRARY_REFUND_MAX_FULL_TEXTS, 5);
+  assert.ok(FOUNDER_REFUND_CLAUSE.includes("**وألا تكون قد قرأت أكثر من 5 ملفات نصاً كاملاً في المكتبة القانونية**"));
+  assert.ok(FOUNDER_REFUND_CLAUSE.includes("ولا يمنع الاسترداد تصفح المكتبة القانونية العادية في هذه الحدود"));
+  assert.ok(FOUNDER_REFUND_LINE_EN.includes("you have not read more than 5 files in full text in the legal library"));
+  assert.ok(SUBSCRIPTION_REFUND_LINE_AR.includes("وألا تكون قد قرأت أكثر من (٥) ملفات نصاً كاملاً في المكتبة القانونية إن كان الاشتراك يشمل المكتبة"));
+  assert.ok(SUBSCRIPTION_REFUND_LINE_EN.includes("you have not read more than (5) files in full text"));
+  assert.ok(IND_AI_REFUND_LINE_AR.includes("لا استرداد لها فعلياً"));
+  assert.ok(IND_AI_REFUND_LINE_EN.includes("in practice it has no refund"));
+  for (const name of ["IND_AI_REFUND_LINE_AR", "IND_AI_REFUND_LINE_EN"]) assert.ok(PAGE.includes(name), name);
+  // the CTA under /pricing says the same (the third refund text, l8)
+  const cta = readFileSync(join(ROOT, "src", "components", "pricing", "PricingCTA.tsx"), "utf8");
+  assert.ok(cta.includes("ولم يُقرأ أكثر من ٥ ملفات نصاً كاملاً في المكتبة"));
 });
