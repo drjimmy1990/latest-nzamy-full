@@ -7538,3 +7538,33 @@ select 'Reader law map by link type: library_reader_law_links_typed, service rol
                           where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
        as ok;
 -- <<< verify:l8_refbox
+-- >>> verify:l9_parser
+-- Batch l9-parser (owner file 18, our reply «خامساً» 2 + 3): run 20261129_70 BEFORE the next library load.
+select 'Amendment cards: article_amendments.decree_id / paragraphs / text_status / position, still server-only (run 20261129_70)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute
+         where attrelid = 'library.article_amendments'::regclass and not attisdropped
+           and attname in ('decree_id', 'paragraphs', 'text_status', 'position')) = 4
+       and not has_table_privilege('anon', 'library.article_amendments', 'SELECT')
+       and not has_table_privilege('authenticated', 'library.article_amendments', 'SELECT')
+       as ok;
+select 'Law summaries: laws.summary / summary_card / summary_status / summary_reviewed_at locked for anon; summary_brief = reviewed card first, else the preamble block (run 20261129_70)' as check,
+       case when (select pg_catalog.count(*) from pg_catalog.pg_attribute
+                   where attrelid = 'library.laws'::regclass and not attisdropped
+                     and attname in ('summary', 'summary_card', 'summary_status', 'summary_reviewed_at')) <> 4
+              or to_regprocedure('library.law_reviewed_summary_card(text, text)') is null then false else
+       not has_column_privilege('anon', 'library.laws', 'summary', 'SELECT')
+       and not has_column_privilege('anon', 'library.laws', 'summary_card', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.laws', 'summary', 'SELECT')
+       and not has_column_privilege('authenticated', 'library.laws', 'summary_card', 'SELECT')
+       and not has_function_privilege('anon', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and has_function_privilege('service_role', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and has_function_privilege('postgres', 'library.law_reviewed_summary_card(text, text)', 'EXECUTE')
+       and coalesce((select a.attgenerated = 's'
+                            and pg_catalog.pg_get_expr(d.adbin, d.adrelid) ~ 'law_reviewed_summary_card\(summary_card, summary_status\)'
+                            and pg_catalog.pg_get_expr(d.adbin, d.adrelid) ~ 'law_summary_brief\(preamble\)'
+                       from pg_catalog.pg_attribute a
+                       join pg_catalog.pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+                      where a.attrelid = 'library.laws'::regclass and a.attname = 'summary_brief' and not a.attisdropped), false)
+       end as ok;
+-- <<< verify:l9_parser
