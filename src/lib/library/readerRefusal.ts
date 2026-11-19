@@ -12,6 +12,8 @@
  *     print a made-up 60 minutes;
  *   - 429 `library_daily_limit`: the server's daily message (it is not an
  *     hourly cap, so «في هذه الساعة» would be false);
+ *   - 429 `library_weekly_limit` (20261129_40, register 14 item 8): the
+ *     server's 7-day message plus when the window lets one more in;
  *   - any other 429 (the proxy's per-minute rate limiter, no `code`): its own
  *     message.
  *
@@ -29,7 +31,7 @@ export interface ReaderLock {
   support: string;
 }
 
-export type ReaderLimitScope = "hourly" | "daily" | "rate";
+export type ReaderLimitScope = "hourly" | "daily" | "weekly" | "rate";
 
 /** One authorised device in a device-limit refusal (owner ٤٢٧). */
 export interface ReaderDevice {
@@ -132,6 +134,31 @@ export function dailyResetLineAr(resetsAt: string | null | undefined, now: numbe
   const rest = minutes % 60;
   return rest === 0 ? `يتجدد حدّك بعد ${hours} ساعة.` : `يتجدد حدّك بعد ${hours} ساعة و${rest} دقيقة.`;
 }
+/**
+ * Owner register 14 item 8: when the 7-day window (150 opens) lets one more
+ * document in — computed on the client from the body's `resetsAt` (a Riyadh
+ * midnight). Days and hours past a day, else the daily wording. null when the
+ * time is unknown or past.
+ */
+export function weeklyResetLineAr(resetsAt: string | null | undefined, now: number): string | null {
+  if (!resetsAt) return null;
+  const at = Date.parse(resetsAt);
+  if (!Number.isFinite(at) || at <= now) return null;
+  const minutes = Math.max(1, Math.ceil((at - now) / MINUTE_MS));
+  if (minutes < 24 * 60) {
+    const line = dailyResetLineAr(resetsAt, now);
+    return line ? line.replace("يتجدد حدّك", "يتجدد حدّك الأسبوعي") : null;
+  }
+  const days = Math.floor(minutes / (24 * 60));
+  const hours = Math.floor((minutes % (24 * 60)) / 60);
+  const d = countedAr(days, "يوم واحد", "يومين", "أيام", "يوماً");
+  if (hours === 0) return `يتجدد حدّك الأسبوعي بعد ${d}.`;
+  const h = countedAr(hours, "ساعة واحدة", "ساعتين", "ساعات", "ساعة");
+  return `يتجدد حدّك الأسبوعي بعد ${d} و${h}.`;
+}
+
+const WEEKLY_FALLBACK_AR =
+  "بلغت الحد الأسبوعي لفتح النص الكامل في المكتبة. الوثائق التي فتحتها اليوم تبقى متاحة لك.";
 const RATE_FALLBACK_AR = "طلبات كثيرة — حاول بعد قليل.";
 const LOCK_FALLBACK_AR = "أُوقفت القراءة في المكتبة القانونية لحسابك مؤقتاً.";
 
@@ -167,6 +194,11 @@ export function readerRefusalFrom(status: number, body: unknown, now: number): R
     const base = text(b.error) ?? DAILY_FALLBACK_AR;
     const reset = dailyResetLineAr(text(b.resetsAt), now);
     return { kind: "limit", scope: "daily", messageAr: reset ? `${base} ${reset}` : base };
+  }
+  if (b.code === "library_weekly_limit") {
+    const base = text(b.error) ?? WEEKLY_FALLBACK_AR;
+    const reset = weeklyResetLineAr(text(b.resetsAt), now);
+    return { kind: "limit", scope: "weekly", messageAr: reset ? `${base} ${reset}` : base };
   }
   return { kind: "limit", scope: "rate", messageAr: text(b.error) ?? RATE_FALLBACK_AR };
 }

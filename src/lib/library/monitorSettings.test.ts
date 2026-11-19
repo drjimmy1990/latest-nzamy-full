@@ -39,6 +39,7 @@ test("every field is a column of the settings table, with the same bounds and de
   const table = SQL.slice(SQL.indexOf("create table if not exists public.library_monitor_settings"), SQL.indexOf("insert into public.library_monitor_settings"));
   for (const f of MONITOR_SETTINGS_FIELDS) {
     if (f.column === "auto_lock_hours") continue; // added by 20261103_10 — its own test below
+    if (f.column === "daily_full_read_limit" || f.column === "weekly_full_read_limit") continue; // 20261129_40 — its own test below
     const line = table.split("\n").find((l) => l.trim().startsWith(`${f.column} `));
     assert.ok(line, `${f.column} is not a column`);
     const def = MONITOR_SETTINGS_DEFAULTS[f.key];
@@ -85,10 +86,41 @@ test("auto_lock_hours: the patch bounds, and a row without the column reads 24",
 test("MONITOR_SETTINGS_SELECT_V1 is the select before 20261103_10 (no auto_lock_hours); the full select names it", () => {
   assert.ok(!MONITOR_SETTINGS_SELECT_V1.split(", ").includes("auto_lock_hours"));
   assert.ok(MONITOR_SETTINGS_SELECT.split(", ").includes("auto_lock_hours"));
+  // batch l9: V1 also leaves out the two 20261129_40 columns (they came later)
   assert.deepEqual(
-    MONITOR_SETTINGS_SELECT.split(", ").filter((c) => c !== "auto_lock_hours"),
+    MONITOR_SETTINGS_SELECT.split(", ").filter((c) => c !== "auto_lock_hours" && c !== "daily_full_read_limit" && c !== "weekly_full_read_limit"),
     MONITOR_SETTINGS_SELECT_V1.split(", "),
   );
+});
+
+test("batch l9 (register 14 item 8, 20261129_40): the warning (30) and weekly (150) fields match the migration", async () => {
+  const { MONITOR_SETTINGS_SELECT_PRE_L9 } = await import("./monitorSettings.ts");
+  const sql = readFileSync(
+    join(import.meta.dirname, "..", "..", "..", "supabase", "migrations", "20261129_40_library_read_log.sql"),
+    "utf8",
+  );
+  const warn = MONITOR_SETTINGS_FIELDS.find((x) => x.key === "dailyWarnDocs");
+  const week = MONITOR_SETTINGS_FIELDS.find((x) => x.key === "weeklyDocs");
+  assert.ok(warn && warn.type === "int" && warn.column === "daily_full_read_limit" && warn.group === "caps");
+  assert.ok(week && week.type === "int" && week.column === "weekly_full_read_limit" && week.group === "caps");
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.dailyWarnDocs, 30);
+  assert.equal(MONITOR_SETTINGS_DEFAULTS.weeklyDocs, 150);
+  assert.match(sql, /add column if not exists daily_full_read_limit int not null default 30;/);
+  assert.match(sql, /add column if not exists weekly_full_read_limit int not null default 150;/);
+  assert.ok(sql.includes(`check (daily_full_read_limit between ${warn.min} and ${warn.max})`));
+  assert.ok(sql.includes(`check (weekly_full_read_limit between ${week.min} and ${week.max})`));
+  assert.deepEqual(
+    MONITOR_SETTINGS_SELECT.split(", ").filter((c) => c !== "daily_full_read_limit" && c !== "weekly_full_read_limit"),
+    MONITOR_SETTINGS_SELECT_PRE_L9.split(", "),
+  );
+  assert.equal(parseSettingsPatch({ weeklyDocs: 0 }).ok, false);
+  assert.equal(parseSettingsPatch({ dailyWarnDocs: 35 }).ok, true);
+  const route = readFileSync(
+    join(import.meta.dirname, "..", "..", "app", "api", "v1", "admin", "library-monitor", "settings", "route.ts"),
+    "utf8",
+  );
+  assert.ok(route.includes("MONITOR_SETTINGS_SELECT_PRE_L9") && route.includes("readLimitsMigrationMissing"));
+  assert.ok(route.includes("شغّل ملف الترحيل 20261129_40_library_read_log.sql أولاً"));
 });
 
 test("the settings route reads before 20261103_10 too: GET and PUT fall back to the V1 select on the missing column", () => {

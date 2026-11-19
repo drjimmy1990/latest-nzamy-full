@@ -85,7 +85,7 @@ export function LibraryPublicGuardSettings({ isDark }: { isDark: boolean }) {
       <h3 className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>حماية المكتبة العامة</h3>
       <p className={`text-xs mb-4 ${muted}`}>
         حدود التصفح للزائر والجلسة، والتحقق البشري (Turnstile) بعد العتبة، وعمق التصفح لغير المشترك، وما يُعرض مجاناً من الأحكام والفقه.
-        حد القراءة اليومي للنص الكامل (daily_full_read_limit) في صفحة «نشاط المكتبة».
+        حدود القراءة للنص الكامل (التحذير daily_full_read_limit، والحد اليومي الصلب daily_full_read_hard_cap، والحد الأسبوعي weekly_full_read_limit) في صفحة «نشاط المكتبة».
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {LIBRARY_PUBLIC_PROTECTION_FIELDS.map((f) => (

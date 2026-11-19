@@ -6,7 +6,8 @@ import { ShieldWarning, ArrowRight, ArrowClockwise, WhatsappLogo, Info } from "@
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { buildWhatsAppHref } from "@/components/floating/whatsappWorkflow";
-import { LOCK_DIALOG_TITLE_AR, libraryLockDialogTextAr, type ReaderLock } from "@/lib/library/readerRefusal";
+import { LOCK_DIALOG_TITLE_AR, libraryLockDialogTextAr, weeklyResetLineAr, type ReaderLock } from "@/lib/library/readerRefusal";
+import { libraryDailyWarningMessageAr, libraryWeeklyLimitMessageAr, LIBRARY_READ_QUOTA } from "@/lib/library/readQuota";
 import type { LibraryReadQuota } from "@/hooks/useLibraryStatus";
 
 /**
@@ -147,6 +148,51 @@ export function LibraryDailyLimitBanner({ quota }: { quota: LibraryReadQuota }) 
         </Link>
         .
       </p>
+    </div>
+  );
+}
+
+/**
+ * Register 14 item 8 (batch l9): the 7-day cap (150 full-text opens over the
+ * last 7 Riyadh days) — a banner, not a block: the documents opened today
+ * keep opening. The reset time is computed here, on the client.
+ */
+export function LibraryWeeklyLimitBanner({ quota }: { quota: LibraryReadQuota }) {
+  const { isDark } = useTheme();
+  const reset = weeklyResetLineAr(quota.weekResetsAt, Date.now());
+  const text = libraryWeeklyLimitMessageAr(quota.weekLimit ?? LIBRARY_READ_QUOTA.weeklyDocs);
+  return (
+    <div
+      dir="rtl"
+      role="status"
+      data-library-weekly-limit
+      className={`mx-auto mt-3 flex max-w-5xl items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
+        isDark ? "border-amber-500/20 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-900"
+      }`}
+    >
+      <Info size={18} weight="bold" className="mt-0.5 shrink-0" />
+      <p className="leading-relaxed">{reset ? `${text} ${reset}` : text}</p>
+    </div>
+  );
+}
+
+/**
+ * Register 14 item 8 (batch l9): the WARNING at daily_full_read_limit (30) —
+ * nothing is refused; the reader sees how many opens are left today.
+ */
+export function LibraryReadWarningBanner({ quota }: { quota: LibraryReadQuota }) {
+  const { isDark } = useTheme();
+  return (
+    <div
+      dir="rtl"
+      role="status"
+      data-library-read-warning
+      className={`mx-auto mt-3 flex max-w-5xl items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
+        isDark ? "border-sky-500/20 bg-sky-500/10 text-sky-200" : "border-sky-200 bg-sky-50 text-sky-900"
+      }`}
+    >
+      <Info size={18} weight="bold" className="mt-0.5 shrink-0" />
+      <p className="leading-relaxed">{libraryDailyWarningMessageAr(quota.usedToday, quota.dailyLimit)}</p>
     </div>
   );
 }

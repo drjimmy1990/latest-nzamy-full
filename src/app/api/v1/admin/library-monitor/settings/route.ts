@@ -9,7 +9,9 @@ import { isMissingColumnError } from "@/lib/library/optionalColumn";
 import {
   MONITOR_SETTINGS_DEFAULTS,
   MONITOR_SETTINGS_SELECT,
+  MONITOR_SETTINGS_SELECT_PRE_L9,
   MONITOR_SETTINGS_SELECT_V1,
+  READ_LIMIT_COLUMNS_L9,
   parseSettingsPatch,
   settingsFromRow,
 } from "@/lib/library/monitorSettings";
@@ -30,12 +32,18 @@ import {
  * MONITOR_SETTINGS_SELECT_V1 and answers autoLockHours 24 with
  * autoLockMigrationMissing: true; PUT refuses a patch that names it (503,
  * the file to run) and saves any other patch with the V1 select.
+ *
+ * daily_full_read_limit / weekly_full_read_limit (20261129_40, register 14
+ * item 8 — the 30 warning and the 150 7-day block) the same way: before that
+ * file runs GET reads without them (their defaults, readLimitsMigrationMissing:
+ * true) and PUT refuses a patch that names them (503, the file to run).
  */
 
 export const dynamic = "force-dynamic";
 
 const AUTO_LOCK_COLUMN = "auto_lock_hours";
 const AUTO_LOCK_MIGRATION_MISSING_AR = "شغّل ملف الترحيل 20261103_10_library_auto_lock_hours.sql أولاً";
+const READ_LIMITS_MIGRATION_MISSING_AR = "شغّل ملف الترحيل 20261129_40_library_read_log.sql أولاً";
 
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
 interface SettingsRead {
@@ -43,18 +51,33 @@ interface SettingsRead {
   error: { code?: string; message?: string } | null;
   /** True when the row was read without auto_lock_hours (20261103_10 not applied yet). */
   autoLockMigrationMissing: boolean;
+  /** True when the row was read without the 20261129_40 read-limit columns. */
+  readLimitsMigrationMissing: boolean;
+  /** The select that worked (the PUT answers with the same one). */
+  select: string;
 }
 
-/** The settings row with auto_lock_hours; before 20261103_10, read once more without it. */
+const missingReadLimit = (error: { code?: string; message?: string } | null) =>
+  READ_LIMIT_COLUMNS_L9.some((c) => isMissingColumnError(error, c));
+
+/**
+ * The settings row with every column; before 20261129_40 once more without
+ * its two columns; before 20261103_10 once more without auto_lock_hours.
+ */
 async function readSettingsRow(service: ServiceClient): Promise<SettingsRead> {
   const read = (select: string) =>
     service.from("library_monitor_settings").select(select).eq("id", true).maybeSingle();
+  const row = (r: { data: unknown }) => (r.data ?? null) as Record<string, unknown> | null;
   const full = await read(MONITOR_SETTINGS_SELECT);
-  if (!isMissingColumnError(full.error, AUTO_LOCK_COLUMN)) {
-    return { row: (full.data ?? null) as Record<string, unknown> | null, error: full.error, autoLockMigrationMissing: false };
+  if (!missingReadLimit(full.error) && !isMissingColumnError(full.error, AUTO_LOCK_COLUMN)) {
+    return { row: row(full), error: full.error, autoLockMigrationMissing: false, readLimitsMigrationMissing: false, select: MONITOR_SETTINGS_SELECT };
+  }
+  const preL9 = await read(MONITOR_SETTINGS_SELECT_PRE_L9);
+  if (!isMissingColumnError(preL9.error, AUTO_LOCK_COLUMN)) {
+    return { row: row(preL9), error: preL9.error, autoLockMigrationMissing: false, readLimitsMigrationMissing: true, select: MONITOR_SETTINGS_SELECT_PRE_L9 };
   }
   const v1 = await read(MONITOR_SETTINGS_SELECT_V1);
-  return { row: (v1.data ?? null) as Record<string, unknown> | null, error: v1.error, autoLockMigrationMissing: true };
+  return { row: row(v1), error: v1.error, autoLockMigrationMissing: true, readLimitsMigrationMissing: true, select: MONITOR_SETTINGS_SELECT_V1 };
 }
 
 export async function GET() {
@@ -72,6 +95,7 @@ export async function GET() {
           updatedBy: null,
           migrationMissing: true,
           autoLockMigrationMissing: true,
+          readLimitsMigrationMissing: true,
           message: MONITOR_MIGRATION_MISSING_AR,
         });
       }
@@ -88,6 +112,7 @@ export async function GET() {
         updatedBy: by ? people.get(by) ?? null : null,
         migrationMissing: false,
         autoLockMigrationMissing: read.autoLockMigrationMissing,
+        readLimitsMigrationMissing: read.readLimitsMigrationMissing,
       },
       { headers: { "Cache-Control": "private, no-store" } },
     );
@@ -117,17 +142,24 @@ export async function PUT(request: NextRequest) {
     if (namesAutoLock && beforeRead.autoLockMigrationMissing) {
       return NextResponse.json({ error: AUTO_LOCK_MIGRATION_MISSING_AR }, { status: 503 });
     }
+    const namesReadLimits = READ_LIMIT_COLUMNS_L9.some((c) => c in patch.columns);
+    if (namesReadLimits && beforeRead.readLimitsMigrationMissing) {
+      return NextResponse.json({ error: READ_LIMITS_MIGRATION_MISSING_AR }, { status: 503 });
+    }
 
     const { data, error } = await service
       .from("library_monitor_settings")
       .update({ ...patch.columns, updated_at: new Date().toISOString(), updated_by: gate.userId })
       .eq("id", true)
-      .select(beforeRead.autoLockMigrationMissing ? MONITOR_SETTINGS_SELECT_V1 : MONITOR_SETTINGS_SELECT)
+      .select(beforeRead.select)
       .maybeSingle();
     if (error) {
       // The column vanished between the two reads, or the patch named it: one statement, nothing saved.
       if (isMissingColumnError(error, AUTO_LOCK_COLUMN)) {
         return NextResponse.json({ error: AUTO_LOCK_MIGRATION_MISSING_AR }, { status: 503 });
+      }
+      if (missingReadLimit(error)) {
+        return NextResponse.json({ error: READ_LIMITS_MIGRATION_MISSING_AR }, { status: 503 });
       }
       if (isMigrationMissing(error.code)) {
         return NextResponse.json({ error: MONITOR_MIGRATION_MISSING_AR }, { status: 503 });
@@ -153,6 +185,7 @@ export async function PUT(request: NextRequest) {
       settings: after,
       updatedAt: (data as { updated_at?: string }).updated_at ?? null,
       autoLockMigrationMissing: beforeRead.autoLockMigrationMissing,
+      readLimitsMigrationMissing: beforeRead.readLimitsMigrationMissing,
     });
   } catch (err) {
     console.error("[admin/library-monitor/settings PUT] unexpected:", err instanceof Error ? err.name : "error");

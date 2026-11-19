@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { hasFullLibraryAccess } from "@/lib/access-control";
+import { libraryFullAccessState } from "@/lib/access-control";
 import { isAuthUnavailable, authUnavailableResponse } from "@/lib/auth/apiAuth";
 import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
@@ -28,6 +28,11 @@ import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
  * for this signed-in account's type (the dashboard sidebar hides the library
  * and the library banner hides itself); such an account never has the full
  * library. A guest: false.
+ *
+ * Register 14 item 48 (batch l9): `pointsLock` — {code, message, balance,
+ * minPoints, topupHref} when a library subscriber's balance is below
+ * library_min_points_to_browse (src/lib/library/pointsGate.ts); hasFullAccess
+ * is then false. null otherwise (a guest included).
  */
 
 // Per viewer and per request: never from a cache.
@@ -44,14 +49,21 @@ export async function GET() {
       return res;
     }
 
-    const [hasFull, account] = await Promise.all([
-      hasFullLibraryAccess(user?.id ?? null),
+    const [full, account] = await Promise.all([
+      libraryFullAccessState(user?.id ?? null),
       user ? readLibraryAccountAccess(user.id) : Promise.resolve(null),
     ]);
     const accountLocked = account !== null && !account.allowed;
-    return NextResponse.json({ hasFullAccess: hasFull && !accountLocked, accountLocked }, { headers: NO_STORE });
+    return NextResponse.json(
+      {
+        hasFullAccess: full.hasFullAccess && !accountLocked,
+        accountLocked,
+        pointsLock: accountLocked ? null : full.pointsLock,
+      },
+      { headers: NO_STORE },
+    );
   } catch (err) {
     console.error("[library access] full-access read failed:", err instanceof Error ? err.message : err);
-    return NextResponse.json({ hasFullAccess: false, accountLocked: false }, { headers: NO_STORE });
+    return NextResponse.json({ hasFullAccess: false, accountLocked: false, pointsLock: null }, { headers: NO_STORE });
   }
 }

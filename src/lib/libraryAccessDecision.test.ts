@@ -109,12 +109,15 @@ test("isPlatformAdmin reads profiles.user_type with the service client and never
   assert.match(fn, /if \(error \|\| !data\) \{?/);
 });
 
-test("hasFullLibraryAccess: tier, admin and grant read together, then the one rule", () => {
+test("hasFullLibraryAccess: tier, admin and grants read together, then the one rule (+ the l9 50-point gate)", () => {
   const fn = fnSource("hasFullLibraryAccess");
   assert.match(fn, /^export async function hasFullLibraryAccess\(userId: string \| null\): Promise<boolean> \{/);
-  assert.match(fn, /if \(!userId\) return false;/);
-  assert.match(fn, /await Promise\.all\(\[\s*getUserTier\(userId\),\s*isPlatformAdmin\(userId\),\s*hasActiveLibraryGrant\(userId\),?\s*\]\)/);
-  assert.match(fn, /fullLibraryAccess\(\{ tier, isAdmin, hasLibraryGrant \}, TIER_RANK\)/);
+  assert.match(fn, /return \(await libraryFullAccessState\(userId\)\)\.hasFullAccess;/);
+  const state = fnSource("libraryFullAccessState");
+  assert.match(state, /if \(!userId\) return NO_FULL_LIBRARY;/);
+  assert.match(state, /await Promise\.all\(\[\s*knownTier !== undefined \? Promise\.resolve\(knownTier\) : getUserTier\(userId\),\s*isPlatformAdmin\(userId\),\s*activeLibraryGrantPlanRefs\(userId\),?\s*\]\)/);
+  assert.match(state, /fullLibraryAccess\(\{ tier, isAdmin, hasLibraryGrant: grants\.length > 0 \}, TIER_RANK\)/);
+  assert.match(state, /libraryPointsGateDecision\(/);
 });
 
 test("checkLibraryAccess and getLibraryAccessForUser decide full access by the same rule", () => {
@@ -129,16 +132,16 @@ test("checkLibraryAccess and getLibraryAccessForUser decide full access by the s
   assert.match(forUser, /const hasFullAccess = await fullLibraryAccessForTier\(userId, tier\);/);
   assert.match(accessControlSource, /hasFullAccess: boolean; \/\/ Pro\+ tier, an active library grant, or an admin/);
 
-  // The shared step: a guest reads nothing more, a Pro+ tier skips the two reads.
+  // The shared step: a guest reads nothing more, a Pro+ tier skips the other reads.
   const shared = accessControlSource.slice(accessControlSource.indexOf("async function fullLibraryAccessForTier("));
-  assert.match(shared, /if \(!userId\) return false;/);
-  assert.match(shared, /await Promise\.all\(\[isPlatformAdmin\(userId\), hasActiveLibraryGrant\(userId\)\]\)/);
-  assert.match(shared, /return fullLibraryAccess\(\{ tier, isAdmin, hasLibraryGrant \}, TIER_RANK\);/);
+  assert.match(shared, /return \(await libraryFullAccessState\(userId, tier\)\)\.hasFullAccess;/);
+  const state = fnSource("libraryFullAccessState");
+  assert.match(state, /if \(knownTier !== undefined && fullLibraryAccess\(\{ tier: knownTier, isAdmin: false, hasLibraryGrant: false \}, TIER_RANK\)\) \{\s*return FULL_LIBRARY;/);
 });
 
 test("access-control imports the rule and the grant read, not a second ranking", () => {
   assert.match(accessControlSource, /import \{ fullLibraryAccess \} from "@\/lib\/libraryAccessDecision";/);
-  assert.match(accessControlSource, /import \{ hasActiveLibraryGrant \} from "@\/lib\/libraryAccessServer";/);
+  assert.match(accessControlSource, /import \{ activeLibraryGrantPlanRefs \} from "@\/lib\/libraryAccessServer";/);
 });
 
 test("no library API route compares the tier with TIER_RANK.pro inline any more", () => {

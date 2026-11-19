@@ -85,6 +85,8 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
   const [missing, setMissing] = useState<string | null>(null);
   // 20261103_10 not applied yet: the settings route answers autoLockMigrationMissing and refuses the field.
   const [autoLockMissing, setAutoLockMissing] = useState(false);
+  // 20261129_40 not applied yet: the warning / weekly fields are shown but cannot be saved.
+  const [readLimitsMissing, setReadLimitsMissing] = useState(false);
 
   const [range, setRange] = useState<"today" | "week">("today");
   const [rows, setRows] = useState<ActivityRow[]>([]);
@@ -143,6 +145,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
       setUpdatedAt(typeof body.updatedAt === "string" ? body.updatedAt : null);
     }
     if (ok) setAutoLockMissing(body?.autoLockMigrationMissing === true);
+    if (ok) setReadLimitsMissing(body?.readLimitsMigrationMissing === true);
     if (body?.migrationMissing) setMissing(String(body.message ?? ""));
   }, []);
 
@@ -166,6 +169,7 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
       setDraft(body!.settings as MonitorSettings);
       setUpdatedAt(typeof body!.updatedAt === "string" ? body!.updatedAt : null);
       setAutoLockMissing(body!.autoLockMigrationMissing === true);
+      setReadLimitsMissing(body!.readLimitsMigrationMissing === true);
       setNotice({ ok: true, msg: "حُفظت الإعدادات. تسري على القرّاء خلال دقيقة." });
     }
     setBusy(null);
@@ -532,7 +536,8 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
             <div className="grid gap-3 md:grid-cols-2">
               {MONITOR_SETTINGS_FIELDS.filter((f) => f.group === g).map((f) => {
                 const lockFieldMissing = f.key === "autoLockHours" && autoLockMissing;
-                const disabled = (f.type === "int" && !!f.toggle && draft[f.toggle] === false) || lockFieldMissing;
+                const readLimitMissing = (f.key === "dailyWarnDocs" || f.key === "weeklyDocs") && readLimitsMissing;
+                const disabled = (f.type === "int" && !!f.toggle && draft[f.toggle] === false) || lockFieldMissing || readLimitMissing;
                 if (f.type === "bool") {
                   return (
                     <label key={f.key} className={`flex items-center gap-2 text-[12px] md:col-span-2 ${tp}`}>
@@ -584,6 +589,10 @@ export default function LibraryActivityPanel({ isDark, card }: Props) {
                     {lockFieldMissing ? (
                       <p className={`mt-0.5 text-[10px] font-bold ${isDark ? "text-amber-300" : "text-amber-700"}`}>
                         غير متاح بعد: تحديث قاعدة البيانات الخاص بمدة الإيقاف لم يُطبَّق. حتى يُطبَّق يبقى الإيقاف التلقائي حتى يرفعه المسؤول.
+                      </p>
+                    ) : readLimitMissing ? (
+                      <p className={`mt-0.5 text-[10px] font-bold ${isDark ? "text-amber-300" : "text-amber-700"}`}>
+                        غير متاح بعد: تحديث قاعدة البيانات الخاص بحدود القراءة (20261129_40) لم يُطبَّق.
                       </p>
                     ) : f.hintAr ? (
                       <p className={`mt-0.5 text-[10px] ${ts}`}>{f.hintAr}</p>

@@ -20,6 +20,7 @@ import {
   paymentsGatewaySettingIssue,
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
+import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -78,6 +79,9 @@ const ALLOWED_SETTINGS_KEYS = [
   "public_full_rulings_per_collection",
   // {"pages": n} — fiqh free pages (owner: 0, subscribers only).
   "library_feqh_free_pages",
+  // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
+  // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
+  "library_min_points_to_browse",
 ] as const;
 
 /**
@@ -158,6 +162,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_public_protection: libraryPublicProtectionIssue,
   public_full_rulings_per_collection: publicRulingsIssue,
   library_feqh_free_pages: feqhFreePagesIssue,
+  // Batch l9 read: pure, covered by src/lib/library/pointsGate.test.ts.
+  library_min_points_to_browse: libraryMinPointsIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

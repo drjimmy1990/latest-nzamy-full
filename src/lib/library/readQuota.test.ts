@@ -292,3 +292,52 @@ test("TtlMemo: expires, and a hard cap drops the oldest", () => {
   t = 1011;
   assert.equal(memo.get("d"), undefined);
 });
+
+// ── batch l9 (register 14 item 8, 20261129_40): warning 30, weekly 150 ──────
+test("register 14 item 8: the warning (30) and the 7-day cap (150) fallbacks", () => {
+  assert.equal(LIBRARY_READ_QUOTA.warnDailyDocs, 30);
+  assert.equal(LIBRARY_READ_QUOTA.weeklyDocs, 150);
+});
+
+test("parseQuotaRow reads the 20261129_40 columns; an older answer leaves them null", () => {
+  const r = parseQuotaRow(row({ week_used: 120, week_limit: 150, warn_at: 30, week_resets_at: "2026-11-25T21:00:00+00:00" }))!;
+  assert.deepEqual([r.weekUsed, r.weekLimit, r.warnAt, r.weekResetsAt], [120, 150, 30, "2026-11-25T21:00:00+00:00"]);
+  const old = parseQuotaRow(row({}))!;
+  assert.deepEqual([old.weekUsed, old.weekLimit, old.warnAt, old.weekResetsAt], [null, null, null, null]);
+});
+
+test("over_weekly → 429 library_weekly_limit with the 7-day limit and the window's reset", () => {
+  const now = Date.parse("2026-11-20T10:00:00Z");
+  const r = quotaRefusal(parseQuotaRow(row({
+    status: "over_weekly", used_today: 10, day_limit: 50, week_used: 150, week_limit: 150,
+    resets_at: "2026-11-21T21:00:00+00:00", week_resets_at: "2026-11-21T21:00:00+00:00",
+  })) as QuotaRow, now)!;
+  assert.equal(r.status, 429);
+  assert.equal(r.body.code, "library_weekly_limit");
+  assert.equal(r.body.limit, 150);
+  assert.equal(r.body.resetsAt, "2026-11-21T21:00:00+00:00");
+  assert.match(r.body.error, /الحد الأسبوعي/);
+  assert.match(r.body.error, /150 وثيقة خلال آخر ٧ أيام بتوقيت الرياض/);
+  assert.ok(!/\d{4}-\d{2}-\d{2}/.test(r.body.error), "no date inside the server string (cached-date trap)");
+  assert.ok(r.retryAfterSeconds && r.retryAfterSeconds > 3600);
+});
+
+test("the 30 warning names the opens left before the hard cap and when it renews", async () => {
+  const { libraryDailyWarningMessageAr } = await import("./readQuota.ts");
+  const m = libraryDailyWarningMessageAr(30, 50);
+  assert.match(m, /فتحت اليوم النص الكامل لـ30 وثيقة/);
+  assert.match(m, /يبقى لك 20 قبل بلوغ الحد اليومي \(50 وثيقة\)/);
+  assert.match(m, /منتصف الليل بتوقيت الرياض/);
+});
+
+test("20261129_40: the read log is service-role only, admins are counted, and the device rule never ends a platform session", () => {
+  const sql = fs.readFileSync(path.resolve(HERE, "..", "..", "..", "supabase", "migrations", "20261129_40_library_read_log.sql"), "utf8")
+    .replace(/--.*$/gm, "");
+  assert.match(sql, /create table if not exists public\.full_text_reads/);
+  assert.match(sql, /revoke all on public\.full_text_reads from public, anon, authenticated;/);
+  assert.match(sql, /'over_weekly'::text/);
+  assert.ok(!/if v_type = 'admin' then\s+return query select 'exempt'/.test(sql.slice(sql.indexOf("create function public.library_read_quota_hit"), sql.indexOf("create or replace function public.library_device_gate"))),
+    "no admin exemption in the quota");
+  assert.ok(!/delete from auth\.(sessions|refresh_tokens)/.test(sql), "no session is ended");
+  assert.ok(!/'suspend'::text/.test(sql), "the third device is refused, never suspended");
+});
