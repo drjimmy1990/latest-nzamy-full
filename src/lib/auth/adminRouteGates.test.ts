@@ -323,6 +323,10 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "receipts/route.ts", method: "POST", action: "orders.manage", logs: 1 },
   { file: "tickets/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "tickets/[id]/route.ts", method: "PATCH", action: "tickets.manage", logs: 1 },
+  // l9 row 53: delete a (fake) ticket, the whole row kept in the audit log
+  { file: "tickets/[id]/route.ts", method: "DELETE", action: "tickets.manage", logs: 1 },
+  // l9 row 53: the support reply
+  { file: "tickets/[id]/reply/route.ts", method: "POST", action: "tickets.manage", logs: 1 },
   { file: "teams/route.ts", method: "PATCH", action: "staff.manage", logs: 1 },
   // P3 Task 10: «حملة المؤسس» — pause / resume and capacity (R2), and the R24 retry
   { file: "founder/sale/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
