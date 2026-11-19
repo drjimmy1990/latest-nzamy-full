@@ -7538,3 +7538,45 @@ select 'Reader law map by link type: library_reader_law_links_typed, service rol
                           where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
        as ok;
 -- <<< verify:l8_refbox
+
+-- >>> verify:l9_testinfra
+-- Batch l9-testinfra (owner file 19 §1ج: test tags, «مسح دفعة الاختبار», mail sink): run 20261129_90 before or after the deploy.
+select 'Test tags: is_test + test_batch with trg_test_tag on every listed table; none on profiles / test_accounts / admin_audit_events (run 20261129_90)' as check,
+       case when to_regclass('public.test_tag_tables') is null or to_regprocedure('public.test_tag_row()') is null then false else
+       not exists (select 1 from public.test_tag_tables t
+                    where to_regclass('public.' || quote_ident(t.table_name)) is not null
+                      and (cardinality(t.owner_columns) > 0 or cardinality(t.parent_refs) > 0)
+                      and not exists (select 1 from pg_catalog.pg_trigger g
+                                       where g.tgrelid = to_regclass('public.' || quote_ident(t.table_name))
+                                         and g.tgname = 'trg_test_tag' and not g.tgisinternal
+                                         and g.tgfoid = to_regprocedure('public.test_tag_row()')))
+       and exists (select 1 from public.test_tag_tables where table_name = 'service_requests')
+       and not exists (select 1 from information_schema.columns
+                        where table_schema = 'public' and column_name = 'is_test'
+                          and table_name in ('profiles', 'test_accounts', 'admin_audit_events', 'platform_staff', 'lawyer_profiles'))
+       end as ok;
+select 'Test batch purge + mail sink: service role only, definer; purge audit append-only (run 20261129_90)' as check,
+       case when to_regprocedure('public.test_batch_purge(text, boolean, uuid, text)') is null
+              or to_regprocedure('public.test_mail_sink_check(text, uuid[], text, text, text)') is null
+              or to_regclass('public.test_batch_purge_audit') is null then false else
+       not has_function_privilege('anon', 'public.test_batch_purge(text, boolean, uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_batch_purge(text, boolean, uuid, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_mail_sink_check(text, uuid[], text, text, text)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.test_account_set_batch(uuid, text, uuid)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.test_batch_purge(text, boolean, uuid, text)', 'EXECUTE')
+       and not has_table_privilege('authenticated', 'public.test_batch_purge_audit', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.test_mail_sink', 'SELECT')
+       and coalesce((select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+                      where p.oid = to_regprocedure('public.test_batch_purge(text, boolean, uuid, text)')), false)
+       and (select count(*) from pg_catalog.pg_trigger
+             where tgrelid = 'public.test_batch_purge_audit'::regclass and not tgisinternal
+               and tgname in ('trg_test_batch_purge_audit_append_only', 'trg_test_batch_purge_audit_no_truncate')) = 2
+       end as ok;
+select 'Every test account has a current test batch (run 20261129_90)' as check,
+       case when to_regclass('public.test_account_batches') is null or to_regprocedure('public.is_test_account(uuid)') is null then false else
+       not exists (select 1 from (select p.id from public.profiles p where p.is_demo
+                                  union select t.user_id from public.test_accounts t) x
+                    where public.is_test_account(x.id)
+                      and not exists (select 1 from public.test_account_batches b where b.user_id = x.id and b.until is null))
+       end as ok;
+-- <<< verify:l9_testinfra
