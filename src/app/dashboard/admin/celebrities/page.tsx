@@ -10,6 +10,8 @@ import {
   DotsThree,
 } from "@phosphor-icons/react";
 import Link from "next/link";
+import { isDemoMode } from "@/lib/runtimeMode";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type AmbStatus = "active" | "pending" | "paused";
@@ -141,7 +143,7 @@ function AmbCard({ amb, expanded, onToggle }: {
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function AdminCelebritiesPage() {
+function AdminCelebritiesPageDemo() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | AmbStatus>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -278,4 +280,21 @@ export default function AdminCelebritiesPage() {
       </div>
     </div>
   );
+}
+
+// File 15 row 27 (batch l9): «حذف بيانات وهمية من اللوحات» — real data or
+// «قريباً». This page rendered fixed rows (السفراء وإحالاتهم وعمولاتهم) as if
+// they were the signed-in account's; no table or route backs them. Outside
+// demo mode it is now «قريباً»; the demo screen above is kept for demo mode only.
+export default function AdminCelebritiesPage() {
+  if (!isDemoMode) {
+    return (
+      <DashboardComingSoon
+        title="سفراء نظامي"
+        description="هذه الصفحة غير متاحة حالياً. السفراء وإحالاتهم وعمولاتهم التي كانت تظهر هنا بيانات ثابتة لا تخص حسابك. لا توجد بيانات حقيقية خلف هذه الصفحة بعد، فلا تُعرض بيانات افتراضية مكانها."
+        backHref="/dashboard/admin"
+      />
+    );
+  }
+  return <AdminCelebritiesPageDemo />;
 }
