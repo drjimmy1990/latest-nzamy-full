@@ -22,6 +22,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { LibraryPublicGuardSettings } from "./_library-public-guard";
+import { LibraryPointsGateSettings } from "./_library-points-gate";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 import { PaymentRulesCard } from "./_components/PaymentRulesCard";
@@ -564,6 +565,10 @@ export default function AdminSettingsPage() {
 
           {/* ── Public library protection (batch l8-libguard, owner item 2) ── */}
           <LibraryPublicGuardSettings isDark={isDark} />
+
+          {/* ── The 50-point library gate (batch l9, register 14 item 48) ── */}
+          <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
+          <LibraryPointsGateSettings isDark={isDark} />
 
           {/* ── Divider ── */}
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />

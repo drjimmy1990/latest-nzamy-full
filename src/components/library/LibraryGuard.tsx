@@ -5,7 +5,12 @@ import { useLibraryStatus } from "@/hooks/useLibraryStatus";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryClosedNotice from "./LibraryClosedNotice";
 import LibraryAccountLockedNotice from "./LibraryAccountLockedNotice";
-import LibrarySecurityLockNotice, { LibraryDailyLimitBanner } from "./LibrarySecurityLockNotice";
+import LibrarySecurityLockNotice, {
+  LibraryDailyLimitBanner,
+  LibraryReadWarningBanner,
+  LibraryWeeklyLimitBanner,
+} from "./LibrarySecurityLockNotice";
+import LibraryPointsLockBanner from "./LibraryPointsLockBanner";
 import { isCollectionReaderPath, isLawReaderPath, isOrderReaderPath } from "./libraryGuardPaths";
 
 /**
@@ -107,16 +112,26 @@ function GuardedContent({ children, pathname }: { children: React.ReactNode; pat
     return <LibrarySecurityLockNotice lock={lib.securityLock} />;
   }
 
-  // Owner note ١٣ C07: at the daily cap the documents already opened today
-  // still open; say so above the page rather than let a new one just fail.
-  if (lib.readQuota?.overDaily) {
-    return (
-      <>
-        <LibraryDailyLimitBanner quota={lib.readQuota} />
-        {children}
-      </>
-    );
-  }
-
-  return <>{children}</>;
+  // Register 14 item 48 (batch l9): a subscriber below the 50-point minimum
+  // reads what a visitor reads (the server decides); the banner says why and
+  // offers the top-up. Owner note ١٣ C07 / register 14 item 8: at the daily
+  // or 7-day cap the documents already opened today still open, and at the
+  // daily warning (30) nothing is refused — each is a banner above the page.
+  const quota = lib.readQuota;
+  const banner = quota?.overDaily ? (
+    <LibraryDailyLimitBanner quota={quota} />
+  ) : quota?.overWeekly ? (
+    <LibraryWeeklyLimitBanner quota={quota} />
+  ) : quota?.warn ? (
+    <LibraryReadWarningBanner quota={quota} />
+  ) : null;
+  // One shape whatever the banners: a banner appearing on the next status poll
+  // (the 30th open) must not remount the reader under it.
+  return (
+    <>
+      {lib.pointsLock ? <LibraryPointsLockBanner lock={lib.pointsLock} /> : null}
+      {banner}
+      {children}
+    </>
+  );
 }

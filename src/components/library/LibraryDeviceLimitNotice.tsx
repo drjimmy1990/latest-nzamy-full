@@ -81,8 +81,8 @@ export default function LibraryDeviceLimitPage({ refusal }: { refusal: DeviceRef
 /**
  * Owner ٤٠: «كل جهاز جديد يتطلب رمز تحقق على البريد». The code is sent only
  * when the user asks (never by a read), checked by the server, and on success
- * the page reloads with this device verified — the account's other sessions
- * are ended then («لا يُفتحان معاً»).
+ * the page reloads with this device verified. No other session of the account
+ * is ended (register 14 item 9: the rule is the library's only; 20261129_40).
  */
 function DeviceCodeCard({ messageAr }: { messageAr: string }) {
   const { isDark } = useTheme();

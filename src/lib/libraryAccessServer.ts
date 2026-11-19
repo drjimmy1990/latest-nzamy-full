@@ -71,6 +71,42 @@ export async function hasActiveLibraryGrant(userId: string): Promise<boolean> {
   }
 }
 
+/**
+ * The plan_ref of every library grant whose window covers now (batch l9, the
+ * 50-point gate: a paid plan or the founder is gated, a trial / invitation /
+ * admin grant is not). [] = no active grant; null = the read failed (the
+ * caller treats it as no grant: fail closed to the tier, as above). A missing
+ * table answers [] (logged once).
+ */
+export async function activeLibraryGrantPlanRefs(userId: string): Promise<string[] | null> {
+  if (typeof userId !== 'string' || userId.length === 0) return [];
+  try {
+    const supabase = await createServiceClient();
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('plan_ref')
+      .eq('user_id', userId)
+      .lte('starts_at', nowIso)
+      .gt('ends_at', nowIso)
+      .limit(50);
+    if (error) {
+      if (isMissingLibraryGrantsTable(error.code)) {
+        logMissingTableOnce();
+        return [];
+      }
+      console.error('[libraryAccess] activeLibraryGrantPlanRefs query failed:', error.code, error.message);
+      return null;
+    }
+    return ((data ?? []) as Array<{ plan_ref?: unknown }>)
+      .map((r) => r.plan_ref)
+      .filter((p): p is string => typeof p === 'string' && p.length > 0);
+  } catch (err) {
+    console.error('[libraryAccess] activeLibraryGrantPlanRefs failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
 
 /**

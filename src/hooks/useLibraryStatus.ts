@@ -18,6 +18,22 @@ export interface LibraryReadQuota {
   dailyLimit: number;
   resetsAt: string | null;
   overDaily: boolean;
+  /** Register 14 item 8 (batch l9): the daily warning threshold (30) and whether it is reached. */
+  warnAt: number | null;
+  warn: boolean;
+  /** Full-text opens over the last 7 Riyadh days and the cap (150); null before 20261129_40. */
+  weekUsed: number | null;
+  weekLimit: number | null;
+  overWeekly: boolean;
+  weekResetsAt: string | null;
+}
+
+/** Register 14 item 48 (batch l9): a library subscriber below the 50-point minimum. */
+export interface LibraryPointsLockState {
+  message: string;
+  balance: number;
+  minPoints: number;
+  topupHref: string;
 }
 
 export interface LibraryStatusState {
@@ -31,6 +47,8 @@ export interface LibraryStatusState {
   readQuota: LibraryReadQuota | null;
   /** Owner item 9 (batch l8): the library is locked for this account's type. */
   accountLock: { message: string } | null;
+  /** Register 14 item 48 (batch l9): balance below library_min_points_to_browse. */
+  pointsLock: LibraryPointsLockState | null;
 }
 
 function parseLock(value: unknown): LibrarySecurityLock | null {
@@ -51,6 +69,8 @@ function parseAccountLock(value: unknown): { message: string } | null {
   return typeof message === "string" && message.trim() !== "" ? { message } : null;
 }
 
+const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
 function parseQuota(value: unknown): LibraryReadQuota | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
@@ -60,7 +80,24 @@ function parseQuota(value: unknown): LibraryReadQuota | null {
     dailyLimit: v.dailyLimit,
     resetsAt: typeof v.resetsAt === "string" ? v.resetsAt : null,
     overDaily: v.overDaily === true,
+    warnAt: num(v.warnAt),
+    warn: v.warn === true,
+    weekUsed: num(v.weekUsed),
+    weekLimit: num(v.weekLimit),
+    overWeekly: v.overWeekly === true,
+    weekResetsAt: typeof v.weekResetsAt === "string" ? v.weekResetsAt : null,
   };
+}
+
+function parsePointsLock(value: unknown): LibraryPointsLockState | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.message !== "string" || v.message.trim() === "") return null;
+  const balance = num(v.balance);
+  const minPoints = num(v.minPoints);
+  if (balance === null || minPoints === null) return null;
+  const href = typeof v.topupHref === "string" && /^\/(?!\/)/.test(v.topupHref) ? v.topupHref : "/pricing";
+  return { message: v.message, balance, minPoints, topupHref: href };
 }
 
 // Fail OPEN on a fetch error, mirroring the server's getLibraryStatus(). A
@@ -75,6 +112,7 @@ const DEFAULT_STATUS: LibraryStatusState = {
   securityLock: null,
   readQuota: null,
   accountLock: null,
+  pointsLock: null,
 };
 
 /**
@@ -115,6 +153,7 @@ export function useLibraryStatus(intervalMs = 60_000) {
             securityLock: parseLock(data.securityLock),
             readQuota: parseQuota(data.readQuota),
             accountLock: parseAccountLock(data.accountLock),
+            pointsLock: parsePointsLock(data.pointsLock),
           });
         }
       } catch {

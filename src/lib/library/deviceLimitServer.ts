@@ -29,13 +29,16 @@
  *     device_code_required; the code is sent and checked by
  *     /api/v1/library/devices/code and /verify);
  *   - a verified device opening with a session it did not open with before
- *     ends every OTHER session of the account («لا يُفتحان معاً»);
+ *     only records it: since 20261129_40 (register 14 item 9, gap #20.3) the
+ *     rule is the LIBRARY's — it never ends another session of the account
+ *     (20261127_60 did, which signed the user out of the whole platform);
  *   - a never-verified device while the verified ones fill the limit (the
  *     third device) is REFUSED with the list of devices (403 device_limit) —
  *     owner ٦٣ (18 Nov evening, batch l8) removed batch 7's suspension: the
  *     user removes an old device (on the refusal or at /laws/my), and this
- *     device then asks for its e-mail code. The gate still answers "suspend"
- *     there; deviceGateDecision reads it as the refusal.
+ *     device then asks for its e-mail code. 20261127_60 answered "suspend"
+ *     there (20261129_40 answers "refused"); deviceGateDecision reads both as
+ *     the refusal.
  *   When this server cannot send a code (no e-mail provider or no pepper) a
  *   new device with room is registered at once, as before — never a lock-out.
  *   Before 20261127_60 runs, the old library_device_check answers instead.

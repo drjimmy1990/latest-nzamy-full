@@ -18,10 +18,12 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 test("the answer is the server's full-library rule, for a guest too", () => {
-  assert.match(source, /import \{ hasFullLibraryAccess \} from "@\/lib\/access-control";/);
-  assert.match(source, /hasFullLibraryAccess\(user\?\.id \?\? null\)/);
+  // l9: the same rule through libraryFullAccessState, which also says why a subscriber is locked (50 points)
+  assert.match(source, /import \{ libraryFullAccessState \} from "@\/lib\/access-control";/);
+  assert.match(source, /libraryFullAccessState\(user\?\.id \?\? null\)/);
   // l8 owner item 9: a locked account never has the full library, and the answer says it is locked
-  assert.match(source, /NextResponse\.json\(\{ hasFullAccess: hasFull && !accountLocked, accountLocked \}/);
+  assert.match(source, /hasFullAccess: full\.hasFullAccess && !accountLocked,\s*accountLocked,/);
+  assert.match(source, /pointsLock: accountLocked \? null : full\.pointsLock/);
   // A guest is a 200 with false, never a 401.
   assert.doesNotMatch(source, /status: 401/);
   assert.doesNotMatch(source, /library-full-access/);

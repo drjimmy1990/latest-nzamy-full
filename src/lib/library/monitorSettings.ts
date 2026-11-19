@@ -55,9 +55,19 @@ const bool = (key: string, column: string, labelAr: string, group: SettingsGroup
   ({ key, column, type: "bool", labelAr, group });
 
 export const MONITOR_SETTINGS_FIELDS: readonly SettingsField[] = [
-  // Owner item 3.2 (batch l8): daily_full_read_limit — full-text opens per user per day (50).
-  int("dailyDocs", "daily_docs", 1, 100000, "حد القراءة اليومي (daily_full_read_limit): فتح النص الكامل لوثائق مختلفة في اليوم — الفرد", "caps"),
-  int("memberDailyDocs", "member_daily_docs", 1, 100000, "حد القراءة اليومي (daily_full_read_limit) — عضو المكتب أو الشركة", "caps"),
+  // Owner item 3.2 (batch l8) / register 14 item 8 (batch l9): the daily HARD
+  // cap — full-text opens per user per day (50), the owner's daily_full_read_hard_cap.
+  int("dailyDocs", "daily_docs", 1, 100000, "الحد اليومي الصلب (daily_full_read_hard_cap): فتح النص الكامل لوثائق مختلفة في اليوم — الفرد", "caps"),
+  int("memberDailyDocs", "member_daily_docs", 1, 100000, "الحد اليومي الصلب (daily_full_read_hard_cap) — عضو المكتب أو الشركة", "caps"),
+  // Register 14 item 8 (batch l9, 20261129_40): the warning (30, no refusal) and the 7-day block (150).
+  {
+    ...int("dailyWarnDocs", "daily_full_read_limit", 1, 100000, "تحذير القراءة اليومي (daily_full_read_limit): يُنبَّه القارئ عند فتح النص الكامل لهذا العدد في اليوم — بلا منع", "caps"),
+    hintAr: "اجعله أقل من الحد اليومي الصلب، وإلا لن يظهر التحذير قبل المنع.",
+  },
+  {
+    ...int("weeklyDocs", "weekly_full_read_limit", 1, 1000000, "حد القراءة الأسبوعي (weekly_full_read_limit): فتح النص الكامل خلال آخر ٧ أيام بتوقيت الرياض", "caps"),
+    hintAr: "يُحسب على آخر ٧ أيام (اليوم وستة قبله). من رُفع حده اليومي بحد خاص يُرفع حده الأسبوعي إلى ٧ أضعافه.",
+  },
   int("hourlyDocs", "hourly_docs", 1, 100000, "حد الوثائق المختلفة في الساعة", "caps"),
   int("lockAfterRefused", "lock_after_refused", 0, 100000, "إيقاف تلقائي بعد محاولة فتح هذا العدد من الوثائق بعد بلوغ الحد اليومي (٠ = لا إيقاف تلقائي)", "caps"),
   // 20261103_10 (owner q362): how long an AUTOMATIC lock lasts; admin locks keep the end the admin chose.
@@ -103,7 +113,7 @@ export type MonitorSettings = Record<string, number | boolean | string>;
  * rules stay admin alerts, not refusals, this batch.
  */
 export const MONITOR_SETTINGS_DEFAULTS: Readonly<MonitorSettings> = Object.freeze({
-  dailyDocs: 50, memberDailyDocs: 50, hourlyDocs: 50, lockAfterRefused: 60, autoLockHours: 24,
+  dailyDocs: 50, memberDailyDocs: 50, dailyWarnDocs: 30, weeklyDocs: 150, hourlyDocs: 50, lockAfterRefused: 60, autoLockHours: 24,
   ruleHourRequestsOn: true, ruleHourRequests: 240,
   ruleHourSearchesOn: true, ruleHourSearches: 60,
   ruleWeekDocsOn: true, ruleWeekDocs: 600,
@@ -117,12 +127,23 @@ export const MONITOR_SETTINGS_DEFAULTS: Readonly<MonitorSettings> = Object.freez
 
 export const MONITOR_SETTINGS_SELECT = ["updated_at", "updated_by", ...MONITOR_SETTINGS_FIELDS.map((f) => f.column)].join(", ");
 
+/** The two columns 20261129_40 adds (register 14 item 8). */
+export const READ_LIMIT_COLUMNS_L9: readonly string[] = Object.freeze(["daily_full_read_limit", "weekly_full_read_limit"]);
+
 /**
- * The select before 20261103_10 (no auto_lock_hours): the settings route
- * reads with it when the database answers that the column does not exist yet,
- * so the page keeps working whichever of the deploy and the SQL comes first.
+ * The select before 20261129_40 (no warning / weekly columns): the settings
+ * route reads with it when the database answers that one of them does not
+ * exist yet; the page then shows their defaults and refuses to save them.
  */
-export const MONITOR_SETTINGS_SELECT_V1 = ["updated_at", "updated_by", ...MONITOR_SETTINGS_FIELDS.filter((f) => f.column !== "auto_lock_hours").map((f) => f.column)].join(", ");
+export const MONITOR_SETTINGS_SELECT_PRE_L9 = ["updated_at", "updated_by", ...MONITOR_SETTINGS_FIELDS.filter((f) => !READ_LIMIT_COLUMNS_L9.includes(f.column)).map((f) => f.column)].join(", ");
+
+/**
+ * The select before 20261103_10 (no auto_lock_hours, nor the 20261129_40
+ * columns): the settings route reads with it when the database answers that
+ * the column does not exist yet, so the page keeps working whichever of the
+ * deploy and the SQL comes first.
+ */
+export const MONITOR_SETTINGS_SELECT_V1 = ["updated_at", "updated_by", ...MONITOR_SETTINGS_FIELDS.filter((f) => f.column !== "auto_lock_hours" && !READ_LIMIT_COLUMNS_L9.includes(f.column)).map((f) => f.column)].join(", ");
 
 /** A database row → the page's settings (a missing or odd column keeps its default). */
 export function settingsFromRow(row: Record<string, unknown> | null | undefined): MonitorSettings {
