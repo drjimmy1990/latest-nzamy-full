@@ -7538,3 +7538,14 @@ select 'Reader law map by link type: library_reader_law_links_typed, service rol
                           where p.oid = to_regprocedure('public.library_reader_law_links_typed(text, text[], integer)')), true)
        as ok;
 -- <<< verify:l8_refbox
+
+-- >>> verify:l9_dash
+-- Batch l9-dash (file 15 row 53, A1: support ticket replies): run 20261129_80 with the deploy (the code works without it; until it runs a session can plant a forged reply).
+select 'Support ticket replies: only the service role writes metadata.replies (trigger support_tickets_guard_replies, security invoker; run 20261129_80)' as check,
+       to_regprocedure('public.support_tickets_guard_replies()') is not null
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.support_tickets_guard_replies()')), true)
+       and exists (select 1 from pg_catalog.pg_trigger t
+                    where t.tgrelid = to_regclass('public.support_tickets')
+                      and t.tgname = 'support_tickets_guard_replies' and not t.tgisinternal and t.tgenabled <> 'D')
+       as ok;
+-- <<< verify:l9_dash

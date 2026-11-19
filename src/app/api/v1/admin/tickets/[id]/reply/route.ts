@@ -16,6 +16,10 @@ import { validateReply, withReply } from "@/lib/services/ticketReplies";
  * «open» moves to «pending» (the queue's «جارٍ»). The ticket's owner gets an
  * in-app notification pointing at the settings Help tab, where the reply is
  * shown. Staff role: tickets.manage; every reply is audited.
+ *
+ * Only the service role may write metadata.replies: 20261129_80 strips it
+ * from any insert or update made by a signed-in session (the owner's own
+ * insert policy would otherwise let him plant a «ردّ فريق الدعم»).
  */
 export async function POST(
   request: NextRequest,
@@ -49,7 +53,8 @@ export async function POST(
     const t = row as { id: string; user_id: string | null; subject: string; status: string; metadata: unknown; updated_at: string };
 
     const at = new Date().toISOString();
-    const metadata = withReply(t.metadata, { body: v.body, at, by: gate.userId });
+    // No staff id in the row (its owner can read it); logAdminAction records who replied.
+    const metadata = withReply(t.metadata, { body: v.body, at });
     if (!metadata) {
       return NextResponse.json({ error: "بلغت التذكرة الحد الأقصى للردود — أغلقها وافتح تذكرة جديدة." }, { status: 409 });
     }

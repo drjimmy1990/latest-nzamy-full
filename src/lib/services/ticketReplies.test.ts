@@ -26,18 +26,19 @@ test("validateReply: trimmed text between 2 and 4000 characters", () => {
 });
 
 test("withReply appends and keeps the rest of the metadata; a full ticket refuses", () => {
-  const meta = { user_name: "س", replies: [{ body: "أ", at: "2026-11-19T10:00:00Z", by: "s1" }] };
-  const next = withReply(meta, { body: "ب", at: "2026-11-19T11:00:00Z", by: "s2" });
+  const meta = { user_name: "س", replies: [{ body: "أ", at: "2026-11-19T10:00:00Z" }] };
+  const next = withReply(meta, { body: "ب", at: "2026-11-19T11:00:00Z" });
   assert.ok(next);
   assert.equal(next.user_name, "س");
   assert.equal((next.replies as unknown[]).length, 2);
   assert.equal(meta.replies.length, 1, "the input is not mutated");
-  assert.ok(withReply(null, { body: "ج", at: "2026-11-19T11:00:00Z", by: null }));
-  const full = { replies: Array.from({ length: TICKET_REPLIES_MAX }, () => ({ body: "x", at: "2026-11-19T10:00:00Z", by: null })) };
-  assert.equal(withReply(full, { body: "y", at: "2026-11-19T11:00:00Z", by: null }), null);
+  assert.ok(withReply(null, { body: "ج", at: "2026-11-19T11:00:00Z" }));
+  assert.ok(!JSON.stringify(next).includes("\"by\""), "no staff id is stored in a row its owner can read");
+  const full = { replies: Array.from({ length: TICKET_REPLIES_MAX }, () => ({ body: "x", at: "2026-11-19T10:00:00Z" })) };
+  assert.equal(withReply(full, { body: "y", at: "2026-11-19T11:00:00Z" }), null);
 });
 
-test("the user sees text and time only — never which staff member replied; junk rows are skipped", () => {
+test("the user sees text and time only — an old `by` field is never passed on; junk rows are skipped", () => {
   const meta = {
     replies: [
       { body: "الثاني", at: "2026-11-19T12:00:00Z", by: "staff-2" },
@@ -51,13 +52,13 @@ test("the user sees text and time only — never which staff member replied; jun
     { body: "الأول", at: "2026-11-19T10:00:00Z" },
     { body: "الثاني", at: "2026-11-19T12:00:00Z" },
   ]);
-  assert.equal(storedReplies(meta)[0].by, "staff-1");
+  assert.equal(Object.hasOwn(storedReplies(meta)[0], "by"), false);
   assert.deepEqual(replyDtos({}), []);
   assert.deepEqual(replyDtos("x"), []);
 });
 
 test("keepReplies: a PATCH can neither overwrite nor add replies", () => {
-  const existing = { a: 1, replies: [{ body: "r", at: "2026-11-19T10:00:00Z", by: null }] };
+  const existing = { a: 1, replies: [{ body: "r", at: "2026-11-19T10:00:00Z" }] };
   assert.deepEqual(keepReplies(existing, { b: 2, replies: [] }), { a: 1, b: 2, replies: existing.replies });
   assert.deepEqual(keepReplies({ a: 1 }, { replies: [{ body: "fake" }] }), { a: 1 });
   assert.deepEqual(keepReplies(null, null), {});
@@ -77,6 +78,14 @@ test("wiring: the admin reply route, the PATCH guard, the user DTO and both scre
   assert.match(admin, /value=\{replyText\}/);
   assert.match(admin, /onClick=\{sendReply\}/);
   assert.doesNotMatch(admin, /رد AI تلقائي/, "the button with no handler is gone");
+  assert.doesNotMatch(admin, /window\.prompt\(/, "the delete confirmation is typed on the page, not in a browser dialog");
+  assert.match(admin, /deleteConfirm\.trim\(\) !== "حذف"/);
   const help = read("app/settings/components/tabs/HelpTab.tsx");
   assert.match(help, /t\.replies/);
+  // the owner may insert / read his row: only the service role may write replies (20261129_80)
+  const sql = read("../supabase/migrations/20261129_80_support_ticket_replies_guard.sql");
+  assert.match(sql, /security invoker/);
+  assert.ok(sql.includes("current_user not in ('authenticated', 'anon')"));
+  assert.match(sql, /before insert or update on public\.support_tickets/);
+  assert.match(read("../supabase/migrations/_verify.sql"), /-- >>> verify:l9_dash[\s\S]*support_tickets_guard_replies[\s\S]*-- <<< verify:l9_dash/);
 });

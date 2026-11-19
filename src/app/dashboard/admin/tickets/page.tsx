@@ -166,6 +166,8 @@ export default function AdminTicketsPage() {
   const [replyText, setReplyText] = useState("");
   const [replying, setReplying] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Typed confirmation on the page itself (no blocking browser dialog): null = hidden.
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -260,8 +262,7 @@ export default function AdminTicketsPage() {
   // DELETE (owner: «حذف 3 تذاكر وهمية»): typed confirmation, then gone for good.
   async function deleteTicket() {
     if (!selectedTicket || deleting) return;
-    const typed = window.prompt(`حذف التذكرة «${selectedTicket.subject}» نهائياً — لا يمكن التراجع. اكتب «حذف» للتأكيد:`);
-    if (typed?.trim() !== "حذف") return;
+    if (deleteConfirm?.trim() !== "حذف") return;
     setDeleting(true);
     setActionErr("");
     try {
@@ -274,6 +275,7 @@ export default function AdminTicketsPage() {
       const goneId = selectedTicket.id;
       setRead((cur) => (cur && cur.ok ? listOk(cur.items.filter((t) => t.id !== goneId), Math.max(0, (cur.total ?? 1) - 1)) : cur));
       setSelectedTicket(null);
+      setDeleteConfirm(null);
     } catch {
       setActionErr("تعذّر الاتصال بالخادم — لم تُحذف التذكرة.");
     } finally {
@@ -378,7 +380,7 @@ export default function AdminTicketsPage() {
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.04 }}
-                onClick={() => { setSelectedTicket(ticket); setReplyText(""); setActionErr(""); }}
+                onClick={() => { setSelectedTicket(ticket); setReplyText(""); setActionErr(""); setDeleteConfirm(null); }}
                 className={`w-full grid grid-cols-[100px_1fr_100px_90px_90px_80px] gap-4 px-5 py-4 text-right transition-colors ${
                   isDark ? "hover:bg-white/[0.02]" : "hover:bg-zinc-50"
                 }`}
@@ -595,14 +597,34 @@ export default function AdminTicketsPage() {
                       <option value="closed">مغلق</option>
                     </select>
                     {/* The automatic AI-reply button had no handler and is gone (l9 row 53). */}
-                    <button
-                      type="button"
-                      onClick={deleteTicket}
-                      disabled={deleting}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 transition disabled:opacity-50"
-                    >
-                      {deleting ? "جارٍ الحذف…" : "حذف التذكرة"}
-                    </button>
+                    {deleteConfirm === null ? (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirm("")}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 transition"
+                      >
+                        حذف التذكرة
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <input
+                          value={deleteConfirm}
+                          onChange={(e) => setDeleteConfirm(e.target.value)}
+                          placeholder="اكتب «حذف» للتأكيد"
+                          aria-label="حذف نهائي لا يمكن التراجع عنه — اكتب «حذف» للتأكيد"
+                          className="w-36 text-xs rounded-lg border border-rose-500/30 bg-transparent px-2 py-1.5 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={deleteTicket}
+                          disabled={deleting || deleteConfirm.trim() !== "حذف"}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 text-white transition disabled:opacity-40"
+                        >
+                          {deleting ? "جارٍ الحذف…" : "حذف نهائي"}
+                        </button>
+                        <button type="button" onClick={() => setDeleteConfirm(null)} className="text-xs px-2 py-1.5 text-zinc-400">إلغاء</button>
+                      </span>
+                    )}
                   </div>
                   <button
                     type="button"
