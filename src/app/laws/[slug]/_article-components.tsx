@@ -24,6 +24,7 @@ import {
 } from "./_details-block";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { visibleAmendments } from "./_previous-versions";
+import { isPreambleEmpty } from "./_preamble";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { Hl, useHighlight, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
 import type { HighlightTerm } from "@/lib/search/multiColorSearch";
@@ -1209,6 +1210,10 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                       </div>
                       )}
                       {amend.summary && <p className={`text-[11px] mb-2 ${isDark ? "text-zinc-500" : "text-slate-500"}`}><Hl text={amend.summary} /></p>}
+                      {/* File 16 §4: never an empty card — an instrument whose previous text the corpus does not hold says so. */}
+                      {amend.textMissing && (
+                        <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{isRTL ? "نص ما قبل التعديل غير متوفر" : "Previous text not available"}</p>
+                      )}
                       {/* Owner note ١٢ §٣: «إظهار الفروق الملونة» — this version against the current text (_word-diff.tsx). */}
                       {amend.fullText && (
                         <PreviousVersionText
@@ -1314,16 +1319,6 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-function isPreambleEmpty(txt?: string): boolean {
-  if (!txt) return true;
-  const clean = txt
-    .replace(/<details>[\s\S]*?<\/summary>/gi, "")
-    .replace(/<\/details>/gi, "")
-    .replace(/لم تتوفر ديباجة/gi, "")
-    .replace(/لا توجد ديباجة/gi, "")
-    .trim();
-  return clean.length === 0;
-}
 
 export function PreambleBlock({
   text,

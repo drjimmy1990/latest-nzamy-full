@@ -154,7 +154,8 @@ test("owner ٢٦٠ opens nothing else in the law route: ديباجة, official m
   assert.match(route, /formatArticleWithPaywall\(a, hasFullAccess, freeLimit, !officialMeta\.officialMetaLocked, unnumbered\)/);
   assert.match(route, /const parentLocked = isArticleLocked\(article, hasFullAccess, freeLimit\);/);
   // The lock row is promised only for ديباجة text left once the card and the موجز are out.
-  assert.match(route, /preambleLocked: officialMeta\.officialMetaLocked && !!\(readerExtras\.preamble\.trim\(\) \|\| regulationExtras\.preamble\.trim\(\)\)/);
+  // File 16 §5: and never over headings and empty toggles alone (_preamble.ts).
+  assert.match(route, /preambleLocked: officialMeta\.officialMetaLocked && !\(isPreambleEmpty\(readerExtras\.preamble\) && isPreambleEmpty\(regulationExtras\.preamble\)\)/);
 });
 
 test("the catalogue sends the موجز to everyone through the same flag, from the service-role read", () => {

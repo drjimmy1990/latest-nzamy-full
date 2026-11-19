@@ -40,7 +40,7 @@ import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
 import { LawSummaryBox } from "./_summary-box";
 import { buildChapterTree } from "./_chapter-tree";
-import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, regulationCardId } from "./_reader-anchors";
+import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, jumpToReaderAnchor, regulationCardId } from "./_reader-anchors";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
 import { apiSlug } from '@/utils/apiSlug';
 import ScopedSearchPanel from "@/components/library/ScopedSearchPanel";
@@ -100,6 +100,9 @@ function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly un
   }, [query, hl, ...deps]);
   return null;
 }
+
+/** Owner file 16 §7: sub-legislation chips shown before «عرض المزيد» («بحد أقصى 2 أو 3»). */
+const REG_CHIPS_SHOWN = 3;
 
 function LawSystemPageContent() {
   const { isDark, isRTL }  = useTheme();
@@ -210,6 +213,8 @@ function LawSystemPageContent() {
   const initialViewMode = (searchParams?.get("viewMode") as "all" | "law" | "regulation" | "appendix") || "all";
   const [viewMode, setViewMode] = useState<"all" | "law" | "regulation" | "appendix">(initialViewMode);
   const [selectedRegName, setSelectedRegName] = useState<string | null>(null); // فلتر اللائحة المختارة عند تعددها
+  // Owner file 16 §7: the first REG_CHIPS_SHOWN sub-legislations, then «عرض المزيد».
+  const [showAllRegChips, setShowAllRegChips] = useState(false);
 
   useEffect(() => {
     const mode = searchParams?.get("viewMode");
@@ -366,6 +371,8 @@ function LawSystemPageContent() {
           // is a whitelist — omitting it here would silently discard the only
           // signal that the «اللائحة وحدها» tab is showing less than the law has.
           regulationInstrumentsLocked: data.regulationInstrumentsLocked || 0,
+          // File 16 §2: the full sub-legislation index (names and numbers, no text).
+          regulationIndex: Array.isArray(data.regulationIndex) ? data.regulationIndex : [],
         } as LawSystem);
       } catch (err) {
         if (cancelled) return;
@@ -619,6 +626,20 @@ function LawSystemPageContent() {
   );
   const regulationAnchorFor = useCallback(
     (articleId: string) => regulationAnchors.anchorByArticleId.get(articleId),
+    [regulationAnchors],
+  );
+  // File 16 §2: an index entry jumps to its card; a chip filter that hides it is cleared first.
+  const onRegulationCardJump = useCallback(
+    (cardId: string) => {
+      const owner = regulationAnchors.articleIdByCardId.get(cardId);
+      if (owner) setActiveId(owner);
+      if (document.getElementById(cardId)) {
+        jumpToReaderAnchor(isScrolling, cardId);
+        return;
+      }
+      setSelectedRegName(null);
+      window.setTimeout(() => jumpToReaderAnchor(isScrolling, cardId), 80);
+    },
     [regulationAnchors],
   );
 
@@ -1124,6 +1145,7 @@ function LawSystemPageContent() {
                 mode="index"
                 viewMode={viewMode as any}
                 regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
+                onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
               />
             </aside>
           )}
@@ -1302,7 +1324,10 @@ function LawSystemPageContent() {
                           >
                             {isRTL ? "الكل" : "All"}
                           </button>
-                          {instruments.map((inst) => (
+                          {instruments
+                            // File 16 §7: 2–3 sub-legislations, then «عرض المزيد»; a chosen one always stays visible.
+                            .filter((inst, i) => showAllRegChips || i < REG_CHIPS_SHOWN || inst.ref === selectedRegName)
+                            .map((inst) => (
                             <button
                               key={inst.ref}
                               onClick={() => setSelectedRegName(inst.ref)}
@@ -1315,6 +1340,15 @@ function LawSystemPageContent() {
                               {inst.ref}
                             </button>
                           ))}
+                          {!showAllRegChips && instruments.length > REG_CHIPS_SHOWN && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllRegChips(true)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
+                            >
+                              {isRTL ? `عرض المزيد (${instruments.length - REG_CHIPS_SHOWN})` : `Show more (${instruments.length - REG_CHIPS_SHOWN})`}
+                            </button>
+                          )}
                         </div>
                       )}
                       {visible.map((inst) => {
@@ -1759,6 +1793,7 @@ function LawSystemPageContent() {
                   setShowFolderModal={setShowFolderModal} setShowPaywall={setShowPaywall}
                   viewerIsSubscriber={viewerIsSubscriber} mode="index" viewMode={viewMode as any}
                   regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
+                  onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
                 />
               </div>
             </motion.div>

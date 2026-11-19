@@ -184,6 +184,12 @@ export interface LawSystem {
   regulationInstruments?: RegulationInstrument[]; // العرض المسطَّح "اللائحة وحدها"
   /** F13 — regulation articles withheld by the paywall */
   regulationInstrumentsLocked?: number;
+  /**
+   * File 16 §2 — the sub-legislation index for every viewer: each instrument's
+   * name and its articles' numbers, no text; `card` = [instrument, row] in
+   * regulationInstruments, null when the text is locked.
+   */
+  regulationIndex?: Array<{ name: string; entries: Array<{ label: string; locked: boolean; card: [number, number] | null }> }>;
   appendices?: LawAppendix[];    // جداول/ملاحق مستوى الوثيقة (اختياري — أنظمة قليلة فقط)
   /** Registry identity of the parent instrument, not a BOE law_guid. */
   parentLawId?: string;

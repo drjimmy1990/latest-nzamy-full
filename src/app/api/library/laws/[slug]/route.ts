@@ -18,6 +18,8 @@ import { latestLegislativeEvent } from '@/lib/library/legislativeEvent';
 import { lawArticleCounts } from '@/lib/library/lawCardFields';
 import { stripArticleAuditNotes, stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
 import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
+import { isPreambleEmpty } from '@/app/laws/[slug]/_preamble';
+import { buildRegulationIndex, compareRegulationSortKey, type RegulationIndexRow } from './_regulation-index';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -338,6 +340,8 @@ export async function GET(
     // not the rows: it renders the same lock/upgrade affordance the article
     // view renders, instead of an empty tab that reads as "no regulation".
     let regulationInstrumentsLocked = 0;
+    // File 16 §2: every row of this view, locked or not, for the index (names and numbers only).
+    const regulationIndexRows: RegulationIndexRow[] = [];
     articles?.forEach((article: Record<string, unknown>) => {
       const regRows = (article.article_regulations as Record<string, unknown>[]) || [];
       // F13: this view used to emit the FULL r.text of every regulation row for
@@ -352,6 +356,7 @@ export async function GET(
         if (!ref) return;
         // #26: a row with no text (once the audit notes are out) is no article of this view.
         if (!regulationRowText(r)) return;
+        regulationIndexRows.push({ ref, regNum: r.reg_num, sortKey: r.sort_key, locked: parentLocked });
         // Counted after the exclusions above: a dual-linked duplicate, a
         // ref-less row and an empty one are not "withheld", they are not part of this view at all.
         if (parentLocked) {
@@ -365,7 +370,7 @@ export async function GET(
     const regulationInstruments = Array.from(regulationsByRef.entries()).map(([ref, rows]) => ({
       ref,
       articles: [...rows]
-        .sort((a, b) => String(a.sort_key || '99999').localeCompare(String(b.sort_key || '99999')))
+        .sort((a, b) => compareRegulationSortKey(a.sort_key, b.sort_key))
         .map((r) => ({
           regNum: r.reg_num ?? null,
           text: regulationRowText(r),
@@ -373,6 +378,13 @@ export async function GET(
           systemArticleNumber: r.system_article_number ?? null,
         })),
     }));
+
+    // File 16 §2: the sub-legislation index for every viewer — names (cleaned
+    // like the per-article regulation names, owner ٤٢٤) and article numbers,
+    // never text. Built from the same rows, in the same order, as above.
+    const regulationIndex = buildRegulationIndex(regulationIndexRows, (ref) =>
+      regulationRefForViewer(ref, officialMeta.officialMetaLocked),
+    );
 
     // Owner note ١١: a document whose rows never name an article or item
     // (a guide split by topical headings) gets no invented «المادة N».
@@ -443,7 +455,9 @@ export async function GET(
       // Owner ٢٦٠: the card and the موجز are lifted out for every viewer now,
       // so a lock row is promised only for the ديباجة text left after them —
       // never for a preamble that was only the card and the law's title.
-      preambleLocked: officialMeta.officialMetaLocked && !!(readerExtras.preamble.trim() || regulationExtras.preamble.trim()),
+      // File 16 §5: no lock row over a preamble of headings and empty toggles
+      // (the reader hides such a preamble for a subscriber too).
+      preambleLocked: officialMeta.officialMetaLocked && !(isPreambleEmpty(readerExtras.preamble) && isPreambleEmpty(regulationExtras.preamble)),
       // N2.1: omitted (not empty) for a viewer the flag does not admit.
       ...(readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
       ...(readerExtras.metadata_card ? { metadata_card: readerExtras.metadata_card } : {}),
@@ -453,6 +467,7 @@ export async function GET(
       // An instrument whose every article is locked never appears in
       // regulationInstruments at all, so this is the only signal the page has.
       regulationInstrumentsLocked,
+      regulationIndex,
       // Paywall metadata for frontend
       paywall: {
         isWhitelisted,

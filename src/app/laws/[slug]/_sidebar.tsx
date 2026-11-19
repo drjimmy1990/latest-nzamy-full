@@ -9,7 +9,7 @@ import { lawStatusPresentation } from "../law-status";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { dbOfficialRowsUnderCard, gazetteIssueLabel, type LawOfficialMeta } from "./_official-meta";
 import { buildChapterTree } from "./_chapter-tree";
-import { jumpToReaderAnchor } from "./_reader-anchors";
+import { jumpToReaderAnchor, regulationCardId } from "./_reader-anchors";
 import { isPageNumberedDocument } from "./_page-count";
 import {
   articleTallyLabel,
@@ -65,6 +65,12 @@ interface SidebarPanelProps {
    * the current view are not listed. See _reader-anchors.ts.
    */
   regulationAnchorFor?: (articleId: string) => string | undefined;
+  /**
+   * File 16 §2: set with the flat view — an entry of the sub-legislation index
+   * (law.regulationIndex) jumps to its card through this (the page clears a
+   * chip filter that hides it).
+   */
+  onRegulationCardJump?: (cardId: string) => void;
 }
 
 export default function SidebarPanel({
@@ -87,6 +93,7 @@ export default function SidebarPanel({
   viewMode = "all",
   officialMeta,
   regulationAnchorFor,
+  onRegulationCardJump,
 }: SidebarPanelProps) {
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
   // Two-level contents: level-1 groups the reader has folded (by chapter id).
@@ -791,8 +798,44 @@ export default function SidebarPanel({
 
         {/* النتائج */}
         <div className="space-y-0.5">
-          {viewMode === "regulation" ? (
-            /* وضع اللائحة فقط — قائمة مسطحة من مواد اللائحة */
+          {viewMode === "regulation" && onRegulationCardJump && (law.regulationIndex?.length ?? 0) > 0 ? (
+            /* File 16 §2: the full sub-legislation index, for every viewer —
+               each instrument by its own name, each of its articles by its
+               own number. A locked article is listed with a lock (no text is
+               sent for it); an open one jumps to its card. */
+            (() => {
+              const q = jumpQuery.trim();
+              const groups = (law.regulationIndex ?? [])
+                .map((g) => ({ ...g, entries: q && !g.name.includes(q) ? g.entries.filter((e) => e.label.includes(q)) : g.entries }))
+                .filter((g) => g.entries.length > 0);
+              if (groups.length === 0) {
+                return <p className={`text-[10px] text-center py-3 ${muted}`}>{isRTL ? "لا توجد نتائج" : "No results"}</p>;
+              }
+              return groups.map((g, gi) => (
+                <div key={`${gi}-${g.name}`} data-testid="regulation-index-group">
+                  <p className={`text-[9px] font-bold px-2 py-1 ${muted}`} title={g.name}>{g.name}</p>
+                  {g.entries.map((e, ei) => (
+                    <button
+                      key={ei}
+                      onClick={() => {
+                        if (e.card) {
+                          onRegulationCardJump(regulationCardId(e.card[0], e.card[1]));
+                          setJumpQuery("");
+                        } else {
+                          setShowPaywall(true);
+                        }
+                      }}
+                      className={`w-full ${textStart} flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] transition ${isDark ? "text-zinc-500 hover:text-zinc-300" : "text-slate-500 hover:text-slate-700"}`}
+                    >
+                      {e.locked && <Lock size={9} className="flex-shrink-0" aria-label={isRTL ? "النص للمشتركين" : "Subscribers only"} />}
+                      <span className="truncate flex-1 font-medium">{e.label}</span>
+                    </button>
+                  ))}
+                </div>
+              ));
+            })()
+          ) : viewMode === "regulation" ? (
+            /* وضع اللائحة فقط — قائمة مسطحة من مواد اللائحة (data without regulationIndex) */
             (() => {
               const regArticles = law.chapters
                 .flatMap(ch => ch.articles)
