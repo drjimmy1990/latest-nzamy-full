@@ -20,11 +20,19 @@
  * The law page (route.ts) and the /laws card (/api/library/init) both count
  * with isLawChildOf, so the two numbers cannot disagree.
  *
+ * Owner file 16 §7 counts «التشريعات الفرعية» of both kinds: the regulations
+ * merged into the file and these linked documents. A linked child whose title
+ * is one of the merged names (the same regulation, also loaded as its own
+ * file) is left out here, so it is never shown or counted twice
+ * (childNamedAmongMerged; names compared in the card's form,
+ * subsidiaryNamesUnderBase).
+ *
  * Pure: `node --test` runs _children.test.ts.
  */
 import { EXEC_REGULATION_TYPE } from "../../../../laws/lawsIndexFacets.ts";
 import { lawStatusForDetail } from "../../../../laws/law-status.ts";
 import type { LawStatus } from "../../../../laws/data.ts";
+import { subsidiaryNamesUnderBase } from "../../../../laws/catalogueCardLabels.ts";
 
 /** Runaway guard for one law's children read (the largest parent today has a few dozen). */
 export const LAW_CHILDREN_MAX = 1000;
@@ -68,6 +76,18 @@ export function hijriSortKey(v: unknown): number | null {
   const day = m[3] ? Number(m[3]) : 0;
   if (month > 12 || day > 30) return null;
   return Number(m[1]) * 10000 + month * 100 + day;
+}
+
+/**
+ * True when the child's title is one of the parent's merged names, in the
+ * card's form (spaces collapsed, a trailing «… ل<base title>» dropped).
+ */
+export function childNamedAmongMerged(childTitle: unknown, parentTitle: unknown, mergedNames: readonly unknown[] | null | undefined): boolean {
+  const names = Array.isArray(mergedNames) ? mergedNames : [];
+  if (names.length === 0) return false;
+  const [child] = subsidiaryNamesUnderBase(str(parentTitle), [childTitle]);
+  if (!child) return false;
+  return subsidiaryNamesUnderBase(str(parentTitle), names).includes(child);
 }
 
 export interface LawChildRow {
@@ -129,14 +149,14 @@ export function sortLawChildren(
  */
 export function childCountsByParent(
   rows: readonly unknown[] | null | undefined,
-  parents: readonly { slug?: unknown; instrument_id?: unknown }[],
+  parents: readonly { slug?: unknown; instrument_id?: unknown; title?: unknown; mergedNames?: readonly unknown[] }[],
 ): Map<string, number> {
-  const byKey = new Map<string, { slug: string; instrument_id: string }>();
+  const byKey = new Map<string, { slug: string; instrument_id: string; title: unknown; mergedNames: readonly unknown[] }>();
   for (const p of parents) {
     const key = lawChildKey(p.instrument_id);
     const slug = str(p.slug);
     // instrument_id is unique in library.laws (20260919); keep the first anyway.
-    if (key && slug && !byKey.has(key)) byKey.set(key, { slug, instrument_id: key });
+    if (key && slug && !byKey.has(key)) byKey.set(key, { slug, instrument_id: key, title: p.title, mergedNames: p.mergedNames ?? [] });
   }
   const children = new Map<string, Set<string>>();
   for (const raw of rows ?? []) {
@@ -144,6 +164,7 @@ export function childCountsByParent(
     const row = raw as Record<string, unknown>;
     const parent = byKey.get(str(row.parent_law_id));
     if (!parent || !isLawChildOf(row, parent)) continue;
+    if (childNamedAmongMerged(row.title, parent.title, parent.mergedNames)) continue;
     if (!children.has(parent.slug)) children.set(parent.slug, new Set());
     children.get(parent.slug)!.add(str(row.slug));
   }
@@ -174,10 +195,14 @@ export interface LawSubLegislation {
  */
 export function lawChildrenForViewer(
   rows: readonly unknown[] | null | undefined,
-  parent: { slug?: unknown; instrument_id?: unknown },
+  parent: { slug?: unknown; instrument_id?: unknown; title?: unknown },
   showOfficialDates: boolean,
+  /** The raw names of the regulations merged into the parent's file: a child among them is left out. */
+  mergedNames: readonly unknown[] = [],
 ): LawSubLegislation {
-  const children = sortLawChildren(rows, parent).map((c): LawChildItem => {
+  const children = sortLawChildren(rows, parent)
+    .filter((c) => !childNamedAmongMerged(c.title, parent.title, mergedNames))
+    .map((c): LawChildItem => {
     const date = showOfficialDates ? str(c.issue_date_hijri) : "";
     return {
       slug: c.slug,

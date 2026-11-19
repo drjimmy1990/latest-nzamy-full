@@ -493,7 +493,14 @@ export async function GET(
         : null,
       // Library agent §1.8 (l10): {count, children} — the executive regulation
       // first, then the newest; dates for a subscriber only (_children.ts).
-      subLegislation: lawChildrenForViewer(await childrenLookup, law, !officialMeta.officialMetaLocked),
+      // File 16 §7: a linked child that is one of the merged regulations (by
+      // name, raw or cleaned) is left out — the reader lists those already.
+      subLegislation: lawChildrenForViewer(
+        await childrenLookup,
+        law,
+        !officialMeta.officialMetaLocked,
+        regulationIndexRows.flatMap((r) => [r.ref, regulationRefForViewer(r.ref, true)]),
+      ),
       // T28-22: the preamble opens with the law's info card («أداة إصدار
       // التشريع | مرسوم ملكي رقم (م/51) وتاريخ …», «المصدر الرسمي») and then
       // the decree itself — measured on 5,477 laws, 2026-09-28. Sending it to

@@ -1222,10 +1222,26 @@ function LawSystemPageContent() {
               <LawSummaryBox summary={law.summary} label={law.summaryLabel} isDark={isDark} isRTL={isRTL} />
             )}
 
-            {/* Library agent §1.8 (l10): «التشريعات الفرعية» — the first three, then
+            {/* Owner file 16 §7 + library agent §1.8 (l10): «التشريعات الفرعية» — merged
+                regulations, then documents linked by parent_law_id; the first three, then
                 «عرض المزيد (N)»; hidden when the law has none. */}
             {viewMode !== "appendix" && (
-              <SubLegislationSection key={law.slug} subLegislation={law.subLegislation} isDark={isDark} isRTL={isRTL} />
+              <SubLegislationSection
+                key={law.slug}
+                subLegislation={law.subLegislation}
+                // File 16 §7: the merged regulations first (the index names, every viewer).
+                mergedNames={(law.regulationIndex ?? []).map((g) => g.name)}
+                onOpenMerged={(name) => {
+                  // The regulation view on that instrument; a fully locked one is not a
+                  // chip (regulationInstruments), so the view opens on all of them.
+                  const inst = (law.regulationInstruments ?? []).find((i) => (i.label || i.ref) === name);
+                  setViewMode("regulation");
+                  setSelectedRegName(inst ? inst.ref : null);
+                  if (inst) setShowAllRegChips(true);
+                }}
+                isDark={isDark}
+                isRTL={isRTL}
+              />
             )}
 
             {/* N2.6: search inside this law with the library's operators; the

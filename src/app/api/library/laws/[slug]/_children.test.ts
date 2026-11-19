@@ -13,6 +13,7 @@ import {
   CHILD_COUNT_ID_CHUNK,
   childCountsByParent,
   childKeyChunks,
+  childNamedAmongMerged,
   compareLawChildren,
   hijriSortKey,
   isLawChildOf,
@@ -124,6 +125,28 @@ test("childCountsByParent: the same rule as the law page, per catalogue card", (
   assert.equal(counts.get("nzm-qada"), lawChildrenForViewer(rows, QADA, false).count);
 });
 
+test("file 16 §7: a linked child that is one of the merged regulations is neither listed nor counted twice", () => {
+  const qada = { ...QADA, title: "نظام القضاء" };
+  const merged = ["اللائحة التنفيذية لنظام القضاء", "لائحة التفتيش القضائي", "ج", "د", "هـ", "و"];
+  assert.equal(childNamedAmongMerged("اللائحة التنفيذية لنظام القضاء", qada.title, merged), true);
+  assert.equal(childNamedAmongMerged("  اللائحة   التنفيذية  ", qada.title, merged), true, "the card's form: spaces, base title dropped");
+  assert.equal(childNamedAmongMerged("لائحة التفتيش القضائي لنظام القضاء", qada.title, merged), true);
+  assert.equal(childNamedAmongMerged("قرار وزاري", qada.title, merged), false);
+  assert.equal(childNamedAmongMerged("اللائحة التنفيذية لنظام القضاء", qada.title, []), false);
+  const rows = [
+    { ...row("same", "لائحة تنفيذية", "1441/1/1", "اللائحة التنفيذية لنظام القضاء") },
+    { ...row("other", "قرار", "1445/1/1", "قرار وزاري") },
+  ];
+  // the law page: the merged one is left out; the card count is the same number
+  const page = lawChildrenForViewer(rows, qada, false, merged);
+  assert.deepEqual(page.children.map((c) => c.slug), ["other"]);
+  const counts = childCountsByParent(rows, [{ ...qada, mergedNames: merged }]);
+  assert.equal(counts.get("nzm-qada"), 1);
+  assert.equal(counts.get("nzm-qada"), page.count);
+  // نظام القضاء today: 6 merged names, 0 linked children → no extra count (the card keeps l9's «+4»)
+  assert.equal(childCountsByParent([], [{ ...qada, mergedNames: merged }]).get("nzm-qada"), undefined);
+});
+
 test("childKeyChunks: distinct non-empty keys, ≤ 50 per in (…) read", () => {
   assert.equal(CHILD_COUNT_ID_CHUNK, 50);
   const parents = Array.from({ length: 120 }, (_, i) => ({ instrument_id: `LAW-${i}` }));
@@ -145,15 +168,17 @@ test("source: the law route reads the children by parent_law_id = instrument_id,
   assert.doesNotMatch(block, /preamble|\btext\b|description/, "titles and metadata only");
   assert.match(block, /if \(error\) \{[\s\S]*?return \[\];/, "a failed read is no 500");
   assert.match(block, /\.catch\(/);
-  assert.match(route, /subLegislation: lawChildrenForViewer\(await childrenLookup, law, !officialMeta\.officialMetaLocked\),/);
+  assert.match(route, /subLegislation: lawChildrenForViewer\(\s*await childrenLookup,\s*law,\s*!officialMeta\.officialMetaLocked,\s*regulationIndexRows\.flatMap\(\(r\) => \[r\.ref, regulationRefForViewer\(r\.ref, true\)\]\),\s*\),/);
 });
 
 test("source: /api/library/init counts the page's children in chunked in (…) reads and never sends instrument_id", () => {
   const init = read("../../init/route.ts");
   assert.match(init, /const LAW_LIST_COLUMNS =\n\s*"[^"]*\binstrument_id";/);
   assert.match(init, /const childChunks = childKeyChunks\(lawsRows\);/);
-  assert.match(init, /\.select\("slug,parent_law_id", \{ count: "exact" \}\)\s*\.in\("parent_law_id", keys\)/);
-  assert.match(init, /childCounts = childCountsByParent\(reads\.flatMap\(\(r\) => r\.data\), lawsRows\);/);
+  assert.match(init, /\.select\("slug,title,parent_law_id", \{ count: "exact" \}\)\s*\.in\("parent_law_id", keys\)/);
+  assert.match(init, /childCounts = childCountsByParent\(reads\.flatMap\(\(r\) => r\.data\), lawsRows\.map\(\(row\) => \(\{/);
+  // merged names in both forms, so a guest and a subscriber get the same number
+  assert.match(init, /mergedNames: \[true, false\]\.flatMap\(\(subscriber\) => \[\s*\.\.\.mergedNamesFromDetails\(row\[LAW_MERGED_DETAILS_COLUMN\], subscriber\),\s*\.\.\.mergedNamesForViewer\(row\[LAW_MERGED_NAMES_COLUMN\], subscriber\),/);
   assert.match(init, /delete shaped\.instrument_id;/, "stripped from every card");
   assert.match(init, /\.\.\.\(childCount > 0 \? \{ sub_legislation_count: childCount \} : \{\}\),/);
 });
@@ -164,12 +189,16 @@ test("source: the law page keeps subLegislation through its whitelist and mounts
   const section = read("../../../../laws/[slug]/_sub-legislation.tsx");
   assert.match(data, /subLegislation\?: \{\n\s*count: number;\n\s*children: Array<\{ slug: string; title: string; type: string; status: LawStatus; issueDate\?: string \}>;/);
   assert.match(page, /subLegislation: data\.subLegislation && Array\.isArray\(data\.subLegislation\.children\)/);
-  assert.match(page, /<SubLegislationSection key=\{law\.slug\} subLegislation=\{law\.subLegislation\} isDark=\{isDark\} isRTL=\{isRTL\} \/>/);
-  // hidden when there is no child; three, then «عرض المزيد (N)»; each links to the child's page
-  assert.match(section, /if \(children\.length === 0\) return null;/);
+  assert.match(page, /<SubLegislationSection\s+key=\{law\.slug\}\s+subLegislation=\{law\.subLegislation\}/);
+  // file 16 §7 (acceptance: نظام القضاء, whose sub-legislation is merged today): the merged ones first
+  assert.match(page, /mergedNames=\{\(law\.regulationIndex \?\? \[\]\)\.map\(\(g\) => g\.name\)\}/);
+  assert.match(page, /setViewMode\("regulation"\);\s*setSelectedRegName\(inst \? inst\.ref : null\);/);
+  assert.match(section, /\.\.\.Array\.from\(new Set\(mergedNames[\s\S]*?kind: "merged"[\s\S]*?\.\.\.\(subLegislation\?\.children \?\? \[\]\)/, "merged first, then linked");
+  // hidden when there is none; three, then «عرض المزيد (N)»; each linked child opens its page
+  assert.match(section, /if \(entries\.length === 0\) return null;/);
   assert.match(section, /export const SUB_LEGISLATION_SHOWN = 3;/);
   assert.match(section, /`عرض المزيد \(\$\{more\}\)`/);
-  assert.match(section, /`التشريعات الفرعية \(\$\{children\.length\}\)`/);
+  assert.match(section, /`التشريعات الفرعية \(\$\{entries\.length\}\)`/);
   assert.match(section, /href=\{`\/laws\/\$\{encodeURIComponent\(child\.slug\)\}`\}/);
   assert.doesNotMatch(section, /text-gray-(?:100|200)\b/, "dark-mode gray-token trap");
 });
