@@ -112,7 +112,7 @@ export const FIRM_NAV: NavItem[] = [
   {
     label: "ERP", labelEn: "ERP", href: "#erp",
     children: [
-      { label: "التقارير",          labelEn: "Reports",         href: "/dashboard/firm/analytics",  icon: "ChartBar" },
+      { label: "التقارير",          labelEn: "Reports",         href: "/dashboard/firm/analytics",  icon: "ChartBar", badge: "قريباً" },
       { label: "الموارد البشرية",   labelEn: "HR",              href: "/dashboard/firm/team",        icon: "Users" },
       { label: "الماليات",          labelEn: "Finance",         href: "/dashboard/firm/finance",     icon: "Money" },
     ],
@@ -185,10 +185,10 @@ export const MICRO_NAV: NavItem[] = [
 
 // ── Provider Nav (مقدم خدمة) ─────────────────────────────────────────────────
 export const PROVIDER_NAV: NavItem[] = [
-  { label: "الطلبات",      labelEn: "Requests",  href: "/dashboard/provider/requests" },
-  { label: "المواعيد",     labelEn: "Calendar",  href: "/dashboard/provider/calendar" },
-  { label: "الملف المهني", labelEn: "Profile",   href: "/dashboard/provider/profile" },
-  { label: "الأرباح",      labelEn: "Earnings",  href: "/dashboard/provider/earnings" },
+  { label: "الطلبات",      labelEn: "Requests",  href: "/dashboard/provider/requests", badge: "قريباً" },
+  { label: "المواعيد",     labelEn: "Calendar",  href: "/dashboard/provider/calendar", badge: "قريباً" },
+  { label: "الملف المهني", labelEn: "Profile",   href: "/dashboard/provider/profile", badge: "قريباً" },
+  { label: "الأرباح",      labelEn: "Earnings",  href: "/dashboard/provider/earnings", badge: "قريباً" },
 ];
 
 // ── Admin Nav (مدير النظام) ──────────────────────────────────────────────────
@@ -212,10 +212,10 @@ export const ADMIN_NAV: NavItem[] = [
 // ── Government Nav (جهة حكومية) ──────────────────────────────────────────────
 export const GOVERNMENT_NAV: NavItem[] = [
   { label: "لوحة التحكم",   labelEn: "Dashboard",    href: "/dashboard/government" },
-  { label: "القضايا",        labelEn: "Cases",        href: "/dashboard/government/cases" },
-  { label: "العقود",          labelEn: "Contracts",    href: "/dashboard/government/contracts" },
-  { label: "الامتثال",       labelEn: "Compliance",   href: "/dashboard/government/compliance" },
-  { label: "التقارير",        labelEn: "Reports",      href: "/dashboard/government/reports" },
+  { label: "القضايا",        labelEn: "Cases",        href: "/dashboard/government/cases", badge: "قريباً" },
+  { label: "العقود",          labelEn: "Contracts",    href: "/dashboard/government/contracts", badge: "قريباً" },
+  { label: "الامتثال",       labelEn: "Compliance",   href: "/dashboard/government/compliance", badge: "قريباً" },
+  { label: "التقارير",        labelEn: "Reports",      href: "/dashboard/government/reports", badge: "قريباً" },
   {
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",
     children: [
@@ -233,8 +233,8 @@ export const GOVERNMENT_NAV: NavItem[] = [
 export const NGO_NAV: NavItem[] = [
   { label: "لوحة التحكم",   labelEn: "Dashboard",   href: "/dashboard/ngo" },
   { label: "المتطوعون",      labelEn: "Volunteers",  href: "/dashboard/ngo/volunteers" },
-  { label: "العقود",          labelEn: "Contracts",   href: "/dashboard/ngo/contracts" },
-  { label: "الماليات",        labelEn: "Finance",     href: "/dashboard/ngo/finance" },
+  { label: "العقود",          labelEn: "Contracts",   href: "/dashboard/ngo/contracts", badge: "قريباً" },
+  { label: "الماليات",        labelEn: "Finance",     href: "/dashboard/ngo/finance", badge: "قريباً" },
   { label: "الامتثال",        labelEn: "Compliance",  href: "/dashboard/ngo/compliance" },
   {
     label: "أدوات AI", labelEn: "AI Tools", href: "#ai",

@@ -155,7 +155,7 @@ export const MICRO_SIDEBAR: SidebarGroup[] = [
     title: "مستنداتي", titleEn: "My Documents",
     items: [
       { label: "عقودي",     labelEn: "My Contracts", href: "/dashboard/micro/contracts", icon: "FileText", gateKey: "micro-contracts" },
-      { label: "مستنداتي",  labelEn: "Documents",    href: "/dashboard/micro/documents", icon: "FolderOpen", gateKey: "micro-documents" },
+      { label: "مستنداتي",  labelEn: "Documents",    href: "/dashboard/micro/documents", icon: "FolderOpen", gateKey: "micro-documents", badge: "قريباً" },
     ],
   },
   {
@@ -180,7 +180,7 @@ export const MICRO_SIDEBAR: SidebarGroup[] = [
 export const PROVIDER_SIDEBAR: SidebarGroup[] = [
   {
     items: [
-      { label: "نظرة عامة",      labelEn: "Overview",   href: "/dashboard/provider",          icon: "SquaresFour" },
+      { label: "نظرة عامة",      labelEn: "Overview",   href: "/dashboard/provider",          icon: "SquaresFour", badge: "قريباً" },
     ],
   },
   {
@@ -195,15 +195,15 @@ export const PROVIDER_SIDEBAR: SidebarGroup[] = [
       // live discount links off a mock promo row and reported invented click
       // and conversion figures for them. /dashboard/provider/promotions now
       // redirects permanently to «الملف المهني» above (next.config.ts).
-      { label: "المواعيد",        labelEn: "Calendar",       href: "/dashboard/provider/calendar", icon: "CalendarCheck" },
+      { label: "المواعيد",        labelEn: "Calendar",       href: "/dashboard/provider/calendar", icon: "CalendarCheck", badge: "قريباً" },
     ],
   },
   {
     title: "ملفي المهني", titleEn: "My Profile",
     items: [
-      { label: "الملف المهني",    labelEn: "Profile",    href: "/dashboard/provider/profile",  icon: "UserCircle" },
-      { label: "الأرباح",         labelEn: "Earnings",   href: "/dashboard/provider/earnings", icon: "Money" },
-      { label: "التقييمات",       labelEn: "Reviews",    href: "/dashboard/provider/reviews",  icon: "Star" },
+      { label: "الملف المهني",    labelEn: "Profile",    href: "/dashboard/provider/profile",  icon: "UserCircle", badge: "قريباً" },
+      { label: "الأرباح",         labelEn: "Earnings",   href: "/dashboard/provider/earnings", icon: "Money", badge: "قريباً" },
+      { label: "التقييمات",       labelEn: "Reviews",    href: "/dashboard/provider/reviews",  icon: "Star", badge: "قريباً" },
     ],
   },
   {
@@ -234,11 +234,11 @@ export const GOVERNMENT_SIDEBAR: SidebarGroup[] = [
   {
     title: "الإدارة القانونية", titleEn: "Legal Management",
     items: [
-      { label: "القضايا والنزاعات", labelEn: "Cases",        href: "/dashboard/government/cases",           icon: "Gavel", gateKey: "gov-ai" },
-      { label: "العقود والاتفاقيات", labelEn: "Contracts",   href: "/dashboard/government/contracts",       icon: "FileText", gateKey: "gov-contracts" },
-      { label: "الامتثال القانوني", labelEn: "Compliance",   href: "/dashboard/government/compliance",      icon: "ShieldCheck", gateKey: "gov-compliance" },
-      { label: "المستشارون الخارجيون", labelEn: "Counsel",   href: "/dashboard/government/external-counsel", icon: "UserCircle", gateKey: "gov-counsel" },
-      { label: "التقارير",          labelEn: "Reports",      href: "/dashboard/government/reports",         icon: "ChartBar", gateKey: "gov-reports" },
+      { label: "القضايا والنزاعات", labelEn: "Cases",        href: "/dashboard/government/cases",           icon: "Gavel", gateKey: "gov-ai", badge: "قريباً" },
+      { label: "العقود والاتفاقيات", labelEn: "Contracts",   href: "/dashboard/government/contracts",       icon: "FileText", gateKey: "gov-contracts", badge: "قريباً" },
+      { label: "الامتثال القانوني", labelEn: "Compliance",   href: "/dashboard/government/compliance",      icon: "ShieldCheck", gateKey: "gov-compliance", badge: "قريباً" },
+      { label: "المستشارون الخارجيون", labelEn: "Counsel",   href: "/dashboard/government/external-counsel", icon: "UserCircle", gateKey: "gov-counsel", badge: "قريباً" },
+      { label: "التقارير",          labelEn: "Reports",      href: "/dashboard/government/reports",         icon: "ChartBar", gateKey: "gov-reports", badge: "قريباً" },
     ],
   },
   {
@@ -300,13 +300,13 @@ export const NGO_SIDEBAR: SidebarGroup[] = [
     title: "إدارة الجمعية", titleEn: "NGO Management",
     items: [
       { label: "المتطوعون",           labelEn: "Volunteers",  href: "/dashboard/ngo/volunteers",   icon: "Users", gateKey: "ngo-volunteers" },
-      { label: "العقود والاتفاقيات",  labelEn: "Contracts",   href: "/dashboard/ngo/contracts",    icon: "FileText" },
-      { label: "الماليات والتبرعات",  labelEn: "Finance",     href: "/dashboard/ngo/finance",      icon: "Money", gateKey: "ngo-donations" },
+      { label: "العقود والاتفاقيات",  labelEn: "Contracts",   href: "/dashboard/ngo/contracts",    icon: "FileText", badge: "قريباً" },
+      { label: "الماليات والتبرعات",  labelEn: "Finance",     href: "/dashboard/ngo/finance",      icon: "Money", gateKey: "ngo-donations", badge: "قريباً" },
       { label: "الأوقاف والأصول",      labelEn: "Awqaf & Assets", href: "/dashboard/ngo/awqaf",     icon: "Buildings", gateKey: "ngo-awqaf", badge: "قريباً" },
-      { label: "البرامج والحملات",     labelEn: "Programs",    href: "/dashboard/ngo/programs",    icon: "Target", gateKey: "ngo-programs", badge: "تجريبي" },
+      { label: "البرامج والحملات",     labelEn: "Programs",    href: "/dashboard/ngo/programs",    icon: "Target", gateKey: "ngo-programs", badge: "قريباً" },
       { label: "مجلس الإدارة",         labelEn: "Board",       href: "/dashboard/ngo/board",       icon: "UsersThree", gateKey: "ngo-board", badge: "قريباً" },
       { label: "الامتثال والحوكمة",   labelEn: "Compliance",  href: "/dashboard/ngo/compliance",   icon: "ShieldCheck", gateKey: "ngo-compliance" },
-      { label: "التقارير الدورية",    labelEn: "Reports",     href: "/dashboard/ngo/reports",      icon: "ChartBar", gateKey: "ngo-reports" },
+      { label: "التقارير الدورية",    labelEn: "Reports",     href: "/dashboard/ngo/reports",      icon: "ChartBar", gateKey: "ngo-reports", badge: "قريباً" },
     ],
   },
   {

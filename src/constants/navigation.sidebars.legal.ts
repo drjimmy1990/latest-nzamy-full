@@ -194,7 +194,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "دليل العملاء",   labelEn: "Clients",       href: "/dashboard/firm/clients",       icon: "AddressBook" },
       { label: "الاستشارات",     labelEn: "Consultations", href: "/dashboard/firm/consultations", icon: "ChatDots" },
-      { label: "بوابة العميل",   labelEn: "Client Portal", href: "/dashboard/firm/client-portal", icon: "Globe", gateKey: "firm-client-portal" },
+      { label: "بوابة العميل",   labelEn: "Client Portal", href: "/dashboard/firm/client-portal", icon: "Globe", gateKey: "firm-client-portal", badge: "قريباً" },
     ],
   },
   {
@@ -203,16 +203,16 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "أعضاء الفريق",     labelEn: "Team",         href: "/dashboard/firm/team",             icon: "Users", gateKey: "firm-team" },
       { label: "الصلاحيات والأدوار",labelEn: "Roles",       href: "/dashboard/firm/team/roles",       icon: "Key", gateKey: "firm-team" },
       { label: "سجلات الساعات",     labelEn: "Timesheets",  href: "/dashboard/firm/team/timesheets",  icon: "Clock", badge: "قريباً" },
-      { label: "المتدربون",          labelEn: "Trainees",    href: "/dashboard/firm/team/trainees",    icon: "Student" },
-      { label: "الحضور والإجازات",   labelEn: "Attendance",  href: "/dashboard/firm/team/attendance",  icon: "CalendarBlank" },
-      { label: "الإنجازات والمكافآت",labelEn: "Achievements", href: "/dashboard/firm/achievements",    icon: "Trophy", badge: "جديد" },
+      { label: "المتدربون",          labelEn: "Trainees",    href: "/dashboard/firm/team/trainees",    icon: "Student", badge: "قريباً" },
+      { label: "الحضور والإجازات",   labelEn: "Attendance",  href: "/dashboard/firm/team/attendance",  icon: "CalendarBlank", badge: "قريباً" },
+      { label: "الإنجازات والمكافآت",labelEn: "Achievements", href: "/dashboard/firm/achievements",    icon: "Trophy", badge: "قريباً" },
     ],
   },
   {
     title: "الإدارات والأقسام", titleEn: "Departments",
     items: [
-      { label: "إدارة الأقسام",     labelEn: "Manage Departments",   href: "/dashboard/firm/departments",  icon: "TreeStructure", gateKey: "firm-departments" },
-      { label: "فروع المكتب",       labelEn: "Firm Branches",        href: "/dashboard/firm/branches",     icon: "MapPin", gateKey: "firm-branches" },
+      { label: "إدارة الأقسام",     labelEn: "Manage Departments",   href: "/dashboard/firm/departments",  icon: "TreeStructure", gateKey: "firm-departments", badge: "قريباً" },
+      { label: "فروع المكتب",       labelEn: "Firm Branches",        href: "/dashboard/firm/branches",     icon: "MapPin", gateKey: "firm-branches", badge: "قريباً" },
       { label: "إعدادات الصلاحيات", labelEn: "Dept Permissions",     href: "/dashboard/firm/departments/permissions", icon: "ShieldCheck", badge: "جديد", gateKey: "firm-departments" },
     ],
   },
@@ -223,7 +223,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "اعتماد العملاء (KYC)",labelEn: "Client KYC",     href: "/dashboard/firm/compliance/kyc", badge: "قريباً",        icon: "ShieldCheck" },
       { label: "الجدران الصينية",    labelEn: "Chinese Walls",  href: "/dashboard/firm/compliance/walls", badge: "قريباً",      icon: "Wall", gateKey: "firm-chinese-walls" },
-      { label: "الفحص الشامل ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/firm/health-check",     icon: "MagnifyingGlass", badge: "جديد", gateKey: "firm-health-check" },
+      { label: "الفحص الشامل ٣٦٠°", labelEn: "Health Check 360°",  href: "/dashboard/firm/health-check",     icon: "MagnifyingGlass", badge: "قريباً", gateKey: "firm-health-check" },
       { label: "الحوكمة المؤسسية",   labelEn: "Governance",         href: "/dashboard/firm/governance",            icon: "ShieldCheck", badge: "قريباً", gateKey: "firm-governance" },
       { label: "مصفوفة الحوكمة",     labelEn: "Governance Matrix",  href: "/dashboard/firm/governance?tab=matrix",  icon: "ListChecks", gateKey: "firm-governance" },
     ],
@@ -234,7 +234,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "الإيرادات",       labelEn: "Revenue",    href: "/dashboard/firm/finance", badge: "قريباً",           icon: "Money", gateKey: "firm-finance" },
       { label: "الأتعاب",          labelEn: "Fees",       href: "/dashboard/firm/fees",              icon: "Receipt", gateKey: "firm-finance" },
       { label: "التقارير المالية", labelEn: "Reports",    href: "/dashboard/firm/finance/reports",   icon: "ChartBar", gateKey: "firm-finance", badge: "قريباً" },
-      { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics" },
+      { label: "لوحة التحليلات",  labelEn: "Analytics",  href: "/dashboard/firm/analytics",         icon: "ChartLine", gateKey: "firm-analytics", badge: "قريباً" },
     ],
   },
   {
@@ -297,9 +297,9 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,
     items: [
-      { label: "مستشارون خارجيون",  labelEn: "Of-Counsel",        href: "/dashboard/firm/of-counsel",     icon: "UserCircle",      badge: "جديد", gateKey: "firm-collaboration" },
+      { label: "مستشارون خارجيون",  labelEn: "Of-Counsel",        href: "/dashboard/firm/of-counsel",     icon: "UserCircle",      badge: "قريباً", gateKey: "firm-collaboration" },
       { label: "عرض إعارة محامٍ",    labelEn: "Post Secondment",   href: "/dashboard/firm/secondment/new", icon: "ArrowsLeftRight", badge: "جديد", gateKey: "firm-secondment" },
-      { label: "الغرف المشتركة",     labelEn: "Shared Rooms",      href: "/dashboard/firm/shared-rooms",   icon: "UsersThree",      badge: "جديد", gateKey: "firm-shared-rooms" },
+      { label: "الغرف المشتركة",     labelEn: "Shared Rooms",      href: "/dashboard/firm/shared-rooms",   icon: "UsersThree",      badge: "قريباً", gateKey: "firm-shared-rooms" },
     ],
   },
   {
