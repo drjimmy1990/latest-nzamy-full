@@ -68,6 +68,8 @@ export type ReasonCode =
   | "registry_not_checked"
   | "name_mismatch"
   | "licence_claimed"
+  /** File 19 §1ب.2 (l9-secleak): a 1448-LAW- test number — the database refused the approval. */
+  | "licence_fake_test"
   | "mobile_change"
   | "throwaway_email"
   | "ai_mismatch"
@@ -128,6 +130,7 @@ export const REASON_AR: Record<ReasonCode, string> = {
   registry_not_checked: "لم يُفحص السجل بعد",
   name_mismatch: "الاسم المُدخل لا يطابق اسم السجل",
   licence_claimed: "رقم الترخيص نفسه لحساب محامٍ آخر موثّق",
+  licence_fake_test: "رقم ترخيص اختبار وهمي (1448-LAW-) — لا يُوثَّق أبداً",
   mobile_change: "طلب قديم «رقمي تغيّر» (قبل التوثيق بالبريد) — يُراجع يدوياً",
   throwaway_email: "بريد من نطاق مؤقت",
   ai_mismatch: "الفحص الآلي للصورة: لا تطابق",

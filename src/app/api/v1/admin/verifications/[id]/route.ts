@@ -5,6 +5,7 @@ import { recordNotification } from "@/lib/notify";
 import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
+import { isFakeTestLicence, isFakeLicenceDbError, FAKE_LICENCE_REFUSAL_AR } from "@/lib/lawyerSignup/fakeLicence";
 
 /**
  * PATCH /api/v1/admin/verifications/[id] — Approve or reject a verification
@@ -44,6 +45,22 @@ export async function PATCH(
   const newStatus = action === "approve" ? "verified" : "rejected";
   const adminClient = await createServiceClient();
 
+  // ── File 19 §1ب.2 (l9-secleak): a 1448-LAW- test licence is never verified ──
+  // The database refuses it too (20261129_20, read below); this answers first,
+  // in Arabic, and holds before that SQL runs. Rejecting stays possible.
+  if (action === "approve") {
+    const [lawyerLicence, providerLicence] = await Promise.all([
+      adminClient.from("lawyer_profiles").select("license_number").eq("user_id", userId).maybeSingle(),
+      adminClient.from("provider_profiles").select("license_number").eq("user_id", userId).maybeSingle(),
+    ]);
+    const licences = [lawyerLicence.data, providerLicence.data].map(
+      (row) => (row as { license_number?: string | null } | null)?.license_number ?? null,
+    );
+    if (licences.some((licence) => isFakeTestLicence(licence))) {
+      return NextResponse.json({ error: FAKE_LICENCE_REFUSAL_AR }, { status: 422 });
+    }
+  }
+
   // ── Try to update across all profile tables ────────────────────────────────
   // We don't know which table the user belongs to, so we try all three.
   // Only one will match, the others will return count=0.
@@ -66,6 +83,9 @@ export async function PATCH(
   // R6 (20261122_40): another VERIFIED lawyer already holds this licence
   // number. Say so, instead of falling through to the other tables and
   // answering "not found".
+  if (isFakeLicenceDbError(lawyerErr)) {
+    return NextResponse.json({ error: FAKE_LICENCE_REFUSAL_AR }, { status: 422 });
+  }
   if (lawyerErr?.code === "23505") {
     return NextResponse.json(
       { error: "لا يمكن الاعتماد: رقم الترخيص نفسه مسجّل لحساب محامٍ آخر موثّق. راجع الحسابين قبل الاعتماد." },
@@ -97,6 +117,9 @@ export async function PATCH(
       .select("user_id, verification_status, sub_role")
       .maybeSingle();
 
+    if (isFakeLicenceDbError(providerErr)) {
+      return NextResponse.json({ error: FAKE_LICENCE_REFUSAL_AR }, { status: 422 });
+    }
     if (!providerErr && providerUpdate) {
       updated = true;
       updatedType = (providerUpdate.sub_role as string) ?? "provider";
