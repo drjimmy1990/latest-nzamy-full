@@ -7793,3 +7793,12 @@ select 'Free questions: the library-open rule only for the library assistant; th
                 and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
                 false) as ok;
 -- <<< verify:l9_public
+
+-- >>> verify:l10_children
+-- Batch l10-children (library agent 19 Nov §1.8: sub-legislation by parent_law_id): run 20261130_20 any time (before or after the deploy).
+select 'Sub-legislation lookups: plain btree laws_parent_law_id_lookup_idx on library.laws (parent_law_id) (run 20261130_20)' as check,
+       coalesce((select i.indrelid = 'library.laws'::regclass and i.indpred is null and i.indexprs is null
+                        and i.indnatts = 1 and i.indisvalid
+                   from pg_catalog.pg_index i
+                  where i.indexrelid = to_regclass('library.laws_parent_law_id_lookup_idx')), false) as ok;
+-- <<< verify:l10_children
