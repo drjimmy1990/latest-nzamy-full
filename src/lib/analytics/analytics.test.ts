@@ -182,7 +182,8 @@ test("the root layout mounts the banner; the scripts are loaded only from Analyt
   assert.match(c, /data-clarity-mask/);
   assert.match(c, /MASK_VALUE = "True"/, "Microsoft's documented value");
   // leaving the routes masks the page synchronously inside history, GA4 or not
-  assert.match(c, /if \(leaving\) document\.body\.setAttribute\(MASK_ATTR, MASK_VALUE\)/);
+  // (batch l9: and Clarity stops at sign-up / payment, so leaving its pages masks too)
+  assert.match(c, /if \(leaving \|\| \(w\.__nzAnalyticsLoaded\?\.clarity && !isClarityRoute\(nextPath\)\)\) \{\s*document\.body\.setAttribute\(MASK_ATTR, MASK_VALUE\);/);
   assert.doesNotMatch(c, /__nzHistoryPatched \|\| !ANALYTICS\.ga4Id/);
   // «أوافق» and «لا أوافق» share one class
   assert.match(c, /onClick=\{\(\) => saveConsent\("granted"\)\} className=\{BUTTON\}/);
@@ -205,4 +206,28 @@ test("the server purchase event: copied at checkout, sent once after the fulfilm
   assert.match(read("lib/payments/checkoutCore.ts"), /analytics: input\.analytics/);
   assert.match(read("lib/payments/fulfillOrder.ts"), /GA4_API_SECRET/);
   assert.match(read("lib/payments/fulfillCore.ts"), /deps\.reportPurchase && order\.live === true && !granted\.alreadyEntitled/);
+});
+
+test("batch l9 (owner message 12 §10.7 / ك6): Clarity on public pages only — never sign-up or payment; GA4 keeps them", async () => {
+  const m = await import("./analytics.ts");
+  for (const p of ["/", "/founder", "/pricing", "/pricing/"]) assert.equal(m.isClarityRoute(p), true, p);
+  for (const p of ["/register", "/register/provider/verify", "/checkout", "/payments/result", "/dashboard/lawyer", "/ai/draft", "/founder-terms", "/laws/x"]) {
+    assert.equal(m.isClarityRoute(p), false, p);
+  }
+  // every Clarity page is an analytics page; sign-up and payment stay GA4 pages
+  for (const r of m.CLARITY_ROUTES) assert.equal(m.isAnalyticsRoute(r), true, r);
+  for (const p of ["/register", "/checkout", "/payments/result"]) assert.equal(m.isAnalyticsRoute(p), true, p);
+
+  const c = read("components/analytics/AnalyticsConsent.tsx");
+  // Clarity is injected only when the page is a Clarity page
+  assert.match(c, /if \(clarityId && withClarity && !loaded\?\.clarity\) \{/);
+  assert.match(c, /loadScripts\(w, clarityHere\);/);
+  // Clarity loaded and now on sign-up / payment: masked, then a fresh load without it
+  assert.match(c, /if \(loaded\?\.clarity && !clarityHere\) \{[\s\S]*?window\.location\.reload\(\);/);
+  // a link from a Clarity page to sign-up / payment is a full page load
+  assert.match(c, /if \(isAnalyticsRoute\(next\.pathname\) && \(!clarityOn \|\| isClarityRoute\(next\.pathname\)\)\) return;/);
+  // the privacy page says so
+  const privacy = read("app/privacy/page.tsx");
+  assert.match(privacy, /وتعمل Microsoft Clarity في الصفحة الرئيسية وصفحة عضوية المؤسس وصفحة الأسعار فقط/);
+  assert.match(privacy, /Microsoft Clarity runs only on the home page, the founder membership page and the pricing page/);
 });
