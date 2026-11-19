@@ -107,3 +107,11 @@ test("20261129_70 (owner file 18 items 3 + 4): the amendment card and law summar
   assert.deepEqual(amendments?.requiredColumns, ["decree_id", "paragraphs", "text_status", "position"]);
   assert.deepEqual(amendments?.stripKeys, []);
 });
+
+test("20261130_30 (owner file 19 Nov §1.9): chapters and articles REQUIRE regulation_ref, never stripped", () => {
+  for (const name of ["chapters", "articles"]) {
+    const t = OWNER_LOADER_TABLES.find((x) => x.name === name);
+    assert.deepEqual(t?.requiredColumns, ["regulation_ref"], name);
+    assert.deepEqual(t?.stripKeys, [], name);
+  }
+});

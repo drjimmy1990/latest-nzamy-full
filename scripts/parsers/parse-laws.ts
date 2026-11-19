@@ -198,6 +198,14 @@ const malformedAnchorFiles: string[] = [];
  */
 const chapterLevelDiagnostics: string[] = [];
 /**
+ * Merged regulations (owner file 19 Nov §1.9): an ATTACHED_REGULATION block
+ * whose title is unreadable or not found verbatim (whitespace collapsed) among
+ * the file's merged_regulation_details[].name, or a block left unclosed.
+ * Informational, never gating: the block's articles keep no regulation_ref
+ * when the title is unreadable; with a readable title they keep it.
+ */
+const regulationRefProblems: string[] = [];
+/**
  * `text_availability: official_text_unpublished` documents: the ones whose
  * notice was kept as `description` instead of a synthetic «الصفحة 1» article,
  * and the ones whose flag disagrees with what the file holds (anchors present,
@@ -624,6 +632,11 @@ export interface ParsedArticle {
   english_text_status?: "unverified";
   chapter_title: string;
   chapter_number?: number;
+  /**
+   * Owner file 19 Nov §1.9: the name of the merged regulation (the title of the
+   * ATTACHED_REGULATION block) this article sits in. Absent outside a block.
+   */
+  regulation_ref?: string;
   regulations: ExecutiveRegulation[];
   amendments: AmendmentEntry[];
   free: boolean;
@@ -655,6 +668,8 @@ export interface ParsedChapter {
    * the parse output differ from a file without levels).
    */
   parent_source_index?: number;
+  /** Owner file 19 Nov §1.9: the ATTACHED_REGULATION block's title. Absent outside a block. */
+  regulation_ref?: string;
   articles: ParsedArticle[];
 }
 
@@ -959,6 +974,98 @@ export function findChapterPartBoundaries(body: string): number[] {
   return offsets;
 }
 
+/** One `<!-- ATTACHED_REGULATION {…} -->` … `<!-- ATTACHED_REGULATION_END -->` block. */
+export interface AttachedRegulationBlock {
+  /** Offset of the opening marker. */
+  start: number;
+  /** Offset of the closing marker, or the body's length when the block is unclosed. */
+  end: number;
+  /** The marker JSON's `title` (or `name`), whitespace collapsed; null when unreadable. */
+  name: string | null;
+  problem?: string;
+}
+
+/**
+ * The merged-regulation blocks of a law file and the name each one carries
+ * (owner file 19 Nov §1.9: «علاقات المواد تُعرَّف بـregulation_ref مطابق حرفياً
+ * لاسم اللائحة»). The name is read from the opening marker's JSON — `title`,
+ * the key the library writes, or `name`.
+ */
+export function findAttachedRegulationBlocks(body: string): AttachedRegulationBlock[] {
+  const blocks: AttachedRegulationBlock[] = [];
+  const openRe = /<!--\s*ATTACHED_REGULATION(?!_END)\b([\s\S]*?)-->/g;
+  const endRe = /<!--\s*ATTACHED_REGULATION_END\s*-->/g;
+  const text = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
+  let m: RegExpExecArray | null;
+  while ((m = openRe.exec(body)) !== null) {
+    endRe.lastIndex = openRe.lastIndex;
+    const close = endRe.exec(body);
+    const block: AttachedRegulationBlock = { start: m.index, end: close ? close.index : body.length, name: null };
+    const raw = m[1].trim();
+    let meta: unknown = null;
+    try {
+      meta = raw ? JSON.parse(raw) : null;
+    } catch {
+      meta = null;
+    }
+    const o = meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {};
+    block.name = text(o.title) || text(o.name) || null;
+    const problems: string[] = [];
+    if (!block.name) {
+      problems.push(
+        `ATTACHED_REGULATION block has no readable title/name (${raw ? "marker JSON unreadable or without title" : "no JSON"}) — its articles get no regulation_ref`,
+      );
+    }
+    if (!close) {
+      problems.push(`ATTACHED_REGULATION block${block.name ? ` «${block.name}»` : ""} has no ATTACHED_REGULATION_END — taken to the end of the file`);
+    }
+    if (problems.length) block.problem = problems.join("; ");
+    blocks.push(block);
+    if (close) openRe.lastIndex = endRe.lastIndex;
+  }
+  return blocks;
+}
+
+/**
+ * Stamp `regulation_ref` on every chapter and article whose marker sits inside
+ * an ATTACHED_REGULATION block, and list the problems: an unreadable title, an
+ * unclosed block, a title not found verbatim among `mergedNames` (the file's
+ * merged_regulation_details[].name, as mergedRegulationDetailsOf reads them).
+ * A merged name with no block is NOT a problem: a regulation may be written as
+ * an inline REGULATION series instead. Items without a source position, and
+ * the orphan chapter (its offsets are relative to a stripped body), are never
+ * stamped. Nothing else changes: the key is only set inside a block.
+ */
+export function stampRegulationRefs(
+  chapters: ParsedChapter[],
+  blocks: readonly AttachedRegulationBlock[],
+  mergedNames: readonly string[],
+): string[] {
+  const problems: string[] = [];
+  const known = new Set(mergedNames);
+  for (const block of blocks) {
+    if (block.problem) problems.push(block.problem);
+    if (block.name && !known.has(block.name)) {
+      problems.push(`ATTACHED_REGULATION title «${block.name}» is not found verbatim in merged_regulation_details[].name`);
+    }
+  }
+  const nameAt = (index: number | undefined): string | null => {
+    if (typeof index !== "number") return null;
+    for (const block of blocks) if (index > block.start && index < block.end) return block.name;
+    return null;
+  };
+  for (const chapter of chapters) {
+    if (chapter.title === "__orphan__") continue;
+    const chapterRef = nameAt(chapter.source_index);
+    if (chapterRef) chapter.regulation_ref = chapterRef;
+    for (const article of chapter.articles) {
+      const ref = nameAt(article.source_index);
+      if (ref) article.regulation_ref = ref;
+    }
+  }
+  return problems;
+}
+
 /**
  * The level-1 parent of every level-2 chapter, by source position.
  *
@@ -1190,6 +1297,17 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     const orphanArticles = parseArticlesInBlock(outsideBody, "__orphan__", -1);
     if (orphanArticles.length > 0) {
       chapters.push({ number: -1, title: "__orphan__", level: 1, articles: orphanArticles });
+    }
+  }
+
+  // Merged regulations (owner file 19 Nov §1.9): regulation_ref on everything
+  // inside an ATTACHED_REGULATION block, and its title checked against the
+  // frontmatter names.
+  const attachedBlocks = findAttachedRegulationBlocks(body);
+  if (attachedBlocks.length) {
+    const mergedNames = (mergedRegulationDetailsOf(meta.merged_regulation_details) ?? []).map((d) => d.name);
+    for (const problem of stampRegulationRefs(chapters, attachedBlocks, mergedNames)) {
+      regulationRefProblems.push(`${path.basename(filePath)} :: ${problem}`);
     }
   }
 
@@ -1880,7 +1998,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     frontmatterWarnings, emptyArticles, verifiedEmptyArticles,
     orphanRegulationAnchors, unknownRegulationStatuses, emptyRegulationBlocks, supersededDuplicateSkipped, gateZeroExcluded,
     lowCoverageFiles, syntheticWholeDocumentArticles, malformedAnchorFiles,
-    chapterLevelDiagnostics, unpublishedTextNotices,
+    chapterLevelDiagnostics, regulationRefProblems, unpublishedTextNotices,
     mukarrarNumberProblems, amendmentTextUnavailable, amendmentAnchorProblems, lawSummaryProblems,
     parentLinkProblems,
   ]) bucket.length = 0;
@@ -2335,6 +2453,10 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     chapterLevelDiagnostics,
   );
   printCapped(
+    "⚠️  merged regulation block(s) — title unreadable, block unclosed, or title not in merged_regulation_details[].name",
+    regulationRefProblems,
+  );
+  printCapped(
     "ℹ️  official_text_unpublished document(s) — notice kept as description, or flag disagreeing with the file",
     unpublishedTextNotices,
   );
@@ -2429,6 +2551,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         corpusScopeInstitutional: corpusScopeDecisions.filter(d => d.corpus_scope === "institutional_reference").length,
         lowCoverageFiles: lowCoverageFiles.length,
         chapterLevelDiagnostics: chapterLevelDiagnostics.length,
+        regulationRefProblems: regulationRefProblems.length,
         unpublishedTextNotices: unpublishedTextNotices.length,
         mukarrarNumberProblems: mukarrarNumberProblems.length,
         amendmentTextUnavailable: amendmentTextUnavailable.length,
@@ -2459,6 +2582,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         unverifiedSupersededTags,
         unverifiedEntityCollisions,
         chapterLevelDiagnostics,
+        regulationRefProblems,
         unpublishedTextNotices,
         mukarrarNumberProblems,
         amendmentTextUnavailable,

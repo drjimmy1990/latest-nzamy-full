@@ -882,6 +882,9 @@ export async function seedLaws(
         // written — a re-seed must also turn a removed level back into 1/null.
         level: hierarchy[ci].level,
         parent_chapter_id: hierarchy[ci].parent_chapter_id,
+        // Owner file 19 Nov §1.9 — REQUIRES migration 20261130_30 (loader
+        // preflight): the merged regulation's name, null outside a block.
+        regulation_ref: ch.regulation_ref ?? null,
       });
 
       const articles = (ch.articles || []) as any[];
@@ -930,6 +933,10 @@ export async function seedLaws(
           title_en: art.title_en || null,
           text_en: art.text_en || null,
           english_text_status: art.text_en ? "unverified" : null,
+          // Owner file 19 Nov §1.9 — REQUIRES migration 20261130_30 (loader
+          // preflight): (law, regulation_ref, number) names an article of a
+          // merged regulation; null for the law's own articles.
+          regulation_ref: art.regulation_ref ?? null,
         });
 
         for (let ai = 0; ai < amends.length; ai++) {
