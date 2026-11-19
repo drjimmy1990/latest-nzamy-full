@@ -173,7 +173,7 @@ test("the laws load-more label counts loaded matches and the cards they fill", a
 });
 
 test("/laws uses the laws labels and counts the grouped cards it renders", () => {
-  const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
   assert.match(page, /k === "laws"\s*\?\s*lawMatchesBadge\(sectionCountDisplay\(searchCounts, k\)\)/);
   assert.match(page, /if \(pagingSection === "laws"\) return lawsLoadMoreLabel\(pagingRows\.length, lawCards\.length, d, !!searchPaging\?\.lawCountIncludesTitleHits\);/);
   assert.match(page, /const lawCards = isSearchActive \? groupLawSearchCards\(filteredLaws\) : filteredLaws;/);

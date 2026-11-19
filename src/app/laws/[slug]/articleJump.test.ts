@@ -32,7 +32,7 @@ test("the article text is never searched", () => {
 });
 
 test("source contract: the readers and the catalogue filter with no literal includes", () => {
-  for (const rel of ["./page.tsx", "./_sidebar.tsx", "../page.tsx", "../../book/[slug]/page.tsx", "../../book/[slug]/_sidebar.tsx"]) {
+  for (const rel of ["./page.tsx", "./_sidebar.tsx", "../(index)/page.tsx", "../../book/[slug]/page.tsx", "../../book/[slug]/_sidebar.tsx"]) {
     const src = readFileSync(new URL(rel.replace("[slug]", "%5Bslug%5D"), import.meta.url), "utf8");
     assert.doesNotMatch(src, /\.includes\(nq\)/, `${rel}: .includes(nq)`);
     assert.doesNotMatch(src, /normalize\w*\([^)]*\)\.includes\(/, `${rel}: normalize(...).includes(`);

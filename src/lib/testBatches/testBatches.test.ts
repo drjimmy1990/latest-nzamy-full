@@ -141,6 +141,8 @@ test("batches route: read for GET, settings.write for moving an account; the pag
   assert.ok(verifyAt > -1 && verifyAt < purgeAt, "the TOTP code is verified right before the purge request");
   assert.match(page, /disabled=\{busy \|\| confirmText !== dry\.batch \|\| code\.length !== 6\}/);
   assert.match(read("lib/auth/adminNavAccess.ts"), /"\/dashboard\/admin\/test-batches": "users\.delete"/);
-  assert.match(read("components/admin/adminNavByRole.ts"), /href: "\/dashboard\/admin\/test-batches"/);
-  assert.match(read("constants/navigation.sidebars.primary.ts"), /href: "\/dashboard\/admin\/test-batches"/);
+  // One admin list feeds both navs (batch l9): the console sidebar and ADMIN_SIDEBAR.
+  assert.match(read("constants/adminNavItems.ts"), /href: "\/dashboard\/admin\/test-batches"/);
+  assert.match(read("components/admin/adminNavByRole.ts"), /import \{ ADMIN_NAV_SECTIONS \} from "\.\.\/\.\.\/constants\/adminNavItems\.ts";/);
+  assert.match(read("constants/navigation.sidebars.primary.ts"), /import \{ ADMIN_NAV_SECTIONS \} from "\.\/adminNavItems\.ts";/);
 });

@@ -4,7 +4,7 @@ import test from "node:test";
 import { lawCardDates, MERGED_INCLUDES_MAX, mergedFileBadge, mergedFileName, mergedIncludesLine, mergedMoreLabel } from "./catalogueCardLabels.ts";
 
 const cards = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
-const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
 
 test("BUG-LIB-07 (q382): the merged badge is the one word «مدمج»", () => {
   assert.equal(mergedFileBadge(false), "");

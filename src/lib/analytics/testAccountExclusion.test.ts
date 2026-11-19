@@ -150,7 +150,7 @@ test("AnalyticsConsent waits for the gate before loading anything and unloads on
   assert.match(c, /const testGate = useTestAccountGate\(allowed && choice === "granted", pathname\);/);
   const pendingAt = c.indexOf('if (allowed && choice === "granted" && testGate === "pending") return;');
   const unloadAt = c.indexOf('if (!allowed || choice !== "granted" || testGate === "excluded") {');
-  const loadAt = c.indexOf("loadScripts(w);");
+  const loadAt = c.indexOf("loadScripts(w, clarityHere);");
   assert.ok(pendingAt > -1 && unloadAt > pendingAt && loadAt > unloadAt, "pending returns first, excluded unloads, then load");
   assert.match(c, /\}, \[allowed, choice, pathname, testGate\]\);/);
   assert.match(c, /choice !== "granted" \|\| !allowed \|\| testGate !== "ok"\) return;/, "no click tracking for a test account");

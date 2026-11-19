@@ -30,7 +30,7 @@ test("missing, unknown, and obsolete tokens never assert activity — and show n
 
 test("owner ٢٥٩: the «not verified» wording is gone from every library surface", () => {
   const files = [
-    "law-status.ts", "data.ts", "page.tsx", "[slug]/_sidebar.tsx", "[slug]/_article-components.tsx",
+    "law-status.ts", "data.ts", "(index)/page.tsx", "[slug]/_sidebar.tsx", "[slug]/_article-components.tsx",
     "components/LawsTabContent.tsx", "../../lib/library/monitorFeed.ts",
   ];
   for (const f of files) {

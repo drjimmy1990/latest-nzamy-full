@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { articleStatusNotice } from "./data.ts";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8");
 const cardsSource = readFileSync(new URL("./components/LawsTabContent.tsx", import.meta.url), "utf8");
 
 test("law search rows retain the article status returned by the search API", () => {
