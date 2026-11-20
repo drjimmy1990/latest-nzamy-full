@@ -8,6 +8,11 @@
  * Map; the flush runs detached. A missing function (the migration not applied
  * yet) pauses sending for 10 minutes; any other failure drops that batch. The
  * key is read from the environment per call and never logged.
+ *
+ * Batch l11 (O19): after a batch is stored (it evaluates the review rules),
+ * the staff e-mail for any new flag is asked for (readAlertsServer.ts — at
+ * most once a minute, nothing without a Resend key and an address). Loaded
+ * lazily, so the proxy bundle does not carry the e-mail code until then.
  */
 import { ActivityMeter, type LibraryActivityKind } from "./activityMeter";
 
@@ -52,7 +57,9 @@ async function flush(): Promise<void> {
       signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
       cache: "no-store",
     });
-    if (!res.ok) {
+    if (res.ok) {
+      void import("./readAlertsServer").then((m) => m.sendPendingReviewFlagEmails()).catch(() => undefined);
+    } else {
       const body: unknown = await res.json().catch(() => null);
       if (isMissingFunction(res.status, body)) {
         functionMissingUntil = Date.now() + MISSING_RETRY_MS;

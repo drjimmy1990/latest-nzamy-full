@@ -84,8 +84,11 @@ const src = (...p: string[]) => readFileSync(join(import.meta.dirname, "..", "..
 
 test("wiring: the full-library rule applies the gate on every full-access read (server, not UI)", () => {
   const ac = src("lib", "access-control.ts");
-  assert.match(ac, /export async function hasFullLibraryAccess\(userId: string \| null\): Promise<boolean> \{\s*return \(await libraryFullAccessState\(userId\)\)\.hasFullAccess;/);
-  assert.match(ac, /async function fullLibraryAccessForTier\(userId: string \| null, tier: ServerTier\): Promise<boolean> \{\s*return \(await libraryFullAccessState\(userId, tier\)\)\.hasFullAccess;/);
+  // O26 (batch l11): the per-request memo still ends in libraryFullAccessState.
+  assert.match(ac, /export async function hasFullLibraryAccess\(userId: string \| null, memo\?: LibraryAccessMemo\): Promise<boolean> \{\s*return \(await memoFullState\(userId, memo\)\)\.hasFullAccess;/);
+  assert.match(ac, /if \(!usableMemo\(memo, userId\)\) return libraryFullAccessState\(userId\);/);
+  assert.match(ac, /memoTier\(userId, memo\)\.then\(\(tier\) => libraryFullAccessState\(userId, tier\)\)/);
+  assert.match(ac, /async function fullLibraryAccessForTier\(userId: string \| null, tier: ServerTier, memo\?: LibraryAccessMemo\): Promise<boolean> \{\s*if \(usableMemo\(memo, userId\)\) return \(await memoFullState\(userId, memo\)\)\.hasFullAccess;\s*return \(await libraryFullAccessState\(userId, tier\)\)\.hasFullAccess;/);
   assert.match(ac, /readLibraryMinPoints\(\), readLibraryPointsBalance\(userId\)/);
   const access = src("app", "api", "v1", "library", "access", "route.ts");
   assert.match(access, /pointsLock: accountLocked \? null : full\.pointsLock/);

@@ -368,7 +368,7 @@ test("T28-22: official metadata is shaped by lawOfficialMeta on the subscriber r
   // whitelisted — the whitelist never makes a subscriber.
   assert.match(
     routeSource,
-    /const \[firstLockedCheck, isSubscriber\] = await Promise\.all\(\[\s*checkLibraryAccess\(userId, slug, 0\),\s*hasFullLibraryAccess\(userId\),\s*\]\);/,
+    /const \[firstLockedCheck, isSubscriber\] = await Promise\.all\(\[\s*checkLibraryAccess\(userId, slug, 0, 'laws', \{ memo: accessMemo \}\),\s*hasFullLibraryAccess\(userId, accessMemo\),\s*\]\);/,
   );
   assert.doesNotMatch(routeSource, /isSubscriber = isWhitelisted/);
   assert.doesNotMatch(routeSource, /TIER_RANK\.pro|getUserTier\(|currentTier === 'pro'/);

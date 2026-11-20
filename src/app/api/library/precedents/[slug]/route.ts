@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { checkLibraryAccess, getLibraryAccessForUser } from '@/lib/access-control';
+import { checkLibraryAccess, getLibraryAccessForUser, libraryAccessMemo } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
+import { spendPublicView } from '@/lib/library/publicViewCapServer';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { isPrincipleLocked, parsePrincipleTarget, planPrincipleWindow, targetWindowOffset } from './_window';
@@ -150,8 +151,10 @@ export async function GET(
     // The collection is only a container. Its ID must not stand in for a
     // principle ID in library_free_items.principles, so retain first-N policy
     // while evaluating explicit free access for every principle below.
-    const probe = await checkLibraryAccess(userId, slug, 0, "principles", { includeExplicitFreeItem: false });
-    const { hasFullAccess, freeItemsByType, whitelistedSlugs } = await getLibraryAccessForUser(userId);
+    // O26 (batch l11): one memo shared by the two calls.
+    const accessMemo = libraryAccessMemo(userId);
+    const probe = await checkLibraryAccess(userId, slug, 0, "principles", { includeExplicitFreeItem: false, memo: accessMemo });
+    const { hasFullAccess, freeItemsByType, whitelistedSlugs } = await getLibraryAccessForUser(userId, accessMemo);
     // Owner ٤٢٧: a subscriber's full text opens on at most N authorised
     // devices (src/lib/library/deviceLimitServer.ts; fails open).
     const deviceRefusal = await enforceLibraryDevice(userId, hasFullAccess);
@@ -161,6 +164,11 @@ export async function GET(
     // none of the account's quota and cannot open its lock.
     const quotaRefusal = await spendLibraryDocument(request, userId, hasFullAccess);
     if (quotaRefusal) return quotaRefusal;
+    // Batch l11 (O18 / A16): the non-subscriber daily view cap — switched
+    // off until the owner approves (publicViewCapServer.ts; a subscriber is
+    // never counted here).
+    const viewRefusal = await spendPublicView(request, { userId, hasFullLibrary: hasFullAccess });
+    if (viewRefusal) return viewRefusal;
     const isWhitelisted = false;
 
     // ?target=<principle id> (q390-ب): open the window that holds it. It only

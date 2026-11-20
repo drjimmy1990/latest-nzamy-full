@@ -73,7 +73,7 @@ test("the helper keys the document exactly as the proxy did, and fails open", ()
   const src = read("lib/library/libraryDocQuota.ts");
   assert.match(src, /libraryQuotaTarget\(request\.method, new URL\(request\.url\)\.pathname\)/);
   assert.match(src, /if \(!target \|\| target\.kind !== "doc"\) return null;/);
-  assert.match(src, /quotaRefusal\(await libraryReadQuotaHit\(userId, target\.docKey\), Date\.now\(\)\)/);
+  assert.match(src, /const row = await libraryReadQuotaHit\(userId, target\.docKey\);\s*const refusal = quotaRefusal\(row, Date\.now\(\)\);/);
   assert.match(src, /if \(!userId \|\| !fullText \|\| !isSupabaseMode\) return null;/, "a preview spends nothing (owner ٤٤٧)");
   assert.match(src, /"Cache-Control": "private, no-store"/);
   assert.match(src, /\} catch \{\n    return null;\n  \}/);

@@ -7938,3 +7938,39 @@ select 'Contract party national ID: both tables server-only (RLS forced, no poli
        and not has_table_privilege('service_role', 'public.contract_party_id_access_log', 'DELETE')
        end as ok;
 -- <<< verify:l11_firm
+-- >>> verify:l11_scrape
+-- Batch l11-scrape (O18 non-subscriber view cap shipped OFF + verified crawlers; O19 sequential/parallel alerts + staff e-mail): run 20261201_30 after 20261129_40, before or after the deploy.
+select 'Scrape guard: the 12 settings columns exist on library_monitor_settings (the cap switch ships OFF; turning it on is the owner''s decision) (run 20261201_30)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute
+         where attrelid = 'public.library_monitor_settings'::regclass and not attisdropped
+           and attname in ('non_subscriber_view_limit_enabled', 'non_subscriber_daily_view_limit', 'non_subscriber_address_daily_limit',
+                           'crawler_view_limits', 'agent_view_limits', 'rule_sequence_on', 'rule_sequence_docs', 'rule_sequence_gap_seconds',
+                           'rule_parallel_on', 'rule_parallel_sessions', 'rule_parallel_minutes', 'alert_emails')) = 12 as ok;
+select 'Scrape guard: library_public_views / library_crawler_daily / library_read_sessions are server-only (RLS on, no anon/authenticated privilege) (run 20261201_30)' as check,
+       case when to_regclass('public.library_public_views') is null or to_regclass('public.library_crawler_daily') is null
+              or to_regclass('public.library_read_sessions') is null then false else
+       (select pg_catalog.bool_and(c.relrowsecurity) from pg_catalog.pg_class c
+         where c.oid in (to_regclass('public.library_public_views'), to_regclass('public.library_crawler_daily'), to_regclass('public.library_read_sessions')))
+       and not has_table_privilege('anon', 'public.library_public_views', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_public_views', 'SELECT')
+       and not has_table_privilege('anon', 'public.library_read_sessions', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_read_sessions', 'SELECT')
+       and not has_table_privilege('anon', 'public.library_crawler_daily', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_crawler_daily', 'SELECT')
+       end as ok;
+select 'Scrape guard: the evaluator is the 20261201_30 one (sequential + parallel rules, no admin exemption) and the new functions are service_role only (run 20261201_30)' as check,
+       case when to_regprocedure('public.library_public_view_hit(text,text[],text,boolean)') is null
+              or to_regprocedure('public.library_read_session_seen(uuid,text,text)') is null
+              or to_regprocedure('public.library_review_flags_claim_email(int,int)') is null then false else
+       pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.library_monitor_evaluate(uuid)'::regprocedure), 'l11_scrape') > 0
+       and (select pg_catalog.bool_and(p.prosecdef and p.proconfig @> array['search_path=""']
+                                       and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                       and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                       and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+              from pg_catalog.pg_proc p
+             where p.oid in (to_regprocedure('public.library_public_view_hit(text,text[],text,boolean)'),
+                             to_regprocedure('public.library_public_view_stats(int)'),
+                             to_regprocedure('public.library_read_session_seen(uuid,text,text)'),
+                             to_regprocedure('public.library_review_flags_claim_email(int,int)')))
+       end as ok;
+-- <<< verify:l11_scrape

@@ -26,7 +26,7 @@ test("the sheet's route previews only a text the caller's own run cited, behind 
   assert.match(route, /await libraryGate\(\)/);
   assert.match(route, /requireApiUser\(/);
   assert.match(route, /\.eq\("user_id", userId\)\s*\.contains\("citations", citedByFilter\(/);
-  assert.match(route, /hasFullLibraryAccess\(userId\)/);
+  assert.match(route, /hasFullLibraryAccess\(userId, accessMemo\)/);
   assert.match(route, /enforceLibraryDevice\(/);
   assert.equal((route.match(/previewExcerpt\(/g) ?? []).length, 2, "both kinds go through the one excerpt rule");
   assert.doesNotMatch(route, /\.select\("\*"\)|select\('\*'\)/);

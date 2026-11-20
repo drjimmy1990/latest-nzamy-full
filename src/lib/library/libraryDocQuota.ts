@@ -29,6 +29,12 @@
  * it passes to enforceLibraryDevice); a preview — the first articles / pages
  * a non-subscriber may read — spends nothing.
  *
+ * Batch l11 (O19): an allowed full-text open also records the reader's
+ * library session for the sequential / parallel review rules
+ * (readAlertsServer.ts — fire and forget, for every account, admins and test
+ * accounts included). The non-subscriber view cap is the routes' second call,
+ * spendPublicView (publicViewCapServer.ts).
+ *
  * FAILS OPEN, like everything it calls: a guest, a demo deploy, a missing
  * function, a timeout or a throw → null, and the read goes on.
  */
@@ -36,6 +42,7 @@ import { NextResponse } from "next/server";
 import { isSupabaseMode } from "@/lib/runtimeMode";
 import { libraryQuotaTarget, quotaRefusal } from "./readQuota";
 import { libraryReadQuotaHit } from "./readQuotaServer";
+import { noteLibraryReadSession } from "./readAlertsServer";
 
 /** null = go on; a NextResponse = the 423 / 429 to return as it is. */
 export async function spendLibraryDocument(
@@ -47,8 +54,12 @@ export async function spendLibraryDocument(
   try {
     const target = libraryQuotaTarget(request.method, new URL(request.url).pathname);
     if (!target || target.kind !== "doc") return null;
-    const refusal = quotaRefusal(await libraryReadQuotaHit(userId, target.docKey), Date.now());
-    if (!refusal) return null;
+    const row = await libraryReadQuotaHit(userId, target.docKey);
+    const refusal = quotaRefusal(row, Date.now());
+    if (!refusal) {
+      if (row) noteLibraryReadSession(request, userId);
+      return null;
+    }
     const headers: Record<string, string> = { "Cache-Control": "private, no-store" };
     if (refusal.retryAfterSeconds !== null) headers["Retry-After"] = String(refusal.retryAfterSeconds);
     return NextResponse.json(refusal.body, { status: refusal.status, headers });
