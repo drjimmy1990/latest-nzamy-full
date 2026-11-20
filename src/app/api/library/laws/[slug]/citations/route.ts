@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { libraryGate } from '@/lib/library-gate';
+import { hasFullLibraryAccess } from '@/lib/access-control';
+import { decreeRefVariants, parseDecreeRef, pickDecree } from '@/lib/library/decreeRef';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { stripArticleAuditNotes } from '@/lib/library/lawPreambleBlocks';
 import { articleStatusForDetail } from '../_article-status';
@@ -11,6 +13,8 @@ import {
   capTitle,
   docNameCandidates,
   mergeSectionRefs,
+  pickFoldedTitle,
+  titleLikePattern,
   parseNumbers,
   refIds,
   shapeArticleRefs,
@@ -30,6 +34,9 @@ import {
  *                          (legislation / judicial / fiqh), every legal link type
  *   ?name=<title>&n=1,2    a law named in the text, and its articles by number
  *   ?law=<slug>&n=1,2      the same for a known law (a regulation's parent)
+ *   ?decree=<words>        a decree named in the text, by number and date
+ *                          (batch l11, N02-13): the one exception to the rule
+ *                          below — library subscribers only, never cached
  *
  * Every answer is the same for every viewer: titles (capped like a locked
  * title), numbers, statuses and links — never article text (20260929_01). So
@@ -125,6 +132,40 @@ export async function GET(
       return json({ available: true, ...withHrefs(live) });
     }
 
+    // ── A decree named in the text (N02-13, batch l11) ───────────────────────
+    // «المرسوم الملكي رقم (م/٥١) وتاريخ …» → its library record, by number AND
+    // date, only when exactly one row fits (decreeRef.ts). A decree's number
+    // and date columns are subscriber metadata (20261108_10), so the lookup by
+    // them answers a library subscriber only; anyone else gets no record and
+    // the popover keeps its plain note. Never cached: it depends on the viewer.
+    if (url.searchParams.has('decree')) {
+      const noStore = (body: unknown) => NextResponse.json(body, { headers: { 'Cache-Control': 'private, no-store' } });
+      const ref = parseDecreeRef((url.searchParams.get('decree') ?? '').slice(0, 200));
+      if (!ref || !ref.date) return noStore({ decree: null });
+      const viewer = await createClient();
+      let userId: string | null = null;
+      try {
+        const { data: { user } } = await viewer.auth.getUser();
+        userId = user?.id ?? null;
+      } catch {
+        userId = null;
+      }
+      if (!(await hasFullLibraryAccess(userId))) return noStore({ decree: null });
+      const { data, error } = await serverOnly
+        .schema('library')
+        .from('decrees_circulars')
+        .select('id, title, ref, date')
+        .in('ref', decreeRefVariants(ref))
+        .limit(100);
+      if (error) throw error;
+      const row = pickDecree((data ?? []) as Array<{ id: unknown; title: unknown; ref: unknown; date: unknown }>, ref);
+      return noStore({
+        decree: row
+          ? { id: String(row.id), title: capTitle(String(row.title ?? '')), href: `/laws/orders/${encodeURIComponent(String(row.id))}` }
+          : null,
+      });
+    }
+
     // ── A named law (or a known one) and its articles ────────────────────────
     const numbers = parseNumbers(url.searchParams.get('n'));
     const supabase = await createClient();
@@ -143,6 +184,17 @@ export async function GET(
       // The longest exact title wins: «نظام العمل» from «نظام العمل الصادر …».
       law = ((data ?? []) as LawRow[])
         .sort((a, b) => b.title.length - a.title.length)[0] ?? null;
+      // N02-13 (batch l11): the text spells the name with other hamza / ة / ى
+      // forms than the library title. One LIKE read on the shortest candidate
+      // (each such letter a one-character wildcard), narrowed by folded equality.
+      if (!law) {
+        const pattern = titleLikePattern(candidates[candidates.length - 1]);
+        if (pattern) {
+          const folded = await supabase.schema('library').from('laws').select(LAW_COLUMNS).like('title', pattern).limit(200);
+          if (folded.error) throw folded.error;
+          law = pickFoldedTitle((folded.data ?? []) as LawRow[], candidates);
+        }
+      }
     }
     if (!law) return json({ law: null, articles: [] });
 

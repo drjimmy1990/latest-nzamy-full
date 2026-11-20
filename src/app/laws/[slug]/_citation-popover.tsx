@@ -28,6 +28,7 @@ import { buildCitation } from "./_citation";
 import { scanCitations, type CiteKind, type CiteScope } from "./_cite-links";
 import { lawStatusPill, pillClass, statusPill, type StatusPill } from "./_cite-status";
 import { scrollToReaderAnchor } from "./_reader-anchors";
+import { parseDecreeRef } from "@/lib/library/decreeRef";
 
 export interface CitationReaderContext {
   lawSlug: string;
@@ -371,8 +372,44 @@ function RemoteBody({ chip, ctx }: { chip: OpenChip; ctx: CitationReaderContext 
   );
 }
 
+interface DecreeAnswer {
+  decree: { id: string; title: string; href: string } | null;
+}
+
+/**
+ * N02-13 (batch l11): a decree whose number AND date the text gives is looked
+ * up on click (citations?decree=); the route answers a library subscriber only
+ * and only with the one record that fits (src/lib/library/decreeRef.ts). Not
+ * found, not asked, or not answered: the plain note as before.
+ */
 function DecreeBody({ chip, ctx }: { chip: OpenChip; ctx: CitationReaderContext }) {
   const { isDark, isRTL } = ctx;
+  const ask = ctx.viewerHasFullAccess && !!parseDecreeRef(chip.label)?.date;
+  const [found, setFound] = useState<DecreeAnswer["decree"]>(null);
+  useEffect(() => {
+    if (!ask) return;
+    let cancelled = false;
+    fetch(`/api/library/laws/${apiSlug(ctx.lawSlug)}/citations?decree=${encodeURIComponent(chip.label.slice(0, 200))}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: DecreeAnswer | null) => { if (!cancelled) setFound(data?.decree ?? null); })
+      .catch(() => { if (!cancelled) setFound(null); });
+    return () => { cancelled = true; };
+  }, [ask, chip.label, ctx.lawSlug]);
+  const linkClass = `inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${isDark ? "bg-white/[0.06] text-zinc-200" : "bg-slate-100 text-slate-700"}`;
+  if (found) {
+    return (
+      <div className="space-y-2">
+        <Link href={found.href} className="block font-black text-[12px] leading-relaxed hover:underline">{found.title}</Link>
+        <div className="flex flex-wrap gap-1.5">
+          <Link href={found.href} className={linkClass}>
+            <ArrowSquareOut size={11} />
+            {isRTL ? "افتح الوثيقة في المكتبة" : "Open it in the library"}
+          </Link>
+          <CopyButton isDark={isDark} isRTL={isRTL} text={chip.label} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-2">
       <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>

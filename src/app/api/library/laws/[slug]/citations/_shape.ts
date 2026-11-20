@@ -116,6 +116,47 @@ export function docNameCandidates(name: string | null, maxWords = 8): string[] {
   return out;
 }
 
+/**
+ * N02-13 (batch l11): a law title for comparison only — diacritics and tatweel
+ * dropped, the hamza forms of alef as «ا», «ؤ / ئ / ء» as «ء», «ة» as «ه»,
+ * «ى» as «ي», spaces collapsed. «نظام الاجراءات الجزائيه» and «نظام الإجراءات
+ * الجزائية» are one key. Display text is never folded.
+ */
+export function foldTitle(s: string): string {
+  return String(s ?? "")
+    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/[ؤئ]/g, "ء")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * One SQL LIKE pattern that every spelling of `name` matches: each letter the
+ * fold merges becomes `_` (any one character), then «%» — so the shortest
+ * candidate (two words) reaches every title that starts like it. The answer is
+ * then narrowed in code by foldTitle equality (pickFoldedTitle). Characters
+ * LIKE treats specially (% _ \ *) never reach the pattern; null when nothing
+ * is left to match.
+ */
+export function titleLikePattern(name: string): string | null {
+  const clean = String(name ?? "")
+    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (clean.split(" ").length < 2) return null;
+  return `${clean.replace(/[اأإآٱؤئءةهىي]/g, "_")}%`;
+}
+
+/** Of the rows read with titleLikePattern, the longest title equal (folded) to a candidate; null when none. */
+export function pickFoldedTitle<T extends { title: string }>(rows: readonly T[], candidates: readonly string[]): T | null {
+  const want = new Set(candidates.map(foldTitle));
+  return [...rows].filter((r) => want.has(foldTitle(r.title))).sort((a, b) => b.title.length - a.title.length)[0] ?? null;
+}
+
 /** A preview key: one graph node of a kind the box lists, its id without control characters. */
 export function parseRefKey(value: string | null): { kind: RefKind; id: string } | null {
   const s = (value ?? "").trim();

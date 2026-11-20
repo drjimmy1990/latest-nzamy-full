@@ -86,7 +86,9 @@ test("named laws and decrees become chips", () => {
   const found = scanCitations(text);
   assert.deepEqual(found.map((c) => c.kind), ["law", "decree"]);
   assert.equal(found[0].docName, "نظام المرافعات الشرعية");
-  assert.equal(text.slice(found[1].start, found[1].end), "المرسوم الملكي رقم (م/٥١)");
+  // N02-13 (batch l11): the decree chip takes its date along, to resolve it.
+  assert.equal(text.slice(found[1].start, found[1].end), "المرسوم الملكي رقم (م/٥١) وتاريخ ٢٣/٨/١٤٢٦هـ");
+  assert.equal(chip("بموجب المرسوم الملكي رقم (م/٥١)، يعمل"), "المرسوم الملكي رقم (م/٥١)");
   // «هذا النظام», «النظام الأساسي» and a bare «مرسوم ملكي» name nothing.
   assert.equal(scanCitations("تسري أحكام هذا النظام وفق النظام الأساسي بموجب مرسوم ملكي.").length, 0);
 });

@@ -193,9 +193,12 @@ const LAW_NAME_RE = /(?<![\p{L}\p{M}])(?:[وف]?[بل]?)(نظام)\s+(?=ال)/gu
 /**
  * «المرسوم الملكي رقم (م/٥١)», «الأمر الملكي رقم (أ/٩٠)», «قرار مجلس الوزراء رقم (٢٢٢)».
  * The number is required: «بموجب مرسوم ملكي» alone names nothing.
+ * N02-13 (batch l11): the chip runs on over «وتاريخ …» when the text gives the
+ * date, so the popover can resolve the decree to ONE library record (a number
+ * alone restarts every year; src/lib/library/decreeRef.ts).
  */
 const DECREE_RE =
-  /(?<![\p{L}\p{M}])(?:[وب]?)(?:(?:ال)?مرسوم\s+(?:ال)?ملكي|(?:ال)?أمر\s+(?:ال)?(?:ملكي|سامي)|قرار\s+مجلس\s+الوزراء)\s+(?:الكريم\s+)?(?:ذي\s+)?رقم\s*\(?\s*(?:[أإامق]\s*\/\s*)?[\d٠-٩]{1,6}(?:\s*\/\s*[\d٠-٩]{1,6})?\s*\)?/gu;
+  /(?<![\p{L}\p{M}])(?:[وب]?)(?:(?:ال)?مرسوم\s+(?:ال)?ملكي|(?:ال)?أمر\s+(?:ال)?(?:ملكي|سامي)|قرار\s+مجلس\s+الوزراء)\s+(?:الكريم\s+)?(?:ذي\s+)?رقم\s*\(?\s*(?:[أإامق]\s*\/\s*)?[\d٠-٩]{1,6}(?:\s*\/\s*[\d٠-٩]{1,6})?\s*\)?(?:\s*،?\s*(?:و|ب)?(?:ال)?تاريخ\s*[\d٠-٩]{1,4}\s*[/.\-]\s*[\d٠-٩]{1,2}\s*[/.\-]\s*[\d٠-٩]{1,4}\s*(?:هـ|ه)?)?/gu;
 
 /** Every reference in `text`, in order, non-overlapping. */
 export function scanCitations(text: string, opts: CiteScanOptions = {}): CiteMention[] {
