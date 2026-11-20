@@ -1,5 +1,3 @@
-"use client";
-
 // «الخزنة القانونية» — honesty gate (owner decision, 28 Sep).
 //
 // WHAT THIS PAGE WAS: three tabs over module constants. INITIAL_ITEMS listed
@@ -20,9 +18,42 @@
 // rendering DashboardComingSoon. src/app/services/lawyers/vault/page.tsx is a
 // separate marketing page and is unaffected.
 
-import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+//
+// N03-43/44 (batch l11-misc): the vault works in the dashboards, so a lawyer
+// or a firm is forwarded to his own working vault (src/lib/nav/aiVaultRedirect.ts);
+// only the others still see «قريباً» here.
 
-export default function AIVaultPage() {
+import { redirect } from "next/navigation";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import { createClient } from "@/lib/supabase/server";
+import { resolveCallerFirm } from "@/lib/auth/firmMembershipAccess";
+import { aiVaultDestination } from "@/lib/nav/aiVaultRedirect";
+
+// Per viewer (the redirect depends on the session): never prerendered or cached.
+export const dynamic = "force-dynamic";
+
+/** The working vault for the signed-in viewer, or null. A failed read keeps «قريباً». */
+async function viewerVault(): Promise<string | null> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data: profile } = await supabase.from("profiles").select("user_type").eq("id", user.id).maybeSingle();
+    const userType = typeof profile?.user_type === "string" ? profile.user_type : null;
+    if (userType !== "lawyer" && userType !== "firm") return null;
+    const firm = await resolveCallerFirm(supabase, user.id);
+    return aiVaultDestination({ userType, firmRole: firm.data?.role ?? null });
+  } catch {
+    return null;
+  }
+}
+
+export default async function AIVaultPage() {
+  // redirect() throws by design, so it stays outside the try above.
+  const destination = await viewerVault();
+  if (destination) redirect(destination);
   return (
     <DashboardComingSoon
       title="الخزنة القانونية"
