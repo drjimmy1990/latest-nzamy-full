@@ -7870,3 +7870,27 @@ select 'Owner edges: resolver + importer functions are security definer, service
                          to_regprocedure('public.graph_rag_owner_edges_mark_deleted(jsonb)')))
        end as ok;
 -- <<< verify:l10_owner_edges
+-- >>> verify:l11_sec
+-- Batch l11-sec: run 20261201_10 AFTER the code deploy (the old /api/v1/lawyer/clients reads the fee columns with the session).
+select 'O1: lawyer_clients fee columns closed to sessions; lawyer_client_fees for authenticated only (run 20261201_10)' as check,
+       case when to_regclass('public.lawyer_clients') is null or to_regprocedure('public.lawyer_client_fees(uuid[])') is null then false else
+       not has_table_privilege('authenticated', 'public.lawyer_clients', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.lawyer_clients', 'fee_total_sar', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.lawyer_clients', 'fee_paid_sar', 'SELECT')
+       and not has_column_privilege('anon', 'public.lawyer_clients', 'fee_total_sar', 'SELECT')
+       and has_column_privilege('authenticated', 'public.lawyer_clients', 'name', 'SELECT')
+       and has_function_privilege('authenticated', 'public.lawyer_client_fees(uuid[])', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.lawyer_client_fees(uuid[])', 'EXECUTE')
+       end as ok;
+select 'O2: library_device_gate has no admin exemption (re-run 20261201_10 after any re-run of 20261129_40)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_device_gate(uuid,text,text,uuid,boolean)')), '''exempt''') = 0, false) as ok;
+select 'O3: hearings / tasks / dashboard_notes carry the restrictive «firm role scope: no-case rows own only» policy (run 20261201_10)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_policy
+         where polname = 'firm role scope: no-case rows own only' and not polpermissive
+           and polrelid in (to_regclass('public.hearings'), to_regclass('public.tasks'), to_regclass('public.dashboard_notes'))) = 3 as ok;
+select 'R6: one verified account per mobile — trg_verified_phone_unique on profiles, lawyer_profiles, provider_profiles (run 20261201_10)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_trigger
+         where tgname = 'trg_verified_phone_unique' and not tgisinternal
+           and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
+       and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
+-- <<< verify:l11_sec

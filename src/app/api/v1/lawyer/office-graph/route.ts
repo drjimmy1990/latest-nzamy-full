@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
-import { canSeeClientFees, firmRoleMap } from "@/lib/services/clientFeeVisibility";
+import { canSeeClientFees, firmRoleMap, withCardFees } from "@/lib/services/clientFeeVisibility";
+import { readCardFees } from "../clients/_feeVisibility";
 import {
   OFFICE_CASE_RECEIVERS,
   buildOfficeGraph,
@@ -196,7 +197,9 @@ export async function GET() {
         .limit(CASE_CAP),
       supabase
         .from("lawyer_clients")
-        .select("id, name, client_type, client_user_id, owner_user_id, firm_id, fee_total_sar, fee_paid_sar", { count: "exact" })
+        // O1 (20261201_10): no fee columns — the session cannot read them; the
+        // fees come through lawyer_client_fees below.
+        .select("id, name, client_type, client_user_id, owner_user_id, firm_id", { count: "exact" })
         .order("created_at", { ascending: false })
         .limit(CLIENT_CAP),
       supabase
@@ -262,7 +265,9 @@ export async function GET() {
       requester: r.requester,
       metadata: r.metadata,
     }));
-    const clients: OfficeClientInput[] = ((clientsRes.data ?? []) as ClientRow[]).map((c) => {
+    const clientBase = (clientsRes.data ?? []) as Array<Omit<ClientRow, "fee_total_sar" | "fee_paid_sar">>;
+    const clientRows: ClientRow[] = withCardFees(clientBase, await readCardFees(supabase, uid, clientBase.map((c) => c.id)));
+    const clients: OfficeClientInput[] = clientRows.map((c) => {
       const visible = feesVisible(c.owner_user_id, c.firm_id);
       return {
         id: c.id,

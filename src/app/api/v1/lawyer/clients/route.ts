@@ -10,8 +10,8 @@ import {
 import { hashNationalId, normalizedCommercialRegister } from "@/lib/services/clientIdentityHash";
 import { checkContactPair } from "@/lib/services/contactFieldRules";
 import { assertLinkableAccount, propagateLink } from "./_link";
-import { canSeeClientFees, withFeesVisibleTo } from "@/lib/services/clientFeeVisibility";
-import { readCallerFirmRoles } from "./_feeVisibility";
+import { canSeeClientFees, withCardFees, withFeesVisibleTo } from "@/lib/services/clientFeeVisibility";
+import { readCallerFirmRoles, readCardFees } from "./_feeVisibility";
 import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 
 /**
@@ -58,8 +58,12 @@ const CLOSED_STATUSES = new Set(["completed", "cancelled"]);
 // literal string type, and `"a" + "b"` widens to plain `string` — which is
 // exactly what turned every row this route reads into an unusable
 // `GenericStringError` type (caught by `tsc`, not by any runtime symptom).
+//
+// O1 (20261201_10): no fee_total_sar / fee_paid_sar here. The session holds no
+// SELECT on those two columns, so naming them (or a RETURNING of them on
+// insert/update) answers 42501. The fees come from readCardFees().
 const CARD_SELECT =
-  "id, owner_user_id, firm_id, client_user_id, client_type, name, phone, email, city, national_id_hash, power_of_attorney_no, commercial_register_no, tax_number, unified_number_700, flags, rating, fee_total_sar, fee_paid_sar, first_engagement_on, status, created_at";
+  "id, owner_user_id, firm_id, client_user_id, client_type, name, phone, email, city, national_id_hash, power_of_attorney_no, commercial_register_no, tax_number, unified_number_700, flags, rating, first_engagement_on, status, created_at";
 
 interface CardRow {
   id: string;
@@ -201,7 +205,10 @@ export async function GET() {
       return NextResponse.json({ error: "تعذّر تحميل دليل الموكّلين." }, { status: 500 });
     }
 
-    const cardRows = (cards ?? []) as CardRow[];
+    // O1: the fees through lawyer_client_fees (only the cards the caller may
+    // see come back; the rest show none).
+    const cardBase = (cards ?? []) as Array<Omit<CardRow, "fee_total_sar" | "fee_paid_sar">>;
+    const cardRows: CardRow[] = withCardFees(cardBase, await readCardFees(supabase, uid, cardBase.map((c) => c.id)));
     const cardById = new Map(cardRows.map((c) => [c.id, c]));
     const cardByClientUserId = new Map(
       cardRows.filter((c) => c.client_user_id).map((c) => [c.client_user_id as string, c]),
@@ -460,7 +467,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: message }, { status });
     }
 
-    const createdCard = data as CardRow;
+    // O1: the creator owns the card, so he sees its fees; read back from the
+    // database (the stored, rounded figures), else what was sent.
+    const createdBase = data as Omit<CardRow, "fee_total_sar" | "fee_paid_sar">;
+    const createdFees = await readCardFees(supabase, user.id, [createdBase.id]);
+    const createdCard: CardRow = withCardFees([createdBase], createdFees ?? new Map([[createdBase.id, {
+      fee_total_sar: feeTotalSar ?? null,
+      fee_paid_sar: feePaidSar ?? null,
+    }]]))[0];
     const linked = clientUserId ? await propagateLink(supabase, createdCard.id, clientUserId) : null;
     return NextResponse.json({ data: cardToDto(createdCard, zeroStats()), linked }, { status: 201 });
   } catch (err) {
