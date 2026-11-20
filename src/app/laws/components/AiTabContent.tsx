@@ -26,6 +26,7 @@
 
 import Link from "next/link";
 import { memo, useEffect, useRef, useState } from "react";
+import LibraryScopeChips, { scopeField, type LibraryScopeChoice } from "@/components/ai/LibraryScopeChips";
 import {
   ArrowCounterClockwise,
   BookOpenText,
@@ -146,6 +147,8 @@ function SignedIn({ isDark }: { isDark: boolean }) {
 
 function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
   const [input, setInput] = useState("");
+  // l11-ai T14-Q485: which part of the library the assistant searches.
+  const [scope, setScope] = useState<LibraryScopeChoice>("all");
   const [turns, setTurns] = useState<Turn[]>([]);
   const running = turns.some(t => t.answer === null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -184,7 +187,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
     // The server's reply and citations, or the refusal it gave (askLibrary).
     // Owner Q458: a follow-up carries this tab's conversation (the server adds
     // its last six turns).
-    const res = await askLibrary({ message: q, conversationId: conversationRef.current }, window.location.pathname + window.location.search);
+    const res = await askLibrary({ message: q, conversationId: conversationRef.current, ...scopeField(scope) }, window.location.pathname + window.location.search);
     if (res.conversationId) conversationRef.current = res.conversationId;
     setTurns(prev => prev.map(t => t.id === id
       ? { ...t, answer: { text: res.text, cites: asCitations(res.citations), action: res.action, refused: res.refused === true } }
@@ -279,6 +282,9 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
 
         {access === "open" && (
           <>
+            <div className="mb-2">
+              <LibraryScopeChips value={scope} onChange={setScope} isDark={isDark} disabled={running} />
+            </div>
             <div className={`flex items-end gap-2 rounded-2xl border px-3.5 py-2.5 transition-colors ${
               isDark
                 ? "border-white/10 bg-white/[0.03] focus-within:border-[#C8A762]/50"
