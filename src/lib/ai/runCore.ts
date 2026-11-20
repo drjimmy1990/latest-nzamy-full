@@ -172,6 +172,12 @@ export interface StartRunDeps {
    * produces zero formal keyword phrases.
    */
   embedQuery?: (text: string) => Promise<{ modelId: string; literal: string } | null>;
+  /**
+   * T17a: a tool with `caseFrom` — the caller's OWN case as model context
+   * (assistantCase.loadAssistantCase on the caller's RLS client). null = not
+   * his / not there (refused, uncharged); a throw = unavailable (uncharged).
+   */
+  loadCase?: (userId: string, caseId: string) => Promise<Record<string, unknown> | null>;
   /** File tools only: the caller's vault files checked, counted and signed (aiFiles.resolveAiFiles). */
   resolveFiles?: (userId: string, fileIds: unknown, rules: FileRules) => Promise<FilesCheck>;
   /**
@@ -212,6 +218,7 @@ export const AI_COPY = {
   off: "هذه الأداة غير متاحة حالياً",
   key: "مفتاح الطلب غير صالح — أعد المحاولة",
   noFiles: "هذه الأداة لا تقبل ملفات",
+  caseNotFound: "لم نجد هذه القضية بين قضاياك — اخترها من القائمة مرة أخرى",
   points: "رصيدك من النقاط لا يكفي لهذه الأداة",
   daily: "بلغت الحد اليومي لهذه الأداة — حاول غداً",
   duplicate: "هذا الطلب أُرسل من قبل",
@@ -456,6 +463,8 @@ export interface DispatchContext {
   deadline: Date;
   startedAt: number;
   actor: RunActor;
+  /** T17a: the caller's own case, read before the charge (tools with `caseFrom`); null otherwise. */
+  caseContext?: Record<string, unknown> | null;
 }
 
 /**
@@ -660,6 +669,26 @@ export async function startRunWith(
   if (spec.filesRequired?.(checked.input) && files.length === 0) {
     return { status: 422, body: { error: spec.filesRequiredCopy ?? AI_COPY.filesRequired, code: "files_required" } };
   }
+  // T17a: the named case is read here, before the charge — the caller's own
+  // case only (assistantCase.ts); the id stays in the input, the summary goes
+  // to n8n only.
+  let caseContext: Record<string, unknown> | null = null;
+  const caseId = spec.caseFrom ? checked.input[spec.caseFrom] : null;
+  if (typeof caseId === "string" && caseId) {
+    if (!deps.loadCase) {
+      console.error("[ai] a case tool without loadCase:", spec.id);
+      return { status: 503, body: { error: AI_COPY.notReady, code: "not_ready" } };
+    }
+    let loaded: Record<string, unknown> | null;
+    try {
+      loaded = await deps.loadCase(actor.userId, caseId);
+    } catch (err) {
+      console.error("[ai] reading the case failed for", spec.id, errorName(err));
+      return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
+    }
+    if (!loaded) return { status: 404, body: { error: AI_COPY.caseNotFound, code: "case_not_found" } };
+    caseContext = loaded;
+  }
   // Owner ٤١٠: a section edit is priced from the memo's earlier edits, read
   // above from this user's own runs of this conversation (never the browser's).
   const sectionEdit = !!spec.sectionEdit && !!conversationId && checked.input.phase === spec.sectionEdit.phase;
@@ -849,7 +878,7 @@ export async function startRunWith(
 
   report(deps.progress, run.run_id, actor.userId, fileEvents(files));
 
-  const ctx: DispatchContext = { spec, run, checked, files, pages, history, conversationId, isAdmin, deadline, startedAt, actor };
+  const ctx: DispatchContext = { spec, run, checked, files, pages, history, conversationId, isAdmin, deadline, startedAt, actor, caseContext };
   if (spec.class === "job" && deps.defer) {
     try {
       deps.defer(async () => {
@@ -884,6 +913,7 @@ async function dispatchSafely(admin: SupabaseClient, deps: StartRunDeps, ctx: Di
  */
 export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps, ctx: DispatchContext): Promise<RouteReply> {
   const { spec, run, checked, files, history, conversationId, deadline, startedAt, actor } = ctx;
+  const caseContext = ctx.caseContext ?? null;
   const clock = deps.clock ?? (() => Date.now());
   const charged = chargedBody(run, conversationId);
   let sources: SourceMap = {};
@@ -892,7 +922,9 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
   // too; every way out below refunds.
   let pkgSources: PackageSource[] = [];
   if (spec.retrieval && deps.retrieve) {
-    const { from, pinFrom, scopeFrom, laws, principles } = spec.retrieval;
+    const { from, pinFrom, scopeFrom, limitsFor } = spec.retrieval;
+    // T14-Q485: the type chips choose the limits; no chip → the tool's own.
+    const limits = limitsFor?.(checked.input) ?? { laws: spec.retrieval.laws, principles: spec.retrieval.principles };
     const pinned = pinFrom ? checked.input[pinFrom] : null;
     const scope = scopeFrom ? checked.input[scopeFrom] : null;
     const question = String(checked.input[from] ?? "");
@@ -950,8 +982,8 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
             ? { useGraph: true }
             : undefined;
         found = retrieveOpts
-          ? await deps.retrieve(queries, { laws, principles }, pin, retrieveOpts)
-          : await deps.retrieve(queries, { laws, principles }, pin);
+          ? await deps.retrieve(queries, limits, pin, retrieveOpts)
+          : await deps.retrieve(queries, limits, pin);
       } catch (err) {
         console.error("[ai] retrieval threw for", run.run_id, errorName(err));
         found = { sources: [], map: {} };
@@ -993,7 +1025,7 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
     },
     input: pkgInput,
     sources: pkgSources,
-    case: null,
+    case: caseContext,
     history,
     files,
     respond: sync ? { mode: "sync" } : { mode: "async", callback_url: deps.callbackUrl },

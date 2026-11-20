@@ -19,6 +19,7 @@ import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
 import { isLibraryAiTool } from "@/lib/library/readQuota";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 import { assistantGuardState } from "@/lib/ai/assistantGuard";
+import { loadAssistantCase, type CaseReader } from "@/lib/ai/assistantCase";
 
 /**
  * /api/v1/ai/runs — the AI tools (docs/plans/2026-10-26-ai-services-n8n-plan.md
@@ -210,6 +211,10 @@ export async function POST(request: NextRequest) {
             graphOn ? withGraphCallLog(opts ?? { useGraph: true }, admin, "ai_run") : undefined,
           ),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
+        // T17a: «قضية محددة» — the caller's OWN case, read on HIS RLS client
+        // (never the service role), own rows only (assistantCase.ts).
+        loadCase: async (userId, caseId) =>
+          (await loadAssistantCase(supabase as unknown as CaseReader, userId, caseId)) as Record<string, unknown> | null,
         ...(textFiles ? { pastedFileUrl: pastedFileUrlFrom(textFiles) } : {}),
         progress: progressSink(admin, (work) => after(work)),
         // A job run answers 202 before its searches; n8n is called after the reply.
