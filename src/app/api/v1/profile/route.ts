@@ -33,6 +33,7 @@ import {
 import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/components/_corporateIdentity";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
+import { isVerifiedPhoneDbError, VERIFIED_PHONE_PROFILE_REFUSAL_AR } from "@/lib/lawyerSignup/verifiedPhone";
 import {
   resolveBusinessProfileScope,
   applyDelegation,
@@ -835,6 +836,11 @@ export async function PATCH(request: Request) {
       .select()
       .single();
     if (error) {
+      // R6 (20261201_10): a verified lawyer/provider moving onto a mobile
+      // another verified account holds.
+      if (isVerifiedPhoneDbError(error)) {
+        return NextResponse.json({ error: VERIFIED_PHONE_PROFILE_REFUSAL_AR, field: "phone" }, { status: 409 });
+      }
       console.error("[api/v1/profile] profiles update failed:", error.message);
       return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
     }
