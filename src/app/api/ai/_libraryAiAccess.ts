@@ -5,6 +5,7 @@ import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } fro
 import { hasActiveLibraryGrant } from '@/lib/libraryAccessServer';
 import { libraryAiDecision, libraryAiReads } from './libraryAiDecision';
 import { isFounderMemberForTool } from './_founderToolMember';
+import { LIBRARY_ASSISTANT_REFUSAL_AR, LIBRARY_TOOL_REFUSAL_AR } from './libraryAiRefusalText';
 
 /**
  * Who may use the library's AI: POST /api/v1/ai/runs asks this for every
@@ -74,13 +75,11 @@ export async function libraryAiAccess(toolId?: string): Promise<NextResponse | n
   // assistant also opens with a library subscription (the founder's included);
   // the other library tools need the professional plan or higher. The plans
   // are named as the law reader names them (laws/[slug] route lockedMessage),
-  // never "Pro" (owner register 4/5/48, N05-L11/12). `requiredTier` stays a
-  // machine value for the client.
+  // never "Pro" (owner register 4/5/48, N05-L11/12; libraryAiRefusalText.ts,
+  // numbers from the registry). `requiredTier` stays a machine value.
   return NextResponse.json(
     {
-      error: reads.libraryGrant
-        ? 'مساعد المكتبة الذكي متاح لمشتركي باقة المكتبة القانونية والأعضاء المؤسسين ومشتركي الباقة الاحترافية أو أعلى، ويُخصم من رصيدك 5 نقاط عن كل سؤال.'
-        : 'هذه الأداة تجيب من نصوص المكتبة القانونية، وهي متاحة لمشتركي الباقة الاحترافية أو أعلى.',
+      error: reads.libraryGrant ? LIBRARY_ASSISTANT_REFUSAL_AR : LIBRARY_TOOL_REFUSAL_AR,
       requiredTier: 'pro',
     },
     { status: 403 },

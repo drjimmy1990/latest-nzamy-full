@@ -215,28 +215,32 @@ test("the gate is all or nothing, not a per-item free check", () => {
   assert.doesNotMatch(gateSource, /checkLibraryAccess|isFreeLibraryItem|isExplicitlyFreeLibraryItem/);
 });
 
-test("the gate's own error bodies are Arabic", () => {
+test("the gate's own error bodies are Arabic", async () => {
   // The 401 body, and the 403's two messages (the library assistant names the
   // library subscription too; the other library tools need the professional plan).
   const code = gateSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   const bodies = [...code.matchAll(/'([^'\n]*[؀-ۿ][^'\n]*)'/g)].map((m) => m[1]);
-  assert.equal(bodies.length, 3, "the 401 and the two 403 messages");
-  for (const text of bodies) {
+  assert.equal(bodies.length, 1, "the 401 here; the two 403 sentences come from libraryAiRefusalText.ts");
+  assert.match(code, /error: reads\.libraryGrant \? LIBRARY_ASSISTANT_REFUSAL_AR : LIBRARY_TOOL_REFUSAL_AR,/);
+  const { LIBRARY_ASSISTANT_REFUSAL_AR, LIBRARY_TOOL_REFUSAL_AR } = await import("./libraryAiRefusalText.ts");
+  for (const text of [...bodies, LIBRARY_ASSISTANT_REFUSAL_AR, LIBRARY_TOOL_REFUSAL_AR]) {
     // N05-L11/12 (batch l11): no "Pro" and no other Latin word — the plans by their Arabic names.
     assert.doesNotMatch(text, /[A-Za-z]/, text);
   }
 });
 
-test("N05-L11/12: the 403s name the real plans in Arabic and the assistant's price per question", () => {
-  const code = gateSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  const bodies = [...code.matchAll(/'([^'\n]*[؀-ۿ][^'\n]*)'/g)].map((m) => m[1]);
-  const assistant = bodies.find((b) => b.includes("مساعد المكتبة"));
-  const other = bodies.find((b) => b.includes("هذه الأداة"));
-  assert.ok(assistant && other, "both 403 messages");
+test("N05-L11/12: the 403s name the real plans, the assistant's price and the 50-point rule, from the registry", async () => {
+  const { LIBRARY_ASSISTANT_REFUSAL_AR: assistant, LIBRARY_TOOL_REFUSAL_AR: other } = await import("./libraryAiRefusalText.ts");
   for (const plan of ["باقة المكتبة القانونية", "الأعضاء المؤسسين", "الباقة الاحترافية"]) assert.ok(assistant.includes(plan), plan);
-  assert.match(assistant, /5 نقاط عن كل سؤال/);
+  assert.ok(assistant.includes("والسؤال الواحد عليه ٥ نقاط من رصيدك"), assistant);
+  assert.ok(assistant.includes("ما دام رصيده لا يقل عن ٥٠ نقطة"), assistant);
   assert.ok(other.includes("الباقة الاحترافية"));
   assert.ok(!other.includes("باقة المكتبة القانونية"), "a library subscription does not open the other library tools");
+  // No number typed in the text module: the price and the minimum are read.
+  const raw = readFileSync(new URL("./libraryAiRefusalText.ts", import.meta.url), "utf8");
+  assert.match(raw, /aiToolPriceText\("library-assistant", "ar"\)/);
+  assert.match(raw, /toArabicDigits\(LIBRARY_MIN_POINTS_DEFAULT\)/);
+  assert.doesNotMatch(raw.replace(/\/\*[\s\S]*?\*\//g, ""), /[0-9٠-٩]\s?(?:نقطة|نقاط)/);
 });
 
 // 0.5 (owner package 17 Nov): a founder member passes for the founder plan's tools only
