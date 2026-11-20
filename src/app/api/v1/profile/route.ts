@@ -34,6 +34,7 @@ import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/com
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
 import { isVerifiedPhoneDbError, VERIFIED_PHONE_PROFILE_REFUSAL_AR } from "@/lib/lawyerSignup/verifiedPhone";
+import { licenceFormatIssue, normaliseLicence } from "@/lib/lawyerSignup/licenceFormat";
 import {
   resolveBusinessProfileScope,
   applyDelegation,
@@ -735,6 +736,29 @@ export async function PATCH(request: Request) {
   const lawyerUpdates: Record<string, unknown> = {};
   if (wantsLawyerUpdate) {
     for (const key of lawyerFields) if (key in body) lawyerUpdates[key] = body[key];
+  }
+
+  // R9a (l11): a CHANGED advocate licence number must look like one (digits,
+  // and the separators the lawyers' registry uses). Unchanged values pass, so
+  // an older number on file never blocks saving the rest of the profile.
+  if (typeof lawyerUpdates.license_number === "string" && licenceFormatIssue(lawyerUpdates.license_number)) {
+    const { data: current, error: currentErr } = await (await createServiceClient())
+      .from("lawyer_profiles")
+      .select("license_number, practice_kind")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (currentErr) {
+      console.error("[api/v1/profile] licence read failed:", currentErr.message, currentErr.code);
+    } else {
+      const row = current as { license_number?: string | null; practice_kind?: string | null } | null;
+      const changed = normaliseLicence(row?.license_number ?? null) !== normaliseLicence(lawyerUpdates.license_number);
+      if (changed && row?.practice_kind !== "consultant") {
+        return NextResponse.json(
+          { error: licenceFormatIssue(lawyerUpdates.license_number), field: "license_number" },
+          { status: 422 },
+        );
+      }
+    }
   }
 
   if (
