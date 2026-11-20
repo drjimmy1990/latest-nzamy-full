@@ -65,6 +65,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { getFirmRouteDecision } from "@/constants/entityRouteAccess";
 import { apiGet } from "@/lib/services/api";
+import { caseMatchesSearch, normalizeCaseSearch } from "@/lib/services/caseSearchFilter";
 import type { WorkflowRequest } from "@/lib/workflowStore";
 import { workflowToCase, STATUS_CONFIG, TYPE_LABELS } from "@/constants/lawyerCasesData";
 import type { Case, CaseStatus } from "@/app/dashboard/lawyer/cases/_types";
@@ -119,6 +120,14 @@ export default function FirmCasesPage() {
   const [assigning, setAssigning] = useState<Case | null>(null);
 
   const [search, setSearch] = useState("");
+  // T10-F5 (batch l11): the search runs on the server (debounced), so a case
+  // older than the newest LIST_LIMIT rows is found too.
+  const [serverQuery, setServerQuery] = useState("");
+  useEffect(() => {
+    const next = normalizeCaseSearch(search);
+    const t = setTimeout(() => setServerQuery(next), 400);
+    return () => clearTimeout(t);
+  }, [search]);
   const [statusFilter, setStatusFilter] = useState<CaseStatus | "all">("all");
   const [showArchive, setShowArchive] = useState(false);
   const [showAddCase, setShowAddCase] = useState(false);
@@ -135,7 +144,7 @@ export default function FirmCasesPage() {
       try {
         const response = await apiGet<{ data?: WorkflowRequest[]; total?: number; degraded?: boolean }>(
           "/api/v1/service-requests",
-          { limit: LIST_LIMIT },
+          { limit: LIST_LIMIT, ...(serverQuery ? { q: serverQuery } : {}) },
         );
         if (cancelled) return;
         if (response.degraded === true) {
@@ -169,7 +178,7 @@ export default function FirmCasesPage() {
       cancelled = true;
       window.removeEventListener("nzamy-workflow-updated", handler);
     };
-  }, [reloadKey]);
+  }, [reloadKey, serverQuery]);
 
   const viewState = listViewState(loading, read);
   const cases = itemsOf(read);
@@ -202,7 +211,7 @@ export default function FirmCasesPage() {
   const filtered = useMemo(() => {
     return baseCases.filter(c => {
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
-      if (search && !c.title.includes(search) && !c.client.includes(search) && !c.court.includes(search)) return false;
+      if (search && !caseMatchesSearch(c, search)) return false;
       return true;
     });
   }, [baseCases, statusFilter, search]);
@@ -353,7 +362,7 @@ export default function FirmCasesPage() {
           )}
           <div className="space-y-2">
             {filtered.length === 0 ? (
-              cases.length === 0 ? (
+              cases.length === 0 && !serverQuery ? (
                 <EmptyState
                   icon={<Gavel />}
                   title="لا توجد قضايا بعد"

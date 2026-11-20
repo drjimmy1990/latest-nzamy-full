@@ -11,6 +11,7 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
+import { withCaseSearch } from "@/lib/services/caseSearchFilter";
 import { checkOrderIntake, intakeErrorMessageAr, persistedRequestMetadata } from "@/lib/services/intakeGuard";
 import { isPleadingDraftIntake } from "@/lib/services/orderIntake";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
@@ -163,6 +164,7 @@ function toWorkflowRequest(row: Record<string, unknown>): Record<string, unknown
  *   - status (filter by status)
  *   - limit (default: 20)
  *   - offset (default: 0)
+ *   - q (T10-F5, batch l11: search title / client name / court on the server, caseSearchFilter.ts)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -214,7 +216,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "قيمة receiver غير معروفة" }, { status: 400 });
     }
     const scope = await resolveListScopeIds(supabase, user.id);
-    query = query.or(ownRequestsOrFilter({ uid: user.id, receiver, ...scope }));
+    // T10-F5 (batch l11): `?q=` (the case lists' search box) joins the ownership
+    // filter in ONE logic tree — and(or(own…),or(search…)) — so the search can
+    // only narrow what he may see (caseSearchFilter.ts).
+    query = query.or(withCaseSearch(ownRequestsOrFilter({ uid: user.id, receiver, ...scope }), searchParams.get("q")));
 
     if (requesterUserId) {
       query = query.eq("requester_user_id", requesterUserId);

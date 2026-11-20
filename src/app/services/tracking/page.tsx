@@ -315,13 +315,17 @@ export default function TrackingPage() {
                   ))}
                 </ul>
 
-                <motion.button
+                {/* N05-M4 (batch l11): the button had no handler. Prices are set
+                    after assessment, so the package is chosen with the team:
+                    it goes where «ابدأ الآن» goes. */}
+                <motion.a
+                  href="/contact"
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  className={`w-full py-3 rounded-xl font-bold text-sm transition-colors ${tier.btnClass} hover:opacity-90`}
+                  className={`block w-full py-3 rounded-xl font-bold text-sm text-center transition-colors ${tier.btnClass} hover:opacity-90`}
                 >
                   {isRTL ? "اختر الباقة" : "Choose Plan"}
-                </motion.button>
+                </motion.a>
               </motion.div>
             ))}
           </div>

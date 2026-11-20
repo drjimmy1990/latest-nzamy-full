@@ -32,6 +32,7 @@ import ContractFormModal from "./ContractFormModal";
 import UploadVersionModal from "./UploadVersionModal";
 import { PartyFormModal, ObligationFormModal, PaymentFormModal } from "./ContractChildForms";
 import ZipDownloadButton from "@/components/attachments/ZipDownloadButton";
+import CounterpartyNationalIdPanel from "./CounterpartyNationalIdPanel";
 
 /**
  * ContractDetail.tsx
@@ -391,6 +392,9 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
               {detail.notes || "لا توجد ملاحظات."}
             </p>
           </div>
+
+          {/* N01-5 (owner ٢٤): the other party's national ID — the contract's author only. */}
+          <CounterpartyNationalIdPanel contractId={contractId} isDark={isDark} />
 
           <div className={`${card} p-4`}>
             <h2 className={`text-[13px] font-bold mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>الأطراف</h2>

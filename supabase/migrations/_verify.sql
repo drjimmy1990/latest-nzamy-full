@@ -7909,3 +7909,32 @@ select 'Reminder kinds: email_reminder_log accepts task_due_1d(_app), contract_p
        and not has_table_privilege('authenticated', 'public.email_reminder_log', 'INSERT')
        end as ok;
 -- <<< verify:l11_remind
+-- >>> verify:l11_firm
+-- Batch l11-firm (O23 firm-wide fee statements; N01-5 encrypted party national ID): run 20261201_40.
+select 'Firm fee statements: firm_fee_statement_reader is security definer, authenticated may run it, anon may not; the payments policy exists (run 20261201_40)' as check,
+       case when to_regprocedure('public.firm_fee_statement_reader(uuid)') is null then false else
+       (select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+         where p.oid = to_regprocedure('public.firm_fee_statement_reader(uuid)'))
+       and has_function_privilege('authenticated', 'public.firm_fee_statement_reader(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.firm_fee_statement_reader(uuid)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_policies
+                    where schemaname = 'public' and tablename = 'payments'
+                      and policyname = 'firm finance reads firm statements' and cmd = 'SELECT')
+       end as ok;
+select 'Contract party national ID: both tables server-only (RLS forced, no policy, no anon/authenticated privilege), the access log append-only (run 20261201_40)' as check,
+       case when to_regclass('public.contract_party_national_ids') is null or to_regclass('public.contract_party_id_access_log') is null then false else
+       (select pg_catalog.bool_and(c.relrowsecurity and c.relforcerowsecurity) from pg_catalog.pg_class c
+         where c.oid in (to_regclass('public.contract_party_national_ids'), to_regclass('public.contract_party_id_access_log')))
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid in (to_regclass('public.contract_party_national_ids'), to_regclass('public.contract_party_id_access_log')))
+       and not has_table_privilege('anon', 'public.contract_party_national_ids', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.contract_party_national_ids', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.contract_party_national_ids', 'INSERT')
+       and not has_table_privilege('anon', 'public.contract_party_id_access_log', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.contract_party_id_access_log', 'SELECT')
+       and has_table_privilege('service_role', 'public.contract_party_national_ids', 'INSERT')
+       and has_table_privilege('service_role', 'public.contract_party_id_access_log', 'INSERT')
+       and not has_table_privilege('service_role', 'public.contract_party_id_access_log', 'UPDATE')
+       and not has_table_privilege('service_role', 'public.contract_party_id_access_log', 'DELETE')
+       end as ok;
+-- <<< verify:l11_firm

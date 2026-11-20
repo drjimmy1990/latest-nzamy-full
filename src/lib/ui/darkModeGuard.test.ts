@@ -37,7 +37,6 @@ const ALLOW: [string, string | null, string][] = [
   ["app/community/[id]/page.tsx", "w-4 h-4 rounded-full bg-white shadow", TOGGLE],
   ["app/dashboard/client/_components/ClientLetterWorkflow.tsx", "rounded-full bg-white shadow-md transition-all", TOGGLE],
   ["app/dashboard/firm/branding/page.tsx", "w-5 h-5 rounded-full bg-white shadow-md", TOGGLE],
-  ["app/dashboard/firm/team/roles/page.tsx", "rounded-full bg-white shadow transition-all", TOGGLE],
   ["app/dashboard/provider/profile/page.tsx", "h-5 w-5 rounded-full bg-white shadow", TOGGLE],
   ["app/settings/components/tabs/_shared.tsx", "w-5 h-5 bg-white rounded-full shadow-sm", TOGGLE],
   ["components/calculators/CalcLaborRights.tsx", "w-4 h-4 rounded-full bg-white shadow-sm", TOGGLE],
