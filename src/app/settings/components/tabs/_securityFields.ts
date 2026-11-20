@@ -52,11 +52,12 @@ export function arabicAuthError(err: unknown): string {
 
 // ── Session timeout ──────────────────────────────────────────────────
 //
-// `user_settings.session_timeout_minutes` is a real column this tab can load
-// and save, but nothing in the codebase reads it to actually end a session —
-// no proxy.ts check, no auth-helper enforcement (verified by grep). It is a
-// stored preference today, not an active control, and the label below says
-// exactly that rather than promising an automatic sign-out.
+// `user_settings.session_timeout_minutes` is enforced since l11 (T5): the
+// root layout's SessionIdleGuard (src/hooks/useSessionIdleGuard.ts) signs an
+// idle session out after this many minutes, with a warning first. It applies
+// once the user has SAVED a choice here (the save also writes
+// preferences.sessionTimeoutChosen — src/lib/auth/idleSignOut.ts); until then
+// nothing signs a session out, as before.
 
 /** The values this tab offers, in minutes. */
 export const SESSION_TIMEOUT_OPTIONS_MINUTES = [15, 30, 60, 120, 240] as const;

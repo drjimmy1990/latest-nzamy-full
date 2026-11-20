@@ -6,6 +6,11 @@ import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { settleFounderSeatAfterDecision } from "@/lib/membership/founderVerificationServer";
 import { isFakeTestLicence, isFakeLicenceDbError, FAKE_LICENCE_REFUSAL_AR } from "@/lib/lawyerSignup/fakeLicence";
+import {
+  isVerifiedPhoneDbError,
+  verifiedPhoneTakenFor,
+  VERIFIED_PHONE_APPROVAL_REFUSAL_AR,
+} from "@/lib/lawyerSignup/verifiedPhone";
 
 /**
  * PATCH /api/v1/admin/verifications/[id] — Approve or reject a verification
@@ -59,6 +64,14 @@ export async function PATCH(
     if (licences.some((licence) => isFakeTestLicence(licence))) {
       return NextResponse.json({ error: FAKE_LICENCE_REFUSAL_AR }, { status: 422 });
     }
+    // R6 (l11, 20261201_10): one verified account per mobile. The database
+    // trigger refuses too; this answers first and holds before the SQL runs.
+    // A failed read is not a refusal: the trigger still decides.
+    const phoneTaken = await verifiedPhoneTakenFor(adminClient, userId);
+    if (phoneTaken === true) {
+      return NextResponse.json({ error: VERIFIED_PHONE_APPROVAL_REFUSAL_AR }, { status: 409 });
+    }
+    if (phoneTaken === null) console.error("[admin/verifications] verified-mobile check could not be read");
   }
 
   // ── Try to update across all profile tables ────────────────────────────────
@@ -85,6 +98,9 @@ export async function PATCH(
   // answering "not found".
   if (isFakeLicenceDbError(lawyerErr)) {
     return NextResponse.json({ error: FAKE_LICENCE_REFUSAL_AR }, { status: 422 });
+  }
+  if (isVerifiedPhoneDbError(lawyerErr)) {
+    return NextResponse.json({ error: VERIFIED_PHONE_APPROVAL_REFUSAL_AR }, { status: 409 });
   }
   if (lawyerErr?.code === "23505") {
     return NextResponse.json(
@@ -119,6 +135,9 @@ export async function PATCH(
 
     if (isFakeLicenceDbError(providerErr)) {
       return NextResponse.json({ error: FAKE_LICENCE_REFUSAL_AR }, { status: 422 });
+    }
+    if (isVerifiedPhoneDbError(providerErr)) {
+      return NextResponse.json({ error: VERIFIED_PHONE_APPROVAL_REFUSAL_AR }, { status: 409 });
     }
     if (!providerErr && providerUpdate) {
       updated = true;

@@ -14,6 +14,7 @@
  * Works before 20261129_40 runs: the setting row missing reads as 50, and
  * points_balance / membership_credits are older (20261022_20 / 20261101_10).
  */
+import "server-only";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   LIBRARY_MIN_POINTS_DEFAULT,

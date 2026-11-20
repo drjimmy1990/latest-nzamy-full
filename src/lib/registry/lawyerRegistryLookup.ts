@@ -21,6 +21,7 @@
  * so the JSON itself never says «منتهٍ». The expiry stays on the admin
  * reviewer's screen (registryMatch.ts, read from the database).
  */
+import { licenceFormatIssue } from "../lawyerSignup/licenceFormat.ts";
 
 export const LICENCE_MAX = 32;
 export const NAME_MAX = 120;
@@ -54,10 +55,10 @@ export function parseLookupBody(body: unknown): ParseResult {
     return { ok: false, error: "بيانات غير صالحة" };
   }
   if (licence) {
-    // Western or Arabic-Indic digits, and the separators the registry uses.
-    if (!/^[0-9٠-٩۰-۹\s/\\\-–—_]+$/.test(licence) || !/[0-9٠-٩۰-۹]/.test(licence)) {
-      return { ok: false, error: "رقم الترخيص أرقام فقط، وقد يتضمّن الشرطة المائلة (/)" };
-    }
+    // Western or Arabic-Indic digits, and the separators the registry uses
+    // (R9a: the one shared rule, src/lib/lawyerSignup/licenceFormat.ts).
+    const issue = licenceFormatIssue(licence);
+    if (issue) return { ok: false, error: issue };
     return { ok: true, input: { licenseNumber: licence, fullName: null, turnstileToken: token || null } };
   }
   if (name) {

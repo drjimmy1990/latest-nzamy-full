@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStaff } from "@/lib/access-control";
+import { staffCan } from "@/lib/auth/staffRoles";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 import { TEST_BATCH_ERRORS_AR, validBatchId } from "@/lib/testBatches/testBatches";
@@ -12,7 +13,10 @@ import { TEST_BATCH_ERRORS_AR, validBatchId } from "@/lib/testBatches/testBatche
  *          the test accounts with their current batch, the tagged rows per
  *          batch, the last purge-audit rows and the last sunk e-mails (the
  *          test mail sink — a test account's codes wait there).
- *          requireStaff("read").
+ *          requireStaff("read"); the sunk e-mails only for a role that may
+ *          manage the tests (settings.write — not an auditor), since they
+ *          hold test accounts' device and sign-up codes (O6, l11). Others
+ *          get mail: null and mailHidden: true.
  *   POST { userId, batch } → moves a TEST account to a new batch (its next
  *          rows and files go to it; the old ones stay in the old batch).
  *          requireStaff("settings.write"), audited (test_batch_assigned).
@@ -42,17 +46,21 @@ export async function GET() {
       return NextResponse.json({ error: TEST_BATCH_ERRORS_AR.failed }, { status: 503, headers: NO_STORE });
     }
 
+    // O6 (l11): the sink holds test accounts' codes — a manage role only.
+    const canReadMail = staffCan(gate.role, "settings.write");
     const [audit, mail] = await Promise.all([
       service
         .from("test_batch_purge_audit")
         .select("id, purge_id, created_at, kind, status, test_batch, actor_email, ip, counts_before, counts_after, blockers, files, error")
         .order("id", { ascending: false })
         .limit(30),
-      service
-        .from("test_mail_sink")
-        .select("id, created_at, to_masked, reason, subject, body_text, tag, test_batch")
-        .order("id", { ascending: false })
-        .limit(30),
+      canReadMail
+        ? service
+            .from("test_mail_sink")
+            .select("id, created_at, to_masked, reason, subject, body_text, tag, test_batch")
+            .order("id", { ascending: false })
+            .limit(30)
+        : Promise.resolve({ data: null, error: null }),
     ]);
     for (const r of [audit, mail]) {
       if (r.error && !isMissingTable(r.error.code)) console.error("[admin/test-batches] read failed:", r.error.code);
@@ -63,7 +71,8 @@ export async function GET() {
         ready: true,
         overview,
         audit: audit.error ? null : (audit.data ?? []),
-        mail: mail.error ? null : (mail.data ?? []),
+        mail: !canReadMail || mail.error ? null : (mail.data ?? []),
+        mailHidden: !canReadMail,
       },
       { headers: NO_STORE },
     );

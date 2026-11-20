@@ -13,8 +13,10 @@ import {
   type CardRow, type Stats,
 } from "../route";
 import { assertLinkableAccount, propagateLink } from "../_link";
-import { readCallerFirmRoles } from "../_feeVisibility";
-import { canSeeClientFees, withFeesVisibleTo } from "@/lib/services/clientFeeVisibility";
+import { readCallerFirmRoles, readCardFees } from "../_feeVisibility";
+import { canSeeClientFees, withCardFees, withFeesVisibleTo } from "@/lib/services/clientFeeVisibility";
+
+type CardBase = Omit<CardRow, "fee_total_sar" | "fee_paid_sar">;
 
 /**
  * /api/v1/lawyer/clients/[id] — single-client read/update, Phase 2.
@@ -61,7 +63,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
     const uid = user.id;
     const { id } = await context.params;
 
-    const { data: card, error: cardError } = await supabase
+    const { data: cardBase, error: cardError } = await supabase
       .from("lawyer_clients")
       .select(CARD_SELECT)
       .eq("id", id)
@@ -72,7 +74,10 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
       return NextResponse.json({ error: "تعذّر تحميل بيانات الموكّل." }, { status: 500 });
     }
 
-    if (card) {
+    if (cardBase) {
+      // O1: the fees through lawyer_client_fees (absent = not for this caller).
+      const base = cardBase as CardBase;
+      const card: CardRow = withCardFees([base], await readCardFees(supabase, uid, [base.id]))[0];
       const stats = await statsForCard(supabase, uid, card as CardRow);
       // Ticket S3: fees only for the author, partners and the finance manager.
       const feesVisible = canSeeClientFees(uid, card as CardRow, await readCallerFirmRoles(supabase, uid));
@@ -181,7 +186,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!existing) {
       return NextResponse.json({ error: "الموكّل غير موجود." }, { status: 404 });
     }
-    const existingCard = existing as CardRow;
+    // O1: the session reads no fee column; the current fees (needed for the
+    // pair check below) come through lawyer_client_fees.
+    const existingBase = existing as CardBase;
+    const existingFees = await readCardFees(supabase, uid, [existingBase.id]);
+    const existingCard: CardRow = withCardFees([existingBase], existingFees)[0];
     // Ticket S3: a role that may not see this card's fees may not write them
     // either. Its edit form received nulls, so fee keys it sends back are
     // ignored rather than allowed to clear the real figures.
@@ -318,6 +327,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // patched value where one is sent, the row's current value otherwise —
     // so a PATCH touching only feePaidSar is still checked against the total
     // already on record, not against `undefined`.
+    if (feesVisible && (feeTotalSar !== undefined || feePaidSar !== undefined) && existingFees === null) {
+      return NextResponse.json({ error: "تعذّر تحميل بيانات الموكّل." }, { status: 500 });
+    }
     if (feesVisible) {
       const effectiveTotal = feeTotalSar !== undefined ? feeTotalSar : existingCard.fee_total_sar;
       const effectivePaid = feePaidSar !== undefined ? feePaidSar : existingCard.fee_paid_sar;
@@ -344,7 +356,11 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return NextResponse.json({ error: message }, { status: httpStatus });
     }
 
-    const updatedCard = data as CardRow;
+    const updatedBase = data as CardBase;
+    const updatedCard: CardRow = withCardFees(
+      [updatedBase],
+      feesVisible ? await readCardFees(supabase, uid, [updatedBase.id]) : null,
+    )[0];
     const linked = linkTargetUserId ? await propagateLink(supabase, updatedCard.id, linkTargetUserId) : null;
     const stats = await statsForCard(supabase, uid, updatedCard);
     return NextResponse.json({ data: withFeesVisibleTo(cardToDto(updatedCard, stats), feesVisible), linked });

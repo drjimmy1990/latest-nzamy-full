@@ -9,6 +9,7 @@
  * PGRST205). Each read then answers "table_missing" — logged once per process
  * — and the caller keeps today's behaviour; nothing here ever throws.
  */
+import "server-only";
 import type { createServiceClient } from "@/lib/supabase/server";
 import { toStaffRole, type StaffRole } from "@/lib/auth/staffRoles";
 import { STAFF_CHECK_UNAVAILABLE_AR, isMissingStaffTable } from "@/lib/auth/staffDecision";

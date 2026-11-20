@@ -33,6 +33,8 @@ import {
 import { normalizeCrNumber, isLegalRepCapacity } from "@/app/register/client/components/_corporateIdentity";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { profilePhoneDecision } from "./_phone";
+import { isVerifiedPhoneDbError, VERIFIED_PHONE_PROFILE_REFUSAL_AR } from "@/lib/lawyerSignup/verifiedPhone";
+import { licenceFormatIssue, normaliseLicence } from "@/lib/lawyerSignup/licenceFormat";
 import {
   resolveBusinessProfileScope,
   applyDelegation,
@@ -736,6 +738,26 @@ export async function PATCH(request: Request) {
     for (const key of lawyerFields) if (key in body) lawyerUpdates[key] = body[key];
   }
 
+  // R9a (l11): a CHANGED advocate licence number must look like one (digits,
+  // and the separators the lawyers' registry uses). Unchanged values pass, so
+  // an older number on file never blocks saving the rest of the profile.
+  if (typeof lawyerUpdates.license_number === "string" && licenceFormatIssue(lawyerUpdates.license_number)) {
+    // The caller's own row, by the verified id (readOwnLawyerRow, plan item N2).
+    const { data: current, error: currentErr } = await readOwnLawyerRow(user.id);
+    if (currentErr) {
+      console.error("[api/v1/profile] licence read failed:", currentErr.message, currentErr.code);
+    } else {
+      const row = current as { license_number?: string | null; practice_kind?: string | null } | null;
+      const changed = normaliseLicence(row?.license_number ?? null) !== normaliseLicence(lawyerUpdates.license_number);
+      if (changed && row?.practice_kind !== "consultant") {
+        return NextResponse.json(
+          { error: licenceFormatIssue(lawyerUpdates.license_number), field: "license_number" },
+          { status: 422 },
+        );
+      }
+    }
+  }
+
   if (
     Object.keys(profileUpdates).length === 0 &&
     Object.keys(lawyerUpdates).length === 0 &&
@@ -835,6 +857,11 @@ export async function PATCH(request: Request) {
       .select()
       .single();
     if (error) {
+      // R6 (20261201_10): a verified lawyer/provider moving onto a mobile
+      // another verified account holds.
+      if (isVerifiedPhoneDbError(error)) {
+        return NextResponse.json({ error: VERIFIED_PHONE_PROFILE_REFUSAL_AR, field: "phone" }, { status: 409 });
+      }
       console.error("[api/v1/profile] profiles update failed:", error.message);
       return NextResponse.json({ error: AR.saveFailed }, { status: 500 });
     }

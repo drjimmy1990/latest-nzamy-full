@@ -48,6 +48,7 @@
  * process reaches an already-open reader within that minute; one made in this
  * process clears the user's entries at once (forgetLibraryDevices).
  */
+import "server-only";
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
@@ -179,7 +180,7 @@ export async function enforceLibraryDevice(userId: string | null, entitled: bool
     // Ruling on question E: a Bearer caller has no cookie jar to mint into, so
     // while the limit is on it is refused unless it sends its own device id.
     if (isBearerWithoutDeviceCookie(hdrs.get("authorization"), id)) {
-      return finish(userId, null, cookielessGateDecision(await readCookielessState(userId)));
+      return finish(userId, null, cookielessGateDecision(await readCookielessState()));
     }
     if (!isValidDeviceId(id)) {
       id = newDeviceId(crypto.getRandomValues(new Uint8Array(32)));
@@ -247,11 +248,11 @@ function finish(
 }
 
 /**
- * The switch and the staff flag for a caller with no device id (no RPC: there
- * is no device to register). Never throws; unknown = null, which fails open.
+ * The switch for a caller with no device id (no RPC: there is no device to
+ * register). Never throws; unknown = null, which fails open.
  */
-async function readCookielessState(userId: string): Promise<CookielessState> {
-  const unknown: CookielessState = { enabled: null, limit: 2, isAdmin: null };
+async function readCookielessState(): Promise<CookielessState> {
+  const unknown: CookielessState = { enabled: null, limit: 2 };
   try {
     const service = await createServiceClient();
     const settings = await service
@@ -267,19 +268,8 @@ async function readCookielessState(userId: string): Promise<CookielessState> {
     const s = (settings.data ?? null) as { device_limit_enabled?: unknown; device_limit?: unknown } | null;
     if (!s) return unknown;
     const limit = typeof s.device_limit === "number" ? s.device_limit : 2;
-    if (s.device_limit_enabled !== true) return { enabled: false, limit, isAdmin: null };
-    const profile = await service
-      .from("profiles")
-      .select("user_type")
-      .eq("id", userId)
-      .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
-      .maybeSingle();
-    if (profile.error) {
-      console.error("[library-device] profile read failed:", profile.error.code ?? "no-code");
-      return { enabled: true, limit, isAdmin: null };
-    }
-    const type = (profile.data as { user_type?: unknown } | null)?.user_type;
-    return { enabled: true, limit, isAdmin: type === "admin" };
+    // O2 (20261201_10): no staff exemption, so the profile is not read.
+    return { enabled: s.device_limit_enabled === true, limit };
   } catch (err) {
     console.error("[library-device] cookieless read threw:", err instanceof Error ? err.name : "error");
     return unknown;

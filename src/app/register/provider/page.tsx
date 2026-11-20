@@ -30,6 +30,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { ProviderType, Step } from "./types";
 import { trackEventOnce } from "@/lib/analytics/track";
 import { StepIndicator, Step1, Step2, Step3, Step4, Step5, needsLicenceProofFor, signupNameOk } from "./components/Steps";
+import { licenceFormatIssue } from "@/lib/lawyerSignup/licenceFormat";
 import { LawyerVerificationPanel } from "@/components/lawyerSignup/LawyerVerificationPanel";
 import { isThrowawayEmail } from "@/lib/lawyerSignup/throwawayEmail";
 import {
@@ -282,11 +283,13 @@ export default function RegisterProviderPage() {
     // Demo mode is exempt because it never calls Supabase — `setDemoSession`
     // completes locally for all five roles.
     if (step === 1) return providerType !== null && (BACKEND_MODE !== "supabase" || emailSignUpWorks);
-    // A licence of spaces only is not a licence (BUG-09). Its format waits on
-    // the owner (what a valid licence number looks like).
+    // A licence of spaces only is not a licence (BUG-09). R9a (l11): an
+    // advocate's number must also look like one — digits with the registry's
+    // separators (soft; the exact format still waits on owner question ١١٠).
     if (step === 2) {
       const proofOk = !needsLicenceProofFor(providerType) || (signupNameOk(formData) && licenceFile !== null);
-      return !!(formData.licenseNumber?.trim() && formData.experience && formData.city) && proofOk;
+      const licenceShapeOk = providerType !== "lawyer" || licenceFormatIssue(formData.licenseNumber) === null;
+      return !!(formData.licenseNumber?.trim() && formData.experience && formData.city) && proofOk && licenceShapeOk;
     }
     if (step === 3) {
       const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email || "");

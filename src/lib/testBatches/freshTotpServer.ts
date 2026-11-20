@@ -1,3 +1,4 @@
+import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { currentAccessToken } from "@/lib/auth/staffMfaServer";
 import { hasVerifiedTotp } from "@/lib/auth/staffMfa";

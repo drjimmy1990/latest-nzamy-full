@@ -292,28 +292,25 @@ export function isBearerWithoutDeviceCookie(authorization: string | null | undef
 
 /**
  * What the server read for a caller without a device id: the switch
- * (null = unknown: the migration is missing or the read failed) and whether
- * the user is staff (null = unknown).
+ * (null = unknown: the migration is missing or the read failed). There is no
+ * staff flag any more: since l11 (O2, 20261201_10) an admin is counted like
+ * everyone (file 19 «بلا أي bypass»).
  */
 export interface CookielessState {
   enabled: boolean | null;
   limit: number;
-  isAdmin: boolean | null;
 }
 
 /**
  * The decision for an entitled read with no device id (ruling on question E):
  *   switch unknown (missing migration, failed read) → allow (fail open);
  *   switch off → allow, nothing changes;
- *   staff → allow (exempt, as in library_device_check);
- *   staff unknown (failed read) → allow (never lock out on an error);
- *   otherwise → 403 device_cookie_required.
+ *   otherwise → 403 device_cookie_required, an admin included (O2: no staff
+ *   exemption since 20261201_10).
  */
 export function cookielessGateDecision(state: CookielessState): DeviceGateDecision {
   if (state.enabled === null) return { action: "allow", remember: null };
   if (state.enabled === false) return { action: "allow", remember: "global" };
-  if (state.isAdmin === true) return { action: "allow", remember: "user" };
-  if (state.isAdmin === null) return { action: "allow", remember: null };
   return {
     action: "refuse",
     status: 403,
