@@ -7870,3 +7870,10 @@ select 'Owner edges: resolver + importer functions are security definer, service
                          to_regprocedure('public.graph_rag_owner_edges_mark_deleted(jsonb)')))
        end as ok;
 -- <<< verify:l10_owner_edges
+-- >>> verify:l11_misc
+-- Batch l11-misc (O22): run 20261201_60 any time (before or after the deploy).
+select 'Feature flags: platform_settings.feature_flags is an object whose site_assistant (if set) is a boolean (run 20261201_60)' as check,
+       coalesce((select jsonb_typeof(value) = 'object'
+                        and (not (value ? 'site_assistant') or jsonb_typeof(value -> 'site_assistant') = 'boolean')
+                   from public.platform_settings where key = 'feature_flags'), false) as ok;
+-- <<< verify:l11_misc
