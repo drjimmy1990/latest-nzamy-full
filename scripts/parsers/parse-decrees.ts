@@ -31,14 +31,31 @@ import {
   lawIdentityOfPath,
   resolveSlugSurvivor,
 } from "./lib/entity-prescan";
-import { extractOwnerLinks, type OwnerLink } from "../../src/lib/library/ownerLinks";
+import { describeOwnerLinkCut, extractOwnerLinks, type OwnerLink } from "../../src/lib/library/ownerLinks";
 import { filterMeta, assertManifestLoadable } from "./manifest";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyInstrument, type InstrumentType } from "./lib/instrument";
 import { decreeSummaries } from "../../src/lib/library/decreeSummary";
+import {
+  anchorShortfall,
+  bodyLineOffset,
+  formatAnchorJoins,
+  formatAnchorProblems,
+  prepareAnchors,
+  totalArticlesMismatch,
+} from "./lib/anchors";
 
 /** Documents whose instrument could not be determined — counted, never guessed. */
 const unknownInstruments: string[] = [];
+
+/** The anchor gate (owner package 19 Nov, items 1.4 / 4.3) — see parse-laws.ts. */
+const anchorJoins: string[] = [];
+/** Unreadable ARTICLE_START anchors and article shortfalls. GATES the exit code. */
+const anchorProblems: string[] = [];
+/** Frontmatter `total_articles` ≠ the parsed page count. Informational. */
+const totalArticlesMismatches: string[] = [];
+/** Owner links dropped or shortened by the caps of ownerLinks.ts (item 1.3). Informational. */
+const ownerLinkCuts: string[] = [];
 
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -235,10 +252,14 @@ function parseUnifiedIndex(filePath: string): ParsedDecree[] {
 function parseCircularMd(filePath: string): ParsedDecree | null {
   console.log(`  📄 Parsing circular markdown: ${path.basename(filePath)}`);
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  const { meta, body: writtenBody } = parseYamlFrontmatter(raw, filePath);
   const scopeDecision = resolveCorpusScope(meta, filePath, raw);
   corpusScopeDecisions.push(scopeDecision);
   if (scopeDecision.corpus_scope !== "public_corpus") return null;
+  // The anchor gate (item 1.4): an ARTICLE_START over several lines (or with
+  // «-->» inside a value) goes on one line first; nothing else changes.
+  const anchors = prepareAnchors(writtenBody, ["ARTICLE_START"]);
+  const body = anchors.body;
 
   const fileId = nameForId(path.basename(filePath, ".md"));
   const title = String(meta.title || fileId);
@@ -284,9 +305,24 @@ function parseCircularMd(filePath: string): ParsedDecree | null {
     });
   }
 
+  {
+    const where = path.basename(filePath);
+    const lineOffset = bodyLineOffset(raw.replace(/\r\n/g, "\n"), writtenBody.replace(/\r\n/g, "\n"));
+    anchorJoins.push(...formatAnchorJoins(where, anchors.joins, lineOffset));
+    anchorProblems.push(...formatAnchorProblems(where, anchors.problems, lineOffset));
+    const short = anchorShortfall(where, "ARTICLE_START", anchors.counts.ARTICLE_START.openers, articles.length);
+    if (short) anchorProblems.push(short);
+  }
+
   // If no ARTICLE markers, treat the entire body as a single article
   if (articles.length === 0 && body.trim().length > 0) {
     articles.push({ number: 1, text: body.trim() });
+  }
+  {
+    const headerLine = totalArticlesMismatch(
+      path.basename(filePath), meta.total_articles, anchors.counts.ARTICLE_START.openers, articles.length,
+    );
+    if (headerLine) totalArticlesMismatches.push(headerLine);
   }
 
   // N2.8: the short موجز from the body's <details> block (front matter's
@@ -342,6 +378,7 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
   corpusScopeDecisions.length = 0;
   unknownInstruments.length = 0;
   frontmatterWarnings.length = 0;
+  for (const bucket of [anchorJoins, anchorProblems, totalArticlesMismatches, ownerLinkCuts]) bucket.length = 0;
   for (const key of Object.keys(schemaVersionCounts)) delete schemaVersionCounts[key];
   const resolvedPath = path.resolve(inputPath);
   const stats = fs.statSync(resolvedPath);
@@ -510,7 +547,9 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
   let ownerLinkCount = 0;
   const ownerKinds = new Map<string, number>();
   for (const d of allDecrees) {
-    const links = extractOwnerLinks(d.metadata ?? {}, lawOfPath);
+    const links = extractOwnerLinks(d.metadata ?? {}, lawOfPath, (cut) =>
+      ownerLinkCuts.push(`${d.id} :: ${describeOwnerLinkCut(cut)}`),
+    );
     d.owner_links = links.length > 0 ? links : null;
     ownerLinkCount += links.length;
     for (const l of links) ownerKinds.set(l.kind, (ownerKinds.get(l.kind) ?? 0) + 1);
@@ -565,6 +604,19 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
     .sort((a, b) => b[1] - a[1])
     .map(([v, n]) => `${v}: ${n}`);
   printCapped("ℹ️  schema_version distribution", schemaVersionSummary);
+  printCapped(
+    "ℹ️  anchor(s) rewritten to one line before parsing — JSON over several lines, or «-->» inside a value (item 1.4)",
+    anchorJoins,
+  );
+  printCapped(
+    "🛑 anchor problem(s) — an ARTICLE_START the parser cannot read, or fewer/more pages parsed than the file opens (item 1.4)",
+    anchorProblems,
+  );
+  printCapped(
+    "ℹ️  total_articles in the frontmatter ≠ the parsed count — the site shows the parsed count (item 4.3)",
+    totalArticlesMismatches,
+  );
+  printCapped("ℹ️  owner links cut — beyond the caps of ownerLinks.ts, not loaded (item 1.3)", ownerLinkCuts);
 
   if (failedFiles.length > 0) {
     console.error(`\n🛑 ${failedFiles.length} file(s) failed to parse and are MISSING from the output.`);
@@ -589,6 +641,10 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
         corpusScopeBlocked: corpusScopeDecisions.filter(d => d.corpus_scope === "pending_review" || d.corpus_scope === "mixed_requires_separation").length,
         corpusScopeInstitutional: corpusScopeDecisions.filter(d => d.corpus_scope === "institutional_reference").length,
         schemaVersionVariants: Object.keys(schemaVersionCounts).length,
+        anchorJoins: anchorJoins.length,
+        anchorProblems: anchorProblems.length,
+        totalArticlesMismatches: totalArticlesMismatches.length,
+        ownerLinkCuts: ownerLinkCuts.length,
       },
       schemaVersionCounts,
       excluded: excludedList,
@@ -600,6 +656,10 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
         supersededDuplicateSkipped: decreeSupersededDuplicateSkipped,
         crossDomainVerified: decreeCrossDomainVerified,
         unverifiedSupersededTags: decreeUnverifiedSupersededTags,
+        anchorJoins,
+        anchorProblems,
+        totalArticlesMismatches,
+        ownerLinkCuts,
       },
     });
     if (p) console.log(`\n📄 Full parse report: ${p}`);
@@ -613,11 +673,13 @@ export function parseDecrees(inputPath: string, reportDir?: string): DecreesPars
   // Rule ق-3: a run that lost documents or would corrupt identity must not exit 0.
   // unverifiedSupersededTags gates too: a live, confirmed cross-domain duplicate
   // (verified 2026-08-22) would otherwise seed silently as its own record.
-  if (idCollisions.length > 0 || failedFiles.length > 0 || decreeUnverifiedSupersededTags.length > 0) {
+  // anchorProblems gates too (item 1.4): each is text missing from the output.
+  if (idCollisions.length > 0 || failedFiles.length > 0 || decreeUnverifiedSupersededTags.length > 0 || anchorProblems.length > 0) {
     console.error(
       `\n✗ Parse completed with unrecoverable problems ` +
         `(${idCollisions.length} id collision(s), ${failedFiles.length} failed file(s), ` +
-        `${decreeUnverifiedSupersededTags.length} unverified superseded_duplicate/merged tag(s)). ` +
+        `${decreeUnverifiedSupersededTags.length} unverified superseded_duplicate/merged tag(s), ` +
+        `${anchorProblems.length} anchor problem(s)). ` +
         `Refusing to report success.`,
     );
     process.exitCode = 1;

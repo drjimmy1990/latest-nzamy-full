@@ -16,7 +16,18 @@
  *
  *   node scripts/library-rows-diff.mjs --rows <dir>
  *   node scripts/library-rows-diff.mjs --rows <dir> --old <older rows dir>
- *   … --table laws | --out <report.json> | --help
+ *   … --table laws | --out <report.json> | --scope-rows | --help
+ *
+ * --scope-rows (owner package 19 Nov, item 5.9 — the trial on a few files):
+ * only the documents present in the rows folder are compared — a law by its
+ * slug, its chapters / articles / regulations by law_slug, its amendment
+ * cards by article_id, a decree's pages by decree_id, … (ROW_SCOPE in
+ * src/lib/library/rowsDiff.ts). "Left behind" then means a loaded row under a
+ * document of the folder that the new rows no longer have, never the rest of
+ * the library. For the rows in both, every field of the new row is compared
+ * with the loaded value: <report>.values.md (to read) and .values.tsv (every
+ * change). Live mode reads with GET only (select=*, filtered by the parent
+ * column); --old <dir> works fully offline.
  *
  * Exit: 0 = clean or adds-only (safe to load) · 3 = needs the team ·
  *       2 = bad options · 1 = error. Never writes to any database.
@@ -32,7 +43,10 @@ process.emitWarning = (warning, ...rest) => {
   if (String(warning).includes("Module type of file")) return;
   return emitWarning.call(process, warning, ...rest);
 };
-const { LIBRARY_ROW_TABLES, diffKeys, diffVerdict, rowKey } = await import("../src/lib/library/rowsDiff.ts");
+const {
+  LIBRARY_ROW_TABLES, diffKeys, diffVerdict, rowKey,
+  scopeFilter, rowInScope, scopedRowUrls, diffRowValues, valueDiffTsv, scopedDiffMarkdown,
+} = await import("../src/lib/library/rowsDiff.ts");
 const { hashRowFiles } = await import("../src/lib/library/fileHash.ts");
 
 // See seed-library-from-owner.mjs: a synchronous exit right after the .ts
@@ -49,6 +63,8 @@ library-rows-diff — what would a library load change? (read-only)
   node scripts/library-rows-diff.mjs --rows <dir>                 compare with the LIVE database
   node scripts/library-rows-diff.mjs --rows <dir> --old <dir>     compare with an older rows folder
   --table <name>   one table only      --out <file>   where to write the JSON report
+  --scope-rows     a trial on a few files: only the documents in --rows (and their
+                   children) are compared, with a per-field value diff (.values.md / .values.tsv)
   --help           this text
 
 Exit 0 = clean / adds-only (safe to load) · 3 = needs the team · 2 = bad options · 1 = error.
@@ -58,10 +74,12 @@ Exit 0 = clean / adds-only (safe to load) · 3 = needs the team · 2 = bad optio
 const VALUE = new Set(["--rows", "--old", "--table", "--out"]);
 const opts = {};
 let help = false;
+let scopeRows = false;
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--help" || a === "-h") { help = true; continue; }
+  if (a === "--scope-rows") { scopeRows = true; continue; }
   if (VALUE.has(a)) {
     const v = argv[i + 1];
     if (v === undefined || v.startsWith("-") || opts[a] !== undefined) {
@@ -150,17 +168,88 @@ async function liveKeys(table, pk) {
   return keys;
 }
 
+/** Rows of one JSONL file by key; with `keep`, only the rows it accepts (streamed: an old full folder is large). */
+async function fileRows(dir, table, pk, keep) {
+  const file = path.join(dir, `${table}.jsonl`);
+  if (!fs.existsSync(file)) return null;
+  const rows = new Map();
+  const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+  let lineNo = 0;
+  for await (const line of rl) {
+    lineNo++;
+    if (!line.trim()) continue;
+    let row;
+    try { row = JSON.parse(line); } catch { throw new Error(`${table}.jsonl line ${lineNo}: not valid JSON`); }
+    const k = rowKey(row, pk);
+    if (k !== null && (!keep || keep(row))) rows.set(k, row);
+  }
+  return rows;
+}
+
+/** The live rows whose `column` is one of `keys` — GET only, every column, keyset paging per batch. */
+async function liveScopedRows(table, pk, column, keys) {
+  const rows = new Map();
+  if (keys.size === 0) return rows;
+  for (const first of scopedRowUrls(base, table, pk, column, keys)) {
+    let last = null;
+    for (;;) {
+      const url = last === null ? first : `${first}&${pk}=gt.${encodeURIComponent(last)}`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { apikey: key, Authorization: `Bearer ${key}`, "Accept-Profile": "library" },
+      });
+      if (!res.ok) throw new Error(`${table}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+      const page = await res.json();
+      const before = rows.size;
+      for (const r of page) { const k = rowKey(r, pk); if (k !== null) rows.set(k, r); }
+      if (page.length > 0 && rows.size === before) throw new Error(`${table}: paging made no progress — stopped.`);
+      if (page.length < 1000) break;
+      last = String(page[page.length - 1][pk]);
+    }
+  }
+  return rows;
+}
+
 // ── Run ─────────────────────────────────────────────────────────────────────
 console.log("═".repeat(78));
-console.log("  library-rows-diff (read-only)");
+console.log(`  library-rows-diff (read-only)${scopeRows ? " — scope: the documents in the rows folder" : ""}`);
 console.log(`  New rows : ${rowsDir}`);
 console.log(`  Compared : ${oldDir ? oldDir : `LIVE ${base}`}`);
 console.log("═".repeat(78));
 
 const diffs = [];
 const missing = [];
+const valueDiffs = [];
+const leftBehindLists = {};
 try {
-  for (const t of tables) {
+  if (scopeRows) {
+    // Parents first (LIBRARY_ROW_TABLES order): a child's scope is its parent's keys.
+    const scope = new Map();
+    const wanted = new Set(tables.map((t) => t.name));
+    for (const t of LIBRARY_ROW_TABLES) {
+      const incoming = await fileRows(rowsDir, t.name, t.pk);
+      const inKeys = new Set(incoming ? incoming.keys() : []);
+      const filter = scopeFilter(t.name, t.pk, inKeys, scope);
+      const loaded = oldDir
+        ? (await fileRows(oldDir, t.name, t.pk, (r) => rowInScope(r, filter))) ?? new Map()
+        : await liveScopedRows(t.name, t.pk, filter.column, filter.keys);
+      scope.set(t.name, new Set([...inKeys, ...loaded.keys()]));
+      if (!wanted.has(t.name)) continue;
+      if (incoming === null) { missing.push(t.name); console.log(`  ${t.name.padEnd(22)} (no ${t.name}.jsonl — nothing of this kind in scope)`); continue; }
+      const d = diffKeys(t.name, inKeys, new Set(loaded.keys()));
+      const v = diffRowValues(t.name, t.pk, incoming, loaded);
+      diffs.push(d);
+      valueDiffs.push(v);
+      leftBehindLists[t.name] = [...loaded.keys()].filter((k) => !inKeys.has(k)).sort();
+      const flag = d.leftBehind || d.unicodeTwins || d.resurrected.length ? "  ⚠️" : "";
+      console.log(
+        `  ${t.name.padEnd(22)} new ${String(d.incoming).padStart(6)}  in scope ${String(d.loaded).padStart(6)}  ` +
+          `+added ${String(d.added).padStart(5)}  =updated ${String(d.updated).padStart(6)} (changed ${String(v.changedRows).padStart(5)})  ` +
+          `left-behind ${String(d.leftBehind).padStart(5)}${flag}`,
+      );
+      for (const k of leftBehindLists[t.name].slice(0, 5)) console.log(`      − ${k}`);
+    }
+  } else for (const t of tables) {
     const incoming = await fileKeys(rowsDir, t.name, t.pk);
     if (incoming === null) { missing.push(t.name); console.log(`  ${t.name.padEnd(22)} (no ${t.name}.jsonl — skipped)`); continue; }
     const loaded = oldDir ? (await fileKeys(oldDir, t.name, t.pk)) ?? new Set() : await liveKeys(t.name, t.pk);
@@ -201,9 +290,27 @@ const report = {
   },
   missing_files: missing,
   tables: diffs,
+  ...(scopeRows
+    ? {
+        scope: "rows",
+        left_behind: leftBehindLists,
+        values: valueDiffs.map(({ changes, ...summary }) => ({ ...summary, changes: changes.length })),
+      }
+    : {}),
 };
 const outFile = opts["--out"] ? path.resolve(process.cwd(), opts["--out"]) : path.join(rowsDir, "rows-diff-report.json");
 fs.writeFileSync(outFile, JSON.stringify(report, null, 2));
+let valuesMd = null;
+let valuesTsv = null;
+if (scopeRows) {
+  const stem = outFile.replace(/\.json$/i, "");
+  valuesMd = `${stem}.values.md`;
+  valuesTsv = `${stem}.values.tsv`;
+  fs.writeFileSync(valuesMd, scopedDiffMarkdown({
+    rowsDir, comparedWith: report.compared_with, keyDiffs: diffs, valueDiffs, leftBehind: leftBehindLists, verdict,
+  }));
+  fs.writeFileSync(valuesTsv, valueDiffTsv(valueDiffs));
+}
 
 console.log("═".repeat(78));
 if (verdict === "needs-team") {
@@ -219,6 +326,8 @@ if (verdict === "needs-team") {
 }
 if (missing.length) console.log(`  Note: no file for ${missing.join(", ")} — the loader would skip those tables.`);
 console.log(`  Report: ${outFile}`);
+if (valuesMd) console.log(`  Value diff: ${valuesMd}`);
+if (valuesTsv) console.log(`              ${valuesTsv}`);
 console.log(`  Input SHA-256 (${Object.keys(report.inputs.rows).length} file(s)) recorded in the report — reload only these exact files.`);
 console.log("═".repeat(78));
 await quit(verdict === "needs-team" ? 3 : 0);

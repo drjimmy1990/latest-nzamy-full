@@ -54,10 +54,46 @@ export const OWNER_LINK_KEYS: Readonly<Record<string, OwnerLinkKind>> = {
   related_laws: "related",
 };
 
-export const OWNER_LINKS_MAX = 40;
-const NAME_MAX = 300;
-const ARTICLES_MAX = 60;
-const ARTICLE_TEXT_MAX = 80;
+/**
+ * Caps, per FILE across every link key (OWNER_LINKS_MAX) and per link
+ * (ARTICLES_MAX, NAME_MAX, ARTICLE_TEXT_MAX). Owner package 19 Nov, item 1.3:
+ * 40 links cut the last `affected_laws` of a decree that amends 48 laws, with
+ * no report. Raised to 500 / 300, and whatever is still cut is reported
+ * through the `onCut` argument of extractOwnerLinks (the parsers print
+ * «owner links cut»). `owner_links` is plain jsonb: no database limit. The
+ * same cap bounds the read-back (parseOwnerLinks), so the graph sees every
+ * stored link.
+ */
+export const OWNER_LINKS_MAX = 500;
+export const NAME_MAX = 300;
+export const ARTICLES_MAX = 300;
+export const ARTICLE_TEXT_MAX = 80;
+
+/** What a cap removed from one file's links. */
+export type OwnerLinkCut =
+  /** Links beyond OWNER_LINKS_MAX (after de-duplication), not kept. */
+  | { what: "links"; kept: number; dropped: number }
+  /** Article texts of one link beyond ARTICLES_MAX (after de-duplication), not kept. */
+  | { what: "articles"; link: string; kept: number; dropped: number }
+  /** A title longer than NAME_MAX, shortened. */
+  | { what: "name"; length: number; kept: number; text: string }
+  /** An article text longer than ARTICLE_TEXT_MAX, shortened. */
+  | { what: "article_text"; length: number; kept: number; text: string };
+export type OwnerLinkCutReporter = (cut: OwnerLinkCut) => void;
+
+/** One report line for a cut (the parsers prefix the file name). */
+export function describeOwnerLinkCut(cut: OwnerLinkCut): string {
+  switch (cut.what) {
+    case "links":
+      return `${cut.dropped} link(s) beyond the cap of ${OWNER_LINKS_MAX} not kept (${cut.kept} kept)`;
+    case "articles":
+      return `link «${cut.link}»: ${cut.dropped} article(s) beyond the cap of ${ARTICLES_MAX} not kept (${cut.kept} kept)`;
+    case "name":
+      return `a title of ${cut.length} characters shortened to ${cut.kept}: «${cut.text.slice(0, 60)}…»`;
+    case "article_text":
+      return `an article text of ${cut.length} characters shortened to ${cut.kept}: «${cut.text.slice(0, 40)}…»`;
+  }
+}
 
 /** Turns a library file path into the target file's slug / registry id; undefined when it names nothing safe. */
 export type OwnerLinkPathResolver = (path: string) => { slug?: string; id?: string } | undefined;
@@ -74,6 +110,11 @@ const isBlank = (v: unknown) =>
   v === null || v === undefined || (typeof v === "string" && (v.trim() === "" || v.trim().toLowerCase() === "null"));
 
 const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
+/** `cap`, telling `onCut` when it shortens. */
+const capReported = (s: string, n: number, what: "name" | "article_text", onCut?: OwnerLinkCutReporter) => {
+  if (s.length > n) onCut?.({ what, length: s.length, kept: n, text: s });
+  return cap(s, n);
+};
 
 /** Words that open an editorial note inside a reference: «نظام باء (ملاحظة المحرر: …)». */
 const NOTE_RE = /[\s(\[،,:؛-]*(?:ملاحظة|ملحوظة|ملاحظات|تنبيه|حاشية)[\s\S]*$/u;
@@ -93,7 +134,7 @@ function cleanText(s: string): string {
 }
 
 /** One written reference (a string) → what it states. */
-function refFromString(raw: string, resolvePath?: OwnerLinkPathResolver): Omit<OwnerLink, "kind"> | null {
+function refFromString(raw: string, resolvePath?: OwnerLinkPathResolver, onCut?: OwnerLinkCutReporter): Omit<OwnerLink, "kind"> | null {
   let text = cleanText(raw.replace(/\\/g, "/"));
   if (!text) return null;
   const out: Omit<OwnerLink, "kind"> = {};
@@ -113,28 +154,41 @@ function refFromString(raw: string, resolvePath?: OwnerLinkPathResolver): Omit<O
     return out;
   }
   text = titleOnly(text.replace(LEADING_WAW_RE, ""));
-  if (text) out.name = cap(text, NAME_MAX);
+  if (text) out.name = capReported(text, NAME_MAX, "name", onCut);
   return out.name || out.slug || out.id || out.guid ? out : null;
 }
 
-function articleTexts(...values: unknown[]): string[] {
+/**
+ * The article texts of one link, de-duplicated, at most ARTICLES_MAX. With
+ * `onCut`, every text shortened and the count left out are reported
+ * (`link` names the link in that report).
+ */
+function articleTexts(values: unknown[], onCut?: OwnerLinkCutReporter, link = ""): string[] {
   const out: string[] = [];
+  const over = new Set<string>();
   for (const v of values) {
     const list = Array.isArray(v) ? v : isBlank(v) ? [] : [v];
     for (const a of list) {
       if (isBlank(a) || (typeof a !== "string" && typeof a !== "number")) continue;
-      const t = cap(cleanText(String(a)), ARTICLE_TEXT_MAX);
+      const full = cleanText(String(a));
+      if (out.length >= ARTICLES_MAX) {
+        if (!onCut) return out;
+        const t = cap(full, ARTICLE_TEXT_MAX);
+        if (t && !out.includes(t)) over.add(t);
+        continue;
+      }
+      const t = capReported(full, ARTICLE_TEXT_MAX, "article_text", onCut);
       if (t && !out.includes(t)) out.push(t);
-      if (out.length >= ARTICLES_MAX) return out;
     }
   }
+  if (over.size > 0) onCut?.({ what: "articles", link, kept: out.length, dropped: over.size });
   return out;
 }
 
 /** One object entry ({name, law_id, law_file, boe_guid, affected_articles, …}) → what it states. */
-function refFromObject(o: Record<string, unknown>, resolvePath?: OwnerLinkPathResolver): Omit<OwnerLink, "kind"> | null {
+function refFromObject(o: Record<string, unknown>, resolvePath?: OwnerLinkPathResolver, onCut?: OwnerLinkCutReporter): Omit<OwnerLink, "kind"> | null {
   const name = [o.name, o.law_name].find((v) => typeof v === "string" && !isBlank(v)) as string | undefined;
-  const base: Omit<OwnerLink, "kind"> = name ? refFromString(name, resolvePath) ?? {} : {};
+  const base: Omit<OwnerLink, "kind"> = name ? refFromString(name, resolvePath, onCut) ?? {} : {};
   const file = [o.law_file].find((v) => typeof v === "string" && !isBlank(v)) as string | undefined;
   if (file) {
     const hit = file.match(PATH_RE) ? resolvePath?.(file.match(PATH_RE)?.[0] as string) : undefined;
@@ -151,13 +205,17 @@ function refFromObject(o: Record<string, unknown>, resolvePath?: OwnerLinkPathRe
   }
   const guid = typeof o.boe_guid === "string" && GUID_RE.test(o.boe_guid.trim()) ? o.boe_guid.trim().toLowerCase() : undefined;
   if (guid && !base.guid) base.guid = guid;
-  const articles = articleTexts(o.affected_articles, o.amended_articles, o.added_articles);
+  const articles = articleTexts(
+    [o.affected_articles, o.amended_articles, o.added_articles],
+    onCut,
+    base.name || base.id || base.slug || base.guid || "",
+  );
   if (articles.length) base.articles = articles;
   return base.name || base.slug || base.id || base.guid ? base : null;
 }
 
 /** A frontmatter value (string, «؛»-separated string, list, object) → its references. */
-function refsOf(value: unknown, resolvePath?: OwnerLinkPathResolver): Array<Omit<OwnerLink, "kind">> {
+function refsOf(value: unknown, resolvePath?: OwnerLinkPathResolver, onCut?: OwnerLinkCutReporter): Array<Omit<OwnerLink, "kind">> {
   if (isBlank(value)) return [];
   const items = Array.isArray(value) ? value : [value];
   const out: Array<Omit<OwnerLink, "kind">> = [];
@@ -165,11 +223,11 @@ function refsOf(value: unknown, resolvePath?: OwnerLinkPathResolver): Array<Omit
     if (isBlank(item)) continue;
     if (typeof item === "string") {
       for (const part of item.split(/[؛;]/u)) {
-        const r = refFromString(part, resolvePath);
+        const r = refFromString(part, resolvePath, onCut);
         if (r) out.push(r);
       }
     } else if (item && typeof item === "object" && !Array.isArray(item)) {
-      const r = refFromObject(item as Record<string, unknown>, resolvePath);
+      const r = refFromObject(item as Record<string, unknown>, resolvePath, onCut);
       if (r) out.push(r);
     }
   }
@@ -182,20 +240,32 @@ const sameRef = (a: OwnerLink, b: OwnerLink) =>
 
 /**
  * The owner's links in one file's frontmatter, in key order, de-duplicated,
- * at most OWNER_LINKS_MAX. Empty when the file states none.
+ * at most OWNER_LINKS_MAX. Empty when the file states none. `onCut` (optional)
+ * hears every cap that removed or shortened something: links beyond the cap
+ * (one call, with the count), articles beyond the cap of a link, a title or an
+ * article text shortened. The returned list is the same with or without it.
  */
-export function extractOwnerLinks(meta: Readonly<Record<string, unknown>>, resolvePath?: OwnerLinkPathResolver): OwnerLink[] {
+export function extractOwnerLinks(
+  meta: Readonly<Record<string, unknown>>,
+  resolvePath?: OwnerLinkPathResolver,
+  onCut?: OwnerLinkCutReporter,
+): OwnerLink[] {
   const out: OwnerLink[] = [];
+  const dropped: OwnerLink[] = [];
   for (const [key, kind] of Object.entries(OWNER_LINK_KEYS)) {
     if (!(key in meta)) continue;
-    for (const ref of refsOf(meta[key], resolvePath)) {
+    if (out.length >= OWNER_LINKS_MAX && !onCut) break;
+    for (const ref of refsOf(meta[key], resolvePath, out.length >= OWNER_LINKS_MAX ? undefined : onCut)) {
       // Articles belong to `affects` only.
       const link: OwnerLink = { kind, ...ref };
       if (kind !== "affects") delete link.articles;
-      if (!out.some((x) => sameRef(x, link))) out.push(link);
-      if (out.length >= OWNER_LINKS_MAX) return out;
+      if (out.some((x) => sameRef(x, link))) continue;
+      if (out.length < OWNER_LINKS_MAX) out.push(link);
+      else if (!onCut) return out;
+      else if (!dropped.some((x) => sameRef(x, link))) dropped.push(link);
     }
   }
+  if (dropped.length > 0) onCut?.({ what: "links", kept: out.length, dropped: dropped.length });
   return out;
 }
 
@@ -219,7 +289,7 @@ export function parseOwnerLinks(raw: unknown): OwnerLink[] {
     if (slug) link.slug = slug;
     if (guid) link.guid = guid.toLowerCase();
     if (Array.isArray(o.articles)) {
-      const a = articleTexts(o.articles);
+      const a = articleTexts([o.articles]);
       if (a.length) link.articles = a;
     }
     if (link.name || link.id || link.slug || link.guid) out.push(link);

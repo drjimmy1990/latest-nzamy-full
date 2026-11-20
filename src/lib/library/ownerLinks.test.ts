@@ -5,7 +5,16 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractOwnerLinks, OWNER_LINKS_MAX, parseOwnerLinks } from "./ownerLinks.ts";
+import {
+  ARTICLE_TEXT_MAX,
+  ARTICLES_MAX,
+  describeOwnerLinkCut,
+  extractOwnerLinks,
+  NAME_MAX,
+  OWNER_LINKS_MAX,
+  parseOwnerLinks,
+  type OwnerLinkCut,
+} from "./ownerLinks.ts";
 
 const PATH = "01_المكتبة_القانونية/أنظمة ولوائح/02 - القسم الإداري/نظام الإحصاءات العامة للدولة/نظام الإحصاءات العامة للدولة_هيئة_الخبراء.md";
 const resolvePath = (p: string) => (p === PATH ? { slug: "statistics-law-1379", id: "LAW-02-0100" } : undefined);
@@ -82,8 +91,69 @@ test("affected_laws: objects with names, files, guids and article texts; strings
 test("only `affects` keeps articles; duplicates collapse; the list is capped", () => {
   assert.deepEqual(extractOwnerLinks({ repeals: [{ name: "نظام قديم", affected_articles: ["1"] }] }), [{ kind: "repeals", name: "نظام قديم" }]);
   assert.equal(extractOwnerLinks({ superseded_by: "LAW-00-1", superseded_by_registry_id: "LAW-00-1" }).length, 1);
-  const many = Array.from({ length: 60 }, (_, i) => `نظام رقم ${i}`);
+  const many = Array.from({ length: OWNER_LINKS_MAX + 20 }, (_, i) => `نظام رقم ${i}`);
   assert.equal(extractOwnerLinks({ related_laws: many }).length, OWNER_LINKS_MAX);
+});
+
+test("owner package 19 Nov, item 1.3: the caps are 500 links per file and 300 articles per link", () => {
+  assert.equal(OWNER_LINKS_MAX, 500);
+  assert.equal(ARTICLES_MAX, 300);
+  assert.equal(NAME_MAX, 300);
+  assert.equal(ARTICLE_TEXT_MAX, 80);
+});
+
+test("item 1.3: 48 affected_laws give 48 links, and nothing is reported cut", () => {
+  const cuts: OwnerLinkCut[] = [];
+  const affected = Array.from({ length: 48 }, (_, i) => ({ name: `نظام رقم ${i + 1}`, affected_articles: [String(i + 1)] }));
+  const links = extractOwnerLinks({ affected_laws: affected }, undefined, (c) => cuts.push(c));
+  assert.equal(links.length, 48);
+  assert.equal(links[47].name, "نظام رقم 48");
+  assert.deepEqual(cuts, []);
+});
+
+test("item 1.3: 501 links keep 500 and report one cut line; the list is the same without a reporter", () => {
+  const cuts: OwnerLinkCut[] = [];
+  const meta = { affected_laws: Array.from({ length: 501 }, (_, i) => `نظام رقم ${i + 1}`) };
+  const links = extractOwnerLinks(meta, undefined, (c) => cuts.push(c));
+  assert.equal(links.length, 500);
+  assert.deepEqual(cuts, [{ what: "links", kept: 500, dropped: 1 }]);
+  assert.equal(describeOwnerLinkCut(cuts[0]), "1 link(s) beyond the cap of 500 not kept (500 kept)");
+  assert.deepEqual(extractOwnerLinks(meta), links);
+});
+
+test("item 1.3: links past the cap are counted across keys, duplicates once", () => {
+  const cuts: OwnerLinkCut[] = [];
+  const meta = {
+    affected_laws: Array.from({ length: 500 }, (_, i) => `نظام رقم ${i + 1}`),
+    related_laws: ["نظام زائد", "نظام زائد", "LAW-00-0001"],
+  };
+  assert.equal(extractOwnerLinks(meta, undefined, (c) => cuts.push(c)).length, 500);
+  assert.deepEqual(cuts, [{ what: "links", kept: 500, dropped: 2 }]);
+});
+
+test("item 1.3: articles beyond 300, a long title and a long article text are reported", () => {
+  const cuts: OwnerLinkCut[] = [];
+  const longName = `نظام ${"ا".repeat(400)}`;
+  const links = extractOwnerLinks(
+    {
+      affected_laws: [
+        { name: "نظام الأحوال", affected_articles: Array.from({ length: 302 }, (_, i) => String(i + 1)) },
+        { name: longName, affected_articles: ["م".repeat(90)] },
+      ],
+    },
+    undefined,
+    (c) => cuts.push(c),
+  );
+  assert.equal(links[0].articles?.length, 300);
+  assert.equal(links[1].name?.length, 300);
+  assert.equal(links[1].articles?.[0].length, 80);
+  assert.deepEqual(
+    cuts.map((c) => c.what),
+    ["articles", "name", "article_text"],
+  );
+  assert.deepEqual(cuts[0], { what: "articles", link: "نظام الأحوال", kept: 300, dropped: 2 });
+  assert.match(describeOwnerLinkCut(cuts[1]), /a title of \d+ characters shortened to 300/);
+  assert.match(describeOwnerLinkCut(cuts[2]), /an article text of 90 characters shortened to 80/);
 });
 
 test("parseOwnerLinks reads the stored jsonb back and drops what is malformed", () => {
