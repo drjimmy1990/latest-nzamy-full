@@ -1,3 +1,4 @@
+import type { LiftedVersion } from "./[slug]/_amendment-split";
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type ArticleStatus =
   | "active"
@@ -117,6 +118,12 @@ export interface LawArticle {
    * reader's «اللائحة التنفيذية» section.
    */
   regulationHeading?: string;
+  /**
+   * O12 (batch l11): amendment notes and superseded wordings lifted off the
+   * end of `text` by the reader (_amendment-split.ts); shown as «الإصدارات
+   * السابقة» cards. Set only for an article whose text this viewer holds.
+   */
+  liftedVersions?: LiftedVersion[];
   principles?: JudicialPrinciple[];
   precedents?: JudicialPrecedent[];
 }

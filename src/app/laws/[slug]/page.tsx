@@ -16,7 +16,8 @@ import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, patchPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
-import type { LawArticle, LawChapter, LawSystem } from "../data";
+import { isRepealedArticleStatus, type LawArticle, type LawChapter, type LawSystem } from "../data";
+import { regulationNamesOf, splitAmendmentText } from "./_amendment-split";
 import { isRepealedLawStatus, lawStatusForDetail } from "../law-status";
 import { EMPTY_OFFICIAL_META, parseOfficialMeta, type LawOfficialMeta } from "./_official-meta";
 import { getSelectedTextWithin } from "./_article-components";
@@ -344,7 +345,16 @@ function LawSystemPageContent() {
             ...(typeof ch.id === 'string' && ch.id ? { id: ch.id } : {}),
             ...(ch.level === 1 || ch.level === 2 ? { level: ch.level } : {}),
             ...(typeof ch.parentChapterId === 'string' && ch.parentChapterId ? { parentChapterId: ch.parentChapterId } : {}),
-            articles: (ch.articles || []).map((a: LawArticle) => ({
+            articles: (ch.articles || []).map((a: LawArticle) => {
+              // O12 / T14b (owner file 16 §3, batch l11): «تعديل:» notes and «نص …
+              // قبل التعديل» wordings left open at the end of the text by data
+              // loaded before l9-parser's split move to «الإصدارات السابقة». Done
+              // HERE, once, so the body, copy, drafter, cart, explain, search and
+              // diff all read the clean current text. A repealed article keeps its
+              // own split (_repealed-article.ts). Display only, on the text this
+              // viewer was already sent (a locked article's preview is only cleaned).
+              const split = isRepealedArticleStatus(a.status || "") ? null : splitAmendmentText(a.text || '', regulationNamesOf(a));
+              return ({
               id: a.id,
               num: a.num,
               // Raw locator parts — the citation builder uses these instead of
@@ -357,7 +367,8 @@ function LawSystemPageContent() {
               // not render as evidence that the article is active.
               status: a.status || 'status_undeclared',
               free: a.free ?? true,
-              text: a.text || '',
+              text: split ? split.current : a.text || '',
+              liftedVersions: split && a.free !== false ? split.lifted : undefined,
               // This mapping is a whitelist: anything omitted here is silently
               // discarded before the renderer ever sees it. originalText was
               // omitted, so the article's superseded wording never arrived —
@@ -371,7 +382,8 @@ function LawSystemPageContent() {
               regulations: a.regulations,
               amendments: a.amendments,
               instrument: a.instrument,
-            })),
+            });
+            }),
           })),
           // N2.1: sent by the law route only to viewers LAW_SUMMARY_AUDIENCE
           // admits; this mapping is a whitelist, so the label must be named too.
@@ -1689,6 +1701,7 @@ function LawSystemPageContent() {
                       isReadingMode={isReadingMode}
                       viewMode={viewMode}
                       viewerHasFullAccess={viewerHasFullAccess === true}
+                      showAmendmentSource={viewerIsSubscriber === true && !officialMeta.locked}
                     />
                   ));
                 })()}
@@ -1717,6 +1730,7 @@ function LawSystemPageContent() {
                     isReadingMode={isReadingMode}
                     viewMode={viewMode}
                     viewerHasFullAccess={viewerHasFullAccess === true}
+                    showAmendmentSource={viewerIsSubscriber === true && !officialMeta.locked}
                   />
                 );
                 const chapterPill = (title: string) => (
