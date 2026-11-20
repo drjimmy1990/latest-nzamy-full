@@ -87,7 +87,7 @@ const txt = {
         id: "free",
         name: "مجاني",
         price: "0 ر.س",
-        desc: "ما يتاح لكل زائر دون اشتراك",
+        desc: "ما يتاح دون اشتراك، للزائر ولكل حساب تُفتح له المكتبة",
         icon: BookOpen,
         color: "from-zinc-600 to-zinc-500",
         // N05-L10: what the code serves a non-subscriber today — the catalogue
@@ -177,7 +177,7 @@ const txt = {
         id: "free",
         name: "Free",
         price: "0 SAR",
-        desc: "What every visitor gets without a plan",
+        desc: "What you can read without a plan: visitors, and accounts the library is open to",
         icon: BookOpen,
         color: "from-zinc-600 to-zinc-500",
         features: [...FREE_PLAN_FEATURES.en],
