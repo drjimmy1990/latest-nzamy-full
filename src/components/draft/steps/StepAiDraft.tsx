@@ -8,6 +8,7 @@ import { useAiRun } from "@/hooks/useAiRun";
 import AiResultActions from "@/components/AiResultActions";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import InsertFromLibraryButton from "@/components/library/InsertFromLibraryButton";
+import ArticleRefAssist from "@/components/ai/ArticleRefAssist";
 import { DRAFT_FACTS_MAX } from "@/lib/ai/tools";
 import CitationCheckList from "@/components/ai/CitationCheckList";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
@@ -269,6 +270,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label htmlFor="draft-facts-summary" className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}>الوقائع كما ستُكتب في المذكرة</label>
                 <InsertFromLibraryButton isDark={isDark} targetRef={factsRef} value={edited.facts_summary} onChange={(v) => update({ facts_summary: v })} disabled={locked} maxLength={DRAFT_FACTS_MAX} />
+                <ArticleRefAssist isDark={isDark} targetRef={factsRef} value={edited.facts_summary} onChange={(v) => update({ facts_summary: v })} disabled={locked} maxLength={DRAFT_FACTS_MAX} />
               </div>
               <textarea id="draft-facts-summary" ref={factsRef} rows={7} value={edited.facts_summary} onChange={(e) => update({ facts_summary: e.target.value })} className={field} disabled={locked} />
             </div>
@@ -453,7 +455,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
           </p>
           <LetterheadExportBar title={pleading.title} blocks={pleadingBlocks(pleading)} filename={spec.label} />
           <div className="flex flex-wrap items-center gap-2">
-            <AiResultActions text={written} filename={spec.label} collectorSource="other" />
+            <AiResultActions text={written} filename={spec.label} collectorSource="other" showExport={false} />
             <button type="button" onClick={downloadWord}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
               <FileDoc size={14} /> تنزيل Word

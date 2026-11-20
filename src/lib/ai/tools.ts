@@ -139,6 +139,13 @@ export interface AiToolSpec {
    */
   promptGuard?: { field: string; replyField: string };
   /**
+   * T17a (batch l11): the input field naming one of the caller's own cases.
+   * The run route reads that case server-side (assistantCase.ts, RLS + own
+   * rows only) before the charge and sends its summary as the package's
+   * `case`; a case that is not his refuses the run, uncharged.
+   */
+  caseFrom?: string;
+  /**
    * Wave 2: the tool answers from library texts the app retrieves (retrieval.ts).
    * Such a tool passes the library gate and the assistant's tier rule before
    * the charge, is refunded when nothing in the library matches, and fails
@@ -151,6 +158,11 @@ export interface AiToolSpec {
     pinFrom?: string;
     /** The input field naming the law page the user is on: searched before the whole library (L5). */
     scopeFrom?: string;
+    /**
+     * T14-Q485 (batch l11): the limits for this input, when they depend on it
+     * (the library assistant's type chips); null or absent → the limits above.
+     */
+    limitsFor?: (input: Record<string, unknown>) => RetrievalLimits | null;
     /**
      * Owner ٤١٣ option A (quick-answer only): an answer that cites none of the
      * texts is stored with `ungrounded: true` and charged, instead of failing
@@ -357,11 +369,47 @@ export const LIBRARY_MESSAGES_PER_CONVERSATION = 30;
 const ARTICLE_ID = /^[\p{L}\p{N}_.\-]{1,200}$/u;
 const LAW_SLUG = /^[\p{L}\p{N}_.\-]{1,200}$/u;
 
+/**
+ * T14-Q485 (batch l11): the library assistant's type chips — الكل / أنظمة /
+ * مبادئ / أوامر / فقه. «الكل» sends no scope (today's search, unchanged).
+ * The others search only that kind: articles or principles.
+ *
+ * «أوامر» and «فقه» are «قريباً»: decrees and fiqh reach the AI through the
+ * legal graph only (retrieval.ts, NZAMY_GRAPH_RAG), and the graph path counts
+ * a hit only for an article or a principle (graphHitCount), so a search
+ * narrowed to them would always come back empty and be refunded. Their limits
+ * are written below for the day the retrieval serves them; until then the
+ * input refuses them (LIBRARY_SCOPES_LIVE) and the chips show «قريباً».
+ */
+export const LIBRARY_SCOPES = ["laws", "principles", "orders", "fiqh"] as const;
+export type LibraryScope = (typeof LIBRARY_SCOPES)[number];
+export const LIBRARY_SCOPES_LIVE: readonly LibraryScope[] = ["laws", "principles"];
+const LIBRARY_SCOPE_LIMITS: Readonly<Record<LibraryScope, RetrievalLimits>> = {
+  laws: { laws: 8, principles: 0 },
+  principles: { laws: 0, principles: 6 },
+  orders: { laws: 0, principles: 0, decrees: 6 },
+  fiqh: { laws: 0, principles: 0, feqh: 6 },
+};
+
+/** The retrieval limits of a library-assistant input with a scope, or null for «الكل». */
+export function libraryScopeLimits(input: Record<string, unknown>): RetrievalLimits | null {
+  const scope = input.scope;
+  return typeof scope === "string" && (LIBRARY_SCOPES as readonly string[]).includes(scope) ? LIBRARY_SCOPE_LIMITS[scope as LibraryScope] : null;
+}
+
 /** L5 مساعد المكتبة: a question inside /laws, optionally about the article the user has open. */
 function libraryAssistantInput(raw: unknown): InputCheck {
   if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
   const message = boundedText(raw.message, LIBRARY_MESSAGE_MAX);
   if (!message || message.length < 2) return { ok: false, error: "اكتب سؤالك (حتى ٤٬٠٠٠ حرف)" };
+  // T14-Q485: a chip other than «الكل»; anything else is refused, never guessed.
+  let scope: LibraryScope | null = null;
+  if (raw.scope !== undefined && raw.scope !== null && raw.scope !== "" && raw.scope !== "all") {
+    if (typeof raw.scope !== "string" || !(LIBRARY_SCOPES as readonly string[]).includes(raw.scope)) return { ok: false, error: "نوع البحث غير صالح" };
+    if (!(LIBRARY_SCOPES_LIVE as readonly string[]).includes(raw.scope)) return { ok: false, error: "البحث في هذا النوع قريباً — اختر «الكل» أو «أنظمة» أو «مبادئ»" };
+    scope = raw.scope as LibraryScope;
+  }
+  const scoped = (input: Record<string, unknown>): InputCheck => ({ ok: true, input: scope ? { ...input, scope } : input });
   // The law page the chat is on (owner's live test 29 Oct: two different laws
   // got the same labour-law answer because the whole library was searched).
   let law_slug: string | null = null;
@@ -370,12 +418,12 @@ function libraryAssistantInput(raw: unknown): InputCheck {
     law_slug = raw.law_slug;
   }
   if (raw.article_id === undefined || raw.article_id === null || raw.article_id === "") {
-    return { ok: true, input: { message, article_id: null, law_slug } };
+    return scoped({ message, article_id: null, law_slug });
   }
   if (typeof raw.article_id !== "string" || !ARTICLE_ID.test(raw.article_id)) {
     return { ok: false, error: "معرّف المادة غير صالح" };
   }
-  return { ok: true, input: { message, article_id: raw.article_id, law_slug } };
+  return scoped({ message, article_id: raw.article_id, law_slug });
 }
 
 function libraryAssistantOutput(raw: unknown): Record<string, unknown> | null {
@@ -433,8 +481,23 @@ function assistantInput(raw: unknown): InputCheck {
   if (!message || message.length < 2) return { ok: false, error: "اكتب رسالتك (حتى ٤٬٠٠٠ حرف)" };
   const mode = raw.mode === undefined || raw.mode === null ? "direct" : raw.mode;
   if (!(ASSISTANT_MODES as readonly unknown[]).includes(mode)) return { ok: false, error: "اختر طريقة الرد: مباشر أو استجوبني" };
-  return { ok: true, input: mode === "grill" ? { context, message, mode } : { context, message } };
+  // T17a: «قضية محددة» may name one of the caller's cases (checked server-side
+  // in the run route, assistantCase.ts); no other context carries one.
+  let case_id: string | null = null;
+  if (raw.case_id !== undefined && raw.case_id !== null && raw.case_id !== "") {
+    if (context !== "case" || typeof raw.case_id !== "string" || !ASSISTANT_CASE_ID.test(raw.case_id)) {
+      return { ok: false, error: "القضية المختارة غير صالحة" };
+    }
+    case_id = raw.case_id;
+  }
+  const input: Record<string, unknown> = { context, message };
+  if (mode === "grill") input.mode = mode;
+  if (case_id) input.case_id = case_id;
+  return { ok: true, input };
 }
+
+/** A case id (service_requests.id, text: a UUID or «REQ-…»): the same shape assistantCase.ts checks again. */
+const ASSISTANT_CASE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function assistantOutput(raw: unknown): Record<string, unknown> | null {
   if (!isPlainObject(raw)) return null;
@@ -1821,7 +1884,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     freeQuestions: true,
     dailyLimit: 60,
     defaultMode: "off",
-    retrieval: { from: "message", pinFrom: "article_id", scopeFrom: "law_slug", laws: 6, principles: 3 },
+    retrieval: { from: "message", pinFrom: "article_id", scopeFrom: "law_slug", laws: 6, principles: 3, limitsFor: libraryScopeLimits },
     // Owner Q485: it explains texts; it never writes a memo or a pleading.
     // Owner ٢٢: nor a contract (referred to «محترف العقود»).
     draftingGuard: { field: "message" },
@@ -1856,6 +1919,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     conversation: { maxMessages: ASSISTANT_MESSAGES_PER_CONVERSATION, historyPairs: 3, field: "message", replyField: "reply" },
     // Owner ١٣: every AI agent is hardened against instruction extraction.
     promptGuard: { field: "message", replyField: "reply" },
+    // T17a: «قضية محددة» sends the caller's own case as context.
+    caseFrom: "case_id",
     validateInput: assistantInput,
     validateOutput: assistantOutput,
   },

@@ -13,7 +13,9 @@ import { useTheme } from "@/components/ThemeProvider";
 import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
 import { ASSISTANT_CONVERSATION_PRICE, ASSISTANT_MESSAGES_PER_CONVERSATION, type AssistantContext } from "@/lib/ai/tools";
 import { messagesNounAr } from "@/lib/ai/toolPointsDisplay";
-import { askAssistant } from "./_assistant-client";
+import { askAssistant, listAssistantCases, type AssistantCaseOption } from "./_assistant-client";
+import { assistantPrefill, consumeAssistantHandoff } from "@/lib/ai/assistantHandoff";
+import { sessionStorageOrNull } from "@/lib/ai/transcriptHandoff";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import ToolUsableGate from "@/components/ai/ToolUsableGate";
@@ -235,6 +237,10 @@ function AssistantPage() {
   // D3: the server keeps the conversation; the page only carries its id and
   // counts the answered messages to show where the five end.
   const [conversationId, setConversationId] = useState<string | null>(null);
+  // T17a: «قضية محددة» loads one of the lawyer's own cases as the context.
+  const [caseId, setCaseId] = useState<string>("");
+  const [cases, setCases] = useState<AssistantCaseOption[] | null | "loading" | "error">(null);
+  const [handoffNote, setHandoffNote] = useState<string | null>(null);
   const [answered, setAnswered] = useState(0);
   const [charged, setCharged] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -242,6 +248,26 @@ function AssistantPage() {
   const ctxRef    = useRef<HTMLDivElement>(null);
 
   const voice = useVoice(t => setInput(p => p ? p + " " + t : t));
+
+  // T17a: the case list, read once the «قضية محددة» context is chosen.
+  useEffect(() => {
+    if (context !== "case" || cases !== null) return;
+    let live = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCases("loading");
+    listAssistantCases().then((list) => { if (live) setCases(list ?? "error"); });
+    return () => { live = false; };
+  }, [context, cases]);
+
+  // T17a: a result sent here «مع السياق» (/ai/analyze) prefills the box, once; nothing is sent.
+  useEffect(() => {
+    const handoff = consumeAssistantHandoff(sessionStorageOrNull());
+    if (!handoff) return;
+    // A one-time read of browser storage after mount (no storage on the server).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInput(assistantPrefill(handoff));
+    setHandoffNote(`نُقل إلى خانة الرسالة نص من «${handoff.sourceLabel || "أداة أخرى"}»${handoff.truncated ? " (جزؤه الأول فقط لطوله)" : ""} — راجعه واكتب سؤالك ثم أرسله.`);
+  }, []);
 
   // Auto-scroll
   useEffect(() => {
@@ -278,7 +304,7 @@ function AssistantPage() {
 
     // The real assistant (plan §5 L4): the server searches the library for this
     // message, answers from what it found, and keeps the conversation.
-    const answer = await askAssistant({ message: content, context, conversationId, userType, mode });
+    const answer = await askAssistant({ message: content, context, conversationId, userType, mode, caseId: context === "case" ? caseId || null : null });
     if (answer.conversationId) setConversationId(answer.conversationId);
     if (answer.ok) {
       setAnswered(n => n + 1);
@@ -414,6 +440,41 @@ function AssistantPage() {
           )}
         </div>
       </div>
+
+      {/* ─── T17a: the case this conversation is about ─── */}
+      {context === "case" && (
+        <div className={`flex flex-wrap items-center gap-2 px-5 py-2 border-b text-[11px] flex-shrink-0 ${isDark ? "border-white/[0.06] bg-zinc-950 text-zinc-400" : "border-slate-100 bg-white text-slate-500"}`}>
+          <Gavel size={12} weight="duotone" className="text-[#C8A762]" />
+          <label htmlFor="assistant-case" className="font-bold">القضية:</label>
+          {cases === "loading" || cases === null ? (
+            <span>جارٍ تحميل قضاياك…</span>
+          ) : cases === "error" ? (
+            <span>تعذّر تحميل قضاياك الآن — يجيب المساعد عن سؤالك دون قضية محددة.</span>
+          ) : cases.length === 0 ? (
+            <span>لا قضايا مسندة إليك بعد — يجيب المساعد عن سؤالك دون قضية محددة.</span>
+          ) : (
+            <select
+              id="assistant-case"
+              value={caseId}
+              onChange={(e) => setCaseId(e.target.value)}
+              disabled={hasChat || loading}
+              title={hasChat ? "لتغيير القضية ابدأ محادثة جديدة" : undefined}
+              className={`max-w-[60vw] rounded-lg border px-2 py-1 text-[11px] font-semibold disabled:opacity-60 ${isDark ? "border-white/[0.08] bg-zinc-900 text-zinc-300" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+            >
+              <option value="">بلا قضية محددة</option>
+              {cases.map((c) => <option key={c.id} value={c.id}>{c.title}{c.type ? ` — ${c.type}` : ""}</option>)}
+            </select>
+          )}
+          {caseId && <span>تُرسَل وقائع القضية ومرحلتها وأسماء مستنداتها مع كل رسالة.</span>}
+          {hasChat && cases !== "loading" && Array.isArray(cases) && cases.length > 0 && <span>لتغيير القضية ابدأ محادثة جديدة.</span>}
+        </div>
+      )}
+      {handoffNote && (
+        <div role="status" className={`flex items-start gap-2 px-5 py-2 border-b text-[11px] flex-shrink-0 ${isDark ? "border-white/[0.06] bg-[#C8A762]/5 text-zinc-300" : "border-slate-100 bg-amber-50/60 text-slate-700"}`}>
+          <p className="flex-1">{handoffNote}</p>
+          <button type="button" onClick={() => setHandoffNote(null)} className="font-bold opacity-70 hover:opacity-100">إخفاء</button>
+        </div>
+      )}
 
       {/* ─── Messages area ─── */}
       <div className={`flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin ${isDark ? "bg-zinc-950/60" : "bg-slate-50/60"}`}>

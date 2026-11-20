@@ -37,7 +37,7 @@ function isSheetReady(root: HTMLElement): boolean {
 const paragraphStyle = { whiteSpace: "pre-wrap", margin: "0 0 2mm" } as const;
 const listStyle = { margin: "0 0 2mm", paddingInlineStart: "7mm" } as const;
 
-function Block({ block }: { block: DocBlock }) {
+export function Block({ block }: { block: DocBlock }) {
   switch (block.kind) {
     case "title":
       return <h1 style={{ fontSize: "15pt", fontWeight: 700, textAlign: "center", margin: "0 0 5mm" }}>{block.text}</h1>;

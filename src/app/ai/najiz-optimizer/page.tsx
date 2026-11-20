@@ -408,6 +408,7 @@ function NajizOptimizerPage() {
                 </div>
 
                 <AiResultActions
+                  letterheadBeside
                   text={result}
                   filename="najiz-optimized"
                   showVault

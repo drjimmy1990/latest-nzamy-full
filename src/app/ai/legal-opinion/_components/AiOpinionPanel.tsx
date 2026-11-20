@@ -166,6 +166,7 @@ export function AiOpinionPanel({ kind, run, input, draftState, blocked, price, i
             filename={kind === "consult" ? "legal-consultation" : "legal-letter"}
           />
           <AiResultActions
+            letterheadBeside
             text={resultText}
             filename={kind === "consult" ? "legal-consultation" : "legal-letter"}
             showCollector

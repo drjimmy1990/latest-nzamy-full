@@ -65,7 +65,7 @@ test("the drafter consumes ?from=transcript in an effect, prefills the facts, an
 
 test("the notice tells the user to review the text and can be dismissed", () => {
   const body = code("components/draft/TranscriptHandoffNotice.tsx");
-  assert.match(body, /هذا نص مُفرَّغ أُرسل من/);
+  assert.match(body, /هذا نص أُرسل من/);
   assert.match(body, /راجعه وعدّله قبل الصياغة/);
   assert.match(body, /role="status"/);
   assert.match(body, /aria-label="إخفاء التنبيه"/);

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useState } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 
 /**
@@ -53,11 +54,19 @@ const CaseGraphView = dynamic(
   { ssr: false },
 );
 
+// T18-P1-32 (batch l11): the named boards of the case map, as on the lawyer case file.
+const CaseBoardSwitcher = dynamic(() => import("@/app/dashboard/business/kanban/CaseBoardSwitcher"), { ssr: false });
+
 export default function LegalCanvas({ caseId }: { caseId?: string }) {
   const { isDark } = useTheme();
+  const [board, setBoard] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
   return (
-    <div className="overflow-hidden rounded-2xl" style={{ height: "580px" }}>
-      <CaseGraphView isDark={isDark} isGlobal={false} caseId={caseId} enableCaseImport />
+    <div className="space-y-2">
+      {caseId && <CaseBoardSwitcher caseId={caseId} value={board} onChange={setBoard} onRenamed={() => setRev((n) => n + 1)} isDark={isDark} />}
+      <div className="overflow-hidden rounded-2xl" style={{ height: "580px" }}>
+        <CaseGraphView key={`${board ?? "main"}:${rev}`} isDark={isDark} isGlobal={false} caseId={caseId} boardId={board} enableCaseImport />
+      </div>
     </div>
   );
 }

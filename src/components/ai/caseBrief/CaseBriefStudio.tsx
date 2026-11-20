@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
+import SendWithContextMenu from "@/components/ai/SendWithContextMenu";
 import Link from "next/link";
 import { useAiRun } from "@/hooks/useAiRun";
 import { useToolDraft } from "@/hooks/useToolDraft";
@@ -411,6 +412,13 @@ function CaseBriefTool() {
                   showHumanReview
                   className="justify-start"
                 />
+                {/* T17a: the brief as context for the assistant or the drafter («حفظ في المجمّع» is «أضف للمجمّع» above). */}
+                <div className="mt-2">
+                  <SendWithContextMenu
+                    text={`إحاطة القضية\n\nالقصة:\n${result.story}\n\nالتقييم الأولي: ${assess.label} — ${result.assessmentReason}`}
+                    sourceLabel="عصارة المرفقات"
+                  />
+                </div>
               </div>
             </div>
 

@@ -28,7 +28,7 @@ export function TranscriptHandoffNotice({ isDark, sourceLabel, truncated, onDism
         className={`mt-0.5 flex-shrink-0 ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`} />
       <div className="flex-1 space-y-0.5">
         <p className={`text-[12px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
-          هذا نص مُفرَّغ أُرسل من {sourceLabel || "المفرّغ الذكي"} — راجعه وعدّله قبل الصياغة
+          هذا نص أُرسل من {sourceLabel || "المفرّغ الذكي"} — راجعه وعدّله قبل الصياغة
         </p>
         <p className={`text-[11px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
           وضعناه في خانة «الوقائع» في الخطوة ٢، ويمكنك تعديله أو حذفه هناك. لن يُرسَل أي طلب قبل أن تراجعه وتضغط الإرسال بنفسك.

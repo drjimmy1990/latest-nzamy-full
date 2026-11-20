@@ -3,7 +3,12 @@
 /**
  * AiResultActions — Standardized action bar for all AI output pages
  * ──────────────────────────────────────────────────────────────────
- * Provides: Copy · Download (.txt) · Add to Collector · Human Review (firm only)
+ * Provides: Copy · Download (.txt) · Word (.docx) · Print / PDF · Add to Collector
+ *           · Human Review (firm only)
+ * N01-21/22/23 (batch l11): Word is the plain package of lib/docx/plainDocx.ts
+ * (the same fflate writer as the letterhead export, loaded on the click), and
+ * print is AiResultPrint (the browser's «حفظ بصيغة PDF» is the PDF). Both for
+ * every account that sees the result; the letterhead bar stays where it was.
  * Usage: <AiResultActions text={resultText} filename="contract-draft" />
  *
  * P9 Mandate: Phosphor Icons only, no emoji, Spring Physics motion.
@@ -13,12 +18,13 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy, CheckCircle, DownloadSimple, Tray,
-  ShareNetwork, Warning,
+  ShareNetwork, Warning, FileDoc, Printer, SpinnerGap,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { addToInbox, type InboxSource } from "@/lib/services/researchService";
 import { useUser } from "@/hooks/useUser";
 import SaveToCaseButton from "@/components/ai/SaveToCaseButton";
+import AiResultPrint from "@/components/ai/AiResultPrint";
 
 
 interface AiResultActionsProps {
@@ -51,6 +57,16 @@ interface AiResultActionsProps {
    */
   showSaveToCase?: boolean;
   runId?: string | null;
+  /** N01-21/22/23: the heading of the Word file and the printed page (default: the filename in words). */
+  title?: string;
+  /** Show «Word» and «طباعة / PDF» (default: true). */
+  showExport?: boolean;
+  /**
+   * The page also mounts LetterheadExportBar (Word + print on the letterhead,
+   * lawyer and firm accounts only): those accounts then get the letterhead's
+   * buttons alone, never a second Word and print pair. Everyone else keeps these.
+   */
+  letterheadBeside?: boolean;
 }
 
 export default function AiResultActions({
@@ -66,6 +82,9 @@ export default function AiResultActions({
   className = "",
   showSaveToCase = true,
   runId = null,
+  title,
+  showExport = true,
+  letterheadBeside = false,
 }: AiResultActionsProps) {
   // showVault is intentionally unused — absorbed by showCollector
   void showVault;
@@ -86,6 +105,11 @@ export default function AiResultActions({
   const [copied, setCopied] = useState(false);
   const [added, setAdded] = useState(false);
   const [flagged, setFlagged] = useState(false);
+  const [wordBusy, setWordBusy] = useState(false);
+  const [wordError, setWordError] = useState<string | null>(null);
+  // A count, not a flag: some browsers never fire afterprint, and the next click must still print.
+  const [printRun, setPrintRun] = useState(0);
+  const docTitle = (title ?? filename.replace(/-/g, " ")).trim();
 
   function handleCopy() {
     navigator.clipboard.writeText(text).then(() => {
@@ -102,6 +126,27 @@ export default function AiResultActions({
     a.download = `${filename}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleWord() {
+    if (wordBusy) return;
+    setWordBusy(true);
+    setWordError(null);
+    try {
+      // fflate is loaded on the click, never with the page.
+      const { plainResultDocx, safeFilename } = await import("@/lib/docx/plainDocx");
+      const bytes = plainResultDocx(text, docTitle);
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeFilename(filename)}.docx`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch {
+      setWordError("تعذّر إنشاء ملف Word — انسخ النص");
+    } finally {
+      setWordBusy(false);
+    }
   }
 
   async function handleCollector() {
@@ -178,6 +223,31 @@ export default function AiResultActions({
         <DownloadSimple size={14} /> تنزيل .txt
       </motion.button>
 
+      {/* Word + print / PDF (N01-21/22/23); the letterhead bar's own pair stands in for lawyers and firms */}
+      {showExport && !(letterheadBeside && (user?.userType === "lawyer" || user?.userType === "firm")) && (
+        <>
+          <motion.button
+            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+            onClick={() => void handleWord()}
+            disabled={wordBusy || !text.trim()}
+            className={`${ghost} disabled:opacity-50`}
+            aria-label="تنزيل كملف Word"
+          >
+            {wordBusy ? <SpinnerGap size={14} className="animate-spin" /> : <FileDoc size={14} />} Word
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+            onClick={() => setPrintRun((n) => n + 1)}
+            disabled={!text.trim()}
+            className={`${ghost} disabled:opacity-50`}
+            aria-label="طباعة أو حفظ بصيغة PDF"
+          >
+            <Printer size={14} /> طباعة / PDF
+          </motion.button>
+          {printRun > 0 && <AiResultPrint key={printRun} text={text} title={docTitle} onDone={() => setPrintRun(0)} />}
+        </>
+      )}
+
       {/* Add to Collector */}
       {canShowCollector && (
         <motion.button
@@ -233,6 +303,10 @@ export default function AiResultActions({
         >
           <ShareNetwork size={14} /> مشاركة
         </motion.button>
+      )}
+
+      {wordError && (
+        <p role="status" className={`w-full text-[11px] ${isDark ? "text-amber-400" : "text-amber-700"}`}>{wordError}</p>
       )}
     </div>
   );
