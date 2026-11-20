@@ -25,6 +25,7 @@
  */
 import { foldArabic, foldMessage, hasPhrase, hasStem, type FoldedMessage } from "./normalize.ts";
 import type { AssistantFeed, PriceLine, TopupLine } from "./feed.ts";
+import { LIBRARY_ACCOUNT_KEYS, type LibraryAccountKey } from "../library/accountAccess.ts";
 import { BILLING_LABEL_AR, formatSarAmount } from "../pricing/priceBook.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import { SALE_PAUSED_LINE_AR } from "../payments/checkoutView.ts";
@@ -281,6 +282,29 @@ function pricesAnswer(feed: AssistantFeed, audience: Classification["audience"])
   return { lines, links: [L.pricing, L.register] };
 }
 
+/** The account types, as the help chat names them in a sentence. */
+const LIBRARY_BUYERS_AR: Readonly<Record<LibraryAccountKey, string>> = Object.freeze({
+  lawyer: "المحامين",
+  consultant: "المستشارين القانونيين",
+  firm: "مكاتب المحاماة",
+  individual: "الأفراد",
+  business: "المنشآت والجهات الحكومية والجمعيات",
+  provider: "مقدّمي الخدمات",
+});
+
+/**
+ * Who may subscribe to the library today, from the admin's switch (the
+ * purchase gate's own setting). null (not read / unreadable) → no line.
+ */
+export function libraryBuyersLineAr(openTo: readonly LibraryAccountKey[] | null): string | null {
+  if (openTo === null) return null;
+  const names = LIBRARY_ACCOUNT_KEYS.filter((k) => openTo.includes(k)).map((k) => LIBRARY_BUYERS_AR[k]);
+  if (names.length === 0) return "اشتراك المكتبة غير متاح اليوم لأي نوع من الحسابات.";
+  const list =
+    names.length <= 2 ? names.join(" و") : names[0] + names.slice(1).map((n) => `، و${n}`).join("");
+  return `الاشتراك متاح اليوم لحسابات ${list}.`;
+}
+
 function libraryAnswer(feed: AssistantFeed): Built {
   const lines = [
     "المكتبة القانونية تضم الأنظمة واللوائح والمبادئ والأحكام القضائية. يستطيع أي زائر تصفّحها وقراءة جزء من محتواها مجاناً، والنص الكامل للمشتركين.",
@@ -288,7 +312,8 @@ function libraryAnswer(feed: AssistantFeed): Built {
   if (feed.prices.library.length > 0) {
     lines.push("اشتراك المكتبة:");
     for (const l of feed.prices.library) lines.push(bullet(`${l.labelAr}: ${sarAr(l.launch?.sar ?? l.sar)}`));
-    lines.push("الاشتراك متاح لحسابات المحامين ومكاتب المحاماة والشركات والجهات الحكومية.");
+    const buyers = libraryBuyersLineAr(feed.libraryOpenTo);
+    if (buyers) lines.push(buyers);
   }
   lines.push(...vatAndSale(feed));
   return { lines, links: [L.laws, L.pricing] };
@@ -455,9 +480,9 @@ function build(intent: AssistantIntent, feed: AssistantFeed, audience: Classific
 }
 
 /** The live reads an intent's answer uses (feedServer.ts loads only these). */
-export function feedNeeds(intent: AssistantIntent): { sale: boolean; offers: boolean; founder: boolean } {
+export function feedNeeds(intent: AssistantIntent): { sale: boolean; offers: boolean; founder: boolean; library: boolean } {
   const sale = intent === "prices" || intent === "library" || intent === "points" || intent === "payment" || intent === "founder";
-  return { sale, offers: intent === "offers", founder: intent === "founder" || intent === "offers" };
+  return { sale, offers: intent === "offers", founder: intent === "founder" || intent === "offers", library: intent === "library" };
 }
 
 /** The reply to one message, from the feed. */
