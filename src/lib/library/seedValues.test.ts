@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createSeedValueReport,
+  LIBRARY_RAISED_CAPS,
   parseStrictInt,
   summarizeSeedValueReport,
 } from "./seedValues.ts";
@@ -163,4 +164,32 @@ test("old safeInt vs values.int: identical for plain integers and empty input; t
     assert.equal(oldSafeInt(v, null), before, `old ${String(v)}`);
     assert.equal(r.int("t", "f", "k", v, null), after, `new ${String(v)}`);
   }
+});
+
+test("l10 (gap 1.6): the raised caps — a 120-character number_text is not cut, a value past the new cap still is and is reported", () => {
+  assert.deepEqual(LIBRARY_RAISED_CAPS, {
+    "articles.number_text": 1000,
+    "laws.official_source_url": 2000,
+    "laws.issuing_instrument": 2000,
+  });
+  const r = createSeedValueReport();
+  const title = "المادة الحادية والعشرون بعد المائة من نظام المرافعات الشرعية الصادر بالمرسوم الملكي رقم م/١ وتاريخ ١٤٣٥هـ";
+  const t120 = (title + " ").repeat(3).slice(0, 120);
+  assert.equal(t120.length, 120);
+  assert.equal(r.cap("articles", "number_text", "law__art-121", t120, LIBRARY_RAISED_CAPS["articles.number_text"]), t120);
+  const url = "https://example.org/" + "a".repeat(600);
+  assert.equal(r.cap("laws", "official_source_url", "law", url, LIBRARY_RAISED_CAPS["laws.official_source_url"]), url);
+  const instr = "م".repeat(250);
+  assert.equal(r.cap("laws", "issuing_instrument", "law", instr, LIBRARY_RAISED_CAPS["laws.issuing_instrument"]), instr);
+  assert.equal(r.snapshot().truncated.length, 0, "nothing under the raised caps is cut");
+  // past the cap: still cut, still reported
+  assert.equal(r.cap("articles", "number_text", "law__art-9", "x".repeat(1001), 1000).length, 1000);
+  assert.deepEqual(r.snapshot().truncated.map((t) => [t.field, t.length, t.max]), [["number_text", 1001, 1000]]);
+});
+
+test("l10 (gap 1.6): the seeder uses the raised caps at its three sites — no 50 / 500 / 200 left there", () => {
+  assert.match(SEEDER, /number_text: cap\("articles", "number_text", artId, art\.number_text \|\| "", LIBRARY_RAISED_CAPS\["articles\.number_text"\]\)/);
+  assert.match(SEEDER, /official_source_url: cap\("laws", "official_source_url", lawId, String\(law\.official_source_url \|\| ""\), LIBRARY_RAISED_CAPS\["laws\.official_source_url"\]\)/);
+  assert.match(SEEDER, /issuing_instrument: cap\("laws", "issuing_instrument", lawId, String\(law\.issuance_decree \|\| ""\), LIBRARY_RAISED_CAPS\["laws\.issuing_instrument"\]\)/);
+  assert.doesNotMatch(SEEDER, /"number_text", artId, .*, 50\)/);
 });

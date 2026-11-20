@@ -7793,3 +7793,26 @@ select 'Free questions: the library-open rule only for the library assistant; th
                 and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
                 false) as ok;
 -- <<< verify:l9_public
+
+-- >>> verify:l10_caps
+-- Batch l10-caps (owner's library-agent package 19 Nov, gap 1.6): run 20261130_10 before the next library load with the l10 loader.
+select 'Wide library text columns: articles.number_text, laws.issuing_instrument, laws.official_source_url are text (run 20261130_10)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute a
+         where not a.attisdropped and a.atttypid = 'pg_catalog.text'::pg_catalog.regtype
+           and ((a.attrelid = 'library.articles'::regclass and a.attname = 'number_text')
+             or (a.attrelid = 'library.laws'::regclass and a.attname in ('issuing_instrument', 'official_source_url')))) = 3
+       as ok;
+select 'Loader width check: library.library_column_widths() exists, service role only (run 20261130_10)' as check,
+       case when to_regprocedure('library.library_column_widths()') is null then false else
+       not has_function_privilege('anon', 'library.library_column_widths()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'library.library_column_widths()', 'EXECUTE')
+       and has_function_privilege('service_role', 'library.library_column_widths()', 'EXECUTE')
+       end as ok;
+select 'v_laws_enactment_status (re-created by 20261130_10 if it read issuing_instrument): still security_invoker, still closed to anon / authenticated' as check,
+       case when to_regclass('library.v_laws_enactment_status') is null then true else
+       coalesce((select c.reloptions @> array['security_invoker=true'] from pg_catalog.pg_class c
+                  where c.oid = 'library.v_laws_enactment_status'::regclass), false)
+       and not has_any_column_privilege('anon', 'library.v_laws_enactment_status', 'SELECT')
+       and not has_any_column_privilege('authenticated', 'library.v_laws_enactment_status', 'SELECT')
+       end as ok;
+-- <<< verify:l10_caps
