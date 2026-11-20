@@ -7892,3 +7892,20 @@ select 'Community: the owner of a verified firm reads and posts lawyers-only con
                     and with_check ilike '%community_is_verified_lawyer%' and with_check not ilike '%community_lawyers_space_ok%')
        end as ok;
 -- <<< verify:l11_community
+-- >>> verify:l11_remind
+-- Batch l11-remind (N01-15 / N01-10 / T10-F7): run 20261201_45 (any time, after 20261125_20).
+select 'Reminder kinds: email_reminder_log accepts task_due_1d(_app), contract_pay_due/overdue(_app), firm_invite; still service role only (run 20261201_45)' as check,
+       case when to_regclass('public.email_reminder_log') is null then false else
+       (select bool_and(position(quote_literal(k) in coalesce(d.def, '')) > 0)
+          from (select string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' ') as def
+                  from pg_catalog.pg_constraint con
+                 where con.conrelid = 'public.email_reminder_log'::regclass and con.contype = 'c'
+                   and pg_catalog.pg_get_constraintdef(con.oid) ~ '\mkind\M') d,
+               unnest(array['hearing_1d', 'poa_30d', 'poa_7d', 'library_7d', 'library_3d',
+                            'task_due_1d', 'task_due_1d_app', 'contract_pay_due', 'contract_pay_due_app',
+                            'contract_pay_overdue', 'contract_pay_overdue_app', 'firm_invite']) as k)
+       and not has_table_privilege('anon', 'public.email_reminder_log', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.email_reminder_log', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.email_reminder_log', 'INSERT')
+       end as ok;
+-- <<< verify:l11_remind

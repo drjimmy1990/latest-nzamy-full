@@ -2,8 +2,9 @@
 
 /**
  * «دعوة برابط» — F7 (migration 20261125_40). For an address that has no
- * account yet (or any address): the firm gets a link to copy and send itself —
- * NO e-mail is sent by the platform in this batch. If the address already
+ * account yet (or any address): the firm gets a link to copy and send itself,
+ * and (T10-F7, batch l11-remind) the platform e-mails it too once e-mail is
+ * set up — the POST answers `emailed`. If the address already
  * belongs to a lawyer/individual account, that person also gets an in-app
  * notification. GET/POST /api/v1/firm/invitations, DELETE …/[id].
  *
@@ -33,7 +34,7 @@ export default function FirmInviteLinks({ isDark, card }: { isDark: boolean; car
   const [role, setRole] = useState<FirmRole>("lawyer");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ link: string; notified: boolean } | null>(null);
+  const [created, setCreated] = useState<{ link: string; notified: boolean; emailed: boolean } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -62,12 +63,12 @@ export default function FirmInviteLinks({ isDark, card }: { isDark: boolean; car
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), role }),
       });
-      const body = (await res.json().catch(() => ({}))) as { data?: { path?: string; notified?: boolean }; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { data?: { path?: string; notified?: boolean; emailed?: boolean }; error?: string };
       if (!res.ok || !body.data?.path) {
         setError(body.error || "تعذّر إنشاء الدعوة.");
         return;
       }
-      setCreated({ link: fullLink(body.data.path), notified: body.data.notified === true });
+      setCreated({ link: fullLink(body.data.path), notified: body.data.notified === true, emailed: body.data.emailed === true });
       setEmail("");
       void load();
     } catch {
@@ -106,7 +107,7 @@ export default function FirmInviteLinks({ isDark, card }: { isDark: boolean; car
         <div>
           <h2 id="invite-links-title" className={`text-base font-black ${strong}`}>دعوة برابط</h2>
           <p className={`text-xs mt-1 ${muted}`}>
-            لمن ليس له حساب على المنصة بعد: أنشئ رابط دعوة وأرسله إليه بنفسك (لا ترسل المنصة بريداً الآن). يُقبل الرابط من حساب مسجّل بالبريد نفسه، وتنتهي صلاحيته بعد ٧ أيام. إن كان للبريد حساب قائم يصله إشعار داخل المنصة أيضاً.
+            لمن ليس له حساب على المنصة بعد: أنشئ رابط دعوة، وسنخبرك هنا إن أرسلته المنصة إلى بريده، ويمكنك دائماً نسخه وإرساله إليه بنفسك. يُقبل الرابط من حساب مسجّل بالبريد نفسه، وتنتهي صلاحيته بعد ٧ أيام. إن كان للبريد حساب قائم يصله إشعار داخل المنصة أيضاً.
           </p>
         </div>
       </div>
@@ -126,7 +127,7 @@ export default function FirmInviteLinks({ isDark, card }: { isDark: boolean; car
       {created && (
         <div className={`rounded-xl border p-3 space-y-2 ${isDark ? "border-emerald-500/20 bg-emerald-500/5" : "border-emerald-200 bg-emerald-50"}`}>
           <p className={`text-xs font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
-            أُنشئت الدعوة{created.notified ? "، ووصل صاحبَ البريد إشعارٌ داخل المنصة" : ""}. انسخ الرابط وأرسله:
+            أُنشئت الدعوة{created.emailed ? "، وأُرسل رابطها إلى البريد" : ""}{created.notified ? "، ووصل صاحبَ البريد إشعارٌ داخل المنصة" : ""}. {created.emailed ? "ويمكنك نسخ الرابط أيضاً:" : "انسخ الرابط وأرسله:"}
           </p>
           <div className="flex items-center gap-2">
             <code dir="ltr" className={`flex-1 truncate text-[11px] ${strong}`}>{created.link}</code>

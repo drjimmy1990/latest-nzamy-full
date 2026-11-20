@@ -4,6 +4,10 @@
  * may receive it. Used by the three reminder crons:
  *   /api/v1/cron/hearing-reminders, /api/v1/cron/poa-reminders,
  *   /api/v1/cron/library-grant-reminders.
+ * And (20261201_45, batch l11-remind) by /api/v1/cron/task-reminders,
+ * /api/v1/cron/contract-payment-reminders — which also mark their IN-APP
+ * notices here (notifyReminderOnce, "_app" kinds) — and by the firm
+ * invitation e-mail (POST /api/v1/firm/invitations, kind firm_invite).
  *
  * ONCE — public.email_reminder_log (20261125_20), primary key
  *   (kind, subject_id, recipient_user_id, due_on):
@@ -33,13 +37,22 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isPlainEmail, sendEmail, type EmailMessage, type SendEmailDeps } from "./sendEmail.ts";
 
-export type ReminderEmailKind = "hearing_1d" | "poa_30d" | "poa_7d" | "library_7d" | "library_3d";
+export type ReminderEmailKind =
+  | "hearing_1d" | "poa_30d" | "poa_7d" | "library_7d" | "library_3d"
+  // 20261201_45 (batch l11-remind): tasks due, contract installments, the firm
+  // invitation e-mail. The "_app" kinds mark the IN-APP notice of the same
+  // reminder (notifyReminderOnce) — their own rows, so neither channel uses
+  // the other's up.
+  | "task_due_1d" | "contract_pay_due" | "contract_pay_overdue" | "firm_invite"
+  | "task_due_1d_app" | "contract_pay_due_app" | "contract_pay_overdue_app";
 
 export const EMAIL_LOG_TABLE = "email_reminder_log";
 export const EMAIL_LOG_CONFLICT = "kind,subject_id,recipient_user_id,due_on";
 export const MAX_EMAIL_ATTEMPTS = 3;
 /** Missing table / column (PostgREST + Postgres): the migration has not run. */
 export const EMAIL_SCHEMA_MISSING = new Set(["42P01", "PGRST205", "42703", "PGRST204"]);
+/** check_violation on the claim insert: the kind is newer than the database's CHECK. */
+export const KIND_NOT_ALLOWED = "23514";
 
 const ID_CHUNK = 150;
 
@@ -180,6 +193,9 @@ export async function claimReminder(admin: SupabaseClient, key: ReminderKey): Pr
     .select("kind");
   if (error) {
     if (EMAIL_SCHEMA_MISSING.has(error.code ?? "")) return "schema_missing";
+    // 23514: the kind CHECK does not know this kind yet — the migration that
+    // adds it (20261201_45 for the l11 kinds) has not run. Nothing is sent.
+    if (error.code === KIND_NOT_ALLOWED) return "schema_missing";
     console.error("[email reminders] claim failed:", key.kind, error.code, error.message);
     return "error";
   }
@@ -253,6 +269,54 @@ export async function sendReminderOnce(
   }
 }
 
+/** One in-app notice (public.notifications: title, body, href). */
+export interface InAppNotice {
+  title: string;
+  body: string;
+  href: string;
+}
+
+/**
+ * The IN-APP half of a once-only reminder (20261201_45): the same claim →
+ * deliver → record as sendReminderOnce, with an "_app" kind, the notice
+ * written straight into public.notifications (what recordNotification does,
+ * but here the insert's error is seen, so a failed insert is retried on the
+ * next run, up to 3 attempts). Before the migration runs the claim answers
+ * "schema_missing" and NOTHING is written — never a notice without a marker,
+ * which would repeat on every run.
+ */
+export async function notifyReminderOnce(
+  admin: SupabaseClient,
+  key: ReminderKey,
+  notice: InAppNotice,
+): Promise<ReminderSendOutcome> {
+  try {
+    const claim = await claimReminder(admin, key);
+    if (claim !== "claimed") return claim;
+    const { error: insErr } = await admin.from("notifications").insert({
+      user_id: key.recipientUserId,
+      title: notice.title,
+      body: notice.body,
+      href: notice.href,
+    });
+    if (insErr) console.error("[in-app reminders] notification insert failed:", key.kind, insErr.code, insErr.message);
+    const { error } = await admin
+      .from(EMAIL_LOG_TABLE)
+      .update({
+        status: insErr ? "failed" : "sent",
+        last_error: insErr ? `notify_${insErr.code ?? "error"}`.slice(0, 200) : null,
+        updated_at: new Date().toISOString(),
+      })
+      .match(keyColumns(key))
+      .eq("status", "sending");
+    if (error) console.error("[in-app reminders] status update failed:", key.kind, error.code, error.message);
+    return insErr ? "failed" : "sent";
+  } catch (err) {
+    console.error("[in-app reminders] threw:", key.kind, err instanceof Error ? err.name : "error");
+    return "error";
+  }
+}
+
 /** Counters every reminder cron reports for its e-mail step. */
 export interface EmailStepReport {
   ok: boolean;
@@ -277,6 +341,31 @@ export function emptyEmailReport(): EmailStepReport {
  */
 export function dashboardRootFor(userType: string | null | undefined): "/dashboard/firm" | "/dashboard/lawyer" {
   return userType === "firm" ? "/dashboard/firm" : "/dashboard/lawyer";
+}
+
+/**
+ * user id → profiles.user_type, for the in-app link of a reminder (the e-mail
+ * step gets the same map from loadEmailRecipients). A failed read leaves the
+ * map partial: dashboardRootFor then falls back to the lawyer dashboard.
+ */
+export async function loadUserTypes(admin: SupabaseClient, userIds: readonly string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const ids = Array.from(new Set(userIds.filter((u) => typeof u === "string" && u)));
+  try {
+    for (const part of chunks(ids, ID_CHUNK)) {
+      const { data, error } = await admin.from("profiles").select("id, user_type").in("id", part);
+      if (error) {
+        console.error("[reminders] user types:", error.code, error.message);
+        break;
+      }
+      for (const p of (data ?? []) as Array<{ id: string; user_type?: unknown }>) {
+        out.set(p.id, typeof p.user_type === "string" ? p.user_type : null);
+      }
+    }
+  } catch (err) {
+    console.error("[reminders] user types threw:", err instanceof Error ? err.name : "error");
+  }
+  return out;
 }
 
 /** Riyadh's calendar day (UTC+3, no DST) `days` after `now`, as YYYY-MM-DD. */
