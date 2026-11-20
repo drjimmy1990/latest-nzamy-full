@@ -265,6 +265,29 @@ export function cleanDetail<T extends Row>(post: T): T {
  * contact details does so on the profile (`lawyer_profiles.show_contact`),
  * not inside forum text.
  */
+/** The refusal for a link or an account handle left after PII masking (S5-3). */
+export const LINK_REFUSAL_AR = "لا يُسمح بوضع رابط أو معرّف حساب في نصوص المجتمع — التواصل يتم عبر المنصّة.";
+
+/**
+ * S5-3 write-side check, run on text ALREADY masked by
+ * src/lib/community/piiMask.ts: phone numbers and e-mail addresses are no
+ * longer refused there (they are hidden and the author is told), but a link
+ * or an account handle is still refused — that is the off-platform-contact
+ * rule (contactSanitizer.ts), not personal data, and there is nothing to mask
+ * it to. `null` = the values may be stored.
+ */
+export function linkIssueIn(values: unknown[]): string | null {
+  for (const v of values) {
+    if (typeof v === "string") {
+      if (findOffPlatformContact(v).some((m) => m.kind === "url" || m.kind === "handle")) return LINK_REFUSAL_AR;
+    } else if (Array.isArray(v)) {
+      const found = linkIssueIn(v);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export function contactIssueIn(values: unknown[]): string | null {
   for (const v of values) {
     if (typeof v === "string") {

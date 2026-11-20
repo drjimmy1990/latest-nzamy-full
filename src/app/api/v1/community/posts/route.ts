@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import {
   LIST_SELECT,
-  contactIssueIn,
   dbCategoryFor,
+  linkIssueIn,
   toFeedItem,
   visibilityForTab,
 } from "./_feed";
@@ -17,6 +17,8 @@ import {
 } from "./_search";
 import { viewerStateFor } from "./_viewer";
 import { OWN_POST_STATUSES, PUBLIC_POST_STATUSES, postedNoticeAr, reviewStateOf } from "@/lib/community/review";
+import { maskCommunityFields, piiMaskedNoticeAr } from "@/lib/community/piiMask";
+import { LAWYERS_SPACE_REFUSAL_AR, canUseLawyersSpace } from "./_lawyersSpace";
 
 /**
  * GET /api/v1/community/posts — List community posts
@@ -51,9 +53,8 @@ import { OWN_POST_STATUSES, PUBLIC_POST_STATUSES, postedNoticeAr, reviewStateOf 
  * The category filter reads the `category` column (it read `tags`, which the
  * ask form never fills).
  *
- * The same RLS policy shows a `lawyers_only` post to its author ONLY — not to
- * other lawyers. Until that policy changes, the lawyers tab lists the
- * caller's own lawyers-only posts and nothing else.
+ * RLS decides who reads a `lawyers_only` post: its author, verified lawyers
+ * (20261016_06) and the owner of a verified firm (20261201_50, N05-C2).
  */
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -127,11 +128,14 @@ export async function GET(request: NextRequest) {
  * Body: { title, body?, category?, visibility? | tab?, tags? }
  *
  * - `category` is stored (it was dropped, so every post was `general`).
- * - `lawyers_only` is accepted from a verified lawyer only, checked on the
- *   caller's own `lawyer_profiles` row (the same check the answers route
- *   uses for `is_lawyer_verified`).
- * - Text carrying a phone number, e-mail, link or handle is refused with the
- *   Arabic reason (contactSanitizer.ts).
+ * - `lawyers_only` is accepted from a verified lawyer or the owner of a
+ *   verified firm (N05-C2, owner ٤٢ — ./_lawyersSpace.ts; the RLS insert
+ *   policy applies the same rule).
+ * - S5-3: phone numbers, e-mails, national/iqama IDs, IBANs and CR numbers
+ *   in the title, body or tags are masked before the row is stored
+ *   (src/lib/community/piiMask.ts); the answer carries `masked` (the kinds)
+ *   and `maskedNotice` for the author. A link or an account handle is still
+ *   refused (linkIssueIn).
  * - Owner ٤٢: the answer says whether the post is public yet (`pendingReview`
  *   + the Arabic `message`).
  */
@@ -162,10 +166,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const tags = Array.isArray(body.tags) ? body.tags.filter((t: unknown) => typeof t === "string") : [];
-  const contactIssue = contactIssueIn([body.title, body.body, tags]);
-  if (contactIssue) {
-    return NextResponse.json({ error: contactIssue }, { status: 400 });
+  const rawTags: string[] = Array.isArray(body.tags) ? body.tags.filter((t: unknown) => typeof t === "string") : [];
+  // S5-3: mask personal data server-side; only the masked text is stored.
+  const { fields: clean, kinds: masked } = maskCommunityFields({
+    title: String(body.title),
+    body: typeof body.body === "string" ? body.body : "",
+    tags: rawTags,
+  });
+  const linkIssue = linkIssueIn([clean.title, clean.body, clean.tags]);
+  if (linkIssue) {
+    return NextResponse.json({ error: linkIssue }, { status: 400 });
   }
 
   const requested = body.visibility ?? body.tab;
@@ -173,29 +183,19 @@ export async function POST(request: NextRequest) {
   if (!visibility) {
     return NextResponse.json({ error: "قيمة الظهور غير صالحة." }, { status: 400 });
   }
-  if (visibility === "lawyers_only") {
-    const { data: lawyerProfile } = await supabase
-      .from("lawyer_profiles")
-      .select("verification_status")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (lawyerProfile?.verification_status !== "verified") {
-      return NextResponse.json(
-        { error: "النشر في مجتمع المحامين متاح للمحامين الموثّقين فقط." },
-        { status: 403 },
-      );
-    }
+  if (visibility === "lawyers_only" && !(await canUseLawyersSpace(supabase, user.id))) {
+    return NextResponse.json({ error: LAWYERS_SPACE_REFUSAL_AR }, { status: 403 });
   }
 
   const { data, error } = await supabase
     .from("community_posts")
     .insert({
       author_id: user.id,
-      title: body.title,
-      body: body.body ?? "",
+      title: clean.title,
+      body: clean.body,
       category: dbCategoryFor(body.category) ?? "general",
       visibility,
-      tags,
+      tags: clean.tags,
     })
     .select()
     .single();
@@ -208,7 +208,13 @@ export async function POST(request: NextRequest) {
   // post as pending_review (trigger, 20261127_60); say so instead of «نُشر».
   const pendingReview = reviewStateOf((data as { status?: unknown } | null)?.status) === "pending";
   return NextResponse.json(
-    { data, pendingReview, message: postedNoticeAr("post", pendingReview) },
+    {
+      data,
+      pendingReview,
+      message: postedNoticeAr("post", pendingReview),
+      masked,
+      maskedNotice: piiMaskedNoticeAr(masked),
+    },
     { status: 201 },
   );
 }

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
-import { contactIssueIn } from "../../_feed";
+import { linkIssueIn } from "../../_feed";
 import { postedNoticeAr, reviewStateOf } from "@/lib/community/review";
+import { maskCommunityPii, piiMaskedNoticeAr } from "@/lib/community/piiMask";
 
 /**
  * POST /api/v1/community/posts/[id]/answers — Add an answer to a post
@@ -19,8 +20,16 @@ import { postedNoticeAr, reviewStateOf } from "@/lib/community/review";
  * src/lib/services/communityAnswerMap.ts) show the lawyer badge/CTA off a
  * real column instead of an always-false default.
  *
- * An answer carrying a phone number, e-mail, link or handle is refused with
- * the Arabic reason (contactSanitizer.ts) — the same rule for every author.
+ * S5-3: phone numbers, e-mails, national/iqama IDs, IBANs and CR numbers
+ * are masked before the answer is stored (src/lib/community/piiMask.ts) —
+ * the same rule for every author — and the answer says what was hidden
+ * (`masked`, `maskedNotice`). A link or an account handle is still refused.
+ * (The community has no separate comments: an answer is the reply.)
+ *
+ * N05-C2: the owner of a verified firm may answer a lawyers-only post (the
+ * RLS insert policy follows community_post_readable, 20261201_50); his
+ * answer never carries the lawyer badge — `is_lawyer_verified` still comes
+ * from his own lawyer_profiles row only.
  */
 export async function POST(
   request: NextRequest,
@@ -50,9 +59,11 @@ export async function POST(
     );
   }
 
-  const contactIssue = contactIssueIn([body.body ?? body.content]);
-  if (contactIssue) {
-    return NextResponse.json({ error: contactIssue }, { status: 400 });
+  const rawText = body.body ?? body.content;
+  const { text: answerText, kinds: masked } = maskCommunityPii(typeof rawText === "string" ? rawText : String(rawText));
+  const linkIssue = linkIssueIn([answerText]);
+  if (linkIssue) {
+    return NextResponse.json({ error: linkIssue }, { status: 400 });
   }
 
   // Verify post exists
@@ -78,7 +89,7 @@ export async function POST(
     .insert({
       post_id: postId,
       author_id: user.id,
-      body: body.body ?? body.content,
+      body: answerText,
       is_lawyer_verified: isLawyerVerified,
     })
     .select()
@@ -91,7 +102,13 @@ export async function POST(
   // Owner ٤٢: an answer also waits for review while the setting is on.
   const pendingReview = reviewStateOf((data as { status?: unknown } | null)?.status) === "pending";
   return NextResponse.json(
-    { data, pendingReview, message: postedNoticeAr("answer", pendingReview) },
+    {
+      data,
+      pendingReview,
+      message: postedNoticeAr("answer", pendingReview),
+      masked,
+      maskedNotice: piiMaskedNoticeAr(masked),
+    },
     { status: 201 },
   );
 }
