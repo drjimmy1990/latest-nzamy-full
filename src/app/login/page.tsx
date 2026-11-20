@@ -44,6 +44,7 @@ import {
 import { translateAuthError } from "@/lib/auth/translateAuthError";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
+import { IDLE_NOTICE_AR } from "@/lib/auth/idleSignOut";
 
 const t = {
   ar: {
@@ -186,6 +187,13 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  // T5 (l11): /login?reason=idle — the idle sign-out sent the user here.
+  const [idleNotice, setIdleNotice] = useState(false);
+  useEffect(() => {
+    try {
+      setIdleNotice(new URLSearchParams(window.location.search).get("reason") === "idle");
+    } catch { /* no window */ }
+  }, []);
   const [loading, setLoading] = useState(false);
   // OWNER-SEC-01: one Turnstile token per sign-in attempt. GoTrue verifies it
   // (GOTRUE_SECURITY_CAPTCHA_*); see src/lib/auth/captcha.ts.
@@ -736,6 +744,17 @@ export default function LoginPage() {
 
                 {/* Security check (Turnstile) — real backend only. */}
                 {BACKEND_MODE === "supabase" && <TurnstileWidget control={captcha} isAr={isAr} />}
+
+                {/* T5 (l11): why the user is here after an idle sign-out. */}
+                {idleNotice && !error && (
+                  <div
+                    role="status"
+                    className="mb-4 flex items-center gap-2 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-[13px] font-medium text-amber-800 dark:text-amber-300"
+                  >
+                    <Warning size={16} weight="fill" className="flex-shrink-0" />
+                    {isAr ? IDLE_NOTICE_AR : "You were signed out after a period of inactivity, to protect your account. Please sign in again."}
+                  </div>
+                )}
 
                 {/* Error message */}
                 {error && (

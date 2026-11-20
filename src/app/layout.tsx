@@ -6,6 +6,7 @@ import ThemeProvider from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
 import AnalyticsConsent from "@/components/analytics/AnalyticsConsent";
 import LibraryChallengeHost from "@/components/library/LibraryChallengeHost";
+import SessionIdleGuard from "@/components/auth/SessionIdleGuard";
 import { densityInitSnippet } from "@/lib/density";
 
 // Self-hosted via next/font (no runtime request to fonts.googleapis.com).
@@ -158,6 +159,8 @@ export default function RootLayout({
           <AnalyticsConsent />
           {/* Owner item 2 (l8): the library's human check — wraps library API fetches only. */}
           <LibraryChallengeHost />
+          {/* T5 (l11): the idle sign-out the user chose in Settings → Security (nothing when unset). */}
+          <SessionIdleGuard />
         </ThemeProvider>
       </body>
     </html>

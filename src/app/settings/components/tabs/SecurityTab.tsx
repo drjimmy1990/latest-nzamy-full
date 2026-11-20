@@ -19,6 +19,7 @@ import { createClient } from "@/lib/supabase/client";
 import { EmptyPanel, SectionTitle, LocalActionStatus } from "./_shared";
 import { AccountDeletionPanel } from "./AccountDeletionPanel";
 import { LibraryDevicesPanel } from "./LibraryDevicesPanel";
+import { IDLE_CHOSEN_PREF, IDLE_SETTINGS_EVENT } from "@/lib/auth/idleSignOut";
 import {
   validateNewPassword,
   arabicAuthError,
@@ -121,9 +122,13 @@ export function SecurityTab() {
 
     setSavingTimeout(true);
     try {
+      // T5 (l11): the explicit choice switches the idle sign-out on
+      // (src/lib/auth/idleSignOut.ts); the guard re-reads it at once.
       await apiMutate<SecuritySettingsEnvelope>("/api/v1/settings", "PUT", {
         session_timeout_minutes: timeoutMinutes,
+        preferences: { [IDLE_CHOSEN_PREF]: true },
       });
+      try { window.dispatchEvent(new Event(IDLE_SETTINGS_EVENT)); } catch { /* no window */ }
       setTimeoutSaved(true);
       setTimeout(() => setTimeoutSaved(false), 2500);
     } catch (err) {
@@ -251,7 +256,7 @@ export function SecurityTab() {
                 مهلة الجلسة المفضّلة لديك
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                يُحفظ هذا الاختيار في حسابك كتفضيل — لا يُنهي المنصّة جلستك تلقائياً بعد.
+                إذا لم تستعمل المنصّة طوال هذه المدة سجّلنا خروجك تلقائيًا حمايةً لحسابك، وننبّهك قبل ذلك بلحظات. يسري بعد أن تحفظ اختيارك.
               </p>
             </div>
           </div>
