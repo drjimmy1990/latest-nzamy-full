@@ -95,6 +95,10 @@ begin
     raise notice '20261201_10: public.lawyer_clients is not here — part A skipped';
     return;
   end if;
+  if not (select pg_catalog.count(*) from pg_catalog.pg_attribute where attrelid = to_regclass('public.lawyer_clients') and attname in ('fee_total_sar', 'fee_paid_sar') and not attisdropped) = 2 then
+    raise notice '20261201_10: lawyer_clients has no fee_total_sar / fee_paid_sar here — part A skipped';
+    return;
+  end if;
 
   execute $fn$
     create or replace function public.lawyer_client_fee_visible(p_owner uuid, p_firm uuid)
@@ -544,7 +548,7 @@ declare
   def        text;
 begin
   -- A
-  if to_regclass('public.lawyer_clients') is not null then
+  if (select pg_catalog.count(*) from pg_catalog.pg_attribute where attrelid = to_regclass('public.lawyer_clients') and attname in ('fee_total_sar', 'fee_paid_sar') and not attisdropped) = 2 then
     foreach r in array array['anon', 'authenticated'] loop
       if not exists (select 1 from pg_roles where rolname = r) then continue; end if;
       if has_table_privilege(r, 'public.lawyer_clients', 'SELECT') then
@@ -656,7 +660,7 @@ begin
   -- Live probe (A): as anon and as authenticated, every readable table and
   -- view in `public`. Only "permission denied for table lawyer_clients" is this
   -- file's doing; anything else is reported and left alone.
-  if to_regclass('public.lawyer_clients') is not null then
+  if (select pg_catalog.count(*) from pg_catalog.pg_attribute where attrelid = to_regclass('public.lawyer_clients') and attname in ('fee_total_sar', 'fee_paid_sar') and not attisdropped) = 2 then
     foreach r in array array['anon', 'authenticated'] loop
       if not exists (select 1 from pg_roles where rolname = r) then continue; end if;
       can_probe := true;
@@ -708,7 +712,7 @@ commit;
 notify pgrst, 'reload schema';
 
 select '20261201_10 l11 sec (O1 fee columns closed to sessions + lawyer_client_fees; O2 device gate without admin exemption; O3 no-case firm rows own-only for trainee/secretary; R6 one verified account per mobile)' as migration,
-       case when to_regclass('public.lawyer_clients') is null then true
+       case when not (select pg_catalog.count(*) from pg_catalog.pg_attribute where attrelid = to_regclass('public.lawyer_clients') and attname in ('fee_total_sar', 'fee_paid_sar') and not attisdropped) = 2 then true
             else not has_column_privilege('authenticated', 'public.lawyer_clients', 'fee_total_sar', 'SELECT')
                  and to_regprocedure('public.lawyer_client_fees(uuid[])') is not null end
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_device_gate(uuid,text,text,uuid,boolean)')), '''exempt''') = 0, true)

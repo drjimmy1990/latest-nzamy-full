@@ -101,7 +101,17 @@ function reach(starts: string[]): Set<string> {
 
 const abs = (rel: string) => join(ROOT, rel);
 const rel = (p: string) => relative(ROOT, p).replace(/\\/g, "/");
-const clientModules = FILES.filter((f) => /^\s*(?:\/\/[^\n]*\n\s*)*["']use client["']/.test(TEXT.get(f) ?? ""));
+/** A "use client" directive at the top, after any leading line or block comments. */
+function isClientModule(text: string): boolean {
+  let s = text.replace(/^﻿/, "");
+  for (;;) {
+    const t = s.replace(/^\s+/, "");
+    if (t.startsWith("//")) s = t.slice(t.indexOf("\n") === -1 ? t.length : t.indexOf("\n") + 1);
+    else if (t.startsWith("/*")) s = t.slice(t.indexOf("*/") === -1 ? t.length : t.indexOf("*/") + 2);
+    else return /^["']use client["']/.test(t);
+  }
+}
+const clientModules = FILES.filter((f) => isClientModule(TEXT.get(f) ?? ""));
 const fromClient = reach(clientModules);
 
 test("O4: server-only is a dependency", () => {
