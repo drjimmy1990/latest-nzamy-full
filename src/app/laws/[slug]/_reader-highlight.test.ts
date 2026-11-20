@@ -112,7 +112,11 @@ test("note ١٢ §٣: the coloured-diff toggle sits inside «الإصدارات 
   const start = reader.indexOf("الإصدارات السابقة (");
   const end = reader.indexOf("</details>", start);
   const block = reader.slice(start, end);
-  assert.match(block, /<PreviousVersionText\s+oldText=\{amend\.fullText\}\s+currentText=\{article\.text\}/);
+  // O12 (batch l11, file 16 §4): against the clean current text, or its closest
+  // paragraph (or the regulation's) — pickDiffTarget, no toggle when none is close.
+  assert.match(block, /<PreviousVersionText\s+oldText=\{amend\.fullText\}\s+currentText=\{pickDiffTarget\(amend\.fullText, diffTargets\)\}/);
+  assert.match(block, /<PreviousVersionText\s+oldText=\{part\.text\}\s+currentText=\{pickDiffTarget\(part\.text, diffTargets\)\}/);
+  assert.match(reader, /const diffTargets = useMemo\(\(\) => diffCandidates\(article\.text, mergedReg\?\.text \?\? ""\)/);
   assert.match(diffView, /"إظهار الفروق الملونة"/);
   assert.match(diffView, /diffWords\(diffSourceText\(oldText\), diffSourceText\(currentText\)\)/);
   // Struck through only as a deleted diff word.

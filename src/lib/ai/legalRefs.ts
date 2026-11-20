@@ -24,6 +24,14 @@
  */
 
 import { articleNumber } from "./questionRefs.ts";
+import { readArticleNumbers } from "../library/articleMentions.ts";
+
+// N02-13 (batch l11): the dual «المادتين / المادتان» names TWO articles —
+// «المادتين الأولى والثانية», «المادتين (٥) و(٦)». ARTICLE and ARTICLE_WORDS
+// read only the first; this reads both with the reader's own list parser
+// (articleMentions.readArticleNumbers), which already tells the list «الخامسة
+// والسادسة» (5, 6) from the compound «الخامسة والعشرون» (25).
+const DUAL = /(?:^|[^ء-يٱ-ۓ])(?:[وفبلك]{0,3})(?:ال)?ماد(?:تين|تان)\s*(?:رقم\s*)?/g;
 
 const DIGITS: Record<string, string> = {
   "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
@@ -95,6 +103,12 @@ export function extractLegalRefs(text: string): string[] {
   for (const m of t.matchAll(ARTICLE_WORDS)) {
     const n = spelledArticle(t, (m.index ?? 0) + m[0].length);
     if (n !== null) articles.push({ at: m.index ?? 0, n: String(n) });
+  }
+  for (const m of t.matchAll(DUAL)) {
+    const from = (m.index ?? 0) + m[0].length;
+    for (const n of readArticleNumbers(t.slice(from, from + 140)).numbers.slice(0, 2)) {
+      articles.push({ at: m.index ?? 0, n: String(n) });
+    }
   }
   for (const a of articles.sort((x, y) => x.at - y.at)) add(`مادة ${a.n}`);
   for (const m of t.matchAll(NUMBERED)) add(`رقم ${m[1].replace(/\s+/g, "")}`);

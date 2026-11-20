@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Minus, Copy, Check, CaretDown, CaretUp,
@@ -24,13 +24,14 @@ import {
 } from "./_details-block";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
 import { visibleAmendments } from "./_previous-versions";
+import { diffCandidates, mergeLiftedVersions, pickDiffTarget } from "./_amendment-split";
 import { isPreambleEmpty } from "./_preamble";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
 import { Hl, useHighlight, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
 import type { HighlightTerm } from "@/lib/search/multiColorSearch";
 import { highlightSafeHtml, textHasHighlight } from "./_highlight-html";
 import { PreviousVersionText } from "./_word-diff";
-import { linkCitationsHtml } from "./_cite-links";
+import { OWN_DOCUMENT_REFS_AS_TEXT, linkCitationsHtml } from "./_cite-links";
 import { useCitations } from "./_citation-popover";
 import { articleNumberOf } from "./_cite-status";
 import { RefSheetButton, useRefBox } from "./_ref-box";
@@ -356,12 +357,14 @@ function renderMarkdownTableToHtml(tableMd: string, cellHtml: (md: string) => st
  */
 const CITE_CACHE_MAX = 6000;
 const citeHtmlCache = new Map<string, string>();
-function cachedCitationsHtml(html: string, docTitle: string, selfNumber: number | null, isDark: boolean): string {
-  const key = `${docTitle}\u0000${selfNumber ?? ""}\u0000${isDark ? 1 : 0}\u0000${html}`;
+function cachedCitationsHtml(html: string, docTitle: string, selfNumber: number | null, isDark: boolean, selfNames: readonly string[] = []): string {
+  // O14: the file's other names and the q٩٥ rule are part of the answer, so of the key.
+  const key = `${docTitle}\u0000${selfNames.join("\u0001")}\u0000${OWN_DOCUMENT_REFS_AS_TEXT ? 1 : 0}\u0000${selfNumber ?? ""}\u0000${isDark ? 1 : 0}\u0000${html}`;
   const hit = citeHtmlCache.get(key);
   if (hit !== undefined) return hit;
   if (citeHtmlCache.size >= CITE_CACHE_MAX) citeHtmlCache.clear();
-  const linked = linkCitationsHtml(html, { docTitle, selfNumber, isDark });
+  // Owner file 16 §1 (q٩٥ default): a reference to this same file is plain text.
+  const linked = linkCitationsHtml(html, { docTitle, selfNumber, isDark, selfNames, ownRefsAsText: OWN_DOCUMENT_REFS_AS_TEXT });
   citeHtmlCache.set(key, linked);
   return linked;
 }
@@ -391,7 +394,7 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
   const safeHtml = (md: string, chips = true) => {
     const html = markdownBoldToSafeHtml(md);
     let linked = html;
-    if (chips && citeOn) linked = cachedCitationsHtml(html, citeCtx.lawTitle, cite.selfNumber, isDark);
+    if (chips && citeOn) linked = cachedCitationsHtml(html, citeCtx.lawTitle, cite.selfNumber, isDark, citeCtx.ownNames);
     return highlightSafeHtml(linked, hlTerms, hlFocus);
   };
   // One delegated handler: a click on a chip opens its popover.
@@ -406,6 +409,9 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
     <div className="space-y-1.5 w-full" onClick={onCiteClick}>
       {blocks.map((block, index) => {
         if (block.type === "details") {
+          // O12 / file 16 §4: a toggle with nothing inside is no toggle (data cut
+          // inside its history block leaves «<details><summary>…» and blank lines).
+          if (!(block.content ?? "").replace(/^[\s>]*$/gm, "").trim()) return null;
           // BUG-LIB-05: known current content (the موجز, an info card, a live
           // annex) folds neutrally; anything else is the amber «سابق» toggle.
           // The summary is plain text (no leftover tags or ** marks), rendered
@@ -779,7 +785,7 @@ export function RightPanel({ article, isDark, cart, onTogglePrinciple, onToggleP
 }
 
 // ─── Article Block ─────────────────────────────────────────────────────────────
-export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all", viewerHasFullAccess }: {
+export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddArticle, onRemoveArticle, onAddExecReg, onRemoveExecReg, onActive, isActive, showPaywall, onExplain, isRTL = true, fontClass = "text-[13px]", isReadingMode = false, viewMode = "all", viewerHasFullAccess, showAmendmentSource = false }: {
   article: LawArticle; lawName: string;
   /** The document's own kind, straight from `library.laws.type`. */
   lawType?: string;
@@ -799,6 +805,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   viewMode?: "all" | "law" | "regulation";
   /** The law API's `paywall.hasFullAccess`: full library access or a whitelisted law. */
   viewerHasFullAccess: boolean;
+  /**
+   * O12 (batch l11): this viewer reads official metadata (T28-22), so a version
+   * lifted out of the text may show its note and decree; false → the lock line,
+   * like the rows the law API sends without them.
+   */
+  showAmendmentSource?: boolean;
 }) {
   // null = the reader has not toggled it: closed, or open when it holds a search match (below).
   const [repealedChoice, setRepealedChoice] = useState<boolean | null>(null);
@@ -806,8 +818,14 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const [copiedReg, setCopiedReg]           = useState(false);
   const isRepealed  = isRepealedArticleStatus(article.status);
   const isAmended   = article.status === "amended";
-  // «الإصدارات السابقة»: only cards with something to read (_previous-versions.ts).
-  const previousVersions = visibleAmendments(article.amendments);
+  // «الإصدارات السابقة»: only cards with something to read (_previous-versions.ts),
+  // the stored rows joined with what the page lifted out of the text (O12,
+  // _amendment-split.ts): one card per version, a repeated row left out.
+  const previousVersions = useMemo(
+    () => visibleAmendments(mergeLiftedVersions(article.amendments, article.liftedVersions, showAmendmentSource)),
+    [article.amendments, article.liftedVersions, showAmendmentSource],
+  );
+  const historyRef = useRef<HTMLDetailsElement>(null);
   const statusNotice = articleStatusNotice(article.status, isRTL);
   const mergedReg   = getMergedReg(article);
   // The server's answer for this law, not the client's tier-only gate.
@@ -840,9 +858,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   const showRepealed = repealedChoice ?? repealedHasHit;
   const setShowRepealed = (open: boolean) => setRepealedChoice(open);
   const historyHay = useMemo(
-    () => visibleAmendments(article.amendments).map((v) => `${v.source}\n${v.date}\n${v.summary}\n${v.fullText}`).join("\n"),
-    [article.amendments],
+    () => previousVersions.map((v) => `${v.source}\n${v.date}\n${v.summary}\n${v.fullText}\n${(v.parts ?? []).map((p) => p.label).join("\n")}`).join("\n"),
+    [previousVersions],
   );
+  // O12: what each previous wording is compared with — the current text, one of
+  // its paragraphs, or a paragraph of this article's regulation (pickDiffTarget).
+  const diffTargets = useMemo(() => diffCandidates(article.text, mergedReg?.text ?? ""), [article.text, mergedReg?.text]);
   const historyHasHit = useTextHasHighlight(historyHay);
   const historicRegHasHit = useTextHasHighlight(article.historicRegulationText);
   const inCart      = !!entry && entry.isArticleAdded;
@@ -1019,9 +1040,21 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
           </span>
         )}
         {isAmended && (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 border border-amber-400/25 flex-shrink-0">
+          // File 16 §3: the «معدّلة» badge opens the article's history.
+          <button
+            type="button"
+            disabled={viewMode === "regulation" || previousVersions.length === 0}
+            onClick={() => {
+              const d = historyRef.current;
+              if (!d) return;
+              d.open = true;
+              d.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            }}
+            title={previousVersions.length > 0 ? (isRTL ? "عرض الإصدارات السابقة" : "Show previous versions") : undefined}
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 border border-amber-400/25 flex-shrink-0 enabled:cursor-pointer enabled:hover:bg-amber-500/25 disabled:cursor-default"
+          >
             ✏️ {isRTL ? "معدَّلة" : "Amended"}
-          </span>
+          </button>
         )}
         {statusNotice && (
           <span
@@ -1181,8 +1214,11 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               have it duplicated by an amendment fullText. Showing both would
               print the same superseded text twice on every one of them.
             */}
-            {viewMode !== "regulation" && isAmended && previousVersions.length > 0 && (
+            {/* O12: also for a version lifted out of the text when the status does not say «معدّلة»
+                — the lifted wording must land somewhere, never vanish. */}
+            {viewMode !== "regulation" && (isAmended || (article.liftedVersions?.length ?? 0) > 0) && previousVersions.length > 0 && (
               <details
+                ref={historyRef}
                 open={historyHasHit}
                 className={`my-3 rounded-xl border transition-all ${
                   isDark
@@ -1214,11 +1250,26 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                       {amend.textMissing && (
                         <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{isRTL ? "نص غير متوفر" : "Text not available"}</p>
                       )}
-                      {/* Owner note ١٢ §٣: «إظهار الفروق الملونة» — this version against the current text (_word-diff.tsx). */}
-                      {amend.fullText && (
+                      {/* Owner note ١٢ §٣ / file 16 §4: «إظهار الفروق الملونة» — this version against
+                          the CLEAN current text (O12: the lifted notes are out of it), or the paragraph
+                          of it (or of the article's regulation) it shares most words with; no toggle
+                          when nothing is close (_amendment-split.ts pickDiffTarget, _word-diff.tsx). */}
+                      {amend.parts ? (
+                        amend.parts.map((part, pi) => (
+                          <div key={pi} className={`${pi > 0 || amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 mt-2 border-t" : ""} ${isDark ? "border-amber-700/15" : "border-amber-200"}`}>
+                            {part.label && <p className={`text-[11px] font-bold mb-1 ${isDark ? "text-amber-300" : "text-amber-800"}`}><Hl text={part.label} /></p>}
+                            <PreviousVersionText
+                              oldText={part.text}
+                              currentText={pickDiffTarget(part.text, diffTargets)}
+                              isDark={isDark}
+                              isRTL={isRTL}
+                            />
+                          </div>
+                        ))
+                      ) : amend.fullText && (
                         <PreviousVersionText
                           oldText={amend.fullText}
-                          currentText={article.text}
+                          currentText={pickDiffTarget(amend.fullText, diffTargets)}
                           isDark={isDark}
                           isRTL={isRTL}
                           className={`${amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 border-t" : ""} ${isDark ? "border-amber-700/15" : "border-amber-200"}`}

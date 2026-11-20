@@ -100,7 +100,7 @@ export function PreviousVersionText({
           )}
         </p>
       ) : (
-        <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
+        <p className={`text-[12px] leading-relaxed whitespace-pre-line ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>
           <Hl text={oldText} />
         </p>
       )}

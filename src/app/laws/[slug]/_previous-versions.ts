@@ -40,6 +40,14 @@ export interface AmendmentLike {
   position?: number | null;
   /** 20261129_70: 'unavailable' = the source keeps no prior text. */
   textStatus?: string | null;
+  /**
+   * O12 (batch l11, _amendment-split.ts): a version lifted out of the current
+   * text keeps its «before» texts apart, each under the source's own label
+   * («ونص الفقرة (5) قبل هذا التعديل…»), so each is compared on its own.
+   */
+  parts?: ReadonlyArray<{ label: string; text: string }> | null;
+  /** O12: words holding the version's date, for the order only (never shown). */
+  sortDate?: string | null;
 }
 
 export interface PreviousVersionCard {
@@ -53,6 +61,8 @@ export interface PreviousVersionCard {
   sourceLocked: boolean;
   /** An instrument whose previous text the corpus does not hold: «نص غير متوفر». */
   textMissing: boolean;
+  /** O12: the labelled «before» texts of a lifted version (absent for a stored row). */
+  parts?: Array<{ label: string; text: string }>;
 }
 
 /** The heading the corpus repeats inside every history block. */
@@ -105,18 +115,27 @@ export function visibleAmendments(list: ReadonlyArray<AmendmentLike> | null | un
     const sourceLocked = entry.sourceLocked === true;
     const source = sourceLocked ? "" : withoutHeading(clean(entry.source));
     let date = sourceLocked ? "" : clean(entry.date);
-    const key = hijriDateKey(date) || hijriDateKey(source);
+    const key = hijriDateKey(date) || hijriDateKey(source) || hijriDateKey(clean(entry.sortDate));
     // The instrument already names its date: print it once.
     if (date && source && (source.includes(date) || (hijriDateKey(date) !== 0 && hijriDateKey(date) === hijriDateKey(source)))) date = "";
     const summary = withoutHeading(cleanVersionText(entry.summary));
     const fullText = cleanVersionText(entry.fullText);
-    const hasBody = summary !== "" || fullText !== "";
+    const rawParts: ReadonlyArray<{ label: string; text: string }> = Array.isArray(entry.parts) ? entry.parts : [];
+    const parts = rawParts
+      .map((p) => ({ label: clean(p?.label), text: cleanVersionText(p?.text) }))
+      .filter((p) => p.text !== "");
+    const hasBody = summary !== "" || fullText !== "" || parts.length > 0;
     const hasInstrument = source !== "" || date !== "";
     const unavailable = entry.textStatus === "unavailable";
     // A card the source marks «no prior text» is kept when it names (or withholds) its instrument.
     if (!hasBody && !hasInstrument && !(unavailable && sourceLocked)) return;
     const position = typeof entry.position === "number" && Number.isFinite(entry.position) ? entry.position : null;
-    cards.push({ source, date, summary, fullText, sourceLocked, textMissing: unavailable ? fullText === "" : !hasBody, key, at, position });
+    cards.push({
+      source, date, summary, fullText, sourceLocked,
+      textMissing: unavailable ? fullText === "" && parts.length === 0 : !hasBody,
+      ...(parts.length > 0 ? { parts } : {}),
+      key, at, position,
+    });
   });
   if (cards.length > 0 && cards.every((c) => c.position !== null)) {
     // 20261129_70: the parser's own card order.
@@ -125,5 +144,8 @@ export function visibleAmendments(list: ReadonlyArray<AmendmentLike> | null | un
     // Older data: newest first by date; undated cards after the dated ones, in their own order.
     cards.sort((a, b) => (a.key && b.key ? b.key - a.key || a.at - b.at : a.key ? -1 : b.key ? 1 : a.at - b.at));
   }
-  return cards.map((c) => ({ source: c.source, date: c.date, summary: c.summary, fullText: c.fullText, sourceLocked: c.sourceLocked, textMissing: c.textMissing }));
+  return cards.map((c) => ({
+    source: c.source, date: c.date, summary: c.summary, fullText: c.fullText, sourceLocked: c.sourceLocked, textMissing: c.textMissing,
+    ...(c.parts ? { parts: c.parts } : {}),
+  }));
 }

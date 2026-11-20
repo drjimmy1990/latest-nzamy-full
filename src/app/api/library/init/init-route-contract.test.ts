@@ -178,11 +178,13 @@ test("the tabs take viewerHasFullAccess as a required prop", () => {
 test("the law reader locks articles on the law API's paywall.hasFullAccess", () => {
   const page = readRepo("src/app/laws/[slug]/page.tsx");
   assert.match(page, /setViewerHasFullAccess\(data\?\.paywall\?\.hasFullAccess === true\)/);
-  // Reset with the other per-law fields, so a new slug never inherits it.
-  assert.match(page, /setPreambleLocked\(false\);\r?\n\s*setViewerHasFullAccess\(false\);/);
+  // Reset with the other per-law fields, so a new slug never inherits it —
+  // to null (O15, batch l11): unknown until this law's answer, never "no".
+  assert.match(page, /useState<boolean \| null>\(null\)/);
+  assert.match(page, /setPreambleLocked\(false\);\r?\n\s*setViewerHasFullAccess\(null\);/);
   const blocks = page.match(/<ArticleBlock\b[\s\S]*?\/>/g) ?? [];
   assert.equal(blocks.length, 2);
-  for (const block of blocks) assert.match(block, /viewerHasFullAccess=\{viewerHasFullAccess\}/);
+  for (const block of blocks) assert.match(block, /viewerHasFullAccess=\{viewerHasFullAccess === true\}/);
 
   const reader = readRepo("src/app/laws/[slug]/_article-components.tsx");
   assert.match(reader, /viewerHasFullAccess: boolean;/);

@@ -41,6 +41,7 @@ export function SubLegislationSection({
   onOpenMerged,
   isDark,
   isRTL = true,
+  placement = "main",
 }: {
   subLegislation?: SubLegislation | null;
   /** The names of the regulations merged into this file (regulationIndex). */
@@ -49,6 +50,8 @@ export function SubLegislationSection({
   onOpenMerged?: (name: string) => void;
   isDark: boolean;
   isRTL?: boolean;
+  /** O13 (batch l11): the same list in the reader's sidebar, a little tighter. */
+  placement?: "main" | "sidebar";
 }) {
   const [showAll, setShowAll] = useState(false);
   const entries: Entry[] = [
@@ -63,9 +66,9 @@ export function SubLegislationSection({
 
   return (
     <section
-      data-testid="law-sub-legislation"
+      data-testid={placement === "sidebar" ? "law-sub-legislation-sidebar" : "law-sub-legislation"}
       aria-label={isRTL ? "التشريعات الفرعية" : "Sub-legislation"}
-      className={`rounded-2xl border px-4 py-3 print:hidden ${
+      className={`rounded-2xl border ${placement === "sidebar" ? "p-3" : "px-4 py-3"} print:hidden ${
         isDark ? "bg-zinc-900 border-white/[0.06]" : "bg-white border-slate-200 shadow-sm"
       }`}
     >

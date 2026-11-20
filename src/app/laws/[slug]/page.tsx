@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock, Prohibit, Info, Clock
+  ListBullets, X, Lock, Prohibit, Info, Clock, ArrowSquareOut
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -16,7 +16,8 @@ import { isSupabaseMode } from "@/lib/services/api";
 import { getPreferences, patchPreferences, type RecentSession } from "@/lib/services/preferencesService";
 import { recordLawOpened, type ReadingActivity } from "@/lib/services/readingActivityStats";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
-import type { LawArticle, LawChapter, LawSystem } from "../data";
+import { isRepealedArticleStatus, type LawArticle, type LawChapter, type LawSystem } from "../data";
+import { regulationNamesOf, splitAmendmentText } from "./_amendment-split";
 import { isRepealedLawStatus, lawStatusForDetail } from "../law-status";
 import { EMPTY_OFFICIAL_META, parseOfficialMeta, type LawOfficialMeta } from "./_official-meta";
 import { getSelectedTextWithin } from "./_article-components";
@@ -102,6 +103,16 @@ function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly un
   return null;
 }
 
+/**
+ * N02-3/4 (batch l11): at lg+ the floating buttons (scroll-to-top on the
+ * start side, the site's WhatsApp / draft buttons on the end side, both
+ * 1.25rem from the bottom, ≈56px tall) sit over the two side columns, never
+ * over the article column (12-column grid, max 1280px). The bottom of each
+ * sticky side column is padded by more than their height, so its last rows
+ * (the index's last articles, the tools card) scroll clear of them.
+ */
+const READER_ASIDE_FAB_CLEARANCE = "pb-24";
+
 /** Owner file 16 §7: sub-legislation chips shown before «عرض المزيد» («بحد أقصى 2 أو 3»). */
 const REG_CHIPS_SHOWN = 3;
 
@@ -152,7 +163,11 @@ function LawSystemPageContent() {
   // `paywall.hasFullAccess` from the same response: full library access (a
   // Pro+ tier, an active library grant, or an admin) or a whitelisted law.
   // ArticleBlock locks an article on it, never on the client's tier.
-  const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
+  // O15 (owner file 16 §2b-ii, batch l11): tri-state — null until THIS law's
+  // response arrives. A surface keyed on it draws a lock on `false` only, so
+  // nothing shows a lock before the entitlement is known. An article's own
+  // lock still comes from the server's per-article `free` (same response).
+  const [viewerHasFullAccess, setViewerHasFullAccess] = useState<boolean | null>(null);
   // File 16 §2 (batch l9): the viewer's own library entitlement
   // (`paywall.isSubscriber`), null until THIS law's response arrives — so no
   // «اشترك» card is ever drawn on a guess (the sidebar shows it on false only).
@@ -268,7 +283,7 @@ function LawSystemPageContent() {
         setLawMeta(getLawMeta(slug));
         setOfficialMeta(EMPTY_OFFICIAL_META);
         setPreambleLocked(false);
-        setViewerHasFullAccess(false);
+        setViewerHasFullAccess(null);
         setViewerIsSubscriber(null);
         setLawNotice("");
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
@@ -330,7 +345,16 @@ function LawSystemPageContent() {
             ...(typeof ch.id === 'string' && ch.id ? { id: ch.id } : {}),
             ...(ch.level === 1 || ch.level === 2 ? { level: ch.level } : {}),
             ...(typeof ch.parentChapterId === 'string' && ch.parentChapterId ? { parentChapterId: ch.parentChapterId } : {}),
-            articles: (ch.articles || []).map((a: LawArticle) => ({
+            articles: (ch.articles || []).map((a: LawArticle) => {
+              // O12 / T14b (owner file 16 §3, batch l11): «تعديل:» notes and «نص …
+              // قبل التعديل» wordings left open at the end of the text by data
+              // loaded before l9-parser's split move to «الإصدارات السابقة». Done
+              // HERE, once, so the body, copy, drafter, cart, explain, search and
+              // diff all read the clean current text. A repealed article keeps its
+              // own split (_repealed-article.ts). Display only, on the text this
+              // viewer was already sent (a locked article's preview is only cleaned).
+              const split = isRepealedArticleStatus(a.status || "") ? null : splitAmendmentText(a.text || '', regulationNamesOf(a));
+              return ({
               id: a.id,
               num: a.num,
               // Raw locator parts — the citation builder uses these instead of
@@ -343,7 +367,8 @@ function LawSystemPageContent() {
               // not render as evidence that the article is active.
               status: a.status || 'status_undeclared',
               free: a.free ?? true,
-              text: a.text || '',
+              text: split ? split.current : a.text || '',
+              liftedVersions: split && a.free !== false ? split.lifted : undefined,
               // This mapping is a whitelist: anything omitted here is silently
               // discarded before the renderer ever sees it. originalText was
               // omitted, so the article's superseded wording never arrived —
@@ -357,7 +382,8 @@ function LawSystemPageContent() {
               regulations: a.regulations,
               amendments: a.amendments,
               instrument: a.instrument,
-            })),
+            });
+            }),
           })),
           // N2.1: sent by the law route only to viewers LAW_SUMMARY_AUDIENCE
           // admits; this mapping is a whitelist, so the label must be named too.
@@ -648,6 +674,18 @@ function LawSystemPageContent() {
     },
     [regulationAnchors],
   );
+  // «التشريعات الفرعية» (main column and, O13, the sidebar): a merged regulation
+  // opens the regulation view on that instrument. A fully locked one is not a
+  // chip (regulationInstruments), so the view opens on all of them.
+  const openMergedRegulation = useCallback(
+    (name: string) => {
+      const inst = (law?.regulationInstruments ?? []).find((i) => (i.label || i.ref) === name);
+      setViewMode("regulation");
+      setSelectedRegName(inst ? inst.ref : null);
+      if (inst) setShowAllRegChips(true);
+    },
+    [law],
+  );
 
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
   // Re-run on a view switch: the article cards are mounted per view, so the
@@ -778,10 +816,22 @@ function LawSystemPageContent() {
     return {
       lawSlug: law.slug || decodeURIComponent(apiSlug(slug)),
       lawTitle: law.title,
+      // O14: the merged regulations are this same file (owner file 16 §1).
+      ownNames: Array.from(
+        new Set(
+          [
+            ...(law.regulationIndex ?? []).map((g) => g.name),
+            ...(law.regulationInstruments ?? []).flatMap((i) => [i.label ?? "", i.ref]),
+          ]
+            .map((n) => (n ?? "").trim())
+            .filter(Boolean),
+        ),
+      ),
       lawType: law.documentType,
       parentSlug: law.parentLawLink?.slug ?? null,
       byNumber: articlesByNumber(allArticles),
-      viewerHasFullAccess,
+      // A popover shows an article's text only when the reader holds it: unknown (null) is no.
+      viewerHasFullAccess: viewerHasFullAccess === true,
       isDark,
       isRTL,
       isInCart: (id: string) => cart.some((e) => e.articleId === id && e.isArticleAdded),
@@ -1109,7 +1159,7 @@ function LawSystemPageContent() {
 
           {/* RIGHT COLUMN: Identity Panel AND Index Panel */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className={`hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto ${READER_ASIDE_FAB_CLEARANCE}`} style={{ overscrollBehavior: 'auto' }}>
               {/* Identity Card */}
               <SidebarPanel
                 isDark={isDark}
@@ -1152,6 +1202,7 @@ function LawSystemPageContent() {
                 viewMode={viewMode as any}
                 regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                 onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
+                onOpenMergedRegulation={openMergedRegulation}
               />
             </aside>
           )}
@@ -1231,14 +1282,7 @@ function LawSystemPageContent() {
                 subLegislation={law.subLegislation}
                 // File 16 §7: the merged regulations first (the index names, every viewer).
                 mergedNames={(law.regulationIndex ?? []).map((g) => g.name)}
-                onOpenMerged={(name) => {
-                  // The regulation view on that instrument; a fully locked one is not a
-                  // chip (regulationInstruments), so the view opens on all of them.
-                  const inst = (law.regulationInstruments ?? []).find((i) => (i.label || i.ref) === name);
-                  setViewMode("regulation");
-                  setSelectedRegName(inst ? inst.ref : null);
-                  if (inst) setShowAllRegChips(true);
-                }}
+                onOpenMerged={openMergedRegulation}
                 isDark={isDark}
                 isRTL={isRTL}
               />
@@ -1267,7 +1311,7 @@ function LawSystemPageContent() {
             <SearchLegendBar
               onClear={clearHighlight}
               // Counts are of what is on the page: locked articles' text is withheld.
-              partial={!viewerHasFullAccess && allArticles.some(a => !a.free)}
+              partial={viewerHasFullAccess === false && allArticles.some(a => !a.free)}
               className="sticky top-28 z-20 print:hidden"
             />
             <ReaderArrivalScroll query={arrivalQuery} deps={[law, viewMode]} />
@@ -1338,11 +1382,18 @@ function LawSystemPageContent() {
                   // would otherwise silently shrink — or come up empty for a
                   // law whose every regulation sits past the free limit.
                   const lockedRegCount = law.regulationInstrumentsLocked ?? 0;
+                  // O13 (batch l11): the instrument chips (2 or more, as before) and
+                  // the linked sub-legislation (l10-children) share the «3 then
+                  // عرض المزيد» budget; the merged ones come first.
+                  const instChips = instruments.length > 1 ? instruments : [];
+                  const linkedChildren = law.subLegislation?.children ?? [];
+                  const chipTotal = instChips.length + linkedChildren.length;
 
                   return (
                     <>
-                      {instruments.length > 1 && (
+                      {(instruments.length > 1 || linkedChildren.length > 0) && (
                         <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+                          {instChips.length > 0 && (
                           <button
                             onClick={() => setSelectedRegName(null)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -1353,7 +1404,8 @@ function LawSystemPageContent() {
                           >
                             {isRTL ? "الكل" : "All"}
                           </button>
-                          {instruments
+                          )}
+                          {instChips
                             // File 16 §7: 2–3 sub-legislations, then «عرض المزيد»; a chosen one always stays visible.
                             .filter((inst, i) => showAllRegChips || i < REG_CHIPS_SHOWN || inst.ref === selectedRegName)
                             .map((inst) => (
@@ -1369,13 +1421,30 @@ function LawSystemPageContent() {
                               {inst.label || inst.ref}
                             </button>
                           ))}
-                          {!showAllRegChips && instruments.length > REG_CHIPS_SHOWN && (
+                          {/* O13 (batch l11): the documents linked by parent_law_id (l10-children)
+                              are files of their own: a chip opens the file's page, it filters nothing. */}
+                          {linkedChildren
+                            .filter((_c, j) => showAllRegChips || instChips.length + j < REG_CHIPS_SHOWN)
+                            .map((child) => (
+                            <Link
+                              key={`child:${child.slug}`}
+                              href={`/laws/${encodeURIComponent(child.slug)}`}
+                              title={isRTL ? "ملف مستقل في المكتبة" : "A separate file in the library"}
+                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-dashed ${
+                                isDark ? "border-white/[0.12] text-zinc-400 hover:text-zinc-200" : "border-slate-300 text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              {child.title || child.slug}
+                              <ArrowSquareOut size={11} weight="bold" aria-hidden />
+                            </Link>
+                          ))}
+                          {!showAllRegChips && chipTotal > REG_CHIPS_SHOWN && (
                             <button
                               type="button"
                               onClick={() => setShowAllRegChips(true)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
                             >
-                              {isRTL ? `عرض المزيد (${instruments.length - REG_CHIPS_SHOWN})` : `Show more (${instruments.length - REG_CHIPS_SHOWN})`}
+                              {isRTL ? `عرض المزيد (${chipTotal - REG_CHIPS_SHOWN})` : `Show more (${chipTotal - REG_CHIPS_SHOWN})`}
                             </button>
                           )}
                         </div>
@@ -1631,7 +1700,8 @@ function LawSystemPageContent() {
                       fontClass={fontClass}
                       isReadingMode={isReadingMode}
                       viewMode={viewMode}
-                      viewerHasFullAccess={viewerHasFullAccess}
+                      viewerHasFullAccess={viewerHasFullAccess === true}
+                      showAmendmentSource={viewerIsSubscriber === true && !officialMeta.locked}
                     />
                   ));
                 })()}
@@ -1659,7 +1729,8 @@ function LawSystemPageContent() {
                     fontClass={fontClass}
                     isReadingMode={isReadingMode}
                     viewMode={viewMode}
-                    viewerHasFullAccess={viewerHasFullAccess}
+                    viewerHasFullAccess={viewerHasFullAccess === true}
+                    showAmendmentSource={viewerIsSubscriber === true && !officialMeta.locked}
                   />
                 );
                 const chapterPill = (title: string) => (
@@ -1719,7 +1790,7 @@ function LawSystemPageContent() {
 
           {/* LEFT COLUMN: AI Tools and related documents */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className={`hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto ${READER_ASIDE_FAB_CLEARANCE}`} style={{ overscrollBehavior: 'auto' }}>
               {/* Owner item 6 (18 Nov): the links of the article in view, beside it — three
                  sections, owner-matched link types only (_ref-box.tsx). It replaces the
                  bar under each article and the «وثائق وأنظمة ذات صلة» card. */}
@@ -1823,6 +1894,7 @@ function LawSystemPageContent() {
                   viewerIsSubscriber={viewerIsSubscriber} mode="index" viewMode={viewMode as any}
                   regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                   onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
+                  onOpenMergedRegulation={(name) => { setShowIndexSheet(false); openMergedRegulation(name); }}
                 />
               </div>
             </motion.div>

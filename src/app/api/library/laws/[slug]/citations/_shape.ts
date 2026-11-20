@@ -116,6 +116,59 @@ export function docNameCandidates(name: string | null, maxWords = 8): string[] {
   return out;
 }
 
+/**
+ * N02-13 (batch l11): a law title for comparison only — diacritics and tatweel
+ * dropped, the hamza forms of alef as «ا», «ؤ / ئ / ء» as «ء», «ة» as «ه»,
+ * «ى» as «ي», spaces collapsed. «نظام الاجراءات الجزائيه» and «نظام الإجراءات
+ * الجزائية» are one key. Display text is never folded.
+ */
+export function foldTitle(s: string): string {
+  return String(s ?? "")
+    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/[ؤئ]/g, "ء")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * One SQL LIKE pattern per candidate that every spelling of it matches, with
+ * no «%»: a title of exactly that shape. The hamza seats and the alef forms
+ * vary anywhere in a word («الاجراءات» / «الإجراءات», «المسئولية» /
+ * «المسؤولية») and become `_`; «ة/ه» and «ى/ي» vary only at a word's end and
+ * become `_` there only, so «الهيئة» stays selective. Characters LIKE treats
+ * specially (% _ \ *) never reach the pattern; null when fewer than two words.
+ * The rows are narrowed in code by foldTitle equality (pickFoldedTitle).
+ */
+export function titleLikePattern(name: string): string | null {
+  const clean = String(name ?? "")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = clean.split(" ").filter(Boolean);
+  if (words.length < 2) return null;
+  return words.map((w) => w.replace(/[اأإآٱؤئء]/g, "_").replace(/[ةهىي]$/, "_")).join(" ");
+}
+
+/**
+ * Every candidate's pattern for one `likeAnyOf('title', …)` read, each in
+ * double quotes (they hold spaces; PostgREST strips the quotes). A pattern
+ * holds only letters, digits, spaces and `_`, so no quote or comma reaches
+ * the filter. [] when no candidate gives one.
+ */
+export function titleLikePatterns(candidates: readonly string[]): string[] {
+  return Array.from(new Set(candidates.map(titleLikePattern).filter((p): p is string => !!p))).map((p) => `"${p}"`);
+}
+
+/** Of the rows read with titleLikePattern, the longest title equal (folded) to a candidate; null when none. */
+export function pickFoldedTitle<T extends { title: string }>(rows: readonly T[], candidates: readonly string[]): T | null {
+  const want = new Set(candidates.map(foldTitle));
+  return [...rows].filter((r) => want.has(foldTitle(r.title))).sort((a, b) => b.title.length - a.title.length)[0] ?? null;
+}
+
 /** A preview key: one graph node of a kind the box lists, its id without control characters. */
 export function parseRefKey(value: string | null): { kind: RefKind; id: string } | null {
   const s = (value ?? "").trim();

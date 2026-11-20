@@ -117,7 +117,12 @@ export function useArticleRefs(lawSlug: string, articleId: string | null, delayM
 
 export interface RefBoxPageContext {
   lawSlug: string;
-  viewerHasFullAccess: boolean;
+  /**
+   * O15 (batch l11): the law API's `paywall.hasFullAccess`; null while it is
+   * not known. The subscriber sections draw their lock on `false` only, so no
+   * lock flashes before the answer (the preview route still decides on its own).
+   */
+  viewerHasFullAccess: boolean | null;
   isDark: boolean;
   isRTL: boolean;
   /** Reading mode hides the side column: the per-article button then shows on every width. */
@@ -237,7 +242,7 @@ function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; 
         const meta = SECTION_META[s];
         const Icon = meta.icon;
         const sec = data.sections[s];
-        const locked = SUBSCRIBER_SECTIONS.has(s) && !ctx.viewerHasFullAccess;
+        const locked = SUBSCRIBER_SECTIONS.has(s) && ctx.viewerHasFullAccess === false;
         return (
           <section key={s} aria-label={meta.title} className={i > 0 ? `pt-3 border-t ${isDark ? "border-white/[0.08]" : "border-slate-200"}` : ""}>
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -405,7 +410,7 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
   // An empty section has no tab (file 16 §8): fall back to the first one shown.
   const tab = tabs.includes(picked) ? picked : (tabs[0] ?? picked);
   const sec = data && tabs.includes(tab) ? data.sections[tab] : undefined;
-  const locked = SUBSCRIBER_SECTIONS.has(tab) && !ctx.viewerHasFullAccess;
+  const locked = SUBSCRIBER_SECTIONS.has(tab) && ctx.viewerHasFullAccess === false;
   return (
     <Modal isDark={isDark} label="كل الإحالات المرتبطة" onClose={onClose} wide>
       <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? "border-white/10" : "border-slate-200"}`}>
