@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from "next/navigat
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowUp, Crown, Stack, Check, Copy, BookOpen, Bookmark, Scales, Printer,
-  ListBullets, X, Lock, Prohibit, Info, Clock
+  ListBullets, X, Lock, Prohibit, Info, Clock, ArrowSquareOut
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -652,6 +652,18 @@ function LawSystemPageContent() {
     },
     [regulationAnchors],
   );
+  // «التشريعات الفرعية» (main column and, O13, the sidebar): a merged regulation
+  // opens the regulation view on that instrument. A fully locked one is not a
+  // chip (regulationInstruments), so the view opens on all of them.
+  const openMergedRegulation = useCallback(
+    (name: string) => {
+      const inst = (law?.regulationInstruments ?? []).find((i) => (i.label || i.ref) === name);
+      setViewMode("regulation");
+      setSelectedRegName(inst ? inst.ref : null);
+      if (inst) setShowAllRegChips(true);
+    },
+    [law],
+  );
 
   // ــ Intersection Observer: تحديث activeId عند السكرول تلقائياً ــــــــــــــــــ
   // Re-run on a view switch: the article cards are mounted per view, so the
@@ -1168,6 +1180,7 @@ function LawSystemPageContent() {
                 viewMode={viewMode as any}
                 regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                 onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
+                onOpenMergedRegulation={openMergedRegulation}
               />
             </aside>
           )}
@@ -1247,14 +1260,7 @@ function LawSystemPageContent() {
                 subLegislation={law.subLegislation}
                 // File 16 §7: the merged regulations first (the index names, every viewer).
                 mergedNames={(law.regulationIndex ?? []).map((g) => g.name)}
-                onOpenMerged={(name) => {
-                  // The regulation view on that instrument; a fully locked one is not a
-                  // chip (regulationInstruments), so the view opens on all of them.
-                  const inst = (law.regulationInstruments ?? []).find((i) => (i.label || i.ref) === name);
-                  setViewMode("regulation");
-                  setSelectedRegName(inst ? inst.ref : null);
-                  if (inst) setShowAllRegChips(true);
-                }}
+                onOpenMerged={openMergedRegulation}
                 isDark={isDark}
                 isRTL={isRTL}
               />
@@ -1354,11 +1360,18 @@ function LawSystemPageContent() {
                   // would otherwise silently shrink — or come up empty for a
                   // law whose every regulation sits past the free limit.
                   const lockedRegCount = law.regulationInstrumentsLocked ?? 0;
+                  // O13 (batch l11): the instrument chips (2 or more, as before) and
+                  // the linked sub-legislation (l10-children) share the «3 then
+                  // عرض المزيد» budget; the merged ones come first.
+                  const instChips = instruments.length > 1 ? instruments : [];
+                  const linkedChildren = law.subLegislation?.children ?? [];
+                  const chipTotal = instChips.length + linkedChildren.length;
 
                   return (
                     <>
-                      {instruments.length > 1 && (
+                      {(instruments.length > 1 || linkedChildren.length > 0) && (
                         <div className={`flex flex-wrap gap-1.5 p-2 rounded-xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+                          {instChips.length > 0 && (
                           <button
                             onClick={() => setSelectedRegName(null)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -1369,7 +1382,8 @@ function LawSystemPageContent() {
                           >
                             {isRTL ? "الكل" : "All"}
                           </button>
-                          {instruments
+                          )}
+                          {instChips
                             // File 16 §7: 2–3 sub-legislations, then «عرض المزيد»; a chosen one always stays visible.
                             .filter((inst, i) => showAllRegChips || i < REG_CHIPS_SHOWN || inst.ref === selectedRegName)
                             .map((inst) => (
@@ -1385,13 +1399,30 @@ function LawSystemPageContent() {
                               {inst.label || inst.ref}
                             </button>
                           ))}
-                          {!showAllRegChips && instruments.length > REG_CHIPS_SHOWN && (
+                          {/* O13 (batch l11): the documents linked by parent_law_id (l10-children)
+                              are files of their own: a chip opens the file's page, it filters nothing. */}
+                          {linkedChildren
+                            .filter((_c, j) => showAllRegChips || instChips.length + j < REG_CHIPS_SHOWN)
+                            .map((child) => (
+                            <Link
+                              key={`child:${child.slug}`}
+                              href={`/laws/${encodeURIComponent(child.slug)}`}
+                              title={isRTL ? "ملف مستقل في المكتبة" : "A separate file in the library"}
+                              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-dashed ${
+                                isDark ? "border-white/[0.12] text-zinc-400 hover:text-zinc-200" : "border-slate-300 text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              {child.title || child.slug}
+                              <ArrowSquareOut size={11} weight="bold" aria-hidden />
+                            </Link>
+                          ))}
+                          {!showAllRegChips && chipTotal > REG_CHIPS_SHOWN && (
                             <button
                               type="button"
                               onClick={() => setShowAllRegChips(true)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-bold underline-offset-2 hover:underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
                             >
-                              {isRTL ? `عرض المزيد (${instruments.length - REG_CHIPS_SHOWN})` : `Show more (${instruments.length - REG_CHIPS_SHOWN})`}
+                              {isRTL ? `عرض المزيد (${chipTotal - REG_CHIPS_SHOWN})` : `Show more (${chipTotal - REG_CHIPS_SHOWN})`}
                             </button>
                           )}
                         </div>
@@ -1839,6 +1870,7 @@ function LawSystemPageContent() {
                   viewerIsSubscriber={viewerIsSubscriber} mode="index" viewMode={viewMode as any}
                   regulationAnchorFor={flatRegulationView ? regulationAnchorFor : undefined}
                   onRegulationCardJump={flatRegulationView ? onRegulationCardJump : undefined}
+                  onOpenMergedRegulation={(name) => { setShowIndexSheet(false); openMergedRegulation(name); }}
                 />
               </div>
             </motion.div>
