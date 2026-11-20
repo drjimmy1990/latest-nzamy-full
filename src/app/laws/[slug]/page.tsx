@@ -102,6 +102,16 @@ function ReaderArrivalScroll({ query, deps }: { query: string; deps: readonly un
   return null;
 }
 
+/**
+ * N02-3/4 (batch l11): at lg+ the floating buttons (scroll-to-top on the
+ * start side, the site's WhatsApp / draft buttons on the end side, both
+ * 1.25rem from the bottom, ≈56px tall) sit over the two side columns, never
+ * over the article column (12-column grid, max 1280px). The bottom of each
+ * sticky side column is padded by more than their height, so its last rows
+ * (the index's last articles, the tools card) scroll clear of them.
+ */
+const READER_ASIDE_FAB_CLEARANCE = "pb-24";
+
 /** Owner file 16 §7: sub-legislation chips shown before «عرض المزيد» («بحد أقصى 2 أو 3»). */
 const REG_CHIPS_SHOWN = 3;
 
@@ -1137,7 +1147,7 @@ function LawSystemPageContent() {
 
           {/* RIGHT COLUMN: Identity Panel AND Index Panel */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className={`hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto ${READER_ASIDE_FAB_CLEARANCE}`} style={{ overscrollBehavior: 'auto' }}>
               {/* Identity Card */}
               <SidebarPanel
                 isDark={isDark}
@@ -1766,7 +1776,7 @@ function LawSystemPageContent() {
 
           {/* LEFT COLUMN: AI Tools and related documents */}
           {!isReadingMode && (
-            <aside className="hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto" style={{ overscrollBehavior: 'auto' }}>
+            <aside className={`hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto ${READER_ASIDE_FAB_CLEARANCE}`} style={{ overscrollBehavior: 'auto' }}>
               {/* Owner item 6 (18 Nov): the links of the article in view, beside it — three
                  sections, owner-matched link types only (_ref-box.tsx). It replaces the
                  bar under each article and the «وثائق وأنظمة ذات صلة» card. */}
