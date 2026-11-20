@@ -71,13 +71,16 @@ export async function libraryAiAccess(toolId?: string): Promise<NextResponse | n
   if (decision === 'allow') return null;
 
   // `upgrade`, and anything else the rule may answer: closed. The library
-  // assistant also opens with a library subscription; the other library
-  // tools need Pro.
+  // assistant also opens with a library subscription (the founder's included);
+  // the other library tools need the professional plan or higher. The plans
+  // are named as the law reader names them (laws/[slug] route lockedMessage),
+  // never "Pro" (owner register 4/5/48, N05-L11/12). `requiredTier` stays a
+  // machine value for the client.
   return NextResponse.json(
     {
       error: reads.libraryGrant
-        ? 'المساعد الذكي للمكتبة يتطلب اشتراك المكتبة أو اشتراك Pro أو أعلى'
-        : 'المساعد الذكي للمكتبة يتطلب اشتراك Pro أو أعلى',
+        ? 'مساعد المكتبة الذكي متاح لمشتركي باقة المكتبة القانونية والأعضاء المؤسسين ومشتركي الباقة الاحترافية أو أعلى، ويُخصم من رصيدك 5 نقاط عن كل سؤال.'
+        : 'هذه الأداة تجيب من نصوص المكتبة القانونية، وهي متاحة لمشتركي الباقة الاحترافية أو أعلى.',
       requiredTier: 'pro',
     },
     { status: 403 },

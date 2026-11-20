@@ -217,14 +217,26 @@ test("the gate is all or nothing, not a per-item free check", () => {
 
 test("the gate's own error bodies are Arabic", () => {
   // The 401 body, and the 403's two messages (the library assistant names the
-  // library subscription too; the other library tools need Pro).
+  // library subscription too; the other library tools need the professional plan).
   const code = gateSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
   const bodies = [...code.matchAll(/'([^'\n]*[؀-ۿ][^'\n]*)'/g)].map((m) => m[1]);
   assert.equal(bodies.length, 3, "the 401 and the two 403 messages");
   for (const text of bodies) {
-    // "Pro" is the plan's name, as in checkLibraryAccess's own message.
-    assert.doesNotMatch(text.replace(/\bPro\b/g, ""), /[A-Za-z]/, text);
+    // N05-L11/12 (batch l11): no "Pro" and no other Latin word — the plans by their Arabic names.
+    assert.doesNotMatch(text, /[A-Za-z]/, text);
   }
+});
+
+test("N05-L11/12: the 403s name the real plans in Arabic and the assistant's price per question", () => {
+  const code = gateSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const bodies = [...code.matchAll(/'([^'\n]*[؀-ۿ][^'\n]*)'/g)].map((m) => m[1]);
+  const assistant = bodies.find((b) => b.includes("مساعد المكتبة"));
+  const other = bodies.find((b) => b.includes("هذه الأداة"));
+  assert.ok(assistant && other, "both 403 messages");
+  for (const plan of ["باقة المكتبة القانونية", "الأعضاء المؤسسين", "الباقة الاحترافية"]) assert.ok(assistant.includes(plan), plan);
+  assert.match(assistant, /5 نقاط عن كل سؤال/);
+  assert.ok(other.includes("الباقة الاحترافية"));
+  assert.ok(!other.includes("باقة المكتبة القانونية"), "a library subscription does not open the other library tools");
 });
 
 // 0.5 (owner package 17 Nov): a founder member passes for the founder plan's tools only
