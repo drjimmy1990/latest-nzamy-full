@@ -7870,3 +7870,25 @@ select 'Owner edges: resolver + importer functions are security definer, service
                          to_regprocedure('public.graph_rag_owner_edges_mark_deleted(jsonb)')))
        end as ok;
 -- <<< verify:l10_owner_edges
+-- >>> verify:l11_community
+-- Batch l11-community (N05-C2 / owner ٤٢): run 20261201_50 before or after the deploy (after 20261127_60).
+select 'Community: the owner of a verified firm reads and posts lawyers-only content; the lawyer badge stays with verified lawyers (run 20261201_50)' as check,
+       case when to_regprocedure('public.community_lawyers_space_ok()') is null
+              or to_regprocedure('public.community_is_verified_office()') is null then false else
+       has_function_privilege('anon', 'public.community_lawyers_space_ok()', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.community_lawyers_space_ok()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.community_is_verified_office()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.community_verified_office_users(uuid[])', 'EXECUTE')
+       and pg_catalog.pg_get_functiondef('public.community_post_readable(uuid)'::regprocedure) ilike '%community_lawyers_space_ok%'
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                    and policyname = 'anyone reads public community posts'
+                    and qual ilike '%community_lawyers_space_ok%' and qual ilike '%pending_review%')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                    and policyname = 'users create their own community posts' and with_check ilike '%community_lawyers_space_ok%')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                    and policyname = 'authors update their own community posts' and with_check ilike '%community_lawyers_space_ok%')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_answers'
+                    and policyname = 'users create community answers'
+                    and with_check ilike '%community_is_verified_lawyer%' and with_check not ilike '%community_lawyers_space_ok%')
+       end as ok;
+-- <<< verify:l11_community
