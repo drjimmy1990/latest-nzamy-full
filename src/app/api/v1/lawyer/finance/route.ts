@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/auth/assertRole";
+import { requireVerifiedProvider } from "@/lib/auth/verifiedProviderServer";
 import {
   createInvoiceWith,
   PAYMENT_COLUMNS,
@@ -397,6 +398,9 @@ export async function POST(request: NextRequest) {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user } = auth;
+    // R9b (l11): an unverified account creates no invoice (403, Arabic).
+    const unverified = await requireVerifiedProvider(user.id, auth.userType);
+    if (unverified) return unverified;
 
     const body = await request.json();
     const service = await createServiceClient();
