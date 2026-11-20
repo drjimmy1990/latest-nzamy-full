@@ -13,6 +13,8 @@ import { StepCase }      from "@/components/draft/steps/StepCase";
 import { StepSubmit }    from "@/components/draft/steps/StepSubmit";
 import { StepAiDraft }   from "@/components/draft/steps/StepAiDraft";
 import { useUser } from "@/hooks/useUser";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftChoice, draftText } from "@/lib/payments/topUpDraft";
 import { draftKindFromMemo } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import { toolRoleRefusal } from "@/lib/ai/aiToolsConfig";
@@ -80,6 +82,34 @@ export default function AIDraftPage() {
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
   const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam || najizSeed ? "draft" : "pre");
+
+  // l11 (T8-Q511a): back from a top-up, the wizard's fields on the AI step
+  // (the analysis was refused before it ran; uploaded files are attached again)
+  useToolDraft("legal-drafter", (d) => {
+    const memoType = draftText(d, "memoType");
+    if (!memoType) return;
+    setPreMode("draft");
+    s.setMemoType(memoType);
+    s.setMemoSubType(draftText(d, "memoSubType") ?? "");
+    const role = draftChoice(d, "clientRole", ["plaintiff", "defendant"] as const);
+    if (role) s.setClientRole(role);
+    const put = (field: string, set: (v: string) => void) => {
+      const v = draftText(d, field);
+      if (v) set(v);
+    };
+    put("legalBranch", s.setLegalBranch);
+    put("notesText", s.setNotesText);
+    put("caseText", s.setCaseText);
+    put("lawyerNotes", s.setLawyerNotes);
+    put("plaintiffName", s.setPlaintiffName);
+    put("defendantName", s.setDefendantName);
+    put("judgmentCourt", s.setJudgmentCourt);
+    put("judgmentNumber", s.setJudgmentNumber);
+    put("judgmentDate", s.setJudgmentDate);
+    put("judgmentText", s.setJudgmentText);
+    put("judgmentReasons", s.setJudgmentReasons);
+    s.setStep("submit");
+  });
 
   // ?from=transcript (N1.8): a transcript handed over by SendToDrafterButton.
   // Consumed once in an effect (storage is browser-only; reading it during
@@ -244,6 +274,22 @@ export default function AIDraftPage() {
             key={kind}
             isDark={isDark}
             kind={kind}
+            draftState={{
+              memoType: s.memoType,
+              memoSubType: s.memoSubType,
+              clientRole: s.clientRole,
+              legalBranch: s.legalBranch,
+              notesText: s.notesText,
+              caseText: s.caseText,
+              lawyerNotes: s.lawyerNotes,
+              plaintiffName: s.plaintiffName,
+              defendantName: s.defendantName,
+              judgmentCourt: s.judgmentCourt,
+              judgmentNumber: s.judgmentNumber,
+              judgmentDate: s.judgmentDate,
+              judgmentText: s.judgmentText,
+              judgmentReasons: s.judgmentReasons,
+            }}
             facts={{
               kind,
               clientRole: s.clientRole,

@@ -9,6 +9,8 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftChoice, draftText } from "@/lib/payments/topUpDraft";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { COMMUNICATE_TONES, type CommunicateType } from "@/lib/ai/tools";
@@ -51,6 +53,19 @@ function AICommunicatePage() {
   const [subject, setSubject] = useState("");
   const [context, setContext] = useState("");
   const [copied, setCopied] = useState(false);
+  // l11 (T8-Q511a): back from a top-up, the message as it was typed
+  useToolDraft("communicate", (d) => {
+    const t = draftChoice(d, "type", COMM_TYPES.map((c) => c.id));
+    const tn = draftChoice(d, "tone", COMMUNICATE_TONES as readonly string[]);
+    const r = draftText(d, "recipient");
+    const s = draftText(d, "subject");
+    const b = draftText(d, "body");
+    if (t) setCommType(t);
+    if (tn) setTone(tn);
+    if (r) setRecipient((cur) => cur || r);
+    if (s) setSubject((cur) => cur || s);
+    if (b) setContext((cur) => cur || b);
+  });
   // The real tool (plan §5 L1): the server checks the role, the input and the
   // points, then n8n writes the message. No canned letter, no timer.
   const run = useAiRun();
