@@ -328,6 +328,22 @@ function decreeKey(words: string): string {
   return num && date ? `${num[1].replace(/[إا]/g, "أ")}/${Number(num[2])}@${date}` : "";
 }
 
+/** Word-set F1 at or above which a stored row is the same wording as a lifted one. */
+export const SAME_VERSION_F1 = 0.95;
+
+/** F1 of the two texts' word sets (0 when either has none). */
+export function wordF1(a: string, b: string): number {
+  const wa = new Set(words(a));
+  const wb = new Set(words(b));
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let common = 0;
+  for (const w of wa) if (wb.has(w)) common++;
+  if (common === 0) return 0;
+  const p = common / wb.size;
+  const r = common / wa.size;
+  return (2 * p * r) / (p + r);
+}
+
 /** The lifted group as one «الإصدارات السابقة» entry. */
 function asAmendment(v: LiftedVersion, showSource: boolean): AmendmentLike {
   const dateWords = [v.date, v.decree, v.note].join(" ");
@@ -368,9 +384,14 @@ export function mergeLiftedVersions(
     if (k) decrees.add(k);
   }
   texts.delete("");
+  const partTexts = (lifted as ReadonlyArray<LiftedVersion>).flatMap((v) => v.parts.map((p) => versionKey(p.text))).filter(Boolean);
   const kept = base.filter((r) => {
     const t = versionKey(r.fullText);
     if (t && texts.has(t)) return false;
+    // The same wording stored with a small difference (a stray mark, spacing, an
+    // audit note taken out): near-identical words. Two real versions of one
+    // paragraph stay far below this (the two ¶5 wordings of نظام القضاء: ≈0.6).
+    if (t && partTexts.some((p) => wordF1(t, p) >= SAME_VERSION_F1)) return false;
     const hasOwnText = t !== "" || versionKey(r.summary) !== "";
     if (!hasOwnText && !r.sourceLocked) {
       const k = decreeKey(`${r.source ?? ""} ${r.date ?? ""}`);

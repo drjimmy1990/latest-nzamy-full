@@ -188,3 +188,11 @@ test("the reader: the «معدّلة» badge opens the history; an empty toggle 
   const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
   assert.equal((page.match(/showAmendmentSource=\{viewerIsSubscriber === true && !officialMeta\.locked\}/g) ?? []).length, 2);
 });
+
+test("a stored row with the same wording but small differences is still one card; two real versions stay two", async () => {
+  const { wordF1, SAME_VERSION_F1 } = await import("./_amendment-split.ts");
+  assert.ok(wordF1(P5_BEFORE_113, P5_ORIGINAL) < SAME_VERSION_F1, "the two ¶5 wordings are two versions");
+  const { lifted } = splitAmendmentText(LIVE_TEXT, [REG_NAME]);
+  const noisy = ROWS.map((r) => (r.fullText ? { ...r, fullText: `> > ${r.fullText.replace(/،/g, " ، ").replace(/\.$/, "")}  ` } : r));
+  assert.equal(visibleAmendments(mergeLiftedVersions(noisy, lifted, true)).length, 2);
+});
