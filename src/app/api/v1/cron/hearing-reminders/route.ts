@@ -34,7 +34,7 @@ import {
  *
  * The in-app hearing reminders stay where they are (/api/v1/cron/deadlines).
  *
- * Without RESEND_API_KEY + EMAIL_FROM: 200 {skipped: "email_unavailable"},
+ * Without e-mail set up (SMTP or Resend): 200 {skipped: "email_unavailable"},
  * nothing read or written — no reminder is used up before e-mail is set up.
  * Before 20261125_20 runs: 200 {skipped: "schema_missing"}, nothing sent.
  *

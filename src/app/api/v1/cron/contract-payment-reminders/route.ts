@@ -41,7 +41,7 @@ import {
  *   4. E-MAIL: generic (owner ٤٥: no client, title, label or amount), skipped
  *      for an account that turned e-mail or the «reminders» / «financial»
  *      category off or has no address; kinds contract_pay_due /
- *      contract_pay_overdue, once each. Without RESEND_API_KEY + EMAIL_FROM:
+ *      contract_pay_overdue, once each. Without e-mail set up (SMTP or Resend):
  *      email {skipped: "email_unavailable"}.
  *
  * Before 20261201_45 runs: 200 {skipped: "schema_missing"}, nothing sent.

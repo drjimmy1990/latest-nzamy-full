@@ -28,7 +28,7 @@ import {
  *   3. Per seat: INSERT the marker (seat, membership end) into
  *      public.founder_renewal_notices with ON CONFLICT DO NOTHING; only when
  *      this run created it, the in-app notice and the e-mail (sendEmail: a
- *      missing Resend key is 'unavailable' and harms nothing; a test account
+ *      missing mail setup is 'unavailable' and harms nothing; a test account
  *      is sunk). Once per seat and year, whatever the schedule.
  *
  * AUTH — fails CLOSED: header `x-cron-secret` must equal CRON_SECRET.

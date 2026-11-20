@@ -46,7 +46,7 @@ export type DecisionInput = {
   aiStatus: AiStatus | null;
   /** The code sent to the account's own e-mail was confirmed. */
   emailOtpVerified: boolean;
-  /** The e-mail code can be sent (LAWYER_OTP_EMAIL=on + Resend + pepper). */
+  /** The e-mail code can be sent (LAWYER_OTP_EMAIL=on + e-mail set up + pepper). */
   emailChannelAvailable: boolean;
   /**
    * A «رقمي تغيّر» request recorded before the e-mail-only change (the

@@ -27,9 +27,9 @@ import { assertLinkableAccount } from "@/app/api/v1/lawyer/clients/_link";
  *      in-app notification to that account: platform-composed (issuer, amount,
  *      reference — no free text), no link (the client has no screen for it),
  *      not again within 10 minutes;
- *   3. when e-mail is configured on this server (RESEND_API_KEY + EMAIL_FROM)
+ *   3. when e-mail is configured on this server (SMTP or Resend, emailConfigured)
  *      and the card has an address, e-mails it once per statement per day
- *      (Resend idempotency key).
+ *      (idempotency key).
  *
  * Only the statement's issuer may send it (metadata.issued_by / owner_user_id),
  * only while it is open (requires_payment) — never a void or settled one. The

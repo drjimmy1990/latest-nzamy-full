@@ -8,7 +8,7 @@
  * body of the one e-mail to the invited address — and, when the inviter or
  * the address is a test account, into the body the test mail sink stores
  * instead of sending (public.test_mail_sink, 20261129_90, service role only).
- * It is never in the subject, the Resend tag, the idempotency key, the
+ * It is never in the subject, the mail tag, the idempotency key, the
  * once-only log row, or a log line:
  *   - the log row's subject_id is `<firm id>:<invitation id>:<hash of the
  *     address>` (no address, no token), kind 'firm_invite' (20261201_45);

@@ -15,8 +15,8 @@
  *        call created is ours. An existing 'failed' row with attempts < 3 is
  *        claimed with a compare-and-set update (status + attempts must still
  *        be what was read), so two overlapping runs cannot both claim it.
- *     2. send through sendEmail, with a stable Resend Idempotency-Key (a retry
- *        of an attempt Resend in fact accepted is not delivered twice);
+ *     2. send through sendEmail, with a stable idempotency key (Resend: a retry
+ *        of an attempt Resend in fact accepted is not delivered twice; SMTP: the same Message-ID);
  *     3. mark 'sent' or 'failed' (last_error is a short code — never a body
  *        or an address).
  *   A 'sending' row left by a crash is never re-sent: a missed e-mail beats a

@@ -41,6 +41,7 @@ const SERVER_ONLY = [
 /** Secret readers `node --test` or the proxy loads: held by contract (no client reaches them). */
 const CONTRACT_ONLY = [
   "src/lib/email/sendEmail.ts",
+  "src/lib/email/emailConfig.ts",
   "src/lib/pricing/clientPricingServer.ts",
   "src/lib/tracking/trackingUnlockCookie.ts",
   "src/lib/accountDeletion/accountDeletionServer.ts",

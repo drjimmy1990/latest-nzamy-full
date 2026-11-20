@@ -74,7 +74,7 @@ export default function TwoFactorPanel({ isDark, card }: { isDark: boolean; card
           <p className={`text-[12px] ${muted}`}>
             {status.emailAlerts
               ? "تنبيه البريد عند كل دخول جديد إلى حساب إدارة: مفعّل."
-              : "تنبيه البريد عند الدخول الجديد متوقف: لم يُضبط مفتاح البريد (RESEND_API_KEY و EMAIL_FROM) في الخادم."}
+              : "تنبيه البريد عند الدخول الجديد متوقف: لم تُضبط خدمة البريد في الخادم."}
           </p>
           <Link href={MFA_PAGE} className={button}>
             {status.enrolled ? "إدارة رموز الاحتياط" : "تفعيل التحقق بخطوتين"}

@@ -32,7 +32,7 @@ import {
  *      category) off or has no address; else claim → send → record in
  *      public.email_reminder_log (20261125_20) — each stage once per end date.
  *
- * Without RESEND_API_KEY + EMAIL_FROM: 200 {skipped: "email_unavailable"},
+ * Without e-mail set up (SMTP or Resend): 200 {skipped: "email_unavailable"},
  * nothing read or written. Before 20261125_20 runs: 200
  * {skipped: "schema_missing"}, nothing sent.
  *
