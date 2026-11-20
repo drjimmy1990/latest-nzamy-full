@@ -39,7 +39,7 @@ test("no plan-only feature: every paid card lists the same features, no «(diff)
   assert.doesNotMatch(code, /\(diff\)|Amendment diff|PDF|كل مزايا|All (?:Quarterly|Semi-Annual) features|واتساب|WhatsApp support/);
   const shared = code.match(/\.\.\.PAID_PLAN_FEATURES\.(ar|en)/g) ?? [];
   assert.equal(shared.length, 6, "three paid cards in each language");
-  assert.ok(code.includes("مفتوحة طوال مدة الاشتراك بشرط ألا ينزل رصيدك عن 50 نقطة"), "register 14 item 48");
+  assert.ok(code.includes("مفتوحة طوال مدة الاشتراك بشرط ألا ينزل رصيدك عن ${LIBRARY_MIN_POINTS_DEFAULT} نقطة"), "register 14 item 48, its number from pointsGate.ts");
 });
 
 test("the paid prices come from the price book, which holds 1,990 / 3,790 / 6,990", async () => {

@@ -24,6 +24,7 @@ import { LibraryGrantStatusCard, useMyLibraryGrant } from "@/components/library/
 import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { bookPriceText } from "@/lib/pricing/priceBook";
 import { libraryPlanPointsLine } from "@/lib/points/pointsSettings";
+import { LIBRARY_MIN_POINTS_DEFAULT } from "@/lib/library/pointsGate";
 
 // ─── Plan features (N05-L10, batch l11) ─────────────────────────────────────
 // The free card says what a visitor is actually served; the paid cards share
@@ -48,13 +49,13 @@ const PAID_PLAN_FEATURES = {
   ar: [
     "نصوص الأنظمة واللوائح والأحكام والمبادئ القضائية والفقه كاملة",
     "الإصدارات السابقة للمواد المعدّلة مع إظهار الفروق",
-    // Register 14 item 48 (the 50-point browse rule, pointsGate.ts).
-    "مفتوحة طوال مدة الاشتراك بشرط ألا ينزل رصيدك عن 50 نقطة",
+    // Register 14 item 48 (the 50-point browse rule): the number is pointsGate.ts's default.
+    `مفتوحة طوال مدة الاشتراك بشرط ألا ينزل رصيدك عن ${LIBRARY_MIN_POINTS_DEFAULT} نقطة`,
   ],
   en: [
     "Full texts of laws, regulations, rulings, principles and fiqh",
     "Previous versions of amended articles, with the changes shown",
-    "Open for the whole plan as long as your balance stays at 50 points or more",
+    `Open for the whole plan as long as your balance stays at ${LIBRARY_MIN_POINTS_DEFAULT} points or more`,
   ],
 } as const;
 
