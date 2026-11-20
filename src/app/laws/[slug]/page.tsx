@@ -778,6 +778,17 @@ function LawSystemPageContent() {
     return {
       lawSlug: law.slug || decodeURIComponent(apiSlug(slug)),
       lawTitle: law.title,
+      // O14: the merged regulations are this same file (owner file 16 §1).
+      ownNames: Array.from(
+        new Set(
+          [
+            ...(law.regulationIndex ?? []).map((g) => g.name),
+            ...(law.regulationInstruments ?? []).flatMap((i) => [i.label ?? "", i.ref]),
+          ]
+            .map((n) => (n ?? "").trim())
+            .filter(Boolean),
+        ),
+      ),
       lawType: law.documentType,
       parentSlug: law.parentLawLink?.slug ?? null,
       byNumber: articlesByNumber(allArticles),

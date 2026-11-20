@@ -32,6 +32,12 @@ import { scrollToReaderAnchor } from "./_reader-anchors";
 export interface CitationReaderContext {
   lawSlug: string;
   lawTitle: string;
+  /**
+   * O14 (owner file 16 §1): the other names this same file goes by — its
+   * merged regulations. A reference to one of them is plain text, like one to
+   * `lawTitle` (_cite-links.ts isOwnDocumentRef).
+   */
+  ownNames?: readonly string[];
   lawType?: string;
   /** A regulation's parent law, when the library links it (resolves «من النظام»). */
   parentSlug: string | null;

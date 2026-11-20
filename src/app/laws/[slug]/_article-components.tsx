@@ -30,7 +30,7 @@ import { Hl, useHighlight, useTextHasHighlight } from "@/components/search/Multi
 import type { HighlightTerm } from "@/lib/search/multiColorSearch";
 import { highlightSafeHtml, textHasHighlight } from "./_highlight-html";
 import { PreviousVersionText } from "./_word-diff";
-import { linkCitationsHtml } from "./_cite-links";
+import { OWN_DOCUMENT_REFS_AS_TEXT, linkCitationsHtml } from "./_cite-links";
 import { useCitations } from "./_citation-popover";
 import { articleNumberOf } from "./_cite-status";
 import { RefSheetButton, useRefBox } from "./_ref-box";
@@ -356,12 +356,14 @@ function renderMarkdownTableToHtml(tableMd: string, cellHtml: (md: string) => st
  */
 const CITE_CACHE_MAX = 6000;
 const citeHtmlCache = new Map<string, string>();
-function cachedCitationsHtml(html: string, docTitle: string, selfNumber: number | null, isDark: boolean): string {
-  const key = `${docTitle}\u0000${selfNumber ?? ""}\u0000${isDark ? 1 : 0}\u0000${html}`;
+function cachedCitationsHtml(html: string, docTitle: string, selfNumber: number | null, isDark: boolean, selfNames: readonly string[] = []): string {
+  // O14: the file's other names and the q٩٥ rule are part of the answer, so of the key.
+  const key = `${docTitle}\u0000${selfNames.join("\u0001")}\u0000${OWN_DOCUMENT_REFS_AS_TEXT ? 1 : 0}\u0000${selfNumber ?? ""}\u0000${isDark ? 1 : 0}\u0000${html}`;
   const hit = citeHtmlCache.get(key);
   if (hit !== undefined) return hit;
   if (citeHtmlCache.size >= CITE_CACHE_MAX) citeHtmlCache.clear();
-  const linked = linkCitationsHtml(html, { docTitle, selfNumber, isDark });
+  // Owner file 16 §1 (q٩٥ default): a reference to this same file is plain text.
+  const linked = linkCitationsHtml(html, { docTitle, selfNumber, isDark, selfNames, ownRefsAsText: OWN_DOCUMENT_REFS_AS_TEXT });
   citeHtmlCache.set(key, linked);
   return linked;
 }
@@ -391,7 +393,7 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
   const safeHtml = (md: string, chips = true) => {
     const html = markdownBoldToSafeHtml(md);
     let linked = html;
-    if (chips && citeOn) linked = cachedCitationsHtml(html, citeCtx.lawTitle, cite.selfNumber, isDark);
+    if (chips && citeOn) linked = cachedCitationsHtml(html, citeCtx.lawTitle, cite.selfNumber, isDark, citeCtx.ownNames);
     return highlightSafeHtml(linked, hlTerms, hlFocus);
   };
   // One delegated handler: a click on a chip opens its popover.
