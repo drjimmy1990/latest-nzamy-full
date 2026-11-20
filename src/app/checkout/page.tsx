@@ -202,7 +202,8 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
       {/* l9 (owner register 14 item 20, file 16): the active offer at the top
           of the payment page, as on /pricing — only where checkout is open
           (never on the gateway-off or refusal notices above). */}
-      <OffersList variant="checkout" />
+      {/* l11 O9: only this item's offers and the general ones. */}
+      <OffersList variant="checkout" itemId={parsed.itemId} />
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 sm:p-8">
         <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">إتمام الدفع</p>
         <h1 className="mt-1 text-xl font-bold sm:text-2xl">{item.labelAr}</h1>

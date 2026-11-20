@@ -7870,3 +7870,23 @@ select 'Owner edges: resolver + importer functions are security definer, service
                          to_regprocedure('public.graph_rag_owner_edges_mark_deleted(jsonb)')))
        end as ok;
 -- <<< verify:l10_owner_edges
+-- >>> verify:l11_pay
+-- Batch l11 pay (register 20 / 55): run 20261201_20 (any order relative to the deploy).
+select 'Offers for visitors: offers_audience_check lists guest, guest offers pinned to verification any, founder offer still lawyer-only (run 20261201_20)' as check,
+       case when to_regclass('public.offers') is null then false else
+       coalesce((select pg_catalog.pg_get_constraintdef(oid) like '%guest%' from pg_catalog.pg_constraint
+                  where conrelid = 'public.offers'::regclass and conname = 'offers_audience_check'), false)
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.offers'::regclass and conname = 'offers_guest_verification_check')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.offers'::regclass and conname = 'offers_founder_audience_check')
+       end as ok;
+select 'Founder renewal: setting row present, notice markers server-only (RLS on, no anon/authenticated privilege) (run 20261201_20)' as check,
+       exists (select 1 from public.platform_settings where key = 'founder_renewal')
+       and case when to_regclass('public.founder_renewal_notices') is null then false else
+       (select relrowsecurity from pg_catalog.pg_class where oid = 'public.founder_renewal_notices'::regclass)
+       and not has_table_privilege('anon', 'public.founder_renewal_notices', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.founder_renewal_notices', 'SELECT')
+       and has_table_privilege('service_role', 'public.founder_renewal_notices', 'INSERT')
+       end as ok;
+-- <<< verify:l11_pay
