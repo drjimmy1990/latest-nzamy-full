@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
+import { checkLibraryAccess, getLibraryAccessForUser, hasFullLibraryAccess } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
@@ -11,7 +11,10 @@ import { articleStatusForDetail } from '../../_article-status';
 import { articleDisplayLabel, articleLocatorText } from '../../_article-label';
 import { liftRegulationHeading } from '../../_regulation-heading';
 import { capTitle, parseRefKey, refHrefs, type RefDocKind, type RefKind } from '../_shape';
-import { articleTextOpen, subscriberOnlyKind, type PreviewLock } from './_access';
+import { articleTextOpen, principleTextOpen, subscriberOnlyKind, type PreviewLock } from './_access';
+import { isFreeLibraryItem } from '@/lib/library-item-access';
+import { collectionFreeCount } from '@/lib/library/publicGuard';
+import { loadLibraryGuardSettings } from '@/lib/library/publicGuardServer';
 
 /**
  * GET /api/library/laws/[slug]/citations/preview?key=<graph node key>
@@ -23,7 +26,11 @@ import { articleTextOpen, subscriberOnlyKind, type PreviewLock } from './_access
  *
  * The only part of the box that serves text, so the paywall is HERE
  * (./_access.ts): an article opens by the law reader's own rule (full access, a
- * whitelisted law, or inside the law's free preview window); a principle or a
+ * whitelisted law, or inside the law's free preview window); a principle by
+ * full library access, or — O16 (b), batch l11-misc — when it is one of the
+ * free items its collection page already shows a non-subscriber in full
+ * (principleFreeForVisitor: explicitly free, or among the collection's first
+ * public_full_rulings_per_collection items); any other principle and every
  * fiqh text by full library access only (item 6 §5 — a non-subscriber gets the
  * title and `locked: "subscribe"`, never the text); a decree or a whole law is
  * named and linked, never quoted. Text is read with the service role from
@@ -63,6 +70,48 @@ async function articlePosition(db: ServiceClient, lawSlug: string, orderIndex: u
   ]);
   if (before.error || tied.error || typeof before.count !== 'number' || typeof tied.count !== 'number') return null;
   return before.count + tied.count;
+}
+
+/** 0-based position of a principle in its collection, in the page's order (order_index, then id). */
+async function principlePosition(db: ServiceClient, collectionId: string, orderIndex: unknown, id: string): Promise<number | null> {
+  if (typeof orderIndex !== 'number') return null;
+  const lib = db.schema('library');
+  const [before, tied] = await Promise.all([
+    lib.from('principles').select('id', { count: 'exact', head: true }).eq('collection_id', collectionId).lt('order_index', orderIndex),
+    lib.from('principles').select('id', { count: 'exact', head: true }).eq('collection_id', collectionId).eq('order_index', orderIndex).lt('id', id),
+  ]);
+  if (before.error || tied.error || typeof before.count !== 'number' || typeof tied.count !== 'number') return null;
+  return before.count + tied.count;
+}
+
+/**
+ * O16 (b): is this principle one a non-subscriber already reads in full on its
+ * collection page? The page's own rule (precedents/[slug]/route.ts): an
+ * explicitly free item, or one of the collection's first
+ * collectionFreeCount(...) items. Any failed read answers false (locked).
+ */
+async function principleFreeForVisitor(db: ServiceClient, userId: string | null, collectionId: string, principleId: string, orderIndex: unknown): Promise<boolean> {
+  try {
+    const [probe, userAccess, guard, position, total] = await Promise.all([
+      checkLibraryAccess(userId, collectionId, 0, 'principles', { includeExplicitFreeItem: false }),
+      getLibraryAccessForUser(userId),
+      loadLibraryGuardSettings(),
+      principlePosition(db, collectionId, orderIndex, principleId),
+      db.schema('library').from('principles').select('id', { count: 'exact', head: true }).eq('collection_id', collectionId),
+    ]);
+    if (total.error || typeof total.count !== 'number') return false;
+    const explicitFree = isFreeLibraryItem({
+      contentType: 'principles',
+      itemId: principleId,
+      hasFullAccess: false,
+      freeItemsByType: userAccess.freeItemsByType,
+      whitelistedLawSlugs: userAccess.whitelistedSlugs,
+    });
+    const freeLimit = collectionFreeCount(probe, total.count, guard.rulings);
+    return principleTextOpen({ isSubscriber: false, explicitFree, freeLimit, position });
+  } catch {
+    return false;
+  }
 }
 
 interface PreviewBody {
@@ -164,7 +213,7 @@ export async function GET(request: Request) {
     if (key.kind === 'principle') {
       const { data: row, error } = await lib
         .from('principles')
-        .select('id, collection_id, principle_number, issuing_body, text')
+        .select('id, collection_id, principle_number, issuing_body, text, order_index')
         .eq('id', key.id)
         .maybeSingle();
       if (error) throw error;
@@ -173,11 +222,14 @@ export async function GET(request: Request) {
       const { data: coll, error: collError } = await lib.from('judicial_collections').select('id, title, court').eq('id', collId).maybeSingle();
       if (collError) throw collError;
       if (!coll) return json({ found: false, kind: 'principle' });
-      const open = isSubscriber && subscriberOnlyKind('principle');
-      if (open) {
+      const subscriberOpen = isSubscriber && subscriberOnlyKind('principle');
+      if (subscriberOpen) {
         const refusal = await enforceLibraryDevice(userId, true);
         if (refusal) return refusal;
       }
+      // O16 (b): a non-subscriber sees the text of the collection's free items
+      // (the ones its page shows in full), and nothing else.
+      const open = subscriberOpen || (await principleFreeForVisitor(db, userId, collId, String(row.id), row.order_index));
       const number = row.principle_number;
       const num = number != null && String(number).trim() !== '' ? `المبدأ رقم ${String(number).trim()}` : 'مبدأ قضائي';
       const text = open && typeof row.text === 'string' ? withCleanCardRows(stripArticleAuditNotes(row.text)) : '';
