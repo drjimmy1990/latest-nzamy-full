@@ -294,11 +294,12 @@ export default function ContractsPage() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.05 }}
-                whileHover={{ scale: 1.07 }}
-                className={`px-5 py-2 rounded-full text-sm font-medium border cursor-default transition-colors ${
+                // N05-M5 (batch l11): a list of what is supported, not buttons —
+                // no hover lift or colour that invites a click leading nowhere.
+                className={`px-5 py-2 rounded-full text-sm font-medium border ${
                   isDark
-                    ? "bg-[#161b22] border-white/10 text-gray-300 hover:border-royal/40 hover:text-white"
-                    : "bg-white border-gray-200 text-gray-700 hover:border-royal/30 hover:text-royal"
+                    ? "bg-[#161b22] border-white/10 text-gray-300"
+                    : "bg-white border-gray-200 text-gray-700"
                 }`}
               >
                 {type}
