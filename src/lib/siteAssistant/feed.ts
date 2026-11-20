@@ -21,6 +21,7 @@ import {
   type Billing,
   type BookEntry,
 } from "../pricing/priceBook.ts";
+import type { LibraryAccountKey } from "../library/accountAccess.ts";
 
 /** The plan cards /pricing shows with a book price, per audience (pricing.individuals / lawyers / firms). */
 export const ASSISTANT_PLAN_IDS = Object.freeze({
@@ -130,4 +131,11 @@ export interface AssistantFeed {
   readonly offers: readonly OfferLine[] | null;
   /** null = the founder campaign is not live (or could not be read). */
   readonly founder: FounderLine | null;
+  /**
+   * The account types the library is sold to today — the admin's switch
+   * (platform_settings.library_access_by_account_type), the same one the
+   * purchase gate obeys. null = not read, or could not be read: the answer
+   * then says nothing about who may subscribe rather than guess.
+   */
+  readonly libraryOpenTo: readonly LibraryAccountKey[] | null;
 }

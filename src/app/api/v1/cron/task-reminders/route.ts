@@ -38,7 +38,7 @@ import {
  *   4. E-MAIL: generic (owner ٤٥: no task title, case or client), skipped for
  *      an account that turned e-mail or the «reminders» category off or has
  *      no address; once per (task, due date, recipient), kind task_due_1d.
- *      Without RESEND_API_KEY + EMAIL_FROM: email {skipped:
+ *      Without e-mail set up (SMTP or Resend): email {skipped:
  *      "email_unavailable"}, nothing written for it.
  *
  * Before 20261201_45 runs the claim is refused (the old kind CHECK) and the

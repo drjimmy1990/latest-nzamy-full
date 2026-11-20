@@ -15,7 +15,8 @@ import { loadAssistantFeed, type FeedViewer } from "@/lib/siteAssistant/feedServ
  *        cached for a minute.
  * POST { message } → { reply: { text, links, suggestions } } — a deterministic
  *        answer (src/lib/siteAssistant/answer.ts) from the price book, this
- *        viewer's open offers, the founder campaign and the payment switch. No
+ *        viewer's open offers, the founder campaign, the payment switch and
+ *        the library's account-type switch (who may subscribe). No
  *        outside model, no legal advice, no library text. Nothing is stored:
  *        the message is answered and forgotten.
  *

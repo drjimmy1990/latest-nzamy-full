@@ -28,10 +28,10 @@ import {
  * address already belongs to a lawyer or individual account, that person also
  * gets an in-app notification pointing at the same link. And (T10-F7, batch
  * l11-remind) the link is e-mailed to the invited address through the shared
- * sender once e-mail is set up (RESEND_API_KEY + EMAIL_FROM + an https
+ * sender once e-mail is set up (SMTP or Resend, + an https
  * NEXT_PUBLIC_SITE_URL) and 20261201_45 has run — `emailed` says whether it
  * went. The token travels only in that e-mail's body: never in a log line,
- * the Resend tag, the idempotency key or the once-only log row
+ * the mail tag, the idempotency key or the once-only log row
  * (src/lib/email/firmInviteEmail.ts). At most FIRM_INVITE_DAILY_CAP e-mails a
  * day per (firm, address). The row is written by public.create_firm_team_invitation —
  * SECURITY DEFINER with its own owner / managing-partner check; the table

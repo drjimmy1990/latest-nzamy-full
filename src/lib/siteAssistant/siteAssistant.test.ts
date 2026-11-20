@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ASSISTANT_NAME_AR, NO_LEGAL_ADVICE_AR, answerMessage, classify, dayAr, feedNeeds, type AssistantIntent } from "./answer.ts";
+import { ASSISTANT_NAME_AR, NO_LEGAL_ADVICE_AR, answerMessage, classify, dayAr, feedNeeds, libraryBuyersLineAr, type AssistantIntent } from "./answer.ts";
 import { buildPriceFeed, type AssistantFeed } from "./feed.ts";
 import { siteAssistantHiddenOn } from "./visibility.ts";
 import { foldArabic } from "./normalize.ts";
@@ -14,7 +14,7 @@ const NOW = new Date("2026-11-20T09:00:00Z"); // inside the launch-2026 campaign
 const LATER = new Date("2027-03-01T09:00:00Z"); // after it
 
 function feed(over: Partial<AssistantFeed> = {}, now = NOW): AssistantFeed {
-  return { prices: buildPriceFeed(now), saleOpen: false, offers: null, founder: null, ...over };
+  return { prices: buildPriceFeed(now), saleOpen: false, offers: null, founder: null, libraryOpenTo: null, ...over };
 }
 
 const AR = "٠١٢٣٤٥٦٧٨٩";
@@ -188,10 +188,40 @@ test("unknown questions get the menu, never a guess", () => {
 });
 
 test("only the needed live reads are made", () => {
-  assert.deepEqual(feedNeeds("greeting"), { sale: false, offers: false, founder: false });
-  assert.deepEqual(feedNeeds("legal_advice"), { sale: false, offers: false, founder: false });
-  assert.deepEqual(feedNeeds("offers"), { sale: false, offers: true, founder: true });
-  assert.deepEqual(feedNeeds("prices"), { sale: true, offers: false, founder: false });
+  assert.deepEqual(feedNeeds("greeting"), { sale: false, offers: false, founder: false, library: false });
+  assert.deepEqual(feedNeeds("legal_advice"), { sale: false, offers: false, founder: false, library: false });
+  assert.deepEqual(feedNeeds("offers"), { sale: false, offers: true, founder: true, library: false });
+  assert.deepEqual(feedNeeds("prices"), { sale: true, offers: false, founder: false, library: false });
+  assert.deepEqual(feedNeeds("library"), { sale: true, offers: false, founder: false, library: true });
+});
+
+test("library: who may subscribe comes from the admin's account-type switch (the purchase gate's setting), never a fixed list", () => {
+  const q = "كم سعر المكتبة";
+  // Default switch: lawyers only.
+  const lawyers = answerMessage(q, feed({ libraryOpenTo: ["lawyer"] })).text;
+  assert.match(lawyers, /الاشتراك متاح اليوم لحسابات المحامين\./);
+  assert.doesNotMatch(lawyers, /مكاتب المحاماة|الشركات|الجهات الحكومية/);
+  // The admin opened more types: they are named, in a fixed order.
+  const more = answerMessage(q, feed({ libraryOpenTo: ["business", "lawyer", "firm"] })).text;
+  assert.match(more, /الاشتراك متاح اليوم لحسابات المحامين، ومكاتب المحاماة، والمنشآت والجهات الحكومية والجمعيات\./);
+  assert.equal(libraryBuyersLineAr(["lawyer", "individual"]), "الاشتراك متاح اليوم لحسابات المحامين والأفراد.");
+  // Every type closed: said plainly.
+  assert.match(answerMessage(q, feed({ libraryOpenTo: [] })).text, /غير متاح اليوم لأي نوع من الحسابات/);
+  // The switch could not be read: no line about who may subscribe at all (no guess).
+  const unknown = answerMessage(q, feed({ libraryOpenTo: null })).text;
+  assert.doesNotMatch(unknown, /الاشتراك متاح|غير متاح اليوم لأي/);
+  assert.match(unknown, /اشتراك المكتبة:/, "the prices are still listed");
+  assert.equal(libraryBuyersLineAr(null), null);
+});
+
+test("library buyers: the server reads the purchase gate's own setting and caches only a successful read", () => {
+  const src = readFileSync(new URL("./feedServer.ts", import.meta.url), "utf8");
+  assert.match(src, /\.eq\("key", LIBRARY_ACCESS_SETTING_KEY\)/);
+  assert.match(src, /parseLibraryAccessMap\(/);
+  assert.match(src, /if \(error\) return null;/);
+  assert.match(src, /needs\.library \? libraryOpenToNow\(\) : Promise\.resolve\(null\)/);
+  const answer = readFileSync(new URL("./answer.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(answer, /الاشتراك متاح لحسابات المحامين ومكاتب المحاماة والشركات/);
 });
 
 test("helpers: Arabic folding and dates", () => {

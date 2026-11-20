@@ -36,7 +36,7 @@ import { libraryEmailKey, libraryEmailMessage } from "@/lib/email/libraryEmailRe
  * (step 4, owner TODO F1): the same due reminders, each once per chain end
  * and recipient in public.email_reminder_log (20261125_20), skipped for an
  * account that turned e-mail or the «renewal» category off. Without
- * RESEND_API_KEY + EMAIL_FROM the e-mail step reports
+ * e-mail set up (SMTP or Resend) the e-mail step reports
  * {skipped: "email_unavailable"} and writes nothing.
  *
  * ── AUTH — fails CLOSED ─────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * Step 4. Never throws, never stops the in-app step's answer: a missing
- * email_reminder_log (20261125_20 not run) or no Resend key is reported in
+ * email_reminder_log (20261125_20 not run) or no mail setup is reported in
  * `email.skipped` and nothing is sent.
  */
 async function sendLibraryReminderEmails(

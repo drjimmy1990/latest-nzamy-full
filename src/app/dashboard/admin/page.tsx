@@ -146,7 +146,7 @@ export default function AdminDashboard() {
               "خوادم الـ API",
               "قاعدة البيانات (PostgreSQL)",
               "شبكة الملفات (CDN)",
-              "مزود البريد (Resend)",
+              "خدمة البريد",
               "بوابة واتساب (WhatsApp)",
               "بوابة الدفع (Moyasar)",
             ].map((label)=>(

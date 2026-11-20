@@ -15,7 +15,7 @@
  *     addresses of the setting `alert_emails`, through sendEmail.ts. Asked
  *     after a flag is raised here and after each activity batch
  *     (activityMeterServer.ts), at most once a minute otherwise. Nothing is
- *     claimed while e-mail is not set up (no Resend key) or no address is
+ *     claimed while e-mail is not set up (neither SMTP nor Resend) or no address is
  *     set, so the flags wait (24 h at most) instead of being lost. The flagged
  *     account's id is NOT passed to sendEmail: a test account's alert must
  *     reach the staff, not the test mail sink (R67 covers test accounts).

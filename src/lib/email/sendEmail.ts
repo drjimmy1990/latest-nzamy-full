@@ -1,14 +1,18 @@
 /**
  * sendEmail.ts — the ONE e-mail sender of the platform (owner TODO F1). Server only.
  * ─────────────────────────────────────────────────────────────────────────
- * Provider: Resend's REST API (POST https://api.resend.com/emails), the
- * provider the lawyer-signup e-mail code (src/lib/lawyerSignup/channels.ts)
- * and the n8n workflows already use.
+ * Providers (the choice is emailConfig.ts emailProvider, in this order):
+ *   1. SMTP — the operator's own mailbox (decision of 20 Nov 2026: no Resend
+ *      for now), through nodemailer, loaded only when a mail goes out.
+ *   2. Resend's REST API (POST https://api.resend.com/emails) — kept working
+ *      exactly as before for a server that has only the Resend key.
+ *   3. Neither → 'unavailable'.
  *
  *   sendEmail({ to, subject, html?, text, tag?, idempotencyKey? })
- *     → 'sent'        Resend accepted the message (2xx)
- *     → 'unavailable' e-mail is not set up here (RESEND_API_KEY or EMAIL_FROM
- *                     missing) — nothing was attempted
+ *     → 'sent'        the provider accepted the message (Resend 2xx; SMTP:
+ *                     the server accepted the recipient)
+ *     → 'unavailable' e-mail is not set up here (neither SMTP nor Resend is
+ *                     fully configured) — nothing was attempted
  *     → 'failed'      an attempt was made (or the input was unusable) and it
  *                     did not succeed
  *     → 'sunk'        NOT sent: the mail went to a test account, was caused by
@@ -24,20 +28,53 @@
  * silently dropping a real user's mail is the worse failure. Staff are never
  * test accounts. `deps.sinkCheck` replaces the lookup in tests.
  *
- * Environment (names only, never logged):
+ * Environment (names only, never logged). SMTP — the same names as the
+ * self-hosted Supabase .env, so its lines can be copied:
+ *   SMTP_HOST        the mail server's host name
+ *   SMTP_PORT        optional, default 587
+ *   SMTP_USER        the mailbox user name
+ *   SMTP_PASS        the mailbox password
+ *   SMTP_SECURE      optional "true" / "false": implicit TLS. Default: true on
+ *                    port 465, else STARTTLS — and STARTTLS is then REQUIRED
+ *                    (requireTLS), so the password never travels in clear
+ *   EMAIL_FROM       the sending address (fallback: SMTP_ADMIN_EMAIL)
+ *   EMAIL_FROM_NAME  optional display name «نظامي» (fallback: SMTP_SENDER_NAME)
+ * Resend (used only when SMTP is not fully set):
  *   RESEND_API_KEY   the Resend API key
  *   EMAIL_FROM       the sending address on a domain verified in Resend
- *   EMAIL_FROM_NAME  optional display name («نظامي»)
+ *   EMAIL_FROM_NAME  optional display name
+ *
+ * SMTP has no idempotency header: with an idempotencyKey the mail carries a
+ * stable Message-ID (a hash of the key and the recipient — never the key
+ * itself), so a retry is recognisably the same message; the callers' own
+ * once-only logs stay the real guard. One nodemailer transport per process
+ * and per settings; connection/greeting ≤ 10 s, socket ≤ 20 s, and the whole
+ * send is cut at 20 s, so a dead mail server cannot hang a cron route.
  *
  * Privacy: nothing here logs a message body or a full address — a failure
- * logs the status, the tag and the MASKED address (maskEmail).
+ * logs the status (SMTP: the error code and reply code only, never the
+ * server's reply text, which can echo an address or the user name), the tag
+ * and the MASKED address (maskEmail).
  *
- * Relative imports only (none needed): `node --test` loads this file
- * (sendEmail.test.ts). `env` and `fetchImpl` are injectable for the tests.
+ * Relative imports only: `node --test` loads this file (sendEmail.test.ts).
+ * `env`, `fetchImpl` and `createSmtpTransport` are injectable for the tests.
  */
 
+import { emailProvider, smtpSettings, type EmailEnv, type SmtpSettings } from "./emailConfig.ts";
+
 export type EmailSendResult = "sent" | "unavailable" | "failed" | "sunk";
-export type EmailEnv = Record<string, string | undefined>;
+export type { EmailEnv, EmailProvider, SmtpSettings } from "./emailConfig.ts";
+// "Is e-mail set up?" lives in emailConfig.ts (pure, no sender code).
+export {
+  emailConfigured,
+  emailProvider,
+  resendConfigured,
+  smtpConfigured,
+  smtpPort,
+  smtpSecure,
+  smtpSenderAddress,
+  smtpSenderName,
+} from "./emailConfig.ts";
 
 export interface EmailMessage {
   /** One recipient address. */
@@ -47,9 +84,13 @@ export interface EmailMessage {
   text: string;
   /** Optional HTML body (renderEmailAr builds an RTL one). */
   html?: string;
-  /** A short label for Resend's dashboard: [A-Za-z0-9_-], other characters become «_». */
+  /** A short label (Resend: its dashboard tag; SMTP: an X-Nzamy-Category header): [A-Za-z0-9_-], other characters become «_». */
   tag?: string;
-  /** Resend's Idempotency-Key header: a retry with the same key is not sent twice (24 h). */
+  /**
+   * Resend: its Idempotency-Key header (a retry with the same key is not sent
+   * twice, 24 h). SMTP: a stable Message-ID derived from it (no server-side
+   * dedupe — the callers' once-only logs are the guard).
+   */
   idempotencyKey?: string;
   /**
    * The accounts this mail is about — the recipient's id and/or the id of
@@ -74,23 +115,60 @@ export interface TestMailSinkDecision {
   reason?: string;
 }
 
+/** The options handed to the SMTP transport factory (nodemailer.createTransport). */
+export interface SmtpTransportOptions {
+  host: string;
+  port: number;
+  secure: boolean;
+  /** STARTTLS is mandatory when the connection does not start in TLS. */
+  requireTLS: boolean;
+  auth: { user: string; pass: string };
+  connectionTimeout: number;
+  greetingTimeout: number;
+  socketTimeout: number;
+  /** No attachment may read a local file or a URL (none are sent; defence in depth). */
+  disableFileAccess: true;
+  disableUrlAccess: true;
+}
+
+/** One SMTP message as nodemailer's sendMail takes it. */
+export interface SmtpMail {
+  from: { name: string; address: string } | string;
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  messageId?: string;
+  headers?: Record<string, string>;
+}
+
+/** What the sender needs from a transport (a nodemailer Transporter fits). */
+export interface SmtpTransportLike {
+  sendMail(mail: SmtpMail): Promise<unknown>;
+}
+
+export type SmtpTransportFactory = (options: SmtpTransportOptions) => SmtpTransportLike | Promise<SmtpTransportLike>;
+
 export interface SendEmailDeps {
   env?: EmailEnv;
   fetchImpl?: typeof fetch;
+  /** The Resend request's timeout. */
   timeoutMs?: number;
   /** Replaces the database lookup of the test mail sink (tests). */
   sinkCheck?: (input: TestMailSinkInput) => Promise<TestMailSinkDecision>;
+  /** Replaces nodemailer.createTransport (tests). Transports are cached per factory and settings. */
+  createSmtpTransport?: SmtpTransportFactory;
+  /** The cap on one whole SMTP send (default SMTP_SEND_TIMEOUT_MS). */
+  smtpTimeoutMs?: number;
 }
 
 export const RESEND_ENDPOINT = "https://api.resend.com/emails";
 export const EMAIL_TIMEOUT_MS = 8000;
-
-const has = (v: string | undefined) => (v ?? "").trim() !== "";
-
-/** True when the variables a send needs are present. */
-export function emailConfigured(env: EmailEnv = process.env): boolean {
-  return has(env.RESEND_API_KEY) && has(env.EMAIL_FROM);
-}
+export const SMTP_CONNECTION_TIMEOUT_MS = 10_000;
+export const SMTP_GREETING_TIMEOUT_MS = 10_000;
+export const SMTP_SOCKET_TIMEOUT_MS = 20_000;
+/** One whole SMTP send (connect, TLS, login, message) never takes longer than this. */
+export const SMTP_SEND_TIMEOUT_MS = 20_000;
 
 /** A single plain address: no spaces, no list, no header injection. */
 // isPlainEmail lives in emailAddress.ts (no sender code), so client-side
@@ -129,7 +207,8 @@ export function fromHeader(env: EmailEnv): string {
 
 export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {}): Promise<EmailSendResult> {
   const env = deps.env ?? process.env;
-  if (!emailConfigured(env)) return "unavailable";
+  const provider = emailProvider(env);
+  if (!provider) return "unavailable";
   const tag = message?.tag ? sanitizeTag(message.tag) : "";
   try {
     const to = typeof message?.to === "string" ? message.to.trim() : "";
@@ -149,6 +228,11 @@ export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {})
     if (sink.sink) {
       console.info("[email] sunk (test mail sink):", sink.reason || "-", tag || "-", maskEmail(to));
       return "sunk";
+    }
+
+    if (provider === "smtp") {
+      const html = typeof message.html === "string" && message.html.trim() ? message.html : undefined;
+      return await sendViaSmtp({ to, subject, text, html, tag, idempotencyKey: message.idempotencyKey }, env, deps);
     }
 
     const body: Record<string, unknown> = { from: fromHeader(env), to: [to], subject, text };
@@ -175,6 +259,144 @@ export async function sendEmail(message: EmailMessage, deps: SendEmailDeps = {})
     const name = err instanceof Error ? err.name : "error";
     console.error("[email] send threw:", name, tag || "-", maskEmail(message?.to));
     return "failed";
+  }
+}
+
+// ── SMTP: the operator's own mailbox ────────────────────────────────────────
+
+/** nodemailer, loaded on the first SMTP send only (ESM or CJS shape alike). */
+const nodemailerFactory: SmtpTransportFactory = async (options) => {
+  type Mod = { createTransport?: (o: SmtpTransportOptions) => SmtpTransportLike };
+  const mod = (await import("nodemailer")) as unknown as Mod & { default?: Mod };
+  const lib = typeof mod.createTransport === "function" ? mod : mod.default;
+  if (!lib || typeof lib.createTransport !== "function") throw new Error("nodemailer unavailable");
+  return lib.createTransport(options);
+};
+
+/** The transport options for these settings (timeouts, TLS rule). */
+export function smtpTransportOptions(s: SmtpSettings): SmtpTransportOptions {
+  return {
+    host: s.host,
+    port: s.port,
+    secure: s.secure,
+    requireTLS: !s.secure,
+    auth: { user: s.user, pass: s.pass },
+    connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
+    socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
+    disableFileAccess: true,
+    disableUrlAccess: true,
+  };
+}
+
+/** One transport per process, per factory and per settings (a settings change makes a new one). */
+const transportCache = new WeakMap<SmtpTransportFactory, Map<string, Promise<SmtpTransportLike>>>();
+
+function transportFor(factory: SmtpTransportFactory, s: SmtpSettings): Promise<SmtpTransportLike> {
+  let byKey = transportCache.get(factory);
+  if (!byKey) {
+    byKey = new Map();
+    transportCache.set(factory, byKey);
+  }
+  const key = JSON.stringify([s.host, s.port, s.secure, s.user, s.pass]);
+  const cached = byKey.get(key);
+  if (cached) return cached;
+  if (byKey.size >= 4) byKey.clear();
+  const made = Promise.resolve().then(() => factory(smtpTransportOptions(s)));
+  byKey.set(key, made);
+  // A factory that failed is not kept: the next send tries again.
+  made.catch(() => {
+    if (byKey.get(key) === made) byKey.delete(key);
+  });
+  return made;
+}
+
+/** The From of an SMTP mail: { name, address }, the name stripped of characters that would break it. */
+export function smtpFrom(s: Pick<SmtpSettings, "fromAddress" | "fromName">): { name: string; address: string } | string {
+  const address = oneLine(s.fromAddress);
+  const name = oneLine(s.fromName).replace(/[<>"\\]/g, "");
+  return name ? { name, address } : address;
+}
+
+/**
+ * A stable Message-ID for an idempotency key: «<sha256(key, recipient)@sender-domain>».
+ * The key itself (which may hold ids) never appears in the mail.
+ */
+export async function smtpMessageId(idempotencyKey: string, to: string, fromAddress: string): Promise<string> {
+  const data = new TextEncoder().encode(`${oneLine(idempotencyKey).slice(0, 256)}\n${to.trim().toLowerCase()}`);
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", data));
+  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+  const at = fromAddress.lastIndexOf("@");
+  const domain = (at >= 0 ? fromAddress.slice(at + 1) : "").toLowerCase().replace(/[^a-z0-9.-]/g, "") || "localhost";
+  return `<${hex}@${domain}>`;
+}
+
+/** True when the server's answer lists the recipient as accepted and not as rejected. */
+function acceptedBy(info: unknown, to: string): boolean {
+  if (!info || typeof info !== "object") return false;
+  const { accepted, rejected } = info as { accepted?: unknown; rejected?: unknown };
+  const addr = (x: unknown): string =>
+    typeof x === "string"
+      ? x
+      : x && typeof x === "object" && typeof (x as { address?: unknown }).address === "string"
+        ? (x as { address: string }).address
+        : "";
+  const want = to.toLowerCase();
+  if (Array.isArray(rejected) && rejected.some((r) => addr(r).trim().toLowerCase() === want)) return false;
+  return Array.isArray(accepted) && accepted.some((a) => addr(a).trim().toLowerCase() === want);
+}
+
+/** The loggable parts of an SMTP error: its code and reply code — never its message or the server's reply text. */
+function smtpErrorParts(err: unknown): [string, string, string] {
+  const e = (err && typeof err === "object" ? err : {}) as { name?: unknown; code?: unknown; responseCode?: unknown };
+  const name = err instanceof Error && /^[A-Za-z]{1,40}$/.test(err.name) ? err.name : "error";
+  const code = typeof e.code === "string" && /^[A-Z][A-Z0-9_]{0,39}$/.test(e.code) ? e.code : "-";
+  const reply = typeof e.responseCode === "number" && e.responseCode >= 100 && e.responseCode <= 599 ? String(e.responseCode) : "-";
+  return [name, code, reply];
+}
+
+interface SmtpOutgoing {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  tag: string;
+  idempotencyKey?: string;
+}
+
+async function sendViaSmtp(m: SmtpOutgoing, env: EmailEnv, deps: SendEmailDeps): Promise<EmailSendResult> {
+  const settings = smtpSettings(env);
+  if (!settings) return "unavailable";
+  const mail: SmtpMail = { from: smtpFrom(settings), to: m.to, subject: m.subject, text: m.text };
+  if (m.html) mail.html = m.html;
+  if (m.tag) mail.headers = { "X-Nzamy-Category": m.tag };
+  if (m.idempotencyKey) mail.messageId = await smtpMessageId(m.idempotencyKey, m.to, settings.fromAddress);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), deps.smtpTimeoutMs ?? SMTP_SEND_TIMEOUT_MS);
+  });
+  const work = (async () => {
+    const transport = await transportFor(deps.createSmtpTransport ?? nodemailerFactory, settings);
+    return { info: await transport.sendMail(mail) };
+  })();
+  // A send that fails after the cut-off is already answered: not an unhandled rejection.
+  work.catch(() => undefined);
+  try {
+    const outcome = await Promise.race([work, timeout]);
+    if (outcome === "timeout") {
+      console.error("[email] smtp send timed out", m.tag || "-", maskEmail(m.to));
+      return "failed";
+    }
+    if (acceptedBy(outcome.info, m.to)) return "sent";
+    console.error("[email] smtp: recipient not accepted", m.tag || "-", maskEmail(m.to));
+    return "failed";
+  } catch (err) {
+    const [name, code, reply] = smtpErrorParts(err);
+    console.error("[email] smtp send failed:", name, code, reply, m.tag || "-", maskEmail(m.to));
+    return "failed";
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

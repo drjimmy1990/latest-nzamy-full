@@ -11,7 +11,7 @@
  *
  * Batch l11 (O19): after a batch is stored (it evaluates the review rules),
  * the staff e-mail for any new flag is asked for (readAlertsServer.ts — at
- * most once a minute, nothing without a Resend key and an address). Loaded
+ * most once a minute, nothing without mail set up and an address). Loaded
  * lazily, so the proxy bundle does not carry the e-mail code until then.
  */
 import { ActivityMeter, type LibraryActivityKind } from "./activityMeter";
