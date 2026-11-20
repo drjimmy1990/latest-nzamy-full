@@ -52,7 +52,6 @@ export const SECTOR_UNFINISHED: Record<UnfinishedSector, SectorUnfinishedCopy> =
     modules: [
       { name: "محفظة نقاط المكتب", state: "غير مكتملة — لا رصيد ولا خصم فعلي.", hrefs: ["/dashboard/firm/wallet"] },
       { name: "لوحة الإيرادات", state: "غير مكتملة — لا تجمع إيرادات المكتب كله؛ بيانات الأتعاب تُصدَر من صفحة «الأتعاب».", hrefs: ["/dashboard/firm/finance"] },
-      { name: "الأدوار والصلاحيات التفصيلية", state: "للعرض فقط — لا تقيّد الوصول على الخادم بعد.", hrefs: ["/dashboard/firm/team/roles"] },
       { name: "الحوكمة والأسوار الصينية والتحقق من العملاء (KYC)", state: "غير مكتملة — لا سجل تدقيق ولا حجب فعلي.", hrefs: ["/dashboard/firm/governance", "/dashboard/firm/compliance/walls", "/dashboard/firm/compliance/kyc"] },
       { name: "الأقسام والفروع", state: "قريباً — لا تُعرض بيانات حتى تُربط ببياناتك الفعلية.", hrefs: ["/dashboard/firm/departments", "/dashboard/firm/branches"] },
       { name: "التحليلات والتقارير", state: "قريباً — لا تُعرض بيانات حتى تُربط ببياناتك الفعلية.", hrefs: ["/dashboard/firm/analytics"] },
