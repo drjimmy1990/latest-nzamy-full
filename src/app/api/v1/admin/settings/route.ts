@@ -12,6 +12,7 @@ import {
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
 import { founderDiscountExpiresIssue, isFounderDiscountBps } from "@/lib/payments/founderDiscount";
 import { firmExtraSeatPriceIssue } from "@/lib/pricing/firmSeats";
+import { founderRenewalIssue } from "@/lib/membership/founderRenewal";
 import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopupIssue } from "@/lib/points/pointsSettings";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import {
@@ -71,6 +72,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // l8 payref (٥٣): {"sar": an extra firm seat's price before VAT | null} —
   // stored only; not sold online, never shown publicly.
   "firm_extra_seat_price_sar",
+  // Batch l11 pay (register 55, founder terms clause ٤; 20261201_20):
+  // {"enabled": bool, "price_sar": SAR before VAT | null} — the founder
+  // renewal; OFF and no price by default; the 60-day notice needs both.
+  "founder_renewal",
   // Batch l8-libguard (owner message 18 Nov, item 2; 20261128_30;
   // src/lib/library/publicGuard.ts): the public library's protection numbers
   // (per-session / per-address budgets, Turnstile threshold, consecutive
@@ -165,6 +170,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l8 payref: pure, covered by founderDiscount.test.ts / firmSeats.test.ts.
   founder_topup_discount_expires: founderDiscountExpiresIssue,
   firm_extra_seat_price_sar: firmExtraSeatPriceIssue,
+  // Batch l11 pay: pure, covered by src/lib/membership/founderRenewal.test.ts.
+  founder_renewal: founderRenewalIssue,
   // Batch l8-libguard: pure, covered by src/lib/library/publicGuard.test.ts.
   library_public_protection: libraryPublicProtectionIssue,
   public_full_rulings_per_collection: publicRulingsIssue,
