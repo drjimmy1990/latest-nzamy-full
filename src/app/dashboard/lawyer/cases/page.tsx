@@ -17,6 +17,7 @@ import { useRiyadhToday } from "@/hooks/useRiyadhToday";
 import { relativeDayAr } from "@/lib/riyadhDay";
 import { getWorkflowRequestsByReceiver, updateWorkflowRequestById } from "@/lib/services/workflowService";
 import { apiGet, isSupabaseMode } from "@/lib/services/api";
+import { caseMatchesSearch, normalizeCaseSearch } from "@/lib/services/caseSearchFilter";
 import { getDeadlines, type Deadline } from "@/lib/services/deadlinesService";
 import { getLawyerClient } from "@/lib/services/lawyerClientsService";
 import type { ListRead } from "@/lib/services/listRead";
@@ -123,7 +124,9 @@ const LIST_LIMIT = 200;
  * unfiltered server count, so comparing it against the rows we received is an
  * honest test of whether the page was cut short.
  */
-async function fetchLawyerRows(offset = 0): Promise<{ rows: WorkflowRequest[]; degraded: boolean; total: number }> {
+// T10-F5 (batch l11): `q` is the search box, run on the server (caseSearchFilter.ts),
+// so a case past the loaded pages is found too.
+async function fetchLawyerRows(offset = 0, q = ""): Promise<{ rows: WorkflowRequest[]; degraded: boolean; total: number }> {
   if (!isSupabaseMode) {
     const rows = offset === 0 ? await getWorkflowRequestsByReceiver("lawyer") : [];
     return { rows, degraded: false, total: rows.length };
@@ -132,7 +135,7 @@ async function fetchLawyerRows(offset = 0): Promise<{ rows: WorkflowRequest[]; d
   // LIST_LIMIT rows from `offset`; `total` is the server's own count.
   const response = await apiGet<{ data?: WorkflowRequest[]; total?: number; degraded?: boolean }>(
     "/api/v1/service-requests",
-    { receiver: "lawyer", limit: LIST_LIMIT, offset },
+    { receiver: "lawyer", limit: LIST_LIMIT, offset, ...(q ? { q } : {}) },
   );
   const rows = response.data ?? [];
   return {
@@ -163,6 +166,14 @@ export default function CasesPage() {
   // diary or the wargaming tool from his case list.
   const isConsultant = user.practiceKind === "consultant";
   const [search,        setSearch]        = useState("");
+  // T10-F5: the term the server list was read with (debounced from `search`).
+  const [serverQuery,   setServerQuery]   = useState("");
+  useEffect(() => {
+    if (!isSupabaseMode) return;
+    const next = normalizeCaseSearch(search);
+    const t = setTimeout(() => setServerQuery(next), 400);
+    return () => clearTimeout(t);
+  }, [search]);
   const [statusFilter,  setStatusFilter]  = useState<CaseStatus | "all">("all");
   const [typeFilter,    setTypeFilter]    = useState<CaseType | "all">("all");
   const [teamFilter,    setTeamFilter]    = useState<string>("all");
@@ -326,7 +337,7 @@ export default function CasesPage() {
     let cancelled = false;
     const syncCases = async () => {
       try {
-        const { rows, degraded, total } = await fetchLawyerRows();
+        const { rows, degraded, total } = await fetchLawyerRows(0, serverQuery);
         if (cancelled) return;
         if (degraded) {
           // The route answers a failed Supabase query with HTTP 200 and
@@ -365,7 +376,7 @@ export default function CasesPage() {
       cancelled = true;
       window.removeEventListener("nzamy-workflow-updated", handler);
     };
-  }, [reloadKey]);
+  }, [reloadKey, serverQuery]);
 
   // «تحميل المزيد» (l9 row 70): the next server page, appended; a case already
   // on screen is never listed twice.
@@ -374,7 +385,7 @@ export default function CasesPage() {
     setLoadingMore(true);
     setMoreError(false);
     try {
-      const { rows, degraded, total } = await fetchLawyerRows(rawLoaded);
+      const { rows, degraded, total } = await fetchLawyerRows(rawLoaded, serverQuery);
       if (degraded) { setMoreError(true); return; }
       const page = casePage(rows);
       setCases((cur) => {
@@ -390,7 +401,7 @@ export default function CasesPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, truncated, rawLoaded]);
+  }, [loadingMore, truncated, rawLoaded, serverQuery]);
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -470,7 +481,9 @@ export default function CasesPage() {
       // Only with stage data behind it — see `latestDegreeByCase`.
       if (stageFilter !== "all" && latestDegreeByCase
         && stageBucketFor(c.status, latestDegreeByCase[c.id]) !== stageFilter) return false;
-      if (search && !c.title.includes(search) && !c.client.includes(search) && !c.court.includes(search)) return false;
+      // T10-F5: the server already narrowed the list by `serverQuery`; this keeps the
+      // loaded rows in step while the next read is on its way (same match, any case).
+      if (search && !caseMatchesSearch(c, search)) return false;
       return true;
     }).sort((a, b) => {
       // القضايا ذات المهل المفتوحة أولاً، الأقرب استحقاقاً قبل غيرها (CODE-F25)
@@ -627,7 +640,7 @@ export default function CasesPage() {
                   action={{ label: "عرض كل القضايا", onClick: clearClientFilter }}
                 />
               )
-            : cases.length === 0
+            : cases.length === 0 && !serverQuery
               ? (
                 <EmptyState
                   icon={<Gavel />}

@@ -11,6 +11,7 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
+import { caseSearchOrFilter } from "@/lib/services/caseSearchFilter";
 import { checkOrderIntake, intakeErrorMessageAr, persistedRequestMetadata } from "@/lib/services/intakeGuard";
 import { isPleadingDraftIntake } from "@/lib/services/orderIntake";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
@@ -163,6 +164,7 @@ function toWorkflowRequest(row: Record<string, unknown>): Record<string, unknown
  *   - status (filter by status)
  *   - limit (default: 20)
  *   - offset (default: 0)
+ *   - q (T10-F5, batch l11: search title / client name / court on the server, caseSearchFilter.ts)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -226,6 +228,13 @@ export async function GET(request: NextRequest) {
 
     if (lawyerClientId) {
       query = query.eq("lawyer_client_id", lawyerClientId);
+    }
+
+    // T10-F5 (batch l11): the case lists' search box. A second `or=` is ANDed
+    // with the ownership one above, so it only ever narrows what he may see.
+    const searchFilter = caseSearchOrFilter(searchParams.get("q"));
+    if (searchFilter) {
+      query = query.or(searchFilter);
     }
 
     const { data, count, error } = await query;
