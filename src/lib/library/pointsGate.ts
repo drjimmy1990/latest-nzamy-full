@@ -43,8 +43,24 @@ export const EXEMPT_LIBRARY_PLAN_REFS: readonly string[] = Object.freeze(["lib-t
 /** The founder's library credits are counted at the assistant's price (founderPlan.ts). */
 export const LIBRARY_CREDIT_POINTS = 5;
 
-/** Where the locked subscriber tops up (the same target as the library assistant's «شحن النقاط»). */
+/**
+ * Where the locked subscriber tops up when online payment is off for him: the
+ * price page, whose buy buttons send a request to the team (owner ٢٤٦). The
+ * server sends this one; the banner swaps in LIBRARY_TOPUP_CHECKOUT_HREF once
+ * the viewer's gateway can take a checkout (libraryTopupHref).
+ */
 export const LIBRARY_TOPUP_HREF = "/pricing";
+/**
+ * O16 (c), batch l11-misc: the 50-point pack's own checkout (sold to every
+ * account type, register 14 item 7). `billing=once` is required —
+ * parseCheckoutQuery refuses an item without a billing.
+ */
+export const LIBRARY_TOPUP_CHECKOUT_HREF = "/checkout?item=topup-50&billing=once";
+
+/** The top-up link the lock banner shows: straight to checkout while payment is on, else the price page. */
+export function libraryTopupHref(gatewayAllowsCheckout: boolean): string {
+  return gatewayAllowsCheckout ? LIBRARY_TOPUP_CHECKOUT_HREF : LIBRARY_TOPUP_HREF;
+}
 export const LIBRARY_TOPUP_LABEL_AR = "اشحن نقاطك";
 export const LIBRARY_POINTS_LOCKED_CODE = "library_points_locked";
 
