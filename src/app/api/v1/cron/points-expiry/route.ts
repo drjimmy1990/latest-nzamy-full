@@ -3,6 +3,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { cronSecretMatches } from "@/lib/payments/fulfillDecision";
 import { recordNotification } from "@/lib/notify";
 import { EXPIRY_WARNING_DAYS, expiryNotice, lotsToWarn, type ExpiringLot } from "@/lib/points/pointsExpiryNotice";
+import { GATED_LIBRARY_PLAN_REFS } from "@/lib/library/pointsGate";
+import { readLibraryMinPoints } from "@/lib/library/pointsGateServer";
 
 /**
  * POST /api/v1/cron/points-expiry — owner 18 Nov 2026 (G9, G16; batch l7):
@@ -77,6 +79,25 @@ export async function POST(request: NextRequest) {
   }
 
   const due = lotsToWarn((rows ?? []) as ExpiringLot[], now);
+
+  // l11 O7 (register 49): the holders of a gated library plan (paid library
+  // plan or the founder) are told the expiry may lock the library — one read
+  // for the whole batch; a failed read only drops that sentence
+  const gated = new Set<string>();
+  let libraryMinPoints: number | null = null;
+  if (due.length > 0) {
+    const { data: grants, error: grantsErr } = await admin
+      .from("library_access_grants")
+      .select("user_id")
+      .in("user_id", [...new Set(due.map((l) => l.user_id))])
+      .in("plan_ref", [...GATED_LIBRARY_PLAN_REFS])
+      .lte("starts_at", now.toISOString())
+      .gt("ends_at", now.toISOString());
+    if (grantsErr) console.warn("[cron/points-expiry] library grants:", grantsErr.code);
+    for (const g of (grants ?? []) as Array<{ user_id?: unknown }>) if (typeof g.user_id === "string") gated.add(g.user_id);
+    if (gated.size > 0) libraryMinPoints = await readLibraryMinPoints();
+  }
+
   let sent = 0;
   let already = 0;
   let errors = 0;
@@ -100,7 +121,10 @@ export async function POST(request: NextRequest) {
       already += 1;
       continue;
     }
-    await recordNotification({ userId: lot.user_id, ...expiryNotice(lot) });
+    await recordNotification({
+      userId: lot.user_id,
+      ...expiryNotice(lot, { libraryMinPoints: gated.has(lot.user_id) ? libraryMinPoints : null }),
+    });
     sent += 1;
   }
 

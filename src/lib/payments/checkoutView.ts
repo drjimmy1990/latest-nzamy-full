@@ -23,6 +23,7 @@ import type { CheckoutResponse } from "./checkoutRules.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { FOUNDER_CREDITS, FOUNDER_LIBRARY_DAYS, FOUNDER_MEMBERSHIP_MONTHS } from "../membership/founderPlan.ts";
+import { libraryExpiryLockLineAr } from "../points/pointsExpiryNotice.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
 
@@ -174,7 +175,7 @@ function pointsAr(n: number): string {
  * The lines the screen shows under the item's name: what the catalog grants
  * and nothing more. Firm plans get no line — their seats are not sold here.
  */
-export function checkoutItemNotes(item: PayableItem): string[] {
+export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: number | null } = {}): string[] {
   if (item.kind === "topup") {
     const notes: string[] = [];
     // The label already names the points («شحن ٢٥٠ (٣٠٠ نقطة)»): no second line.
@@ -183,6 +184,10 @@ export function checkoutItemNotes(item: PayableItem): string[] {
     }
     if (typeof item.pointsValidityMonths === "number") {
       notes.push(`صالحة ${monthsAr(item.pointsValidityMonths)} من تاريخ الشراء`);
+      // l11 O7 (register 49, founder terms ١٢): only for a holder of a gated
+      // library plan — the page passes the minimum then (0 = gate off: no line)
+      const lock = libraryExpiryLockLineAr(ctx.libraryMinPoints, "this_topup");
+      if (lock) notes.push(lock);
     }
     return notes;
   }
@@ -199,6 +204,13 @@ export function checkoutItemNotes(item: PayableItem): string[] {
   }
   return [];
 }
+
+/**
+ * l11 O7: the in-tool top-up modal reads no account data before the pack is
+ * chosen, so it says the rule for library subscribers in general.
+ */
+export const TOPUP_LIBRARY_EXPIRY_GENERIC_AR =
+  "لمشتركي المكتبة: فتح المكتبة مشروط ببقاء رصيدك فوق الحد الأدنى من النقاط، فانتهاء صلاحية الشحنة قد يُقفل التصفح حتى تشحن من جديد.";
 
 /** «اشتراك شهري» / «اشتراك ربع سنوي» / «اشتراك نصف سنوي» / «اشتراك سنوي» / «دفعة واحدة» */
 export function billingLabelAr(billing: Billing): string {

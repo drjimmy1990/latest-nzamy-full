@@ -62,7 +62,9 @@ test("/checkout: a guest goes to /login?next=<this page>; the gateway and the au
 test("/checkout shows the listed price, the VAT sentence and the catalog notes", () => {
   assert.match(page, /formatHalalas\(listed\)/);
   assert.match(page, /listedVatNotice\(item\)/);
-  assert.match(page, /checkoutItemNotes\(item\)/);
+  // l11 O7: the library-lock line for a holder of a gated library plan
+  assert.match(page, /checkoutItemNotes\(item, \{ libraryMinPoints \}\)/);
+  assert.match(page, /GATED_LIBRARY_PLAN_REFS\.includes\(r\)\)\) libraryMinPoints = await readLibraryMinPoints\(\)/);
   assert.doesNotMatch(page, /مقعد|مقاعد/);
 });
 

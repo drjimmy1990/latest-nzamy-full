@@ -22,6 +22,9 @@ import {
   isActiveFounder,
 } from "@/lib/payments/founderDiscount";
 import { FOUNDER_TERMS_VERSION } from "@/lib/founder/founderTerms";
+import { activeLibraryGrantPlanRefs } from "@/lib/libraryAccessServer";
+import { GATED_LIBRARY_PLAN_REFS } from "@/lib/library/pointsGate";
+import { readLibraryMinPoints } from "@/lib/library/pointsGateServer";
 import {
   billingLabelAr,
   checkoutItemNotes,
@@ -147,7 +150,19 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const priced = quote(item.id, parsed.billing, undefined, new Date());
   let listed = priced.ok ? priced.netHalalas : item.prices[parsed.billing];
   let launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
-  const notes = checkoutItemNotes(item);
+  // l11 O7 (register 49, founder terms ١٢): a top-up bought by a holder of a
+  // gated library plan (paid library plan or the founder) says its expiry may
+  // lock the library. A failed read shows no extra line.
+  let libraryMinPoints: number | null = null;
+  if (item.kind === "topup") {
+    try {
+      const refs = await activeLibraryGrantPlanRefs(user.id);
+      if (refs?.some((r) => GATED_LIBRARY_PLAN_REFS.includes(r))) libraryMinPoints = await readLibraryMinPoints();
+    } catch {
+      console.warn("[checkout] reading the library grants threw");
+    }
+  }
+  const notes = checkoutItemNotes(item, { libraryMinPoints });
 
   // l6-pay: before paying, what the POST will take off — the same server
   // functions checkout prices with (upgradeProration / founderDiscount). A
