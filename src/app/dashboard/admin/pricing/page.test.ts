@@ -72,7 +72,22 @@ test("S6 M10: the platform readiness list no longer says pricing is local-only",
   const pricing = [...readiness.matchAll(/id: "pricing",[\s\S]*?note: "[^"]*",/g)].map((m) => m[0]);
   assert.equal(pricing.length, 2, "fixture: both pricing entries found");
   for (const entry of pricing) {
-    assert.match(entry, /\/api\/v1\/admin\/pricing-catalog/);
+    // S5-4 (l11-misc): the note is plain Arabic — it says the prices are saved
+    // on the server, without naming the route (pricing-catalog stays in the
+    // developer comment).
+    const note = /note: "([^"]*)",/.exec(entry)?.[1] ?? "";
+    assert.match(note, /تُحفظ على الخادم/);
     assert.doesNotMatch(entry, /محلياً|Pricing API|pricing API|AdminPricingItem/);
+    assert.doesNotMatch(note, /[A-Za-z]/, "no Latin words in an admin-facing note");
   }
+});
+
+test("S5-4: the readiness list shows plain Arabic only (titles and notes), and the page prints no code names", () => {
+  const readiness = readFileSync(new URL("../../../../constants/adminBackendReadiness.ts", import.meta.url), "utf8");
+  const shown = [...readiness.matchAll(/(?:title|note): "([^"]*)"/g)].map((m) => m[1]);
+  assert.ok(shown.length >= 26, `fixture: ${shown.length} titles + notes`);
+  for (const text of shown) assert.doesNotMatch(text, /[A-Za-z]/, `«${text}»`);
+  const page = readFileSync(new URL("../platform/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(page, /\{surface\.contract\}/);
+  assert.doesNotMatch(page, /owner-level|مراجعة sitemap/);
 });
