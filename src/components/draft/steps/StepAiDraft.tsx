@@ -449,7 +449,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
           </p>
           <LetterheadExportBar title={pleading.title} blocks={pleadingBlocks(pleading)} filename={spec.label} />
           <div className="flex flex-wrap items-center gap-2">
-            <AiResultActions text={written} filename={spec.label} collectorSource="other" />
+            <AiResultActions text={written} filename={spec.label} collectorSource="other" showExport={false} />
             <button type="button" onClick={downloadWord}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
               <FileDoc size={14} /> تنزيل Word

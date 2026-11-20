@@ -18,7 +18,13 @@
 import { degreeFromDb } from "../services/caseStageVocabulary.ts";
 import { requestTypeLabelAr } from "../services/requestTypeLabels.ts";
 
-export const CASE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * service_requests.id is TEXT: a UUID from the route, or a minted reference
+ * such as «REQ-MTJFH6ZF-B5OQ» (orderReference.ts). Letters, digits, «-» and
+ * «_» only, so the id is always a plain value in the query, never syntax.
+ */
+export const CASE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const CASE_FACTS_MAX = 3000;
 export const CASE_TITLE_MAX = 200;
 export const CASE_DOCS_MAX = 20;
@@ -34,13 +40,16 @@ export interface AssistantCaseContext {
   documents: string[];
 }
 
+/** service_requests.status (its CHECK constraint, plus the later «pending» / «in_progress»). */
 const STATUS_AR: Readonly<Record<string, string>> = {
+  draft: "مسودة",
+  pending_payment: "بانتظار الدفع",
+  pending_assignment: "بانتظار الإسناد",
   pending: "قيد الانتظار",
+  assigned: "مسندة",
   in_progress: "قيد العمل",
-  active: "جارية",
-  review: "قيد المراجعة",
+  in_review: "قيد المراجعة",
   completed: "منتهية",
-  closed: "مغلقة",
   cancelled: "ملغاة",
 };
 
@@ -84,7 +93,7 @@ export function buildAssistantCase(
 
 /** The `.or(...)` that keeps a read to the caller's own cases (on top of RLS). */
 export function ownCaseFilter(userId: string): string {
-  if (!CASE_ID.test(userId)) throw new Error("bad user id");
+  if (!USER_ID.test(userId)) throw new Error("bad user id");
   return `assigned_to.eq.${userId},requester_user_id.eq.${userId}`;
 }
 

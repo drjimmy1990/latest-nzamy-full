@@ -11,7 +11,7 @@
  * files): it mounts this component and passes `scope` to askLibrary — see the
  * l11-ai report for the exact lines.
  */
-import { LIBRARY_SCOPES, type LibraryScope } from "@/lib/ai/tools";
+import { LIBRARY_SCOPES, LIBRARY_SCOPES_LIVE, type LibraryScope } from "@/lib/ai/tools";
 
 export type LibraryScopeChoice = LibraryScope | "all";
 
@@ -45,13 +45,16 @@ export default function LibraryScopeChips({
     <div role="radiogroup" aria-label="ابحث في" className="flex flex-wrap items-center gap-1.5" dir="rtl">
       {CHOICES.map((c) => {
         const on = c === value;
+        // «أوامر» / «فقه»: not served by the AI search yet (tools.ts LIBRARY_SCOPES_LIVE).
+        const soon = c !== "all" && !LIBRARY_SCOPES_LIVE.includes(c);
         return (
           <button
             key={c}
             type="button"
             role="radio"
             aria-checked={on}
-            disabled={disabled}
+            disabled={disabled || soon}
+            title={soon ? "قريباً" : undefined}
             onClick={() => onChange(c)}
             className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold transition-colors disabled:opacity-50 ${
               on
@@ -59,7 +62,7 @@ export default function LibraryScopeChips({
                 : isDark ? "border-white/[0.08] text-zinc-400 hover:text-zinc-200" : "border-zinc-200 text-zinc-500 hover:text-zinc-700"
             }`}
           >
-            {LIBRARY_SCOPE_LABELS_AR[c]}
+            {LIBRARY_SCOPE_LABELS_AR[c]}{soon ? " (قريباً)" : ""}
           </button>
         );
       })}

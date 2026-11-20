@@ -6,7 +6,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { strFromU8 } from "fflate";
 import { plainResultDocx, resultBlocks, safeFilename } from "./plainDocx.ts";
 import { assertPackageOpens } from "./packageCheck.testkit.ts";
@@ -58,4 +58,27 @@ test("AiResultActions offers Word and print/PDF, fflate loaded on the click", ()
   assert.match(print, /exportableBlocks\(resultBlocks\(text, title\)\)/);
   assert.match(print, /window\.print\(\)/);
   assert.doesNotMatch(print, /منصة نظامي/, "no platform stamp on the paper (owner ٤٤٢(أ))");
+});
+
+test("no second Word / print pair where the letterhead bar already offers one", () => {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const p = `${dir}/${name}`;
+      if (statSync(p).isDirectory()) walk(p);
+      else if (p.endsWith(".tsx")) files.push(p);
+    }
+  };
+  walk("src");
+  const both = files.filter((p) => {
+    const s = read(p);
+    return /<AiResultActions\b/.test(s) && /<LetterheadExportBar\b/.test(s);
+  });
+  assert.ok(both.length >= 4, "the overlap is still found");
+  for (const p of both) {
+    const s = read(p);
+    const tags = s.match(/<AiResultActions\b[^>]*?\/>/g) ?? [];
+    assert.equal(tags.length, (s.match(/<AiResultActions\b/g) ?? []).length, `every mount read: ${p}`);
+    for (const tag of tags) assert.match(tag, /letterheadBeside|showExport=\{false\}/, p);
+  }
 });

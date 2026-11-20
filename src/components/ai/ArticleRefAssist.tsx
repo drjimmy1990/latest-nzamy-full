@@ -189,7 +189,7 @@ export default function ArticleRefAssist({ isDark, targetRef, value, onChange, d
         </ul>
       )}
       {note && <p role="status" className={`mt-1 ${isDark ? "text-amber-400" : "text-amber-700"}`}>{note}</p>}
-      <p className={`mt-1 text-[10.5px] ${muted}`}>↓ ↑ للتنقل · Enter للإدراج · Esc للإغلاق</p>
+      <p className={`mt-1 text-[10.5px] ${muted}`}>الأسهم للتنقل · زر الإدخال للإدراج · زر الخروج للإغلاق</p>
     </div>
   );
 }

@@ -372,13 +372,18 @@ const LAW_SLUG = /^[\p{L}\p{N}_.\-]{1,200}$/u;
 /**
  * T14-Q485 (batch l11): the library assistant's type chips — الكل / أنظمة /
  * مبادئ / أوامر / فقه. «الكل» sends no scope (today's search, unchanged).
- * The others search only that kind: articles, principles, decrees and
- * circulars, or fiqh. Decrees and fiqh come from the legal graph only
- * (retrieval.ts, NZAMY_GRAPH_RAG); with the graph off such a question finds
- * nothing and is refunded like any question with no matching text.
+ * The others search only that kind: articles or principles.
+ *
+ * «أوامر» and «فقه» are «قريباً»: decrees and fiqh reach the AI through the
+ * legal graph only (retrieval.ts, NZAMY_GRAPH_RAG), and the graph path counts
+ * a hit only for an article or a principle (graphHitCount), so a search
+ * narrowed to them would always come back empty and be refunded. Their limits
+ * are written below for the day the retrieval serves them; until then the
+ * input refuses them (LIBRARY_SCOPES_LIVE) and the chips show «قريباً».
  */
 export const LIBRARY_SCOPES = ["laws", "principles", "orders", "fiqh"] as const;
 export type LibraryScope = (typeof LIBRARY_SCOPES)[number];
+export const LIBRARY_SCOPES_LIVE: readonly LibraryScope[] = ["laws", "principles"];
 const LIBRARY_SCOPE_LIMITS: Readonly<Record<LibraryScope, RetrievalLimits>> = {
   laws: { laws: 8, principles: 0 },
   principles: { laws: 0, principles: 6 },
@@ -401,6 +406,7 @@ function libraryAssistantInput(raw: unknown): InputCheck {
   let scope: LibraryScope | null = null;
   if (raw.scope !== undefined && raw.scope !== null && raw.scope !== "" && raw.scope !== "all") {
     if (typeof raw.scope !== "string" || !(LIBRARY_SCOPES as readonly string[]).includes(raw.scope)) return { ok: false, error: "نوع البحث غير صالح" };
+    if (!(LIBRARY_SCOPES_LIVE as readonly string[]).includes(raw.scope)) return { ok: false, error: "البحث في هذا النوع قريباً — اختر «الكل» أو «أنظمة» أو «مبادئ»" };
     scope = raw.scope as LibraryScope;
   }
   const scoped = (input: Record<string, unknown>): InputCheck => ({ ok: true, input: scope ? { ...input, scope } : input });
@@ -482,7 +488,7 @@ function assistantInput(raw: unknown): InputCheck {
     if (context !== "case" || typeof raw.case_id !== "string" || !ASSISTANT_CASE_ID.test(raw.case_id)) {
       return { ok: false, error: "القضية المختارة غير صالحة" };
     }
-    case_id = raw.case_id.toLowerCase();
+    case_id = raw.case_id;
   }
   const input: Record<string, unknown> = { context, message };
   if (mode === "grill") input.mode = mode;
@@ -490,8 +496,8 @@ function assistantInput(raw: unknown): InputCheck {
   return { ok: true, input };
 }
 
-/** A case id (service_requests.id): the same shape assistantCase.ts checks again. */
-const ASSISTANT_CASE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** A case id (service_requests.id, text: a UUID or «REQ-…»): the same shape assistantCase.ts checks again. */
+const ASSISTANT_CASE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 function assistantOutput(raw: unknown): Record<string, unknown> | null {
   if (!isPlainObject(raw)) return null;

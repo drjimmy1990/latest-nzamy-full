@@ -61,6 +61,12 @@ interface AiResultActionsProps {
   title?: string;
   /** Show «Word» and «طباعة / PDF» (default: true). */
   showExport?: boolean;
+  /**
+   * The page also mounts LetterheadExportBar (Word + print on the letterhead,
+   * lawyer and firm accounts only): those accounts then get the letterhead's
+   * buttons alone, never a second Word and print pair. Everyone else keeps these.
+   */
+  letterheadBeside?: boolean;
 }
 
 export default function AiResultActions({
@@ -78,6 +84,7 @@ export default function AiResultActions({
   runId = null,
   title,
   showExport = true,
+  letterheadBeside = false,
 }: AiResultActionsProps) {
   // showVault is intentionally unused — absorbed by showCollector
   void showVault;
@@ -216,8 +223,8 @@ export default function AiResultActions({
         <DownloadSimple size={14} /> تنزيل .txt
       </motion.button>
 
-      {/* Word + print / PDF (N01-21/22/23) */}
-      {showExport && (
+      {/* Word + print / PDF (N01-21/22/23); the letterhead bar's own pair stands in for lawyers and firms */}
+      {showExport && !(letterheadBeside && (user?.userType === "lawyer" || user?.userType === "firm")) && (
         <>
           <motion.button
             whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}

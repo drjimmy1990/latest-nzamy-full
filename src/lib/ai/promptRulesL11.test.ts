@@ -16,7 +16,7 @@ import { AI_WORKFLOWS } from "../../../n8n/ai/workflows.mjs";
 import { fakeDb, type FakeQuery } from "../payments/fakeDb.test-helper.ts";
 import { startRunWith, type RunActor, type StartRunDeps } from "./runCore.ts";
 import type { RetrievalLimits, Retrieved } from "./retrieval.ts";
-import { AI_TOOLS, LIB_QUERIES_PATH, LIBRARY_SCOPES, libraryScopeLimits } from "./tools.ts";
+import { AI_TOOLS, LIB_QUERIES_PATH, LIBRARY_SCOPES, LIBRARY_SCOPES_LIVE, libraryScopeLimits } from "./tools.ts";
 
 type Item = { json: Record<string, any> };
 function runCode(code: string, body: Record<string, unknown>): Item[] {
@@ -62,13 +62,18 @@ test("L6 is written once in the source and recorded in the principles doc", () =
   assert.match(doc, /الخاص يقدَّم على العام/);
 });
 
-test("T14-Q485 input: «الكل» sends no scope; the four chips pass; anything else is refused", () => {
+test("T14-Q485 input: «الكل» sends no scope; أنظمة / مبادئ pass; أوامر / فقه are «قريباً»; anything else is refused", () => {
   const v = AI_TOOLS["library-assistant"].validateInput;
   assert.deepEqual(v({ message: "سؤال" }), { ok: true, input: { message: "سؤال", article_id: null, law_slug: null } });
   assert.deepEqual(v({ message: "سؤال", scope: "all" }), { ok: true, input: { message: "سؤال", article_id: null, law_slug: null } });
+  assert.deepEqual([...LIBRARY_SCOPES_LIVE], ["laws", "principles"]);
   for (const scope of LIBRARY_SCOPES) {
-    assert.deepEqual(v({ message: "سؤال", scope }), { ok: true, input: { message: "سؤال", article_id: null, law_slug: null, scope } });
+    const r = v({ message: "سؤال", scope });
+    if (LIBRARY_SCOPES_LIVE.includes(scope)) assert.deepEqual(r, { ok: true, input: { message: "سؤال", article_id: null, law_slug: null, scope } });
+    else assert.match(r.ok ? "" : r.error, /قريباً/, scope);
   }
+  const chips = readFileSync("src/components/ai/LibraryScopeChips.tsx", "utf8");
+  assert.match(chips, /disabled=\{disabled \|\| soon\}/);
   assert.equal(v({ message: "سؤال", scope: "decrees; drop" }).ok, false);
   assert.equal(v({ message: "سؤال", scope: 3 }).ok, false);
   assert.deepEqual(v({ message: "اشرح", article_id: "labor__art-80", scope: "principles" }), {
@@ -118,7 +123,6 @@ async function runWith(input: Record<string, unknown>): Promise<RetrievalLimits[
 test("T14-Q485 run: the chip's limits reach retrieval; no chip → 6 articles and 3 principles as before", async () => {
   assert.deepEqual(await runWith({ message: "ما مدة الإشعار؟" }), [{ laws: 6, principles: 3 }]);
   assert.deepEqual(await runWith({ message: "ما مدة الإشعار؟", scope: "principles" }), [{ laws: 0, principles: 6 }]);
-  assert.deepEqual(await runWith({ message: "ما مدة الإشعار؟", scope: "orders" }), [{ laws: 0, principles: 0, decrees: 6 }]);
 });
 
 test("T14-Q485 prompt: the model is told the search was narrowed, and only then", () => {

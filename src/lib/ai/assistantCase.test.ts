@@ -23,9 +23,12 @@ const LAWYER: RunActor = { userId: USER, userType: "lawyer", practiceKind: "advo
 
 // ── input ────────────────────────────────────────────────────────────────────
 
-test("assistant input: a case id only with «قضية محددة», a UUID, lower-cased; none → today's input", () => {
+test("assistant input: a case id only with «قضية محددة», a UUID or a «REQ-…» reference, kept as is; none → today's input", () => {
   const v = AI_TOOLS.assistant.validateInput;
-  assert.deepEqual(v({ context: "case", message: "سؤال", case_id: CASE.toUpperCase() }), { ok: true, input: { context: "case", message: "سؤال", case_id: CASE } });
+  assert.deepEqual(v({ context: "case", message: "سؤال", case_id: CASE }), { ok: true, input: { context: "case", message: "سؤال", case_id: CASE } });
+  assert.deepEqual(v({ context: "case", message: "سؤال", case_id: "REQ-MTJFH6ZF-B5OQ" }), { ok: true, input: { context: "case", message: "سؤال", case_id: "REQ-MTJFH6ZF-B5OQ" } });
+  assert.equal(v({ context: "case", message: "سؤال", case_id: "a,b" }).ok, false);
+  assert.equal(v({ context: "case", message: "سؤال", case_id: "x".repeat(65) }).ok, false);
   assert.deepEqual(v({ context: "case", message: "سؤال" }), { ok: true, input: { context: "case", message: "سؤال" } });
   assert.deepEqual(v({ context: "case", message: "سؤال", case_id: "" }), { ok: true, input: { context: "case", message: "سؤال" } });
   assert.equal(v({ context: "general", message: "سؤال", case_id: CASE }).ok, false);
@@ -97,7 +100,8 @@ test("loadAssistantCase: own rows only, on the caller's client; not his → null
   assert.deepEqual(mine?.documents, ["مذكرة.pdf"]);
   assert.ok(seen.includes(`service_requests.or(${ownCaseFilter(USER)})`), "the own-rows filter is always applied");
   assert.equal(await loadAssistantCase(reader({ own: false }), USER, CASE), null);
-  assert.equal(await loadAssistantCase(reader({ own: true }), USER, "not-a-uuid"), null);
+  assert.equal(await loadAssistantCase(reader({ own: true }), USER, "bad id,or"), null);
+  assert.equal((await loadAssistantCase(reader({ own: true }), USER, "REQ-MTJFH6ZF-B5OQ"))?.title, "قضية");
   await assert.rejects(loadAssistantCase(reader({ own: true, caseError: true }), USER, CASE));
   // Stages and documents are extras: their failure leaves them out, never the case.
   const partial = await loadAssistantCase(reader({ own: true, extrasFail: true }), USER, CASE);
