@@ -14,7 +14,7 @@ import {
   docNameCandidates,
   mergeSectionRefs,
   pickFoldedTitle,
-  titleLikePattern,
+  titleLikeOrFilter,
   parseNumbers,
   refIds,
   shapeArticleRefs,
@@ -185,12 +185,13 @@ export async function GET(
       law = ((data ?? []) as LawRow[])
         .sort((a, b) => b.title.length - a.title.length)[0] ?? null;
       // N02-13 (batch l11): the text spells the name with other hamza / ة / ى
-      // forms than the library title. One LIKE read on the shortest candidate
-      // (each such letter a one-character wildcard), narrowed by folded equality.
+      // forms than the library title. One read with a LIKE pattern per
+      // candidate (exact length; the letters that vary are one-character
+      // wildcards), narrowed by folded equality, the longest title winning.
       if (!law) {
-        const pattern = titleLikePattern(candidates[candidates.length - 1]);
-        if (pattern) {
-          const folded = await supabase.schema('library').from('laws').select(LAW_COLUMNS).like('title', pattern).limit(200);
+        const filter = titleLikeOrFilter(candidates);
+        if (filter) {
+          const folded = await supabase.schema('library').from('laws').select(LAW_COLUMNS).or(filter).limit(50);
           if (folded.error) throw folded.error;
           law = pickFoldedTitle((folded.data ?? []) as LawRow[], candidates);
         }

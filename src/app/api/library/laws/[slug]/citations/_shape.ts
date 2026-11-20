@@ -134,21 +134,33 @@ export function foldTitle(s: string): string {
 }
 
 /**
- * One SQL LIKE pattern that every spelling of `name` matches: each letter the
- * fold merges becomes `_` (any one character), then «%» — so the shortest
- * candidate (two words) reaches every title that starts like it. The answer is
- * then narrowed in code by foldTitle equality (pickFoldedTitle). Characters
- * LIKE treats specially (% _ \ *) never reach the pattern; null when nothing
- * is left to match.
+ * One SQL LIKE pattern per candidate that every spelling of it matches, with
+ * no «%»: a title of exactly that shape. The hamza seats and the alef forms
+ * vary anywhere in a word («الاجراءات» / «الإجراءات», «المسئولية» /
+ * «المسؤولية») and become `_`; «ة/ه» and «ى/ي» vary only at a word's end and
+ * become `_` there only, so «الهيئة» stays selective. Characters LIKE treats
+ * specially (% _ \ *) never reach the pattern; null when fewer than two words.
+ * The rows are narrowed in code by foldTitle equality (pickFoldedTitle).
  */
 export function titleLikePattern(name: string): string | null {
   const clean = String(name ?? "")
-    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
     .replace(/[^\p{L}\p{N}\s]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (clean.split(" ").length < 2) return null;
-  return `${clean.replace(/[اأإآٱؤئءةهىي]/g, "_")}%`;
+  const words = clean.split(" ").filter(Boolean);
+  if (words.length < 2) return null;
+  return words.map((w) => w.replace(/[اأإآٱؤئء]/g, "_").replace(/[ةهىي]$/, "_")).join(" ");
+}
+
+/**
+ * The PostgREST `or` filter over every candidate's pattern, values quoted
+ * (they hold spaces); null when no candidate gives one. A pattern holds only
+ * letters, digits, spaces and `_`, so no quote or comma reaches the filter.
+ */
+export function titleLikeOrFilter(candidates: readonly string[]): string | null {
+  const patterns = Array.from(new Set(candidates.map(titleLikePattern).filter((p): p is string => !!p)));
+  return patterns.length > 0 ? patterns.map((p) => `title.like."${p}"`).join(",") : null;
 }
 
 /** Of the rows read with titleLikePattern, the longest title equal (folded) to a candidate; null when none. */

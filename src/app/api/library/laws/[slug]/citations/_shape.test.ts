@@ -270,15 +270,24 @@ test("route contract: libraryGate first, service role for graph and articles, no
 // ── N02-13 (batch l11): hamza / ة / ى spellings of a law's name; decrees by number and date ──
 
 test("N02-13: a law named with other hamza, ة/ه or ى/ي forms finds its library title", async () => {
-  const { foldTitle, pickFoldedTitle, titleLikePattern } = await import("./_shape.ts");
+  const { foldTitle, pickFoldedTitle, titleLikeOrFilter, titleLikePattern } = await import("./_shape.ts");
   assert.equal(foldTitle("نظام الإجراءات الجزائية"), foldTitle("نظام الاجراءات الجزائيه"));
   assert.equal(foldTitle("نظام المسؤولية"), foldTitle("نظام المسئولية"));
   assert.equal(foldTitle("نظام مكافحة الرشوة"), foldTitle("نِظامُ مكافحة الرشوه"));
   assert.notEqual(foldTitle("نظام القضاء"), foldTitle("نظام القضاء العسكري"));
-  // One pattern, LIKE wildcards for the folded letters, no user-supplied % or _.
-  assert.equal(titleLikePattern("نظام الاجراءات"), "نظ_م _ل_جر___ت%");
-  assert.equal(titleLikePattern("نظام%_ العمل*"), "نظ_م _لعمل%");
+  // One exact-length pattern per candidate: alef / hamza forms anywhere, ة/ه and ى/ي only at a word's end.
+  assert.equal(titleLikePattern("نظام الاجراءات الجزائيه"), "نظ_م _ل_جر___ت _لجز__ي_");
+  assert.equal(titleLikePattern("نظام الهيئة"), "نظ_م _لهي__", "ه and ي inside a word stay literal: selective");
+  assert.equal(titleLikePattern("نظام%_ العمل*"), "نظ_م _لعمل", "no user-supplied % _ * reaches the pattern");
   assert.equal(titleLikePattern("نظام"), null, "one word names nothing");
+  assert.equal(
+    titleLikeOrFilter(docNameCandidates("نظام الاجراءات الجزائيه")),
+    'title.like."نظ_م _ل_جر___ت _لجز__ي_",title.like."نظ_م _ل_جر___ت"',
+  );
+  assert.equal(titleLikeOrFilter(["نظام"]), null);
+  // Among many titles of the same shape, only the folded-equal one is taken.
+  const crowd = Array.from({ length: 120 }, (_, i) => ({ slug: `x${i}`, title: `نظام الإجراءات رقم${i}` }));
+  assert.equal(pickFoldedTitle([...crowd, { slug: "t", title: "نظام الإجراءات" }], docNameCandidates("نظام الاجراءات"))?.slug, "t");
   const rows = [
     { slug: "a", title: "نظام الإجراءات الجزائية" },
     { slug: "b", title: "نظام الإجراءات الجزائية العسكري" },
@@ -291,8 +300,8 @@ test("N02-13: a law named with other hamza, ة/ه or ى/ي forms finds its libra
 
 test("N02-13 route contract: the folded read runs only when the exact one finds nothing; decrees for subscribers only", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-  assert.match(route, /if \(!law\) \{\n\s*const pattern = titleLikePattern\(candidates\[candidates\.length - 1\]\);/);
-  assert.match(route, /\.like\('title', pattern\)\.limit\(200\)/);
+  assert.match(route, /if \(!law\) \{\n\s*const filter = titleLikeOrFilter\(candidates\);/);
+  assert.match(route, /\.or\(filter\)\.limit\(50\)/);
   assert.match(route, /law = pickFoldedTitle\(/);
   const decree = route.slice(route.indexOf("if (url.searchParams.has('decree'))"), route.indexOf("// ── A named law"));
   assert.ok(decree.length > 0);
