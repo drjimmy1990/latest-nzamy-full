@@ -48,6 +48,7 @@
  * process reaches an already-open reader within that minute; one made in this
  * process clears the user's entries at once (forgetLibraryDevices).
  */
+import "server-only";
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";

@@ -11,6 +11,7 @@
  * of the offer's plan_ref: "already bought" and the purchases count).
  */
 
+import "server-only";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { FOUNDER_CAMPAIGN_ID } from "@/lib/membership/founderPlan";
 import {

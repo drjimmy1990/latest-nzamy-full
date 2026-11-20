@@ -28,6 +28,7 @@
  *                      is never told it was revoked.
  */
 
+import "server-only";
 import { cookies } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sha256Hex } from "@/lib/services/shareSecrets";

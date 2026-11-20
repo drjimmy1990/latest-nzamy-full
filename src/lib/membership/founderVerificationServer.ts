@@ -6,6 +6,7 @@
  * in-app notification and the admins' bell. Server-only.
  */
 
+import "server-only";
 import type { createServiceClient } from "@/lib/supabase/server";
 import { getMoyasarConfig } from "@/lib/access-control";
 import { createMoyasarClient } from "@/lib/payments/moyasarClient";

@@ -15,6 +15,7 @@
  *   viewerLibraryAccountLocked() — the same question for a status read: true
  *     only for a signed-in account that is locked.
  */
+import "server-only";
 import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";

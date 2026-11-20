@@ -3,6 +3,7 @@
  * share: names / e-mails for a set of user ids, and one user id by e-mail.
  * Service client, after the route's staff check. Never throws.
  */
+import "server-only";
 import { createServiceClient } from "@/lib/supabase/server";
 import type { PersonRef } from "@/lib/library/monitorAdmin";
 

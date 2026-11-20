@@ -17,6 +17,7 @@
  *                                  Env-gated by sendEmail (no key → nothing).
  *                                  Never throws.
  */
+import "server-only";
 import { headers } from "next/headers";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";

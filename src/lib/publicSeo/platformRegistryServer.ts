@@ -14,6 +14,7 @@
  * EMPTY_REGISTRY, which hides the licence line — nothing unproven is printed.
  * Server-only (reads the service-role key).
  */
+import "server-only";
 import { EMPTY_REGISTRY, PLATFORM_REGISTRY_KEYS, registryFromRows, type PlatformRegistry } from "./platformRegistry";
 
 export const PLATFORM_REGISTRY_REVALIDATE_SECONDS = 300;
