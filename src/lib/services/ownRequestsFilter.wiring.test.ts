@@ -7,7 +7,9 @@ const route = readFileSync(join(import.meta.dirname, "../../app/api/v1/service-r
 const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function POST"));
 
 test("GET /api/v1/service-requests always scopes the list to the caller's own work", () => {
-  assert.match(get, /query = query\.or\(ownRequestsOrFilter\(\{ uid: user\.id, receiver, \.\.\.scope \}\)\)/);
+  // T10-F5 (batch l11): the search box's `q` is ANDed INTO the same tree
+  // (withCaseSearch → and(or(own),or(search))), never in place of it.
+  assert.match(get, /query = query\.or\(withCaseSearch\(ownRequestsOrFilter\(\{ uid: user\.id, receiver, \.\.\.scope \}\), searchParams\.get\("q"\)\)\)/);
   // the two old shapes that let the marketplace browse arm through
   assert.doesNotMatch(get, /receiver\.eq\.\$\{receiver\},requester_user_id/);
   assert.doesNotMatch(get, /if \(!entityIds\.firmId && !entityIds\.businessId\)/);

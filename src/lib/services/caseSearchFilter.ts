@@ -46,6 +46,17 @@ export function caseSearchOrFilter(raw: unknown): string | null {
   return CASE_SEARCH_FIELDS.map((field) => `${field}.ilike."*${term}*"`).join(",");
 }
 
+/**
+ * The ownership filter (a comma list for `query.or`) with the search ANDed in,
+ * as ONE logic tree: `and(or(<own>),or(<search>))` — never two `or=` params,
+ * so nothing depends on how PostgREST combines repeated keys. No term → the
+ * ownership filter unchanged.
+ */
+export function withCaseSearch(ownOrFilter: string, raw: unknown): string {
+  const search = caseSearchOrFilter(raw);
+  return search ? `and(or(${ownOrFilter}),or(${search}))` : ownOrFilter;
+}
+
 /** The same match on a loaded row, for the instant narrowing on screen (case-insensitive). */
 export function caseMatchesSearch(row: { title: string; client: string; court: string }, raw: unknown): boolean {
   const term = normalizeCaseSearch(raw).toLocaleLowerCase();

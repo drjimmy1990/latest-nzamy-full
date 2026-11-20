@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { caseMatchesSearch, caseSearchOrFilter, normalizeCaseSearch, CASE_SEARCH_MAX_LENGTH } from "./caseSearchFilter.ts";
+import { caseMatchesSearch, caseSearchOrFilter, normalizeCaseSearch, withCaseSearch, CASE_SEARCH_MAX_LENGTH } from "./caseSearchFilter.ts";
 
 const repo = (rel: string) => readFileSync(rel, "utf8").replace(/\r\n/g, "\n");
 
@@ -37,12 +37,17 @@ test("T10-F5: the on-screen match is the same term, any case", () => {
   assert.equal(caseMatchesSearch(row, "  "), true);
 });
 
-test("T10-F5: the GET route ANDs the search with the ownership filter", () => {
+test("T10-F5: the search joins the ownership filter in one AND tree", () => {
+  const own = "requester_user_id.eq.u1,assigned_to.eq.u1";
+  assert.equal(withCaseSearch(own, ""), own);
+  assert.equal(withCaseSearch(own, null), own);
+  assert.equal(
+    withCaseSearch(own, "عقد"),
+    'and(or(requester_user_id.eq.u1,assigned_to.eq.u1),or(title.ilike."*عقد*",requester->>name.ilike."*عقد*",metadata->>court.ilike."*عقد*"))',
+  );
   const route = repo("src/app/api/v1/service-requests/route.ts");
-  const own = route.indexOf("query = query.or(ownRequestsOrFilter(");
-  const search = route.indexOf('caseSearchOrFilter(searchParams.get("q"))');
-  assert.ok(own > 0 && search > own);
-  assert.match(route, /if \(searchFilter\) \{\n\s*query = query\.or\(searchFilter\);/);
+  assert.match(route, /query = query\.or\(withCaseSearch\(ownRequestsOrFilter\(\{ uid: user\.id, receiver, \.\.\.scope \}\), searchParams\.get\("q"\)\)\);/);
+  assert.equal((route.match(/query\.or\(/g) ?? []).length, 1, "a single or= on the list query");
 });
 
 test("T10-F5: both case lists send `q` and refetch from the first page", () => {

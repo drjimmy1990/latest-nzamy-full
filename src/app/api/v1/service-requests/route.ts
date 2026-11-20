@@ -11,7 +11,7 @@ import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
 import { isKnownReceiver, ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
-import { caseSearchOrFilter } from "@/lib/services/caseSearchFilter";
+import { withCaseSearch } from "@/lib/services/caseSearchFilter";
 import { checkOrderIntake, intakeErrorMessageAr, persistedRequestMetadata } from "@/lib/services/intakeGuard";
 import { isPleadingDraftIntake } from "@/lib/services/orderIntake";
 import { assertCourtPractice } from "@/lib/auth/assertCourtPractice";
@@ -216,7 +216,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "قيمة receiver غير معروفة" }, { status: 400 });
     }
     const scope = await resolveListScopeIds(supabase, user.id);
-    query = query.or(ownRequestsOrFilter({ uid: user.id, receiver, ...scope }));
+    // T10-F5 (batch l11): `?q=` (the case lists' search box) joins the ownership
+    // filter in ONE logic tree — and(or(own…),or(search…)) — so the search can
+    // only narrow what he may see (caseSearchFilter.ts).
+    query = query.or(withCaseSearch(ownRequestsOrFilter({ uid: user.id, receiver, ...scope }), searchParams.get("q")));
 
     if (requesterUserId) {
       query = query.eq("requester_user_id", requesterUserId);
@@ -228,13 +231,6 @@ export async function GET(request: NextRequest) {
 
     if (lawyerClientId) {
       query = query.eq("lawyer_client_id", lawyerClientId);
-    }
-
-    // T10-F5 (batch l11): the case lists' search box. A second `or=` is ANDed
-    // with the ownership one above, so it only ever narrows what he may see.
-    const searchFilter = caseSearchOrFilter(searchParams.get("q"));
-    if (searchFilter) {
-      query = query.or(searchFilter);
     }
 
     const { data, count, error } = await query;
