@@ -228,11 +228,11 @@ function getGuestServicesForCategory(cat: UserCategory | "guest"): ServiceItem[]
 }
 
 const MICRO_SERVICES: ServiceItem[] = [
-  { key: "micro-requirements", icon: <Storefront {...iconProps} />, label: "الرخص والاشتراطات", sub: "بلدية • زكاة • تأمينات", href: "/dashboard/micro/requirements" },
+  { key: "micro-requirements", icon: <Storefront {...iconProps} />, label: "الرخص والاشتراطات", sub: "بلدية • زكاة • تأمينات", href: "/dashboard/micro/requirements", badge: "قريباً" },
   { key: "micro-requests", icon: <ClipboardText {...iconProps} />, label: "طلب خدمة قانونية", sub: "يفتح طلبات المنشأة ومتابعتها", href: "/dashboard/micro/requests" },
   { key: "micro-contracts", icon: <FileText {...iconProps} />, label: "عقود المنشأة", sub: "توريد • عمل • شراكات بسيطة", href: "/dashboard/micro/contracts" },
   { key: "micro-ai", icon: <Robot {...iconProps} />, label: "مساعد المنشآت", sub: "إجراء ذكي حسب نوع النشاط", href: "/ai/micro", badge: "قريباً" },
-  { key: "micro-case", icon: <Scales {...iconProps} />, label: "قضايا ومطالبات", sub: "عرض أو إنشاء ملف نزاع", href: "/dashboard/micro/cases" },
+  { key: "micro-case", icon: <Scales {...iconProps} />, label: "قضايا ومطالبات", sub: "عرض أو إنشاء ملف نزاع", href: "/dashboard/micro/cases", badge: "قريباً" },
   {
     key: "micro-quick-help",
     icon: <Warning {...iconProps} />,
@@ -277,7 +277,7 @@ function getLawyerServices(user: ServiceSession): ServiceItem[] {
       label: "طلبات التوثيق",
       sub: "امتياز موثّق مفعّل على حسابك",
       href: "/dashboard/provider/notary/requests",
-      badge: "موثّق",
+      badge: "قريباً",
     });
   }
   if (hasProviderRole(user, "bailiff")) {
@@ -287,7 +287,7 @@ function getLawyerServices(user: ServiceSession): ServiceItem[] {
       label: "طلبات التعقيب",
       sub: "معاملات حكومية وإجراءات",
       href: "/dashboard/provider/bailiff/requests",
-      badge: "معقّب",
+      badge: "قريباً",
     });
   }
   if (hasProviderRole(user, "arbitrator")) {
@@ -297,7 +297,7 @@ function getLawyerServices(user: ServiceSession): ServiceItem[] {
       label: "قضايا التحكيم",
       sub: "جلسات وأحكام تحكيمية",
       href: "/dashboard/provider/arbitration/cases",
-      badge: "محكّم",
+      badge: "قريباً",
     });
   }
 
@@ -326,7 +326,7 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
     return addSupport([
       { key: "firm-finance", icon: <Money {...iconProps} />, label: "مالية المكتب", sub: "إيرادات وأتعاب ومحفظة", href: "/dashboard/firm/finance" },
       { key: "firm-fees", icon: <Coins {...iconProps} />, label: "الأتعاب", sub: "تسعير ومطالبات العملاء", href: "/dashboard/firm/fees" },
-      { key: "firm-finance-reports", icon: <ChartBar {...iconProps} />, label: "تقارير مالية", sub: "تحليلات ومؤشرات تحصيل", href: "/dashboard/firm/analytics" },
+      { key: "firm-finance-reports", icon: <ChartBar {...iconProps} />, label: "تقارير مالية", sub: "تحليلات ومؤشرات تحصيل", href: "/dashboard/firm/analytics", badge: "قريباً" },
       { key: "firm-finance-calc", icon: <Key {...iconProps} />, label: "حاسبة قانونية", sub: "رسوم وأتعاب وتقديرات", href: "/ai/fee-calculator" },
       quick,
     ], "دعم مالية المكتب");
@@ -335,8 +335,8 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
   if (role === "hr_manager") {
     return addSupport([
       { key: "firm-hr-team", icon: <UsersThree {...iconProps} />, label: "فريق المكتب", sub: "دعوات ومقاعد وملفات", href: "/dashboard/firm/team" },
-      { key: "firm-hr-timesheets", icon: <Timer {...iconProps} />, label: "ساعات العمل", sub: "Timesheets وحضور", href: "/dashboard/firm/team/timesheets" },
-      { key: "firm-hr-trainees", icon: <Users {...iconProps} />, label: "المتدربون", sub: "متابعة تدريب وإنجازات", href: "/dashboard/firm/team/trainees" },
+      { key: "firm-hr-timesheets", icon: <Timer {...iconProps} />, label: "ساعات العمل", sub: "سجل الساعات والحضور", href: "/dashboard/firm/team/timesheets", badge: "قريباً" },
+      { key: "firm-hr-trainees", icon: <Users {...iconProps} />, label: "المتدربون", sub: "متابعة تدريب وإنجازات", href: "/dashboard/firm/team/trainees", badge: "قريباً" },
       { key: "firm-hr-ai", icon: <Robot {...iconProps} />, label: "مستشار HR", sub: "سياسات داخلية وإنذارات", href: "/ai/corp/hr", badge: "قريباً" },
       quick,
     ], "دعم موارد المكتب");
@@ -345,9 +345,9 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
   if (role === "legal_secretary" || role === "office_admin") {
     return addSupport([
       // The hearings route admits legal_secretary, not office_admin (entityRouteAccess.ts).
-      ...(role === "legal_secretary" ? [{ key: "firm-admin-hearings", icon: <CalendarCheck {...iconProps} />, label: "جلسات اليوم", sub: "مواعيد وتنبيهات ومحاضر", href: "/dashboard/firm/hearings" }] : []),
+      ...(role === "legal_secretary" ? [{ key: "firm-admin-hearings", icon: <CalendarCheck {...iconProps} />, label: "جلسات اليوم", sub: "مواعيد وتنبيهات ومحاضر", href: "/dashboard/firm/hearings", badge: "قريباً" }] : []),
       { key: "firm-admin-clients", icon: <AddressBook {...iconProps} />, label: "العملاء والاستشارات", sub: "مواعيد وبيانات تواصل", href: "/dashboard/firm/clients" },
-      { key: "firm-admin-docs", icon: <FileText {...iconProps} />, label: "المستندات والأرشيف", sub: "رفع وفرز ومتابعة", href: "/dashboard/firm/documents" },
+      { key: "firm-admin-docs", icon: <FileText {...iconProps} />, label: "المستندات والأرشيف", sub: "رفع وفرز ومتابعة", href: "/dashboard/firm/documents", badge: "قريباً" },
       { key: "firm-admin-secretary", icon: <Robot {...iconProps} />, label: "السكرتير الذكي", sub: "قريباً — غير متاح بعد", badge: "قريباً", href: "/ai/secretary" },
       ...(role === "office_admin" ? [{ key: "firm-office-team", icon: <UsersThree {...iconProps} />, label: "إدارة الفريق", sub: "دعوات وأدوار تشغيلية", href: "/dashboard/firm/team" }] : []),
       quick,
@@ -356,8 +356,8 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
 
   if (role === "compliance_manager") {
     return addSupport([
-      { key: "firm-compliance-walls", icon: <Vault {...iconProps} />, label: "الجدران الصينية", sub: "فصل الملفات الحساسة", href: "/dashboard/firm/compliance/walls" },
-      { key: "firm-compliance-governance", icon: <Gavel {...iconProps} />, label: "الحوكمة", sub: "سياسات ومصفوفة صلاحيات", href: "/dashboard/firm/governance" },
+      { key: "firm-compliance-walls", icon: <Vault {...iconProps} />, label: "الجدران الصينية", sub: "فصل الملفات الحساسة", href: "/dashboard/firm/compliance/walls", badge: "قريباً" },
+      { key: "firm-compliance-governance", icon: <Gavel {...iconProps} />, label: "الحوكمة", sub: "سياسات ومصفوفة صلاحيات", href: "/dashboard/firm/governance", badge: "قريباً" },
       { key: "firm-compliance-monitor", icon: <Warning {...iconProps} />, label: "راصد التشريعات", sub: "قيد النفاذ وأحدث الإصدارات", href: "/ai/monitor" },
       quick,
     ], "دعم الامتثال");
@@ -365,8 +365,8 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
 
   if (role === "trainee") {
     return addSupport([
-      { key: "firm-trainee-tasks", icon: <ClipboardText {...iconProps} />, label: "مهامي", sub: "تكليفات تحت إشراف", href: "/dashboard/firm/tasks" },
-      { key: "firm-trainee-templates", icon: <FileText {...iconProps} />, label: "النماذج", sub: "مذكرات وقوالب مساعدة", href: "/dashboard/firm/templates" },
+      { key: "firm-trainee-tasks", icon: <ClipboardText {...iconProps} />, label: "مهامي", sub: "تكليفات تحت إشراف", href: "/dashboard/firm/tasks", badge: "قريباً" },
+      { key: "firm-trainee-templates", icon: <FileText {...iconProps} />, label: "النماذج", sub: "مذكرات وقوالب مساعدة", href: "/dashboard/firm/templates", badge: "قريباً" },
       { key: "firm-trainee-library", icon: <BookOpen {...iconProps} />, label: "المكتبة القانونية", sub: "أنظمة وسوابق للتعلم", href: "/laws" },
       { key: "firm-trainee-ai", icon: <Robot {...iconProps} />, label: "سؤال قانوني سريع", sub: "إجابة تدريبية داخلية", next: "ai-chat" },
       quick,
@@ -376,15 +376,15 @@ function getFirmServices(user: ServiceSession): ServiceItem[] {
   if (["lawyer", "senior_lawyer", "external_of_counsel", "legal_consultant", "in_house_counsel"].includes(role)) {
     return addSupport([
       { key: "firm-lawyer-cases", icon: <Gavel {...iconProps} />, label: "قضاياي ومهامي", sub: "ملفات مصرح بها حسب دورك", href: "/dashboard/firm/cases" },
-      { key: "firm-lawyer-docs", icon: <FileText {...iconProps} />, label: "مستندات القضية", sub: "رفع ومراجعة وصياغة", href: "/dashboard/firm/documents" },
+      { key: "firm-lawyer-docs", icon: <FileText {...iconProps} />, label: "مستندات القضية", sub: "رفع ومراجعة وصياغة", href: "/dashboard/firm/documents", badge: "قريباً" },
       { key: "firm-lawyer-draft", icon: <PencilSimple {...iconProps} />, label: "صياغة قانونية", sub: "لوائح ومذكرات وعقود", href: "/ai/draft" },
-      { key: "firm-lawyer-shared", icon: <UsersFour {...iconProps} />, label: "غرف مشتركة", sub: "تعاون داخلي أو خارجي", href: "/dashboard/firm/shared-rooms" },
+      { key: "firm-lawyer-shared", icon: <UsersFour {...iconProps} />, label: "غرف مشتركة", sub: "تعاون داخلي أو خارجي", href: "/dashboard/firm/shared-rooms", badge: "قريباً" },
       quick,
     ], "دعم محامي المكتب");
   }
 
   return addSupport([
-    { key: "firm-assign", icon: <UsersThree {...iconProps} />, label: "توزيع قضية", sub: "اختيار الفريق وحِمل العمل", href: "/dashboard/firm/cases/assign" },
+    { key: "firm-assign", icon: <UsersThree {...iconProps} />, label: "توزيع قضية", sub: "اختيار الفريق وحِمل العمل", href: "/dashboard/firm/cases/assign", badge: "قريباً" },
     { key: "firm-workload", icon: <ChartBar {...iconProps} />, label: "عبء الفريق", sub: "الشركاء والمتدربون والسكرتارية", href: "/dashboard/firm/team/workload" },
     { key: "firm-contract-review", icon: <FileText {...iconProps} />, label: "مراجع عقود المكتب", sub: "تقرير مخاطر لعقود العملاء", href: "/ai/contracts", badge: "قريباً" },
     { key: "firm-market", icon: <Storefront {...iconProps} />, label: "طلبات السوق", sub: "فرص وإحالات للمكتب", href: "/dashboard/firm/marketplace" },
@@ -407,9 +407,9 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
 
   if (role === "hr_manager") {
     return addSupport([
-      { key: "corp-hr-contracts", icon: <Briefcase {...iconProps} />, label: "عقود الموظفين", sub: "تحديث أو مراجعة عقد عمل", href: "/dashboard/business/employee-contracts" },
+      { key: "corp-hr-contracts", icon: <Briefcase {...iconProps} />, label: "عقود الموظفين", sub: "تحديث أو مراجعة عقد عمل", href: "/dashboard/business/employee-contracts", badge: "قريباً" },
       { key: "corp-hr-ai", icon: <Robot {...iconProps} />, label: "مستشار HR القانوني", sub: "فصل • إنذار • مخالصة", href: "/ai/corp/hr", badge: "قريباً" },
-      { key: "corp-hr-review", icon: <ClipboardText {...iconProps} />, label: "طلب مراجعة", sub: "أرسل ملفاً للفريق القانوني", href: "/dashboard/business/reviews/new" },
+      { key: "corp-hr-review", icon: <ClipboardText {...iconProps} />, label: "طلب مراجعة", sub: "أرسل ملفاً للفريق القانوني", href: "/dashboard/business/reviews/new", badge: "قريباً" },
       { key: "corp-hr-cases", icon: <Scales {...iconProps} />, label: "نزاعات عمالية", sub: "قضايا موظفين ومطالبات", href: "/dashboard/business/cases" },
       { key: "corp-hr-quick", icon: <Warning {...iconProps} />, label: "تصعيد HR سريع", sub: "يفتح طلباً للفريق القانوني وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
     ], "دعم شؤون الموظفين");
@@ -417,9 +417,9 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
 
   if (role === "finance_manager") {
     return addSupport([
-      { key: "corp-finance-reports", icon: <ChartBar {...iconProps} />, label: "تقارير ومخاطر", sub: "التزامات مالية وقانونية", href: "/dashboard/business/reports" },
-      { key: "corp-finance-wallet", icon: <Money {...iconProps} />, label: "المحفظة والفواتير", sub: "مدفوعات وأمانات الخدمة", href: "/dashboard/business/wallet" },
-      { key: "corp-finance-review", icon: <ClipboardText {...iconProps} />, label: "مراجعة مستند", sub: "عقد أو مطالبة مالية", href: "/dashboard/business/reviews/new" },
+      { key: "corp-finance-reports", icon: <ChartBar {...iconProps} />, label: "تقارير ومخاطر", sub: "التزامات مالية وقانونية", href: "/dashboard/business/reports", badge: "قريباً" },
+      { key: "corp-finance-wallet", icon: <Money {...iconProps} />, label: "المحفظة والفواتير", sub: "مدفوعات وأمانات الخدمة", href: "/dashboard/business/wallet", badge: "قريباً" },
+      { key: "corp-finance-review", icon: <ClipboardText {...iconProps} />, label: "مراجعة مستند", sub: "عقد أو مطالبة مالية", href: "/dashboard/business/reviews/new", badge: "قريباً" },
       { key: "corp-finance-risk", icon: <ShieldCheck {...iconProps} />, label: "تقييم مخاطر", sub: "طرف تعاقدي أو مطالبة", href: "/ai/corp/risk-assessment", badge: "قريباً" },
       { key: "corp-finance-quick", icon: <Warning {...iconProps} />, label: "تصعيد مالي سريع", sub: "يفتح طلباً للفريق القانوني/المالي وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
     ], "دعم مالي/قانوني");
@@ -427,18 +427,18 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
 
   if (role === "employee") {
     return addSupport([
-      { key: "corp-employee-requests", icon: <ClipboardText {...iconProps} />, label: "طلباتي", sub: "متابعة ما أرسلته للإدارة", href: "/dashboard/business/requests" },
-      { key: "corp-employee-new", icon: <Warning {...iconProps} />, label: "ارفع طلباً جديداً", sub: "عقد أو مشكلة أو موافقة", href: "/dashboard/business/reviews/new" },
-      { key: "corp-employee-board", icon: <Briefcase {...iconProps} />, label: "مهامي اليومية", sub: "ما يخصني فقط في لوحة العمل", href: "/dashboard/business/kanban" },
+      { key: "corp-employee-requests", icon: <ClipboardText {...iconProps} />, label: "طلباتي", sub: "متابعة ما أرسلته للإدارة", href: "/dashboard/business/requests", badge: "قريباً" },
+      { key: "corp-employee-new", icon: <Warning {...iconProps} />, label: "ارفع طلباً جديداً", sub: "عقد أو مشكلة أو موافقة", href: "/dashboard/business/reviews/new", badge: "قريباً" },
+      { key: "corp-employee-board", icon: <Briefcase {...iconProps} />, label: "مهامي اليومية", sub: "ما يخصني فقط في لوحة العمل", href: "/dashboard/business/kanban", badge: "قريباً" },
       { key: "corp-employee-quick", icon: <ChatCircle {...iconProps} />, label: "طلب عاجل", sub: "يفتح طلباً للفريق القانوني وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
     ], "دعم الموظف");
   }
 
   if (role === "department_head") {
     return addSupport([
-      { key: "corp-head-dept", icon: <Buildings {...iconProps} />, label: "قسمك", sub: "طلبات القسم ونطاقه", href: "/dashboard/business/departments" },
-      { key: "corp-head-review", icon: <ClipboardText {...iconProps} />, label: "طلب مراجعة", sub: "إرسال مستند للفريق القانوني", href: "/dashboard/business/reviews/new" },
-      { key: "corp-head-requests", icon: <FileText {...iconProps} />, label: "طلبات القسم", sub: "متابعة الحالة والتصعيد", href: "/dashboard/business/requests" },
+      { key: "corp-head-dept", icon: <Buildings {...iconProps} />, label: "قسمك", sub: "طلبات القسم ونطاقه", href: "/dashboard/business/departments", badge: "قريباً" },
+      { key: "corp-head-review", icon: <ClipboardText {...iconProps} />, label: "طلب مراجعة", sub: "إرسال مستند للفريق القانوني", href: "/dashboard/business/reviews/new", badge: "قريباً" },
+      { key: "corp-head-requests", icon: <FileText {...iconProps} />, label: "طلبات القسم", sub: "متابعة الحالة والتصعيد", href: "/dashboard/business/requests", badge: "قريباً" },
       { key: "corp-head-quick", icon: <Warning {...iconProps} />, label: "تصعيد قسم سريع", sub: "يفتح طلباً باسم قسمك للشؤون القانونية", quickRequest: roleQuick },
     ], "دعم مدير القسم");
   }
@@ -446,18 +446,18 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
   if (role === "legal_staff" || role === "seconded") {
     return addSupport([
       { key: "corp-legal-cases", icon: <Scales {...iconProps} />, label: "قضاياي", sub: "ملفات مصرح بها فقط", href: "/dashboard/business/cases" },
-      { key: "corp-legal-reviews", icon: <ClipboardText {...iconProps} />, label: "مراجعات الأقسام", sub: "طلبات قادمة من الإدارات", href: "/dashboard/business/reviews" },
-      { key: "corp-legal-mail", icon: <FileText {...iconProps} />, label: "LegalMail", sub: "مخاطبات ومهام قانونية", href: "/ai/mail-advisor" },
+      { key: "corp-legal-reviews", icon: <ClipboardText {...iconProps} />, label: "مراجعات الأقسام", sub: "طلبات قادمة من الإدارات", href: "/dashboard/business/reviews", badge: "قريباً" },
+      { key: "corp-legal-mail", icon: <FileText {...iconProps} />, label: "LegalMail", sub: "مخاطبات ومهام قانونية", href: "/ai/mail-advisor", badge: "قريباً" },
       { key: "corp-legal-quick", icon: <Warning {...iconProps} />, label: "طلب داخلي سريع", sub: "يفتح طلباً باسمك وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
     ], role === "seconded" ? "دعم المستشار المنتدب" : "دعم الأخصائي القانوني");
   }
 
   if (role === "compliance_officer") {
     return addSupport([
-      { key: "corp-compliance-home", icon: <ShieldCheck {...iconProps} />, label: "امتثال وحوكمة", sub: "PDPL • زكاة • لوائح", href: "/dashboard/business/governance" },
+      { key: "corp-compliance-home", icon: <ShieldCheck {...iconProps} />, label: "امتثال وحوكمة", sub: "PDPL • زكاة • لوائح", href: "/dashboard/business/governance", badge: "قريباً" },
       { key: "corp-compliance-risk", icon: <Warning {...iconProps} />, label: "تقييم مخاطر", sub: "طرف تعاقدي أو سياسة", href: "/ai/corp/risk-assessment", badge: "قريباً" },
-      { key: "corp-compliance-health", icon: <TrendUp {...iconProps} />, label: "فحص 360", sub: "مخاطر وثغرات واشتراطات", href: "/dashboard/business/health-check" },
-      { key: "corp-compliance-reports", icon: <ChartBar {...iconProps} />, label: "تقارير الامتثال", sub: "لوحات وتقارير تنفيذية", href: "/dashboard/business/reports" },
+      { key: "corp-compliance-health", icon: <TrendUp {...iconProps} />, label: "فحص 360", sub: "مخاطر وثغرات واشتراطات", href: "/dashboard/business/health-check", badge: "قريباً" },
+      { key: "corp-compliance-reports", icon: <ChartBar {...iconProps} />, label: "تقارير الامتثال", sub: "لوحات وتقارير تنفيذية", href: "/dashboard/business/reports", badge: "قريباً" },
       { key: "corp-compliance-quick", icon: <ChatCircle {...iconProps} />, label: "تصعيد امتثال سريع", sub: "يفتح طلب امتثال للفريق وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
     ], "دعم الامتثال");
   }
@@ -469,10 +469,10 @@ function getCorporateServices(user: ServiceSession): ServiceItem[] {
       label: serviceMode ? "اطلب محامياً خارجياً" : "طلب مراجعة عاجلة",
       sub: serviceMode ? "للشركات بلا قسم قانوني داخلي" : "عقد أو مستند عاجل — رد سريع",
       href: serviceMode ? "/dashboard/business/seconded-counsel" : "/dashboard/business/reviews/new",
-      badge: serviceMode ? "Service" : undefined,
+      badge: "قريباً",
     },
     { key: "corp-new-case", icon: <Scales {...iconProps} />, label: "إضافة قضية", sub: "نزاع تجاري أو مطالبة", href: "/dashboard/business/cases/new" },
-    { key: "corp-compliance", icon: <ShieldCheck {...iconProps} />, label: "امتثال وحوكمة", sub: "PDPL • زكاة • لوائح", href: "/dashboard/business/governance" },
+    { key: "corp-compliance", icon: <ShieldCheck {...iconProps} />, label: "امتثال وحوكمة", sub: "PDPL • زكاة • لوائح", href: "/dashboard/business/governance", badge: "قريباً" },
     { key: "corp-ai-chat", icon: <Robot {...iconProps} />, label: "مساعد قانوني داخلي", sub: "سؤال سريع حسب سياق الشركة", next: "ai-chat", badge: "AI" },
     { key: "corp-owner-quick", icon: <ChatCircle {...iconProps} />, label: "طلب سريع للإدارة", sub: "يفتح طلباً لفريق نظامي وينتقل إلى واتساب للمتابعة", quickRequest: roleQuick },
   ], "دعم الشركة");
@@ -507,8 +507,8 @@ function getGovernmentServices(user: ServiceSession): ServiceItem[] {
 
   return addSupport([
     ...(byRole[role] ?? byRole.gov_counsel),
-    { key: "gov-cases", icon: <Gavel {...iconProps} />, label: "قضايا الجهة", sub: "نزاعات وعقود ومخاطر", href: "/dashboard/government/cases" },
-    { key: "gov-external-counsel", icon: <AddressBook {...iconProps} />, label: "مستشارون خارجيون", sub: "ربط منطقي مع مزودي الخدمة", href: "/dashboard/government/external-counsel" },
+    { key: "gov-cases", icon: <Gavel {...iconProps} />, label: "قضايا الجهة", sub: "نزاعات وعقود ومخاطر", href: "/dashboard/government/cases", badge: "قريباً" },
+    { key: "gov-external-counsel", icon: <AddressBook {...iconProps} />, label: "مستشارون خارجيون", sub: "ربط منطقي مع مزودي الخدمة", href: "/dashboard/government/external-counsel", badge: "قريباً" },
     {
       key: "gov-role-quick",
       icon: <Warning {...iconProps} />,
@@ -529,7 +529,7 @@ function getGovernmentServices(user: ServiceSession): ServiceItem[] {
 const NGO_SERVICES: ServiceItem[] = addSupport([
   { key: "ngo-governance", icon: <ShieldCheck {...iconProps} />, label: "الحوكمة والامتثال", sub: "المركز الوطني واللوائح", href: "/dashboard/ngo/compliance" },
   { key: "ngo-donation", icon: <ChartBar {...iconProps} />, label: "تحليل التبرعات", sub: "مخاطر وامتثال مالي", href: "/ai/ngo/donation-analyzer", badge: "قريباً" },
-  { key: "ngo-reports", icon: <FileText {...iconProps} />, label: "التقارير الدورية", sub: "تقرير ربعي أو سنوي", href: "/dashboard/ngo/reports" },
+  { key: "ngo-reports", icon: <FileText {...iconProps} />, label: "التقارير الدورية", sub: "تقرير ربعي أو سنوي", href: "/dashboard/ngo/reports", badge: "قريباً" },
   { key: "ngo-market", icon: <UsersFour {...iconProps} />, label: "تصفح المهنيين", sub: "محامون ومراجعون ومزودون", href: "/marketplace" },
   {
     key: "ngo-quick-support",
@@ -565,17 +565,17 @@ function getProviderServices(user: ServiceSession): ServiceItem[] {
 
   if (user?.subRole === "notary") {
     return addSupport([
-      { key: "provider-notary-requests", icon: <Stamp {...iconProps} />, label: "طلبات التوثيق", sub: "طلبات جديدة وجارية", href: "/dashboard/provider/notary/requests", badge: "موثّق" },
-      { key: "provider-notary-drafts", icon: <PencilSimple {...iconProps} />, label: "مسودات التوثيق", sub: "عقود ووكالات وإقرارات", href: "/dashboard/provider/notary/drafts" },
+      { key: "provider-notary-requests", icon: <Stamp {...iconProps} />, label: "طلبات التوثيق", sub: "طلبات جديدة وجارية", href: "/dashboard/provider/notary/requests", badge: "قريباً" },
+      { key: "provider-notary-drafts", icon: <PencilSimple {...iconProps} />, label: "مسودات التوثيق", sub: "عقود ووكالات وإقرارات", href: "/dashboard/provider/notary/drafts", badge: "قريباً" },
       { key: "provider-notary-ai", icon: <Robot {...iconProps} />, label: "صائغ عقد التوثيق", sub: "مسودة أولية منظمة", href: "/ai/draft?mode=notary", badge: "AI" },
-      { key: "provider-profile", icon: <SealCheck {...iconProps} />, label: "تقوية الملف", sub: "تخصصات وتراخيص وثقة", href: "/dashboard/provider/profile" },
+      { key: "provider-profile", icon: <SealCheck {...iconProps} />, label: "تقوية الملف", sub: "تخصصات وتراخيص وثقة", href: "/dashboard/provider/profile", badge: "قريباً" },
       providerQuick("notary", "دعم الموثق"),
     ], "دعم الموثّق");
   }
 
   if (user?.subRole === "bailiff") {
     return addSupport([
-      { key: "provider-bailiff-requests", icon: <ClipboardText {...iconProps} />, label: "طلبات التعقيب", sub: "جديدة • جارية • مكتملة", href: "/dashboard/provider/bailiff/requests", badge: "معقّب" },
+      { key: "provider-bailiff-requests", icon: <ClipboardText {...iconProps} />, label: "طلبات التعقيب", sub: "جديدة • جارية • مكتملة", href: "/dashboard/provider/bailiff/requests", badge: "قريباً" },
       { key: "provider-bailiff-procedures", icon: <MapTrifold {...iconProps} />, label: "دليل الإجراءات", sub: "اشتراطات وخطوات الجهات", href: "/ai/procedures" },
       { key: "provider-bailiff-ai", icon: <Robot {...iconProps} />, label: "مساعد المعاملات", sub: "صياغة رد أو تقرير", href: "/ai/consult", badge: "قريباً" },
       { key: "provider-market", icon: <Storefront {...iconProps} />, label: "تصفح السوق", sub: "طلبات مناسبة لتخصصك", href: "/marketplace" },
@@ -585,18 +585,18 @@ function getProviderServices(user: ServiceSession): ServiceItem[] {
 
   if (user?.subRole === "arbitrator") {
     return addSupport([
-      { key: "provider-arb-cases", icon: <Scales {...iconProps} />, label: "قضايا التحكيم", sub: "كل النزاعات والجلسات", href: "/dashboard/provider/arbitration/cases", badge: "محكّم" },
-      { key: "provider-arb-hearings", icon: <CalendarCheck {...iconProps} />, label: "جلسات التحكيم", sub: "مواعيد وأطراف", href: "/dashboard/provider/arbitration/hearings" },
-      { key: "provider-arb-drafts", icon: <Gavel {...iconProps} />, label: "مسودات الأحكام", sub: "صياغة حكم تحكيمي", href: "/dashboard/provider/arbitration/drafts" },
+      { key: "provider-arb-cases", icon: <Scales {...iconProps} />, label: "قضايا التحكيم", sub: "كل النزاعات والجلسات", href: "/dashboard/provider/arbitration/cases", badge: "قريباً" },
+      { key: "provider-arb-hearings", icon: <CalendarCheck {...iconProps} />, label: "جلسات التحكيم", sub: "مواعيد وأطراف", href: "/dashboard/provider/arbitration/hearings", badge: "قريباً" },
+      { key: "provider-arb-drafts", icon: <Gavel {...iconProps} />, label: "مسودات الأحكام", sub: "صياغة حكم تحكيمي", href: "/dashboard/provider/arbitration/drafts", badge: "قريباً" },
       { key: "provider-arb-market", icon: <Storefront {...iconProps} />, label: "طلبات تحكيم جديدة", sub: "سوق النزاعات", href: "/marketplace?category=arbitration" },
       providerQuick("arbitrator", "دعم المحكم"),
     ], "دعم المحكّم");
   }
 
   return addSupport([
-    { key: "provider-requests", icon: <Storefront {...iconProps} />, label: "الطلبات المتاحة", sub: "فرص جديدة في السوق", href: "/dashboard/provider/requests" },
-    { key: "provider-active", icon: <Timer {...iconProps} />, label: "عروضي الجارية", sub: "متابعة العروض والمواعيد", href: "/dashboard/provider/requests?tab=active" },
-    { key: "provider-profile", icon: <SealCheck {...iconProps} />, label: "تقوية الملف", sub: "اعتمادات وتخصصات", href: "/dashboard/provider/profile" },
+    { key: "provider-requests", icon: <Storefront {...iconProps} />, label: "الطلبات المتاحة", sub: "فرص جديدة في السوق", href: "/dashboard/provider/requests", badge: "قريباً" },
+    { key: "provider-active", icon: <Timer {...iconProps} />, label: "عروضي الجارية", sub: "متابعة العروض والمواعيد", href: "/dashboard/provider/requests?tab=active", badge: "قريباً" },
+    { key: "provider-profile", icon: <SealCheck {...iconProps} />, label: "تقوية الملف", sub: "اعتمادات وتخصصات", href: "/dashboard/provider/profile", badge: "قريباً" },
     { key: "provider-report", icon: <FileText {...iconProps} />, label: "صياغة تقرير", sub: "تقرير مهني سريع", href: "/ai/draft?mode=report" },
     providerQuick("provider"),
   ], "دعم مقدم الخدمة");
@@ -606,7 +606,7 @@ const ADMIN_SERVICES: ServiceItem[] = [
   { key: "admin-platform", icon: <Gear {...iconProps} />, label: "تناغم المنصة", sub: "حالة الأسطح والمحتوى", href: "/dashboard/admin/platform" },
   { key: "admin-users", icon: <Users {...iconProps} />, label: "ملفات المستخدمين", sub: "مراجعة حساب أو صلاحية", href: "/dashboard/admin/users" },
   { key: "admin-provider-kyc", icon: <SealCheck {...iconProps} />, label: "تحقق المزودين", sub: "KYC وتراخيص مهنية", href: "/dashboard/admin/provider-verification" },
-  { key: "admin-disputes", icon: <Scales {...iconProps} />, label: "نزاعات وتصعيد", sub: "ربط العميل بالمزود والضمان", href: "/dashboard/admin/disputes" },
+  { key: "admin-disputes", icon: <Scales {...iconProps} />, label: "نزاعات وتصعيد", sub: "ربط العميل بالمزود والضمان", href: "/dashboard/admin/disputes", badge: "قريباً" },
   { key: "admin-pricing", icon: <Coins {...iconProps} />, label: "الأسعار والباقات", sub: "AI credits وخدمات السوق", href: "/dashboard/admin/pricing" },
   { key: "admin-settings", icon: <Gear {...iconProps} />, label: "إعدادات المنصة", sub: "المكتبة والاشتراكات والحدود", href: "/dashboard/admin/settings" },
   { key: "admin-audit", icon: <Vault {...iconProps} />, label: "سجل التدقيق", sub: "أمان وعمليات حساسة", href: "/dashboard/admin/audit-log" },
