@@ -92,7 +92,7 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
       { href: "/dashboard/admin/community/moderation", label: "إشراف المجتمع", labelEn: "Community Moderation", icon: "Flag" },
       { href: "/dashboard/admin/community/reports", label: "بلاغات المجتمع", labelEn: "Community Reports", icon: "Flag" },
       { href: "/dashboard/admin/marketplace/orders", label: "طلبات السوق", labelEn: "Marketplace Orders", icon: "Storefront" },
-      { href: "/dashboard/admin/features", label: "مفاتيح الميزات", labelEn: "Feature Flags", icon: "ToggleRight" },
+      { href: "/dashboard/admin/features", label: "مفاتيح الميزات", labelEn: "Feature switches", icon: "ToggleRight" },
     ],
   },
   {

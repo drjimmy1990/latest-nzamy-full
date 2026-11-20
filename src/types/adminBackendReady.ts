@@ -1,4 +1,4 @@
-export type AdminReadinessStatus = "UI Working" | "Backend-ready" | "Missing UI" | "Risk";
+export type AdminReadinessStatus = "working" | "no_save" | "no_ui" | "risk";
 
 export type AdminDiscountType = "percentage" | "fixed";
 export type AdminCouponStatus = "active" | "scheduled" | "expired" | "disabled";

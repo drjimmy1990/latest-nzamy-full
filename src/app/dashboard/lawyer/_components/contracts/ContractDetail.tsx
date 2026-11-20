@@ -387,7 +387,7 @@ export default function ContractDetail({ contractId, isDark, basePath }: Props) 
       {tab === "overview" && (
         <div className="space-y-4">
           <div className={`${card} p-4`}>
-            <h2 className={`text-[13px] font-bold mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ملاحظات</h2>
+            <h2 className={`text-[13px] font-bold mb-2 ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>ملاحظات داخلية (لا يراها العميل)</h2>
             <p className={`text-[12.5px] leading-relaxed whitespace-pre-wrap ${isDark ? "text-zinc-400" : "text-slate-600"}`}>
               {detail.notes || "لا توجد ملاحظات."}
             </p>

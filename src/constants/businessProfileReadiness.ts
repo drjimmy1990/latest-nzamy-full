@@ -40,7 +40,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     availableForSizes: ["owner_only", "small", "medium", "large", "enterprise"],
     routes: ["/dashboard/business/requests", "/dashboard/business/kanban"],
     contract: "BusinessLegalRequest",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "litigation",
@@ -50,7 +50,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/business/cases", "/dashboard/business/hearings"],
     contract: "BusinessLitigationMatter",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "contract_review",
@@ -59,7 +59,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     availableForSizes: ["owner_only", "small", "medium", "large", "enterprise"],
     routes: ["/dashboard/business/reviews", "/dashboard/business/reviews/new", "/ai/contracts"],
     contract: "BusinessContractReview",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "legal_library",
@@ -68,7 +68,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     availableForSizes: ["owner_only", "small", "medium", "large", "enterprise"],
     routes: ["/laws"],
     contract: "LegalLibrarySystem",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "ai_corp_tools",
@@ -78,7 +78,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/ai/corp/deal-intel", "/ai/corp/corpmind", "/ai/corp/hr"],
     contract: "BusinessAiEntitlement",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "marketplace",
@@ -88,7 +88,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/business/marketplace", "/marketplace"],
     contract: "BusinessMarketplaceAccess",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "secondment",
@@ -98,7 +98,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/business/seconded-counsel"],
     contract: "BusinessSecondment",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "governance",
@@ -108,7 +108,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/business/governance", "/dashboard/business/health-check"],
     contract: "BusinessGovernanceProgram",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "hr_contracts",
@@ -117,7 +117,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     availableForSizes: ["small", "medium", "large", "enterprise"],
     routes: ["/dashboard/business/employee-contracts"],
     contract: "BusinessEmploymentContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "finance_reports",
@@ -126,7 +126,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     availableForSizes: ["medium", "large", "enterprise"],
     routes: ["/dashboard/business/reports", "/dashboard/business/wallet"],
     contract: "BusinessFinancialReport",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "departments",
@@ -136,7 +136,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     needsInternalLegal: true,
     routes: ["/dashboard/business/departments", "/dashboard/business/team"],
     contract: "BusinessOrgUnit",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "community_supervision",
@@ -146,7 +146,7 @@ export const BUSINESS_SERVICE_ENTITLEMENTS: BusinessServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/admin/community/moderation"],
     contract: "CommunityModerationItem",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
 ];
 
@@ -163,7 +163,7 @@ export const BUSINESS_PROFILE_SCENARIOS: BusinessProfileScenario[] = [
     recommendedServices: ["legal_requests", "contract_review", "legal_library", "marketplace"],
     dashboardRoutes: ["/dashboard/business?mode=service", "/dashboard/business/marketplace", "/ai/consult"],
     adminRoute: "/dashboard/admin/business",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "الواجهة تحدد المسارات والاشتراك محلياً فقط؛ الربط الحقيقي ينتظر CompanyProfile API.",
     betaNotes: "أي مخرجات AI قانونية تبقى خلف BetaReviewGate حتى انتهاء مراجعة المصادر.",
   },
@@ -179,7 +179,7 @@ export const BUSINESS_PROFILE_SCENARIOS: BusinessProfileScenario[] = [
     recommendedServices: ["legal_requests", "litigation", "contract_review", "marketplace", "hr_contracts"],
     dashboardRoutes: ["/dashboard/business", "/dashboard/business/cases", "/dashboard/business/team"],
     adminRoute: "/dashboard/admin/business",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "تفعيل التقاضي والسوق محلي في الأدمن؛ لا توجد عقود تمثيل أو فوترة خادمية بعد.",
     betaNotes: "مناسب للبيتا كمسار خدمة واضح بدون إيحاء أن التمثيل القانوني أصبح إنتاجياً.",
   },
@@ -195,7 +195,7 @@ export const BUSINESS_PROFILE_SCENARIOS: BusinessProfileScenario[] = [
     recommendedServices: ["legal_requests", "contract_review", "governance", "hr_contracts", "finance_reports", "departments", "ai_corp_tools"],
     dashboardRoutes: ["/dashboard/business", "/dashboard/business/departments", "/dashboard/business/reviews"],
     adminRoute: "/dashboard/admin/business",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "RBAC والمسارات ظاهرة؛ مصدر الحقيقة للأدوار والموافقات ينتظر Auth/RBAC backend.",
     betaNotes: "السيناريو الافتراضي لاختبار الإدارة القانونية الداخلية قبل بناء الجداول.",
   },
@@ -211,9 +211,9 @@ export const BUSINESS_PROFILE_SCENARIOS: BusinessProfileScenario[] = [
     recommendedServices: ["legal_requests", "litigation", "contract_review", "legal_library", "ai_corp_tools", "marketplace", "secondment", "governance", "hr_contracts", "finance_reports", "departments", "community_supervision"],
     dashboardRoutes: ["/dashboard/business", "/dashboard/business/governance", "/dashboard/business/seconded-counsel"],
     adminRoute: "/dashboard/admin/business",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "كل الأسطح UI-ready؛ audit/approval/service entitlement الحقيقي ينتظر backend.",
-    betaNotes: "يجب إبقاء Feature Flags وBetaReviewGate حتى اعتماد سياسات البيانات القانونية.",
+    betaNotes: "تبقى مفاتيح الميزات ومراجعة مخرجات الذكاء الاصطناعي حتى اعتماد سياسات البيانات القانونية.",
   },
   {
     id: "enterprise-hybrid",
@@ -227,7 +227,7 @@ export const BUSINESS_PROFILE_SCENARIOS: BusinessProfileScenario[] = [
     recommendedServices: ["legal_requests", "litigation", "contract_review", "ai_corp_tools", "marketplace", "secondment", "governance", "hr_contracts", "finance_reports", "departments", "community_supervision"],
     dashboardRoutes: ["/dashboard/business", "/dashboard/business/team", "/dashboard/business/reports"],
     adminRoute: "/dashboard/admin/business",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "تجربة الهيكل الهجين محلية فقط؛ الربط يتطلب org graph وservice entitlement backend.",
     betaNotes: "يعامل كأعلى سيناريو بيتا لاختبار تداخل الصلاحيات قبل الإنتاج.",
   },
@@ -239,7 +239,7 @@ export const BUSINESS_ADMIN_CONTROLS: BusinessAdminControl[] = [
     title: "بروفيل الشركة وحجمها",
     route: "/dashboard/admin/business",
     contract: "BusinessProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "اختيار الحجم والهيكل القانوني ونموذج الخدمة يعمل محلياً فقط حتى ربط CompanyProfile API.",
   },
   {
@@ -247,7 +247,7 @@ export const BUSINESS_ADMIN_CONTROLS: BusinessAdminControl[] = [
     title: "خدمات الشركة المفعلة",
     route: "/dashboard/admin/business",
     contract: "BusinessServiceEntitlement",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "التقاضي، السوق، الانتداب، الحوكمة، وأدوات AI تظهر كتفعيل محلي مع حدود بيتا واضحة.",
   },
   {
@@ -255,7 +255,7 @@ export const BUSINESS_ADMIN_CONTROLS: BusinessAdminControl[] = [
     title: "أدوار الشركة وصلاحياتها",
     route: "/dashboard/business/team",
     contract: "BusinessRolePermission",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "الأدوار ظاهرة ومتغيرة في UI؛ الإلزام الخادمي ينتظر Auth/RBAC backend.",
   },
   {
@@ -263,7 +263,7 @@ export const BUSINESS_ADMIN_CONTROLS: BusinessAdminControl[] = [
     title: "تدقيق تغييرات الشركات",
     route: "/dashboard/admin/audit-log",
     contract: "AdminAuditEvent",
-    readiness: "Risk",
+    readiness: "risk",
     note: "أي تعديل محلي يحتاج لاحقاً سجل before/after وربط actor/time/entity قبل الإنتاج.",
   },
 ];

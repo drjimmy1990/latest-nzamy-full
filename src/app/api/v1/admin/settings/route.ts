@@ -23,6 +23,9 @@ import {
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
+// Batch l11-misc (O22): server-side feature flags.
+import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
+import { clearFeatureFlagsCache } from "@/lib/featureFlags/featureFlagsServer";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -88,6 +91,11 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
   // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
   "library_min_points_to_browse",
+  // Batch l11-misc (O22, 20261201_60; src/lib/featureFlags/featureFlags.ts):
+  // {"<flag>": boolean} for the closed list FEATURE_FLAGS (today
+  // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
+  // one minute; the page posts the whole object.
+  "feature_flags",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -181,6 +189,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l9 public: pure, covered by src/lib/publicSeo/platformRegistry.test.ts.
   license_number: (value) => licenceSettingIssue("license_number", value),
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),
+  // Batch l11-misc (O22): pure, covered by src/lib/featureFlags/featureFlags.test.ts.
+  feature_flags: featureFlagsIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */
@@ -396,6 +406,9 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       return dbErrorJson("admin/settings PATCH", error);
     }
+
+    // Batch l11-misc (O22): this process reads the new flags at once.
+    if (key === FEATURE_FLAGS_SETTING) clearFeatureFlagsCache();
 
     await logAdminAction({
       actorId: gate.userId,

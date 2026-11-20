@@ -31,6 +31,7 @@ const ALLOWED: Record<string, string> = {
   "v1/me/account-deletion/route.ts": "its own deletion status and request (requireApiUser allowFrozen)",
   "v1/me/account-deletion/cancel/route.ts": "«استعادة الحساب» (requireApiUser allowFrozen)",
   "v1/ai-review-requests/route.ts": "an anonymous-capable request for a human review; writes no account data",
+  "v1/chatbot/route.ts": "«مساعد نظامي» (l11-misc): POST for the question; the session is read only to pick this viewer's offers and payment view; writes nothing",
   "library/search/route.ts": "a search: POST for the body, reads only",
   "library/scoped-search/route.ts": "a search: POST for the body, reads only",
   "library/folders/titles/route.ts": "a catalogue title lookup: POST for the body (≤ 400 ids), reads only",

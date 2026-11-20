@@ -18,6 +18,7 @@ import {
   WarningCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import { ADMIN_READINESS_LABEL_AR } from "@/constants/adminBackendReadiness";
 import {
   MOCK_CURRENT_GOVERNMENT_ID,
   MOCK_CURRENT_MICRO_ID,
@@ -317,8 +318,8 @@ export default function AdminSectorProfilesPage() {
             <div key={control.id} className={`p-4 border-b md:border-l ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
               <div className="flex items-center justify-between gap-2">
                 <Link href={control.route} className={`text-sm font-black hover:underline ${isDark ? "text-white" : "text-slate-800"}`}>{control.title}</Link>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${control.readiness === "Risk" ? "border-amber-500/25 text-amber-300" : "border-blue-500/25 text-blue-300"}`}>
-                  {control.readiness}
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${control.readiness === "risk" ? "border-amber-500/25 text-amber-300" : "border-blue-500/25 text-blue-300"}`}>
+                  {ADMIN_READINESS_LABEL_AR[control.readiness]}
                 </span>
               </div>
               <p className={`mt-2 text-xs leading-relaxed ${muted}`}>{control.note}</p>
@@ -618,7 +619,7 @@ function ContractGrid({ sector, muted, isDark }: { sector: SectorProfileType; mu
           <div key={`${item.sector}-${item.key}`} className={`rounded-xl border p-3 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-slate-100 bg-slate-50"}`}>
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-black">{item.label}</p>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${item.readiness === "UI Working" ? "border-emerald-500/25 text-emerald-400" : "border-blue-500/25 text-blue-300"}`}>{item.readiness}</span>
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${item.readiness === "working" ? "border-emerald-500/25 text-emerald-400" : "border-blue-500/25 text-blue-300"}`}>{ADMIN_READINESS_LABEL_AR[item.readiness]}</span>
             </div>
             <p className={`mt-1 text-xs leading-relaxed ${muted}`}>{item.description}</p>
             <p className={`mt-2 text-[10px] font-mono ${muted}`}>{item.contract}</p>
