@@ -152,7 +152,11 @@ function LawSystemPageContent() {
   // `paywall.hasFullAccess` from the same response: full library access (a
   // Pro+ tier, an active library grant, or an admin) or a whitelisted law.
   // ArticleBlock locks an article on it, never on the client's tier.
-  const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
+  // O15 (owner file 16 §2b-ii, batch l11): tri-state — null until THIS law's
+  // response arrives. A surface keyed on it draws a lock on `false` only, so
+  // nothing shows a lock before the entitlement is known. An article's own
+  // lock still comes from the server's per-article `free` (same response).
+  const [viewerHasFullAccess, setViewerHasFullAccess] = useState<boolean | null>(null);
   // File 16 §2 (batch l9): the viewer's own library entitlement
   // (`paywall.isSubscriber`), null until THIS law's response arrives — so no
   // «اشترك» card is ever drawn on a guess (the sidebar shows it on false only).
@@ -268,7 +272,7 @@ function LawSystemPageContent() {
         setLawMeta(getLawMeta(slug));
         setOfficialMeta(EMPTY_OFFICIAL_META);
         setPreambleLocked(false);
-        setViewerHasFullAccess(false);
+        setViewerHasFullAccess(null);
         setViewerIsSubscriber(null);
         setLawNotice("");
         const res = await fetch(`/api/library/laws/${apiSlug(slug)}`);
@@ -792,7 +796,8 @@ function LawSystemPageContent() {
       lawType: law.documentType,
       parentSlug: law.parentLawLink?.slug ?? null,
       byNumber: articlesByNumber(allArticles),
-      viewerHasFullAccess,
+      // A popover shows an article's text only when the reader holds it: unknown (null) is no.
+      viewerHasFullAccess: viewerHasFullAccess === true,
       isDark,
       isRTL,
       isInCart: (id: string) => cart.some((e) => e.articleId === id && e.isArticleAdded),
@@ -1278,7 +1283,7 @@ function LawSystemPageContent() {
             <SearchLegendBar
               onClear={clearHighlight}
               // Counts are of what is on the page: locked articles' text is withheld.
-              partial={!viewerHasFullAccess && allArticles.some(a => !a.free)}
+              partial={viewerHasFullAccess === false && allArticles.some(a => !a.free)}
               className="sticky top-28 z-20 print:hidden"
             />
             <ReaderArrivalScroll query={arrivalQuery} deps={[law, viewMode]} />
@@ -1642,7 +1647,7 @@ function LawSystemPageContent() {
                       fontClass={fontClass}
                       isReadingMode={isReadingMode}
                       viewMode={viewMode}
-                      viewerHasFullAccess={viewerHasFullAccess}
+                      viewerHasFullAccess={viewerHasFullAccess === true}
                     />
                   ));
                 })()}
@@ -1670,7 +1675,7 @@ function LawSystemPageContent() {
                     fontClass={fontClass}
                     isReadingMode={isReadingMode}
                     viewMode={viewMode}
-                    viewerHasFullAccess={viewerHasFullAccess}
+                    viewerHasFullAccess={viewerHasFullAccess === true}
                   />
                 );
                 const chapterPill = (title: string) => (

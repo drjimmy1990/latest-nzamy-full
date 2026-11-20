@@ -69,3 +69,17 @@ test("register 14 item 14: the law map is gone from the law page", () => {
   assert.equal(existsSync(new URL("./_law-map.tsx", import.meta.url)), false);
   assert.doesNotMatch(PAGE, /LawMapButton|_law-map|خريطة التشابك/);
 });
+
+test("O15 (batch l11): no lock before the entitlement is known — tri-state, lock on false only", () => {
+  assert.match(BOX, /viewerHasFullAccess: boolean \| null;/);
+  const locks = BOX.match(/SUBSCRIBER_SECTIONS\.has\((?:s|tab)\) && ctx\.viewerHasFullAccess === false/g) ?? [];
+  assert.equal(locks.length, 2, "the side box and the «عرض الكل» dialog");
+  assert.doesNotMatch(BOX, /!ctx\.viewerHasFullAccess/);
+  // The page starts and resets it at null (unknown), never false.
+  assert.match(PAGE, /useState<boolean \| null>\(null\)/);
+  assert.match(PAGE, /setViewerHasFullAccess\(null\);/);
+  assert.doesNotMatch(PAGE, /setViewerHasFullAccess\(false\)/);
+  // The «partial» search note and the citation popover treat unknown as "not yet".
+  assert.match(PAGE, /partial=\{viewerHasFullAccess === false && /);
+  assert.match(PAGE, /viewerHasFullAccess: viewerHasFullAccess === true,/);
+});
