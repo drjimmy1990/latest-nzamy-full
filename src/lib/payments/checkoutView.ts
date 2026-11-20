@@ -451,7 +451,17 @@ export interface CouponPreview {
   net: number;
   vat: number;
   total: number;
+  /**
+   * l11 O8: the server answered `source: "founder"` — the founder member's
+   * discount is larger than the coupon, so the figures are the founder
+   * discount's and the coupon is NOT sent with the payment (checkout would
+   * drop it anyway). Absent for a plain coupon preview.
+   */
+  founderWins?: true;
 }
+
+/** l11 O8: the line under the figures when the founder discount beats the coupon. */
+export const FOUNDER_BEATS_COUPON_AR = "خصم العضو المؤسس أكبر من هذا الكود، فيُطبَّق خصم المؤسس وحده ولا يُستعمل الكود";
 
 export function parseCouponPreview(body: unknown): CouponPreview | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
@@ -460,7 +470,9 @@ export function parseCouponPreview(body: unknown): CouponPreview | null {
   if (!isText(b.code) || typeof q !== "object" || q === null) return null;
   if (!isInt(q.listNet) || !isInt(q.discount) || !isInt(q.net) || !isInt(q.vat) || !isInt(q.total)) return null;
   if (q.discount <= 0 || q.listNet - q.discount !== q.net || q.net + q.vat !== q.total) return null;
-  return { code: b.code, listNet: q.listNet, discount: q.discount, net: q.net, vat: q.vat, total: q.total };
+  const preview: CouponPreview = { code: b.code, listNet: q.listNet, discount: q.discount, net: q.net, vat: q.vat, total: q.total };
+  if (b.source === "founder") preview.founderWins = true;
+  return preview;
 }
 
 /**
