@@ -18,9 +18,20 @@
  * failure — a missing column, a permission error, a timeout — stops the run
  * with exit 1, before a single row is written.
  *
+ * Column widths (l10 gap 1.6, migration 20261130_10): before the first write,
+ * preflightColumnWidths reads every capped library column's type through the
+ * read-only RPC library.library_column_widths() and stops the run when a
+ * column is narrower than the seeder's raised cap (LIBRARY_RAISED_CAPS) or
+ * than the longest value the rows carry for it. Postgres refuses an over-long
+ * varchar value (it never cuts), so without this a load against an
+ * articles.number_text still at varchar(50) would fail ≈1,500 article rows
+ * one batch at a time. A missing RPC, an error or a throw stops the run too.
+ *
  * Pure (the probe is passed in): `node --test` loads it directly; nothing here
  * opens a connection.
  */
+
+import { LIBRARY_RAISED_CAPS } from "./seedValues.ts";
 
 export interface OwnerLoaderTable {
   /** The file is `<name>.jsonl` in the --rows folder. */
@@ -63,8 +74,10 @@ export const OWNER_LOADER_TABLES: readonly OwnerLoaderTable[] = [
     // written on every law row — REQUIRED the same way.
     requiredColumns: ["merged_regulations", "owner_links", "summary", "summary_card", "summary_status", "summary_reviewed_at"],
   },
-  { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "articles", pkey: "id", batchSize: 100, stripKeys: [] },
+  // regulation_ref (owner file 19 Nov §1.9, migration 20261130_30): written on
+  // every chapter and article row — REQUIRED before the first write.
+  { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [], requiredColumns: ["regulation_ref"] },
+  { name: "articles", pkey: "id", batchSize: 100, stripKeys: [], requiredColumns: ["regulation_ref"] },
   // decree_id / paragraphs / text_status / position (owner file 18 item 3,
   // migration 20261129_70): written on every amendment row — REQUIRED.
   {
@@ -134,6 +147,164 @@ export async function preflightRequiredColumns(
     }
   }
   return problems;
+}
+
+/** One row of library.library_column_widths() (migration 20261130_10). */
+export interface ColumnWidth {
+  table_name: string;
+  column_name: string;
+  /** format_type(): «character varying(50)», «text», … */
+  data_type: string;
+  /** The character limit; null = no limit (text, or varchar without one). */
+  max_chars: number | null;
+}
+
+/** The longest string value the rows carry for one column. */
+export interface LongestValue {
+  table: string;
+  column: string;
+  /** In characters (code points), what varchar(n) counts. */
+  length: number;
+  /** The row's primary key, to find it. */
+  key: string;
+}
+
+export const COLUMN_WIDTHS_RPC = "library_column_widths";
+export const COLUMN_WIDTHS_MIGRATION = "supabase/migrations/20261130_10_library_wide_text_columns.sql";
+
+/** Characters as Postgres counts them for varchar(n): code points, not UTF-16 units. */
+export function codePointLength(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      const d = s.charCodeAt(i + 1);
+      if (d >= 0xdc00 && d <= 0xdfff) i++;
+    }
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Keeps the longest string per (table, column) over the rows the loader is
+ * about to write. Only the columns that have a limit are watched (`watch`:
+ * table → columns), so the scan stays cheap on the large tables.
+ */
+export function createLongestValueTracker(watch: ReadonlyMap<string, readonly string[]>) {
+  const best = new Map<string, LongestValue>();
+  return {
+    observe(table: string, row: Record<string, unknown>, key: unknown): void {
+      const cols = watch.get(table);
+      if (!cols) return;
+      for (const column of cols) {
+        const v = row[column];
+        if (typeof v !== "string") continue;
+        const k = `${table}.${column}`;
+        const prev = best.get(k);
+        // A string's code-point count never exceeds its UTF-16 length: skip the count when it cannot win.
+        if (prev && v.length <= prev.length) continue;
+        const length = codePointLength(v);
+        if (!prev || length > prev.length) best.set(k, { table, column, length, key: String(key ?? "") });
+      }
+    },
+    snapshot(): LongestValue[] {
+      return [...best.values()];
+    },
+  };
+}
+
+/** table → the columns that have a character limit (what the tracker watches). */
+export function limitedColumns(widths: readonly ColumnWidth[], tables: readonly OwnerLoaderTable[]): Map<string, string[]> {
+  const names = new Set(tables.map((t) => t.name));
+  const out = new Map<string, string[]>();
+  for (const w of widths) {
+    if (w.max_chars == null || !names.has(w.table_name)) continue;
+    out.set(w.table_name, [...(out.get(w.table_name) ?? []), w.column_name]);
+  }
+  return out;
+}
+
+/**
+ * The width problems, pure:
+ *   - a raised-cap column (LIBRARY_RAISED_CAPS) of a table being loaded that is
+ *     missing, or limited below its cap;
+ *   - any limited column whose longest value in the rows is longer than the limit.
+ */
+export function findNarrowColumns(
+  widths: readonly ColumnWidth[],
+  tables: readonly OwnerLoaderTable[],
+  longest: readonly LongestValue[] = [],
+  caps: Readonly<Record<string, number>> = LIBRARY_RAISED_CAPS,
+): PreflightProblem[] {
+  const names = new Set(tables.map((t) => t.name));
+  const byKey = new Map(widths.map((w) => [`${w.table_name}.${w.column_name}`, w]));
+  const problems: PreflightProblem[] = [];
+  for (const [key, cap] of Object.entries(caps)) {
+    const [table, column] = key.split(".");
+    if (!names.has(table)) continue;
+    const w = byKey.get(key);
+    if (!w) {
+      problems.push({ table, column, reason: `column not found by ${COLUMN_WIDTHS_RPC}()` });
+    } else if (w.max_chars != null && w.max_chars < cap) {
+      problems.push({
+        table, column,
+        reason: `is ${w.data_type}, narrower than the seeder's cap of ${cap} characters — run ${COLUMN_WIDTHS_MIGRATION}`,
+      });
+    }
+  }
+  for (const l of longest) {
+    if (!names.has(l.table)) continue;
+    const w = byKey.get(`${l.table}.${l.column}`);
+    if (w && w.max_chars != null && l.length > w.max_chars) {
+      problems.push({
+        table: l.table, column: l.column,
+        reason: `is ${w.data_type}, but row ${l.key} carries ${l.length} characters (Postgres would refuse the row)`,
+      });
+    }
+  }
+  return problems;
+}
+
+/**
+ * Read the widths (one RPC call) and judge them. Any error or throw is a
+ * problem: an unknown width is not a known-safe width.
+ */
+export async function fetchColumnWidths(
+  fetchWidths: () => PromiseLike<{ data: unknown; error: { message?: string; code?: string } | null }>,
+): Promise<{ widths: ColumnWidth[] } | { problem: PreflightProblem }> {
+  const fail = (reason: string) => ({
+    problem: { table: "*", column: "*", reason: `${COLUMN_WIDTHS_RPC}(): ${reason} — run ${COLUMN_WIDTHS_MIGRATION}, then load again` },
+  });
+  try {
+    const { data, error } = await fetchWidths();
+    if (error) return fail(error.message || error.code || "unknown error");
+    if (!Array.isArray(data) || data.length === 0) return fail("returned no columns");
+    return { widths: data as ColumnWidth[] };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * The whole width preflight: read the widths, let `scanLongest` measure the
+ * rows' longest values for the limited columns, judge both. A scan that
+ * throws is a problem too.
+ */
+export async function preflightColumnWidths(
+  tables: readonly OwnerLoaderTable[],
+  fetchWidths: () => PromiseLike<{ data: unknown; error: { message?: string; code?: string } | null }>,
+  scanLongest: (watch: Map<string, string[]>) => PromiseLike<LongestValue[]>,
+): Promise<PreflightProblem[]> {
+  const got = await fetchColumnWidths(fetchWidths);
+  if ("problem" in got) return [got.problem];
+  let longest: LongestValue[];
+  try {
+    longest = await scanLongest(limitedColumns(got.widths, tables));
+  } catch (e) {
+    return [{ table: "*", column: "*", reason: `could not measure the rows: ${e instanceof Error ? e.message : String(e)}` }];
+  }
+  return findNarrowColumns(got.widths, tables, longest);
 }
 
 /** An RPC batch is stored only when the RPC answered exactly the batch's row count. */

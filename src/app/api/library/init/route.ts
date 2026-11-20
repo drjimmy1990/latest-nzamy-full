@@ -13,6 +13,7 @@ import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/op
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
 import { SUCCESSOR_READ_MAX_ROWS, readSuccessorRows, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
 import { isRepealedLawStatus } from "@/app/laws/law-status";
+import { childCountsByParent, childKeyChunks } from "@/app/api/library/laws/[slug]/_children";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -27,7 +28,7 @@ import { isRepealedLawStatus } from "@/app/laws/law-status";
  * (the principles and collections lists name allow-list columns only).
  */
 const LAW_LIST_COLUMNS =
-  "slug, title, title_en, description, type, section_code, section_name, issuing_instrument, issue_date_hijri, total_articles, status, has_merged_regulation";
+  "slug, title, title_en, description, type, section_code, section_name, issuing_instrument, issue_date_hijri, total_articles, status, has_merged_regulation, instrument_id";
 /**
  * N2.2: the law's موجز for the card (library.laws.summary_brief, generated from
  * the preamble by migration 20261025_20) — the موجز text only, never the
@@ -416,6 +417,61 @@ export async function GET(request: Request) {
     }
     const successors = successorsBySupersededSlug(successorRows);
 
+    // Library agent §1.8 (batch l10): «+N تشريعات فرعية» on the card — the
+    // documents whose parent_law_id names a card's instrument_id, by the same
+    // rule as the law page's list (isLawChildOf in _children.ts), less the ones
+    // whose title is one of the card's merged names (file 16 §7 counts both
+    // kinds; the card adds the merged names itself). The names are compared in
+    // both forms (a subscriber's and a guest's), so every viewer gets the same
+    // number. One read per
+    // chunk of this page's ids (≤ 50 per `in (…)`, so ≤ 4 for the largest
+    // page), served by laws_parent_law_id_lookup_idx (20261130_20); slug and
+    // parent_law_id are on the anon allow-list of 20261004_01, so the request
+    // client reads them. Supplementary: a failed read only means no counter.
+    let childCounts = new Map<string, number>();
+    const childChunks = childKeyChunks(lawsRows);
+    if (childChunks.length > 0) {
+      try {
+        const reads = await Promise.all(childChunks.map((keys) =>
+          readSuccessorRows(
+            () =>
+              supabase
+                .schema("library")
+                .from("laws")
+                .select("slug,title,parent_law_id", { count: "exact" })
+                .in("parent_law_id", keys)
+                .order("slug")
+                .range(0, 999) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null; count: number | null }>,
+            () =>
+              selectAllPages<Record<string, unknown>>(
+                (f, t) =>
+                  supabase
+                    .schema("library")
+                    .from("laws")
+                    .select("slug,title,parent_law_id")
+                    .in("parent_law_id", keys)
+                    .order("slug")
+                    .range(f, t) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
+                { pageSize: 1000, maxRows: SUCCESSOR_READ_MAX_ROWS }
+              )
+          )
+        ));
+        const failed = reads.find((r) => r.error);
+        if (failed) console.warn("[Library Init API] children count failed:", failed.error?.message);
+        else childCounts = childCountsByParent(reads.flatMap((r) => r.data), lawsRows.map((row) => ({
+          slug: row.slug,
+          instrument_id: row.instrument_id,
+          title: row.title,
+          mergedNames: [true, false].flatMap((subscriber) => [
+            ...mergedNamesFromDetails(row[LAW_MERGED_DETAILS_COLUMN], subscriber),
+            ...mergedNamesForViewer(row[LAW_MERGED_NAMES_COLUMN], subscriber),
+          ]),
+        })));
+      } catch (e) {
+        console.warn("[Library Init API] children count threw:", e);
+      }
+    }
+
     laws.data = lawsRows.map((row) => {
       const slug = row.slug as string;
       const isFree = isFreeLibraryItem({ contentType: "laws", itemId: slug, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
@@ -426,6 +482,8 @@ export async function GET(request: Request) {
         latest_update: { date_hijri: row[LAW_EVENT_DATE_ALIAS] },
         issue_date_hijri: row.issue_date_hijri,
       });
+      // §1.8 (l10): the card's sub-legislation count (childCounts above).
+      const childCount = childCounts.get(slug) ?? 0;
       const { [LAW_EVENT_DATE_ALIAS]: _eventDate, ...rest } = row;
       void _eventDate; // never sent: the raw latest_update date leaves only as `latest_legislative_update`
       const shaped = isFree ? rest : stripFields({ ...rest }, ["preamble", "description", "article_status_summary"]);
@@ -444,11 +502,15 @@ export async function GET(request: Request) {
           : mergedNamesForViewer(shaped[LAW_MERGED_NAMES_COLUMN], hasFullAccess);
         delete shaped[LAW_MERGED_DETAILS_COLUMN];
       }
+      // instrument_id is read only to count the sub-legislation; it is not a card field.
+      delete shaped.instrument_id;
       return {
         ...maskListOfficialFields(shaped, hasFullAccess),
         ...(event ? { latest_legislative_update: event.dateHijri } : {}),
         // §2.4-1: {slug, title} of the law that replaced a repealed one.
         ...(replacedBy ? { replaced_by: replacedBy } : {}),
+        // §1.8 (l10): how many documents name this one in parent_law_id; absent at 0.
+        ...(childCount > 0 ? { sub_legislation_count: childCount } : {}),
         free: isFree,
         locked: !isFree,
       };

@@ -10,6 +10,9 @@
  * (owner note ١١; list and checks in src/lib/library/ownerLoaderTables.ts).
  * A live run first checks every required column (feqh_books.series_id /
  * volume_number) and stops with exit 1, writing nothing, if any check fails.
+ * It then reads the library column widths (library.library_column_widths(),
+ * migration 20261130_10) and stops the same way when a column is narrower than
+ * the seeder's raised cap or than the longest value in the rows (l10 gap 1.6).
  *
  * NO 800MB SQL FILE UPLOAD NEEDED.
  *
@@ -71,7 +74,9 @@ process.emitWarning = (warning, ...rest) => {
 const { stripInternalContentKeys } = await import("../src/lib/library/internalContentFields.ts");
 const { liveWriteDecision, parseSeedOwnerArgs, SEED_OWNER_USAGE } = await import("../src/lib/library/seedOwnerArgs.ts");
 const { fetchWithTimeout } = await import("../src/lib/library/fetchWithTimeout.ts");
-const { OWNER_LOADER_TABLES, preflightRequiredColumns, rpcBatchStored } = await import("../src/lib/library/ownerLoaderTables.ts");
+const {
+  COLUMN_WIDTHS_RPC, createLongestValueTracker, OWNER_LOADER_TABLES, preflightColumnWidths, preflightRequiredColumns, rpcBatchStored,
+} = await import("../src/lib/library/ownerLoaderTables.ts");
 
 // Leave from the top level without a synchronous process.exit right after the
 // dynamic .ts imports: on Windows that aborts Node itself (libuv
@@ -344,6 +349,30 @@ async function seedTable(tableConfig) {
   return stats;
 }
 
+// Read-only pass over the JSONL files before the first write: the longest
+// value of every limited column (preflightColumnWidths, l10). Same rows and
+// the same --limit as the load; unreadable lines are left to the load's report.
+async function scanLongestValues(tables, watch) {
+  const tracker = createLongestValueTracker(watch);
+  for (const t of tables) {
+    if (!watch.has(t.name)) continue;
+    const filePath = path.join(ROWS_DIR, `${t.name}.jsonl`);
+    if (!fs.existsSync(filePath)) continue;
+    const rl = readline.createInterface({ input: fs.createReadStream(filePath), crlfDelay: Infinity });
+    let read = 0;
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      read++;
+      let row;
+      try { row = JSON.parse(line); } catch { if (read >= maxLimit) break; continue; }
+      if (row && typeof row === "object") tracker.observe(t.name, row, row[t.pkey]);
+      if (read >= maxLimit) break;
+    }
+    rl.close();
+  }
+  return tracker.snapshot();
+}
+
 function printSummary(tableStats) {
   const w1 = 24;
   const w2 = 13;
@@ -408,6 +437,18 @@ async function main() {
       console.error("❌ Pre-flight check failed — nothing was written:");
       for (const p of problems) console.error(`   - library.${p.table}.${p.column}: ${p.reason}`);
       console.error("   Run the pending SQL (e.g. supabase/migrations/20261026_51_feqh_books_series.sql), then load again.");
+      process.exit(1);
+    }
+    // Column widths (l10, 20261130_10): no column narrower than the seeder's
+    // raised caps or than the longest value these rows carry — else stop here.
+    const widthProblems = await preflightColumnWidths(
+      tablesToSeed,
+      () => supabase.rpc(COLUMN_WIDTHS_RPC),
+      (watch) => scanLongestValues(tablesToSeed, watch),
+    );
+    if (widthProblems.length) {
+      console.error("❌ Pre-flight check failed (column widths) — nothing was written:");
+      for (const p of widthProblems) console.error(`   - library.${p.table}.${p.column}: ${p.reason}`);
       process.exit(1);
     }
   }

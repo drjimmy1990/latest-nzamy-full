@@ -240,6 +240,24 @@ export interface GraphWatchdogBackend {
    * the migration (the backend then answers `{ reset: 0 }`).
    */
   refreshReplacements?(): Promise<{ changed_laws: number; reset: number }>;
+  /**
+   * `graph_rag_resolve_owner_edges` (20261130_40): the owner's links
+   * (library_graph.owner_edges, keyed by his edge_id) mapped again to node keys
+   * and reconciled into library_graph.edges as `owner_curated`. Called after
+   * every prune, so a link whose article was re-keyed comes back on the new
+   * key. Optional: absent before the migration (the backend then answers null).
+   */
+  resolveOwnerEdges?(): Promise<OwnerEdgeResolveResult | null>;
+}
+
+/** What `graph_rag_resolve_owner_edges` answers (20261130_40). */
+export interface OwnerEdgeResolveResult {
+  owner_edges: number;
+  by_status: Record<string, number>;
+  graph_edges: number;
+  upserted: number;
+  removed: number;
+  status_changed: number;
 }
 
 /** Thresholds (cosine similarity, 0–1) the database applies; unset keys keep the SQL defaults. */
@@ -463,6 +481,8 @@ export async function runGraphSyncPass(
   // The owner-link reading of a full pass, kept in the run's details for the
   // explorer's status tab (graph_rag_explore_status, 20261119_10).
   let ownerLinkStats: OwnerLinkStats | null = null;
+  // The owner's own links (20261130_40), re-resolved after the prune.
+  let ownerEdgeStats: OwnerEdgeResolveResult | { error: string } | null = null;
 
   let nodeBuffer: GraphNodePayload[] = [];
   let edgeBuffer: GraphEdgePayload[] = [];
@@ -752,6 +772,24 @@ export async function runGraphSyncPass(
       const relink = await backend.relinkVault(profile.modelId);
       vaultRelinked = relink.relinked;
       missingAfterRelink = relink.missing;
+      // The owner's links (owner file 19 Nov §2): after the prune, so an edge
+      // dropped with a re-keyed node comes back on its new key. A failure is
+      // logged and retried next pass; it never fails the graph pass.
+      if (backend.resolveOwnerEdges) {
+        try {
+          const resolved = await backend.resolveOwnerEdges();
+          if (resolved) {
+            ownerEdgeStats = resolved;
+            log(
+              `[graph-watchdog] Owner edges: ${resolved.owner_edges} rows, ${resolved.graph_edges} in the graph ` +
+                `(+${resolved.upserted} / -${resolved.removed}), by status ${JSON.stringify(resolved.by_status)}`,
+            );
+          }
+        } catch (e) {
+          ownerEdgeStats = { error: (e instanceof Error ? e.message : String(e)).slice(0, 300) };
+          log(`[graph-watchdog] Owner edges not resolved this pass (retried next pass): ${ownerEdgeStats.error}`);
+        }
+      }
       log(
         `[graph-watchdog] Graph synced: upserted=${nodesUpserted}, pruned=${nodesDeleted}, edges=${edgesUpserted}, vaultRelinked=${vaultRelinked}, missingVectors=${relink.missing}`,
       );
@@ -888,6 +926,7 @@ export async function runGraphSyncPass(
         quota_paused: quotaPaused,
         prune_skipped: pruneSkipped,
         ...(ownerLinkStats ? { owner_links: ownerLinkStats } : {}),
+        ...(ownerEdgeStats ? { owner_edges: ownerEdgeStats } : {}),
       },
     });
 

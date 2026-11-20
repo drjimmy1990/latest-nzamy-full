@@ -79,7 +79,7 @@ test("sections: legislation and judicial filled, fiqh empty; computed and outlin
       ["decree:d1", "decree", "AMENDS_ARTICLE", "in", "order", "d1", null],
     ],
   );
-  assert.equal(out.sections.legislation.items[0].relation, "إحالة: تُحيل إليها هذه المادة");
+  assert.equal(out.sections.legislation.items[0].relation, "تحيل إليها هذه المادة", "a5 refers to a7: a7 is listed as the article a5 refers to");
   assert.deepEqual(
     out.sections.judicial.items.map((i) => [i.key, i.docKind, i.docId, i.anchorId, i.relation]),
     [["principle:p1", "collection", "high-court", "p1", "مبدأ قضائي يستند إليها"]],

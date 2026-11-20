@@ -57,8 +57,47 @@ import {
 // Owner 2026-11-07: the corpus's own audit notes never reach an amendment summary.
 import { stripAuditNotes } from "../../src/lib/library/lawPreambleBlocks";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
-import { extractOwnerLinks, type OwnerLink } from "../../src/lib/library/ownerLinks";
+import { describeOwnerLinkCut, extractOwnerLinks, type OwnerLink } from "../../src/lib/library/ownerLinks";
 import { tallyOwnerLinks } from "./lib/owner-links-tally";
+import {
+  anchorShortfall,
+  bodyLineOffset,
+  formatAnchorJoins,
+  formatAnchorProblems,
+  prepareAnchors,
+  totalArticlesMismatch,
+  type AnchorKind,
+} from "./lib/anchors";
+
+/** The anchor kinds this parser reads (the anchor gate, l10 items 1.4 / 4.3). */
+const LAW_ANCHOR_KINDS: readonly AnchorKind[] = [
+  "ARTICLE_START", "CHAPTER_START", "AMENDMENT", "REGULATION", "ATTACHED_REGULATION",
+];
+/**
+ * Owner package 19 Nov, item 1.4: an anchor whose JSON spans lines (or holds
+ * «-->» inside a value) is rewritten to one line before parsing. Each one is
+ * listed here. Informational: the text is read in full.
+ */
+const anchorJoins: string[] = [];
+/**
+ * The anchor gate: an anchor the parser cannot read (JSON that does not parse,
+ * no JSON, not closed on its line) and any file where fewer (or more)
+ * articles, chapters, amendment cards or regulations were parsed than its
+ * anchors open. GATES the exit code, like
+ * malformedAnchorFiles: each line is text that would vanish from the site.
+ */
+const anchorProblems: string[] = [];
+/**
+ * Item 4.3: frontmatter `total_articles` ≠ the parsed article count.
+ * Informational — the site stores and shows the parsed count.
+ */
+const totalArticlesMismatches: string[] = [];
+/** Item 1.3: owner links dropped or shortened by the caps of ownerLinks.ts. Informational. */
+const ownerLinkCuts: string[] = [];
+/** Latent-recovered articles suppressed by parseArticlesInBlock (merged into a regulation on purpose), per file. */
+let latentArticlesSuppressed = 0;
+/** AMENDMENT anchors that became an amendment record (readable or not), per file. */
+let amendmentAnchorsRead = 0;
 
 /** Collected across a whole run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
@@ -197,6 +236,14 @@ const malformedAnchorFiles: string[] = [];
  * slip in one heading must not block the whole library).
  */
 const chapterLevelDiagnostics: string[] = [];
+/**
+ * Merged regulations (owner file 19 Nov §1.9): an ATTACHED_REGULATION block
+ * whose title is unreadable or not found verbatim (whitespace collapsed) among
+ * the file's merged_regulation_details[].name, or a block left unclosed.
+ * Informational, never gating: the block's articles keep no regulation_ref
+ * when the title is unreadable; with a readable title they keep it.
+ */
+const regulationRefProblems: string[] = [];
 /**
  * `text_availability: official_text_unpublished` documents: the ones whose
  * notice was kept as `description` instead of a synthetic «الصفحة 1» article,
@@ -624,6 +671,11 @@ export interface ParsedArticle {
   english_text_status?: "unverified";
   chapter_title: string;
   chapter_number?: number;
+  /**
+   * Owner file 19 Nov §1.9: the name of the merged regulation (the title of the
+   * ATTACHED_REGULATION block) this article sits in. Absent outside a block.
+   */
+  regulation_ref?: string;
   regulations: ExecutiveRegulation[];
   amendments: AmendmentEntry[];
   free: boolean;
@@ -655,6 +707,8 @@ export interface ParsedChapter {
    * the parse output differ from a file without levels).
    */
   parent_source_index?: number;
+  /** Owner file 19 Nov §1.9: the ATTACHED_REGULATION block's title. Absent outside a block. */
+  regulation_ref?: string;
   articles: ParsedArticle[];
 }
 
@@ -959,6 +1013,98 @@ export function findChapterPartBoundaries(body: string): number[] {
   return offsets;
 }
 
+/** One `<!-- ATTACHED_REGULATION {…} -->` … `<!-- ATTACHED_REGULATION_END -->` block. */
+export interface AttachedRegulationBlock {
+  /** Offset of the opening marker. */
+  start: number;
+  /** Offset of the closing marker, or the body's length when the block is unclosed. */
+  end: number;
+  /** The marker JSON's `title` (or `name`), whitespace collapsed; null when unreadable. */
+  name: string | null;
+  problem?: string;
+}
+
+/**
+ * The merged-regulation blocks of a law file and the name each one carries
+ * (owner file 19 Nov §1.9: «علاقات المواد تُعرَّف بـregulation_ref مطابق حرفياً
+ * لاسم اللائحة»). The name is read from the opening marker's JSON — `title`,
+ * the key the library writes, or `name`.
+ */
+export function findAttachedRegulationBlocks(body: string): AttachedRegulationBlock[] {
+  const blocks: AttachedRegulationBlock[] = [];
+  const openRe = /<!--\s*ATTACHED_REGULATION(?!_END)\b([\s\S]*?)-->/g;
+  const endRe = /<!--\s*ATTACHED_REGULATION_END\s*-->/g;
+  const text = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
+  let m: RegExpExecArray | null;
+  while ((m = openRe.exec(body)) !== null) {
+    endRe.lastIndex = openRe.lastIndex;
+    const close = endRe.exec(body);
+    const block: AttachedRegulationBlock = { start: m.index, end: close ? close.index : body.length, name: null };
+    const raw = m[1].trim();
+    let meta: unknown = null;
+    try {
+      meta = raw ? JSON.parse(raw) : null;
+    } catch {
+      meta = null;
+    }
+    const o = meta && typeof meta === "object" && !Array.isArray(meta) ? (meta as Record<string, unknown>) : {};
+    block.name = text(o.title) || text(o.name) || null;
+    const problems: string[] = [];
+    if (!block.name) {
+      problems.push(
+        `ATTACHED_REGULATION block has no readable title/name (${raw ? "marker JSON unreadable or without title" : "no JSON"}) — its articles get no regulation_ref`,
+      );
+    }
+    if (!close) {
+      problems.push(`ATTACHED_REGULATION block${block.name ? ` «${block.name}»` : ""} has no ATTACHED_REGULATION_END — taken to the end of the file`);
+    }
+    if (problems.length) block.problem = problems.join("; ");
+    blocks.push(block);
+    if (close) openRe.lastIndex = endRe.lastIndex;
+  }
+  return blocks;
+}
+
+/**
+ * Stamp `regulation_ref` on every chapter and article whose marker sits inside
+ * an ATTACHED_REGULATION block, and list the problems: an unreadable title, an
+ * unclosed block, a title not found verbatim among `mergedNames` (the file's
+ * merged_regulation_details[].name, as mergedRegulationDetailsOf reads them).
+ * A merged name with no block is NOT a problem: a regulation may be written as
+ * an inline REGULATION series instead. Items without a source position, and
+ * the orphan chapter (its offsets are relative to a stripped body), are never
+ * stamped. Nothing else changes: the key is only set inside a block.
+ */
+export function stampRegulationRefs(
+  chapters: ParsedChapter[],
+  blocks: readonly AttachedRegulationBlock[],
+  mergedNames: readonly string[],
+): string[] {
+  const problems: string[] = [];
+  const known = new Set(mergedNames);
+  for (const block of blocks) {
+    if (block.problem) problems.push(block.problem);
+    if (block.name && !known.has(block.name)) {
+      problems.push(`ATTACHED_REGULATION title «${block.name}» is not found verbatim in merged_regulation_details[].name`);
+    }
+  }
+  const nameAt = (index: number | undefined): string | null => {
+    if (typeof index !== "number") return null;
+    for (const block of blocks) if (index > block.start && index < block.end) return block.name;
+    return null;
+  };
+  for (const chapter of chapters) {
+    if (chapter.title === "__orphan__") continue;
+    const chapterRef = nameAt(chapter.source_index);
+    if (chapterRef) chapter.regulation_ref = chapterRef;
+    for (const article of chapter.articles) {
+      const ref = nameAt(article.source_index);
+      if (ref) article.regulation_ref = ref;
+    }
+  }
+  return problems;
+}
+
 /**
  * The level-1 parent of every level-2 chapter, by source position.
  *
@@ -1033,7 +1179,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   // embedded in its text. Normalising once here fixes every downstream pattern.
   const sourceText = fs.readFileSync(filePath, "utf-8");
   const raw = sourceText.replace(/\r\n/g, "\n");
-  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  const { meta, body: writtenBody } = parseYamlFrontmatter(raw, filePath);
   const scopeDecision = resolveCorpusScope(meta, filePath, sourceText);
   corpusScopeDecisions.push(scopeDecision);
   if (scopeDecision.corpus_scope !== "public_corpus") return null;
@@ -1059,6 +1205,16 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     gateZeroExcluded.push(`${path.basename(filePath)} :: gate_zero_status="${gateZeroStatus}"`);
     return null;
   }
+
+  // The anchor gate (owner package 19 Nov, item 1.4): every anchor whose JSON
+  // spans lines, or holds «-->» inside a value, goes on one line first, so
+  // every regex below sees it. Any other byte of the body is unchanged.
+  const anchors = prepareAnchors(writtenBody, LAW_ANCHOR_KINDS);
+  const body = anchors.body;
+  latentArticlesSuppressed = 0;
+  amendmentAnchorsRead = 0;
+  let syntheticArticleUsed = false;
+  let chapterAnchorsRead = 0;
 
   // ب-133: read independently of validateEnum, which would reject this value
   // (correctly — it is not a legal status) and default it away before we could
@@ -1146,6 +1302,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
         const synthetic = parseArticlesInBlock(wrapped, "", 0, path.basename(filePath));
         if (synthetic.length === 1 && hasMeaningfulContent(synthetic[0].text)) {
           articles = synthetic;
+          syntheticArticleUsed = true;
           syntheticWholeDocumentArticles.push(path.basename(filePath));
         }
       } else if (hasArticleStart !== hasArticleEnd) {
@@ -1155,6 +1312,7 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     if (keepEmptyChapter) chapters.push({ source_index: 0, number: 0, title: "", level: 1, articles });
   } else {
     while ((chapterMatch = chapterRe.exec(body)) !== null) {
+      chapterAnchorsRead++;
       const chapterMeta = safeJsonParse(chapterMatch[1], `chapter in ${slug}`);
       const chapterBody = chapterMatch[2];
       const chapterNum = Number(chapterMeta?.number || chapters.length + 1);
@@ -1193,7 +1351,46 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
     }
   }
 
+  // Merged regulations (owner file 19 Nov §1.9): regulation_ref on everything
+  // inside an ATTACHED_REGULATION block, and its title checked against the
+  // frontmatter names.
+  const attachedBlocks = findAttachedRegulationBlocks(body);
+  if (attachedBlocks.length) {
+    const mergedNames = (mergedRegulationDetailsOf(meta.merged_regulation_details) ?? []).map((d) => d.name);
+    for (const problem of stampRegulationRefs(chapters, attachedBlocks, mergedNames)) {
+      regulationRefProblems.push(`${path.basename(filePath)} :: ${problem}`);
+    }
+  }
+
   const totalArticles = chapters.reduce((sum, ch) => sum + ch.articles.length, 0);
+
+  // ── The anchor gate: what the body opens vs what was parsed ─────────────
+  // An ARTICLE_START becomes one article, or (latent_recovered) the text of the
+  // regulation before it; the whole-document article has no anchor at all.
+  // Every AMENDMENT becomes a card record of its article, every REGULATION a
+  // regulation of an emitted article (measured on the 10-03 corpus: 0 files
+  // differ for either) — one outside any article is lost, so it is counted.
+  {
+    const where = path.basename(filePath);
+    const lineOffset = bodyLineOffset(raw, writtenBody);
+    anchorJoins.push(...formatAnchorJoins(where, anchors.joins, lineOffset));
+    anchorProblems.push(...formatAnchorProblems(where, anchors.problems, lineOffset));
+    const articleOpeners = anchors.counts.ARTICLE_START.openers;
+    const articlesFromAnchors = totalArticles - (syntheticArticleUsed ? 1 : 0) + latentArticlesSuppressed;
+    for (const line of [
+      anchorShortfall(where, "ARTICLE_START", articleOpeners, articlesFromAnchors),
+      anchorShortfall(where, "CHAPTER_START", anchors.counts.CHAPTER_START.openers, chapterAnchorsRead),
+      anchorShortfall(where, "AMENDMENT", anchors.counts.AMENDMENT.openers, amendmentAnchorsRead),
+      anchorShortfall(
+        where,
+        "REGULATION",
+        anchors.counts.REGULATION.openers,
+        chapters.reduce((n, ch) => n + ch.articles.reduce((m, a) => m + a.regulations.length, 0), 0),
+      ),
+    ]) if (line) anchorProblems.push(line);
+    const headerLine = totalArticlesMismatch(where, meta.total_articles, articleOpeners, totalArticles);
+    if (headerLine) totalArticlesMismatches.push(headerLine);
+  }
 
   // The unpublished flag on a file that is NOT a bare notice (it has article
   // anchors, chapters, or a positive total_articles) is left to a human: the
@@ -1386,13 +1583,15 @@ function parseSingleLaw(filePath: string): ParsedLaw | null {
   // real files that turned out fine), so only larger documents are checked;
   // 70% (not e.g. 85%) because several legitimately-fine large multi-chapter
   // codes measured 70-85% in the same investigation.
-  if (body.length > 20000) {
+  // Measured against the body as written (before any anchor join), so a joined
+  // anchor never moves a file across the threshold.
+  if (writtenBody.length > 20000) {
     const captured = preambleText.length + regulationPreamble.length + sumCapturedChars(returned.chapters);
-    const coveragePct = (captured / body.length) * 100;
+    const coveragePct = (captured / writtenBody.length) * 100;
     if (coveragePct < 70) {
       lowCoverageFiles.push({
         file: path.basename(filePath),
-        bodyLen: body.length,
+        bodyLen: writtenBody.length,
         capturedLen: captured,
         coveragePct: Math.round(coveragePct * 10) / 10,
       });
@@ -1676,6 +1875,7 @@ function parseArticlesInBlock(
     // first, then removed from the live text — previously it was never read and
     // never stripped, so it ended up concatenated into `text`.
     const history = extractArticleHistory(articleBody, status);
+    amendmentAnchorsRead += history.records.filter((r) => r.anchor || r.anchorUnreadable).length;
     // ── One amendment = one card (owner file 18, item 3; «خامساً» 1) ───────
     // Each AMENDMENT anchor comes paired with the text after it; a before-text
     // with no anchor (the older files) is a card of its own, as before.
@@ -1848,6 +2048,7 @@ function parseArticlesInBlock(
   }
 
   const emitted = articles.filter((article) => !suppressedLatentArticles.has(article));
+  latentArticlesSuppressed += suppressedLatentArticles.size;
   for (const article of emitted) {
     for (const regulation of article.regulations) {
       if (!regulation.text.trim()) {
@@ -1880,9 +2081,9 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     frontmatterWarnings, emptyArticles, verifiedEmptyArticles,
     orphanRegulationAnchors, unknownRegulationStatuses, emptyRegulationBlocks, supersededDuplicateSkipped, gateZeroExcluded,
     lowCoverageFiles, syntheticWholeDocumentArticles, malformedAnchorFiles,
-    chapterLevelDiagnostics, unpublishedTextNotices,
+    chapterLevelDiagnostics, regulationRefProblems, unpublishedTextNotices,
     mukarrarNumberProblems, amendmentTextUnavailable, amendmentAnchorProblems, lawSummaryProblems,
-    parentLinkProblems,
+    parentLinkProblems, anchorJoins, anchorProblems, totalArticlesMismatches, ownerLinkCuts,
   ]) bucket.length = 0;
   for (const version of Object.keys(schemaVersionCounts)) delete schemaVersionCounts[version];
 
@@ -2335,6 +2536,10 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     chapterLevelDiagnostics,
   );
   printCapped(
+    "⚠️  merged regulation block(s) — title unreadable, block unclosed, or title not in merged_regulation_details[].name",
+    regulationRefProblems,
+  );
+  printCapped(
     "ℹ️  official_text_unpublished document(s) — notice kept as description, or flag disagreeing with the file",
     unpublishedTextNotices,
   );
@@ -2354,6 +2559,18 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     "⚠️  frontmatter summary problem(s) — text loaded as written, bad status/date as null (file 18, item 4)",
     lawSummaryProblems,
   );
+  printCapped(
+    "ℹ️  anchor(s) rewritten to one line before parsing — JSON over several lines, or «-->» inside a value (item 1.4)",
+    anchorJoins,
+  );
+  printCapped(
+    "🛑 anchor problem(s) — an anchor the parser cannot read, or fewer/more articles, chapters, amendment cards or regulations parsed than the file opens (item 1.4)",
+    anchorProblems,
+  );
+  printCapped(
+    "ℹ️  total_articles in the frontmatter ≠ the parsed count — the site shows the parsed count (item 4.3)",
+    totalArticlesMismatches,
+  );
 
   // The owner's own links (20261118_10). Read after every drop, so a path
   // resolves to a law that is really in this output, by its final slug.
@@ -2370,9 +2587,13 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     return undefined;
   };
   for (const law of laws) {
-    const links = extractOwnerLinks(law.metadata ?? {}, lawOfPath);
+    const where = path.basename(lawSourceFile.get(law) || law.slug);
+    const links = extractOwnerLinks(law.metadata ?? {}, lawOfPath, (cut) =>
+      ownerLinkCuts.push(`${where} :: ${describeOwnerLinkCut(cut)}`),
+    );
     law.owner_links = links.length > 0 ? links : null;
   }
+  printCapped("ℹ️  owner links cut — beyond the caps of ownerLinks.ts, not loaded (item 1.3)", ownerLinkCuts);
   // Owner file 18, item 5: parent links as the children state them.
   const lawIds = new Set(laws.map((law) => law.instrument_id).filter(Boolean));
   for (const law of laws) {
@@ -2380,9 +2601,12 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     const where = path.basename(lawSourceFile.get(law) || law.slug);
     if (law.type === "نظام") parentLinkProblems.push(`${where} :: parent_law_id "${law.parent_law_id}" on a type: نظام file`);
     if (law.parent_law_id === law.instrument_id) parentLinkProblems.push(`${where} :: parent_law_id points at the file itself`);
-    else if (!lawIds.has(law.parent_law_id)) parentLinkProblems.push(`${where} :: parent_law_id "${law.parent_law_id}" names no law of this run — no link (orphan list)`);
+    else if (!lawIds.has(law.parent_law_id)) parentLinkProblems.push(`${where} :: parent_law_id "${law.parent_law_id}" names no law of this run — no link (orphan list; on a partial run, e.g. a 3-file trial, the parent may simply not be in the input)`);
   }
-  printCapped("ℹ️  parent_law_id problem(s) — kept as written (file 18, item 5)", parentLinkProblems);
+  printCapped(
+    `ℹ️  parent_law_id problem(s) — kept as written (file 18, item 5)${laws.length < 50 ? " — a small run: a parent outside the input is listed too" : ""}`,
+    parentLinkProblems,
+  );
 
   const ownerTally = tallyOwnerLinks(laws);
   console.log(`\nℹ️  ${ownerTally.summary}`);
@@ -2429,12 +2653,17 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         corpusScopeInstitutional: corpusScopeDecisions.filter(d => d.corpus_scope === "institutional_reference").length,
         lowCoverageFiles: lowCoverageFiles.length,
         chapterLevelDiagnostics: chapterLevelDiagnostics.length,
+        regulationRefProblems: regulationRefProblems.length,
         unpublishedTextNotices: unpublishedTextNotices.length,
         mukarrarNumberProblems: mukarrarNumberProblems.length,
         amendmentTextUnavailable: amendmentTextUnavailable.length,
         amendmentAnchorProblems: amendmentAnchorProblems.length,
         lawSummaryProblems: lawSummaryProblems.length,
         parentLinkProblems: parentLinkProblems.length,
+        anchorJoins: anchorJoins.length,
+        anchorProblems: anchorProblems.length,
+        totalArticlesMismatches: totalArticlesMismatches.length,
+        ownerLinkCuts: ownerLinkCuts.length,
         ownerLinks: ownerTally.links,
         ownerLinksResolved: ownerTally.resolved,
         ownerLinksUnresolved: ownerTally.unresolved.length,
@@ -2459,12 +2688,17 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         unverifiedSupersededTags,
         unverifiedEntityCollisions,
         chapterLevelDiagnostics,
+        regulationRefProblems,
         unpublishedTextNotices,
         mukarrarNumberProblems,
         amendmentTextUnavailable,
         amendmentAnchorProblems,
         lawSummaryProblems,
         parentLinkProblems,
+        anchorJoins,
+        anchorProblems,
+        totalArticlesMismatches,
+        ownerLinkCuts,
       },
       identityCollisions: collisions.map((c) => ({ key: c.slug, members: c.sources })),
       failed: failed.map((f) => `${f.file}: ${f.error}`),
@@ -2483,6 +2717,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
     rejectedEnumSummary.length > 0 ||
     orphanRegulationAnchors.length > 0 ||
     malformedAnchorFiles.length > 0 ||
+    anchorProblems.length > 0 ||
     unverifiedSupersededTags.length > 0 ||
     unverifiedEntityCollisions.length > 0
   ) {
@@ -2493,6 +2728,7 @@ export function parseLaws(inputPath: string, reportDir?: string): LawsParserOutp
         `${rejectedEnumSummary.length} rejected enum value(s), ` +
         `${orphanRegulationAnchors.length} orphan REGULATION anchor(s), ` +
         `${malformedAnchorFiles.length} malformed anchor file(s), ` +
+        `${anchorProblems.length} anchor problem(s), ` +
         `${unverifiedSupersededTags.length} unverified superseded_duplicate tag(s), ` +
         `${unverifiedEntityCollisions.length} unverified entity collision(s)). ` +
         `Refusing to report success.`,

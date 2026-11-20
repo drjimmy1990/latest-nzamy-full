@@ -20,9 +20,11 @@ test("init: law rows are masked for non-subscribers and the envelope says so", (
   // ٣١٨: besides the mask, a row carries only the one public date (date alone)
   // and, for a repealed law, its successor's {slug, title} (§2.4-1, public
   // columns: successorsBySupersededSlug builds nothing else).
+  // Batch l10 (§1.8): plus how many documents name the law in parent_law_id
+  // (a count of public rows), absent at 0.
   assert.match(
     initSource,
-    /return \{\s*\.\.\.maskListOfficialFields\(shaped, hasFullAccess\),\s*\.\.\.\(event \? \{ latest_legislative_update: event\.dateHijri \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(replacedBy \? \{ replaced_by: replacedBy \} : \{\}\),\s*free: isFree,\s*locked: !isFree,\s*\};/,
+    /return \{\s*\.\.\.maskListOfficialFields\(shaped, hasFullAccess\),\s*\.\.\.\(event \? \{ latest_legislative_update: event\.dateHijri \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(replacedBy \? \{ replaced_by: replacedBy \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(childCount > 0 \? \{ sub_legislation_count: childCount \} : \{\}\),\s*free: isFree,\s*locked: !isFree,\s*\};/,
   );
   assert.match(initSource, /const replacedBy = isRepealedLawStatus\(row\.status\) \? successors\.get\(slug\) : undefined;/);
   assert.match(initSource, /\.select\("slug,title,supersedes_law_slug"\)\s*\.not\("supersedes_law_slug", "is", null\)/);

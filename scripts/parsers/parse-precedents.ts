@@ -31,9 +31,54 @@ import { applyExclusions, formatExclusionSummary } from "./lib/exclusions";
 import { writeParseReport, printCapped, bindParseReportToOutput } from "./lib/report";
 import { classifyCourt, type JudicialTrack } from "./lib/court";
 import { COLLECTION_VOLUME_KEYS, readSeriesId, readVolumeNumber } from "../../src/lib/library/seriesFields";
+import {
+  anchorShortfall,
+  bodyLineOffset,
+  formatAnchorJoins,
+  formatAnchorProblems,
+  prepareAnchors,
+  type AnchorKind,
+  type PreparedAnchors,
+} from "./lib/anchors";
 
 /** Collected per run so YAML problems are reported, never swallowed. */
 const frontmatterWarnings: string[] = [];
+
+/** The anchor kinds this parser reads (the anchor gate, item 1.4 — see parse-laws.ts). */
+const PRECEDENT_ANCHOR_KINDS: readonly AnchorKind[] = ["ARTICLE_START", "PRINCIPLE_START"];
+/** The anchor read of each file, by path; reported once, for the classifier that took the file. */
+const preparedByFile = new Map<string, { anchors: PreparedAnchors; lineOffset: number }>();
+/** The body of a file with every PRINCIPLE_START / ARTICLE_START on one line; nothing else changes. */
+function anchorBody(filePath: string, raw: string, writtenBody: string): string {
+  let hit = preparedByFile.get(filePath);
+  if (!hit) {
+    hit = {
+      anchors: prepareAnchors(writtenBody, PRECEDENT_ANCHOR_KINDS),
+      lineOffset: bodyLineOffset(raw.replace(/\r\n/g, "\n"), writtenBody.replace(/\r\n/g, "\n")),
+    };
+    preparedByFile.set(filePath, hit);
+  }
+  return hit.anchors.body;
+}
+/** Anchors rewritten to one line (informational). */
+const anchorJoins: string[] = [];
+/** Unreadable anchors and principle shortfalls. GATES the exit code. */
+const anchorProblems: string[] = [];
+/**
+ * Records the anchor read of `file` once. `parsed` = the principles the
+ * accepting classifier produced from `kind` anchors (null: no count check).
+ */
+function noteAnchors(file: string, kind: AnchorKind | null, parsed: number): void {
+  const hit = preparedByFile.get(file);
+  if (!hit) return;
+  const where = path.basename(file);
+  anchorJoins.push(...formatAnchorJoins(where, hit.anchors.joins, hit.lineOffset));
+  anchorProblems.push(...formatAnchorProblems(where, hit.anchors.problems, hit.lineOffset));
+  if (kind) {
+    const short = anchorShortfall(where, kind, hit.anchors.counts[kind].openers, parsed);
+    if (short) anchorProblems.push(short);
+  }
+}
 
 /**
  * ك-05 (2026-08-24): same schema_version visibility parse-laws.ts has had
@@ -420,7 +465,8 @@ function safeFallbackId(filePath: string, fileId: string): string {
 
 function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  const { meta, body: writtenBody } = parseYamlFrontmatter(raw, filePath);
+  const body = anchorBody(filePath, raw, writtenBody);
   trackSchemaVersion(meta);
   // Judicial branch: derived from the folder first (the strongest signal, and
   // the only one present for files carrying no court field), then the court name.
@@ -547,7 +593,8 @@ function parsePrincipleCollection(filePath: string): ParsedPrincipleCollection |
 
 function parseCourtPrecedent(filePath: string): ParsedCourtPrecedent | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  const { meta, body: writtenBody } = parseYamlFrontmatter(raw, filePath);
+  const body = anchorBody(filePath, raw, writtenBody);
   trackSchemaVersion(meta);
   // Judicial branch: derived from the folder first (the strongest signal, and
   // the only one present for files carrying no court field), then the court name.
@@ -690,7 +737,8 @@ function extractRulingSection(body: string, synonyms: string[]): string {
 
 function parsePrecedentContainer(filePath: string): ParsedPrincipleCollection | null {
   const raw = fs.readFileSync(filePath, "utf-8");
-  const { meta, body } = parseYamlFrontmatter(raw, filePath);
+  const { meta, body: writtenBody } = parseYamlFrontmatter(raw, filePath);
+  const body = anchorBody(filePath, raw, writtenBody);
   trackSchemaVersion(meta);
   // Judicial branch: derived from the folder first (the strongest signal, and
   // the only one present for files carrying no court field), then the court name.
@@ -816,6 +864,9 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
   const resolvedPath = path.resolve(inputPath);
   const stats = fs.statSync(resolvedPath);
   const files: string[] = [];
+  preparedByFile.clear();
+  anchorJoins.length = 0;
+  anchorProblems.length = 0;
 
   if (stats.isDirectory()) {
     const entries = fs.readdirSync(resolvedPath, { recursive: true }) as string[];
@@ -871,6 +922,7 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
       const container = parsePrecedentContainer(file);
       if (container && container.principles.length > 0) {
         collections.push(container);
+        noteAnchors(file, "ARTICLE_START", container.principles.length);
         continue;
       }
 
@@ -878,6 +930,7 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
       const collection = parsePrincipleCollection(file);
       if (collection && collection.principles.length > 0) {
         collections.push(collection);
+        noteAnchors(file, "PRINCIPLE_START", collection.principles.length);
         continue;
       }
 
@@ -885,6 +938,8 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
       const precedent = parseCourtPrecedent(file);
       if (precedent) {
         courtPrecedents.push(precedent);
+        // ARTICLE_START here is only the ruling-text fallback: readability, no count.
+        noteAnchors(file, null, 0);
         continue;
       }
 
@@ -896,6 +951,7 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
         emptyPlaceholders.push(file);
         continue;
       }
+      noteAnchors(file, null, 0);
       unclassified.push(file);
     } catch (err) {
       console.error(`  ✗ Failed to parse ${file}: ${(err as Error).message}`);
@@ -944,6 +1000,14 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
   );
 
   printCapped("⚠️  frontmatter warning(s)", frontmatterWarnings);
+  printCapped(
+    "ℹ️  anchor(s) rewritten to one line before parsing — JSON over several lines, or «-->» inside a value (item 1.4)",
+    anchorJoins,
+  );
+  printCapped(
+    "🛑 anchor problem(s) — an anchor the parser cannot read, or fewer/more principles parsed than the file opens (item 1.4)",
+    anchorProblems,
+  );
 
   // ك-05 — schema_version distribution (see parse-laws.ts for the original).
   const schemaVersionSummary = Object.entries(schemaVersionCounts)
@@ -972,6 +1036,8 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
         emptyPlaceholders: emptyPlaceholders.length,
         failed: failedFiles.length,
         schemaVersionVariants: Object.keys(schemaVersionCounts).length,
+        anchorJoins: anchorJoins.length,
+        anchorProblems: anchorProblems.length,
       },
       schemaVersionCounts,
       excluded: excludedList,
@@ -979,17 +1045,18 @@ export function parsePrecedents(inputPath: string, reportDir?: string): Preceden
       identityCollisions: collCollisions.map(([key, members]) => ({ key, members })),
       unclassified,
       failed: failedFiles,
-      notes: { emptyPlaceholders },
+      notes: { emptyPlaceholders, anchorJoins, anchorProblems },
     });
     if (p) console.log(`\n📄 Full parse report: ${p}`);
   }
 
   // Rule ق-3: losing documents or corrupting identity must not exit 0.
-  if (collCollisions.length > 0 || unclassified.length > 0 || failedFiles.length > 0) {
+  // anchorProblems gates too (item 1.4): each is a principle missing from the output.
+  if (collCollisions.length > 0 || unclassified.length > 0 || failedFiles.length > 0 || anchorProblems.length > 0) {
     console.error(
       `\n✗ Parse completed with unrecoverable problems ` +
         `(${collCollisions.length} collision(s), ${unclassified.length} unclassified, ` +
-        `${failedFiles.length} failed). Refusing to report success.`,
+        `${failedFiles.length} failed, ${anchorProblems.length} anchor problem(s)). Refusing to report success.`,
     );
     process.exitCode = 1;
   }

@@ -39,6 +39,7 @@ import {
 import FolderSelectionModal from "@/components/laws/FolderSelectionModal";
 import SidebarPanel from "./_sidebar";
 import { LawSummaryBox } from "./_summary-box";
+import { SubLegislationSection } from "./_sub-legislation";
 import { buildChapterTree } from "./_chapter-tree";
 import { READER_SCROLL_MARGIN_TOP, buildRegulationAnchors, jumpToReaderAnchor, regulationCardId } from "./_reader-anchors";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
@@ -373,6 +374,11 @@ function LawSystemPageContent() {
           regulationInstrumentsLocked: data.regulationInstrumentsLocked || 0,
           // File 16 §2: the full sub-legislation index (names and numbers, no text).
           regulationIndex: Array.isArray(data.regulationIndex) ? data.regulationIndex : [],
+          // Library agent §1.8 (l10): the children by parent_law_id, already in
+          // the owner's order. This mapping is a whitelist: named, or it is lost.
+          subLegislation: data.subLegislation && Array.isArray(data.subLegislation.children)
+            ? { count: data.subLegislation.children.length, children: data.subLegislation.children }
+            : null,
         } as LawSystem);
       } catch (err) {
         if (cancelled) return;
@@ -1214,6 +1220,28 @@ function LawSystemPageContent() {
             {/* N2.1: the موجز, lifted out of the preamble (it no longer repeats there). */}
             {viewMode !== "appendix" && (
               <LawSummaryBox summary={law.summary} label={law.summaryLabel} isDark={isDark} isRTL={isRTL} />
+            )}
+
+            {/* Owner file 16 §7 + library agent §1.8 (l10): «التشريعات الفرعية» — merged
+                regulations, then documents linked by parent_law_id; the first three, then
+                «عرض المزيد (N)»; hidden when the law has none. */}
+            {viewMode !== "appendix" && (
+              <SubLegislationSection
+                key={law.slug}
+                subLegislation={law.subLegislation}
+                // File 16 §7: the merged regulations first (the index names, every viewer).
+                mergedNames={(law.regulationIndex ?? []).map((g) => g.name)}
+                onOpenMerged={(name) => {
+                  // The regulation view on that instrument; a fully locked one is not a
+                  // chip (regulationInstruments), so the view opens on all of them.
+                  const inst = (law.regulationInstruments ?? []).find((i) => (i.label || i.ref) === name);
+                  setViewMode("regulation");
+                  setSelectedRegName(inst ? inst.ref : null);
+                  if (inst) setShowAllRegChips(true);
+                }}
+                isDark={isDark}
+                isRTL={isRTL}
+              />
             )}
 
             {/* N2.6: search inside this law with the library's operators; the
