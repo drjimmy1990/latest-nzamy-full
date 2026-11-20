@@ -117,9 +117,10 @@ test("the board and the case page share the moves and the write", () => {
 });
 
 test("file 15 row 70 (l9): the case list pages on the server — «تحميل المزيد» reads the next page from the real total", () => {
-  assert.ok(page.includes('{ receiver: "lawyer", limit: LIST_LIMIT, offset }'));
+  // T10-F5 (batch l11) adds the server-side search term `q` to the same read.
+  assert.ok(page.includes('{ receiver: "lawyer", limit: LIST_LIMIT, offset, ...(q ? { q } : {}) }'));
   assert.ok(page.includes("const truncated = rawTotal > rawLoaded;"));
-  assert.ok(page.includes("await fetchLawyerRows(rawLoaded)"));
+  assert.ok(page.includes("await fetchLawyerRows(rawLoaded, serverQuery)"));
   assert.ok(page.includes("تحميل المزيد"));
   assert.ok(!page.includes("تُعرض أحدث {LIST_LIMIT} سجل فقط"), "the dead-end note is gone");
 });
