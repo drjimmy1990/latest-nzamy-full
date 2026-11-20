@@ -14,6 +14,9 @@
  *     hourly cap, so «في هذه الساعة» would be false);
  *   - 429 `library_weekly_limit` (20261129_40, register 14 item 8): the
  *     server's 7-day message plus when the window lets one more in;
+ *   - 429 `library_public_view_limit` (batch l11, register 14 item 52): the
+ *     non-subscriber's daily view cap — the server's message plus when it
+ *     renews (publicViewCap.ts);
  *   - any other 429 (the proxy's per-minute rate limiter, no `code`): its own
  *     message.
  *
@@ -160,6 +163,8 @@ export function weeklyResetLineAr(resetsAt: string | null | undefined, now: numb
 const WEEKLY_FALLBACK_AR =
   "بلغت الحد الأسبوعي لفتح النص الكامل في المكتبة. الوثائق التي فتحتها اليوم تبقى متاحة لك.";
 const RATE_FALLBACK_AR = "طلبات كثيرة — حاول بعد قليل.";
+const PUBLIC_VIEW_FALLBACK_AR =
+  "بلغت الحد اليومي لتصفح نصوص المكتبة دون اشتراك. يتجدد الحد عند منتصف الليل بتوقيت الرياض، ويمكنك الاشتراك في المكتبة لتقرأ دون هذا الحد.";
 const LOCK_FALLBACK_AR = "أُوقفت القراءة في المكتبة القانونية لحسابك مؤقتاً.";
 
 function text(value: unknown): string | null {
@@ -189,6 +194,11 @@ export function readerRefusalFrom(status: number, body: unknown, now: number): R
   if (status !== 429) return null;
   if (b.code === "library_hourly_limit") {
     return { kind: "limit", scope: "hourly", messageAr: hourlyCapMessageAr(hourlyCapMinutesLeft(text(b.resetsAt), now)) };
+  }
+  if (b.code === "library_public_view_limit") {
+    const base = text(b.error) ?? PUBLIC_VIEW_FALLBACK_AR;
+    const reset = dailyResetLineAr(text(b.resetsAt), now);
+    return { kind: "limit", scope: "daily", messageAr: reset ? `${base} ${reset}` : base };
   }
   if (b.code === "library_daily_limit") {
     const base = text(b.error) ?? DAILY_FALLBACK_AR;

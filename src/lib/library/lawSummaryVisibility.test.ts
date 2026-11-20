@@ -135,7 +135,7 @@ test("cardForViewer: null stays null; an all-official card becomes null for a no
 test("the law route uses this flag on the subscriber flag (hasFullLibraryAccess), never the whitelist", () => {
   const route = read("src/app/api/library/laws/[slug]/route.ts");
   assert.match(route, /lawReaderExtras\(\s*preamble,\s*isSubscriber\s*\)/);
-  assert.match(route, /hasFullLibraryAccess\(userId\)/);
+  assert.match(route, /hasFullLibraryAccess\(userId, accessMemo\)/);
 });
 
 test("owner ٢٦٠ opens nothing else in the law route: ديباجة, official metadata and article text keep their locks", () => {

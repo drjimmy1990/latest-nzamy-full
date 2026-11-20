@@ -75,3 +75,14 @@ test("missingLegalRefs accepts a spelled-out reference rewritten in digits, and 
   assert.deepEqual(missingLegalRefs(required, "المادة 25 والمادة الثمانون"), []);
   assert.deepEqual(missingLegalRefs(required, "المادة 25 فقط"), ["مادة 80"]);
 });
+
+// ── N02-13 (batch l11): the dual names two articles ──
+test("«المادتين» / «المادتان» yield both articles, in words or digits", () => {
+  assert.deepEqual(extractLegalRefs("وفق المادتين الأولى والثانية من النظام"), ["مادة 1", "مادة 2"]);
+  assert.deepEqual(extractLegalRefs("نصت المادتان (٥) و(٦) على"), ["مادة 5", "مادة 6"]);
+  assert.deepEqual(extractLegalRefs("بالمادتين الحادية عشرة والثانية عشرة"), ["مادة 11", "مادة 12"]);
+  // A compound number after the dual is one article, not two.
+  assert.deepEqual(extractLegalRefs("المادتين الخامسة والعشرين و(٣٠)"), ["مادة 25", "مادة 30"]);
+  // A shorter text that dropped the second article is caught.
+  assert.deepEqual(missingLegalRefs(extractLegalRefs("المادتين (٥) و(٦)"), "المادة 5"), ["مادة 6"]);
+});

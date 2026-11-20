@@ -8,6 +8,7 @@
  * minutes, and only a key inside that lawyer's own `<user_id>/` folder.
  */
 
+import "server-only";
 import type { createServiceClient } from "@/lib/supabase/server";
 import { shapeSignupView, type SignupVerificationView } from "./adminView.ts";
 

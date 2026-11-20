@@ -33,11 +33,32 @@ export function lotsToWarn(rows: readonly ExpiringLot[], now: Date): ExpiringLot
   });
 }
 
-export function expiryNotice(lot: ExpiringLot): { title: string; body: string; href: string } {
+/**
+ * l11 O7 (register 49, founder terms clause ١٢): a library subscriber opens
+ * the library only while his balance is at least library_min_points_to_browse
+ * (`minPoints`), so a lot that ends may lock it. The clause's own wording;
+ * null when the gate is off (0) or the number is unusable.
+ */
+export function libraryExpiryLockLineAr(minPoints: number | null | undefined, subject: "this_topup" | "these_points"): string | null {
+  if (typeof minPoints !== "number" || !Number.isSafeInteger(minPoints) || minPoints <= 0) return null;
+  const what = subject === "this_topup" ? "هذه الشحنة" : "هذه النقاط";
+  return `بما أن فتح المكتبة مشروط ببقاء رصيدك ${arabicDigits(minPoints)} نقطة فأكثر، فانتهاء صلاحية ${what} قد يُقفل التصفح حتى تشحن من جديد.`;
+}
+
+/**
+ * The 7-day notice. l11 O7: `libraryMinPoints` — set by the cron only for a
+ * holder of a gated library plan (paid library plan or the founder) — adds
+ * the library-lock sentence.
+ */
+export function expiryNotice(
+  lot: ExpiringLot,
+  opts: { libraryMinPoints?: number | null } = {},
+): { title: string; body: string; href: string } {
   const library = lot.wallet_scope === "library_agent";
+  const lock = libraryExpiryLockLineAr(opts.libraryMinPoints, "these_points");
   return {
     title: library ? "تنتهي نقاط مساعد المكتبة قريباً" : "تنتهي بعض نقاطك قريباً",
-    body: `تنتهي ${arabicDigits(lot.points_left)} نقطة${library ? " من نقاط مساعد المكتبة" : ""} في ${billingDateAr(lot.expires_at)}، ولا تُستعاد بعد انتهائها.`,
+    body: `تنتهي ${arabicDigits(lot.points_left)} نقطة${library ? " من نقاط مساعد المكتبة" : ""} في ${billingDateAr(lot.expires_at)}، ولا تُستعاد بعد انتهائها.${lock ? ` ${lock}` : ""}`,
     href: POINTS_BILLING_HREF,
   };
 }

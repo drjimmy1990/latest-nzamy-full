@@ -15,7 +15,8 @@ const wrapper = SRC.slice(SRC.indexOf("function withAttributionCookie("), SRC.in
 
 test("every response passes through the cookie step: the default export only wraps proxyRoutes", () => {
   // Batch l8-libguard: the library session cookie wraps the same single call (it touches library API answers only).
-  assert.match(SRC, /export default async function proxy\(req: NextRequest\) \{\n  return withLibrarySessionCookie\(req, withAttributionCookie\(req, await proxyRoutes\(req\)\)\);\n\}/);
+  // Batch l11-sec (O5): the library API's X-Robots-Tag is the outermost step (headers only).
+  assert.match(SRC, /export default async function proxy\(req: NextRequest\) \{\n  return withLibraryApiNoIndex\(req, withLibrarySessionCookie\(req, withAttributionCookie\(req, await proxyRoutes\(req\)\)\)\);\n\}/);
   assert.equal(SRC.match(/export default/g)?.length, 1);
   assert.ok(SRC.indexOf("export default async function proxy(") < SRC.indexOf("async function proxyRoutes("));
 });

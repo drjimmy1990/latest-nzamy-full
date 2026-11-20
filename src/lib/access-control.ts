@@ -325,8 +325,53 @@ export async function isPlatformAdmin(userId: string | null): Promise<boolean> {
  * per-article paywall is checkLibraryAccess() below, which applies the same
  * rule.
  */
-export async function hasFullLibraryAccess(userId: string | null): Promise<boolean> {
-  return (await libraryFullAccessState(userId)).hasFullAccess;
+export async function hasFullLibraryAccess(userId: string | null, memo?: LibraryAccessMemo): Promise<boolean> {
+  return (await memoFullState(userId, memo)).hasFullAccess;
+}
+
+// ─── O26 (batch l11): one set of access reads per request ─────────────────────
+// A document route asks checkLibraryAccess() and hasFullLibraryAccess() (or
+// getLibraryAccessForUser()) side by side, and each read the tier, the admin
+// role, the library grants and — for a gated subscriber — the 50-point
+// setting and the balance on its own: the same reads twice per request. A
+// route now builds ONE memo per request and passes it to each call. The memo
+// holds the in-flight PROMISES (the calls run in Promise.all, so a result
+// cache would come too late), lives only as long as the request (no
+// module-level TTL: an admin's change still applies on the next request,
+// G39), and is ignored for another user id. Without a memo every function
+// behaves exactly as before.
+
+/** Per-request memo of the library access reads (O26). Build one per request. */
+export interface LibraryAccessMemo {
+  readonly userId: string | null;
+  tier?: Promise<ServerTier>;
+  full?: Promise<LibraryFullAccessState>;
+}
+
+/** A fresh memo for one request of `userId` (null = a guest). */
+export function libraryAccessMemo(userId: string | null): LibraryAccessMemo {
+  return { userId };
+}
+
+function usableMemo(memo: LibraryAccessMemo | undefined, userId: string | null): memo is LibraryAccessMemo {
+  return !!memo && memo.userId === userId;
+}
+
+/** The viewer's tier (guest = free), once per memo. */
+function memoTier(userId: string | null, memo?: LibraryAccessMemo): Promise<ServerTier> {
+  const read = (): Promise<ServerTier> => (userId ? getUserTier(userId) : Promise.resolve("free" as ServerTier));
+  if (!usableMemo(memo, userId)) return read();
+  memo.tier ??= read();
+  return memo.tier;
+}
+
+/** libraryFullAccessState(), once per memo (reusing the memo's tier). */
+function memoFullState(userId: string | null, memo?: LibraryAccessMemo): Promise<LibraryFullAccessState> {
+  if (!usableMemo(memo, userId)) return libraryFullAccessState(userId);
+  memo.full ??= userId
+    ? memoTier(userId, memo).then((tier) => libraryFullAccessState(userId, tier))
+    : Promise.resolve(NO_FULL_LIBRARY);
+  return memo.full;
 }
 
 /** The full-library answer with the 50-point lock that closed it, if any. */
@@ -378,7 +423,8 @@ export async function libraryFullAccessState(userId: string | null, knownTier?: 
  * The same rule for a caller that has already read the tier: a guest reads
  * nothing more, and a Pro+ tier skips the admin and grant reads (same answer).
  */
-async function fullLibraryAccessForTier(userId: string | null, tier: ServerTier): Promise<boolean> {
+async function fullLibraryAccessForTier(userId: string | null, tier: ServerTier, memo?: LibraryAccessMemo): Promise<boolean> {
+  if (usableMemo(memo, userId)) return (await memoFullState(userId, memo)).hasFullAccess;
   return (await libraryFullAccessState(userId, tier)).hasFullAccess;
 }
 
@@ -389,7 +435,7 @@ export async function checkLibraryAccess(
   itemId: string,
   articleIndex: number,
   contentType: LibraryFreeItemType = "laws",
-  options: { includeExplicitFreeItem?: boolean } = {},
+  options: { includeExplicitFreeItem?: boolean; memo?: LibraryAccessMemo } = {},
 ): Promise<LibraryAccessResult> {
   const adminClient = await createServiceClient();
 
@@ -439,11 +485,11 @@ export async function checkLibraryAccess(
   }
 
   // 3. Get user tier (guest = free)
-  const currentTier: ServerTier = userId ? await getUserTier(userId) : "free";
+  const currentTier: ServerTier = await memoTier(userId, options.memo);
 
   // 4. Full library access gets everything (owner ٢٠٥/٢٠٩): a Pro+ tier, an
   // active library grant, or an admin. currentTier stays the real tier.
-  if (await fullLibraryAccessForTier(userId, currentTier)) {
+  if (await fullLibraryAccessForTier(userId, currentTier, options.memo)) {
     return {
       allowed: true,
       isWhitelisted: false,
@@ -483,11 +529,12 @@ export interface LibraryUserAccess {
 
 export async function getLibraryAccessForUser(
   userId: string | null,
+  memo?: LibraryAccessMemo,
 ): Promise<LibraryUserAccess> {
   const adminClient = await createServiceClient();
 
-  const tier: ServerTier = userId ? await getUserTier(userId) : "free";
-  const hasFullAccess = await fullLibraryAccessForTier(userId, tier);
+  const tier: ServerTier = await memoTier(userId, memo);
+  const hasFullAccess = await fullLibraryAccessForTier(userId, tier, memo);
 
   const { data: settings } = await adminClient
     .from("platform_settings")

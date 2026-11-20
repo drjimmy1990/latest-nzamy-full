@@ -207,7 +207,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     availableForSizes: ["solo_office", "small_firm", "mid_firm", "large_firm", "enterprise_firm"],
     routes: ["/dashboard/firm/cases", "/dashboard/firm/clients", "/dashboard/firm/documents"],
     contract: "FirmProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "firm_points_wallet",
@@ -216,7 +216,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     availableForSizes: ["solo_office", "small_firm", "mid_firm", "large_firm", "enterprise_firm"],
     routes: ["/dashboard/firm/wallet", "/dashboard/admin/provider-verification/firms"],
     contract: "FirmPointsWallet",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "practice_departments",
@@ -226,7 +226,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/departments"],
     contract: "FirmOrgUnit",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "branches",
@@ -236,7 +236,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/branches"],
     contract: "FirmBranch",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "finance",
@@ -246,7 +246,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/finance", "/dashboard/firm/fees"],
     contract: "FirmFinancialReport",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "hr",
@@ -256,7 +256,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/team/attendance", "/dashboard/firm/team/trainees"],
     contract: "FirmHrProgram",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "governance",
@@ -266,7 +266,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/governance"],
     contract: "FirmGovernanceProgram",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "chinese_walls",
@@ -276,7 +276,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/compliance/walls"],
     contract: "FirmConflictWall",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "client_portal",
@@ -286,7 +286,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/client-portal", "/dashboard/firm/branding"],
     contract: "FirmClientPortal",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "external_collaboration",
@@ -296,7 +296,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/of-counsel", "/dashboard/firm/shared-rooms"],
     contract: "FirmExternalCollaboration",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "marketplace",
@@ -306,7 +306,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/marketplace", "/marketplace"],
     contract: "FirmMarketplaceAccess",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "secondment",
@@ -316,7 +316,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/secondment/new"],
     contract: "FirmSecondmentOffer",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "shared_rooms",
@@ -326,7 +326,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/shared-rooms"],
     contract: "FirmSharedRoom",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "advanced_ai",
@@ -336,7 +336,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/ai/analyze?source=firm", "/ai/legal-translate", "/ai/contracts"],
     contract: "FirmAiUsageEntitlement",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "legal_library",
@@ -345,7 +345,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     availableForSizes: ["solo_office", "small_firm", "mid_firm", "large_firm", "enterprise_firm"],
     routes: ["/laws"],
     contract: "LegalLibrarySystem",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "analytics",
@@ -355,7 +355,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/analytics", "/dashboard/firm/finance/reports"],
     contract: "FirmAnalyticsReport",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "health_check",
@@ -365,7 +365,7 @@ export const FIRM_SERVICE_ENTITLEMENTS: FirmServiceEntitlement[] = [
     needsAdminFlag: true,
     routes: ["/dashboard/firm/health-check"],
     contract: "FirmHealthCheck",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
 ];
 
@@ -381,7 +381,7 @@ export const FIRM_PROFILE_SCENARIOS: FirmProfileScenario[] = [
     recommendedServices: ["core_cases", "firm_points_wallet", "client_portal", "legal_library"],
     dashboardRoutes: ["/dashboard/firm", "/dashboard/firm/cases", "/dashboard/firm/wallet"],
     adminRoute: "/dashboard/admin/provider-verification/firms",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "الاشتراك والنقاط والمقاعد محلية فقط حتى ربط FirmProfile/Billing/Wallet APIs.",
     betaNotes: "النقاط توقف الخدمات الاستهلاكية فقط ولا توقف تشغيل القضايا والعملاء.",
   },
@@ -396,7 +396,7 @@ export const FIRM_PROFILE_SCENARIOS: FirmProfileScenario[] = [
     recommendedServices: ["core_cases", "firm_points_wallet", "client_portal", "finance", "advanced_ai", "legal_library"],
     dashboardRoutes: ["/dashboard/firm/team", "/dashboard/firm/finance", "/dashboard/firm/client-portal"],
     adminRoute: "/dashboard/admin/provider-verification/firms",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "إضافة الأعضاء وتغيير الباقة محليان فقط، والدعوات الحقيقية تنتظر Auth/RBAC backend.",
     betaNotes: "تظل رسائل Backend-ready ظاهرة عند إضافة عضو أو تعديل رصيد نقاط.",
   },
@@ -411,7 +411,7 @@ export const FIRM_PROFILE_SCENARIOS: FirmProfileScenario[] = [
     recommendedServices: ["core_cases", "firm_points_wallet", "practice_departments", "finance", "governance", "client_portal", "external_collaboration", "advanced_ai", "health_check"],
     dashboardRoutes: ["/dashboard/firm/departments", "/dashboard/firm/governance", "/dashboard/firm/health-check"],
     adminRoute: "/dashboard/admin/provider-verification/firms",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "تقسيم النقاط على الأقسام UI-ready فقط، ومصدر الحقيقة ينتظر Wallet/RBAC APIs.",
     betaNotes: "مدير القسم يرى قسمه فقط، والشريك المدير يرى الشركة كلها.",
   },
@@ -426,7 +426,7 @@ export const FIRM_PROFILE_SCENARIOS: FirmProfileScenario[] = [
     recommendedServices: ["core_cases", "firm_points_wallet", "practice_departments", "branches", "finance", "hr", "governance", "chinese_walls", "marketplace", "external_collaboration", "shared_rooms", "advanced_ai", "analytics", "health_check"],
     dashboardRoutes: ["/dashboard/firm/compliance/walls", "/dashboard/firm/shared-rooms", "/dashboard/firm/analytics"],
     adminRoute: "/dashboard/admin/provider-verification/firms",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "Chinese Walls وسجل التدقيق واجهة فقط ولا تعزل بيانات حقيقية حتى backend.",
     betaNotes: "لا إزالة لتحذيرات البيتا قبل وجود audit log وpolicy enforcement فعلي.",
   },
@@ -441,7 +441,7 @@ export const FIRM_PROFILE_SCENARIOS: FirmProfileScenario[] = [
     recommendedServices: ["core_cases", "firm_points_wallet", "practice_departments", "branches", "finance", "hr", "governance", "chinese_walls", "marketplace", "external_collaboration", "secondment", "shared_rooms", "advanced_ai", "legal_library", "analytics", "health_check"],
     dashboardRoutes: ["/dashboard/firm", "/dashboard/firm/governance", "/dashboard/admin/provider-verification/firms"],
     adminRoute: "/dashboard/admin/provider-verification/firms",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "Enterprise لا يعمل إنتاجيا قبل SSO/Billing/SLA/Audit APIs.",
     betaNotes: "يظل السعر مخصصا وbetaLocked حتى اعتماد نموذج العقود السنوية.",
   },
@@ -453,7 +453,7 @@ export const FIRM_ADMIN_CONTROLS: FirmAdminControl[] = [
     title: "اعتماد بروفيل شركة المحاماة",
     route: "/dashboard/admin/provider-verification/firms",
     contract: "FirmProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "إدارة الحجم والهيكل والأقسام والتخصص داخل المزودين، بدون حفظ خادمي.",
   },
   {
@@ -461,7 +461,7 @@ export const FIRM_ADMIN_CONTROLS: FirmAdminControl[] = [
     title: "اشتراك سنوي + مقاعد + نقاط",
     route: "/dashboard/admin/pricing",
     contract: "FirmPlanContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "النموذج السنوي يظهر في التسعير، والاحتساب الحقيقي ينتظر Billing API.",
   },
   {
@@ -469,7 +469,7 @@ export const FIRM_ADMIN_CONTROLS: FirmAdminControl[] = [
     title: "محفظة نقاط الشركة والأقسام",
     route: "/dashboard/admin/provider-verification/firms",
     contract: "FirmPointsWallet",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "نفاد النقاط يوقف الخدمات الاستهلاكية فقط، لا القضايا والعملاء والتشغيل الأساسي.",
   },
   {
@@ -477,7 +477,7 @@ export const FIRM_ADMIN_CONTROLS: FirmAdminControl[] = [
     title: "أدوار وصلاحيات شركة المحاماة",
     route: "/dashboard/firm/team/roles",
     contract: "FirmRoleContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "المصفوفة UI-ready، والإلزام الحقيقي ينتظر Auth/RBAC backend.",
   },
   {
@@ -485,7 +485,7 @@ export const FIRM_ADMIN_CONTROLS: FirmAdminControl[] = [
     title: "سجل تدقيق تعديلات firm",
     route: "/dashboard/admin/audit-log",
     contract: "FirmAuditEvent",
-    readiness: "Risk",
+    readiness: "risk",
     note: "أي تعديل محلي يحتاج لاحقا before/after وactor/time/entity قبل الإنتاج.",
   },
 ];

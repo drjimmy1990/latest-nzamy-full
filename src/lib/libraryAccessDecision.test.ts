@@ -111,8 +111,10 @@ test("isPlatformAdmin reads profiles.user_type with the service client and never
 
 test("hasFullLibraryAccess: tier, admin and grants read together, then the one rule (+ the l9 50-point gate)", () => {
   const fn = fnSource("hasFullLibraryAccess");
-  assert.match(fn, /^export async function hasFullLibraryAccess\(userId: string \| null\): Promise<boolean> \{/);
-  assert.match(fn, /return \(await libraryFullAccessState\(userId\)\)\.hasFullAccess;/);
+  // O26 (batch l11): an optional per-request memo; without it, exactly as before.
+  assert.match(fn, /^export async function hasFullLibraryAccess\(userId: string \| null, memo\?: LibraryAccessMemo\): Promise<boolean> \{/);
+  assert.match(fn, /return \(await memoFullState\(userId, memo\)\)\.hasFullAccess;/);
+  assert.match(accessControlSource, /if \(!usableMemo\(memo, userId\)\) return libraryFullAccessState\(userId\);/);
   const state = fnSource("libraryFullAccessState");
   assert.match(state, /if \(!userId\) return NO_FULL_LIBRARY;/);
   assert.match(state, /await Promise\.all\(\[\s*knownTier !== undefined \? Promise\.resolve\(knownTier\) : getUserTier\(userId\),\s*isPlatformAdmin\(userId\),\s*activeLibraryGrantPlanRefs\(userId\),?\s*\]\)/);
@@ -123,18 +125,19 @@ test("hasFullLibraryAccess: tier, admin and grants read together, then the one r
 test("checkLibraryAccess and getLibraryAccessForUser decide full access by the same rule", () => {
   const check = fnSource("checkLibraryAccess");
   assert.doesNotMatch(check, /TIER_RANK\.pro/);
-  assert.match(check, /if \(await fullLibraryAccessForTier\(userId, currentTier\)\) \{\s*return \{\s*allowed: true,\s*isWhitelisted: false,\s*freeLimit: -1,\s*currentTier,/);
+  assert.match(check, /if \(await fullLibraryAccessForTier\(userId, currentTier, options\.memo\)\) \{\s*return \{\s*allowed: true,\s*isWhitelisted: false,\s*freeLimit: -1,\s*currentTier,/);
   assert.match(check, /`المادة مقفلة — تتطلب اشتراك المكتبة القانونية أو الباقة الاحترافية فما فوق`/);
   assert.doesNotMatch(check, /يتطلب اشتراك Pro أو أعلى/);
 
   const forUser = fnSource("getLibraryAccessForUser");
   assert.doesNotMatch(forUser, /TIER_RANK\.pro/);
-  assert.match(forUser, /const hasFullAccess = await fullLibraryAccessForTier\(userId, tier\);/);
+  assert.match(forUser, /const hasFullAccess = await fullLibraryAccessForTier\(userId, tier, memo\);/);
   assert.match(accessControlSource, /hasFullAccess: boolean; \/\/ Pro\+ tier, an active library grant, or an admin/);
 
   // The shared step: a guest reads nothing more, a Pro+ tier skips the other reads.
   const shared = accessControlSource.slice(accessControlSource.indexOf("async function fullLibraryAccessForTier("));
   assert.match(shared, /return \(await libraryFullAccessState\(userId, tier\)\)\.hasFullAccess;/);
+  assert.match(shared, /if \(usableMemo\(memo, userId\)\) return \(await memoFullState\(userId, memo\)\)\.hasFullAccess;/);
   const state = fnSource("libraryFullAccessState");
   assert.match(state, /if \(knownTier !== undefined && fullLibraryAccess\(\{ tier: knownTier, isAdmin: false, hasLibraryGrant: false \}, TIER_RANK\)\) \{\s*return FULL_LIBRARY;/);
 });
@@ -157,7 +160,7 @@ test("no library API route compares the tier with TIER_RANK.pro inline any more"
   }
   for (const rel of ["enactments/route.ts", "monitor/route.ts", "laws/[slug]/route.ts"]) {
     const src = readFileSync(new URL(rel, root), "utf8");
-    assert.match(src, /hasFullLibraryAccess\(userId\)/, rel);
+    assert.match(src, /hasFullLibraryAccess\(userId(?:, accessMemo)?\)/, rel);
     assert.match(src, /import \{[^}]*\bhasFullLibraryAccess\b[^}]*\} from ["']@\/lib\/access-control["'];/, rel);
   }
 });

@@ -24,6 +24,11 @@ import {
  * INSUFFICIENT_POINTS_EVENT, which the /ai layout's TopUpModalHost answers with
  * a top-up modal in place. A run the server accepts (running / done / review)
  * clears the tool's draft; an error never does.
+ *
+ * l11 (T8-Q511a): `draftState` (optional) is what is kept instead of the
+ * run's input — the page's own form state (the labels, ids and raw fields
+ * it can put back), for pages that send a transformed input. The page reads
+ * it back with useToolDraft. Absent → the input is kept, as before.
  */
 
 function session(): Storage | null {
@@ -45,11 +50,16 @@ export function useAiRun() {
   }, [client]);
 
   const start = useCallback(
-    async (tool: string, input: Record<string, unknown>, opts?: AiRunStartOptions): Promise<void> => {
+    async (
+      tool: string,
+      input: Record<string, unknown>,
+      opts?: AiRunStartOptions,
+      draftState?: Record<string, unknown>,
+    ): Promise<void> => {
       await client.start(tool, input, opts);
       const after = client.getState();
       if (after.phase === "error" && after.code === INSUFFICIENT_POINTS_CODE) {
-        saveToolDraft(session(), tool, input, Date.now());
+        saveToolDraft(session(), tool, draftState ?? input, Date.now());
         try {
           window.dispatchEvent(new CustomEvent(INSUFFICIENT_POINTS_EVENT, { detail: { tool } }));
         } catch {

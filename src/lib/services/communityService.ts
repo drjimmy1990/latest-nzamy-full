@@ -135,23 +135,30 @@ export async function getCommunityPost(id: number | string): Promise<StoredCommu
   return body.data as StoredCommunityQuestion;
 }
 
-export async function createCommunityPost(input: CommunityQuestionInput): Promise<StoredCommunityQuestion> {
+/**
+ * S5-3: the server masks personal data before storing a post or an answer and
+ * says so in `maskedNotice` (null = nothing was hidden). It rides on the
+ * returned object as an optional extra, so existing callers are unaffected.
+ */
+export type WithMaskedNotice<T> = T & { maskedNotice?: string | null };
+
+export async function createCommunityPost(input: CommunityQuestionInput): Promise<WithMaskedNotice<StoredCommunityQuestion>> {
   if (!isSupabaseMode) return createCommunityQuestionLocal(input);
   // THROWS: the local-write fallback published the question to nobody but the
   // author's own browser and then reported it posted. `{ data }` unwrapped.
-  const res = await apiMutate<{ data: StoredCommunityQuestion }>(
+  const res = await apiMutate<{ data: StoredCommunityQuestion; maskedNotice?: string | null }>(
     "/api/v1/community/posts",
     "POST",
     input,
   );
   if (!res?.data) throw new Error("لم يصل تأكيد نشر السؤال من الخادم");
-  return res.data;
+  return { ...res.data, maskedNotice: res.maskedNotice ?? null };
 }
 
 export async function addCommunityAnswer(
   postId: number | string,
   answer: Omit<StoredCommunityAnswer, "id" | "votes" | "isAccepted" | "ago">,
-): Promise<StoredCommunityAnswer> {
+): Promise<WithMaskedNotice<StoredCommunityAnswer>> {
   if (!isSupabaseMode) {
     // Demo is local only and self-consistent (owner ١١٥): a seed card the demo
     // feed shows can be answered too — it is copied into this browser's store.
@@ -166,13 +173,13 @@ export async function addCommunityAnswer(
   }
   // THROWS, and no longer returns `null` — a `null` answer was indistinguishable
   // from "saved, nothing to show" at the call site. `{ data }` unwrapped.
-  const res = await apiMutate<{ data: StoredCommunityAnswer }>(
+  const res = await apiMutate<{ data: StoredCommunityAnswer; maskedNotice?: string | null }>(
     `/api/v1/community/posts/${postId}/answers`,
     "POST",
     answer,
   );
   if (!res?.data) throw new Error("لم يصل تأكيد نشر الإجابة من الخادم");
-  return res.data;
+  return { ...res.data, maskedNotice: res.maskedNotice ?? null };
 }
 
 /** What the vote route answers: the caller's vote now, and the server's count. */

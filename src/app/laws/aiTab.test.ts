@@ -14,7 +14,7 @@ const page = readFileSync(new URL("./(index)/page.tsx", import.meta.url), "utf8"
 test("the tab asks the real assistant through askLibrary and shows the server's citations", () => {
   assert.match(tab, /import \{ askLibrary, LIBRARY_AI_SOON \} from "\.\.\/\[slug\]\/_library-assistant";/);
   // Q458: with the tab's conversation id (the server reads the history itself).
-  assert.match(tab, /await askLibrary\(\{ message: q, conversationId: conversationRef\.current \}, window\.location\.pathname \+ window\.location\.search\)/);
+  assert.match(tab, /await askLibrary\(\{ message: q, conversationId: conversationRef\.current, \.\.\.scopeField\(scope\) \}, window\.location\.pathname \+ window\.location\.search\)/);
   assert.match(tab, /asCitations\(res\.citations\)/);
   assert.match(tab, /<CitedText /);
   assert.match(tab, /<SourceList /);

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
+import { requireVerifiedProvider } from "@/lib/auth/verifiedProviderServer";
 import {
   EXPENSE_SELECT,
   LIST_PAGE_SIZE,
@@ -32,6 +33,9 @@ export async function GET(request: NextRequest) {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // R9b (l11): an unverified account creates no fee statement (403, Arabic).
+    const unverified = await requireVerifiedProvider(user.id, auth.userType);
+    if (unverified) return unverified;
     const f = parseListFilters((k) => request.nextUrl.searchParams.get(k));
     if (!f.caseId && !f.clientId) {
       return NextResponse.json({ error: "اختر القضية أو الموكل لإعداد بيان الأتعاب." }, { status: 400 });

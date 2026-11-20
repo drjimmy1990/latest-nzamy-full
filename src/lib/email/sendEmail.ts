@@ -93,13 +93,10 @@ export function emailConfigured(env: EmailEnv = process.env): boolean {
 }
 
 /** A single plain address: no spaces, no list, no header injection. */
-export function isPlainEmail(addr: unknown): addr is string {
-  return (
-    typeof addr === "string" &&
-    addr.length <= 254 &&
-    /^[^\s@,;<>"()[\]\\]+@[^\s@,;<>"()[\]\\]+\.[^\s@,;<>"()[\]\\]+$/.test(addr)
-  );
-}
+// isPlainEmail lives in emailAddress.ts (no sender code), so client-side
+// modules can validate an address without bundling the sender.
+export { isPlainEmail } from "./emailAddress.ts";
+import { isPlainEmail } from "./emailAddress.ts";
 
 /** «m***@e***.sa» — enough to tell two recipients apart in a log, no more. */
 export function maskEmail(addr: unknown): string {

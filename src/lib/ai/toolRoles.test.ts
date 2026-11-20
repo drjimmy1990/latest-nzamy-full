@@ -137,7 +137,8 @@ test("libraryToolRefusal: the plans link only where a Pro plan is on sale; the c
     const tier = libraryToolRefusal("library_tier", "سؤال قانوني سريع", userType);
     assert.ok(tier, userType);
     assert.match(tier.text, /«سؤال قانوني سريع»/);
-    assert.match(tier.text, /Pro أو أعلى/);
+    assert.match(tier.text, /الباقة الاحترافية أو أعلى/);
+    assert.doesNotMatch(tier.text, /Pro/);
     assert.match(tier.text, /اشتراك المكتبة القانونية وحده لا يفتح أدوات الذكاء/);
     assert.match(tier.text, /لم تُخصم نقاطك/);
     assert.deepEqual(tier.action, { label: "عرض الباقات", href: LIBRARY_TOOL_PLANS_HREF });
@@ -183,7 +184,7 @@ test("each library tool's screen maps the gate's refusal to its own words", () =
   assert.deepEqual(library, ["assistant", "canvas-card", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
   assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType\)/);
   assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المساعد المتقدم", input\.userType \?\? null\)/);
-  assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType, mode \}\)/);
+  assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType, mode, caseId: context === "case" \? caseId \|\| null : null \}\)/);
   assert.match(src("app/dashboard/business/kanban/_graph-ai-card.ts"), /libraryToolRefusal\([^)]*"اقترح سنداً نظامياً", userType\)/);
   assert.match(src("app/dashboard/business/kanban/CaseGraphView.tsx"), /askCanvasCard\(chosen\.slice\(0, 8\), fetch, userType\)/);
   // /ai/legal-opinion already had its own (aiOpinion.ts), and the law reader its own (_ai-reply.ts).

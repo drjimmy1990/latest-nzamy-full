@@ -32,7 +32,11 @@
  *     payments for it — a code is never locked for good.
  *   - validateCouponWith — the preview behind POST /api/v1/coupons/validate:
  *     the same steps as checkout (account type, audience, the book's quote)
- *     and the same priceWithCoupon, so the preview equals the charge.
+ *     and the same priceWithCoupon, so the preview equals the charge. l11
+ *     O8 (F12d): for an active founder member it then runs checkout's step
+ *     3c — the founder discount off the listed price against what the coupon
+ *     saves, the larger wins — and, when the founder discount wins, answers
+ *     its figures with `source: "founder"` (the coupon is not used).
  *   - recordCouponUsage — fulfilment's half: one coupon_usage row for a paid
  *     LIVE order that carried a coupon and was granted, idempotent (unique
  *     order_id, 20261026_20). It never blocks what the buyer paid for.
@@ -62,6 +66,14 @@ import { activeLaunchPrice, bookEntry, PRICE_BOOK, type BookEntry } from "../pri
 import { SUPERSEDE_WINDOW_MS } from "./checkoutRules.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import { readUpgrade, UPGRADE_FAILED_AR, UPGRADE_NO_COUPON_AR } from "./upgradeProration.ts";
+import {
+  bestDiscount,
+  FOUNDER_DISCOUNT_FAILED_AR,
+  founderDiscountApplies,
+  founderDiscountBps,
+  founderDiscountHalalas,
+  isActiveFounder,
+} from "./founderDiscount.ts";
 import type { TierRankTable } from "../entitlementGrantRules.ts";
 
 export const COUPON_COLUMNS =
@@ -407,7 +419,14 @@ export interface ValidateDeps {
 export type ValidateReply =
   | {
       status: 200;
-      body: { code: string; quote: { listNet: number; discount: number; net: number; vat: number; total: number } };
+      body: {
+        code: string;
+        /** l11 O8: present only when the founder discount beats the coupon — the figures are then the founder's and the coupon is not used. */
+        source?: "founder";
+        /** l11 O8: present only for an active founder member whose coupon beats his founder discount — the coupon replaces it (never both). */
+        replacesFounder?: true;
+        quote: { listNet: number; discount: number; net: number; vat: number; total: number };
+      };
     }
   | { status: 400 | 403 | 429 | 503; body: { error: string } };
 
@@ -457,11 +476,41 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
     book: deps.book,
   });
   if (!priced.ok) return { status: priced.status, body: { error: priced.error } };
+
+  // l11 O8 (F12d): checkout's step 3c, the same reads and the same rule — a
+  // founder member's discount off the LISTED price against what the other
+  // path saves (a launch price's saving plus the coupon); the larger wins, a
+  // tie goes to the founder discount. A failed founder read is checkout's 503.
+  let replacesFounder = false;
+  if (founderDiscountApplies(q.item.kind)) {
+    const founder = await isActiveFounder(admin, input.userId, now);
+    if (founder === null) return { status: 503, body: { error: FOUNDER_DISCOUNT_FAILED_AR } };
+    if (founder) {
+      const bps = await founderDiscountBps(admin);
+      const listNet = q.launch ? q.launch.listNetHalalas : q.netHalalas;
+      const fd = founderDiscountHalalas(listNet, bps);
+      const otherSaving = listNet - q.netHalalas + priced.quote.discountHalalas;
+      if (bestDiscount(otherSaving, fd).source === "founder") {
+        const f = applyDiscount(listNet, fd);
+        return {
+          status: 200,
+          body: {
+            code: priced.coupon.code,
+            source: "founder",
+            quote: { listNet: f.listNetHalalas, discount: f.discountHalalas, net: f.netHalalas, vat: f.vatHalalas, total: f.totalHalalas },
+          },
+        };
+      }
+      replacesFounder = fd > 0;
+    }
+  }
+
   const d = priced.quote;
   return {
     status: 200,
     body: {
       code: priced.coupon.code,
+      ...(replacesFounder ? { replacesFounder: true as const } : {}),
       quote: { listNet: d.listNetHalalas, discount: d.discountHalalas, net: d.netHalalas, vat: d.vatHalalas, total: d.totalHalalas },
     },
   };

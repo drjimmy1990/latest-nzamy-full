@@ -86,7 +86,9 @@ test("named laws and decrees become chips", () => {
   const found = scanCitations(text);
   assert.deepEqual(found.map((c) => c.kind), ["law", "decree"]);
   assert.equal(found[0].docName, "نظام المرافعات الشرعية");
-  assert.equal(text.slice(found[1].start, found[1].end), "المرسوم الملكي رقم (م/٥١)");
+  // N02-13 (batch l11): the decree chip takes its date along, to resolve it.
+  assert.equal(text.slice(found[1].start, found[1].end), "المرسوم الملكي رقم (م/٥١) وتاريخ ٢٣/٨/١٤٢٦هـ");
+  assert.equal(chip("بموجب المرسوم الملكي رقم (م/٥١)، يعمل"), "المرسوم الملكي رقم (م/٥١)");
   // «هذا النظام», «النظام الأساسي» and a bare «مرسوم ملكي» name nothing.
   assert.equal(scanCitations("تسري أحكام هذا النظام وفق النظام الأساسي بموجب مرسوم ملكي.").length, 0);
 });
@@ -108,4 +110,61 @@ test("html: only text runs, never inside a link, entities intact, fixed attribut
   // No source text ever lands in an attribute.
   for (const attr of out.matchAll(/data-cite-[a-z]+="([^"]*)"/g)) assert.match(attr[1], /^[a-z0-9,]+$/);
   assert.equal(linkCitationsHtml("لا شيء هنا"), "لا شيء هنا");
+});
+
+// ── O14 (batch l11, owner file 16 §1, q٩٥ default): references to this same file are plain text ──
+
+test("O14: the file's own name, its own articles and its merged instruments are plain text", () => {
+  const opts = { docTitle: "نظام القضاء", ownRefsAsText: true, selfNames: ["آلية العمل التنفيذية لنظام القضاء ونظام ديوان المظالم"] };
+  // Screenshot 01: «القسم الأول: آلية العمل التنفيذية لنظام القضاء» inside نظام القضاء.
+  const heading = linkCitationsHtml("القسم الأول: آلية العمل التنفيذية لنظام القضاء", opts);
+  assert.equal(heading, "القسم الأول: آلية العمل التنفيذية لنظام القضاء");
+  // Its own articles, by «من هذا النظام», bare, or by its own name.
+  for (const t of ["المادة الخامسة من هذا النظام", "المادة (٥)", "المادة (٥) من نظام القضاء"]) {
+    assert.doesNotMatch(linkCitationsHtml(t, opts), /<button/, t);
+  }
+  // Hamza and ة/ه spellings of its own name are still its own name.
+  assert.doesNotMatch(linkCitationsHtml("وفقاً لنظام القضاء", { ...opts, docTitle: "نظام القضاء" }), /<button/);
+  assert.doesNotMatch(
+    linkCitationsHtml("وفقاً لنظام الاجراءات الجزائيه", { docTitle: "نظام الإجراءات الجزائية", ownRefsAsText: true }),
+    /<button/,
+  );
+});
+
+test("O14: another law, a longer name, the parent law and decrees stay chips", () => {
+  const opts = { docTitle: "نظام القضاء", ownRefsAsText: true };
+  const out = linkCitationsHtml(
+    "وفقاً لنظام المرافعات الشرعية ونظام القضاء العسكري، والمادة (٤) من نظام العمل، وبموجب المرسوم الملكي رقم (م/٧٨)",
+    opts,
+  );
+  assert.equal((out.match(/<button /g) ?? []).length, 4, out);
+  assert.ok(out.includes('data-cite-kind="decree"'), out);
+  // «من النظام» in a regulation is its parent law: another file.
+  const reg = linkCitationsHtml("المادة (٤) من النظام.", { docTitle: "اللائحة التنفيذية لنظام العمل", ownRefsAsText: true });
+  assert.ok(reg.includes('data-cite-scope="parent"'), reg);
+});
+
+test("O14: off (ownRefsAsText unset) the chips are as before — the rule is one switch", () => {
+  const out = linkCitationsHtml("المادة (٥) من هذا النظام ووفقاً لنظام القضاء", { docTitle: "نظام القضاء" });
+  assert.equal((out.match(/<button /g) ?? []).length, 2, out);
+});
+
+test("O14: the reader passes the switch, the merged names and both into the chip cache key", async () => {
+  const { readFileSync } = await import("node:fs");
+  const md = readFileSync(new URL("./_article-components.tsx", import.meta.url), "utf8");
+  assert.match(md, /ownRefsAsText: OWN_DOCUMENT_REFS_AS_TEXT/);
+  assert.match(md, /cachedCitationsHtml\(html, citeCtx\.lawTitle, cite\.selfNumber, isDark, citeCtx\.ownNames\)/);
+  assert.ok(md.includes('const key = `${docTitle}\\u0000${selfNames.join("\\u0001")}'), "the merged names are in the cache key");
+  const page = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  assert.match(page, /ownNames: Array\.from\(/);
+});
+
+test("N02-13: «نظام A ونظام B» is two laws, each its own chip", () => {
+  const text = "وفق آلية العمل التنفيذية لنظام القضاء ونظام المرافعات الشرعية";
+  const laws = scanCitations(text).filter((c) => c.kind === "law").map((c) => c.docName);
+  assert.deepEqual(laws, ["نظام القضاء", "نظام المرافعات الشرعية"]);
+  // Inside نظام القضاء: its own name is text, the other law stays a chip.
+  const out = linkCitationsHtml(text, { docTitle: "نظام القضاء", ownRefsAsText: true });
+  assert.equal((out.match(/<button /g) ?? []).length, 1, out);
+  assert.ok(out.includes(">نظام المرافعات الشرعية</button>"), out);
 });

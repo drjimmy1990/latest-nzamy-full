@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
-import { DETAIL_SELECT, cleanDetail, contactIssueIn, publicDetail, visibilityForTab } from "../_feed";
+import { DETAIL_SELECT, cleanDetail, linkIssueIn, publicDetail, visibilityForTab } from "../_feed";
 import { viewerStateFor } from "../_viewer";
 import { reviewStateOf } from "@/lib/community/review";
+import { maskCommunityFields, piiMaskedNoticeAr, type PiiKind } from "@/lib/community/piiMask";
+import { LAWYERS_SPACE_REFUSAL_AR, canUseLawyersSpace } from "../_lawyersSpace";
 
 /**
  * GET /api/v1/community/posts/[id] — Get single post with all answers
@@ -150,6 +152,11 @@ export async function GET(
 /**
  * PATCH /api/v1/community/posts/[id] — Update post (owner only)
  * Allowlist: title, body, category, tags
+ *
+ * S5-3: an edit is masked like a new post (src/lib/community/piiMask.ts) —
+ * otherwise an edit after approval would be the way round the mask — and
+ * the answer carries `masked` / `maskedNotice`. A link or handle is refused.
+ * N05-C2: moving a post into lawyers-only follows ../_lawyersSpace.ts.
  */
 export async function PATCH(
   request: NextRequest,
@@ -195,9 +202,20 @@ export async function PATCH(
     }
   }
 
-  const contactIssue = contactIssueIn([updates.title, updates.body, updates.tags]);
-  if (contactIssue) {
-    return NextResponse.json({ error: contactIssue }, { status: 400 });
+  // S5-3: mask the text fields that are present; only masked text is stored.
+  let masked: PiiKind[] = [];
+  const textFields: Record<string, unknown> = {};
+  for (const key of ["title", "body", "tags"]) {
+    if (key in updates) textFields[key] = updates[key];
+  }
+  if (Object.keys(textFields).length > 0) {
+    const result = maskCommunityFields(textFields);
+    Object.assign(updates, result.fields);
+    masked = result.kinds;
+  }
+  const linkIssue = linkIssueIn([updates.title, updates.body, updates.tags]);
+  if (linkIssue) {
+    return NextResponse.json({ error: linkIssue }, { status: 400 });
   }
 
   if ("visibility" in updates) {
@@ -205,18 +223,8 @@ export async function PATCH(
     if (!visibility) {
       return NextResponse.json({ error: "قيمة الظهور غير صالحة." }, { status: 400 });
     }
-    if (visibility === "lawyers_only") {
-      const { data: lawyerProfile } = await supabase
-        .from("lawyer_profiles")
-        .select("verification_status")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (lawyerProfile?.verification_status !== "verified") {
-        return NextResponse.json(
-          { error: "النشر في مجتمع المحامين متاح للمحامين الموثّقين فقط." },
-          { status: 403 },
-        );
-      }
+    if (visibility === "lawyers_only" && !(await canUseLawyersSpace(supabase, user.id))) {
+      return NextResponse.json({ error: LAWYERS_SPACE_REFUSAL_AR }, { status: 403 });
     }
     updates.visibility = visibility;
   }
@@ -239,5 +247,5 @@ export async function PATCH(
     return dbErrorJson("community/posts/[id] PATCH", error);
   }
 
-  return NextResponse.json({ data });
+  return NextResponse.json({ data, masked, maskedNotice: piiMaskedNoticeAr(masked) });
 }

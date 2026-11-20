@@ -7870,3 +7870,158 @@ select 'Owner edges: resolver + importer functions are security definer, service
                          to_regprocedure('public.graph_rag_owner_edges_mark_deleted(jsonb)')))
        end as ok;
 -- <<< verify:l10_owner_edges
+-- >>> verify:l11_community
+-- Batch l11-community (N05-C2 / owner ٤٢): run 20261201_50 before or after the deploy (after 20261127_60).
+select 'Community: the owner of a verified firm reads and posts lawyers-only content; the lawyer badge stays with verified lawyers (run 20261201_50)' as check,
+       case when to_regprocedure('public.community_lawyers_space_ok()') is null
+              or to_regprocedure('public.community_is_verified_office()') is null then false else
+       has_function_privilege('anon', 'public.community_lawyers_space_ok()', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.community_lawyers_space_ok()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.community_is_verified_office()', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.community_verified_office_users(uuid[])', 'EXECUTE')
+       and pg_catalog.pg_get_functiondef('public.community_post_readable(uuid)'::regprocedure) ilike '%community_lawyers_space_ok%'
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                    and policyname = 'anyone reads public community posts'
+                    and qual ilike '%community_lawyers_space_ok%' and qual ilike '%pending_review%')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                    and policyname = 'users create their own community posts' and with_check ilike '%community_lawyers_space_ok%')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_posts'
+                    and policyname = 'authors update their own community posts' and with_check ilike '%community_lawyers_space_ok%')
+       and exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'community_answers'
+                    and policyname = 'users create community answers'
+                    and with_check ilike '%community_is_verified_lawyer%' and with_check not ilike '%community_lawyers_space_ok%')
+       end as ok;
+-- <<< verify:l11_community
+-- >>> verify:l11_remind
+-- Batch l11-remind (N01-15 / N01-10 / T10-F7): run 20261201_45 (any time, after 20261125_20).
+select 'Reminder kinds: email_reminder_log accepts task_due_1d(_app), contract_pay_due/overdue(_app), firm_invite; still service role only (run 20261201_45)' as check,
+       case when to_regclass('public.email_reminder_log') is null then false else
+       (select bool_and(position(quote_literal(k) in coalesce(d.def, '')) > 0)
+          from (select string_agg(pg_catalog.pg_get_constraintdef(con.oid), ' ') as def
+                  from pg_catalog.pg_constraint con
+                 where con.conrelid = 'public.email_reminder_log'::regclass and con.contype = 'c'
+                   and pg_catalog.pg_get_constraintdef(con.oid) ~ '\mkind\M') d,
+               unnest(array['hearing_1d', 'poa_30d', 'poa_7d', 'library_7d', 'library_3d',
+                            'task_due_1d', 'task_due_1d_app', 'contract_pay_due', 'contract_pay_due_app',
+                            'contract_pay_overdue', 'contract_pay_overdue_app', 'firm_invite']) as k)
+       and not has_table_privilege('anon', 'public.email_reminder_log', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.email_reminder_log', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.email_reminder_log', 'INSERT')
+       end as ok;
+-- <<< verify:l11_remind
+-- >>> verify:l11_firm
+-- Batch l11-firm (O23 firm-wide fee statements; N01-5 encrypted party national ID): run 20261201_40.
+select 'Firm fee statements: firm_fee_statement_reader is security definer, authenticated may run it, anon may not; the payments policy exists (run 20261201_40)' as check,
+       case when to_regprocedure('public.firm_fee_statement_reader(uuid)') is null then false else
+       (select p.prosecdef and p.proconfig @> array['search_path=""'] from pg_catalog.pg_proc p
+         where p.oid = to_regprocedure('public.firm_fee_statement_reader(uuid)'))
+       and has_function_privilege('authenticated', 'public.firm_fee_statement_reader(uuid)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.firm_fee_statement_reader(uuid)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_policies
+                    where schemaname = 'public' and tablename = 'payments'
+                      and policyname = 'firm finance reads firm statements' and cmd = 'SELECT')
+       end as ok;
+select 'Contract party national ID: both tables server-only (RLS forced, no policy, no anon/authenticated privilege), the access log append-only (run 20261201_40)' as check,
+       case when to_regclass('public.contract_party_national_ids') is null or to_regclass('public.contract_party_id_access_log') is null then false else
+       (select pg_catalog.bool_and(c.relrowsecurity and c.relforcerowsecurity) from pg_catalog.pg_class c
+         where c.oid in (to_regclass('public.contract_party_national_ids'), to_regclass('public.contract_party_id_access_log')))
+       and not exists (select 1 from pg_catalog.pg_policy
+                        where polrelid in (to_regclass('public.contract_party_national_ids'), to_regclass('public.contract_party_id_access_log')))
+       and not has_table_privilege('anon', 'public.contract_party_national_ids', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.contract_party_national_ids', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.contract_party_national_ids', 'INSERT')
+       and not has_table_privilege('anon', 'public.contract_party_id_access_log', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.contract_party_id_access_log', 'SELECT')
+       and has_table_privilege('service_role', 'public.contract_party_national_ids', 'INSERT')
+       and has_table_privilege('service_role', 'public.contract_party_id_access_log', 'INSERT')
+       and not has_table_privilege('service_role', 'public.contract_party_id_access_log', 'UPDATE')
+       and not has_table_privilege('service_role', 'public.contract_party_id_access_log', 'DELETE')
+       end as ok;
+-- <<< verify:l11_firm
+-- >>> verify:l11_scrape
+-- Batch l11-scrape (O18 non-subscriber view cap shipped OFF + verified crawlers; O19 sequential/parallel alerts + staff e-mail): run 20261201_30 after 20261129_40, before or after the deploy.
+select 'Scrape guard: the 12 settings columns exist on library_monitor_settings (the cap switch ships OFF; turning it on is the owner''s decision) (run 20261201_30)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_attribute
+         where attrelid = 'public.library_monitor_settings'::regclass and not attisdropped
+           and attname in ('non_subscriber_view_limit_enabled', 'non_subscriber_daily_view_limit', 'non_subscriber_address_daily_limit',
+                           'crawler_view_limits', 'agent_view_limits', 'rule_sequence_on', 'rule_sequence_docs', 'rule_sequence_gap_seconds',
+                           'rule_parallel_on', 'rule_parallel_sessions', 'rule_parallel_minutes', 'alert_emails')) = 12 as ok;
+select 'Scrape guard: library_public_views / library_crawler_daily / library_read_sessions are server-only (RLS on, no anon/authenticated privilege) (run 20261201_30)' as check,
+       case when to_regclass('public.library_public_views') is null or to_regclass('public.library_crawler_daily') is null
+              or to_regclass('public.library_read_sessions') is null then false else
+       (select pg_catalog.bool_and(c.relrowsecurity) from pg_catalog.pg_class c
+         where c.oid in (to_regclass('public.library_public_views'), to_regclass('public.library_crawler_daily'), to_regclass('public.library_read_sessions')))
+       and not has_table_privilege('anon', 'public.library_public_views', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_public_views', 'SELECT')
+       and not has_table_privilege('anon', 'public.library_read_sessions', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_read_sessions', 'SELECT')
+       and not has_table_privilege('anon', 'public.library_crawler_daily', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_crawler_daily', 'SELECT')
+       end as ok;
+select 'Scrape guard: the evaluator is the 20261201_30 one (sequential + parallel rules, no admin exemption) and the new functions are service_role only (run 20261201_30)' as check,
+       case when to_regprocedure('public.library_public_view_hit(text,text[],text,boolean)') is null
+              or to_regprocedure('public.library_read_session_seen(uuid,text,text)') is null
+              or to_regprocedure('public.library_review_flags_claim_email(int,int)') is null then false else
+       pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.library_monitor_evaluate(uuid)'::regprocedure), 'l11_scrape') > 0
+       and (select pg_catalog.bool_and(p.prosecdef and p.proconfig @> array['search_path=""']
+                                       and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                       and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                       and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+              from pg_catalog.pg_proc p
+             where p.oid in (to_regprocedure('public.library_public_view_hit(text,text[],text,boolean)'),
+                             to_regprocedure('public.library_public_view_stats(int)'),
+                             to_regprocedure('public.library_read_session_seen(uuid,text,text)'),
+                             to_regprocedure('public.library_review_flags_claim_email(int,int)')))
+       end as ok;
+-- <<< verify:l11_scrape
+-- >>> verify:l11_pay
+-- Batch l11 pay (register 20 / 55): run 20261201_20 (any order relative to the deploy).
+select 'Offers for visitors: offers_audience_check lists guest, guest offers pinned to verification any, founder offer still lawyer-only (run 20261201_20)' as check,
+       case when to_regclass('public.offers') is null then false else
+       coalesce((select pg_catalog.pg_get_constraintdef(oid) like '%guest%' from pg_catalog.pg_constraint
+                  where conrelid = 'public.offers'::regclass and conname = 'offers_audience_check'), false)
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.offers'::regclass and conname = 'offers_guest_verification_check')
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = 'public.offers'::regclass and conname = 'offers_founder_audience_check')
+       end as ok;
+select 'Founder renewal: setting row present, notice markers server-only (RLS on, no anon/authenticated privilege) (run 20261201_20)' as check,
+       exists (select 1 from public.platform_settings where key = 'founder_renewal')
+       and case when to_regclass('public.founder_renewal_notices') is null then false else
+       (select relrowsecurity from pg_catalog.pg_class where oid = 'public.founder_renewal_notices'::regclass)
+       and not has_table_privilege('anon', 'public.founder_renewal_notices', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.founder_renewal_notices', 'SELECT')
+       and has_table_privilege('service_role', 'public.founder_renewal_notices', 'INSERT')
+       end as ok;
+-- <<< verify:l11_pay
+-- >>> verify:l11_misc
+-- Batch l11-misc (O22): run 20261201_60 any time (before or after the deploy).
+select 'Feature flags: platform_settings.feature_flags is an object whose site_assistant (if set) is a boolean (run 20261201_60)' as check,
+       coalesce((select jsonb_typeof(value) = 'object'
+                        and (not (value ? 'site_assistant') or jsonb_typeof(value -> 'site_assistant') = 'boolean')
+                   from public.platform_settings where key = 'feature_flags'), false) as ok;
+-- <<< verify:l11_misc
+-- >>> verify:l11_sec
+-- Batch l11-sec: run 20261201_10 AFTER the code deploy (the old /api/v1/lawyer/clients reads the fee columns with the session).
+select 'O1: lawyer_clients fee columns closed to sessions; lawyer_client_fees for authenticated only (run 20261201_10)' as check,
+       case when to_regclass('public.lawyer_clients') is null or to_regprocedure('public.lawyer_client_fees(uuid[])') is null then false else
+       not has_table_privilege('authenticated', 'public.lawyer_clients', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.lawyer_clients', 'fee_total_sar', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.lawyer_clients', 'fee_paid_sar', 'SELECT')
+       and not has_column_privilege('anon', 'public.lawyer_clients', 'fee_total_sar', 'SELECT')
+       and has_column_privilege('authenticated', 'public.lawyer_clients', 'name', 'SELECT')
+       and has_function_privilege('authenticated', 'public.lawyer_client_fees(uuid[])', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.lawyer_client_fees(uuid[])', 'EXECUTE')
+       end as ok;
+select 'O2: library_device_gate has no admin exemption (re-run 20261201_10 after any re-run of 20261129_40)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_device_gate(uuid,text,text,uuid,boolean)')), '''exempt''') = 0, false) as ok;
+select 'O3: hearings / tasks / dashboard_notes carry the restrictive «firm role scope: no-case rows own only» policy (run 20261201_10)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_policy
+         where polname = 'firm role scope: no-case rows own only' and not polpermissive
+           and polrelid in (to_regclass('public.hearings'), to_regclass('public.tasks'), to_regclass('public.dashboard_notes'))) = 3 as ok;
+select 'R6: one verified account per mobile — trg_verified_phone_unique on profiles, lawyer_profiles, provider_profiles (run 20261201_10)' as check,
+       (select pg_catalog.count(*) from pg_catalog.pg_trigger
+         where tgname = 'trg_verified_phone_unique' and not tgisinternal
+           and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
+       and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
+-- <<< verify:l11_sec

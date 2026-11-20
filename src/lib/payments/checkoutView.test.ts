@@ -9,6 +9,7 @@ import { PAYABLE_ITEMS } from "./catalog.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import type { CheckoutResponse } from "./checkoutRules.ts";
 import {
+  TOPUP_LIBRARY_EXPIRY_GENERIC_AR,
   checkoutRequestBody,
   buyButtonAction,
   checkoutBillingFor,
@@ -193,7 +194,7 @@ test("checkoutItemNotes: the library states its access length; firm plans promis
 test("checkoutItemNotes: the founder membership states its length and what activation grants (20261101_10), nothing more", () => {
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["lawyer-founder-2026"]), [
     "عضوية لمدة ١٢ شهراً من تاريخ التفعيل",
-    "٦ أعمال بالصائغ القانوني ومخرج مستقل واحد",
+    "٦ أعمال بالصائغ القانوني",
     "وصول إلى المكتبة القانونية لمدة ٣٦٥ يوماً",
   ]);
   // the card's promises that this plan does not grant (global constraints)
@@ -479,4 +480,18 @@ test("l8: saleGatewayPaused — off, the stub and a refused test mode are paused
   assert.match(cards, /SALE_PAUSED_REQUEST_NOTE_AR : SALE_PAUSED_LINE_AR/);
   const hero = readFileSync(join(root, "src/app/founder/_components/HeroMeter.tsx"), "utf8");
   assert.match(hero, /saleGatewayPaused\(usePaymentsStatus\(\)\) && view\.phase === "live"/);
+});
+
+test("l11 O7: a top-up bought by a library subscriber says its expiry may lock the library (founder terms ١٢)", () => {
+  const topup = Object.values(PAYABLE_ITEMS).find((i) => i.kind === "topup" && typeof i.pointsValidityMonths === "number");
+  assert.ok(topup);
+  const plain = checkoutItemNotes(topup);
+  assert.equal(plain.some((n) => n.includes("المكتبة")), false, "no line without a gated library plan");
+  const gated = checkoutItemNotes(topup, { libraryMinPoints: 50 });
+  assert.equal(gated.length, plain.length + 1);
+  assert.equal(gated.at(-1), "بما أن فتح المكتبة مشروط ببقاء رصيدك ٥٠ نقطة فأكثر، فانتهاء صلاحية هذه الشحنة قد يُقفل التصفح حتى تشحن من جديد.");
+  assert.deepEqual(checkoutItemNotes(topup, { libraryMinPoints: 0 }), plain, "0 = the gate is off");
+  const lib = Object.values(PAYABLE_ITEMS).find((i) => i.kind === "library");
+  if (lib) assert.equal(checkoutItemNotes(lib, { libraryMinPoints: 50 }).some((n) => n.includes("الشحنة")), false, "top-ups only");
+  assert.match(TOPUP_LIBRARY_EXPIRY_GENERIC_AR, /قد يُقفل التصفح حتى تشحن من جديد/);
 });

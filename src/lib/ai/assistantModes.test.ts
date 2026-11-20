@@ -46,7 +46,8 @@ test("the page sends the mode and offers the two choices", () => {
   assert.ok(read("src/app/ai/assistant/_assistant-client.ts").includes(`...(input.mode === "grill" ? { mode: "grill" } : {})`));
   const page = read("src/app/ai/assistant/page.tsx");
   assert.ok(page.includes("مباشر") && page.includes("استجوبني"));
-  assert.ok(page.includes("mode });"));
+  // T17a (batch l11): the case id follows the mode in the same call.
+  assert.ok(page.includes("userType, mode, caseId:"));
 });
 
 test("P1-27: the four routes mount the stage with their tool's label", () => {

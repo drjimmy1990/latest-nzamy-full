@@ -23,7 +23,12 @@ export interface ServiceRequestWizardProps {
   serviceTitleEn: string;
   serviceId: string;
   onClose: () => void;
-  userRole: "individual" | "lawyer_client";
+  /**
+   * Who is ordering (N05-M3, batch l11): a company account is `corporate`, never
+   * `lawyer_client` — that value turns on the lawyer-only fields (bar number,
+   * court, case number) and is stored as the requester's role in the order.
+   */
+  userRole: "individual" | "corporate" | "lawyer_client";
 }
 
 export const REGIONS = [

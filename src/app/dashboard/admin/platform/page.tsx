@@ -54,17 +54,17 @@ const STATUS_CLASS: Record<PlatformSurfaceStatus, string> = {
 };
 
 const READINESS_LABEL: Record<AdminReadinessStatus, string> = {
-  "UI Working": "يعمل",
-  "Backend-ready": "واجهة دون حفظ",
-  "Missing UI": "بلا واجهة",
-  Risk: "خطر",
+  "working": "يعمل",
+  "no_save": "واجهة دون حفظ",
+  "no_ui": "بلا واجهة",
+  risk: "خطر",
 };
 
 const READINESS_CLASS: Record<AdminReadinessStatus, string> = {
-  "UI Working": "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
-  "Backend-ready": "border-blue-500/25 bg-blue-500/10 text-blue-300",
-  "Missing UI": "border-rose-500/25 bg-rose-500/10 text-rose-300",
-  Risk: "border-amber-500/25 bg-amber-500/10 text-amber-300",
+  "working": "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
+  "no_save": "border-blue-500/25 bg-blue-500/10 text-blue-300",
+  "no_ui": "border-rose-500/25 bg-rose-500/10 text-rose-300",
+  risk: "border-amber-500/25 bg-amber-500/10 text-amber-300",
 };
 
 export default function AdminPlatformPage() {
@@ -87,7 +87,7 @@ export default function AdminPlatformPage() {
             </h1>
           </motion.div>
           <p className={`text-sm leading-relaxed max-w-3xl ${isDark ? "text-gray-400" : "text-gray-500"}`}>
-            فحص owner-level للصفحات العامة، المحتوى، المكتبة القانونية، المدونة، الميديا، الأكاديمية، الفهرسة، وما يقابلها في لوحة الأدمن.
+            مراجعة شاملة للصفحات العامة والمحتوى والمكتبة القانونية والمدونة والوسائط والأكاديمية والفهرسة، وما يقابلها في لوحة الإدارة.
           </p>
         </div>
         <Link
@@ -97,7 +97,7 @@ export default function AdminPlatformPage() {
           }`}
         >
           <Database size={16} />
-          مراجعة sitemap
+          مراجعة خريطة الموقع
         </Link>
       </div>
 
@@ -195,9 +195,9 @@ export default function AdminPlatformPage() {
 
       <div className={`rounded-2xl border overflow-hidden ${isDark ? "bg-[#0d1117] border-white/10" : "bg-white border-gray-200 shadow-sm"}`}>
         <div className={`px-5 py-4 border-b ${isDark ? "border-white/10" : "border-gray-100"}`}>
-          <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>جاهزية لوحة الإدارة للربط بالخادم</h2>
+          <h2 className={`text-base font-black ${isDark ? "text-white" : "text-gray-900"}`}>جاهزية صفحات لوحة الإدارة</h2>
           <p className={`text-xs mt-1 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
-            هذا التصنيف يفصل بين ما يعمل في الواجهة الآن وما ينتظر الربط بالخادم أو قاعدة البيانات.
+            هذا التصنيف يفصل بين ما يُحفظ فعلاً الآن وما يُعرض للاطلاع فقط حتى يُربط.
           </p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x lg:divide-x-reverse divide-white/5">
@@ -217,15 +217,8 @@ export default function AdminPlatformPage() {
                   {READINESS_LABEL[surface.status]}
                 </span>
               </div>
-              <p className={`text-xs leading-relaxed mb-3 ${isDark ? "text-gray-400" : "text-gray-500"}`}>{surface.note}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-[11px] px-2 py-1 rounded-lg border font-mono ${isDark ? "border-white/10 text-gray-300" : "border-gray-200 text-gray-700"}`}>
-                  {surface.route}
-                </span>
-                <span className={`text-[11px] px-2 py-1 rounded-lg border font-mono ${isDark ? "border-blue-500/20 text-blue-200" : "border-blue-100 text-blue-700"}`}>
-                  {surface.contract}
-                </span>
-              </div>
+              {/* S5-4: plain Arabic only — the route and the code reference are not printed (the title links to the page). */}
+              <p className={`text-xs leading-relaxed ${isDark ? "text-gray-400" : "text-gray-500"}`}>{surface.note}</p>
             </motion.div>
           ))}
         </div>

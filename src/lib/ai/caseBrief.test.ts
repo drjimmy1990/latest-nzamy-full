@@ -73,7 +73,8 @@ test("moving the page to /ai/analyze moved no money and no rule: same prices, sa
 
   // The studio prints the registry's constants, asks for this one tool and sends these fields.
   const studio = readFileSync(join(process.cwd(), "src/components/ai/caseBrief/CaseBriefStudio.tsx"), "utf8");
-  assert.ok(studio.includes('run.start("case-brief", { role_note: chatInput.trim(), want_requests: generateClientRequests }, { fileIds: readyIds })'));
+  // l11 (T8-Q511a): a fourth argument keeps the form for a top-up round trip
+  assert.ok(studio.includes('run.start("case-brief", { role_note: chatInput.trim(), want_requests: generateClientRequests }, { fileIds: readyIds }, {'));
   assert.ok(studio.includes("readyIds.length <= CASE_BRIEF_FILES.max"));
   assert.ok(studio.includes("chatInput.trim().length >= 3"));
   assert.ok(studio.includes('CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")'));

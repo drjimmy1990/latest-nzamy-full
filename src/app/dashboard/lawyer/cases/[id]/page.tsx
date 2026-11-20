@@ -109,6 +109,7 @@ import CaseTimeExpensesSection from "@/components/dashboard/financeLedger/CaseTi
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import { caseSummaryBlocks } from "../_caseSummaryBlocks";
 import InsertFromLibraryButton from "@/components/library/InsertFromLibraryButton";
+import ArticleRefAssist from "@/components/ai/ArticleRefAssist";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -143,6 +144,8 @@ const DEADLINES_COUNT: ArabicCountForms = {
 };
 
 
+// T18-P1-32 (batch l11): the named boards of the case map.
+const CaseBoardSwitcher = dynamic(() => import("@/app/dashboard/business/kanban/CaseBoardSwitcher"), { ssr: false });
 const CaseGraphView = dynamic(
   () => import("@/app/dashboard/business/kanban/CaseGraphView"),
   { ssr: false, loading: () => <div className="h-96 flex items-center justify-center text-sm text-slate-400">جارٍ تحميل خريطة القضية...</div> }
@@ -468,6 +471,9 @@ export default function CaseDetailPage() {
   const taskStatusRace = useRef(createLatestWins<TaskStatus>());
   const subtaskRace = useRef(createLatestWins<CaseTask["subtasks"]>());
   const [graphFullscreen, setGraphFullscreen] = useState(false);
+  // T18-P1-32: null = the case's default board; a rename bumps the revision so the open board reloads.
+  const [graphBoard, setGraphBoard] = useState<string | null>(null);
+  const [graphBoardRev, setGraphBoardRev] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // "The file is stored, the screen may be stale" — a different message from
@@ -2290,6 +2296,7 @@ export default function CaseDetailPage() {
                 <p className={`text-[12px] font-semibold ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
                   خريطة القضية البصرية — {caseData.title}
                 </p>
+                <CaseBoardSwitcher caseId={id} value={graphBoard} onChange={setGraphBoard} onRenamed={() => setGraphBoardRev((n) => n + 1)} isDark={isDark} />
                 {/* A «نظامي AI» pill sat here, in the same header as the real case
                     title. The platform contributes nothing to this board: the
                     cards are the lawyer's own, the canvas has no analysis engine
@@ -2314,7 +2321,7 @@ export default function CaseDetailPage() {
                   and then save its stale copy over the lawyer's work. */}
               <div className="h-[calc(100%-48px)]">
                 {!graphFullscreen && (
-                  <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} enableCaseImport />
+                  <CaseGraphView key={`${graphBoard ?? "main"}:${graphBoardRev}`} isDark={isDark} isGlobal={false} caseId={id} boardId={graphBoard} enableCaseImport />
                 )}
               </div>
               {graphFullscreen && (
@@ -2332,7 +2339,7 @@ export default function CaseDetailPage() {
                     </button>
                   </div>
                   <div className="flex-1">
-                    <CaseGraphView isDark={isDark} isGlobal={false} caseId={id} enableCaseImport />
+                    <CaseGraphView key={`${graphBoard ?? "main"}:${graphBoardRev}`} isDark={isDark} isGlobal={false} caseId={id} boardId={graphBoard} enableCaseImport />
                   </div>
                 </div>
               )}
@@ -2365,6 +2372,7 @@ export default function CaseDetailPage() {
                     <NoteScopePicker value={newNoteVisibility} onChange={setNewNoteVisibility} team={caseTeam} disabled={addingNote} />
                     {/* 8000 = case_notes.body check (20260910_case_notes.sql). */}
                     <InsertFromLibraryButton isDark={isDark} targetRef={newNoteRef} value={newNoteBody} onChange={setNewNoteBody} disabled={addingNote} maxLength={8000} />
+                    <ArticleRefAssist isDark={isDark} targetRef={newNoteRef} value={newNoteBody} onChange={setNewNoteBody} disabled={addingNote} maxLength={8000} />
                     <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
                       {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}

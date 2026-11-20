@@ -216,7 +216,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "أدوات الأحكام والاختصاص والبحث القضائي للقاضي فقط.",
     routes: ["/dashboard/government/cases", "/ai/gov/judgment-drafter", "/ai/gov/judicial-search"],
     contract: "GovernmentRoleContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "prosecution",
@@ -225,7 +225,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "لوائح اتهام، تحليل أدلة، مدد نظامية، وتقارير تحقيق.",
     routes: ["/ai/gov/indictment-drafter", "/ai/gov/evidence-analyzer", "/dashboard/government/reports"],
     contract: "GovernmentRoleContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "investigation",
@@ -234,7 +234,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "نماذج تحقيق وضمانات وإجراءات منفصلة عن أدوات الضابط والقاضي.",
     routes: ["/ai/gov/investigation-forms", "/ai/gov/guarantees-checker"],
     contract: "GovernmentRoleContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "police",
@@ -243,7 +243,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "محاضر، تقارير حوادث، قبض وتفتيش، ودليل إجراءات.",
     routes: ["/ai/gov/detention-records", "/ai/gov/incident-report", "/ai/gov/arrest-forms"],
     contract: "GovernmentRoleContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "counsel",
@@ -252,7 +252,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "عقود حكومية، مشتريات، آراء قانونية، ومستشارون خارجيون.",
     routes: ["/dashboard/government/contracts", "/dashboard/government/external-counsel", "/ai/gov/procurement-reviewer"],
     contract: "GovernmentProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "compliance",
@@ -261,7 +261,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "تقارير امتثال ومراجعات رقابية حسب نطاق الجهة.",
     routes: ["/dashboard/government/compliance", "/ai/gov/compliance-checker"],
     contract: "SectorEntitlement",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "reports",
@@ -270,7 +270,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "لوحات متابعة مؤسسية وقياسات تشغيلية بلا تصدير خادمي الآن.",
     routes: ["/dashboard/government/reports"],
     contract: "SectorAuditEvent",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "contracts",
@@ -279,7 +279,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "سجل عقود ومراجعة بنود ومخاطر للمستشارين الحكوميين.",
     routes: ["/dashboard/government/contracts", "/ai/gov/contract-reviewer"],
     contract: "GovernmentProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "sso",
@@ -288,7 +288,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "ظاهر كحالة pending فقط ولا يوجد تكامل هوية أو أنظمة حكومية.",
     routes: ["/dashboard/admin/sector-profiles"],
     contract: "GovernmentProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "ai_by_role",
@@ -297,7 +297,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "القاضي لا يرى أدوات الضابط كصلاحية فعلية، والعكس.",
     routes: ["/dashboard/government", "/ai/gov/procedure-guide"],
     contract: "GovernmentRoleContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "volunteers",
@@ -306,7 +306,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "إضافة وتنظيم متطوعين وعقود تطوع كواجهة فقط.",
     routes: ["/dashboard/ngo/volunteers", "/dashboard/ngo/volunteers/new"],
     contract: "NgoProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "donations",
@@ -315,7 +315,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "عرض سجل تبرعات وتمويل برامج بدون Payment/Billing API.",
     routes: ["/dashboard/ngo/finance"],
     contract: "NgoProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "awqaf",
@@ -324,7 +324,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "إدارة وقف أو أصل وربطه ببرنامج ومصدر دخل كحالة واجهة.",
     routes: ["/dashboard/ngo/awqaf"],
     contract: "NgoProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "board",
@@ -333,7 +333,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "أعضاء، اجتماعات، قرارات، ومصفوفة اعتماد داخلية.",
     routes: ["/dashboard/ngo/board"],
     contract: "NgoProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "programs",
@@ -342,7 +342,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "برامج خيرية، حملات، مستفيدون، وتقارير أثر.",
     routes: ["/dashboard/ngo/programs"],
     contract: "NgoProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "compliance",
@@ -351,7 +351,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "تقارير وحوكمة ومتطلبات المركز الوطني كواجهة متابعة.",
     routes: ["/dashboard/ngo/compliance"],
     contract: "NgoProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "reports",
@@ -360,7 +360,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "تقارير ربع سنوية وسنوية بدون تصدير أو رفع فعلي.",
     routes: ["/dashboard/ngo/reports"],
     contract: "SectorAuditEvent",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "ai",
@@ -369,7 +369,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "عقود تطوع، مدقق حوكمة، محلل تبرعات، ومعد تقارير.",
     routes: ["/ai/contracts", "/ai/ngo/governance-checker", "/ai/ngo/donation-analyzer"],
     contract: "SectorEntitlement",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "requirements",
@@ -378,7 +378,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "بلدية، زكاة، تأمينات، عمل، ورخص بمنطق بسيط لصاحب المنشأة.",
     routes: ["/dashboard/micro/requirements"],
     contract: "MicroProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "contracts",
@@ -387,7 +387,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "قوالب ومراجعة عقود تشغيلية بسيطة.",
     routes: ["/dashboard/micro/contracts"],
     contract: "MicroProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "documents",
@@ -396,7 +396,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "ملفات ورخص وتصاريح بدون تخزين خادمي.",
     routes: ["/dashboard/micro/documents"],
     contract: "MicroProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "wallet",
@@ -405,7 +405,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "يعرض حدود استخدام داخل الخطة، وليس نقاط.",
     routes: ["/dashboard/micro/wallet"],
     contract: "SectorPlanContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "requests",
@@ -414,7 +414,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "رفع طلب خدمة أو متابعة طلبات بسيطة.",
     routes: ["/dashboard/micro/requests"],
     contract: "MicroProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "marketplace",
@@ -423,7 +423,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "تصعيد لمهني أو محام عند الحاجة بدون مقاعد أو نقاط.",
     routes: ["/marketplace?tab=post-request"],
     contract: "SectorEntitlement",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
   {
     key: "cases",
@@ -432,7 +432,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "متابعة قضية أو تصعيد خدمة عند الحاجة، بدون تعقيد إداري.",
     routes: ["/dashboard/micro/cases"],
     contract: "MicroProfileContract",
-    readiness: "UI Working",
+    readiness: "working",
   },
   {
     key: "ai",
@@ -441,7 +441,7 @@ export const SECTOR_ENTITLEMENTS: SectorEntitlement[] = [
     description: "مساعد منشآت وفحص مستندات واستشارة قانونية ضمن حدود الخطة.",
     routes: ["/ai/micro", "/ai/consult", "/ai/analyze?source=labor"],
     contract: "SectorEntitlement",
-    readiness: "Backend-ready",
+    readiness: "no_save",
   },
 ];
 
@@ -454,7 +454,7 @@ export const SECTOR_PROFILE_SCENARIOS: SectorProfileScenario[] = [
     recommendedServices: ["judiciary", "prosecution", "investigation", "counsel", "reports", "ai_by_role"],
     dashboardRoutes: ["/dashboard/government", "/dashboard/government/cases", "/dashboard/government/reports"],
     adminRoute: "/dashboard/admin/sector-profiles",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "RBAC وSSO والتقارير المؤسسية واجهة فقط حتى ربط Auth/RBAC/Reporting APIs.",
     betaNotes: "يجب إبقاء فصل أدوات القاضي/الضابط/المحقق ظاهرا قبل أي ربط إنتاجي.",
   },
@@ -466,7 +466,7 @@ export const SECTOR_PROFILE_SCENARIOS: SectorProfileScenario[] = [
     recommendedServices: ["police", "investigation", "reports", "ai_by_role"],
     dashboardRoutes: ["/dashboard/government", "/ai/gov/detention-records", "/ai/gov/investigation-forms"],
     adminRoute: "/dashboard/admin/sector-profiles",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "كل الإجراء محلي/تعليمي في البيتا ولا يمثل سجلا رسميا أو تكاملا حكوميا.",
     betaNotes: "الأدوات الشرطية لا تظهر كصلاحية للقاضي أو المستشار الحكومي.",
   },
@@ -478,7 +478,7 @@ export const SECTOR_PROFILE_SCENARIOS: SectorProfileScenario[] = [
     recommendedServices: ["counsel", "contracts", "compliance", "reports", "ai_by_role"],
     dashboardRoutes: ["/dashboard/government/contracts", "/dashboard/government/compliance"],
     adminRoute: "/dashboard/admin/sector-profiles",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "العقود والتقارير جاهزة واجهيا فقط، ولا يوجد تكامل مع أنظمة مشتريات أو وثائق.",
     betaNotes: "الحكومة B2G بعقد سنوي/عرض سعر، بلا نقاط وبلا أسعار ثابتة إجبارية.",
   },
@@ -490,7 +490,7 @@ export const SECTOR_PROFILE_SCENARIOS: SectorProfileScenario[] = [
     recommendedServices: ["volunteers", "donations", "programs", "compliance", "reports", "ai"],
     dashboardRoutes: ["/dashboard/ngo", "/dashboard/ngo/volunteers", "/dashboard/ngo/programs"],
     adminRoute: "/dashboard/admin/sector-profiles",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "لا يوجد Donation API أو Volunteer DB أو تقارير رفع فعلية في هذه المرحلة.",
     betaNotes: "كل زر إضافة/تصدير/اعتماد يظهر أنه محلي وجاهز للباك إند.",
   },
@@ -502,7 +502,7 @@ export const SECTOR_PROFILE_SCENARIOS: SectorProfileScenario[] = [
     recommendedServices: ["awqaf", "board", "programs", "reports", "compliance", "ai"],
     dashboardRoutes: ["/dashboard/ngo/awqaf", "/dashboard/ngo/board", "/dashboard/ngo/reports"],
     adminRoute: "/dashboard/admin/sector-profiles",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "الأصول والوقف وسجلات المجلس واجهة فقط حتى وجود CMS/DB وتدقيق.",
     betaNotes: "الوقف لا يعامل كجمعية عادية فقط؛ تظهر إدارة الأصول والريع والقرارات.",
   },
@@ -514,7 +514,7 @@ export const SECTOR_PROFILE_SCENARIOS: SectorProfileScenario[] = [
     recommendedServices: ["requirements", "contracts", "documents", "wallet", "requests", "marketplace", "ai"],
     dashboardRoutes: ["/dashboard/micro", "/dashboard/micro/requirements", "/dashboard/micro/contracts"],
     adminRoute: "/dashboard/admin/sector-profiles",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     backendBoundary: "الخطة تعرض حدود استخدام فقط؛ لا نقاط ولا مقاعد ولا فوترة فعلية.",
     betaNotes: "الواجهة تبقى خفيفة وغير مزدحمة لصاحب المنشأة.",
   },
@@ -527,7 +527,7 @@ export const SECTOR_ADMIN_CONTROLS: SectorAdminControl[] = [
     sector: "government",
     route: "/dashboard/admin/sector-profiles",
     contract: "GovernmentProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "نوع الجهة، الأدوار، SSO pending، وخطة B2G كلها محلية حتى ربط عقود الجهة.",
   },
   {
@@ -536,7 +536,7 @@ export const SECTOR_ADMIN_CONTROLS: SectorAdminControl[] = [
     sector: "government",
     route: "/dashboard/government",
     contract: "GovernmentRoleContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "الواجهة تفصل الأدوات، لكن الإلزام الحقيقي يحتاج Auth/RBAC.",
   },
   {
@@ -545,7 +545,7 @@ export const SECTOR_ADMIN_CONTROLS: SectorAdminControl[] = [
     sector: "ngo",
     route: "/dashboard/admin/sector-profiles",
     contract: "NgoProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "النوع والخطة والحدود والأوقاف والبرامج ومجلس الإدارة واجهة فقط.",
   },
   {
@@ -554,7 +554,7 @@ export const SECTOR_ADMIN_CONTROLS: SectorAdminControl[] = [
     sector: "ngo",
     route: "/dashboard/ngo/compliance",
     contract: "SectorAuditEvent",
-    readiness: "Risk",
+    readiness: "risk",
     note: "التقارير وسجل المجلس يحتاجان Audit/Reporting APIs قبل الإنتاج.",
   },
   {
@@ -563,7 +563,7 @@ export const SECTOR_ADMIN_CONTROLS: SectorAdminControl[] = [
     sector: "micro",
     route: "/dashboard/admin/sector-profiles",
     contract: "MicroProfileContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "النشاط والرخص والاشتراطات وخطة micro-shield محلية، بلا نقاط أو مقاعد.",
   },
   {
@@ -572,7 +572,7 @@ export const SECTOR_ADMIN_CONTROLS: SectorAdminControl[] = [
     sector: "government",
     route: "/dashboard/admin/pricing",
     contract: "SectorPlanContract",
-    readiness: "Backend-ready",
+    readiness: "no_save",
     note: "الحكومة B2G، والجمعيات سنوي، والمنشآت الصغيرة سنوي/مجاني؛ الحفظ الحقيقي ينتظر Billing/Entitlements APIs.",
   },
 ];

@@ -29,7 +29,7 @@ function newKey(): string {
 }
 
 export async function askAssistant(
-  input: { message: string; context: string; conversationId: string | null; userType?: string | null; mode?: "direct" | "grill" },
+  input: { message: string; context: string; conversationId: string | null; userType?: string | null; mode?: "direct" | "grill"; caseId?: string | null },
   fetchImpl: typeof fetch = fetch,
 ): Promise<AssistantAnswer> {
   let res: Response;
@@ -40,7 +40,13 @@ export async function askAssistant(
       body: JSON.stringify({
         tool: "assistant",
         // Q481: «استجوبني» is sent as mode "grill"; «مباشر» sends no mode (today's input).
-        input: { message: input.message, context: input.context, ...(input.mode === "grill" ? { mode: "grill" } : {}) },
+        input: {
+          message: input.message,
+          context: input.context,
+          ...(input.mode === "grill" ? { mode: "grill" } : {}),
+          // T17a: «قضية محددة» with a chosen case; the server reads it (own cases only).
+          ...(input.context === "case" && input.caseId ? { case_id: input.caseId } : {}),
+        },
         ...(input.conversationId ? { conversationId: input.conversationId } : {}),
         idempotencyKey: newKey(),
       }),
@@ -63,8 +69,31 @@ export async function askAssistant(
     };
   }
   if (res.status === 401) return { ok: false, text: "سجّل الدخول لاستخدام المساعد المتقدم", citations: [], code };
+  if (code === "case_not_found") return { ok: false, text: typeof json.error === "string" ? json.error : FALLBACK, citations: [], conversationId, code };
   // Lawyers and firms (owner ٤١٧, 8 Nov); the library's AI tier still gates it, in this tool's name.
   const library = libraryToolRefusal(code, "المساعد المتقدم", input.userType ?? null);
   if (library) return { ok: false, text: library.text, citations: [], conversationId, code };
   return { ok: false, text: typeof json.error === "string" && json.error ? json.error : FALLBACK, citations: [], conversationId, code };
+}
+
+/** T17a: one of the caller's own cases, as the «قضية محددة» picker lists it. */
+export interface AssistantCaseOption {
+  id: string;
+  title: string;
+  type: string | null;
+}
+
+/** The caller's own cases (GET /api/v1/ai/assistant-cases); null when they could not be read. */
+export async function listAssistantCases(fetchImpl: typeof fetch = fetch): Promise<AssistantCaseOption[] | null> {
+  try {
+    const res = await fetchImpl("/api/v1/ai/assistant-cases", { cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
+    if (!Array.isArray(body?.data)) return null;
+    return body.data.filter(
+      (c): c is AssistantCaseOption => typeof c === "object" && c !== null && typeof (c as AssistantCaseOption).id === "string" && typeof (c as AssistantCaseOption).title === "string",
+    );
+  } catch {
+    return null;
+  }
 }

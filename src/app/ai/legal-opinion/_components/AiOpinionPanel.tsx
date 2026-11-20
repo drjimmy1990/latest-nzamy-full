@@ -30,6 +30,8 @@ interface Props {
   kind: AiOpinionKind;
   run: ReturnType<typeof useAiRun>;
   input: Record<string, unknown>;
+  /** l11 (T8-Q511a): the page's own fields, kept for a top-up round trip (useToolDraft restores them). */
+  draftState?: Record<string, unknown>;
   /** Why the button cannot run yet (a field missing), or null. */
   blocked: string | null;
   price: number;
@@ -52,7 +54,7 @@ const COPY: Record<AiOpinionKind, { title: string; lead: string; button: string;
   },
 };
 
-export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card }: Props) {
+export function AiOpinionPanel({ kind, run, input, draftState, blocked, price, isDark, card }: Props) {
   const [copied, setCopied] = useState(false);
   // Driven by FounderCreditChoice: false whenever it is hidden.
   const [useCredit, setUseCredit] = useState(false);
@@ -89,7 +91,7 @@ export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card 
           <FounderCreditChoice key={founderCreditChoiceKey(run.phase, run.creditUsed, run.runId)} kind="independent_output" value={useCredit} onChange={setUseCredit} isDark={isDark} disabled={run.busy} />
           <button
             type="button"
-            onClick={() => void run.start(AI_OPINION_TOOL[kind], input, useCredit ? { useCredit: true } : {})}
+            onClick={() => void run.start(AI_OPINION_TOOL[kind], input, useCredit ? { useCredit: true } : {}, draftState)}
             disabled={!!blocked || run.busy}
             className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0B3D2E] to-[#1a6b50] py-3 text-[13px] font-bold text-white disabled:opacity-40 shadow-lg"
           >
@@ -164,6 +166,7 @@ export function AiOpinionPanel({ kind, run, input, blocked, price, isDark, card 
             filename={kind === "consult" ? "legal-consultation" : "legal-letter"}
           />
           <AiResultActions
+            letterheadBeside
             text={resultText}
             filename={kind === "consult" ? "legal-consultation" : "legal-letter"}
             showCollector

@@ -37,6 +37,8 @@ import BetaReviewGate from "@/components/BetaReviewGate";
 import { useAiRun } from "@/hooks/useAiRun";
 import { LEGAL_CONSULT_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
 import { AiOpinionPanel, TeamOrderDivider } from "./_components/AiOpinionPanel";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftText } from "@/lib/payments/topUpDraft";
 import { consultRunInput } from "./_components/aiOpinion";
 
 // ─── UI id → stored metadata.intake.outputType map (Task C4, notes §3) ─────────
@@ -174,6 +176,22 @@ export default function AILegalOpinionPage() {
   // page level so a paid result survives a step back and forth; a new type or
   // a new quick question clears it.
   const consultRun = useAiRun();
+  // l11 (T8-Q511a): back from a top-up — the consultation's question on its
+  // submit step; or the letter wizard (LetterWorkflow restores its own fields)
+  useToolDraft("legal-opinion-consult", (d) => {
+    const q = draftText(d, "description");
+    if (!q) return;
+    setSelectedType("consult");
+    const area = draftText(d, "topicArea");
+    if (area) setTopicArea(area);
+    setDescription((cur) => cur || q);
+    setCurrentStep("submit");
+  });
+  useToolDraft("legal-opinion-letter", (d) => {
+    if (!draftText(d, "letterType")) return;
+    setSelectedType("letter");
+    setCurrentStep("context");
+  });
   const consultText = description.trim();
   const consultBlocked =
     consultText.length < LEGAL_OPINION_QUESTION_MIN ? `اكتب سؤالك ووقائعه في ${LEGAL_OPINION_QUESTION_MIN.toLocaleString("ar-SA")} حرفاً على الأقل.`
@@ -757,6 +775,7 @@ export default function AILegalOpinionPage() {
                   kind="consult"
                   run={consultRun}
                   input={consultRunInput(LEGAL_AREA_LABELS[topicArea], description)}
+                  draftState={{ topicArea, description }}
                   blocked={consultBlocked}
                   price={LEGAL_CONSULT_PRICE}
                   isDark={isDark} card={card}

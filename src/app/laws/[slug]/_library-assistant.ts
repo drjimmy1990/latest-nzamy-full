@@ -12,6 +12,7 @@
  * law the reader is on before the whole library (owner's live test 29 Oct:
  * two different laws got the same labour-law answer).
  */
+import type { LibraryScope } from "@/lib/ai/tools";
 import { libraryAiRefusal, type LibraryAiAction } from "./_ai-reply.ts";
 
 export interface LibraryAnswer {
@@ -76,7 +77,7 @@ export function lawSlugFromPath(path: string): string | null {
 }
 
 export async function askLibrary(
-  input: { message: string; articleId?: string | null; conversationId?: string | null },
+  input: { message: string; articleId?: string | null; conversationId?: string | null; scope?: LibraryScope | null },
   currentPath: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<LibraryAnswer> {
@@ -88,7 +89,7 @@ export async function askLibrary(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tool: "library-assistant",
-        input: { message: input.message, article_id: input.articleId ?? null, law_slug: lawSlugFromPath(currentPath) },
+        input: { message: input.message, article_id: input.articleId ?? null, law_slug: lawSlugFromPath(currentPath), ...(input.scope ? { scope: input.scope } : {}) },
         ...(cid ? { conversationId: cid } : {}),
         idempotencyKey: newKey(),
       }),

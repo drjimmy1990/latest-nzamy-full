@@ -819,7 +819,7 @@ test("routes that need locked columns read them with the service role and keep m
   const decree = read("src/app/api/library/decrees/[id]/route.ts");
   assert.match(decree, /await serverOnly\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)\s*\.select\(DECREE_COLUMNS\)\s*\.eq\('id', id\)/);
   assert.match(decree, /serverOnly\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)\s*\.select\('preamble'\)\s*\.eq\('id', id\)/);
-  assert.match(decree, /const \[probe, isSubscriber\] = await Promise\.all\(\[\s*checkLibraryAccess\(userId, id, 0, "decrees"\),\s*hasFullLibraryAccess\(userId\),\s*\]\);/);
+  assert.match(decree, /const \[probe, isSubscriber\] = await Promise\.all\(\[\s*checkLibraryAccess\(userId, id, 0, "decrees", \{ memo: accessMemo \}\),\s*hasFullLibraryAccess\(userId, accessMemo\),\s*\]\);/);
   assert.match(decree, /preamble: isSubscriber \? withCleanCardRows\(preamble\) : '',/);
   assert.match(decree, /preambleLocked: !isSubscriber && preamble\.trim\(\) !== '',/);
   assert.doesNotMatch(decree, /decree\.preamble|\.select\('\*'\)/);

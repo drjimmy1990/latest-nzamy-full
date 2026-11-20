@@ -29,6 +29,7 @@ import { LawyerRegistryLookup } from "./LawyerRegistryLookup";
 import { LICENCE_ACCEPT, LICENCE_MAX_BYTES, LICENCE_MIME_TYPES } from "@/lib/services/licenceUpload";
 import { isFourPartName } from "@/lib/lawyerSignup/nameLicence";
 import { latinLicenceInput } from "@/lib/forms/latinDigits";
+import { licenceFormatIssue } from "@/lib/lawyerSignup/licenceFormat";
 import { isThrowawayEmail, THROWAWAY_EMAIL_AR } from "@/lib/lawyerSignup/throwawayEmail";
 
 export function StepIndicator({ step, total }: { step: Step; total: number }) {
@@ -231,6 +232,12 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
             <input type="text" dir="ltr" placeholder={lc.ph} value={data.licenseNumber || ""} onChange={e => onChange("licenseNumber", latinLicenceInput(e.target.value))} className={`${inputBase} ${isAr ? "pr-10 pl-4" : "pl-10 pr-4"}`} />
           </div>
           <p className="mt-1 text-xs text-ink-faint dark:text-gray-500">{lc.hint}</p>
+          {/* R9a (l11): an advocate's licence is digits with an optional slash. */}
+          {providerType === "lawyer" && licenceFormatIssue(data.licenseNumber) && (
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+              {isAr ? licenceFormatIssue(data.licenseNumber) : "The licence number is digits only; it may include a slash (/)."}
+            </p>
+          )}
         </div>
 
         {/* Launch batch R2/R3/R5: fill the licence and the name from the

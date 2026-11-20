@@ -410,8 +410,13 @@ export default function QuestionDetailPage() {
       const reply = mapStoredReply(savedAnswer);
       setReplies(prev => [...prev, reply]);
       setReplyText("");
-      // Owner ٤٢: say plainly when the answer waits for review.
-      if (reply.reviewState === "pending") setNotice({ text: postedNoticeAr("answer", true) });
+      // Owner ٤٢: say plainly when the answer waits for review. S5-3: and
+      // what the server hid from it (phone, e-mail, ID…) before storing it.
+      const notices = [
+        reply.reviewState === "pending" ? postedNoticeAr("answer", true) : null,
+        savedAnswer.maskedNotice ?? null,
+      ].filter((t): t is string => !!t);
+      if (notices.length > 0) setNotice({ text: notices.join(" ") });
     } catch (err) {
       setReplyError(err instanceof Error && err.message ? err.message : "تعذّر نشر تعليقك — لم يُحفظ.");
     } finally {

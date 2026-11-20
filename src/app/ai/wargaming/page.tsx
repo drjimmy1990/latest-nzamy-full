@@ -22,6 +22,8 @@ import {
 import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftChoice, draftText, draftTextList } from "@/lib/payments/topUpDraft";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
@@ -572,6 +574,22 @@ function AIWargamingPage() {
   const [memoAttachmentIds, setMemoAttachmentIds] = useState<string[]>([]);
   const [submitting,    setSubmitting]    = useState(false);
   const [submitErrors,  setSubmitErrors]  = useState<string[]>([]);
+  // l11 (T8-Q511a): back from a top-up, the case, the targets and the pasted
+  // texts on the last step (uploaded files are attached again)
+  useToolDraft("wargaming", (d) => {
+    const summary = draftText(d, "summary");
+    if (!summary) return;
+    const role = draftChoice(d, "role", CASE_ROLES.map((r) => r.id)) ?? "";
+    setCtx((cur) => (cur.summary ? cur : { role, area: draftText(d, "area") ?? "", areaOther: draftText(d, "areaOther") ?? "", summary }));
+    const known = SIM_TARGETS.map((t) => t.id as string);
+    const picked = (draftTextList(d, "targets", 4) ?? []).filter((t) => known.includes(t)) as SimTarget[];
+    if (picked.length > 0) setTargets(new Set(picked));
+    const memo = draftText(d, "memoText");
+    if (memo) setMemoText((cur) => cur || memo);
+    const docs = draftText(d, "docsText");
+    if (docs) setDocsText((cur) => cur || docs);
+    setStep("submit");
+  });
 
   const {
     attachments, uploading, attachError, attachFile, removeAttachment, clearAttachError,
@@ -615,6 +633,7 @@ function AIWargamingPage() {
         ...(docsPaste.ok ? { docs_text: docsText.trim() } : {}),
       },
       { fileIds: aiFileIds, ...(useCredit ? { useCredit: true } : {}) },
+      { role: ctx.role, area: ctx.area, areaOther: ctx.areaOther, summary: ctx.summary, targets: Array.from(targets), memoText, docsText },
     );
   }
 

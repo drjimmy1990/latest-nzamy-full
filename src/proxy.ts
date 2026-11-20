@@ -98,6 +98,7 @@ import {
 import { libraryActivityKind } from "@/lib/library/activityMeter";
 import { recordLibraryActivity } from "@/lib/library/activityMeterServer";
 import { hasValidSaudiMobile } from "@/lib/services/saudiMobile";
+import { isLibraryApiPath, LIBRARY_API_ROBOTS_HEADER, LIBRARY_API_ROBOTS_VALUE } from "@/lib/publicSeo/libraryApiRobots";
 
 // ─── Rate limiting (owner item ١٧٢) ─────────────────────────────────────────
 //
@@ -750,7 +751,21 @@ function withAttributionCookie(req: NextRequest, response: NextResponse): NextRe
 }
 
 export default async function proxy(req: NextRequest) {
-  return withLibrarySessionCookie(req, withAttributionCookie(req, await proxyRoutes(req)));
+  return withLibraryApiNoIndex(req, withLibrarySessionCookie(req, withAttributionCookie(req, await proxyRoutes(req))));
+}
+
+/**
+ * O5 (l11): `X-Robots-Tag: noindex, noarchive` on every /api/library/*
+ * response — the handlers' answers (the header passes through
+ * NextResponse.next()) and the proxy's own refusals alike.
+ */
+function withLibraryApiNoIndex(req: NextRequest, response: NextResponse): NextResponse {
+  try {
+    if (isLibraryApiPath(req.nextUrl.pathname)) response.headers.set(LIBRARY_API_ROBOTS_HEADER, LIBRARY_API_ROBOTS_VALUE);
+  } catch {
+    // an immutable response: leave it as it is
+  }
+  return response;
 }
 
 async function proxyRoutes(req: NextRequest) {

@@ -14,10 +14,10 @@
  * read from anywhere. All of that is gone; what is left is what the database
  * returns, or an honest empty/failed state.
  *
- * What the database returns is narrow today: the community_posts SELECT
- * policy shows a `lawyers_only` post to its AUTHOR only, so a lawyer sees
- * their own lawyers-only topics here and not their colleagues' — a policy
- * change, not a page change (see the report for this branch).
+ * Who reads them is decided by RLS: verified lawyers (20261016_06) and, since
+ * 20261201_50 (N05-C2, owner ٤٢), the owner of a verified firm («مكتب
+ * موثّق»: verified CR + a lawyer whose licence is valid). Anyone else who
+ * reaches the page gets an empty list, never someone else's topic.
  *
  * RBAC:
  *   - userType === "lawyer" | "firm" → the feed

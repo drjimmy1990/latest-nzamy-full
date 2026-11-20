@@ -202,4 +202,7 @@ export const REVIEW_RULE_AR: Readonly<Record<string, string>> = {
   sustained: "وتيرة آلية متواصلة",
   night: "قراءة كثيفة ليلاً",
   near_cap: "اقتراب من الحد اليومي",
+  // Batch l11 (O19, 20261201_30): the two rules set on «حماية المكتبة من السحب».
+  sequential: "فتح وثائق كثيرة تباعاً بسرعة",
+  parallel: "قراءة من جلسات كثيرة في وقت واحد",
 };

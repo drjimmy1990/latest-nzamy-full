@@ -12,6 +12,7 @@ import {
 import { aiToolsSettingIssue } from "@/lib/ai/aiToolsConfig";
 import { founderDiscountExpiresIssue, isFounderDiscountBps } from "@/lib/payments/founderDiscount";
 import { firmExtraSeatPriceIssue } from "@/lib/pricing/firmSeats";
+import { founderRenewalIssue } from "@/lib/membership/founderRenewal";
 import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopupIssue } from "@/lib/points/pointsSettings";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import {
@@ -22,6 +23,9 @@ import {
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
+// Batch l11-misc (O22): server-side feature flags.
+import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
+import { clearFeatureFlagsCache } from "@/lib/featureFlags/featureFlagsServer";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -71,6 +75,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // l8 payref (٥٣): {"sar": an extra firm seat's price before VAT | null} —
   // stored only; not sold online, never shown publicly.
   "firm_extra_seat_price_sar",
+  // Batch l11 pay (register 55, founder terms clause ٤; 20261201_20):
+  // {"enabled": bool, "price_sar": SAR before VAT | null} — the founder
+  // renewal; OFF and no price by default; the 60-day notice needs both.
+  "founder_renewal",
   // Batch l8-libguard (owner message 18 Nov, item 2; 20261128_30;
   // src/lib/library/publicGuard.ts): the public library's protection numbers
   // (per-session / per-address budgets, Turnstile threshold, consecutive
@@ -83,6 +91,11 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
   // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
   "library_min_points_to_browse",
+  // Batch l11-misc (O22, 20261201_60; src/lib/featureFlags/featureFlags.ts):
+  // {"<flag>": boolean} for the closed list FEATURE_FLAGS (today
+  // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
+  // one minute; the page posts the whole object.
+  "feature_flags",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -165,6 +178,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l8 payref: pure, covered by founderDiscount.test.ts / firmSeats.test.ts.
   founder_topup_discount_expires: founderDiscountExpiresIssue,
   firm_extra_seat_price_sar: firmExtraSeatPriceIssue,
+  // Batch l11 pay: pure, covered by src/lib/membership/founderRenewal.test.ts.
+  founder_renewal: founderRenewalIssue,
   // Batch l8-libguard: pure, covered by src/lib/library/publicGuard.test.ts.
   library_public_protection: libraryPublicProtectionIssue,
   public_full_rulings_per_collection: publicRulingsIssue,
@@ -174,6 +189,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l9 public: pure, covered by src/lib/publicSeo/platformRegistry.test.ts.
   license_number: (value) => licenceSettingIssue("license_number", value),
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),
+  // Batch l11-misc (O22): pure, covered by src/lib/featureFlags/featureFlags.test.ts.
+  feature_flags: featureFlagsIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */
@@ -389,6 +406,9 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       return dbErrorJson("admin/settings PATCH", error);
     }
+
+    // Batch l11-misc (O22): this process reads the new flags at once.
+    if (key === FEATURE_FLAGS_SETTING) clearFeatureFlagsCache();
 
     await logAdminAction({
       actorId: gate.userId,

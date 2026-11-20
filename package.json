@@ -74,7 +74,8 @@
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-confetti": "^6.1.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@capacitor/cli": "8.4.3",

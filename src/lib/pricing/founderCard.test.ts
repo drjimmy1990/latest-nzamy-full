@@ -41,7 +41,6 @@ test("the card copy is the brief's, verbatim", () => {
   assert.equal(FOUNDER_TERM_LINE, "للسنة الأولى، ١٢ شهرًا من التفعيل");
   assert.deepEqual(FOUNDER_BENEFITS, [
     "٦ أعمال بالصائغ القانوني (يمكن تكرار النوع)",
-    "مخرج مستقل واحد تختاره من: محترف العقود، الرأي الفصل، المحاكي الشامل، داعم الاتجاه (قريبًا)",
     "المكتبة القانونية ١٢ شهرًا",
     "إدارة المكتب: قريبًا — ضمن مدة العضوية المحسوبة من التفعيل",
   ]);
@@ -49,8 +48,9 @@ test("the card copy is the brief's, verbatim", () => {
   assert.equal(FOUNDER_CLOSED_TEXT, "انتهت حملة المؤسس أو اكتملت مقاعدها");
   assert.equal(FOUNDER_PAUSED_TEXT, "البيع متوقف مؤقتاً — تابعنا لموعد الاستئناف");
   assert.equal(FOUNDER_CONSULTANT_NOTE, "حساب المستشار: لا يشمل الصائغ القانوني والمحاكي الشامل");
-  // «مخرج مستقل واحد» is written out; it must stay what one activation grants.
+  // l11 (O10, register 62): the one independent output stays internal — never on the card.
   assert.equal(FOUNDER_CREDITS.independent_output, 1);
+  assert.ok(!FOUNDER_BENEFITS.some((line) => line.includes("مخرج مستقل")));
 });
 
 test("the card promises nothing the plan does not grant", () => {

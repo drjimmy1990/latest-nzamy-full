@@ -41,6 +41,8 @@ import {
   FileMagnifyingGlass, CloudArrowUp, X, Warning, PaperPlaneTilt, SignIn, Paperclip, Sparkle,
 } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftChoice, draftText, draftTextMap } from "@/lib/payments/topUpDraft";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
@@ -98,6 +100,30 @@ function AIBriefCheckPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  // l11 (T8-Q511a): back from a top-up, the form as it was — the pasted memo,
+  // or the uploaded one (still stored), the client's capacity and the notes
+  useToolDraft("brief-check", (d) => {
+    const role = draftChoice(d, "clientRole", [...BRIEF_CLIENT_ROLES.map((r) => r.id), "other"] as const);
+    const scope = draftChoice(d, "reviewScope", BRIEF_REVIEW_SCOPES.map((s) => s.id));
+    const mode = draftChoice(d, "memoMode", ["file", "paste"] as const);
+    if (!role && !scope) return;
+    if (role) setClientRole((cur) => cur || (role as BriefClientRoleId | "other"));
+    const other = draftText(d, "clientRoleOther");
+    if (other) setClientRoleOther((cur) => cur || other);
+    if (scope) setReviewScope((cur) => cur || scope);
+    const court = draftText(d, "courtType");
+    if (court) setCourtType((cur) => cur || court);
+    const kind = draftText(d, "caseType");
+    if (kind) setCaseType((cur) => cur || kind);
+    const n = draftText(d, "notes");
+    if (n) setNotes((cur) => cur || n);
+    if (mode) setMemoMode(mode);
+    const pasted = draftText(d, "memoPaste");
+    if (pasted) setMemoPaste((cur) => cur || pasted);
+    const m = draftTextMap(d, "memo");
+    const size = typeof (d.memo as { size?: unknown } | undefined)?.size === "number" ? ((d.memo as { size: number }).size) : 0;
+    if (m?.documentId && m.name) setMemo((cur) => cur ?? { documentId: m.documentId, name: m.name, size });
+  });
   const ai = useAiRun();
   const report = ai.phase === "done" ? asBriefCheckReport(ai.output) : null;
   // tool-status before the AI report's box and price (owner ٤١٧, 8 Nov: lawyers and firms;
@@ -180,10 +206,12 @@ function AIBriefCheckPage() {
   function runAiReport() {
     if (!canRunAi) return;
     const fields = { client_capacity: capacity, court: courtType.trim() || null, case_type: caseType.trim() || null, notes: notes.trim() || null };
+    // l11: the form itself is kept for a top-up round trip (useToolDraft above)
+    const draft = { clientRole, clientRoleOther, reviewScope, courtType, caseType, notes, memoMode, memoPaste, ...(memo ? { memo } : {}) };
     if (pasting) {
-      void ai.start("brief-check", { ...fields, memo_text: memoPaste.trim() }, { fileIds: [] });
+      void ai.start("brief-check", { ...fields, memo_text: memoPaste.trim() }, { fileIds: [] }, draft);
     } else if (memo) {
-      void ai.start("brief-check", fields, { fileIds: [memo.documentId] });
+      void ai.start("brief-check", fields, { fileIds: [memo.documentId] }, draft);
     }
   }
 

@@ -20,25 +20,25 @@ const ROUTES: ReadonlyArray<{ file: string; entitled: RegExp; after: RegExp; bef
   {
     file: "app/api/library/laws/[slug]/route.ts",
     entitled: /enforceLibraryDevice\(userId, isSubscriber\)/,
-    after: /hasFullLibraryAccess\(userId\)/,
+    after: /hasFullLibraryAccess\(userId, accessMemo\)/,
     before: /formatArticleWithPaywall\(a, hasFullAccess/,
   },
   {
     file: "app/api/library/decrees/[id]/route.ts",
     entitled: /enforceLibraryDevice\(userId, isSubscriber\)/,
-    after: /hasFullLibraryAccess\(userId\)/,
+    after: /hasFullLibraryAccess\(userId, accessMemo\)/,
     before: /const response = \{/,
   },
   {
     file: "app/api/library/precedents/[slug]/route.ts",
     entitled: /enforceLibraryDevice\(userId, hasFullAccess\)/,
-    after: /await getLibraryAccessForUser\(userId\)/,
+    after: /await getLibraryAccessForUser\(userId, accessMemo\)/,
     before: /hasAccess: hasFullAccess/,
   },
   {
     file: "app/api/library/books/[slug]/route.ts",
     entitled: /enforceLibraryDevice\(userId, freeLimit === -1 && !isWhitelisted\)/,
-    after: /const probe = await checkLibraryAccess\(userId, slug, 0, "feqh"\)/,
+    after: /const probe = await checkLibraryAccess\(userId, slug, 0, "feqh", \{ memo: accessMemo \}\)/,
     before: /hasAccess: hasFullAccess/,
   },
   {
@@ -73,7 +73,7 @@ test("the server half fails open and keys the cookie strictly", () => {
   const bearer = src.indexOf('if (isBearerWithoutDeviceCookie(hdrs.get("authorization"), id)) {');
   assert.ok(bearer > 0, "the Bearer branch exists");
   const branch = src.slice(bearer, src.indexOf("}", bearer));
-  assert.match(branch, /return finish\(userId, null, cookielessGateDecision\(await readCookielessState\(userId\)\)\);/);
+  assert.match(branch, /return finish\(userId, null, cookielessGateDecision\(await readCookielessState\(\)\)\);/);
   assert.ok(bearer < src.indexOf("newDeviceId("), "decided before any id is minted");
   assert.doesNotMatch(src, /isBearerWithoutDeviceCookie\([^)]*\)\) return null;/);
   assert.match(src, /abortSignal\(AbortSignal\.timeout\(RPC_TIMEOUT_MS\)\)/);

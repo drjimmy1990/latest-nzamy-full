@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";
+import { requireVerifiedProvider } from "@/lib/auth/verifiedProviderServer";
 import { parseIsoDate } from "@/lib/services/deadlineEngine";
 import {
   CONTRACT_STATUSES, isContractStatus, isContractType,
@@ -209,6 +210,9 @@ export async function POST(request: NextRequest) {
     const auth = await assertRole(["lawyer", "firm"]);
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // R9b (l11): an unverified account creates no contract (403, Arabic).
+    const unverified = await requireVerifiedProvider(user.id, auth.userType);
+    if (unverified) return unverified;
 
     const body = (await request.json()) as CreateBody;
 

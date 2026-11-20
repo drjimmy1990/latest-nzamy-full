@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertCaseWorker } from "@/lib/auth/assertCaseWorker";
+import { requireVerifiedProvider } from "@/lib/auth/verifiedProviderServer";
 import { parseMarkBilled } from "@/lib/financeLedger/financeLedgerRules";
 import { errorResponse } from "../../_financeLedger/server";
 
@@ -21,6 +22,9 @@ export async function POST(request: NextRequest) {
     const auth = await assertCaseWorker();
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
+    // R9b (l11): an unverified account creates no fee statement (403, Arabic).
+    const unverified = await requireVerifiedProvider(user.id, auth.userType);
+    if (unverified) return unverified;
 
     const parsed = parseMarkBilled(await request.json().catch(() => null));
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });

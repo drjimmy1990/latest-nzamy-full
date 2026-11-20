@@ -18,6 +18,7 @@
  * use the service role only AFTER an RLS read of the vault has succeeded
  * (logo upload, signed URL), never instead of it.
  */
+import "server-only";
 import { NextResponse } from "next/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { assertRole } from "@/lib/auth/assertRole";

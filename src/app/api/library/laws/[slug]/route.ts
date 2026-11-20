@@ -2,9 +2,10 @@ import { articleStatusForDetail } from "./_article-status";
 import { publicExcerpt } from '@/lib/library/publicGuard';
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
+import { checkLibraryAccess, hasFullLibraryAccess, libraryAccessMemo } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
+import { spendPublicView } from '@/lib/library/publicViewCapServer';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
 import { lawStatusForDetail } from '@/app/laws/law-status';
@@ -287,9 +288,12 @@ export async function GET(
     // ── Paywall check ────────────────────────────────────────────────────────
     // Check access once (same result for all articles in a law), and read
     // the subscriber flag alongside it (T28-22 below).
+    // O26 (batch l11): one memo, so the two calls share the tier / admin /
+    // grant / points reads instead of each doing them.
+    const accessMemo = libraryAccessMemo(userId);
     const [firstLockedCheck, isSubscriber] = await Promise.all([
-      checkLibraryAccess(userId, slug, 0),
-      hasFullLibraryAccess(userId),
+      checkLibraryAccess(userId, slug, 0, 'laws', { memo: accessMemo }),
+      hasFullLibraryAccess(userId, accessMemo),
     ]);
     const isWhitelisted = firstLockedCheck.isWhitelisted;
     // Owner answer ١٨٤: the preview is 5% of the law or 5 articles, whichever
@@ -308,6 +312,11 @@ export async function GET(
     // none of the account's quota and cannot open its lock.
     const quotaRefusal = await spendLibraryDocument(_request, userId, isSubscriber);
     if (quotaRefusal) return quotaRefusal;
+    // Batch l11 (O18 / A16): the non-subscriber daily view cap — switched
+    // off until the owner approves (publicViewCapServer.ts; a subscriber is
+    // never counted here).
+    const viewRefusal = await spendPublicView(_request, { userId, hasFullLibrary: isSubscriber });
+    if (viewRefusal) return viewRefusal;
 
     // T28-22 (owner decision): the decree, its date, the official links and the
     // gazette reference are for SUBSCRIBERS — full library access as above,

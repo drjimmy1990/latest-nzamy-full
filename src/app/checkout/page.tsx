@@ -22,6 +22,9 @@ import {
   isActiveFounder,
 } from "@/lib/payments/founderDiscount";
 import { FOUNDER_TERMS_VERSION } from "@/lib/founder/founderTerms";
+import { activeLibraryGrantPlanRefs } from "@/lib/libraryAccessServer";
+import { GATED_LIBRARY_PLAN_REFS } from "@/lib/library/pointsGate";
+import { readLibraryMinPoints } from "@/lib/library/pointsGateServer";
 import {
   billingLabelAr,
   checkoutItemNotes,
@@ -147,7 +150,19 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const priced = quote(item.id, parsed.billing, undefined, new Date());
   let listed = priced.ok ? priced.netHalalas : item.prices[parsed.billing];
   let launchList = priced.ok && priced.launch ? priced.launch.listNetHalalas : null;
-  const notes = checkoutItemNotes(item);
+  // l11 O7 (register 49, founder terms ١٢): a top-up bought by a holder of a
+  // gated library plan (paid library plan or the founder) says its expiry may
+  // lock the library. A failed read shows no extra line.
+  let libraryMinPoints: number | null = null;
+  if (item.kind === "topup") {
+    try {
+      const refs = await activeLibraryGrantPlanRefs(user.id);
+      if (refs?.some((r) => GATED_LIBRARY_PLAN_REFS.includes(r))) libraryMinPoints = await readLibraryMinPoints();
+    } catch {
+      console.warn("[checkout] reading the library grants threw");
+    }
+  }
+  const notes = checkoutItemNotes(item, { libraryMinPoints });
 
   // l6-pay: before paying, what the POST will take off — the same server
   // functions checkout prices with (upgradeProration / founderDiscount). A
@@ -202,7 +217,8 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
       {/* l9 (owner register 14 item 20, file 16): the active offer at the top
           of the payment page, as on /pricing — only where checkout is open
           (never on the gateway-off or refusal notices above). */}
-      <OffersList variant="checkout" />
+      {/* l11 O9: only this item's offers and the general ones. */}
+      <OffersList variant="checkout" itemId={parsed.itemId} />
       <section className="rounded-2xl border border-zinc-200 bg-white p-6 text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 sm:p-8">
         <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">إتمام الدفع</p>
         <h1 className="mt-1 text-xl font-bold sm:text-2xl">{item.labelAr}</h1>

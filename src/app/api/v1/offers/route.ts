@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
-import { OffersReadError, loadOffersForUser } from "@/lib/offers/offersServer";
+import { OffersReadError, loadOffersForGuest, loadOffersForUser } from "@/lib/offers/offersServer";
 
 /**
  * GET /api/v1/offers — the offers meant for the signed-in user right now
@@ -22,6 +22,11 @@ import { OffersReadError, loadOffersForUser } from "@/lib/offers/offersServer";
  * session only proves who is asking; the service client reads. Before the
  * migration runs the answer is an empty list. A failed read is a 503 — the
  * browser then shows nothing rather than a guess. Per viewer, never cached.
+ *
+ * l11 O17 (register 20): a visitor who is NOT signed in gets the offers whose
+ * audience names «زائر» (loadOffersForGuest) — no popup, no session key —
+ * instead of a 401, so the /pricing strip shows them. A suspended or frozen
+ * signed-in account is still refused as before.
  */
 
 export const dynamic = "force-dynamic";
@@ -33,6 +38,11 @@ export async function GET() {
   try {
     const supabase = await createClient();
     const auth = await requireApiUser(supabase, { error: "سجّل الدخول لعرض العروض" });
+    if (auth instanceof NextResponse && auth.status === 401) {
+      // no session: the visitor's offers
+      const reply = await loadOffersForGuest(await createServiceClient(), new Date());
+      return NextResponse.json(reply, { headers: NO_STORE });
+    }
     if (auth instanceof NextResponse) {
       auth.headers.set("Cache-Control", NO_STORE["Cache-Control"]);
       return auth;

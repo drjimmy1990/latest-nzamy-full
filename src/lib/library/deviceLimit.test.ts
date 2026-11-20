@@ -146,7 +146,7 @@ test("missing-schema codes fail open; other codes do not count as missing", () =
 
 test("ruling E: a read with no device id is refused while the limit is on — and only then", () => {
   // switch on, an ordinary subscriber → 403 device_cookie_required
-  const refused = cookielessGateDecision({ enabled: true, limit: 2, isAdmin: false });
+  const refused = cookielessGateDecision({ enabled: true, limit: 2 });
   assert.equal(refused.action, "refuse");
   if (refused.action === "refuse") {
     assert.equal(refused.status, 403);
@@ -158,12 +158,20 @@ test("ruling E: a read with no device id is refused while the limit is on — an
     assert.equal(refused.body.limit, 2);
   }
   // switch off → nothing changes
-  assert.deepEqual(cookielessGateDecision({ enabled: false, limit: 2, isAdmin: null }), { action: "allow", remember: "global" });
+  assert.deepEqual(cookielessGateDecision({ enabled: false, limit: 2 }), { action: "allow", remember: "global" });
   // migration missing / settings read failed → fail open
-  assert.deepEqual(cookielessGateDecision({ enabled: null, limit: 2, isAdmin: null }), { action: "allow", remember: null });
-  // staff exempt; staff unknown (failed read) never locks out
-  assert.deepEqual(cookielessGateDecision({ enabled: true, limit: 2, isAdmin: true }), { action: "allow", remember: "user" });
-  assert.deepEqual(cookielessGateDecision({ enabled: true, limit: 2, isAdmin: null }), { action: "allow", remember: null });
+  assert.deepEqual(cookielessGateDecision({ enabled: null, limit: 2 }), { action: "allow", remember: null });
+});
+
+test("O2 (l11, 20261201_10): no staff arm — the cookieless state carries no admin flag and the server reads no profile", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const src = readFileSync(join(import.meta.dirname, "deviceLimit.ts"), "utf8");
+  const body = src.slice(src.indexOf("export function cookielessGateDecision"), src.indexOf("export interface DeviceListItem"));
+  assert.doesNotMatch(body, /isAdmin/);
+  const server = readFileSync(join(import.meta.dirname, "deviceLimitServer.ts"), "utf8");
+  const reader = server.slice(server.indexOf("async function readCookielessState"), server.indexOf("export type RevokeReason"));
+  assert.doesNotMatch(reader, /from\("profiles"\)|user_type|isAdmin/);
 });
 
 test("reader: a 403 device_cookie_required renders as the device refusal", () => {

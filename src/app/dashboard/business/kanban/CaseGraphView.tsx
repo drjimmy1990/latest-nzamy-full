@@ -67,6 +67,7 @@ export default function CaseGraphView({
   initialNodes: seedNodes,
   initialEdges: seedEdges,
   caseId,
+  boardId = null,
   enableCaseImport = false,
 }: {
   isDark: boolean;
@@ -82,6 +83,13 @@ export default function CaseGraphView({
    * to key a save on; those keep the honest "not saved" chip.
    */
   caseId?: string;
+  /**
+   * T18-P1-32 (batch l11): a named board of the case (public.canvas_boards)
+   * instead of its default one. The caller remounts this view (React `key`)
+   * when the board changes, so one mounted view always loads and saves the
+   * same board; the id is read once, from a ref.
+   */
+  boardId?: string | null;
   /**
    * Shows «استيراد من القضية» (N3.5). Only the lawyer and firm case files pass
    * it: the drawer reads the lawyer hearings / case-stages routes, which the
@@ -172,7 +180,8 @@ export default function CaseGraphView({
   // forgotten the moment the debounce fires.
   const autosave = useRef<GraphAutosave<GraphPayload> | null>(null);
   const { userId, userType } = useUser();
-  const draftKey = caseId && userId ? `nzamy:case-graph-draft:${userId}:${caseId}` : null;
+  const boardRef = useRef<string | null>(boardId);
+  const draftKey = caseId && userId ? `nzamy:case-graph-draft:${userId}:${caseId}${boardId ? `:${boardId}` : ""}` : null;
   const draftKeyRef = useRef<string | null>(draftKey);
   useEffect(() => { draftKeyRef.current = draftKey; }, [draftKey]);
   // What the read returned, to tell a draft that differs from it.
@@ -199,7 +208,7 @@ export default function CaseGraphView({
     setLoadState("loading");
     draftChecked.current = false;
     setOfferedDraft(null);
-    getCaseGraph(caseId)
+    getCaseGraph(caseId, boardRef.current)
       .then((saved) => {
         if (cancelled) return;
         // Loading is not a change: with a saved board the reset below is not
@@ -254,7 +263,7 @@ export default function CaseGraphView({
   useEffect(() => {
     if (!caseId || loadState !== "ready") return;
     const ctl = new GraphAutosave<GraphPayload>({
-      send: (p) => saveCaseGraph(caseId, p),
+      send: (p) => saveCaseGraph(caseId, p, boardRef.current),
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
       onStatus: (s, m) => {
@@ -329,7 +338,7 @@ export default function CaseGraphView({
     const ctl = autosave.current;
     if (!caseId || !ctl) return;
     try {
-      const saved = await getCaseGraph(caseId);
+      const saved = await getCaseGraph(caseId, boardRef.current);
       ctl.discard();
       skipNextAutosave.current = true;
       const board = normalizeLoadedBoard(saved);
@@ -345,7 +354,7 @@ export default function CaseGraphView({
     const ctl = autosave.current;
     if (!caseId || !ctl) return;
     try {
-      await getCaseGraph(caseId);
+      await getCaseGraph(caseId, boardRef.current);
       ctl.resume();
     } catch {
       setSaveMessage("تعذّرت قراءة النسخة المحفوظة — حاول مرة أخرى.");

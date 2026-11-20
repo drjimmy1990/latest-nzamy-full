@@ -11,6 +11,7 @@
  * of the offer's plan_ref: "already bought" and the purchases count).
  */
 
+import "server-only";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { FOUNDER_CAMPAIGN_ID } from "@/lib/membership/founderPlan";
 import {
@@ -21,6 +22,7 @@ import {
 } from "@/lib/pricing/campaigns";
 import {
   FOUNDER_OFFER_SLUG,
+  GUEST_VIEWER,
   OFFER_COLUMNS,
   audienceKeyFor,
   compareOffers,
@@ -189,6 +191,46 @@ export async function loadOffersForUser(db: Db, user: Pick<User, "id" | "last_si
   // A failed read of the dismissals keeps the cards and opens no popup.
   const popup = dismissals.error ? null : pickPopup(open.map((o) => o.row), (dismissals.data ?? []) as DismissalRow[], nowMs);
   return { offers: open.map((o) => o.card), popupId: popup?.id ?? null, sessionKey: sessionKeyFor(user) };
+}
+
+/**
+ * l11 O17 (register 20): the offers a visitor who is not signed in may see
+ * on /pricing — the ACTIVE offers whose audience names `guest` (verification
+ * "any"), open now on the server's clock, with a seat left. No popup, no
+ * session key, nothing about any account is read. Before 20261128_50 runs:
+ * none. A failed read throws OffersReadError (the route answers 503).
+ */
+export async function loadOffersForGuest(db: Db, now: Date): Promise<OffersReply> {
+  const rows = await db
+    .from("offers")
+    .select(OFFER_COLUMNS)
+    .eq("status", "active")
+    .contains("audience_account_types", [GUEST_VIEWER.audience])
+    .order("priority", { ascending: false })
+    .limit(50);
+  if (rows.error) {
+    if (isMissingTable(rows.error.code)) return EMPTY;
+    throw new OffersReadError(`offers: ${rows.error.code}`);
+  }
+  const mine = ((rows.data ?? []) as unknown as OfferRow[])
+    .filter((r) => offerMatchesViewer(r, GUEST_VIEWER))
+    .sort(compareOffers);
+  if (mine.length === 0) return EMPTY;
+
+  const nowMs = now.getTime();
+  const campaign = mine.some((r) => r.campaign_id) ? await readFounderCampaignState(db, now) : null;
+  const offers: OffersReply["offers"] = [];
+  for (const row of mine) {
+    let purchases = 0;
+    if (!row.campaign_id && row.seats_total !== null && row.plan_ref) {
+      const n = await countPurchases(db, row.plan_ref, row.starts_at ?? row.created_at, row.ends_at);
+      if (n === null) continue; // seats unknown: never shown on a guess
+      purchases = n;
+    }
+    const a = offerAvailability(row, nowMs, { purchases, campaign });
+    if (a.open) offers.push(offerCardDto(row, a));
+  }
+  return { offers, popupId: null, sessionKey: null };
 }
 
 // ── POST /api/v1/offers/[id]/events ─────────────────────────────────────────

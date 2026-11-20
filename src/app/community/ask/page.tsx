@@ -43,6 +43,8 @@ export default function AskQuestionPage() {
   const [postedId, setPostedId] = useState<string | null>(null);
   // Owner ٤٢: the server stored the question pending_review (not public yet).
   const [pendingReview, setPendingReview] = useState(false);
+  // S5-3: what the server hid from the text before storing it (null = nothing).
+  const [maskedNotice, setMaskedNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // /community/lawyers links here with ?tab=lawyers. Read once on mount from
@@ -79,12 +81,13 @@ export default function AskQuestionPage() {
         asker: user.name || "زائر نظامي",
         askerType: user.userType === "lawyer" ? "lawyer" as const : user.isLoggedIn ? "user" as const : "guest" as const,
         isAnonymous: isAnon || isGuest,
-        // Read by POST /api/v1/community/posts; accepted from a verified lawyer only.
+        // Read by POST /api/v1/community/posts; accepted from a verified lawyer or a verified firm.
         visibility: lawyersOnly ? "lawyers_only" : "public",
       };
       const question = await createCommunityPost(input);
       setPostedId(question?.id != null ? String(question.id) : null);
       setPendingReview(reviewStateOf((question as unknown as { status?: unknown } | null)?.status) === "pending");
+      setMaskedNotice(question?.maskedNotice ?? null);
       setSubmitted(true);
     } catch (err) {
       setSubmitError(err instanceof Error && err.message ? err.message : "تعذّر نشر السؤال — لم يُحفظ.");
@@ -122,6 +125,11 @@ export default function AskQuestionPage() {
                 ? postedNoticeAr("post", true)
                 : isRTL ? "تظهر الإجابات في صفحة السؤال." : "Answers appear on the question's page."}
             </p>
+            {maskedNotice && (
+              <p role="status" className={`text-sm mb-6 rounded-xl border px-3 py-2 ${isDark ? "border-amber-700/40 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                {maskedNotice}
+              </p>
+            )}
             <div className="flex flex-col gap-3">
               {isGuest && (
                 <Link href="/register" className="w-full py-3 bg-[#0B3D2E] text-white font-bold rounded-xl text-sm">
@@ -179,7 +187,7 @@ export default function AskQuestionPage() {
           {lawyersOnly && (
             <p className={`text-sm mt-2 flex items-center gap-1.5 ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>
               <Gavel size={14} weight="fill" />
-              {isRTL ? "يُنشر هذا الموضوع في مجتمع المحامين (للمحامين الموثّقين)." : "This topic is posted to the lawyers' community (verified lawyers)."}
+              {isRTL ? "يُنشر هذا الموضوع في مجتمع المحامين (للمحامين والمكاتب الموثّقة)." : "This topic is posted to the lawyers' community (verified lawyers and firms)."}
             </p>
           )}
         </div>

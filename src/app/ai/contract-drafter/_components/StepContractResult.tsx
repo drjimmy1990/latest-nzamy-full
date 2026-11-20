@@ -183,6 +183,7 @@ export default function StepContractResult({
           </div>
         )}
         <AiResultActions
+          letterheadBeside
           text={contractText}
           filename={`contract-${contractType?.id ?? "draft"}`}
           showVault

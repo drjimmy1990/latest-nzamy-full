@@ -182,7 +182,9 @@ export default function ServicesMarketplacePage() {
           serviceId={wizardService.id}
           serviceTitle={wizardService.title}
           serviceTitleEn={wizardService.titleEn}
-          userRole={role === "individual" ? "individual" : "lawyer_client"}
+          // N05-M3 (batch l11): each role is sent as itself — a company used
+          // to be sent as "lawyer_client" and was shown the lawyer-only fields.
+          userRole={role}
           onClose={() => setWizardService(null)}
         />
       )}

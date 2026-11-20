@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { Coins, Lock } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
-import { LIBRARY_TOPUP_LABEL_AR, libraryPointsLockedMessageAr } from "@/lib/library/pointsGate";
+import { LIBRARY_TOPUP_LABEL_AR, libraryPointsLockedMessageAr, libraryTopupHref } from "@/lib/library/pointsGate";
+import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
+import { gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
 import type { LibraryPointsLockState } from "@/hooks/useLibraryStatus";
 
 /**
@@ -16,6 +18,10 @@ import type { LibraryPointsLockState } from "@/hooks/useLibraryStatus";
  */
 export default function LibraryPointsLockBanner({ lock }: { lock: LibraryPointsLockState }) {
   const { isDark } = useTheme();
+  // O16 (c): straight to the 50-point checkout while payment is on for this
+  // viewer; otherwise the server's link (the price page and its request flow).
+  const payments = usePaymentsStatus();
+  const topupHref = gatewayAllowsCheckout(payments) ? libraryTopupHref(true) : lock.topupHref;
   return (
     <div
       dir="rtl"
@@ -30,7 +36,7 @@ export default function LibraryPointsLockBanner({ lock }: { lock: LibraryPointsL
         {lock.message || libraryPointsLockedMessageAr(lock.minPoints)}
       </p>
       <Link
-        href={lock.topupHref}
+        href={topupHref}
         className="inline-flex items-center gap-2 rounded-xl bg-[#C8A762] px-4 py-2 text-sm font-bold text-white transition-all hover:bg-[#b8964f]"
       >
         <Coins size={16} weight="bold" />

@@ -8,18 +8,32 @@ import type { FirmRole } from "@/types/firmBackendReady";
 import { recordNotification } from "@/lib/notify";
 import { limitRefusal, limitRefusalBody } from "@/lib/api/dbErrorCore";
 import { firmInviteErrorResponse, firmInvitePath, isFirmInviteRole, normaliseInviteEmail } from "./_invitations";
+import { emailConfigured } from "@/lib/email/sendEmail";
+import { riyadhDayPlus, sendReminderOnce } from "@/lib/email/reminderDelivery";
+import {
+  FIRM_INVITE_DAILY_CAP,
+  firmInviteEmailMessage,
+  firmInviteSubjectId,
+  firmInviteSubjectPrefix,
+} from "@/lib/email/firmInviteEmail";
 
 /**
  * /api/v1/firm/invitations — F7 «دعوة عضو برابط» (migration 20261125_40).
  *
  * GET  → `{ data: PendingFirmInvitation[] }` the firm's pending link
  *        invitations (token path included — the managers' own links).
- * POST `{ email, role }` → 201 `{ data: { id, path, expiresAt, notified } }`
+ * POST `{ email, role }` → 201 `{ data: { id, path, expiresAt, notified, emailed } }`
  *
- * No e-mail is sent in this batch. The firm owner (or an active managing
- * partner) gets a link to copy; if the address already belongs to a lawyer or
- * individual account, that person also gets an in-app notification pointing at
- * the same link. The row is written by public.create_firm_team_invitation —
+ * The firm owner (or an active managing partner) gets a link to copy; if the
+ * address already belongs to a lawyer or individual account, that person also
+ * gets an in-app notification pointing at the same link. And (T10-F7, batch
+ * l11-remind) the link is e-mailed to the invited address through the shared
+ * sender once e-mail is set up (RESEND_API_KEY + EMAIL_FROM + an https
+ * NEXT_PUBLIC_SITE_URL) and 20261201_45 has run — `emailed` says whether it
+ * went. The token travels only in that e-mail's body: never in a log line,
+ * the Resend tag, the idempotency key or the once-only log row
+ * (src/lib/email/firmInviteEmail.ts). At most FIRM_INVITE_DAILY_CAP e-mails a
+ * day per (firm, address). The row is written by public.create_firm_team_invitation —
  * SECURITY DEFINER with its own owner / managing-partner check; the table
  * itself is no longer writable by sessions (its old INSERT policy let anyone
  * mint an invitation into any firm).
@@ -40,6 +54,59 @@ async function callerFirm(auth: Extract<Awaited<ReturnType<typeof assertRole>>, 
     return { response: NextResponse.json({ error: "الدعوات لصاحب المكتب والشريك المدير فقط." }, { status: 403 }) };
   }
   return { firm: data };
+}
+
+/**
+ * T10-F7: e-mail the invitation link to the invited address. True only when
+ * the shared sender accepted it (or the test mail sink took it). Never throws,
+ * never logs the link, the token or the address.
+ */
+async function emailInvitation(input: {
+  firmId: string;
+  firmName: string | null;
+  inviterId: string;
+  invitationId: string;
+  email: string;
+  roleLabel: string | null;
+  path: string;
+  expiresAt: string;
+}): Promise<boolean> {
+  try {
+    if (!emailConfigured(process.env)) return false;
+    const message = firmInviteEmailMessage(
+      { firmName: input.firmName, roleLabel: input.roleLabel, path: input.path, expiresAt: input.expiresAt },
+      process.env,
+    );
+    if (!message) return false; // no https site origin → no link to send
+    const service = await createServiceClient();
+    const today = riyadhDayPlus(new Date(), 0);
+    // At most FIRM_INVITE_DAILY_CAP a day per (firm, address).
+    const { count, error } = await service
+      .from("email_reminder_log")
+      .select("subject_id", { count: "exact", head: true })
+      .eq("kind", "firm_invite")
+      .eq("due_on", today)
+      .like("subject_id", `${firmInviteSubjectPrefix(input.firmId, input.email)}%`);
+    if (error) {
+      console.error("[firm/invitations POST] invitation e-mail count failed:", error.code);
+      return false;
+    }
+    if ((count ?? 0) >= FIRM_INVITE_DAILY_CAP) return false;
+    const outcome = await sendReminderOnce(
+      service,
+      {
+        kind: "firm_invite",
+        subjectId: firmInviteSubjectId(input.firmId, input.email, input.invitationId),
+        recipientUserId: input.inviterId,
+        dueOn: today,
+      },
+      { to: input.email, ...message },
+    );
+    return outcome === "sent";
+  } catch (err) {
+    console.error("[firm/invitations POST] invitation e-mail threw:", err instanceof Error ? err.name : "error");
+    return false;
+  }
 }
 
 export async function GET() {
@@ -117,6 +184,7 @@ export async function POST(request: NextRequest) {
     // An existing professional account also hears about it in the app — the
     // same account rule as POST /api/v1/firm/members (lawyer / individual).
     let notified = false;
+    let firmNameAr: string | null = null;
     try {
       const service = await createServiceClient();
       const { data: account } = await service
@@ -126,8 +194,9 @@ export async function POST(request: NextRequest) {
         .in("user_type", ["lawyer", "individual"])
         .maybeSingle();
       const firmRow = await service.from("firm_profiles").select("name_ar").eq("id", r.firm.id).maybeSingle();
+      firmNameAr = (firmRow.data?.name_ar as string | null) ?? null;
       if (account?.id) {
-        const firmName = (firmRow.data?.name_ar as string | null) ?? "مكتب محاماة";
+        const firmName = firmNameAr ?? "مكتب محاماة";
         await recordNotification({
           userId: account.id as string,
           title: "دعوة للانضمام إلى فريق مكتب محاماة",
@@ -140,8 +209,19 @@ export async function POST(request: NextRequest) {
       console.error("[firm/invitations POST] notification lookup failed:", err);
     }
 
+    const emailed = await emailInvitation({
+      firmId: r.firm.id,
+      firmName: firmNameAr,
+      inviterId: auth.user.id,
+      invitationId: created.id,
+      email,
+      roleLabel: FIRM_ROLE_LABEL[role as FirmRole] ?? null,
+      path,
+      expiresAt: created.expires_at,
+    });
+
     return NextResponse.json(
-      { data: { id: created.id, path, expiresAt: created.expires_at, notified } },
+      { data: { id: created.id, path, expiresAt: created.expires_at, notified, emailed } },
       { status: 201 },
     );
   } catch (err) {

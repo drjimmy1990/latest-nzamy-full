@@ -1,10 +1,30 @@
 import type { AdminReadinessStatus } from "@/types/adminBackendReady";
 
+/**
+ * The admin platform page's readiness list (/dashboard/admin/platform).
+ *
+ * S5-4 (batch l11-misc, owner rule «لا مصطلحات تقنية في الواجهة»): `title` and
+ * `note` are shown to the admin, so they are plain Arabic — no route, API,
+ * type or library names. `status` is an internal key the page turns into
+ * Arabic (ADMIN_READINESS_LABEL_AR), and `contract` is a code reference the page no
+ * longer prints. Statuses were re-checked against the pages on 20 Nov 2026:
+ * articles, community moderation and the audit log now save and read on the
+ * server.
+ */
+/** The Arabic label of each readiness key, wherever an admin page shows one. */
+export const ADMIN_READINESS_LABEL_AR: Readonly<Record<AdminReadinessStatus, string>> = Object.freeze({
+  working: "يعمل",
+  no_save: "واجهة دون حفظ",
+  no_ui: "بلا واجهة",
+  risk: "خطر",
+});
+
 export interface AdminBackendReadinessSurface {
   id: string;
   title: string;
   route: string;
   status: AdminReadinessStatus;
+  /** A code reference for developers; not rendered. */
   contract: string;
   note: string;
 }
@@ -14,111 +34,110 @@ export const ADMIN_BACKEND_READINESS: AdminBackendReadinessSurface[] = [
     id: "coupons",
     title: "الكوبونات والخصومات",
     route: "/dashboard/admin/subscriptions/coupons",
-    status: "Backend-ready",
+    status: "working",
     contract: "AdminCoupon",
-    note: "إضافة وتعديل وتعطيل عبر /api/v1/admin/coupons، مع سجلّ استخدام لكل كوبون.",
+    note: "إضافة الكوبونات وتعديلها وإيقافها تُحفظ فعلاً، ولكل كوبون سجلّ استخدام.",
   },
   {
     id: "team",
     title: "فريق نظامي والمشرفون",
     route: "/dashboard/admin/team",
-    status: "Backend-ready",
+    status: "working",
     contract: "AdminTeamMember",
-    // The old screen advertised a five-level RBAC matrix that nothing enforced.
     // Owner answer ٢١٠ (Task 3.4): three staff roles in platform_staff
-    // (20261019_30), enforced on every admin write by requireStaff, set on
-    // this page by a super admin. Before the migration runs every admin keeps
-    // full access.
-    note: "الدعوات وتعيين الأدوار (مشرف رئيسي / عمليات / مراجع) تعمل عبر /api/v1/admin/teams، والخادم يتحقق من الدور في كل إجراء إداري.",
+    // (20261019_30), enforced on every admin write by requireStaff.
+    note: "الدعوات وتعيين الأدوار (مشرف رئيسي / عمليات / مراجع) تُحفظ فعلاً، ويُتحقَّق من دور الموظف في كل إجراء إداري.",
   },
   {
     id: "business-profiles",
-    title: "بروفيلات الشركات التجارية",
+    title: "ملفات الشركات التجارية",
     route: "/dashboard/admin/business",
-    status: "Backend-ready",
+    status: "no_save",
     contract: "BusinessProfileContract",
-    note: "حجم الشركة، الهيكل القانوني، الخدمات، والـ Feature Flags تعمل محلياً فقط؛ مصدر الحقيقة ينتظر CompanyProfile/ServiceEntitlement API.",
+    note: "قائمة الشركات تُقرأ من حسابات المنصة، أما حجم الشركة وهيكلها القانوني وخدماتها فتُعرض هنا ولا تُعدَّل منها بعد.",
   },
   {
     id: "firm-provider-profiles",
-    title: "بروفيلات شركات المحاماة داخل المزودين",
+    title: "ملفات شركات المحاماة",
     route: "/dashboard/admin/provider-verification/firms",
-    status: "Backend-ready",
+    status: "no_save",
     contract: "FirmProfileContract + FirmPlanContract + FirmPointsWallet",
-    note: "الاشتراك السنوي والمقاعد والنقاط والأدوار والمميزات تعمل محلياً فقط؛ مصدر الحقيقة ينتظر Firm/Profile وBilling وWallet وRBAC APIs.",
+    note: "الاشتراك السنوي والمقاعد والنقاط والأدوار تُعرض هنا ولا تُعدَّل من هذه الصفحة بعد.",
   },
   {
     id: "sector-profiles",
-    title: "بروفيلات الحكومة والجمعيات والمنشآت الصغيرة",
+    title: "ملفات الجهات الحكومية والجمعيات والمنشآت الصغيرة",
     route: "/dashboard/admin/sector-profiles",
-    status: "Backend-ready",
+    status: "no_save",
     contract: "GovernmentProfileContract + NgoProfileContract + MicroProfileContract + SectorPlanContract",
-    note: "تجهيز قطاعات B2G وNGO/Awqaf وMicro محلياً فقط؛ لا SSO أو Billing أو Entitlements أو RBAC خادمي.",
+    note: "تُعرض هنا للاطلاع فقط؛ لم تُفعَّل لهذه الجهات بعد الفوترة ولا الصلاحيات ولا الدخول الموحَّد.",
   },
   {
     id: "articles",
     title: "مقالات المدونة",
     route: "/dashboard/admin/content/articles",
-    status: "Backend-ready",
+    status: "working",
     contract: "PlatformContentItem",
-    note: "إنشاء وتعديل وأرشفة وحذف محلي مع مصدر محتوى موحد حتى وصول CMS.",
+    note: "إنشاء المقالات وتعديلها وأرشفتها وحذفها تُحفظ فعلاً وتظهر في المدونة.",
   },
   {
     id: "laws",
     title: "المكتبة القانونية",
     route: "/dashboard/admin/content/laws",
-    status: "Backend-ready",
+    status: "no_save",
     contract: "LegalLibrarySystem",
-    note: "إدارة الأنظمة والمواد جاهزة للربط، والمصادر الرسمية تحتاج خدمة نشر ومراجعة.",
+    note: "تعديل الأنظمة والمواد من هذه الصفحة لم يُربط بعد؛ المكتبة تُحمَّل بأداة التحميل المعتمدة بعد مراجعة المصادر.",
   },
   {
     id: "pricing",
     title: "التسعير ورسوم المنصة",
     route: "/dashboard/admin/pricing",
-    status: "Backend-ready",
+    status: "no_save",
     contract: "AdminPricingCatalogRow",
-    // S6-T7/T8: the client services' prices are read and written through
-    // /api/v1/admin/pricing-catalog (requireStaff settings.write, audited).
-    note: "أسعار خدمات العملاء تُحفظ على الخادم عبر /api/v1/admin/pricing-catalog بصلاحية settings.write، وكل تعديل يُسجَّل في سجل الإدارة. الباقات والشحن من دفتر الأسعار وتتغيّر بنشر الكود، والسوق قريباً؛ نسب عمولته من src/lib/pricing/commission.ts (٥٪ المؤسسون وشركات المحاماة المتكاملة، ٧٪ المشتركون، ١٥٪ الحسابات المجانية — المالك ٤٢١).",
+    // S6-T7/T8: the client services' prices go through
+    // /api/v1/admin/pricing-catalog (requireStaff settings.write, audited);
+    // commission rates in src/lib/pricing/commission.ts (owner ٤٢١).
+    note: "أسعار خدمات العملاء تُحفظ على الخادم لمن يملك صلاحية تعديل الإعدادات، وكل تعديل يُسجَّل في سجل الإدارة. الباقات والشحن من جدول الأسعار المعتمد وتتغيّر مع تحديث المنصة، والسوق قريباً؛ نسب عمولته: ٥٪ للمؤسسين وشركات المحاماة المتكاملة، و٧٪ للمشتركين، و١٥٪ للحسابات المجانية (قرار المالك ٤٢١).",
   },
   {
     id: "feature-flags",
-    title: "Feature Flags والبيتا",
+    title: "مفاتيح الميزات",
     route: "/dashboard/admin/features",
-    status: "Backend-ready",
-    contract: "AdminFeatureFlag",
-    note: "التوجلز وإضافة المفاتيح تعمل محلياً فقط؛ runtime الحقيقي ينتظر feature-flags backend أو تحديث betaConfig.",
+    status: "working",
+    contract: "FeatureFlags (platform_settings.feature_flags)",
+    // O22 (batch l11-misc): src/lib/featureFlags/*.
+    note: "مفتاح «مساعد نظامي» يُحفظ على الخادم ويسري على الموقع خلال دقيقة، وكل تغيير يُسجَّل في سجل الإدارة. مفتاحا المرحلة التجريبية ثابتان ويتغيّران مع الإطلاق الكامل فقط.",
   },
   {
     id: "community-moderation",
     title: "إشراف المجتمع",
     route: "/dashboard/admin/community/moderation",
-    status: "Backend-ready",
+    status: "working",
     contract: "CommunityModerationItem",
-    note: "قرارات الاعتماد والرفض والتصعيد محلية، وتحتاج queue وaudit خادميين.",
+    note: "قرارات الاعتماد والرفض والتصعيد تُحفظ فعلاً، وإعدادات الإشراف تُعدَّل من الصفحة نفسها.",
   },
   {
     id: "pricing",
     title: "التسعير والباقات ورسوم المنصة",
     route: "/dashboard/admin/pricing",
-    status: "Backend-ready",
+    status: "no_save",
     contract: "AdminPricingCatalogRow",
-    note: "أسعار خدمات العملاء تُحفظ على الخادم عبر /api/v1/admin/pricing-catalog وتظهر للعملاء فور الحفظ؛ الباقات والشحن للقراءة فقط من دفتر الأسعار، ورسوم المنصة قريباً.",
+    note: "أسعار خدمات العملاء تُحفظ على الخادم وتظهر للعملاء فور الحفظ؛ الباقات والشحن للقراءة فقط من جدول الأسعار المعتمد، ورسوم المنصة قريباً.",
   },
   {
     id: "audit-log",
     title: "سجل التدقيق",
     route: "/dashboard/admin/audit-log",
-    status: "Risk",
+    status: "working",
     contract: "AdminAuditEvent",
-    note: "الواجهة موجودة، لكن سجل before/after الحقيقي لا يعمل بدون مصدر خادمي.",
+    note: "يعرض العمليات الإدارية الحساسة كما حُفظت، ومعها القيمة قبل التعديل وبعده حيث تتوفر.",
   },
   {
     id: "admin-access",
-    title: "حماية لوحة الأدمن",
+    title: "حماية لوحة الإدارة",
     route: "/dashboard/admin",
-    status: "UI Working",
+    status: "working",
     contract: "UserTypeGuard",
-    note: "حماية الواجهة موجودة، أما enforcement الخادمي فيأتي مع طبقة المصادقة.",
+    note: "لوحة الإدارة محمية في المتصفح وعلى الخادم، وكل إجراء إداري يتحقق من دور الموظف قبل تنفيذه.",
   },
 ];

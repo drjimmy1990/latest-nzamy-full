@@ -486,6 +486,7 @@ export default function AdminOffersPage() {
                 seatsLeft: null,
                 seatsTotal: null,
                 endsAt: fromRiyadhInput(form.endsAt),
+                planRef: null,
               }}
             />
           </div>

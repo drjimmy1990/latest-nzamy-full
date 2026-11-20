@@ -54,6 +54,44 @@ export interface CiteScanOptions {
   docTitle?: string;
   /** The current article's own number: «المادة (٥)» inside article 5 is not linked. */
   selfNumber?: number | null;
+  /**
+   * Other names this same file goes by: the regulations merged into it
+   * (owner file 16 §1 — a reference to them is a reference to this file).
+   */
+  selfNames?: readonly string[];
+  /**
+   * Owner file 16 §1, q٩٥ default (batch l11, O14): a reference to the file
+   * the reader is in — its own name, a merged instrument's name, or one of
+   * its own articles — is plain text, not a chip. The side box and the index
+   * still link them. References to another law, the parent law and decrees
+   * stay chips. Read by `linkCitationsHtml` only; `scanCitations` still
+   * reports every reference with its scope.
+   */
+  ownRefsAsText?: boolean;
+}
+
+/**
+ * q٩٥'s default (the owner has not answered): only references to this same
+ * file become plain text. Should he answer «every reference in the text»,
+ * the reader's call site changes, not this parser.
+ */
+export const OWN_DOCUMENT_REFS_AS_TEXT = true;
+
+/**
+ * True when a reference points at the file being read: an article of this
+ * document (scope "self"), or a named law / article reference whose name is
+ * this document's title or one of its merged instruments' names. Names are
+ * compared whole after normalizeArabicKey (hamza, ة/ه, ى/ي, diacritics), never
+ * by prefix: «نظام القضاء» is not «نظام القضاء العسكري».
+ */
+export function isOwnDocumentRef(c: CiteMention, opts: CiteScanOptions = {}): boolean {
+  if (c.kind === "decree") return false;
+  if (c.kind === "article" && c.scope === "self") return true;
+  if (c.scope !== "other" || !c.docName) return false;
+  const name = normalizeArabicKey(c.docName);
+  if (!name) return false;
+  const own = [opts.docTitle ?? "", ...(opts.selfNames ?? [])].map((n) => normalizeArabicKey(n)).filter(Boolean);
+  return own.includes(name);
 }
 
 const MAX_NUMBERS = 8;
@@ -65,6 +103,8 @@ const NAME_STOP = new Set(
     "الصادر", "الصادره", "وتاريخ", "بتاريخ", "وتاريخه", "علي", "في", "الي", "او", "ما", "التي", "الذي", "وفق", "وفقا",
     "وذلك", "فيما", "ويعاقب", "يعاقب", "عن", "اذا", "مع", "من", "هذا", "هذه", "بشان", "ولائحته", "ولوائحه", "المشار",
     "المذكور", "المعدل", "والمعدل", "رقم", "بموجب", "حسب", "بحسب", "دون", "متي", "لا", "قد", "كما", "ثم", "حتي",
+    // N02-13 (batch l11): «نظام القضاء ونظام ديوان المظالم» names two laws, not one.
+    "ونظام", "ولائحه", "واللائحه",
   ].map((w) => normalizeArabicKey(w)),
 );
 
@@ -153,9 +193,12 @@ const LAW_NAME_RE = /(?<![\p{L}\p{M}])(?:[وف]?[بل]?)(نظام)\s+(?=ال)/gu
 /**
  * «المرسوم الملكي رقم (م/٥١)», «الأمر الملكي رقم (أ/٩٠)», «قرار مجلس الوزراء رقم (٢٢٢)».
  * The number is required: «بموجب مرسوم ملكي» alone names nothing.
+ * N02-13 (batch l11): the chip runs on over «وتاريخ …» when the text gives the
+ * date, so the popover can resolve the decree to ONE library record (a number
+ * alone restarts every year; src/lib/library/decreeRef.ts).
  */
 const DECREE_RE =
-  /(?<![\p{L}\p{M}])(?:[وب]?)(?:(?:ال)?مرسوم\s+(?:ال)?ملكي|(?:ال)?أمر\s+(?:ال)?(?:ملكي|سامي)|قرار\s+مجلس\s+الوزراء)\s+(?:الكريم\s+)?(?:ذي\s+)?رقم\s*\(?\s*(?:[أإامق]\s*\/\s*)?[\d٠-٩]{1,6}(?:\s*\/\s*[\d٠-٩]{1,6})?\s*\)?/gu;
+  /(?<![\p{L}\p{M}])(?:[وب]?)(?:(?:ال)?مرسوم\s+(?:ال)?ملكي|(?:ال)?أمر\s+(?:ال)?(?:ملكي|سامي)|قرار\s+مجلس\s+الوزراء)\s+(?:الكريم\s+)?(?:ذي\s+)?رقم\s*\(?\s*(?:[أإامق]\s*\/\s*)?[\d٠-٩]{1,6}(?:\s*\/\s*[\d٠-٩]{1,6})?\s*\)?(?:\s*،?\s*(?:و|ب)?(?:ال)?تاريخ\s*[\d٠-٩]{1,4}\s*[/.\-]\s*[\d٠-٩]{1,2}\s*[/.\-]\s*[\d٠-٩]{1,4}\s*(?:هـ|ه)?)?/gu;
 
 /** Every reference in `text`, in order, non-overlapping. */
 export function scanCitations(text: string, opts: CiteScanOptions = {}): CiteMention[] {
@@ -216,7 +259,9 @@ function linkTextRun(text: string, opts: CiteScanOptions, cls: string): string {
     entities.push(e);
     return SLOT;
   });
-  const found = scanCitations(plain, opts);
+  const all = scanCitations(plain, opts);
+  // O14 (q٩٥ default): a reference to this same file stays plain text.
+  const found = opts.ownRefsAsText ? all.filter((c) => !isOwnDocumentRef(c, opts)) : all;
   if (found.length === 0) return text;
   let next = 0;
   const restore = (s: string) => s.replace(/￼/g, () => entities[next++] ?? "");
