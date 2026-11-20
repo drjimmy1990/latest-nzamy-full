@@ -742,11 +742,8 @@ export async function PATCH(request: Request) {
   // and the separators the lawyers' registry uses). Unchanged values pass, so
   // an older number on file never blocks saving the rest of the profile.
   if (typeof lawyerUpdates.license_number === "string" && licenceFormatIssue(lawyerUpdates.license_number)) {
-    const { data: current, error: currentErr } = await (await createServiceClient())
-      .from("lawyer_profiles")
-      .select("license_number, practice_kind")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    // The caller's own row, by the verified id (readOwnLawyerRow, plan item N2).
+    const { data: current, error: currentErr } = await readOwnLawyerRow(user.id);
     if (currentErr) {
       console.error("[api/v1/profile] licence read failed:", currentErr.message, currentErr.code);
     } else {

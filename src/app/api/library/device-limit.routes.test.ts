@@ -73,7 +73,7 @@ test("the server half fails open and keys the cookie strictly", () => {
   const bearer = src.indexOf('if (isBearerWithoutDeviceCookie(hdrs.get("authorization"), id)) {');
   assert.ok(bearer > 0, "the Bearer branch exists");
   const branch = src.slice(bearer, src.indexOf("}", bearer));
-  assert.match(branch, /return finish\(userId, null, cookielessGateDecision\(await readCookielessState\(userId\)\)\);/);
+  assert.match(branch, /return finish\(userId, null, cookielessGateDecision\(await readCookielessState\(\)\)\);/);
   assert.ok(bearer < src.indexOf("newDeviceId("), "decided before any id is minted");
   assert.doesNotMatch(src, /isBearerWithoutDeviceCookie\([^)]*\)\) return null;/);
   assert.match(src, /abortSignal\(AbortSignal\.timeout\(RPC_TIMEOUT_MS\)\)/);
