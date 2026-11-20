@@ -109,6 +109,7 @@ import CaseTimeExpensesSection from "@/components/dashboard/financeLedger/CaseTi
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import { caseSummaryBlocks } from "../_caseSummaryBlocks";
 import InsertFromLibraryButton from "@/components/library/InsertFromLibraryButton";
+import ArticleRefAssist from "@/components/ai/ArticleRefAssist";
 
 /**
  * Arabic counted-noun tables for this page's two tab counters.
@@ -2371,6 +2372,7 @@ export default function CaseDetailPage() {
                     <NoteScopePicker value={newNoteVisibility} onChange={setNewNoteVisibility} team={caseTeam} disabled={addingNote} />
                     {/* 8000 = case_notes.body check (20260910_case_notes.sql). */}
                     <InsertFromLibraryButton isDark={isDark} targetRef={newNoteRef} value={newNoteBody} onChange={setNewNoteBody} disabled={addingNote} maxLength={8000} />
+                    <ArticleRefAssist isDark={isDark} targetRef={newNoteRef} value={newNoteBody} onChange={setNewNoteBody} disabled={addingNote} maxLength={8000} />
                     <button onClick={submitCaseNote} disabled={!newNoteBody.trim() || addingNote}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-bold bg-[#0B3D2E] text-[#C8A762] disabled:opacity-40 transition-opacity">
                       {addingNote ? <Spinner size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />}
