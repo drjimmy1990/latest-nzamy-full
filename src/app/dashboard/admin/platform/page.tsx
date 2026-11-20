@@ -54,17 +54,17 @@ const STATUS_CLASS: Record<PlatformSurfaceStatus, string> = {
 };
 
 const READINESS_LABEL: Record<AdminReadinessStatus, string> = {
-  "UI Working": "يعمل",
-  "Backend-ready": "واجهة دون حفظ",
-  "Missing UI": "بلا واجهة",
-  Risk: "خطر",
+  "working": "يعمل",
+  "no_save": "واجهة دون حفظ",
+  "no_ui": "بلا واجهة",
+  risk: "خطر",
 };
 
 const READINESS_CLASS: Record<AdminReadinessStatus, string> = {
-  "UI Working": "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
-  "Backend-ready": "border-blue-500/25 bg-blue-500/10 text-blue-300",
-  "Missing UI": "border-rose-500/25 bg-rose-500/10 text-rose-300",
-  Risk: "border-amber-500/25 bg-amber-500/10 text-amber-300",
+  "working": "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
+  "no_save": "border-blue-500/25 bg-blue-500/10 text-blue-300",
+  "no_ui": "border-rose-500/25 bg-rose-500/10 text-rose-300",
+  risk: "border-amber-500/25 bg-amber-500/10 text-amber-300",
 };
 
 export default function AdminPlatformPage() {

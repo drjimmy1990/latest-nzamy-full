@@ -42,10 +42,10 @@ import type { AdminReadinessStatus } from "@/types/adminBackendReady";
 // Owner rule: no engineering words on screen. The readiness values stay the
 // typed keys they are; only what the badge prints is Arabic.
 const READINESS_AR: Record<AdminReadinessStatus, string> = {
-  "UI Working": "يعمل",
-  "Backend-ready": "واجهة دون حفظ",
-  "Missing UI": "بلا واجهة",
-  Risk: "خطر",
+  "working": "يعمل",
+  "no_save": "واجهة دون حفظ",
+  "no_ui": "بلا واجهة",
+  risk: "خطر",
 };
 
 type BooleanFeatureKey = {
@@ -206,7 +206,7 @@ export default function AdminBusinessProfilesPage() {
   const internalLegalCount = companies.filter(
     (company) => profileFor(company, features[company.id]).hasInternalLegal,
   ).length;
-  const backendReadyControls = BUSINESS_ADMIN_CONTROLS.filter((control) => control.readiness === "Backend-ready").length;
+  const backendReadyControls = BUSINESS_ADMIN_CONTROLS.filter((control) => control.readiness === "no_save").length;
 
   return (
     <div className="p-6 md:p-10 space-y-6 max-w-[1600px] mx-auto pb-32" dir="rtl">
@@ -434,7 +434,7 @@ export default function AdminBusinessProfilesPage() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <p className={`text-sm font-black ${enabled ? "text-emerald-400" : isDark ? "text-zinc-200" : "text-zinc-800"}`}>{service.label}</p>
-                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${service.readiness === "UI Working" ? "border-emerald-500/25 text-emerald-400" : "border-blue-500/25 text-blue-300"}`}>
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${service.readiness === "working" ? "border-emerald-500/25 text-emerald-400" : "border-blue-500/25 text-blue-300"}`}>
                           {READINESS_AR[service.readiness] ?? service.readiness}
                         </span>
                       </div>
@@ -455,7 +455,7 @@ export default function AdminBusinessProfilesPage() {
                   <div key={control.id} className={`p-4 border-b md:border-l ${isDark ? "border-white/[0.05]" : "border-zinc-100"}`}>
                     <div className="flex items-center justify-between gap-2">
                       <Link href={control.route} className={`text-sm font-black hover:underline ${isDark ? "text-white" : "text-zinc-900"}`}>{control.title}</Link>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${control.readiness === "Risk" ? "border-amber-500/25 text-amber-300" : "border-blue-500/25 text-blue-300"}`}>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${control.readiness === "risk" ? "border-amber-500/25 text-amber-300" : "border-blue-500/25 text-blue-300"}`}>
                         {READINESS_AR[control.readiness] ?? control.readiness}
                       </span>
                     </div>

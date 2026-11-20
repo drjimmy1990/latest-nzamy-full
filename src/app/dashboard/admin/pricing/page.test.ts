@@ -91,3 +91,29 @@ test("S5-4: the readiness list shows plain Arabic only (titles and notes), and t
   assert.doesNotMatch(page, /\{surface\.contract\}/);
   assert.doesNotMatch(page, /owner-level|مراجعة sitemap/);
 });
+
+test("S5-4: the shipped admin code carries no «Backend-ready» / «UI Working» / «Feature Flags» strings", () => {
+  for (const rel of [
+    "../../../../types/adminBackendReady.ts",
+    "../../../../constants/adminBackendReadiness.ts",
+    "../../../../constants/businessProfileReadiness.ts",
+    "../../../../constants/firmProfileReadiness.ts",
+    "../../../../constants/sectorProfileReadiness.ts",
+    "../../../../constants/adminNavItems.ts",
+    "../platform/page.tsx",
+    "../business/page.tsx",
+    "../sector-profiles/page.tsx",
+    "../features/page.tsx",
+  ]) {
+    const code = readFileSync(new URL(rel, import.meta.url), "utf8")
+      .split(/\r?\n/)
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join("\n");
+    for (const word of ['"Backend-ready"', '"UI Working"', '"Missing UI"', "Feature Flags", "Feature flag"]) {
+      assert.equal(code.includes(word), false, `${rel}: ${word}`);
+    }
+  }
+  // A readiness key is never printed raw: the sector page prints its Arabic label.
+  const sector = readFileSync(new URL("../sector-profiles/page.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(sector, /\{(?:item|control)\.readiness\}/);
+});
