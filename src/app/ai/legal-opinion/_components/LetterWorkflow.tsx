@@ -17,6 +17,8 @@ import { validateLegalOpinionIntake } from "@/lib/services/orderIntake.legalOpin
 import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftChoice, draftText, draftTextList } from "@/lib/payments/topUpDraft";
 import { LEGAL_LETTER_PRICE, LETTER_SUBJECT_MAX } from "@/lib/ai/tools";
 import { AiOpinionPanel, TeamOrderDivider } from "./AiOpinionPanel";
 import { letterRunInput } from "./aiOpinion";
@@ -84,6 +86,32 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
   // L12 (owner LIVE-F21 / NOTE-22): the letter's automatic path, on step 4
   // above the team order. The letter is signed by the sender typed in step 2.
   const letterRun = useAiRun();
+  // l11 (T8-Q511a): back from a top-up, the letter's fields on its last step
+  useToolDraft("legal-opinion-letter", (d) => {
+    const type = draftText(d, "letterType");
+    if (!type) return;
+    setLetterType(type);
+    const put = (field: string, set: (v: string) => void) => {
+      const v = draftText(d, field);
+      if (v) set(v);
+    };
+    put("letterTypeCustom", setLetterTypeCustom);
+    put("letterPurpose", setLetterPurpose);
+    put("senderName", setSenderName);
+    put("recipientName", setRecipientName);
+    put("govEntity", setGovEntity);
+    put("deadlineDays", setDeadlineDays);
+    put("letterSubject", setLetterSubject);
+    put("letterLegalRef", setLetterLegalRef);
+    const sr = draftChoice(d, "senderRole", ["individual", "company"] as const);
+    if (sr) setSenderRole(sr);
+    const rt = draftChoice(d, "recipientType", ["individual", "company", "government"] as const);
+    if (rt) setRecipientType(rt);
+    if (d.responseDeadline === true) setResponseDeadline(true);
+    const annexes = draftTextList(d, "letterAttachments", 50);
+    if (annexes) setLetterAttachments(annexes);
+    setLetterStep(4);
+  });
 
   // Resolves letterType to a display label, "other" included. Previously
   // `LETTER_TYPES.find(l => l.id === letterType)?.label` resolved to
@@ -769,6 +797,10 @@ export function LetterWorkflow({ isDark, card, onBack }: LetterWorkflowProps) {
               deadlineDays: responseDeadline ? deadlineDays : null,
               annexes: letterAttachments,
             })}
+            draftState={{
+              letterType, letterTypeCustom, letterPurpose, senderName, senderRole, recipientName, recipientType,
+              govEntity, responseDeadline, deadlineDays, letterSubject, letterAttachments, letterLegalRef,
+            }}
             blocked={letterBlocked}
             price={LEGAL_LETTER_PRICE}
             isDark={isDark} card={card}

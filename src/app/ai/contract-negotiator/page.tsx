@@ -19,6 +19,8 @@ import {
 } from "@/components/contracts/contractNegotiatorRun";
 import { REVIEW_RISK_AR, type ReviewRisk } from "@/components/contracts/contractReviewRun";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftRows, draftText } from "@/lib/payments/topUpDraft";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
@@ -87,6 +89,17 @@ function NegotiatorTool({ isDark }: { isDark: boolean }) {
   const [contractType, setContractType] = useState("");
   const [clauses, setClauses] = useState<Array<NegotiatorClauseDraft & { key: number }>>([{ ...EMPTY_CLAUSE, key: 0 }]);
   const nextKey = useRef(1);
+  // l11 (T8-Q511a): back from a top-up, the party, the type and the clauses as typed
+  useToolDraft("contract-negotiator", (d) => {
+    const p = draftText(d, "ourParty");
+    const t = draftText(d, "contractType");
+    const rows = draftRows(d, "clauses", NEGOTIATOR_CLAUSES_MAX);
+    if (p) setOurParty((cur) => cur || p);
+    if (t) setContractType((cur) => cur || t);
+    if (rows) {
+      setClauses(rows.map((r) => ({ text: r.text ?? "", theirDemand: r.theirDemand ?? "", ourGoal: r.ourGoal ?? "", key: nextKey.current++ })));
+    }
+  });
 
   const points = CONTRACT_NEGOTIATOR_PRICE.toLocaleString("ar-SA");
   const form = { ourParty, contractType, clauses };
@@ -109,7 +122,11 @@ function NegotiatorTool({ isDark }: { isDark: boolean }) {
   }
   function start() {
     if (run.busy || problem) return;
-    void run.start("contract-negotiator", contractNegotiatorInput(form));
+    void run.start("contract-negotiator", contractNegotiatorInput(form), undefined, {
+      ourParty,
+      contractType,
+      clauses: clauses.map(({ text, theirDemand, ourGoal }) => ({ text, theirDemand, ourGoal })),
+    });
   }
 
   return (

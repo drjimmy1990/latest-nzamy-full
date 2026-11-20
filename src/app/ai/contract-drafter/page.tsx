@@ -8,7 +8,9 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { useAiRun } from "@/hooks/useAiRun";
-import { ContractType, Mode, Step } from "./_components/contractTypes";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftText as draftField, draftTextMap } from "@/lib/payments/topUpDraft";
+import { ContractType, Mode, Step, contractTypes } from "./_components/contractTypes";
 import { asContractDraft, contractDraftFields, contractDraftText } from "./_components/contractDraft";
 import StepModeSelector from "./_components/StepModeSelector";
 import StepTypeSelector from "./_components/StepTypeSelector";
@@ -61,6 +63,17 @@ export default function ContractDrafterPage() {
   const [contractText, setContractText] = useState("");
   const [copied, setCopied] = useState(false);
   const [step4Tab, setStep4Tab] = useState<"text" | "review">("text");
+  // l11 (T8-Q511a): back from a top-up, the chosen contract and its fields on
+  // the generate step (the agreement box is ticked again by the user)
+  useToolDraft("contract-drafter", (d) => {
+    const typeId = draftField(d, "type_id");
+    const ct = typeId ? contractTypes.find((t) => t.id === typeId) : undefined;
+    if (!ct) return;
+    setMode("draft");
+    setSelectedType(ct);
+    setFormData(draftTextMap(d, "form") ?? {});
+    setStep(3);
+  });
 
   // L11 (plan §5 wave 5): a background job. The server checks the fields,
   // charges the points and n8n writes the draft; the hook polls until it is
@@ -78,7 +91,12 @@ export default function ContractDrafterPage() {
 
   function handleGenerateContract() {
     if (!selectedType || run.busy) return;
-    void run.start("contract-drafter", { type: selectedType.id, fields: contractDraftFields(selectedType.fields, formData) });
+    void run.start(
+      "contract-drafter",
+      { type: selectedType.id, fields: contractDraftFields(selectedType.fields, formData) },
+      undefined,
+      { type_id: selectedType.id, form: formData },
+    );
   }
 
   function handleCopy() {

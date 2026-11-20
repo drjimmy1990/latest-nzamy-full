@@ -13,6 +13,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import ConsultantGate from "@/components/dashboard/ConsultantGate";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftText } from "@/lib/payments/topUpDraft";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
@@ -146,6 +148,12 @@ function NajizOptimizerPage() {
   // The server refuses a memo already within 9,000 characters, and fails (and
   // refunds) any result that drops an article or a numbered reference.
   const ai = useAiRun();
+  // l11 (T8-Q511a): back from a top-up, the memo as it was pasted (the free
+  // rules run again on it, then «اختصار بالذكاء الاصطناعي»)
+  useToolDraft("najiz-optimizer", (d) => {
+    const t = draftText(d, "inputText");
+    if (t) setInputText((cur) => cur || t);
+  });
 
   useEffect(() => {
     const text = ai.phase === "done" && typeof ai.output?.text === "string" ? ai.output.text : null;
@@ -157,7 +165,7 @@ function NajizOptimizerPage() {
 
   function handleShorten() {
     if (!result || ai.busy) return;
-    void ai.start("najiz-optimizer", { text: result });
+    void ai.start("najiz-optimizer", { text: result }, undefined, { inputText });
   }
 
   const card = isDark

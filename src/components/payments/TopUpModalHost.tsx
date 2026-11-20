@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
 import MoyasarCheckout from "@/components/payments/MoyasarCheckout";
 import { formatHalalas, type PayableItem } from "@/lib/payments/catalog";
+import { checkoutItemNotes, TOPUP_LIBRARY_EXPIRY_GENERIC_AR } from "@/lib/payments/checkoutView";
 import { INSUFFICIENT_POINTS_EVENT, saveTopUpReturn, topUpPacksFor } from "@/lib/payments/topUpDraft";
 
 /**
@@ -95,6 +96,13 @@ export default function TopUpModalHost() {
                 اختيار حزمة أخرى
               </button>
             </div>
+            {/* l11 O7: the pack's validity, and the library rule (register 49) */}
+            <ul className="space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+              {checkoutItemNotes(pack).map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+              <li>{TOPUP_LIBRARY_EXPIRY_GENERIC_AR}</li>
+            </ul>
             <MoyasarCheckout itemId={pack.id} billing="once" />
           </div>
         ) : packs.length > 0 ? (

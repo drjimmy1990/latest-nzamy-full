@@ -148,8 +148,9 @@ export default function PricingPage() {
         )}
 
         {/* Owner item 5: the offers meant for this signed-in user (the
-            popup's offer stays here after it is closed). */}
-        <OffersList variant="strip" enabled={!userLoading && isLoggedIn} />
+            popup's offer stays here after it is closed). l11 O17 (register
+            20): a visitor sees the offers meant for «زائر». */}
+        <OffersList variant="strip" enabled={!userLoading} />
 
         {/* Plan cards + enterprise + SME + quarterly */}
         <PricingCards

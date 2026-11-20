@@ -29,8 +29,13 @@ import type { FounderWindowState } from "../pricing/campaigns.ts";
  * The audience keys. `lawyer` is the ADVOCATE lawyer only; the legal
  * consultant (a lawyer account with practice_kind 'consultant') is its own
  * key, so an offer for lawyers never reaches him unless the admin ticks it.
+ * `guest` (l11 O17, register 20): a visitor who is not signed in — the
+ * /pricing strip shows him the offers that name it. No signed-in account is
+ * ever a guest (audienceKeyFor never answers it); a guest offer is for every
+ * visitor, so its verification is "any" (offerInputToColumns, and a CHECK in
+ * 20261201_20).
  */
-export const OFFER_AUDIENCE_KEYS = ["lawyer", "consultant", "firm", "individual", "corporate"] as const;
+export const OFFER_AUDIENCE_KEYS = ["lawyer", "consultant", "firm", "individual", "corporate", "guest"] as const;
 export type OfferAudienceKey = (typeof OFFER_AUDIENCE_KEYS)[number];
 
 export const OFFER_AUDIENCE_LABELS_AR: Readonly<Record<OfferAudienceKey, string>> = Object.freeze({
@@ -39,7 +44,18 @@ export const OFFER_AUDIENCE_LABELS_AR: Readonly<Record<OfferAudienceKey, string>
   firm: "مكتب محاماة",
   individual: "فرد",
   corporate: "منشأة",
+  guest: "زائر غير مسجّل",
 });
+
+/** l11 O17: the visitor's audience key (never a signed-in account's). */
+export const GUEST_AUDIENCE: OfferAudienceKey = "guest";
+
+/** A guest offer needs verification "any" — a visitor has none (offerInputToColumns). */
+export const GUEST_NEEDS_ANY_AR = "عرض الزوار يظهر لكل زائر: اختر «الكل» في حالة التوثيق";
+
+/** The visitor's viewer: no account, nothing bought, no seat. */
+export const GUEST_VIEWER: Readonly<{ audience: OfferAudienceKey; verified: null; boughtPlanRefs: ReadonlySet<string>; founderSeat: false }> =
+  Object.freeze({ audience: GUEST_AUDIENCE, verified: null, boughtPlanRefs: new Set<string>(), founderSeat: false as const });
 
 export const OFFER_VERIFICATIONS = ["any", "verified", "unverified"] as const;
 export type OfferVerification = (typeof OFFER_VERIFICATIONS)[number];
@@ -336,6 +352,24 @@ export interface OfferCardDto {
   seatsTotal: number | null;
   /** ISO, server clock; null when the offer has no end. */
   endsAt: string | null;
+  /**
+   * l11 O9: the price-book item the offer is about (offers.plan_ref), or null
+   * for a general offer. /checkout shows only the offers of the item being
+   * bought and the general ones (offersForItem).
+   */
+  planRef: string | null;
+}
+
+/** offers_plan_ref_check (20261128_50): a price-book id. */
+const PLAN_REF_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/**
+ * l11 O9: the offers /checkout shows for `itemId` — those about that item and
+ * the general ones (no plan_ref); never an offer about another item.
+ */
+export function offersForItem<T extends Pick<OfferCardDto, "planRef">>(offers: readonly T[], itemId: string | null | undefined): T[] {
+  if (!itemId) return offers.filter((o) => o.planRef === null);
+  return offers.filter((o) => o.planRef === null || o.planRef === itemId);
 }
 
 export function offerCardDto(row: OfferRow, a: Extract<OfferAvailability, { open: true }>): OfferCardDto {
@@ -351,6 +385,7 @@ export function offerCardDto(row: OfferRow, a: Extract<OfferAvailability, { open
     seatsLeft: a.seatsLeft,
     seatsTotal: a.seatsTotal,
     endsAt: a.endsAt,
+    planRef: row.plan_ref && PLAN_REF_RE.test(row.plan_ref) ? row.plan_ref : null,
   };
 }
 
@@ -365,7 +400,7 @@ const isCount = (n: unknown): n is number => typeof n === "number" && Number.isI
 
 function cardFromApi(v: unknown): OfferCardDto | null {
   if (!isObject(v)) return null;
-  const { id, title, body, mediaUrl, mediaKind, ctaLabel, ctaHref, seatsLeft, seatsTotal, endsAt } = v;
+  const { id, title, body, mediaUrl, mediaKind, ctaLabel, ctaHref, seatsLeft, seatsTotal, endsAt, planRef } = v;
   if (typeof id !== "string" || !id || typeof title !== "string" || !title.trim()) return null;
   if (typeof ctaLabel !== "string" || !ctaLabel.trim() || !isSameSitePath(ctaHref)) return null;
   const media = isMediaUrl(mediaUrl) && (mediaKind === "image" || mediaKind === "video") ? mediaUrl : null;
@@ -380,6 +415,7 @@ function cardFromApi(v: unknown): OfferCardDto | null {
     seatsLeft: isCount(seatsLeft) ? seatsLeft : null,
     seatsTotal: isCount(seatsTotal) ? seatsTotal : null,
     endsAt: typeof endsAt === "string" && parseMs(endsAt) !== null ? endsAt : null,
+    planRef: typeof planRef === "string" && PLAN_REF_RE.test(planRef) ? planRef : null,
   };
 }
 
@@ -511,7 +547,7 @@ const failed = (v: unknown): v is { ok: false; error: string } => isObject(v) &&
  */
 export function offerInputToColumns(
   body: unknown,
-  existing: Pick<OfferRow, "campaign_id" | "starts_at" | "ends_at"> | null,
+  existing: (Pick<OfferRow, "campaign_id" | "starts_at" | "ends_at"> & Partial<Pick<OfferRow, "audience_account_types" | "audience_verification">>) | null,
   knownPlanRefs: ReadonlySet<string>,
 ): OfferInputResult {
   if (!isObject(body)) return BAD("صيغة الطلب غير صالحة");
@@ -586,6 +622,11 @@ export function offerInputToColumns(
     if (failed(v)) return v;
     out.ends_at = v;
   }
+  // l11 O17: a guest offer is for every visitor — verification "any" (the
+  // stored values when this edit does not send them; a CHECK backs it)
+  const audience = (Object.hasOwn(out, "audience_account_types") ? out.audience_account_types : existing?.audience_account_types ?? []) as string[];
+  const verification = Object.hasOwn(out, "audience_verification") ? out.audience_verification : existing?.audience_verification ?? "any";
+  if (audience.includes(GUEST_AUDIENCE) && verification !== "any") return BAD(GUEST_NEEDS_ANY_AR);
   const starts = (Object.hasOwn(out, "starts_at") ? out.starts_at : existing?.starts_at ?? null) as string | null;
   const ends = (Object.hasOwn(out, "ends_at") ? out.ends_at : existing?.ends_at ?? null) as string | null;
   if (starts && ends && Date.parse(ends) <= Date.parse(starts)) return BAD("النهاية يجب أن تكون بعد البداية");

@@ -1,5 +1,6 @@
 "use client";
 
+import { offersForItem } from "@/lib/offers/offerRules";
 import { OfferCard } from "./OfferCard";
 import { reportOfferEvent, useOffers } from "./useOffers";
 
@@ -12,15 +13,29 @@ import { reportOfferEvent, useOffers } from "./useOffers";
  * waits for it). A closed popup's offer stays here while it is open. Loading
  * and a failed read say so plainly on the page variant; "no offer" is said
  * only on a real empty answer.
+ * l11 O9: the checkout variant takes the item being bought (`itemId`) and
+ * shows only that item's offers and the general ones (offersForItem).
+ * l11 O17: on /pricing the strip is enabled for a visitor too — the route
+ * then answers the offers meant for «زائر».
  */
-export function OffersList({ variant = "page", enabled = true }: { variant?: "page" | "strip" | "checkout"; enabled?: boolean }) {
+export function OffersList({
+  variant = "page",
+  enabled = true,
+  itemId,
+}: {
+  variant?: "page" | "strip" | "checkout";
+  enabled?: boolean;
+  /** checkout only: the price-book id being bought. */
+  itemId?: string;
+}) {
   const reply = useOffers(enabled);
 
   if (variant === "checkout") {
-    if (!reply || reply.offers.length === 0) return null;
+    const offers = reply ? offersForItem(reply.offers, itemId) : [];
+    if (offers.length === 0) return null;
     return (
       <section aria-label="عروض متاحة لك" dir="rtl" className="mb-5 space-y-3">
-        {reply.offers.map((o) => (
+        {offers.map((o) => (
           <div key={o.id} className="rounded-2xl border border-[#C8A762]/40 bg-white p-5 dark:border-[#C8A762]/25 dark:bg-zinc-900">
             <OfferCard offer={o} compact onCta={() => reportOfferEvent(o.id, "click")} />
           </div>

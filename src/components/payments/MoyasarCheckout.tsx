@@ -16,6 +16,8 @@ import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import {
   checkoutRequestBody,
+  COUPON_REPLACES_FOUNDER_AR,
+  FOUNDER_BEATS_COUPON_AR,
   intentNeedsRefresh,
   moyasarInitConfig,
   parseCheckoutResponse,
@@ -278,7 +280,9 @@ export default function MoyasarCheckout({
         return;
       }
       setCoupon(checked.preview);
-      couponCode.current = checked.preview.code;
+      // l11 O8: when the founder discount wins, the code is not sent — the
+      // charge is the founder discount's, exactly the figures shown
+      couponCode.current = checked.preview.founderWins ? null : checked.preview.code;
     } finally {
       setCouponChecking(false);
     }
@@ -404,7 +408,7 @@ export default function MoyasarCheckout({
               <dd>{formatHalalas(coupon.listNet)}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt>الخصم</dt>
+              <dt>{coupon.founderWins ? FOUNDER_DISCOUNT_LABEL_AR : "الخصم"}</dt>
               <dd className="font-semibold text-emerald-700 dark:text-emerald-400">− {formatHalalas(coupon.discount)}</dd>
             </div>
             <div className="flex justify-between gap-4">
@@ -412,6 +416,11 @@ export default function MoyasarCheckout({
               <dd>{formatHalalas(coupon.net)}</dd>
             </div>
           </dl>
+          {coupon.founderWins || coupon.replacesFounder ? (
+            <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+              {coupon.founderWins ? FOUNDER_BEATS_COUPON_AR : COUPON_REPLACES_FOUNDER_AR}
+            </p>
+          ) : null}
           <p className="text-xs text-zinc-600 dark:text-zinc-400">تُحسب ضريبة القيمة المضافة على المبلغ بعد الخصم.</p>
         </div>
       ) : (

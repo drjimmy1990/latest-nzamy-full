@@ -68,8 +68,6 @@ const ALLOW: [string, string | null, string][] = [
   ["app/founder/page.tsx", "rounded-[23px] bg-white p-6 text-[#14261F]", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text`],
   ["app/founder/_components/LibraryGifs.tsx", "border border-[#D9E3DD] bg-white shadow-", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the GIF's browser frame"],
   ["app/founder/_components/LibraryGifs.tsx", "flex items-center gap-1.5 bg-[#EEF3F0] px-3 py-2", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the GIF frame's address bar"],
-  ["app/founder/_components/ToolsShowcase.tsx", "border-[#F0B8B2] bg-[#FBE9E7]", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the risky clause"],
-  ["app/founder/_components/ToolsShowcase.tsx", "border-[#A8D5B5] bg-[#E3F3E8]", `deliberate paper surface (data-light-surface) on the campaign page, with its own dark text` + ": the proposed clause"],
   // inverted primary buttons
   ["app/dashboard/government/page.tsx", "bg-white text-zinc-950 hover:bg-slate-200", INVERTED],
   ["app/dashboard/ngo/page.tsx", "bg-white text-zinc-950 hover:bg-slate-200", INVERTED],

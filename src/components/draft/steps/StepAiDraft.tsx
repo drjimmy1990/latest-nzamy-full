@@ -60,6 +60,12 @@ import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 interface Props {
   isDark: boolean;
   kind: DraftKindId;
+  /**
+   * l11 (T8-Q511a): the wizard's own fields, kept instead of the analysis
+   * input when the analysis is refused for insufficient points; the page
+   * puts them back after a top-up (useToolDraft "legal-drafter").
+   */
+  draftState?: Record<string, unknown>;
   facts: WizardFacts;
   fileIds: string[];
   skippedFiles: string[];
@@ -73,7 +79,7 @@ interface Props {
   onToolOff: (code: "tool_off" | "library_tier") => void;
 }
 
-export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPleading, onToolOff }: Props) {
+export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedFiles, onPleading, onToolOff }: Props) {
   const analysis = useAiRun();
   const writing = useAiRun();
   const [sent, setSent] = useState<Record<string, unknown> | null>(null);
@@ -147,7 +153,7 @@ export function StepAiDraft({ isDark, kind, facts, fileIds, skippedFiles, onPlea
     writing.reset();
     setDraftSent(null);
     resetEdits();
-    void analysis.start("legal-drafter", input, { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}) });
+    void analysis.start("legal-drafter", input, { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}) }, draftState);
   }
 
   function startDraft() {

@@ -9,6 +9,8 @@
  *   - founder_topup_discount_bps  (the founder's top-up discount rate, 1500 = 15 %)
  *   - founder_topup_discount_expires (how long it runs: the membership year by default)
  *   - firm_extra_seat_price_sar   (٥٣: stored only, never sold or shown publicly)
+ *   - founder_renewal             (l11, register 55 / founder terms ٤: the
+ *                                  renewal price and its switch; OFF, no price)
  * A key with no row shows the code default and says so.
  */
 
@@ -24,6 +26,7 @@ import {
   founderDiscountWindowFromSetting,
 } from "@/lib/payments/founderDiscount";
 import { FIRM_EXTRA_SEAT_PRICE_KEY, FIRM_PLAN_SEATS, firmExtraSeatPriceSar } from "@/lib/pricing/firmSeats";
+import { FOUNDER_RENEWAL_KEY, FOUNDER_RENEWAL_NOTICE_DAYS, parseFounderRenewal } from "@/lib/membership/founderRenewal";
 
 const TYPE_LABELS: ReadonlyArray<[string, string]> = [
   ["lawyer", "محامٍ"],
@@ -63,6 +66,8 @@ export function PaymentRulesCard() {
   const [months, setMonths] = useState(String(FOUNDER_DISCOUNT_DEFAULT_MONTHS));
   const [until, setUntil] = useState("");
   const [seatPrice, setSeatPrice] = useState("");
+  const [renewOn, setRenewOn] = useState(false);
+  const [renewPrice, setRenewPrice] = useState("");
   const [saving, setSaving] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(null);
 
@@ -78,6 +83,7 @@ export function PaymentRulesCard() {
           [FOUNDER_DISCOUNT_SETTING_KEY]: s[FOUNDER_DISCOUNT_SETTING_KEY] !== undefined,
           [FOUNDER_DISCOUNT_EXPIRES_KEY]: s[FOUNDER_DISCOUNT_EXPIRES_KEY] !== undefined,
           [FIRM_EXTRA_SEAT_PRICE_KEY]: s[FIRM_EXTRA_SEAT_PRICE_KEY] !== undefined,
+          [FOUNDER_RENEWAL_KEY]: s[FOUNDER_RENEWAL_KEY] !== undefined,
         });
         const map = (s[MIN_TOPUP_KEY] && typeof s[MIN_TOPUP_KEY] === "object" ? s[MIN_TOPUP_KEY] : DEFAULT_MIN_TOPUP_SAR) as Record<string, unknown>;
         setMinTopup(Object.fromEntries(TYPE_LABELS.map(([t]) => [t, typeof map[t] === "number" ? String(map[t]) : ""])));
@@ -93,6 +99,9 @@ export function PaymentRulesCard() {
         }
         const price = firmExtraSeatPriceSar(s[FIRM_EXTRA_SEAT_PRICE_KEY]);
         setSeatPrice(price === null ? "" : String(price));
+        const renewal = parseFounderRenewal(s[FOUNDER_RENEWAL_KEY]);
+        setRenewOn(renewal.enabled);
+        setRenewPrice(renewal.priceHalalas === null ? "" : String(renewal.priceHalalas / 100));
         setLoaded(true);
       })
       .catch(() => {
@@ -144,6 +153,11 @@ export function PaymentRulesCard() {
     }
     const n = whole(months);
     void save(FOUNDER_DISCOUNT_EXPIRES_KEY, { months_after_activation: n ?? -1 });
+  }
+
+  function saveRenewal() {
+    const raw = renewPrice.trim();
+    void save(FOUNDER_RENEWAL_KEY, { enabled: renewOn, price_sar: raw === "" ? null : (whole(raw) ?? -1) });
   }
 
   function saveSeatPrice() {
@@ -258,6 +272,24 @@ export function PaymentRulesCard() {
             {saveButton(FIRM_EXTRA_SEAT_PRICE_KEY, saveSeatPrice)}
           </div>
           {note(FIRM_EXTRA_SEAT_PRICE_KEY)}
+        </section>
+
+        <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          <p className={label}>تجديد باقة المحامي المؤسس (ريال قبل الضريبة){notStored(FOUNDER_RENEWAL_KEY)}</p>
+          <p className={`mt-1 ${hint}`}>
+            شروط باقة المؤسس (البند ٤): التجديد بالسعر المعلن وقتها، ويُعلَن قبل نهاية سنة العضوية بـ{FOUNDER_RENEWAL_NOTICE_DAYS.toLocaleString("ar-SA")} يوماً،
+            ويُخصم منه خصم المؤسس (السجل ١٤ البند ٥٥). عند التفعيل مع سعر يُرسَل لكل عضو مؤسس تنتهي سنته خلال المدة إشعار في حسابه ورسالة بريد مرة واحدة.
+            لا يُباع التجديد عبر الموقع بعد. اتركه موقوفاً بلا سعر حتى يحدده المالك.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className={`flex items-center gap-2 ${hint}`}>
+              <input type="checkbox" checked={renewOn} onChange={(e) => setRenewOn(e.target.checked)} />
+              إعلان سعر التجديد
+            </label>
+            <input className={input} inputMode="numeric" value={renewPrice} onChange={(e) => setRenewPrice(e.target.value)} aria-label="سعر تجديد باقة المؤسس" />
+            {saveButton(FOUNDER_RENEWAL_KEY, saveRenewal)}
+          </div>
+          {note(FOUNDER_RENEWAL_KEY)}
         </section>
       </div>
     </div>

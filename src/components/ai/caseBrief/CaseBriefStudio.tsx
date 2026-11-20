@@ -13,6 +13,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import Link from "next/link";
 import { useAiRun } from "@/hooks/useAiRun";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftRows, draftText } from "@/lib/payments/topUpDraft";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
@@ -140,6 +142,17 @@ function CaseBriefTool() {
   const [copied,     setCopied]     = useState(false);
   const [generateClientRequests, setGenerateClientRequests] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  // l11 (T8-Q511a): back from a top-up, the note and the files already
+  // uploaded (they stay stored; they are not uploaded again)
+  useToolDraft("case-brief", (d) => {
+    const note = draftText(d, "role_note");
+    if (note) setChatInput((cur) => cur || note);
+    if (d.want_requests === false) setGenerateClientRequests(false);
+    const kept = (draftRows(d, "files", CASE_BRIEF_FILES.max) ?? []).filter((f) => f.id && f.name);
+    if (kept.length > 0) {
+      setFiles((cur) => (cur.length > 0 ? cur : kept.map((f) => ({ key: `draft-${f.id}`, name: f.name, status: "ready" as const, id: f.id }))));
+    }
+  });
 
 
   const card = isDark
@@ -169,7 +182,11 @@ function CaseBriefTool() {
 
   function runBrief() {
     if (!canRun) return;
-    void run.start("case-brief", { role_note: chatInput.trim(), want_requests: generateClientRequests }, { fileIds: readyIds });
+    void run.start("case-brief", { role_note: chatInput.trim(), want_requests: generateClientRequests }, { fileIds: readyIds }, {
+      role_note: chatInput.trim(),
+      want_requests: generateClientRequests,
+      files: files.filter((f) => f.status === "ready" && f.id).map((f) => ({ id: f.id as string, name: f.name })),
+    });
   }
 
   const assess = result ? ASSESS_CFG[result.assessment] : null;

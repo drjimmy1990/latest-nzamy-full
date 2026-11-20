@@ -9,6 +9,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useContractsState } from "@/hooks/useContractsState";
 import { useAiRun } from "@/hooks/useAiRun";
 import { useToolUsable } from "@/hooks/useToolUsable";
+import { useToolDraft } from "@/hooks/useToolDraft";
+import { draftChoice, draftText as draftField, draftTextList, draftTextMap } from "@/lib/payments/topUpDraft";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
 import { CONTRACTS_PRO_PRICE } from "@/lib/ai/tools";
 import { asContractsProDraft, contractsProInput, contractsProText } from "@/components/contracts/contractsProRun";
@@ -83,6 +85,62 @@ function AIContractsPageInner() {
   const [useCredit, setUseCredit] = useState(false);
   const draft = run.phase === "done" ? asContractsProDraft(run.output) : null;
   const draftText = draft ? contractsProText(draft) : "";
+  // l11 (T8-Q511a): back from a top-up, the whole draft wizard as it was, on
+  // its last step (attachments are not kept: they are uploaded again)
+  useToolDraft("contracts-pro", (d) => {
+    const complexity = draftChoice(d, "complexity", ["simple", "detailed"] as const);
+    if (!complexity) return;
+    const party = (field: string, fallback: PartyData): PartyData => {
+      const m = draftTextMap(d, field);
+      const type = draftChoice(m, "type", ["company", "individual", "government"] as const);
+      return m ? { ...fallback, ...m, type: type ?? fallback.type } : fallback;
+    };
+    s.setContractMode("draft");
+    s.setContractComplexity(complexity);
+    s.setParty1Data((cur) => party("party1", cur));
+    s.setParty2Data((cur) => party("party2", cur));
+    const type = draftField(d, "contractType");
+    if (type) s.setContractType(type);
+    const lang = draftChoice(d, "contractLanguage", ["ar", "en", "ar_en", "custom"] as const);
+    if (lang) s.setContractLanguage(lang);
+    const langName = draftField(d, "customLanguageName");
+    if (langName) s.setCustomLanguageName(langName);
+    const layout = draftChoice(d, "customLanguageLayout", ["single", "dual"] as const);
+    if (layout) s.setCustomLanguageLayout(layout);
+    const base = draftChoice(d, "customLanguageBase", ["ar", "en"] as const);
+    if (base) s.setCustomLanguageBase(base);
+    const desc = draftField(d, "contractDesc");
+    if (desc) s.setContractDesc(desc);
+    const court = draftField(d, "courtType");
+    if (court) s.setCourtType(court);
+    const checked = draftTextList(d, "checkedClauses", 200);
+    if (checked) s.setClauses((list) => list.map((c) => ({ ...c, checked: checked.includes(String(c.id)) })));
+    const edits = draftTextMap(d, "clauseEdits");
+    if (edits) {
+      const byId: Record<number, string> = {};
+      for (const [k, v] of Object.entries(edits)) if (/^\d+$/.test(k)) byId[Number(k)] = v;
+      s.setClauseEdits(byId);
+    }
+    const extra = draftTextList(d, "additionalClauses", 100);
+    if (extra) s.setAdditionalClauses(extra);
+    s.setStep("submit");
+  });
+  useToolDraft("contract-review", (d) => {
+    const focus = draftField(d, "rPartyFocus");
+    const fears = draftField(d, "rFears");
+    const other = draftField(d, "rOtherParty");
+    const type = draftField(d, "contractType");
+    const pasted = draftField(d, "rContractText");
+    if (!focus && !fears && !other && !pasted) return;
+    s.setContractMode("review");
+    if (focus) s.setRPartyFocus(focus);
+    if (fears) s.setRFears(fears);
+    if (other) s.setROtherParty(other);
+    if (type) s.setContractType(type);
+    if (pasted) s.setRContractText(pasted);
+    s.setStep(pasted ? "submit" : "r_upload");
+  });
+
   function generateContract() {
     if (run.busy || !s.contractComplexity) return;
     void run.start("contracts-pro", contractsProInput({
@@ -98,7 +156,21 @@ function AIContractsPageInner() {
       courtType: s.courtType,
       selectedClauses: s.clauses.filter(c => c.checked).map(c => s.clauseEdits[c.id]?.trim() || c.title),
       additionalClauses: s.additionalClauses,
-    }), useCredit ? { useCredit: true } : {});
+    }), useCredit ? { useCredit: true } : {}, {
+      complexity: s.contractComplexity,
+      contractType: s.contractType,
+      contractLanguage: s.contractLanguage,
+      customLanguageName: s.customLanguageName,
+      customLanguageLayout: s.customLanguageLayout,
+      customLanguageBase: s.customLanguageBase,
+      party1: s.party1Data,
+      party2: s.party2Data,
+      contractDesc: s.contractDesc,
+      courtType: s.courtType,
+      checkedClauses: s.clauses.filter((c) => c.checked).map((c) => String(c.id)),
+      clauseEdits: Object.fromEntries(Object.entries(s.clauseEdits).map(([k, v]) => [String(k), v])),
+      additionalClauses: s.additionalClauses,
+    });
   }
 
   // The AI review (250 points) runs only once tool-status says this caller may
@@ -112,7 +184,13 @@ function AIContractsPageInner() {
     if (reviewRun.busy || reviewSource.kind === "none") return;
     const input = contractReviewInput({ rPartyFocus: s.rPartyFocus, rFears: s.rFears, rOtherParty: s.rOtherParty, contractType: s.contractType });
     const fileIds = reviewSource.kind === "file" ? reviewSource.fileIds : [];
-    void reviewRun.start("contract-review", reviewSource.kind === "paste" ? { ...input, contract_text: reviewSource.text } : input, { fileIds });
+    void reviewRun.start("contract-review", reviewSource.kind === "paste" ? { ...input, contract_text: reviewSource.text } : input, { fileIds }, {
+      rPartyFocus: s.rPartyFocus,
+      rFears: s.rFears,
+      rOtherParty: s.rOtherParty,
+      contractType: s.contractType,
+      ...(reviewSource.kind === "paste" ? { rContractText: s.rContractText } : {}),
+    });
   }
 
   // Draft-mode submit recap — rows for the "submit" step. Mirrors buildIntake()

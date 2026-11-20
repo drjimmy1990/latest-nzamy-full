@@ -23,6 +23,7 @@ import type { CheckoutResponse } from "./checkoutRules.ts";
 import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { FOUNDER_CREDITS, FOUNDER_LIBRARY_DAYS, FOUNDER_MEMBERSHIP_MONTHS } from "../membership/founderPlan.ts";
+import { libraryExpiryLockLineAr } from "../points/pointsExpiryNotice.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
 
@@ -174,7 +175,7 @@ function pointsAr(n: number): string {
  * The lines the screen shows under the item's name: what the catalog grants
  * and nothing more. Firm plans get no line — their seats are not sold here.
  */
-export function checkoutItemNotes(item: PayableItem): string[] {
+export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: number | null } = {}): string[] {
   if (item.kind === "topup") {
     const notes: string[] = [];
     // The label already names the points («شحن ٢٥٠ (٣٠٠ نقطة)»): no second line.
@@ -183,6 +184,10 @@ export function checkoutItemNotes(item: PayableItem): string[] {
     }
     if (typeof item.pointsValidityMonths === "number") {
       notes.push(`صالحة ${monthsAr(item.pointsValidityMonths)} من تاريخ الشراء`);
+      // l11 O7 (register 49, founder terms ١٢): only for a holder of a gated
+      // library plan — the page passes the minimum then (0 = gate off: no line)
+      const lock = libraryExpiryLockLineAr(ctx.libraryMinPoints, "this_topup");
+      if (lock) notes.push(lock);
     }
     return notes;
   }
@@ -193,12 +198,19 @@ export function checkoutItemNotes(item: PayableItem): string[] {
     // P3 founder membership: what founder_activate (20261101_10) grants, nothing more
     return [
       `عضوية لمدة ${monthsAr(FOUNDER_MEMBERSHIP_MONTHS)} من تاريخ التفعيل`,
-      `${arabicNumber(FOUNDER_CREDITS.drafting_work)} أعمال بالصائغ القانوني ومخرج مستقل واحد`,
+      `${arabicNumber(FOUNDER_CREDITS.drafting_work)} أعمال بالصائغ القانوني`,
       `وصول إلى المكتبة القانونية لمدة ${daysAr(FOUNDER_LIBRARY_DAYS)}`,
     ];
   }
   return [];
 }
+
+/**
+ * l11 O7: the in-tool top-up modal reads no account data before the pack is
+ * chosen, so it says the rule for library subscribers in general.
+ */
+export const TOPUP_LIBRARY_EXPIRY_GENERIC_AR =
+  "لمشتركي المكتبة: فتح المكتبة مشروط ببقاء رصيدك فوق الحد الأدنى من النقاط، فانتهاء صلاحية الشحنة قد يُقفل التصفح حتى تشحن من جديد.";
 
 /** «اشتراك شهري» / «اشتراك ربع سنوي» / «اشتراك نصف سنوي» / «اشتراك سنوي» / «دفعة واحدة» */
 export function billingLabelAr(billing: Billing): string {
@@ -451,7 +463,25 @@ export interface CouponPreview {
   net: number;
   vat: number;
   total: number;
+  /**
+   * l11 O8: the server answered `source: "founder"` — the founder member's
+   * discount is larger than the coupon, so the figures are the founder
+   * discount's and the coupon is NOT sent with the payment (checkout would
+   * drop it anyway). Absent for a plain coupon preview.
+   */
+  founderWins?: true;
+  /**
+   * l11 O8: the buyer is an active founder member and this coupon saves more
+   * than his founder discount — the coupon replaces the founder discount
+   * shown above the form (never both).
+   */
+  replacesFounder?: true;
 }
+
+/** l11 O8: the line under the figures when the founder discount beats the coupon. */
+export const FOUNDER_BEATS_COUPON_AR = "خصم العضو المؤسس أكبر من هذا الكود، فيُطبَّق خصم المؤسس وحده ولا يُستعمل الكود";
+/** l11 O8: the line when the coupon beats the founder discount shown above the form. */
+export const COUPON_REPLACES_FOUNDER_AR = "هذا الكود أكبر من خصم العضو المؤسس، فيُطبَّق الكود وحده بدل خصم المؤسس ولا يجتمع الخصمان";
 
 export function parseCouponPreview(body: unknown): CouponPreview | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
@@ -460,7 +490,10 @@ export function parseCouponPreview(body: unknown): CouponPreview | null {
   if (!isText(b.code) || typeof q !== "object" || q === null) return null;
   if (!isInt(q.listNet) || !isInt(q.discount) || !isInt(q.net) || !isInt(q.vat) || !isInt(q.total)) return null;
   if (q.discount <= 0 || q.listNet - q.discount !== q.net || q.net + q.vat !== q.total) return null;
-  return { code: b.code, listNet: q.listNet, discount: q.discount, net: q.net, vat: q.vat, total: q.total };
+  const preview: CouponPreview = { code: b.code, listNet: q.listNet, discount: q.discount, net: q.net, vat: q.vat, total: q.total };
+  if (b.source === "founder") preview.founderWins = true;
+  else if (b.replacesFounder === true) preview.replacesFounder = true;
+  return preview;
 }
 
 /**

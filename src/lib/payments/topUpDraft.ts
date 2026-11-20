@@ -94,6 +94,44 @@ export function draftText(input: Record<string, unknown> | null, field: string):
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
+/** l11 (T8-Q511a): one of `allowed`, or null — for a select / tab the page restores. */
+export function draftChoice<T extends string>(input: Record<string, unknown> | null, field: string, allowed: readonly T[]): T | null {
+  const v = input?.[field];
+  return typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : null;
+}
+
+/** l11: a list of non-empty strings (at most `max`), or null. */
+export function draftTextList(input: Record<string, unknown> | null, field: string, max = 50): string[] | null {
+  const v = input?.[field];
+  if (!Array.isArray(v)) return null;
+  const out = v.filter((s): s is string => typeof s === "string" && s.length > 0).slice(0, max);
+  return out.length > 0 ? out : null;
+}
+
+/** l11: a { key: string } map (a wizard's form fields), or null. Non-string values are dropped. */
+export function draftTextMap(input: Record<string, unknown> | null, field: string): Record<string, string> | null {
+  const v = input?.[field];
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, s] of Object.entries(v as Record<string, unknown>)) if (typeof s === "string") out[k] = s;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** l11: a list of { key: string } maps (repeated form rows), or null. */
+export function draftRows(input: Record<string, unknown> | null, field: string, max = 50): Array<Record<string, string>> | null {
+  const v = input?.[field];
+  if (!Array.isArray(v)) return null;
+  const rows = v
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r))
+    .slice(0, max)
+    .map((r) => {
+      const out: Record<string, string> = {};
+      for (const [k, s] of Object.entries(r)) if (typeof s === "string") out[k] = s;
+      return out;
+    });
+  return rows.length > 0 ? rows : null;
+}
+
 /** Only a relative /ai/… path (letters, digits, - _ / and a query) — never another origin. */
 export function safeToolReturnPath(raw: unknown): string | null {
   if (typeof raw !== "string" || raw.length > 200) return null;
