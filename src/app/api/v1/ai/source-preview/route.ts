@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
-import { checkLibraryAccess, hasFullLibraryAccess } from "@/lib/access-control";
+import { checkLibraryAccess, hasFullLibraryAccess, libraryAccessMemo } from "@/lib/access-control";
 import { enforceLibraryDevice } from "@/lib/library/deviceLimitServer";
 import { libraryGate } from "@/lib/library-gate";
 import { articleDisplayLabel } from "@/app/api/library/laws/[slug]/_article-label";
@@ -60,7 +60,9 @@ export async function GET(request: NextRequest) {
 
     // Article and principle text is server-only (20260929_01): this read is the paywall.
     const serverOnly = await createServiceClient();
-    const isSubscriber = await hasFullLibraryAccess(userId);
+    // O26 (batch l11): the probe below reuses these reads.
+    const accessMemo = libraryAccessMemo(userId);
+    const isSubscriber = await hasFullLibraryAccess(userId, accessMemo);
 
     if (ref.kind === "article") {
       const { data: a, error } = await serverOnly
@@ -77,7 +79,7 @@ export async function GET(request: NextRequest) {
       const slug = str((a as Row).law_slug);
       const [law, access] = await Promise.all([
         serverOnly.schema("library").from("laws").select("title").eq("slug", slug).maybeSingle(),
-        isSubscriber ? Promise.resolve(null) : checkLibraryAccess(userId, slug, 0),
+        isSubscriber ? Promise.resolve(null) : checkLibraryAccess(userId, slug, 0, "laws", { memo: accessMemo }),
       ]);
       const entitled = isSubscriber || access?.isWhitelisted === true;
       const deviceRefused = entitled && (await enforceLibraryDevice(userId, isSubscriber)) !== null;

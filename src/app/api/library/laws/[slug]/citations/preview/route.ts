@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
+import { checkLibraryAccess, hasFullLibraryAccess, libraryAccessMemo } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { effectiveFreeLimit } from '@/lib/library/previewLimit';
 import { libraryGate } from '@/lib/library-gate';
@@ -103,7 +103,9 @@ export async function GET(request: Request) {
   const lib = db.schema('library');
 
   try {
-    const isSubscriber = await hasFullLibraryAccess(userId);
+    // O26 (batch l11): the per-law probe below reuses these reads.
+    const accessMemo = libraryAccessMemo(userId);
+    const isSubscriber = await hasFullLibraryAccess(userId, accessMemo);
 
     // ── An article of a law ──────────────────────────────────────────────────
     if (key.kind === 'article') {
@@ -121,7 +123,7 @@ export async function GET(request: Request) {
 
       let open = isSubscriber;
       if (!open) {
-        const probe = await checkLibraryAccess(userId, lawSlug, 0);
+        const probe = await checkLibraryAccess(userId, lawSlug, 0, 'laws', { memo: accessMemo });
         const lawOpen = probe.isWhitelisted === true || probe.freeLimit === -1;
         if (lawOpen) open = true;
         else {
