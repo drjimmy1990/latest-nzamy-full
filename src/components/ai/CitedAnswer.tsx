@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ArrowSquareOut, BookOpen, Scales } from "@phosphor-icons/react";
 import ModalShell from "@/components/ui/ModalShell";
 import { statusPill } from "@/lib/ai/citationStatus";
+import { mentionLookupUrl, readMentionLookup, splitAnswer, type AnswerPart, type MentionLookup } from "@/lib/ai/answerMentions";
 
 /**
  * A library tool's answer (wave 2): the text with its [S…] markers as numbered
@@ -17,6 +18,15 @@ import { statusPill } from "@/lib/ai/citationStatus";
  * cited article shows its status — 🟢 سارية / 🟡 معدّلة / 🔴 ملغاة — from the
  * library row (citationStatus.ts), never from the model. Every AI result view
  * renders citations through CitedText / SourceList, so they all get both.
+ *
+ * N06-34..39 remainder (batch l11): an article the answer names in its own
+ * words («المادة الثمانين من نظام العمل») is a chip too (answerMentions.ts,
+ * the reader's parser). It resolves on click through the reader's lookup —
+ * title, number, status, never text. When the run CITED that article, the
+ * chip offers the same CitationSheet (source-preview, with its 100-character
+ * rule for a viewer without the library); any other article is shown by title
+ * and status only, with its library link. A mention never reads text the
+ * caller's own run did not cite.
  */
 
 export interface Citation {
@@ -219,16 +229,158 @@ function useCitationSheet(isDark: boolean): [(c: Citation, n: number) => void, R
 
 // ── the answer and its sources ───────────────────────────────────────────────
 
+type MentionPart = Extract<AnswerPart, { type: "mention" }>;
+type LookupState = { phase: "loading" } | { phase: "ready"; lookup: MentionLookup } | { phase: "error" };
+
+/** One lookup per reference per page view. */
+const lookupCache = new Map<string, Promise<LookupState>>();
+
+function loadLookup(url: string): Promise<LookupState> {
+  const hit = lookupCache.get(url);
+  if (hit) return hit;
+  const p = fetch(url, { credentials: "same-origin" })
+    .then(async (res): Promise<LookupState> => {
+      if (!res.ok) {
+        lookupCache.delete(url);
+        return { phase: "error" };
+      }
+      return { phase: "ready", lookup: readMentionLookup(await res.json().catch(() => null)) };
+    })
+    .catch((): LookupState => {
+      lookupCache.delete(url);
+      return { phase: "error" };
+    });
+  lookupCache.set(url, p);
+  return p;
+}
+
+function MentionSheet({
+  mention,
+  citedById,
+  isDark,
+  onOpenCite,
+  onClose,
+}: {
+  mention: MentionPart;
+  citedById: Map<string, Citation & { n: number }>;
+  isDark: boolean;
+  onOpenCite: (c: Citation, n: number) => void;
+  onClose: () => void;
+}) {
+  const url = mentionLookupUrl(mention);
+  const [state, setState] = useState<LookupState>(() => (url ? { phase: "loading" } : { phase: "error" }));
+  useEffect(() => {
+    if (!url) return;
+    let live = true;
+    loadLookup(url).then((s) => { if (live) setState(s); });
+    return () => { live = false; };
+  }, [url]);
+  const muted = isDark ? "text-zinc-400" : "text-zinc-500";
+  const lookup = state.phase === "ready" ? state.lookup : null;
+  const linkBtn = `inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11.5px] font-bold ${isDark ? "border-white/[0.1] text-zinc-300 hover:bg-white/[0.05]" : "border-zinc-200 text-zinc-700 hover:bg-zinc-50"}`;
+
+  return (
+    <ModalShell
+      title={<span className="flex items-start gap-2"><BookOpen size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-blue-500" /><span>{mention.text}</span></span>}
+      subtitle={lookup?.lawTitle ?? "مرجع ورد في نص الإجابة"}
+      onClose={onClose}
+      isDark={isDark}
+      maxWidthClass="max-w-lg"
+      zIndexClass="z-[80]"
+    >
+      <div className="space-y-3" aria-live="polite" aria-busy={state.phase === "loading" || undefined}>
+        {state.phase === "loading" && (
+          <div className="space-y-2" aria-label="جارٍ البحث عن المادة">
+            {[0, 1].map((i) => <div key={i} className={`h-3 animate-pulse rounded ${isDark ? "bg-white/[0.06]" : "bg-zinc-100"}`} style={{ width: `${90 - i * 25}%` }} />)}
+          </div>
+        )}
+        {state.phase === "error" && <p className={`text-[13px] ${isDark ? "text-amber-300" : "text-amber-700"}`}>تعذّر البحث عن هذه المادة الآن.</p>}
+        {lookup && lookup.articles.length === 0 && (
+          <p className={`text-[13px] ${muted}`}>
+            لم نجد هذه المادة في المكتبة.
+            {lookup.lawUrl && <> <a href={lookup.lawUrl} target="_blank" rel="noopener noreferrer" className="font-bold underline">افتح النظام في المكتبة</a></>}
+          </p>
+        )}
+        {lookup && lookup.articles.length > 0 && (
+          <ul className="space-y-2">
+            {lookup.articles.map((a) => {
+              const cited = citedById.get(a.id);
+              return (
+                <li key={a.id} className={`rounded-xl border p-3 ${isDark ? "border-white/[0.06]" : "border-zinc-100"}`}>
+                  <div className="flex items-start gap-2">
+                    <span className={`flex-1 text-[13px] font-bold leading-relaxed ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>{a.title}</span>
+                    <CitationStatusPill status={a.status} isDark={isDark} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {cited && (
+                      <button type="button" onClick={() => onOpenCite(cited, cited.n)} className={linkBtn} aria-haspopup="dialog">
+                        اعرض النص (المصدر {cited.n})
+                      </button>
+                    )}
+                    <a href={a.url} target="_blank" rel="noopener noreferrer" className={linkBtn}>
+                      افتح في المكتبة <ArrowSquareOut size={12} aria-hidden="true" />
+                      <span className="sr-only">(في تبويب جديد)</span>
+                    </a>
+                  </div>
+                  {!cited && <p className={`mt-1.5 text-[11.5px] ${muted}`}>لم تكن هذه المادة من النصوص التي استندت إليها الإجابة؛ نصها في المكتبة.</p>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className={`rounded-xl border px-4 py-2 text-[12.5px] font-bold ${isDark ? "border-white/[0.1] text-zinc-300 hover:bg-white/[0.05]" : "border-zinc-200 text-zinc-700 hover:bg-zinc-50"}`}
+        >
+          رجوع إلى الإجابة
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
 export function CitedText({ text, cites, isDark, className = "" }: { text: string; cites: Citation[]; isDark: boolean; className?: string }) {
   const bySid = new Map(cites.map((c, i) => [c.sid, { ...c, n: i + 1 }]));
+  const citedById = new Map<string, Citation & { n: number }>();
+  cites.forEach((c, i) => { if (c.kind === "article" && c.id && !citedById.has(c.id)) citedById.set(c.id, { ...c, n: i + 1 }); });
   const [openSheet, sheet] = useCitationSheet(isDark);
+  const [mention, setMention] = useState<MentionPart | null>(null);
+  const mentionNode =
+    mention && typeof document !== "undefined"
+      ? createPortal(
+          <MentionSheet
+            mention={mention}
+            citedById={citedById}
+            isDark={isDark}
+            onOpenCite={(c, n) => { setMention(null); openSheet(c, n); }}
+            onClose={() => setMention(null)}
+          />,
+          document.body,
+        )
+      : null;
   return (
     <>
       <p className={`whitespace-pre-wrap ${className}`}>
-        {text.split(/(\[S\d{1,3}\])/g).map((part, i) => {
-          const m = /^\[(S\d{1,3})\]$/.exec(part);
-          if (!m) return <Fragment key={i}>{part}</Fragment>;
-          const c = bySid.get(m[1]);
+        {splitAnswer(text, cites).map((part, i) => {
+          if (part.type === "text") return <Fragment key={i}>{part.text}</Fragment>;
+          if (part.type === "mention") {
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setMention(part)}
+                aria-haspopup="dialog"
+                title="اعرض المادة"
+                className={`inline rounded px-0.5 text-start underline decoration-dotted underline-offset-4 focus:outline-none focus-visible:ring-2 ${
+                  isDark ? "text-[#C8A762] hover:bg-[#C8A762]/10 focus-visible:ring-[#C8A762]" : "text-[#0B3D2E] hover:bg-[#0B3D2E]/5 focus-visible:ring-[#0B3D2E]"
+                }`}
+              >
+                {part.text}
+              </button>
+            );
+          }
+          const c = bySid.get(part.sid);
           if (!c) return null;
           return (
             <button
@@ -248,6 +400,7 @@ export function CitedText({ text, cites, isDark, className = "" }: { text: strin
         })}
       </p>
       {sheet}
+      {mentionNode}
     </>
   );
 }
