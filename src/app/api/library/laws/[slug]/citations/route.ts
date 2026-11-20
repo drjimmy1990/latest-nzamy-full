@@ -14,7 +14,7 @@ import {
   docNameCandidates,
   mergeSectionRefs,
   pickFoldedTitle,
-  titleLikeOrFilter,
+  titleLikePatterns,
   parseNumbers,
   refIds,
   shapeArticleRefs,
@@ -189,9 +189,9 @@ export async function GET(
       // candidate (exact length; the letters that vary are one-character
       // wildcards), narrowed by folded equality, the longest title winning.
       if (!law) {
-        const filter = titleLikeOrFilter(candidates);
-        if (filter) {
-          const folded = await supabase.schema('library').from('laws').select(LAW_COLUMNS).or(filter).limit(50);
+        const patterns = titleLikePatterns(candidates);
+        if (patterns.length > 0) {
+          const folded = await supabase.schema('library').from('laws').select(LAW_COLUMNS).likeAnyOf('title', patterns).limit(50);
           if (folded.error) throw folded.error;
           law = pickFoldedTitle((folded.data ?? []) as LawRow[], candidates);
         }

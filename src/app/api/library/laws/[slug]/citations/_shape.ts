@@ -154,13 +154,13 @@ export function titleLikePattern(name: string): string | null {
 }
 
 /**
- * The PostgREST `or` filter over every candidate's pattern, values quoted
- * (they hold spaces); null when no candidate gives one. A pattern holds only
- * letters, digits, spaces and `_`, so no quote or comma reaches the filter.
+ * Every candidate's pattern for one `likeAnyOf('title', …)` read, each in
+ * double quotes (they hold spaces; PostgREST strips the quotes). A pattern
+ * holds only letters, digits, spaces and `_`, so no quote or comma reaches
+ * the filter. [] when no candidate gives one.
  */
-export function titleLikeOrFilter(candidates: readonly string[]): string | null {
-  const patterns = Array.from(new Set(candidates.map(titleLikePattern).filter((p): p is string => !!p)));
-  return patterns.length > 0 ? patterns.map((p) => `title.like."${p}"`).join(",") : null;
+export function titleLikePatterns(candidates: readonly string[]): string[] {
+  return Array.from(new Set(candidates.map(titleLikePattern).filter((p): p is string => !!p))).map((p) => `"${p}"`);
 }
 
 /** Of the rows read with titleLikePattern, the longest title equal (folded) to a candidate; null when none. */
