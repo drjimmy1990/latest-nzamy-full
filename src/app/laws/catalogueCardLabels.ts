@@ -48,9 +48,11 @@ export function mergedFileName(baseTitle: unknown, subsidiaryNames: readonly unk
 /**
  * The subsidiary names, trimmed, blank and duplicate ones skipped, each without
  * a trailing repeat of the base title («… لنظام المرافعات الشرعية» under that
- * law → «…»). Shared by mergedFileName and mergedIncludesLine.
+ * law → «…»). Shared by mergedFileName and mergedIncludesLine, and (batch l10)
+ * by the server's dedupe of linked children against the merged names
+ * (src/app/api/library/laws/[slug]/_children.ts), so both compare one form.
  */
-function subsidiaryNamesUnderBase(base: string, subsidiaryNames: readonly unknown[]): string[] {
+export function subsidiaryNamesUnderBase(base: string, subsidiaryNames: readonly unknown[]): string[] {
   const seen = new Set<string>();
   const subs: string[] = [];
   for (const raw of Array.isArray(subsidiaryNames) ? subsidiaryNames : []) {
@@ -89,9 +91,22 @@ export function mergedIncludesLine(baseTitle: unknown, subsidiaryNames: readonly
  * of mergedIncludesLine. "" when every name is already on the card. Arabic
  * number agreement: 1 «تشريع فرعي», 2 «تشريعان فرعيان», 3–10 «تشريعات
  * فرعية», 11+ «تشريعًا فرعيًا».
+ *
+ * Batch l10 (library agent §1.8): §7's sub-legislation is «لائحة تنفيذية،
+ * قرارات وزارية…» — the regulations merged into the file AND the documents
+ * that name it in their `parent_law_id`. `linkedChildren` is the latter,
+ * already without the ones whose title is one of the merged names
+ * (/api/library/init's `sub_legislation_count`), so nothing counts twice.
  */
-export function mergedMoreLabel(baseTitle: unknown, subsidiaryNames: readonly unknown[] = []): string {
-  const more = subsidiaryNamesUnderBase(text(baseTitle), subsidiaryNames).length - MERGED_INCLUDES_MAX;
+export function mergedMoreLabel(baseTitle: unknown, subsidiaryNames: readonly unknown[] = [], linkedChildren: unknown = 0): string {
+  const merged = Math.max(0, subsidiaryNamesUnderBase(text(baseTitle), subsidiaryNames).length - MERGED_INCLUDES_MAX);
+  const linked = typeof linkedChildren === "number" && Number.isInteger(linkedChildren) && linkedChildren > 0 ? linkedChildren : 0;
+  return subLegislationCountLabel(merged + linked);
+}
+
+/** «+N تشريعات فرعية» with Arabic number agreement; "" for 0 or anything that is not a positive whole number. */
+export function subLegislationCountLabel(count: unknown): string {
+  const more = typeof count === "number" && Number.isInteger(count) ? count : 0;
   if (more <= 0) return "";
   const noun = more === 1 ? "تشريع فرعي" : more === 2 ? "تشريعان فرعيان" : more <= 10 ? "تشريعات فرعية" : "تشريعًا فرعيًا";
   return `+${more} ${noun}`;

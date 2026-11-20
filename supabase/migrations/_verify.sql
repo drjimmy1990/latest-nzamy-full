@@ -7816,3 +7816,11 @@ select 'v_laws_enactment_status (re-created by 20261130_10 if it read issuing_in
        and not has_any_column_privilege('authenticated', 'library.v_laws_enactment_status', 'SELECT')
        end as ok;
 -- <<< verify:l10_caps
+-- >>> verify:l10_children
+-- Batch l10-children (library agent 19 Nov §1.8: sub-legislation by parent_law_id): run 20261130_20 any time (before or after the deploy).
+select 'Sub-legislation lookups: plain btree laws_parent_law_id_lookup_idx on library.laws (parent_law_id) (run 20261130_20)' as check,
+       coalesce((select i.indrelid = 'library.laws'::regclass and i.indpred is null and i.indexprs is null
+                        and i.indnatts = 1 and i.indisvalid
+                   from pg_catalog.pg_index i
+                  where i.indexrelid = to_regclass('library.laws_parent_law_id_lookup_idx')), false) as ok;
+-- <<< verify:l10_children

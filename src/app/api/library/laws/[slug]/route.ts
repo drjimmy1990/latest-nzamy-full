@@ -21,6 +21,7 @@ import { liftRegulationHeading, regulationRefForViewer } from './_regulation-hea
 import { isPreambleEmpty } from '@/app/laws/[slug]/_preamble';
 import { buildRegulationIndex, compareRegulationSortKey, type RegulationIndexRow } from './_regulation-index';
 import { LAW_REVIEWED_SUMMARY_COLUMNS, reviewedSummaryFor } from './_reviewed-summary';
+import { LAW_CHILDREN_MAX, lawChildKey, lawChildrenForViewer } from './_children';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
 /**
@@ -48,7 +49,7 @@ type PgErrorParts = { code?: string; details?: string };
  * description too (`latestUpdate`, latestUpdateDetail).
  */
 const LAW_DETAIL_COLUMNS =
-  'slug, title, title_en, type, status, description, preamble, parent_law_id, parent_law, enabling_article, issuing_instrument, issue_date_hijri, boe_source_url, official_source_url, gazette_issue_number, gazette_publication_date, gazette_url, latest_update, has_merged_regulation';
+  'slug, title, title_en, type, status, description, preamble, parent_law_id, parent_law, enabling_article, issuing_instrument, issue_date_hijri, boe_source_url, official_source_url, gazette_issue_number, gazette_publication_date, gazette_url, latest_update, has_merged_regulation, instrument_id';
 
 /**
  * GET /api/library/laws/[slug]
@@ -155,6 +156,35 @@ export async function GET(
         );
       }
     }
+
+    // Library agent §1.8 (l10): this law's sub-legislation — the rows whose
+    // parent_law_id names THIS law's instrument_id, the key the parser stores
+    // for instrument_id || id (_children.ts; no slug fallback). Titles, types
+    // and status are public like the catalogue; issue_date_hijri is locked
+    // (T28-22), so the read is the service role's and the date leaves only for
+    // a subscriber (lawChildrenForViewer at the response build). Supplementary:
+    // a failed read is logged and sends no list, never a 500. Started here and
+    // awaited at the response build, like replacedByLookup.
+    const childKey = lawChildKey(law.instrument_id);
+    const childrenLookup = (async (): Promise<unknown[]> => {
+      if (!childKey) return [];
+      const { data, error } = await serverOnly
+        .schema('library')
+        .from('laws')
+        .select('slug,title,type,status,issue_date_hijri,parent_law_id')
+        .eq('parent_law_id', childKey)
+        .neq('slug', law.slug)
+        .order('slug', { ascending: true })
+        .limit(LAW_CHILDREN_MAX);
+      if (error) {
+        console.warn('[Laws API] children lookup failed:', error.message);
+        return [];
+      }
+      return (data as unknown[] | null) ?? [];
+    })().catch((e) => {
+      console.warn('[Laws API] children lookup threw:', e);
+      return [] as unknown[];
+    });
 
     // Fetch chapters.
     //
@@ -461,6 +491,16 @@ export async function GET(
       parentLawLink: parentLawLink
         ? { slug: parentLawLink.slug, title: parentLawLink.title }
         : null,
+      // Library agent §1.8 (l10): {count, children} — the executive regulation
+      // first, then the newest; dates for a subscriber only (_children.ts).
+      // File 16 §7: a linked child that is one of the merged regulations (by
+      // name, raw or cleaned) is left out — the reader lists those already.
+      subLegislation: lawChildrenForViewer(
+        await childrenLookup,
+        law,
+        !officialMeta.officialMetaLocked,
+        regulationIndexRows.flatMap((r) => [r.ref, regulationRefForViewer(r.ref, true)]),
+      ),
       // T28-22: the preamble opens with the law's info card («أداة إصدار
       // التشريع | مرسوم ملكي رقم (م/51) وتاريخ …», «المصدر الرسمي») and then
       // the decree itself — measured on 5,477 laws, 2026-09-28. Sending it to

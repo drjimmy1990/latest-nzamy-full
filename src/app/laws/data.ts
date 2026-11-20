@@ -204,6 +204,15 @@ export interface LawSystem {
   enablingArticle?: string;
   /** Present only when the API resolved one safe, unambiguous parent row. */
   parentLawLink?: { slug: string; title: string } | null;
+  /**
+   * Library agent §1.8 (batch l10): the documents whose `parent_law_id` names
+   * this one, in the owner's order (executive regulation first, then the
+   * newest); `issueDate` for a subscriber only. Absent from an older API.
+   */
+  subLegislation?: {
+    count: number;
+    children: Array<{ slug: string; title: string; type: string; status: LawStatus; issueDate?: string }>;
+  } | null;
 
   /**
    * The document's kind exactly as the source states it, straight from

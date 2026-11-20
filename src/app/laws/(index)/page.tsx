@@ -963,6 +963,9 @@ export default function LegalLibraryPage() {
         mergedNames: Array.isArray(law.merged_regulation_names)
           ? law.merged_regulation_names.filter((n: unknown): n is string => typeof n === "string" && n.trim() !== "")
           : [],
+        // Library agent §1.8 (l10): documents whose parent_law_id names this law
+        // (/api/library/init; absent at 0). This mapping is a whitelist.
+        subLegislationCount: typeof law.sub_legislation_count === "number" ? law.sub_legislation_count : 0,
         sub_types: law.has_merged_regulation ? ["لائحة تنفيذية"] : [],
         // The row's own type: only 593 of 5,901 are «نظام» (LIB-03).
         doc_type: law.type || "",
