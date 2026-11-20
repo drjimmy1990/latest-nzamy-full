@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import ThemeProvider from "@/components/ThemeProvider";
 import FloatingButtons from "@/components/FloatingButtons";
+import SiteAssistantWidget from "@/components/chatbot/SiteAssistantWidget";
 import AnalyticsConsent from "@/components/analytics/AnalyticsConsent";
 import LibraryChallengeHost from "@/components/library/LibraryChallengeHost";
 import { densityInitSnippet } from "@/lib/density";
@@ -154,6 +155,8 @@ export default function RootLayout({
         <ThemeProvider>
           <main id="main-content">{children}</main>
           <FloatingButtons />
+          {/* O20 / A21 (l11-misc): «مساعد نظامي» — behind the site_assistant switch; draws nothing until GET /api/v1/chatbot says on. */}
+          <SiteAssistantWidget />
           {/* Visitor analytics: nothing without the env ids and the visitor's consent (src/lib/analytics/analytics.ts). */}
           <AnalyticsConsent />
           {/* Owner item 2 (l8): the library's human check — wraps library API fetches only. */}
