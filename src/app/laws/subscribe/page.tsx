@@ -25,6 +25,39 @@ import { VAT_NOTICE } from "@/lib/pricing/vatNotice";
 import { bookPriceText } from "@/lib/pricing/priceBook";
 import { libraryPlanPointsLine } from "@/lib/points/pointsSettings";
 
+// ─── Plan features (N05-L10, batch l11) ─────────────────────────────────────
+// The free card says what a visitor is actually served; the paid cards share
+// one list, because every paid plan opens the same library for its own length.
+
+const FREE_PLAN_FEATURES = {
+  ar: [
+    "فهرس المكتبة كاملاً: عناوين الأنظمة واللوائح والأحكام وموجزاتها",
+    "معاينة مجانية لأول ٣ إلى ٥ مواد من كل نظام أو لائحة",
+    "حكمان كاملان من كل مجموعة أحكام، والباقي عناوين",
+    "نصوص بقية المواد والمبادئ والفقه للمشتركين",
+  ],
+  en: [
+    "The whole catalogue: titles and summaries of laws, regulations and rulings",
+    "A free preview of the first 3 to 5 articles of every law or regulation",
+    "Two full rulings in every collection; the rest by title",
+    "The other articles, principles and fiqh are for subscribers",
+  ],
+} as const;
+
+const PAID_PLAN_FEATURES = {
+  ar: [
+    "نصوص الأنظمة واللوائح والأحكام والمبادئ القضائية والفقه كاملة",
+    "الإصدارات السابقة للمواد المعدّلة مع إظهار الفروق",
+    // Register 14 item 48 (the 50-point browse rule, pointsGate.ts).
+    "مفتوحة طوال مدة الاشتراك بشرط ألا ينزل رصيدك عن 50 نقطة",
+  ],
+  en: [
+    "Full texts of laws, regulations, rulings, principles and fiqh",
+    "Previous versions of amended articles, with the changes shown",
+    "Open for the whole plan as long as your balance stays at 50 points or more",
+  ],
+} as const;
+
 // ─── Bilingual ──────────────────────────────────────────────────────────────
 
 const txt = {
@@ -41,14 +74,11 @@ const txt = {
     // While the Moyasar gateway is on (gatewayAllowsCheckout) a plan is paid
     // online and activated by the payment, not by a review (Task 7 ruling).
     plansSubPaid: "اختر الخطة المناسبة — يُفعَّل الاشتراك فور إتمام الدفع الإلكتروني.",
-    monthly: "شهري",
-    // No «(وفّر ١٦٪)»: every plan below has price === priceYearly, so the
-    // toggle saves nothing.
-    yearly: "سنوي",
+    // N05-L10 (batch l11): no «شهري / سنوي» toggle. Every plan is a one-off
+    // payment for a fixed period (price book: 1,990 / 3,790 / 6,990), so a
+    // toggle had nothing to change.
     subscribe: "اشترك الآن",
     exploreFree: "تصفح المجاني",
-    perMonth: "/شهر",
-    perYear: "/سنة",
     // Owner ٢٥٨: every price is VAT-exclusive, the library included — one sentence.
     vatNote: VAT_NOTICE.exclusive.ar,
     plans: [
@@ -56,16 +86,15 @@ const txt = {
         id: "free",
         name: "مجاني",
         price: "0 ر.س",
-        priceYearly: "0 ر.س",
-        desc: "تصفح محدود للأنظمة الأساسية",
+        desc: "ما يتاح لكل زائر دون اشتراك",
         icon: BookOpen,
         color: "from-zinc-600 to-zinc-500",
-        features: [
-          "تصفح عناوين الأنظمة فقط",
-          "بحث محدود — 5 عمليات/يوم",
-          "بدون نصوص كاملة",
-          "بدون سوابق قضائية",
-        ],
+        // N05-L10: what the code serves a non-subscriber today — the catalogue
+        // and its summaries, the free preview of every document (owner ١٨٤:
+        // previewLimit.ts, 3 to 5 articles), and 2 full rulings per collection
+        // (register 14 item 13: public_full_rulings_per_collection). No search
+        // quota exists: the old «5 عمليات/يوم» promised one.
+        features: [...FREE_PLAN_FEATURES.ar],
         cta: "ابدأ مجاناً",
         featured: false,
       },
@@ -73,16 +102,17 @@ const txt = {
         id: "lib-q1",
         name: "ربع سنوي (٣ أشهر)",
         price: `${bookPriceText("lib-q1", "once", "ar")} ر.س / ٣ أشهر`,
-        priceYearly: `${bookPriceText("lib-q1", "once", "ar")} ر.س / ٣ أشهر`,
-        desc: "وصول كامل للمكتبة والبحث بالنص الكامل",
+        desc: "المكتبة كاملة لمدة ثلاثة أشهر",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
+        // N05-L10: the three plans open the same library (one grant, its own
+        // length); they differ in length and points only. No plan-only
+        // feature is listed: the old lists sold the rulings from the half-year
+        // plan up and a «(diff)» / PDF export on the annual plan only.
         features: [
           // l9 (file 15 row 13): the points the plan includes
           libraryPlanPointsLine("lib-q1", "ar"),
-          "نصوص الأنظمة واللوائح كاملة",
-          "بحث غير محدود بالنص الكامل",
-          "دعم البريد الإلكتروني",
+          ...PAID_PLAN_FEATURES.ar,
         ],
         cta: "اشترك الآن",
         featured: false,
@@ -91,17 +121,13 @@ const txt = {
         id: "lib-q2",
         name: "نصف سنوي (٦ أشهر)",
         price: `${bookPriceText("lib-q2", "once", "ar")} ر.س / ٦ أشهر`,
-        priceYearly: `${bookPriceText("lib-q2", "once", "ar")} ر.س / ٦ أشهر`,
-        desc: "يضيف السوابق والمبادئ القضائية والبحث بالمواد والبنود",
+        desc: "المكتبة كاملة لمدة ستة أشهر",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
           // l9 (file 15 row 13): the points the plan includes
           libraryPlanPointsLine("lib-q2", "ar"),
-          "كل مزايا الربع سنوي",
-          "السوابق والمبادئ القضائية",
-          "بحث بالمواد والبنود",
-          "دعم عبر واتساب",
+          ...PAID_PLAN_FEATURES.ar,
         ],
         cta: "اشترك الآن",
         featured: true,
@@ -110,16 +136,13 @@ const txt = {
         id: "lib-annual",
         name: "سنوي (١٢ شهر)",
         price: `${bookPriceText("lib-annual", "once", "ar")} ر.س / سنة`,
-        priceYearly: `${bookPriceText("lib-annual", "once", "ar")} ر.س / سنة`,
-        desc: "اشتراك لمدة ١٢ شهراً للاستخدام المستمر",
+        desc: "المكتبة كاملة لمدة سنة",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [
           // l9 (file 15 row 13): the points the plan includes
           libraryPlanPointsLine("lib-annual", "ar"),
-          "كل مزايا النصف سنوي",
-          "مقارنة التعديلات (diff)",
-          "تصدير نصوص الأنظمة بصيغة PDF",
+          ...PAID_PLAN_FEATURES.ar,
         ],
         cta: "اشترك الآن",
         featured: false,
@@ -132,7 +155,7 @@ const txt = {
         a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود (٣٠ يوماً ما لم يُحدَّد غير ذلك) فور تفعيله، دون انتظار.",
         aPaid: "بعد الدفع الإلكتروني يُفعَّل الاشتراك تلقائياً؛ وما زال بإمكانك تقديم طلب يراجعه الفريق. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود (٣٠ يوماً ما لم يُحدَّد غير ذلك) فور تفعيله، دون انتظار.",
       },
-      { q: "ما الفرق بين البحث المحدود والبحث الكامل؟", a: "البحث المحدود يسمح بـ 5 عمليات يومية في عناوين الأنظمة فقط. البحث الكامل يتيح بحثاً غير محدود في النصوص الكاملة." },
+      { q: "ماذا أستطيع أن أقرأ دون اشتراك؟", a: "فهرس المكتبة كاملاً بعناوينه وموجزاته، ومعاينة لأول ٣ إلى ٥ مواد من كل نظام أو لائحة، وحكمين كاملين من كل مجموعة أحكام. ويفتح الاشتراك نصوص المكتبة كلها." },
       { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً." },
       { q: "هل المكتبة تشمل الأنظمة الملغاة؟", a: "نعم. نحتفظ بجميع الأنظمة بما فيها الملغاة والمعدلة مع إشارة واضحة لحالة كل نظام وتاريخ التعديل." },
     ],
@@ -145,28 +168,18 @@ const txt = {
     plansTitle: "Choose Your Plan",
     plansSub: "Choose the plan that fits — your request is reviewed and activated once approved.",
     plansSubPaid: "Choose the plan that fits — your subscription is activated as soon as the online payment completes.",
-    monthly: "Monthly",
-    yearly: "Yearly",
     subscribe: "Subscribe Now",
     exploreFree: "Browse Free",
-    perMonth: "/mo",
-    perYear: "/yr",
     vatNote: VAT_NOTICE.exclusive.en,
     plans: [
       {
         id: "free",
         name: "Free",
         price: "0 SAR",
-        priceYearly: "0 SAR",
-        desc: "Limited browsing of core laws",
+        desc: "What every visitor gets without a plan",
         icon: BookOpen,
         color: "from-zinc-600 to-zinc-500",
-        features: [
-          "Browse law titles only",
-          "Limited search — 5/day",
-          "No full texts",
-          "No judicial precedents",
-        ],
+        features: [...FREE_PLAN_FEATURES.en],
         cta: "Start Free",
         featured: false,
       },
@@ -174,16 +187,13 @@ const txt = {
         id: "lib-q1",
         name: "Quarterly (3 Months)",
         price: `SAR ${bookPriceText("lib-q1", "once", "en")} / 3 Months`,
-        priceYearly: `SAR ${bookPriceText("lib-q1", "once", "en")} / 3 Months`,
-        desc: "Full library access with full-text search",
+        desc: "The full library for three months",
         icon: MagnifyingGlass,
         color: "from-[#0B3D2E] to-emerald-600",
         features: [
           // l9 (file 15 row 13): the points the plan includes
           libraryPlanPointsLine("lib-q1", "en"),
-          "Full law & regulation texts",
-          "Unlimited full-text search",
-          "Email support",
+          ...PAID_PLAN_FEATURES.en,
         ],
         cta: "Subscribe Now",
         featured: false,
@@ -192,17 +202,13 @@ const txt = {
         id: "lib-q2",
         name: "Semi-Annual (6 Months)",
         price: `SAR ${bookPriceText("lib-q2", "once", "en")} / 6 Months`,
-        priceYearly: `SAR ${bookPriceText("lib-q2", "once", "en")} / 6 Months`,
-        desc: "Adds judicial precedents, principles and article-level search",
+        desc: "The full library for six months",
         icon: Scales,
         color: "from-[#C8A762] to-amber-600",
         features: [
           // l9 (file 15 row 13): the points the plan includes
           libraryPlanPointsLine("lib-q2", "en"),
-          "All Quarterly features",
-          "Judicial precedents & principles",
-          "Article & clause level search",
-          "WhatsApp support",
+          ...PAID_PLAN_FEATURES.en,
         ],
         cta: "Subscribe Now",
         featured: true,
@@ -211,16 +217,13 @@ const txt = {
         id: "lib-annual",
         name: "Annual (12 Months)",
         price: `SAR ${bookPriceText("lib-annual", "once", "en")} / Year`,
-        priceYearly: `SAR ${bookPriceText("lib-annual", "once", "en")} / Year`,
-        desc: "A 12-month subscription for ongoing use",
+        desc: "The full library for a year",
         icon: Buildings,
         color: "from-purple-700 to-purple-500",
         features: [
           // l9 (file 15 row 13): the points the plan includes
           libraryPlanPointsLine("lib-annual", "en"),
-          "All Semi-Annual features",
-          "Amendment diff comparison",
-          "Export laws to PDF",
+          ...PAID_PLAN_FEATURES.en,
         ],
         cta: "Subscribe Now",
         featured: false,
@@ -233,7 +236,7 @@ const txt = {
         a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for the length the code grants (30 days unless it says otherwise) as soon as you redeem it — no waiting.",
         aPaid: "After online payment the subscription is activated automatically; you can still send a request for the team to review. If you have an invitation code, it opens the full legal library for the length the code grants (30 days unless it says otherwise) as soon as you redeem it — no waiting.",
       },
-      { q: "What's the difference between limited and full search?", a: "Limited search allows 5 daily queries on titles only. Full search is unlimited across the full texts." },
+      { q: "What can I read without a plan?", a: "The whole catalogue with its titles and summaries, a preview of the first 3 to 5 articles of every law or regulation, and two full rulings in every collection. A plan opens every text in the library." },
       { q: "Can I upgrade or downgrade anytime?", a: "You can request an upgrade or a change at any time; the team reviews the request and activates it manually." },
       { q: "Does the library include repealed laws?", a: "Yes. We maintain all laws including repealed and amended ones with clear status indicators and modification dates." },
     ],
@@ -261,7 +264,6 @@ export default function LawsSubscribePage() {
   const isAr = lang === "ar";
   const t = isAr ? txt.ar : txt.en;
   const Arrow = isAr ? ArrowLeft : ArrowRight;
-  const [yearly, setYearly] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -407,26 +409,11 @@ export default function LawsSubscribePage() {
           </div>
         </motion.section>
 
-        {/* ── Toggle ──────────────────────────────────────────────────── */}
+        {/* ── Plans heading (N05-L10: no «شهري / سنوي» toggle; each plan is
+            one payment for its own period) ─────────────────────────────── */}
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={5} className="text-center space-y-3">
           <h2 className={`text-2xl font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>{t.plansTitle}</h2>
           <p className={`text-sm ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>{payOnline ? t.plansSubPaid : t.plansSub}</p>
-
-          <div className={`inline-flex items-center gap-1 p-1 rounded-xl ${isDark ? "bg-zinc-800" : "bg-zinc-100"}`}>
-            {[false, true].map(isY => (
-              <button
-                key={String(isY)}
-                onClick={() => setYearly(isY)}
-                className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-all ${
-                  yearly === isY
-                    ? isDark ? "bg-[#0B3D2E] text-[#C8A762] shadow-sm" : "bg-white text-[#0B3D2E] shadow-sm"
-                    : isDark ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-700"
-                }`}
-              >
-                {isY ? t.yearly : t.monthly}
-              </button>
-            ))}
-          </div>
         </motion.div>
 
         {/* ── The current library subscription (owner note ١٨ C05) ─────
@@ -493,13 +480,8 @@ export default function LawsSubscribePage() {
 
                 <div className="flex items-baseline gap-1.5 mb-5 flex-wrap">
                   <span className={`text-2xl font-bold font-mono ${isDark ? "text-white" : "text-zinc-900"}`}>
-                    {yearly ? plan.priceYearly : plan.price}
+                    {plan.price}
                   </span>
-                  {!(yearly ? plan.priceYearly : plan.price).includes("/") && (
-                    <span className="text-[11px] text-zinc-400">
-                      {yearly ? t.perYear : t.perMonth}
-                    </span>
-                  )}
                 </div>
 
                 <div className="space-y-2.5 mb-6">
