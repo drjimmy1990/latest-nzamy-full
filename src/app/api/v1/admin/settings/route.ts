@@ -86,17 +86,17 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
   // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
   "library_min_points_to_browse",
+  // Batch l11-misc (O22, 20261201_60; src/lib/featureFlags/featureFlags.ts):
+  // {"<flag>": boolean} for the closed list FEATURE_FLAGS (today
+  // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
+  // one minute; the page posts the whole object.
+  "feature_flags",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
   // the footer, the Organization JSON-LD and /llms.txt.
   "license_number",
   "license_issuer",
-  // Batch l11-misc (O22, 20261201_60; src/lib/featureFlags/featureFlags.ts):
-  // {"<flag>": boolean} for the closed list FEATURE_FLAGS (today
-  // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
-  // one minute; the page posts the whole object.
-  "feature_flags",
 ] as const;
 
 /**
