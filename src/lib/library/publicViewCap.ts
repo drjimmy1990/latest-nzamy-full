@@ -41,7 +41,7 @@
  *
  * Pure: relative imports only, so `node --test` loads it.
  */
-import { isPlainEmail } from "../email/sendEmail.ts";
+import { isPlainEmail } from "../email/emailAddress.ts";
 import { VERIFIED_CRAWLERS, VISITOR_AGENTS } from "./crawlerList.ts";
 
 export interface CrawlerLimit {

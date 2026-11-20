@@ -137,7 +137,8 @@ test("libraryToolRefusal: the plans link only where a Pro plan is on sale; the c
     const tier = libraryToolRefusal("library_tier", "سؤال قانوني سريع", userType);
     assert.ok(tier, userType);
     assert.match(tier.text, /«سؤال قانوني سريع»/);
-    assert.match(tier.text, /Pro أو أعلى/);
+    assert.match(tier.text, /الباقة الاحترافية أو أعلى/);
+    assert.doesNotMatch(tier.text, /Pro/);
     assert.match(tier.text, /اشتراك المكتبة القانونية وحده لا يفتح أدوات الذكاء/);
     assert.match(tier.text, /لم تُخصم نقاطك/);
     assert.deepEqual(tier.action, { label: "عرض الباقات", href: LIBRARY_TOOL_PLANS_HREF });
