@@ -421,7 +421,7 @@ export function ObligationFormModal({ contractId, isDark, onClose, initial, onSa
         )}
 
         <div>
-          <label className={labelCls}>ملاحظات</label>
+          <label className={labelCls}>ملاحظات داخلية (لا يراها العميل)</label>
           <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className={`${inputCls} resize-none`} />
         </div>
 
@@ -556,7 +556,7 @@ export function PaymentFormModal({ contractId, isDark, onClose, initial, onSaved
         )}
 
         <div>
-          <label className={labelCls}>ملاحظات</label>
+          <label className={labelCls}>ملاحظات داخلية (لا يراها العميل)</label>
           <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className={`${inputCls} resize-none`} />
         </div>
 

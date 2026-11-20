@@ -152,7 +152,7 @@ export default function UploadVersionModal({ contractId, isDark, onClose, onUplo
           </div>
 
           <div>
-            <label className={labelCls}>ملاحظات</label>
+            <label className={labelCls}>ملاحظات داخلية (لا يراها العميل)</label>
             <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} disabled={uploading} className={`${inputCls} resize-none`} />
           </div>
 

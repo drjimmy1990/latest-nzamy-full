@@ -507,7 +507,7 @@ export default function ContractFormModal({ isDark, onClose, initial, onSaved }:
           </div>
 
           <div>
-            <label className={labelCls}>ملاحظات</label>
+            <label className={labelCls}>ملاحظات داخلية (لا يراها العميل)</label>
             <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} className={`${inputCls} resize-none`} />
           </div>
 
