@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { checkLibraryAccess, hasFullLibraryAccess } from '@/lib/access-control';
+import { checkLibraryAccess, hasFullLibraryAccess, libraryAccessMemo } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
+import { spendPublicView } from '@/lib/library/publicViewCapServer';
 import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
@@ -80,9 +81,11 @@ export async function GET(
     // by its own index below. (Probing at index 0 and treating access.allowed as
     // a document-level gate unlocked the whole decree for guests — the bug.)
     // The subscriber flag (the preamble, owner ٢٢١) is read alongside it.
+    // O26 (batch l11): one memo shared by the two calls.
+    const accessMemo = libraryAccessMemo(userId);
     const [probe, isSubscriber] = await Promise.all([
-      checkLibraryAccess(userId, id, 0, "decrees"),
-      hasFullLibraryAccess(userId),
+      checkLibraryAccess(userId, id, 0, "decrees", { memo: accessMemo }),
+      hasFullLibraryAccess(userId, accessMemo),
     ]);
     const isWhitelisted = probe.isWhitelisted;
     const hasFullAccess = probe.freeLimit === -1 || isWhitelisted;
@@ -95,6 +98,11 @@ export async function GET(
     // none of the account's quota and cannot open its lock.
     const quotaRefusal = await spendLibraryDocument(_request, userId, isSubscriber);
     if (quotaRefusal) return quotaRefusal;
+    // Batch l11 (O18 / A16): the non-subscriber daily view cap — switched
+    // off until the owner approves (publicViewCapServer.ts; a subscriber is
+    // never counted here).
+    const viewRefusal = await spendPublicView(_request, { userId, hasFullLibrary: isSubscriber });
+    if (viewRefusal) return viewRefusal;
 
     // Fetch pages and the preamble — service role: both are server-only
     // (20261018_02, 20261019_40). An error is a 500, never a decree that

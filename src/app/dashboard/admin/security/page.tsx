@@ -2,11 +2,12 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { ShieldCheck, Warning, LockSimple, Users, Bug, BookOpenText, Hourglass, Devices } from "@phosphor-icons/react";
+import { ShieldCheck, Warning, LockSimple, Users, Bug, BookOpenText, Hourglass, Devices, ShieldWarning } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import LibraryLocksPanel from "./LibraryLocksPanel";
 import LibraryActivityPanel from "./LibraryActivityPanel";
 import LibraryDevicesPanel from "./LibraryDevicesPanel";
+import LibraryProtectionPanel from "./LibraryProtectionPanel";
 import TwoFactorPanel from "./TwoFactorPanel";
 
 // "library_activity" (20261031_10) and "library_locks" (owner note ١٣ C09,
@@ -16,8 +17,10 @@ import TwoFactorPanel from "./TwoFactorPanel";
 // removed the invented accounts, IPs, percentages and the KPI row that used
 // to fill them, as promised in the Wave 1 owner report.
 // "library_devices" — owner ٤٢٧, the device limit (20261108_20).
-type SecTab = "library_activity"|"library_locks"|"library_devices"|"two_factor"|"overview"|"duplicates"|"scraping"|"threats";
-const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","library_devices","two_factor","overview","duplicates","scraping","threats"];
+// "library_protection" — batch l11 (20261201_30): the non-subscriber view
+// cap, the verified crawlers, the sequential / parallel reading alerts.
+type SecTab = "library_activity"|"library_locks"|"library_devices"|"library_protection"|"two_factor"|"overview"|"duplicates"|"scraping"|"threats";
+const SEC_TABS: readonly SecTab[] = ["library_activity","library_locks","library_devices","library_protection","two_factor","overview","duplicates","scraping","threats"];
 
 export default function SecurityPage() {
   const { isDark } = useTheme();
@@ -37,6 +40,7 @@ export default function SecurityPage() {
     { id:"library_activity", label:"نشاط المكتبة", icon:BookOpenText },
     { id:"library_locks", label:"قفل المكتبة", icon:LockSimple },
     { id:"library_devices", label:"أجهزة المكتبة", icon:Devices },
+    { id:"library_protection", label:"حماية المكتبة من السحب", icon:ShieldWarning },
     // Owner item 18 (batch l7): the staff member's own two-step state.
     { id:"two_factor", label:"التحقق بخطوتين", icon:ShieldCheck },
     { id:"overview", label:"نظرة عامة", icon:ShieldCheck, soon:true },
@@ -74,6 +78,7 @@ export default function SecurityPage() {
       {tab==="library_activity" && <LibraryActivityPanel isDark={isDark} card={card} />}
       {tab==="library_locks" && <LibraryLocksPanel isDark={isDark} card={card} />}
       {tab==="library_devices" && <LibraryDevicesPanel isDark={isDark} card={card} />}
+      {tab==="library_protection" && <LibraryProtectionPanel isDark={isDark} card={card} />}
       {tab==="two_factor" && <TwoFactorPanel isDark={isDark} card={card} />}
 
       {current?.soon && (

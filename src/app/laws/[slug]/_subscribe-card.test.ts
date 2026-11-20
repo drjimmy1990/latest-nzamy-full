@@ -31,7 +31,7 @@ test("the page holds the entitlement as unknown until this law's response arrive
 });
 
 test("the law API sends the viewer's own entitlement apart from a whitelisted law", () => {
-  assert.match(ROUTE, /hasFullLibraryAccess\(userId\),/);
+  assert.match(ROUTE, /hasFullLibraryAccess\(userId, accessMemo\),/);
   assert.match(ROUTE, /const hasFullAccess = isSubscriber \|\| isWhitelisted;/);
   assert.match(ROUTE, /paywall: \{[\s\S]*?hasFullAccess,[\s\S]*?isSubscriber,[\s\S]*?totalArticles/);
 });

@@ -257,26 +257,51 @@ test("subscribe card: the owner's button, the price, the founder banner, the acc
   assert.match(read("app/layout.tsx"), /<LibraryChallengeHost \/>/);
 });
 
-test("the crawler gets nothing more than a visitor: no library route or reader branches on the User-Agent", () => {
+// Rewritten in batch l11 (O18 / A16), not deleted: the non-subscriber view
+// cap exempts a crawler of the closed list from the COUNT — never from what
+// is served — and only once its address proves it (crawlerVerify.ts). So
+// exactly one file may read the User-Agent for a decision, only the cap may
+// use it, and the exemption needs the address proof.
+test("the crawler gets nothing more than a visitor: only crawlerVerify.ts reads the User-Agent, only the view cap uses it, and only an address proof exempts", () => {
   const roots = ["app/api/library", "app/laws", "app/precedents", "app/book", "lib/library"];
+  // deviceLimitServer.ts reads it only to NAME a subscriber's device («Chrome على Windows»),
+  // never to choose what text is served. crawlerVerify.ts reads it to know WHICH provider's
+  // addresses to check (claimFromHeaders); the claim alone exempts nothing.
+  const allowed = new Set(["lib/library/deviceLimitServer.ts", "lib/library/crawlerVerify.ts"]);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const e of fs.readdirSync(path.join(SRC, dir), { withFileTypes: true })) {
       const rel = path.join(dir, e.name);
       if (e.isDirectory()) walk(rel);
       else if (/\.(ts|tsx)$/.test(e.name) && !/\.test\.ts$/.test(e.name)) {
+        if (allowed.has(rel.split(path.sep).join("/"))) continue;
         const text = read(rel);
-        // A User-Agent read, Next's userAgent(), an isbot() helper or a /googlebot/ test —
-        // never the robots metadata (`googleBot: { index: false }`) or a comment.
-        // deviceLimitServer.ts reads it only to NAME a subscriber's device («Chrome على Windows»),
-        // never to choose what text is served.
-        if (rel.endsWith("deviceLimitServer.ts")) continue;
-        if (/headers\.get\(\s*["']user-agent["']\s*\)|(?<![A-Za-z])userAgent\(|(?<![A-Za-z])isbot\(|\/googlebot\/i?\.test/i.test(text)) offenders.push(rel);
+        // Any "user-agent" header name, Next's userAgent(), an isbot() helper or a /googlebot/ test —
+        // never the robots metadata (`googleBot: { index: false }`).
+        if (/["']user-agent["']|(?<![A-Za-z])userAgent\(|(?<![A-Za-z])isbot\(|\/googlebot\/i?\.test/i.test(text)) offenders.push(rel);
       }
     }
   };
   for (const r of roots) walk(r);
   assert.deepEqual(offenders, []);
+
+  // Who may import the claim / proof: the cap and the proof's own server half only.
+  const importers: string[] = [];
+  const all = (dir: string) => {
+    for (const e of fs.readdirSync(path.join(SRC, dir), { withFileTypes: true })) {
+      const rel = path.join(dir, e.name);
+      if (e.isDirectory()) all(rel);
+      else if (/\.(ts|tsx)$/.test(e.name) && !/\.test\.ts$/.test(e.name)
+               && /from\s+["'][^"']*crawlerVerify(?:\.ts)?["']/.test(read(rel))) importers.push(rel.split(path.sep).join("/"));
+    }
+  };
+  all(".");
+  assert.deepEqual(importers.sort(), ["lib/library/crawlerVerifyServer.ts", "lib/library/publicViewCapServer.ts"]);
+
+  // The exemption is set only from the address proof, never from the claim.
+  const cap = read("lib/library/publicViewCapServer.ts");
+  assert.match(cap, /verified = await isVerifiedCrawler\(claim\.crawler, address\);\s*if \(verified\) verifiedCrawlerId = claim\.crawler\.id;/);
+  assert.equal((cap.match(/verifiedCrawlerId = /g) ?? []).length, 1, "set in one place only, after the proof");
 });
 
 test("no bulk export: no library API route sends a file download, and every list route caps its page", () => {

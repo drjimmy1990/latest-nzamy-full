@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { checkLibraryAccess } from '@/lib/access-control';
+import { checkLibraryAccess, hasFullLibraryAccess, libraryAccessMemo } from '@/lib/access-control';
 import { enforceLibraryDevice } from '@/lib/library/deviceLimitServer';
 import { TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 import { spendLibraryDocument } from '@/lib/library/libraryDocQuota';
+import { spendPublicView } from '@/lib/library/publicViewCapServer';
 import { libraryGate } from '@/lib/library-gate';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type BookSeriesInfo, type VolumeRow } from '@/lib/library/bookVolumes';
@@ -154,7 +155,10 @@ export async function GET(
     // by its own order_index below. (Treating access.allowed as a document-level
     // gate unlocked the whole book for guests — the bug. order_index is
     // pagination- and section-filter-independent, unlike a per-page loop index.)
-    const probe = await checkLibraryAccess(userId, slug, 0, "feqh");
+    // O26 (batch l11): the memo lets the subscriber question below reuse the
+    // probe's reads (a free book answers before the tier is read).
+    const accessMemo = libraryAccessMemo(userId);
+    const probe = await checkLibraryAccess(userId, slug, 0, "feqh", { memo: accessMemo });
     const isWhitelisted = probe.isWhitelisted;
     const freeLimit = probe.freeLimit; // -1 = unlimited (whitelisted or Pro+)
     const hasFullAccess = freeLimit === -1 || isWhitelisted;
@@ -169,6 +173,15 @@ export async function GET(
     // none of the account's quota and cannot open its lock.
     const quotaRefusal = await spendLibraryDocument(request, userId, freeLimit === -1 && !isWhitelisted);
     if (quotaRefusal) return quotaRefusal;
+    // Batch l11 (O18 / A16): the non-subscriber daily view cap — switched
+    // off until the owner approves (publicViewCapServer.ts; a subscriber is
+    // never counted here).
+    // A free book's probe says nothing about the viewer, so ask (memoised).
+    const viewRefusal = await spendPublicView(request, {
+      userId,
+      hasFullLibrary: freeLimit === -1 && !isWhitelisted ? true : await hasFullLibraryAccess(userId, accessMemo),
+    });
+    if (viewRefusal) return viewRefusal;
 
     // The order_index from which blocks are locked. Owner answer ١٨٣: the
     // book's first two printed pages (its leading blocks' page_number, public

@@ -20,25 +20,25 @@ const ROUTES: ReadonlyArray<{ file: string; entitled: RegExp; after: RegExp; bef
   {
     file: "app/api/library/laws/[slug]/route.ts",
     entitled: /enforceLibraryDevice\(userId, isSubscriber\)/,
-    after: /hasFullLibraryAccess\(userId\)/,
+    after: /hasFullLibraryAccess\(userId, accessMemo\)/,
     before: /formatArticleWithPaywall\(a, hasFullAccess/,
   },
   {
     file: "app/api/library/decrees/[id]/route.ts",
     entitled: /enforceLibraryDevice\(userId, isSubscriber\)/,
-    after: /hasFullLibraryAccess\(userId\)/,
+    after: /hasFullLibraryAccess\(userId, accessMemo\)/,
     before: /const response = \{/,
   },
   {
     file: "app/api/library/precedents/[slug]/route.ts",
     entitled: /enforceLibraryDevice\(userId, hasFullAccess\)/,
-    after: /await getLibraryAccessForUser\(userId\)/,
+    after: /await getLibraryAccessForUser\(userId, accessMemo\)/,
     before: /hasAccess: hasFullAccess/,
   },
   {
     file: "app/api/library/books/[slug]/route.ts",
     entitled: /enforceLibraryDevice\(userId, freeLimit === -1 && !isWhitelisted\)/,
-    after: /const probe = await checkLibraryAccess\(userId, slug, 0, "feqh"\)/,
+    after: /const probe = await checkLibraryAccess\(userId, slug, 0, "feqh", \{ memo: accessMemo \}\)/,
     before: /hasAccess: hasFullAccess/,
   },
   {
