@@ -49,6 +49,8 @@ type Reply =
       overview: { accounts: Account[]; rows_by_batch: Record<string, number>; tables: number } | null;
       audit: AuditRow[] | null;
       mail: MailRow[] | null;
+      /** O6 (l11): true when the caller's role may not read the sink (an auditor). */
+      mailHidden?: boolean;
     };
 type DryRun = PurgeResult & {
   batch: string;
@@ -441,7 +443,9 @@ export default function TestBatchesPage() {
             <p className="mb-3 text-[12px] text-zinc-400">
               رسائل لم تُرسل لأنها إلى حساب اختبار أو بسببه أو إلى نطاق اختبار. رموز التحقق لحسابات الاختبار تظهر هنا. آخر ٣٠ رسالة.
             </p>
-            {data.mail === null ? (
+            {data.mailHidden ? (
+              <p className="text-[13px] text-zinc-400">هذا الصندوق يطّلع عليه المشرف الأعلى وحده، لأنه يحوي رموز التحقق لحسابات الاختبار.</p>
+            ) : data.mail === null ? (
               <p className="text-[13px] text-red-300">تعذّرت قراءة الصندوق.</p>
             ) : data.mail.length === 0 ? (
               <p className="text-[13px] text-zinc-400">لا رسائل.</p>
