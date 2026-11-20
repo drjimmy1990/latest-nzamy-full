@@ -39,7 +39,7 @@ test("assistant input: a case id only with «قضية محددة», a UUID, lowe
 test("buildAssistantCase: title, type, status and stage in Arabic, facts capped, document names only", () => {
   const c = buildAssistantCase(
     { title: "مطالبة عمالية", type: "business_case", status: "in_progress", description: "و".repeat(CASE_FACTS_MAX + 50), client_phone: "0500000000" },
-    [{ degree: "first_instance", position: 1 }, { degree: "appeal", outcome: "قيد النظر", position: 2 }],
+    [{ degree: "first_instance", position: 1 }, { degree: "appeal", outcome: "pending", position: 2 }],
     [{ file_name: "عقد العمل.pdf" }, { file_name: "  " }, { name: "إنذار.pdf" }],
   );
   assert.equal(c.title, "مطالبة عمالية");

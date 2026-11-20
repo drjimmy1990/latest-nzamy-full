@@ -2,7 +2,9 @@
  * caseGraphService.ts
  * ─────────────────────────────────────────────────────────
  * Typed client for /api/v1/lawyer/case-graph/[caseId] (Phase 1,
- * public.case_graphs).
+ * public.case_graphs), and — with a `boardId` (T18-P1-32, batch l11) — for a
+ * named board of the same case, /api/v1/lawyer/case-graph/[caseId]/boards/[boardId]
+ * (public.canvas_boards). Same body, same compare-and-set on `updatedAt`.
  *
  * "use client" free deliberately: CaseGraphView's own node/edge types
  * (GraphNode/GraphEdge in ./‌../../app/dashboard/business/kanban/_graph-model)
@@ -43,25 +45,36 @@ const inflight = new Map<string, Promise<void>>();
  */
 const versions = new Map<string, string | null>();
 
+/** The queue / version key and the URL of a case's default board, or of one of its named boards. */
+export function boardKey(caseId: string, boardId?: string | null): string {
+  return boardId ? `${caseId}::${boardId}` : caseId;
+}
+export function boardUrl(caseId: string, boardId?: string | null): string {
+  const base = `/api/v1/lawyer/case-graph/${encodeURIComponent(caseId)}`;
+  return boardId ? `${base}/boards/${encodeURIComponent(boardId)}` : base;
+}
+
 /** `null` = no saved graph for this case yet — a real, common state, not a failure. */
-export async function getCaseGraph(caseId: string): Promise<CaseGraphData | null> {
-  const pending = inflight.get(caseId);
+export async function getCaseGraph(caseId: string, boardId?: string | null): Promise<CaseGraphData | null> {
+  const key = boardKey(caseId, boardId);
+  const pending = inflight.get(key);
   if (pending) await pending.catch(() => undefined);
-  const res = await apiGet<{ data: CaseGraphData | null }>(`/api/v1/lawyer/case-graph/${encodeURIComponent(caseId)}`);
+  const res = await apiGet<{ data: CaseGraphData | null }>(boardUrl(caseId, boardId));
   const data = res?.data ?? null;
-  versions.set(caseId, data ? data.updatedAt : null);
+  versions.set(key, data ? data.updatedAt : null);
   return data;
 }
 
 type GraphBody = { nodes: unknown[]; edges: unknown[]; viewport: Record<string, unknown> };
 
-async function putGraph(caseId: string, body: GraphBody): Promise<void> {
+async function putGraph(caseId: string, body: GraphBody, boardId?: string | null): Promise<void> {
   // Same rule as apiMutate (owner decision ١١٥): demo mode never writes.
   if (isDemoMode) {
     throw new GraphSaveError("وضع العرض التجريبي محلي بالكامل: لا يُرسَل أي حفظ أو تعديل إلى الخادم.", "fatal");
   }
-  const url = `/api/v1/lawyer/case-graph/${encodeURIComponent(caseId)}`;
-  const base = versions.has(caseId) ? versions.get(caseId) : undefined;
+  const key = boardKey(caseId, boardId);
+  const url = boardUrl(caseId, boardId);
+  const base = versions.has(key) ? versions.get(key) : undefined;
   let response: Response;
   try {
     response = await fetch(url, {
@@ -78,7 +91,7 @@ async function putGraph(caseId: string, body: GraphBody): Promise<void> {
   }
   const json = (await response.json().catch(() => null)) as { updatedAt?: string; error?: string } | null;
   if (response.ok) {
-    if (typeof json?.updatedAt === "string") versions.set(caseId, json.updatedAt);
+    if (typeof json?.updatedAt === "string") versions.set(key, json.updatedAt);
     return;
   }
   if (response.status === 409) {
@@ -89,7 +102,7 @@ async function putGraph(caseId: string, body: GraphBody): Promise<void> {
     const saved = current?.data;
     if (saved && canonicalJson({ nodes: saved.nodes, edges: saved.edges, viewport: saved.viewport })
         === canonicalJson(body)) {
-      versions.set(caseId, saved.updatedAt);
+      versions.set(key, saved.updatedAt);
       return;
     }
   }
@@ -106,19 +119,21 @@ async function putGraph(caseId: string, body: GraphBody): Promise<void> {
 export async function saveCaseGraph(
   caseId: string,
   graph: { nodes: unknown[]; edges: unknown[]; viewport?: Record<string, unknown> },
+  boardId?: string | null,
 ): Promise<void> {
-  const previous = inflight.get(caseId) ?? Promise.resolve();
+  const key = boardKey(caseId, boardId);
+  const previous = inflight.get(key) ?? Promise.resolve();
   const run = previous
     .catch(() => undefined)
     .then(() => putGraph(caseId, {
       nodes: graph.nodes,
       edges: graph.edges,
       viewport: graph.viewport ?? {},
-    }));
-  inflight.set(caseId, run);
+    }, boardId));
+  inflight.set(key, run);
   try {
     await run;
   } finally {
-    if (inflight.get(caseId) === run) inflight.delete(caseId);
+    if (inflight.get(key) === run) inflight.delete(key);
   }
 }

@@ -44,6 +44,16 @@ const STATUS_AR: Readonly<Record<string, string>> = {
   cancelled: "ملغاة",
 };
 
+/** case_stages.outcome (the lawyer case file's OUTCOME_CONFIG words). */
+const OUTCOME_AR: Readonly<Record<string, string>> = {
+  pending: "قيد النظر",
+  won: "كسب القضية",
+  lost: "خسارة",
+  partial: "حكم جزئي",
+  settled: "تسوية",
+  withdrawn: "تنازل",
+};
+
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const cap = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}…` : s);
 
@@ -54,7 +64,8 @@ export function buildAssistantCase(
   attachments: ReadonlyArray<Record<string, unknown>>,
 ): AssistantCaseContext {
   const latest = [...stages].sort((a, b) => Number(b.position ?? 0) - Number(a.position ?? 0))[0];
-  const stage = latest && str(latest.degree) ? `الدرجة: ${degreeFromDb(str(latest.degree))}${str(latest.outcome) ? ` — ${str(latest.outcome)}` : ""}` : null;
+  const outcome = latest ? OUTCOME_AR[str(latest.outcome)] : undefined;
+  const stage = latest && str(latest.degree) ? `الدرجة: ${degreeFromDb(str(latest.degree))}${outcome ? ` — ${outcome}` : ""}` : null;
   const documents = attachments
     .map((a) => str(a.file_name) || str(a.name))
     .map((n) => n.trim())

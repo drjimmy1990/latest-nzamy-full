@@ -60,7 +60,7 @@ test("the import drawer is only on the lawyer and firm case files", () => {
   assert.match(view, /const canImport = enableCaseImport && !!caseId;/);
   const lawyer = readFileSync(join(here, "../../lawyer/cases/[id]/page.tsx"), "utf8");
   const firm = readFileSync(join(here, "../../firm/cases/[id]/LegalCanvas.tsx"), "utf8");
-  assert.equal((lawyer.match(/caseId=\{id\} enableCaseImport/g) ?? []).length, 2);
+  assert.equal((lawyer.match(/caseId=\{id\} boardId=\{graphBoard\} enableCaseImport/g) ?? []).length, 2);
   assert.match(firm, /enableCaseImport/);
   const business = readFileSync(join(here, "../cases/[id]/page.tsx"), "utf8");
   assert.doesNotMatch(business, /enableCaseImport/);
@@ -68,7 +68,7 @@ test("the import drawer is only on the lawyer and firm case files", () => {
 
 test("one live board per case page: the inline canvas unmounts while fullscreen is open", () => {
   const lawyer = readFileSync(join(here, "../../lawyer/cases/[id]/page.tsx"), "utf8");
-  assert.match(lawyer, /\{!graphFullscreen && \(\s*<CaseGraphView isDark=\{isDark\} isGlobal=\{false\} caseId=\{id\} enableCaseImport \/>/);
+  assert.match(lawyer, /\{!graphFullscreen && \(\s*<CaseGraphView key=\{`\$\{graphBoard \?\? "main"\}:\$\{graphBoardRev\}`\} isDark=\{isDark\} isGlobal=\{false\} caseId=\{id\} boardId=\{graphBoard\} enableCaseImport \/>/);
 });
 
 test("an unconfirmed change is sent on unmount, and a read waits for it", () => {
@@ -80,12 +80,12 @@ test("an unconfirmed change is sent on unmount, and a read waits for it", () => 
   assert.doesNotMatch(view, /pendingSave/, "the pre-ack clear is gone");
   const svc = readFileSync(join(here, "../../../../lib/services/caseGraphService.ts"), "utf8");
   const get = svc.slice(svc.indexOf("export async function getCaseGraph"), svc.indexOf("type GraphBody"));
-  assert.match(get, /const pending = inflight\.get\(caseId\);\s*if \(pending\) await pending/);
+  assert.match(get, /const pending = inflight\.get\(key\);\s*if \(pending\) await pending/);
 });
 
 test("CODE-F24: versioned saves, conflict choices, page-close guard, draft offered not applied", () => {
   const svc = readFileSync(join(here, "../../../../lib/services/caseGraphService.ts"), "utf8");
-  assert.match(svc, /versions\.set\(caseId, data \? data\.updatedAt : null\)/);
+  assert.match(svc, /versions\.set\(key, data \? data\.updatedAt : null\)/);
   assert.match(svc, /baseUpdatedAt: base/);
   assert.match(svc, /if \(isDemoMode\)/);
   assert.doesNotMatch(svc, /new Date\([^)]/, "the version string is never re-parsed");
