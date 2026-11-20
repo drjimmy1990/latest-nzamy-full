@@ -470,10 +470,18 @@ export interface CouponPreview {
    * drop it anyway). Absent for a plain coupon preview.
    */
   founderWins?: true;
+  /**
+   * l11 O8: the buyer is an active founder member and this coupon saves more
+   * than his founder discount — the coupon replaces the founder discount
+   * shown above the form (never both).
+   */
+  replacesFounder?: true;
 }
 
 /** l11 O8: the line under the figures when the founder discount beats the coupon. */
 export const FOUNDER_BEATS_COUPON_AR = "خصم العضو المؤسس أكبر من هذا الكود، فيُطبَّق خصم المؤسس وحده ولا يُستعمل الكود";
+/** l11 O8: the line when the coupon beats the founder discount shown above the form. */
+export const COUPON_REPLACES_FOUNDER_AR = "هذا الكود أكبر من خصم العضو المؤسس، فيُطبَّق الكود وحده بدل خصم المؤسس ولا يجتمع الخصمان";
 
 export function parseCouponPreview(body: unknown): CouponPreview | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
@@ -484,6 +492,7 @@ export function parseCouponPreview(body: unknown): CouponPreview | null {
   if (q.discount <= 0 || q.listNet - q.discount !== q.net || q.net + q.vat !== q.total) return null;
   const preview: CouponPreview = { code: b.code, listNet: q.listNet, discount: q.discount, net: q.net, vat: q.vat, total: q.total };
   if (b.source === "founder") preview.founderWins = true;
+  else if (b.replacesFounder === true) preview.replacesFounder = true;
   return preview;
 }
 

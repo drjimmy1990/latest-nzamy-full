@@ -423,6 +423,8 @@ export type ValidateReply =
         code: string;
         /** l11 O8: present only when the founder discount beats the coupon — the figures are then the founder's and the coupon is not used. */
         source?: "founder";
+        /** l11 O8: present only for an active founder member whose coupon beats his founder discount — the coupon replaces it (never both). */
+        replacesFounder?: true;
         quote: { listNet: number; discount: number; net: number; vat: number; total: number };
       };
     }
@@ -479,6 +481,7 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
   // founder member's discount off the LISTED price against what the other
   // path saves (a launch price's saving plus the coupon); the larger wins, a
   // tie goes to the founder discount. A failed founder read is checkout's 503.
+  let replacesFounder = false;
   if (founderDiscountApplies(q.item.kind)) {
     const founder = await isActiveFounder(admin, input.userId, now);
     if (founder === null) return { status: 503, body: { error: FOUNDER_DISCOUNT_FAILED_AR } };
@@ -498,6 +501,7 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
           },
         };
       }
+      replacesFounder = fd > 0;
     }
   }
 
@@ -506,6 +510,7 @@ export async function validateCouponWith(deps: ValidateDeps, input: ValidateInpu
     status: 200,
     body: {
       code: priced.coupon.code,
+      ...(replacesFounder ? { replacesFounder: true as const } : {}),
       quote: { listNet: d.listNetHalalas, discount: d.discountHalalas, net: d.netHalalas, vat: d.vatHalalas, total: d.totalHalalas },
     },
   };

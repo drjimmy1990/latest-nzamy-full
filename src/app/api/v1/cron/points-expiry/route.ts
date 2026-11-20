@@ -39,6 +39,8 @@ const DAY_MS = 86_400_000;
 const EXPIRE_BATCH = 500;
 /** At most this many lots warned per run; the rest wait for the next run. */
 const WARNING_LIMIT = 500;
+/** l11 O7: users per library-grants read (keeps the request URL short). */
+const GRANTS_CHUNK = 100;
 
 const SCHEMA_MISSING = new Set(["42P01", "PGRST205", "42703", "PGRST204", "42883", "PGRST202"]);
 
@@ -81,22 +83,24 @@ export async function POST(request: NextRequest) {
   const due = lotsToWarn((rows ?? []) as ExpiringLot[], now);
 
   // l11 O7 (register 49): the holders of a gated library plan (paid library
-  // plan or the founder) are told the expiry may lock the library — one read
-  // for the whole batch; a failed read only drops that sentence
+  // plan or the founder) are told the expiry may lock the library — read in
+  // chunks of GRANTS_CHUNK users (a short URL); a failed chunk only drops
+  // that sentence for its users
   const gated = new Set<string>();
   let libraryMinPoints: number | null = null;
-  if (due.length > 0) {
+  const dueUsers = [...new Set(due.map((l) => l.user_id))];
+  for (let i = 0; i < dueUsers.length; i += GRANTS_CHUNK) {
     const { data: grants, error: grantsErr } = await admin
       .from("library_access_grants")
       .select("user_id")
-      .in("user_id", [...new Set(due.map((l) => l.user_id))])
+      .in("user_id", dueUsers.slice(i, i + GRANTS_CHUNK))
       .in("plan_ref", [...GATED_LIBRARY_PLAN_REFS])
       .lte("starts_at", now.toISOString())
       .gt("ends_at", now.toISOString());
     if (grantsErr) console.warn("[cron/points-expiry] library grants:", grantsErr.code);
     for (const g of (grants ?? []) as Array<{ user_id?: unknown }>) if (typeof g.user_id === "string") gated.add(g.user_id);
-    if (gated.size > 0) libraryMinPoints = await readLibraryMinPoints();
   }
+  if (gated.size > 0) libraryMinPoints = await readLibraryMinPoints();
 
   let sent = 0;
   let already = 0;

@@ -18,7 +18,7 @@ import { startCheckoutWith, type CheckoutDeps, type CheckoutInput } from "./chec
 import { createCouponAttemptBudget } from "./couponAttempts.ts";
 import { validateCouponWith } from "./couponServer.ts";
 import { FOUNDER_DISCOUNT_FAILED_AR } from "./founderDiscount.ts";
-import { FOUNDER_BEATS_COUPON_AR, parseCouponPreview } from "./checkoutView.ts";
+import { COUPON_REPLACES_FOUNDER_AR, FOUNDER_BEATS_COUPON_AR, parseCouponPreview } from "./checkoutView.ts";
 
 const NOW = new Date("2026-10-22T08:00:00.000Z");
 const USER = "00000000-0000-0000-0000-00000000u011";
@@ -116,12 +116,17 @@ test("O8: a 400 SAR coupon beats the founder 15 % — the coupon's figures, no f
   assert.deepEqual(figures(preview), { net: 159000, total: 182850 });
   assert.equal("source" in (preview.body as object), false);
   assert.equal(parseCouponPreview(preview.body)?.founderWins, undefined);
+  // the founder line above the form is replaced, and the screen says so
+  assert.equal((preview.body as { replacesFounder?: boolean }).replacesFounder, true);
+  assert.equal(parseCouponPreview(preview.body)?.replacesFounder, true);
+  assert.match(COUPON_REPLACES_FOUNDER_AR, /يُطبَّق الكود وحده بدل خصم المؤسس/);
 });
 
 test("O8: a tie goes to the founder discount, in the preview as at checkout", async () => {
   const { preview, charge } = await both({ founder: true, coupon: { ...COUPON, discount_value: "298.50" } });
   assert.deepEqual(figures(preview), figures(charge));
   assert.equal((preview.body as { source?: string }).source, "founder");
+  assert.equal("replacesFounder" in (preview.body as object), false);
 });
 
 test("O8: a non-founder sees the coupon as before; a failed founder read is the same 503 in both", async () => {
@@ -129,6 +134,7 @@ test("O8: a non-founder sees the coupon as before; a failed founder read is the 
   assert.deepEqual(figures(plain.preview), figures(plain.charge));
   assert.deepEqual(figures(plain.preview), { net: 194000, total: 223100 });
   assert.equal("source" in (plain.preview.body as object), false);
+  assert.equal("replacesFounder" in (plain.preview.body as object), false, "a non-founder's preview is unchanged");
 
   const broken = await both({ founder: "error", coupon: COUPON });
   assert.deepEqual(broken.preview, { status: 503, body: { error: FOUNDER_DISCOUNT_FAILED_AR } });
@@ -141,5 +147,5 @@ test("O8: the screen does not send the code when the founder discount wins, and 
   // source pin (a client component cannot be imported under node --test)
   const form = readFileSync(join(import.meta.dirname, "..", "..", "components", "payments", "MoyasarCheckout.tsx"), "utf8");
   assert.ok(form.includes("couponCode.current = checked.preview.founderWins ? null : checked.preview.code;"));
-  assert.ok(form.includes("{FOUNDER_BEATS_COUPON_AR}"));
+  assert.ok(form.includes("coupon.founderWins ? FOUNDER_BEATS_COUPON_AR : COUPON_REPLACES_FOUNDER_AR"));
 });

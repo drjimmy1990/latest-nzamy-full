@@ -16,6 +16,7 @@ import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import {
   checkoutRequestBody,
+  COUPON_REPLACES_FOUNDER_AR,
   FOUNDER_BEATS_COUPON_AR,
   intentNeedsRefresh,
   moyasarInitConfig,
@@ -415,8 +416,10 @@ export default function MoyasarCheckout({
               <dd>{formatHalalas(coupon.net)}</dd>
             </div>
           </dl>
-          {coupon.founderWins ? (
-            <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">{FOUNDER_BEATS_COUPON_AR}</p>
+          {coupon.founderWins || coupon.replacesFounder ? (
+            <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+              {coupon.founderWins ? FOUNDER_BEATS_COUPON_AR : COUPON_REPLACES_FOUNDER_AR}
+            </p>
           ) : null}
           <p className="text-xs text-zinc-600 dark:text-zinc-400">تُحسب ضريبة القيمة المضافة على المبلغ بعد الخصم.</p>
         </div>
