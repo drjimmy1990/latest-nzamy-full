@@ -193,7 +193,7 @@ export function checkoutItemNotes(item: PayableItem): string[] {
     // P3 founder membership: what founder_activate (20261101_10) grants, nothing more
     return [
       `عضوية لمدة ${monthsAr(FOUNDER_MEMBERSHIP_MONTHS)} من تاريخ التفعيل`,
-      `${arabicNumber(FOUNDER_CREDITS.drafting_work)} أعمال بالصائغ القانوني ومخرج مستقل واحد`,
+      `${arabicNumber(FOUNDER_CREDITS.drafting_work)} أعمال بالصائغ القانوني`,
       `وصول إلى المكتبة القانونية لمدة ${daysAr(FOUNDER_LIBRARY_DAYS)}`,
     ];
   }

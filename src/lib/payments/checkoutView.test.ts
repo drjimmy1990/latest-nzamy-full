@@ -193,7 +193,7 @@ test("checkoutItemNotes: the library states its access length; firm plans promis
 test("checkoutItemNotes: the founder membership states its length and what activation grants (20261101_10), nothing more", () => {
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["lawyer-founder-2026"]), [
     "عضوية لمدة ١٢ شهراً من تاريخ التفعيل",
-    "٦ أعمال بالصائغ القانوني ومخرج مستقل واحد",
+    "٦ أعمال بالصائغ القانوني",
     "وصول إلى المكتبة القانونية لمدة ٣٦٥ يوماً",
   ]);
   // the card's promises that this plan does not grant (global constraints)

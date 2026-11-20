@@ -45,7 +45,6 @@ export const FOUNDER_TERM_LINE = `للسنة الأولى، ${MONTHS} شهرًا
 
 export const FOUNDER_BENEFITS: readonly string[] = Object.freeze([
   `${toArabicDigits(FOUNDER_CREDITS.drafting_work)} أعمال بالصائغ القانوني (يمكن تكرار النوع)`,
-  "مخرج مستقل واحد تختاره من: محترف العقود، الرأي الفصل، المحاكي الشامل، داعم الاتجاه (قريبًا)",
   `المكتبة القانونية ${MONTHS} شهرًا`,
   "إدارة المكتب: قريبًا — ضمن مدة العضوية المحسوبة من التفعيل",
 ]);
