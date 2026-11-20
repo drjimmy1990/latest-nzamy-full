@@ -664,7 +664,8 @@ test("register 17: the explorer shows every classified link type, «إحالة»
   for (const t of ["EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES", "CITES_ARTICLE", "IMPLEMENTED_BY", "REPLACED_BY", "SIMILAR_TO"]) {
     assert.equal(core.edgeMetaFor(t), core.EDGE_TYPE_META[t as keyof typeof core.EDGE_TYPE_META], `${t} named by its own label`);
   }
-  assert.equal(core.edgeMetaFor("CITES_ARTICLE").label, "إحالة");
+  assert.equal(core.edgeMetaFor("CITES_ARTICLE").label, "يحيل إلى مادة", "owner decision 19 Nov: refers_to_article");
+  assert.deepEqual([core.edgeMetaFor("CITES_ARTICLE").out, core.edgeMetaFor("CITES_ARTICLE").in], ["يحيل إلى مادة", "مادة تحيل إليها"]);
   assert.equal(core.edgeMetaFor("NEW_LINK").label, "رابط غير معروف");
 
   assert.equal(core.explorerEdgeFilter([]), null, "no names: every type");

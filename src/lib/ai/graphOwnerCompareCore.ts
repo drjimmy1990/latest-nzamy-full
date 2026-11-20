@@ -10,7 +10,7 @@
  *   1. The id bridge: his node ids (`LAW-…`, `FILE-…`, `idari-…`, `NCAR-…`)
  *      against our document identities (laws.slug / laws.instrument_id,
  *      decrees_circulars.id, principles / judicial_collections metadata ids).
- *   2. The type mapping: our five exportable edge types → his raw type names,
+ *   2. The type mapping: our six exportable edge types → his raw type names,
  *      his direction, document level (article and principle ends roll up).
  *   3. The key his compare_graphs.py builds, so the annotation can explain
  *      every row of only_ours.tsv / only_theirs.tsv.
@@ -449,6 +449,7 @@ export const EXPORTED_OUR_TYPES = [
   "SUPERSEDES_LAW",
   "PARENT_LAW",
   "IMPLEMENTED_BY",
+  "CITES_ARTICLE",
 ] as const;
 
 export interface ExportEnd {
@@ -523,6 +524,12 @@ export function mapOurEdge(bridge: Bridge, e: DbEdgeLine): ExportEdge[] {
       ];
     case "IMPLEMENTED_BY": // system article → regulation article; our own label kept
       return [{ type: "OURS:IMPLEMENTED_BY", from: end(s.doc), to: end(t.doc), ...base }];
+    case "CITES_ARTICLE": {
+      // article → article (our automatic graph)  ⇒  refers_to_article (owner decision 19 Nov:
+      // «يحيل إلى مادة»), both article numbers kept; his file has no such type.
+      const sArt = articleString(e.from.node_type === "article" ? e.from.article_number : null);
+      return [{ type: "refers_to_article", from: end(s.doc, sArt), to: end(t.doc, tArt), ...base }];
+    }
     default:
       return [];
   }
@@ -620,6 +627,8 @@ export const REASON_AR: Record<Reason, string> = {
 /** His new→old kinds: the inverse of his own old→new kinds. */
 export const OWNER_NEW_TO_OLD = new Set(["supersedes", "repeals", "replaces", "amends"]);
 export const OWNER_KINDS_NOT_IN_OURS = new Set(["contains_merged_regulation", "related_to", "cites_precedent"]);
+/** Our kinds written under an owner name his file does not carry (refers_to_article: owner decision 19 Nov). */
+export const OUR_KINDS_NOT_IN_HIS = new Set(["refers_to_article"]);
 
 export interface AnnotateInput {
   ownerEdges: readonly OwnerEdge[];
@@ -752,7 +761,7 @@ export function annotateRow(idx: Index, input: AnnotateInput, side: Side, key: C
       reason = "pair_matched_other_type";
       hisIds = idsOf([...idx.hisByKey.entries()].filter(([k]) => pairOf(k) === pair).flatMap(([, v]) => v));
     } else if (idx.hisTypesByPair.has(rev)) reason = "reversed";
-    else if (p.type.startsWith("OURS:")) reason = "kind_not_in_his";
+    else if (p.type.startsWith("OURS:") || OUR_KINDS_NOT_IN_HIS.has(p.type)) reason = "kind_not_in_his";
     else reason = "true_miss";
   }
   return { type: p.type, from: p.from, to: p.to, article: p.article, side, reason, his_edge_ids: hisIds, our_types: ourTypes };

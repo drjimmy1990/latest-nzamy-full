@@ -135,10 +135,12 @@ export const EDGE_TYPE_META: Readonly<
     color: "#B79FD9",
     hint: "نص يقرّر قاعدة عامة تحكم نصاً آخر.",
   },
+  // Owner decision 19 Nov 2026: his name refers_to_article «يحيل إلى مادة»;
+  // the edge key stays CITES_ARTICLE.
   CITES_ARTICLE: {
-    label: "إحالة",
-    out: "يُحيل إلى",
-    in: "مُحال إليها من",
+    label: "يحيل إلى مادة",
+    out: "يحيل إلى مادة",
+    in: "مادة تحيل إليها",
     color: "#8B8B95",
     hint: "إحالة نظامية عامة («وفقاً للمادة…»، «المنصوص عليها في المادة…»).",
   },

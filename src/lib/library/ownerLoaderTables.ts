@@ -74,8 +74,10 @@ export const OWNER_LOADER_TABLES: readonly OwnerLoaderTable[] = [
     // written on every law row — REQUIRED the same way.
     requiredColumns: ["merged_regulations", "owner_links", "summary", "summary_card", "summary_status", "summary_reviewed_at"],
   },
-  { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [] },
-  { name: "articles", pkey: "id", batchSize: 100, stripKeys: [] },
+  // regulation_ref (owner file 19 Nov §1.9, migration 20261130_30): written on
+  // every chapter and article row — REQUIRED before the first write.
+  { name: "chapters", pkey: "id", batchSize: 200, stripKeys: [], requiredColumns: ["regulation_ref"] },
+  { name: "articles", pkey: "id", batchSize: 100, stripKeys: [], requiredColumns: ["regulation_ref"] },
   // decree_id / paragraphs / text_status / position (owner file 18 item 3,
   // migration 20261129_70): written on every amendment row — REQUIRED.
   {

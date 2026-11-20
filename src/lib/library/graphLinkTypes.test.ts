@@ -42,7 +42,11 @@ function edge(type: string): DbEdgeLine {
 
 test("the comparison mapping stays pinned to the export (documentation only since register 17)", () => {
   const ownerTypes = new Set(Object.keys(OWNER_GRAPH_TYPES));
-  assert.equal(ownerTypes.size, 14, "his report lists 14 raw types");
+  assert.equal(ownerTypes.size, 15, "his report lists 14 raw types, plus refers_to_article (owner decision 19 Nov)");
+  assert.equal(OWNER_GRAPH_TYPES.refers_to_article.category, "يحيل إلى مادة");
+  assert.notEqual(OWNER_GRAPH_TYPES.refers_to_article.category, OWNER_GRAPH_TYPES.related_to.category, "article → article is not law → law");
+  assert.deepEqual([...OUR_TO_OWNER_TYPES.CITES_ARTICLE], ["refers_to_article"]);
+  assert.deepEqual([...OUR_TO_OWNER_TYPES.INTERPRETS_ARTICLE], ["cites_article"]);
   for (const t of EXPLORER_EDGE_TYPES) {
     const mapped = mapOurEdge(bridge, edge(t)).map((e) => e.type);
     const matches = mapped.length > 0 && mapped.every((m) => ownerTypes.has(m));
@@ -102,6 +106,8 @@ test("labels: every reader type has both directions, distinct, no «يفسّر»
     assert.notEqual(SHOWN_LINK_LABELS[t].out, SHOWN_LINK_LABELS[t].in, t);
     assert.doesNotMatch(SHOWN_LINK_LABELS[t].out + SHOWN_LINK_LABELS[t].in, /يفسّر|يفسر|تفسير/);
   }
-  assert.match(linkLabel("CITES_ARTICLE", "in"), /إحالة/);
+  assert.equal(linkLabel("CITES_ARTICLE", "out"), "تحيل إليها هذه المادة", "names the other article: the one this article refers to");
+  assert.equal(linkLabel("CITES_ARTICLE", "in"), "مادة تحيل إليها");
+  assert.equal(linkLabel("INTERPRETS_ARTICLE", "out"), "مبدأ قضائي يستند إليه", "cites_article keeps its words");
   assert.equal(linkLabel("SIMILAR_TO", "out"), "");
 });

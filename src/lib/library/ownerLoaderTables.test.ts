@@ -207,3 +207,11 @@ test("the loader runs the width preflight before the first write, live only, and
   assert.match(LOADER.slice(guard, firstSeed), /process\.exit\(1\)/);
   assert.match(LOADER.slice(required - 200, guard), /if \(!isDry\) \{/);
 });
+
+test("20261130_30 (owner file 19 Nov §1.9): chapters and articles REQUIRE regulation_ref, never stripped", () => {
+  for (const name of ["chapters", "articles"]) {
+    const t = OWNER_LOADER_TABLES.find((x) => x.name === name);
+    assert.deepEqual(t?.requiredColumns, ["regulation_ref"], name);
+    assert.deepEqual(t?.stripKeys, [], name);
+  }
+});
