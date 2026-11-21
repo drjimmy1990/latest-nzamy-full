@@ -740,3 +740,58 @@ test("Art. 18: the independent consultant plan is restricted, an individual plan
   assert.equal(isArticle18Restricted("consultant-independent"), true);
   assert.equal(isArticle18Restricted("ind-ai"), false);
 });
+
+/**
+ * Q89 (batch l12 access + integration fix 11): only a library plan or grant
+ * opens the library, so no other plan's card, description or comparison row
+ * may present it as included. A line that names the library on a non-library
+ * plan says it is a separate subscription. The source of every plan /pricing
+ * and checkout draw is read (the icon imports keep these files out of node).
+ */
+const LIBRARY_WORD = /المكتبة القانونية|مكتبة قانونية|مكتبة لفريق|[Ll]egal [Ll]ibrary|\b[Ll]ibrary\b/;
+const LIBRARY_INCLUDED = /المكتبة القانونية( الكاملة)? ✅|Full Legal Library|الوصول الكامل لمحرك البحث في المكتبة|^(?:مكتبة قانونية|Legal library) [—+]|^(?:مكتبة لفريق|Library for)/;
+function nonLibraryPlanLibraryClaims(source: string): string[] {
+  const out: string[] = [];
+  for (const m of source.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
+    const s = m[1];
+    if (!LIBRARY_WORD.test(s) || /^[a-z0-9:_-]+$/.test(s)) continue; // ids («library-assistant») are not copy
+    // The library assistant is a priced AI tool line, not a library claim.
+    if (s === "البحث الدلالي وشرح المواد في المكتبة") continue;
+    // A comparison row's bare label: its cells are checked line by line below.
+    if (s === "المكتبة القانونية" || s === "Legal Library") continue;
+    if (LIBRARY_INCLUDED.test(s) || !/باشتراك|subscription|By subscription/.test(s)) out.push(s);
+  }
+  for (const line of source.split("\n")) {
+    if (/feature: "(?:المكتبة القانونية|Legal Library)"/.test(line) && /✅|"(?:مشمول|Included)"/.test(line)) out.push(line.trim());
+  }
+  return out;
+}
+
+test("Q89 (l12): no non-library plan card advertises the library as included (lawyer-pro, consultant, firm, company, legal department, …)", () => {
+  // Negative control: the old card lines are caught.
+  assert.deepEqual(nonLibraryPlanLibraryClaims('ai: ["المكتبة القانونية الكاملة ✅", "Full Legal Library ✅"]').length, 2);
+  assert.deepEqual(nonLibraryPlanLibraryClaims('desc: "مكتبة قانونية — قريباً: نقاط"').length, 1);
+  assert.deepEqual(nonLibraryPlanLibraryClaims('{ feature: "المكتبة القانونية", "biz-sm-basic": "✅" },').length, 1);
+  const files = [
+    "constants/pricing/pricing.lawyers.ts",
+    "constants/pricing/pricing.firms.ts",
+    "constants/pricing/pricing.companies.ts",
+    "constants/pricing/pricing.companies.legaldept.ts",
+    "constants/pricing/pricing.companies.comparison.ts",
+    "constants/pricing/pricing.government.ts",
+    "constants/pricing/pricing.ngo.ts",
+    "constants/pricing/pricing.micro.ts",
+    "constants/pricing/pricing.individuals.ts",
+    "constants/pricing/pricing.providers.ts",
+  ];
+  for (const path of files) {
+    const src = code(path).split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    assert.deepEqual(nonLibraryPlanLibraryClaims(src), [], path);
+  }
+  const plans = code("lib/pricing/plans.ts");
+  const consultant = plans.slice(plans.indexOf("export const INDEPENDENT_CONSULTANT_PLAN"), plans.indexOf("export function getStandaloneLibraryPlan"));
+  assert.deepEqual(nonLibraryPlanLibraryClaims(consultant), [], "consultant-independent");
+  for (const path of ["app/api/library/laws/[slug]/route.ts", "app/book/[slug]/_stream-block.tsx", "app/laws/orders/[slug]/page.tsx"]) {
+    assert.doesNotMatch(code(path), /المكتبة القانونية أو الباقة الاحترافية|library or professional plan/, `${path}: a lock note that says Pro opens the text`);
+  }
+});

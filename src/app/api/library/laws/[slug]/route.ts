@@ -718,7 +718,7 @@ function formatArticleWithPaywall(
     // not only on screen (withoutRepealNotice).
     result.text = preview(withoutRepealNotice(lifted.text));
     if (originalText) result.originalText = preview(originalText);
-    result.lockedMessage = 'للاطلاع على النص الكامل، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية';
+    result.lockedMessage = 'للاطلاع على النص الكامل، اشترك في باقة المكتبة القانونية';
   } else {
     result.text = lifted.text;
     if (originalText) result.originalText = originalText;

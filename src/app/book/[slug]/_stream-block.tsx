@@ -133,7 +133,7 @@ function StreamBlock({
       {/* Owner decision (18 Nov): fiqh text is for subscribers only (library_feqh_free_pages,
           0 by default) — the note names no free pages, and carries the subscribe button. */}
       {block.locked && (
-        <LibraryLockedNote message="نص هذا الموضع متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية." />
+        <LibraryLockedNote message="نص هذا الموضع متاح لمشتركي باقة المكتبة القانونية." />
       )}
 
       {/* Sharh */}

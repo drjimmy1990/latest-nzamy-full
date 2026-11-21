@@ -18,13 +18,13 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── شركة صغيرة (٦-٤٩) ─────────────────────────────
     { id: "biz-sm-basic", name: "أساسية", badge: "~٨٣٣ ر.س/شهر",
       priceMonthly: "٩,٩٨٨", priceYearly: "٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "مكتبة قانونية + طلبات قانونية — قريباً: تنبيهات العقود · بدون ترافع أو استشارات", target: "شركات صغيرة", cta: "اشترك سنوياً",
+      desc: "طلبات قانونية — قريباً: تنبيهات العقود · بدون ترافع أو استشارات · المكتبة باشتراك مستقل", target: "شركات صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
-          "المكتبة القانونية الكاملة ✅",
+          "المكتبة القانونية باشتراك مستقل",
           "تنبيهات انتهاء العقود: قريباً",
           null,
         ],
@@ -91,13 +91,13 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── شركة متوسطة (٥٠-٢٤٩) ──────────────────────────
     { id: "biz-md-basic", name: "أساسية", badge: "~٢,٤٩٩ ر.س/شهر",
       priceMonthly: "٢٩,٩٨٨", priceYearly: "٢٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "مكتبة قانونية — قريباً: استشارات أساسية + HR · بدون ترافع مشمول", target: "شركات متوسطة", cta: "اشترك سنوياً",
+      desc: "قريباً: استشارات أساسية + HR · بدون ترافع مشمول · المكتبة باشتراك مستقل", target: "شركات متوسطة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
-          "المكتبة القانونية الكاملة ✅",
+          "المكتبة القانونية باشتراك مستقل",
           null,
           null,
         ],
@@ -170,7 +170,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       features: {
         ai: [
           "أدوات الذكاء الاصطناعي: قريباً",
-          "المكتبة القانونية الكاملة ✅",
+          "المكتبة القانونية باشتراك مستقل",
           null,
           null,
         ],
@@ -239,11 +239,11 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── Small (6-49) EN ─────────────────────────────────
     { id: "biz-sm-basic", name: "Basic", badge: "~833 SAR/mo",
       priceMonthly: "9,988", priceYearly: "9,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Legal library + legal requests — coming soon: contract alerts · no litigation or consultations", target: "Small Companies", cta: "Subscribe Yearly",
+      desc: "Legal requests — coming soon: contract alerts · no litigation or consultations · library by separate subscription", target: "Small Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
-        ai: ["AI tools: coming soon", "Full Legal Library ✅", "Contract expiry alerts: coming soon", null],
+        ai: ["AI tools: coming soon", "Legal library by separate subscription", "Contract expiry alerts: coming soon", null],
         platform: ["5 users", "Legal requests: 5/mo — coming soon", "Professional Marketplace: coming soon", "Employee contracts (HR): coming soon"],
         support: ["Lawyer consultation: ❌", "Litigation: 10% fee discount when needed — coming soon"],
       },
@@ -273,11 +273,11 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
     // ── Medium (50-249) EN ───────────────────────────────
     { id: "biz-md-basic", name: "Basic", badge: "~2,499 SAR/mo",
       priceMonthly: "29,988", priceYearly: "29,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Legal library — coming soon: core consultations + HR · no included litigation", target: "Medium Companies", cta: "Subscribe Yearly",
+      desc: "Coming soon: core consultations + HR · no included litigation · library by separate subscription", target: "Medium Companies", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: false, someFeaturesSoon: true,
       features: {
-        ai: ["AI tools: coming soon", "Full Legal Library ✅", null, null],
+        ai: ["AI tools: coming soon", "Legal library by separate subscription", null, null],
         platform: ["5 users", "Lawyer consultations: 2 hrs/mo — coming soon", "Requests: 10/mo — coming soon · Kanban: coming soon", "Marketplace + Employee contracts: coming soon"],
         support: ["Litigation: 15% fee discount (no cases included) — coming soon", "Email support"],
       },
@@ -311,7 +311,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       ctaHref: "/contact", highlighted: false, color: "border-slate-200/50",
       companySize: "large", forLegalDept: false, someFeaturesSoon: true,
       features: {
-        ai: ["AI tools: coming soon", "Full Legal Library ✅", null, null],
+        ai: ["AI tools: coming soon", "Legal library by separate subscription", null, null],
         platform: ["10 users", "Lawyer consultations: 3 hrs/mo — coming soon", "Requests: 15/mo — coming soon · Kanban: coming soon", "Basic governance + Employee contracts: coming soon"],
         support: ["Litigation: 1 case/yr (claim cap 150K SAR) — coming soon", "15% off additional — coming soon · WhatsApp"],
       },

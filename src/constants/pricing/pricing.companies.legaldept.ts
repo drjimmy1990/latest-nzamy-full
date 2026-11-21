@@ -14,13 +14,13 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     // ── صغيرة (٦-٤٩) ───────────────────────────────────
     { id: "dept-sm-basic", name: "أساسية", badge: "~٤١٦ ر.س/شهر",
       priceMonthly: "٤,٩٨٨", priceYearly: "٤,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "مكتبة قانونية — قريباً: نقاط + Kanban لفريق صغير", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
+      desc: "قريباً: نقاط + Kanban لفريق صغير · المكتبة باشتراك مستقل", target: "إدارة قانونية صغيرة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: true, someFeaturesSoon: true,
       includedSeats: 2, includedAnnualPoints: 5000, extraSeatPrice: "١,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٥ مقاعد + ٥,٠٠٠ نقطة", bonusLabel: "٥,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٥,٠٠٠ نقطة سنوية — قريباً", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية الكاملة ✅", null],
+        ai: ["٥,٠٠٠ نقطة سنوية — قريباً", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية باشتراك مستقل", null],
         platform: ["٥ مقاعد", "طلبات: ٥/شهر — قريباً · Kanban: قريباً", "عقود الموظفين (HR): قريباً", null],
         support: ["تقارير شهرية: قريباً", "دعم بريد إلكتروني"],
       },
@@ -54,13 +54,13 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     // ── متوسطة (٥٠-٢٤٩) ────────────────────────────────
     { id: "dept-md-basic", name: "أساسية", badge: "~٨٣٣ ر.س/شهر",
       priceMonthly: "٩,٩٨٨", priceYearly: "٩,٩٨٨", periodMonthly: "ر.س / سنة", periodYearly: "ر.س / سنة",
-      desc: "مكتبة لفريق قانوني متوسط — قريباً: نقاط + Kanban", target: "إدارة قانونية متوسطة", cta: "اشترك سنوياً",
+      desc: "لفريق قانوني متوسط — قريباً: نقاط + Kanban · المكتبة باشتراك مستقل", target: "إدارة قانونية متوسطة", cta: "اشترك سنوياً",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: true, someFeaturesSoon: true,
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "٢,٤٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ٥ مقاعد + ١٥,٠٠٠ نقطة", bonusLabel: "١٥,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["١٥,٠٠٠ نقطة سنوية — قريباً", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية الكاملة ✅", null],
+        ai: ["١٥,٠٠٠ نقطة سنوية — قريباً", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية باشتراك مستقل", null],
         platform: ["٥ مقاعد", "طلبات: ١٠/شهر — قريباً · Kanban: قريباً", "إدارات + عقود HR: قريباً", null],
         support: ["تقارير شهرية: قريباً", "دعم واتساب"],
       },
@@ -100,7 +100,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "٢,٩٨٨ ر.س/سنة",
       pricingFormulaLabel: "اشتراك + ١٠ مقاعد + ٤٠,٠٠٠ نقطة", bonusLabel: "٤٠,٠٠٠ نقطة سنوية",
       features: {
-        ai: ["٤٠,٠٠٠ نقطة سنوية — قريباً", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية ✅", null],
+        ai: ["٤٠,٠٠٠ نقطة سنوية — قريباً", "أدوات الذكاء الاصطناعي: قريباً", "المكتبة القانونية باشتراك مستقل", null],
         platform: ["١٠ مقاعد", "Kanban + حوكمة أساسية: قريباً", "إدارات + عقود HR: قريباً", null],
         support: ["تقارير أساسية: قريباً", "دعم واتساب"],
       },
@@ -136,13 +136,13 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     // ── Small (6-49) EN ─────────────────────────────────
     { id: "dept-sm-basic", name: "Basic", badge: "~416 SAR/mo",
       priceMonthly: "4,988", priceYearly: "4,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Legal library — coming soon: points + Kanban for a small team", target: "Small Legal Dept", cta: "Subscribe Yearly",
+      desc: "Coming soon: points + Kanban for a small team · library by separate subscription", target: "Small Legal Dept", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "small", forLegalDept: true, someFeaturesSoon: true,
       includedSeats: 2, includedAnnualPoints: 5000, extraSeatPrice: "1,988 SAR/yr",
       pricingFormulaLabel: "Annual + 5 seats + 5,000 pts", bonusLabel: "5,000 annual points",
       features: {
-        ai: ["5,000 annual points — coming soon", "AI tools: coming soon", "Full Legal Library ✅", null],
+        ai: ["5,000 annual points — coming soon", "AI tools: coming soon", "Legal library by separate subscription", null],
         platform: ["5 seats", "Requests: 5/mo — coming soon · Kanban: coming soon", "Employee contracts (HR): coming soon", null],
         support: ["Monthly reports: coming soon", "Email support"],
       },
@@ -176,13 +176,13 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
     // ── Medium (50-249) EN ──────────────────────────────
     { id: "dept-md-basic", name: "Basic", badge: "~833 SAR/mo",
       priceMonthly: "9,988", priceYearly: "9,988", periodMonthly: "SAR / year", periodYearly: "SAR / year",
-      desc: "Library for a mid-size legal team — coming soon: points + Kanban", target: "Medium Legal Dept", cta: "Subscribe Yearly",
+      desc: "For a mid-size legal team — coming soon: points + Kanban · library by separate subscription", target: "Medium Legal Dept", cta: "Subscribe Yearly",
       ctaHref: "/register/client?type=company", highlighted: false, color: "border-slate-200/50",
       companySize: "medium", forLegalDept: true, someFeaturesSoon: true,
       includedSeats: 5, includedAnnualPoints: 15000, extraSeatPrice: "2,488 SAR/yr",
       pricingFormulaLabel: "Annual + 5 seats + 15,000 pts", bonusLabel: "15,000 annual points",
       features: {
-        ai: ["15,000 annual points — coming soon", "AI tools: coming soon", "Full Legal Library ✅", null],
+        ai: ["15,000 annual points — coming soon", "AI tools: coming soon", "Legal library by separate subscription", null],
         platform: ["5 seats", "Requests: 10/mo — coming soon · Kanban: coming soon", "Departments + HR contracts: coming soon", null],
         support: ["Monthly reports: coming soon", "WhatsApp support"],
       },
@@ -222,7 +222,7 @@ export const plansCompaniesLegalDept: { ar: Plan[]; en: Plan[] } = {
       includedSeats: 10, includedAnnualPoints: 40000, extraSeatPrice: "2,988 SAR/yr",
       pricingFormulaLabel: "Annual + 10 seats + 40,000 pts", bonusLabel: "40,000 annual points",
       features: {
-        ai: ["40,000 annual points — coming soon", "AI tools: coming soon", "Full Legal Library ✅", null],
+        ai: ["40,000 annual points — coming soon", "AI tools: coming soon", "Legal library by separate subscription", null],
         platform: ["10 seats", "Kanban + Basic governance: coming soon", "Departments + HR contracts: coming soon", null],
         support: ["Basic reports: coming soon", "WhatsApp support"],
       },

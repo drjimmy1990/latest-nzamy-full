@@ -753,7 +753,7 @@ export default function OrderReaderPage() {
                             <Lock size={14} weight="fill" />
                             {/* Owner Q101 (l12): the free pages are an admin setting (0 by
                                 default), so the notice names no fixed number of pages. */}
-                            <span>{isRTL ? "نص هذه الصفحة متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية." : "This page is for library or professional plan subscribers."}</span>
+                            <span>{isRTL ? "نص هذه الصفحة متاح لمشتركي باقة المكتبة القانونية." : "This page is for library plan subscribers."}</span>
                           </div>
                         </div>
                       );
