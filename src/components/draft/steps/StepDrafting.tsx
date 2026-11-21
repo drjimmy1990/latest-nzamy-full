@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   PencilSimple, Copy, CheckCircle, Microphone, TextT,
   MagicWand, DownloadSimple, ArrowCounterClockwise, ChatCenteredText,
-  Gavel, Shield, BookOpen, Scales, ChatCircleDots, Sparkle, X,
+  Gavel, Shield, BookOpen, ChatCircleDots, Sparkle, X,
 } from "@phosphor-icons/react";
 import { useState, useEffect, useMemo } from "react";
 import { VoiceInput } from "@/components/ui/VoiceInput";
@@ -251,7 +251,7 @@ function MemoBlock({
 
   const typeIcon: Record<string, React.ElementType> = {
     defense: Gavel, "sub-defense": Shield, heading: BookOpen,
-    requests: Scales, header: Sparkle, text: ChatCircleDots,
+    requests: Gavel, header: Sparkle, text: ChatCircleDots,
   };
   const TypeIcon = typeIcon[section.type] ?? BookOpen;
 

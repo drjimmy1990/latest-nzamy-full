@@ -14,6 +14,7 @@ import FirmDashboardLayout from "@/app/dashboard/firm/layout";
 import MicroDashboardLayout from "@/app/dashboard/micro/layout";
 import ProviderDashboardLayout from "@/app/dashboard/provider/layout";
 import LawyerOnlyToolNotice from "@/components/ai/LawyerOnlyToolNotice";
+import AdminToolsNotice from "@/components/ai/AdminToolsNotice";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import TermsReacceptGate from "@/components/legal/TermsReacceptGate";
 import TopUpModalHost from "@/components/payments/TopUpModalHost";
@@ -89,7 +90,9 @@ function AIShell({ children: page }: { children: React.ReactNode }) {
   // keeps the page (the edge sends him to /login first; the page has its own
   // sign-in handling).
   const lawyerOnlyRefused = shell !== "loading" && user.isLoggedIn && isLawyerOnlyAiHref(pathname) && !canSeeLawyerTools(user.userType);
-  const children = lawyerOnlyRefused ? <LawyerOnlyToolNotice userType={user.userType} /> : page;
+  const tool = lawyerOnlyRefused ? <LawyerOnlyToolNotice userType={user.userType} /> : page;
+  // N2 (batch l12): one line for the admin, who sees every tool open (display only).
+  const children = <><AdminToolsNotice />{tool}</>;
 
   switch (shell) {
     case "loading":    return <AILoading />;

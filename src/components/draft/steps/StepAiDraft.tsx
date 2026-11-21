@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Sparkle, CheckCircle, XCircle, Plus, Trash, Warning, FileDoc, Scales, ArrowCounterClockwise, PencilSimple,
+  Sparkle, CheckCircle, XCircle, Plus, Trash, Warning, FileDoc, Gavel, ArrowCounterClockwise, PencilSimple,
 } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
 import AiResultActions from "@/components/AiResultActions";
@@ -326,7 +326,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
             </section>
 
             <section className="space-y-2">
-              <h3 className={`flex items-center gap-1.5 text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}><Scales size={14} /> الدفوع والأسانيد المقترحة — اعتمد أو استبعد</h3>
+              <h3 className={`flex items-center gap-1.5 text-[12px] font-bold ${isDark ? "text-zinc-300" : "text-zinc-700"}`}><Gavel size={14} /> الدفوع والأسانيد المقترحة — اعتمد أو استبعد</h3>
               {edited.defenses.map((d, n) => (
                 <div key={n} className={`rounded-xl border p-3 space-y-2 transition-opacity ${d.kept ? "" : "opacity-55"} ${
                   d.kept ? (isDark ? "border-emerald-500/20" : "border-emerald-200") : isDark ? "border-white/[0.06]" : "border-zinc-100"

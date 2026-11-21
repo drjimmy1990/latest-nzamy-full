@@ -48,6 +48,14 @@ export interface AiToolSpec {
   /** Art. 18: a consultant (practice_kind) may not run it. */
   consultantBlocked: boolean;
   /**
+   * Owner ١٤٦ (register 14 #19, batch l12): a tool newly closed to the
+   * consultant that is not pleading (the legal opinion, محترف العقود). A
+   * consultant whose paid plan term was already running at the cut-off keeps
+   * it until that term ends (consultantTerm.ts), and the refusal names the
+   * reservation, not Art. 18's pleading ban.
+   */
+  consultantPaidTerm?: true;
+  /**
    * The price in points, from the validated input (metered tools read `pages`).
    * `priorSectionEdits`: the memo's section edits so far, read by runCore from
    * the conversation's runs for a `sectionEdit` run only (owner ٤١٠).
@@ -224,8 +232,8 @@ const ECHO_ROLES = ["lawyer", "firm"] as const;
  * Every registered customer account type: profiles.user_type minus `admin`.
  * Owner ٤١٧, answer of 8 Nov 2026 (it reverses his 7 Nov answer, which had
  * opened every tool to every registered account): only the general guidance
- * tools stay open to all of these — the quick answer and the two legal-opinion
- * types. Every one of these types can buy points (priceBook top-ups). An admin
+ * tools stay open to all of these — the quick answer (the two legal-opinion
+ * types were too, until owner ١٢٢ closed them to lawyers and firms). Every one of these types can buy points (priceBook top-ups). An admin
  * passes every tool anyway (toolRoleRefusal). Art. 18's consultant lock is the
  * separate `consultantBlocked` flag, and a tool that searches the library still
  * needs the library AI's own tier (runs/route.ts).
@@ -1216,8 +1224,13 @@ function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
   return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
 }
 
-/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧: general guidance stays open to all). */
-const LEGAL_OPINION_ROLES = REGISTERED_ROLES;
+/**
+ * The roles of /ai/legal-opinion's two built types. Owner ١٢٢ (register 14
+ * #19, batch l12): lawyers and law firms only. It was open to every registered
+ * account (owner ٤١٧); any other account now gets the lock notice with
+ * «اطلب من محامٍ» (lawyerOnlyTools.ts, LawyerOnlyToolNotice).
+ */
+const LEGAL_OPINION_ROLES = LAWYER_FIRM_ROLES;
 
 /**
  * The assembled contract (n8n drafts the outline, then each clause on its own
@@ -2034,8 +2047,10 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     class: "job",
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
-    // A consultation is advice, not pleading: /ai/legal-opinion is open to consultants (Art. 18).
-    consultantBlocked: false,
+    // Owner ١٤٦ (batch l12): closed to the consultant until his account type
+    // opens; a paid term already running keeps it to its end.
+    consultantBlocked: true,
+    consultantPaidTerm: true,
     price: () => LEGAL_CONSULT_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2050,7 +2065,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     class: "job",
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
-    consultantBlocked: false,
+    consultantBlocked: true,
+    consultantPaidTerm: true,
     price: () => LEGAL_LETTER_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2065,7 +2081,11 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     // The lawyer, firm and business sidebars and the public navbar all open /ai/contracts.
     roles: CONTRACTS_PRO_ROLES,
-    consultantBlocked: false,
+    // Owner ١٤٦ (batch l12): contract drafting is closed to the consultant like
+    // the legal opinion (a paid term already running keeps it); contract review
+    // on the same page stays open to him.
+    consultantBlocked: true,
+    consultantPaidTerm: true,
     price: () => CONTRACTS_PRO_PRICE,
     dailyLimit: 5,
     defaultMode: "off",

@@ -14,6 +14,7 @@ import { StepSubmit }    from "@/components/draft/steps/StepSubmit";
 import { StepAiDraft }   from "@/components/draft/steps/StepAiDraft";
 import { useUser } from "@/hooks/useUser";
 import { useToolDraft } from "@/hooks/useToolDraft";
+import { useSessionState } from "@/hooks/useSessionState";
 import { draftChoice, draftText } from "@/lib/payments/topUpDraft";
 import { draftKindFromMemo } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
@@ -81,7 +82,11 @@ export default function AIDraftPage() {
   const aiPath = aiOpen && !aiOff && !consultantBlocked && kind !== null;
   // "pre" = show chooser, "draft" = show the wizard
   // If a mode param is provided skip the chooser and go straight to draft
-  const [preMode, setPreMode] = useState<"pre" | "draft">(modeParam || najizSeed ? "draft" : "pre");
+  // P2-3 (batch l12): kept for this tab, unless the page was opened with its own seed.
+  const [preMode, setPreMode] = useSessionState<"pre" | "draft">("legal-drafter", "preMode", modeParam || najizSeed ? "draft" : "pre", {
+    allowed: ["pre", "draft"],
+    enabled: !modeParam && !najizSeed,
+  });
 
   // l11 (T8-Q511a): back from a top-up, the wizard's fields on the AI step
   // (the analysis was refused before it ran; uploaded files are attached again)

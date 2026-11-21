@@ -252,9 +252,12 @@ test("libraryAiDecision: an active founder member running a founder-plan tool is
   assert.equal(libraryAiDecision(loose, RANKS), "upgrade");
 });
 
-test("isFounderPlanTool: the drafter and the four output tools, nothing else", async () => {
+test("isFounderPlanTool: the drafter, the four output tools and «مراجع العقود» (06 أ6, access only), nothing else", async () => {
   const { isFounderPlanTool } = await import("./founderPlanTool.ts");
-  for (const t of ["legal-drafter", "contracts-pro", "legal-opinion-consult", "legal-opinion-letter", "wargaming"]) {
+  const { creditKindForRun } = await import("../../../lib/membership/founderPlan.ts");
+  // 06 أ6: on the list for access, never a credit spend.
+  assert.equal(creditKindForRun("contract-review", {}, 0), null);
+  for (const t of ["legal-drafter", "contracts-pro", "legal-opinion-consult", "legal-opinion-letter", "wargaming", "contract-review"]) {
     assert.equal(isFounderPlanTool(t), true, t);
   }
   for (const t of ["library-assistant", "quick-answer", "assistant", "canvas-card", "", undefined, null, 5]) {

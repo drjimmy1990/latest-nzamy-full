@@ -7,7 +7,7 @@ import {
   ArrowCounterClockwise, CheckCircle, Info, ChartBar, Receipt,
   Buildings, Users, CalendarBlank, ArrowsLeftRight, Warning, Sparkle,
   // Case Type Icons
-  HardHat, Storefront, Scales, Lock, UsersThree, House, Bank
+  HardHat, Storefront, Lock, UsersThree, House, Bank
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import LawyerToolLink from "@/components/ai/LawyerToolLink";
@@ -39,7 +39,7 @@ interface FeeInputs {
 const CASE_TYPES: { id: CaseType; label: string; Icon: React.ElementType }[] = [
   { id: "labor",       label: "عمالي",           Icon: HardHat },
   { id: "commercial",  label: "تجاري",            Icon: Storefront },
-  { id: "civil",       label: "مدني",             Icon: Scales },
+  { id: "civil",       label: "مدني",             Icon: Gavel },
   { id: "criminal",    label: "جنائي",            Icon: Lock },
   { id: "family",      label: "أحوال شخصية",      Icon: UsersThree },
   { id: "real_estate", label: "عقاري",            Icon: House },

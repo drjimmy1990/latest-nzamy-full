@@ -126,8 +126,8 @@ test("owner ٢٢ / ٢٦: a contract-writing request is refused uncharged — «�
     ["lawyer", "advocate", true],
     ["firm", "advocate", true],
     ["admin", "advocate", true],
-    // contracts-pro is not consultant-blocked (unlike the memo drafter).
-    ["lawyer", "consultant", true],
+    // Owner ١٤٦ (batch l12): contracts-pro is reserved now, so an unpaid consultant gets no link to it.
+    ["lawyer", "consultant", false],
     ["individual", "advocate", false],
     ["corporate", "advocate", false],
     ["micro", "advocate", false],
@@ -140,6 +140,7 @@ test("owner ٢٢ / ٢٦: a contract-writing request is refused uncharged — «�
     assert.equal(r.body.code, "drafting_refused", userType);
     assert.match(String(r.body.error), /لا يكتب العقود/);
     if (link) assert.deepEqual(r.body.action, { label: "افتح محترف العقود", href: "/ai/contracts" }, `${userType}/${practice}`);
+    else if (practice === "consultant") assert.equal(r.body.action, undefined, `${userType}/${practice}`);
     else assert.deepEqual(r.body.action, userType === "micro" ? SERVICES : CLIENT_FORM, `${userType}/${practice}`);
     assert.ok(!log.some((q) => q.op === "rpc"), "nothing charged");
     assert.deepEqual(calls, [], "no n8n call");

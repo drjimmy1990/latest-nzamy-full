@@ -19,7 +19,6 @@ import type { ResearchType } from "@/components/legal-opinion/ContextResearch";
 import { ContextDueDiligence, ENTITY_TYPES, DD_GOALS, DD_SCOPE_ITEMS } from "@/components/legal-opinion/ContextDueDiligence";
 import type { EntityType, DdGoal, DdSide } from "@/components/legal-opinion/ContextDueDiligence";
 import { ContextCrossExam } from "@/components/legal-opinion/ContextCrossExam";
-import { CrossExamResultView } from "./_components/CrossExamResultView";
 import { SubmitStep, type RecapRow } from "./_components/SubmitStep";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
@@ -30,16 +29,22 @@ import { validateLegalOpinionIntake } from "@/lib/services/orderIntake.legalOpin
 import type { OutputType, SearchDepth, StepKey } from "./_types";
 import { OUTPUT_TYPES, AGENTS_QUICK, AGENTS_DEEP, AGENTS_COMPREHENSIVE } from "./_constants";
 import { StepProgress, ProcessingView } from "./_components/SharedViews";
-import { ResultView } from "./_components/ResultView";
 import { LetterWorkflow } from "./_components/LetterWorkflow";
 import { SettingsStep } from "./_components/SettingsStep";
-import BetaReviewGate from "@/components/BetaReviewGate";
 import { useAiRun } from "@/hooks/useAiRun";
 import { LEGAL_CONSULT_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
 import { AiOpinionPanel, TeamOrderDivider } from "./_components/AiOpinionPanel";
 import { useToolDraft } from "@/hooks/useToolDraft";
 import { draftText } from "@/lib/payments/topUpDraft";
 import { consultRunInput } from "./_components/aiOpinion";
+import ConsultantReservedGate from "@/components/ai/ConsultantReservedGate";
+import { useSessionState } from "@/hooks/useSessionState";
+
+/** P2-3 (batch l12): the opinion keeps its type, step and typed fields for this tab (toolStepState.ts). */
+const OPINION_STEP_TOOL = "legal-opinion-consult";
+const OPINION_TYPE_KEYS: readonly (OutputType | "")[] = ["", ...OUTPUT_TYPES.map((t) => t.id)];
+// "processing" / "result" are never restored: nothing on them is live.
+const OPINION_STEP_KEYS: readonly StepKey[] = ["type", "context", "settings", "submit"];
 
 // ─── UI id → stored metadata.intake.outputType map (Task C4, notes §3) ─────────
 // The wizard's own identifiers are hyphenated; the persisted intake contract
@@ -101,55 +106,64 @@ function submitErrorMessageAr(err: unknown): string {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
+/** Owner ١٤٦: a consultant meets the reservation lock first (ConsultantReservedGate). */
 export default function AILegalOpinionPage() {
+  return (
+    <ConsultantReservedGate tool="legal-opinion-consult">
+      <LegalOpinionWorkspace />
+    </ConsultantReservedGate>
+  );
+}
+
+function LegalOpinionWorkspace() {
   const { isDark } = useTheme();
 
   // State
-  const [selectedType, setSelectedType] = useState<OutputType | "">("");
-  const [currentStep, setCurrentStep] = useState<StepKey>("type");
-  const [topicArea, setTopicArea] = useState("");
-  const [description, setDescription] = useState("");
-  const [question, setQuestion] = useState("");
-  const [searchDepth, setSearchDepth] = useState<SearchDepth>("deep");
+  const [selectedType, setSelectedType] = useSessionState<OutputType | "">(OPINION_STEP_TOOL, "selectedType", "", { allowed: OPINION_TYPE_KEYS });
+  const [currentStep, setCurrentStep] = useSessionState<StepKey>(OPINION_STEP_TOOL, "currentStep", "type", { allowed: OPINION_STEP_KEYS });
+  const [topicArea, setTopicArea] = useSessionState(OPINION_STEP_TOOL, "topicArea", "");
+  const [description, setDescription] = useSessionState(OPINION_STEP_TOOL, "description", "");
+  const [question, setQuestion] = useSessionState(OPINION_STEP_TOOL, "question", "");
+  const [searchDepth, setSearchDepth] = useSessionState<SearchDepth>(OPINION_STEP_TOOL, "searchDepth", "deep");
   // Settings state — Study
-  const [studyGoal, setStudyGoal] = useState<StudyGoalId | "">("");
-  const [litigationStage, setLitigationStage] = useState<"first" | "appeal" | "cassation">("first");
+  const [studyGoal, setStudyGoal] = useSessionState<StudyGoalId | "">(OPINION_STEP_TOOL, "studyGoal", "");
+  const [litigationStage, setLitigationStage] = useSessionState<"first" | "appeal" | "cassation">(OPINION_STEP_TOOL, "litigationStage", "first");
   // Settings state — Memo
-  const [memoStructure, setMemoStructure] = useState({ facts: true, legal: true, recommendation: true, attachments: false });
-  const [memoDetailLevel, setMemoDetailLevel] = useState<"brief" | "detailed" | "comprehensive">("detailed");
+  const [memoStructure, setMemoStructure] = useSessionState(OPINION_STEP_TOOL, "memoStructure", { facts: true, legal: true, recommendation: true, attachments: false });
+  const [memoDetailLevel, setMemoDetailLevel] = useSessionState<"brief" | "detailed" | "comprehensive">(OPINION_STEP_TOOL, "memoDetailLevel", "detailed");
   // Context state — Memo (Task C4: previously local useState inside
   // ContextMemo with no Props for either — both died the moment the user
   // chose them. Lifted here like every other shared field.)
-  const [memoAudience, setMemoAudience] = useState<MemoAudience>("judge");
-  const [memoSide, setMemoSide] = useState<LawyerSide>("plaintiff");
+  const [memoAudience, setMemoAudience] = useSessionState<MemoAudience>(OPINION_STEP_TOOL, "memoAudience", "judge");
+  const [memoSide, setMemoSide] = useSessionState<LawyerSide>(OPINION_STEP_TOOL, "memoSide", "plaintiff");
   // Settings state — Research
-  const [researchSources, setResearchSources] = useState({ nzamy: true, laws: true, judgments: false, decrees: false });
-  const [researchLimit, setResearchLimit] = useState<"5" | "10" | "unlimited">("10");
+  const [researchSources, setResearchSources] = useSessionState(OPINION_STEP_TOOL, "researchSources", { nzamy: true, laws: true, judgments: false, decrees: false });
+  const [researchLimit, setResearchLimit] = useSessionState<"5" | "10" | "unlimited">(OPINION_STEP_TOOL, "researchLimit", "10");
   // Context state — Research (Task C4: previously local useState inside
   // ContextResearch, Props had none of them — all four died local.
   // kwInput stays local inside ContextResearch — transient input buffer,
   // not a value the order needs.)
-  const [researchType, setResearchType] = useState<ResearchType>("topic");
-  const [compareWith, setCompareWith] = useState("النظام الإماراتي");
-  const [keywords, setKeywords] = useState<string[]>([]);
+  const [researchType, setResearchType] = useSessionState<ResearchType>(OPINION_STEP_TOOL, "researchType", "topic");
+  const [compareWith, setCompareWith] = useSessionState(OPINION_STEP_TOOL, "compareWith", "النظام الإماراتي");
+  const [keywords, setKeywords] = useSessionState<string[]>(OPINION_STEP_TOOL, "keywords", []);
   // Context state — Due Diligence (Task C4: previously local useState
   // inside ContextDueDiligence; Props exposed only description — every
   // other field died local, "files" worst of all since it captured
   // filenames only and discarded the File itself.)
-  const [ddEntityType, setDdEntityType] = useState<EntityType>("company");
-  const [ddEntityName, setDdEntityName] = useState("");
-  const [ddExtraField, setDdExtraField] = useState("");
-  const [ddGoal, setDdGoal] = useState<DdGoal>("acquisition");
-  const [ddSide, setDdSide] = useState<DdSide>("buyer");
-  const [ddScope, setDdScope] = useState<Record<string, boolean>>(DEFAULT_DD_SCOPE);
+  const [ddEntityType, setDdEntityType] = useSessionState<EntityType>(OPINION_STEP_TOOL, "ddEntityType", "company");
+  const [ddEntityName, setDdEntityName] = useSessionState(OPINION_STEP_TOOL, "ddEntityName", "");
+  const [ddExtraField, setDdExtraField] = useSessionState(OPINION_STEP_TOOL, "ddExtraField", "");
+  const [ddGoal, setDdGoal] = useSessionState<DdGoal>(OPINION_STEP_TOOL, "ddGoal", "acquisition");
+  const [ddSide, setDdSide] = useSessionState<DdSide>(OPINION_STEP_TOOL, "ddSide", "buyer");
+  const [ddScope, setDdScope] = useSessionState<Record<string, boolean>>(OPINION_STEP_TOOL, "ddScope", DEFAULT_DD_SCOPE);
   // Context state — Cross-Exam (Task C4: witnessRole/destroyGoal already
   // reached page.tsx baked into `description` as free text via
   // confirmReady(); crossExamReady additionally gates the shared "next"
   // button so a client can't skip cross-exam's own dynamic Q&A phases —
   // see ContextCrossExam's onReadyInfo prop).
-  const [crossExamReady, setCrossExamReady] = useState(false);
-  const [crossExamWitnessRole, setCrossExamWitnessRole] = useState("");
-  const [crossExamDestroyGoal, setCrossExamDestroyGoal] = useState("");
+  const [crossExamReady, setCrossExamReady] = useSessionState(OPINION_STEP_TOOL, "crossExamReady", false);
+  const [crossExamWitnessRole, setCrossExamWitnessRole] = useSessionState(OPINION_STEP_TOOL, "crossExamWitnessRole", "");
+  const [crossExamDestroyGoal, setCrossExamDestroyGoal] = useSessionState(OPINION_STEP_TOOL, "crossExamDestroyGoal", "");
 
   // Real file uploads (Task C4) — one shared instance across every
   // non-letter sub-flow, mirroring src/app/ai/wargaming/page.tsx. Only one
@@ -737,27 +751,12 @@ export default function AILegalOpinionPage() {
           </motion.div>
         )}
 
-        {/* ── STEP: RESULT ── */}
-        {/* HIDDEN, not deleted (Task C4) — same reasoning as "processing"
-            above. ResultView/CrossExamResultView/StudyDocumentEditor are
-            100% canned (MOCK_RESULT, hardcoded question batteries) — see
-            task-C4-report.md. */}
-        {currentStep === "result" && (
-          <motion.div key="step-result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            {selectedType === "cross-exam" ? (
-              <BetaReviewGate toolId="legal-opinion.cross-exam" toolName="مُولّد الاستجواب" reviewScope="legal-data">
-                <CrossExamResultView isDark={isDark} card={card} onReset={reset} />
-              </BetaReviewGate>
-            ) : (
-              <ResultView
-                outputType={selectedType as OutputType}
-                isDark={isDark}
-                onReset={reset}
-                onEdit={() => setCurrentStep("context")}
-              />
-            )}
-          </motion.div>
-        )}
+        {/* ── STEP: RESULT ── unmounted (P0-4, batch l12): ResultView,
+            CrossExamResultView and StudyDocumentEditor printed MOCK_RESULT and
+            fixed question lists, and no path ever set currentStep to "result".
+            The files stay on disk (owner decision ٤: no deletion of source
+            before its own decision); nothing imports them, so they leave the
+            bundle. The live consultation result is AiOpinionPanel below. */}
 
         {/* ── STEP: SUBMIT ── */}
         {/* The real replacement for processing/result — the request becomes

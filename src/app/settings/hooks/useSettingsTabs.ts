@@ -53,7 +53,8 @@ const SETTINGS_TABS: Partial<Record<SettingsTabId, SettingsTabDef>> = {
   entity:        { id: "entity",       labelAr: "إعدادات الكيان", labelEn: "Organization",  iconKey: "buildings" },
   team:          { id: "team",         labelAr: "الفريق والدعوات", labelEn: "Team & Invites", iconKey: "users-three" },
   profession:    { id: "profession",   labelAr: "إعدادات المهنة", labelEn: "Profession",    iconKey: "identification-badge" },
-  signature:     { id: "signature",    labelAr: "التوقيع والختم", labelEn: "Signature",     iconKey: "pen-nib" },
+  // N17 (batch l12): the tab points at the vault's letterhead, stamp and signature.
+  signature:     { id: "signature",    labelAr: "الترويسة والختم والتوقيع", labelEn: "Letterhead & Signature", iconKey: "pen-nib" },
   delegation:    { id: "delegation",   labelAr: "التفويض",        labelEn: "Delegation",    iconKey: "handshake" },
   invoice:       { id: "invoice",      labelAr: "الفواتير",       labelEn: "Invoices",      iconKey: "receipt" },
   compliance:    { id: "compliance",   labelAr: "الامتثال",       labelEn: "Compliance",    iconKey: "scales" },

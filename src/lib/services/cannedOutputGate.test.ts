@@ -197,11 +197,11 @@ test("/ai/micro has no canned output", () => {
   assert.ok(!body.includes("/ai/contract-drafter"), "a micro account is not sent to a lawyer tool");
   assert.ok(!body.includes("CONTRACT_CASES"));
   assert.ok(!AI_TOOLS["contract-drafter"].roles.includes("micro"), "the drafter is lawyer and firm only");
-  assert.match(page, /const GUIDANCE_LINKS[\s\S]*href: "\/ai\/quick-answer"[\s\S]*href: "\/ai\/legal-opinion"/);
-  for (const href of ["/ai/quick-answer", "/ai/legal-opinion"]) {
-    const tool = href === "/ai/quick-answer" ? "quick-answer" : "legal-opinion-consult";
-    assert.ok(AI_TOOLS[tool].roles.includes("micro"), `${tool} runs for a micro account`);
-  }
+  // Owner ١٢٢ (batch l12): the legal opinion is lawyer + firm only, so the quick answer is the guidance left.
+  assert.match(page, /const GUIDANCE_LINKS[\s\S]*href: "\/ai\/quick-answer"/);
+  assert.ok(!body.includes('href: "/ai/legal-opinion"'), "a micro account is not sent to the lawyer-only legal opinion");
+  assert.ok(AI_TOOLS["quick-answer"].roles.includes("micro"), "quick-answer runs for a micro account");
+  assert.ok(!AI_TOOLS["legal-opinion-consult"].roles.includes("micro"));
   assert.match(page, /const SOON_CASES[\s\S]*id: "warning_letter"[\s\S]*id: "complaint_reply"[\s\S]*id: "consultation"/);
   assert.ok(!/٥٠٠|500 نقطة/.test(body), "a price is typed by hand");
   assert.ok(body.includes("قريباً"));

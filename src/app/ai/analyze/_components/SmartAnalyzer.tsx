@@ -12,6 +12,7 @@ import Link from "next/link";
 import { buildEvalReport } from "./evalReport";
 import { domains } from "./types";
 import AiResultActions from "@/components/AiResultActions";
+import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
 import BetaReviewGate from "@/components/BetaReviewGate";
 
 interface Props { isDark: boolean; isRTL: boolean; }
@@ -264,6 +265,8 @@ export default function SmartAnalyzer({ isDark, isRTL }: Props) {
       </motion.div>
 
       <motion.div variants={fadeUp} className={`pt-4 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
+        {/* Owner ١٢٤a: the fixed line on the five analysis tools. */}
+        <AssistIndicatorNote isDark={isDark} className="mb-3" />
         <AiResultActions text={`${report.recommendation}\n${report.risks.join("\n")}`}
           filename="legal-analysis" showVault showHumanReview className="justify-start" />
       </motion.div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, CheckCircle, PencilSimple } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
@@ -9,6 +9,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { useAiRun } from "@/hooks/useAiRun";
 import { useToolDraft } from "@/hooks/useToolDraft";
+import { useSessionState } from "@/hooks/useSessionState";
 import { draftText as draftField, draftTextMap } from "@/lib/payments/topUpDraft";
 import { ContractType, Mode, Step, contractTypes } from "./_components/contractTypes";
 import { asContractDraft, contractDraftFields, contractDraftText } from "./_components/contractDraft";
@@ -54,15 +55,29 @@ export default function ContractDrafterPage() {
   const ArrowBack = isRTL ? ArrowRight : ArrowLeft;
 
   // Wizard state
-  const [mode, setMode] = useState<Mode>(null);
-  const [step, setStep] = useState<Step>(1);
+  const [mode, setMode] = useSessionState<Mode>("contract-drafter", "mode", null, { allowed: ["draft", "review", null] });
+  const [step, setStep] = useSessionState<Step>("contract-drafter", "step", 1, { allowed: [1, 2, 3, 5] });
   const [selectedType, setSelectedType] = useState<ContractType | null>(null);
-  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [formData, setFormData] = useSessionState<Record<string, string>>("contract-drafter", "formData", {});
   const [agreed, setAgreed] = useState(false);
   // Review mode: the text the user pasted. Draft mode reads the AI's draft.
-  const [contractText, setContractText] = useState("");
+  const [contractText, setContractText] = useSessionState("contract-drafter", "contractText", "");
   const [copied, setCopied] = useState(false);
   const [step4Tab, setStep4Tab] = useState<"text" | "review">("text");
+  // P2-3 (batch l12): the chosen contract is kept by its id (the type itself holds
+  // components), and a kept draft step without its contract opens step 1.
+  const [keptTypeId, setKeptTypeId] = useSessionState("contract-drafter", "typeId", "");
+  useEffect(() => {
+    if (selectedType) setKeptTypeId(selectedType.id);
+  }, [selectedType, setKeptTypeId]);
+  useEffect(() => {
+    if (selectedType || !keptTypeId) return;
+    const ct = contractTypes.find((t) => t.id === keptTypeId);
+    if (ct) setSelectedType(ct);
+  }, [keptTypeId, selectedType]);
+  useEffect(() => {
+    if (mode === "draft" && step > 1 && !selectedType && !keptTypeId) setStep(1);
+  }, [mode, step, selectedType, keptTypeId, setStep]);
   // l11 (T8-Q511a): back from a top-up, the chosen contract and its fields on
   // the generate step (the agreement box is ticked again by the user)
   useToolDraft("contract-drafter", (d) => {

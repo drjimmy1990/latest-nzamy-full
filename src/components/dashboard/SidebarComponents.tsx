@@ -14,7 +14,7 @@ import {
   CalendarBlank, Receipt, ChartBar, FileArrowUp, Buildings,
   ShieldCheck, GitBranch, BookOpen, GearSix, Wallet,
   Tray, UserCircle, Star, Note, Gift, Percent, ShieldStar,
-  Briefcase, Stamp, ArrowLeft, Kanban, Scales, Storefront, ArrowFatUp,
+  Briefcase, Stamp, ArrowLeft, Kanban, Storefront, ArrowFatUp,
   Ticket, Megaphone, Coins, Terminal, Database, Tag, UserCirclePlus, CreditCard,
   Broom, Microphone, Article, Target, MapTrifold, Translate,
   Trophy, Brain, Plus, ListChecks, PencilLine, Crown, Vault,
@@ -40,7 +40,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   CalendarBlank, Receipt, ChartBar, FileArrowUp, Buildings,
   ShieldCheck, GitBranch, BookOpen, GearSix, Wallet,
   Tray, UserCircle, Star, Note, Gift, Percent, ShieldStar,
-  Briefcase, Stamp, ArrowLeft, Kanban, Scales, Storefront, ArrowFatUp,
+  Briefcase, Stamp, ArrowLeft, Kanban, Storefront, ArrowFatUp,
   Ticket, Megaphone, Coins, Terminal, Database, Tag, UserCirclePlus, CreditCard,
   Broom, Microphone, Article, Target, MapTrifold, Translate,
   Trophy, Brain, Plus, ListChecks, PencilLine, Crown, Vault,
@@ -53,6 +53,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   HandCuffs: LockKey,
   ClipboardList: ClipboardText,
   GraduationCap: BookOpen,  // fallback: Academy
+  // R3e (owner file 12, batch l12): no cross-like icon in a menu; a stray "Scales" draws the gavel.
+  Scales: Gavel,
 };
 
 export function SidebarIcon_({ name, size = 17 }: { name: string; size?: number }) {

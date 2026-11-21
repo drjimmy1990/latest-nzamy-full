@@ -19,6 +19,7 @@ import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import AiResultActions from "@/components/AiResultActions";
+import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
@@ -129,6 +130,8 @@ export function AiOpinionPanel({ kind, run, input, draftState, blocked, price, i
             <h3 className={`mb-2 text-[12px] font-bold ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>المصادر</h3>
             <SourceList cites={cites} isDark={isDark} />
           </div>
+          {/* Owner ١٢٤a: the fixed line on the five analysis tools. */}
+          <AssistIndicatorNote isDark={isDark} />
         </div>
       )}
 

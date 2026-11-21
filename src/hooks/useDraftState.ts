@@ -7,6 +7,11 @@ import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { valueLabelAr } from "@/lib/services/intakeValues";
+import { useSessionState } from "@/hooks/useSessionState";
+
+/** P2-3 (batch l12): the drafter keeps its step and typed fields for this tab (toolStepState.ts). */
+const DRAFT_STEP_TOOL = "legal-drafter";
+const DRAFT_STEP_KEYS: readonly (StepKey | VisibleStepKey)[] = CLIENT_VISIBLE_STEPS.map((s) => s.key);
 
 /**
  * Resolve a raw memoType id (e.g. "case") to its Arabic label ("تحرير دعوى")
@@ -59,47 +64,49 @@ export function useDraftState(initialMode = "", prefill?: DraftPrefill | null) {
     }
   }
   const seed = seedFromMode(initialMode);
-  const [step, setStep]           = useState<StepKey | VisibleStepKey>("identify");
+  // A page opened with its own seed (?mode=, a Najiz or library prefill) starts from it, not from the kept state.
+  const keep = { enabled: !initialMode && !prefill };
+  const [step, setStep]           = useSessionState<StepKey | VisibleStepKey>(DRAFT_STEP_TOOL, "step", "identify", { ...keep, allowed: DRAFT_STEP_KEYS });
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied]       = useState(false);
 
   // Step 1 state
-  const [clientRole, setClientRole]   = useState<"plaintiff" | "defendant" | "">("");
-  const [memoType, setMemoType]       = useState(seed.memoType || prefill?.memoType || "");
-  const [memoSubType, setMemoSubType] = useState("");
-  const [legalBranch, setLegalBranch] = useState(seed.legalBranch || prefill?.legalBranch || "");
-  const [notesText, setNotesText]     = useState(prefill?.notesText ?? "");
+  const [clientRole, setClientRole]   = useSessionState<"plaintiff" | "defendant" | "">(DRAFT_STEP_TOOL, "clientRole", "", keep);
+  const [memoType, setMemoType]       = useSessionState(DRAFT_STEP_TOOL, "memoType", seed.memoType || prefill?.memoType || "", keep);
+  const [memoSubType, setMemoSubType] = useSessionState(DRAFT_STEP_TOOL, "memoSubType", "", keep);
+  const [legalBranch, setLegalBranch] = useSessionState(DRAFT_STEP_TOOL, "legalBranch", seed.legalBranch || prefill?.legalBranch || "", keep);
+  const [notesText, setNotesText]     = useSessionState(DRAFT_STEP_TOOL, "notesText", prefill?.notesText ?? "", keep);
   const [showPreFiling, setShowPreFiling] = useState(false);
   const [preFilingAnswers, setPreFilingAnswers] = useState<string[]>([]);
 
   // Step 2 state
-  const [caseText, setCaseText]           = useState("");
+  const [caseText, setCaseText]           = useSessionState(DRAFT_STEP_TOOL, "caseText", "", keep);
   const [caseFile, setCaseFile]           = useState<string | null>(null);
   const [supportDocs, setSupportDocs]     = useState<SupportDoc[]>([]);
-  const [lawyerNotes, setLawyerNotes]     = useState("");
+  const [lawyerNotes, setLawyerNotes]     = useSessionState(DRAFT_STEP_TOOL, "lawyerNotes", "", keep);
   const [useFirmMemory, setUseFirmMemory] = useState(false);
   const [bulkUpload, setBulkUpload]       = useState(false);
   const [customLegalTexts, setCustomLegalTexts] = useState("");
-  const [disputeSummary, setDisputeSummary]     = useState("");
+  const [disputeSummary, setDisputeSummary]     = useSessionState(DRAFT_STEP_TOOL, "disputeSummary", "", keep);
 
   // Party data (only for تحرير دعوى)
-  const [partyOne, setPartyOne] = useState<PartyData>({ ...EMPTY_PARTY });
-  const [partyTwo, setPartyTwo] = useState<PartyData>({ ...EMPTY_PARTY });
+  const [partyOne, setPartyOne] = useSessionState<PartyData>(DRAFT_STEP_TOOL, "partyOne", { ...EMPTY_PARTY }, keep);
+  const [partyTwo, setPartyTwo] = useSessionState<PartyData>(DRAFT_STEP_TOOL, "partyTwo", { ...EMPTY_PARTY }, keep);
 
   // بيانات الحكم المطعون فيه (for طعن / رد / استئناف)
-  const [judgmentNumber,  setJudgmentNumber]  = useState("");
-  const [judgmentCourt,   setJudgmentCourt]   = useState("");
-  const [judgmentDate,    setJudgmentDate]    = useState("");
-  const [judgmentText,    setJudgmentText]    = useState("");
-  const [judgmentReasons, setJudgmentReasons] = useState("");
-  const [plaintiffName,   setPlaintiffName]   = useState("");
-  const [defendantName,   setDefendantName]   = useState("");
+  const [judgmentNumber,  setJudgmentNumber]  = useSessionState(DRAFT_STEP_TOOL, "judgmentNumber", "", keep);
+  const [judgmentCourt,   setJudgmentCourt]   = useSessionState(DRAFT_STEP_TOOL, "judgmentCourt", "", keep);
+  const [judgmentDate,    setJudgmentDate]    = useSessionState(DRAFT_STEP_TOOL, "judgmentDate", "", keep);
+  const [judgmentText,    setJudgmentText]    = useSessionState(DRAFT_STEP_TOOL, "judgmentText", "", keep);
+  const [judgmentReasons, setJudgmentReasons] = useSessionState(DRAFT_STEP_TOOL, "judgmentReasons", "", keep);
+  const [plaintiffName,   setPlaintiffName]   = useSessionState(DRAFT_STEP_TOOL, "plaintiffName", "", keep);
+  const [defendantName,   setDefendantName]   = useSessionState(DRAFT_STEP_TOOL, "defendantName", "", keep);
 
   // Step 7
   const [reviewPhase, setReviewPhase] = useState(0);
 
   // ── Submit step state ───────────────────────────────────────────────────
-  const [submitNotes, setSubmitNotes]   = useState("");
+  const [submitNotes, setSubmitNotes]   = useSessionState(DRAFT_STEP_TOOL, "submitNotes", "", keep);
   const [submitting, setSubmitting]     = useState(false);
   const [submitErrors, setSubmitErrors] = useState<string[]>([]);
 

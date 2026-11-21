@@ -24,8 +24,10 @@ import {
 } from "../../app/ai/legal-opinion/_components/aiOpinion.ts";
 
 const RUN = "11111111-2222-4333-8444-555555555555";
-const INDIVIDUAL: RunActor = { userId: "u-2", userType: "individual", practiceKind: "advocate", displayName: "أ. سارة" };
-const CONSULTANT: RunActor = { userId: "u-3", userType: "lawyer", practiceKind: "consultant", displayName: null };
+// Owner ١٢٢ (batch l12): the legal opinion is lawyer + firm only, so the plain caller is an advocate.
+const INDIVIDUAL: RunActor = { userId: "u-2", userType: "lawyer", practiceKind: "advocate", displayName: "أ. سارة" };
+// Owner ١٤٦: a consultant runs it only on a paid term already running at the cut-off.
+const CONSULTANT: RunActor = { userId: "u-3", userType: "lawyer", practiceKind: "consultant", displayName: null, consultantPaidTerm: true };
 const ON = { "legal-opinion-consult": { mode: "live" }, "legal-opinion-letter": { mode: "live" } };
 const QUESTION = "استقلت من عملي بعد ست سنوات، فهل أستحق مكافأة نهاية الخدمة؟";
 
@@ -78,7 +80,7 @@ function deps(calls: Call[], o: { access?: StartRunDeps["libraryAccess"]; found?
 
 const rpcs = (log: FakeQuery[]) => log.filter((q) => q.op === "rpc").map((q) => q.table);
 
-test("the registry: two jobs (100 / 50), off by default, no files, every registered role (owner ٤١٧ adds government), consultants allowed", () => {
+test("the registry: two jobs (100 / 50), off by default, no files, lawyers and firms only (owner ١٢٢), consultants reserved (owner ١٤٦)", () => {
   assert.equal(LEGAL_CONSULT_PRICE, 100, "owner ٤١٠: the consultation is 100");
   assert.equal(LEGAL_LETTER_PRICE, 50, "owner ٤١٠: the letter is 50");
   assert.equal(AI_TOOLS["legal-opinion-consult"].price({}, { pages: null }), 100);
@@ -89,9 +91,10 @@ test("the registry: two jobs (100 / 50), off by default, no files, every registe
     assert.equal(t.n8nPath, `nzamy-ai/${id}`);
     assert.equal(t.defaultMode, "off");
     assert.equal(t.files, undefined);
-    assert.equal(t.consultantBlocked, false, "/ai/legal-opinion is open to consultants (Art. 18)");
+    assert.equal(t.consultantBlocked, true, "owner ١٤٦: reserved for the advocate and the firm");
+    assert.equal(t.consultantPaidTerm, true, "owner ١٤٦: a paid consultant keeps it to his term's end");
     assert.ok(!t.sendsDisplayName, "the letter is signed by the sender typed, never the account");
-    assert.deepEqual([...t.roles], ["individual", "lawyer", "firm", "corporate", "micro", "provider", "government", "ngo"]);
+    assert.deepEqual([...t.roles], ["lawyer", "firm"]);
   }
   assert.deepEqual(AI_TOOLS["legal-opinion-consult"].retrieval, { from: "question", laws: 8, principles: 4 });
   assert.equal(AI_TOOLS["legal-opinion-letter"].retrieval, undefined, "a letter is not refunded for citing no library text");
@@ -284,4 +287,20 @@ test("page helpers: the inputs the page sends pass the server's checks; results 
     assert.doesNotMatch(text, /المساعد الذكي للمكتبة/);
   }
   assert.match(aiOpinionErrorText("library_tier", null), /الباقة الاحترافية/, "names the plan the tool needs, in Arabic (N05-L12)");
+});
+
+test("owner ١٢٢ / ١٤٦: an individual and an unpaid consultant are refused before any charge", async () => {
+  for (const [actor, code] of [
+    [{ userId: "u-4", userType: "individual", practiceKind: "advocate", displayName: null }, "role"],
+    [{ userId: "u-5", userType: "lawyer", practiceKind: "consultant", displayName: null }, "consultant_blocked"],
+  ] as Array<[RunActor, string]>) {
+    const { client, log } = db();
+    const calls: Call[] = [];
+    const r = await startRunWith(client as never, deps(calls), actor, { tool: "legal-opinion-consult", input: { question: QUESTION }, idempotencyKey: "key-abcdef09" });
+    assert.equal(r.status, 403, actor.userType);
+    assert.equal(r.body.code, code);
+    assert.deepEqual(rpcs(log), [], "nothing charged");
+    assert.deepEqual(calls, [], "n8n never called");
+    if (code === "consultant_blocked") assert.doesNotMatch(String(r.body.error), /المادة ١٨/);
+  }
 });

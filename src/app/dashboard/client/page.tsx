@@ -523,12 +523,14 @@ export default function ClientDashboard() {
       color: "from-[#0B3D2E] to-[#1a6b50]",
       desc: "إجابة مستندة إلى الأنظمة",
     },
+    // Owner ١٢٢ (batch l12): the legal opinion is for lawyers and firms only;
+    // a client asks a lawyer instead.
     {
-      label: "الرأي القانوني",
-      href: "/ai/legal-opinion",
+      label: "اطلب من محامٍ",
+      href: "/dashboard/client/consultation/new",
       icon: FileText,
       color: "from-[#155c40] to-[#1e7a55]",
-      desc: "استشارة أو خطاب مكتوب",
+      desc: "استشارة مكتوبة من محامٍ مرخّص",
     },
   ];
 

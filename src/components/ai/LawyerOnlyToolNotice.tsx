@@ -10,8 +10,9 @@ import { useTheme } from "@/components/ThemeProvider";
  * the page's own answer when it is reached anyway (a fail-open edge read, a
  * client-side navigation). The run route refuses the tool with 403 either way.
  *
- * It offers what the owner left open to every account: the general guidance
- * tools, and for an individual or a company the consultation request form.
+ * It offers what the owner left open to every account: the quick answer, and
+ * for an individual or a company «اطلب من محامٍ» (the consultation request
+ * form). The legal opinion left that list with owner ١٢٢ (batch l12).
  */
 export default function LawyerOnlyToolNotice({ userType }: { userType: string | null | undefined }) {
   const { isDark } = useTheme();
@@ -24,20 +25,18 @@ export default function LawyerOnlyToolNotice({ userType }: { userType: string | 
           هذه الأداة للمحامين ومكاتب المحاماة المرخّصة
         </p>
         <p className={`text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-          أدوات الصياغة والعقود وتحليل القضايا في نظامي مخصّصة للمحامين ومكاتب المحاماة. يمكنك الحصول على توجيه عام من الأدوات المتاحة لحسابك
-          {canOrderConsultation ? "، أو طلب استشارة من محامٍ." : "."}
+          أدوات الصياغة والعقود والرأي القانوني وتحليل القضايا في نظامي مخصّصة للمحامين ومكاتب المحاماة. يمكنك الحصول على توجيه عام من الأدوات المتاحة لحسابك
+          {canOrderConsultation ? "، أو أن تطلب ما تحتاجه من محامٍ." : "."}
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
+          {/* Owner ١٢٢: the lock carries «اطلب من محامٍ». */}
           {canOrderConsultation && (
             <Link href="/dashboard/client/consultation/new" className={`${link} bg-[#0B3D2E] text-white`}>
-              اطلب استشارة
+              اطلب من محامٍ
             </Link>
           )}
           <Link href="/ai/quick-answer" className={`${link} border ${isDark ? "border-white/[0.1] text-zinc-300" : "border-zinc-200 text-zinc-700"}`}>
             سؤال قانوني سريع
-          </Link>
-          <Link href="/ai/legal-opinion" className={`${link} border ${isDark ? "border-white/[0.1] text-zinc-300" : "border-zinc-200 text-zinc-700"}`}>
-            الرأي القانوني
           </Link>
         </div>
       </div>

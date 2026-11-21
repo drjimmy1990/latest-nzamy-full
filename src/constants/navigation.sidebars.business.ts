@@ -244,7 +244,7 @@ export const GOVERNMENT_SIDEBAR: SidebarGroup[] = [
   {
     title: "أدوات القاضي", titleEn: "Judge Tools",
     items: [
-      { label: "مُرجّح الأحكام",    labelEn: "Judgment Weigher",      href: "/ai/gov/judgment-weigher",      icon: "Scales", badge: "قريباً", gateKey: "gov-judiciary" },
+      { label: "مُرجّح الأحكام",    labelEn: "Judgment Weigher",      href: "/ai/gov/judgment-weigher",      icon: "Gavel", badge: "قريباً", gateKey: "gov-judiciary" },
       { label: "باحث المبادئ",      labelEn: "Judicial Search",        href: "/ai/gov/judicial-search",       icon: "MagnifyingGlass", badge: "قريباً", gateKey: "gov-judiciary" },
       { label: "صائغ الأحكام",      labelEn: "Judgment Drafter",       href: "/ai/gov/judgment-drafter",      icon: "PencilSimple", badge: "قريباً", gateKey: "gov-judiciary" },
       { label: "صائغ المنطوق",      labelEn: "Verdict Drafter",        href: "/ai/gov/verdict-drafter",       icon: "Gavel", badge: "قريباً", gateKey: "gov-judiciary" },

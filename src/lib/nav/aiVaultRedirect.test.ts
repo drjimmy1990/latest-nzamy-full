@@ -42,6 +42,9 @@ test("the page is a per-viewer server page that redirects outside its try and ke
   const src = readFileSync(new URL("../../app/ai/vault/page.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(src, /^"use client"/m);
   assert.match(src, /export const dynamic = "force-dynamic"/);
-  assert.match(src, /const destination = await viewerVault\(\);\s*if \(destination\) redirect\(destination\);/);
+  // N2 (batch l12): an admin is shown both vaults to pick from, before the redirect.
+  assert.match(src, /const destination = await viewerVault\(\);\s*if \(destination === "admin"\) return <AdminVaultPicker \/>;\s*if \(destination\) redirect\(destination\);/);
+  assert.match(src, /if \(userType === "admin"\) return "admin";/);
+  assert.match(src, /<Link href=\{LAWYER_VAULT_PATH\}[\s\S]*<Link href=\{FIRM_VAULT_PATH\}/);
   assert.match(src, /<DashboardComingSoon/);
 });

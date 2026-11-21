@@ -4,7 +4,7 @@ import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Scales, MagnifyingGlass, ArrowLeft, ArrowRight,
+  Gavel, MagnifyingGlass, ArrowLeft, ArrowRight,
   CheckCircle, Warning, Robot, Copy, DownloadSimple, Sparkle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -71,7 +71,7 @@ function JudgmentWeigherInner() {
         {/* Header */}
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDark ? "bg-indigo-500/10" : "bg-indigo-50"}`}>
-            <Scales size={22} weight="duotone" className={isDark ? "text-indigo-400" : "text-indigo-600"} />
+            <Gavel size={22} weight="duotone" className={isDark ? "text-indigo-400" : "text-indigo-600"} />
           </div>
           <div>
             <h1 className={`text-lg font-black ${isDark ? "text-white" : "text-gray-900"}`}>مُرجّح الأحكام</h1>
@@ -131,7 +131,7 @@ function JudgmentWeigherInner() {
                 className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition ${
                   isValid ? "bg-indigo-600 text-white hover:bg-indigo-700" : "opacity-40 cursor-not-allowed bg-indigo-600 text-white"
                 }`}>
-                <Scales size={16} /> ترجيح الأدلة <Arrow size={14} />
+                <Gavel size={16} /> ترجيح الأدلة <Arrow size={14} />
               </button>
             </motion.div>
           )}
