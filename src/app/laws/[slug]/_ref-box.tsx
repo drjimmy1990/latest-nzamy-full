@@ -33,7 +33,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowSquareOut, BookBookmark, Check, Copy, Crosshair, Gavel, LinkSimple, Lock, Plus, Scroll, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, BookBookmark, BookmarkSimple, Check, Copy, Crosshair, Gavel, LinkSimple, Lock, Scroll, X } from "@phosphor-icons/react";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import { apiSlug } from "@/utils/apiSlug";
 import { buildCitation } from "./_citation";
@@ -623,7 +623,7 @@ function RefPreview({ ctx, item, onClose }: { ctx: RefBoxContextValue; item: Ref
         </button>
         {(item.kind === "article" || item.kind === "principle") && p?.found && (
           <button type="button" onClick={onAdd} disabled={added || inCart} className={`${btn} disabled:opacity-60`}>
-            {added || inCart ? <Check size={13} /> : p.locked ? <Lock size={13} /> : <Plus size={13} />}
+            {added || inCart ? <Check size={13} /> : p.locked ? <Lock size={13} /> : <BookmarkSimple size={13} />}
             {added || inCart ? "في المسودة" : "إضافة للمسودة"}
           </button>
         )}

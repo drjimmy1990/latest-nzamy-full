@@ -1,10 +1,26 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Stack, Trash, X, ArrowCounterClockwise, Copy, Check, BookOpen, CaretDown, CaretUp, FileText, Scales, Gavel, Tray
+  Stack, Trash, X, ArrowCounterClockwise, Copy, Check, BookOpen, CaretDown, CaretUp, FileText, Scales, Gavel, Tray,
+  FileDoc, ShareNetwork, WhatsappLogo, XLogo, LinkedinLogo, LinkSimple, PencilSimpleLine,
 } from "@phosphor-icons/react";
 import { addToDesktop } from "@/lib/services/researchService";
+import { useUser } from "@/hooks/useUser";
+import { AI_TOOLS } from "@/lib/ai/tools";
+import { toolRoleRefusal } from "@/lib/ai/aiToolsConfig";
+import { sessionStorageOrNull } from "@/lib/ai/transcriptHandoff";
+import { DRAFTER_LIBRARY_URL, writeLibraryHandoff } from "@/lib/ai/libraryDrafterHandoff";
+import {
+  DRAFT_LIMITS_DEFAULT,
+  capForCopy,
+  draftEntryPath,
+  draftShareLinks,
+  draftShareMessage,
+  parseDraftLimits,
+  type DraftLimits,
+} from "@/lib/library/draftExport";
 
 export interface CartEntry {
   articleId: string;
@@ -20,6 +36,25 @@ export interface CartEntry {
   precedents: Array<{ id: string; summary: string; court: string; caseNum: string; year: string; relevance?: string }>;
 }
 
+/*
+ * L2 (owner file 03 ل2, batch l12): the drawer's actions in ordered groups —
+ *   نسخ          copy all / copy selected (as before), stopping at the admin cap
+ *                («نسخ المسودة كاملة» answer ج, platform_settings.library_draft_limits);
+ *   تنزيل Word   POST /api/library/draft-export: the server re-reads the texts
+ *                for the viewer, counts the whole draft once in the read limit,
+ *                and returns the file (header «استرشادي», source per item, date);
+ *   مشاركة       WhatsApp / X / LinkedIn / copy link — the title, a short excerpt
+ *                and the page link only, never the full text;
+ *   إرسال        to المجمّع البحثي (as before) and to الصائغ القانوني (the same
+ *                one-shot handoff as «أرسل إلى الصائغ», lawyer and firm only).
+ */
+
+type WordState =
+  | { kind: "idle" }
+  | { kind: "busy" }
+  | { kind: "done"; locked: number }
+  | { kind: "failed"; message: string };
+
 export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark, isRTL = true }: {
   cart: CartEntry[];
   onRemoveArticle: (id: string) => void;
@@ -28,11 +63,35 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
   isDark: boolean;
   isRTL?: boolean;
 }) {
+  const router = useRouter();
+  const user = useUser();
   const [copied, setCopied]         = useState(false);
+  const [copyNote, setCopyNote]     = useState<string | null>(null);
   const [history, setHistory]       = useState<CartEntry[][]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [collapsedLaws, setCollapsedLaws] = useState<Set<string>>(new Set());
   const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [limits, setLimits] = useState<DraftLimits>(DRAFT_LIMITS_DEFAULT);
+  const [word, setWord] = useState<WordState>({ kind: "idle" });
+  const [shareOpen, setShareOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [drafterError, setDrafterError] = useState<string | null>(null);
+
+  // The admin's caps (GET answers the defaults when the setting is missing).
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/library/draft-export", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (!cancelled && body && typeof body === "object") setLimits(parseDraftLimits((body as { limits?: unknown }).limits));
+      })
+      .catch(() => {
+        /* the defaults stay */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── Group by lawName ──────────────────────────────────────────────────────────
   const grouped = useMemo(() => {
@@ -46,6 +105,8 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
 
   const lawCount = grouped.size;
   const totalArticles = cart.reduce((acc, e) => acc + (e.isArticleAdded ? 1 : 0) + (e.isExecRegAdded ? 1 : 0), 0);
+  /** What every action works on: the selection, or the whole draft. */
+  const scope = selectedIds.length ? cart.filter(c => selectedIds.includes(c.articleId)) : cart;
 
   // ── Selection helpers ─────────────────────────────────────────────────────────
   const toggleItem = (id: string) =>
@@ -85,21 +146,82 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
     return out;
   };
 
-  const handleCopyAll = () => {
-    const text = cart.map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(40) + "\n\n");
+  /** Copies the entries up to the admin cap, and says so when it stopped short (answer ج). */
+  const copyEntries = (entries: CartEntry[]) => {
+    const { kept, left } = capForCopy(entries, limits);
+    const text = kept.map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(40) + "\n\n");
     navigator.clipboard.writeText(text);
+    setCopyNote(left > 0
+      ? (isRTL ? `نُسخ أول ${limits.maxItems} عنصراً، وهو حد النسخ؛ حدّد الباقي وانسخه على دفعة ثانية.` : `Copied the first ${limits.maxItems} items (the copy limit).`)
+      : null);
     setCopied(true); setTimeout(() => setCopied(false), 2200);
   };
 
-  const handleCopySelected = () => {
-    const text = cart.filter(c => selectedIds.includes(c.articleId)).map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(40) + "\n\n");
-    navigator.clipboard.writeText(text);
-    setCopied(true); setTimeout(() => setCopied(false), 2200);
-  };
+  const handleCopyAll = () => copyEntries(cart);
+  const handleCopySelected = () => copyEntries(cart.filter(c => selectedIds.includes(c.articleId)));
 
   const handleCopyLaw = (lawName: string) => {
-    const text = (grouped.get(lawName) ?? []).map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(30) + "\n\n");
+    const { kept } = capForCopy(grouped.get(lawName) ?? [], limits);
+    const text = kept.map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(30) + "\n\n");
     navigator.clipboard.writeText(text);
+  };
+
+  // ── Word (server-built, server-counted) ──────────────────────────────────────
+  const handleWord = async () => {
+    if (!scope.length || word.kind === "busy") return;
+    if (scope.length > limits.maxItems) {
+      setWord({ kind: "failed", message: isRTL ? `يتسع ملف Word لـ ${limits.maxItems} عنصراً على الأكثر؛ حدّد بعض العناصر ثم نزّلها.` : `A Word file holds at most ${limits.maxItems} items.` });
+      return;
+    }
+    setWord({ kind: "busy" });
+    try {
+      const res = await fetch("/api/library/draft-export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: scope.map(e => ({
+            articleId: e.articleId,
+            lawSlug: e.lawSlug,
+            lawName: e.lawName,
+            label: e.articleNum,
+            title: e.articleTitle,
+            withArticle: e.isArticleAdded,
+            withExecReg: e.isExecRegAdded,
+            text: buildEntryText(e, true),
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        const message = typeof body?.error === "string" && body.error ? body.error : (isRTL ? "تعذّر تجهيز الملف — حاول مرة أخرى." : "Could not build the file.");
+        setWord({ kind: "failed", message });
+        return;
+      }
+      const locked = Number(res.headers.get("X-Draft-Locked") ?? "0") || 0;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `مسودة-نظامي-${new Date().toISOString().slice(0, 10)}.docx`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setWord({ kind: "done", locked });
+    } catch {
+      setWord({ kind: "failed", message: isRTL ? "تعذّر تجهيز الملف — تحقّق من الاتصال وحاول مرة أخرى." : "Could not build the file." });
+    }
+  };
+
+  // ── Share: title + short excerpt + link (answer ج) ───────────────────────────
+  const shareEntry = scope[0] ?? null;
+  const shareUrl = shareEntry && typeof window !== "undefined" ? `${window.location.origin}${draftEntryPath(shareEntry.lawSlug)}` : "";
+  const shareMessage = shareEntry
+    ? draftShareMessage({ title: `${shareEntry.articleNum} — ${shareEntry.lawName}`, text: shareEntry.isArticleAdded ? shareEntry.articleText : "", url: shareUrl }, limits)
+    : "";
+  const shareLinks = shareEntry ? draftShareLinks(shareMessage, shareUrl) : null;
+  const copyShareLink = () => {
+    if (!shareUrl) return;
+    navigator.clipboard.writeText(shareUrl);
+    setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000);
   };
 
   // ── Send to the collector (owner answer ١٩٤) ───────────────────────────────
@@ -108,7 +230,7 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
   // per law, ready for reports and research. A guest (or a role the research
   // API refuses) gets a failure that says to sign in — never a silent success.
   const handleSendToCollector = async () => {
-    const entries = selectedIds.length ? cart.filter(c => selectedIds.includes(c.articleId)) : cart;
+    const entries = scope;
     if (!entries.length || sendState === "sending") return;
     const byLaw = new Map<string, CartEntry[]>();
     entries.forEach(e => { if (!byLaw.has(e.lawName)) byLaw.set(e.lawName, []); byLaw.get(e.lawName)!.push(e); });
@@ -125,6 +247,21 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
     }
   };
 
+  // ── Send to the drafter (L2 هـ / L6): lawyer and firm, as «أرسل إلى الصائغ» ──
+  const drafterOpen =
+    !user.loading && user.isLoggedIn &&
+    toolRoleRefusal(AI_TOOLS["legal-drafter"], { userType: user.userType ?? "", practiceKind: null }) === null;
+  const handleSendToDrafter = () => {
+    const text = scope.map(e => buildEntryText(e, true)).join("\n\n");
+    const label = scope.length === 1 ? `${scope[0].lawName} — ${scope[0].articleNum}` : `مسودة المكتبة — ${scope.length} عناصر`;
+    const result = writeLibraryHandoff(sessionStorageOrNull(), text, label);
+    if (!result.ok) {
+      setDrafterError(isRTL ? "تعذّر حفظ النص في هذا المتصفح — انسخ المسودة والصقها في «ملاحظات ومرئيات» لدى الصائغ القانوني." : "Could not hand the text over — copy it instead.");
+      return;
+    }
+    router.push(DRAFTER_LIBRARY_URL);
+  };
+
   // ── Actions ───────────────────────────────────────────────────────────────────
   const doRemove = (id: string) => { setHistory(h => [...h, cart]); onRemoveArticle(id); };
   const doClear  = () => { setHistory(h => [...h, cart]); onClearAll(); };
@@ -134,6 +271,11 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
     selectedIds.forEach(id => onRemoveArticle(id));
     setSelectedIds([]);
   };
+
+  const groupTitle = `text-[10px] font-bold tracking-wide ${isDark ? "text-zinc-500" : "text-slate-400"}`;
+  const outlineBtn = `flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-[11px] font-bold transition disabled:opacity-60 ${isDark ? "border-white/10 text-zinc-200 hover:bg-white/[0.05]" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`;
+  const shareBtn = `flex-1 flex items-center justify-center gap-1 py-2 rounded-xl border text-[11px] font-semibold transition ${isDark ? "border-white/10 text-zinc-300 hover:bg-white/[0.05]" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`;
+  const scopeSuffix = selectedIds.length ? ` (${selectedIds.length})` : "";
 
   return (
     <motion.div
@@ -163,17 +305,17 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
         </div>
         <div className="flex gap-1">
           {history.length > 0 && (
-            <button onClick={() => setHistory(h => h.slice(0, -1))} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
+            <button onClick={() => setHistory(h => h.slice(0, -1))} aria-label={isRTL ? "تراجع" : "Undo"} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
               <ArrowCounterClockwise size={14} />
             </button>
           )}
-          <button onClick={handleCopyAll} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
+          <button onClick={handleCopyAll} aria-label={isRTL ? "نسخ المسودة كاملة" : "Copy the whole draft"} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
             {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
           </button>
-          <button onClick={doClear} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-red-900/20 text-red-400" : "hover:bg-red-50 text-red-500"}`}>
+          <button onClick={doClear} aria-label={isRTL ? "تفريغ المسودة" : "Clear the draft"} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-red-900/20 text-red-400" : "hover:bg-red-50 text-red-500"}`}>
             <Trash size={14} />
           </button>
-          <button onClick={onClose} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
+          <button onClick={onClose} aria-label={isRTL ? "إغلاق" : "Close"} className={`p-1.5 rounded-lg transition ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}>
             <X size={14} />
           </button>
         </div>
@@ -264,9 +406,11 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
         )}
       </div>
 
-      {/* ── Footer ── */}
+      {/* ── Footer: the actions in ordered groups (L2) ── */}
       {cart.length > 0 && (
-        <div className={`p-3 border-t flex flex-col gap-2 ${isDark ? "border-white/[0.07]" : "border-slate-200"}`}>
+        <div className={`p-3 border-t flex flex-col gap-2.5 max-h-[55vh] overflow-y-auto ${isDark ? "border-white/[0.07]" : "border-slate-200"}`}>
+          {/* ١ نسخ وتنزيل */}
+          <p className={groupTitle}>{isRTL ? "نسخ وتنزيل" : "Copy & download"}</p>
           {selectedIds.length > 0 ? (
             <div className="flex gap-2">
               <button onClick={doDeleteSelected} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-[11px] font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition">
@@ -282,6 +426,48 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
               {copied ? <><Check size={13} /> {isRTL ? "تم النسخ" : "Copied"}</> : <><Copy size={13} /> {isRTL ? "نسخ كل المسودة" : "Copy entire draft"}</>}
             </button>
           )}
+          {copyNote && <p role="status" className={`text-[11px] ${isDark ? "text-amber-300" : "text-amber-800"}`}>{copyNote}</p>}
+          <button onClick={handleWord} disabled={word.kind === "busy"} className={outlineBtn}>
+            <FileDoc size={14} />
+            {word.kind === "busy"
+              ? (isRTL ? "جارٍ تجهيز الملف…" : "Preparing…")
+              : (isRTL ? `تنزيل ملف Word${scopeSuffix}` : `Download Word${scopeSuffix}`)}
+          </button>
+          {word.kind === "done" && (
+            <p role="status" className={`text-[11px] ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+              {isRTL
+                ? (word.locked > 0
+                    ? `نُزّل الملف. ${word.locked === 1 ? "عنصر واحد نُزّل بعنوانه فقط" : `${word.locked} عناصر نُزّلت بعناوينها فقط`} لأن نصه متاح لمشتركي باقة المكتبة.`
+                    : "نُزّل الملف، ويُحتسب تنزيله قراءةً واحدة من حد القراءة اليومي.")
+                : "Downloaded."}
+            </p>
+          )}
+          {word.kind === "failed" && <p role="alert" className="text-[11px] text-red-600">{word.message}</p>}
+
+          {/* ٢ مشاركة */}
+          <p className={groupTitle}>{isRTL ? "مشاركة" : "Share"}</p>
+          <button onClick={() => setShareOpen(o => !o)} className={outlineBtn} aria-expanded={shareOpen}>
+            <ShareNetwork size={14} />
+            {isRTL ? (selectedIds.length > 1 ? "مشاركة أول عنصر محدد" : "مشاركة") : "Share"}
+          </button>
+          {shareOpen && shareLinks && (
+            <div className="flex flex-col gap-1.5">
+              <p className={`text-[10.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
+                {isRTL ? "تُشارَك العنوان ومقتطف قصير ورابط الصفحة فقط، لا النص الكامل." : "Only the title, a short excerpt and the page link are shared."}
+              </p>
+              <div className="flex gap-1.5">
+                <a href={shareLinks.whatsapp} target="_blank" rel="noopener noreferrer" className={shareBtn}><WhatsappLogo size={13} /> {isRTL ? "واتساب" : "WhatsApp"}</a>
+                <a href={shareLinks.x} target="_blank" rel="noopener noreferrer" className={shareBtn}><XLogo size={13} /> X</a>
+                <a href={shareLinks.linkedin} target="_blank" rel="noopener noreferrer" className={shareBtn}><LinkedinLogo size={13} /> {isRTL ? "لينكدإن" : "LinkedIn"}</a>
+                <button onClick={copyShareLink} className={shareBtn}>
+                  {linkCopied ? <Check size={13} /> : <LinkSimple size={13} />} {isRTL ? (linkCopied ? "نُسخ" : "نسخ الرابط") : "Copy link"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ٣ إرسال */}
+          <p className={groupTitle}>{isRTL ? "إرسال" : "Send"}</p>
           <button
             onClick={handleSendToCollector}
             disabled={sendState === "sending"}
@@ -305,6 +491,17 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
               {isRTL ? "تعذّر الإرسال — سجّل الدخول بحساب يملك المجمّع البحثي ثم أعد المحاولة." : "Could not send — sign in with an account that has the collector, then try again."}
             </p>
           )}
+          {drafterOpen && (
+            <button
+              onClick={handleSendToDrafter}
+              title={isRTL ? "يفتح الصائغ القانوني والنص في خانة «ملاحظات ومرئيات» — لا يُرسل شيئاً ولا يخصم نقاطاً" : undefined}
+              className={outlineBtn}
+            >
+              <PencilSimpleLine size={13} />
+              {isRTL ? `إرسال إلى الصائغ القانوني${scopeSuffix}` : `Send to the drafter${scopeSuffix}`}
+            </button>
+          )}
+          {drafterError && <p role="alert" className="text-[11px] text-red-600">{drafterError}</p>}
         </div>
       )}
     </motion.div>

@@ -3,7 +3,7 @@
 import { useCallback, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, Minus, Copy, Check, CaretDown, CaretUp,
+  Copy, Check, CaretDown, CaretUp,
   ClockCounterClockwise, FileText, BookOpen, Lock,
   Scales,
   Gavel, Sparkle
@@ -37,6 +37,7 @@ import { articleNumberOf } from "./_cite-status";
 import { RefSheetButton, useRefBox } from "./_ref-box";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
 import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton"; // l6-tools Q485
+import { DraftToggleIcon, DraftToggleLabel } from "@/components/draft/DraftToggleIcon"; // l12 lib02 «New 2»
 
 const NO_TERMS: readonly HighlightTerm[] = [];
 
@@ -662,8 +663,8 @@ function PrincipleCard({ p, isDark, inCart, onToggle, locked, onLock, isRTL = tr
           <button onClick={handleCopy} aria-label={isRTL ? "نسخ المبدأ" : "Copy principle"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} aria-label={inCart ? (isRTL ? "إزالة من السلة" : "Remove from cart") : (isRTL ? "إضافة إلى السلة" : "Add to cart")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
-            {inCart ? <Minus size={11} /> : <Plus size={11} />}
+          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+            <DraftToggleIcon inDraft={inCart} size={11} />
           </button>
         </div>
       </div>
@@ -695,8 +696,8 @@ function PrecedentCard({ pr, isDark, inCart, onToggle, locked, onLock, isRTL = t
           <button onClick={handleCopy} aria-label={isRTL ? "نسخ السابقة القضائية" : "Copy precedent"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} aria-label={inCart ? (isRTL ? "إزالة من السلة" : "Remove from cart") : (isRTL ? "إضافة إلى السلة" : "Add to cart")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
-            {inCart ? <Minus size={11} /> : <Plus size={11} />}
+          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+            <DraftToggleIcon inDraft={inCart} size={11} />
           </button>
         </div>
       </div>
@@ -1086,9 +1087,11 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             
             <button
               onClick={mainOnToggleCart}
-              className={`p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
+              aria-pressed={mainInCart}
+              title={mainInCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")}
+              className={`p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
             >
-              {mainInCart ? <Minus size={12} /> : <Plus size={12} />}
+              <DraftToggleLabel inDraft={mainInCart} size={12} />
             </button>
           </div>
         )}
@@ -1323,11 +1326,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                         title={regInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
                         className={`p-2 rounded-lg transition ${
                           regInCart
-                            ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500"
+                            ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700"
                             : isDark ? "bg-[#C8A762]/15 text-[#C8A762]" : "bg-amber-50 text-amber-700"
                         }`}
+                        aria-pressed={regInCart}
                       >
-                        {regInCart ? <Minus size={11} /> : <Plus size={11} />}
+                        <DraftToggleLabel inDraft={regInCart} size={11} />
                       </button>
                     </div>
                   )}

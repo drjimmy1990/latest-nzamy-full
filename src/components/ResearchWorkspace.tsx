@@ -672,6 +672,7 @@ export function ResearchWorkspace({ isDark, pageId, isRTL = true }: { isDark: bo
           bottom: tools (9rem) → index (5rem) → scroll-to-top (1.25rem),
           each above the iOS safe-area inset; z-40 like the other FABs. */}
       <div
+        data-fab-autohide=""
         onMouseDown={(e)=>e.stopPropagation()}
         onTouchStart={(e)=>e.stopPropagation()}
         style={{ bottom: "calc(9rem + env(safe-area-inset-bottom, 0px))" }}

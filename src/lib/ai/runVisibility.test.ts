@@ -40,15 +40,15 @@ test("viewerIsAdmin: only a read that says admin is an admin; every failure is c
   assert.deepEqual(log[0].filters, [["eq", "id", "u-9"]], "the viewer's own profile is read");
 });
 
-test("staffMaySeeRunOutput: review + settings.write (super_admin) only", () => {
-  assert.equal(staffMaySeeRunOutput("review", "super_admin"), true);
-  for (const status of ["succeeded", "failed", "running", undefined]) {
-    assert.equal(staffMaySeeRunOutput(status, "super_admin"), false, String(status));
-  }
-  // Read-only roles: the route's gate answers 403 first; the rule says no as well.
-  assert.equal(staffMaySeeRunOutput("review", "operations"), false);
-  assert.equal(staffMaySeeRunOutput("review", "auditor"), false);
-  assert.equal(staffMaySeeRunOutput("review", null), false);
+test("staffMaySeeRunOutput (l12, owner file 03 ل11): only a TEST account's run, only for settings.write", () => {
+  assert.equal(staffMaySeeRunOutput("super_admin", true), true);
+  // a real user's run: never, whatever the role — the retired review rows included
+  assert.equal(staffMaySeeRunOutput("super_admin", false), false);
+  assert.equal(staffMaySeeRunOutput("super_admin", null), false, "an unread test flag is no");
+  // read-only roles: the route's gate answers 403 first; the rule says no as well
+  assert.equal(staffMaySeeRunOutput("operations", true), false);
+  assert.equal(staffMaySeeRunOutput("auditor", true), false);
+  assert.equal(staffMaySeeRunOutput(null, true), false);
 });
 
 test("admin ai-runs/[id]: settings.write gate before the read, output only through the rule", () => {
@@ -58,7 +58,14 @@ test("admin ai-runs/[id]: settings.write gate before the read, output only throu
   assert.ok(gateAt > -1, "the super-admin gate is missing");
   assert.ok(readAt > gateAt, "the gate runs before the read");
   assert.ok(src.includes("createServiceClient()"));
-  assert.ok(src.includes("staffMaySeeRunOutput(meta.status, gate.role)"), "output rides only on the pure rule");
+  assert.ok(src.includes("staffMaySeeRunOutput(gate.role, ownerIsTest)"), "output rides only on the pure rule");
+  assert.ok(src.includes("isTestAccountUser(admin, meta.user_id)"), "the test-account flag is the run owner's");
+  // the first read never selects the answer: it is read only after the rule says yes
+  const firstRead = src.slice(readAt, src.indexOf("maybeSingle()", readAt));
+  assert.doesNotMatch(firstRead, /output|citations|input/, "the metadata read must not select the answer");
+  const ruleAt = src.indexOf("staffMaySeeRunOutput(gate.role, ownerIsTest)");
+  assert.ok(src.indexOf('.select("output, citations")') > ruleAt, "the output is read only after the rule");
+  assert.doesNotMatch(src, /select\([^)]*input/, "the question is never read here");
   assert.doesNotMatch(src, /export async function (POST|PATCH|PUT|DELETE)/, "read-only route");
   for (const path of ["api/v1/ai/runs/route.ts", "api/v1/ai/runs/[id]/route.ts"]) {
     const user = readFileSync(join(APP, path), "utf8");

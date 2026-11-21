@@ -26,6 +26,8 @@ import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 // Batch l11-misc (O22): server-side feature flags.
 import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
 import { clearFeatureFlagsCache } from "@/lib/featureFlags/featureFlagsServer";
+import { draftLimitsIssue } from "@/lib/library/draftExport";
+import { retentionSettingIssue } from "@/lib/ai/aiHistory";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -96,6 +98,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
   // one minute; the page posts the whole object.
   "feature_flags",
+  // Batch l12 lib-draft (20261202_40): the library draft's caps (owner file 03
+  // ل2 answer ج) and the months an AI run keeps its question and answer (ل11).
+  "library_draft_limits",
+  "ai_runs_retention",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -191,6 +197,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),
   // Batch l11-misc (O22): pure, covered by src/lib/featureFlags/featureFlags.test.ts.
   feature_flags: featureFlagsIssue,
+  library_draft_limits: draftLimitsIssue,
+  ai_runs_retention: retentionSettingIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

@@ -43,6 +43,8 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       // ٤: المساعدة والمتابعة
       { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true, badge: "قريباً" },
       { label: "راصد التشريعات",    labelEn: "Law Monitor",              href: "/ai/monitor",       icon: "Bell" },
+      // L11-log (owner file 03 ل11, 20 Nov): «سجلّي» under the AI group — his stated exception to «القائمة الجانبية كما هي».
+      { label: "سجلّي",             labelEn: "My AI history",            href: "/dashboard/lawyer/ai/history", icon: "ClockCounterClockwise", divider: true },
     ],
   },
 

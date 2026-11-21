@@ -17,7 +17,7 @@
  */
 
 import { memo } from "react";
-import { BookmarkSimple, Check, Copy, FileText, ListNumbers, Plus } from "@phosphor-icons/react";
+import { BookmarkSimple, Check, Copy, FileText, ListNumbers } from "@phosphor-icons/react";
 import { LibraryLockedNote } from "@/components/library/LibrarySubscribeCard";
 import { Hl } from "@/components/search/MultiColorHighlight";
 import { pageToken, volumeToken } from "./_locator";
@@ -99,7 +99,7 @@ function StreamBlock({
                 isDark ? "border-white/[0.07] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}
             >
-              {inDraft ? <Check size={12} /> : <Plus size={12} />}
+              {inDraft ? <Check size={12} /> : <BookmarkSimple size={12} />}
               {inDraft ? "في المسودة" : "إضافة للمسودة"}
             </button>
           )}
