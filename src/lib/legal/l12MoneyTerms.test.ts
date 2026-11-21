@@ -35,6 +35,17 @@ test("the re-ask modal names this version's changes (not l9's clauses 14–15)",
   assert.ok(!gate.includes("وأُضيف إليها البند ١٤"));
 });
 
+test("l12 N9 (market) rides on the same version: /terms §٦ says the platform is an intermediary and no longer that fees are collected or a commission deducted through it", () => {
+  const terms = read("app/terms/page.tsx");
+  assert.ok(terms.includes("في سوق الطلبات: المنصة وسيط لا ضامن ولا أمين على الأتعاب، ولا تُحصَّل الأتعاب عبر المنصة حالياً."));
+  assert.ok(terms.includes("neither a guarantor nor a trustee of fees"));
+  assert.ok(!terms.includes("تُقتطع عمولة الخدمة"), "no commission deducted before payout while payment is off");
+  assert.ok(!terms.includes("is deducted directly from fees"));
+  assert.ok(!terms.includes("عبر قنوات الدفع المعتمدة في المنصة وحدها"));
+  assert.ok(!terms.includes("ويُصرف المستحق لمقدم الخدمة"));
+  assert.ok(read("components/legal/TermsReacceptGate.tsx").includes("وسيط لا ضامن ولا أمين على الأتعاب"));
+});
+
 test("/founder no longer calls 50 a top-up minimum; the point line is on the top-up screens", () => {
   const founder = read("app/founder/page.tsx");
   assert.ok(!founder.includes("بحد أدنى ٥٠ نقطة"));

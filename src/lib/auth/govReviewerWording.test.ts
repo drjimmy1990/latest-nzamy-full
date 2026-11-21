@@ -12,8 +12,8 @@ const COMMENT_LINE = /^\s*(\/\/|\*|\/\*|\{\/\*)/;
 const SHADDA = String.fromCharCode(0x651);
 const WORD = new RegExp(`معق${SHADDA}?ب`);
 
-/** Waiting on the money builder's terms version (src/app/terms is theirs in batch l12). */
-const PENDING_ELSEWHERE = new Set(["src/app/terms/page.tsx"]);
+/** Nothing pending: the integrator changed /terms with the l12 terms version (2026-11-22). */
+const PENDING_ELSEWHERE = new Set<string>();
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
