@@ -11,6 +11,7 @@ import {
 } from "@/lib/library/publicViewCap";
 import { useUser } from "@/hooks/useUser";
 import { staffMaySee } from "@/lib/auth/adminNavAccess";
+import LibraryListCapPanel from "./LibraryListCapPanel";
 
 /**
  * «حماية المكتبة من السحب» (batch l11; owner register 14 items 52, 53, 56,
@@ -378,6 +379,9 @@ export default function LibraryProtectionPanel({ isDark, card }: Props) {
           </div>
         )}
       </div>
+
+      {/* Batch l12 (Q100a): the non-subscriber list cap, its own settings and route. */}
+      <LibraryListCapPanel isDark={isDark} card={card} />
     </div>
   );
 }

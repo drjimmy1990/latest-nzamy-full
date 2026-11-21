@@ -79,7 +79,8 @@ test("the admin's patch: known keys, booleans only, at least one", () => {
 
 test("an exception needs an account, a decision and a reason", () => {
   const ok = parseOverrideInput({ email: " A@B.SA ", allowed: true, reason: "فريق العمل" });
-  assert.deepEqual(ok, { ok: true, userId: null, email: "a@b.sa", allowed: true, reason: "فريق العمل" });
+  // Q94a (l12): an old body (no end) is a permanent exception.
+  assert.deepEqual(ok, { ok: true, userId: null, email: "a@b.sa", allowed: true, reason: "فريق العمل", expiresAt: null, endsWithSubscription: false });
   const byId = parseOverrideInput({ userId: "00000000-0000-0000-0000-0000000000AA", allowed: false, reason: "تجربة" });
   assert.equal(byId.ok && byId.userId, "00000000-0000-0000-0000-0000000000aa");
   assert.equal(parseOverrideInput({ email: "nope", allowed: true, reason: "تجربة" }).ok, false);

@@ -6,9 +6,11 @@
  * same props; it watches the box's text at its cursor (articleRefTrigger.ts):
  *
  *   «[[نظام العمل ٨٠» or «@مادة ٨٠ نظام العمل»  →  a short list of library
- *   laws (the library's own autocomplete)  →  a pick checks the article in the
- *   library (the reader's citations lookup: numbers and titles, never text,
- *   nothing counted) and replaces the shortcut with «المادة (٨٠) من نظام العمل».
+ *   laws  →  a pick checks the article in the library (numbers and titles,
+ *   never text, nothing counted) and replaces the shortcut with «المادة (٨٠)
+ *   من نظام العمل». N11 (batch l12): both lookups are the tool's own
+ *   endpoint (/api/v1/ai/article-ref), which skips the per-account library
+ *   lock, so the helper works for every account the tool admits.
  *
  * Keyboard: ↓ ↑ to move, Enter to pick, Esc to close. Nothing is sent or
  * charged; the box's own limit is respected (fitsLimit).
@@ -21,6 +23,7 @@ import {
   articleFound,
   findTrigger,
   lawOptions,
+  lawSearchUrl,
   parseRefQuery,
   referenceText,
   replaceTrigger,
@@ -83,7 +86,8 @@ export default function ArticleRefAssist({ isDark, targetRef, value, onChange, d
     setList({ status: "loading" });
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/library/autocomplete?q=${encodeURIComponent(lawQuery)}`, { cache: "no-store" });
+        // N11 (batch l12): the tool's own lookup — no per-account library lock.
+        const res = await fetch(lawSearchUrl(lawQuery), { cache: "no-store" });
         if (!res.ok) throw new Error(String(res.status));
         const laws = lawOptions(await res.json());
         if (live) {

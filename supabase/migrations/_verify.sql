@@ -8085,3 +8085,27 @@ select 'l12 community: AI review log is service-role only (run 20261202_70)' as 
             and not has_table_privilege('authenticated', 'public.community_ai_reviews', 'SELECT')
        end as ok;
 -- <<< verify:l12_market
+-- >>> verify:l12_rules
+-- Batch l12 rules (Q94a / Q100a / Q121 / Q96): run 20261202_50 any time after 20261201_30 and 20261129_60 (before or after the deploy).
+select 'Q94a: library exceptions can end (expires_at / ends_with_subscription) and library_access_for honours it (run 20261202_50)' as check,
+       case when to_regclass('public.library_access_user_overrides') is null or to_regprocedure('public.library_access_for(uuid)') is null then false else
+       exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_access_user_overrides'::regclass and attname = 'expires_at' and not attisdropped)
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_access_user_overrides'::regclass and attname = 'ends_with_subscription' and not attisdropped)
+       and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_access_for(uuid)')), 'ends_with_subscription') > 0
+       end as ok;
+select 'Q100a: the non-subscriber list cap exists, server-only (RLS on, no session privilege) — OFF until the owner approves (run 20261202_50)' as check,
+       case when to_regclass('public.library_public_list_items') is null or to_regprocedure('public.library_public_list_hit(text[],text[])') is null then false else
+       (select relrowsecurity from pg_catalog.pg_class where oid = 'public.library_public_list_items'::regclass)
+       and not has_table_privilege('anon', 'public.library_public_list_items', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_public_list_items', 'SELECT')
+       and not has_function_privilege('anon', 'public.library_public_list_hit(text[],text[])', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_public_list_hit(text[],text[])', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_monitor_settings'::regclass and attname = 'non_subscriber_list_limit_enabled' and not attisdropped)
+       end as ok;
+select 'Q121 + Q96: free-question tool setting read by the free-question functions; reviewed-only summaries setting present (run 20261202_50)' as check,
+       to_regprocedure('public.ai_free_question_tool(uuid)') is not null
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'ai_free_question_tool') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), 'ai_free_question_tool') > 0, false)
+       and exists (select 1 from public.platform_settings where key = 'free_question_tool_by_account_type')
+       and exists (select 1 from public.platform_settings where key = 'library_summaries_reviewed_only') as ok;
+-- <<< verify:l12_rules

@@ -18,6 +18,8 @@ import type { Metadata } from "next";
 import { buildLibraryFallbackMetadata, buildLibraryMetadata } from "@/lib/seo";
 import { createServiceClient } from "@/lib/supabase/server";
 import { checkLibraryAccess, getLibraryStatus } from "@/lib/access-control";
+import { summaryShown } from "@/lib/library/summaryReview";
+import { readSummariesReviewedOnly } from "@/lib/library/summaryReviewServer";
 import {
   decodeRouteSlug,
   lawDateModified,
@@ -58,6 +60,24 @@ const isClosed = cache(async (): Promise<boolean> => (await getLibraryStatus()).
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
+/**
+ * Q96 (batch l12): may this document's موجز appear in the <head> / JSON-LD /
+ * SSR shell? Only when reviewed, while library_summaries_reviewed_only is on
+ * (the default) — the same rule as the library API. The status is its own
+ * read, so a missing column (decrees before 20261202_50) or a failed read
+ * means "not reviewed": the description falls back to the generic line.
+ */
+async function summaryAllowed(table: "laws" | "decrees_circulars", key: "slug" | "id", value: string): Promise<boolean> {
+  if (!(await readSummariesReviewedOnly())) return true;
+  try {
+    const supabase = await createServiceClient();
+    const { data, error } = await supabase.schema("library").from(table).select("summary_status").eq(key, value).maybeSingle();
+    return !error && summaryShown((data as { summary_status?: unknown } | null)?.summary_status, true);
+  } catch {
+    return false;
+  }
+}
+
 async function readLaw(slug: string): Promise<LibraryDocLoad> {
   const supabase = await createServiceClient();
   let { data, error } = await supabase
@@ -84,13 +104,14 @@ async function readLaw(slug: string): Promise<LibraryDocLoad> {
   if (!data) return { status: "not_found" };
   const type = str(data.type);
   const lawSlug = str(data.slug) || slug;
+  const showSummary = await summaryAllowed("laws", "slug", lawSlug);
   return {
     status: "ok",
     doc: {
       kind: "law",
       id: lawSlug,
       name: publicDocumentTitle("law", { title: str(data.title), type }),
-      description: publicDescription("law", str((data as Record<string, unknown>).summary_brief)),
+      description: publicDescription("law", showSummary ? str((data as Record<string, unknown>).summary_brief) : ""),
       dateModified: lawDateModified(data),
       legislationType: type || null,
     },
@@ -145,14 +166,18 @@ async function readOrder(id: string): Promise<LibraryDocLoad> {
     return { status: "error" };
   }
   if (!data) return { status: "not_found" };
-  const summary = str(data.summary_brief) || str(data.summary);
+  // Q96: an unreviewed decree موجز stays out of the title, description and shell.
+  const showSummary = await summaryAllowed("decrees_circulars", "id", str(data.id) || id);
+  const brief = showSummary ? str(data.summary_brief) : "";
+  const full = showSummary ? str(data.summary) : "";
+  const summary = brief || full;
   return {
     status: "ok",
     doc: {
       kind: "order",
       id: str(data.id) || id,
       name: publicDocumentTitle("order", { title: str(data.title), type: str(data.type), summary }),
-      description: publicDescription("order", str(data.summary_brief), str(data.summary)),
+      description: publicDescription("order", brief, full),
       // A decree's own date is its issue date — a subscriber's (٣١٨). No
       // visitor-visible legislative-event date exists for decrees yet.
       dateModified: null,

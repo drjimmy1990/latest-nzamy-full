@@ -21,7 +21,8 @@ import { stripArticleAuditNotes, stripAuditNotes, stripPipelineNotes } from '@/l
 import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
 import { isPreambleEmpty } from '@/app/laws/[slug]/_preamble';
 import { buildRegulationIndex, compareRegulationSortKey, type RegulationIndexRow } from './_regulation-index';
-import { LAW_REVIEWED_SUMMARY_COLUMNS, reviewedSummaryFor } from './_reviewed-summary';
+import { LAW_REVIEWED_SUMMARY_COLUMNS, readerSummaryFields } from './_reviewed-summary';
+import { readSummariesReviewedOnly } from '@/lib/library/summaryReviewServer';
 import { LAW_CHILDREN_MAX, lawChildKey, lawChildrenForViewer } from './_children';
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 
@@ -356,16 +357,22 @@ export async function GET(
     // File 16 §6 (l9; columns of l9-parser's 20261129_70): the frontmatter موجز,
     // shown only once reviewed. Its own read, so the columns not existing yet
     // (or any error) leave today's موجز as it is (_reviewed-summary.ts).
-    const reviewedSummary = await serverOnly
-      .schema('library')
-      .from('laws')
-      .select(LAW_REVIEWED_SUMMARY_COLUMNS)
-      .eq('slug', law.slug)
-      .maybeSingle()
-      .then(
-        (r) => reviewedSummaryFor(r.error ? null : r.data, isSubscriber),
-        () => null,
-      );
+    // Q96 (batch l12): with library_summaries_reviewed_only on (the default),
+    // the preamble's موجز is shown only when the law's summary_status is
+    // reviewed; otherwise no موجز at all (readerSummaryFields).
+    const [reviewedSummaryRow, summariesReviewedOnly] = await Promise.all([
+      serverOnly
+        .schema('library')
+        .from('laws')
+        .select(LAW_REVIEWED_SUMMARY_COLUMNS)
+        .eq('slug', law.slug)
+        .maybeSingle()
+        .then(
+          (r) => (r.error ? null : r.data),
+          () => null,
+        ),
+      readSummariesReviewedOnly(),
+    ]);
 
     // Owner ٣١٧ / ٣١٨: the ONE public date — the latest official legislative
     // event (the later of latest_update's date and the issue date; the key
@@ -525,9 +532,7 @@ export async function GET(
       // (the reader hides such a preamble for a subscriber too).
       preambleLocked: officialMeta.officialMetaLocked && !(isPreambleEmpty(readerExtras.preamble) && isPreambleEmpty(regulationExtras.preamble)),
       // N2.1: omitted (not empty) for a viewer the flag does not admit.
-      ...(reviewedSummary !== null
-        ? (reviewedSummary ? { summary: reviewedSummary } : {})
-        : readerExtras.summary ? { summary: readerExtras.summary, summaryLabel: readerExtras.summaryLabel } : {}),
+      ...readerSummaryFields(reviewedSummaryRow, isSubscriber, readerExtras, summariesReviewedOnly),
       ...(readerExtras.metadata_card ? { metadata_card: readerExtras.metadata_card } : {}),
       // Flat per-instrument view for the "اللائحة وحدها" tab — see build above.
       regulationInstruments,

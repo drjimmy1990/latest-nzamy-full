@@ -10,6 +10,10 @@ import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
 import { mergedNamesForViewer, mergedNamesFromDetails } from "@/lib/library/mergedRegulationNames";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
+import { summaryShown } from "@/lib/library/summaryReview";
+import { keepAllowed, listItemKey } from "@/lib/library/publicListCap";
+import { spendPublicListItems } from "@/lib/library/publicListCapServer";
+import { readSummariesReviewedOnly } from "@/lib/library/summaryReviewServer";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
 import { SUCCESSOR_READ_MAX_ROWS, readSuccessorRows, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
 import { isRepealedLawStatus } from "@/app/laws/law-status";
@@ -99,7 +103,12 @@ const LAW_OPTIONAL_FEATURES: readonly OptionalFeature[] = [
   { key: "repealedLast", columns: [LAW_REPEALED_KEY] },
   { key: "mergedNames", columns: [LAW_MERGED_NAMES_COLUMN] },
   { key: "mergedDetails", columns: [LAW_MERGED_DETAILS_COLUMN] },
+  // Q96 (batch l12): the law's summary_status (20261129_70) — the card's موجز
+  // only when reviewed (library_summaries_reviewed_only). Never sent.
+  { key: "summaryStatus", columns: ["summary_status"] },
 ];
+/** Q96: library.decrees_circulars.summary_status (20261202_50); never sent. */
+const DECREE_OPTIONAL_FEATURES: readonly OptionalFeature[] = [{ key: "decreeSummaryStatus", columns: ["summary_status"] }];
 const ASC_NULLS_LAST = { ascending: true, nullsFirst: false } as const;
 const DESC_NULLS_LAST = { ascending: false, nullsFirst: false } as const;
 // `summary` (owner ٢٦٣): the card shows the short موجز, else the source's
@@ -162,7 +171,10 @@ export async function GET(request: Request) {
   } catch {
     userId = null;
   }
-  const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
+  const [{ hasFullAccess, whitelistedSlugs, freeItemsByType }, summariesReviewedOnly] = await Promise.all([
+    getLibraryAccessForUser(userId),
+    readSummariesReviewedOnly(),
+  ]);
 
   // Strip large body fields from a locked row so the list never leaks paid text.
   const stripFields = (row: Record<string, unknown>, fields: string[]) => {
@@ -306,7 +318,7 @@ export async function GET(request: Request) {
 
     const [laws, decrees, principles, books, collections] = await Promise.all([
       shouldFetch("laws")
-        ? fetchSection("laws", (on) => `${on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS}, ${LAW_EVENT_DATE_SELECT}` + (on.has("mergedNames") ? `, ${LAW_MERGED_NAMES_COLUMN}` : "") + (on.has("mergedDetails") ? `, ${LAW_MERGED_DETAILS_COLUMN}` : ""), "laws", (q, on) => {
+        ? fetchSection("laws", (on) => `${on.has("summary") ? `${LAW_LIST_COLUMNS}, ${LAW_SUMMARY_COLUMN}` : LAW_LIST_COLUMNS}, ${LAW_EVENT_DATE_SELECT}` + (on.has("mergedNames") ? `, ${LAW_MERGED_NAMES_COLUMN}` : "") + (on.has("mergedDetails") ? `, ${LAW_MERGED_DETAILS_COLUMN}` : "") + (on.has("summaryStatus") ? ", summary_status" : ""), "laws", (q, on) => {
             let out = q;
             if (lawSectionCode) out = out.eq("section_code", lawSectionCode);
             if (lawType) {
@@ -334,11 +346,18 @@ export async function GET(request: Request) {
             // The موجز for the viewers the ٢٦٠ flag admits (answered: everyone,
             // the guest too); the order for all.
             // The «يشتمل على» names for every viewer (cleaned per tier below).
-            wanted: [...(lawSummaryVisible(hasFullAccess) ? ["summary", "sort", "repealedLast"] : ["sort", "repealedLast"]), "mergedNames", "mergedDetails"],
+            wanted: [...(lawSummaryVisible(hasFullAccess) ? ["summary", "summaryStatus", "sort", "repealedLast"] : ["sort", "repealedLast"]), "mergedNames", "mergedDetails"],
           })
         : Promise.resolve(emptySection()),
       shouldFetch("decrees")
-        ? fetchSection("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", (q) => q.order("id"), serverOnly)
+        ? fetchSection(
+            "decrees_circulars",
+            (on) => (on.has("decreeSummaryStatus") ? `${DECREE_LIST_COLUMNS}, summary_status` : DECREE_LIST_COLUMNS),
+            "decrees",
+            (q) => q.order("id"),
+            serverOnly,
+            { features: DECREE_OPTIONAL_FEATURES, wanted: ["decreeSummaryStatus"] },
+          )
         : Promise.resolve(emptySection()),
       // Service role: principles.text is server-only since 20261016_01 (owner
       // decision ١٧١); the paywall block below strips it from locked rows.
@@ -487,6 +506,11 @@ export async function GET(request: Request) {
       const { [LAW_EVENT_DATE_ALIAS]: _eventDate, ...rest } = row;
       void _eventDate; // never sent: the raw latest_update date leaves only as `latest_legislative_update`
       const shaped = isFree ? rest : stripFields({ ...rest }, ["preamble", "description", "article_status_summary"]);
+      // Q96 (batch l12): the card's موجز only when the law's summary is
+      // reviewed (library_summaries_reviewed_only); the status never leaves.
+      const lawSummaryShown = summaryShown(shaped.summary_status, summariesReviewedOnly);
+      delete shaped.summary_status;
+      if (!lawSummaryShown && "summary_brief" in shaped) shaped.summary_brief = null;
       // Owner ٣١٩ (ب): the موجز stays for everyone; a non-subscriber's loses
       // its decree numbers and issue dates here, on the server.
       if (typeof shaped.summary_brief === "string") {
@@ -525,6 +549,10 @@ export async function GET(request: Request) {
       // Owner ٤٢٤ / ٣٨٠: the number and date are a subscriber's (hasFullAccess,
       // never the free-item list) — '' for everyone else, like the decree route.
       const shaped = isFree ? { ...row } : stripFields({ ...row }, ["content", "text"]);
+      // Q96 (batch l12): a decree's summaries only once reviewed; the status never leaves.
+      const decreeSummaryShown = summaryShown(shaped.summary_status, summariesReviewedOnly);
+      delete shaped.summary_status;
+      if (!decreeSummaryShown) for (const key of ["summary_brief", "summary"]) if (key in shaped) shaped[key] = null;
       // ...and the موجز / summary lose their numbers and dates (the laws' ٣١٩ rule).
       for (const key of ["summary_brief", "summary"]) {
         if (typeof shaped[key] === "string") shaped[key] = summaryForViewer(shaped[key] as string, hasFullAccess);
@@ -544,6 +572,36 @@ export async function GET(request: Request) {
     books.data = (books.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
     collections.data = (collections.data as unknown as Record<string, unknown>[]).map((row) => ({ ...row, free: true, locked: false })) as any;
 
+    // Q100a (batch l12): the non-subscriber list cap — 30 items a day / 100 a
+    // week, SHIPPED OFF until the owner approves the evidence
+    // (publicListCapServer.ts; fails open). Items are allowed in the order
+    // listed; a section that was cut says hasMore: false, and the answer
+    // carries `listLimit` with the reader's message.
+    const LIST_SECTIONS = [
+      [laws, "law", "slug"],
+      [decrees, "decree", "id"],
+      [principles, "principle", "id"],
+      [books, "book", "id"],
+      [collections, "collection", "id"],
+    ] as const;
+    const listCap = await spendPublicListItems(
+      request,
+      { userId, hasFullLibrary: hasFullAccess },
+      LIST_SECTIONS.flatMap(([s, kind, idField]) =>
+        (s.data as unknown as Record<string, unknown>[]).map((row) => listItemKey(kind, row[idField])).filter((k): k is string => k !== null),
+      ),
+    );
+    if (listCap.allowed) {
+      for (const [s, kind, idField] of LIST_SECTIONS) {
+        const rows = s.data as unknown as Record<string, unknown>[];
+        const kept = keepAllowed(rows, (row) => listItemKey(kind, row[idField]), listCap.allowed);
+        if (kept.length < rows.length) {
+          s.data = kept as any;
+          s.hasMore = false;
+        }
+      }
+    }
+
     return NextResponse.json(
       {
         laws,
@@ -559,6 +617,8 @@ export async function GET(request: Request) {
         // grant, or an admin; owner ٢٠٥/٢٠٩). /laws hands it to its tabs, so a
         // card's lock follows this rule, not the client's tier-only gate.
         viewer: { hasFullAccess },
+        // Q100a: present only when the list cap held items back.
+        ...(listCap.notice ? { listLimit: listCap.notice } : {}),
       },
       // Tier-shaped (paywall + official metadata): never from a shared cache.
       { headers: { "Cache-Control": TIER_SHAPED_CACHE_CONTROL } },

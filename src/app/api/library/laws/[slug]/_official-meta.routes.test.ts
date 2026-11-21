@@ -31,7 +31,8 @@ test("init: law rows are masked for non-subscribers and the envelope says so", (
   assert.doesNotMatch(initSource, /\.in\("supersedes_law_slug"/);
   // hasFullAccess here is getLibraryAccessForUser's full library access (a
   // Pro+ tier, an active library grant, or an admin; owner ٢٠٥/٢٠٩) — no whitelist.
-  assert.match(initSource, /const \{ hasFullAccess, whitelistedSlugs, freeItemsByType \} = await getLibraryAccessForUser\(userId\);/);
+  // l12 (Q96): read alongside the reviewed-only switch, still getLibraryAccessForUser's answer.
+  assert.match(initSource, /const \[\{ hasFullAccess, whitelistedSlugs, freeItemsByType \}, summariesReviewedOnly\] = await Promise\.all\(\[\s*getLibraryAccessForUser\(userId\),/);
   assert.match(initSource, /officialMetaLocked: !hasFullAccess,/);
   assert.match(initSource, /\{ headers: \{ "Cache-Control": TIER_SHAPED_CACHE_CONTROL \} \}/);
   // status stays in the card columns.

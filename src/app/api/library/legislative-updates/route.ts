@@ -23,7 +23,11 @@ const COLUMNS = "slug, title, status, issue_date_hijri, latest_update_date:lates
 const HEADERS = { "Cache-Control": "private, max-age=300" };
 
 export async function GET() {
-  const gate = await libraryGate();
+  // Titles, links and dates only, the same for every viewer: the per-account
+  // library lock does not apply (as /api/library/stats). With the lock a
+  // signed-in individual / firm / business got no card while a guest saw it
+  // (journal prerequisite, batch l12). Only «افتح في المكتبة» stays gated.
+  const gate = await libraryGate({ accountLock: false });
   if (gate) return gate;
   try {
     const supabase = await createServiceClient();

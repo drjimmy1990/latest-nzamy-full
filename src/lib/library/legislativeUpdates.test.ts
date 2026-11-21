@@ -51,7 +51,10 @@ test("the limit", () => {
 
 test("the route reads as the service role behind the library gate, the date only, and never sends the key", () => {
   const src = readFileSync(new URL("../../app/api/library/legislative-updates/route.ts", import.meta.url), "utf8");
-  assert.match(src, /const gate = await libraryGate\(\);\s*if \(gate\) return gate;/);
+  // Batch l12 (journal prerequisite): the library's closed switch applies, the
+  // per-account lock does not — a signed-in individual sees the card a guest sees.
+  assert.match(src, /const gate = await libraryGate\(\{ accountLock: false \}\);\s*if \(gate\) return gate;/);
+  assert.doesNotMatch(src, /libraryGate\(\)/);
   assert.match(src, /createServiceClient\(\)/);
   assert.match(src, /latest_update_date:latest_update->>date_hijri/);
   assert.doesNotMatch(src, /"[^"]*\blatest_update\b(?!->>)[^"]*"\s*;/, "latest_update's text is never selected");

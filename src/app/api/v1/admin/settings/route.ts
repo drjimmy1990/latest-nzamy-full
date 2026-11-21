@@ -24,6 +24,8 @@ import {
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
+import { summariesReviewedOnlyIssue } from "@/lib/library/summaryReview";
+import { freeQuestionToolSettingIssue } from "@/lib/ai/freeQuestion";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 // Batch l11-misc (O22): server-side feature flags.
 import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
@@ -104,6 +106,12 @@ const ALLOWED_SETTINGS_KEYS = [
   // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
   // one minute; the page posts the whole object.
   "feature_flags",
+  // Batch l12 rules (20261202_50): Q96 {"on": boolean} — only reviewed
+  // summaries are shown in the library (ON by default; src/lib/library/summaryReview.ts);
+  "library_summaries_reviewed_only",
+  // Q121 {"individual": "quick-answer" | "assistant"} — the tool that carries
+  // an individual's free questions (src/lib/ai/freeQuestion.ts).
+  "free_question_tool_by_account_type",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -203,6 +211,9 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),
   // Batch l11-misc (O22): pure, covered by src/lib/featureFlags/featureFlags.test.ts.
   feature_flags: featureFlagsIssue,
+  // Batch l12 rules: pure, covered by summaryReview.test.ts / freeQuestionTool.test.ts.
+  library_summaries_reviewed_only: summariesReviewedOnlyIssue,
+  free_question_tool_by_account_type: freeQuestionToolSettingIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

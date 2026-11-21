@@ -23,6 +23,7 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { LibraryPublicGuardSettings } from "./_library-public-guard";
 import { LibraryPointsGateSettings } from "./_library-points-gate";
+import { LibraryRulesSettings } from "./_library-rules";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 import { PaymentRulesCard } from "./_components/PaymentRulesCard";
@@ -570,6 +571,10 @@ export default function AdminSettingsPage() {
           {/* ── The 50-point library gate (batch l9, register 14 item 48) ── */}
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
           <LibraryPointsGateSettings isDark={isDark} />
+
+          {/* ── Reviewed summaries + the individual's free-question tool (batch l12 rules, Q96 / Q121) ── */}
+          <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
+          <LibraryRulesSettings isDark={isDark} />
 
           {/* ── Divider ── */}
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />

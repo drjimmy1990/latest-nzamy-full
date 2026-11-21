@@ -16,6 +16,10 @@ import {
  * applies on the next library request, no deploy. POST/DELETE — one account's
  * exception (a team member, a trial). Every change is audited (who, when,
  * before/after) and the last changes are listed here.
+ *
+ * Q94a (batch l12): an exception may end — on a date, and/or with the
+ * account's library subscription (the owner: a firm or business account is
+ * given the library «حتى نهاية اشتراكه»). Past its end it no longer applies.
  */
 
 interface Override {
@@ -23,6 +27,9 @@ interface Override {
   allowed: boolean;
   reason: string;
   updatedAt: string | null;
+  expiresAt?: string | null;
+  endsWithSubscription?: boolean;
+  inForce?: boolean;
   name: string;
   email: string;
   userType: string | null;
@@ -39,7 +46,25 @@ interface State {
   map: LibraryAccessMap;
   overrides: Override[];
   overridesMigrationMissing: boolean;
+  overrideEndAvailable: boolean;
   history: HistoryRow[];
+}
+
+function dayOnly(iso: string | null | undefined): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString("ar-SA-u-nu-arab", { dateStyle: "medium" });
+  } catch {
+    return iso;
+  }
+}
+
+/** Q94a: the exception's end, in words. */
+function endText(o: Override): string {
+  const parts: string[] = [];
+  if (o.expiresAt) parts.push(`حتى ${dayOnly(o.expiresAt)}`);
+  if (o.endsWithSubscription) parts.push(o.expiresAt ? "ثم ما دام اشتراك المكتبة سارياً" : "ما دام اشتراك المكتبة سارياً");
+  return parts.length ? parts.join(" ") : "دائم";
 }
 
 const ACTION_AR: Record<string, string> = {
@@ -75,6 +100,8 @@ export default function AdminLibraryAccessPage() {
   const [email, setEmail] = useState("");
   const [allowed, setAllowed] = useState(true);
   const [reason, setReason] = useState("");
+  const [expiresOn, setExpiresOn] = useState("");
+  const [withSubscription, setWithSubscription] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -90,6 +117,7 @@ export default function AdminLibraryAccessPage() {
         map: body.map,
         overrides: Array.isArray(body.overrides) ? body.overrides : [],
         overridesMigrationMissing: body.overridesMigrationMissing === true,
+        overrideEndAvailable: body.overrideEndAvailable === true,
         history: Array.isArray(body.history) ? body.history : [],
       });
     } catch {
@@ -131,7 +159,13 @@ export default function AdminLibraryAccessPage() {
       const res = await fetch("/api/v1/admin/library-access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), allowed, reason: reason.trim() }),
+        body: JSON.stringify({
+          email: email.trim(),
+          allowed,
+          reason: reason.trim(),
+          ...(expiresOn ? { expiresAt: expiresOn } : {}),
+          ...(withSubscription ? { endsWithSubscription: true } : {}),
+        }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
@@ -140,6 +174,8 @@ export default function AdminLibraryAccessPage() {
         setToast({ ok: true, msg: "حُفظ الاستثناء" });
         setEmail("");
         setReason("");
+        setExpiresOn("");
+        setWithSubscription(false);
         await load();
       }
     } catch {
@@ -233,7 +269,10 @@ export default function AdminLibraryAccessPage() {
 
           <section className="mb-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5">
             <h2 className="mb-1 text-[14px] font-bold text-white">استثناءات لحسابات بعينها</h2>
-            <p className="mb-4 text-[11px] text-zinc-500">يفتح الاستثناء المكتبة لحساب واحد (فريق، تجربة) أو يغلقها عنه، أياً كان مفتاح نوعه.</p>
+            <p className="mb-4 text-[11px] text-zinc-500">
+              يفتح الاستثناء المكتبة لحساب واحد (فريق، تجربة) أو يغلقها عنه، أياً كان مفتاح نوعه. ولحساب مكتب أو منشأة يُمنح الاستثناء حتى نهاية
+              اشتراكه في المكتبة: اختر «ينتهي بانتهاء اشتراك المكتبة»، وإن لم يشترك بعد فحدّد تاريخاً يشترك قبله. بعد انتهاء الاستثناء يعود مفتاح نوعه.
+            </p>
             {state.overridesMigrationMissing ? (
               <p className="text-[12px] text-amber-300">الاستثناءات غير متاحة بعد: شغّل ملف الترحيل 20261128_20_library_access_by_account_type.sql.</p>
             ) : (
@@ -269,6 +308,24 @@ export default function AdminLibraryAccessPage() {
                     حفظ الاستثناء
                   </button>
                 </div>
+                {state.overrideEndAvailable && (
+                  <div className="mb-4 flex flex-wrap items-center gap-4 text-[12px] text-zinc-300">
+                    <label className="flex items-center gap-2">
+                      <span>ينتهي في تاريخ (اختياري)</span>
+                      <input
+                        type="date"
+                        value={expiresOn}
+                        onChange={(e) => setExpiresOn(e.target.value)}
+                        className="rounded-xl border border-white/[0.08] bg-[#0d1117] px-3 py-1.5 text-sm text-white outline-none"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={withSubscription} onChange={(e) => setWithSubscription(e.target.checked)} />
+                      <span>ينتهي بانتهاء اشتراك المكتبة</span>
+                    </label>
+                    <span className="text-zinc-500">بلا تاريخ ولا اشتراك: استثناء دائم.</span>
+                  </div>
+                )}
                 {state.overrides.length === 0 ? (
                   <p className="text-[12px] text-zinc-500">لا استثناءات.</p>
                 ) : (
@@ -280,6 +337,9 @@ export default function AdminLibraryAccessPage() {
                         </span>
                         <span className={o.allowed ? "text-emerald-300" : "text-red-300"}>{o.allowed ? "مفتوحة له" : "مغلقة عنه"}</span>
                         <span className="text-zinc-400">{o.reason}</span>
+                        <span className={o.inForce === false ? "text-amber-300" : "text-zinc-400"}>
+                          {endText(o)}{o.inForce === false ? " — منتهٍ (يسري مفتاح النوع)" : ""}
+                        </span>
                         <span className="text-zinc-500">{when(o.updatedAt)}</span>
                         <button
                           type="button"

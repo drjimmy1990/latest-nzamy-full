@@ -123,6 +123,13 @@ export interface RunActor {
   userType: string;
   practiceKind: PracticeKind;
   displayName: string | null;
+  /**
+   * Q121 (batch l12): the tool that carries this account's free questions,
+   * read by the route from the setting (freeQuestion.freeQuestionToolOf).
+   * Absent → freeQuestionToolFor(userType) with the default (quick-answer
+   * for an individual, the library assistant for everyone else).
+   */
+  freeQuestionTool?: string;
 }
 
 export interface StartRunDeps {
@@ -737,7 +744,7 @@ export async function startRunWith(
   // only on the account's own free tool — quick-answer for an individual, the
   // library assistant for everyone else (freeQuestionToolFor, 20261129_60).
   let freeQuestion =
-    !!spec.freeQuestions && spec.id === freeQuestionToolFor(actor.userType) &&
+    !!spec.freeQuestions && spec.id === (actor.freeQuestionTool ?? freeQuestionToolFor(actor.userType)) &&
     !creditKind && !isAdmin && !sectionEdit && price > 0 &&
     !!deps.freeQuestions && (await freeQuestionsLeftSafe(deps.freeQuestions, actor.userId));
   // Owner ٨ / ١٥ / ١٨: a founder's library-assistant question is paid from his
