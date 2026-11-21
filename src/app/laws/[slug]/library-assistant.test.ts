@@ -186,3 +186,33 @@ test("L3: the saved conversations are read for the law page only; anything but a
   const down = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
   assert.equal(await loadLibraryHistory("/laws/labor-law", down), null);
 });
+
+test("researcher V3: the studio page /laws/research (and every static /laws page) sends no law", async () => {
+  for (const path of ["/laws/research", "/laws/research?q=1", "/laws/my", "/laws/orders", "/laws/subscribe"]) {
+    assert.equal(lawSlugFromPath(path), null, path);
+  }
+  const { fetchImpl, sent } = reply(200, { output: { reply: "ج" }, citations: [] });
+  await askLibrary({ message: "س" }, "/laws/research", fetchImpl);
+  assert.equal((sent[0].input as Record<string, unknown>).law_slug, null);
+  // A sign-in refusal still brings the reader back to the studio.
+  const out = await askLibrary({ message: "س" }, "/laws/research", reply(401, {}).fetchImpl);
+  assert.equal(out.action?.href, `/login?next=${encodeURIComponent("/laws/research")}`);
+});
+
+test("researcher V3 A2: onKey is told every key it sends, including a full conversation's retry", async () => {
+  const keys: string[] = [];
+  const sent: Array<Record<string, unknown>> = [];
+  const fetchImpl = (async (_url: string, init: RequestInit) => {
+    const b = JSON.parse(String(init.body));
+    sent.push(b);
+    return b.conversationId
+      ? new Response(JSON.stringify({ error: "full", code: "conversation_full" }), { status: 409 })
+      : new Response(JSON.stringify({ output: { reply: "جواب" }, citations: [] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await askLibrary({ message: "س", conversationId: CID }, "/laws", fetchImpl, (k) => keys.push(k));
+  assert.deepEqual(keys, sent.map((b) => b.idempotencyKey));
+  assert.equal(keys.length, 2);
+  // A watcher that throws never stops the question.
+  const ok = await askLibrary({ message: "س" }, "/laws", reply(200, { output: { reply: "ج" }, citations: [] }).fetchImpl, () => { throw new Error("x"); });
+  assert.equal(ok.text, "ج");
+});

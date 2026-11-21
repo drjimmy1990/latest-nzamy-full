@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowSquareOut, BookOpen, Scales } from "@phosphor-icons/react";
+import { ArrowSquareOut, BookOpen, Gavel } from "@phosphor-icons/react";
 import ModalShell from "@/components/ui/ModalShell";
 import { statusPill } from "@/lib/ai/citationStatus";
 import { mentionLookupUrl, readMentionLookup, splitAnswer, type AnswerPart, type MentionLookup } from "@/lib/ai/answerMentions";
@@ -78,7 +78,7 @@ export function CitationStatusPill({ status, isDark }: { status: unknown; isDark
 
 // ── the sheet ────────────────────────────────────────────────────────────────
 
-interface Preview {
+export interface Preview {
   lawTitle: string | null;
   label: string | null;
   status: string | null;
@@ -88,16 +88,17 @@ interface Preview {
   deviceRefused: boolean;
 }
 
-type PreviewState = { phase: "loading" } | { phase: "ready"; preview: Preview } | { phase: "error"; message: string } | { phase: "none" };
+export type PreviewState = { phase: "loading" } | { phase: "ready"; preview: Preview } | { phase: "error"; message: string } | { phase: "none" };
 
 /** One read per cited text per page view: the sheet reopens instantly. */
 const previewCache = new Map<string, Promise<PreviewState>>();
 
-function previewable(c: Citation): c is Citation & { id: string } {
+export function previewable(c: Citation): c is Citation & { id: string } {
   return (c.kind === "article" || c.kind === "principle") && typeof c.id === "string" && c.id.length > 0;
 }
 
-function loadPreview(c: Citation & { id: string }): Promise<PreviewState> {
+/** Exported for the researcher's side panel (src/app/laws/research), which reads the same cached preview. */
+export function loadPreview(c: Citation & { id: string }): Promise<PreviewState> {
   const key = `${c.kind}:${c.id}`;
   const hit = previewCache.get(key);
   if (hit) return hit;
@@ -134,7 +135,7 @@ function CitationSheet({ cite, n, isDark, onClose }: { cite: Citation; n: number
   // The live library status wins; the one stored with the run stands in until it arrives.
   const status = preview ? preview.status : cite.status;
   const muted = isDark ? "text-zinc-400" : "text-zinc-500";
-  const KindIcon = cite.kind === "principle" ? Scales : BookOpen;
+  const KindIcon = cite.kind === "principle" ? Gavel : BookOpen;
 
   return (
     <ModalShell
@@ -340,11 +341,19 @@ function MentionSheet({
   );
 }
 
-export function CitedText({ text, cites, isDark, className = "" }: { text: string; cites: Citation[]; isDark: boolean; className?: string }) {
+export function CitedText({ text, cites, isDark, className = "", onOpenCite }: {
+  text: string;
+  cites: Citation[];
+  isDark: boolean;
+  className?: string;
+  /** Optional: open a cited source somewhere else (the researcher's side panel) instead of the sheet. */
+  onOpenCite?: (c: Citation, n: number) => void;
+}) {
   const bySid = new Map(cites.map((c, i) => [c.sid, { ...c, n: i + 1 }]));
   const citedById = new Map<string, Citation & { n: number }>();
   cites.forEach((c, i) => { if (c.kind === "article" && c.id && !citedById.has(c.id)) citedById.set(c.id, { ...c, n: i + 1 }); });
-  const [openSheet, sheet] = useCitationSheet(isDark);
+  const [openOwnSheet, sheet] = useCitationSheet(isDark);
+  const openSheet = onOpenCite ?? openOwnSheet;
   const [mention, setMention] = useState<MentionPart | null>(null);
   const mentionNode =
     mention && typeof document !== "undefined"
@@ -405,8 +414,16 @@ export function CitedText({ text, cites, isDark, className = "" }: { text: strin
   );
 }
 
-export function SourceList({ cites, isDark, compact = false, startAt = 1 }: { cites: Citation[]; isDark: boolean; compact?: boolean; startAt?: number }) {
-  const [openSheet, sheet] = useCitationSheet(isDark);
+export function SourceList({ cites, isDark, compact = false, startAt = 1, onOpenCite }: {
+  cites: Citation[];
+  isDark: boolean;
+  compact?: boolean;
+  startAt?: number;
+  /** Optional: open a source somewhere else (the researcher's side panel) instead of the sheet. */
+  onOpenCite?: (c: Citation, n: number) => void;
+}) {
+  const [openOwnSheet, sheet] = useCitationSheet(isDark);
+  const openSheet = onOpenCite ?? openOwnSheet;
   if (cites.length === 0) return null;
   return (
     <>
@@ -423,7 +440,7 @@ export function SourceList({ cites, isDark, compact = false, startAt = 1 }: { ci
             >
               <span className={`mt-0.5 font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{i + startAt}</span>
               {c.kind === "principle" ? (
-                <Scales size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-amber-500" />
+                <Gavel size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-amber-500" />
               ) : (
                 <BookOpen size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-blue-500" />
               )}
