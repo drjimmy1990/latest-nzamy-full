@@ -2,13 +2,14 @@
  * calendarFeed.ts — P1-37 «كل جلساتي»: the lawyer's hearings and open deadlines
  * as ONE .ics file, and the privacy rule every calendar file here follows.
  *
- * A calendar file leaves the platform: it is synced to Google / iCloud /
- * Exchange, shared with assistants, shown on lock screens. So an event carries
- * the hearing's title (type + case title, as AddHearingModal composes it), its
- * day and hour, the court's location, and «القضية: …» — and NOTHING else: no
- * notes (they hold whatever the lawyer typed about the client), no client
- * name, no assignee or owner name, no ids beyond the opaque UID. The location
- * of a client meeting is dropped too: it can be the client's home address.
+ * What an event carries — owner RAW[71] (20 Nov 2026, N14), which reverses
+ * the privacy rule of answers ٤٥ / ٤٩: the hearing's title (type + case title,
+ * as AddHearingModal composes it), its day and hour, the court's location, and
+ * in the description «القضية: …», «العميل: …» and the lawyer's notes in full.
+ * The lawyer asked for his own diary to say who the hearing is for and what he
+ * wrote about it. Still left out: assignee or owner names and any id beyond the
+ * opaque UID. The location of a client meeting stays dropped: it can be the
+ * client's home address (not part of RAW[71]).
  *
  * Cancelled hearings are left out; held and adjourned ones stay (they are the
  * record of what happened). Deadlines: open ones only, as all-day events on
@@ -33,6 +34,10 @@ export interface FeedHearing {
   type?: string | null;
   status?: string | null;
   caseName?: string | null;
+  /** N14: the client's name, as the hearings list shows it. */
+  clientName?: string | null;
+  /** N14: the lawyer's notes on the hearing, in full. */
+  notes?: string | null;
 }
 
 export interface FeedDeadline {
@@ -52,7 +57,17 @@ function caseLine(name: string | null | undefined): string | null {
   return n ? `القضية: ${n}` : null;
 }
 
-/** One hearing → the calendar event, under the privacy rule above. */
+/** N14: «القضية: …», «العميل: …», then the notes in full — each only when present. */
+function hearingDescription(h: FeedHearing): string | null {
+  const client = (h.clientName ?? "").trim();
+  const notes = (h.notes ?? "").trim();
+  const lines = [caseLine(h.caseName), client ? `العميل: ${client}` : null, notes ? `ملاحظات: ${notes}` : null].filter(
+    (l): l is string => l !== null,
+  );
+  return lines.length ? lines.join("\n") : null;
+}
+
+/** One hearing → the calendar event, under the rule above. */
 export function hearingIcsInput(h: FeedHearing, now?: Date): HearingIcsInput {
   const location = h.type === "client_meet" ? null : (h.location ?? "").trim() || null;
   return {
@@ -62,7 +77,7 @@ export function hearingIcsInput(h: FeedHearing, now?: Date): HearingIcsInput {
     time: h.time ?? null,
     durationMinutes: h.durationMinutes ?? null,
     location,
-    description: caseLine(h.caseName),
+    description: hearingDescription(h),
     now,
   };
 }
