@@ -19,6 +19,7 @@ import {
   GENERAL_DETAILS_FALLBACK_SUMMARY,
   cleanDetailsSummary,
   isAmendmentDetails,
+  isPreambleToggle,
   isOpenDetailsTag,
   splitDetailsMarkup,
 } from "./_details-block";
@@ -430,7 +431,9 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
             );
           }
           return (
-            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open || block.open === true}>
+            // File 03 L4: the preamble's own «📜 ديباجة …» toggle is the text
+            // itself, not a fold — it opens on load.
+            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open || block.open === true || isPreambleToggle(summaryText, block.content)}>
               {body}
             </GeneralToggleDetails>
           );
