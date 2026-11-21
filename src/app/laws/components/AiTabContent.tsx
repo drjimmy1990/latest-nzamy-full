@@ -46,6 +46,7 @@ import type { LibraryAiAction } from "../[slug]/_ai-reply";
 import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import LibraryPointsLowNotice from "@/components/library/LibraryPointsLowNotice";
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const ROYAL = "#0B3D2E";
@@ -282,6 +283,8 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
 
         {access === "open" && (
           <>
+            {/* 06 ج6 (l12): one question away from the 50-point lock → say so first. */}
+            <LibraryPointsLowNotice isDark={isDark} refreshKey={turns.length * 2 + (running ? 1 : 0)} />
             <div className="mb-2">
               <LibraryScopeChips value={scope} onChange={setScope} isDark={isDark} disabled={running} />
             </div>

@@ -14,7 +14,7 @@ import type { MyLibraryGrantAnswer } from "../../../lib/library/myLibraryGrant.t
 export type SubscriptionView =
   /** A library grant runs (or is booked): LibraryGrantStatusCard draws it. */
   | { kind: "grant" }
-  /** Full library without a library grant — his plan (Pro+ tier) or an admin. */
+  /** Full library without a library grant — an admin only (no tier opens it since owner ٨٩, l12). */
   | { kind: "plan" }
   /** No full library. `messageAr` set when his account type may not buy it. */
   | { kind: "none"; messageAr: string | null }

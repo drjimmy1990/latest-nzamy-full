@@ -66,7 +66,7 @@ export function PlanBlock({ fullAccess }: { fullAccess: boolean | null }) {
               <SealCheck size={16} weight="fill" /> الوصول الكامل للمكتبة مفعّل لحسابك
             </p>
             <p className="mt-1 text-xs leading-6 text-zinc-600 dark:text-zinc-400">
-              يأتي ضمن باقتك الحالية، وليس لديك اشتراك مكتبة مستقل.
+              مفتوح لحسابك بصفته حساب إدارة المنصة، دون اشتراك مكتبة.
             </p>
             <Link
               href="/settings?tab=subscription"

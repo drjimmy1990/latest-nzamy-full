@@ -16,7 +16,7 @@
  * Pure, relative imports only — `node --test` loads it.
  */
 import { staffCan, type StaffRole } from "../auth/staffRoles.ts";
-import { fullLibraryAccess } from "../libraryAccessDecision.ts";
+import { tierAtLeastPro } from "../libraryAccessDecision.ts";
 
 export const LIBRARY_REQUEST_ADMIN_ONLY_AR =
   "لا يمكن اعتماد هذا الطلب من حسابك: منح المكتبة القانونية دون طلب مدفوع صلاحية للمشرف الأعلى وحده. اترك الطلب له، أو ارفضه.";
@@ -44,18 +44,21 @@ export const GRANT_ACTION_ADMIN_ONLY_AR =
   "لا يمكن تغيير نوع المنح عن نوع الطلب من حسابك: هذا للمشرف الأعلى وحده. اعتمد الطلب كما قُدِّم، أو اتركه له.";
 
 export const LIBRARY_TIER_ADMIN_ONLY_AR =
-  "لا يمكن منح هذه الباقة من حسابك: باقة Pro وما فوقها تشمل المكتبة القانونية كاملة، ومنح المكتبة دون طلب مدفوع صلاحية للمشرف الأعلى وحده. اختر باقة أدنى، أو اترك الطلب له.";
+  "لا يمكن منح هذه الباقة من حسابك: منح باقة Pro وما فوقها دون طلب مدفوع صلاحية للمشرف الأعلى وحده. اختر باقة أدنى، أو اترك الطلب له.";
 
 export type RequestGrantApproval =
   | { allowed: true }
   | { allowed: false; status: 403; code: "grant_action_admin_only" | "library_grant_admin_only"; error: string };
 
 /**
- * Owner ٤٢٧, the plan / media / credits / wallet arm of the same route. A Pro+
- * plan IS the full library (libraryAccessDecision.ts fullLibraryAccess), so an
- * operations approval of a plan request with tier "pro" (the console's
- * default) — or of a credits request turned into a plan by `grantAction` —
- * would be a free library grant by another door. Without `entitlements.grant`:
+ * Owner ٤٢٧, the plan / media / credits / wallet arm of the same route. Until
+ * batch l12 a Pro+ plan WAS the full library, so an operations approval of a
+ * plan request with tier "pro" (the console's default) — or of a credits
+ * request turned into a plan by `grantAction` — was a free library grant by
+ * another door. Since owner ٨٩ (l12) no tier opens the library, but a free
+ * Pro+ plan is still the platform's dearest plan given away, so the rule is
+ * KEPT as it was (code and refusal unchanged, the message no longer says the
+ * plan includes the library). Without `entitlements.grant`:
  *   - the grant action must be the kind's own (no `grantAction` override);
  *   - a plan grant must be of a tier below pro, unless the request is tied
  *     to a paid order (none is today).
@@ -77,7 +80,7 @@ export function requestGrantApprovalDecision(input: {
   }
   if (kindAction === "plan" && input.paidOrder !== true) {
     const tier = typeof input.tier === "string" ? input.tier : "";
-    if (fullLibraryAccess({ tier, isAdmin: false, hasLibraryGrant: false }, input.ranks)) {
+    if (tierAtLeastPro(tier, input.ranks)) {
       return { allowed: false, status: 403, code: "library_grant_admin_only", error: LIBRARY_TIER_ADMIN_ONLY_AR };
     }
   }

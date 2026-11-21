@@ -474,8 +474,8 @@ test("T1.6: the invite-code copy promises the library for the code's days (30 by
     assert.doesNotMatch(faq, /باقة Pro/, "FAQ: «باقة Pro»");
     assert.doesNotMatch(faq, /Pro tier/i, "FAQ: Pro tier");
   }
-  assert.match(subscribe, /إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود \(٣٠ يوماً ما لم يُحدَّد غير ذلك\) فور تفعيله، دون انتظار\./);
-  assert.match(subscribe, /If you have an invitation code, it opens the full legal library for the length the code grants \(30 days unless it says otherwise\) as soon as you redeem it — no waiting\./);
+  // Owner ٩٣ (l12): invitation codes are stopped, so the FAQ no longer offers one.
+  for (const faq of faqs) assert.doesNotMatch(faq, /كود دعوة|invitation code/i, "FAQ: an invitation code");
   assert.doesNotMatch(subscribe, /كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً/, "FAQ: a flat 30 days (q378)");
 });
 
@@ -554,8 +554,8 @@ test("fix round 1: the library cards promise no legislative alerts and no invite
   // card — and not the header comment — states a length.
   const raw = src("constants/pricing/pricing.library.ts");
   assert.doesNotMatch(raw, /تجربة [١٢٣] ?(شهر|أشهر)|تجربة ٢ شهر|تجربة ٣ أشهر|\d-month trial|\d+-day invite trial/);
-  assert.equal(library.split('"٣ دعوات للزملاء لتجربة المكتبة"').length - 1, 6, "three individual + three firm cards (ar)");
-  assert.equal(library.split('"3 invitations for colleagues to try the library"').length - 1, 6, "the English twins");
+  // Owner ٩٣ (l12): invitation codes and the colleague invite are off, so no card promises one.
+  assert.doesNotMatch(library, /دعوات للزملاء|دعوات مخصصة|colleague invit|invitations for colleagues|Custom invites/i);
 });
 
 test("P15: the subscribe and /pricing FAQs promise no prorated upgrade or billing cycle (there is no gateway)", () => {

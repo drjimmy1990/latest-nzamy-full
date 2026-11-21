@@ -9,6 +9,7 @@ import {
 import { listViewState, itemsOf, type ListRead } from "@/lib/services/listRead";
 import { formatArabicDate, toArabicDigits } from "@/lib/services/clientDashboardCards";
 import { DEFAULT_INVITE_GRANT_DAYS, invitationTermsAr } from "@/lib/services/libraryInvitationDisplay";
+import { LIBRARY_INVITES_CLOSED, LIBRARY_INVITES_CLOSED_ADMIN_AR } from "@/lib/library/libraryInvitesClosed";
 
 /**
  * Admin → Library invitation codes (Phase 6).
@@ -141,17 +142,19 @@ export default function AdminLibraryInvitationsPage() {
           <div>
             <h1 className="text-xl font-black text-white">أكواد دعوة المكتبة</h1>
             <p className="text-[12px] text-zinc-500">
-              كل كود يمنح اشتراك المكتبة القانونية للمدة المحددة له ({DEFAULT_GRANT_DAYS_LABEL} يوماً إن لم تُحدَّد مدة)، لعدد مقاعده من الحسابات — أي مستخدم مسجّل يفعّله من صفحة اشتراك المكتبة.
+              {LIBRARY_INVITES_CLOSED
+                ? LIBRARY_INVITES_CLOSED_ADMIN_AR
+                : `كل كود يمنح اشتراك المكتبة القانونية للمدة المحددة له (${DEFAULT_GRANT_DAYS_LABEL} يوماً إن لم تُحدَّد مدة)، لعدد مقاعده من الحسابات — أي مستخدم مسجّل يفعّله من صفحة اشتراك المكتبة.`}
             </p>
           </div>
         </div>
-        <button
+        {!LIBRARY_INVITES_CLOSED && <button
           onClick={() => setShowForm((v) => !v)}
           className="flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2.5 text-[13px] font-bold text-[#C8A762] hover:bg-[#155e41] transition-colors"
         >
           <Plus size={16} weight="bold" />
           كود جديد
-        </button>
+        </button>}
       </div>
 
       {toast && (
@@ -178,7 +181,7 @@ export default function AdminLibraryInvitationsPage() {
         ))}
       </div>
 
-      {showForm && (
+      {showForm && !LIBRARY_INVITES_CLOSED && (
         <div className="mb-6 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-5 space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="space-y-1 block">

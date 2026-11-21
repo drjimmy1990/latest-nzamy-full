@@ -53,7 +53,7 @@ const RANKS = { free: 0, shield: 1, ai: 2, pro: 3, max: 4, corp: 5, enterprise: 
 const ask = (over: Partial<Parameters<typeof requestGrantApprovalDecision>[0]>) =>
   requestGrantApprovalDecision({ role: "operations", kind: "plan", grantAction: undefined, tier: "shield", paidOrder: false, ranks: RANKS, ...over });
 
-test("operations may not approve a plan / media request at pro or above (Pro+ is the full library)", () => {
+test("operations may not approve a plan / media request at pro or above (a free Pro+ plan stays top-admin only; owner ٨٩ l12 took the library out of it)", () => {
   for (const kind of ["plan", "media"]) {
     for (const tier of ["pro", "max", "corp", "enterprise"]) {
       const d = ask({ kind, tier });

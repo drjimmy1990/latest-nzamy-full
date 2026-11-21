@@ -285,10 +285,11 @@ export async function checkAccess(
   };
 }
 
-// ─── Full library access — Pro+, a library grant, or an admin ────────────────
+// ─── Full library access — a library grant, or an admin ──────────────────────
 // Owner answers ٢٠٥ / ٢٠٩ (2026-10-18): the library subscription
 // (public.library_access_grants) opens the whole library on its own, and so
-// does a platform admin. The rule is fullLibraryAccess() in
+// does a platform admin. Owner ٨٩ / ٩٣ (20 Nov 2026, batch l12): NOTHING
+// else — no subscription tier (Pro, the consultant, the firm plans) opens it. The rule is fullLibraryAccess() in
 // ./libraryAccessDecision.ts; these are its reads. getUserTier() is unchanged,
 // so everything keyed on the tier alone (credits, feature gates) keeps its answer.
 
@@ -318,8 +319,8 @@ export async function isPlatformAdmin(userId: string | null): Promise<boolean> {
 }
 
 /**
- * True when the user has the full library: a Pro+ tier, an active library
- * grant, or an admin — and, for a subscriber the 50-point gate applies to,
+ * True when the user has the full library: an active library grant or an
+ * admin (owner ٨٩ / ٩٣, l12: no tier) — and, for a grant holder the 50-point gate applies to,
  * a balance at the minimum (libraryFullAccessState). A guest (null) never
  * does. The routes that shape official metadata on it call this; the
  * per-article paywall is checkLibraryAccess() below, which applies the same
@@ -379,6 +380,13 @@ export interface LibraryFullAccessState {
   hasFullAccess: boolean;
   /** Set only when a gated subscriber's balance is below library_min_points_to_browse. */
   pointsLock: LibraryPointsLock | null;
+  /**
+   * 06 ج6 (l12): set when the subscriber IS gated and still open — his
+   * balance and the minimum, so the status route can warn him before the
+   * question that would lock him. Absent for an admin, a guest, a locked or
+   * an ungated account, or when the balance could not be read.
+   */
+  pointsGate?: { balance: number; minPoints: number } | null;
 }
 
 const NO_FULL_LIBRARY: LibraryFullAccessState = Object.freeze({ hasFullAccess: false, pointsLock: null }) as LibraryFullAccessState;
@@ -386,42 +394,42 @@ const FULL_LIBRARY: LibraryFullAccessState = Object.freeze({ hasFullAccess: true
 
 /**
  * Owner ٢٠٥ / ٢٠٩ (who has the full library) + register 14 item 48 (batch
- * l9, the 50-point gate, src/lib/library/pointsGate.ts): a paid library plan
- * or the founder opens the full text only while the balance (founder library
- * credits included) is at least library_min_points_to_browse; an admin, a
- * Pro+ tier, or a trial / invitation / admin grant is not gated. Below the
- * minimum the subscriber reads what a visitor reads and `pointsLock` says
- * why. `knownTier`: a caller that has already read the tier (a Pro+ tier then
- * skips every other read — same answer).
+ * l9, the 50-point gate, src/lib/library/pointsGate.ts) + owner ٨٩ / ٩٣
+ * (batch l12): an active library grant — any of them, the paid plans, the
+ * founder, and the older trial / invitation / admin grants — opens the full
+ * text only while the balance (founder library credits included) is at
+ * least library_min_points_to_browse; only an admin is not gated, and no
+ * subscription tier opens the library. Below the minimum the subscriber
+ * reads what a visitor reads and `pointsLock` says why. `knownTier` is
+ * accepted for the callers that pass it and no longer decides anything.
  */
 export async function libraryFullAccessState(userId: string | null, knownTier?: ServerTier): Promise<LibraryFullAccessState> {
+  void knownTier;
   if (!userId) return NO_FULL_LIBRARY;
-  if (knownTier !== undefined && fullLibraryAccess({ tier: knownTier, isAdmin: false, hasLibraryGrant: false }, TIER_RANK)) {
-    return FULL_LIBRARY;
-  }
-  const [tier, isAdmin, planRefs] = await Promise.all([
-    knownTier !== undefined ? Promise.resolve(knownTier) : getUserTier(userId),
+  const [isAdmin, planRefs] = await Promise.all([
     isPlatformAdmin(userId),
     activeLibraryGrantPlanRefs(userId),
   ]);
   const grants = planRefs ?? [];
-  if (!fullLibraryAccess({ tier, isAdmin, hasLibraryGrant: grants.length > 0 }, TIER_RANK)) return NO_FULL_LIBRARY;
-  const tierIncludesLibrary = fullLibraryAccess({ tier, isAdmin: false, hasLibraryGrant: false }, TIER_RANK);
+  if (!fullLibraryAccess({ isAdmin, hasLibraryGrant: grants.length > 0 })) return NO_FULL_LIBRARY;
   // Is the balance asked at all? (minPoints 1 stands for "a gate exists".)
-  if (!libraryPointsGateDecision({ isAdmin, tierIncludesLibrary, planRefs: grants, balance: null, minPoints: 1 }).gated) {
+  if (!libraryPointsGateDecision({ isAdmin, planRefs: grants, balance: null, minPoints: 1 }).gated) {
     return FULL_LIBRARY;
   }
   const [minPoints, balance] = await Promise.all([readLibraryMinPoints(), readLibraryPointsBalance(userId)]);
-  const decision = libraryPointsGateDecision({ isAdmin, tierIncludesLibrary, planRefs: grants, balance, minPoints });
+  const decision = libraryPointsGateDecision({ isAdmin, planRefs: grants, balance, minPoints });
   if (decision.locked && balance !== null) {
     return { hasFullAccess: false, pointsLock: libraryPointsLock(balance, minPoints) };
+  }
+  if (decision.gated && balance !== null) {
+    return { hasFullAccess: true, pointsLock: null, pointsGate: { balance, minPoints } };
   }
   return FULL_LIBRARY;
 }
 
 /**
  * The same rule for a caller that has already read the tier: a guest reads
- * nothing more, and a Pro+ tier skips the admin and grant reads (same answer).
+ * nothing more. (The tier no longer opens the library — owner ٨٩, l12.)
  */
 async function fullLibraryAccessForTier(userId: string | null, tier: ServerTier, memo?: LibraryAccessMemo): Promise<boolean> {
   if (usableMemo(memo, userId)) return (await memoFullState(userId, memo)).hasFullAccess;
@@ -487,8 +495,8 @@ export async function checkLibraryAccess(
   // 3. Get user tier (guest = free)
   const currentTier: ServerTier = await memoTier(userId, options.memo);
 
-  // 4. Full library access gets everything (owner ٢٠٥/٢٠٩): a Pro+ tier, an
-  // active library grant, or an admin. currentTier stays the real tier.
+  // 4. Full library access gets everything (owner ٢٠٥/٢٠٩, ٨٩/٩٣ l12): an
+  // active library grant, or an admin — never a tier. currentTier stays the real tier.
   if (await fullLibraryAccessForTier(userId, currentTier, options.memo)) {
     return {
       allowed: true,
@@ -509,20 +517,20 @@ export async function checkLibraryAccess(
     freeLimit,
     freeLimitSource: hasOverride ? "override" : "default",
     currentTier,
-    message: allowed ? undefined : `المادة مقفلة — تتطلب اشتراك المكتبة القانونية أو الباقة الاحترافية فما فوق`,
+    message: allowed ? undefined : `المادة مقفلة — تتطلب اشتراك المكتبة القانونية`,
   };
 }
 
 // ─── getLibraryAccessForUser — one-shot library access context ────────────────
 // For list/search routes that are NOT per-article-index (where checkLibraryAccess
 // is the right call). Returns the user's tier + whether they have full library
-// access (a Pro+ tier, an active library grant, or an admin — owner ٢٠٥/٢٠٩) +
+// access (an active library grant or an admin — owner ٢٠٥/٢٠٩, ٨٩/٩٣ l12) +
 // the whitelisted slugs and per-type free items so the route can mark rows
 // free/locked. Guests (userId null) get tier "free".
 
 export interface LibraryUserAccess {
   tier: ServerTier;
-  hasFullAccess: boolean; // Pro+ tier, an active library grant, or an admin
+  hasFullAccess: boolean; // an active library grant, or an admin (never a tier: owner ٨٩, l12)
   whitelistedSlugs: string[]; // library_whitelisted_laws.slugs (law-slug-keyed)
   freeItemsByType: Record<string, string[]>; // library_free_items, keyed by content type
 }

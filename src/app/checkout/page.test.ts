@@ -63,7 +63,9 @@ test("/checkout shows the listed price, the VAT sentence and the catalog notes",
   assert.match(page, /formatHalalas\(listed\)/);
   assert.match(page, /listedVatNotice\(item\)/);
   // l11 O7: the library-lock line for a holder of a gated library plan
-  assert.match(page, /checkoutItemNotes\(item, \{ libraryMinPoints \}\)/);
+  assert.match(page, /checkoutItemNotes\(item, \{ libraryMinPoints, libraryQuestionPoints: aiToolPointRange\("library-assistant"\)\[1\] \}\)/);
+  // 06 ج6 + ٩٣ (l12): a library plan's checkout reads the minimum too
+  assert.match(page, /if \(item\.kind === "library"\) \{\s*try \{\s*libraryMinPoints = await readLibraryMinPoints\(\);/);
   assert.match(page, /GATED_LIBRARY_PLAN_REFS\.includes\(r\)\)\) libraryMinPoints = await readLibraryMinPoints\(\)/);
   assert.doesNotMatch(page, /مقعد|مقاعد/);
 });
