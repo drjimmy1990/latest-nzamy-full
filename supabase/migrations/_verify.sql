@@ -8045,3 +8045,43 @@ select 'Legal drafter prices are a setting with all 8 kinds, each 1 point or mor
                                          where pg_catalog.jsonb_typeof(e.value) <> 'number' or (e.value)::text::numeric < 1)
                    from public.platform_settings where key = 'ai_draft_prices'), false) as ok;
 -- <<< verify:l12_money
+-- >>> verify:l12_market
+-- 2026-12-02 — l12 Q130a/Q151: the market opens to verified lawyers (asks + admin approval
+-- window + admin assign + commission setting); Q131a community AI review log.
+-- Run 20261202_70 after the l12 deploy (any time is safe). Docker: supabase/tests/rls/l12_market.test.sql
+select 'l12 market: acceptances table (RLS, no direct writes) + settings + open list with hide/market filter (run 20261202_70)' as check,
+       case when to_regclass('public.marketplace_acceptances') is null
+              or to_regprocedure('public.marketplace_open_requests(integer, integer)') is null then false
+       else coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.marketplace_acceptances')), false)
+            and (select pg_catalog.count(*) from public.platform_settings
+                  where key in ('marketplace_market', 'marketplace_commission_pct', 'community_ai_review')) = 3
+            and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                  'marketplace_hidden_at is null') > 0
+            and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.guard_service_request_marketplace_publish()')),
+                                  'marketplace_hidden_at') > 0
+            and not has_table_privilege('anon', 'public.marketplace_acceptances', 'SELECT')
+            and not has_table_privilege('authenticated', 'public.marketplace_acceptances', 'INSERT')
+            and not has_table_privilege('authenticated', 'public.marketplace_acceptances', 'UPDATE')
+       end as ok;
+select 'l12 market: lawyer calls to authenticated, admin calls service_role only (run 20261202_70)' as check,
+       case when to_regprocedure('public.marketplace_request_accept(text)') is null
+              or to_regprocedure('public.marketplace_acceptance_decide(uuid, uuid, boolean, text)') is null
+              or to_regprocedure('public.marketplace_assign_lawyer(text, uuid, uuid)') is null
+              or to_regprocedure('public.marketplace_overdue_acceptances(boolean)') is null
+              or to_regprocedure('public.marketplace_open_requests_admin(integer, integer)') is null
+              or to_regprocedure('public.marketplace_request_listable(text)') is null then false
+       else has_function_privilege('authenticated', 'public.marketplace_request_accept(text)', 'EXECUTE')
+            and not has_function_privilege('anon', 'public.marketplace_request_accept(text)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_acceptance_decide(uuid, uuid, boolean, text)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_assign_lawyer(text, uuid, uuid)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_overdue_acceptances(boolean)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_open_requests_admin(integer, integer)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_request_listable(text)', 'EXECUTE')
+       end as ok;
+select 'l12 community: AI review log is service-role only (run 20261202_70)' as check,
+       case when to_regclass('public.community_ai_reviews') is null then false
+       else coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.community_ai_reviews')), false)
+            and not has_table_privilege('anon', 'public.community_ai_reviews', 'SELECT')
+            and not has_table_privilege('authenticated', 'public.community_ai_reviews', 'SELECT')
+       end as ok;
+-- <<< verify:l12_market

@@ -26,6 +26,7 @@ import Footer from "@/components/Footer";
 import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { commissionRatesLine } from "@/lib/pricing/commission";
+import { INTERMEDIARY_NOTICE_AR, NO_PLATFORM_PAYMENT_AR } from "@/lib/marketplace/marketSettings";
 
 import { CATEGORIES, CITIES, DURATIONS, URGENCY_OPTIONS, STEPS, INITIAL, type FormData, type ServiceCategory, type UrgencyType } from "./_data";
 
@@ -479,7 +480,7 @@ export default function MarketplacePostPage() {
                       <Info size={16} className="text-blue-500 flex-shrink-0 mt-0.5" weight="fill" />
                       <p className={`text-xs ${isDark ? "text-blue-300" : "text-blue-700"}`}>
                         <span className="font-bold">عمولة المنصة:</span> نسبة من قيمة الصفقة حسب باقة مزوّد الخدمة ({commissionRatesLine("ar")}) يدفعها مزوّد الخدمة — لا تُخصم من ميزانيتك.
-                        يُدفع المبلغ عبر بوابة دفع مرخّصة من البنك المركزي، ولا تحتفظ المنصة بأي أموال في حساب وسيط.
+                        {INTERMEDIARY_NOTICE_AR} {NO_PLATFORM_PAYMENT_AR}
                       </p>
                     </div>
                   </div>

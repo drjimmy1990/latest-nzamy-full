@@ -533,7 +533,7 @@ export default function QuestionDetailPage() {
         {reply.reviewState && (
           <p role="status" className={`mb-3 text-xs font-semibold rounded-xl px-3 py-2 ${reply.reviewState === "pending" ? isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-800" : isDark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-700"}`}>
             {reply.reviewState === "pending"
-              ? `${REVIEW_PENDING_AR} — إجابتك لا تظهر لغيرك قبل موافقة فريق المراجعة.`
+              ? `${REVIEW_PENDING_AR} — إجابتك لا تظهر لغيرك قبل اعتمادها في المراجعة.`
               : `${REVIEW_REJECTED_AR}${reply.reviewNote ? ` — السبب: ${reply.reviewNote}` : ""}`}
           </p>
         )}
@@ -584,7 +584,7 @@ export default function QuestionDetailPage() {
             {questionReview && (
               <div role="status" className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${questionReview.state === "pending" ? isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800" : isDark ? "border-red-500/30 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700"}`}>
                 {questionReview.state === "pending"
-                  ? `${REVIEW_PENDING_AR} — سؤالك لا يظهر لغيرك قبل موافقة فريق المراجعة، ولا يمكن الإجابة عليه قبلها.`
+                  ? `${REVIEW_PENDING_AR} — سؤالك لا يظهر لغيرك قبل اعتماده في المراجعة، ولا يمكن الإجابة عليه قبلها.`
                   : `${REVIEW_REJECTED_AR}${questionReview.note ? ` — السبب: ${questionReview.note}` : ""}. يمكنك تعديله ليعود إلى المراجعة.`}
               </div>
             )}

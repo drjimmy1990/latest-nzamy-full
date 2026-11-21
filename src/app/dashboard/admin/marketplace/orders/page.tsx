@@ -1,162 +1,517 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { useState } from "react";
-import {
-  Storefront, MagnifyingGlass, Eye, Clock, CheckCircle,
-  X, Warning, Money, Users, ChartLine, Scales, Package,
-} from "@phosphor-icons/react";
+/**
+ * /dashboard/admin/marketplace/orders — «طلبات السوق» (l12, owner answers of 20 Nov).
+ *
+ * Replaces a screen of made-up orders and amounts with the real market:
+ *   1. Settings — the market switch, how a lawyer's ask is accepted (admin
+ *      approval within N minutes, default 30 — RAW[66]; or instant — Q151),
+ *      and the commission rates (shown only; nothing is collected through the
+ *      platform). Saving needs settings.write.
+ *   2. Lawyers' asks — approve / reject (with a reason the lawyer reads); an
+ *      ask past its window is marked «تجاوز المهلة» and the staff are alerted;
+ *      it is NEVER accepted automatically.
+ *   3. The requests lawyers see now — assign one to a verified lawyer
+ *      (RAW[22]: the administration has priority), or hide it from the market.
+ * N9: «المنصة وسيط لا ضامن ولا أمين على الأتعاب».
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import { Storefront, ArrowClockwise, CheckCircle, XCircle, Warning, EyeSlash, UserPlus } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import IntermediaryNotice from "@/components/marketplace/IntermediaryNotice";
+import { formatArabicDate } from "@/lib/services/clientDashboardCards";
+import { toArabicDigits } from "@/lib/marketplace/marketSettings";
 
-const ORDERS = [
-  { id:"MO-412", client:"شركة الحلول القانونية", provider:"أ. محمد العتيبي", service:"استشارة قانونية", amount:4500, status:"active" as const, date:"منذ يوم" },
-  { id:"MO-411", client:"نورة الحارثي", provider:"خالد الشمري — موثّق", service:"توثيق عقد إيجار", amount:1200, status:"active" as const, date:"منذ ٣ أيام" },
-  { id:"MO-410", client:"مكتب البراك", provider:"أ. سارة الزهراني", service:"صياغة عقد تأسيس", amount:8000, status:"completed" as const, date:"منذ أسبوع" },
-  { id:"MO-409", client:"مؤسسة النور", provider:"أ. فهد القحطاني", service:"تمثيل قضائي", amount:3200, status:"disputed" as const, date:"منذ ١٠ أيام" },
-  { id:"MO-408", client:"أ. عبدالله العمري", provider:"محمد البلوي — محكّم", service:"تحكيم تجاري", amount:6500, status:"completed" as const, date:"منذ أسبوعين" },
-  { id:"MO-407", client:"شركة التقنية", provider:"أ. نوف العنزي", service:"مراجعة عقود", amount:2800, status:"cancelled" as const, date:"منذ ٣ أسابيع" },
-];
+interface Settings {
+  open: boolean;
+  openedAt: string | null;
+  acceptMode: "admin_approval" | "instant";
+  approvalMinutes: number;
+  commission: { founderOrEnterprise: number; subscriber: number; free: number };
+  installed: boolean;
+}
 
-const STATUS_CFG: Record<string,{label:string;cls:string}> = {
-  new:       { label:"جديد",     cls:"bg-blue-500/10 border-blue-500/20 text-blue-400" },
-  active:    { label:"قيد التنفيذ", cls:"bg-amber-500/10 border-amber-500/20 text-amber-400" },
-  completed: { label:"مكتمل",    cls:"bg-emerald-500/10 border-emerald-500/20 text-emerald-400" },
-  cancelled: { label:"ملغي",     cls:"bg-zinc-500/10 border-zinc-500/20 text-zinc-400" },
-  disputed:  { label:"متنازع",   cls:"bg-red-500/10 border-red-500/20 text-red-400" },
-};
+interface Ask {
+  id: string;
+  requestId: string;
+  requestTitle: string;
+  requestCategory: string | null;
+  requestTaken: boolean;
+  lawyerName: string | null;
+  lawyerVerified: boolean;
+  mode: string;
+  status: string;
+  statusLabel: string;
+  dueAt: string | null;
+  createdAt: string | null;
+  note: string | null;
+  overdue: boolean;
+}
 
-// Top services
-const TOP_SERVICES = [
-  { name:"استشارة قانونية", count:142, pct:100 },
-  { name:"صياغة عقود", count:98, pct:69 },
-  { name:"تمثيل قضائي", count:76, pct:54 },
-  { name:"توثيق", count:54, pct:38 },
-  { name:"تحكيم تجاري", count:31, pct:22 },
-];
+interface MarketRequest {
+  id: string;
+  title: string;
+  typeLabel: string;
+  cityLabel: string | null;
+  summary: string | null;
+  createdAt: string | null;
+  published: boolean;
+  pendingAsks: number;
+}
+
+function fmtTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("ar-SA-u-nu-arab", { dateStyle: "medium", timeStyle: "short" });
+}
+
+async function readJson<T>(res: Response): Promise<T> {
+  return (await res.json().catch(() => ({}))) as T;
+}
 
 export default function MarketplaceOrdersPage() {
   const { isDark } = useTheme();
-  const [filter, setFilter] = useState("all");
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [draft, setDraft] = useState<Settings | null>(null);
+  const [settingsMsg, setSettingsMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [asks, setAsks] = useState<Ask[] | null>(null);
+  const [askFilter, setAskFilter] = useState("pending");
+  const [requests, setRequests] = useState<MarketRequest[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [rowMsg, setRowMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [assignFor, setAssignFor] = useState<string | null>(null);
+  const [lawyerQuery, setLawyerQuery] = useState("");
+  const [lawyers, setLawyers] = useState<Array<{ id: string; name: string }>>([]);
+
+  const loadAll = useCallback(async () => {
+    setError(null);
+    try {
+      const [s, a, r] = await Promise.all([
+        fetch("/api/v1/admin/marketplace/settings", { cache: "no-store" }),
+        fetch(`/api/v1/admin/marketplace/acceptances?status=${askFilter}`, { cache: "no-store" }),
+        fetch("/api/v1/admin/marketplace/requests", { cache: "no-store" }),
+      ]);
+      const sb = await readJson<{ data?: Settings; error?: string }>(s);
+      const ab = await readJson<{ data?: Ask[]; error?: string }>(a);
+      const rb = await readJson<{ data?: MarketRequest[]; error?: string }>(r);
+      if (!s.ok || !a.ok || !r.ok) {
+        setError(sb.error || ab.error || rb.error || "تعذّر تحميل بيانات السوق.");
+      }
+      if (sb.data) {
+        setSettings(sb.data);
+        setDraft(sb.data);
+      }
+      setAsks(Array.isArray(ab.data) ? ab.data : []);
+      setRequests(Array.isArray(rb.data) ? rb.data : []);
+    } catch {
+      setError("تعذّر الاتصال — تحقق من اتصالك وحاول مجدداً.");
+    }
+  }, [askFilter]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  useEffect(() => {
+    if (!assignFor || lawyerQuery.trim().length < 2) {
+      setLawyers([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      const res = await fetch(`/api/v1/admin/marketplace/lawyers?q=${encodeURIComponent(lawyerQuery.trim())}`, { cache: "no-store" });
+      const body = await readJson<{ data?: Array<{ id: string; name: string }> }>(res);
+      setLawyers(Array.isArray(body.data) ? body.data : []);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [assignFor, lawyerQuery]);
+
+  const saveSettings = async () => {
+    if (!draft) return;
+    setBusy("settings");
+    setSettingsMsg(null);
+    try {
+      const res = await fetch("/api/v1/admin/marketplace/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          open: draft.open,
+          acceptMode: draft.acceptMode,
+          approvalMinutes: Number(draft.approvalMinutes),
+          commission: {
+            founderOrEnterprise: Number(draft.commission.founderOrEnterprise),
+            subscriber: Number(draft.commission.subscriber),
+            free: Number(draft.commission.free),
+          },
+        }),
+      });
+      const body = await readJson<{ data?: Settings; error?: string }>(res);
+      if (!res.ok) {
+        setSettingsMsg({ text: body.error || "تعذّر الحفظ.", ok: false });
+        return;
+      }
+      if (body.data) {
+        setSettings(body.data);
+        setDraft(body.data);
+      }
+      setSettingsMsg({ text: "حُفظت الإعدادات.", ok: true });
+      void loadAll();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const decide = async (id: string, action: "approve" | "reject") => {
+    setBusy(id);
+    setRowMsg(null);
+    try {
+      const res = await fetch(`/api/v1/admin/marketplace/acceptances/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, note: notes[id] ?? "" }),
+      });
+      const body = await readJson<{ message?: string; error?: string }>(res);
+      setRowMsg({ id, text: body.message || body.error || "", ok: res.ok });
+      void loadAll();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const requestAction = async (id: string, payload: Record<string, unknown>) => {
+    setBusy(id);
+    setRowMsg(null);
+    try {
+      const res = await fetch(`/api/v1/admin/marketplace/requests/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await readJson<{ message?: string; error?: string }>(res);
+      setRowMsg({ id, text: body.message || body.error || "", ok: res.ok });
+      if (res.ok) {
+        setAssignFor(null);
+        setLawyerQuery("");
+      }
+      void loadAll();
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const card = isDark
-    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
-    : "rounded-2xl border border-slate-100 bg-white shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
-
-  const filtered = filter==="all" ? ORDERS : ORDERS.filter(o=>o.status===filter);
-  const avgOrderValue = Math.round(ORDERS.reduce((s,o)=>s+o.amount,0)/ORDERS.length);
+    ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60 p-5"
+    : "rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.06)]";
+  const tp = isDark ? "text-white" : "text-slate-800";
+  const ts = isDark ? "text-zinc-400" : "text-slate-500";
+  const input = isDark
+    ? "rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-sm text-white"
+    : "rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800";
+  const btn = "rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50";
+  const chip = isDark ? "bg-white/[0.06] text-zinc-300" : "bg-slate-100 text-slate-700";
 
   return (
     <div className="max-w-6xl mx-auto space-y-5" dir="rtl">
-      <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}}>
-        <h1 className={`text-xl font-bold mb-1 ${isDark?"text-white":"text-slate-800"}`}>طلبات السوق</h1>
-        <p className={`text-[12px] ${isDark?"text-zinc-500":"text-slate-400"}`}>مراقبة وإدارة كل طلبات سوق المهنيين</p>
-      </motion.div>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className={`text-xl font-bold mb-1 flex items-center gap-2 ${tp}`}>
+            <Storefront size={22} weight="duotone" />
+            طلبات السوق
+          </h1>
+          <p className={`text-[12px] ${ts}`}>
+            طلبات العملاء التي يراها المحامون الموثَّقون، وطلبات قبولهم، والإسناد. لا تُحصَّل الأتعاب عبر المنصة حالياً.
+          </p>
+          <IntermediaryNotice className="mt-1" />
+        </div>
+        <button type="button" onClick={() => void loadAll()} className={`${btn} ${chip} inline-flex items-center gap-1`}>
+          <ArrowClockwise size={14} weight="bold" />
+          تحديث
+        </button>
+      </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label:"إجمالي الطلبات", val:ORDERS.length.toString(), icon:Package, c:"text-blue-400" },
-          { label:"نشطة", val:ORDERS.filter(o=>o.status==="active").length.toString(), icon:Clock, c:"text-amber-400" },
-          { label:"مكتملة", val:ORDERS.filter(o=>o.status==="completed").length.toString(), icon:CheckCircle, c:"text-emerald-400" },
-          { label:"متنازعة", val:ORDERS.filter(o=>o.status==="disputed").length.toString(), icon:Scales, c:"text-red-400" },
-          { label:"متوسط قيمة الطلب", val:`${avgOrderValue.toLocaleString("ar-SA")} ر.س`, icon:Money, c:"text-[#C8A762]" },
-        ].map((k,i)=>(
-          <motion.div key={i} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} transition={{delay:i*0.05}}
-            className={`${card} p-4`}>
-            <div className="flex items-center gap-2 mb-1">
-              <k.icon size={14} weight="duotone" className={k.c}/>
-              <p className={`text-[10px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{k.label}</p>
+      {error && (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+
+      {/* 1. Settings */}
+      <section className={card} aria-labelledby="market-settings">
+        <h2 id="market-settings" className={`text-base font-bold mb-3 ${tp}`}>إعدادات السوق</h2>
+        {!draft && <p className={`text-sm ${ts}`}>جارٍ التحميل…</p>}
+        {draft && !draft.installed && (
+          <p className={`text-sm ${ts}`}>إعدادات السوق غير مفعّلة بعد على قاعدة البيانات (ملف SQL ‏20261202_70).</p>
+        )}
+        {draft && draft.installed && (
+          <div className="space-y-4">
+            <label className={`flex items-center gap-2 text-sm ${tp}`}>
+              <input
+                type="checkbox"
+                checked={draft.open}
+                onChange={(e) => setDraft({ ...draft, open: e.target.checked })}
+              />
+              السوق مفتوح: تظهر طلبات العملاء الجديدة للمحامين الموثَّقين دون نشر يدوي
+              {settings?.open && settings.openedAt ? (
+                <span className={`text-xs ${ts}`}>(مفتوح منذ {fmtTime(settings.openedAt)})</span>
+              ) : null}
+            </label>
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <span className={tp}>قبول المحامي للطلب:</span>
+              <label className={`flex items-center gap-1 ${tp}`}>
+                <input
+                  type="radio"
+                  name="acceptMode"
+                  checked={draft.acceptMode === "admin_approval"}
+                  onChange={() => setDraft({ ...draft, acceptMode: "admin_approval" })}
+                />
+                باعتماد الإدارة
+              </label>
+              <label className={`flex items-center gap-1 ${tp}`}>
+                <input
+                  type="radio"
+                  name="acceptMode"
+                  checked={draft.acceptMode === "instant"}
+                  onChange={() => setDraft({ ...draft, acceptMode: "instant" })}
+                />
+                فوري
+              </label>
+              <label className={`flex items-center gap-1 ${tp}`}>
+                مهلة الاعتماد
+                <input
+                  type="number"
+                  min={5}
+                  max={1440}
+                  className={`${input} w-20`}
+                  value={draft.approvalMinutes}
+                  onChange={(e) => setDraft({ ...draft, approvalMinutes: Number(e.target.value) })}
+                />
+                دقيقة
+              </label>
             </div>
-            <p className={`text-[18px] font-bold ${k.c}`}>{k.val}</p>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-5 gap-4">
-        {/* Daily orders line */}
-        <div className={`${card} p-5 col-span-3`}>
-          <p className={`text-[12px] font-bold mb-3 ${isDark?"text-white":"text-slate-800"}`}>حجم الطلبات اليومي</p>
-          <svg viewBox="0 0 300 70" className="w-full h-16" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="orders-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#C8A762" stopOpacity="0.2"/>
-                <stop offset="100%" stopColor="#C8A762" stopOpacity="0"/>
-              </linearGradient>
-            </defs>
-            <path d="M0,55 L30,48 L60,52 L90,40 L120,35 L150,42 L180,30 L210,25 L240,28 L270,18 L300,12 L300,70 L0,70 Z" fill="url(#orders-fill)"/>
-            {/* N07-68: a non-scaling stroke keeps the line's thickness in this stretched SVG. */}
-            <path d="M0,55 L30,48 L60,52 L90,40 L120,35 L150,42 L180,30 L210,25 L240,28 L270,18 L300,12" fill="none" stroke="#C8A762" strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
-          </svg>
-        </div>
-
-        {/* Top services */}
-        <div className={`${card} p-5 col-span-2`}>
-          <p className={`text-[12px] font-bold mb-3 ${isDark?"text-white":"text-slate-800"}`}>أكثر الخدمات طلباً</p>
-          <div className="space-y-2.5">
-            {TOP_SERVICES.map((s,i)=>(
-              <div key={i}>
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className={`text-[10px] ${isDark?"text-zinc-300":"text-slate-600"}`}>{s.name}</span>
-                  <span className={`text-[10px] font-bold ${isDark?"text-zinc-400":"text-slate-500"}`}>{s.count}</span>
-                </div>
-                <div className={`h-1.5 rounded-full overflow-hidden ${isDark?"bg-white/[0.05]":"bg-slate-100"}`}>
-                  <motion.div initial={{width:0}} animate={{width:`${s.pct}%`}} transition={{delay:i*0.08,duration:0.6,type:"spring",stiffness:100,damping:20}}
-                    className="h-full rounded-full bg-gradient-to-l from-[#C8A762] to-amber-600"/>
-                </div>
-              </div>
-            ))}
+            <p className={`text-xs ${ts}`}>
+              إذا انتهت المهلة دون قرار تُنبَّه الإدارة، ولا يُقبل أي محامٍ تلقائياً.
+            </p>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <span className={tp}>نسب العمولة (للعرض؛ لا تحصيل الآن):</span>
+              {(
+                [
+                  ["founderOrEnterprise", "المؤسسون وشركات المحاماة المتكاملة"],
+                  ["subscriber", "المشتركون"],
+                  ["free", "الحسابات المجانية"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className={`flex items-center gap-1 ${tp}`}>
+                  {label}
+                  <input
+                    type="number"
+                    min={5}
+                    max={15}
+                    className={`${input} w-16`}
+                    value={draft.commission[key]}
+                    onChange={(e) => setDraft({ ...draft, commission: { ...draft.commission, [key]: Number(e.target.value) } })}
+                  />
+                  ٪
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={busy === "settings"}
+                onClick={() => void saveSettings()}
+                className={`${btn} bg-emerald-600 text-white hover:bg-emerald-700`}
+              >
+                حفظ الإعدادات
+              </button>
+              {settingsMsg && (
+                <span role="status" className={`text-xs ${settingsMsg.ok ? "text-emerald-600" : "text-red-600 dark:text-red-400"}`}>
+                  {settingsMsg.text}
+                </span>
+              )}
+            </div>
           </div>
+        )}
+      </section>
+
+      {/* 2. Asks */}
+      <section className={card} aria-labelledby="market-asks">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 id="market-asks" className={`text-base font-bold ${tp}`}>طلبات قبول المحامين</h2>
+          <select className={input} value={askFilter} onChange={(e) => setAskFilter(e.target.value)} aria-label="تصفية">
+            <option value="pending">بانتظار الاعتماد</option>
+            <option value="approved">معتمدة</option>
+            <option value="rejected">مرفوضة</option>
+            <option value="superseded">أُسندت لغيره</option>
+            <option value="withdrawn">مسحوبة</option>
+            <option value="all">الكل</option>
+          </select>
         </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-1.5">
-        {[["all","الكل"],["active","نشطة"],["completed","مكتملة"],["disputed","متنازعة"],["cancelled","ملغاة"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setFilter(v)}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
-              filter===v?"bg-[#C8A762] text-black":isDark?"bg-white/[0.04] text-zinc-500":"bg-slate-100 text-slate-500"
-            }`}>{l}</button>
-        ))}
-      </div>
-
-      {/* Table */}
-      <div className={`${card} overflow-hidden`}>
-        {/* overflow-hidden on the card keeps its rounded corners; the table
-            needs its own x-scroller or 8-9 columns are simply cut off on a
-            phone with no way to reach them. */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-right">
-          <thead><tr className={`border-b ${isDark?"border-white/[0.06]":"border-slate-100"}`}>
-            {["الرقم","الطالب","المزود","الخدمة","المبلغ","الحالة","التاريخ",""].map(h=>(
-              <th key={h} className={`px-4 py-3 text-[10px] font-bold uppercase ${isDark?"text-zinc-600":"text-slate-400"}`}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {filtered.map((o,i)=>{
-              const sc = STATUS_CFG[o.status];
-              return (
-                <motion.tr key={o.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*0.04}}
-                  className={`border-b ${isDark?"border-white/[0.04] hover:bg-white/[0.02]":"border-slate-50 hover:bg-slate-50/50"} group transition-colors`}>
-                  <td className="px-4 py-3"><span className={`text-[11px] font-bold ${isDark?"text-zinc-300":"text-slate-600"}`}>{o.id}</span></td>
-                  <td className="px-4 py-3"><span className={`text-[11px] ${isDark?"text-zinc-400":"text-slate-500"}`}>{o.client}</span></td>
-                  <td className="px-4 py-3"><span className={`text-[11px] ${isDark?"text-zinc-400":"text-slate-500"}`}>{o.provider}</span></td>
-                  <td className="px-4 py-3"><span className={`text-[10px] ${isDark?"text-zinc-500":"text-slate-400"}`}>{o.service}</span></td>
-                  <td className="px-4 py-3"><span className={`text-[12px] font-bold ${isDark?"text-white":"text-slate-800"}`}>{o.amount.toLocaleString("ar-SA")} <span className="text-[9px] font-normal text-zinc-500">ر.س</span></span></td>
-                  <td className="px-4 py-3"><span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${sc.cls}`}>{sc.label}</span></td>
-                  <td className="px-4 py-3"><span className={`text-[10px] ${isDark?"text-zinc-600":"text-slate-400"}`}>{o.date}</span></td>
-                  <td className="px-4 py-3">
-                    <button className={`h-7 w-7 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${isDark?"bg-white/[0.04] text-zinc-400 hover:text-white":"bg-slate-50 text-slate-400 hover:text-slate-700"}`}>
-                      <Eye size={12}/>
+        {asks === null && <p className={`text-sm ${ts}`}>جارٍ التحميل…</p>}
+        {asks !== null && asks.length === 0 && <p className={`text-sm ${ts}`}>لا توجد طلبات قبول في هذا التصنيف.</p>}
+        {asks !== null && asks.length > 0 && (
+          <ul className="space-y-3">
+            {asks.map((a) => (
+              <li
+                key={a.id}
+                className={`rounded-xl border p-3 ${a.overdue ? "border-red-400/60" : isDark ? "border-white/10" : "border-slate-200"}`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className={`text-sm ${tp}`}>
+                    <span className="font-bold">{a.lawyerName || "محامٍ"}</span>
+                    {!a.lawyerVerified && <span className="text-xs text-red-600"> (لم يعد موثَّقاً)</span>}
+                    <span className={ts}> يطلب قبول </span>
+                    <span className="font-bold">{a.requestTitle || a.requestId}</span>
+                    {a.requestCategory && <span className={ts}> · {a.requestCategory}</span>}
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${chip}`}>{a.statusLabel}</span>
+                </div>
+                <p className={`text-xs mt-1 ${ts}`}>
+                  {fmtTime(a.createdAt)}
+                  {a.status === "pending" && a.dueAt ? ` · المهلة حتى ${fmtTime(a.dueAt)}` : ""}
+                  {a.requestTaken && a.status === "pending" ? " · الطلب أُسند من قبل" : ""}
+                </p>
+                {a.overdue && (
+                  <p className="text-xs mt-1 text-red-600 dark:text-red-400 inline-flex items-center gap-1">
+                    <Warning size={13} weight="bold" />
+                    تجاوز المهلة دون قرار — لا يُقبل تلقائياً
+                  </p>
+                )}
+                {a.note && <p className={`text-xs mt-1 ${ts}`}>الملاحظة: {a.note}</p>}
+                {a.status === "pending" && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      className={`${input} flex-1 min-w-[12rem]`}
+                      placeholder="سبب الرفض (يقرؤه المحامي) — اختياري"
+                      maxLength={500}
+                      value={notes[a.id] ?? ""}
+                      onChange={(e) => setNotes({ ...notes, [a.id]: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      disabled={busy === a.id}
+                      onClick={() => void decide(a.id, "approve")}
+                      className={`${btn} bg-emerald-600 text-white inline-flex items-center gap-1`}
+                    >
+                      <CheckCircle size={14} weight="bold" />
+                      اعتماد وإسناد
                     </button>
-                  </td>
-                </motion.tr>
-              );
-            })}
-          </tbody>
-        </table>
-        </div>
-      </div>
+                    <button
+                      type="button"
+                      disabled={busy === a.id}
+                      onClick={() => void decide(a.id, "reject")}
+                      className={`${btn} bg-red-600 text-white inline-flex items-center gap-1`}
+                    >
+                      <XCircle size={14} weight="bold" />
+                      رفض
+                    </button>
+                  </div>
+                )}
+                {rowMsg?.id === a.id && (
+                  <p role="status" className={`text-xs mt-1 ${rowMsg.ok ? "text-emerald-600" : "text-red-600 dark:text-red-400"}`}>
+                    {rowMsg.text}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* 3. Requests in the market */}
+      <section className={card} aria-labelledby="market-requests">
+        <h2 id="market-requests" className={`text-base font-bold mb-1 ${tp}`}>الطلبات المعروضة على المحامين الآن</h2>
+        <p className={`text-xs mb-3 ${ts}`}>
+          يرى المحامون النوع والمدينة وسطر الملخّص فقط. لاسترجاع طلب أُسند لمحامٍ استخدم «توجيه» في صفحة طلبات الخدمات.
+        </p>
+        {requests === null && <p className={`text-sm ${ts}`}>جارٍ التحميل…</p>}
+        {requests !== null && requests.length === 0 && <p className={`text-sm ${ts}`}>لا توجد طلبات معروضة في السوق الآن.</p>}
+        {requests !== null && requests.length > 0 && (
+          <ul className="space-y-3">
+            {requests.map((r) => (
+              <li key={r.id} className={`rounded-xl border p-3 ${isDark ? "border-white/10" : "border-slate-200"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className={`text-sm ${tp}`}>
+                    <span className="font-bold">{r.title || r.id}</span>
+                    <span className={ts}>
+                      {" "}
+                      · {r.typeLabel}
+                      {r.cityLabel ? ` · ${r.cityLabel}` : ""} · {formatArabicDate(r.createdAt)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    {r.published && <span className={`rounded-full px-2 py-0.5 ${chip}`}>منشور يدوياً</span>}
+                    {r.pendingAsks > 0 && (
+                      <span className="rounded-full px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                        {toArabicDigits(r.pendingAsks)} طلب قبول
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {r.summary && <p className={`text-xs mt-1 ${ts}`}>{r.summary}</p>}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAssignFor(assignFor === r.id ? null : r.id);
+                      setLawyerQuery("");
+                    }}
+                    className={`${btn} ${chip} inline-flex items-center gap-1`}
+                  >
+                    <UserPlus size={14} weight="bold" />
+                    إسناد لمحامٍ
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === r.id}
+                    onClick={() => void requestAction(r.id, { action: "hide" })}
+                    className={`${btn} ${chip} inline-flex items-center gap-1`}
+                  >
+                    <EyeSlash size={14} weight="bold" />
+                    إخفاء من السوق
+                  </button>
+                </div>
+                {assignFor === r.id && (
+                  <div className="mt-2 space-y-2">
+                    <input
+                      className={`${input} w-full`}
+                      placeholder="ابحث باسم المحامي الموثَّق (حرفان على الأقل)"
+                      value={lawyerQuery}
+                      onChange={(e) => setLawyerQuery(e.target.value)}
+                    />
+                    {lawyers.length > 0 && (
+                      <ul className="flex flex-wrap gap-2">
+                        {lawyers.map((l) => (
+                          <li key={l.id}>
+                            <button
+                              type="button"
+                              disabled={busy === r.id}
+                              onClick={() => void requestAction(r.id, { action: "assign_lawyer", lawyerUserId: l.id })}
+                              className={`${btn} bg-emerald-600 text-white`}
+                            >
+                              إسناد إلى {l.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {lawyerQuery.trim().length >= 2 && lawyers.length === 0 && (
+                      <p className={`text-xs ${ts}`}>لا محامٍ موثَّقاً بهذا الاسم.</p>
+                    )}
+                  </div>
+                )}
+                {rowMsg?.id === r.id && (
+                  <p role="status" className={`text-xs mt-1 ${rowMsg.ok ? "text-emerald-600" : "text-red-600 dark:text-red-400"}`}>
+                    {rowMsg.text}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

@@ -291,6 +291,10 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "verifications/[id]/route.ts", method: "PATCH", action: "verifications.decide", logs: 1 },
   { file: "community/moderation/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "community/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  // l12 Q130a: the open market — approve/reject a lawyer's ask; assign a lawyer / hide; the settings
+  { file: "marketplace/acceptances/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 1 },
+  { file: "marketplace/requests/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 2 },
+  { file: "marketplace/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },
