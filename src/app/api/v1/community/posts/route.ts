@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { runCommunityAiReview } from "@/lib/community/aiReviewServer";
 import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -207,6 +208,11 @@ export async function POST(request: NextRequest) {
   // Owner ٤٢: while review before publishing is on, the database stores the
   // post as pending_review (trigger, 20261127_60); say so instead of «نُشر».
   const pendingReview = reviewStateOf((data as { status?: unknown } | null)?.status) === "pending";
+  // Q131a (l12): the AI pre-publish review runs after the response; it is a
+  // no-op unless switched on, and anything but a clear verdict leaves the
+  // post pending for the human queue (src/lib/community/aiReviewServer.ts).
+  const postId = (data as { id?: unknown } | null)?.id;
+  if (pendingReview && typeof postId === "string") after(() => runCommunityAiReview("post", postId));
   return NextResponse.json(
     {
       data,

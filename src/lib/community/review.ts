@@ -36,8 +36,8 @@ export const REVIEW_REJECTED_AR = "لم يُعتمد للنشر";
 export function postedNoticeAr(kind: "post" | "answer", pending: boolean): string {
   if (!pending) return kind === "post" ? "نُشر سؤالك في المجتمع." : "نُشرت إجابتك.";
   return kind === "post"
-    ? "استلمنا سؤالك، وهو بانتظار المراجعة. يظهر للأعضاء بعد موافقة فريق المراجعة، وتجده الآن في «أسئلتي»."
-    : "استلمنا إجابتك، وهي بانتظار المراجعة. تظهر للأعضاء بعد موافقة فريق المراجعة.";
+    ? "استلمنا سؤالك، وهو بانتظار المراجعة. يظهر للأعضاء بعد اعتماده في المراجعة، وتجده الآن في «أسئلتي»."
+    : "استلمنا إجابتك، وهي بانتظار المراجعة. تظهر للأعضاء بعد اعتمادها في المراجعة.";
 }
 
 /** platform_settings.community_prepublish_review → on/off. Anything but an explicit false is ON (decision 13: default ON). */
@@ -136,12 +136,12 @@ export function reviewNotificationAr(
 ): { title: string; body: string } | null {
   const what = kind === "post" ? "سؤالك" : "إجابتك";
   if (status === "active") {
-    return { title: "اعتُمد للنشر في المجتمع", body: `اعتمد فريق المراجعة ${what}، وأصبح ظاهراً للأعضاء.` };
+    return { title: "اعتُمد للنشر في المجتمع", body: `اعتُمد ${what} في المراجعة، وأصبح ظاهراً للأعضاء.` };
   }
   if (status === "rejected") {
     return {
       title: "لم يُعتمد للنشر في المجتمع",
-      body: `لم يعتمد فريق المراجعة ${what}. السبب: ${note ?? "—"}. يمكنك تعديله وإرساله للمراجعة من جديد.`,
+      body: `لم يُعتمد ${what} في المراجعة. السبب: ${note ?? "—"}. يمكنك تعديله وإرساله للمراجعة من جديد.`,
     };
   }
   return null;

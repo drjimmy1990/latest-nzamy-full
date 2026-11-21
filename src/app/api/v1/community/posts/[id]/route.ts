@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
+import { runCommunityAiReview } from "@/lib/community/aiReviewServer";
 import { dbErrorJson } from "@/lib/api/dbError";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
@@ -247,5 +248,10 @@ export async function PATCH(
     return dbErrorJson("community/posts/[id] PATCH", error);
   }
 
+  // Q131a (l12): an edit the trigger sent back to review goes through the AI
+  // pre-publish review too (no-op unless switched on; fail closed).
+  if (reviewStateOf((data as { status?: unknown } | null)?.status) === "pending") {
+    after(() => runCommunityAiReview("post", id));
+  }
   return NextResponse.json({ data, masked, maskedNotice: piiMaskedNoticeAr(masked) });
 }

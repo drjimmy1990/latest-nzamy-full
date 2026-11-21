@@ -55,6 +55,8 @@ interface QueueRead {
   total: number | null;
   pending: { posts: number | null; answers: number | null };
   prepublishReview: boolean | null;
+  /** Q131a (l12): the AI pre-publish review switch; null = 20261202_70 not run. */
+  aiReview: { enabled: boolean | null; configured: boolean };
 }
 
 const STATUS_LABEL: Record<ModerationUiStatus, string> = {
@@ -104,6 +106,10 @@ export default function AdminCommunityModerationPage() {
         total: typeof json.total === "number" ? json.total : null,
         pending: json.pending ?? { posts: null, answers: null },
         prepublishReview: typeof json.prepublishReview === "boolean" ? json.prepublishReview : null,
+        aiReview: {
+          enabled: typeof json.aiReview?.enabled === "boolean" ? json.aiReview.enabled : null,
+          configured: json.aiReview?.configured === true,
+        },
       });
       setState("ready");
     } catch {
@@ -174,11 +180,38 @@ export default function AdminCommunityModerationPage() {
     }
   }
 
+  async function setAiReview(on: boolean) {
+    if (busy) return;
+    setBusy("ai-setting");
+    setMessage(null);
+    try {
+      const res = await fetch("/api/v1/admin/community/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiReview: on }),
+      });
+      const json = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(json?.error || "تعذّر حفظ الإعداد");
+      setMessage({
+        tone: "ok",
+        text: on
+          ? "المراجعة الآلية مفعّلة: يقرر الوكيل النشر أو الرفض، وما لا يحسمه يبقى هنا."
+          : "أُوقفت المراجعة الآلية: كل ما ينتظر المراجعة يُعتمد من هنا.",
+      });
+      await load();
+    } catch (err) {
+      setMessage({ tone: "error", text: err instanceof Error ? err.message : "تعذّر حفظ الإعداد" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const card = `rounded-2xl border ${isDark ? "bg-[#0d1117] border-white/10" : "bg-white border-gray-200 shadow-sm"}`;
   const muted = isDark ? "text-gray-400" : "text-gray-500";
   const strong = isDark ? "text-white" : "text-gray-900";
   const items = read?.data ?? [];
   const review = read?.prepublishReview ?? null;
+  const ai = read?.aiReview ?? null;
   const count = (n: number | null | undefined) => (typeof n === "number" ? toArabicDigits(n) : "—");
 
   return (
@@ -192,7 +225,7 @@ export default function AdminCommunityModerationPage() {
             <h1 className={`text-3xl font-black ${strong}`}>مراجعة المجتمع</h1>
           </div>
           <p className={`text-sm ${muted}`}>
-            الأسئلة والإجابات الجديدة لا تظهر للأعضاء قبل اعتمادها هنا. أسماء الكاتبين تظهر لفريق المراجعة فقط.
+            الأسئلة والإجابات الجديدة لا تظهر للأعضاء قبل اعتمادها (هنا، أو بالمراجعة الآلية إن كانت مفعّلة). أسماء الكاتبين تظهر لفريق المراجعة فقط.
           </p>
         </div>
         <button
@@ -224,6 +257,32 @@ export default function AdminCommunityModerationPage() {
             className={`px-4 py-2 rounded-xl text-xs font-bold border disabled:opacity-50 ${review ? isDark ? "border-amber-500/30 text-amber-300 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-50" : "border-emerald-500/30 bg-emerald-600 text-white hover:bg-emerald-700"}`}
           >
             {review ? "إيقاف المراجعة قبل النشر" : "تفعيل المراجعة قبل النشر"}
+          </button>
+        )}
+      </div>
+
+      {/* Q131a (l12): the AI pre-publish review — a filter only, it never answers */}
+      <div className={`${card} p-5 flex flex-col md:flex-row md:items-center justify-between gap-4`}>
+        <div>
+          <p className={`font-black ${strong}`}>المراجعة الآلية قبل النشر (وكيل ذكاء اصطناعي)</p>
+          <p className={`text-xs mt-1 ${muted}`}>
+            {ai === null || ai.enabled === null
+              ? "غير متاحة بعد (لم يُشغَّل ملف الترحيل 20261202_70)."
+              : ai.enabled
+                ? ai.configured
+                  ? "مفعّلة: يقرأ الوكيل كل سؤال أو إجابة تنتظر المراجعة فيقرر النشر أو الرفض بسبب محدد، وما لا يحسمه أو يتعذّر عليه يبقى هنا. لا يجيب الوكيل عن الأسئلة."
+                  : "مفعّلة، لكن الخادم غير موصول بخدمة الذكاء الاصطناعي الآن، فيبقى كل جديد هنا للمراجعة."
+                : "موقوفة: كل ما ينتظر المراجعة يُعتمد من هذه الصفحة."}
+          </p>
+        </div>
+        {ai !== null && ai.enabled !== null && (
+          <button
+            type="button"
+            disabled={busy === "ai-setting"}
+            onClick={() => void setAiReview(!ai.enabled)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold border disabled:opacity-50 ${ai.enabled ? isDark ? "border-amber-500/30 text-amber-300 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-50" : "border-emerald-500/30 bg-emerald-600 text-white hover:bg-emerald-700"}`}
+          >
+            {ai.enabled ? "إيقاف المراجعة الآلية" : "تفعيل المراجعة الآلية"}
           </button>
         )}
       </div>
