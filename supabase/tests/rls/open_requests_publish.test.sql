@@ -11,6 +11,10 @@
 --     $M/20261127_70_open_requests_publish.sql \
 --     $T/open_requests_publish.test.sql
 --
+-- l12 (20261202_70, Q130a): with 20261202_70 in the chain the market is OPEN by default and
+-- lists new client requests without a publish, so T2 fails by design. Add
+-- $T/prelude_l12_market_closed.sql before 20261202_70 to run this test unchanged.
+--
 -- NEGATIVE CONTROL (must FAIL): the same chain without the two 20261127_70
 -- lines → "F0 FAIL" (no marketplace_published_at column).
 --

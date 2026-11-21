@@ -52,6 +52,8 @@ export function communityAiReviewOn(value: unknown): boolean {
 }
 
 export interface AiReviewEnv {
+  /** process.env is accepted as is (the index signature avoids TS's weak-type check). */
+  [key: string]: string | undefined;
   N8N_AI_BASE_URL?: string;
   NZAMY_AI_KEY?: string;
 }
