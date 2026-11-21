@@ -12,6 +12,8 @@ import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
 import { PrintWatermark } from "@/app/laws/components/PrintWatermark";
 import { LibraryAI, CommunityQuestionModal } from "@/app/laws/[slug]/_ai-components";
+import { MD } from "@/app/laws/[slug]/_article-components";
+import { decreePreambleForDisplay, hasBlockMarkup, pageSnippet } from "@/lib/library/decreeDisplay";
 import { getLawMeta } from "@/app/laws/law-metadata-map";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -399,6 +401,10 @@ export default function OrderReaderPage() {
     };
   }, [order]);
 
+  // File 03 L9-a (lib07): the preamble without the موجز (the summary box's)
+  // and with the identity card as rows; the rest is drawn by MD, never as raw text.
+  const preambleView = useMemo(() => decreePreambleForDisplay(order?.preamble), [order?.preamble]);
+
   if (deviceRefusal) return <LibraryDeviceLimitPage refusal={deviceRefusal} />;
 
   if (!order) {
@@ -574,7 +580,7 @@ export default function OrderReaderPage() {
                       const label = isRTL ? `الصفحة ${idx + 1}` : `Page ${idx + 1}`;
                       const snippet = isPageLocked(idx)
                         ? (isRTL ? "للمشتركين" : "Subscribers")
-                        : art.slice(0, 45) + (art.length > 45 ? "..." : "");
+                        : pageSnippet(art, 45);
                       return (
                         <button
                           key={idx}
@@ -666,15 +672,35 @@ export default function OrderReaderPage() {
                     </Link>
                   </div>
                 </div>
-              ) : order.preamble && (
+              ) : (preambleView.text || preambleView.card) && (
                 <div className="mb-8 print:hidden">
                   <h3 className={`text-xs font-black uppercase tracking-wider mb-3 ${isDark ? "text-zinc-500" : "text-slate-400"}`}>
                     {isRTL ? "الديباجة التمهيدية" : "Preamble"}
                   </h3>
-                  <div className={`p-5 rounded-2xl border text-xs leading-loose whitespace-pre-wrap font-serif ${
+                  <div className={`p-5 rounded-2xl border space-y-4 ${
                     isDark ? "bg-[#0c0f12]/50 border-white/5 text-zinc-300" : "bg-slate-50/50 border-slate-100 text-gray-700"
                   }`}>
-                    <Hl text={order.preamble} />
+                    {/* File 03 L9-a: the «📊 بطاقة تعريف» rows as a table, not raw «| --- |». */}
+                    {preambleView.card && (
+                      <div className={`overflow-x-auto rounded-xl border ${isDark ? "border-zinc-800" : "border-slate-200"}`}>
+                        <table className="min-w-full text-xs text-right" data-testid="decree-identity-card">
+                          <caption className={`px-3 py-2 text-start text-[11px] font-black ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                            {isRTL ? "بطاقة التعريف" : "Identity card"}
+                          </caption>
+                          <tbody className={`divide-y ${isDark ? "divide-zinc-800" : "divide-slate-100"}`}>
+                            {[...preambleView.card.main, ...preambleView.card.more].map((f, i) => (
+                              <tr key={`${f.key}-${i}`}>
+                                <th scope="row" className={`px-3 py-2 font-bold whitespace-nowrap align-top ${isDark ? "text-zinc-400" : "text-slate-500"}`}><Hl text={f.key} /></th>
+                                <td className="px-3 py-2 leading-relaxed"><Hl text={f.value} /></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {preambleView.text && (
+                      <MD text={preambleView.text} isDark={isDark} isRTL={isRTL} fontClass="text-xs leading-loose" />
+                    )}
                   </div>
                 </div>
               )}
@@ -748,7 +774,13 @@ export default function OrderReaderPage() {
                             </button>
                           </div>
                         </div>
-                        <p className={`${fontSizeClass} whitespace-pre-wrap font-sans`}><BoldHl text={art} /></p>
+                        {/* File 03 L9-a: a page with headings, folds or tables is drawn by MD;
+                            any other page stays the plain text it was. */}
+                        {hasBlockMarkup(art) ? (
+                          <MD text={art} isDark={isDark} isRTL={isRTL} fontClass={fontSizeClass} />
+                        ) : (
+                          <p className={`${fontSizeClass} whitespace-pre-wrap font-sans`}><BoldHl text={art} /></p>
+                        )}
                       </div>
                     );
                   })

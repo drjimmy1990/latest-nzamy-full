@@ -24,8 +24,9 @@ import { LibraryLockedNote } from "@/components/library/LibrarySubscribeCard";
  * (HighlightScope + useNearViewport); the page's legend counts every loaded
  * principle itself and steps block to block.
  */
-const Paragraphs = memo(function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
-  const paragraphs = useMemo(() => principleParagraphs(text), [text]);
+const Paragraphs = memo(function Paragraphs({ text, className, number }: { text: string | null | undefined; className?: string; number?: string | number | null }) {
+  // L9-d: `number` drops a first line that only repeats the principle's number.
+  const paragraphs = useMemo(() => principleParagraphs(text, number), [text, number]);
   if (paragraphs.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -192,12 +193,12 @@ export default function PrincipleBlock({
                     {para.letter}ـ
                   </span>
                 )}
-                <Paragraphs text={para.text} />
+                <Paragraphs text={para.text} number={p.number} />
               </div>
             );
           })
         ) : (
-          <Paragraphs text={cleanTextOfRef(p.text)} />
+          <Paragraphs text={cleanTextOfRef(p.text)} number={p.number} />
         )}
       </div>
 

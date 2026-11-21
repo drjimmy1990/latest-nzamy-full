@@ -38,11 +38,44 @@ const MIN_TAIL = 120;
 const PAGE_COMMENT = /<!?-{2,}\s*PAGE_(?:END|START|BREAK)[^>]*>/gi;
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 
-/** Display text: no Markdown marks; blank-line paragraph breaks kept as «\n\n». */
-export function cleanPrincipleText(text: string | null | undefined): string {
+/** Arabic-Indic / Extended Arabic-Indic digits → ASCII, for comparing numbers only. */
+function asciiDigits(s: string): string {
+  return s
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
+}
+
+/**
+ * True when `line` is only the principle's number printed again (owner file
+ * 03 L9-d, screenshot lib05: principle 609 opened with «٦٠٩٦٠٩»). With the
+ * number known: the number once or twice in a row («609», «٦٠٩٦٠٩»). Without
+ * it: a run of digits that is one number written twice («٦٠٩٦٠٩»). A first
+ * line with words, a date or anything else is never a match.
+ */
+export function isRepeatedNumberLine(line: string, number?: string | number | null): boolean {
+  const digits = asciiDigits(line.replace(/[\s*_#>()[\]]/g, ""));
+  if (!/^\d{1,12}$/.test(digits)) return false;
+  const n = number === null || number === undefined ? "" : asciiDigits(String(number)).replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (n) return digits === n || digits === n + n;
+  const half = digits.length / 2;
+  return Number.isInteger(half) && half >= 2 && digits.slice(0, half) === digits.slice(half);
+}
+
+/** The text without a first line that only repeats the principle's number (isRepeatedNumberLine). */
+function withoutNumberLine(text: string, number?: string | number | null): string {
+  const m = /^\s*([^\n]*)(?:\n|$)/.exec(text);
+  if (!m || !isRepeatedNumberLine(m[1], number)) return text;
+  return text.slice(m[0].length);
+}
+
+/**
+ * Display text: no Markdown marks; blank-line paragraph breaks kept as «\n\n».
+ * A first line that only repeats the principle's number goes (L9-d); pass
+ * `number` when the caller knows it.
+ */
+export function cleanPrincipleText(text: string | null | undefined, number?: string | number | null): string {
   if (typeof text !== "string" || text.trim() === "") return "";
-  const normalized = text
-    .replace(/\r\n?/g, "\n")
+  const normalized = withoutNumberLine(text.replace(/\r\n?/g, "\n"), number)
     .replace(PAGE_COMMENT, "")
     .replace(HTML_COMMENT, "")
     .replace(/^[ \t]*>[ \t]?/gm, "")
@@ -109,8 +142,8 @@ function splitLong(paragraph: string): string[] {
 }
 
 /** The paragraphs to render, in order. Empty input → []. */
-export function principleParagraphs(text: string | null | undefined): string[] {
-  const cleaned = cleanPrincipleText(text);
+export function principleParagraphs(text: string | null | undefined, number?: string | number | null): string[] {
+  const cleaned = cleanPrincipleText(text, number);
   if (cleaned === "") return [];
   const paragraphs: string[] = [];
   for (const block of cleaned.split(/\n{2,}/)) {
@@ -172,8 +205,8 @@ export function principleHighlightTexts(
   texts.push(p.issuing_body);
   if (p.session_date) texts.push(p.session_date);
   const paras = (p.paragraphs ?? []).filter((para) => cleanPrincipleText(para.text) !== "" && !isReferenceText(para.text));
-  if (paras.length > 0) for (const para of paras) texts.push(...principleParagraphs(para.text));
-  else texts.push(...principleParagraphs(cleanTextOfRef(p.text)));
+  if (paras.length > 0) for (const para of paras) texts.push(...principleParagraphs(para.text, p.number));
+  else texts.push(...principleParagraphs(cleanTextOfRef(p.text), p.number));
   const ref = principleReferenceLine(referenceOf(p) || "");
   if (ref) texts.push(ref);
   const details = (p.details ?? {}) as Record<string, unknown>;

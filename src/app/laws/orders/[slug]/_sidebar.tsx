@@ -7,6 +7,7 @@ import { orderMetaShown } from "../../orderMetaLabels";
 import { type DemoOrder } from "../../demo-data-access";
 import { orderTypeStyle, orderTypeLabelEn } from "../../components/ListItems";
 import { ResearchWorkspace } from "@/components/ResearchWorkspace";
+import { decreeCategoryLabel } from "@/lib/library/decreeDisplay";
 
 interface SidebarPanelProps {
   isDark: boolean;
@@ -38,6 +39,7 @@ export default function SidebarPanel({
   setShowFolderModal
 }: SidebarPanelProps) {
   const router = useRouter();
+  const categoryLabel = decreeCategoryLabel(order.cat, isRTL);
   return (
     <div className="relative z-50 space-y-3">
       {/* Metadata Card */}
@@ -77,10 +79,13 @@ export default function SidebarPanel({
               )}
             </>
           )}
-          <div className="flex justify-between">
-            <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "تصنيف الملف:" : "Category ID:"}</span>
-            <span className={`font-mono font-bold ${isDark ? "text-gray-300" : "text-gray-700"}`}>{order.cat}</span>
-          </div>
+          {/* File 03 New 5 (lib07): the section's name, never the bare code («30»); unknown → no row. */}
+          {categoryLabel && (
+            <div className="flex justify-between gap-3">
+              <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "تصنيف الملف:" : "Category:"}</span>
+              <span className={`font-bold text-end ${isDark ? "text-gray-300" : "text-gray-700"}`}>{categoryLabel}</span>
+            </div>
+          )}
           {order.official_url && (
             <div className="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-2.5 mt-1">
               <span className={isDark ? "text-gray-500" : "text-gray-400"}>{isRTL ? "الرابط الرسمي:" : "Official Link:"}</span>

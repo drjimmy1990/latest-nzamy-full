@@ -266,7 +266,7 @@ export default function JudicialPrinciplesPage() {
 
   const getOrCreateEntry = (p: JudicialPrincipleItem) => {
     const mainParas = p.paragraphs?.filter(para => !isReferenceText(para.text)) || [];
-    const mainText = cleanPrincipleText(mainParas.length > 0 ? mainParas.map(para => para.text).join("\n") : cleanTextOfRef(p.text));
+    const mainText = cleanPrincipleText(mainParas.length > 0 ? mainParas.map(para => para.text).join("\n") : cleanTextOfRef(p.text), p.number);
     const refText = getReferenceForPrinciple(p);
     return {
       articleId: p.id,
