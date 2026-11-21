@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نظامي — الصائغ</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  :root { --bg:#fff; --fg:#1b1f24; --mut:#667; --line:#d9dde3; --acc:#0b6b4f; --err:#b42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1b1f24; --fg:#eef0f3; --mut:#9aa3ae; --line:#363c45; --acc:#3fb68b; --err:#ff8a80; } }
+  body { margin:0; padding:12px 16px; font:14px/1.6 "Segoe UI", Tahoma, sans-serif; background:var(--bg); color:var(--fg); }
+  h1 { font-size:16px; margin:0 0 8px; }
+  section { border-top:1px solid var(--line); padding:10px 0; }
+  button { font:inherit; padding:6px 12px; margin:2px 0 2px 6px; border:1px solid var(--acc); background:var(--acc); color:#fff; border-radius:6px; cursor:pointer; }
+  button.alt { background:transparent; color:var(--acc); }
+  input, select { font:inherit; width:100%; box-sizing:border-box; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  .mut { color:var(--mut); font-size:12px; } .err { color:var(--err); }
+  h2 { font-size:14px; margin:10px 0 4px; } .item { border:1px solid var(--line); border-radius:6px; padding:6px 8px; margin:6px 0; }
+  #estimateOut { white-space:pre-wrap; } #out { white-space:pre-wrap; border:1px solid var(--line); border-radius:6px; padding:8px; min-height:2em; }
+</style>
+</head>
+<body>
+<h1>نظامي — الصائغ</h1>
+<p class="mut">نسخة تجريبية للمشرفين. السعر يُعرض من الخادم قبل أي خصم، ولا يُنفَّذ شيء دون تأكيدك.</p>
+
+<section id="login">
+  <label>رمز الدخول (staging)<input id="token" type="password" autocomplete="off"></label>
+  <label>عنوان المنصة<input id="base" value="https://nezamy.sa"></label>
+  <label>رقم القضية (اختياري)<input id="caseId"></label>
+  <button id="connect">اتصال</button>
+  <div id="who" class="mut"></div>
+</section>
+
+<section id="tools" hidden>
+  <button data-f="review">راجع الفقرة</button>
+  <button data-f="rewrite">أعد صياغة التحديد</button>
+  <button data-f="citation">اقترح استشهادًا</button>
+  <label>تعليمات إعادة الصياغة<input id="instr" placeholder="مثال: أكثر إيجازًا"></label>
+  <label>مرحلة الخط
+    <select id="stage"><option>intake</option><option>draft</option><option>extraction</option><option>adversary</option><option>refine</option><option>najiz</option></select>
+  </label>
+  <button data-f="stage" class="alt">شغّل المرحلة على التحديد</button>
+  <button id="estimate" class="alt">قدّر تكلفة المستند كله</button>
+  <div id="estimateOut" class="mut"></div>
+</section>
+
+<section id="clientSection" hidden>
+  <h2>تعليقات العميل</h2>
+  <label>رقم المستند على المنصة<input id="docId" placeholder="يُؤخذ من المنصة"></label>
+  <button id="loadComments" class="alt">اجلب تعليقات العميل</button>
+  <div id="comments"></div>
+</section>
+
+<section>
+  <div id="msg" class="mut"></div>
+  <div id="out"></div>
+  <button id="apply" class="alt" hidden>طبّق بتعقب التغييرات</button>
+</section>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
