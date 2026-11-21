@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, Crown, Scroll, Check, Copy, FolderSimple,
   TextT, NotePencil, Bookmark, Trash, CheckCircle, Warning, Lock,
-  Plus, FolderSimplePlus, MagnifyingGlass, Gavel, BookOpen, Stack, Scales, Printer
+  BookmarkSimple, FolderSimplePlus, MagnifyingGlass, Gavel, BookOpen, Stack, Scales, Printer
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
@@ -794,7 +794,7 @@ export default function OrderReaderPage() {
                               ) : isAdded ? (
                                 <CheckCircle size={14} weight="fill" className="text-emerald-600" />
                               ) : (
-                                <Plus size={14} />
+                                <BookmarkSimple size={14} />
                               )}
                             </button>
                           </div>

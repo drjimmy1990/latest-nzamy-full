@@ -31,6 +31,8 @@ import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 // Batch l11-misc (O22): server-side feature flags.
 import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
 import { clearFeatureFlagsCache } from "@/lib/featureFlags/featureFlagsServer";
+import { draftLimitsIssue } from "@/lib/library/draftExport";
+import { retentionSettingIssue } from "@/lib/ai/aiHistory";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -117,6 +119,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // {"decree_free_pages": 0..20 (Q101: 0), "child_name_form": "full"|"short"
   // (library question 5: full)} — the reader's display choices still open.
   "library_reader_display",
+  // Batch l12 lib-draft (20261202_40): the library draft's caps (owner file 03
+  // ل2 answer ج) and the months an AI run keeps its question and answer (ل11).
+  "library_draft_limits",
+  "ai_runs_retention",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -221,6 +227,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   free_question_tool_by_account_type: freeQuestionToolSettingIssue,
   // Batch l12 lib-a: pure, covered by src/lib/library/readerDisplaySettings.test.ts.
   library_reader_display: libraryReaderDisplayIssue,
+  library_draft_limits: draftLimitsIssue,
+  ai_runs_retention: retentionSettingIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

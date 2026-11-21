@@ -452,12 +452,13 @@ export default function AdminAIUsagePage() {
                     <td className="font-mono">{r.tool}</td>
                     <td className={STATUS_TONE[r.status] ?? ""}>
                       {STATUS_LABEL[r.status] ?? r.status}
-                      {/* A row left from the retired review mode: charged, hidden from its
-                          owner. The output is for judging a manual refund (super admin only;
-                          the route answers 403 to any other role). */}
+                      {/* A row left from the retired review mode: its details for a manual
+                          refund (super admin only; the route answers 403 to any other role).
+                          Owner file 03 ل11 (l12): the answer text itself is shown only for a
+                          test account's run, never a real user's. */}
                       {r.status === "review" && (
                         <a href={`/api/v1/admin/ai-runs/${r.id}`} target="_blank" rel="noopener noreferrer"
-                          className="ms-2 text-[11px] text-[#C8A762] underline">عرض الناتج</a>
+                          className="ms-2 text-[11px] text-[#C8A762] underline">التفاصيل</a>
                       )}
                     </td>
                     <td>

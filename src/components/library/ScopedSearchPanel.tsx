@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowSquareOut, Check, Copy, Lock, MagnifyingGlass, MapPin, Plus, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, BookmarkSimple, Check, Copy, Lock, MagnifyingGlass, MapPin, X } from "@phosphor-icons/react";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import type { ArticleBody, BlockBody, PrincipleBody, ScopedHit } from "@/app/api/library/scoped-search/scopedSearch";
 import { highlightSegments, hitCartEntry, hitCopy, scopedHitHref, scopedPanelTitle, type ScopeInfo } from "@/lib/library/scopedHitActions";
@@ -445,7 +445,7 @@ export default function ScopedSearchPanel({
                           aria-pressed={added}
                           className={`${chip} ${added ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" : "border-[#0B3D2E] bg-[#0B3D2E] text-white hover:opacity-90"}`}
                         >
-                          {added ? <Check size={11} aria-hidden="true" /> : <Plus size={11} aria-hidden="true" />}
+                          {added ? <Check size={11} aria-hidden="true" /> : <BookmarkSimple size={11} aria-hidden="true" />}
                           {added ? "في المسودة" : "إضافة لمسودة التجميع"}
                         </button>
                       )}

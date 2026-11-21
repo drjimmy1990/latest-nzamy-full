@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
+import { isMissingHiddenColumn } from "@/lib/ai/aiHistory";
 
 /**
  * GET /api/v1/ai/runs/<id> — one run of the signed-in user (the job tools'
@@ -28,14 +29,21 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const auth = await requireApiUser(supabase, { error: "سجّل الدخول لعرض الطلب" });
     if (auth instanceof NextResponse) return auth;
 
-    const { data, error } = await supabase
-      .from("ai_runs")
-      .select(
-        "id, tool, variant, class, status, price_points, charged_points, charged, output, citations, error_code, progress_step, created_at, finished_at, refunded_at",
-      )
-      .eq("id", id)
-      .eq("user_id", auth.user.id)
-      .maybeSingle();
+    // L11-log (l12): a run the user deleted from «سجلّي» is gone for him (404).
+    // Before 20261202_40 runs there is no column: read without the filter.
+    const read = (skipHidden: boolean) => {
+      let q = supabase
+        .from("ai_runs")
+        .select(
+          "id, tool, variant, class, status, price_points, charged_points, charged, output, citations, error_code, progress_step, created_at, finished_at, refunded_at",
+        )
+        .eq("id", id)
+        .eq("user_id", auth.user.id);
+      if (skipHidden) q = q.is("user_hidden_at", null);
+      return q.maybeSingle();
+    };
+    let { data, error } = await read(true);
+    if (error && isMissingHiddenColumn(error)) ({ data, error } = await read(false));
     if (error) {
       console.error("[ai/runs/:id] read failed:", error.code, error.message);
       return NextResponse.json({ error: "تعذّر تحميل الطلب" }, { status: 503, headers: NO_STORE });

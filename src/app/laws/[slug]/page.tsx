@@ -1840,6 +1840,7 @@ function LawSystemPageContent() {
         <button
           type="button"
           onClick={() => setShowIndexSheet(true)}
+          data-fab-autohide=""
           aria-label={isRTL ? "فهرس المواد والبحث" : "Article index and search"}
           // Middle of the phone FAB column (see ResearchWorkspace's stack note).
           style={{ bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
@@ -1963,6 +1964,7 @@ function LawSystemPageContent() {
             whileHover={{ scale: 1.1, y: -2 }}
             whileTap={{ scale: 0.92 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            data-fab-autohide=""
             // Bottom of the FAB column, above the safe-area inset; z-40 like
             // the other FABs (it was z-[9999] and covered modals).
             style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}

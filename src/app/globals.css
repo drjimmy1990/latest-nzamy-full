@@ -900,3 +900,24 @@ input:is([type="submit"], [type="button"], [type="reset"]):disabled[class*="disa
     animation: none;
   }
 }
+
+/* ─── Library readers: floating buttons off the text on narrow screens ────
+   Batch l12 (owner lib02 / New 1): below lg every floating button marked
+   data-fab-autohide fades out while the reader scrolls DOWN and returns on a
+   scroll up, near the top and at the end of the page. <html data-fab-scroll>
+   is set by src/hooks/useFabScroll.ts (FloatingButtons) on library readers
+   only. Opacity + visibility, not transform: framer-motion owns the inline
+   transform of the animated buttons. The reader column gets bottom room so
+   its last lines scroll clear of the buttons. Desktop (lg+) is untouched. */
+@media (max-width: 1023.98px) {
+  [data-fab-autohide] { transition: opacity 0.2s ease, visibility 0.2s ease; }
+  html[data-fab-scroll="down"] [data-fab-autohide] {
+    opacity: 0 !important;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .nzamy-reader-container { padding-bottom: 6rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-fab-autohide] { transition: none; }
+}

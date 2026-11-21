@@ -6,7 +6,9 @@
  * the session roles on purpose (20261027_10), so the list is read by the
  * server with the service role, ALWAYS filtered on the caller's own user_id
  * (GET /api/v1/ai/library-history). ai_runs_retention clears input / output
- * after 90 days, so a conversation older than that is no longer listed.
+ * after platform_settings.ai_runs_retention months (default 12, 20261202_40;
+ * was 90 days), so a conversation older than that is no longer listed, and a
+ * run the user deleted from «سجلّي» has neither and is skipped.
  */
 
 import { citedStatus } from "./citationStatus.ts";
