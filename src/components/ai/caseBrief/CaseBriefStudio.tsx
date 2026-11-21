@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
+import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
 import SendWithContextMenu from "@/components/ai/SendWithContextMenu";
 import Link from "next/link";
 import { useAiRun } from "@/hooks/useAiRun";
@@ -399,6 +400,8 @@ function CaseBriefTool() {
               </div>
               <p className={`mt-2 text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{result.assessmentReason}</p>
               <p className={`mt-1 text-[10px] italic ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>تقييم مبدئي قائم على المعطيات المتاحة — وليس حكماً نهائياً.</p>
+              {/* Owner ١٢٤a: the fixed line on the five analysis tools. */}
+              <AssistIndicatorNote isDark={isDark} className="mt-1.5" />
               {run.chargedPoints > 0 && (
                 <p className={`mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>خُصمت {run.chargedPoints.toLocaleString("ar-SA")} نقطة</p>
               )}

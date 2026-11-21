@@ -19,7 +19,6 @@ import type { ResearchType } from "@/components/legal-opinion/ContextResearch";
 import { ContextDueDiligence, ENTITY_TYPES, DD_GOALS, DD_SCOPE_ITEMS } from "@/components/legal-opinion/ContextDueDiligence";
 import type { EntityType, DdGoal, DdSide } from "@/components/legal-opinion/ContextDueDiligence";
 import { ContextCrossExam } from "@/components/legal-opinion/ContextCrossExam";
-import { CrossExamResultView } from "./_components/CrossExamResultView";
 import { SubmitStep, type RecapRow } from "./_components/SubmitStep";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createServiceOrder } from "@/lib/services/serviceOrders";
@@ -30,16 +29,15 @@ import { validateLegalOpinionIntake } from "@/lib/services/orderIntake.legalOpin
 import type { OutputType, SearchDepth, StepKey } from "./_types";
 import { OUTPUT_TYPES, AGENTS_QUICK, AGENTS_DEEP, AGENTS_COMPREHENSIVE } from "./_constants";
 import { StepProgress, ProcessingView } from "./_components/SharedViews";
-import { ResultView } from "./_components/ResultView";
 import { LetterWorkflow } from "./_components/LetterWorkflow";
 import { SettingsStep } from "./_components/SettingsStep";
-import BetaReviewGate from "@/components/BetaReviewGate";
 import { useAiRun } from "@/hooks/useAiRun";
 import { LEGAL_CONSULT_PRICE, LEGAL_OPINION_QUESTION_MAX, LEGAL_OPINION_QUESTION_MIN } from "@/lib/ai/tools";
 import { AiOpinionPanel, TeamOrderDivider } from "./_components/AiOpinionPanel";
 import { useToolDraft } from "@/hooks/useToolDraft";
 import { draftText } from "@/lib/payments/topUpDraft";
 import { consultRunInput } from "./_components/aiOpinion";
+import ConsultantReservedGate from "@/components/ai/ConsultantReservedGate";
 
 // ─── UI id → stored metadata.intake.outputType map (Task C4, notes §3) ─────────
 // The wizard's own identifiers are hyphenated; the persisted intake contract
@@ -101,7 +99,16 @@ function submitErrorMessageAr(err: unknown): string {
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
+/** Owner ١٤٦: a consultant meets the reservation lock first (ConsultantReservedGate). */
 export default function AILegalOpinionPage() {
+  return (
+    <ConsultantReservedGate tool="legal-opinion-consult">
+      <LegalOpinionWorkspace />
+    </ConsultantReservedGate>
+  );
+}
+
+function LegalOpinionWorkspace() {
   const { isDark } = useTheme();
 
   // State
@@ -737,27 +744,12 @@ export default function AILegalOpinionPage() {
           </motion.div>
         )}
 
-        {/* ── STEP: RESULT ── */}
-        {/* HIDDEN, not deleted (Task C4) — same reasoning as "processing"
-            above. ResultView/CrossExamResultView/StudyDocumentEditor are
-            100% canned (MOCK_RESULT, hardcoded question batteries) — see
-            task-C4-report.md. */}
-        {currentStep === "result" && (
-          <motion.div key="step-result" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            {selectedType === "cross-exam" ? (
-              <BetaReviewGate toolId="legal-opinion.cross-exam" toolName="مُولّد الاستجواب" reviewScope="legal-data">
-                <CrossExamResultView isDark={isDark} card={card} onReset={reset} />
-              </BetaReviewGate>
-            ) : (
-              <ResultView
-                outputType={selectedType as OutputType}
-                isDark={isDark}
-                onReset={reset}
-                onEdit={() => setCurrentStep("context")}
-              />
-            )}
-          </motion.div>
-        )}
+        {/* ── STEP: RESULT ── unmounted (P0-4, batch l12): ResultView,
+            CrossExamResultView and StudyDocumentEditor printed MOCK_RESULT and
+            fixed question lists, and no path ever set currentStep to "result".
+            The files stay on disk (owner decision ٤: no deletion of source
+            before its own decision); nothing imports them, so they leave the
+            bundle. The live consultation result is AiOpinionPanel below. */}
 
         {/* ── STEP: SUBMIT ── */}
         {/* The real replacement for processing/result — the request becomes
