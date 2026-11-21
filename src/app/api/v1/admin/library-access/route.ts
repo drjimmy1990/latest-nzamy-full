@@ -7,10 +7,13 @@ import {
   LIBRARY_ACCESS_SETTING_KEY,
   LIBRARY_ACCOUNT_KEYS,
   LIBRARY_ACCOUNT_LABELS_AR,
+  overrideEndFromRow,
+  overrideInForce,
   parseLibraryAccessMap,
   parseLibraryAccessPatch,
   parseOverrideInput,
 } from "@/lib/library/accountAccess";
+import { hasActiveLibraryGrant } from "@/lib/libraryAccessServer";
 
 /**
  * /api/v1/admin/library-access — owner item 9 (batch l8): the legal library
@@ -23,8 +26,13 @@ import {
  *        requireStaff("settings.write"). Upserts platform_settings
  *        library_access_by_account_type; audited with the whole map before and
  *        after. Takes effect on the next library request (nothing caches it).
- * POST   { email | userId, allowed, reason } requireStaff("settings.write"):
- *        one account's exception (upsert); audited before/after.
+ * POST   { email | userId, allowed, reason, expiresAt?, endsWithSubscription? }
+ *        requireStaff("settings.write"): one account's exception (upsert);
+ *        audited before/after. Q94a (batch l12, 20261202_50): an exception
+ *        may end on a date and/or with the account's library subscription
+ *        (held while a library grant covers now). «Ends with the
+ *        subscription» with no date needs a subscription held now (409
+ *        otherwise: give a date to buy before).
  * DELETE ?userId= requireStaff("settings.write"): removes an exception;
  *        404 when there is none; audited.
  *
@@ -37,7 +45,12 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const MIGRATION_MISSING_AR = "شغّل ملف الترحيل 20261128_20_library_access_by_account_type.sql أولاً";
+const END_MIGRATION_MISSING_AR = "انتهاء الاستثناء غير متاح بعد: شغّل ملف الترحيل 20261202_50_l12_rules.sql أولاً";
 const MISSING_TABLE = new Set(["42P01", "PGRST205"]);
+/** A column PostgREST does not know yet (20261202_50 not run). */
+const MISSING_COLUMN = new Set(["42703", "PGRST204"]);
+const NO_SUBSCRIPTION_AR =
+  "لا يوجد اشتراك مكتبة ساري لهذا الحساب الآن. حدّد تاريخاً ينتهي فيه الاستثناء (مهلة ليشترك)، ويستمر بعده ما دام اشتراكه سارياً.";
 const TARGET_TYPE = "library_access";
 
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
@@ -71,9 +84,10 @@ export async function GET() {
 
     const [map, overrides, history] = await Promise.all([
       readMap(service),
+      // "*": the end columns (Q94a, 20261202_50) are listed when they exist.
       service
         .from("library_access_user_overrides")
-        .select("user_id, allowed, reason, created_at, updated_at, updated_by")
+        .select("*")
         .order("updated_at", { ascending: false })
         .limit(500),
       service
@@ -100,6 +114,19 @@ export async function GET() {
       const { data } = await service.from("profiles").select("id, display_name, email, user_type").in("id", ids);
       for (const p of (data ?? []) as Row[]) people.set(String(p.id), p);
     }
+    // Q94a: who among the «ends with the subscription» exceptions holds a library grant now.
+    const withSub = overrideRows.filter((r) => overrideEndFromRow(r).endsWithSubscription).map((r) => String(r.user_id));
+    const subscribed = new Set<string>();
+    if (withSub.length > 0) {
+      const nowIso = new Date().toISOString();
+      const { data } = await service
+        .from("library_access_grants")
+        .select("user_id")
+        .in("user_id", withSub)
+        .lte("starts_at", nowIso)
+        .gt("ends_at", nowIso);
+      for (const g of (data ?? []) as Row[]) subscribed.add(String(g.user_id));
+    }
 
     return NextResponse.json(
       {
@@ -111,10 +138,14 @@ export async function GET() {
         updatedAt: typeof map.row?.updated_at === "string" ? map.row.updated_at : null,
         overrides: overrideRows.map((r) => {
           const p = people.get(String(r.user_id));
+          const end = overrideEndFromRow(r);
           return {
             userId: String(r.user_id),
             allowed: r.allowed === true,
             reason: typeof r.reason === "string" ? r.reason : "",
+            expiresAt: end.expiresAt,
+            endsWithSubscription: end.endsWithSubscription,
+            inForce: overrideInForce(end, subscribed.has(String(r.user_id))),
             updatedAt: typeof r.updated_at === "string" ? r.updated_at : null,
             name: typeof p?.display_name === "string" ? p.display_name : "",
             email: typeof p?.email === "string" ? p.email : "",
@@ -122,6 +153,8 @@ export async function GET() {
           };
         }),
         overridesMigrationMissing: overridesMissing,
+        // Q94a: the end columns exist (20261202_50 run) — the page offers the end fields.
+        overrideEndAvailable: !overridesMissing && (overrideRows.length === 0 || "ends_with_subscription" in (overrideRows[0] ?? {})),
         history: history.error ? [] : (history.data ?? []),
       },
       { headers: NO_STORE },
@@ -203,7 +236,7 @@ export async function POST(request: NextRequest) {
 
     const prev = await service
       .from("library_access_user_overrides")
-      .select("allowed, reason")
+      .select("*")
       .eq("user_id", userId)
       .maybeSingle();
     if (prev.error) {
@@ -212,18 +245,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "تعذّر حفظ الاستثناء" }, { status: 500 });
     }
 
+    // Q94a: «ends with the subscription» and no date → a subscription must be held now.
+    if (input.endsWithSubscription && !input.expiresAt && !(await hasActiveLibraryGrant(userId))) {
+      return NextResponse.json({ error: NO_SUBSCRIPTION_AR }, { status: 409 });
+    }
+
     const now = new Date().toISOString();
-    const { error } = await service.from("library_access_user_overrides").upsert(
-      {
-        user_id: userId,
-        allowed: input.allowed,
-        reason: input.reason,
-        updated_by: gate.userId,
-        updated_at: now,
-        ...(prev.data ? {} : { created_by: gate.userId, created_at: now }),
-      },
+    const hasEnd = input.expiresAt !== null || input.endsWithSubscription;
+    const row = {
+      user_id: userId,
+      allowed: input.allowed,
+      reason: input.reason,
+      updated_by: gate.userId,
+      updated_at: now,
+      ...(prev.data ? {} : { created_by: gate.userId, created_at: now }),
+    };
+    let { error } = await service.from("library_access_user_overrides").upsert(
+      { ...row, expires_at: input.expiresAt, ends_with_subscription: input.endsWithSubscription },
       { onConflict: "user_id" },
     );
+    // Before 20261202_50 the end columns do not exist: a permanent exception
+    // still saves (as before); one with an end is refused, never saved without it.
+    if (error && MISSING_COLUMN.has(error.code ?? "")) {
+      if (hasEnd) return NextResponse.json({ error: END_MIGRATION_MISSING_AR }, { status: 503 });
+      ({ error } = await service.from("library_access_user_overrides").upsert(row, { onConflict: "user_id" }));
+    }
     if (error) {
       if (MISSING_TABLE.has(error.code ?? "")) return NextResponse.json({ error: MIGRATION_MISSING_AR }, { status: 503 });
       console.error("[admin/library-access POST] save failed:", error.code);
@@ -236,7 +282,7 @@ export async function POST(request: NextRequest) {
       targetType: TARGET_TYPE,
       targetId: userId,
       before: prev.data ?? null,
-      after: { allowed: input.allowed, reason: input.reason },
+      after: { allowed: input.allowed, reason: input.reason, expires_at: input.expiresAt, ends_with_subscription: input.endsWithSubscription },
       metadata: { user_type: found.user.user_type ?? null },
     });
     return NextResponse.json({ ok: true, userId }, { headers: NO_STORE });
@@ -261,7 +307,7 @@ export async function DELETE(request: NextRequest) {
       .from("library_access_user_overrides")
       .delete()
       .eq("user_id", userId.toLowerCase())
-      .select("allowed, reason");
+      .select("*");
     if (error) {
       if (MISSING_TABLE.has(error.code ?? "")) return NextResponse.json({ error: MIGRATION_MISSING_AR }, { status: 503 });
       console.error("[admin/library-access DELETE] failed:", error.code);

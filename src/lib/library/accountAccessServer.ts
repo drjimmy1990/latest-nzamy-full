@@ -20,10 +20,13 @@ import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { hasSupabaseAuthCookie } from "@/lib/library/readQuota";
+import { hasActiveLibraryGrant } from "@/lib/libraryAccessServer";
 import {
   LIBRARY_ACCESS_SETTING_KEY,
   libraryAccessDecision,
   libraryAccountLockedBody,
+  overrideEndFromRow,
+  overrideInForce,
   type LibraryAccessDecision,
   type LibraryAccountKey,
 } from "@/lib/library/accountAccess";
@@ -43,7 +46,8 @@ async function decideFromReads(service: ServiceClient, userId: string): Promise<
     service.from("profiles").select("user_type").eq("id", userId).maybeSingle(),
     service.from("lawyer_profiles").select("practice_kind").eq("user_id", userId).maybeSingle(),
     service.from("platform_settings").select("value").eq("key", LIBRARY_ACCESS_SETTING_KEY).maybeSingle(),
-    service.from("library_access_user_overrides").select("allowed").eq("user_id", userId).maybeSingle(),
+    // "*": the end columns (Q94a, 20261202_50) are read when they exist.
+    service.from("library_access_user_overrides").select("*").eq("user_id", userId).maybeSingle(),
   ]);
   if (profile.error) {
     console.error("[library account access] profile read failed:", profile.error.code);
@@ -61,7 +65,13 @@ async function decideFromReads(service: ServiceClient, userId: string): Promise<
     console.error("[library account access] override read failed:", overrideErr.code);
     return CLOSED;
   }
-  const allowed = (override.data as { allowed?: unknown } | null)?.allowed;
+  let allowed = (override.data as { allowed?: unknown } | null)?.allowed;
+  // Q94a: an exception past its end is ignored (the type's switch answers).
+  if (typeof allowed === "boolean") {
+    const end = overrideEndFromRow(override.data);
+    const needsGrant = end.endsWithSubscription && !overrideInForce(end, false);
+    if (!overrideInForce(end, needsGrant ? await hasActiveLibraryGrant(userId) : false)) allowed = undefined;
+  }
   return libraryAccessDecision({
     userType,
     // A failed lawyer_profiles read, or no row: an advocate (the platform's rule).
