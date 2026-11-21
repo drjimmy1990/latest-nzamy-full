@@ -33,6 +33,11 @@
  * (src/lib/auth/entityRoleScope.test.ts). «Assigned» = the case's filer or
  * lead, its case team, or the assignee of one of its hearings or tasks; a
  * card he owns or one linked to such a case.
+ *
+ * Q112 (20261202_80): these two are narrowed ALWAYS; the admin setting
+ * firm_case_scope adds office_admin / hr_manager / compliance_manager (default
+ * all three) and keeps the finance manager out of case files —
+ * src/lib/firm/firmCaseScope.ts holds that half.
  */
 export const FIRM_CASE_SCOPED_ROLES: readonly string[] = ["trainee", "legal_secretary"];
 

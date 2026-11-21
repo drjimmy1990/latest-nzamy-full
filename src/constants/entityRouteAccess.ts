@@ -91,7 +91,12 @@ const FIRM_LEGAL_ROLES = ["managing_partner", "partner", "senior_lawyer", "lawye
 // 20261019_21_consultant_court_write_guard.sql. Only the court routes below
 // use this list; every other legal rule keeps FIRM_LEGAL_ROLES.
 const FIRM_LITIGATION_ROLES = ["managing_partner", "partner", "senior_lawyer", "lawyer"] as const;
-const FIRM_CASE_VIEW_ROLES = [...FIRM_LEGAL_ROLES, "legal_secretary", "compliance_manager"] as const;
+// Q112 / file 05 #28 (20261202_80): the case pages admit every role that the
+// database lets read at least its ASSIGNED cases — the trainee too (before,
+// the page refused him while RLS showed him his cases). Which rows each role
+// sees is the database's answer (firm_case_scoped_member, the admin setting
+// firm_case_scope — src/lib/firm/firmCaseScope.ts), not this list.
+const FIRM_CASE_VIEW_ROLES = [...FIRM_LEGAL_ROLES, "trainee", "legal_secretary", "compliance_manager"] as const;
 const FIRM_TEAM_ADMIN_ROLES = ["managing_partner", "office_admin", "hr_manager"] as const;
 const FIRM_BILLING_ROLES = ["managing_partner", "partner", "finance_manager", "office_admin"] as const;
 
@@ -106,8 +111,8 @@ export const FIRM_ROUTE_RULES: readonly Rule<AffiliationRole>[] = [
   { path: "/dashboard/firm/activity", match: "prefix", label: "سجل النشاط", allowedRoles: ["managing_partner", "partner", "senior_lawyer", "legal_secretary", "office_admin", "compliance_manager"] },
   { path: "/dashboard/firm/contracts", match: "prefix", label: "العقود", allowedRoles: [...FIRM_LEGAL_ROLES, "legal_secretary"] },
   { path: "/dashboard/firm/templates", match: "prefix", label: "النماذج", allowedRoles: [...FIRM_LEGAL_ROLES, "trainee", "legal_secretary"] },
-  { path: "/dashboard/firm/documents", match: "prefix", label: "المستندات", allowedRoles: [...FIRM_CASE_VIEW_ROLES, "trainee"] },
-  { path: "/dashboard/firm/archive", match: "prefix", label: "الأرشيف", allowedRoles: [...FIRM_CASE_VIEW_ROLES, "trainee"] },
+  { path: "/dashboard/firm/documents", match: "prefix", label: "المستندات", allowedRoles: FIRM_CASE_VIEW_ROLES },
+  { path: "/dashboard/firm/archive", match: "prefix", label: "الأرشيف", allowedRoles: FIRM_CASE_VIEW_ROLES },
   { path: "/dashboard/firm/clients", match: "prefix", label: "العملاء", allowedRoles: [...FIRM_LEGAL_ROLES, "legal_secretary", "office_admin", "finance_manager"] },
   { path: "/dashboard/firm/consultations", match: "prefix", label: "الاستشارات", allowedRoles: [...FIRM_LEGAL_ROLES, "legal_secretary", "office_admin"] },
   { path: "/dashboard/firm/client-portal", match: "prefix", label: "بوابة العميل", allowedRoles: ["managing_partner", "partner", "office_admin"] },

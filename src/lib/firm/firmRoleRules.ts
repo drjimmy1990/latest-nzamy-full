@@ -7,8 +7,9 @@
  * Every line below points at the rule that enforces it:
  *   sections            FIRM_ROUTE_RULES (src/constants/entityRouteAccess.ts) —
  *                       the dashboard pages a role may open (proxy + layout);
- *   assigned only       FIRM_CASE_SCOPED_ROLES (ownRequestsFilter.ts), held equal
- *                       to public.firm_case_scoped_member (20261129_10, RLS);
+ *   assigned only       FIRM_CASE_SCOPED_ROLES (ownRequestsFilter.ts) + the admin
+ *                       setting firm_case_scope (firmCaseScope.ts, Q112), held
+ *                       equal to public.firm_case_scoped_member (20261202_80, RLS);
  *   assign / be assigned FIRM_CASE_ASSIGN_ROLES / FIRM_CASE_ASSIGNEE_ROLES
  *                       (/api/v1/firm/cases/[id]/assign);
  *   colleagues' fees    FEE_VISIBLE_FIRM_ROLES (client cards, clientFeeVisibility.ts);
@@ -29,6 +30,12 @@
  */
 import { FIRM_ROUTE_RULES } from "../../constants/entityRouteAccess.ts";
 import { FIRM_CASE_SCOPED_ROLES } from "../services/ownRequestsFilter.ts";
+import {
+  DEFAULT_FIRM_CASE_SCOPE,
+  firmCaseScopedRoles,
+  firmRoleSeesAssignedCasesOnly,
+  type FirmCaseScope,
+} from "./firmCaseScope.ts";
 import { FEE_VISIBLE_FIRM_ROLES } from "../services/clientFeeVisibility.ts";
 import { FIRM_CASE_ASSIGN_ROLES, FIRM_CASE_ASSIGNEE_ROLES } from "../../app/api/v1/firm/cases/_caseAssign.ts";
 import { FIRM_LETTERHEAD_GRANTS } from "../branding/firmLetterheadPermissions.ts";
@@ -99,16 +106,25 @@ export const FIRM_RULE_LABEL: Record<FirmRuleKey, string> = {
   branding: "إدارة هوية المكتب ومطبوعاته",
 };
 
-/** The fixed rules for one role, in a stable order. */
-export function firmRoleRules(role: string): FirmRule[] {
-  const scoped = FIRM_CASE_SCOPED_ROLES.includes(role);
+/**
+ * The rules for one role, in a stable order. `scope` is the platform's
+ * firm_case_scope setting (Q112, firmCaseScope.ts) — the default when the
+ * screen could not read it.
+ */
+export function firmRoleRules(role: string, scope: FirmCaseScope = DEFAULT_FIRM_CASE_SCOPE): FirmRule[] {
+  const scoped = FIRM_CASE_SCOPED_ROLES.includes(role) || firmCaseScopedRoles(scope).includes(role);
+  const financeNoCases = role === "finance_manager" && firmRoleSeesAssignedCasesOnly(role, scope);
   const seesCases = opensSection(role, "/dashboard/firm/cases");
   const rules: FirmRule[] = [
     {
       key: "cases",
       label: FIRM_RULE_LABEL.cases,
       allowed: scoped || seesCases,
-      note: scoped ? "المسندة إليه فقط" : seesCases ? "كل قضايا المكتب" : undefined,
+      note: scoped
+        ? "المسندة إليه فقط"
+        : financeNoCases
+          ? "لا يطّلع على ملفات القضايا، ويرى المالية والأتعاب"
+          : seesCases ? "كل قضايا المكتب" : undefined,
     },
     { key: "assign", label: FIRM_RULE_LABEL.assign, allowed: FIRM_CASE_ASSIGN_ROLES.has(role) },
     { key: "assignee", label: FIRM_RULE_LABEL.assignee, allowed: FIRM_CASE_ASSIGNEE_ROLES.has(role) },

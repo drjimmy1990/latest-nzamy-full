@@ -26,6 +26,9 @@ import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 // Batch l11-misc (O22): server-side feature flags.
 import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
 import { clearFeatureFlagsCache } from "@/lib/featureFlags/featureFlagsServer";
+// Batch l12 firm (20261202_80): firm role scope (Q112) and founder storage fair use (N21).
+import { firmCaseScopeIssue } from "@/lib/firm/firmCaseScope";
+import { founderStorageIssue } from "@/lib/membership/founderStorage";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -102,6 +105,13 @@ const ALLOWED_SETTINGS_KEYS = [
   // the footer, the Organization JSON-LD and /llms.txt.
   "license_number",
   "license_issuer",
+  // Batch l12 firm (20261202_80): {"assigned_only_roles": [office roles],
+  // "finance_manager_no_cases": bool} — which firm roles see only their
+  // assigned cases (Q112; src/lib/firm/firmCaseScope.ts, read by the RLS);
+  "firm_case_scope",
+  // {"gb": n, "alert_pct": n} — the founder's internal storage fair use (N21;
+  // src/lib/membership/founderStorage.ts). Never shown on a marketing page.
+  "founder_storage_fair_use",
 ] as const;
 
 /**
@@ -191,6 +201,9 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),
   // Batch l11-misc (O22): pure, covered by src/lib/featureFlags/featureFlags.test.ts.
   feature_flags: featureFlagsIssue,
+  // Batch l12 firm: pure, covered by firmCaseScope.test.ts / founderStorage.test.ts.
+  firm_case_scope: firmCaseScopeIssue,
+  founder_storage_fair_use: founderStorageIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

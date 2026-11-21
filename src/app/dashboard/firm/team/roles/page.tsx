@@ -18,10 +18,13 @@ import { Check, Info, ShieldCheck, SquaresFour, X } from "@phosphor-icons/react"
 import { useTheme } from "@/components/ThemeProvider";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
 import { FIRM_ROLE_ORDER, firmRoleRules, firmRoleSections, type FirmRoleId } from "@/lib/firm/firmRoleRules";
+import { useFirmCaseScope } from "@/hooks/useFirmCaseScope";
 
 export default function RolesPage() {
   const { isDark } = useTheme();
   const [selected, setSelected] = useState<FirmRoleId>(FIRM_ROLE_ORDER[0]);
+  // Q112: which roles see only their assigned cases is a platform setting.
+  const caseScope = useFirmCaseScope();
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -30,7 +33,7 @@ export default function RolesPage() {
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const strong = isDark ? "text-zinc-300" : "text-slate-700";
 
-  const rules = firmRoleRules(selected);
+  const rules = firmRoleRules(selected, caseScope);
   const sections = firmRoleSections(selected);
 
   return (

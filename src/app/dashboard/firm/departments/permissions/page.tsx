@@ -16,11 +16,14 @@ import { useTheme } from "@/components/ThemeProvider";
 import { SubscriptionGuard } from "@/components/dashboard/SubscriptionGuard";
 import { FIRM_ROLE_LABEL } from "@/constants/firmProfileReadiness";
 import { FIRM_ROLE_ORDER, FIRM_RULE_LABEL, firmRoleRules, type FirmRuleKey } from "@/lib/firm/firmRoleRules";
+import { useFirmCaseScope } from "@/hooks/useFirmCaseScope";
 
 const COLUMNS: FirmRuleKey[] = ["cases", "assign", "hearings", "clientFees", "firmStatements", "memberPoints", "team", "invite", "letterhead"];
 
 export default function FirmDepartmentPermissionsPage() {
   const { isDark } = useTheme();
+  // Q112: which roles see only their assigned cases is a platform setting.
+  const caseScope = useFirmCaseScope();
 
   const card = isDark
     ? "rounded-2xl border border-white/[0.06] bg-zinc-900/60"
@@ -56,7 +59,7 @@ export default function FirmDepartmentPermissionsPage() {
             </thead>
             <tbody>
               {FIRM_ROLE_ORDER.map((role, rowIndex) => {
-                const rules = new Map(firmRoleRules(role).map((r) => [r.key, r]));
+                const rules = new Map(firmRoleRules(role, caseScope).map((r) => [r.key, r]));
                 return (
                   <motion.tr key={role} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: rowIndex * 0.03 }}
                     className={isDark ? "border-t border-white/[0.05]" : "border-t border-slate-100"}>
