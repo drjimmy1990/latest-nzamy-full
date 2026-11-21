@@ -62,6 +62,7 @@ import {
 } from "@phosphor-icons/react";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import { apiSlug } from "@/utils/apiSlug";
+import { cleanPrincipleText } from "@/app/precedents/[slug]/_principle-text";
 import {
   LAW_LINKS_ID,
   expandLawLinks,
@@ -735,7 +736,9 @@ function RefPreview({ ctx, item, onClose }: { ctx: RefBoxContextValue; item: Ref
   }, [ctx.lawSlug, item.key, item.kind]);
 
   const p = state.data;
-  const text = p?.text ? plain(p.text) : "";
+  // lib05 / L9-d (lib-a): a principle drops the first line that only repeats its
+  // number and keeps its heading on a line of its own (cleanPrincipleText).
+  const text = p?.text ? (item.kind === "principle" ? cleanPrincipleText(p.text, p.num) : plain(p.text)) : "";
   const meta = SECTION_META[item.section] ?? SECTION_META.legislation;
   const sameLaw = item.kind === "article" && item.docKind === "law" && item.docId === ctx.lawSlug && !!item.anchorId && !item.anchorMissing;
   const href = p?.found && p.href ? p.href : item.href;

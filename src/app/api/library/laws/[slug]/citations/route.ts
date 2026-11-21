@@ -8,6 +8,7 @@ import { stripArticleAuditNotes } from '@/lib/library/lawPreambleBlocks';
 import { readerLinkTypes } from '@/lib/library/graphLinkTypes';
 import { getFeatureFlags } from '@/lib/featureFlags/featureFlagsServer';
 import { articleStatusForDetail } from '../_article-status';
+import { TIER_SHAPED_CACHE_CONTROL } from '../_official-meta';
 import {
   BULK_PER_TYPE,
   centerKeyOf,
@@ -25,6 +26,7 @@ import {
   shapeLawLinks,
   validArticleId,
   withAutoTags,
+  maskDecreeTitlesForViewer,
   withHrefs,
 } from './_shape';
 
@@ -51,7 +53,8 @@ import {
  *                          (batch l11, N02-13): the one exception to the rule
  *                          below — library subscribers only, never cached
  *
- * Every answer is the same for every viewer: titles (capped like a locked
+ * Every answer but the decree titles (Q101, viewerIsSubscriber below) is the
+ * same for every viewer: titles (capped like a locked
  * title), numbers, statuses and links — never article text (20260929_01). So
  * the entitlement question does not arise, and nothing here spends the
  * library document quota. The graph functions are service-role only; their
@@ -68,6 +71,24 @@ function graphFunctionMissing(code: string | null | undefined): boolean {
 
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': status === 200 ? CACHE : 'no-store' } });
+}
+
+/**
+ * Owner Q101 (batch l12): the links answers name decrees, whose titles carry
+ * the number and date a non-subscriber may not read — so those answers are
+ * shaped per viewer (maskDecreeTitlesForViewer) and never cached.
+ */
+async function viewerIsSubscriber(): Promise<boolean> {
+  try {
+    const { data: { user } } = await (await createClient()).auth.getUser();
+    return await hasFullLibraryAccess(user?.id ?? null);
+  } catch {
+    return false;
+  }
+}
+
+function tierJson(body: unknown) {
+  return NextResponse.json(body, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
 }
 
 function safeArticleStatus(raw: unknown): string {
@@ -109,7 +130,8 @@ export async function GET(
         console.error('[citations] law links failed:', error.code ?? 'no-code', error.message);
         return json({ error: 'تعذّر تحميل الإحالات' }, 500);
       }
-      return json({ available: true, ...shapeLawLinks(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn) });
+      const shapedLaw = shapeLawLinks(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn);
+      return tierJson({ available: true, ...maskDecreeTitlesForViewer(shapedLaw, await viewerIsSubscriber()) });
     }
 
     // ── One article's links: the links box (owner item 6, decision ٦٠) ──────
@@ -168,7 +190,8 @@ export async function GET(
         safeArticleStatus,
         lawStatusForDetail,
       );
-      return json({ available: true, ...withHrefs(withAutoTags(live, autoTagOn)) });
+      const out = withHrefs(withAutoTags(live, autoTagOn));
+      return tierJson({ available: true, ...maskDecreeTitlesForViewer(out, await viewerIsSubscriber()) });
     }
 
     // ── A decree named in the text (N02-13, batch l11) ───────────────────────

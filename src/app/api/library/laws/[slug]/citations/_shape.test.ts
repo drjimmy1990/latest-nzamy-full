@@ -475,3 +475,27 @@ test("Q132: the law's own node ('@law') answers like an article — links on the
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(route, /p_node_key: centerKeyOf\(id, slug\),/);
 });
+
+test("Q101 (l12 integration): a non-subscriber's links never carry a decree's number in its title", async () => {
+  const { maskDecreeTitlesForViewer } = await import("./_shape.ts");
+  const answer = {
+    items: [
+      { key: "decree:d1", kind: "decree", docKind: "order", docId: "d1", title: "مرسوم ملكي رقم م/115 وتاريخ 1439/12/05هـ" },
+      { key: "law:labor", kind: "law", docKind: "law", docId: "labor", title: "نظام العمل" },
+    ],
+    articles: { a1: { legislation: { items: [{ key: "decree:d1", docKind: "order", title: "مرسوم ملكي رقم م/115 وتاريخ 1439/12/05هـ" }] } } },
+  };
+  const masked = maskDecreeTitlesForViewer(answer, false);
+  for (const t of [masked.items[0].title, masked.articles.a1.legislation.items[0].title]) {
+    assert.doesNotMatch(t, /115|1439/);
+    assert.ok(t.trim().length > 0, "never empty");
+  }
+  assert.equal(masked.items[1].title, "نظام العمل", "a law keeps its title");
+  assert.equal(maskDecreeTitlesForViewer(answer, true), answer, "a subscriber reads the stored title");
+  const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  assert.equal((route.match(/maskDecreeTitlesForViewer\(/g) ?? []).length, 2, "bulk and per-article answers");
+  assert.match(route, /tierJson\(\{ available: true, \.\.\.maskDecreeTitlesForViewer\(shapedLaw, await viewerIsSubscriber\(\)\) \}\)/);
+  assert.match(route, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
+  const preview = readFileSync(new URL("./preview/route.ts", import.meta.url), "utf8");
+  assert.match(preview, /decreeTitleForViewer\(\{ title: decree\.title, type: decree\.type \}, isSubscriber\)/);
+});

@@ -119,3 +119,8 @@ test("fallback (bulk missing or failed): only while the article is on screen, af
   assert.doesNotMatch(BOX, /rootMargin/, "no prefetch of articles off screen — they count toward the public guard");
   assert.match(BOX, /const pending = inflight\.get\(id\);\s*if \(pending\) return pending;/);
 });
+
+test("lib05 (l12 integration): the preview cleans a principle's text with cleanPrincipleText and its number", () => {
+  const src = readFileSync(new URL("./_ref-box.tsx", import.meta.url), "utf8");
+  assert.match(src, /item\.kind === "principle" \? cleanPrincipleText\(p\.text, p\.num\) : plain\(p\.text\)/);
+});
