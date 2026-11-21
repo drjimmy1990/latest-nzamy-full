@@ -1717,6 +1717,37 @@ function sectionFromDraft(
   };
 }
 
+const LAWYER_NOTES_KEYS = ["extraction", "adversary", "refine", "skipped", "engine"] as const;
+const LAWYER_NOTES_MAX_JSON = 100_000;
+
+/** The lawyer's internal notes of the v2 pipeline: known keys only, bounded in size. */
+function lawyerNotesOf(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null;
+  const out: Record<string, unknown> = {};
+  for (const key of LAWYER_NOTES_KEYS) {
+    if (raw[key] !== undefined) out[key] = raw[key];
+  }
+  if (!Object.keys(out).length) return null;
+  try {
+    return JSON.stringify(out).length <= LAWYER_NOTES_MAX_JSON ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The Najiz-ready copy: its text, its length, and whether it is over the limit. */
+function najizOf(raw: unknown): { text: string; chars: number; over_limit: boolean; markers_kept: boolean } | null {
+  if (!isPlainObject(raw)) return null;
+  const text = boundedText(raw.text, 20000);
+  if (!text) return null;
+  return {
+    text,
+    chars: Number.isInteger(raw.chars) ? (raw.chars as number) : text.length,
+    over_limit: raw.over_limit === true,
+    markers_kept: raw.markers_kept !== false,
+  };
+}
+
 /**
  * The analysis or the draft, by the run's phase. All or nothing, as L11: one
  * bad row refuses the result (refunded for the analysis) rather than handing
@@ -1744,7 +1775,15 @@ function legalDrafterOutput(raw: unknown, input: Record<string, unknown>): Recor
     }
     const requests = textList(raw.requests, 15, 1000);
     if (!requests) return null;
-    return { phase: "draft", title, sections, requests, cited };
+    // v2 pipeline extras (legal-drafter-v2): optional, and dropped silently when
+    // they are not the expected shape, so an L14 reply is unchanged.
+    const lawyer_notes = lawyerNotesOf(raw.lawyer_notes);
+    const najiz = najizOf(raw.najiz);
+    return {
+      phase: "draft", title, sections, requests, cited,
+      ...(lawyer_notes ? { lawyer_notes } : {}),
+      ...(najiz ? { najiz } : {}),
+    };
   }
   const facts_summary = boundedText(raw.facts_summary, 6000);
   const issues = titledList(raw.issues, 12, "detail", 2000);

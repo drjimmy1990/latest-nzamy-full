@@ -194,6 +194,21 @@ test("output: the analysis and the draft by the run's phase; one bad row refuses
   assert.equal(out({ ...pleading, sections: [...pleading.sections, { heading: "x", body: "" }] }, { phase: "draft" }), null);
 });
 
+test("output (v2): lawyer_notes and najiz pass on a draft, known keys only; a malformed one is dropped, never refuses the memo", () => {
+  const out = tool.validateOutput;
+  const notes = { adversary: { verdict: "ok", findings: [] }, refine: null, secret: "x" };
+  const najiz = { text: "نص ناجز", chars: 7, over_limit: false, markers_kept: true };
+  const d = out({ ...pleading, lawyer_notes: notes, najiz }, { phase: "draft" }) as Record<string, any>;
+  assert.deepEqual(Object.keys(d.lawyer_notes).sort(), ["adversary", "refine"]);
+  assert.deepEqual(d.najiz, najiz);
+  const bad = out({ ...pleading, lawyer_notes: "x", najiz: { text: "" } }, { phase: "draft" }) as Record<string, any>;
+  assert.equal(bad.lawyer_notes, undefined);
+  assert.equal(bad.najiz, undefined);
+  const huge = out({ ...pleading, lawyer_notes: { engine: "x".repeat(200_000) } }, { phase: "draft" }) as Record<string, any>;
+  assert.equal(huge.lawyer_notes, undefined);
+  assert.equal((out(analysis, { phase: "issues" }) as Record<string, any>).najiz, undefined, "the analysis never carries them");
+});
+
 // ── through the pipeline ─────────────────────────────────────────────────────
 
 test("the analysis: a new conversation, charged the kind's price, the library searched, n8n told it is phase «issues»", async () => {

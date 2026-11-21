@@ -10,7 +10,7 @@ The app charges these; `src/lib/ai/tools.ts` and `src/lib/ai/draftKinds.ts` are 
 |---|---|
 | `wargaming` (L9) | 150 points; 75 with exactly one target |
 | `analyze-strength` (L10) | 75 points; now blocked for consultants like L9 (Art. 18) |
-| `legal-drafter` (L14) | claim 200; reply / rejoinder / supplementary / closing 500; appeal 1,000; cassation and petition 1,500 |
+| `legal-drafter` (L14) | claim and replies (reply / rejoinder / supplementary / closing) 500; appeal 800; cassation and petition 1,500 |
 | `legal-opinion-consult` (L12) | 100 points |
 | `legal-opinion-letter` (L12) | 50 points |
 | `assistant` (L4) | 30 points per conversation of 15 messages (was 100 per 5) |
