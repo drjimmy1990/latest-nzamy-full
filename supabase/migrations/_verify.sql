@@ -8025,3 +8025,21 @@ select 'R6: one verified account per mobile — trg_verified_phone_unique on pro
            and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
        and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
 -- <<< verify:l11_sec
+-- >>> verify:l12_access
+-- Batch l12-access: run 20261202_20 before (or after) the l12 deploy; the sign-in route fails open without it.
+select 'l12 lockout: setting row, both tables RLS on with no anon/authenticated privilege, route functions service-role only (run 20261202_20)' as check,
+       case when to_regclass('public.auth_login_locks') is null or to_regprocedure('public.auth_login_record(text,text,text,boolean)') is null then false else
+       exists (select 1 from public.platform_settings where key = 'auth_login_lockout')
+       and (select relrowsecurity from pg_catalog.pg_class where oid = 'public.auth_login_locks'::regclass)
+       and (select relrowsecurity from pg_catalog.pg_class where oid = 'public.auth_login_attempts'::regclass)
+       and not has_table_privilege('anon', 'public.auth_login_locks', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.auth_login_attempts', 'SELECT')
+       and not has_function_privilege('authenticated', 'public.auth_login_record(text,text,text,boolean)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.hook_password_verification_attempt(jsonb)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.auth_login_record(text,text,text,boolean)', 'EXECUTE')
+       end as ok;
+select 'l12 test kinds (owner 109): test_accounts.kind present, caps and mail sink patched (run 20261202_20)' as check,
+       exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'test_accounts' and column_name = 'kind')
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.demo_guard_sandbox_row()')), 'test_account_kind(v_u)') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.test_mail_sink_check(text,uuid[],text,text,text)')), 'u is distinct from v_own') > 0, false) as ok;
+-- <<< verify:l12_access
