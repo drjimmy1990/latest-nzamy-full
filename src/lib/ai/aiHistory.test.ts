@@ -104,3 +104,10 @@ test("a deleted run is gone from its owner's run page too", () => {
   assert.ok(src.includes('q.is("user_hidden_at", null)'));
   assert.ok(src.includes('.eq("user_id", auth.user.id)'));
 });
+
+test("L11-log (l12 integration): the single-screen lawyer tools show their own last five runs", () => {
+  for (const tool of ["brief-check", "communicate", "contract-negotiator"]) {
+    const page = readFileSync(new URL(`../../app/ai/${tool}/page.tsx`, import.meta.url), "utf8");
+    assert.ok(page.includes(`<AiHistoryList isDark={isDark} tool="${tool}" recent />`), tool);
+  }
+});
