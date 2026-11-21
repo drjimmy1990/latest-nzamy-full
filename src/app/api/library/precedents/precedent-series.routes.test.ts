@@ -25,7 +25,8 @@ test("the route reads the series on the request client, catalogue columns only, 
   assert.doesNotMatch(lookup, /serverOnly|metadata/);
   assert.match(lookup, /const series: CollectionSeriesInfo \| null = lookup\.series;/);
   assert.match(helper, /\.limit\(SERIES_MAX_VOLUMES\)/);
-  assert.match(helper, /supabase\.schema\("library"\)\.from\("judicial_collections"\)\.select\(SERIES_SIBLING_COLUMNS\)/);
+  assert.match(helper, /supabase\.schema\("library"\)\.from\("judicial_collections"\)\.select\("id, title, court, part, series_id, free, ruling_count"\)/);
+  assert.match(helper, /type LibraryClient = Awaited<ReturnType<typeof createClient>>;/);
   assert.doesNotMatch(helper, /createServiceClient|metadata/);
   assert.match(route, /seriesId: seriesId \|\| null,\s*series,/);
 });

@@ -10,7 +10,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { readCollectionSeries, SERIES_MAX_VOLUMES, SERIES_SIBLING_COLUMNS } from "./collectionSeriesLookup.ts";
 import {
   arabicVolumeOrdinal,
@@ -43,7 +42,7 @@ function fakeClient(rows: CollectionVolumeRow[], error: unknown = null) {
       return m === "limit" ? Promise.resolve({ data: error ? null : rows, error }) : chain;
     };
   }
-  return { client: chain as unknown as SupabaseClient, calls };
+  return { client: chain as unknown as Parameters<typeof readCollectionSeries>[0], calls };
 }
 
 test("arabicVolumeOrdinal: the owner's «المجلد الثالث», 1–39, else null", () => {

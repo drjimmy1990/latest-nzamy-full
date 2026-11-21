@@ -17,7 +17,7 @@
  * `error` and the caller decides (the reader hides the selector; the search
  * refuses the scope as before).
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { createClient } from "@/lib/supabase/server";
 import {
   buildCollectionSeries,
   collectionFallbackLookup,
@@ -27,8 +27,15 @@ import {
 
 export const SERIES_MAX_VOLUMES = 200;
 
-/** The catalogue columns a series needs (court: half of the title-fallback key). */
+/**
+ * The catalogue columns a series needs (court: half of the title-fallback key).
+ * The query below spells them as a literal so library-column-lock.test.ts can
+ * read them; this constant is what the tests compare against.
+ */
 export const SERIES_SIBLING_COLUMNS = "id, title, court, part, series_id, free, ruling_count";
+
+/** The REQUEST client (never the service role): the column-lock scanner reads this alias. */
+type LibraryClient = Awaited<ReturnType<typeof createClient>>;
 
 export interface CollectionSeriesLookup {
   series: CollectionSeriesInfo | null;
@@ -37,10 +44,10 @@ export interface CollectionSeriesLookup {
 
 /** The series `collection` belongs to (tagged or by title), or null for a stand-alone collection. */
 export async function readCollectionSeries(
-  supabase: SupabaseClient,
+  supabase: LibraryClient,
   collection: Pick<CollectionVolumeRow, "id" | "title" | "court" | "series_id">,
 ): Promise<CollectionSeriesLookup> {
-  const table = () => supabase.schema("library").from("judicial_collections").select(SERIES_SIBLING_COLUMNS);
+  const table = () => supabase.schema("library").from("judicial_collections").select("id, title, court, part, series_id, free, ruling_count");
   const seriesId = typeof collection.series_id === "string" ? collection.series_id.trim() : "";
   let siblings: { data: unknown[] | null; error: unknown };
   if (seriesId) {
