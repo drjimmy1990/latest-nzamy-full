@@ -108,7 +108,7 @@ test("06 ج6 (l12): the warning's words and shape", () => {
   assert.equal(libraryPointsWordAr(1), "نقطة واحدة");
   assert.equal(
     libraryPointsLowMessageAr(52, 50, 5),
-    "تنبيه: رصيدك ٥٢ نقطة، وسؤال مساعد المكتبة يكلّف ٥ نقاط؛ بعد السؤال ينزل رصيدك عن ٥٠ نقطة فتُقفل نصوص المكتبة الكاملة حتى تشحن.",
+    "تنبيه: رصيدك ٥٢ نقطة، والسؤال المدفوع لمساعد المكتبة يكلّف ٥ نقاط؛ بعده ينزل رصيدك عن ٥٠ نقطة فتُقفل نصوص المكتبة الكاملة حتى تشحن.",
   );
   assert.deepEqual(libraryPointsLow(52, 50, 5), {
     code: "library_points_low", message: libraryPointsLowMessageAr(52, 50, 5), balance: 52, minPoints: 50, questionPoints: 5, topupHref: LIBRARY_TOPUP_HREF,
@@ -118,7 +118,7 @@ test("06 ج6 (l12): the warning's words and shape", () => {
 test("٩٣ quarterly (l12): the library checkout line; the quarterly plan's 50 against 50 says the first question locks", () => {
   const q1 = libraryPlanCheckoutGateLineAr(50, 50, 5)!;
   assert.match(q1, /بألا يقل رصيدك عن ٥٠ نقطة/);
-  assert.match(q1, /فأول سؤال تطرحه ينزل رصيدك عن الحد/);
+  assert.match(q1, /فأول سؤال مدفوع تطرحه ينزل رصيدك عن الحد/);
   const annual = libraryPlanCheckoutGateLineAr(300, 50, 5)!;
   assert.doesNotMatch(annual, /أول سؤال/);
   assert.match(annual, /تمنحك ٣٠٠ نقطة لمساعد المكتبة/);

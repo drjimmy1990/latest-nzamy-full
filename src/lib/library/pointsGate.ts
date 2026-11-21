@@ -186,7 +186,7 @@ export function libraryPointsLowBeforeQuestion(balance: number | null, minPoints
 
 /** The pre-question warning, in the owner's words for the lock. */
 export function libraryPointsLowMessageAr(balance: number, minPoints: number, questionPoints: number): string {
-  return `تنبيه: رصيدك ${libraryPointsWordAr(balance)}، وسؤال مساعد المكتبة يكلّف ${libraryPointsWordAr(questionPoints)}؛ بعد السؤال ينزل رصيدك عن ${libraryPointsWordAr(minPoints)} فتُقفل نصوص المكتبة الكاملة حتى تشحن.`;
+  return `تنبيه: رصيدك ${libraryPointsWordAr(balance)}، والسؤال المدفوع لمساعد المكتبة يكلّف ${libraryPointsWordAr(questionPoints)}؛ بعده ينزل رصيدك عن ${libraryPointsWordAr(minPoints)} فتُقفل نصوص المكتبة الكاملة حتى تشحن.`;
 }
 
 /** What the status route sends a subscriber one question away from the lock. */
@@ -223,7 +223,7 @@ export function libraryPlanCheckoutGateLineAr(planPoints: number | null, minPoin
   if (typeof planPoints !== "number" || !Number.isFinite(planPoints) || planPoints < 0) return `${rule}.`;
   const tight = typeof questionPoints === "number" && questionPoints > 0 && planPoints - questionPoints < minPoints;
   if (tight) {
-    return `${rule}، والباقة تمنحك ${libraryPointsWordAr(planPoints)} لمساعد المكتبة؛ فأول سؤال تطرحه ينزل رصيدك عن الحد ويُقفل النصوص الكاملة حتى تشحن نقاطاً إضافية.`;
+    return `${rule}، والباقة تمنحك ${libraryPointsWordAr(planPoints)} لمساعد المكتبة؛ فأول سؤال مدفوع تطرحه ينزل رصيدك عن الحد ويُقفل النصوص الكاملة حتى تشحن نقاطاً إضافية.`;
   }
   return `${rule}، والباقة تمنحك ${libraryPointsWordAr(planPoints)} لمساعد المكتبة؛ إذا نزل رصيدك عن الحد فاشحن لتستمر.`;
 }

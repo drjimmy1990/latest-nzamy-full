@@ -59,7 +59,7 @@ test("no screen offers a code or a colleague invite any more", () => {
 test("owner ٨٩: a library plan's checkout says the 50-point rule; the quarterly one says the first question locks", () => {
   const q1 = checkoutItemNotes(PAYABLE_ITEMS["lib-q1"], { libraryMinPoints: 50, libraryQuestionPoints: 5 });
   assert.equal(q1.length, 2);
-  assert.match(q1[1], /فأول سؤال تطرحه ينزل رصيدك عن الحد/);
+  assert.match(q1[1], /فأول سؤال مدفوع تطرحه ينزل رصيدك عن الحد/);
   const annual = checkoutItemNotes(PAYABLE_ITEMS["lib-annual"], { libraryMinPoints: 50, libraryQuestionPoints: 5 });
   assert.doesNotMatch(annual[1], /أول سؤال/);
   // gate off or not read: the old single line

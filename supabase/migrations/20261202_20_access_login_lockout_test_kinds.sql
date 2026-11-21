@@ -16,7 +16,8 @@
 --          the operator switches the hook on in the auth container
 --          (GOTRUE_HOOK_PASSWORD_VERIFICATION_ATTEMPT_ENABLED=true and
 --          ..._URI=pg-functions://postgres/public/hook_password_verification_attempt).
---          Once on, a script calling GoTrue directly is locked too.
+--          Once on, a script calling GoTrue directly is locked too — but
+--          NOT switched on in this batch (see OPS below).
 --      The route sends one e-mail per lock to the account (if one exists):
 --      public.auth_login_claim_notice hands the address out once.
 --      Tables: public.auth_login_attempts (append, pruned after a day) and
@@ -47,9 +48,12 @@
 --   finds no function, logs it once and signs in exactly as before (fail
 --   open). Part B needs 20261127_80 and 20261129_90 (both live). Idempotent.
 --
--- OPS (optional, after this file): switch the GoTrue hook on (see A) and
---   restart the auth container; check a wrong password 5× locks, and that
---   the right one works again after lock_minutes.
+-- OPS — the GoTrue hook: DO NOT switch it on in this batch. GoTrue calls the
+--   hook only for an EXISTING account, so once on, a locked real account
+--   answers «أُوقف الدخول…» where an unknown address answers «invalid
+--   credentials» — it would tell which addresses have accounts. It stays
+--   inert (and the route's 'u:' check finds nothing) until the owner accepts
+--   that trade for blocking direct GoTrue calls.
 --
 -- ROLLBACK:
 --   drop function if exists public.hook_password_verification_attempt(jsonb),

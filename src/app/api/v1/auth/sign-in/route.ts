@@ -36,8 +36,10 @@ import { loginLockKey } from "@/lib/auth/loginLockoutKey";
  * sendEmail. Until the SQL has run (or if a lockout call fails) the route
  * signs in exactly as before — fail open, logged.
  *
- * A script that calls GoTrue directly skips this route; the GoTrue hook in
- * the same migration closes that once the operator switches it on.
+ * A script that calls GoTrue directly skips this route (Turnstile still
+ * applies there). The GoTrue hook in the same migration would close that,
+ * but it stays OFF: GoTrue calls it only for existing accounts, so it would
+ * tell real addresses from unknown ones (the owner decides that trade).
  */
 export const dynamic = "force-dynamic";
 
