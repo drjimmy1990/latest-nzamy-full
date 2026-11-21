@@ -16,6 +16,7 @@ import { usePathname } from "next/navigation";
 import { useDraftCart } from "@/hooks/useDraftCart";
 import { useFabScroll } from "@/hooks/useFabScroll";
 import { draftFabVisible } from "@/lib/library/draftFab";
+import { LAWS_STATIC_SEGMENTS } from "@/components/library/libraryGuardPaths";
 const DraftDrawer = dynamic(() => import("@/components/laws/DraftDrawer").then(m => ({ default: m.DraftDrawer })), { ssr: false });
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -392,10 +393,13 @@ function isLegalItemDetailPage(pathname: string | null): boolean {
     return Boolean(slug && slug.trim() !== "");
   }
 
-  // 2. Legislation / Law detail: /laws/[slug] (exclude /laws index, subscribe, feqh-preview)
+  // 2. Legislation / Law detail: /laws/[slug]. The /laws index and every static
+  // sibling (subscribe, feqh-preview, my, research, …: LAWS_STATIC_SEGMENTS)
+  // are not a reader — /laws/research (batch l12) has no header cart button,
+  // so the floating one must stay there.
   if (pathname.startsWith("/laws/")) {
-    const slug = pathname.substring("/laws/".length);
-    if (!slug || slug === "subscribe" || slug === "feqh-preview") {
+    const slug = pathname.substring("/laws/".length).split("/")[0];
+    if (!slug || LAWS_STATIC_SEGMENTS.has(slug)) {
       return false;
     }
     return true;

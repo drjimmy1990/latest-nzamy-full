@@ -88,3 +88,11 @@ test("L2: the reader's floating draft button follows draftFabVisible with the he
     assert.match(reader, /isRTL \? "المسودة" : "Draft"/, page);
   }
 });
+
+test("research (l12 integration): static /laws pages such as /laws/research are not readers — the floating draft button stays", async () => {
+  const src = await readFile(new URL("./FloatingButtons.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes('import { LAWS_STATIC_SEGMENTS } from "@/components/library/libraryGuardPaths";'));
+  assert.ok(src.includes('if (!slug || LAWS_STATIC_SEGMENTS.has(slug)) {'));
+  const paths = await readFile(new URL("./library/libraryGuardPaths.ts", import.meta.url), "utf8");
+  assert.match(paths, /"research",/);
+});
