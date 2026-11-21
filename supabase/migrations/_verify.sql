@@ -7788,7 +7788,11 @@ select 'Free questions per account type: ai_start_free_question takes quick-answ
        and (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
              where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
 select 'Free questions: the library-open rule only for the library assistant; the e-mail rule for everyone (ai_free_question_status of 20261129_60)' as check,
-       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'is distinct from ''individual''') > 0
+       -- 20261202_50 (Q121) moved the «not an individual» test into public.ai_free_question_tool; accept either place.
+       coalesce((pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'is distinct from ''individual''') > 0
+                 or (pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'ai_free_question_tool(p_user) = ''library-assistant''') > 0
+                     and to_regprocedure('public.ai_free_question_tool(uuid)') is not null
+                     and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_tool(uuid)')), 'is distinct from ''individual''') > 0))
                 and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'library_access_for') > 0
                 and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'email_confirmed_at') > 0,
                 false) as ok;
