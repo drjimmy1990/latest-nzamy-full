@@ -683,7 +683,7 @@ function AiHubDashboard() {
     // /ai/consult is open to everyone again, non-Saudi individuals included
     // (owner Q172 default, 2026-10-04): /ai/global is coming-soon, not a substitute.
     if (t.href === "/ai/consult") return true;
-    if (t.href === SIMPLE_CONTRACT_HREF) return SIMPLE_CONTRACT_AUDIENCE.has(user.userType);
+    if (t.href === SIMPLE_CONTRACT_HREF) return SIMPLE_CONTRACT_AUDIENCE.has(user.userType ?? "");
     if (!t.id) return true;
     return user.permissions.includes(t.id as UserPermission);
   });

@@ -267,7 +267,7 @@ test("entry links (l12 integration): hub card and sidebars for individuals and b
   const src = (rel: string) => read(new URL(`../../${rel}`, import.meta.url), "utf8");
   const hub = src("app/ai/page.tsx");
   assert.match(hub, /const SIMPLE_CONTRACT_AUDIENCE: ReadonlySet<string> = new Set\(\["individual", "corporate", "admin"\]\);/);
-  assert.match(hub, /if \(t\.href === SIMPLE_CONTRACT_HREF\) return SIMPLE_CONTRACT_AUDIENCE\.has\(user\.userType\);/);
+  assert.match(hub, /if \(t\.href === SIMPLE_CONTRACT_HREF\) return SIMPLE_CONTRACT_AUDIENCE\.has\(user\.userType \?\? ""\);/);
   assert.match(hub, /t\.href === SIMPLE_CONTRACT_HREF && !simpleContractLive \? \{ \.\.\.t, badgeAr: "قريباً", badgeEn: "Soon" \} : t/);
   const row = 'href: "/ai/simple-contract", icon: "PencilSimple", badge: "قريباً", liveToolId: "simple-contract" }';
   assert.ok(src("constants/navigation.sidebars.primary.ts").includes(row), "individual sidebar");
