@@ -69,3 +69,8 @@ lawyer_notes: { extraction:{items,gaps,conflicts,dropped}|null, adversary:{verdi
 ## مخاطر معروفة
 - تعبيرا `Model.modelName` و`$('Next stage').last()` داخل حلقة لم تُشغَّل على n8n فعليًا؛ الاختبار المحلي يحاكي العقد Code فقط، لا Agent ولا Gemini.
 - مرفقات الملفات: يقرؤها Gemini (Read) في مرحلة `write` الأولى فقط كما L14؛ بقية المراحل تعمل على النص.
+
+## مرحلة `intake` و`model_tier` (2026-11-21، منفَّذان في n8n)
+- **`intake` (اختيارية):** تعمل قبل `write` فقط حين يُرسل التطبيق `input.stages` ومعها `"intake"` في طور `draft`؛ الافتراضي بلا تغيير. برومبتها `prompts.intake` (وإلا TEMP قصير يظهر `temp`). المخرج `{ brief, facts }` يدخل برومبت `write` داخل `<case_brief>`، ويُحفظ في `lawyer_notes.intake`، ويصل التطبيق في `stage_done`. تقرأ المرفقات (Read) بدل `write`. فشلها يُفشل التشغيل ولا تُتخطى أبدًا (كـ`write`)، وحارس الوقت لا يبدأ إلا بعد `write`.
+- **`model_tier`:** الحزمة تحمل `model_tier` أصلًا؛ أضفنا `tier_models` (`{ deep: "gemini-…" }`) يرسله التطبيق، فيصير نموذجًا افتراضيًا لكل المراحل. الأسبقية: `models[stage]` ثم `tier_models[model_tier]` ثم نموذج الـworkflow. لا أسماء نماذج ثابتة في الكود. يظهر في `lawyer_notes.engine.tier`.
+- تخزين البرومبتات: لا شيء منها في الـworkflow إلا TEMP القصير؛ النصوص كلها من `body.prompts`.

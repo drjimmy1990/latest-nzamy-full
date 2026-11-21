@@ -38,6 +38,10 @@ export const NAJIZ_MAX_CHARS = 9000;
 // TEMP: short placeholder prompts until the owner's texts arrive in
 // body.prompts.<stage>. They only make the pipeline run end to end on staging.
 export const TEMP_PROMPTS = {
+  intake: [
+    "أنت مهيّئ ملفات قضايا سعودي. اقرأ المرفقات (إن وُجدت) والمعطيات المرسلة، وأعد عصارة بشكل Markdown: الأطراف، الوقائع مرتبة زمنياً، المستندات والأدلة، الطلبات، المواعيد.",
+    "انقل ما ورد حرفياً ولا تخترع واقعة أو تاريخاً أو مبلغاً؛ وما لم يتضح فاكتبه في facts بوسم [يحتاج تحقق].",
+  ].join("\n"),
   extraction: [
     "أنت باحث قانوني سعودي. مهمتك استخراج الأسانيد من المصادر المرسلة لدعم المذكرة المعروضة، دون كتابة مذكرة.",
     "لكل مادة أو مبدأ في <sources> يخدم موضعاً في المذكرة: معرّف المصدر، واسم النظام، ورقم المادة، وعبارتها الحاسمة منقولة حرفياً من المصدر كما وردت، والموضع الذي تخدمه في المذكرة.",
@@ -147,7 +151,7 @@ let st = $json.state;
 if (!st) {
   const wanted = Array.isArray(i.stages) ? i.stages.filter((s) => STAGES.includes(s)) : STAGES;
   st = {
-    stages: i.phase === 'draft' ? ['write', ...STAGES.filter((s) => wanted.includes(s))] : ['write'],
+    stages: i.phase === 'draft' ? [...(Array.isArray(i.stages) && i.stages.includes('intake') ? ['intake'] : []), 'write', ...STAGES.filter((s) => wanted.includes(s))] : ['write'],
     idx: 0, out: {}, notes: {}, skipped: [], models: [], source: {},
     policy: i.on_stage_error === 'skip' ? 'skip' : 'fail',
   };
@@ -159,14 +163,15 @@ st.last = null;
 // already reached the lawyer. body.deadline_at (ISO) and body.reserve_ms (default 180000) are optional.
 const deadline = Date.parse(b.deadline_at || '');
 const reserve = Number.isFinite(Number(b.reserve_ms)) && Number(b.reserve_ms) >= 0 ? Number(b.reserve_ms) : 180000;
-if (st.idx > 0 && st.idx < st.stages.length && Number.isFinite(deadline) && deadline - Date.now() < reserve) {
+if (st.idx > st.stages.indexOf('write') && st.idx < st.stages.length && Number.isFinite(deadline) && deadline - Date.now() < reserve) {
   for (const s of st.stages.slice(st.idx)) st.skipped.push({ stage: s, reason: 'deadline' });
   st.idx = st.stages.length;
 }
 const stage = st.stages[st.idx];
 const modelOf = (s) => {
   const raw = b.models && typeof b.models === 'object' ? (b.models[s] ?? (s === 'write' ? b.models.draft : undefined)) : undefined;
-  const m = typeof raw === 'string' ? raw.trim() : '';
+  const tm = b.tier_models && typeof b.tier_models === 'object' && typeof b.model_tier === 'string' ? b.tier_models[b.model_tier] : undefined;
+  const m = typeof raw === 'string' && raw.trim() ? raw.trim() : (typeof tm === 'string' ? tm.trim() : '');
   return /^(models\/)?[A-Za-z0-9][A-Za-z0-9._-]{1,60}$/.test(m) ? (m.startsWith('models/') ? m : 'models/' + m) : DEFAULT_MODEL;
 };
 const SYSTEM = 'أنت محامٍ سعودي خبير. اتبع التعليمات في رسالة المستخدم بدقة، وأعد كائن JSON واحداً فقط.';
@@ -188,11 +193,12 @@ if (!stage) {
   const output = { title: m.title, sections: m.sections, requests: m.requests, cited: Array.isArray(m.cited) ? m.cited : (Array.isArray(w.cited) ? w.cited : []) };
   const n = st.notes;
   output.lawyer_notes = {
+    intake: n.intake || null,
     extraction: n.extraction || null,
     adversary: n.adversary || null,
     refine: n.refine || null,
     skipped: st.skipped,
-    engine: { stages: st.stages, prompts: st.source, models: st.models },
+    engine: { stages: st.stages, prompts: st.source, models: st.models, tier: typeof b.model_tier === 'string' ? b.model_tier.slice(0, 40) : null },
   };
   if (st.out.najiz) output.najiz = st.out.najiz;
   const leak = Object.values(prompts).filter((p) => typeof p === 'string' && p.trim().length >= 80).map((p) => p.trim().slice(0, 80));
@@ -208,9 +214,14 @@ const model = modelOf(stage);
 if (stage === 'write') {
   const ownDraft = i.phase === 'draft' ? own('draft') : '';
   st.source.write = ownDraft ? 'body' : 'built-in';
-  const lines = ownDraft ? [ownDraft, ...frame, ...task.slice(1), ...rules, sourcesXml(b.sources)] : [...frame, ...task, ...rules, sourcesXml(b.sources)];
+  const brief = st.out.intake ? '<case_brief>\n' + esc(st.out.intake.brief) + '\n</case_brief>' : '';
+  const lines = ownDraft ? [ownDraft, ...frame, brief, ...task.slice(1), ...rules, sourcesXml(b.sources)] : [...frame, brief, ...task, ...rules, sourcesXml(b.sources)];
   content = lines.filter(Boolean).join('\n');
   progress = i.phase === 'draft' ? 'الصياغة' : 'التحليل';
+} else if (stage === 'intake') {
+  step = 'reading'; progress = 'التهيئة وعصارة المرفقات';
+  content = [own('intake') || TEMP.intake, ...frame, facts, DATA_RULE, 'الشكل: {"brief":"","facts":[""]}'].filter(Boolean).join('\n');
+  st.source.intake = own('intake') ? 'body' : 'temp';
 } else if (stage === 'extraction') {
   progress = 'الاستخراج من المكتبة';
   content = base('extraction', [memoXml(current()),
@@ -233,7 +244,7 @@ if (stage === 'write') {
 st.models.push(model);
 const out = { json: { state: st, stage, step, progress, model, system: SYSTEM, content, read: false, done } };
 const first = $input.first();
-if (stage === 'write' && st.idx === 0 && first && first.json && first.json.fields) {
+if ((stage === 'intake' || (stage === 'write' && !st.stages.includes('intake'))) && st.idx === 0 && first && first.json && first.json.fields) {
   out.json.read = true; out.json.fields = first.json.fields; out.json.prompt = content; out.binary = first.binary;
 }
 return [out];`;
@@ -245,7 +256,7 @@ const st = JSON.parse(JSON.stringify(cur.state));
 st.idx += 1;
 const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message: stage + ': ' + message } } }];
 const soft = (code, message) => {
-  if (stage === 'write' || st.policy !== 'skip') return fail(code, message);
+  if (stage === 'write' || stage === 'intake' || st.policy !== 'skip') return fail(code, message);
   st.skipped.push({ stage, reason: message });
   st.last = { stage, skipped: true, reason: message };
   return [{ json: { state: st } }];
@@ -266,6 +277,11 @@ const memoOk = (m) => m && typeof m.title === 'string' && m.title.trim() && Arra
 if (stage === 'write') {
   if (st.stages.length > 1 && !memoOk(o)) return fail('schema_invalid', 'the draft is not a memo (title, sections, requests)');
   st.out.write = o;
+} else if (stage === 'intake') {
+  const brief = str(o.brief, 60000);
+  if (!brief) return fail('schema_invalid', 'no brief');
+  st.out.intake = { brief };
+  st.notes.intake = { brief, facts: (Array.isArray(o.facts) ? o.facts : []).map((f) => str(f, 600)).filter(Boolean).slice(0, 60) };
 } else if (stage === 'extraction') {
   const text = {};
   for (const s of Array.isArray(b.sources) ? b.sources : []) text[s.sid] = norm(s.text);

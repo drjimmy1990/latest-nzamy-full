@@ -120,7 +120,7 @@ test("the workflow is a staging copy: own name and path, inactive, wired into on
 test("the system message has no braces, and a TEMP stand-in exists for every post-draft stage", () => {
   const out = run(pkg(DRAFT_INPUT), good);
   assert.ok(!/[{}]/.test(out.next.json.system));
-  assert.deepEqual(Object.keys(TEMP_PROMPTS).sort(), [...V2_STAGES].sort());
+  assert.deepEqual(Object.keys(TEMP_PROMPTS).sort(), ["intake", ...V2_STAGES].sort());
 });
 
 test("issues and section phases: one stage, the L14 prompt and the output untouched", () => {
@@ -324,4 +324,42 @@ test("deadline guard: plenty of time (or no deadline) changes nothing", () => {
   const far = run(pkg(DRAFT_INPUT, { deadline_at: new Date(Date.now() + 3_600_000).toISOString() }), good);
   assert.equal(far.log.length, 5);
   assert.equal(far.final.output.lawyer_notes.skipped.length, 0);
+});
+
+test("intake (opt-in): runs first, its brief feeds the write stage, notes carry it, files are read by intake only", () => {
+  const body = pkg({ ...DRAFT_INPUT, stages: ["intake"] });
+  const seen: string[] = [];
+  const r = run(body, (stage, content) => {
+    seen.push(stage);
+    if (stage === "intake") return j({ brief: "عصارة القضية", facts: ["واقعة"] });
+    if (stage === "write") assert.match(content, /<case_brief>\nعصارة القضية\n<\/case_brief>/);
+    return good(stage, content);
+  });
+  assert.deepEqual(seen, ["intake", "write"]);
+  assert.equal(r.final.status, "succeeded");
+  assert.equal(r.final.output.lawyer_notes.intake.brief, "عصارة القضية");
+  assert.equal(r.log[0].step, "reading");
+  assert.equal(r.log[0].done, null);
+  assert.equal(r.log[1].done.stage, "intake");
+  // not asked for: the default pipeline has no intake
+  assert.ok(!run(pkg(DRAFT_INPUT), good).log.some((l) => l.stage === "intake"));
+});
+
+test("intake failing fails the run (it is never skipped); the deadline guard does not skip write after intake", () => {
+  const body = pkg({ ...DRAFT_INPUT, stages: ["intake"], on_stage_error: "skip" });
+  const bad = run(body, (s, c) => (s === "intake" ? j({ brief: "" }) : good(s, c)));
+  assert.equal(bad.final.status, "failed");
+  const late = run(pkg({ ...DRAFT_INPUT, stages: ["intake", "refine"] }, { deadline_at: new Date(Date.now() + 1000).toISOString() }), (s, c) => (s === "intake" ? j({ brief: "ع" }) : good(s, c)));
+  assert.equal(late.final.status, "succeeded");
+  assert.deepEqual(late.log.map((l) => l.stage), ["intake", "write"]);
+  assert.deepEqual(late.final.output.lawyer_notes.skipped.map((x: any) => x.stage), ["refine"]);
+});
+
+test("model_tier + tier_models: a tier sets the default model for every stage; models[stage] still wins; unknown tier → built-in", () => {
+  const body = pkg(DRAFT_INPUT, { tier_models: { deep: "gemini-long-1", fast: "gemini-fast-1" }, models: { najiz: "gemini-fast-1" } });
+  const r = run(body, good);
+  assert.deepEqual(r.log.map((l) => l.model), ["models/gemini-long-1", "models/gemini-long-1", "models/gemini-long-1", "models/gemini-long-1", "models/gemini-fast-1"]);
+  assert.equal(r.final.output.lawyer_notes.engine.tier, "deep");
+  const none = run(pkg(DRAFT_INPUT, { tier_models: { fast: "gemini-fast-1" } }), good);
+  assert.ok(none.log.every((l) => l.model === MODEL.modelName));
 });
