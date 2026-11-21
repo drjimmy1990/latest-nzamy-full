@@ -9,7 +9,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  BULK_PER_TYPE,
+  LAW_LINKS_ID,
   MAX_ITEMS_PER_SECTION,
+  centerKeyOf,
   READER_LINK_TYPES,
   READER_SECTION_QUERIES,
   applyLiveRows,
@@ -22,6 +25,11 @@ import {
   refIds,
   shapeArticleRefs,
   validArticleId,
+  expandLawLinks,
+  groupsOfRefs,
+  shapeLawLinks,
+  withAutoTags,
+  withHrefs,
 } from "./_shape.ts";
 
 const SECRET = "نص المادة السري الذي لا يراه الزائر";
@@ -61,12 +69,13 @@ test("register 14 item 17: the route asks for every legal link type, «إحال�
     "PARENT_LAW",
     "PENALIZES",
     "REPLACED_BY",
+    "SIMILAR_TO",
     "SUBJECT_TO",
     "SUPERSEDES_LAW",
-  ]);
+  ], "Q133 (batch l12): SIMILAR_TO in its own section, behind the admin switch the route reads");
 });
 
-test("sections: legislation and judicial filled, fiqh empty; computed and outline types dropped even if the function returns them", () => {
+test("sections: legislation and judicial filled, fiqh empty; outline types dropped even if the function returns them; similarity in its own section", () => {
   const out = shapeArticleRefs(neighborhood, "a5", "labor");
   assert.equal(out.found, true);
   assert.deepEqual(
@@ -87,12 +96,14 @@ test("sections: legislation and judicial filled, fiqh empty; computed and outlin
   );
   assert.equal(out.sections.fiqh.items.length, 0);
   assert.ok(!JSON.stringify(out).includes(SECRET), "no snippet, no evidence");
-  assert.ok(!JSON.stringify(out).includes("SIMILAR_TO") && !JSON.stringify(out).includes("NEXT_ARTICLE"), "not legal links: never in the box");
-  for (const s of ["legislation", "judicial", "fiqh"] as const) {
+  assert.ok(!JSON.stringify(out).includes("NEXT_ARTICLE"), "the outline: never in the box");
+  assert.deepEqual(out.sections.similar.items.map((i) => [i.key, i.linkType, i.relation]), [["article:x1", "SIMILAR_TO", "متقاربة في المعنى (ربط آلي)"]]);
+  assert.equal(shapeArticleRefs(neighborhood, "a5", "labor", READER_LINK_TYPES.filter((t) => t !== "SIMILAR_TO")).sections.similar.total, 0, "switch off: not shown");
+  for (const s of ["legislation", "judicial", "fiqh", "similar"] as const) {
     for (const i of out.sections[s].items) {
       assert.deepEqual(
         Object.keys(i).sort(),
-        ["anchorId", "anchorMissing", "direction", "docId", "docKind", "key", "kind", "linkType", "relation", "section", "status", "title"],
+        ["anchorId", "anchorMissing", "auto", "direction", "docId", "docKind", "key", "kind", "linkType", "relation", "section", "status", "title"],
       );
     }
   }
@@ -129,6 +140,7 @@ test("one query per group: 200 principles or 200 «إحالة» links never crow
       ["legislation", ["AMENDS_ARTICLE", "EXEMPTS_FROM", "IMPLEMENTED_BY", "PARENT_LAW", "PENALIZES", "REPLACED_BY", "SUBJECT_TO", "SUPERSEDES_LAW"]],
       ["legislation", ["CITES_ARTICLE"]],
       ["judicial", ["INTERPRETS_ARTICLE"]],
+      ["similar", ["SIMILAR_TO"]],
     ],
     "fiqh has no type, so it is not asked for",
   );
@@ -261,7 +273,8 @@ test("route contract: libraryGate first, service role for graph and articles, no
   assert.doesNotMatch(route, /select\([^)]*text/);
   assert.doesNotMatch(route, /spendLibraryDocument/);
   assert.match(route, /shapeArticleRefs\(answers\[i\]\.data, id, slug, q\.types\)/);
-  assert.match(route, /READER_SECTION_QUERIES\.map\(\(q\) =>/, "one graph call per group");
+  assert.match(route, /const queries = READER_SECTION_QUERIES\s*\.map\(/, "one graph call per group");
+  assert.match(route, /queries\.map\(\(q\) =>\s*serverOnly\.rpc\('graph_rag_explore_neighborhood'/);
   assert.match(route, /p_edge_types: q\.types,/);
   assert.match(route, /select\('slug, status, title'\)/, "the law's name for a missing anchor");
   assert.doesNotMatch(route, /searchParams\.get\('map'\)|library_reader_law_links/, "the law map route branch is gone");
@@ -310,4 +323,181 @@ test("N02-13 route contract: the folded read runs only when the exact one finds 
   assert.match(decree, /select\('id, title, ref, date'\)/);
   // Only the id, the capped title and the link leave the route — never ref or date.
   assert.match(decree, /\{ id: String\(row\.id\), title: capTitle\(String\(row\.title \?\? ''\)\), href: `\/laws\/orders\/\$\{encodeURIComponent\(String\(row\.id\)\)\}` \}/);
+});
+
+// ── Batch l12 (owner L1, Q132, Q133, library-Q4): the whole law at once ──────
+
+const bulkRaw = {
+  found: true,
+  law_slug: "labor",
+  per_type: 3,
+  nodes: [
+    { node_key: "article:b1", node_type: "article", law_slug: "civil", title: "نظام المعاملات — المادة 1", item_status: "active", snippet: SECRET, lib: { anchor: true, status: "amended", doc: true, doc_status: "active", doc_title: "نظام المعاملات المدنية" } },
+    { node_key: "article:gone", node_type: "article", law_slug: "civil", title: "نظام المعاملات — المادة 99", item_status: "active", lib: { anchor: false, doc: true, doc_status: "active", doc_title: "نظام المعاملات المدنية" } },
+    { node_key: "article:lawgone", node_type: "article", law_slug: "deleted-law", title: "نظام محذوف — المادة 2", lib: { anchor: false, doc: false } },
+    { node_key: "principle:p9", node_type: "principle", title: "مبدأ 9", url: "/precedents/high#p9", lib: { anchor: true, doc: true, doc_title: "مبادئ المحكمة العليا" } },
+    { node_key: "law:labor", node_type: "law", law_slug: "labor", title: "نظام العمل", doc_status: "active", lib: { doc: true, doc_status: "active", doc_title: "نظام العمل" } },
+    { node_key: "article:s1", node_type: "article", law_slug: "civil", title: "نظام المعاملات — المادة 7", lib: { anchor: true, status: "active", doc: true, doc_status: "active", doc_title: "نظام المعاملات المدنية" } },
+  ],
+  articles: [
+    {
+      id: "a5",
+      links: [
+        { t: "INTERPRETS_ARTICLE", d: "in", n: 40, items: [{ k: "principle:p9", o: "owner_curated", s: "owner_edges" }] },
+        { t: "CITES_ARTICLE", d: "out", n: 2, items: [{ k: "article:b1", o: "auto_watchdog", s: null }, { k: "article:gone", o: "owner_curated", s: "owner_edges" }] },
+        { t: "SIMILAR_TO", d: "out", n: 1, items: [{ k: "article:s1", o: "auto_similarity" }] },
+        { t: "NEXT_ARTICLE", d: "out", n: 1, items: [{ k: "article:b1" }] },
+      ],
+    },
+    { id: "a6", links: [{ t: "CITES_ARTICLE", d: "out", n: 1, items: [{ k: "article:lawgone", o: "auto_watchdog" }] }] },
+    { id: "", links: [] },
+  ],
+};
+
+test("L1 bulk: one compact answer for the law — each node once, groups with true totals, no text, ordered like the box", () => {
+  const out = shapeLawLinks(bulkRaw, "labor", READER_LINK_TYPES, (s) => `art:${String(s)}`, (s) => `law:${String(s)}`, true);
+  assert.equal(out.found, true);
+  assert.equal(out.perType, BULK_PER_TYPE);
+  assert.ok(!JSON.stringify(out).includes(SECRET), "no snippet");
+  assert.deepEqual(Object.keys(out.articles), ["a5"], "a6's only link points into a law that is gone: nothing to draw");
+  assert.deepEqual(
+    out.articles.a5.map(([t, d, n, keys]) => [t, d, n, keys]),
+    [
+      ["CITES_ARTICLE", "out", 2, [["article:b1", 1], ["article:gone", 0]]],
+      ["INTERPRETS_ARTICLE", "in", 40, [["principle:p9", 0]]],
+      ["SIMILAR_TO", "out", 1, [["article:s1", 0]]],
+    ],
+    "legislation before judicial before similar; the outline dropped; «رابط آلي» only on the unreviewed automatic «إحالة»",
+  );
+  assert.equal(out.items["article:b1"].status, "art:amended", "status from library.*, not the graph's copy");
+  assert.equal(out.items["article:b1"].href, "/laws/civil#b1");
+  // Q132: an anchor that is gone is an ordinary link to its document, under the document's name.
+  assert.equal(out.items["article:gone"].anchorMissing, true);
+  assert.equal(out.items["article:gone"].title, "نظام المعاملات المدنية");
+  assert.equal(out.items["article:gone"].href, "/laws/civil");
+  assert.equal(out.items["article:lawgone"], undefined, "a document that is gone is dropped");
+  assert.equal(out.items["law:labor"], undefined, "a node no article lists is not sent");
+  assert.equal(out.items["principle:p9"].docHref, "/precedents/high");
+});
+
+test("L1 bulk: switches and guards — tag off, similar off, another law, garbage", () => {
+  const noTag = shapeLawLinks(bulkRaw, "labor", READER_LINK_TYPES, String, String, false);
+  assert.ok(noTag.articles.a5.every(([, , , keys]) => keys.every(([, a]) => a === 0)), "library_auto_link_tag off: no tag");
+  const noSimilar = shapeLawLinks(bulkRaw, "labor", READER_LINK_TYPES.filter((t) => t !== "SIMILAR_TO"), String, String, true);
+  assert.ok(!noSimilar.articles.a5.some(([t]) => t === "SIMILAR_TO"), "library_similar_links off: the section is never sent");
+  assert.equal(shapeLawLinks(bulkRaw, "civil", READER_LINK_TYPES, String, String, true).found, false, "the URL's law is the authority");
+  assert.equal(shapeLawLinks(null, "labor", READER_LINK_TYPES, String, String, true).found, false);
+  assert.equal(shapeLawLinks({ found: false }, "labor", READER_LINK_TYPES, String, String, true).found, false);
+  const many = {
+    ...bulkRaw,
+    articles: [{ id: "a5", links: [{ t: "CITES_ARTICLE", d: "out", n: 1, items: ["article:b1", "article:s1", "article:gone", "article:b1", "article:s1"].map((k) => ({ k })) }] }],
+  };
+  const capped = shapeLawLinks(many, "labor", READER_LINK_TYPES, String, String, true);
+  assert.deepEqual(capped.articles.a5[0][3].map(([k]) => k), ["article:b1", "article:s1", "article:gone"], "at most BULK_PER_TYPE, each once");
+  assert.equal(capped.articles.a5[0][2], 3, "a total below the items listed is raised to them");
+});
+
+test("L1 expand: one article's box data from the bulk answer — sections, groups, «عرض الكل» knows it is partial", () => {
+  const bulk = shapeLawLinks(bulkRaw, "labor", READER_LINK_TYPES, String, String, true);
+  const a5 = expandLawLinks(bulk, "a5");
+  assert.equal(a5.found, true);
+  assert.equal(a5.partial, true);
+  assert.deepEqual(a5.groups.map((g) => [g.section, g.relation, g.total, g.keys.length]), [
+    ["legislation", "تحيل إليها هذه المادة", 2, 2],
+    ["judicial", "مبدأ قضائي يستند إليها", 40, 1],
+    ["similar", "متقاربة في المعنى (ربط آلي)", 1, 1],
+  ]);
+  assert.equal(a5.sections.judicial.total, 40);
+  assert.equal(a5.sections.legislation.items[0].auto, true);
+  assert.equal(a5.sections.legislation.items[1].anchorMissing, true);
+  assert.equal(a5.sections.fiqh.items.length, 0);
+  const none = expandLawLinks(bulk, "a-without-links");
+  assert.equal(none.found, false, "an article with no link: nothing under it");
+  assert.equal(none.groups.length, 0);
+});
+
+test("groups of a full list (?article=) and the tag switch on one article's answer", () => {
+  const live = applyLiveRows(
+    shapeArticleRefs(neighborhood, "a5", "labor"),
+    { articles: [{ id: "a7", status: "active" }, { id: "x1", status: "active" }], laws: ["labor", "civil", "old", "parent"].map((slug) => ({ slug, status: "active" })), principles: [{ id: "p1" }], collections: [{ id: "high-court" }], decrees: [{ id: "d1" }] },
+    String,
+    String,
+  );
+  const groups = groupsOfRefs(withHrefs(live));
+  assert.equal(groups[0].linkType, "AMENDS_ARTICLE", "amendment first, as in the bulk order");
+  assert.ok(groups.some((g) => g.linkType === "SIMILAR_TO" && g.section === "similar"));
+  const tagged = { ...live, sections: { ...live.sections, legislation: { ...live.sections.legislation, items: live.sections.legislation.items.map((i) => ({ ...i, auto: true })) } } };
+  assert.ok(withAutoTags(tagged, false).sections.legislation.items.every((i) => i.auto === false));
+  assert.ok(withAutoTags(tagged, true).sections.legislation.items.every((i) => i.auto === true));
+});
+
+test("CITES_ARTICLE from the graph carries «رابط آلي» only when automatic and not from his files", () => {
+  const n = {
+    found: true,
+    nodes: [
+      { node_key: "article:c", node_type: "article", law_slug: "l" },
+      { node_key: "article:d", node_type: "article", law_slug: "l" },
+      { node_key: "article:e", node_type: "article", law_slug: "l" },
+    ],
+    edges: [
+      { source: "article:c", target: "article:d", edge_type: "CITES_ARTICLE", origin: "auto_watchdog", metadata: {} },
+      { source: "article:c", target: "article:e", edge_type: "CITES_ARTICLE", origin: "auto_watchdog", metadata: { source: "owner_links" } },
+    ],
+  };
+  const out = shapeArticleRefs(n, "c", "l");
+  assert.deepEqual(out.sections.legislation.items.map((i) => [i.key, i.auto]), [["article:d", true], ["article:e", false]]);
+});
+
+test("route contract (l12): ?bulk=1 reads the two switches and calls the law function once", () => {
+  const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(route, /url\.searchParams\.get\('bulk'\) === '1'/);
+  assert.match(route, /serverOnly\.rpc\('graph_rag_law_article_links', \{\s*p_law_slug: slug,\s*p_per_type: BULK_PER_TYPE,\s*p_types: types,/);
+  assert.match(route, /const types = readerLinkTypes\(flags\?\.library_similar_links \?\? false\);/);
+  assert.match(route, /withHrefs\(withAutoTags\(live, autoTagOn\)\)/);
+  assert.match(route, /if \(graphFunctionMissing\(error\.code\)\) return json\(\{ available: false \}\);/, "before 20261202_30: the reader falls back to one article at a time");
+});
+
+test("Q132: the law's own node ('@law') answers like an article — links on the whole law", () => {
+  assert.equal(centerKeyOf(LAW_LINKS_ID, "labor"), "law:labor");
+  assert.equal(centerKeyOf("a5", "labor"), "article:a5");
+  const raw = {
+    found: true,
+    nodes: [
+      { node_key: "law:labor", node_type: "law", law_slug: "labor", title: "نظام العمل" },
+      { node_key: "principle:p1", node_type: "principle", title: "مبدأ", url: "/precedents/high#p1" },
+    ],
+    edges: [{ source: "principle:p1", target: "law:labor", edge_type: "INTERPRETS_ARTICLE", origin: "owner_curated", metadata: { source: "owner_edges" } }],
+  };
+  const out = shapeArticleRefs(raw, LAW_LINKS_ID, "labor");
+  assert.equal(out.found, true);
+  assert.deepEqual(out.sections.judicial.items.map((i) => [i.key, i.auto]), [["principle:p1", false]], "his link: no tag");
+  assert.equal(shapeArticleRefs(raw, LAW_LINKS_ID, "civil").found, false);
+  const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(route, /p_node_key: centerKeyOf\(id, slug\),/);
+});
+
+test("Q101 (l12 integration): a non-subscriber's links never carry a decree's number in its title", async () => {
+  const { maskDecreeTitlesForViewer } = await import("./_decree-titles.ts");
+  const answer = {
+    items: [
+      { key: "decree:d1", kind: "decree", docKind: "order", docId: "d1", title: "مرسوم ملكي رقم م/115 وتاريخ 1439/12/05هـ" },
+      { key: "law:labor", kind: "law", docKind: "law", docId: "labor", title: "نظام العمل" },
+    ],
+    articles: { a1: { legislation: { items: [{ key: "decree:d1", docKind: "order", title: "مرسوم ملكي رقم م/115 وتاريخ 1439/12/05هـ" }] } } },
+  };
+  const masked = maskDecreeTitlesForViewer(answer, false);
+  for (const t of [masked.items[0].title, masked.articles.a1.legislation.items[0].title]) {
+    assert.doesNotMatch(t, /115|1439/);
+    assert.ok(t.trim().length > 0, "never empty");
+  }
+  assert.equal(masked.items[1].title, "نظام العمل", "a law keeps its title");
+  assert.equal(maskDecreeTitlesForViewer(answer, true), answer, "a subscriber reads the stored title");
+  const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  assert.equal((route.match(/maskDecreeTitlesForViewer\(/g) ?? []).length, 2, "bulk and per-article answers");
+  assert.match(route, /tierJson\(\{ available: true, \.\.\.maskDecreeTitlesForViewer\(shapedLaw, await viewerIsSubscriber\(\)\) \}\)/);
+  assert.match(route, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
+  // The client box imports _shape: the decree helpers stay out of it.
+  assert.doesNotMatch(readFileSync(new URL("./_shape.ts", import.meta.url), "utf8"), /decreeDisplay/);
+  const preview = readFileSync(new URL("./preview/route.ts", import.meta.url), "utf8");
+  assert.match(preview, /decreeTitleForViewer\(\{ title: decree\.title, type: decree\.type \}, isSubscriber\)/);
 });

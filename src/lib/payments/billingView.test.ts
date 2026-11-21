@@ -143,8 +143,8 @@ test("R3 (owner ٤٢٠): a receipt of the retired 399 plan keeps «التأمي�
 });
 
 test("Task F fix round 1: a top-up bought before owner ٤٢٢ prints the points its lot credited, not today's grant", () => {
-  // topup-1000 granted 1,250 before ٤٢٢ and 1,500 now (priceBook.ts).
-  assert.equal(PRICE_BOOK["topup-1000"].points, 1500);
+  // topup-1000 granted 1,250 before ٤٢٢, 1,500 after it, and 1,000 since l12 (Q88a) (priceBook.ts).
+  assert.equal(PRICE_BOOK["topup-1000"].points, 1000);
   const old = { ...order, item_id: "topup-1000", net_halalas: 100000, vat_halalas: 15000, total_halalas: 115000, credited_points: 1250 };
   assert.equal(orderLabelWithPointsAr("topup-1000", 1250), "شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة (منها ٢٥٠ نقطة مكافأة)");
   assert.equal(receiptView(old, company)?.item, "شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة (منها ٢٥٠ نقطة مكافأة)");

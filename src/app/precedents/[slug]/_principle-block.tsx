@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef } from "react";
-import { FileText, Copy, Check, Plus, Minus } from "@phosphor-icons/react";
+import { FileText, Copy, Check } from "@phosphor-icons/react";
+import { DraftToggleIcon } from "@/components/draft/DraftToggleIcon";
 import { JudicialPrincipleItem } from "@/app/laws/data";
 import { cleanPrincipleText, principleParagraphs, principleReferenceLine } from "./_principle-text";
 import { HighlightScope, Hl, useTextHasHighlight } from "@/components/search/MultiColorHighlight";
@@ -24,8 +25,9 @@ import { LibraryLockedNote } from "@/components/library/LibrarySubscribeCard";
  * (HighlightScope + useNearViewport); the page's legend counts every loaded
  * principle itself and steps block to block.
  */
-const Paragraphs = memo(function Paragraphs({ text, className }: { text: string | null | undefined; className?: string }) {
-  const paragraphs = useMemo(() => principleParagraphs(text), [text]);
+const Paragraphs = memo(function Paragraphs({ text, className, number }: { text: string | null | undefined; className?: string; number?: string | number | null }) {
+  // L9-d: `number` drops a first line that only repeats the principle's number.
+  const paragraphs = useMemo(() => principleParagraphs(text, number), [text, number]);
   if (paragraphs.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -166,12 +168,13 @@ export default function PrincipleBlock({
               }}
               className={`p-1.5 rounded-lg border transition ${
                 cartMap.has(p.id)
-                  ? isDark ? "bg-red-900/20 text-red-400 border-red-500/20" : "bg-red-50 text-red-500 border-red-200"
+                  ? isDark ? "bg-emerald-900/25 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-700 border-emerald-200"
                   : isDark ? "bg-[#C8A762]/10 text-[#C8A762] border-[#C8A762]/20 hover:bg-[#C8A762]/20" : "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100"
               }`}
-              title={isRTL ? "إضافة إلى المسودة" : "Add to Draft"}
+              title={cartMap.has(p.id) ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to Draft")}
+              aria-pressed={cartMap.has(p.id)}
             >
-              {cartMap.has(p.id) ? <Minus size={12} /> : <Plus size={12} />}
+              <DraftToggleIcon inDraft={cartMap.has(p.id)} size={12} />
             </button>
           </div>
         )}
@@ -192,12 +195,12 @@ export default function PrincipleBlock({
                     {para.letter}ـ
                   </span>
                 )}
-                <Paragraphs text={para.text} />
+                <Paragraphs text={para.text} number={p.number} />
               </div>
             );
           })
         ) : (
-          <Paragraphs text={cleanTextOfRef(p.text)} />
+          <Paragraphs text={cleanTextOfRef(p.text)} number={p.number} />
         )}
       </div>
 

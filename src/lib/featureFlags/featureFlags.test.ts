@@ -14,7 +14,7 @@ import {
 /** O22 (batch l11-misc): server-side feature flags in platform_settings.feature_flags. */
 
 test("the list is closed and every flag has an Arabic name and description", () => {
-  assert.deepEqual([...FEATURE_FLAG_KEYS], ["site_assistant"]);
+  assert.deepEqual([...FEATURE_FLAG_KEYS], ["site_assistant", "library_auto_link_tag", "library_similar_links"]);
   for (const k of FEATURE_FLAG_KEYS) {
     assert.ok(FEATURE_FLAGS[k].nameAr.length > 3);
     assert.ok(FEATURE_FLAGS[k].descriptionAr.length > 10);
@@ -24,13 +24,20 @@ test("the list is closed and every flag has an Arabic name and description", () 
 });
 
 test("parse: missing / malformed → defaults; booleans kept; unknown keys ignored", () => {
-  assert.deepEqual(parseFeatureFlags(null), { site_assistant: true });
-  assert.deepEqual(parseFeatureFlags("off"), { site_assistant: true });
-  assert.deepEqual(parseFeatureFlags([false]), { site_assistant: true });
-  assert.deepEqual(parseFeatureFlags({ site_assistant: "false" }), { site_assistant: true });
-  assert.deepEqual(parseFeatureFlags({ site_assistant: false }), { site_assistant: false });
-  assert.deepEqual(parseFeatureFlags({ site_assistant: false, other: true }), { site_assistant: false });
-  assert.deepEqual(parseFeatureFlags({ __proto__: { site_assistant: false } }), { site_assistant: true }, "own keys only");
+  assert.deepEqual(parseFeatureFlags(null), { ...defaultFeatureFlags(), site_assistant: true });
+  assert.deepEqual(parseFeatureFlags("off"), { ...defaultFeatureFlags(), site_assistant: true });
+  assert.deepEqual(parseFeatureFlags([false]), { ...defaultFeatureFlags(), site_assistant: true });
+  assert.deepEqual(parseFeatureFlags({ site_assistant: "false" }), { ...defaultFeatureFlags(), site_assistant: true });
+  assert.deepEqual(parseFeatureFlags({ site_assistant: false }), { ...defaultFeatureFlags(), site_assistant: false });
+  assert.deepEqual(parseFeatureFlags({ site_assistant: false, other: true }), { ...defaultFeatureFlags(), site_assistant: false });
+  assert.deepEqual(parseFeatureFlags({ __proto__: { site_assistant: false } }), { ...defaultFeatureFlags(), site_assistant: true }, "own keys only");
+});
+
+test("batch l12: the two library link switches ship on (owner library-Q4 default; Q133 register 14)", () => {
+  assert.equal(defaultFeatureFlags().library_auto_link_tag, true);
+  assert.equal(defaultFeatureFlags().library_similar_links, true);
+  assert.equal(parseFeatureFlags({ library_similar_links: false }).library_similar_links, false);
+  assert.equal(featureFlagsIssue({ library_auto_link_tag: false }), null);
 });
 
 test("write validator: an object of known flags → booleans, nothing else", () => {
@@ -84,12 +91,12 @@ test("cache: a failed read answers the defaults and retries after 5 s", async ()
     if (fail) throw new Error("db down");
     return { site_assistant: false };
   }, { now: () => t });
-  assert.deepEqual(await cache.get(), { site_assistant: true });
+  assert.deepEqual(await cache.get(), { ...defaultFeatureFlags(), site_assistant: true });
   fail = false;
   t += 4_000;
-  assert.deepEqual(await cache.get(), { site_assistant: true }, "short negative cache");
+  assert.deepEqual(await cache.get(), { ...defaultFeatureFlags(), site_assistant: true }, "short negative cache");
   t += 1_001;
-  assert.deepEqual(await cache.get(), { site_assistant: false });
+  assert.deepEqual(await cache.get(), { ...defaultFeatureFlags(), site_assistant: false });
 });
 
 test("the admin settings route allow-lists, validates and clears the cache for feature_flags", () => {

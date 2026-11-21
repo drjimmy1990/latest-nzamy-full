@@ -25,6 +25,9 @@ export const LAWYER_ONLY_AI_PAGES: Readonly<Record<string, string>> = Object.fre
   "/ai/brief-check": "brief-check",
   "/ai/communicate": "communicate",
   "/ai/assistant": "assistant",
+  // Owner ١٢٢ (register 14 #19, batch l12): the legal opinion (both its built
+  // types, consultation and letter) is for lawyers and law firms only.
+  "/ai/legal-opinion": "legal-opinion-consult",
 });
 
 /** The account types that see these pages: the tools' roles plus the admin, who passes every tool. */

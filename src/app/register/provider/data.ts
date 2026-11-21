@@ -7,7 +7,7 @@ export const providerTypes = {
     { id: "lawyer" as ProviderType, icon: Gavel, label: "محامي", desc: "ممارسة المحاماة وتقديم الاستشارات", color: "bg-royal/5 text-royal", borderActive: "border-royal/30 bg-royal/5" },
     { id: "firm" as ProviderType, icon: Buildings, label: "شركة محاماة", desc: "مكتب قانوني أو شركة متكاملة", color: "bg-gold/10 text-gold-dark", borderActive: "border-gold/30 bg-gold/5" },
     { id: "notary" as ProviderType, icon: Stamp, label: "موثّق", desc: "توثيق العقود والمحررات الرسمية", color: "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400", borderActive: "border-blue-200 dark:border-blue-500/20 bg-blue-50 dark:bg-blue-500/10" },
-    { id: "tracker" as ProviderType, icon: Shield, label: "معقّب", desc: "إنجاز المعاملات الحكومية", color: "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400", borderActive: "border-orange-200 dark:border-orange-500/20 bg-orange-50 dark:bg-orange-500/10" },
+    { id: "tracker" as ProviderType, icon: Shield, label: "مراجع حكومي", desc: "إنجاز المعاملات الحكومية", color: "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400", borderActive: "border-orange-200 dark:border-orange-500/20 bg-orange-50 dark:bg-orange-500/10" },
     { id: "arbitrator" as ProviderType, icon: Scales, label: "محكّم", desc: "التحكيم وفض النزاعات", color: "bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400", borderActive: "border-purple-200 dark:border-purple-500/20 bg-purple-50 dark:bg-purple-500/10" },
     // Owner answer ٢١٩: a lawyer account with practice_kind 'consultant' — no
     // pleading or hearings (Art. 18). Licensed in Saudi Arabia only; see
@@ -48,7 +48,7 @@ export const plans = {
       price: bookPriceText("lawyer-pro", "yearly", "ar"),
       period: "ر.س / سنة",
       desc: "اشتراك سنوي بنقاط لأدوات الذكاء الاصطناعي",
-      features: ["كل مميزات إدارة الممارسة", "النقاط بحزم الشحن فقط", `حزم شحن من ${bookPriceText("topup-50", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
+      features: ["كل مميزات إدارة الممارسة", "النقاط بحزم الشحن فقط", `حزم شحن من ${bookPriceText("topup-500", "once", "ar")} ر.س`, "أسعار الأدوات بالنقاط حسب قائمة الأسعار"],
       cta: "اشترك الآن",
       highlighted: true,
     },
@@ -80,7 +80,7 @@ export const plans = {
       price: bookPriceText("lawyer-pro", "yearly", "en"),
       period: "SAR / year",
       desc: "Yearly subscription with AI tool points",
-      features: ["All practice-management features", "Points from top-ups only", `Top-ups from SAR ${bookPriceText("topup-50", "once", "en")}`, "Tool prices in points per the price list"],
+      features: ["All practice-management features", "Points from top-ups only", `Top-ups from SAR ${bookPriceText("topup-500", "once", "en")}`, "Tool prices in points per the price list"],
       cta: "Subscribe",
       highlighted: true,
     },

@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowSquareOut, Check, Copy, Lock, MagnifyingGlass, MapPin, Plus, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, BookmarkSimple, Check, Copy, Lock, MagnifyingGlass, MapPin, X } from "@phosphor-icons/react";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import type { ArticleBody, BlockBody, PrincipleBody, ScopedHit } from "@/app/api/library/scoped-search/scopedSearch";
 import { highlightSegments, hitCartEntry, hitCopy, scopedHitHref, scopedPanelTitle, type ScopeInfo } from "@/lib/library/scopedHitActions";
@@ -31,6 +31,32 @@ import { cleanPrincipleText } from "@/app/precedents/[slug]/_principle-text";
 import SearchSyntaxHelp from "@/components/library/SearchSyntaxHelp";
 
 const PAGE_SIZE = 20;
+
+/**
+ * File 03 L8 (batch l12): the volumes the reader picked for this scope,
+ * remembered in this browser only (a convenience: a missing or blocked
+ * storage means «كل المجلدات»). [] = every volume.
+ */
+const VOLUMES_KEY = (scope: string) => `nzamy.scopedSearch.volumes.${scope}`;
+
+function readPickedVolumes(scope: string): string[] {
+  try {
+    const raw = window.localStorage.getItem(VOLUMES_KEY(scope));
+    const v: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 200) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePickedVolumes(scope: string, ids: string[]): void {
+  try {
+    if (ids.length === 0) window.localStorage.removeItem(VOLUMES_KEY(scope));
+    else window.localStorage.setItem(VOLUMES_KEY(scope), JSON.stringify(ids));
+  } catch {
+    /* the choice lasts this visit only */
+  }
+}
 
 const OPERATORS: Array<{ token: string; label: string; insert: string }> = [
   { token: "+", label: "جمع إلزامي", insert: " +" },
@@ -121,6 +147,14 @@ export default function ScopedSearchPanel({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastQueryRef = useRef("");
+  // File 03 L8: the picked volumes ([] = all), read once from this browser.
+  const [picked, setPicked] = useState<string[]>([]);
+  const pickedRef = useRef<string[]>([]);
+  useEffect(() => {
+    const stored = readPickedVolumes(scope);
+    pickedRef.current = stored;
+    setPicked(stored);
+  }, [scope]);
 
   // A different document starts over: the readers mount the panel with
   // key={scope}. On unmount, an answer still in flight is dropped.
@@ -137,7 +171,14 @@ export default function ScopedSearchPanel({
         const res = await fetch("/api/library/scoped-search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scope, query: q, page, limit: PAGE_SIZE }),
+          body: JSON.stringify({
+            scope,
+            query: q,
+            page,
+            limit: PAGE_SIZE,
+            // L8: only when narrowed; the server ignores ids the scope does not have.
+            ...(pickedRef.current.length > 0 ? { volumes: pickedRef.current } : {}),
+          }),
           signal: ctrl.signal,
         });
         const body = await res.json().catch(() => null);
@@ -172,6 +213,23 @@ export default function ScopedSearchPanel({
     }
     lastQueryRef.current = q;
     void run(q, 1);
+  };
+
+  // L8: the scope's volumes (from the last answer); the picker shows for a series.
+  const scopeVolumes = data?.scope?.volumes ?? [];
+  const knownPicked = picked.filter((id) => scopeVolumes.some((v) => v.id === id));
+  const allVolumes = knownPicked.length === 0 || knownPicked.length === scopeVolumes.length;
+  const choose = (ids: string[]) => {
+    const next = ids.length === scopeVolumes.length ? [] : ids;
+    pickedRef.current = next;
+    setPicked(next);
+    writePickedVolumes(scope, next);
+    if (lastQueryRef.current) void run(lastQueryRef.current, 1);
+  };
+  const toggleVolume = (id: string) => {
+    const base = allVolumes ? [] : knownPicked;
+    const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+    choose(scopeVolumes.map((v) => v.id).filter((vid) => next.includes(vid)));
   };
 
   const clear = () => {
@@ -276,13 +334,42 @@ export default function ScopedSearchPanel({
         ))}
       </div>
 
+      {/* File 03 L8: «كل المجلدات» stays the default; a simple picker narrows it. */}
+      {scopeVolumes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-2" role="group" aria-label="المجلدات">
+          <span className={`text-[10px] font-bold ${muted}`}>المجلدات:</span>
+          <button
+            type="button"
+            aria-pressed={allVolumes}
+            onClick={() => choose([])}
+            className={`${chip} min-h-[32px] ${allVolumes ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : isDark ? "border-white/[0.07] text-zinc-300 hover:text-[#C8A762]" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E]"}`}
+          >
+            كل المجلدات ({scopeVolumes.length})
+          </button>
+          {scopeVolumes.map((v, i) => {
+            const on = !allVolumes && knownPicked.includes(v.id);
+            return (
+              <button
+                key={v.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleVolume(v.id)}
+                className={`${chip} min-h-[32px] ${on ? "bg-[#0B3D2E] text-white border-[#0B3D2E]" : isDark ? "border-white/[0.07] text-zinc-300 hover:text-[#C8A762]" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E]"}`}
+              >
+                {v.label || `المجلد ${i + 1}`}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <p id={statusId} role="status" aria-live="polite" className={`text-[11px] font-bold mt-3 ${error ? (isDark ? "text-red-400" : "text-red-600") : muted}`}>
         {error
           ? error
           : data
             ? data.count === 0
               ? `لا نتائج لـ «${data.query}» داخل ${documentLabel}.`
-              : `${data.count} نتيجة${volumeCount > 1 ? " في كل المجلدات" : ""} — معروضة أدناه بترتيب القراءة${results.length < data.count ? ` (${results.length} منها حتى الآن)` : ""}.${
+              : `${data.count} نتيجة${volumeCount > 1 || scopeVolumes.length > 1 ? (allVolumes ? " في كل المجلدات" : ` في المجلدات المختارة (${knownPicked.length})`) : ""} — معروضة أدناه بترتيب القراءة${results.length < data.count ? ` (${results.length} منها حتى الآن)` : ""}.${
                   !data.hasMore && results.length < data.count ? " تُعرض أول النتائج فقط؛ أضف كلمات أدق لتضييق البحث." : ""
                 }`
             : ""}
@@ -358,7 +445,7 @@ export default function ScopedSearchPanel({
                           aria-pressed={added}
                           className={`${chip} ${added ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" : "border-[#0B3D2E] bg-[#0B3D2E] text-white hover:opacity-90"}`}
                         >
-                          {added ? <Check size={11} aria-hidden="true" /> : <Plus size={11} aria-hidden="true" />}
+                          {added ? <Check size={11} aria-hidden="true" /> : <BookmarkSimple size={11} aria-hidden="true" />}
                           {added ? "في المسودة" : "إضافة لمسودة التجميع"}
                         </button>
                       )}

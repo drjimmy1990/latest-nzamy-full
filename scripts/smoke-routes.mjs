@@ -141,6 +141,7 @@ const ROUTES = [
   "/laws",
   "/laws/civil-procedure",
   "/laws/companies-law",
+  "/laws/research",
   "/terms",
   "/privacy",
   "/review/abc123",

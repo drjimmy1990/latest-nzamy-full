@@ -66,11 +66,16 @@ test("both FAB containers use the safe-area bottom offset, not the old phone lif
   assert.ok(!src.includes("bottom-20 md:bottom-6"), "the old bottom-20 phone lift is back");
 });
 
-// ── N02-3: one draft button per reader ───────────────────────────────────────
+// ── L2 (l12, owner file 03) overrules N02-3: the floating draft button comes
+//    back on the readers, past 300 px (draftFab.test.ts has the rule) ─────────
 
-test("N02-3: no floating draft button on a reader whose header has its own «المسودة» button", async () => {
+test("L2: the reader's floating draft button follows draftFabVisible with the header-button flag", async () => {
   const src = await readFile(SRC, "utf8");
-  assert.ok(src.includes("const showDraftFab = cartCount > 0 && isItemDetail && !readerHasOwnDraftButton(pathname);"));
+  assert.ok(src.includes("headerHasDraftButton: readerHasOwnDraftButton(pathname),"));
+  assert.ok(src.includes("const fab = useFabScroll(isItemDetail && !isFabSuppressedPath(pathname));"));
+  assert.ok(!src.includes("!readerHasOwnDraftButton(pathname);"), "the blanket N02-3 removal is back");
+  // lib02 / New 1: both FAB containers fade out below lg while scrolling down
+  assert.equal((src.match(/data-fab-autohide="" style=\{FAB_BOTTOM_STYLE\}/g) ?? []).length, 2);
   assert.ok(src.includes('return !pathname.startsWith("/precedents/judgment/");'));
   // each reader the helper names really has the header button that opens the drawer
   for (const page of [
@@ -82,4 +87,12 @@ test("N02-3: no floating draft button on a reader whose header has its own «ا�
     const reader = await readFile(page, "utf8");
     assert.match(reader, /isRTL \? "المسودة" : "Draft"/, page);
   }
+});
+
+test("research (l12 integration): static /laws pages such as /laws/research are not readers — the floating draft button stays", async () => {
+  const src = await readFile(new URL("./FloatingButtons.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes('import { LAWS_STATIC_SEGMENTS } from "@/components/library/libraryGuardPaths";'));
+  assert.ok(src.includes('if (!slug || LAWS_STATIC_SEGMENTS.has(slug)) {'));
+  const paths = await readFile(new URL("./library/libraryGuardPaths.ts", import.meta.url), "utf8");
+  assert.match(paths, /"research",/);
 });

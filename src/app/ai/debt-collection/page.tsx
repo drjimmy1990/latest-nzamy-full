@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Money, CaretLeft, Warning, CheckCircle, ArrowRight,
   ArrowCounterClockwise, Copy, Download, FileText,
-  Scales, ArrowCircleLeft, Gavel, Alarm, X,
+  Gavel, ArrowCircleLeft, Alarm, X,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import LawyerToolLink from "@/components/ai/LawyerToolLink";
@@ -471,7 +471,7 @@ export default function DebtCollectionPage() {
               {/* Actions */}
               <div className="grid grid-cols-2 gap-3">
                 <LawyerToolLink href="/ai/contracts" className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[12px] font-bold transition-colors ${isDark ? "border-white/[0.06] text-zinc-300 hover:bg-white/[0.04]" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                  <Scales size={14} /> صياغة عقد جديد
+                  <Gavel size={14} /> صياغة عقد جديد
                 </LawyerToolLink>
                 {selectedTrack !== "court_order" && (
                   <button onClick={() => { const next: Record<Track, Track | null> = { friendly: "formal", formal: "pre_court", pre_court: "court_order", court_order: null }; const n = next[selectedTrack]; if (n) handleSelectTrack(n); }}

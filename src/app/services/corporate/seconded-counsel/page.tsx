@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Briefcase, Check, Star, CalendarBlank, Buildings,
+  Briefcase, Check, CalendarBlank, Buildings,
   Scales, Shield, FileText, Users, Phone, ChatCircleDots,
   ArrowLeft, Clock, Money, Trophy, Brain,
   GraduationCap, CheckCircle,
@@ -97,10 +97,6 @@ const FEATURES = [
   { icon: GraduationCap, label: "حوكمة الشركات", desc: "بناء نظام الحوكمة الداخلي وفق المعايير السعودية والدولية" },
 ];
 
-const TESTIMONIALS = [
-  { name: "م. خالد الدوسري", role: "الرئيس التنفيذي — شركة تقنية", text: "وفّر علينا المستشار المنتدب أكثر من ٣٠٠,٠٠٠ ريال مقارنة بتوظيف محامٍ штатный. والأهم أن المشكلات القانونية تُحسم قبل أن تتضخم.", plan: "ستاندرد" },
-  { name: "أ. نورة السبيعي", role: "مديرة مالية — مجموعة استثمارية", text: "لأول مرة نشعر أن لدينا قسماً قانونياً حقيقياً دون الحاجة لتعيين فريق كامل. الباقة البريميوم غيّرت مستوى ثقتنا القانونية.", plan: "بريميوم" },
-];
 
 // ─── Page ───────────────────────────────────────────────────────────────────────
 
@@ -273,37 +269,9 @@ export default function SecondedCounselPage() {
           </div>
         </section>
 
-        {/* ── Testimonials ───────────────────────────────────────────────── */}
-        <section className="py-16">
-          <div className="max-w-[900px] mx-auto px-6">
-            <div className="text-center mb-10">
-              <h2 className={`text-2xl font-bold ${textPrimary}`}>ماذا يقول عملاؤنا</h2>
-            </div>
-            <div className="grid md:grid-cols-2 gap-5">
-              {TESTIMONIALS.map((t, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-                  transition={{ delay: i * 0.1 }}
-                  className={`rounded-[1.5rem] border p-6 ${border} ${cardBg}`}>
-                  <div className="flex items-center gap-1 mb-3">
-                    {[...Array(5)].map((_, si) => (
-                      <Star key={si} size={13} weight="fill" className="text-[#C8A762]" />
-                    ))}
-                  </div>
-                  <p className={`text-[13px] leading-relaxed mb-4 italic ${textSecondary}`}>&ldquo;{t.text}&rdquo;</p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className={`text-[13px] font-bold ${textPrimary}`}>{t.name}</p>
-                      <p className={`text-[11px] ${textSecondary}`}>{t.role}</p>
-                    </div>
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${isDark ? "border-white/[0.08] bg-zinc-800 text-zinc-400" : "border-zinc-200 bg-zinc-50 text-zinc-500"}`}>
-                      {t.plan}
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </section>
+        {/* File 05 / owner list (l12): the «ماذا يقول عملاؤنا» block was removed — its
+            two quotes were invented (no such clients). Nothing replaces it until real,
+            consented quotes exist. */}
 
         {/* ── CTA ────────────────────────────────────────────────────────── */}
         <section className="py-16 pb-24">

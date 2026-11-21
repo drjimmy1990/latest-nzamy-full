@@ -14,8 +14,11 @@
  *   - withdrawal (batch l8, owner 18 Nov items 1.2 and ٦٤): 14 days; the
  *     founder plan, the library, the bundles and the other subscriptions
  *     only when no AI feature was used (the founder plan's text is
- *     /founder-terms item ٧ word for word); a point top-up when at most 5 %
- *     of its own points was used. refundEligibility.ts checks the same.
+ *     /founder-terms item ٧ word for word); a point top-up only when NONE of
+ *     its own points was used (batch l12, owner F02 §5 item 69 «المشحونة غير
+ *     المصروفة كلياً تُسترد خلال 14 يوماً … نقاط المكافأة والهدايا لا
+ *     تُسترد» — was 5 %, ٦٤; the wording awaits his lawyer, question ١٦٣).
+ *     refundEligibility.ts checks the same.
  *     Batch l9 (owner register 14 items 16 / 44): where the plan includes the
  *     library, also no more than LIBRARY_REFUND_MAX_FULL_TEXTS (5) files read
  *     in full text — counted on the server only, never shown to the client
@@ -46,7 +49,8 @@ export const INSTANT_CANCEL_MINUTES = 90;
 export const WITHDRAWAL_DAYS = 14;
 /** l9 (register 16 / 44): a plan that includes the library is refundable only with at most this many files read in full text. */
 export const LIBRARY_REFUND_MAX_FULL_TEXTS = 5;
-export const WITHDRAWAL_MAX_POINTS_USED_PCT = 5;
+/** l12 (owner item 69): 0 — a top-up is refundable only while none of its own points was spent (was 5, ٦٤). */
+export const WITHDRAWAL_MAX_POINTS_USED_PCT = 0;
 export const CONSULTATION_CANCEL_HOURS = 24;
 export const PROMO_POINTS_VALIDITY_DAYS = 90;
 export const RENEWAL_REMINDER_DAYS: readonly number[] = Object.freeze([7, 3]);
@@ -218,11 +222,16 @@ export const IND_AI_REFUND_LINE_AR =
 export const IND_AI_REFUND_LINE_EN =
   "**The individuals' smart (AI) plan**: in practice it has no refund, because it consists entirely of AI tools, and using any of them ends the right to a refund under the rule above.";
 
-/** ٦٤: the 5 % rule now belongs to point top-ups alone, measured on that top-up's own points. */
+/**
+ * l12 (owner F02 §5 item 69, in force by default; wording for his lawyer,
+ * ١٦٣): a top-up is refunded only while NONE of its own points was spent;
+ * spent in part or in full → no refund; bonus and gift points are never
+ * refunded. refundEligibility.ts enforces the same (WITHDRAWAL_MAX_POINTS_USED_PCT = 0).
+ */
 export const TOPUP_REFUND_LINE_AR =
-  `**شحن النقاط**: يحق لك الاسترداد خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء بشرط ألا يتجاوز ما استُخدم من نقاط الشحنة نفسها ${arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ منها.`;
+  `**شحن النقاط**: يحق لك استرداد مبلغ الشحنة خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء بشرط ألا يكون قد صُرف شيء من نقاطها، فإن صُرف منها شيء قلّ أو كثر فلا استرداد لها. ولا تُسترد النقاط الإضافية ولا نقاط الهدايا.`;
 export const TOPUP_REFUND_LINE_EN =
-  `**Point top-ups**: you may get a refund within (${WITHDRAWAL_DAYS}) days of purchase provided no more than ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of that top-up's own points has been used.`;
+  `**Point top-ups**: you may get the top-up's amount refunded within (${WITHDRAWAL_DAYS}) days of purchase provided none of its points has been spent; once any of them is spent, however few, it is not refundable. Bonus points and gift points are never refunded.`;
 
 export function promoPointsLinesAr(show: boolean = SHOW_PROMO_POINTS_VALIDITY): string[] {
   return show

@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import InvitationModal from "@/components/InvitationModal";
+import { LIBRARY_INVITES_CLOSED } from "@/lib/library/libraryInvitesClosed";
 import { useUser } from "@/hooks/useUser";
 import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
 import { buyButtonAction, gatewayAllowsCheckout } from "@/lib/payments/checkoutView";
@@ -153,8 +154,8 @@ const txt = {
     faqs: [
       {
         q: "كيف يتم تفعيل الاشتراك؟",
-        a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود (٣٠ يوماً ما لم يُحدَّد غير ذلك) فور تفعيله، دون انتظار.",
-        aPaid: "بعد الدفع الإلكتروني يُفعَّل الاشتراك تلقائياً؛ وما زال بإمكانك تقديم طلب يراجعه الفريق. إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود (٣٠ يوماً ما لم يُحدَّد غير ذلك) فور تفعيله، دون انتظار.",
+        a: "عند الضغط على «اشترك الآن» يُرسَل طلبك للمراجعة، ويقوم فريقنا بتفعيل خطتك بعد الموافقة عليه.",
+        aPaid: "بعد الدفع الإلكتروني يُفعَّل الاشتراك تلقائياً؛ وما زال بإمكانك تقديم طلب يراجعه الفريق.",
       },
       { q: "ماذا أستطيع أن أقرأ دون اشتراك؟", a: "فهرس المكتبة كاملاً بعناوينه وموجزاته، ومعاينة لأول ٣ إلى ٥ مواد من كل نظام أو لائحة، وحكمين كاملين من كل مجموعة أحكام. ويفتح الاشتراك نصوص المكتبة كلها." },
       { q: "هل يمكنني ترقية أو تنزيل خطتي في أي وقت؟", a: "يمكنك طلب الترقية أو التغيير في أي وقت؛ يراجع الفريق الطلب ويفعّله يدوياً." },
@@ -234,8 +235,8 @@ const txt = {
     faqs: [
       {
         q: "How does activation work?",
-        a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved. If you have an invitation code, it opens the full legal library for the length the code grants (30 days unless it says otherwise) as soon as you redeem it — no waiting.",
-        aPaid: "After online payment the subscription is activated automatically; you can still send a request for the team to review. If you have an invitation code, it opens the full legal library for the length the code grants (30 days unless it says otherwise) as soon as you redeem it — no waiting.",
+        a: "Clicking \"Subscribe Now\" sends your request for review, and our team activates your plan once it's approved.",
+        aPaid: "After online payment the subscription is activated automatically; you can still send a request for the team to review.",
       },
       { q: "What can I read without a plan?", a: "The whole catalogue with its titles and summaries, a preview of the first 3 to 5 articles of every law or regulation, and two full rulings in every collection. A plan opens every text in the library." },
       { q: "Can I upgrade or downgrade anytime?", a: "You can request an upgrade or a change at any time; the team reviews the request and activates it manually." },
@@ -302,7 +303,8 @@ export default function LawsSubscribePage() {
   // The code-redeem CTA can only ever succeed for a signed-in user in
   // Supabase mode (redeemLibraryInvitation throws in demo mode), and it waits
   // for the answer so it never flashes for a subscriber.
-  const canRedeemCode = isLoggedIn && isSupabaseMode && !libraryAccess.loading && !libraryAccess.hasFullAccess;
+  // Owner ٩٣ (batch l12): invitation codes are stopped — the CTA is gone with them.
+  const canRedeemCode = !LIBRARY_INVITES_CLOSED && isLoggedIn && isSupabaseMode && !libraryAccess.loading && !libraryAccess.hasFullAccess;
 
   function handleSubscribe(planId: string) {
     if (planId === "free") {

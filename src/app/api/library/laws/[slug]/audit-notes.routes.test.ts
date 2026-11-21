@@ -31,7 +31,8 @@ test("every article text field is stripped of the corpus's audit notes", () => {
   assert.doesNotMatch(fmt, /result\.historicRegulationText = article\.historic_regulation_text/);
   // The locked preview is cut from the stripped text.
   assert.match(fmt, /if \(originalText\) result\.originalText = preview\(originalText\);/);
-  assert.match(fmt, /result\.text = preview\(lifted\.text\)/);
+  // l12 Q101: the repeal notice leaves the locked preview too.
+  assert.match(fmt, /result\.text = preview\(withoutRepealNotice\(lifted\.text\)\)/);
   // The amendment fields keep their own filter (pipeline + audit notes).
   assert.match(fmt, /fullText: stripAuditNotes\(a\.full_text as string \| null, 'fullText'\)/);
 });

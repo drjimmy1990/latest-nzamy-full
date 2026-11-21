@@ -20,7 +20,11 @@
  *   - the rate is the setting platform_settings.founder_topup_discount_bps
  *     (basis points; 1500 = 15 %), read by founderDiscountBps(). Absent,
  *     malformed or unreadable → FOUNDER_DISCOUNT_DEFAULT_BPS.
- *   - ٤٨: the top-up keeps every point of its pack (the bonus included).
+ *   - ٤٨: the top-up keeps every point of its pack. Batch l12 (owner Q88a /
+ *     ١٥٢): the packs carry no bonus by default; when the admin sets one
+ *     (topup_bonus_pct) a founder gets the discount OR the bonus, the larger
+ *     (founder_bonus_rule, default "higher_only" — topupBonus.ts, checkout
+ *     step 3e).
  *
  * Batch l9 (owner register 14 items 29 / 32 / 55, 19 Nov 2026) widens it:
  * eligible items are point top-ups AND any plan or library subscription he

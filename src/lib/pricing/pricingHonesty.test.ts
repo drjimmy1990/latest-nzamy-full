@@ -474,8 +474,8 @@ test("T1.6: the invite-code copy promises the library for the code's days (30 by
     assert.doesNotMatch(faq, /باقة Pro/, "FAQ: «باقة Pro»");
     assert.doesNotMatch(faq, /Pro tier/i, "FAQ: Pro tier");
   }
-  assert.match(subscribe, /إن كان لديك كود دعوة، فإنه يفتح المكتبة القانونية كاملة للمدة التي يمنحها الكود \(٣٠ يوماً ما لم يُحدَّد غير ذلك\) فور تفعيله، دون انتظار\./);
-  assert.match(subscribe, /If you have an invitation code, it opens the full legal library for the length the code grants \(30 days unless it says otherwise\) as soon as you redeem it — no waiting\./);
+  // Owner ٩٣ (l12): invitation codes are stopped, so the FAQ no longer offers one.
+  for (const faq of faqs) assert.doesNotMatch(faq, /كود دعوة|invitation code/i, "FAQ: an invitation code");
   assert.doesNotMatch(subscribe, /كود دعوة، فإنه يفتح المكتبة القانونية كاملة لمدة ٣٠ يوماً/, "FAQ: a flat 30 days (q378)");
 });
 
@@ -554,8 +554,8 @@ test("fix round 1: the library cards promise no legislative alerts and no invite
   // card — and not the header comment — states a length.
   const raw = src("constants/pricing/pricing.library.ts");
   assert.doesNotMatch(raw, /تجربة [١٢٣] ?(شهر|أشهر)|تجربة ٢ شهر|تجربة ٣ أشهر|\d-month trial|\d+-day invite trial/);
-  assert.equal(library.split('"٣ دعوات للزملاء لتجربة المكتبة"').length - 1, 6, "three individual + three firm cards (ar)");
-  assert.equal(library.split('"3 invitations for colleagues to try the library"').length - 1, 6, "the English twins");
+  // Owner ٩٣ (l12): invitation codes and the colleague invite are off, so no card promises one.
+  assert.doesNotMatch(library, /دعوات للزملاء|دعوات مخصصة|colleague invit|invitations for colleagues|Custom invites/i);
 });
 
 test("P15: the subscribe and /pricing FAQs promise no prorated upgrade or billing cycle (there is no gateway)", () => {
@@ -703,8 +703,9 @@ function validityAr(months: number): string {
 }
 
 test("٢٤٩: each top-up card states the validity the catalog grants", () => {
-  const topups = Object.values(PAYABLE_ITEMS).filter((item) => item.kind === "topup");
-  assert.equal(topups.length, 8, "eight top-ups in the catalog (owner ٣٠٢ + l9's 50-point pack)");
+  // l12 (owner Q87): the 50-point pack is retired — no card, so only the packs on sale
+  const topups = Object.values(PAYABLE_ITEMS).filter((item) => item.kind === "topup" && item.onSale);
+  assert.equal(topups.length, 7, "seven top-ups on sale (owner ٣٠٢; l9's 50-point pack retired in l12)");
   const lawyers = planLists("constants/pricing/pricing.lawyers.ts").find((l) => l.name === "plansLawyers");
   const individuals = planLists("constants/pricing/pricing.individuals.ts").find((l) => l.name === "plansIndividuals");
   assert.ok(lawyers, "plansLawyers was not found");
@@ -712,8 +713,7 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   for (const item of topups) {
     const months = item.pointsValidityMonths;
     assert.ok(months, `${item.id} has no validity in the catalog`);
-    // ٣٠٢: 100 / 250 are the individuals' cards, 500 and up the lawyers';
-    // l9: the 50-point pack is sold to both, so it is on both tabs
+    // ٣٠٢: 100 / 250 are the individuals' cards, 500 and up the lawyers'
     const forIndividuals = Array.isArray(item.buyers) && item.buyers.includes("individual");
     const forLawyers = Array.isArray(item.buyers) && item.buyers.includes("lawyer");
     const tabs = [...(forIndividuals ? [individuals] : []), ...(forLawyers ? [lawyers] : [])];
@@ -739,4 +739,59 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
 test("Art. 18: the independent consultant plan is restricted, an individual plan is not", () => {
   assert.equal(isArticle18Restricted("consultant-independent"), true);
   assert.equal(isArticle18Restricted("ind-ai"), false);
+});
+
+/**
+ * Q89 (batch l12 access + integration fix 11): only a library plan or grant
+ * opens the library, so no other plan's card, description or comparison row
+ * may present it as included. A line that names the library on a non-library
+ * plan says it is a separate subscription. The source of every plan /pricing
+ * and checkout draw is read (the icon imports keep these files out of node).
+ */
+const LIBRARY_WORD = /المكتبة القانونية|مكتبة قانونية|مكتبة لفريق|[Ll]egal [Ll]ibrary|\b[Ll]ibrary\b/;
+const LIBRARY_INCLUDED = /المكتبة القانونية( الكاملة)? ✅|Full Legal Library|الوصول الكامل لمحرك البحث في المكتبة|^(?:مكتبة قانونية|Legal library) [—+]|^(?:مكتبة لفريق|Library for)/;
+function nonLibraryPlanLibraryClaims(source: string): string[] {
+  const out: string[] = [];
+  for (const m of source.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
+    const s = m[1];
+    if (!LIBRARY_WORD.test(s) || /^[a-z0-9:_-]+$/.test(s)) continue; // ids («library-assistant») are not copy
+    // The library assistant is a priced AI tool line, not a library claim.
+    if (s === "البحث الدلالي وشرح المواد في المكتبة") continue;
+    // A comparison row's bare label: its cells are checked line by line below.
+    if (s === "المكتبة القانونية" || s === "Legal Library") continue;
+    if (LIBRARY_INCLUDED.test(s) || !/باشتراك|subscription|By subscription/.test(s)) out.push(s);
+  }
+  for (const line of source.split("\n")) {
+    if (/feature: "(?:المكتبة القانونية|Legal Library)"/.test(line) && /✅|"(?:مشمول|Included)"/.test(line)) out.push(line.trim());
+  }
+  return out;
+}
+
+test("Q89 (l12): no non-library plan card advertises the library as included (lawyer-pro, consultant, firm, company, legal department, …)", () => {
+  // Negative control: the old card lines are caught.
+  assert.deepEqual(nonLibraryPlanLibraryClaims('ai: ["المكتبة القانونية الكاملة ✅", "Full Legal Library ✅"]').length, 2);
+  assert.deepEqual(nonLibraryPlanLibraryClaims('desc: "مكتبة قانونية — قريباً: نقاط"').length, 1);
+  assert.deepEqual(nonLibraryPlanLibraryClaims('{ feature: "المكتبة القانونية", "biz-sm-basic": "✅" },').length, 1);
+  const files = [
+    "constants/pricing/pricing.lawyers.ts",
+    "constants/pricing/pricing.firms.ts",
+    "constants/pricing/pricing.companies.ts",
+    "constants/pricing/pricing.companies.legaldept.ts",
+    "constants/pricing/pricing.companies.comparison.ts",
+    "constants/pricing/pricing.government.ts",
+    "constants/pricing/pricing.ngo.ts",
+    "constants/pricing/pricing.micro.ts",
+    "constants/pricing/pricing.individuals.ts",
+    "constants/pricing/pricing.providers.ts",
+  ];
+  for (const path of files) {
+    const src = code(path).split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    assert.deepEqual(nonLibraryPlanLibraryClaims(src), [], path);
+  }
+  const plans = code("lib/pricing/plans.ts");
+  const consultant = plans.slice(plans.indexOf("export const INDEPENDENT_CONSULTANT_PLAN"), plans.indexOf("export function getStandaloneLibraryPlan"));
+  assert.deepEqual(nonLibraryPlanLibraryClaims(consultant), [], "consultant-independent");
+  for (const path of ["app/api/library/laws/[slug]/route.ts", "app/book/[slug]/_stream-block.tsx", "app/laws/orders/[slug]/page.tsx"]) {
+    assert.doesNotMatch(code(path), /المكتبة القانونية أو الباقة الاحترافية|library or professional plan/, `${path}: a lock note that says Pro opens the text`);
+  }
 });

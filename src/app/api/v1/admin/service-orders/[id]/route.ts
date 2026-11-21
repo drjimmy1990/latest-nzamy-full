@@ -393,12 +393,26 @@ export async function PATCH(
     const publication = publishing
       ? { marketplace_published_at: nowIso, marketplace_published_by: adminUserId, marketplace_category: body.category }
       : { marketplace_published_at: null, marketplace_published_by: null, marketplace_category: null };
-    const { data: published, error: publishError } = await admin
+    // l12 Q130a (20261202_70): with the market open a client's request is
+    // listed without a publish, so «إلغاء النشر» also HIDES it
+    // (marketplace_hidden_at) and «نشر» shows it again. Before 20261202_70
+    // the column is missing (42703 / PGRST204): the write is retried without
+    // it, exactly the 20261127_70 behaviour.
+    const withHide = { ...publication, marketplace_hidden_at: publishing ? null : nowIso };
+    let { data: published, error: publishError } = await admin
       .from("service_requests")
-      .update(publication)
+      .update(withHide)
       .eq("id", id)
       .select()
       .single();
+    if (publishError && (publishError.code === "42703" || publishError.code === "PGRST204")) {
+      ({ data: published, error: publishError } = await admin
+        .from("service_requests")
+        .update(publication)
+        .eq("id", id)
+        .select()
+        .single());
+    }
     if (publishError) {
       // 20261127_70 has not run: the columns do not exist yet. Say so — never
       // a generic error, never a pretend success.

@@ -40,6 +40,8 @@ export interface AmendmentEntry {
   position?: number;
   /** l9-parser 20261129_70: 'unavailable' = the source keeps no prior text («نص غير متوفر»). */
   textStatus?: "available" | "unavailable";
+  /** File 03 L5 (l12): the amending decree's library id (20261129_70) — a subscriber's, like `source`. */
+  decreeId?: string;
 }
 
 export interface ExecutiveRegulation {
@@ -354,7 +356,6 @@ export interface JudicialPrinciplesSystem {
 // LAW_ARTICLES were deleted — no reader used them, and this module ships to
 // the browser (articleStatusNotice). Law text is read from the database only.
 
-export const PLANS = [
-  { id: "library-only", name: "مكتبة قانونية", nameEn: "Library Only", price: "٤٩", priceEn: "49", features: ["وصول كامل للمكتبة", "تحديثات الأنظمة", "بحث متقدم"], featuresEn: ["Full library access", "Law updates", "Advanced search"], highlight: false },
-  { id: "pro", name: "نظامي برو", nameEn: "Nezamy Pro", price: "١٤٩", priceEn: "149", features: ["كل مزايا المكتبة", "الصائغ بالذكاء الاصطناعي", "السكرتير القانوني", "٢٠٠ توكن/شهر"], featuresEn: ["All library features", "AI Legal Drafter", "Legal Secretary AI", "200 tokens/month"], highlight: true },
-];
+// N23 (owner raw log [27], batch l12): the unused PLANS list (a «٤٩» library
+// plan and a «١٤٩» Pro plan that were never sold) was deleted; the library
+// prices live in the price book only (src/lib/pricing/priceBook.ts).

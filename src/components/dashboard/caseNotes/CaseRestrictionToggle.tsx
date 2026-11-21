@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowClockwise, LockSimple, LockSimpleOpen, Spinner } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
+import CaseOpenLog from "./CaseOpenLog";
 
 /**
  * «قضية مقيّدة» — N01-19 (migration 20261125_40_restricted_cases.sql).
@@ -98,7 +99,7 @@ export default function CaseRestrictionToggle({ caseId, card }: { caseId: string
         <>
           <p className={`text-[10px] leading-relaxed mb-3 ${muted}`}>
             {state.restricted
-              ? "هذه القضية مقيّدة: لا يراها من أعضاء المكتب إلا المحامي المسؤول ومنشئ القضية وفريق القضية وصاحب المكتب والشريك المدير."
+              ? "هذه القضية مقيّدة: لا يراها من أعضاء المكتب إلا المحامي المسؤول ومنشئ القضية وفريق القضية وصاحب المكتب والشريك المدير. وكل فتح لها من صاحب المكتب أو الشريك المدير يُسجَّل بتاريخه ويراه المحامي المسؤول."
               : "هذه القضية مفتوحة لكل أعضاء المكتب النشطين. التقييد يحصرها في المحامي المسؤول وفريق القضية وصاحب المكتب والشريك المدير."}
           </p>
           {state.canChange && (
@@ -117,6 +118,7 @@ export default function CaseRestrictionToggle({ caseId, card }: { caseId: string
             </button>
           )}
           {error && <p className="mt-2 text-[11px] font-semibold text-red-500">{error}</p>}
+          {state.restricted && <CaseOpenLog caseId={caseId} isDark={isDark} />}
         </>
       )}
     </div>

@@ -119,6 +119,8 @@ export const CORPORATE_SIDEBAR: SidebarGroup[] = [
       { label: "اطلب خدمة جديدة", labelEn: "Request a Service", href: "/dashboard/client/services",     icon: "Plus", badge: "ابدأ هنا" },
       { label: "طلباتي",          labelEn: "My Orders",         href: "/dashboard/client/requests",     icon: "ListChecks" },
       { label: "استشاراتي",       labelEn: "Consultations",     href: "/dashboard/client/consultation", icon: "ChatDots" },
+      // Owner ١٢٣ (batch l12): the business's «صائغ العقود المبسّط»; «قيد التفعيل» until the tool is live (liveToolId).
+      { label: "صائغ العقود المبسّط", labelEn: "Simple Contract Drafter", href: "/ai/simple-contract", icon: "PencilSimple", badge: "قيد التفعيل", liveToolId: "simple-contract" },
     ],
   },
   {
@@ -244,7 +246,7 @@ export const GOVERNMENT_SIDEBAR: SidebarGroup[] = [
   {
     title: "أدوات القاضي", titleEn: "Judge Tools",
     items: [
-      { label: "مُرجّح الأحكام",    labelEn: "Judgment Weigher",      href: "/ai/gov/judgment-weigher",      icon: "Scales", badge: "قريباً", gateKey: "gov-judiciary" },
+      { label: "مُرجّح الأحكام",    labelEn: "Judgment Weigher",      href: "/ai/gov/judgment-weigher",      icon: "Gavel", badge: "قريباً", gateKey: "gov-judiciary" },
       { label: "باحث المبادئ",      labelEn: "Judicial Search",        href: "/ai/gov/judicial-search",       icon: "MagnifyingGlass", badge: "قريباً", gateKey: "gov-judiciary" },
       { label: "صائغ الأحكام",      labelEn: "Judgment Drafter",       href: "/ai/gov/judgment-drafter",      icon: "PencilSimple", badge: "قريباً", gateKey: "gov-judiciary" },
       { label: "صائغ المنطوق",      labelEn: "Verdict Drafter",        href: "/ai/gov/verdict-drafter",       icon: "Gavel", badge: "قريباً", gateKey: "gov-judiciary" },

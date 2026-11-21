@@ -25,6 +25,7 @@ import { FOUNDER_TERMS_VERSION } from "@/lib/founder/founderTerms";
 import { activeLibraryGrantPlanRefs } from "@/lib/libraryAccessServer";
 import { GATED_LIBRARY_PLAN_REFS } from "@/lib/library/pointsGate";
 import { readLibraryMinPoints } from "@/lib/library/pointsGateServer";
+import { aiToolPointRange } from "@/lib/ai/toolPointsDisplay";
 import {
   billingLabelAr,
   checkoutItemNotes,
@@ -154,6 +155,14 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   // gated library plan (paid library plan or the founder) says its expiry may
   // lock the library. A failed read shows no extra line.
   let libraryMinPoints: number | null = null;
+  // Owner 06 ج6 + ٩٣ (batch l12): a library plan's checkout states the 50-point rule.
+  if (item.kind === "library") {
+    try {
+      libraryMinPoints = await readLibraryMinPoints();
+    } catch {
+      console.warn("[checkout] reading the library minimum threw");
+    }
+  }
   if (item.kind === "topup") {
     try {
       const refs = await activeLibraryGrantPlanRefs(user.id);
@@ -162,7 +171,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
       console.warn("[checkout] reading the library grants threw");
     }
   }
-  const notes = checkoutItemNotes(item, { libraryMinPoints });
+  const notes = checkoutItemNotes(item, { libraryMinPoints, libraryQuestionPoints: aiToolPointRange("library-assistant")[1] });
 
   // l6-pay: before paying, what the POST will take off — the same server
   // functions checkout prices with (upgradeProration / founderDiscount). A

@@ -64,12 +64,14 @@ test("l8 (٦٤): the library uses the founder's no-AI rule and is ENFORCED — i
   assert.equal(refundEligibility({ kind: "library", paid_at: PAID }, at(REFUND_WINDOW_MS + 1000), ev())!.state, "ineligible");
 });
 
-test("l8 (٦٤): a top-up keeps the 5 % rule on its own lot, now ENFORCED", () => {
+test("l12 (owner item 69): a top-up is refundable only while NONE of its own lot was spent — ENFORCED", () => {
   assert.equal(ruleFor("topup"), "points_5pct");
   const top = (used: number) => refundEligibility({ kind: "topup", paid_at: PAID }, at(60_000), ev({ orderLotTotal: 1000, orderLotUsed: used, aiRuns: [{ tool: "x", created_at: PAID }] }))!;
-  assert.deepEqual([top(50).state, top(50).enforced, needsOverride(top(50))], ["eligible", true, false], "5 % is allowed; AI runs do not matter for a top-up");
-  assert.deepEqual([top(51).state, needsOverride(top(51))], ["ineligible", true]);
-  assert.equal(top(51).ruleLabel, "سياسة الاسترداد: شحن النقاط (٥٪ من نقاط الشحنة)");
+  assert.deepEqual([top(0).state, top(0).enforced, needsOverride(top(0))], ["eligible", true, false], "nothing spent is allowed; AI runs do not matter for a top-up");
+  assert.deepEqual([top(1).state, needsOverride(top(1))], ["ineligible", true], "one point spent ends it (was 5 %)");
+  assert.ok(top(1).reasons.includes("صُرف شيء من نقاط هذه الشحنة."));
+  assert.ok(top(1).lines.some((l) => l.includes("والشرط ألا يُصرف منها شيء")));
+  assert.equal(top(1).ruleLabel, "سياسة الاسترداد: شحن النقاط (بلا صرف شيء من نقاط الشحنة)");
 });
 
 test("a plan uses the no-AI rule but stays advisory (٦٤ names the library and the bundles only — owner question)", () => {

@@ -57,7 +57,8 @@ test("the law route lifts the heading before the locked preview and filters ever
   assert.match(route, /const articleText = stripArticleAuditNotes\(article\.text\);/);
   assert.match(route, /regulationRows\.length > 0\s*\?\s*liftRegulationHeading\(articleText, !showOfficialMeta\)/);
   // The locked preview is cut from the text WITHOUT the heading.
-  assert.match(route, /result\.text = preview\(lifted\.text\)/);
+  // l12 Q101: and without the repeal notice (withoutRepealNotice).
+  assert.match(route, /result\.text = preview\(withoutRepealNotice\(lifted\.text\)\)/);
   assert.doesNotMatch(route, /result\.text = preview\(article\.text\)/);
   // Sent only inside the unlocked regulations block.
   const unlocked = route.indexOf("result.regulations = sorted.map");

@@ -17,8 +17,9 @@
  *     assistant: its runs since paid_at and the points spent from THIS
  *     order's own (library_agent) lot count; a drafter run paid by another
  *     plan does not. Bundles (not built yet) are plans and will follow.
- *   - top-up (٦٤: «5% للشحن فقط»): 14 days and at most 5 % of the order's own
- *     lot used — ENFORCED since l8 (l7 only showed it).
+ *   - top-up (٦٤: «5% للشحن فقط»; batch l12, owner item 69: «المشحونة غير
+ *     المصروفة كلياً»): 14 days and NONE of the order's own lot used
+ *     (WITHDRAWAL_MAX_POINTS_USED_PCT = 0) — ENFORCED since l8.
  *   - plan: the no-AI rule, shown and NOT enforced — ٦٤ names the library and
  *     the bundles only; whether every plan is enforced is an owner question.
  *     A plan whose tier includes the library (Pro and above) also shows the
@@ -181,8 +182,18 @@ export function refundEligibility(order: { kind: string; paid_at: string | null;
     if (credits.length || evidence.aiRuns.length || evidence.pointsDebited > 0) reasons.push("استُخدمت ميزة ذكاء اصطناعي منذ الدفع.");
   } else {
     const pct = evidence.orderLotTotal ? (evidence.orderLotUsed * 100) / evidence.orderLotTotal : 0;
-    lines.push(`نقاط هذه العملية: استُخدم ${ar(evidence.orderLotUsed)} من ${ar(evidence.orderLotTotal)} (${ar(Math.round(pct * 10) / 10)}٪)، والحد ${ar(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪.`);
-    if (pct > WITHDRAWAL_MAX_POINTS_USED_PCT) reasons.push(`استُخدم أكثر من ${ar(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ من نقاط العملية.`);
+    lines.push(
+      WITHDRAWAL_MAX_POINTS_USED_PCT === 0
+        ? `نقاط هذه العملية: صُرف ${ar(evidence.orderLotUsed)} من ${ar(evidence.orderLotTotal)}، والشرط ألا يُصرف منها شيء.`
+        : `نقاط هذه العملية: استُخدم ${ar(evidence.orderLotUsed)} من ${ar(evidence.orderLotTotal)} (${ar(Math.round(pct * 10) / 10)}٪)، والحد ${ar(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪.`,
+    );
+    if (WITHDRAWAL_MAX_POINTS_USED_PCT === 0 ? evidence.orderLotUsed > 0 : pct > WITHDRAWAL_MAX_POINTS_USED_PCT) {
+      reasons.push(
+        WITHDRAWAL_MAX_POINTS_USED_PCT === 0
+          ? "صُرف شيء من نقاط هذه الشحنة."
+          : `استُخدم أكثر من ${ar(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ من نقاط العملية.`,
+      );
+    }
   }
   // Batch l9 (register 14 items 16 / 44): no more than 5 full texts read since
   // payment where the plan includes the library. A line for the admin only —
@@ -228,6 +239,6 @@ export const OVERRIDE_REQUIRED_AR = `هذه العملية غير مؤهلة ل�
 /** The rule the admin's verdict box names, per kind (l8: not only the founder's). */
 export function refundRuleLabelAr(kind: string): string {
   if (kind === "membership") return "شروط باقة المؤسس (البند ٧)";
-  if (kind === "topup") return "سياسة الاسترداد: شحن النقاط (٥٪ من نقاط الشحنة)";
+  if (kind === "topup") return "سياسة الاسترداد: شحن النقاط (بلا صرف شيء من نقاط الشحنة)";
   return "سياسة الاسترداد: بلا استخدام ذكاء اصطناعي";
 }

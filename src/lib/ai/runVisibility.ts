@@ -10,9 +10,13 @@
  *                         from an admin (the owner's rule: «للأدمن: يظهر
  *                         الناتج 100% دائماً»);
  *   viewerIsAdmin         the fail-closed profile read both user routes use;
- *   staffMaySeeRunOutput  another user's row through the admin route: only a
- *                         review row, only for settings.write (super_admin),
- *                         so an admin can triage refunds.
+ *   staffMaySeeRunOutput  another user's row through the admin route: only
+ *                         a TEST account's run, only for settings.write
+ *                         (super_admin). Owner file 03 ل11 (20 Nov 2026,
+ *                         batch l12): a user's questions and answers are his
+ *                         alone — «لا يطّلع عليه فريق الإدارة إلا الحسابات
+ *                         التجريبية» — which replaces the earlier rule that
+ *                         let a super admin read a real user's review row.
  *
  * Pure apart from viewerIsAdmin's injected client; relative imports only, so
  * `node --test` runs it.
@@ -47,12 +51,14 @@ export async function viewerIsAdmin(client: SupabaseClient, userId: string): Pro
 
 /**
  * GET /api/v1/admin/ai-runs/<id>: whether the answer carries the run's
- * output. Only a stored "review" row (to judge a refund), and only for a
- * staff role holding settings.write (super_admin). Any other status, or a
- * read-only role, gets the metadata the list already shows. The route's
- * requireStaff("settings.write") already answers 403 to operations and
- * auditor; this is the same rule again, so the output can never ride along.
+ * output. Only when the run's owner is a test account (isTestAccountUser —
+ * profiles.is_demo or public.test_accounts, never a staff account), and only
+ * for a staff role holding settings.write (super_admin). A real user's run —
+ * any status, the retired "review" rows included — gives staff the metadata
+ * the list already shows (tool, status, points, error code, times), never the
+ * question or the answer. `runOwnerIsTestAccount` null (could not be read)
+ * is "no".
  */
-export function staffMaySeeRunOutput(status: unknown, role: StaffRole | null | undefined): boolean {
-  return status === "review" && staffCan(role, "settings.write");
+export function staffMaySeeRunOutput(role: StaffRole | null | undefined, runOwnerIsTestAccount: boolean | null): boolean {
+  return runOwnerIsTestAccount === true && staffCan(role, "settings.write");
 }

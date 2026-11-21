@@ -99,6 +99,16 @@ export const FOUNDER_OUTPUT_TOOLS = ["contracts-pro", "legal-opinion-consult", "
 
 export type FounderOutputTool = (typeof FOUNDER_OUTPUT_TOOLS)[number];
 
+/**
+ * 06 أ6 (owner package 20 Nov, batch l12): «مراجع العقود» joins the founder's
+ * tool list for ACCESS only — he enters it like the drafter, the legal opinion
+ * and the simulator, without a Pro plan, and pays its points as usual. It is
+ * not an independent-output tool: it never spends the founder's one credit
+ * (creditKindForRun ignores it). The admin switches the tool on after the
+ * owner's test (q128); until then it stays off for everyone.
+ */
+export const FOUNDER_ACCESS_ONLY_TOOLS = ["contract-review"] as const;
+
 function isFounderDraftKind(kind: unknown): kind is DraftKindId {
   return typeof kind === "string" && (FOUNDER_DRAFT_KINDS as readonly string[]).includes(kind);
 }

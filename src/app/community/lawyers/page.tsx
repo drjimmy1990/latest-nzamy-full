@@ -15,8 +15,8 @@
  * returns, or an honest empty/failed state.
  *
  * Who reads them is decided by RLS: verified lawyers (20261016_06) and, since
- * 20261201_50 (N05-C2, owner ٤٢), the owner of a verified firm («مكتب
- * موثّق»: verified CR + a lawyer whose licence is valid). Anyone else who
+ * 20261201_50 (N05-C2, owner ٤٢), the owner of a «مكتب معتمد» (N18,
+ * 20261202_80: a registered law firm with an active office plan). Anyone else who
  * reaches the page gets an empty list, never someone else's topic.
  *
  * RBAC:

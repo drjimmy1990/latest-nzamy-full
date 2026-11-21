@@ -79,8 +79,8 @@ export default function TermsReacceptGate() {
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-ink-muted dark:text-gray-300">
           {isAr
-            ? "حُدِّثت الشروط والأحكام، وأُضيف إليها البند ١٤ «منع الهندسة العكسية والسحب الآلي» واستثناؤه الوحيد (١٤-أ)، والبند ١٥ «حجز التنقيب في النصوص والبيانات واستعمال الذكاء الاصطناعي». للمتابعة في استخدام المنصة، اقرأها ثم أقرّ بها."
-            : "The Terms & Conditions have been updated with Clause 14 “No reverse engineering or automated scraping”, its sole exception (14-A), and Clause 15 “Text and data mining and AI-training reservation”. To keep using the platform, please read them and confirm."}
+            ? "حُدِّثت الشروط والأحكام: النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة، وأقل شحنة للفرد ١٠٠ نقطة ولغيره ٥٠٠ نقطة، وشحنة النقاط تُسترد خلال ١٤ يوماً ما دام لم يُصرف شيء من نقاطها، ولا يجتمع خصم المؤسس مع النقاط الإضافية على الشحنة نفسها، والمنصة في سوق الطلبات وسيط لا ضامن ولا أمين على الأتعاب. للمتابعة في استخدام المنصة، اقرأها ثم أقرّ بها."
+            : "The Terms & Conditions have been updated: one point equals one Saudi riyal before VAT; the smallest top-up is 100 points for individuals and 500 points for every other account; a top-up is refundable within 14 days while none of its points has been spent; the founder discount does not stack with a top-up's bonus points; and in the requests market the platform is an intermediary, not a guarantor or trustee of fees. To keep using the platform, please read them and confirm."}
         </p>
 
         <div className="mt-5">

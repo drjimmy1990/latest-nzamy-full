@@ -77,6 +77,7 @@ import type { LibraryGrantSource, LibraryPlanRef } from "../libraryAccess.ts";
 import { resolveItem, type PayableItem } from "./catalog.ts";
 import { addMonthsUtc, isMissingPaymentsObject, planWindow } from "./fulfillDecision.ts";
 import { readLibraryPlanPoints } from "../points/pointsSettings.ts";
+import { grantedTopupPoints } from "./topupBonus.ts";
 
 /** The columns of a claimed payment_orders row a grant reads. */
 export interface PurchaseOrder {
@@ -85,6 +86,8 @@ export interface PurchaseOrder {
   kind: string;
   item_id: string;
   billing: string;
+  /** payment_orders.metadata — l12: a top-up's frozen points (metadata.topup, topupBonus.ts). */
+  metadata?: Record<string, unknown> | null;
 }
 
 /** Why a paid membership order granted nothing and waits for an admin refund (metadata.founder, 20261101_10). */
@@ -370,9 +373,11 @@ export async function grantPurchase(
     if (!item.points || !item.pointsValidityMonths) {
       return { ok: false, error: `top-up ${item.id} has no points or validity` };
     }
+    // l12 (owner Q88a / ١٦٢): the points the checkout froze in the order — the
+    // pack's own points plus any admin-set bonus — else the pack's own points
     const lot = await creditOrderLot(deps.admin, {
       userId: order.user_id,
-      points: item.points,
+      points: grantedTopupPoints(item.points, order.metadata),
       source: "purchase",
       expiresAt: addMonthsUtc(now, item.pointsValidityMonths),
       orderId: order.id,

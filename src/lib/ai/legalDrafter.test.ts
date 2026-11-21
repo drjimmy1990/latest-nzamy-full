@@ -58,18 +58,20 @@ const FOUND: Retrieved = {
 
 const row = (input: Record<string, unknown>, status = "succeeded", output: unknown = analysis) => ({ input, output, status });
 
+function dbHandler(q: FakeQuery, prior: unknown[] = []) {
+  if (q.table === "platform_settings") return { data: { value: { "legal-drafter": { mode: "live" } } } };
+  if (q.table === "ai_runs" && q.op === "select") return { data: prior };
+  if (q.op === "rpc" && q.table === "ai_start_run") {
+    const price = (q.payload as Record<string, unknown>).p_price as number;
+    return { data: [{ run_id: RUN, created: true, status: "running", charged: price > 0, charged_points: price }] };
+  }
+  if (q.op === "rpc" && q.table === "ai_fail_run") return { data: true };
+  if (q.table === "ai_runs" && q.op === "update") return { data: [{ id: RUN }] };
+  return {};
+}
+
 function db(prior: unknown[] = []) {
-  return fakeDb((q: FakeQuery) => {
-    if (q.table === "platform_settings") return { data: { value: { "legal-drafter": { mode: "live" } } } };
-    if (q.table === "ai_runs" && q.op === "select") return { data: prior };
-    if (q.op === "rpc" && q.table === "ai_start_run") {
-      const price = (q.payload as Record<string, unknown>).p_price as number;
-      return { data: [{ run_id: RUN, created: true, status: "running", charged: price > 0, charged_points: price }] };
-    }
-    if (q.op === "rpc" && q.table === "ai_fail_run") return { data: true };
-    if (q.table === "ai_runs" && q.op === "update") return { data: [{ id: RUN }] };
-    return {};
-  });
+  return fakeDb((q: FakeQuery) => dbHandler(q, prior));
 }
 
 type Call = { path: string; body: Record<string, unknown> };
@@ -99,9 +101,9 @@ const startPayload = (log: FakeQuery[]) => log.find((q) => q.table === "ai_start
 
 // ── kinds ────────────────────────────────────────────────────────────────────
 
-test("kinds (owner ٩, 17 Nov 2026): 500 for a claim and the first-instance memos, 800 an appeal, 1,500 cassation and a petition", () => {
+test("kinds (owner ٩, 17 Nov 2026; l12 N6: the claim 200): 500 for the first-instance memos, 800 an appeal, 1,500 cassation and a petition", () => {
   assert.deepEqual(DRAFT_KIND_IDS, ["claim", "reply", "rejoinder", "supplementary", "closing", "appeal", "cassation", "petition"]);
-  assert.equal(draftKindPrice("claim"), 500);
+  assert.equal(draftKindPrice("claim"), 200);
   for (const k of ["reply", "rejoinder", "supplementary", "closing"]) assert.equal(draftKindPrice(k), 500, k);
   assert.equal(draftKindPrice("appeal"), 800);
   assert.equal(draftKindPrice("cassation"), 1500);
@@ -208,6 +210,32 @@ test("the analysis: a new conversation, charged the kind's price, the library se
   assert.equal(calls[1].path, "nzamy-ai/legal-drafter");
   assert.equal((pkg.input as Record<string, unknown>).phase, "issues");
   assert.equal((pkg.sources as unknown[]).length, 1);
+});
+
+test("l12 (owner N6): the analysis is charged the admin's ai_draft_prices; an expectedPrice from an older screen is refused uncharged", async () => {
+  const key = (q: FakeQuery) => q.filters.find(([op, col]) => op === "eq" && col === "key")?.[2];
+  const withPrices = () =>
+    fakeDb((q: FakeQuery) =>
+      q.table === "platform_settings" && key(q) === "ai_draft_prices" ? { data: { value: { claim: 300 } } } : dbHandler(q),
+    );
+  const a = withPrices();
+  const r = await startRunWith(a.client as never, deps(), LAWYER, body(issuesInput({ kind: "claim" })));
+  assert.equal(r.status, 202);
+  assert.equal(startPayload(a.log)?.p_price, 300, "the setting, not the code default 200");
+  // a kind the setting leaves out keeps its default
+  const b = withPrices();
+  await startRunWith(b.client as never, deps(), LAWYER, body(issuesInput({ kind: "appeal" })));
+  assert.equal(startPayload(b.log)?.p_price, 800);
+  // the screen showed 200: refused with the fresh price, nothing charged
+  const c = withPrices();
+  const r2 = await startRunWith(c.client as never, deps(), LAWYER, body(issuesInput({ kind: "claim" }), { expectedPrice: 200 }));
+  assert.equal(r2.status, 409);
+  assert.equal((r2.body as Record<string, unknown>).price, 300);
+  assert.equal(startPayload(c.log), undefined);
+  // no usable setting (db() answers every key with the ai_tools value, malformed here) → the code default
+  const d = db();
+  await startRunWith(d.client as never, deps(), LAWYER, body(issuesInput({ kind: "claim" })));
+  assert.equal(startPayload(d.log)?.p_price, 200);
 });
 
 test("the draft after a succeeded analysis: free, searched with the facts before it", async () => {

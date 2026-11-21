@@ -1,11 +1,12 @@
 /**
  * Owner ٤٢ (batch l7 decision 13): review before publishing, names hidden,
- * «مكتب موثّق». The SQL half is proven by supabase/tests/rls/l7_community.test.sql.
+ * «مكتب معتمد» (N18, batch l12). The SQL half is proven by supabase/tests/rls/l7_community.test.sql.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  OFFICE_PLAN_IDS,
   OWN_POST_STATUSES,
   PUBLIC_POST_STATUSES,
   dbStatusesFor,
@@ -16,6 +17,7 @@ import {
   prepublishReviewOn,
   reviewNotificationAr,
   reviewStateOf,
+  VERIFIED_OFFICE_AR,
 } from "./review.ts";
 
 const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), "utf8");
@@ -77,28 +79,22 @@ test("the author's notification names no one and carries the reason", () => {
   assert.equal(reviewNotificationAr("post", "moderated", null), null);
 });
 
-test("«مكتب موثّق» = verified CR + a verified practising lawyer whose licence is valid today", () => {
-  const today = "2026-11-19";
-  const lawyer = { verification: "verified", practising: true, inRegistry: false, registryExpiry: null, fileExpiry: "2027-01-01" };
-  assert.equal(isVerifiedOffice({ firmVerification: "verified", lawyers: [lawyer] }, today), true);
-  assert.equal(isVerifiedOffice({ firmVerification: "pending", lawyers: [lawyer] }, today), false, "no verified CR");
-  assert.equal(isVerifiedOffice({ firmVerification: "verified", lawyers: [] }, today), false, "no lawyer");
-  assert.equal(isVerifiedOffice({ firmVerification: "verified", lawyers: [{ ...lawyer, fileExpiry: "2026-11-18" }] }, today), false, "expired");
-  assert.equal(isVerifiedOffice({ firmVerification: "verified", lawyers: [{ ...lawyer, verification: "pending" }] }, today), false);
-  assert.equal(isVerifiedOffice({ firmVerification: "verified", lawyers: [{ ...lawyer, practising: false }] }, today), false, "a secretary is not a lawyer");
-  // the registry decides when it knows the licence
-  assert.equal(
-    isVerifiedOffice({ firmVerification: "verified", lawyers: [{ ...lawyer, inRegistry: true, registryExpiry: "2026-01-01" }] }, today),
-    false,
-  );
-  assert.equal(
-    isVerifiedOffice({ firmVerification: "verified", lawyers: [{ ...lawyer, inRegistry: true, registryExpiry: "2027-06-01", fileExpiry: null }] }, today),
-    true,
-  );
-  assert.equal(
-    isVerifiedOffice({ firmVerification: "verified", lawyers: [{ ...lawyer, inRegistry: true, registryExpiry: "2027-06-01", registryArchived: true }] }, today),
-    false,
-  );
+test("N18 «مكتب معتمد» = a registered law firm with an active office plan (the old licensed-lawyer rule is gone)", () => {
+  const now = new Date("2026-11-21T12:00:00Z");
+  const plan = { planId: "firm-basic", status: "active", periodEnd: "2027-01-01T00:00:00Z" };
+  assert.equal(VERIFIED_OFFICE_AR, "مكتب معتمد");
+  assert.equal(isVerifiedOffice({ firmVerification: "verified", subscriptions: [plan] }, now), true);
+  assert.equal(isVerifiedOffice({ firmVerification: "verified", subscriptions: [{ ...plan, planId: "firm-enterprise", periodEnd: null }] }, now), true);
+  assert.equal(isVerifiedOffice({ firmVerification: "pending", subscriptions: [plan] }, now), false, "not registered");
+  assert.equal(isVerifiedOffice({ firmVerification: "verified", subscriptions: [] }, now), false, "no plan (a licensed lawyer alone no longer counts)");
+  assert.equal(isVerifiedOffice({ firmVerification: "verified", subscriptions: [{ ...plan, status: "trialing" }] }, now), false, "a trial");
+  assert.equal(isVerifiedOffice({ firmVerification: "verified", subscriptions: [{ ...plan, periodEnd: "2026-11-20T00:00:00Z" }] }, now), false, "ended");
+  assert.equal(isVerifiedOffice({ firmVerification: "verified", subscriptions: [{ ...plan, planId: "lawyer-pro" }] }, now), false, "not an office plan");
+  // the SQL twin names the same plans and the same status
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261202_80_l12_firm_roles_log_badge_storage.sql", import.meta.url), "utf8");
+  assert.ok(sql.includes("and s.plan_id in ('firm-basic', 'firm-enterprise')"));
+  assert.ok(sql.includes("and s.status = 'active'"));
+  assert.deepEqual([...OFFICE_PLAN_IDS], ["firm-basic", "firm-enterprise"]);
 });
 
 test("routes: the feed is an allow-list, the detail route sends no profile slug, POST says pending", () => {

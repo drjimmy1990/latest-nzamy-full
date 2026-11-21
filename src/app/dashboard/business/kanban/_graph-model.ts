@@ -1,5 +1,5 @@
 import {
-  User, FileText, Scales, CalendarBlank, MagnifyingGlass, Record, LinkSimple, ListChecks,
+  User, FileText, BookOpen, CalendarBlank, MagnifyingGlass, Record, LinkSimple, ListChecks,
   type Icon,
 } from "@phosphor-icons/react";
 
@@ -66,7 +66,7 @@ export interface GraphEdge {
 export const TYPE_CONFIG: Record<NodeType, { icon: Icon; bg: string; text: string; label: string }> = {
   person:   { icon: User,          bg: "bg-emerald-500/10 border-emerald-500/30",  text: "text-emerald-500", label: "شخص/طرف" },
   doc:      { icon: FileText,      bg: "bg-blue-500/10 border-blue-500/30",        text: "text-blue-500",    label: "مستند/عقد" },
-  law:      { icon: Scales,        bg: "bg-[#C8A762]/10 border-[#C8A762]/30",      text: "text-[#C8A762]",   label: "مادة نظامية" },
+  law:      { icon: BookOpen,        bg: "bg-[#C8A762]/10 border-[#C8A762]/30",      text: "text-[#C8A762]",   label: "مادة نظامية" },
   event:    { icon: CalendarBlank, bg: "bg-purple-500/10 border-purple-500/30",    text: "text-purple-500",  label: "حدث/جلسة" },
   evidence: { icon: MagnifyingGlass, bg: "bg-orange-500/10 border-orange-500/30",  text: "text-orange-500",  label: "دليل إثبات" },
   custom:   { icon: Record,        bg: "bg-zinc-500/10 border-zinc-500/30",        text: "text-zinc-500",    label: "ملاحظة حرة" },

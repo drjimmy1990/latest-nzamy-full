@@ -39,12 +39,60 @@ export const RETRIEVED_AT = "2026-10-28";
 export const TEST_RECORD_IDS = ["319731", "18143"];
 export const EXPECTED_SOURCE_COUNT = 363;
 /**
- * Addresses the source publishes that the platform does not (owner q386:
- * «لا يُنشر بريد غير متحقَّق للنيابة العامة»). my.gov.sa lists info@bip.gov.sa
- * for النيابة العامة (17570); its domain had no mail (MX) record in the owner's
- * check (note ١٩ §٤), so it is dropped here rather than shown with a warning.
+ * Addresses the source publishes that the platform does not.
+ *   - owner q386 («لا يُنشر بريد غير متحقَّق للنيابة العامة»): my.gov.sa lists
+ *     info@bip.gov.sa for النيابة العامة (17570); its domain had no mail (MX)
+ *     record in the owner's check (note ١٩ §٤).
+ *   - owner Q119 (batch l12; his default «تُخفى»): the 44 my.gov.sa addresses his
+ *     mail-server check found unable to receive mail (gov_contacts_consolidated
+ *     .json «broken_mygov_emails», package 2026-11-03, mx_ok false). 41 were in
+ *     this directory; the other three are 17570 above and the two test records.
+ * They are dropped here rather than shown with a warning.
  */
-export const WITHHELD_EMAILS = { "17570": ["info@bip.gov.sa"] };
+export const WITHHELD_EMAILS = {
+  "17570": ["info@bip.gov.sa"],
+  "17237": ["imara@almadinah.gov.sa"],
+  "17246": ["info@hail.gov.sa"],
+  "17324": ["webmaster@saudiairlines.com.sa"],
+  "17330": ["info@mos.gov.sa"],
+  "17384": ["info@ncar.gov.sa"],
+  "17423": ["contact@bu.edu.sa"],
+  "17495": ["info@ifta.gov.sa"],
+  "17540": ["info@energy.gov.sa"],
+  "17603": ["care@monenergy.gov.sa"],
+  "17615": ["Care@haj.gov.sa"],
+  "17621": ["info@mofa.gov.sa"],
+  "17639": ["937@moh.gov.com"],
+  "17642": ["1950@moj.gov.sa"],
+  "17645": ["ccc@mof.gov.sa"],
+  "17726": ["ksu@edu.sa"],
+  "17732": ["info@olympic.sa"],
+  "17744": ["info@gea.gov.sa"],
+  "17765": ["care@nelc.gov.sa"],
+  "17768": ["INFO@NDF.GOV.SA"],
+  "17804": ["ialbatin@momra.gov.sa"],
+  "17825": ["info@lcgpa.gov.sa"],
+  "17927": ["info@SCOT.sa"],
+  "17948": ["ss@hstp.gov.sa"],
+  "17966": ["cs@fa.gov.sa"],
+  "17990": ["info@ksaa.gov.sa"],
+  "18017": ["info@kaica.org.sa"],
+  "18056": ["ic@ndmc.gov.sa"],
+  "18059": ["Nafaqah_IT@moj.gov.sa"],
+  "18077": ["info@jcsa.sa"],
+  "18098": ["osp@osp.com"],
+  "18140": ["gov@gov.sa"],
+  "18173": ["info@eif.gov.sa"],
+  "18200": ["INFO@NDLP.GOV.SA"],
+  "18227": ["moc@gov.sa"],
+  "18230": ["moc@gov.sa"],
+  "18233": ["moc@gov.sa"],
+  "18236": ["moc@gov.sa"],
+  "18239": ["moc@gov.sa"],
+  "18242": ["moc@gov.sa"],
+  "18245": ["moc@gov.sa"],
+  "1149483": ["r.eid@clsr.gov.sa"],
+};
 
 const stripMd = (s) => s.replace(/\*\*/g, "").replace(/`/g, "").trim();
 

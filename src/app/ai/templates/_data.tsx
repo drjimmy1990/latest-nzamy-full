@@ -1,5 +1,5 @@
 import {
-  BookOpen, FileText, Seal, ChatCircleText, ShieldCheck, Buildings, Users, Brain, Scales
+  BookOpen, FileText, Seal, ChatCircleText, ShieldCheck, Buildings, Users, Brain, Gavel
 } from "@phosphor-icons/react";
 
 export type TemplateCategory =
@@ -401,7 +401,7 @@ export const CAT_CONFIG: Record<TemplateCategory, { label: string; color: string
   compliance:    { label: "امتثال",        color: "text-red-500",     bg: "bg-red-500/10",     icon: ShieldCheck,    emoji: "🛡️" },
   governance:    { label: "حوكمة",         color: "text-amber-500",   bg: "bg-amber-500/10",   icon: Buildings,      emoji: "🏢" },
   hr:            { label: "موارد بشرية",   color: "text-cyan-500",    bg: "bg-cyan-500/10",    icon: Users,          emoji: "👔" },
-  dispute:       { label: "نزاع",          color: "text-orange-500",  bg: "bg-orange-500/10",  icon: Scales,         emoji: "🏛️" },
+  dispute:       { label: "نزاع",          color: "text-orange-500",  bg: "bg-orange-500/10",  icon: Gavel,         emoji: "🏛️" },
   ip:            { label: "ملكية فكرية",   color: "text-indigo-500",  bg: "bg-indigo-500/10",  icon: Brain,          emoji: "💡" },
   collaboration: { label: "تعاون مهني",    color: "text-teal-500",    bg: "bg-teal-500/10",    icon: Users,          emoji: "🤝" },
 };

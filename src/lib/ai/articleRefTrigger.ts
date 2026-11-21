@@ -6,8 +6,14 @@
  * library confirmed the article exists (the reader's citations lookup: titles
  * and numbers only, never text, nothing counted).
  *
+ * N11 (batch l12): both lookups go to the tool's own endpoint,
+ * GET /api/v1/ai/article-ref (./articleRefLookup.ts) — titles and numbers
+ * only, no per-account library lock — so a firm, business or individual
+ * account can check an article inside a tool it may use.
+ *
  * Pure: `node --test` runs articleRefTrigger.test.ts.
  */
+import { articleRefCheckUrl, articleRefLawsUrl } from "./articleRefLookup.ts";
 
 /** The longest stretch looked back from the cursor for a trigger. */
 export const TRIGGER_LOOKBACK = 80;
@@ -81,8 +87,20 @@ export interface LawOption {
   lawType: string | null;
 }
 
-/** The laws among the library autocomplete's top matches (GET /api/library/autocomplete). */
+/**
+ * The laws of the tool's own lookup (N11, batch l12: GET /api/v1/ai/article-ref
+ * answers `{ laws: [{slug, title, lawType}] }`), or of the library
+ * autocomplete's top matches (`topMatches`, the older source).
+ */
 export function lawOptions(body: unknown, max = 6): LawOption[] {
+  const laws = (body as { laws?: unknown } | null)?.laws;
+  if (Array.isArray(laws)) {
+    return laws
+      .map((t) => (t ?? {}) as Record<string, unknown>)
+      .filter((r) => typeof r.slug === "string" && r.slug && typeof r.title === "string" && r.title.trim())
+      .slice(0, max)
+      .map((r) => ({ slug: r.slug as string, title: (r.title as string).trim(), lawType: typeof r.lawType === "string" ? r.lawType : null }));
+  }
   const top = (body as { topMatches?: unknown } | null)?.topMatches;
   if (!Array.isArray(top)) return [];
   const out: LawOption[] = [];
@@ -98,10 +116,18 @@ export function lawOptions(body: unknown, max = 6): LawOption[] {
   return out;
 }
 
-/** The reader's lookup for one article of a known law (titles and numbers only). */
+/**
+ * The check of one article of a known law — numbers only. N11 (batch l12):
+ * the TOOL's endpoint (no per-account library lock, nothing counted), not the
+ * reader's citations route.
+ */
 export function articleCheckUrl(slug: string, number: number): string {
-  const s = encodeURIComponent(slug);
-  return `/api/library/laws/${s}/citations?law=${s}&n=${number}`;
+  return articleRefCheckUrl(slug, number);
+}
+
+/** N11: the tool's law search (titles only). */
+export function lawSearchUrl(query: string): string {
+  return articleRefLawsUrl(query);
 }
 
 /** True when the lookup found that article number. */

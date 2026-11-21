@@ -22,11 +22,10 @@ import { libraryPlanPointsLine } from "../../lib/points/pointsSettings";
  *   ✓ Full access to laws, regulations, judicial principles
  *   ✓ Advanced search in the legal library — the texts only; AI tools spend
  *     the user's points (owner answer ١٩٩, 2026-10-18)
- *   ✓ 3 colleague invitations to try the library. No card states a trial
- *     length: the redeem flow grants 30 days and a colleague invite uses the
- *     invitation's own trial_days (owner answer ٢٠٣ says only "the trial
- *     period"). Nothing notifies subscribers of new legislation, so no card
- *     promises legislative alerts.
+ *   ✗ No colleague invitations: owner answer ٩٣ (20 Nov 2026, batch l12)
+ *     stopped the library invitation codes and the colleague invite, so no
+ *     card promises one. Nothing notifies subscribers of new legislation, so
+ *     no card promises legislative alerts.
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -51,7 +50,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           libraryPlanPointsLine("lib-q1", "ar"),
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات للزملاء لتجربة المكتبة",
         ],
         platform: [
           "قراءة هادئة — وضع التركيز",
@@ -79,7 +77,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           libraryPlanPointsLine("lib-q2", "ar"),
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات للزملاء لتجربة المكتبة",
         ],
         platform: [
           "قراءة هادئة — وضع التركيز",
@@ -110,7 +107,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           libraryPlanPointsLine("lib-annual", "ar"),
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات للزملاء لتجربة المكتبة",
           "تصدير نصوص الأنظمة بصيغة PDF",
         ],
         platform: [
@@ -143,7 +139,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           libraryPlanPointsLine("lib-q1", "en"),
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "Focus reading mode",
@@ -171,7 +166,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           libraryPlanPointsLine("lib-q2", "en"),
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "Focus reading mode",
@@ -200,7 +194,6 @@ export const plansLibrary: { ar: Plan[]; en: Plan[] } = {
           libraryPlanPointsLine("lib-annual", "en"),
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 invitations for colleagues to try the library",
           "Export law texts as PDF",
         ],
         platform: [
@@ -227,7 +220,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "ر.س / سنة",
       desc: "مثالي للمكاتب الصغيرة وفرق العمل المحدودة",
       target: "١–٥ أعضاء",
-      bonusLabel: "٣ دعوات للزملاء",
       pricingFormulaLabel: "متاح لـ ١ إلى ٥ مستخدمين (مقاعد)",
       cta: "اشترك الآن",
       ctaHref: "/contact?type=firm-library",
@@ -237,7 +229,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات للزملاء لتجربة المكتبة",
         ],
         platform: [
           "١–٥ مقاعد نشطة",
@@ -257,7 +248,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "ر.س / سنة",
       desc: "لشركات المحاماة المتوسطة ذات الفرق المتعددة",
       target: "٦–٢٠ عضواً",
-      bonusLabel: "٣ دعوات للزملاء",
       pricingFormulaLabel: "متاح لـ ٦ إلى ٢٠ مستخدماً (مقاعد)",
       cta: "اشترك الآن",
       ctaHref: "/contact?type=firm-library",
@@ -267,7 +257,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات للزملاء لتجربة المكتبة",
         ],
         platform: [
           "٦–٢٠ مقعداً نشطاً",
@@ -287,7 +276,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "ر.س / سنة",
       desc: "لشركات المحاماة الكبرى والشركاء المتعددين",
       target: "٢١–٥٠ عضواً",
-      bonusLabel: "٣ دعوات للزملاء",
       pricingFormulaLabel: "متاح لـ ٢١ إلى ٥٠ مستخدماً (مقاعد)",
       cta: "اشترك الآن",
       ctaHref: "/contact?type=firm-library",
@@ -297,7 +285,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "٣ دعوات للزملاء لتجربة المكتبة",
         ],
         platform: [
           "٢١–٥٠ مقعداً نشطاً",
@@ -317,7 +304,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "سنوياً",
       desc: "للكيانات الكبرى والشبكات القضائية الواسعة",
       target: "٥٠+ عضو",
-      bonusLabel: "دعوات مخصصة",
       pricingFormulaLabel: "عدد مقاعد مخصص (٥٠+ مستخدم)",
       cta: "تواصل معنا",
       ctaHref: "/contact",
@@ -327,7 +313,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "وصول كامل للأنظمة واللوائح والمبادئ القضائية",
           "بحث متقدّم في المكتبة القانونية",
-          "دعوات للزملاء مخصصة حسب الطلب",
         ],
         platform: [
           "عدد مقاعد غير محدود أو مخصص",
@@ -349,7 +334,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "SAR / year",
       desc: "Perfect for small offices and limited teams",
       target: "1–5 seats",
-      bonusLabel: "3 colleague invites",
       pricingFormulaLabel: "For 1 to 5 users (seats)",
       cta: "Subscribe Now",
       ctaHref: "/contact?type=firm-library",
@@ -359,7 +343,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "1–5 active seats",
@@ -379,7 +362,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "SAR / year",
       desc: "For medium law firms with multiple practice groups",
       target: "6–20 seats",
-      bonusLabel: "3 colleague invites",
       pricingFormulaLabel: "For 6 to 20 users (seats)",
       cta: "Subscribe Now",
       ctaHref: "/contact?type=firm-library",
@@ -389,7 +371,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "6–20 active seats",
@@ -409,7 +390,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "SAR / year",
       desc: "For major law firms and multi-partner networks",
       target: "21–50 seats",
-      bonusLabel: "3 colleague invites",
       pricingFormulaLabel: "For 21 to 50 users (seats)",
       cta: "Subscribe Now",
       ctaHref: "/contact?type=firm-library",
@@ -419,7 +399,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "3 invitations for colleagues to try the library",
         ],
         platform: [
           "21–50 active seats",
@@ -439,7 +418,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
       periodYearly:  "annually",
       desc: "For national networks and major judicial entities",
       target: "50+ seats",
-      bonusLabel: "Custom invites",
       pricingFormulaLabel: "Custom seat limit (50+ users)",
       cta: "Contact Us",
       ctaHref: "/contact",
@@ -449,7 +427,6 @@ export const plansFirmsLibrary: { ar: Plan[]; en: Plan[] } = {
         ai: [
           "Full access to laws, regulations & principles",
           "Advanced search in the legal library",
-          "Custom colleague invites",
         ],
         platform: [
           "Unlimited or custom seats",

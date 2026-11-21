@@ -126,3 +126,47 @@ export function attachLatinDigitsCapture(root: CaptureRoot, names: readonly stri
   root.addEventListener("input", handler, { capture: true });
   return () => root.removeEventListener("input", handler, { capture: true });
 }
+
+// ── l12-access (file 10 ب24): the site-wide sweep ─────────────────────────────
+// 41 numeric inputs across the site never called the helpers above (the fee,
+// inheritance and deadline calculators, admin settings, offers, coupons,
+// secondment …). One capture-phase listener on the document
+// (src/components/forms/LatinDigitsEverywhere.tsx, mounted once in the root
+// layout) now covers every NUMBER field — and only those: a field qualifies
+// by its own markup (type number / tel, or inputMode numeric / decimal / tel,
+// or data-latin-digits="true"). Free text — the library search, names,
+// notes — is never touched (Arabic digits are legitimate there).
+
+/** The part of an element the sweep looks at (testable without a DOM). */
+export type DigitFieldLike = {
+  tagName?: string;
+  type?: string;
+  inputMode?: string;
+  getAttribute?: (name: string) => string | null;
+};
+
+const NUMERIC_TYPES = new Set(["number", "tel"]);
+const NUMERIC_MODES = new Set(["numeric", "decimal", "tel"]);
+
+/** Is this element a number field the sweep makes Latin? */
+export function wantsLatinDigits(el: DigitFieldLike | null | undefined): boolean {
+  if (!el || typeof el.tagName !== "string" || el.tagName.toUpperCase() !== "INPUT") return false;
+  const attr = (n: string) => (typeof el.getAttribute === "function" ? el.getAttribute(n) : null);
+  if (attr("data-latin-digits") === "false") return false;
+  if (attr("data-latin-digits") === "true") return true;
+  const type = (el.type ?? attr("type") ?? "").toLowerCase();
+  if (NUMERIC_TYPES.has(type)) return true;
+  const mode = (el.inputMode || attr("inputmode") || "").toLowerCase();
+  return NUMERIC_MODES.has(mode);
+}
+
+/**
+ * A `type="number"` field never shows the browser an Arabic digit (it is
+ * dropped before any `input` event), so the sweep catches the KEY instead
+ * (`beforeinput`): this is the text to insert in its place, or null when the
+ * typed text has no non-Latin digit (let the browser handle it).
+ */
+export function latinReplacementFor(data: string | null | undefined): string | null {
+  if (typeof data !== "string" || !hasNonLatinDigits(data)) return null;
+  return toAsciiDigits(data).replace(/٫/g, ".");
+}

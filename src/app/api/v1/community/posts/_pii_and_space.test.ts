@@ -28,7 +28,7 @@ test("lawyersSpaceFromRpc: the database decides; a missing function falls back; 
   assert.equal(lawyersSpaceFromRpc(null, { code: "42883" }), "fallback");
   assert.equal(lawyersSpaceFromRpc(true, { code: "57014" }), false, "a timeout is a refusal");
   assert.equal(lawyersSpaceFromRpc(null, {}), false);
-  assert.match(LAWYERS_SPACE_REFUSAL_AR, /المكاتب الموثّقة/);
+  assert.match(LAWYERS_SPACE_REFUSAL_AR, /المكاتب المعتمدة/);
 });
 
 test("the three write routes mask before they store, and no longer refuse a phone or e-mail", () => {

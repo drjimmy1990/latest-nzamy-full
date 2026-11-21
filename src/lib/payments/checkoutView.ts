@@ -24,6 +24,8 @@ import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { FOUNDER_CREDITS, FOUNDER_LIBRARY_DAYS, FOUNDER_MEMBERSHIP_MONTHS } from "../membership/founderPlan.ts";
 import { libraryExpiryLockLineAr } from "../points/pointsExpiryNotice.ts";
+import { libraryPlanCheckoutGateLineAr } from "../library/pointsGate.ts";
+import { DEFAULT_LIBRARY_PLAN_POINTS } from "../points/pointsSettings.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
 
@@ -172,10 +174,20 @@ function pointsAr(n: number): string {
 }
 
 /**
+ * l12 (owner Q87, RAW[61][76]): «النقطة = ريال واحد قبل الضريبة» — shown on
+ * the top-up popup and checkout, and in /terms (section ٦). Prices are
+ * VAT-exclusive (answer ٢٥٨), so a point is one riyal before the 15 %.
+ */
+export const POINT_VALUE_LINE_AR = "النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة";
+
+/**
  * The lines the screen shows under the item's name: what the catalog grants
  * and nothing more. Firm plans get no line — their seats are not sold here.
  */
-export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: number | null } = {}): string[] {
+export function checkoutItemNotes(
+  item: PayableItem,
+  ctx: { libraryMinPoints?: number | null; libraryQuestionPoints?: number | null } = {},
+): string[] {
   if (item.kind === "topup") {
     const notes: string[] = [];
     // The label already names the points («شحن ٢٥٠ (٣٠٠ نقطة)»): no second line.
@@ -184,6 +196,10 @@ export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: n
     }
     if (typeof item.pointsValidityMonths === "number") {
       notes.push(`صالحة ${monthsAr(item.pointsValidityMonths)} من تاريخ الشراء`);
+    }
+    // l12 (owner Q87, RAW[61]): the point's value, on every top-up screen
+    notes.push(POINT_VALUE_LINE_AR);
+    if (typeof item.pointsValidityMonths === "number") {
       // l11 O7 (register 49, founder terms ١٢): only for a holder of a gated
       // library plan — the page passes the minimum then (0 = gate off: no line)
       const lock = libraryExpiryLockLineAr(ctx.libraryMinPoints, "this_topup");
@@ -192,7 +208,18 @@ export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: n
     return notes;
   }
   if (item.kind === "library" && typeof item.libraryDays === "number") {
-    return [`وصول إلى المكتبة القانونية لمدة ${daysAr(item.libraryDays)}`];
+    const notes = [`وصول إلى المكتبة القانونية لمدة ${daysAr(item.libraryDays)}`];
+    // Owner 06 ج6 + ٩٣ (batch l12): the 50-point rule, said before paying —
+    // and, for the quarterly plan whose points equal the minimum, that the
+    // first assistant question locks the full text. Only when the page
+    // passed the minimum (0 = gate off: no line).
+    const gate = libraryPlanCheckoutGateLineAr(
+      DEFAULT_LIBRARY_PLAN_POINTS[item.id] ?? null,
+      ctx.libraryMinPoints ?? null,
+      ctx.libraryQuestionPoints ?? null,
+    );
+    if (gate) notes.push(gate);
+    return notes;
   }
   if (item.kind === "membership") {
     // P3 founder membership: what founder_activate (20261101_10) grants, nothing more
@@ -261,11 +288,32 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
   if (expiresAt !== null && !isText(expiresAt)) return null;
   // P7: a couponed quote carries listNet / discount / couponCode, all three,
   // and listNet − discount must be the charged net.
-  const hasCoupon = q.discount !== undefined || q.listNet !== undefined || q.couponCode !== undefined;
+  const hasCoupon = q.discount !== undefined || q.couponCode !== undefined;
   if (hasCoupon) {
     if (!isInt(q.listNet) || !isInt(q.discount) || !isText(q.couponCode)) return null;
     if (q.discount <= 0 || q.listNet - q.discount !== q.net) return null;
   }
+  // l12: the server's other optional figures (checkoutCore step 8) were
+  // dropped here, and a founder / upgrade quote — listNet without a coupon —
+  // was refused outright, so its checkout never opened. Each is now kept when
+  // it is a whole non-negative number; listNet alone (no coupon) needs the
+  // founder discount or the upgrade credit beside it.
+  const founderDiscount = q.founderDiscount;
+  const prorationCredit = q.prorationCredit;
+  for (const v of [founderDiscount, prorationCredit, q.launchListNet, q.topupPoints, q.bonusPoints]) {
+    if (v !== undefined && !isInt(v)) return null;
+  }
+  if (!hasCoupon && q.listNet !== undefined) {
+    if (!isInt(q.listNet) || (founderDiscount === undefined && prorationCredit === undefined)) return null;
+  }
+  const extras = {
+    ...(!hasCoupon && isInt(q.listNet) ? { listNet: q.listNet } : {}),
+    ...(isInt(founderDiscount) && founderDiscount > 0 ? { founderDiscount } : {}),
+    ...(isInt(prorationCredit) && prorationCredit > 0 ? { prorationCredit } : {}),
+    ...(isInt(q.launchListNet) ? { launchListNet: q.launchListNet } : {}),
+    ...(isInt(q.topupPoints) ? { topupPoints: q.topupPoints } : {}),
+    ...(isInt(q.bonusPoints) ? { bonusPoints: q.bonusPoints } : {}),
+  };
   return {
     orderId: b.orderId,
     intentId: b.intentId,
@@ -283,8 +331,9 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
           listNet: q.listNet as number,
           discount: q.discount as number,
           couponCode: q.couponCode as string,
+          ...extras,
         }
-      : { net: q.net, vat: q.vat, total: q.total, vatMode: q.vatMode },
+      : { net: q.net, vat: q.vat, total: q.total, vatMode: q.vatMode, ...extras },
     callbackUrl: b.callbackUrl,
     expiresAt,
   };

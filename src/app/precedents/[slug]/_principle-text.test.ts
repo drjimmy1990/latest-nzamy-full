@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { LONG_PARAGRAPH, cleanPrincipleText, principleParagraphs } from "./_principle-text.ts";
+import { LONG_PARAGRAPH, cleanPrincipleText, isRepeatedNumberLine, principleParagraphs } from "./_principle-text.ts";
 
 /** The words of a text, ignoring whitespace and line-only bullets. */
 function words(text: string): string[] {
@@ -123,8 +123,8 @@ test("the principle card renders every text field through the cleaner, never raw
   }
   assert.doesNotMatch(src, /\{p\.details\['الحيثيات_والقرار'\]\}/);
   assert.doesNotMatch(src, />\{para\.text\}</);
-  assert.match(src, /<Paragraphs text=\{para\.text\} \/>/);
-  assert.match(src, /<Paragraphs text=\{cleanTextOfRef\(p\.text\)\} \/>/);
+  assert.match(src, /<Paragraphs text=\{para\.text\} number=\{p\.number\} \/>/);
+  assert.match(src, /<Paragraphs text=\{cleanTextOfRef\(p\.text\)\} number=\{p\.number\} \/>/);
   // Reference lines are still recognised on the raw text.
   assert.match(src, /filter\(para => !isReferenceText\(para\.text\)/);
 });
@@ -165,4 +165,31 @@ test("legend texts: the built reference is counted, the «المرجع:» label 
   assert.match(page, /const referenceOf = \(p: JudicialPrincipleItem\) => referenceForPrinciple\(p, collection, isRTL\);/);
   assert.match(page, /const getReferenceForPrinciple = \(p: JudicialPrincipleItem\) => referenceForPrinciple\(p, collection, isRTL\);/);
   assert.doesNotMatch(page, /^const isReferenceText/m);
+});
+
+test("L9-d lib05: a first line that only repeats the principle's number is dropped", () => {
+  const raw = "٦٠٩٦٠٩\nقرار اللجنة الابتدائية\nتتلخص وقائع هذه الدعوى أن المدعين ورثة/...... (باكستاني الجنسية).";
+  assert.equal(cleanPrincipleText(raw, 609), "قرار اللجنة الابتدائية\nتتلخص وقائع هذه الدعوى أن المدعين ورثة/...... (باكستاني الجنسية).");
+  // without the number, a doubled run is still recognised
+  assert.equal(cleanPrincipleText(raw).startsWith("قرار اللجنة الابتدائية"), true);
+  // the label line becomes its own paragraph, as in the collection reader
+  assert.equal(principleParagraphs(raw, "609")[0], "قرار اللجنة الابتدائية");
+  // the «......» redaction blanks stay (owner files 03 and 08)
+  assert.ok(cleanPrincipleText(raw, 609).includes("ورثة/......"));
+});
+
+test("L9-d: only a bare repeat of the number goes — never words, dates or another number", () => {
+  assert.equal(isRepeatedNumberLine("609", 609), true);
+  assert.equal(isRepeatedNumberLine("٦٠٩٦٠٩", "609"), true);
+  assert.equal(isRepeatedNumberLine("**٦٠٩**", 609), true);
+  assert.equal(isRepeatedNumberLine("٦٠٩٦٠٩٦٠٩", 609), false);
+  assert.equal(isRepeatedNumberLine("610", 609), false);
+  assert.equal(isRepeatedNumberLine("المبدأ 609", 609), false);
+  assert.equal(isRepeatedNumberLine("1440/02/28", 609), false);
+  assert.equal(isRepeatedNumberLine("٦٠٩٦٠٩", null), true);
+  assert.equal(isRepeatedNumberLine("609", null), false);
+  assert.equal(isRepeatedNumberLine("1212", undefined), true);
+  assert.equal(isRepeatedNumberLine("11", undefined), false);
+  const text = "1440/02/28\nنص";
+  assert.equal(cleanPrincipleText(text, 609), text);
 });

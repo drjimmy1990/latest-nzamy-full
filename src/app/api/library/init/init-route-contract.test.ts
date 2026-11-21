@@ -56,7 +56,8 @@ test("N2.5 + ٣١٧: the laws catalogue is ordered in SQL — in force before re
   assert.match(lawsCall, /return out\.order\("section_code"\)\.order\("title"\)\.order\("slug"\);/);
   // Every viewer gets the order and the «يشتمل على» names (owner 2026-11-07);
   // the موجز only through the ٢٦٠ flag.
-  assert.match(lawsCall, /wanted: \[\.\.\.\(lawSummaryVisible\(hasFullAccess\) \? \["summary", "sort", "repealedLast"\] : \["sort", "repealedLast"\]\), "mergedNames", "mergedDetails"\]/);
+  // Q96 (l12): the موجز read also names summary_status (the reviewed-only rule).
+  assert.match(lawsCall, /wanted: \[\.\.\.\(lawSummaryVisible\(hasFullAccess\) \? \["summary", "summaryStatus", "sort", "repealedLast"\] : \["sort", "repealedLast"\]\), "mergedNames", "mergedDetails"\]/);
   // No in-page JS sort of the laws rows.
   assert.doesNotMatch(n.slice(n.indexOf("const lawsRows")), /lawsRows[^;]*\.sort\(/);
 });
@@ -149,7 +150,7 @@ const LIBRARY_ACCESS_SITES = [
 const TABS = ["FeqhTabContent", "LawsTabContent", "PrecedentsTabContent"] as const;
 
 test("the response tells the page whether this viewer has the full library", () => {
-  assert.match(source, /const \{ hasFullAccess, whitelistedSlugs, freeItemsByType \} = await getLibraryAccessForUser\(userId\)/);
+  assert.match(source, /const \[\{ hasFullAccess, whitelistedSlugs, freeItemsByType \}, summariesReviewedOnly\] = await Promise\.all\(\[\s*getLibraryAccessForUser\(userId\),/);
   assert.match(source, /viewer: \{ hasFullAccess \}/);
 });
 
@@ -194,11 +195,12 @@ test("the law reader locks articles on the law API's paywall.hasFullAccess", () 
 test("the redeem CTA and the invitation banner ask GET /api/v1/library/access, and wait for it", () => {
   const subscribe = readRepo("src/app/laws/subscribe/page.tsx");
   assert.match(subscribe, /import \{ useLibraryFullAccess \} from "@\/lib\/library\/useLibraryFullAccess";/);
-  assert.match(subscribe, /const canRedeemCode = isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
+  // owner ٩٣ (l12): both are shut by LIBRARY_INVITES_CLOSED first
+  assert.match(subscribe, /const canRedeemCode = !LIBRARY_INVITES_CLOSED && isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
 
   const banner = readRepo("src/components/InvitationBanner.tsx");
   assert.match(banner, /import \{ useLibraryFullAccess \} from "@\/lib\/library\/useLibraryFullAccess";/);
-  assert.match(banner, /const eligible = isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
+  assert.match(banner, /const eligible = !LIBRARY_INVITES_CLOSED && isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
 });
 
 test("none of the six sites gates library text on the tier-only can(\"library-full-access\")", () => {

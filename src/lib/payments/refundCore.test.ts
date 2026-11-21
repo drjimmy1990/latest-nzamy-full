@@ -289,8 +289,10 @@ test("l7 × 20261127_40: points emptied by EXPIRY are not «used» — the order
   const { deps } = setup();
   const r = await refundOrderWith({ ...deps, admin: db.client }, "o", "admin", false);
   const v = (r.body as { eligibility: { state: string; lines: string[] } }).eligibility;
-  assert.equal(v.state, "eligible", "5 of 1,000 used (0.5 %), not 1,000");
-  assert.ok(v.lines.some(l => l.includes("استُخدم ٥ من ١٬٠٠٠") || l.includes("استُخدم ٥ من ١٠٠٠")), v.lines.join(" | "));
+  // l12 (owner item 69): any spend ends a top-up's refund — but the spend counted is 5, never the 1,000 expiry emptied
+  assert.equal(v.state, "ineligible", "5 of 1,000 spent → not refundable (l12: none may be spent)");
+  assert.ok(v.lines.some(l => l.includes("صُرف ٥ من ١٬٠٠٠") || l.includes("صُرف ٥ من ١٠٠٠")), v.lines.join(" | "));
+  assert.ok(!v.lines.some(l => l.includes("صُرف ١٬٠٠٠") || l.includes("صُرف ١٠٠٠")), "expiry is not spend");
   assert.ok((r.body as { warnings: string[] }).warnings.some(w => w.includes("استُخدمت بعض نقاط")), "the used-points warning still fires for real use");
 });
 test("l7 × 20261127_40: a failed ledger read of the order lot leaves the verdict «تعذّر التحقق»", async () => {

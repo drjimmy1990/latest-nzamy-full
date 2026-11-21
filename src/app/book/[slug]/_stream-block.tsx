@@ -17,7 +17,7 @@
  */
 
 import { memo } from "react";
-import { BookmarkSimple, Check, Copy, FileText, ListNumbers, Plus } from "@phosphor-icons/react";
+import { BookmarkSimple, Check, Copy, FileText, ListNumbers } from "@phosphor-icons/react";
 import { LibraryLockedNote } from "@/components/library/LibrarySubscribeCard";
 import { Hl } from "@/components/search/MultiColorHighlight";
 import { pageToken, volumeToken } from "./_locator";
@@ -99,7 +99,7 @@ function StreamBlock({
                 isDark ? "border-white/[0.07] text-zinc-300 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}
             >
-              {inDraft ? <Check size={12} /> : <Plus size={12} />}
+              {inDraft ? <Check size={12} /> : <BookmarkSimple size={12} />}
               {inDraft ? "في المسودة" : "إضافة للمسودة"}
             </button>
           )}
@@ -133,7 +133,7 @@ function StreamBlock({
       {/* Owner decision (18 Nov): fiqh text is for subscribers only (library_feqh_free_pages,
           0 by default) — the note names no free pages, and carries the subscribe button. */}
       {block.locked && (
-        <LibraryLockedNote message="نص هذا الموضع متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية." />
+        <LibraryLockedNote message="نص هذا الموضع متاح لمشتركي باقة المكتبة القانونية." />
       )}
 
       {/* Sharh */}

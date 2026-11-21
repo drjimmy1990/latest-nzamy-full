@@ -7,9 +7,12 @@
  *
  * Pure: relative imports only, so `node --test` loads it.
  */
-import { FOUNDER_DRAFTER_TOOL, FOUNDER_OUTPUT_TOOLS } from "../../../lib/membership/founderPlan.ts";
+import { FOUNDER_ACCESS_ONLY_TOOLS, FOUNDER_DRAFTER_TOOL, FOUNDER_OUTPUT_TOOLS } from "../../../lib/membership/founderPlan.ts";
 
+/** 06 أ6 (batch l12): «مراجع العقود» is on the list for access only (FOUNDER_ACCESS_ONLY_TOOLS). */
 export function isFounderPlanTool(toolId: unknown): boolean {
   return typeof toolId === "string"
-    && (toolId === FOUNDER_DRAFTER_TOOL || (FOUNDER_OUTPUT_TOOLS as readonly string[]).includes(toolId));
+    && (toolId === FOUNDER_DRAFTER_TOOL
+      || (FOUNDER_OUTPUT_TOOLS as readonly string[]).includes(toolId)
+      || (FOUNDER_ACCESS_ONLY_TOOLS as readonly string[]).includes(toolId));
 }

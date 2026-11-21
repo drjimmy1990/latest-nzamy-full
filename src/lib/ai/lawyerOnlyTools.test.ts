@@ -39,7 +39,8 @@ test("the matcher is segment-aware and ignores the query", () => {
   assert.equal(lawyerOnlyAiTool("/ai/assistant/x"), "assistant");
   assert.equal(lawyerOnlyAiTool("/ai/contracts-x"), null);
   assert.equal(lawyerOnlyAiTool("/ai/quick-answer"), null);
-  assert.equal(lawyerOnlyAiTool("/ai/legal-opinion"), null);
+  // Owner ١٢٢ (batch l12): the legal opinion is a lawyer-only page now.
+  assert.equal(lawyerOnlyAiTool("/ai/legal-opinion"), "legal-opinion-consult");
   for (const t of ["lawyer", "firm", "admin"]) assert.equal(canSeeLawyerTools(t), true, t);
   for (const t of ["individual", "corporate", "micro", "provider", "government", "ngo", "", null, undefined]) assert.equal(canSeeLawyerTools(t), false, String(t));
 });
@@ -66,7 +67,7 @@ test("the edge: each page has a lawyer/firm rule and is PROTECTED, so the rule i
     for (const t of ["individual", "corporate", "micro", "provider", "government", "ngo"]) assert.equal(isRouteAllowedFor(page, t), false, `${t} at ${page}`);
   }
   // The pages every account keeps.
-  for (const page of ["/ai/draft", "/ai/analyze", "/ai/quick-answer", "/ai/legal-opinion"]) {
+  for (const page of ["/ai/draft", "/ai/analyze", "/ai/quick-answer"]) {
     assert.equal(isRouteAllowedFor(page, "individual"), true, page);
     assert.equal(isRouteAllowedFor(page, "corporate"), true, page);
   }
@@ -75,11 +76,16 @@ test("the edge: each page has a lawyer/firm rule and is PROTECTED, so the rule i
 test("the /ai layout draws the notice, not the tool, for a signed-in account outside lawyer/firm/admin", () => {
   const layout = src("app/ai/layout.tsx");
   assert.match(layout, /const lawyerOnlyRefused = shell !== "loading" && user\.isLoggedIn && isLawyerOnlyAiHref\(pathname\) && !canSeeLawyerTools\(user\.userType\);/);
-  assert.match(layout, /const children = lawyerOnlyRefused \? <LawyerOnlyToolNotice userType=\{user\.userType\} \/> : page;/);
+  assert.match(layout, /const tool = lawyerOnlyRefused \? <LawyerOnlyToolNotice userType=\{user\.userType\} \/> : page;/);
+  // N2 (batch l12): the admin's one-line notice rides above the page (it renders nothing for anyone else).
+  assert.match(layout, /const children = <><AdminToolsNotice \/>\{tool\}<\/>;/);
   const notice = src("components/ai/LawyerOnlyToolNotice.tsx");
   assert.match(notice, /هذه الأداة للمحامين ومكاتب المحاماة المرخّصة/);
   assert.ok(notice.includes('href="/dashboard/client/consultation/new"'), "an individual or a company is offered the consultation request");
-  assert.ok(notice.includes('href="/ai/quick-answer"') && notice.includes('href="/ai/legal-opinion"'), "the general guidance stays offered");
+  assert.ok(notice.includes('href="/ai/quick-answer"'), "the general guidance stays offered");
+  // Owner ١٢٢: the legal opinion is no longer offered to these accounts; «اطلب من محامٍ» is.
+  assert.ok(!notice.includes('href="/ai/legal-opinion"'));
+  assert.match(notice, /اطلب من محامٍ/);
 });
 
 test("the /ai hub and the quick answer's follow-ups do not offer a lawyer tool to another account", () => {
@@ -158,9 +164,7 @@ test("Q443: the client welcome bar makes no pending promise", () => {
   const page = code("app/dashboard/client/page.tsx");
   assert.ok(!page.includes('href="/ai/consult"'), "the «اسأل ذكاء نظامي · قريباً» button is back");
   assert.ok(!page.includes('href: "/ai/consult"'));
-  assert.match(page, /const QUICK_SERVICES = \[[\s\S]*href: "\/ai\/quick-answer"[\s\S]*href: "\/ai\/legal-opinion"[\s\S]*\];/);
-  for (const href of ["/ai/quick-answer", "/ai/legal-opinion"]) {
-    const tool = href === "/ai/quick-answer" ? "quick-answer" : "legal-opinion-consult";
-    for (const t of ["individual", "corporate"]) assert.ok(AI_TOOLS[tool].roles.includes(t), `${tool} × ${t}`);
-  }
+  // Owner ١٢٢: the second card asks a lawyer, not the (lawyer-only) legal opinion.
+  assert.match(page, /const QUICK_SERVICES = \[[\s\S]*href: "\/ai\/quick-answer"[\s\S]*href: "\/dashboard\/client\/consultation\/new"[\s\S]*\];/);
+  for (const t of ["individual", "corporate"]) assert.ok(AI_TOOLS["quick-answer"].roles.includes(t), `quick-answer × ${t}`);
 });

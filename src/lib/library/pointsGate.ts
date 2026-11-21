@@ -13,11 +13,13 @@
  *   اشحن لتستمر في المكتبة» with a top-up button; it opens again the moment
  *   the balance is back at 50.
  *
- *   NOT gated (defaults until the owner answers Q-B2 / Q-B3): an admin; a
- *   Pro-tier plan (or above) that includes the library; a trial, invitation
- *   or admin library grant (lib-trial / lib-invite / lib-admin) — those carry
- *   no points, so the gate would shut them out on day one. One exempt source
- *   is enough. 0 in the setting switches the gate off.
+ *   Owner answer ٩٣ (20 Nov 2026, batch l12): «لا استثناء لأي حساب». EVERY
+ *   holder of a library grant is gated — the paid plans, the founder, and the
+ *   older trial / invitation / admin grants (lib-trial / lib-invite /
+ *   lib-admin) alike — and no subscription tier opens the library any more
+ *   (owner ٨٩, libraryAccessDecision.ts). The ONLY account outside the gate
+ *   is a platform admin (staff bypass, kept). 0 in the setting switches the
+ *   gate off.
  *
  *   A balance that could not be read (null) never locks (fail open): an
  *   outage must not shut a paying subscriber out.
@@ -35,10 +37,17 @@ export const LIBRARY_MIN_POINTS_SETTING = "library_min_points_to_browse";
 export const LIBRARY_MIN_POINTS_DEFAULT = 50;
 export const LIBRARY_MIN_POINTS_MAX = 100_000;
 
-/** The library plans whose holder is gated (paid plans + the founder). */
-export const GATED_LIBRARY_PLAN_REFS: readonly string[] = Object.freeze(["lib-q1", "lib-q2", "lib-annual", "lib-founder"]);
-/** Grants that open the library with no points: never gated (default). */
-export const EXEMPT_LIBRARY_PLAN_REFS: readonly string[] = Object.freeze(["lib-trial", "lib-invite", "lib-admin"]);
+/**
+ * The library plans whose holder is gated. Owner ٩٣ (l12): every library
+ * grant, the older trial / invitation / admin grants included. The gate does
+ * not depend on this list (ANY active grant is gated, so a plan added later
+ * is gated from day one); it names the known refs for the checkout notes.
+ */
+export const GATED_LIBRARY_PLAN_REFS: readonly string[] = Object.freeze([
+  "lib-q1", "lib-q2", "lib-annual", "lib-founder", "lib-trial", "lib-invite", "lib-admin",
+]);
+/** Owner ٩٣ (l12): no grant opens the library without points any more. Kept, empty, for callers. */
+export const EXEMPT_LIBRARY_PLAN_REFS: readonly string[] = Object.freeze([]);
 
 /** The founder's library credits are counted at the assistant's price (founderPlan.ts). */
 export const LIBRARY_CREDIT_POINTS = 5;
@@ -51,11 +60,13 @@ export const LIBRARY_CREDIT_POINTS = 5;
  */
 export const LIBRARY_TOPUP_HREF = "/pricing";
 /**
- * O16 (c), batch l11-misc: the 50-point pack's own checkout (sold to every
- * account type, register 14 item 7). `billing=once` is required —
+ * O16 (c), batch l11-misc: a top-up pack's own checkout. Since l12 (owner
+ * Q87) the 50-point pack is retired (checkout answers 410), so the link is the
+ * smallest pack every library buyer may buy: 500 (library plans are sold to
+ * professional accounts only). `billing=once` is required —
  * parseCheckoutQuery refuses an item without a billing.
  */
-export const LIBRARY_TOPUP_CHECKOUT_HREF = "/checkout?item=topup-50&billing=once";
+export const LIBRARY_TOPUP_CHECKOUT_HREF = "/checkout?item=topup-500&billing=once";
 
 /** The top-up link the lock banner shows: straight to checkout while payment is on, else the price page. */
 export function libraryTopupHref(gatewayAllowsCheckout: boolean): string {
@@ -88,8 +99,6 @@ export function libraryMinPointsIssue(value: unknown): string | null {
 
 export interface PointsGateInput {
   isAdmin: boolean;
-  /** The subscription tier alone opens the library (Pro or above). */
-  tierIncludesLibrary: boolean;
   /** plan_ref of every library grant active now. */
   planRefs: readonly string[];
   /** points_balance + founder library credits; null when it could not be read. */
@@ -108,9 +117,9 @@ export interface PointsGateDecision {
 export function libraryPointsGateDecision(input: PointsGateInput): PointsGateDecision {
   const open = { gated: false, locked: false };
   if (!(input.minPoints > 0)) return open;
-  if (input.isAdmin === true || input.tierIncludesLibrary === true) return open;
-  if (input.planRefs.some((p) => EXEMPT_LIBRARY_PLAN_REFS.includes(p))) return open;
-  if (!input.planRefs.some((p) => GATED_LIBRARY_PLAN_REFS.includes(p))) return open;
+  if (input.isAdmin === true) return open;
+  // Owner ٩٣ (l12): any active library grant is gated — no exempt plan.
+  if (input.planRefs.length === 0) return open;
   const locked = typeof input.balance === "number" && Number.isFinite(input.balance) && input.balance < input.minPoints;
   return { gated: true, locked };
 }
@@ -147,4 +156,76 @@ export function libraryPointsLock(balance: number, minPoints: number): LibraryPo
     minPoints,
     topupHref: LIBRARY_TOPUP_HREF,
   };
+}
+
+// ── Owner 06 ج6 + ٩٣ (batch l12): the warning BEFORE the lock ────────────────
+// A gated subscriber whose next library-assistant question would take his
+// balance below the minimum is told so before he asks (the library assistant
+// screens), and the library checkout says the same rule. Nothing is refused
+// here — the question still runs; only the lock above closes the full text.
+
+export const LIBRARY_POINTS_LOW_CODE = "library_points_low";
+
+/** «٥ نقاط» / «١٠٠ نقطة» / «نقطة واحدة» / «نقطتان» (Arabic-Indic digits). */
+export function libraryPointsWordAr(n: number): string {
+  if (n === 1) return "نقطة واحدة";
+  if (n === 2) return "نقطتان";
+  const d = toArabicDigits(String(n));
+  return n >= 3 && n <= 10 ? `${d} نقاط` : `${d} نقطة`;
+}
+
+/**
+ * True when the subscriber is still open (balance at or above the minimum)
+ * but ONE question at `questionPoints` would take him below it. A gate that
+ * is off (minPoints 0), an unknown balance or an unknown price warns nothing.
+ */
+export function libraryPointsLowBeforeQuestion(balance: number | null, minPoints: number, questionPoints: number | null): boolean {
+  if (!(minPoints > 0)) return false;
+  if (typeof balance !== "number" || !Number.isFinite(balance)) return false;
+  if (typeof questionPoints !== "number" || !Number.isFinite(questionPoints) || questionPoints <= 0) return false;
+  return balance >= minPoints && balance - questionPoints < minPoints;
+}
+
+/** The pre-question warning, in the owner's words for the lock. */
+export function libraryPointsLowMessageAr(balance: number, minPoints: number, questionPoints: number): string {
+  return `تنبيه: رصيدك ${libraryPointsWordAr(balance)}، والسؤال المدفوع لمساعد المكتبة يكلّف ${libraryPointsWordAr(questionPoints)}؛ بعده ينزل رصيدك عن ${libraryPointsWordAr(minPoints)} فتُقفل نصوص المكتبة الكاملة حتى تشحن.`;
+}
+
+/** What the status route sends a subscriber one question away from the lock. */
+export interface LibraryPointsLow {
+  code: typeof LIBRARY_POINTS_LOW_CODE;
+  message: string;
+  balance: number;
+  minPoints: number;
+  questionPoints: number;
+  topupHref: string;
+}
+
+export function libraryPointsLow(balance: number, minPoints: number, questionPoints: number): LibraryPointsLow {
+  return {
+    code: LIBRARY_POINTS_LOW_CODE,
+    message: libraryPointsLowMessageAr(balance, minPoints, questionPoints),
+    balance,
+    minPoints,
+    questionPoints,
+    topupHref: LIBRARY_TOPUP_HREF,
+  };
+}
+
+/**
+ * The line on a library plan's checkout (owner ٩٣ quarterly + 06 ج6): the
+ * points the plan brings (library_plan_points) against the minimum. When the
+ * plan's points are at or below the minimum plus one question (the quarterly
+ * plan's 50 against 50), it says the first question locks the full text.
+ * null when the gate is off or a number is unknown.
+ */
+export function libraryPlanCheckoutGateLineAr(planPoints: number | null, minPoints: number | null, questionPoints: number | null): string | null {
+  if (typeof minPoints !== "number" || !(minPoints > 0)) return null;
+  const rule = `فتح نصوص المكتبة الكاملة مشروط بألا يقل رصيدك عن ${libraryPointsWordAr(minPoints)}`;
+  if (typeof planPoints !== "number" || !Number.isFinite(planPoints) || planPoints < 0) return `${rule}.`;
+  const tight = typeof questionPoints === "number" && questionPoints > 0 && planPoints - questionPoints < minPoints;
+  if (tight) {
+    return `${rule}، والباقة تمنحك ${libraryPointsWordAr(planPoints)} لمساعد المكتبة؛ فأول سؤال مدفوع تطرحه ينزل رصيدك عن الحد ويُقفل النصوص الكاملة حتى تشحن نقاطاً إضافية.`;
+  }
+  return `${rule}، والباقة تمنحك ${libraryPointsWordAr(planPoints)} لمساعد المكتبة؛ إذا نزل رصيدك عن الحد فاشحن لتستمر.`;
 }

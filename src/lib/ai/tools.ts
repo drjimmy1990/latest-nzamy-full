@@ -19,6 +19,15 @@ import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
 import { stripCitationMarkers } from "./citationMarkers.ts";
 import {
+  SIMPLE_CONTRACT_DEFAULT_PRICE,
+  SIMPLE_CONTRACT_NOTICE_AR,
+  SIMPLE_CONTRACT_PRICE_KEY,
+  SIMPLE_CONTRACT_ROLES,
+  SIMPLE_CONTRACT_SERVICES_HREF,
+  SIMPLE_CONTRACT_TOOL,
+  simpleContractPriceFrom,
+} from "./simpleContract.ts";
+import {
   SECTION_EDIT_COPY,
   SECTION_EDIT_MAX_PER_MEMO,
   SECTION_EDIT_PHASE,
@@ -48,11 +57,32 @@ export interface AiToolSpec {
   /** Art. 18: a consultant (practice_kind) may not run it. */
   consultantBlocked: boolean;
   /**
+   * Owner ١٤٦ (register 14 #19, batch l12): a tool newly closed to the
+   * consultant that is not pleading (the legal opinion, محترف العقود). A
+   * consultant whose paid plan term was already running at the cut-off keeps
+   * it until that term ends (consultantTerm.ts), and the refusal names the
+   * reservation, not Art. 18's pleading ban.
+   */
+  consultantPaidTerm?: true;
+  /**
    * The price in points, from the validated input (metered tools read `pages`).
    * `priorSectionEdits`: the memo's section edits so far, read by runCore from
    * the conversation's runs for a `sectionEdit` run only (owner ٤١٠).
+   * `draftPrices`: l12 (owner N6) the admin's ai_draft_prices, read by runCore
+   * for legal-drafter runs; absent → the code defaults (draftKinds.ts).
    */
-  price: (input: Record<string, unknown>, ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts }) => number;
+  price: (
+    input: Record<string, unknown>,
+    ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts; draftPrices?: Readonly<Partial<Record<string, number>>>; settingPrice?: number },
+  ) => number;
+  /**
+   * Batch l12 simpledraft (owner ١٢٣): the price is an admin setting. runCore
+   * reads platform_settings `key` right before `price` and hands the parsed
+   * points in as ctx.settingPrice (absent when the row is missing or
+   * malformed: `price` then falls back to its default). A failed read refuses
+   * the run, uncharged.
+   */
+  priceSetting?: { key: string; parse: (value: unknown) => number | null };
   /**
    * Owner ٤١٠ (legal-drafter): a run whose input.phase is `phase` edits one
    * section of the memo. runCore counts the memo's earlier section edits for
@@ -219,8 +249,8 @@ const ECHO_ROLES = ["lawyer", "firm"] as const;
  * Every registered customer account type: profiles.user_type minus `admin`.
  * Owner ٤١٧, answer of 8 Nov 2026 (it reverses his 7 Nov answer, which had
  * opened every tool to every registered account): only the general guidance
- * tools stay open to all of these — the quick answer and the two legal-opinion
- * types. Every one of these types can buy points (priceBook top-ups). An admin
+ * tools stay open to all of these — the quick answer (the two legal-opinion
+ * types were too, until owner ١٢٢ closed them to lawyers and firms). Every one of these types can buy points (priceBook top-ups). An admin
  * passes every tool anyway (toolRoleRefusal). Art. 18's consultant lock is the
  * separate `consultantBlocked` flag, and a tool that searches the library still
  * needs the library AI's own tier (runs/route.ts).
@@ -918,6 +948,16 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
   };
 }
 /**
+ * l12 simpledraft (owner ١٢٣) «صائغ العقود المبسّط»: the same draft shape as
+ * L11, plus the app's own guidance line and link, so a stored run, its page
+ * and anything copied from it always carry them, whatever the model wrote.
+ */
+function simpleContractOutput(raw: unknown): Record<string, unknown> | null {
+  const draft = contractDraftOutput(raw);
+  return draft ? { ...draft, notice: SIMPLE_CONTRACT_NOTICE_AR, notice_href: SIMPLE_CONTRACT_SERVICES_HREF } : null;
+}
+
+/**
  * L12 الرأي الفصل: consultation and letter, the two output types built first.
  * Owner ٤١٠ (7 Nov 2026): the consultation is 100 points and the letter 50
  * (both were the D4 400 tier; study / memo / research stay the team's order).
@@ -1211,8 +1251,13 @@ function legalLetterOutput(raw: unknown): Record<string, unknown> | null {
   return { title, body, cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 20) : [] };
 }
 
-/** The roles of /ai/legal-opinion's two built types: every registered account (owner ٤١٧: general guidance stays open to all). */
-const LEGAL_OPINION_ROLES = REGISTERED_ROLES;
+/**
+ * The roles of /ai/legal-opinion's two built types. Owner ١٢٢ (register 14
+ * #19, batch l12): lawyers and law firms only. It was open to every registered
+ * account (owner ٤١٧); any other account now gets the lock notice with
+ * «اطلب من محامٍ» (lawyerOnlyTools.ts, LawyerOnlyToolNotice).
+ */
+const LEGAL_OPINION_ROLES = LAWYER_FIRM_ROLES;
 
 /**
  * The assembled contract (n8n drafts the outline, then each clause on its own
@@ -2023,14 +2068,35 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     validateInput: contractDraftInput,
     validateOutput: contractDraftOutput,
   },
+  [SIMPLE_CONTRACT_TOOL]: {
+    id: SIMPLE_CONTRACT_TOOL,
+    n8nPath: `nzamy-ai/${SIMPLE_CONTRACT_TOOL}`,
+    class: "job",
+    tier: "deep",
+    // Owner ١٢٣ (20 Nov 2026, raw log [25]): the individual and the business
+    // only; never the lawyer or the firm (they have «محترف العقود»).
+    roles: SIMPLE_CONTRACT_ROLES,
+    consultantBlocked: false,
+    // q١٢٣ (100 or 150) is open: platform_settings simple_contract_price, 100 until set.
+    price: (_input, ctx) => ctx.settingPrice ?? SIMPLE_CONTRACT_DEFAULT_PRICE,
+    priceSetting: { key: SIMPLE_CONTRACT_PRICE_KEY, parse: simpleContractPriceFrom },
+    dailyLimit: 5,
+    // Off until its n8n workflow (n8n/ai/simple-contract.json) is imported and tested.
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: contractDraftInput,
+    validateOutput: simpleContractOutput,
+  },
   "legal-opinion-consult": {
     id: "legal-opinion-consult",
     n8nPath: "nzamy-ai/legal-opinion-consult",
     class: "job",
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
-    // A consultation is advice, not pleading: /ai/legal-opinion is open to consultants (Art. 18).
-    consultantBlocked: false,
+    // Owner ١٤٦ (batch l12): closed to the consultant until his account type
+    // opens; a paid term already running keeps it to its end.
+    consultantBlocked: true,
+    consultantPaidTerm: true,
     price: () => LEGAL_CONSULT_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2045,7 +2111,8 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     class: "job",
     tier: "deep",
     roles: LEGAL_OPINION_ROLES,
-    consultantBlocked: false,
+    consultantBlocked: true,
+    consultantPaidTerm: true,
     price: () => LEGAL_LETTER_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2060,7 +2127,11 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     tier: "deep",
     // The lawyer, firm and business sidebars and the public navbar all open /ai/contracts.
     roles: CONTRACTS_PRO_ROLES,
-    consultantBlocked: false,
+    // Owner ١٤٦ (batch l12): contract drafting is closed to the consultant like
+    // the legal opinion (a paid term already running keeps it); contract review
+    // on the same page stays open to him.
+    consultantBlocked: true,
+    consultantPaidTerm: true,
     price: () => CONTRACTS_PRO_PRICE,
     dailyLimit: 5,
     defaultMode: "off",
@@ -2118,7 +2189,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     price: (input, ctx) =>
       input.phase === SECTION_EDIT_PHASE
         ? sectionEditPrice(ctx.priorSectionEdits, input.section_index)
-        : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0,
+        : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind, ctx.draftPrices) : 0,
     // An analysis and its draft are two runs. Section edits are not held to this
     // limit (ai_start_section_edit): the memo's ceiling of 30 bounds them; and
     // since 20261108_41 they are not counted against it either, and the draft

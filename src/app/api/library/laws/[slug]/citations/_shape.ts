@@ -19,8 +19,10 @@
 import {
   LINK_SECTIONS,
   READER_QUERY_GROUPS,
+  READER_LINK_SECTIONS,
   SHOWN_LINK_TYPES,
   isShownLinkType,
+  isUnreviewedAutoLink,
   linkLabel,
   sectionOfLinkType,
   type LinkSection,
@@ -60,9 +62,17 @@ export interface RefItem {
   /**
    * The anchor no longer exists (row gone): the item is NOT a confirmed article
    * or principle — its title is the document's name, it carries no status, and
-   * its links go to the document, never a 404.
+   * its links go to the document, never a 404. Owner Q132 (20 Nov, 22:16
+   * «شغّلهم من غير وسم»): the reader shows it as an ordinary link to that
+   * document — no «غير مؤكَّدة» tag (batch l12).
    */
   anchorMissing: boolean;
+  /**
+   * «رابط آلي» (batch l12, owner library-Q4): an unreviewed «إحالة» the system
+   * extracted (graphLinkTypes.isUnreviewedAutoLink). The route clears it while
+   * the admin switch library_auto_link_tag is off.
+   */
+  auto: boolean;
 }
 
 export interface RefSection {
@@ -77,12 +87,25 @@ export interface ArticleRefs {
 }
 
 export function emptySections(): Record<LinkSection, RefSection> {
-  return { legislation: { total: 0, items: [] }, judicial: { total: 0, items: [] }, fiqh: { total: 0, items: [] } };
+  return { legislation: { total: 0, items: [] }, judicial: { total: 0, items: [] }, fiqh: { total: 0, items: [] }, similar: { total: 0, items: [] } };
 }
 
 export function capTitle(value: unknown): string {
   const s = typeof value === "string" ? value.trim() : "";
   return s.length > TITLE_CHARS ? `${s.slice(0, TITLE_CHARS)}...` : s;
+}
+
+/**
+ * Batch l12 (Q132): the law's own node in the bulk answer and in ?article= —
+ * the links on the whole law (an owner link whose article could not be
+ * pinned, law-to-law amendment / replacement). Never a library article id
+ * (those never start with «@»).
+ */
+export const LAW_LINKS_ID = "@law";
+
+/** The graph node of a box id: the article's, or the law's for LAW_LINKS_ID. */
+export function centerKeyOf(articleId: string, lawSlug: string): string {
+  return articleId === LAW_LINKS_ID ? `law:${lawSlug}` : `article:${articleId}`;
 }
 
 /** An article id as the reader sends it: library.articles.id (varchar 150), no control characters. */
@@ -190,6 +213,13 @@ interface RawEdge {
   source?: unknown;
   target?: unknown;
   edge_type?: unknown;
+  origin?: unknown;
+  metadata?: unknown;
+}
+
+/** `metadata.source` of a graph edge (owner_links / owner_edges), else undefined. */
+function edgeSource(metadata: unknown): unknown {
+  return metadata && typeof metadata === "object" ? (metadata as { source?: unknown }).source : undefined;
 }
 
 /** The first path segment after `base` in a graph node's url, decoded once ('' when it is not there). */
@@ -252,7 +282,7 @@ export function shapeArticleRefs(
   if (!raw || typeof raw !== "object") return empty;
   const r = raw as { found?: unknown; nodes?: unknown; edges?: unknown; truncated?: unknown; center_edge_counts?: unknown };
   if (r.found !== true) return empty;
-  const center = `article:${articleId}`;
+  const center = centerKeyOf(articleId, lawSlug);
   const nodes = new Map<string, RawNode>();
   for (const n of Array.isArray(r.nodes) ? (r.nodes as RawNode[]) : []) {
     if (typeof n?.node_key === "string") nodes.set(n.node_key, n);
@@ -290,6 +320,7 @@ export function shapeArticleRefs(
       section,
       ...place,
       anchorMissing: false,
+      auto: isUnreviewedAutoLink(e.edge_type, e.origin, edgeSource(e.metadata)),
     });
   }
 
@@ -326,7 +357,7 @@ export const READER_SECTION_QUERIES: ReadonlyArray<{ section: LinkSection; types
  */
 export function mergeSectionRefs(parts: ReadonlyArray<{ section: LinkSection; refs: ArticleRefs }>): ArticleRefs {
   const out: ArticleRefs = { found: parts.some((p) => p.refs.found), sections: emptySections() };
-  const seen: Record<LinkSection, Set<string>> = { legislation: new Set(), judicial: new Set(), fiqh: new Set() };
+  const seen: Record<LinkSection, Set<string>> = { legislation: new Set(), judicial: new Set(), fiqh: new Set(), similar: new Set() };
   for (const p of parts) {
     const src = p.refs.sections[p.section];
     const dst = out.sections[p.section];
@@ -467,4 +498,234 @@ export function withHrefs(refs: ArticleRefs): { found: boolean; sections: Record
     sections[s] = { total: refs.sections[s].total, items: refs.sections[s].items.map((it) => ({ ...it, ...refHrefs(it) })) };
   }
   return { found: refs.found, sections };
+}
+
+/** The «رابط آلي» tag while the admin switch library_auto_link_tag is off: no item carries it. */
+export function withAutoTags<T extends { sections: Record<LinkSection, { total: number; items: RefItem[] }> }>(refs: T, on: boolean): T {
+  if (on) return refs;
+  const sections = {} as Record<LinkSection, { total: number; items: RefItem[] }>;
+  for (const s of LINK_SECTIONS) sections[s] = { ...refs.sections[s], items: refs.sections[s].items.map((it) => ({ ...it, auto: false })) };
+  return { ...refs, sections };
+}
+
+// ─── The whole law at once (batch l12, owner L1: links under every article) ──
+
+/** Items per link type and direction sent for each article (the inline list shows three). */
+export const BULK_PER_TYPE = 3;
+
+/** One node of the bulk answer: the item without its link words (they depend on the article). */
+export type BulkItem = Pick<RefItem, "key" | "kind" | "title" | "status" | "docKind" | "docId" | "anchorId" | "anchorMissing"> & {
+  href: string;
+  docHref: string;
+};
+/** One link group of an article: [type, direction, how many there are, [node key, 1 = «رابط آلي»][≤ BULK_PER_TYPE]]. */
+export type BulkGroup = [ShownLinkType, "out" | "in", number, Array<[string, 0 | 1]>];
+export interface LawLinks {
+  found: boolean;
+  perType: number;
+  items: Record<string, BulkItem>;
+  articles: Record<string, BulkGroup[]>;
+}
+
+/** The order the box lists groups in: READER_QUERY_GROUPS (amendment and regulation first, «إحالة», judicial, similar), out before in. */
+const GROUP_ORDER: readonly ShownLinkType[] = READER_QUERY_GROUPS.flatMap((g) => [...g.types]);
+function groupRank(t: ShownLinkType, d: "out" | "in"): number {
+  const i = GROUP_ORDER.indexOf(t);
+  return (i < 0 ? GROUP_ORDER.length : i) * 2 + (d === "out" ? 0 : 1);
+}
+
+interface BulkLib {
+  anchor?: unknown;
+  status?: unknown;
+  doc?: unknown;
+  doc_status?: unknown;
+  doc_title?: unknown;
+}
+
+type MutableLiveRows = {
+  articles: Array<{ id: unknown; status: unknown }>;
+  laws: Array<{ slug: unknown; status: unknown; title: unknown }>;
+  principles: Array<{ id: unknown }>;
+  collections: Array<{ id: unknown; title: unknown }>;
+  decrees: Array<{ id: unknown }>;
+};
+
+/**
+ * public.graph_rag_law_article_links(law, per_type, types) → one compact
+ * answer for every article of the law: each node once (`items`, titles capped,
+ * statuses and existence from library.* — the SQL reads them in the same call,
+ * so no id list ever goes over the wire), and per article its link groups
+ * with their true totals and at most BULK_PER_TYPE node keys each.
+ *
+ * The same whitelist as shapeArticleRefs: no snippet, evidence or text field is
+ * copied. A node whose document is gone is dropped (applyLiveRows); one whose
+ * anchor is gone links to its document under the document's name. A type
+ * outside `types` is dropped whatever the function returned. An article whose
+ * groups are all dropped is left out (the reader then draws nothing).
+ */
+export function shapeLawLinks(
+  raw: unknown,
+  lawSlug: string,
+  types: readonly ShownLinkType[],
+  articleStatus: (raw: unknown) => string,
+  lawStatus: (raw: unknown) => string,
+  autoTagOn: boolean,
+): LawLinks {
+  const empty: LawLinks = { found: false, perType: BULK_PER_TYPE, items: {}, articles: {} };
+  if (!raw || typeof raw !== "object") return empty;
+  const r = raw as { found?: unknown; law_slug?: unknown; nodes?: unknown; articles?: unknown };
+  if (r.found !== true || r.law_slug !== lawSlug) return empty;
+  const asked = new Set<ShownLinkType>(types.filter((t) => isShownLinkType(t)));
+
+  // Every node once, through the same live-row rules as one article's box.
+  const pool: ArticleRefs = { found: true, sections: emptySections() };
+  const rows: MutableLiveRows = { articles: [], laws: [], principles: [], collections: [], decrees: [] };
+  for (const n of Array.isArray(r.nodes) ? (r.nodes as Array<RawNode & { lib?: unknown }>) : []) {
+    const key = typeof n?.node_key === "string" ? n.node_key : "";
+    const kind = kindOf(n?.node_type);
+    if (!key || !kind || !key.startsWith(`${kind}:`)) continue;
+    const place = placeOf(kind, key, n);
+    if (!place) continue;
+    const lib = (n.lib && typeof n.lib === "object" ? n.lib : {}) as BulkLib;
+    if (lib.doc === true) {
+      if (place.docKind === "law") rows.laws.push({ slug: place.docId, status: lib.doc_status, title: lib.doc_title });
+      if (place.docKind === "collection") rows.collections.push({ id: place.docId, title: lib.doc_title });
+      if (place.docKind === "order") rows.decrees.push({ id: place.docId });
+    }
+    if (lib.anchor === true && place.anchorId) {
+      if (kind === "article") rows.articles.push({ id: place.anchorId, status: lib.status });
+      if (kind === "principle") rows.principles.push({ id: place.anchorId });
+    }
+    const status = kind === "article" ? n.item_status : n.doc_status;
+    pool.sections.legislation.items.push({
+      key,
+      kind,
+      title: capTitle(n.title) || capTitle(place.docId),
+      status: typeof status === "string" ? status : null,
+      linkType: "CITES_ARTICLE",
+      direction: "out",
+      relation: "",
+      section: "legislation",
+      ...place,
+      anchorMissing: false,
+      auto: false,
+    });
+  }
+  const live = applyLiveRows(pool, rows, articleStatus, lawStatus);
+  const items: Record<string, BulkItem> = {};
+  for (const it of live.sections.legislation.items) {
+    items[it.key] = {
+      key: it.key,
+      kind: it.kind,
+      title: it.title,
+      status: it.status,
+      docKind: it.docKind,
+      docId: it.docId,
+      anchorId: it.anchorId,
+      anchorMissing: it.anchorMissing,
+      ...refHrefs(it),
+    };
+  }
+
+  const articles: Record<string, BulkGroup[]> = {};
+  for (const a of Array.isArray(r.articles) ? (r.articles as Array<{ id?: unknown; links?: unknown }>) : []) {
+    const id = validArticleId(typeof a?.id === "string" ? a.id : null);
+    if (!id) continue;
+    const groups: BulkGroup[] = [];
+    for (const l of Array.isArray(a.links) ? (a.links as Array<{ t?: unknown; d?: unknown; n?: unknown; items?: unknown }>) : []) {
+      const t = l?.t;
+      if (!isShownLinkType(t) || !asked.has(t)) continue;
+      const d = l.d === "out" || l.d === "in" ? l.d : null;
+      if (!d) continue;
+      const keys: Array<[string, 0 | 1]> = [];
+      for (const it of Array.isArray(l.items) ? (l.items as Array<{ k?: unknown; o?: unknown; s?: unknown }>) : []) {
+        const k = typeof it?.k === "string" ? it.k : "";
+        if (!items[k] || keys.some(([x]) => x === k) || keys.length >= BULK_PER_TYPE) continue;
+        keys.push([k, autoTagOn && isUnreviewedAutoLink(t, it.o, it.s) ? 1 : 0]);
+      }
+      if (keys.length === 0) continue;
+      const n = l.n;
+      const total = typeof n === "number" && Number.isInteger(n) && n >= keys.length ? n : keys.length;
+      groups.push([t, d, total, keys]);
+    }
+    if (groups.length === 0) continue;
+    groups.sort((x, y) => groupRank(x[0], x[1]) - groupRank(y[0], y[1]));
+    articles[id] = groups;
+  }
+  // Only the nodes some article still lists.
+  const used = new Set<string>();
+  for (const gs of Object.values(articles)) for (const g of gs) for (const [k] of g[3]) used.add(k);
+  for (const k of Object.keys(items)) if (!used.has(k)) delete items[k];
+  return { found: true, perType: BULK_PER_TYPE, items, articles };
+}
+
+/** One group of an article's links as the box draws it. */
+export interface RefGroupOut {
+  linkType: ShownLinkType;
+  direction: "out" | "in";
+  relation: string;
+  section: LinkSection;
+  total: number;
+  keys: string[];
+}
+
+/** One article's box data as the reader caches it (from the bulk answer, or from ?article=). */
+export interface ArticleRefsOut {
+  found: boolean;
+  /** true: each group holds at most BULK_PER_TYPE items — «عرض الكل» asks for the article's full list. */
+  partial?: boolean;
+  sections: Record<LinkSection, { total: number; items: RefItemOut[] }>;
+  groups?: RefGroupOut[];
+}
+
+/**
+ * The bulk answer → one article's box data (the client seeds its cache with
+ * it): the sections the side box and «عرض الكل» read, each item with its link
+ * words, and the groups the inline list draws.
+ */
+export function expandLawLinks(bulk: Pick<LawLinks, "items" | "articles">, articleId: string): ArticleRefsOut & { partial: true; groups: RefGroupOut[] } {
+  const sections = {} as Record<LinkSection, { total: number; items: RefItemOut[] }>;
+  for (const s of LINK_SECTIONS) sections[s] = { total: 0, items: [] };
+  const groups: RefGroupOut[] = [];
+  const seen = new Set<string>();
+  for (const [t, d, total, keys] of bulk.articles[articleId] ?? []) {
+    if (!isShownLinkType(t)) continue;
+    const section = READER_LINK_SECTIONS[t];
+    const relation = linkLabel(t, d);
+    const shown: string[] = [];
+    for (const [k, auto] of keys) {
+      const base = bulk.items[k];
+      if (!base) continue;
+      shown.push(k);
+      if (seen.has(`${section}|${k}`)) continue;
+      seen.add(`${section}|${k}`);
+      sections[section].items.push({ ...base, linkType: t, direction: d, relation, section, auto: auto === 1 });
+    }
+    if (shown.length === 0) continue;
+    const n = Math.max(total, shown.length);
+    sections[section].total += n;
+    groups.push({ linkType: t, direction: d, relation, section, total: n, keys: shown });
+  }
+  return { found: groups.length > 0, partial: true, sections, groups };
+}
+
+/**
+ * The groups of one article's full list (?article=): its items grouped by
+ * link type and direction, in the box's order. Totals are the items listed
+ * (the section's own total says when there are more).
+ */
+export function groupsOfRefs(refs: Pick<ArticleRefsOut, "sections">): RefGroupOut[] {
+  const by = new Map<string, RefGroupOut>();
+  for (const s of LINK_SECTIONS) {
+    for (const it of refs.sections[s]?.items ?? []) {
+      const id = `${it.linkType}|${it.direction}`;
+      const g = by.get(id) ?? { linkType: it.linkType, direction: it.direction, relation: it.relation, section: it.section, total: 0, keys: [] };
+      if (!g.keys.includes(it.key)) {
+        g.keys.push(it.key);
+        g.total++;
+      }
+      by.set(id, g);
+    }
+  }
+  return [...by.values()].sort((x, y) => groupRank(x.linkType, x.direction) - groupRank(y.linkType, y.direction));
 }

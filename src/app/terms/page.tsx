@@ -45,8 +45,8 @@ const sections = {
         "**المنصة**: موقع نظامي الإلكتروني وتطبيقاته المتاحة على عناوين الإنترنت ومتاجر التطبيقات.",
         "**المستخدم**: كل شخص طبيعي أو اعتباري يسجل أو يستخدم المنصة، سواء كان طالب خدمة أو مقدم خدمة.",
         "**طالب الخدمة**: الفرد أو الجهة التي تطلب خدمات قانونية عبر المنصة.",
-        "**مقدم الخدمة**: المحامي أو الموثق أو المعقب أو المحكم المرخص الذي يقدم خدماته عبر المنصة.",
-        "**الأتعاب**: المقابل المالي المستحق عن الخدمة القانونية، ويُحصَّل عبر قنوات الدفع المعتمدة في المنصة وحدها.",
+        "**مقدم الخدمة**: المحامي أو الموثق أو المراجع الحكومي أو المحكم المرخص الذي يقدم خدماته عبر المنصة.",
+        "**الأتعاب**: المقابل المالي المستحق عن الخدمة القانونية، وما تبيعه المنصة منها يُحصَّل عبر قنوات الدفع المعتمدة فيها.",
       ],
     },
     {
@@ -96,8 +96,12 @@ const sections = {
       title: "٦. السياسة المالية",
       content: [
         "تُعرض الأتعاب كاملة وشاملة للضريبة قبل تأكيد الطلب، ولا يُستحق أي مبلغ لم يُعرض على طالب الخدمة قبل الدفع.",
-        "تُحصَّل الأتعاب عبر قنوات الدفع المعتمدة في المنصة عند تأكيد الطلب، ويُصرف المستحق لمقدم الخدمة بعد إنجاز الخدمة أو المرحلة المتفق عليها منها.",
-        "رسوم المنصة: تُقتطع عمولة الخدمة (تتراوح بين ٥٪ و١٥٪ حسب الخدمة) مباشرة من الأتعاب قبل تحويلها لمقدم الخدمة.",
+        // l12 (owner Q87, RAW[61][64]): the point's value and the minimum top-up
+        "**النقاط**: النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة. وأقل شحنة للفرد ١٠٠ نقطة، ولغيره من أنواع الحسابات ٥٠٠ نقطة، ولكل حزمة مدة صلاحية تُذكر عند الشراء.",
+        "تُحصَّل أتعاب الخدمات التي تبيعها المنصة نفسها عبر قنوات الدفع المعتمدة فيها عند تأكيد الطلب.",
+        // l12 (owner N9, market): payment through the platform stays off (P3), so
+        // no line may say fees are collected here or a commission deducted before payout.
+        "في سوق الطلبات: المنصة وسيط لا ضامن ولا أمين على الأتعاب، ولا تُحصَّل الأتعاب عبر المنصة حالياً.",
         "**حق العدول**: لطالب الخدمة الحق في العدول عن الطلب واسترداد ما دفعه وفق المدد والحالات المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، ما لم يكن تنفيذ الخدمة قد بدأ بموافقته الصريحة أو كان المخرج مُعدّاً خصيصاً له.",
         "سياسة الاسترداد التفصيلية — بما فيها مدد المعالجة وحالات الاستثناء — مبيّنة في **سياسة الاسترداد** وتُعدّ جزءاً لا يتجزأ من هذه الشروط.",
         "يخضع نظام الفوترة لمتطلبات الفاتورة الإلكترونية لهيئة الزكاة والضريبة والجمارك (ZATCA المرحلة الثانية).",
@@ -200,7 +204,7 @@ const sections = {
         "**User**: Any natural or legal person who registers or uses the platform, whether as a service seeker or provider.",
         "**Service Seeker**: The individual or entity requesting legal services through the platform.",
         "**Service Provider**: The licensed lawyer, notary, tracker, or arbitrator providing services through the platform.",
-        "**Fees**: The amount payable for the legal service, collected exclusively through the platform's approved payment channels.",
+        "**Fees**: The amount payable for the legal service; what the platform itself sells is collected through its approved payment channels.",
       ],
     },
     {
@@ -250,8 +254,9 @@ const sections = {
       title: "6. Financial Policy",
       content: [
         "Fees are displayed in full and inclusive of tax before an order is confirmed; no amount not shown to the service seeker before payment becomes due.",
-        "Fees are collected through the platform's approved payment channels upon order confirmation, and are paid out to the service provider after the service — or the agreed milestone of it — has been delivered.",
-        "Platform fees: A service commission (ranging from 5% to 15% depending on the service) is deducted directly from fees before transfer to the service provider.",
+        "**Points**: one point equals one Saudi riyal before VAT. The smallest top-up is 100 points for individuals and 500 points for every other account type, and each pack's validity is stated at purchase.",
+        "Fees for the services the platform itself sells are collected through its approved payment channels upon order confirmation.",
+        "In the requests market, the platform is an intermediary — neither a guarantor nor a trustee of fees — and fees are not collected through the platform at present.",
         "**Right of withdrawal**: Service seekers may withdraw from an order and recover what they paid within the periods and cases set out in the Saudi E-Commerce Law and its Implementing Regulations, unless performance has begun with their express consent or the deliverable was prepared specifically for them.",
         "The detailed refund terms — including processing times and exclusions — are set out in the **Refund Policy**, which forms an integral part of these terms.",
         "The billing system complies with ZATCA e-invoicing requirements (Phase 2).",

@@ -4,6 +4,7 @@ import type { ServerTier } from "@/lib/access-control";
 import { colleagueInviteTrialDays } from "@/lib/libraryAccess";
 import { grantLibraryAccess } from "@/lib/libraryAccessServer";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
+import { LIBRARY_INVITES_CLOSED, LIBRARY_INVITES_CLOSED_STATUS, libraryInvitesClosedBody } from "@/lib/library/libraryInvitesClosed";
 
 /**
  * POST /api/v1/invite/[code]/accept — Accept a colleague/trial invitation.
@@ -79,6 +80,10 @@ export async function POST(
   _request: Request,
   { params }: { params: Promise<{ code: string }> },
 ) {
+  // Owner ٩٣ (batch l12): the colleague invitation is stopped — nothing is accepted.
+  if (LIBRARY_INVITES_CLOSED) {
+    return NextResponse.json(libraryInvitesClosedBody(), { status: LIBRARY_INVITES_CLOSED_STATUS });
+  }
   try {
     const { code } = await params;
     if (!code) {

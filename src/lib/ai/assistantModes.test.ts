@@ -50,10 +50,12 @@ test("the page sends the mode and offers the two choices", () => {
   assert.ok(page.includes("userType, mode, caseId:"));
 });
 
-test("P1-27: the four routes mount the stage with their tool's label", () => {
+test("P1-27: the three routes mount the stage with their tool's label", () => {
+  // The /laws researcher tab moved to the V3 four-stage card (owner file 11
+  // item 6): src/app/laws/research/_components/research.test.ts pins it.
+  assert.ok(read("src/app/laws/research/_components/ResearchTurn.tsx").includes("<ResearchStageCard events={turn.events}"));
   const mounts: [string, string][] = [
     ["src/app/ai/assistant/page.tsx", `aiToolLabelAr("assistant")`],
-    ["src/app/laws/components/AiTabContent.tsx", `aiToolLabelAr(TOOL)`],
     ["src/app/ai/najiz-optimizer/page.tsx", `aiToolLabelAr("najiz-optimizer")`],
     ["src/app/ai/communicate/page.tsx", `aiToolLabelAr("communicate")`],
   ];

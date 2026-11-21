@@ -50,13 +50,17 @@ test("the licence line: hidden whole while the number is empty; the issuer only 
   assert.equal(licenceLineEn(filled), "Licence number: 1234/ت, issued by: الجهة المانحة للاختبار.");
 });
 
-test("the home badge says «منصة مرخّصة» and names no issuer the owner did not set", () => {
-  assert.equal(licenceBadge(EMPTY_REGISTRY, true), "منصة مرخّصة");
+test("file 05 #33 (l12): the home badge only with a licence number; it names no issuer the owner did not set", () => {
+  assert.equal(licenceBadge(EMPTY_REGISTRY, true), null, "no number: no badge");
+  assert.equal(licenceBadge({ ...EMPTY_REGISTRY, licenceIssuer: "جهة" }, true), null, "an issuer without a number: no badge");
+  assert.equal(licenceBadge({ ...EMPTY_REGISTRY, licence: "1234/ت" }, true), "منصة مرخّصة");
   assert.equal(licenceBadge(filled, true), "مرخّص من الجهة المانحة للاختبار");
   assert.equal(licenceBadge(filled, false), "Licensed platform");
   const hero = read("../../components/Hero.tsx");
   assert.doesNotMatch(hero, /"مرخّص من وزارة العدل"|Ministry of Justice/);
-  assert.match(hero, /licenceBadge\(\{ \.\.\.EMPTY_REGISTRY, licenceIssuer \}, isAr\)/);
+  assert.match(hero, /licenceBadge\(\{ \.\.\.EMPTY_REGISTRY, licence, licenceIssuer \}, isAr\)/);
+  assert.match(hero, /\{badge && \(/);
+  assert.match(read("../../app/page.tsx"), /<Hero licence=\{registry\.licence\} licenceIssuer=\{registry\.licenceIssuer\} \/>/);
 });
 
 test("the admin validator: strings only, one line, capped, no placeholder or markup", () => {
@@ -80,18 +84,21 @@ test("the settings route allows and validates both keys", () => {
   assert.match(route, /license_issuer: \(value\) => licenceSettingIssue\("license_issuer", value\),/);
 });
 
-test("/faq: no year «٢٠٢٥»; «منصة مرخّصة» kept; the licence line joins answer 3 only when given", () => {
+test("/faq: no year «٢٠٢٥»; «مرخّصة» and the licence line join answer 3 only when the number is given (file 05 #33)", () => {
   for (const item of faqData) {
     assert.doesNotMatch(item.answerAr, /٢٠٢٥|2025/, `faq ${item.id}`);
     assert.doesNotMatch(item.answerEn, /2025/, `faq ${item.id}`);
   }
   const licenceItem = faqData.find((i) => i.id === LICENCE_FAQ_ID)!;
-  assert.match(licenceItem.answerAr, /منصة مرخّصة/);
+  assert.doesNotMatch(licenceItem.questionAr + licenceItem.answerAr, /مرخّص/, "no licence claimed without the number");
+  assert.doesNotMatch(licenceItem.answerEn, /licensed|supervision/i);
   assert.equal(faqWithLicence(faqData, null, null), faqData, "nothing set: the same items");
   const withLine = faqWithLicence(faqData, licenceLineAr(filled), licenceLineEn(filled));
   const three = withLine.find((i) => i.id === LICENCE_FAQ_ID)!;
   assert.ok(three.answerAr.endsWith(" رقم الترخيص: 1234/ت، الجهة المانحة: الجهة المانحة للاختبار."));
   assert.ok(three.answerEn.endsWith(" Licence number: 1234/ت, issued by: الجهة المانحة للاختبار."));
+  assert.ok(three.answerAr.startsWith("نعم، نظامي منصة مرخّصة."));
+  assert.equal(three.questionAr, "هل المنصة موثوقة ومرخّصة؟");
   for (const item of withLine.filter((i) => i.id !== LICENCE_FAQ_ID)) {
     assert.equal(item, faqData.find((i) => i.id === item.id), "other answers untouched");
   }

@@ -648,7 +648,7 @@ export default function RegisterProviderPage() {
                   be on screen.
 
                   Shown for all five roles now: a Google sign-up can finish for
-                  every one of them, including موثّق, معقّب and محكّم, because
+                  every one of them, including موثّق, مراجع حكومي and محكّم, because
                   the onboarding picker offers those three and the account-type
                   claim carries the specialty into `provider_profiles.sub_role`.
                   See `googleSignUpWorks` above. "التالي" is still disabled for
@@ -689,7 +689,7 @@ export default function RegisterProviderPage() {
                         `data` payload at all (see handleGoogleSignUp).
                       - the names in quotes are verbatim the onboarding
                         picker's own labels — «محامي / مستشار» and «شركة
-                        محاماة» for lawyer and firm, «موثّق» / «معقّب» /
+                        محاماة» for lawyer and firm, «موثّق» / «مراجع حكومي» /
                         «محكّم» for the other three
                         (src/app/onboarding/page.tsx) — so the user is told the
                         words they will actually see on the next screen.
@@ -718,7 +718,7 @@ export default function RegisterProviderPage() {
                     {isAr
                       ? (emailSignUpWorks
                           ? "يُنشئ Google حسابك فقط، ولا يُرسل رقم الترخيص أو التخصص أو الوثائق. بعد تسجيل الدخول تختار «محامي / مستشار» أو «شركة محاماة» وتُدخل رقم جوالك، فتصل إلى لوحة التحكم — ويبقى ملفك المهني غير موثّق ولا يظهر في نتائج البحث حتى تراجعه إدارة المنصّة. ولتقديم ملفك المهني كاملاً الآن، أكمل خطوات التسجيل بالبريد الإلكتروني في هذه الصفحة."
-                          : "يُنشئ Google حسابك فقط، ولا يُرسل رقم الترخيص أو التخصص أو الوثائق. بعد تسجيل الدخول تختار «موثّق» أو «معقّب» أو «محكّم» وتُدخل رقم جوالك، فيُسجَّل تخصصك مع حسابك وتصل إلى لوحة التحكم — ويبقى ملفك المهني غير موثّق ولا يظهر في نتائج البحث حتى تراجعه إدارة المنصّة.")
+                          : "يُنشئ Google حسابك فقط، ولا يُرسل رقم الترخيص أو التخصص أو الوثائق. بعد تسجيل الدخول تختار «موثّق» أو «مراجع حكومي» أو «محكّم» وتُدخل رقم جوالك، فيُسجَّل تخصصك مع حسابك وتصل إلى لوحة التحكم — ويبقى ملفك المهني غير موثّق ولا يظهر في نتائج البحث حتى تراجعه إدارة المنصّة.")
                       : (emailSignUpWorks
                           ? "Google creates your account only — it does not send your licence number, specialty or documents. After signing in you choose “Lawyer / Consultant” or “Law Firm” and enter your mobile number, which brings you to your dashboard — your professional file stays unverified and does not appear in search results until the platform administrators review it. To submit your full professional application now, complete the email registration steps on this page."
                           : "Google creates your account only — it does not send your licence number, specialty or documents. After signing in you choose “Notary”, “Gov. Agent” or “Arbitrator” and enter your mobile number, which records your specialty with your account and brings you to your dashboard — your professional file stays unverified and does not appear in search results until the platform administrators review it.")}
@@ -763,7 +763,7 @@ export default function RegisterProviderPage() {
                 <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/20 dark:bg-amber-500/5">
                   <p className="text-xs leading-relaxed text-ink-muted dark:text-gray-300">
                     {isAr
-                      ? "لدور «موثّق» أو «معقّب» أو «محكّم»، إنشاء الحساب يمرّ عبر زر «المتابعة بحساب Google» أعلاه: تختار تخصصك بعد تسجيل الدخول فيُسجَّل مع حسابك. أما إكمال التسجيل بالبريد الإلكتروني من هذه الصفحة — وهو المسار الذي يُرسل معه رقم الترخيص والوثائق — فغير متاح لهذه الأدوار الثلاث بعد، بسبب خلل تقني في إنشاء حسابات هذا النوع بالبريد. أُعِدَّ إصلاح هذا الخلل ويحتاج تفعيله إلى خطوتين من فريق المنصّة: تطبيقه على قاعدة البيانات، ثم نشر تحديث لهذه الصفحة. ولذلك أوقفنا زر «التالي» لهذه الأدوار بدل أن تملأ بياناتك ووثائقك ثم يفشل الطلب في آخر خطوة."
+                      ? "لدور «موثّق» أو «مراجع حكومي» أو «محكّم»، إنشاء الحساب يمرّ عبر زر «المتابعة بحساب Google» أعلاه: تختار تخصصك بعد تسجيل الدخول فيُسجَّل مع حسابك. أما إكمال التسجيل بالبريد الإلكتروني من هذه الصفحة — وهو المسار الذي يُرسل معه رقم الترخيص والوثائق — فغير متاح لهذه الأدوار الثلاث بعد، بسبب خلل تقني في إنشاء حسابات هذا النوع بالبريد. أُعِدَّ إصلاح هذا الخلل ويحتاج تفعيله إلى خطوتين من فريق المنصّة: تطبيقه على قاعدة البيانات، ثم نشر تحديث لهذه الصفحة. ولذلك أوقفنا زر «التالي» لهذه الأدوار بدل أن تملأ بياناتك ووثائقك ثم يفشل الطلب في آخر خطوة."
                       : "For a notary, government-transactions agent or arbitrator, the account is created through the “Continue with Google” button above: you choose your specialty after signing in and it is recorded with your account. Completing registration by email on this page — the route that also submits your licence number and documents — is not available for these three roles yet, because of a technical fault in creating accounts of this type by email. A fix has been prepared and switching it on takes two steps by the platform team: applying it to the database, then deploying an update to this page. That is why we have disabled “Next” for these roles rather than let you fill in your details and documents and have the application fail at the last step."}
                   </p>
                   <p className="mt-2 text-xs leading-relaxed text-ink-muted dark:text-gray-300">

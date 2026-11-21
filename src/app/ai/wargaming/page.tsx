@@ -2,9 +2,8 @@
 import { motion, AnimatePresence } from "framer-motion";
 import React, { useState, useRef } from "react";
 import {
-  Sword, Scales, Brain, SpeakerHigh, MagnifyingGlass,
-  FileArrowUp, X, FileText, HandFist, Gavel,
-  Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft,
+  Sword, Gavel, Brain, SpeakerHigh, MagnifyingGlass,
+  FileArrowUp, X, FileText, HandFist, Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft,
   Check, CaretDown, Warning, ArrowsCounterClockwise,
   Spinner, PaperPlaneTilt, Sparkle,
 } from "@phosphor-icons/react";
@@ -23,6 +22,8 @@ import type { OrderAttachment } from "@/lib/services/orderIntake";
 import { LEGAL_TAXONOMY } from "@/constants/taxonomies";
 import { useAiRun } from "@/hooks/useAiRun";
 import { useToolDraft } from "@/hooks/useToolDraft";
+// P2-3 (batch l12): the step and typed fields kept for this tab (toolStepState.ts).
+import { useSessionState } from "@/hooks/useSessionState";
 import { draftChoice, draftText, draftTextList } from "@/lib/payments/topUpDraft";
 import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
@@ -56,7 +57,7 @@ interface CaseContext {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const SIM_TARGETS: { id: SimTarget; label: string; sub: string; icon: typeof Sword; color: string; grad: string }[] = [
   { id:"opponent", label:"محاكاة الخصم",    sub:"هجماته ودفوعه المتوقعة",     icon:HandFist,        color:"text-red-400",    grad:"from-red-700 to-red-500"     },
-  { id:"court",    label:"اتجاه المحكمة",  sub:"ما ستفحصه المحكمة وأسئلتها",  icon:Scales,          color:"text-amber-400",  grad:"from-amber-600 to-amber-400" },
+  { id:"court",    label:"اتجاه المحكمة",  sub:"ما ستفحصه المحكمة وأسئلتها",  icon:Gavel,          color:"text-amber-400",  grad:"from-amber-600 to-amber-400" },
   { id:"critique", label:"نقض المذكرة",    sub:"ثغرات كاشف الصياغة",           icon:MagnifyingGlass, color:"text-purple-400", grad:"from-purple-700 to-purple-500"},
   { id:"plea",     label:"تدريب المرافعة", sub:"سكريبت وأداء الجلسة",          icon:SpeakerHigh,     color:"text-blue-400",   grad:"from-blue-700 to-blue-500"   },
 ];
@@ -562,11 +563,11 @@ function AIWargamingPage() {
   // "simulating" / "results" steps. "submit" sends the team order and runs
   // the real AI simulation (SimResultView).
   type PageStep = "setup" | "targets" | "submit";
-  const [step,    setStep]    = useState<PageStep>("setup");
-  const [ctx,     setCtx]     = useState<CaseContext>({ role:"", area:"", areaOther:"", summary:"" });
+  const [step,    setStep]    = useSessionState<PageStep>("wargaming", "step", "setup", { allowed: ["setup", "targets", "submit"] });
+  const [ctx,     setCtx]     = useSessionState<CaseContext>("wargaming", "ctx", { role:"", area:"", areaOther:"", summary:"" });
   const [targets, setTargets] = useState<Set<SimTarget>>(new Set(["opponent","court"]));
-  const [memoText, setMemoText] = useState("");
-  const [docsText, setDocsText] = useState("");
+  const [memoText, setMemoText] = useSessionState("wargaming", "memoText", "");
+  const [docsText, setDocsText] = useSessionState("wargaming", "docsText", "");
   // documentIds from the shared attachments list that were uploaded via the
   // memo-specific dropzone in TargetSelect — distinct from "any attachment
   // on the order" so an unrelated case file from step 1 can never silently

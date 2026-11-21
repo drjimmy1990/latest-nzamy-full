@@ -21,9 +21,11 @@ test("item 4: the template drawer sends a non-lawyer to a consultation, not to t
     page,
     /\{selected\.redirectTo && isLawyerOnlyAiHref\(selected\.redirectTo\) && !canSeeLawyerTools\(user\.userType\) \? \([\s\S]{0,400}user\.loading \? null : \(\s*<Link href="\/dashboard\/client\/consultation\/new"[\s\S]{0,400}اطلب استشارة/,
   );
-  // …and only then falls back to the template's own link (the lawyer, firm, admin, and the non-lawyer pages /ai/draft, /ai/legal-opinion).
+  // …and only then falls back to the template's own link (the lawyer, firm, admin, and the non-lawyer page /ai/draft).
+  // Owner ١٢٢ (batch l12): /ai/legal-opinion is lawyer-only now, so a client is sent to the consultation instead.
   assert.match(page, /\) : selected\.redirectTo \? \(\s*<Link href=\{selected\.redirectTo\}/);
-  for (const shared of ["/ai/draft", "/ai/legal-opinion"]) assert.ok(!isLawyerOnlyAiHref(shared), shared);
+  assert.ok(!isLawyerOnlyAiHref("/ai/draft"));
+  assert.ok(isLawyerOnlyAiHref("/ai/legal-opinion"));
   // The alternative is a page the client and the company may open.
   for (const t of ["individual", "corporate"]) assert.ok(isRouteAllowedFor("/dashboard/client/consultation/new", t), t);
   for (const t of ["lawyer", "firm", "admin"]) assert.ok(canSeeLawyerTools(t), t);

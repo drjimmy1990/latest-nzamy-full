@@ -135,3 +135,18 @@ export function splitRepealedMarker(heading: string): { text: string; repealed: 
   const text = heading.replace(REPEALED_MARKER, " ").replace(/[ \t]{2,}/g, " ").trim();
   return text === heading.trim() ? { text: heading, repealed: false } : { text, repealed: true };
 }
+
+/**
+ * Owner Q101 (batch l12): a LOCKED repealed article's preview must not open
+ * with «أُلغيت هذه المادة بموجب …» — the repealing instrument and its date are
+ * a subscriber's. The reader hid the line on screen only; the law route now
+ * drops it from the stored text before cutting the preview. The heading and
+ * the prior wording stay; a text with no such line comes back unchanged.
+ */
+export function withoutRepealNotice(text: string | null | undefined): string {
+  const t = (text ?? "").replace(/\r\n/g, "\n");
+  if (!SELF_REPEAL.test(t)) return t;
+  const parts = splitRepealedArticle(t, "");
+  if (!parts.notice) return t;
+  return [parts.heading, parts.prior, parts.warning].filter((p) => p.trim() !== "").join("\n\n");
+}

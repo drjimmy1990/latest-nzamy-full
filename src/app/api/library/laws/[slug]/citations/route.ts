@@ -5,8 +5,13 @@ import { hasFullLibraryAccess } from '@/lib/access-control';
 import { decreeRefVariants, parseDecreeRef, pickDecree } from '@/lib/library/decreeRef';
 import { lawStatusForDetail } from '@/app/laws/law-status';
 import { stripArticleAuditNotes } from '@/lib/library/lawPreambleBlocks';
+import { readerLinkTypes } from '@/lib/library/graphLinkTypes';
+import { getFeatureFlags } from '@/lib/featureFlags/featureFlagsServer';
 import { articleStatusForDetail } from '../_article-status';
+import { TIER_SHAPED_CACHE_CONTROL } from '../_official-meta';
 import {
+  BULK_PER_TYPE,
+  centerKeyOf,
   NEIGHBORHOOD_LIMIT,
   READER_SECTION_QUERIES,
   applyLiveRows,
@@ -18,9 +23,12 @@ import {
   parseNumbers,
   refIds,
   shapeArticleRefs,
+  shapeLawLinks,
   validArticleId,
+  withAutoTags,
   withHrefs,
 } from './_shape';
+import { maskDecreeTitlesForViewer } from './_decree-titles';
 
 /**
  * GET /api/library/laws/[slug]/citations — the law reader's citation data
@@ -30,15 +38,23 @@ import {
  * never on first paint. The law map («خريطة التشابك التشريعي», ?map=1) is gone
  * (register 14 item 14): no button, no panel, no route branch.
  *
- *   ?article=<id>          the links box of one article: three sections
- *                          (legislation / judicial / fiqh), every legal link type
+ *   ?bulk=1                batch l12 (owner L1): every article of the law at
+ *                          once — per article its link groups with their true
+ *                          totals and at most BULK_PER_TYPE items each, every
+ *                          node once (graph_rag_law_article_links, 20261202_30).
+ *                          The reader fetches it beside the law and draws the
+ *                          list under each article and the side box from it.
+ *   ?article=<id>          the links box of one article (id '@law': the law's own
+ *                          node, LAW_LINKS_ID): its sections
+ *                          (legislation / judicial / fiqh / similar), every legal link type
  *   ?name=<title>&n=1,2    a law named in the text, and its articles by number
  *   ?law=<slug>&n=1,2      the same for a known law (a regulation's parent)
  *   ?decree=<words>        a decree named in the text, by number and date
  *                          (batch l11, N02-13): the one exception to the rule
  *                          below — library subscribers only, never cached
  *
- * Every answer is the same for every viewer: titles (capped like a locked
+ * Every answer but the decree titles (Q101, viewerIsSubscriber below) is the
+ * same for every viewer: titles (capped like a locked
  * title), numbers, statuses and links — never article text (20260929_01). So
  * the entitlement question does not arise, and nothing here spends the
  * library document quota. The graph functions are service-role only; their
@@ -55,6 +71,24 @@ function graphFunctionMissing(code: string | null | undefined): boolean {
 
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { 'Cache-Control': status === 200 ? CACHE : 'no-store' } });
+}
+
+/**
+ * Owner Q101 (batch l12): the links answers name decrees, whose titles carry
+ * the number and date a non-subscriber may not read — so those answers are
+ * shaped per viewer (maskDecreeTitlesForViewer) and never cached.
+ */
+async function viewerIsSubscriber(): Promise<boolean> {
+  try {
+    const { data: { user } } = await (await createClient()).auth.getUser();
+    return await hasFullLibraryAccess(user?.id ?? null);
+  } catch {
+    return false;
+  }
+}
+
+function tierJson(body: unknown) {
+  return NextResponse.json(body, { headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
 }
 
 function safeArticleStatus(raw: unknown): string {
@@ -77,17 +111,44 @@ export async function GET(
   const serverOnly = await createServiceClient();
 
   try {
+    // Batch l12: the two admin switches (featureFlags.ts) — the similar-meaning
+    // section (Q133) and the «رابط آلي» tag (library-Q4). Same for every viewer.
+    const wantsLinks = url.searchParams.has('article') || url.searchParams.get('bulk') === '1';
+    const flags = wantsLinks ? await getFeatureFlags() : null;
+    const types = readerLinkTypes(flags?.library_similar_links ?? false);
+    const autoTagOn = flags?.library_auto_link_tag ?? false;
+
+    // ── Every article of the law at once (batch l12, owner L1) ───────────────
+    if (url.searchParams.get('bulk') === '1') {
+      const { data, error } = await serverOnly.rpc('graph_rag_law_article_links', {
+        p_law_slug: slug,
+        p_per_type: BULK_PER_TYPE,
+        p_types: types,
+      });
+      if (error) {
+        if (graphFunctionMissing(error.code)) return json({ available: false });
+        console.error('[citations] law links failed:', error.code ?? 'no-code', error.message);
+        return json({ error: 'تعذّر تحميل الإحالات' }, 500);
+      }
+      const shapedLaw = shapeLawLinks(data, slug, types, safeArticleStatus, lawStatusForDetail, autoTagOn);
+      return tierJson({ available: true, ...maskDecreeTitlesForViewer(shapedLaw, await viewerIsSubscriber()) });
+    }
+
     // ── One article's links: the links box (owner item 6, decision ٦٠) ──────
     if (url.searchParams.has('article')) {
       const id = validArticleId(url.searchParams.get('article'));
       if (!id) return json({ error: 'bad article' }, 400);
       // One call per query group (READER_SECTION_QUERIES, graphLinkTypes.ts):
       // hundreds of principles citing an article, or its many «إحالة» links,
-      // never crowd out its amendment and regulation links.
+      // never crowd out its amendment and regulation links. A group whose
+      // types are switched off (SIMILAR_TO, Q133) is not asked.
+      const queries = READER_SECTION_QUERIES
+        .map((q) => ({ section: q.section, types: q.types.filter((t) => types.includes(t)) }))
+        .filter((q) => q.types.length > 0);
       const answers = await Promise.all(
-        READER_SECTION_QUERIES.map((q) =>
+        queries.map((q) =>
           serverOnly.rpc('graph_rag_explore_neighborhood', {
-            p_node_key: `article:${id}`,
+            p_node_key: centerKeyOf(id, slug),
             p_depth: 1,
             p_edge_types: q.types,
             p_limit: NEIGHBORHOOD_LIMIT,
@@ -101,7 +162,7 @@ export async function GET(
         return json({ error: 'تعذّر تحميل الإحالات' }, 500);
       }
       const shaped = mergeSectionRefs(
-        READER_SECTION_QUERIES.map((q, i) => ({ section: q.section, refs: shapeArticleRefs(answers[i].data, id, slug, q.types) })),
+        queries.map((q, i) => ({ section: q.section, refs: shapeArticleRefs(answers[i].data, id, slug, q.types) })),
       );
       // Statuses from library.* now, not the graph's copy. A vanished anchor
       // links to its document and is named by it (never a confirmed article);
@@ -129,7 +190,8 @@ export async function GET(
         safeArticleStatus,
         lawStatusForDetail,
       );
-      return json({ available: true, ...withHrefs(live) });
+      const out = withHrefs(withAutoTags(live, autoTagOn));
+      return tierJson({ available: true, ...maskDecreeTitlesForViewer(out, await viewerIsSubscriber()) });
     }
 
     // ── A decree named in the text (N02-13, batch l11) ───────────────────────

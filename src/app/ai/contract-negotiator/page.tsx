@@ -1,5 +1,6 @@
 "use client";
 
+import AiHistoryList from "@/components/ai/AiHistoryList";
 import { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowCounterClockwise, CheckCircle, Copy, Handshake, Plus, Spinner, Trash, Warning } from "@phosphor-icons/react";
@@ -277,6 +278,10 @@ function NegotiatorTool({ isDark }: { isDark: boolean }) {
           </>)}
         </>
       )}
+      {/* L11-log (batch l12): this tool's last five runs, own rows only. */}
+      <section className="mt-6" aria-label="آخر معاملاتك في هذه الأداة">
+        <AiHistoryList isDark={isDark} tool="contract-negotiator" recent />
+      </section>
     </div>
   );
 }

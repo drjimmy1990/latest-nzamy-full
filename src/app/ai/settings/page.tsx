@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import {
   Robot, SlidersHorizontal, PencilSimple,
   CheckCircle, Sparkle, PlusCircle, X,
-  Notebook, Scales,
+  Notebook, Gavel,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import { isSupabaseMode } from "@/lib/services/api";
@@ -178,7 +178,7 @@ export default function AISettingsPage() {
       {/* Specialization */}
       <div className={`${card} p-5 shadow-sm`}>
         <div className="flex items-center gap-2 mb-4">
-          <Scales size={16} weight="duotone" className={isDark ? "text-zinc-500" : "text-zinc-400"} />
+          <Gavel size={16} weight="duotone" className={isDark ? "text-zinc-500" : "text-zinc-400"} />
           <h2 className={`font-bold text-[14px] ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>التخصص القانوني</h2>
         </div>
         <div className="flex flex-wrap gap-2">

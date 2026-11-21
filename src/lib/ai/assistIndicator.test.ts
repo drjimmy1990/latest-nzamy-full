@@ -1,7 +1,8 @@
 /**
  * Owner ٣٨ (18 Nov 2026): the five analysis tools show an indicator only as
  * «مؤشر مساعد», never an outcome prediction; the fake «قوة موقفك القانوني» bar
- * and the dead wargaming mock are gone.
+ * and the dead wargaming mock are gone. Owner ١٢٤a (20 Nov) worded it: a value
+ * reads «بنسبة تقديرية X٪», and the fixed line sits on all five result screens.
  *
  * RUN: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/ai/assistIndicator.test.ts
  */
@@ -15,25 +16,30 @@ const src = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.ur
 const code = (rel: string) =>
   src(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "").replace(/(^|[^:"'\\])\/\/.*$/gm, "$1");
 
-test("the label and its line: «مؤشر مساعد», and it never predicts the outcome", () => {
+test("owner ١٢٤a: the fixed line «مؤشر مساعد لا يتنبأ بنتيجة القضية»", () => {
   assert.equal(ASSIST_INDICATOR_LABEL, "مؤشر مساعد");
-  assert.match(ASSIST_INDICATOR_NOTE, /لا يتنبأ بنتيجة القضية/);
+  assert.match(ASSIST_INDICATOR_NOTE, /^مؤشر مساعد لا يتنبأ بنتيجة القضية/);
 });
 
-test("a percentage is only ever «مؤشر مساعد: N٪», 0–100, Arabic digits", () => {
-  assert.equal(assistIndicatorPercent(65), "مؤشر مساعد: ٦٥٪");
-  assert.equal(assistIndicatorPercent(0), "مؤشر مساعد: ٠٪");
-  assert.equal(assistIndicatorPercent(99.6), "مؤشر مساعد: ١٠٠٪");
+test("owner ١٢٤a: a percentage is only ever «بنسبة تقديرية N٪», 0–100, Arabic digits", () => {
+  assert.equal(assistIndicatorPercent(65), "بنسبة تقديرية ٦٥٪");
+  assert.equal(assistIndicatorPercent(0), "بنسبة تقديرية ٠٪");
+  assert.equal(assistIndicatorPercent(99.6), "بنسبة تقديرية ١٠٠٪");
   for (const bad of [-1, 101, NaN, Infinity, "65", null, undefined]) assert.equal(assistIndicatorPercent(bad), null, String(bad));
 });
 
-test("no bare percentage on the five tools' result screens; the two with an indicator carry the label", () => {
+test("owner ١٢٤a: all five live result screens carry the line, and none prints a bare percentage", () => {
+  assert.equal(ASSIST_INDICATOR_SCREENS.length, 5);
   for (const rel of ASSIST_INDICATOR_SCREENS) {
-    assert.doesNotMatch(code(rel), /٪|%\}|\d%|\$\{[^}]*\}%/, rel);
+    // A CSS calc(100% - 18px) is layout, not a figure.
+    assert.doesNotMatch(code(rel).replace(/calc\([^)]*\)/g, ""), /٪|%\}|\d%|\$\{[^}]*\}%/, rel);
+    assert.match(src(rel), /<AssistIndicatorNote isDark=\{isDark\}/, rel);
   }
-  assert.match(src("app/ai/analyze-strength/page.tsx"), /<AssistIndicatorNote isDark=\{isDark\}/);
-  assert.match(src("app/ai/wargaming/_SimResultView.tsx"), /<AssistIndicatorNote isDark=\{isDark\}/);
-  assert.match(src("components/ai/AssistIndicatorNote.tsx"), /assistIndicatorPercent\(percent\) \?\? ASSIST_INDICATOR_LABEL/);
+  // The chip appears only with a real value; the line always.
+  const note = src("components/ai/AssistIndicatorNote.tsx");
+  assert.match(note, /const chip = assistIndicatorPercent\(percent\);/);
+  assert.match(note, /\{chip && \(/);
+  assert.match(note, /<span>\{ASSIST_INDICATOR_NOTE\}<\/span>/);
 });
 
 test("the client analyzer's hard-coded «قوة موقفك القانوني» bar is gone", () => {

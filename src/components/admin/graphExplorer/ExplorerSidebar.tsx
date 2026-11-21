@@ -45,6 +45,8 @@ import {
 } from "@/lib/ai/graphExplorerCore";
 import { LIVE_WINDOWS, graphMissLabel, livePercent, type ExplorerLiveStats } from "@/lib/ai/graphCallLog";
 import { explorerApi, type LabOptions, type LabResult, type OverviewData, type SearchResult } from "./explorerApi";
+// Batch l12 (owner file 10 ب34): the daily broken-reference check, in the status tab.
+import LinkCheckPanel from "./LinkCheckPanel";
 
 export type SidebarTab = "search" | "start" | "lab" | "status";
 
@@ -925,6 +927,7 @@ function StatusTab({ overview }: { overview: OverviewData | null }) {
         </button>
       </div>
       <LivePanel />
+      <LinkCheckPanel />
       {error && <p className="text-[12px] text-red-300">{error}</p>}
       {!status && !error && <div className="h-24 animate-pulse rounded-xl bg-zinc-900/70" />}
 

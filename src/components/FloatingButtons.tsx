@@ -14,6 +14,9 @@ import { useUser } from "@/hooks/useUser";
 import { submitLibraryIssueReport, type IssueKind } from "@/lib/services/feedbackService";
 import { usePathname } from "next/navigation";
 import { useDraftCart } from "@/hooks/useDraftCart";
+import { useFabScroll } from "@/hooks/useFabScroll";
+import { draftFabVisible } from "@/lib/library/draftFab";
+import { LAWS_STATIC_SEGMENTS } from "@/components/library/libraryGuardPaths";
 const DraftDrawer = dynamic(() => import("@/components/laws/DraftDrawer").then(m => ({ default: m.DraftDrawer })), { ssr: false });
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -390,10 +393,13 @@ function isLegalItemDetailPage(pathname: string | null): boolean {
     return Boolean(slug && slug.trim() !== "");
   }
 
-  // 2. Legislation / Law detail: /laws/[slug] (exclude /laws index, subscribe, feqh-preview)
+  // 2. Legislation / Law detail: /laws/[slug]. The /laws index and every static
+  // sibling (subscribe, feqh-preview, my, research, …: LAWS_STATIC_SEGMENTS)
+  // are not a reader — /laws/research (batch l12) has no header cart button,
+  // so the floating one must stay there.
   if (pathname.startsWith("/laws/")) {
-    const slug = pathname.substring("/laws/".length);
-    if (!slug || slug === "subscribe" || slug === "feqh-preview") {
+    const slug = pathname.substring("/laws/".length).split("/")[0];
+    if (!slug || LAWS_STATIC_SEGMENTS.has(slug)) {
       return false;
     }
     return true;
@@ -417,11 +423,14 @@ function isLegalItemDetailPage(pathname: string | null): boolean {
 }
 
 /**
- * N02-3 (owner, 13-Nov package): the readers that carry their own «المسودة»
- * button in the page header — the law, royal-order, principles-collection and
- * feqh-book readers. There the floating draft button was a second copy of it,
- * sitting over the article text. The judgment page (/precedents/judgment/…)
- * has no header button, so it keeps the floating one.
+ * The readers that carry their own «المسودة» button in the page header — the
+ * law, royal-order, principles-collection and feqh-book readers. The judgment
+ * page (/precedents/judgment/…) has no header button.
+ *
+ * N02-3 (13-Nov package, ce3cc4c5) removed the floating draft button from
+ * these readers. L2 (owner file 03, 20 Nov) overrules that: there it shows
+ * once the reader is 300 px below the top and hides again near the header,
+ * where the header button is in view (draftFab.ts draftFabVisible).
  */
 export function readerHasOwnDraftButton(pathname: string | null): boolean {
   if (!isLegalItemDetailPage(pathname) || !pathname) return false;
@@ -537,9 +546,17 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
   // Use props if provided, otherwise use internal draft cart
   const cartCount = propCartCount !== undefined ? propCartCount : cart.length;
-  // Floating Draft Cart FAB is strictly restricted to legal item detail pages,
-  // and never where the page header already has its own «المسودة» button (N02-3).
-  const showDraftFab = cartCount > 0 && isItemDetail && !readerHasOwnDraftButton(pathname);
+  // Floating Draft Cart FAB: library item pages only. Where the page header has
+  // its own «المسودة» button it shows past 300 px and hides near the header
+  // (L2, owner file 03). useFabScroll also fades every floating button out
+  // below lg while the reader scrolls down (lib02 / New 1).
+  const fab = useFabScroll(isItemDetail && !isFabSuppressedPath(pathname));
+  const showDraftFab = draftFabVisible({
+    cartCount,
+    isItemDetail,
+    headerHasDraftButton: readerHasOwnDraftButton(pathname),
+    scrollY: fab.scrollY,
+  });
   const removeArticle = (id: string) => {
     setCart(prev => prev.filter(item => item.articleId !== id));
   };
@@ -649,7 +666,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
           is matrix row 168's complaint in its most severe form.
           40 is above page content and below every overlay, which is the only
           band a persistent FAB belongs in. */}
-      <div style={FAB_BOTTOM_STYLE} className={`fixed ${waBtnSide} z-40 ${isFabMobileSuppressedPath(pathname) ? "hidden lg:flex" : "flex"} flex-col items-center gap-2.5 print:hidden`}>
+      <div data-fab-autohide="" style={FAB_BOTTOM_STYLE} className={`fixed ${waBtnSide} z-40 ${isFabMobileSuppressedPath(pathname) ? "hidden lg:flex" : "flex"} flex-col items-center gap-2.5 print:hidden`}>
 
         {/* ── Orange Report mini-FAB (only on library pages) ── */}
         {reportConfig && (
@@ -724,7 +741,7 @@ export default function FloatingButtons({ reportConfig: propReportConfig, cartCo
 
       {/* ── Floating Draft Cart FAB (Restricted to legal item detail pages) ── */}
       {showDraftFab && (
-        <div style={FAB_BOTTOM_STYLE} className={`fixed ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden`}>
+        <div data-fab-autohide="" style={FAB_BOTTOM_STYLE} className={`fixed ${isRTL ? "left-[88px]" : "right-[88px]"} z-40 print:hidden`}>
           <div className="relative group">
             {/* Tooltip */}
             <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 py-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold shadow-lg border border-white/10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10">

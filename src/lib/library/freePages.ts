@@ -46,12 +46,20 @@ export function feqhLockFrom(rows: readonly BlockPlace[], scanned: number = FREE
   return rows[rows.length - 1].order_index + 1;
 }
 
-/** How many of a decree's pages (in order) a reader gets in full; -1 = all. */
+/**
+ * How many of a decree's pages (in order) a reader gets in full; -1 = all.
+ * `freePages` is the default for everyone else — owner Q101 (batch l12): the
+ * admin setting library_reader_display.decree_free_pages, 0 by default
+ * (src/lib/library/readerDisplaySettings.ts); FREE_PAGES when not given. The
+ * whitelist (-1) and an admin per-item override still win over it.
+ */
 export function freeDecreePages(
   access: { freeLimit: number; freeLimitSource?: "override" | "default"; isWhitelisted?: boolean },
   total: number,
+  freePages: number = FREE_PAGES,
 ): number {
   if (access.freeLimit === -1 || access.isWhitelisted) return -1;
   if (access.freeLimitSource === "override") return Math.max(0, access.freeLimit);
-  return Math.min(FREE_PAGES, Math.max(0, total));
+  const pages = Number.isInteger(freePages) && freePages >= 0 ? freePages : FREE_PAGES;
+  return Math.min(pages, Math.max(0, total));
 }

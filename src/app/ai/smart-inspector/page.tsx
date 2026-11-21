@@ -9,7 +9,7 @@ import {
   ChartBar, Warning, CheckCircle, Minus, Target, Clock,
   ArrowRight, ArrowLeft, CalendarCheck, SealCheck,
   FileText, Plus, PaperclipHorizontal, FileMagnifyingGlass,
-  Scales, Brain,
+  Brain,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import Link from "next/link";

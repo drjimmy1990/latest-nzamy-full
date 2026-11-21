@@ -666,7 +666,8 @@ export default function ConsultationRoomPage() {
     // label with nothing after it.
     const channelLabel = channelLabelOf(consultation);
     const lines = [
-      "نسخة من طلب استشارة قانونية — منصة نظامي",
+      // Q117 (batch l12): the client's copy carries no platform name or mark.
+      "نسخة من طلب استشارة قانونية",
       `رقم الطلب: ${consultation.id}`,
       ...(consultation.title ? [`عنوان الطلب: ${consultation.title}`] : []),
       ...(channelLabel ? [`نوع الجلسة: ${channelLabel}`] : []),
@@ -693,7 +694,7 @@ export default function ConsultationRoomPage() {
         : [NO_OPINION_AR]),
       "",
       "-----------------------------------------",
-      "هذه نسخة من طلب مقدَّم عبر منصة نظامي، وليست رأياً قانونياً ولا تقريراً صادراً عن محامٍ.",
+      "هذه نسخة من طلب استشارة مقدَّم إلكترونياً، وليست رأياً قانونياً ولا تقريراً صادراً عن محامٍ.",
     ];
 
     setCopyError(null);
@@ -785,7 +786,7 @@ export default function ConsultationRoomPage() {
     printWindow.document.write(`
       <html dir="rtl" lang="ar">
       <head>
-        <title>نسخة من طلب استشارة قانونية — منصة نظامي</title>
+        <title>نسخة من طلب استشارة قانونية</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -893,7 +894,7 @@ export default function ConsultationRoomPage() {
       </head>
       <body>
         <div class="header">
-          <div class="logo-title">منصة نظامي</div>
+          <div class="logo-title">نسخة العميل</div>
           <div class="date">رقم الطلب: ${escapeHtml(consultation.id)}${dateLine}</div>
         </div>
 
@@ -927,7 +928,7 @@ export default function ConsultationRoomPage() {
         </div>
 
         <div class="footer">
-          هذه الوثيقة نسخة من طلب مقدَّم عبر منصة نظامي. ليست رأياً قانونياً ولا تقريراً صادراً عن محامٍ، ولا يصح الاستناد إليها أمام أي جهة.
+          هذه الوثيقة نسخة من طلب استشارة مقدَّم إلكترونياً. ليست رأياً قانونياً ولا تقريراً صادراً عن محامٍ، ولا يصح الاستناد إليها أمام أي جهة.
         </div>
 
         <script>

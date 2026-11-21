@@ -1,9 +1,10 @@
 "use client";
 
 import {
-  Scales, Calendar, Stack, FolderSimple, BookBookmark
+  Gavel, Calendar, Stack, FolderSimple, BookBookmark
 } from "@phosphor-icons/react";
 import type { JudicialPrinciplesSystem } from "@/app/laws/data";
+import { seriesCurrentVolumeLabel } from "@/lib/library/precedentVolumes";
 
 interface IdentityPanelProps {
   isDark: boolean;
@@ -38,6 +39,7 @@ export default function IdentityPanel({
 }: IdentityPanelProps) {
   const card = `rounded-2xl border ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`;
   const muted = isDark ? "text-zinc-500" : "text-slate-400";
+  const volumeLabel = seriesCurrentVolumeLabel(collection.series);
 
   return (
     <div className="space-y-4">
@@ -62,7 +64,7 @@ export default function IdentityPanel({
             is the honest answer when the source does not say.
           */}
           <div className="flex gap-1.5 items-start">
-            <Scales size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
+            <Gavel size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
               <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "جهة الإصدار" : "Issuing Body"}</p>
               <p className={`text-[10px] font-semibold leading-tight ${courtKnown ? (isDark ? "text-zinc-200" : "text-zinc-700") : muted}`}>{courtLabel}</p>
@@ -81,13 +83,15 @@ export default function IdentityPanel({
           </div>
           )}
 
-          {collection.part && collection.part !== 0 && (
+          {/* Owner file 11 item 7: in a series the volume's own label («المجلد الثالث»),
+              never «الجزء 1» (the loader stores part 1 on every volume of a series). */}
+          {(volumeLabel || (collection.part && collection.part !== 0)) && (
           <div className="flex gap-1.5 items-start">
             <Stack size={10} className={`mt-0.5 flex-shrink-0 ${muted}`} />
             <div>
-              <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "الجزء / المجلد" : "Volume / Part"}</p>
+              <p className={`text-[8px] uppercase tracking-wider ${muted}`}>{isRTL ? "المجلد" : "Volume"}</p>
               <p className={`text-[10px] font-semibold leading-tight ${isDark ? "text-zinc-200" : "text-zinc-700"}`}>
-                {isRTL ? `الجزء ${collection.part}` : `Part ${collection.part}`}
+                {volumeLabel ?? (isRTL ? `الجزء ${collection.part}` : `Part ${collection.part}`)}
               </p>
             </div>
           </div>

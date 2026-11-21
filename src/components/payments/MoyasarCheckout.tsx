@@ -567,6 +567,16 @@ export default function MoyasarCheckout({
             <dd className="font-semibold text-zinc-500 line-through dark:text-zinc-400">{formatHalalas(ready.quote.launchListNet)}</dd>
           </div>
         ) : null}
+        {/* l12 (owner Q88a): the points the server froze in this order — what the wallet gets. */}
+        {typeof ready.quote.topupPoints === "number" ? (
+          <div className="flex items-center justify-between gap-4 px-5 py-3">
+            <dt className="text-zinc-600 dark:text-zinc-400">النقاط التي تُضاف إلى رصيدك</dt>
+            <dd className="font-semibold text-zinc-900 dark:text-zinc-100">
+              {ready.quote.topupPoints.toLocaleString("ar-SA")} نقطة
+              {ready.quote.bonusPoints ? ` (منها ${ready.quote.bonusPoints.toLocaleString("ar-SA")} نقطة إضافية)` : ""}
+            </dd>
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-4 px-5 py-3">
           <dt className="text-zinc-600 dark:text-zinc-400">المبلغ قبل الضريبة</dt>
           <dd className="font-semibold text-zinc-900 dark:text-zinc-100">{formatHalalas(ready.quote.net)}</dd>

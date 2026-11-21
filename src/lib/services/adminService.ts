@@ -94,8 +94,8 @@ const MOCK_REQUESTS: VerificationRequest[] = [
     docs: ["شهادة تحكيم", "بطاقة هوية"], aiScore: 45, status: "rejected",
   },
   {
-    id: "PV-037", user_id: "mock-037", name: "خالد الشهري — معقّب", type: "bailiff", date: "منذ ٤ أيام",
-    docs: ["تصريح معقّب", "بطاقة هوية"], aiScore: 88, status: "verified",
+    id: "PV-037", user_id: "mock-037", name: "خالد الشهري — مراجع حكومي", type: "bailiff", date: "منذ ٤ أيام",
+    docs: ["تصريح مراجع حكومي", "بطاقة هوية"], aiScore: 88, status: "verified",
   },
   {
     id: "PV-036", user_id: "mock-036", name: "أ. نوف العنزي", type: "lawyer", date: "منذ أسبوع",

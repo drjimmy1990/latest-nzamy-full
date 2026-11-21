@@ -23,7 +23,10 @@ test("a marker or a source row opens the sheet in place, not a new tab", () => {
 
 test("the sheet's route previews only a text the caller's own run cited, behind the paywall rules", () => {
   const route = read("app/api/v1/ai/source-preview/route.ts");
-  assert.match(route, /await libraryGate\(\)/);
+  // N11 (l12): the closed switch first; the per-account lock only for a text
+  // cited by the library assistant alone (a drafter / opinion preview skips it).
+  assert.match(route, /await libraryGate\(\{ accountLock: false \}\)/);
+  assert.match(route, /if \(!\(cited\.data as Array<\{ tool\?: unknown \}>\)\.some\(\(r\) => !isLibraryAiTool\(r\.tool\)\)\) \{\s*const locked = await libraryAccountGate\(\);\s*if \(locked\) return locked;/);
   assert.match(route, /requireApiUser\(/);
   assert.match(route, /\.eq\("user_id", userId\)\s*\.contains\("citations", citedByFilter\(/);
   assert.match(route, /hasFullLibraryAccess\(userId, accessMemo\)/);

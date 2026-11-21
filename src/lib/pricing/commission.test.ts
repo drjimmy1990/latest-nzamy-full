@@ -44,3 +44,16 @@ test("the providers tab and the parked marketplace pages read the module, and no
   // unchanged by design: the Terms keep their «٥٪–١٥٪» range; the refund page
   // and the price list still name no rate (pricingHonesty.test.ts)
 });
+
+test("l12 Q130a: the rates are a setting — parsed inside the Terms' 5–15 %, defaults otherwise", async () => {
+  const { parseCommissionRates, validCommissionPct } = await import("./commission.ts");
+  assert.deepEqual(parseCommissionRates({ founderOrEnterprise: 6, subscriber: 8, free: 12 }), { founderOrEnterprise: 6, subscriber: 8, free: 12 });
+  assert.deepEqual(parseCommissionRates(null), { founderOrEnterprise: 5, subscriber: 7, free: 15 });
+  assert.deepEqual(parseCommissionRates({ founderOrEnterprise: 2, subscriber: "9", free: 40 }), { founderOrEnterprise: 5, subscriber: 9, free: 15 });
+  assert.equal(validCommissionPct(7.5), null);
+  const rates = { founderOrEnterprise: 6, subscriber: 8, free: 12 };
+  assert.equal(commissionPctFor({ plan: "free" }, rates), 12);
+  assert.equal(commissionPctFor({ plan: "lawyer-pro" }, rates), 8);
+  assert.equal(commissionPctFor({ plan: "firm-enterprise" }, rates), 6);
+  assert.equal(commissionRatesLine("ar", rates), "٦٪ للمؤسسين وشركات المحاماة المتكاملة · ٨٪ للمشتركين · ١٢٪ للحسابات المجانية");
+});

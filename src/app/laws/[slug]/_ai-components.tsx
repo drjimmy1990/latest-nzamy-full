@@ -10,6 +10,7 @@ import type { LawArticle } from "../data";
 import { LiteMarkdown } from "../components/AiTabContent";
 import type { LibraryAiAction } from "./_ai-reply";
 import { askLibrary, loadLibraryHistory, type LibraryHistoryConversation } from "./_library-assistant";
+import LibraryPointsLowNotice from "@/components/library/LibraryPointsLowNotice";
 import { explainGreeting, explainSubtitle } from "./_explain-greeting";
 import { asCitations, CitedText, SourceList, type Citation } from "@/components/ai/CitedAnswer";
 import { useUser } from "@/hooks/useUser";
@@ -277,6 +278,8 @@ export function LibraryAI({ isDark, isRTL = true }: { isDark: boolean; isRTL?: b
                   <div ref={bottomRef} />
                 </div>
               )}
+              {/* 06 ج6 (l12): one question away from the 50-point lock → say so first. */}
+              {user.isLoggedIn && <LibraryPointsLowNotice isDark={isDark} refreshKey={msgs.length} className="mx-3 mt-3" />}
               <div className={`flex items-center gap-2 p-3 border-t ${isDark ? "border-white/[0.05]" : "border-slate-100"}`}>
                 <div className={`flex items-center gap-2 flex-1 p-1 pl-3 pr-1 rounded-xl border transition-colors ${
                   input.trim() ? (isDark ? "border-[#C8A762]/50 bg-zinc-800/80" : "border-amber-400 bg-white") : (isDark ? "border-white/[0.08] bg-zinc-800/50" : "border-slate-200 bg-slate-50")

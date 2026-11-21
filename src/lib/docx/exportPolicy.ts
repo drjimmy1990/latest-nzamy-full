@@ -33,6 +33,10 @@ export function exportableBlocks(blocks: DocBlock[]): DocBlock[] {
     if (block.kind === "list") {
       const items = block.items.map(clean).filter(Boolean);
       if (items.length) out.push({ ...block, items });
+    } else if (block.kind === "table") {
+      // N13: cells are data the lawyer stored, cleaned the same way; an empty cell stays a cell.
+      const rows = block.rows.map((r) => r.map(clean)).filter((r) => r.some(Boolean));
+      if (rows.length) out.push({ ...block, header: block.header.map(clean), rows });
     } else if (block.kind === "signature") {
       const lines = block.lines.map(clean).filter(Boolean);
       if (lines.length) out.push({ ...block, lines });

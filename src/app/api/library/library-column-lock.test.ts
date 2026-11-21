@@ -729,7 +729,8 @@ test("reads the scanner cannot see (dynamic table names, a client parameter) are
   const booksCall = init.slice(init.indexOf('shouldFetch("books")'), init.indexOf('shouldFetch("collections")'));
   assert.doesNotMatch(booksCall, /serverOnly/, "books stay on the request client");
   // 20261108_10: the decree list reads ref / date / summaries — service role.
-  assert.match(decreesCall, /DECREE_LIST_COLUMNS, "decrees", \(q\) => q\.order\("id"\), serverOnly\)/);
+  // Q96 (l12): the decree read may add summary_status (an optional column) — still the service role.
+  assert.match(decreesCall, /DECREE_LIST_COLUMNS\),\s*"decrees",\s*\(q\) => q\.order\("id"\),\s*serverOnly,/);
   assert.match(init, /const out = isFree \? \{ \.\.\.row \} : stripFields\(\{ \.\.\.row \}, \["text"\]\);/);
 
   // autocomplete: count(table, client) selects `id` and filters on `fts`;
@@ -775,7 +776,7 @@ test("reads the scanner cannot see (dynamic table names, a client parameter) are
     decreeList[1].split(",").map((s) => s.trim()).some((c) => LOCKED.decrees_circulars.includes(c)),
     "init's decree list names locked columns, so it must stay on the service role",
   );
-  assert.match(init, /fetchSection\("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", \(q\) => q\.order\("id"\), serverOnly\)/);
+  assert.match(init, /fetchSection\(\s*"decrees_circulars",\s*\(on\) => \(on\.has\("decreeSummaryStatus"\) \? `\$\{DECREE_LIST_COLUMNS\}, summary_status` : DECREE_LIST_COLUMNS\),\s*"decrees",\s*\(q\) => q\.order\("id"\),\s*serverOnly,/);
   assert.match(auto, /count\('decrees_circulars', serverOnly\),/);
   assert.doesNotMatch(auto, /count\('decrees_circulars'\)/);
   assert.match(stats, /decrees: \{ table: "decrees_circulars", column: "id", serverOnly: false \}/);

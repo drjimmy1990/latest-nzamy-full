@@ -42,6 +42,7 @@ import {
   captchaSubmitError,
 } from "@/lib/auth/captcha";
 import { translateAuthError } from "@/lib/auth/translateAuthError";
+import { LOGIN_LOCKED_AR, LOGIN_LOCKED_CODE, LOGIN_LOCKED_EN } from "@/lib/auth/loginLockout";
 import { useTurnstile } from "@/components/auth/useTurnstile";
 import { TurnstileWidget } from "@/components/auth/TurnstileWidget";
 import { IDLE_NOTICE_AR } from "@/lib/auth/idleSignOut";
@@ -241,18 +242,40 @@ export default function LoginPage() {
           return;
         }
         const supabase = createClient();
-        let signIn: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+        // Batch l12-access (owner file 10 ب23): the password goes to OUR server
+        // route, which counts wrong passwords per account (5 in 15 minutes →
+        // a 15-minute lock + an e-mail), passes the Turnstile token on to
+        // GoTrue and sets the session cookies on its answer. The browser
+        // client below then reads that session from the cookies.
+        let signInRes: Response;
         try {
-          signIn = await supabase.auth.signInWithPassword(credentials);
+          signInRes = await fetch("/api/v1/auth/sign-in", {
+            method: "POST",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ..."email" in credentials ? { email: credentials.email } : { phone: credentials.phone },
+              password: credentials.password,
+              captchaToken: captcha.token,
+            }),
+          });
         } finally {
           // The token reached GoTrue (or may have): it is spent whatever the
           // answer, including when the handshake below fails after a
           // successful sign-in. The next attempt gets a fresh challenge.
           captcha.spend();
         }
-        const { data, error: authError } = signIn;
+        const signInBody = (await signInRes.json().catch(() => null)) as
+          | { ok?: boolean; code?: string; error?: string; authError?: { message?: string; code?: string; status?: number } }
+          | null;
+        if (signInRes.status === 423 || signInBody?.code === LOGIN_LOCKED_CODE) {
+          setError(isAr ? LOGIN_LOCKED_AR : LOGIN_LOCKED_EN);
+          return;
+        }
+        const authError = signInRes.ok && signInBody?.ok === true ? null : (signInBody?.authError ?? { message: "network" });
 
-        if (authError || !data.user) {
+        if (authError) {
           // A captcha refusal is said as such, so the visitor knows to redo
           // the check rather than their password (which stays in the field).
           // Every credential failure keeps ONE message: GoTrue answers
@@ -260,11 +283,7 @@ export default function LoginPage() {
           // account alike, and this must not tell them apart (CAP-06). The
           // "login" context adds only what says nothing about the account:
           // a rate limit, the network, an unconfirmed address (BUG-09).
-          setError(
-            authError
-              ? translateAuthError(authError, { context: "login", isAr })
-              : isAr ? "بيانات الدخول غير صحيحة" : "Invalid credentials",
-          );
+          setError(translateAuthError(authError, { context: "login", isAr }));
           return;
         }
 

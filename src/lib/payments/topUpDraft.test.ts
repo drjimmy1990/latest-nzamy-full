@@ -95,9 +95,9 @@ test("the way back is a relative /ai path only — never another origin", () => 
   assert.equal(readTopUpReturn(s), null, "re-validated on read");
 });
 
-test("the packs follow the book's audience: 50 for everyone (l9), an individual 100 / 250, a lawyer 500 and up, cheapest first", () => {
-  assert.deepEqual(topUpPacksFor("individual").map((p) => p.id), ["topup-50", "topup-100", "topup-250"]);
-  assert.deepEqual(topUpPacksFor("lawyer").map((p) => p.id), ["topup-50", "topup-500", "topup-1000", "topup-2500", "topup-5000", "topup-10000"]);
+test("the packs follow the book's audience: an individual 100 / 250, a lawyer 500 and up, cheapest first (l12 Q87: the 50 pack is retired)", () => {
+  assert.deepEqual(topUpPacksFor("individual").map((p) => p.id), ["topup-100", "topup-250"]);
+  assert.deepEqual(topUpPacksFor("lawyer").map((p) => p.id), ["topup-500", "topup-1000", "topup-2500", "topup-5000", "topup-10000"]);
   assert.deepEqual(topUpPacksFor(null).map((p) => p.id), []);
 });
 

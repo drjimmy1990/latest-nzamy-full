@@ -48,3 +48,11 @@ test("the reader's PreambleBlock uses this rule for both the law's and the regul
   assert.match(src, /regulationPreamble && !isPreambleEmpty\(regulationPreamble\)/);
   assert.doesNotMatch(src, /function isPreambleEmpty/);
 });
+
+test("file 03 L4: the title and an empty «📜 ديباجة» toggle hide the section; a toggle with prose keeps it", () => {
+  const empty = "# نظام المرور\n\n<details>\n<summary>📜 ديباجة نظام المرور</summary>\n\n</details>";
+  assert.equal(isPreambleEmpty(empty), true);
+  assert.equal(isPreambleEmpty("# نظام المرور"), true);
+  const full = "# نظام المرور\n\n<details>\n<summary>📜 ديباجة نظام المرور</summary>\n\nبعون الله تعالى، نحن ملك المملكة العربية السعودية، بعد الاطلاع على المادة …\n</details>";
+  assert.equal(isPreambleEmpty(full), false);
+});

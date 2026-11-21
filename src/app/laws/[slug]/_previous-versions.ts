@@ -48,6 +48,12 @@ export interface AmendmentLike {
   parts?: ReadonlyArray<{ label: string; text: string }> | null;
   /** O12: words holding the version's date, for the order only (never shown). */
   sortDate?: string | null;
+  /**
+   * File 03 L5 (batch l12): the amending instrument's library id
+   * (article_amendments.decree_id, 20261129_70) — a subscriber's, like
+   * `source`; the «عُدّلت بموجب …» line links it.
+   */
+  decreeId?: string | null;
 }
 
 export interface PreviousVersionCard {
@@ -63,6 +69,8 @@ export interface PreviousVersionCard {
   textMissing: boolean;
   /** O12: the labelled «before» texts of a lifted version (absent for a stored row). */
   parts?: Array<{ label: string; text: string }>;
+  /** L5: the amending decree's page id (a decrees_circulars uuid), when known and not withheld. */
+  decreeId?: string;
 }
 
 /** The heading the corpus repeats inside every history block. */
@@ -130,10 +138,12 @@ export function visibleAmendments(list: ReadonlyArray<AmendmentLike> | null | un
     // A card the source marks «no prior text» is kept when it names (or withholds) its instrument.
     if (!hasBody && !hasInstrument && !(unavailable && sourceLocked)) return;
     const position = typeof entry.position === "number" && Number.isFinite(entry.position) ? entry.position : null;
+    const decreeId = sourceLocked ? "" : decreePageId(entry.decreeId);
     cards.push({
       source, date, summary, fullText, sourceLocked,
       textMissing: unavailable ? fullText === "" && parts.length === 0 : !hasBody,
       ...(parts.length > 0 ? { parts } : {}),
+      ...(decreeId ? { decreeId } : {}),
       key, at, position,
     });
   });
@@ -147,5 +157,34 @@ export function visibleAmendments(list: ReadonlyArray<AmendmentLike> | null | un
   return cards.map((c) => ({
     source: c.source, date: c.date, summary: c.summary, fullText: c.fullText, sourceLocked: c.sourceLocked, textMissing: c.textMissing,
     ...(c.parts ? { parts: c.parts } : {}),
+    ...(c.decreeId ? { decreeId: c.decreeId } : {}),
   }));
+}
+
+/** decrees_circulars.id is a uuid: any other value cannot open /laws/orders/{id} (the route answers 404). */
+const DECREE_PAGE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A decree_id the reader can link, lower-cased; '' for anything else. */
+export function decreePageId(value: unknown): string {
+  const v = clean(value);
+  return DECREE_PAGE_ID_RE.test(v) ? v.toLowerCase() : "";
+}
+
+/**
+ * File 03 L5 (batch l12) — the line under an amended article, outside the
+ * fold: «عُدّلت بموجب {الأداة} بتاريخ {التاريخ}», from the newest card that
+ * names its instrument (the cards are in the parser's order, else newest
+ * first). For a viewer the instrument is withheld from (T28-22): «عُدّلت»
+ * only. No card with an instrument: no line — nothing is guessed.
+ */
+export type AmendedByLine =
+  | { kind: "source"; text: string; decreeId?: string }
+  | { kind: "locked" };
+
+export function amendedByLine(cards: ReadonlyArray<PreviousVersionCard>): AmendedByLine | null {
+  const newest = cards.find((c) => c.sourceLocked || c.source !== "");
+  if (!newest) return null;
+  if (newest.sourceLocked) return { kind: "locked" };
+  const text = `عُدّلت بموجب ${newest.source}${newest.date ? ` بتاريخ ${newest.date}` : ""}`;
+  return newest.decreeId ? { kind: "source", text, decreeId: newest.decreeId } : { kind: "source", text };
 }

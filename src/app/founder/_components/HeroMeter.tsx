@@ -3,8 +3,6 @@
 import { splitRemaining, type FounderPhase } from "@/lib/founder/founderWindow";
 import { toArabicDigits } from "@/lib/services/arabicCount";
 import { useFounderWindow } from "./FounderWindowProvider";
-import { usePaymentsStatus } from "@/hooks/usePaymentsStatus";
-import { SALE_PAUSED_LINE_AR, saleGatewayPaused } from "@/lib/payments/checkoutView";
 
 /**
  * The hero's countdown and seat meter. Every number is the server's: the
@@ -14,6 +12,11 @@ import { SALE_PAUSED_LINE_AR, saleGatewayPaused } from "@/lib/payments/checkoutV
  *
  * The ticking digits are not a live region (a screen reader would announce
  * every second); the phase line above them is, so a change of state is read.
+ *
+ * Owner 06 أ1 (batch l12): the countdown KEEPS ticking while online payment is
+ * paused — the campaign's window does not stop with the gateway. The paused
+ * line is said at the buy button only (founderCard.ts, FOUNDER_GATEWAY_PAUSED_TEXT),
+ * not here in place of the timer (an l8 choice the owner did not make).
  */
 
 const PHASE_LINE: Record<FounderPhase, string> = {
@@ -32,10 +35,8 @@ const grouped = (n: number) => toArabicDigits(String(n).replace(/\B(?=(\d{3})+(?
 
 export function HeroMeter() {
   const { view } = useFounderWindow();
-  // l8 (owner 18 Nov, 1.1): on sale by the window but online payment is off → «البيع متوقف مؤقتاً» and why
-  const gatewayPaused = saleGatewayPaused(usePaymentsStatus()) && view.phase === "live";
-  const phaseLine = gatewayPaused ? SALE_PAUSED_LINE_AR : PHASE_LINE[view.phase];
-  const parts = view.remainingMs === null || gatewayPaused ? null : splitRemaining(view.remainingMs);
+  const phaseLine = PHASE_LINE[view.phase];
+  const parts = view.remainingMs === null ? null : splitRemaining(view.remainingMs);
   const units: Array<[number | undefined, string]> = [
     [parts?.days, "يوم"],
     [parts?.hours, "ساعة"],

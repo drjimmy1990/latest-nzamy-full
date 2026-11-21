@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning, FrameCorners, TrashSimple, Palette, ArrowCounterClockwise, ArrowClockwise, Graph, DownloadSimple, Lightning, Scales } from "@phosphor-icons/react";
+import { CheckCircle, CircleNotch, Crosshair, Info, LinkSimple, ArrowsOutSimple, Lock, LockOpen, Rows, Export, NotePencil, Warning, FrameCorners, TrashSimple, Palette, ArrowCounterClockwise, ArrowClockwise, Graph, DownloadSimple, Lightning, BookOpen } from "@phosphor-icons/react";
 import {
   EDGE_CONFIG,
   TYPE_CONFIG,
@@ -525,7 +525,7 @@ export default function CaseGraphView({
                     ? `يبحث في مكتبة الأنظمة عن مواد تتصل بالبطاقات المختارة ويضيفها بطاقات (${aiToolPriceText("canvas-card", "ar")})`
                     : "اختر بطاقة أو أكثر أولاً"}
                 >
-                  {aiCard.busy ? <CircleNotch size={13} className="animate-spin" /> : <Scales size={13} />}
+                  {aiCard.busy ? <CircleNotch size={13} className="animate-spin" /> : <BookOpen size={13} />}
                   {aiCard.busy ? "جارٍ البحث..." : "اقترح سنداً نظامياً"}
                 </button>
               )}

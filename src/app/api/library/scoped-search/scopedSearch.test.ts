@@ -145,8 +145,45 @@ test("route: gate first, operator-safe parsing, the RPC with an inline fallback,
   assert.match(ROUTE, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
   assert.match(ROUTE, /getLibraryAccessForUser\(userId\)/);
   // the series is resolved on the server from the catalogue (anon allow-list columns)
-  assert.match(ROUTE, /buildCollectionSeries\(/);
+  // Owner file 11 item 7: tagged or by title, the one lookup the reader uses too.
+  assert.match(ROUTE, /readCollectionSeries\(supabase, data\)/);
   assert.match(ROUTE, /buildBookSeries\(/);
   // every hit goes through shapeHit (the paywall); rows never reach the response raw
   assert.match(ROUTE, /rows\.map\(\(row\) => shapeHit\(scope\.kind, row, scope\.volumes, parsed\.plainTerms, access\)\)/);
+});
+
+test("L8 (l12): the volume picker — validated ids, intersected with the scope, never zero volumes", async () => {
+  const { validateScopedRequest, pickScopeVolumes, SCOPED_VOLUMES_MAX } = await import("./scopedSearch.ts");
+  const base = { scope: "book:كتاب-1", query: "غرامة" };
+  const ok = validateScopedRequest({ ...base, volumes: ["v2", " v1 ", "v2"] });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.ok && ok.request.volumes, ["v2", "v1"]);
+  // absent / empty = every volume (no field at all)
+  const none = validateScopedRequest(base);
+  assert.equal(none.ok && "volumes" in none.request, false);
+  const empty = validateScopedRequest({ ...base, volumes: [] });
+  assert.equal(empty.ok && "volumes" in empty.request, false);
+  for (const bad of ["v1", [1], [""], ["\u0000x"], Array.from({ length: SCOPED_VOLUMES_MAX + 1 }, (_, i) => `v${i}`)]) {
+    const r = validateScopedRequest({ ...base, volumes: bad });
+    assert.equal(r.ok, false, JSON.stringify(bad).slice(0, 40));
+    assert.equal(!r.ok && r.code, "invalid_volumes");
+  }
+  const scope = ["v1", "v2", "v3"];
+  assert.deepEqual(pickScopeVolumes(scope, undefined), scope);
+  assert.deepEqual(pickScopeVolumes(scope, []), scope);
+  assert.deepEqual(pickScopeVolumes(scope, ["v3", "v1"]), ["v1", "v3"], "in the scope's order");
+  assert.deepEqual(pickScopeVolumes(scope, ["other"]), scope, "only unknown ids → all, not zero");
+  assert.deepEqual(pickScopeVolumes(scope, ["v2", "other"]), ["v2"]);
+});
+
+test("L8 (l12): the route narrows the ids, keeps the quota key; the panel remembers the choice", () => {
+  const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(route, /const ids = pickScopeVolumes\(scope\.volumes\.map\(\(vol\) => vol\.id\), req\.volumes\);/);
+  assert.match(route, /const docKey = scopedSearchDocKey\(scope\.kind, scope\.id\);/);
+  const panel = readFileSync(new URL("../../../../components/library/ScopedSearchPanel.tsx", import.meta.url), "utf8");
+  assert.match(panel, /window\.localStorage\.getItem\(VOLUMES_KEY\(scope\)\)/);
+  assert.match(panel, /\.\.\.\(pickedRef\.current\.length > 0 \? \{ volumes: pickedRef\.current \} : \{\}\)/);
+  assert.match(panel, /كل المجلدات \(\{scopeVolumes\.length\}\)/);
+  // the operators stay visible
+  assert.match(panel, /role="group" aria-label="معاملات البحث"/);
 });

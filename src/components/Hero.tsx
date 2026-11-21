@@ -51,12 +51,16 @@ function AnimatedStat({ value, label, delay }: { value: string; label: string; d
  * page (src/lib/publicSeo/platformRegistryServer.ts). The badge says
  * «منصة مرخّصة» and names an issuer only once one is set — it used to print
  * «مرخّص من وزارة العدل», an issuer the owner never gave (batch l9).
+ * `licence`: the admin setting license_number — with it empty the badge is
+ * not shown at all (file 05 #33, batch l12).
  */
-export default function Hero({ licenceIssuer = "" }: { licenceIssuer?: string }) {
+export default function Hero({ licence = "", licenceIssuer = "" }: { licence?: string; licenceIssuer?: string }) {
   const { lang, theme } = useTheme();
   const isAr = lang === "ar";
   const isDark = theme === "dark";
   const [videoOpen, setVideoOpen] = useState(false);
+  // File 05 #33 (l12): «منصة مرخّصة» only with a licence number.
+  const badge = licenceBadge({ ...EMPTY_REGISTRY, licence, licenceIssuer }, isAr);
   
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
@@ -258,10 +262,12 @@ export default function Hero({ licenceIssuer = "" }: { licenceIssuer?: string })
 
             {/* Trust badges */}
             <div className={`mt-10 flex flex-wrap items-center gap-4 text-[10px] sm:text-xs font-medium border-t pt-8 ${isDark ? "border-white/10 text-gray-400" : "border-slate-100 text-slate-500"}`}>
-              <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
-                <Buildings size={16} className="text-royal dark:text-emerald-400" />
-                {licenceBadge({ ...EMPTY_REGISTRY, licenceIssuer }, isAr)}
-              </div>
+              {badge && (
+                <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
+                  <Buildings size={16} className="text-royal dark:text-emerald-400" />
+                  {badge}
+                </div>
+              )}
               <div className="flex items-center gap-1.5 rounded-full bg-slate-50 dark:bg-white/5 px-2.5 py-1 sm:px-3 sm:py-1.5">
                 <LockKey size={16} className="text-royal dark:text-emerald-400" />
                 {isAr ? "اتصال مشفّر TLS" : "TLS Encrypted Connection"}

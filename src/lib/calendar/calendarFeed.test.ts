@@ -44,7 +44,24 @@ test("one file, one VTIMEZONE, one VEVENT per hearing and open deadline; cancell
   assert.ok(ics.startsWith("BEGIN:VCALENDAR\r\n") && ics.endsWith("END:VCALENDAR\r\n"));
 });
 
-test("privacy: no notes, no client, no platform line; a client meeting loses its location", () => {
+test("N14 (owner RAW[71], reverses ٤٥ / ٤٩): the client's name and the full notes are in the event", () => {
+  const notes = "أحضر أصل العقد؛ الموكل يطلب التأجيل،\nوالشاهد الثاني غائب";
+  const input = hearingIcsInput({ ...hearing, clientName: "شركة المثال", notes }, now);
+  assert.equal(input.description, `القضية: دعوى عمالية\nالعميل: شركة المثال\nملاحظات: ${notes}`);
+  const l = unfold(buildHearingIcs(input)!);
+  const desc = l.find((x) => x.startsWith("DESCRIPTION:") && x.includes("العميل"));
+  assert.ok(desc, "the event carries the client line");
+  // RFC 5545 TEXT: the notes' newline is escaped (\n), nothing cut; an ASCII ; and , would be too.
+  assert.ok(desc!.includes("ملاحظات: أحضر أصل العقد؛ الموكل يطلب التأجيل،\\nوالشاهد الثاني غائب"));
+  const ascii = unfold(buildHearingIcs(hearingIcsInput({ ...hearing, notes: "a;b,c" }, now))!).find((x) => x.startsWith("DESCRIPTION:") && x.includes("ملاحظات"));
+  assert.ok(ascii!.endsWith("ملاحظات: a\\;b\\,c"));
+  // Only what is present: no client and no notes → the case line alone, as before.
+  assert.equal(hearingIcsInput({ ...hearing, clientName: "  ", notes: "" }, now).description, "القضية: دعوى عمالية");
+  assert.equal(hearingIcsInput({ ...hearing, caseName: "" }, now).description, null);
+  assert.equal(hearingIcsInput({ ...hearing, caseName: "", clientName: "س" }, now).description, "العميل: س");
+});
+
+test("still kept private: no platform line; a client meeting loses its location", () => {
   const input = hearingIcsInput({ ...hearing, type: "client_meet", location: "حي النرجس، منزل الموكل" }, now);
   assert.equal(input.location, null);
   assert.equal(input.description, "القضية: دعوى عمالية");
@@ -52,7 +69,12 @@ test("privacy: no notes, no client, no platform line; a client meeting loses its
   assert.ok(!ics.includes("النرجس"));
   assert.ok(!ics.includes("منصة"));
   assert.equal(hearingIcsInput(hearing, now).location, "المحكمة العمالية بالرياض");
-  assert.equal(hearingIcsInput({ ...hearing, caseName: "" }, now).description, null);
+});
+
+test("the long notes still fold to ≤ 75 octets per line", () => {
+  const { ics } = buildCalendarFeed([{ ...hearing, notes: "ملاحظة طويلة ".repeat(60) }], [], now);
+  for (const line of ics.split("\r\n")) assert.ok(new TextEncoder().encode(line).length <= 75);
+  assert.ok(unfold(ics).some((x) => x.startsWith("DESCRIPTION:") && x.includes("ملاحظات: ملاحظة طويلة")));
 });
 
 test("a deadline is an all-day event titled «مهلة: …»", () => {
@@ -74,4 +96,13 @@ test("a bad date is skipped, never guessed; an empty feed is still a valid calen
 test("every physical line ≤ 75 octets", () => {
   const { ics } = buildCalendarFeed([{ ...hearing, title: "ج".repeat(200) }], [], now);
   for (const line of ics.split("\r\n")) assert.ok(new TextEncoder().encode(line).length <= 75);
+});
+
+test("N14 wiring (l12 integration): the hearings page hands the client's name and the notes to every calendar file", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../../app/dashboard/lawyer/hearings/page.tsx", import.meta.url), "utf8");
+  const fn = page.slice(page.indexOf("function feedHearingOf"), page.indexOf("function downloadHearingIcs"));
+  assert.match(fn, /clientName: ev\.client \?\? null, notes: ev\.notes \?\? null,/);
+  const bar = readFileSync(new URL("../../app/dashboard/lawyer/hearings/_HearingsExportBar.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(bar, /لا يحمل ملاحظاتك ولا أسماء الموكلين/);
 });

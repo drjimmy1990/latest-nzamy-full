@@ -97,7 +97,7 @@ const TYPE_CFG: Record<string,{label:string;color:string}> = {
   lawyer:{ label:"محامي", color:"text-blue-400" },
   notary:{ label:"موثّق", color:"text-emerald-400" },
   arbitrator:{ label:"محكّم", color:"text-purple-400" },
-  bailiff:{ label:"معقّب", color:"text-orange-400" },
+  bailiff:{ label:"مراجع حكومي", color:"text-orange-400" },
 };
 
 /**

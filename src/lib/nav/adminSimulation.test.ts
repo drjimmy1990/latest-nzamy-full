@@ -390,6 +390,8 @@ const SAFE_CALLEES = new Set([
   "setAdminView", // writes the admin VIEW to this tab's sessionStorage (useAdminView.ts) — UI state, R27's own sibling
   "withoutConsultantBlockedItems", // N01-29: the pure Art. 18 menu filter getSidebarByUserType itself applies (navigation.sidebars.ts) — returns a subset of the static config
   "withoutLibraryItems", // l8 owner item 9: the pure library-lock menu filter (src/lib/library/accountAccess.ts) — returns a subset of the static config
+  "withAdminAiGroup", // l12 N2: the pure admin-menu builder (src/lib/ai/adminAiTools.ts) — adds a static group for a real admin, sends nothing
+  "adminToolsShown", // l12 N2: the pure boolean behind the admin AI display (src/lib/ai/adminAiTools.ts), sends nothing
 ]);
 /** Built-in methods that cannot send anything; the binding they produce stays tainted, so the later sink is still checked. */
 const PURE_METHODS = new Set([
@@ -624,6 +626,7 @@ const ALLOWED_IMPORTERS = new Set<string>([
   "app/dashboard/business/layout.tsx",          // S6-T18: the hidden-section notice only
   "components/dashboard/ConsultantGate.tsx",    // S6-T18: the Art. 18 lock panel only
   "app/dashboard/firm/layout.tsx",              // S6-T18: FirmRoleContext only (quick add keeps the session role)
+  "hooks/useAdminToolsView.ts",                 // l12 N2: two display booleans for /ai (admin tools shown, consultant lock previewed)
 ]);
 
 /** Files that read FirmRoleContext (S6-T18 feeds it the simulated firm role). Add one only after review. */

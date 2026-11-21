@@ -140,3 +140,47 @@ export function lawCardDates(latestUpdate: unknown, issueDate: unknown, official
   if (upd && dateDigits(upd) && dateDigits(upd) === dateDigits(iss)) return { update, issued: "" };
   return { update, issued: `صدر: ${iss}` };
 }
+
+/**
+ * File 03 L3 (batch l12): the sub-legislation names under a /laws card —
+ * the regulations merged into the file first, then the linked documents
+ * (/api/library/init `sub_legislation_titles`), duplicates once. `form`
+ * is the admin setting library_reader_display.child_name_form (library
+ * question 5): "full" keeps «اللائحة التنفيذية لنظام المرور», "short" drops
+ * the repeated base title («اللائحة التنفيذية», as before).
+ */
+export function cardSubLegislationNames(
+  baseTitle: unknown,
+  mergedNames: readonly unknown[] = [],
+  childTitles: readonly unknown[] = [],
+  form: "full" | "short" = "full",
+): string[] {
+  const base = text(baseTitle);
+  const all = [...(Array.isArray(mergedNames) ? mergedNames : []), ...(Array.isArray(childTitles) ? childTitles : [])];
+  if (form === "short") return subsidiaryNamesUnderBase(base, all);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of all) {
+    const name = text(raw);
+    if (!name || name === base) continue;
+    // Compared in the short form, so «اللائحة التنفيذية» and «اللائحة التنفيذية لنظام X» are one.
+    const [key] = subsidiaryNamesUnderBase(base, [name]);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+/** The names shown before «إظهار المزيد» (owner file 03 L3: «لائحة أو لائحتان»). */
+export const CARD_SUB_NAMES_SHOWN = 2;
+
+/**
+ * How many sub-legislation documents the card knows of but does not name
+ * even when expanded: the linked children counted by the API beyond the
+ * titles it sent. 0 when every one is named.
+ */
+export function unnamedSubLegislationCount(linkedCount: unknown, linkedTitlesSent: number): number {
+  const n = typeof linkedCount === "number" && Number.isInteger(linkedCount) && linkedCount > 0 ? linkedCount : 0;
+  return Math.max(0, n - Math.max(0, linkedTitlesSent));
+}

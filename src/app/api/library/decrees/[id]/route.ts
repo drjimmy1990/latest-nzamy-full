@@ -8,7 +8,11 @@ import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 import { summaryForViewer } from '@/lib/library/legislativeEvent';
+import { summaryShown } from '@/lib/library/summaryReview';
+import { readSummariesReviewedOnly } from '@/lib/library/summaryReviewServer';
 import { maskDecreeOfficialFields, TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
+import { decreeTitleForViewer } from '@/lib/library/decreeDisplay';
+import { loadLibraryReaderDisplay } from '@/lib/library/readerDisplaySettingsServer';
 
 /**
  * The decree's header columns. Read with the SERVICE ROLE since migration
@@ -45,6 +49,13 @@ const DECREE_COLUMNS = 'id, title, type, issuer, ref, date, summary, summary_bri
  * ٣١٨) — the same isSubscriber test as the preamble. Everyone else gets ''
  * for the three and `officialMetaLocked: true` (maskDecreeOfficialFields).
  * The two free scanned pages stay as they are (owner ٤٤٩ pending).
+ *
+ * Owner Q101 (batch l12): the decree's title loses its number and date for a
+ * non-subscriber too (decreeTitleForViewer — the public name the page's
+ * <title> already uses), and the free pages are the admin setting
+ * library_reader_display.decree_free_pages, 0 by default (was 2): a
+ * non-subscriber reads the header, the موجز and no page text. The free-item
+ * whitelist and an admin per-item override still open pages.
  */
 export async function GET(
   _request: Request,
@@ -131,9 +142,26 @@ export async function GET(
       return NextResponse.json({ error: 'تعذّر تحميل هذا القرار' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const preamble = typeof preambleRow?.preamble === 'string' ? preambleRow.preamble : '';
+    // Q96 (batch l12): the summaries only once reviewed
+    // (library_summaries_reviewed_only; summary_status is 20261202_50's —
+    // before it runs, or on a failed read, the status is unknown: not shown).
+    const [decreeSummaryStatus, summariesReviewedOnly] = await Promise.all([
+      serverOnly
+        .schema('library')
+        .from('decrees_circulars')
+        .select('summary_status')
+        .eq('id', id)
+        .maybeSingle()
+        .then(
+          (r) => (r.error ? null : (r.data as { summary_status?: unknown } | null)?.summary_status ?? null),
+          () => null,
+        ),
+      readSummariesReviewedOnly(),
+    ]);
+    const showSummaries = summaryShown(decreeSummaryStatus, summariesReviewedOnly);
     // How many leading pages carry their text: all (Pro+, whitelisted), an
-    // admin override, or the owner's first two pages.
-    const free = freeDecreePages(probe, pages.length);
+    // admin per-item override, or the admin setting decree_free_pages (Q101, 0).
+    const free = freeDecreePages(probe, pages.length, (await loadLibraryReaderDisplay()).decree_free_pages);
     const unlockedCount = free === -1 ? pages.length : Math.min(free, pages.length);
 
     // Format response matching frontend DemoOrder interface. Owner ٤٢٤: the
@@ -142,17 +170,20 @@ export async function GET(
       { ref: decree.ref || '', date: decree.date || '', official_url: decree.official_url || '' },
       isSubscriber,
     );
+    const viewerSummary = !showSummaries ? null : typeof decree.summary === 'string' ? summaryForViewer(decree.summary, isSubscriber) : decree.summary;
+    const viewerBrief = !showSummaries ? null : typeof decree.summary_brief === 'string' ? summaryForViewer(decree.summary_brief, isSubscriber) : decree.summary_brief;
     const response = {
       id: decree.id,
-      title: decree.title,
+      // Owner Q101: no number or date in a non-subscriber's title.
+      title: decreeTitleForViewer({ title: decree.title, type: decree.type, summary: viewerBrief || viewerSummary }, isSubscriber),
       type: decree.type,
       issuer: decree.issuer,
       ref: official.ref,
       date: official.date,
       // Owner ٤٢٤ / ٣٨٠ (the laws' ٣١٩ rule): a non-subscriber's موجز and
       // summary lose their decree numbers and dates. The title is unchanged.
-      summary: typeof decree.summary === 'string' ? summaryForViewer(decree.summary, isSubscriber) : decree.summary,
-      summary_brief: typeof decree.summary_brief === 'string' ? summaryForViewer(decree.summary_brief, isSubscriber) : decree.summary_brief,
+      summary: viewerSummary,
+      summary_brief: viewerBrief,
       cat: decree.category,
       // Owner answer ٢٢١: the text for subscribers; for everyone else nothing,
       // and a lock card when there is a preamble to lock.

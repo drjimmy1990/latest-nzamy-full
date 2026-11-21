@@ -15,7 +15,7 @@ import {
   ArrowLeft,
   Sparkle,
   User,
-  Scales,
+  Gavel,
   Envelope,
   Robot,
   FileMagnifyingGlass,
@@ -32,6 +32,9 @@ import { LAWYER_AI_TOOLS, type LawyerAiTool } from "@/constants/lawyerAiCatalog"
 import { getLawyerAiBadge } from "@/constants/lawyerAiBadges";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
+import { adminAiOrder } from "@/lib/ai/adminAiTools";
+import { useAdminToolsView } from "@/hooks/useAdminToolsView";
+import { useLiveTools } from "@/hooks/useLiveTools";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -533,7 +536,7 @@ const LAWYER_AI_ICON_MAP: Record<LawyerAiTool["permission"], any> = {
   "ai:collector": Notebook,
   "ai:contracts": FileText,
   "ai:contract-drafter": FileText,
-  "ai:wargaming": Scales,
+  "ai:wargaming": Gavel,
   "ai:analyze-strength": Sparkle,
   "ai:analyze": MagnifyingGlass,
   "ai:legal-opinion": Brain,
@@ -554,7 +557,7 @@ const LEGACY_AI_TOOLS: AiToolCard[] = [
   { id: "ai:draft", href: "/ai/draft", titleAr: "الصائغ القانوني", titleEn: "Legal Drafter", icon: PencilSimple, descAr: "صياغة عقود ومذكرات قانونية احترافية", descEn: "Draft professional legal contracts and memos" },
   { id: "ai:contracts", href: "/ai/contract-drafter", titleAr: "محترف العقود المختصر", titleEn: "Contract Drafter Lite", icon: FileText, descAr: "أنشئ مسودة عقد بسيطة في دقائق ثم احصل على مراجعة محامٍ", descEn: "Create a simple contract draft in minutes, then get lawyer review", badgeAr: "بالنقاط", badgeEn: "Points" },
   { id: "ai:quick-answer", href: "/ai/quick-answer", titleAr: "المجيب القانوني السريع", titleEn: "Quick Legal Responder", icon: ChatCircleDots, descAr: "سؤال محدد ← إجابة فورية مستندة للنظام السعودي", descEn: "One question → instant answer grounded in Saudi law", badge: "جديد" },
-  { id: "ai:memo-studio", href: "/ai/wargaming", titleAr: "المحاكي الشامل للقضايا", titleEn: "Litigation Studio", icon: Scales, descAr: "دمج الذكاء الاصطناعي (قوة الموقف، الخصوم، الجلسات، والمذكرات)", descEn: "Integrated AI for position strength, opponents, hearings & memos", badge: "مُدمَج" },
+  { id: "ai:memo-studio", href: "/ai/wargaming", titleAr: "المحاكي الشامل للقضايا", titleEn: "Litigation Studio", icon: Gavel, descAr: "دمج الذكاء الاصطناعي (قوة الموقف، الخصوم، الجلسات، والمذكرات)", descEn: "Integrated AI for position strength, opponents, hearings & memos", badge: "مُدمَج" },
   { id: "ai:consult", href: "/ai/consult", titleAr: "المستشار الذكي", titleEn: "AI Advisor", icon: ChatCircleDots, descAr: "غير متاحة حالياً — قيد الإعداد.", descEn: "Not available yet — in preparation.", badgeAr: "قريباً", badgeEn: "Soon" },
   // Wave 1 task 6: the client analyzer ends at the beta gate's "not
   // available" card (betaGatedRoutes.ts), so its card promises nothing live.
@@ -588,8 +591,27 @@ const GLOBAL_RESEARCH_CARD: AiToolCard = {
   badgeEn: "Soon",
 };
 
+/**
+ * Owner ١٢٣ (batch l12 simpledraft): «صائغ العقود المبسّط» for individuals and
+ * businesses only (SIMPLE_CONTRACT_ROLES; never the lawyer or the firm). It
+ * ships off: the hub marks it «قيد التفعيل» until tool-status says it runs
+ * (useLiveTools), and its page says the same.
+ */
+const SIMPLE_CONTRACT_HREF = "/ai/simple-contract";
+const SIMPLE_CONTRACT_AUDIENCE: ReadonlySet<string> = new Set(["individual", "corporate", "admin"]);
+const SIMPLE_CONTRACT_CARD: AiToolCard = {
+  id: null,
+  href: SIMPLE_CONTRACT_HREF,
+  titleAr: "صائغ العقود المبسّط",
+  titleEn: "Simple Contract Drafter",
+  icon: PencilSimple,
+  descAr: "اختر نوع العقد واكتب بياناته، فتصلك مسوّدة عقد مبسّطة استرشادية بلغة واضحة.",
+  descEn: "Pick the contract type and fill in its details to get a simple, guidance-only draft.",
+};
+
 const AI_TOOLS: AiToolCard[] = [
   GLOBAL_RESEARCH_CARD,
+  SIMPLE_CONTRACT_CARD,
   ...LAWYER_AI_TOOLS.map((tool) => ({
     id: tool.permission,
     href: tool.href,
@@ -634,6 +656,7 @@ function AiHubDashboard() {
   const user = useUser();
   const isRTL = lang === "ar";
   const isDark = theme === "dark";
+  const adminTools = useAdminToolsView().showAll;
   // Same condition as src/app/ai/analyze/page.tsx (cannedOutputGate.test.ts).
   const seesLawyerAnalyzer = user.userType === "lawyer" || user.userType === "firm" || user.userType === "admin";
   const hubTools = seesLawyerAnalyzer
@@ -660,9 +683,21 @@ function AiHubDashboard() {
     // /ai/consult is open to everyone again, non-Saudi individuals included
     // (owner Q172 default, 2026-10-04): /ai/global is coming-soon, not a substitute.
     if (t.href === "/ai/consult") return true;
+    if (t.href === SIMPLE_CONTRACT_HREF) return SIMPLE_CONTRACT_AUDIENCE.has(user.userType ?? "");
     if (!t.id) return true;
     return user.permissions.includes(t.id as UserPermission);
   });
+  // N2 (owner F02 §5 #63, batch l12): the admin sees every tool, the drafter then
+  // محترف العقود first, with no «قريباً» or price badge. Display only — a tool
+  // switched off still refuses his run before any charge (src/lib/ai/adminAiTools.ts).
+  // Owner ١٢٣: the simple contract drafter is «قيد التفعيل» until it runs for this account.
+  const simpleContractLive = useLiveTools(["simple-contract"], allowedTools.some((t) => t.href === SIMPLE_CONTRACT_HREF)).has("simple-contract");
+  const withSimpleBadge = allowedTools.map((t) =>
+    t.href === SIMPLE_CONTRACT_HREF && !simpleContractLive ? { ...t, badgeAr: "قيد التفعيل", badgeEn: "Activating soon" } : t,
+  );
+  const shownTools = adminTools
+    ? adminAiOrder(withSimpleBadge).map((t) => ({ ...t, badge: undefined, badgeAr: undefined, badgeEn: undefined }))
+    : withSimpleBadge;
 
   return (
     <div className={`p-6 md:p-10 max-w-[1200px] mx-auto min-h-[100dvh]`} dir={isRTL ? "rtl" : "ltr"}>
@@ -680,13 +715,13 @@ function AiHubDashboard() {
         </p>
       </div>
 
-      {allowedTools.length === 0 ? (
+      {shownTools.length === 0 ? (
         <div className="text-center py-20 bg-slate-50 dark:bg-white/5 rounded-3xl border border-dashed border-slate-200 dark:border-white/10">
           <p className="text-slate-500 dark:text-gray-400">{isRTL ? "عفواً، لا توجد أدوات متاحة في باقتك الحالية." : "No tools available in your current plan."}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {allowedTools.map((tool, i) => {
+          {shownTools.map((tool, i) => {
             const Icon = tool.icon;
             return (
               <motion.div

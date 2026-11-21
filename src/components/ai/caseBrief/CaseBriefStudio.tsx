@@ -4,13 +4,13 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CloudArrowUp, X, Robot, FileMagnifyingGlass, Warning,
-  CheckCircle, ArrowSquareOut, Scales, BookOpen, Clock,
+  CheckCircle, ArrowSquareOut, Gavel, BookOpen, Clock,
   SealWarning, Lightbulb, ChatCircleDots,
-  FileText, PencilSimple, MagnifyingGlass, Brain, Gavel,
-  ListChecks, Copy, UserCircle, CurrencyCircleDollar, UsersThree,
+  FileText, PencilSimple, MagnifyingGlass, Brain, ListChecks, Copy, UserCircle, CurrencyCircleDollar, UsersThree,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
+import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
 import SendWithContextMenu from "@/components/ai/SendWithContextMenu";
 import Link from "next/link";
 import { useAiRun } from "@/hooks/useAiRun";
@@ -87,7 +87,7 @@ function asBrief(output: Record<string, unknown> | null): BriefResult | null {
 
 const RELATED_TOOLS = [
   { id: "draft", href: "/ai/draft", label: "الصائغ القانوني", desc: "صياغة مذكرات ولوائح", icon: PencilSimple },
-  { id: "wargaming", href: "/ai/wargaming", label: "محاكي القضايا", desc: "تقييم قوة الموقف", icon: Scales },
+  { id: "wargaming", href: "/ai/wargaming", label: "محاكي القضايا", desc: "تقييم قوة الموقف", icon: Gavel },
   { id: "legal-opinion", href: "/ai/legal-opinion", label: "الرأي الفصل", desc: "دراسة قانونية معمّقة", icon: Brain },
   { id: "quick-answer", href: "/ai/quick-answer", label: "المجيب السريع", desc: "سؤال قانوني فوري", icon: ChatCircleDots },
   { id: "brief-check", href: "/ai/brief-check", label: "فاحص المذكرات", desc: "فحص المذكرة الجاهزة", icon: FileMagnifyingGlass },
@@ -399,6 +399,8 @@ function CaseBriefTool() {
               </div>
               <p className={`mt-2 text-[12px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>{result.assessmentReason}</p>
               <p className={`mt-1 text-[10px] italic ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>تقييم مبدئي قائم على المعطيات المتاحة — وليس حكماً نهائياً.</p>
+              {/* Owner ١٢٤a: the fixed line on the five analysis tools. */}
+              <AssistIndicatorNote isDark={isDark} className="mt-1.5" />
               {run.chargedPoints > 0 && (
                 <p className={`mt-1 text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>خُصمت {run.chargedPoints.toLocaleString("ar-SA")} نقطة</p>
               )}

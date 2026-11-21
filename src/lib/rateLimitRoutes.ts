@@ -244,6 +244,31 @@ export function isAiRunProgressRoute(method: string, pathname: string): boolean 
   return (method === "GET" || method === "HEAD") && AI_RUN_PROGRESS_RE.test(pathname);
 }
 
+// N10 (owner raw log [48], batch l12-access): «معاينة المصدر» — GET
+// /api/v1/ai/source-preview — shows the text of a cited source inside an AI
+// answer. Every GET was free of any bucket (the general one counts writes
+// only), so a script could walk sources through it. Its own bucket, keyed
+// like the document preview (visitor key plus a wider per-IP ceiling). The
+// exact path only.
+export const SOURCE_PREVIEW_RE = /^\/api\/v1\/ai\/source-preview$/;
+
+/** True for a GET/HEAD of /api/v1/ai/source-preview. */
+export function isSourcePreviewRoute(method: string, pathname: string): boolean {
+  return (method === "GET" || method === "HEAD") && SOURCE_PREVIEW_RE.test(pathname);
+}
+
+// Batch l12-access (owner file 10 ب23): POST /api/v1/auth/sign-in checks a
+// password with GoTrue. The account lockout is in the database (5 wrong in
+// 15 minutes per account); this bucket stops one visitor spraying many
+// accounts through the route. Keyed like the tracking unlock (visitor key
+// plus a wider per-IP ceiling). The exact path only.
+export const AUTH_SIGN_IN_RE = /^\/api\/v1\/auth\/sign-in$/;
+
+/** True for a POST of /api/v1/auth/sign-in. */
+export function isAuthSignInRoute(method: string, pathname: string): boolean {
+  return method === "POST" && AUTH_SIGN_IN_RE.test(pathname);
+}
+
 /**
  * The visitor key for the library-read bucket and the other visitor buckets
  * in src/proxy.ts. nezamy.sa is served through Cloudflare (Server: cloudflare,

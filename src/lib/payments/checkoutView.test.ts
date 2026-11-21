@@ -31,6 +31,7 @@ import {
   INTENT_EXPIRY_MARGIN_MS,
   INTENT_REFRESH_MS,
   billingLabelAr,
+  POINT_VALUE_LINE_AR,
 } from "./checkoutView.ts";
 
 // ── checkoutHref ────────────────────────────────────────────────────────────
@@ -160,23 +161,25 @@ test("task 5 review M5: retired ind-litigation keeps resolving by id, but /check
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), []);
 });
 
-test("checkoutItemNotes: each top-up states the validity the catalog grants; the points are in its label already", () => {
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء"]);
+test("checkoutItemNotes: each top-up states the validity the catalog grants and the point's value (l12 Q87); the points are in its label already", () => {
+  const V = POINT_VALUE_LINE_AR;
+  assert.equal(V, "النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة");
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء", V]);
   for (const id of ["topup-2500", "topup-5000", "topup-10000"]) {
-    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء"], id);
+    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء", V], id);
   }
-  // every top-up label names its points, so the screen shows them once
+  // every top-up label names its points, so the screen shows them once (l12 Q88a: points = price)
   for (const [id, points] of [
-    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٧٠٠ نقطة"], ["topup-1000", "١٬٥٠٠ نقطة"],
-    ["topup-2500", "٥٬٠٠٠ نقطة"], ["topup-5000", "١٢٬٥٠٠ نقطة"], ["topup-10000", "٣٠٬٠٠٠ نقطة"],
+    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٥٠٠ نقطة"], ["topup-1000", "١٬٠٠٠ نقطة"],
+    ["topup-2500", "٢٬٥٠٠ نقطة"], ["topup-5000", "٥٬٠٠٠ نقطة"], ["topup-10000", "١٠٬٠٠٠ نقطة"],
   ]) {
     assert.ok(PAYABLE_ITEMS[id].labelAr.includes(points), id);
   }
   // a top-up whose label does not name its points still gets the line
-  assert.deepEqual(checkoutItemNotes({ ...PAYABLE_ITEMS["topup-100"], labelAr: "شحن" }), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes({ ...PAYABLE_ITEMS["topup-100"], labelAr: "شحن" }), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء", V]);
 });
 
 test("checkoutItemNotes: the library states its access length; firm plans promise no seats", () => {
@@ -421,6 +424,21 @@ test("parseCheckoutResponse: a couponed quote keeps listNet / discount / couponC
   assert.equal(parseCheckoutResponse({ ...couponed, quote: { ...couponed.quote, discount: 0, listNet: net } }), null);
 });
 
+test("l12: parseCheckoutResponse keeps the founder discount, the upgrade credit, the launch price and the top-up points — a founder quote is no longer refused", () => {
+  const founder = { ...RESPONSE, amountHalalas: 48875, quote: { net: 42500, vat: 6375, total: 48875, vatMode: "exclusive", listNet: 50000, founderDiscount: 7500, topupPoints: 500, bonusPoints: 0 } };
+  assert.deepEqual(parseCheckoutResponse(JSON.parse(JSON.stringify(founder))), founder);
+  const bonus = { ...RESPONSE, quote: { ...RESPONSE.quote, topupPoints: 540, bonusPoints: 40 } };
+  assert.deepEqual(parseCheckoutResponse(bonus), bonus);
+  const upgrade = { ...RESPONSE, quote: { ...RESPONSE.quote, listNet: 49900, prorationCredit: 10000 } };
+  assert.deepEqual(parseCheckoutResponse(upgrade), upgrade);
+  const launch = { ...RESPONSE, quote: { ...RESPONSE.quote, launchListNet: 49900 } };
+  assert.deepEqual(parseCheckoutResponse(launch), launch);
+  // a listNet with nothing to explain it, or a figure that is not a whole number, is not this server's answer
+  assert.equal(parseCheckoutResponse({ ...RESPONSE, quote: { ...RESPONSE.quote, listNet: 49900 } }), null);
+  assert.equal(parseCheckoutResponse({ ...RESPONSE, quote: { ...RESPONSE.quote, topupPoints: "540" } }), null);
+  assert.equal(parseCheckoutResponse({ ...RESPONSE, quote: { ...RESPONSE.quote, bonusPoints: -1 } }), null);
+});
+
 test("parseCouponPreview: the validate answer, checked (discount > 0, listNet − discount = net, net + VAT = total)", () => {
   const ok = { code: "NZAMY50", quote: { listNet: 149000, discount: 5000, net: 144000, vat: 21600, total: 165600 } };
   assert.deepEqual(parseCouponPreview(ok), { code: "NZAMY50", listNet: 149000, discount: 5000, net: 144000, vat: 21600, total: 165600 });
@@ -479,7 +497,12 @@ test("l8: saleGatewayPaused — off, the stub and a refused test mode are paused
   assert.match(cards, /saleGatewayPaused\(payments\)/);
   assert.match(cards, /SALE_PAUSED_REQUEST_NOTE_AR : SALE_PAUSED_LINE_AR/);
   const hero = readFileSync(join(root, "src/app/founder/_components/HeroMeter.tsx"), "utf8");
-  assert.match(hero, /saleGatewayPaused\(usePaymentsStatus\(\)\) && view\.phase === "live"/);
+  // Owner 06 أ1 (l12): the countdown keeps ticking while payment is paused; the
+  // paused line is at the buy button (founderCard.ts), not in place of the timer.
+  assert.doesNotMatch(hero, /saleGatewayPaused|SALE_PAUSED_LINE_AR/);
+  assert.match(hero, /const parts = view\.remainingMs === null \? null : splitRemaining\(view\.remainingMs\);/);
+  const card = readFileSync(join(root, "src/lib/pricing/founderCard.ts"), "utf8");
+  assert.match(card, /if \(!href\) return \{ kind: "unavailable", label: FOUNDER_GATEWAY_PAUSED_TEXT/);
 });
 
 test("l11 O7: a top-up bought by a library subscriber says its expiry may lock the library (founder terms ١٢)", () => {

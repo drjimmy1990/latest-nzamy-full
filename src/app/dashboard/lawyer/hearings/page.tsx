@@ -113,6 +113,8 @@ interface CalEvent {
   // `hearings.case_request_id` is an actual foreign key to the case now, not
   // a guess, so the chip can be a link again — see EventCard below.
   client?: string; caseName?: string; caseId?: string;
+  // N13 (batch l12): the linked case's columns for the Word / print table.
+  caseInfo?: HearingDto["caseInfo"];
   // `date` is the row's own stored "YYYY-MM-DD" — an ABSOLUTE day, and the only
   // one of the two that is actually stored. EVERYTHING the lawyer reads as a
   // date is derived from it: the card's date line (formatEventDateAr), the
@@ -273,6 +275,7 @@ function hearingDtoToCalEvent(row: HearingDto): CalEvent | null {
     ownerName: row.ownerName ?? null,
     assigneeUserId: row.assigneeUserId ?? undefined,
     assigneeName: row.assigneeName ?? null,
+    caseInfo: row.caseInfo ?? null,
   };
 }
 
@@ -435,8 +438,9 @@ function googleCalUrl(ev: CalEvent): string | null {
   // own calendar zone — wrong for any lawyer whose calendar is set elsewhere.
   // The stamps, the one-hour default block and the all-day fallback live in
   // src/lib/calendar/googleCalendarLink.ts (pure, tested).
-  // P1-37: what leaves the platform is the case title only — no notes, no
-  // client name, no platform line (calendarFeed.ts states the rule).
+  // N14 (l12, replacing P1-37's title-only rule): the case title, the client's
+  // name and the lawyer's notes in full; still no platform line
+  // (calendarFeed.ts states the rule).
   const details = hearingIcsInput(feedHearingOf(ev)).description ?? "";
   return googleCalendarUrl({
     title: ev.title,
@@ -462,6 +466,8 @@ function feedHearingOf(ev: CalEvent): FeedHearing {
     id: ev.id, title: ev.title, date: ev.date, time: ev.time ?? null,
     durationMinutes: ev.durationMinutes ?? null, location: ev.location ?? null,
     type: ev.type, status: ev.status ?? null, caseName: ev.caseName ?? null,
+    // N14 (owner RAW[71]): the client's name and the lawyer's notes in full.
+    clientName: ev.client ?? null, notes: ev.notes ?? null,
   };
 }
 
@@ -1201,16 +1207,12 @@ function LawyerHearingsPage() {
   const todayCount    = events.filter(e=>e.dateSort===0&&!e.done).length;
   const scheduledCount= events.filter(e=>!e.done&&e.dateSort>=0).length;
   const groups = groupByDate(filtered);
-  // P1-37: the printout is the list as filtered on screen. Each line carries
-  // its own date; a client meeting's place is left off (it can be a home).
-  const printGroups = groups.map(([heading, evs]) => ({
-    heading,
-    lines: evs.map((ev) => [
-      `${formatEventDateAr(ev.date)}${ev.time ? ` — ${formatTimeOfDayAr(ev.time)}` : ""}`,
-      ev.title,
-      ev.type === "client_meet" ? "" : ev.location ?? "",
-    ].filter(Boolean).join(" — ")),
-  }));
+  // P1-37 + N13 (batch l12): the printout is the list as filtered on screen,
+  // as ONE six-column table (date, time, court, case number, client, circuit —
+  // src/lib/hearings/hearingsTable.ts); a client meeting's place is left off.
+  const tableRows = groups.flatMap(([, evs]) => evs.map((ev) => ({
+    date: ev.date, time: ev.time ?? null, location: ev.location ?? null, type: ev.type, caseInfo: ev.caseInfo ?? null,
+  })));
   const typeCounts = Object.entries(EVENT_CONFIG).map(([k,v])=>({key:k as EventType,label:v.label,count:events.filter(e=>e.type===k&&!e.done&&e.dateSort>=0).length})).filter(t=>t.count>0);
 
   // The two option lists bake their counts into the LABEL string, so they are
@@ -1377,7 +1379,7 @@ function LawyerHearingsPage() {
           ready={loadState === "ready" && events.length > 0}
           hearingsTruncated={truncated}
           hearings={events.map(feedHearingOf)}
-          printGroups={printGroups}
+          tableRows={tableRows}
         />
 
         {/* Search and sort appear only when there is something to search.

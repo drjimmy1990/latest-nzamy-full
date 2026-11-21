@@ -56,7 +56,7 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
       { href: "/dashboard/admin/users/roles", label: "الأدوار والصلاحيات", labelEn: "Roles & Permissions", icon: "Key" },
       { href: "/dashboard/admin/business", label: "بروفيلات الشركات", labelEn: "Company Profiles", icon: "Buildings" },
       { href: "/dashboard/admin/provider-verification", label: "تحقق المزودين", labelEn: "Provider KYC", icon: "ShieldCheck" },
-      { href: "/dashboard/admin/provider-verification/firms", label: "شركات المحاماة", labelEn: "Law Firms", icon: "Scales" },
+      { href: "/dashboard/admin/provider-verification/firms", label: "شركات المحاماة", labelEn: "Law Firms", icon: "Gavel" },
       { href: "/dashboard/admin/sector-profiles", label: "بروفيلات القطاعات", labelEn: "Sector Profiles", icon: "Globe" },
       { href: "/dashboard/admin/subscriptions", label: "الاشتراكات", labelEn: "Subscriptions", icon: "CreditCard" },
       { href: "/dashboard/admin/subscriptions/orders", label: "عمليات الدفع والاسترداد", labelEn: "Payments and Refunds", icon: "CreditCard" },

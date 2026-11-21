@@ -276,18 +276,21 @@ export const CONTRACT_REFUSAL_TEXT =
 const CONTRACTS_HINT = " لصياغة عقدك استعمل «محترف العقود».";
 
 /**
- * Owner ٢٦: where an individual or a business asks a lawyer on the platform to
- * draft the contract — the client request form (open to individual and
- * corporate accounts, routeAccess.ts CLIENT_INTAKE_PREFIXES), «طلب عام».
+ * Owner ٢٦: the client request form («طلب عام»). Until batch l12 the contract
+ * refusal sent an individual or a business there; it no longer carries it
+ * (below). Kept for the old link's readers.
  */
 export const CLIENT_CONTRACT_DRAFTING_HREF = "/dashboard/client/requests/new?type=general";
-/** Any other client account (micro, provider, …): the public contracts service page. */
+/**
+ * Owner file 02 [78] / guide 06 هـ2 / old-notes 10 ج9 (20 Nov 2026, batch l12):
+ * every account that is not on the lawyer side — individual, business and the
+ * rest — is sent to the public contracts service page to order a contract.
+ */
 export const CONTRACT_SERVICES_HREF = "/services/contracts";
-export const CLIENT_CONTRACT_DRAFTING_LABEL = "صياغة العقود عبر محامٍ في المنصة";
+/** Guide 06 هـ2: «اطلب صياغة عقد». */
+export const CLIENT_CONTRACT_DRAFTING_LABEL = "اطلب صياغة عقد";
 const CLIENT_CONTRACTS_HINT = " يمكنك طلب صياغة عقدك من محامٍ في المنصة.";
 
-/** The account types the owner names «فرد» and «منشأة» (٢٦), which may file through the client request form. */
-const CLIENT_INTAKE_TYPES: ReadonlySet<string> = new Set(["individual", "corporate"]);
 const LAWYER_SIDE_TYPES: ReadonlySet<string> = new Set(["lawyer", "firm", "admin"]);
 
 /**
@@ -296,8 +299,9 @@ const LAWYER_SIDE_TYPES: ReadonlySet<string> = new Set(["lawyer", "firm", "admin
  * firms, consultants included, or an admin): only then does it carry that link.
  * Owner ٢٦: a client account (`userType` individual / corporate / any other
  * non-lawyer type) that may not run it gets a link to drafting through a
- * lawyer on the platform instead. A lawyer-side caller refused for another
- * reason gets no link (as before).
+ * lawyer on the platform instead — since batch l12 (02 [78], 06 هـ2) always
+ * /services/contracts. A lawyer-side caller refused for another reason gets
+ * no link (as before).
  */
 export function contractDraftingRefusal(canUseContracts: boolean, userType?: string | null): {
   error: string;
@@ -309,10 +313,7 @@ export function contractDraftingRefusal(canUseContracts: boolean, userType?: str
     return {
       error: CONTRACT_REFUSAL_TEXT + CLIENT_CONTRACTS_HINT,
       code: DRAFTING_REFUSED_CODE,
-      action: {
-        label: CLIENT_CONTRACT_DRAFTING_LABEL,
-        href: CLIENT_INTAKE_TYPES.has(userType) ? CLIENT_CONTRACT_DRAFTING_HREF : CONTRACT_SERVICES_HREF,
-      },
+      action: { label: CLIENT_CONTRACT_DRAFTING_LABEL, href: CONTRACT_SERVICES_HREF },
     };
   }
   return {

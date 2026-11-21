@@ -8,15 +8,13 @@ import { spendPublicView } from '@/lib/library/publicViewCapServer';
 import { libraryGate } from '@/lib/library-gate';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { isPrincipleLocked, parsePrincipleTarget, planPrincipleWindow, targetWindowOffset } from './_window';
-import { buildCollectionSeries, type CollectionSeriesInfo } from '@/lib/library/precedentVolumes';
+import type { CollectionSeriesInfo } from '@/lib/library/precedentVolumes';
+import { readCollectionSeries } from '@/lib/library/collectionSeriesLookup';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 // Owner item 2 (batch l8): browsing depth. Register 14 item 13 (batch l9): the
 // public reads N full items per collection, the rest are titles — no excerpt.
 import { collectionFreeCount, isBeyondPublicDepth, libraryDepthMessageAr } from '@/lib/library/publicGuard';
 import { loadLibraryGuardSettings } from '@/lib/library/publicGuardServer';
-
-/** A runaway guard for one series' volumes (the largest today: 30). */
-const SERIES_MAX_VOLUMES = 200;
 
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
 
@@ -119,26 +117,15 @@ export async function GET(
       return NextResponse.json({ error: 'لم يُعثر على مجموعة المبادئ هذه' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
 
-    // N2.4: the other volumes of a tagged series, for the reader's volume
-    // selector. Catalogue columns only (all on the anon allow-list); each
-    // volume keeps its own `free`. A failed lookup only hides the selector.
-    let series: CollectionSeriesInfo | null = null;
+    // N2.4: the other volumes of a series, for the reader's volume selector.
+    // Tagged by series_id, or (owner file 11 item 7) untagged with the same
+    // court + base title (collectionSeriesLookup.ts). Catalogue columns only
+    // (all on the anon allow-list); each volume keeps its own `free`. A failed
+    // lookup only hides the selector.
     const seriesId = typeof collection.series_id === 'string' ? collection.series_id.trim() : '';
-    if (seriesId) {
-      const siblings = await supabase
-        .schema('library')
-        .from('judicial_collections')
-        .select('id, title, part, series_id, free, ruling_count')
-        .eq('series_id', seriesId)
-        .order('part', { ascending: true })
-        .order('id', { ascending: true })
-        .limit(SERIES_MAX_VOLUMES);
-      if (siblings.error) {
-        console.warn('[Precedents API] series volumes lookup failed:', siblings.error);
-      } else {
-        series = buildCollectionSeries(siblings.data ?? [], collection.id);
-      }
-    }
+    const lookup = await readCollectionSeries(supabase, collection);
+    if (lookup.error) console.warn('[Precedents API] series volumes lookup failed:', lookup.error);
+    const series: CollectionSeriesInfo | null = lookup.series;
 
     // Check user authentication
     const { data: { user } } = await supabase.auth.getUser();

@@ -11,6 +11,7 @@ import { articleStatusForDetail } from '../../_article-status';
 import { articleDisplayLabel, articleLocatorText } from '../../_article-label';
 import { liftRegulationHeading } from '../../_regulation-heading';
 import { capTitle, parseRefKey, refHrefs, type RefDocKind, type RefKind } from '../_shape';
+import { decreeTitleForViewer } from '@/lib/library/decreeDisplay';
 import { articleTextOpen, principleTextOpen, subscriberOnlyKind, type PreviewLock } from './_access';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { collectionFreeCount } from '@/lib/library/publicGuard';
@@ -271,14 +272,16 @@ export async function GET(request: Request) {
       } satisfies PreviewBody);
     }
     if (key.kind === 'decree') {
-      const { data: decree, error } = await lib.from('decrees_circulars').select('id, title').eq('id', key.id).maybeSingle();
+      const { data: decree, error } = await lib.from('decrees_circulars').select('id, title, type').eq('id', key.id).maybeSingle();
       if (error) throw error;
       if (!decree) return json({ found: false, kind: 'decree' });
+      // Owner Q101 (batch l12): no number or date in a non-subscriber's title.
+      const decreeName = capTitle(decreeTitleForViewer({ title: decree.title, type: decree.type }, isSubscriber));
       return json({
         found: true,
         kind: 'decree',
-        title: capTitle(decree.title),
-        docTitle: capTitle(decree.title),
+        title: decreeName,
+        docTitle: decreeName,
         status: null,
         locked: null,
         ...refHrefs({ docKind: 'order', docId: String(decree.id), anchorId: null, anchorMissing: false }),

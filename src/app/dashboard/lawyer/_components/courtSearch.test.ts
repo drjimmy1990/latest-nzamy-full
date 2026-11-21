@@ -106,3 +106,12 @@ test("review I1: the board reads the class everywhere a court decides something"
   assert.match(modal, /savedCourtClass = [^;]*courtClassOf\(courtResolved\.court, courtClass\)/);
   assert.match(modal, /\.\.\.\(savedCourtClass \? \{ courtClass: savedCourtClass \} : \{\}\)/);
 });
+
+test("Q118: a personal-status circuit inside a general court files the case under «المحكمة العامة»", () => {
+  const moved = realDirectory().find((r) => r.name === "دائرة الأحوال الشخصية الأولى بالمحكمة العامة بجازان");
+  assert.ok(moved);
+  assert.equal(moved.category, "محكمة عامة");
+  assert.equal(directoryCourtClass(moved), "المحكمة العامة");
+  // a circuit of a stand-alone personal-status court keeps its own class
+  assert.equal(directoryCourtClass({ name: "دائرة الأحوال الشخصية الثانية عشرة بمحكمة الأحوال الشخصية بمكة المكرمة", category: "محكمة أحوال شخصية" }), "محكمة الأحوال الشخصية");
+});

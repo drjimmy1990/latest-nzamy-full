@@ -1,6 +1,7 @@
 import { buildMetadata } from "@/lib/seo";
 import LibraryGuard from "@/components/library/LibraryGuard";
 import LibraryDashboardBar from "@/components/library/LibraryDashboardBar";
+import LawsIndexHeading from "./_index-heading";
 
 export const metadata = buildMetadata({
   titleAr: "مكتبة الأنظمة والتشريعات السعودية",
@@ -13,10 +14,14 @@ export const metadata = buildMetadata({
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    // A law's reader (/laws/[slug]) carries its own guard: see that layout.
-    <LibraryGuard lawReaderGuardsItself>
-      <LibraryDashboardBar />
-      {children}
-    </LibraryGuard>
+    <>
+      {/* File 10 ب17.2: /laws's one <h1>, outside the guard (it SSRs a spinner). */}
+      <LawsIndexHeading />
+      {/* A law's reader (/laws/[slug]) carries its own guard: see that layout. */}
+      <LibraryGuard lawReaderGuardsItself>
+        <LibraryDashboardBar />
+        {children}
+      </LibraryGuard>
+    </>
   );
 }

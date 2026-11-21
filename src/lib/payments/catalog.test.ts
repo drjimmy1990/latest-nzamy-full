@@ -228,7 +228,8 @@ test("prices and grants as the owner set them (net halalas)", () => {
     "lib-q1":                 { prices: { once: 199000 } },
     "lib-q2":                 { prices: { once: 379000 } },
     "lib-annual":             { prices: { once: 699000 } },
-    "topup-50":               { prices: { once: 5000 } },
+    // l12 (owner Q87): retired — resolvable for its orders, never sold
+    "topup-50":               { prices: {}, retired: { once: 5000 } },
     "topup-100":              { prices: { once: 10000 } },
     "topup-250":              { prices: { once: 25000 } },
     "topup-500":              { prices: { once: 50000 } },
@@ -286,12 +287,12 @@ test("every top-up carries its points and their validity", () => {
   const want: Record<string, [number, number]> = {
     "topup-100": [100, 3],
     "topup-250": [250, 3],
-    // owner ٤٢٢: the professionals' packs grant the bonus balances
-    "topup-500": [700, 3],
-    "topup-1000": [1500, 6],
-    "topup-2500": [5000, 12],
-    "topup-5000": [12500, 12],
-    "topup-10000": [30000, 12],
+    // l12 (owner Q88a): owner ٤٢٢'s bonus balances are cancelled — points = price
+    "topup-500": [500, 3],
+    "topup-1000": [1000, 6],
+    "topup-2500": [2500, 12],
+    "topup-5000": [5000, 12],
+    "topup-10000": [10000, 12],
   };
   for (const [id, [points, months]] of Object.entries(want)) {
     const item = PAYABLE_ITEMS[id];

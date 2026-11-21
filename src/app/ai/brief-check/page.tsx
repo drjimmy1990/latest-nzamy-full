@@ -1,5 +1,6 @@
 "use client";
 
+import AiHistoryList from "@/components/ai/AiHistoryList";
 /**
  * «مراجعة وتدقيق مذكرة» — a real order the TEAM fulfils (owner decision,
  * registry Q77, 28 Sep).
@@ -449,6 +450,10 @@ function AIBriefCheckPage() {
       )}
 
       {report && <BriefCheckReportView report={report} isDark={isDark} chargedPoints={ai.chargedPoints} />}
+      {/* L11-log (batch l12): this tool's last five runs, own rows only. */}
+      <section className="mt-6" aria-label="آخر معاملاتك في هذه الأداة">
+        <AiHistoryList isDark={isDark} tool="brief-check" recent />
+      </section>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import AiHistoryList from "@/components/ai/AiHistoryList";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import {
@@ -222,6 +223,10 @@ function AICommunicatePage() {
           </div>
         </div>
       </div>
+      {/* L11-log (batch l12): this tool's last five runs, own rows only. */}
+      <section className="mt-6" aria-label="آخر معاملاتك في هذه الأداة">
+        <AiHistoryList isDark={isDark} tool="communicate" recent />
+      </section>
     </div>
   );
 }

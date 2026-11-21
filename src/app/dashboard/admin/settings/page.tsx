@@ -23,10 +23,15 @@ import {
 import { useTheme } from "@/components/ThemeProvider";
 import { LibraryPublicGuardSettings } from "./_library-public-guard";
 import { LibraryPointsGateSettings } from "./_library-points-gate";
+import { LibraryRulesSettings } from "./_library-rules";
+import { LibraryReaderDisplaySettings } from "./_library-reader-display";
+import { DraftAndAiHistorySettings } from "./_draft-and-ai-history";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 import { PaymentRulesCard } from "./_components/PaymentRulesCard";
 import { PlatformLicenceCard } from "./_components/PlatformLicenceCard";
+import { FirmRulesCard } from "./_components/FirmRulesCard";
+import { SimpleContractPriceCard } from "./_components/SimpleContractPriceCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -571,6 +576,16 @@ export default function AdminSettingsPage() {
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
           <LibraryPointsGateSettings isDark={isDark} />
 
+          {/* ── Reviewed summaries + the individual's free-question tool (batch l12 rules, Q96 / Q121) ── */}
+          <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
+          <LibraryRulesSettings isDark={isDark} />
+          {/* ── Library display choices still open (batch l12: Q101, library question 5) ── */}
+          <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
+          <LibraryReaderDisplaySettings isDark={isDark} />
+          {/* ── Draft caps + AI history retention (batch l12 lib-draft, owner file 03 ل2 / ل11) ── */}
+          <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
+          <DraftAndAiHistorySettings isDark={isDark} />
+
           {/* ── Divider ── */}
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
 
@@ -960,6 +975,11 @@ export default function AdminSettingsPage() {
 
       {/* ── l9 public: the platform licence number + issuer (owner file 20 row 4) ── */}
       <PlatformLicenceCard />
+
+      {/* ── l12 firm: firm roles that see only assigned cases (Q112), founder storage fair use (N21) ── */}
+      <FirmRulesCard />
+      {/* ── l12 simpledraft: the simplified contract drafter's price (owner ١٢٣, default 100) ── */}
+      <SimpleContractPriceCard />
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* ── Section 4: Legal Library Open/Close ── */}

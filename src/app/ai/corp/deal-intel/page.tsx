@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Briefcase, ChartLine, ShieldWarning, Buildings, Handshake,
   CheckCircle, CaretLeft, ArrowRight, DownloadSimple, Copy, Check,
-  Sparkle, Globe, Lightbulb, ListChecks, Warning, Scales,
+  Sparkle, Globe, Lightbulb, ListChecks, Warning, Gavel,
   ShareNetwork, Spinner, FileText, MagnifyingGlass, Robot,
   TrendUp, Newspaper, Bank,
 } from "@phosphor-icons/react";
@@ -336,7 +336,7 @@ function DealIntelInnerDemo() {
             />
 
             {/* Legal */}
-            <AccordionCard icon={Scales} title={MOCK_REPORT.legal.title} color={MOCK_REPORT.legal.color} isDark={isDark} defaultOpen>
+            <AccordionCard icon={Gavel} title={MOCK_REPORT.legal.title} color={MOCK_REPORT.legal.color} isDark={isDark} defaultOpen>
               <div className="pt-3 space-y-3">
                 {MOCK_REPORT.legal.texts.map((t, i) => (
                   <div key={i} className={`p-3 rounded-xl ${isDark ? "bg-zinc-800/60" : "bg-slate-50"}`}>

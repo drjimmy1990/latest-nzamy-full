@@ -11,6 +11,14 @@
 --     $M/20261127_70_open_requests_publish.sql \
 --     $T/open_requests_publish.test.sql
 --
+-- l12 (20261202_70, Q130a): with 20261202_70 in the chain the market is OPEN by default and
+-- lists new client requests without a publish. FULL CHAIN: append
+-- $T/prelude_platform_settings_min.sql $M/20261202_70_market_open.sql before this
+-- file. T2 then first proves the open market (the verified lawyer sees R's
+-- unpublished client request, never the demo / test account's or the lawyer
+-- row), and closes the market as an admin would before the publish-only
+-- checks below — which are the same on both chains.
+--
 -- NEGATIVE CONTROL (must FAIL): the same chain without the two 20261127_70
 -- lines → "F0 FAIL" (no marketplace_published_at column).
 --
@@ -71,6 +79,34 @@ begin
     raise exception 'T1 FAIL: a session insert published itself: %', row_to_json(r);
   end if;
   raise notice 'T1 PASS: a session insert cannot publish';
+end $$;
+
+-- T2 (l12, market OPEN — only when 20261202_70 is in the chain) the verified
+-- lawyer sees R's new client requests (SR-AI, T1's SR-SELF, SR-TAKEN) without a
+-- publish; the demo, the test
+-- account and the receiver = lawyer rows stay out. Then the admin closes the market.
+do $$
+declare
+  ids  text[];
+  open boolean;
+begin
+  -- dynamic: on the 20261127_70 chain there is no platform_settings table.
+  if to_regclass('public.platform_settings') is null then
+    return;
+  end if;
+  execute $q$select coalesce((select (value ->> 'open')::boolean from public.platform_settings where key = 'marketplace_market'), false)$q$ into open;
+  if not open then
+    return;
+  end if;
+  set local role app_user;
+  perform set_config('test.uid', '22222222-0000-0000-0000-00000000000b', true);
+  select array_agg(id order by id) into ids from public.marketplace_open_requests();
+  reset role;
+  if ids is distinct from array['SR-AI', 'SR-SELF', 'SR-TAKEN'] then
+    raise exception 'T2 FAIL (l12 open market): listed %, expected {SR-AI,SR-SELF,SR-TAKEN}', ids;
+  end if;
+  execute $q$update public.platform_settings set value = jsonb_set(value, '{open}', 'false'::jsonb) where key = 'marketplace_market'$q$;
+  raise notice 'T2 PASS (l12): the open market lists the client''s unpublished requests only; market closed for the publish-only checks';
 end $$;
 
 -- T2 nothing is listed before staff publish — not even a receiver = lawyer row

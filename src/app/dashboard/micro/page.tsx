@@ -58,7 +58,7 @@ const NAV_LINKS = [
 // opens the contract drafter for three cases and is «قريباً» for the rest (S3-05),
 // so both cards say «قريباً».
 const AI_TOOLS = [
-  { href: "/ai/legal-opinion", labelAr: "اسأل سؤالاً قانونياً", labelEn: "Ask a Legal Question", descAr: "إجابة فورية",          descEn: "Instant answer",          icon: ChatCircle, primary: true },
+  { href: "/ai/quick-answer",   labelAr: "اسأل سؤالاً قانونياً", labelEn: "Ask a Legal Question", descAr: "إجابة فورية",          descEn: "Instant answer",          icon: ChatCircle, primary: true },
   { href: "/ai/analyze",       labelAr: "افحص مستنداً",           labelEn: "Scan a Document",      descAr: "قريباً",               descEn: "Coming soon",      icon: Scan,       primary: false },
   { href: "/ai/micro",         labelAr: "مساعد المنشآت",          labelEn: "Business Assistant",   descAr: "قريباً",               descEn: "Coming soon",   icon: Robot,      primary: false },
 ];

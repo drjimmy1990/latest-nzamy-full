@@ -17,7 +17,9 @@ export type DocBlock =
   | { kind: "heading"; text: string }
   | { kind: "para"; text: string }
   | { kind: "list"; items: string[]; ordered: boolean }
-  | { kind: "signature"; lines: string[] };
+  | { kind: "signature"; lines: string[] }
+  /** N13 (batch l12): a right-to-left table; `header` is repeated on every page. */
+  | { kind: "table"; header: string[]; rows: string[][] };
 
 export const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 export const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -65,6 +67,31 @@ function paragraph(text: string, size: number, bold: boolean, jc: "both" | "cent
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 const arabicNumber = (n: number) => String(n).replace(/\d/g, (d) => ARABIC_DIGITS[Number(d)]);
 
+const TABLE_SIZE = 22;
+const CELL_BORDER = `<w:top w:val="single" w:sz="4" w:space="0" w:color="999999"/><w:left w:val="single" w:sz="4" w:space="0" w:color="999999"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="999999"/><w:right w:val="single" w:sz="4" w:space="0" w:color="999999"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="999999"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="999999"/>`;
+
+function cellXml(text: string, bold: boolean): string {
+  return `<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/></w:tcPr><w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr>${runXml(text, TABLE_SIZE, bold)}</w:p></w:tc>`;
+}
+
+/**
+ * N13: a table that reads right to left (w:bidiVisual: the first column on the
+ * right), full width, with its header row repeated on every page (w:tblHeader).
+ * A row shorter than the header is padded with empty cells.
+ */
+function tableXml(header: string[], rows: string[][]): string {
+  const width = header.length;
+  const row = (cells: string[], head: boolean) =>
+    `<w:tr>${head ? "<w:trPr><w:tblHeader/></w:trPr>" : ""}${Array.from({ length: width }, (_, i) => cellXml(cells[i] ?? "", head)).join("")}</w:tr>`;
+  return (
+    `<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>${CELL_BORDER}</w:tblBorders></w:tblPr>` +
+    `<w:tblGrid>${Array.from({ length: width }, () => "<w:gridCol/>").join("")}</w:tblGrid>` +
+    row(header, true) +
+    rows.map((r) => row(r, false)).join("") +
+    `</w:tbl><w:p/>`
+  );
+}
+
 export function blocksToBodyXml(blocks: DocBlock[]): string {
   return blocks
     .map((block) => {
@@ -81,6 +108,8 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
             .join("");
         case "signature":
           return block.lines.map((line) => paragraph(line, BODY_SIZE, false, "both")).join("");
+        case "table":
+          return tableXml(block.header, block.rows);
       }
     })
     .join("");

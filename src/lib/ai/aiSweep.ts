@@ -4,7 +4,8 @@
  *
  *   (default)   ai_sweep_runs: every run still `running` past its deadline fails
  *               as `timeout` and gets its points back.
- *   retention   ai_runs_retention (input / output older than 90 days), then
+ *   retention   ai_runs_retention (input / output older than the admin's
+ *               ai_runs_retention months, default 12 — 20261202_40), then
  *               progress_events_prune (events older than 7 days).
  *
  * A function that is not there yet (its migration has not run) is skipped, never

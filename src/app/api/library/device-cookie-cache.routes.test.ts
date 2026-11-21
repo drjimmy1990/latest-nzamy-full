@@ -52,7 +52,7 @@ test("the routes that call enforceLibraryDevice are exactly these six", () => {
     }
   };
   walk(path.join(SRC, "app"));
-  assert.deepEqual(found.sort(), [...ROUTES, ...NO_STORE_ROUTES].sort());
+  assert.deepEqual(found.sort(), [...ROUTES, ...NO_STORE_ROUTES, ...EXPORT_ROUTES].sort());
 });
 
 const ROUTES = [
@@ -68,6 +68,13 @@ const ROUTES = [
  * Batch l8-refbox (owner item 6): the links box's text preview, likewise.
  */
 const NO_STORE_ROUTES = ["app/api/v1/ai/source-preview/route.ts", "app/api/library/laws/[slug]/citations/preview/route.ts"] as const;
+
+/**
+ * Batch l12 lib-draft (owner file 03 ل2): the draft's Word download applies the
+ * device rule before its one quota read, like a document route; its file and
+ * refusals are private, no-store (draftExport.test.ts pins the order).
+ */
+const EXPORT_ROUTES = ["app/api/library/draft-export/route.ts"] as const;
 
 for (const rel of NO_STORE_ROUTES) {
   test(`${rel}: every response is private, no-store`, () => {

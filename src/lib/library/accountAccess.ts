@@ -105,6 +105,36 @@ export function libraryAccessDecision(input: {
   return { allowed: parseLibraryAccessMap(input.map)[accountKey], accountKey, via: "type" };
 }
 
+/**
+ * Q94a (batch l12, 20261202_50): an exception may END — at `expiresAt`, or
+ * with the account's library subscription (`endsWithSubscription`: in force
+ * while a library grant covers now, so it follows a renewal). Neither = a
+ * permanent exception (a team member), as before. The same rule as
+ * public.library_access_for; out of force the exception is ignored and the
+ * type's switch answers.
+ */
+export interface OverrideEnd {
+  expiresAt: string | null;
+  endsWithSubscription: boolean;
+}
+
+export function overrideInForce(end: OverrideEnd, hasActiveLibraryGrant: boolean, now: number = Date.now()): boolean {
+  const at = end.expiresAt ? Date.parse(end.expiresAt) : NaN;
+  const dated = end.expiresAt !== null && end.expiresAt !== "";
+  if (!dated && !end.endsWithSubscription) return true;
+  if (dated && Number.isFinite(at) && at > now) return true;
+  return end.endsWithSubscription && hasActiveLibraryGrant;
+}
+
+/** A stored override row's end (missing columns — the SQL not run — read as no end). */
+export function overrideEndFromRow(row: unknown): OverrideEnd {
+  const r = (row && typeof row === "object" ? row : {}) as { expires_at?: unknown; ends_with_subscription?: unknown };
+  return {
+    expiresAt: typeof r.expires_at === "string" && r.expires_at !== "" ? r.expires_at : null,
+    endsWithSubscription: r.ends_with_subscription === true,
+  };
+}
+
 /** The body of a locked answer (403). */
 export function libraryAccountLockedBody(): { error: string; code: string; libraryAccountLocked: true } {
   return { error: LIBRARY_ACCOUNT_LOCKED_AR, code: LIBRARY_ACCOUNT_LOCKED_CODE, libraryAccountLocked: true };
@@ -137,10 +167,37 @@ export function parseLibraryAccessPatch(
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,255}$/;
 
-/** The admin's override body: `{ userId | email, allowed, reason }`; a reason is required. */
+/** The furthest an exception's date may be set (five years). */
+export const OVERRIDE_MAX_DAYS = 5 * 366;
+
+/**
+ * Q94a: `expiresAt` as the admin sends it — a date «YYYY-MM-DD» (the end of
+ * that day, Riyadh time) or a full ISO time. null = no date. Must be in the
+ * future and within OVERRIDE_MAX_DAYS.
+ */
+export function parseOverrideExpiry(value: unknown, now: number = Date.now()): { ok: true; expiresAt: string | null } | { ok: false; error: string } {
+  if (value === undefined || value === null || value === "") return { ok: true, expiresAt: null };
+  if (typeof value !== "string") return { ok: false, error: "تاريخ انتهاء الاستثناء غير صالح" };
+  const v = value.trim();
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T23:59:59+03:00` : v;
+  const at = /^\d{4}-\d{2}-\d{2}T/.test(iso) ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(at)) return { ok: false, error: "تاريخ انتهاء الاستثناء غير صالح" };
+  if (at <= now) return { ok: false, error: "تاريخ انتهاء الاستثناء يجب أن يكون بعد اليوم" };
+  if (at > now + OVERRIDE_MAX_DAYS * 86_400_000) return { ok: false, error: "تاريخ انتهاء الاستثناء بعيد جداً (خمس سنوات على الأكثر)" };
+  return { ok: true, expiresAt: new Date(at).toISOString() };
+}
+
+/**
+ * The admin's override body: `{ userId | email, allowed, reason, expiresAt?,
+ * endsWithSubscription? }`; a reason is required. Q94a: an exception may end
+ * on a date and/or with the account's library subscription.
+ */
 export function parseOverrideInput(
   body: unknown,
-): { ok: true; userId: string | null; email: string | null; allowed: boolean; reason: string } | { ok: false; error: string } {
+  now: number = Date.now(),
+):
+  | { ok: true; userId: string | null; email: string | null; allowed: boolean; reason: string; expiresAt: string | null; endsWithSubscription: boolean }
+  | { ok: false; error: string } {
   if (!body || typeof body !== "object") return { ok: false, error: "بيانات غير صالحة" };
   const b = body as Record<string, unknown>;
   const userId = typeof b.userId === "string" && UUID.test(b.userId.trim()) ? b.userId.trim().toLowerCase() : null;
@@ -150,7 +207,12 @@ export function parseOverrideInput(
   const reason = typeof b.reason === "string" ? b.reason.trim() : "";
   if (reason.length < 3) return { ok: false, error: "اكتب سبب الاستثناء (فريق، تجربة…)" };
   if (reason.length > 500) return { ok: false, error: "السبب أطول من 500 حرف" };
-  return { ok: true, userId, email, allowed: b.allowed, reason };
+  if (b.endsWithSubscription !== undefined && typeof b.endsWithSubscription !== "boolean") {
+    return { ok: false, error: "قيمة «ينتهي بانتهاء اشتراك المكتبة» غير صالحة" };
+  }
+  const expiry = parseOverrideExpiry(b.expiresAt, now);
+  if (!expiry.ok) return expiry;
+  return { ok: true, userId, email, allowed: b.allowed, reason, expiresAt: expiry.expiresAt, endsWithSubscription: b.endsWithSubscription === true };
 }
 
 /** A /laws (or /precedents, /book) link: the library's own pages. */

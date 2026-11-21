@@ -3,7 +3,7 @@
 import { useCallback, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, Minus, Copy, Check, CaretDown, CaretUp,
+  Copy, Check, CaretDown, CaretUp,
   ClockCounterClockwise, FileText, BookOpen, Lock,
   Scales,
   Gavel, Sparkle
@@ -19,11 +19,13 @@ import {
   GENERAL_DETAILS_FALLBACK_SUMMARY,
   cleanDetailsSummary,
   isAmendmentDetails,
+  isPreambleToggle,
   isOpenDetailsTag,
   splitDetailsMarkup,
 } from "./_details-block";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
-import { visibleAmendments } from "./_previous-versions";
+import { amendedByLine, visibleAmendments } from "./_previous-versions";
+import Link from "next/link";
 import { diffCandidates, mergeLiftedVersions, pickDiffTarget } from "./_amendment-split";
 import { isPreambleEmpty } from "./_preamble";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
@@ -34,9 +36,10 @@ import { PreviousVersionText } from "./_word-diff";
 import { OWN_DOCUMENT_REFS_AS_TEXT, linkCitationsHtml } from "./_cite-links";
 import { useCitations } from "./_citation-popover";
 import { articleNumberOf } from "./_cite-status";
-import { RefSheetButton, useRefBox } from "./_ref-box";
+import { ArticleRefsInline, useRefBox } from "./_ref-box";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
 import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton"; // l6-tools Q485
+import { DraftToggleIcon, DraftToggleLabel } from "@/components/draft/DraftToggleIcon"; // l12 lib02 «New 2»
 
 const NO_TERMS: readonly HighlightTerm[] = [];
 
@@ -430,7 +433,9 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
             );
           }
           return (
-            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open || block.open === true}>
+            // File 03 L4: the preamble's own «📜 ديباجة …» toggle is the text
+            // itself, not a fold — it opens on load.
+            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open || block.open === true || isPreambleToggle(summaryText, block.content)}>
               {body}
             </GeneralToggleDetails>
           );
@@ -662,8 +667,8 @@ function PrincipleCard({ p, isDark, inCart, onToggle, locked, onLock, isRTL = tr
           <button onClick={handleCopy} aria-label={isRTL ? "نسخ المبدأ" : "Copy principle"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} aria-label={inCart ? (isRTL ? "إزالة من السلة" : "Remove from cart") : (isRTL ? "إضافة إلى السلة" : "Add to cart")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
-            {inCart ? <Minus size={11} /> : <Plus size={11} />}
+          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+            <DraftToggleIcon inDraft={inCart} size={11} />
           </button>
         </div>
       </div>
@@ -695,8 +700,8 @@ function PrecedentCard({ pr, isDark, inCart, onToggle, locked, onLock, isRTL = t
           <button onClick={handleCopy} aria-label={isRTL ? "نسخ السابقة القضائية" : "Copy precedent"} className={`p-2 rounded-lg transition ${isDark ? "hover:bg-white/[0.08] text-zinc-400 hover:text-zinc-200" : "hover:bg-slate-200 text-slate-600 hover:text-slate-800"}`}>
             {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
           </button>
-          <button onClick={locked ? onLock : onToggle} aria-label={inCart ? (isRTL ? "إزالة من السلة" : "Remove from cart") : (isRTL ? "إضافة إلى السلة" : "Add to cart")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
-            {inCart ? <Minus size={11} /> : <Plus size={11} />}
+          <button onClick={locked ? onLock : onToggle} aria-pressed={inCart} aria-label={inCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")} className={`p-2 rounded-lg transition ${inCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}>
+            <DraftToggleIcon inDraft={inCart} size={11} />
           </button>
         </div>
       </div>
@@ -864,6 +869,17 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   // O12: what each previous wording is compared with — the current text, one of
   // its paragraphs, or a paragraph of this article's regulation (pickDiffTarget).
   const diffTargets = useMemo(() => diffCandidates(article.text, mergedReg?.text ?? ""), [article.text, mergedReg?.text]);
+  // File 03 L5 (batch l12): «عُدّلت بموجب … بتاريخ …» under the article, outside
+  // the fold, and «إظهار الفروق» beside it — it opens the history on the newest
+  // card's coloured diff (a bump of diffSignal), when that card can be compared.
+  const amendedLine = useMemo(() => (isAmended ? amendedByLine(previousVersions) : null), [isAmended, previousVersions]);
+  const newestDiffable = useMemo(() => {
+    const first = previousVersions[0];
+    if (!first) return false;
+    const texts = first.parts ? first.parts.map((p) => p.text) : first.fullText ? [first.fullText] : [];
+    return texts.some((t) => !!pickDiffTarget(t, diffTargets));
+  }, [previousVersions, diffTargets]);
+  const [diffSignal, setDiffSignal] = useState(0);
   const historyHasHit = useTextHasHighlight(historyHay);
   const historicRegHasHit = useTextHasHighlight(article.historicRegulationText);
   const inCart      = !!entry && entry.isArticleAdded;
@@ -1080,15 +1096,24 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             )}
 
             {!isLocked && !isRepealed && viewMode !== "regulation" && <SendToDrafterNotesButton text={article.text} sourceLabel={`${lawName} — ${article.numberText || article.num}`} isDark={isDark} className="px-1" />}
-            <button onClick={mainOnCopy} className={`p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
+            {/* File 03 L12: touch targets of at least 44 px, with Arabic names. */}
+            <button
+              onClick={mainOnCopy}
+              aria-label={isRTL ? "نسخ المادة" : "Copy article"}
+              title={isRTL ? "نسخ المادة" : "Copy article"}
+              className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}
+            >
               {mainCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
             </button>
             
             <button
               onClick={mainOnToggleCart}
-              className={`p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
+              aria-label={mainInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
+              aria-pressed={mainInCart}
+              title={mainInCart ? (isRTL ? "في المسودة — اضغط للإزالة" : "In the draft — remove") : (isRTL ? "أضف للمسودة" : "Add to draft")}
+              className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
             >
-              {mainInCart ? <Minus size={12} /> : <Plus size={12} />}
+              <DraftToggleLabel inDraft={mainInCart} size={12} />
             </button>
           </div>
         )}
@@ -1199,10 +1224,10 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 <MD text={article.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} cite={citeSelf} />
               )
             )}
-            {/* Owner item 6 (18 Nov): the links live in the side box beside the
-                article; on a phone (and in reading mode) this opens the same
-                sections in a bottom sheet (_ref-box.tsx). */}
-            {viewMode !== "regulation" && refBox && <RefSheetButton articleId={article.id} />}
+            {/* Owner L1 (20 Nov, lib02): the links under every article again —
+                a counter chip and small cards per relation, from the law's one
+                links request; the side box reads the same cache (_ref-box.tsx). */}
+            {viewMode !== "regulation" && refBox && <ArticleRefsInline articleId={article.id} />}
 
             {/*
               Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks).
@@ -1214,6 +1239,46 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               have it duplicated by an amendment fullText. Showing both would
               print the same superseded text twice on every one of them.
             */}
+            {viewMode !== "regulation" && amendedLine && (
+              <div
+                data-testid="article-amended-by"
+                className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}
+              >
+                {amendedLine.kind === "locked" ? (
+                  <span>
+                    {isRTL ? "عُدّلت هذه المادة" : "This article was amended"}
+                    <span className={`ms-2 text-[10.5px] font-semibold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                      🔒 {isRTL ? "أداة التعديل وتاريخه متاحان للمشتركين" : "The amending instrument and its date are for subscribers"}
+                    </span>
+                  </span>
+                ) : amendedLine.decreeId ? (
+                  <Link href={`/laws/orders/${encodeURIComponent(amendedLine.decreeId)}`} className="underline decoration-dotted underline-offset-4 hover:decoration-solid">
+                    <Hl text={amendedLine.text} />
+                  </Link>
+                ) : (
+                  <span><Hl text={amendedLine.text} /></span>
+                )}
+                {newestDiffable && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = historyRef.current;
+                      if (d) {
+                        d.open = true;
+                        d.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                      }
+                      setDiffSignal((n) => n + 1);
+                    }}
+                    className={`inline-flex items-center min-h-[32px] text-[10.5px] font-bold px-2.5 py-1 rounded-lg border transition ${
+                      isDark ? "border-amber-400/30 text-amber-300 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
+                    }`}
+                  >
+                    {isRTL ? "إظهار الفروق" : "Show changes"}
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* O12: also for a version lifted out of the text when the status does not say «معدّلة»
                 — the lifted wording must land somewhere, never vanish. */}
             {viewMode !== "regulation" && (isAmended || (article.liftedVersions?.length ?? 0) > 0) && previousVersions.length > 0 && (
@@ -1263,6 +1328,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                               currentText={pickDiffTarget(part.text, diffTargets)}
                               isDark={isDark}
                               isRTL={isRTL}
+                              openDiffSignal={i === 0 ? diffSignal : 0}
                             />
                           </div>
                         ))
@@ -1272,6 +1338,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                           currentText={pickDiffTarget(amend.fullText, diffTargets)}
                           isDark={isDark}
                           isRTL={isRTL}
+                          openDiffSignal={i === 0 ? diffSignal : 0}
                           className={`${amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 border-t" : ""} ${isDark ? "border-amber-700/15" : "border-amber-200"}`}
                         />
                       )}
@@ -1323,11 +1390,12 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                         title={regInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
                         className={`p-2 rounded-lg transition ${
                           regInCart
-                            ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500"
+                            ? isDark ? "bg-emerald-900/25 text-emerald-400" : "bg-emerald-50 text-emerald-700"
                             : isDark ? "bg-[#C8A762]/15 text-[#C8A762]" : "bg-amber-50 text-amber-700"
                         }`}
+                        aria-pressed={regInCart}
                       >
-                        {regInCart ? <Minus size={11} /> : <Plus size={11} />}
+                        <DraftToggleLabel inDraft={regInCart} size={11} />
                       </button>
                     </div>
                   )}

@@ -305,12 +305,20 @@ test("the crawler gets nothing more than a visitor: only crawlerVerify.ts reads 
 });
 
 test("no bulk export: no library API route sends a file download, and every list route caps its page", () => {
+  // The one exception (owner file 03 ل2, batch l12): the draft's Word file —
+  // items capped by the admin (library_draft_limits.max_items), texts re-read
+  // for the viewer's own entitlement, the whole draft counted once in the read
+  // limit. Pinned here so a second download route cannot slip in beside it.
+  const DRAFT_EXPORT = path.join("app/api/library/draft-export/route.ts");
+  const draft = read(DRAFT_EXPORT);
+  assert.match(draft, /parseDraftExportBody\(body, limits\)/);
+  assert.match(draft, /libraryReadQuotaHit\(userId, draftDocKey\(items\)\)/);
   const offenders: string[] = [];
   const walk = (dir: string) => {
     for (const e of fs.readdirSync(path.join(SRC, dir), { withFileTypes: true })) {
       const rel = path.join(dir, e.name);
       if (e.isDirectory()) walk(rel);
-      else if (/route\.ts$/.test(e.name) && /content-disposition|text\/csv|application\/zip/i.test(read(rel))) offenders.push(rel);
+      else if (/route\.ts$/.test(e.name) && rel !== DRAFT_EXPORT && /content-disposition|text\/csv|application\/zip/i.test(read(rel))) offenders.push(rel);
     }
   };
   walk("app/api/library");

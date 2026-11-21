@@ -4,7 +4,7 @@ import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  UserCircleGear, Scales, FileText, Warning,
+  UserCircleGear, Gavel, FileText, Warning,
   ArrowLeft, ArrowRight, Sparkle, CheckCircle,
   Copy, Download, BookOpen, ListChecks
 } from "@phosphor-icons/react";
@@ -222,7 +222,7 @@ ${opinionType === "رأي قانوني في عقد" ? "أن العقد المع�
           <motion.div key="research" initial={{ opacity:0,y:12 }} animate={{ opacity:1,y:0 }} exit={{ opacity:0,y:-12 }} className="space-y-5">
 
             <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4 text-[12px] text-zinc-400 flex gap-2">
-              <Scales size={15} className="text-blue-400 flex-shrink-0 mt-0.5" />
+              <Gavel size={15} className="text-blue-400 flex-shrink-0 mt-0.5" />
               <span>
                 أدخل النصوص النظامية التي تودّ الاستناد إليها في الرأي. يمكن تركها فارغة وسيستند النظام لقواعد عامة.
               </span>

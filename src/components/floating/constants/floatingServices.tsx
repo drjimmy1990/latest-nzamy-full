@@ -187,8 +187,8 @@ function getGuestServicesForCategory(cat: UserCategory | "guest"): ServiceItem[]
   if (cat === "provider") {
     return addSupport([
       { key: "guest-provider-notary", icon: <Stamp {...iconProps} />, label: "أحتاج موثقاً", sub: "وكالة • إقرار • عقد", next: "notary-type" },
-      { key: "guest-provider-market", icon: <Storefront {...iconProps} />, label: "تصفح مقدمي الخدمة", sub: "موثق • معقب • محكم", href: "/marketplace" },
-      { key: "guest-provider-onboarding", icon: <SealCheck {...iconProps} />, label: "انضم كمقدم خدمة", sub: "إنشاء حساب موثق أو معقب أو محكم", href: "/register" },
+      { key: "guest-provider-market", icon: <Storefront {...iconProps} />, label: "تصفح مقدمي الخدمة", sub: "موثق • مراجع حكومي • محكم", href: "/marketplace" },
+      { key: "guest-provider-onboarding", icon: <SealCheck {...iconProps} />, label: "انضم كمقدم خدمة", sub: "إنشاء حساب موثق أو مراجع حكومي أو محكم", href: "/register" },
     ], "دعم مقدمي الخدمة");
   }
 
@@ -579,8 +579,8 @@ function getProviderServices(user: ServiceSession): ServiceItem[] {
       { key: "provider-bailiff-procedures", icon: <MapTrifold {...iconProps} />, label: "دليل الإجراءات", sub: "اشتراطات وخطوات الجهات", href: "/ai/procedures" },
       { key: "provider-bailiff-ai", icon: <Robot {...iconProps} />, label: "مساعد المعاملات", sub: "صياغة رد أو تقرير", href: "/ai/consult", badge: "قريباً" },
       { key: "provider-market", icon: <Storefront {...iconProps} />, label: "تصفح السوق", sub: "طلبات مناسبة لتخصصك", href: "/marketplace" },
-      providerQuick("bailiff", "دعم المعقب"),
-    ], "دعم المعقّب");
+      providerQuick("bailiff", "دعم المراجع الحكومي"),
+    ], "دعم المراجع الحكومي");
   }
 
   if (user?.subRole === "arbitrator") {

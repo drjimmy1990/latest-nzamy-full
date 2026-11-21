@@ -91,6 +91,14 @@ const FIRM_LEGAL_ROLES = ["managing_partner", "partner", "senior_lawyer", "lawye
 // 20261019_21_consultant_court_write_guard.sql. Only the court routes below
 // use this list; every other legal rule keeps FIRM_LEGAL_ROLES.
 const FIRM_LITIGATION_ROLES = ["managing_partner", "partner", "senior_lawyer", "lawyer"] as const;
+// Q112 / file 05 #28 (20261202_80): which rows each of these roles sees on the
+// case pages is the database's answer (firm_case_scoped_member and the admin
+// setting firm_case_scope — src/lib/firm/firmCaseScope.ts): the secretary and,
+// by default, the compliance manager see only their assigned cases. The
+// trainee stays OUT of these pages on purpose: this list is also the SQL list
+// of who may hand a case to a guest (tracking_link_maker_ok, 20261025_32,
+// review 2026-10-25); he reads his assigned cases through the documents,
+// archive, hearings and tasks pages.
 const FIRM_CASE_VIEW_ROLES = [...FIRM_LEGAL_ROLES, "legal_secretary", "compliance_manager"] as const;
 const FIRM_TEAM_ADMIN_ROLES = ["managing_partner", "office_admin", "hr_manager"] as const;
 const FIRM_BILLING_ROLES = ["managing_partner", "partner", "finance_manager", "office_admin"] as const;

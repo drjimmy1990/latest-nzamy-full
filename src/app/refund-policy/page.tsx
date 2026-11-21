@@ -30,8 +30,8 @@ import {
   upgradeProrationLinesAr,
   upgradeProrationLinesEn,
   WITHDRAWAL_DAYS,
-  WITHDRAWAL_MAX_POINTS_USED_PCT,
 } from "@/lib/payments/refundPolicy";
+import { TERMS_LAST_UPDATED_AR, TERMS_LAST_UPDATED_EN } from "@/lib/legal/termsVersion";
 
 // The policy's numbers live in src/lib/payments/refundPolicy.ts. The new
 // sentences (P7: the 90-minute instant cancel, the top-up points validity)
@@ -56,7 +56,6 @@ import {
 const AR = {
   minutes: arNumber(INSTANT_CANCEL_MINUTES),
   days: arNumber(WITHDRAWAL_DAYS),
-  pct: arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT),
   files: arNumber(LIBRARY_REFUND_MAX_FULL_TEXTS),
 };
 
@@ -283,12 +282,12 @@ export default function RefundPolicyPage() {
               {isRTL ? "سياسة الاسترجاع والاستبدال" : "Refund & Exchange Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ٢١ نوفمبر ٢٠٢٦" : "Last updated: November 21, 2026"}
+              {isRTL ? `آخر تحديث: ${TERMS_LAST_UPDATED_AR}` : `Last updated: ${TERMS_LAST_UPDATED_EN}`}
             </p>
             <div className={`mx-auto mt-4 max-w-lg rounded-xl border px-4 py-3 text-sm ${isDark ? "border-yellow-500/20 bg-yellow-500/5 text-yellow-300" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
               {isRTL
-                ? `إلغاء فوري خلال ${AR.minutes} دقيقة من الشراء بالخطأ (يُطلب من الدعم)، والاسترداد خلال ${AR.days} يوماً من الشراء بشرط عدم استخدام أي ميزة ذكاء اصطناعي وألا تتجاوز القراءة ${AR.files} ملفات نصاً كاملاً في المكتبة إن شملها الاشتراك (ولشحن النقاط: ألا يتجاوز المستخدم ${AR.pct}٪ من نقاط الشحنة)، واسترداد أتعاب الخدمات الفردية وفق الشروط أدناه.`
-                : `An instant cancel within ${INSTANT_CANCEL_MINUTES} minutes of a purchase made by mistake (requested from support), a refund within ${WITHDRAWAL_DAYS} days of purchase provided no AI feature was used and, where the plan includes the library, no more than ${LIBRARY_REFUND_MAX_FULL_TEXTS} files were read in full text (for point top-ups: at most ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of the top-up's points used), and refunds for individual service fees per the terms below.`}
+                ? `إلغاء فوري خلال ${AR.minutes} دقيقة من الشراء بالخطأ (يُطلب من الدعم)، والاسترداد خلال ${AR.days} يوماً من الشراء بشرط عدم استخدام أي ميزة ذكاء اصطناعي وألا تتجاوز القراءة ${AR.files} ملفات نصاً كاملاً في المكتبة إن شملها الاشتراك (ولشحن النقاط: ألا يُصرف شيء من نقاط الشحنة)، واسترداد أتعاب الخدمات الفردية وفق الشروط أدناه.`
+                : `An instant cancel within ${INSTANT_CANCEL_MINUTES} minutes of a purchase made by mistake (requested from support), a refund within ${WITHDRAWAL_DAYS} days of purchase provided no AI feature was used and, where the plan includes the library, no more than ${LIBRARY_REFUND_MAX_FULL_TEXTS} files were read in full text (for point top-ups: none of the top-up's points spent), and refunds for individual service fees per the terms below.`}
             </div>
           </motion.div>
         </div>

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Gavel, BookOpen, ArrowRight, CaretLeft,
   Clock, Info, MapPin, CaretDown,
-  ClipboardText, Buildings, Scales, PhoneCall,
+  ClipboardText, Buildings, PhoneCall,
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
@@ -110,7 +110,7 @@ export default function ProceduresPage() {
           {([
             { key: "circuits" as Mode, label: "إيميلات الدوائر القضائية", short: "الدوائر", icon: MapPin },
             { key: "agencies" as Mode, label: "الجهات الحكومية", short: "الجهات", icon: Buildings },
-            { key: "grievances" as Mode, label: "التظلم حسب القطاع", short: "التظلمات", icon: Scales },
+            { key: "grievances" as Mode, label: "التظلم حسب القطاع", short: "التظلمات", icon: Gavel },
             { key: "channels" as Mode, label: "القنوات الوطنية", short: "القنوات", icon: PhoneCall },
           ] as const).map(tab => (
             <button key={tab.key} onClick={() => setMode(tab.key)} aria-pressed={mode === tab.key}

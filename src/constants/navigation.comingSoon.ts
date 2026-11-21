@@ -24,6 +24,19 @@ export function isComingSoonItem(item: SidebarItem): boolean {
 }
 
 /**
+ * Batch l12 (owner ١٢٣): a built tool waiting for its live switch (n8n import,
+ * admin mode) says «قيد التفعيل», not «قريباً». It stays in its own group (not
+ * the «قريباً» section) and, like a «قريباً» row, loses the badge once
+ * tool-status confirms the tool runs for this user.
+ */
+export const PENDING_ACTIVATION_BADGE = "قيد التفعيل";
+
+/** A row whose badge drops when its `liveToolId` is confirmed live. */
+function awaitsLiveTool(item: SidebarItem): boolean {
+  return !!item.liveToolId && (isComingSoonItem(item) || item.badge === PENDING_ACTIVATION_BADGE);
+}
+
+/**
  * BUG-12 (owner package 2026-11-06): a «قريباً» row backed by an AI registry
  * tool (`liveToolId`) loses the badge once tool-status confirmed the tool is
  * open for this user. Applied BEFORE withComingSoonLast, so a live tool stays
@@ -32,7 +45,7 @@ export function isComingSoonItem(item: SidebarItem): boolean {
  */
 export function withLiveToolBadges(groups: SidebarGroup[], liveTools: ReadonlySet<string> | null | undefined): SidebarGroup[] {
   if (!liveTools || liveTools.size === 0) return groups;
-  const isLive = (item: SidebarItem) => !!item.liveToolId && liveTools.has(item.liveToolId) && isComingSoonItem(item);
+  const isLive = (item: SidebarItem) => awaitsLiveTool(item) && liveTools.has(item.liveToolId!);
   return groups.map((group) => {
     if (!group.items.some(isLive)) return group;
     return {
@@ -51,7 +64,7 @@ export function comingSoonToolIds(groups: SidebarGroup[]): string[] {
   const ids = new Set<string>();
   for (const group of groups) {
     for (const item of group.items) {
-      if (item.liveToolId && isComingSoonItem(item)) ids.add(item.liveToolId);
+      if (awaitsLiveTool(item)) ids.add(item.liveToolId!);
     }
   }
   return [...ids].sort();

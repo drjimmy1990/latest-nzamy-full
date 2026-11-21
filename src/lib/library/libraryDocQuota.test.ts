@@ -19,7 +19,7 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), "utf8").repla
 
 /**
  * `fullText`: owner ٤٤٧ (N05-L6) — only an entitled full-text open spends the
- * 220 / 400 daily cap, never a preview. Each route passes the same flag it
+ * daily cap (50, library_monitor_settings), never a preview. Each route passes the same flag it
  * gives enforceLibraryDevice, so the quota and the device rule agree.
  */
 const DOC_ROUTES: ReadonlyArray<{ file: string; request: string; fullText: string; before: RegExp }> = [

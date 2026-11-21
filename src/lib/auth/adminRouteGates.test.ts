@@ -291,6 +291,10 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "verifications/[id]/route.ts", method: "PATCH", action: "verifications.decide", logs: 1 },
   { file: "community/moderation/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "community/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
+  // l12 Q130a: the open market — approve/reject a lawyer's ask; assign a lawyer / hide; the settings
+  { file: "marketplace/acceptances/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 1 },
+  { file: "marketplace/requests/[id]/route.ts", method: "PATCH", action: "orders.manage", logs: 2 },
+  { file: "marketplace/settings/route.ts", method: "PATCH", action: "settings.write", logs: 1 },
   { file: "community/reports/[id]/route.ts", method: "PATCH", action: "community.moderate", logs: 1 },
   { file: "broadcasts/route.ts", method: "POST", action: "broadcasts.send", logs: 1 },
   { file: "broadcasts/[id]/route.ts", method: "PATCH", action: "broadcasts.send", logs: 1 },
@@ -310,6 +314,8 @@ const GATES: Array<{ file: string; method: string; action: StaffAction | "per-fi
   { file: "library-monitor/settings/route.ts", method: "PUT", action: "settings.write", logs: 1 },
   // Batch l11 (O18 / O19): the scrape-protection settings, switch-on audited under its own action.
   { file: "library-monitor/protection/route.ts", method: "PUT", action: "settings.write", logs: 1 },
+  // Batch l12 rules (Q100a): the non-subscriber list cap (OFF), switch-on audited under its own action.
+  { file: "library-monitor/list-cap/route.ts", method: "PUT", action: "settings.write", logs: 1 },
   // l8 owner item 9: the library per account type and per-account exceptions (one audit row each)
   { file: "library-access/route.ts", method: "PUT", action: "settings.write", logs: 1 },
   { file: "library-access/route.ts", method: "POST", action: "settings.write", logs: 1 },

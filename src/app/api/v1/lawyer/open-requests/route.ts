@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { assertRole } from "@/lib/auth/assertRole";
 import { DB_ERROR_AR } from "@/lib/api/dbError";
 import { toOpenRequestItems } from "@/lib/services/openRequestsView";
+import { createServiceClient } from "@/lib/supabase/server";
+import { readMarketSettings } from "@/lib/marketplace/marketSettingsServer";
 
 const PAGE_SIZE = 30;
 
@@ -14,6 +16,10 @@ const PAGE_SIZE = 30;
  * never returns the title, the description, the requester or the metadata.
  * `verified` lets the screen say WHY a list is empty (not verified yet vs. no
  * open request) instead of guessing.
+ *
+ * l12 Q130a / Q151: `market` tells the screen how an ask is accepted (admin
+ * approval within N minutes, or instant) and whether the open market is on,
+ * so the card's wording matches the setting (platform_settings, 20261202_70).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,9 +30,10 @@ export async function GET(request: NextRequest) {
     const rawPage = Number(request.nextUrl.searchParams.get("page") ?? "0");
     const page = Number.isInteger(rawPage) && rawPage >= 0 && rawPage < 1000 ? rawPage : 0;
 
-    const [listResult, profileResult] = await Promise.all([
+    const [listResult, profileResult, market] = await Promise.all([
       supabase.rpc("marketplace_open_requests", { p_limit: PAGE_SIZE, p_offset: page * PAGE_SIZE }),
       supabase.from("lawyer_profiles").select("verification_status").eq("user_id", user.id).maybeSingle(),
+      createServiceClient().then((admin) => readMarketSettings(admin)),
     ]);
 
     if (listResult.error) {
@@ -43,6 +50,12 @@ export async function GET(request: NextRequest) {
       page,
       hasMore: Array.isArray(listResult.data) && listResult.data.length === PAGE_SIZE,
       verified: profileResult.error ? null : profileResult.data?.verification_status === "verified",
+      market: {
+        installed: market.installed,
+        open: market.settings.open,
+        acceptMode: market.settings.acceptMode,
+        approvalMinutes: market.settings.approvalMinutes,
+      },
     });
   } catch (err) {
     console.error("[lawyer/open-requests] unexpected:", err);

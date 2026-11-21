@@ -7,7 +7,7 @@
  * note; an unsupported case is refused with its reason, never guessed.
  */
 import { useMemo, useState } from "react";
-import { Scales, Warning, Info } from "@phosphor-icons/react";
+import { Gavel, Warning, Info } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
 import {
@@ -72,7 +72,7 @@ export default function InheritanceCalculator({ preview }: { preview: boolean })
   return (
     <div className={`mx-auto max-w-4xl space-y-4 p-5 ${isDark ? "text-zinc-100" : "text-slate-800"}`} dir="rtl">
       <div className="flex items-center gap-2">
-        <Scales size={22} weight="duotone" className="text-[#C8A762]" />
+        <Gavel size={22} weight="duotone" className="text-[#C8A762]" />
         <h1 className="text-[18px] font-black">حاسبة المواريث</h1>
       </div>
       {preview && (

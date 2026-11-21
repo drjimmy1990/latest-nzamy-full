@@ -106,6 +106,20 @@ export function visitorAddress(getHeader: (name: string) => string | null): stri
   return ip && ip !== "unknown" ? ip : null;
 }
 
+/**
+ * Q100a (batch l12, publicListCapServer.ts): is this request a crawler of the
+ * closed list, its switch on, PROVEN by its address? The list cap never
+ * counts one. The same proof as the view cap below — the User-Agent only
+ * names which provider to check.
+ */
+export async function provenCrawlerRequest(request: Request, settings: PublicViewSettings): Promise<boolean> {
+  const getHeader = (name: string) => request.headers.get(name);
+  const address = visitorAddress(getHeader);
+  const claim = claimFromHeaders(getHeader);
+  if (!claim.crawler || !address || !settings.crawlers[claim.crawler.id]?.on) return false;
+  return isVerifiedCrawler(claim.crawler, address);
+}
+
 async function callHit(body: Record<string, unknown>): Promise<unknown> {
   if (Date.now() < functionMissingUntil) return null;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

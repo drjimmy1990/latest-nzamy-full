@@ -8025,3 +8025,187 @@ select 'R6: one verified account per mobile — trg_verified_phone_unique on pro
            and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
        and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
 -- <<< verify:l11_sec
+-- >>> verify:l12_money
+-- Batch l12 money (owner Q87 / Q88a / ١٥٢ / N6, 20 Nov 2026): run 20261202_10 before or after the deploy (before preferred).
+-- It replaces the l9 minimum: the `verify:l9_terms` row «Minimum top-up 50 for every account type» answers f from now on (expected).
+select 'Minimum top-up: individual 100, every other type 500 — no type left at the l9 value 50 (owner Q87; run 20261202_10)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object'
+                        and value ?& array['lawyer', 'firm', 'corporate', 'micro', 'government', 'ngo', 'provider', 'individual']
+                        and not exists (select 1 from pg_catalog.jsonb_each(value) e where e.value = '50'::jsonb)
+                   from public.platform_settings where key = 'min_topup_by_account_type'), false) as ok;
+select 'Top-up bonus is a setting (topup_bonus_pct, whole percent 0–100) and the founder rule is higher_only|both (Q88a / ١٥٢; run 20261202_10)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object'
+                        and not exists (select 1 from pg_catalog.jsonb_each(value) e
+                                         where pg_catalog.jsonb_typeof(e.value) <> 'number' or (e.value)::text::numeric not between 0 and 100)
+                   from public.platform_settings where key = 'topup_bonus_pct'), false)
+       and exists (select 1 from public.platform_settings where key = 'founder_bonus_rule' and value ->> 'mode' in ('higher_only', 'both')) as ok;
+select 'Legal drafter prices are a setting with all 8 kinds, each 1 point or more (N6; run 20261202_10)' as check,
+       coalesce((select value ?& array['claim', 'reply', 'rejoinder', 'supplementary', 'closing', 'appeal', 'cassation', 'petition']
+                        and not exists (select 1 from pg_catalog.jsonb_each(value) e
+                                         where pg_catalog.jsonb_typeof(e.value) <> 'number' or (e.value)::text::numeric < 1)
+                   from public.platform_settings where key = 'ai_draft_prices'), false) as ok;
+-- <<< verify:l12_money
+-- >>> verify:l12_market
+-- 2026-12-02 — l12 Q130a/Q151: the market opens to verified lawyers (asks + admin approval
+-- window + admin assign + commission setting); Q131a community AI review log.
+-- Run 20261202_70 after the l12 deploy (any time is safe). Docker: supabase/tests/rls/l12_market.test.sql
+select 'l12 market: acceptances table (RLS, no direct writes) + settings + open list with hide/market filter (run 20261202_70)' as check,
+       case when to_regclass('public.marketplace_acceptances') is null
+              or to_regprocedure('public.marketplace_open_requests(integer, integer)') is null then false
+       else coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.marketplace_acceptances')), false)
+            and (select pg_catalog.count(*) from public.platform_settings
+                  where key in ('marketplace_market', 'marketplace_commission_pct', 'community_ai_review')) = 3
+            and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.marketplace_open_requests(integer, integer)')),
+                                  'marketplace_hidden_at is null') > 0
+            and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.guard_service_request_marketplace_publish()')),
+                                  'marketplace_hidden_at') > 0
+            and not has_table_privilege('anon', 'public.marketplace_acceptances', 'SELECT')
+            and not has_table_privilege('authenticated', 'public.marketplace_acceptances', 'INSERT')
+            and not has_table_privilege('authenticated', 'public.marketplace_acceptances', 'UPDATE')
+       end as ok;
+select 'l12 market: lawyer calls to authenticated, admin calls service_role only (run 20261202_70)' as check,
+       case when to_regprocedure('public.marketplace_request_accept(text)') is null
+              or to_regprocedure('public.marketplace_acceptance_decide(uuid, uuid, boolean, text)') is null
+              or to_regprocedure('public.marketplace_assign_lawyer(text, uuid, uuid)') is null
+              or to_regprocedure('public.marketplace_overdue_acceptances(boolean)') is null
+              or to_regprocedure('public.marketplace_open_requests_admin(integer, integer)') is null
+              or to_regprocedure('public.marketplace_request_listable(text)') is null then false
+       else has_function_privilege('authenticated', 'public.marketplace_request_accept(text)', 'EXECUTE')
+            and not has_function_privilege('anon', 'public.marketplace_request_accept(text)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_acceptance_decide(uuid, uuid, boolean, text)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_assign_lawyer(text, uuid, uuid)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_overdue_acceptances(boolean)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_open_requests_admin(integer, integer)', 'EXECUTE')
+            and not has_function_privilege('authenticated', 'public.marketplace_request_listable(text)', 'EXECUTE')
+       end as ok;
+select 'l12 community: AI review log is service-role only (run 20261202_70)' as check,
+       case when to_regclass('public.community_ai_reviews') is null then false
+       else coalesce((select c.relrowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('public.community_ai_reviews')), false)
+            and not has_table_privilege('anon', 'public.community_ai_reviews', 'SELECT')
+            and not has_table_privilege('authenticated', 'public.community_ai_reviews', 'SELECT')
+       end as ok;
+-- <<< verify:l12_market
+-- >>> verify:l12_rules
+-- Batch l12 rules (Q94a / Q100a / Q121 / Q96): run 20261202_50 any time after 20261201_30 and 20261129_60 (before or after the deploy).
+select 'Q94a: library exceptions can end (expires_at / ends_with_subscription) and library_access_for honours it (run 20261202_50)' as check,
+       case when to_regclass('public.library_access_user_overrides') is null or to_regprocedure('public.library_access_for(uuid)') is null then false else
+       exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_access_user_overrides'::regclass and attname = 'expires_at' and not attisdropped)
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_access_user_overrides'::regclass and attname = 'ends_with_subscription' and not attisdropped)
+       and pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.library_access_for(uuid)')), 'ends_with_subscription') > 0
+       end as ok;
+select 'Q100a: the non-subscriber list cap exists, server-only (RLS on, no session privilege) — OFF until the owner approves (run 20261202_50)' as check,
+       case when to_regclass('public.library_public_list_items') is null or to_regprocedure('public.library_public_list_hit(text[],text[])') is null then false else
+       (select relrowsecurity from pg_catalog.pg_class where oid = 'public.library_public_list_items'::regclass)
+       and not has_table_privilege('anon', 'public.library_public_list_items', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.library_public_list_items', 'SELECT')
+       and not has_function_privilege('anon', 'public.library_public_list_hit(text[],text[])', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.library_public_list_hit(text[],text[])', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_attribute where attrelid = 'public.library_monitor_settings'::regclass and attname = 'non_subscriber_list_limit_enabled' and not attisdropped)
+       end as ok;
+select 'Q121 + Q96: free-question tool setting read by the free-question functions; reviewed-only summaries setting present (run 20261202_50)' as check,
+       to_regprocedure('public.ai_free_question_tool(uuid)') is not null
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_free_question_status(uuid)')), 'ai_free_question_tool') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), 'ai_free_question_tool') > 0, false)
+       and exists (select 1 from public.platform_settings where key = 'free_question_tool_by_account_type')
+       and exists (select 1 from public.platform_settings where key = 'library_summaries_reviewed_only') as ok;
+-- <<< verify:l12_rules
+-- >>> verify:l12_lib_links
+-- Batch l12 lib-links (owner L1, Q132, file 02 #43, file 10 ب34): run 20261202_30 AFTER 20261130_40, before or after the deploy.
+select 'Library links: the law-wide links read, the link check, its run and history are service_role only with an empty search_path; link_checks server-only (run 20261202_30)' as check,
+       case when to_regprocedure('public.graph_rag_law_article_links(text, integer, text[])') is null
+              or to_regprocedure('public.graph_rag_link_check(integer)') is null
+              or to_regprocedure('public.graph_rag_link_check_run(integer)') is null
+              or to_regprocedure('public.graph_rag_link_check_history(integer)') is null
+              or to_regclass('library_graph.link_checks') is null then false else
+       (select pg_catalog.bool_and(p.proconfig @> array['search_path=""']
+                                   and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                   and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                   and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+          from pg_catalog.pg_proc p
+         where p.oid in (to_regprocedure('public.graph_rag_law_article_links(text, integer, text[])'),
+                         to_regprocedure('public.graph_rag_link_check(integer)'),
+                         to_regprocedure('public.graph_rag_link_check_run(integer)'),
+                         to_regprocedure('public.graph_rag_link_check_history(integer)')))
+       and (select c.relrowsecurity and c.relforcerowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('library_graph.link_checks'))
+       and not has_table_privilege('anon', 'library_graph.link_checks', 'SELECT')
+       and not has_table_privilege('authenticated', 'library_graph.link_checks', 'SELECT')
+       end as ok;
+select 'Library links: the owner links resolver publishes flagged links and falls back to the document (resolved_doc) (run 20261202_30)' as check,
+       case when to_regprocedure('public.graph_rag_resolve_owner_edges()') is null or to_regclass('library_graph.owner_edges') is null then false else
+       pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_resolve_owner_edges()')) like '%resolved_doc%'
+       and pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_resolve_owner_edges()')) not like '%''held_flagged'' where status is null%'
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = to_regclass('library_graph.owner_edges') and conname = 'owner_edges_resolve_status_check'
+                      and pg_catalog.pg_get_constraintdef(oid) like '%resolved_doc%')
+       and not has_function_privilege('anon', 'public.graph_rag_resolve_owner_edges()', 'EXECUTE')
+       end as ok;
+-- <<< verify:l12_lib_links
+-- >>> verify:l12_lib_draft
+-- Batch l12 lib-draft (L11-log «سجلّي», L2 draft limits): run 20261202_40 any time (before or after the deploy).
+select 'L11-log: ai_runs.user_hidden_at exists, sessions read only that column (never input), retention reads ai_runs_retention (run 20261202_40)' as check,
+       case when to_regclass('public.ai_runs') is null
+              or not exists (select 1 from pg_catalog.pg_attribute
+                              where attrelid = 'public.ai_runs'::regclass and attname = 'user_hidden_at' and not attisdropped)
+            then false else
+       has_column_privilege('authenticated', 'public.ai_runs', 'user_hidden_at', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.ai_runs', 'input', 'SELECT')
+       and not has_column_privilege('anon', 'public.ai_runs', 'user_hidden_at', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.ai_runs', 'UPDATE')
+       and not has_function_privilege('authenticated', 'public.ai_runs_retention()', 'EXECUTE')
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_runs_retention()')), 'ai_runs_retention''') > 0, false)
+       end as ok;
+select 'L11-log / L2: settings ai_runs_retention (months 1–60) and library_draft_limits present (run 20261202_40)' as check,
+       coalesce((select jsonb_typeof(value -> 'months') = 'number' from public.platform_settings where key = 'ai_runs_retention'), false)
+       and coalesce((select jsonb_typeof(value -> 'max_items') = 'number' and jsonb_typeof(value -> 'share_excerpt_chars') = 'number'
+                       from public.platform_settings where key = 'library_draft_limits'), false) as ok;
+-- <<< verify:l12_lib_draft
+-- >>> verify:l12_firm
+-- Batch l12 firm: run 20261202_80 before or after the deploy; re-run it after any re-run of 20261129_10, 20261127_60 or 20261201_50.
+select 'Q112: firm_case_scoped_member reads the firm_case_scope setting (trainee + secretary always); sessions cannot call the setting reader (run 20261202_80)' as check,
+       to_regprocedure('public.firm_case_scope_roles()') is not null
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_case_scoped_member(uuid)')), 'firm_case_scope_roles') > 0, false)
+       and not has_function_privilege('authenticated', 'public.firm_case_scope_roles()', 'EXECUTE')
+       and exists (select 1 from public.platform_settings where key = 'firm_case_scope') as ok;
+select 'Q112: the finance manager sees no case file — restrictive policy on service_requests (run 20261202_80)' as check,
+       exists (select 1 from pg_catalog.pg_policy
+                where polname = 'firm case: finance manager sees no case files' and not polpermissive
+                  and polrelid = to_regclass('public.service_requests')) as ok;
+select 'Q113 / Q114: company tiers start at 5 seats; the extra firm seat has a price (run 20261202_80)' as check,
+       public.business_plan_seat_cap('biz-sm-basic') = 5 and public.business_plan_seat_cap('dept-sm-basic') = 5
+       and coalesce((select pg_catalog.jsonb_typeof(value -> 'sar') = 'number' from public.platform_settings where key = 'firm_extra_seat_price_sar'), false) as ok;
+select 'N16: the restricted-case open log is append-only and closed to sessions (run 20261202_80)' as check,
+       to_regclass('public.restricted_case_open_log') is not null
+       and not has_table_privilege('authenticated', 'public.restricted_case_open_log', 'SELECT')
+       and has_function_privilege('authenticated', 'public.log_restricted_case_open(text)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.restricted_case_open_log_read(text)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_trigger where tgname = 'trg_restricted_case_open_log_append_only' and not tgisinternal) as ok;
+select 'N18: «مكتب معتمد» = a registered law firm with an active office plan (run 20261202_80 after 20261201_50)' as check,
+       case when to_regprocedure('public.community_verified_office_users(uuid[])') is null then false else
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.community_verified_office_users(uuid[])')), 'firm-enterprise') > 0, false)
+       and not has_function_privilege('authenticated', 'public.community_verified_office_users(uuid[])', 'EXECUTE')
+       end as ok;
+select 'N21: founder storage fair use — setting, usage function (service role only), alert marker (run 20261202_80)' as check,
+       exists (select 1 from public.platform_settings where key = 'founder_storage_fair_use')
+       and to_regprocedure('public.founder_storage_usage()') is not null
+       and not has_function_privilege('authenticated', 'public.founder_storage_usage()', 'EXECUTE')
+       and to_regclass('public.founder_storage_alerts') is not null
+       and not has_table_privilege('authenticated', 'public.founder_storage_alerts', 'SELECT') as ok;
+-- <<< verify:l12_firm
+-- >>> verify:l12_access
+-- Batch l12-access: run 20261202_20 before (or after) the l12 deploy; the sign-in route fails open without it.
+select 'l12 lockout: setting row, both tables RLS on with no anon/authenticated privilege, route functions service-role only (run 20261202_20)' as check,
+       case when to_regclass('public.auth_login_locks') is null or to_regprocedure('public.auth_login_record(text,text,text,boolean)') is null then false else
+       exists (select 1 from public.platform_settings where key = 'auth_login_lockout')
+       and (select relrowsecurity from pg_catalog.pg_class where oid = 'public.auth_login_locks'::regclass)
+       and (select relrowsecurity from pg_catalog.pg_class where oid = 'public.auth_login_attempts'::regclass)
+       and not has_table_privilege('anon', 'public.auth_login_locks', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.auth_login_attempts', 'SELECT')
+       and not has_function_privilege('authenticated', 'public.auth_login_record(text,text,text,boolean)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.hook_password_verification_attempt(jsonb)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.auth_login_record(text,text,text,boolean)', 'EXECUTE')
+       end as ok;
+select 'l12 test kinds (owner 109): test_accounts.kind present, caps and mail sink patched (run 20261202_20)' as check,
+       exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'test_accounts' and column_name = 'kind')
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.demo_guard_sandbox_row()')), 'test_account_kind(v_u)') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.test_mail_sink_check(text,uuid[],text,text,text)')), 'u is distinct from v_own') > 0, false) as ok;
+-- <<< verify:l12_access

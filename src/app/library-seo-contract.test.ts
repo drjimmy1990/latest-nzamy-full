@@ -153,3 +153,13 @@ test("the library sitemaps: documents only, paged, by primary key, empty when cl
   // The root /sitemap.xml stays where it is (no generateSitemaps there).
   assert.doesNotMatch(read("./sitemap.ts"), /generateSitemaps/);
 });
+
+test("file 10 ب17.2 (l12): /laws has one <h1>, server-rendered outside LibraryGuard, on /laws only", () => {
+  const layout = read("./laws/layout.tsx");
+  assert.ok(layout.indexOf("<LawsIndexHeading />") > -1 && layout.indexOf("<LawsIndexHeading />") < layout.indexOf("<LibraryGuard"), "outside the guard");
+  const heading = read("./laws/_index-heading.tsx");
+  assert.match(heading, /if \(pathname !== "\/laws"\) return null;/);
+  assert.equal((heading.match(/<h1 className=/g) || []).length, 1);
+  // the catalogue page itself adds none
+  assert.doesNotMatch(read("./laws/(index)/page.tsx"), /<h1 /);
+});

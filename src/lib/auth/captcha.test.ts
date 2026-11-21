@@ -142,7 +142,9 @@ const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 test("login builds its credentials through buildPasswordCredentials and spends the token", () => {
   const src = read("../../app/login/page.tsx");
   assert.match(src, /buildPasswordCredentials\(/);
-  assert.match(src, /signInWithPassword\(credentials\)/);
+  // l12-access (file 10 ب23): the credentials go to the server route, which signs in with GoTrue.
+  assert.match(src, /fetch\("\/api\/v1\/auth\/sign-in"/);
+  assert.match(src, /password: credentials\.password,\s*captchaToken: captcha\.token,/);
   // The captcha refusal is recognised inside the shared translator
   // (translateAuthError → isCaptchaAuthError, BUG-09).
   assert.match(src, /translateAuthError\(/);

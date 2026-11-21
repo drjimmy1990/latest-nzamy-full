@@ -14,6 +14,7 @@
  */
 import type { LibraryScope } from "@/lib/ai/tools";
 import { libraryAiRefusal, type LibraryAiAction } from "./_ai-reply.ts";
+import { LAWS_STATIC_SEGMENTS } from "../../../components/library/libraryGuardPaths.ts";
 
 export interface LibraryAnswer {
   text: string;
@@ -63,7 +64,11 @@ function newKey(): string {
 /** The same shape the server accepts (tools.ts LAW_SLUG); anything else is not sent. */
 const LAW_SLUG = /^[\p{L}\p{N}_.\-]{1,200}$/u;
 
-/** The law slug in a /laws/<slug> path (query and hash ignored, decoded once), or null. */
+/**
+ * The law slug in a /laws/<slug> path (query and hash ignored, decoded once), or null.
+ * A static page of the section (/laws/research, /laws/my, …) is not a law: a
+ * question asked there carries no law (researcher V3: the studio page).
+ */
 export function lawSlugFromPath(path: string): string | null {
   const m = /^\/laws\/([^/?#]+)/.exec(String(path ?? ""));
   if (!m) return null;
@@ -73,27 +78,41 @@ export function lawSlugFromPath(path: string): string | null {
   } catch {
     // A malformed escape: keep it as typed; the shape check below decides.
   }
-  return LAW_SLUG.test(slug) ? slug : null;
+  return LAW_SLUG.test(slug) && !LAWS_STATIC_SEGMENTS.has(slug) ? slug : null;
 }
 
+/**
+ * `onKey` (researcher V3 A2, optional): told each idempotency key as it is
+ * minted, so the page can follow the run's progress (GET
+ * /api/v1/ai/runs/progress?key=) while the POST is in flight. A full
+ * conversation's retry mints a second key, and the page follows that one.
+ */
 export async function askLibrary(
   input: { message: string; articleId?: string | null; conversationId?: string | null; scope?: LibraryScope | null },
   currentPath: string,
   fetchImpl: typeof fetch = fetch,
+  onKey?: (key: string) => void,
 ): Promise<LibraryAnswer> {
   const conversationId =
     typeof input.conversationId === "string" && CONVERSATION_ID.test(input.conversationId) ? input.conversationId : null;
-  const send = (cid: string | null) =>
-    fetchImpl("/api/v1/ai/runs", {
+  const send = (cid: string | null) => {
+    const key = newKey();
+    try {
+      onKey?.(key);
+    } catch {
+      // A watcher's failure never stops the question.
+    }
+    return fetchImpl("/api/v1/ai/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tool: "library-assistant",
         input: { message: input.message, article_id: input.articleId ?? null, law_slug: lawSlugFromPath(currentPath), ...(input.scope ? { scope: input.scope } : {}) },
         ...(cid ? { conversationId: cid } : {}),
-        idempotencyKey: newKey(),
+        idempotencyKey: key,
       }),
     });
+  };
   let res: Response;
   let json: Record<string, unknown>;
   try {

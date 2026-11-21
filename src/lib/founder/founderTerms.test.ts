@@ -36,16 +36,19 @@ test("item ٧ is the owner's 19-Nov refund (draft clause 7): no AI feature AND n
   assert.doesNotMatch(founderTermsText(), /خدمات الباقة/, "the published wording the owner called an urgent fix is gone");
 });
 
-test("l9: ONE new version (register 31), later than the published 2026-11-20, shared with /terms", () => {
-  assert.equal(FOUNDER_TERMS_VERSION, "2026-11-21");
-  assert.ok(FOUNDER_TERMS_VERSION > "2026-11-20", "never backwards");
+test("l12: ONE new version for the batch, later than l9's published 2026-11-21, shared with /terms", () => {
+  assert.equal(FOUNDER_TERMS_VERSION, "2026-11-22");
+  assert.ok(FOUNDER_TERMS_VERSION > "2026-11-21", "never backwards");
   assert.equal(FOUNDER_TERMS_VERSION, CURRENT_TERMS_VERSION, "/terms gained clauses 14–15 in the same version");
 });
 
-test("l9 (register 7 / 29 / 32 / 55): minimum top-up 50 points; the 15 % is on top-ups AND any plan, his renewal included, while the yearly subscription is active; the larger discount only", () => {
+test("l9 (register 29 / 32 / 55) + l12 (Q87 / ١٥٢): the lawyer's smallest top-up is 500 (50 opens the library only), a point is one riyal before VAT; the 15 % is on top-ups AND any plan, his renewal included, while the yearly subscription is active; the larger discount only, never with a top-up bonus", () => {
   const t = founderTermsText();
   assert.doesNotMatch(t, /أي قيمة|أي مبلغ|مدى الحياة|دائم/);
-  assert.ok(t.includes("**شحن النقاط بحد أدنى 50 نقطة**"));
+  assert.doesNotMatch(t, /بحد أدنى 50 نقطة/, "Q87: 50 is not a top-up minimum");
+  assert.ok(t.includes("ويعود التصفح والمساعد بعد **شحن النقاط** فور بلوغ رصيدك 50 نقطة، وأقل شحنة للمحامي **500 نقطة**"));
+  assert.ok(t.includes("**النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة**"));
+  assert.doesNotMatch(t, /البونص/, "Q88a: the campaign bonus wording is gone");
   const discount = FOUNDER_TERMS_ITEMS.flatMap((i) => i.bullets ?? []).find((b) => b.includes("15%"));
   assert.ok(discount, "the discount bullet");
   assert.match(discount!, /على شحنات النقاط وعلى أي باقة تشتريها من نظامي/);
@@ -56,6 +59,8 @@ test("l9 (register 7 / 29 / 32 / 55): minimum top-up 50 points; the 15 % is on t
   assert.doesNotMatch(t, /شحنات النقاط وحدها|على الشحن وحده/, "the l8 «top-ups only» wording is gone");
   const rules = FOUNDER_TERMS_ITEMS.find((i) => i.title.startsWith("١٣."));
   assert.match(rules?.paragraphs?.[0] ?? "", /أعلى خصم واحد فقط/);
+  assert.match(rules?.paragraphs?.[0] ?? "", /ولا يجتمع خصم المؤسس على شحنة النقاط مع النقاط الإضافية/, "١٥٢: the higher of the two");
+  assert.match(discount!, /ولا يجتمع على الشحنة الواحدة مع النقاط الإضافية إن وُجدت/);
   assert.match(FOUNDER_TERMS_ITEMS.find((i) => i.title.startsWith("٤."))?.paragraphs?.[0] ?? "", /يُعلن قبل نهاية السنة بـ60 يوماً/);
 });
 

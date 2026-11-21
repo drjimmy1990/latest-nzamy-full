@@ -2,17 +2,21 @@ import MyMarketplaceDashboard from "@/components/marketplace/MyMarketplaceDashbo
 import OpenRequestsList from "@/components/marketplace/OpenRequestsList";
 
 /**
- * The lawyer's marketplace: the «not available yet» panel for publishing and
- * offers (shared with firm and company, MyMarketplaceDashboard), then the
- * read-only open requests a verified lawyer may browse (owner ١٠ + ١٩) —
- * type, city and one summary line. Lawyer only: the firm and company screens
- * keep the panel alone.
+ * The lawyer's marketplace.
+ *
+ * l12 Q130a (owner answers of 20 Nov): the clients' market is open — the
+ * open requests come FIRST, with «اطلب القبول», his asks and the requests
+ * assigned to him (OpenRequestsList). Below it, the lawyer-to-lawyer
+ * «سوق الإسناد» panel (shared with firm and company, MyMarketplaceDashboard)
+ * stays «not available yet»: that market (offers between lawyers, payment
+ * through the platform) is still parked by BETA_MONOPOLY_MODE.
  */
 export default function LawyerMarketplacePage() {
   return (
     <>
-      <MyMarketplaceDashboard userType="lawyer" />
+      <div className="pt-6" />
       <OpenRequestsList />
+      <MyMarketplaceDashboard userType="lawyer" />
     </>
   );
 }

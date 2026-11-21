@@ -68,6 +68,26 @@ const NOTICE_LINE_RE = new RegExp(`^[\\s>*_]*(?:${alternation(REFERENCE_NOTICE_V
  */
 const PREAMBLE_SUMMARY_RE = /📝[^\n]*موجز|بطاقة\s+تعريف|البطاقة\s+التعريفية|➕/;
 
+/**
+ * The corpus's own ديباجة toggle (owner file 03 L4, lib06): every preamble is
+ * wrapped as `<details><summary>📜 ديباجة نظام …</summary> … </details>`, and
+ * the default-to-history rule drew it as the amber «سابق» toggle. It is the
+ * current preamble — unless its summary or a «before» label says it is the
+ * superseded one («📜 ديباجة النظام قبل التعديل»). A bare «📜» is still
+ * history: the amendment fallback label uses it.
+ */
+const PREAMBLE_TOGGLE_RE = /^(?:📜\s*)?(?:ال)?ديباجة(?=\s|$)/;
+
+/** True for the preamble's own toggle («📜 ديباجة النظام») when nothing marks it superseded. */
+export function isPreambleToggle(summary: string | null | undefined, content: string | null | undefined): boolean {
+  const s = (summary ?? "").replace(/\s+/g, " ").trim();
+  if (!PREAMBLE_TOGGLE_RE.test(s)) return false;
+  if (HISTORIC_SUMMARY_RE.test(stripTashkeel(s))) return false;
+  const body = content ?? "";
+  if (UNBOLDED_BEFORE_RE.test(stripTashkeel(body))) return false;
+  return !BEFORE_LABEL_LINE_RE.test(fold(body));
+}
+
 /** The parser's history evidence: the summary says so, or the body carries a label or notice. */
 function hasHistoryWording(summary: string, content: string): boolean {
   if (HISTORIC_SUMMARY_RE.test(stripTashkeel(summary))) return true;
@@ -87,6 +107,7 @@ export function isAmendmentDetails(summary: string | null | undefined, content: 
   const s = (summary ?? "").replace(/\s+/g, " ").trim();
   const body = content ?? "";
   if (PREAMBLE_SUMMARY_RE.test(s)) return false;
+  if (isPreambleToggle(s, body)) return false;
   if (hasHistoryWording(s, body)) return true;
   if (LIVE_ANNEX_SUMMARY_ALLOWLIST.has(s)) return false;
   if (ENGLISH_TEXT_SUMMARY_RE.test(s) && isPredominantlyLatin(body)) return false;

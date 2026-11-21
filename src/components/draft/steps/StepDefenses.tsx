@@ -4,7 +4,7 @@ import { useState, Dispatch, SetStateAction } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldCheck, ShieldSlash, PencilSimple, Plus,
-  CaretDown, CheckCircle, XCircle, Star, Scales,
+  CaretDown, CheckCircle, XCircle, Star, Gavel,
   Warning, Trash,
 } from "@phosphor-icons/react";
 import {
@@ -162,7 +162,7 @@ function DefenseCard({
           </div>
           {def.legalBase && (
             <p className={`text-[10px] flex items-center gap-1 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
-              <Scales size={9} /> {def.legalBase}
+              <Gavel size={9} /> {def.legalBase}
             </p>
           )}
         </div>

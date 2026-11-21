@@ -48,6 +48,7 @@ On n8n.asra3.com (all created **inactive**):
 | L13 محترف العقود (job, clause by clause) | `NZAMY · AI · contracts-pro (L13 محترف العقود)` | `mMekAog89HsgLz3o` | `nzamy-ai/contracts-pro` |
 | مراجع العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-review (مراجع العقود)` | (none yet) | `nzamy-ai/contract-review` |
 | مفاوض العقود (job), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · contract-negotiator (مفاوض العقود)` | (none yet) | `nzamy-ai/contract-negotiator` |
+| صائغ العقود المبسّط (job, l12), NOT on the live n8n yet, import after the deploy | `NZAMY · AI · simple-contract (صائغ العقود المبسّط)` | (none yet) | `nzamy-ai/simple-contract` |
 | ملخص الطلب المفتوح (app-internal, no points), NOT on the live n8n yet | `NZAMY · AI · request-summary (ملخص الطلب المفتوح)` | (none yet) | `nzamy-ai/request-summary` |
 
 **request-summary (owner ١٩).** The app calls it after a client creates an open request, and only when `REQUEST_SUMMARY_AI=on` is set with `N8N_AI_BASE_URL` and `NZAMY_AI_KEY` (src/lib/services/requestPublicSummaryModel.ts). It gets `{ tool, input: { type_label, text }, max_chars }`, where the text is already scrubbed of names, numbers and contacts, and it answers `200 { summary }`: one Arabic line. The app checks that line again and keeps its own fallback line on any failure. To switch it on:
@@ -154,6 +155,19 @@ Wave 1 has no SQL and no new server variables.
 5. Set it to `live` only when you are satisfied, and read the first real user's ledger row: a debit of 250 or 150, and a refund if that run failed.
 
 **A percentage fails the run.** The owner's rule refuses any figure with `%` or `٪` in the result, and the run is refunded. A contract's own rate («غرامة ٥٪») is covered by the same check: the prompts ask for it in words. If real contracts refund too often, this is the first place to look.
+
+## صائغ العقود المبسّط (batch l12, owner ١٢٣): your steps
+
+**What it is.** A job at `/ai/simple-contract` for **individual and corporate accounts only** (a lawyer or a firm is pointed to «محترف العقود»; other types to `/services/contracts`). One screen: the contract type (the same six as L11), its fields, a box the user ticks, then the draft. The prompt writes 5 to 12 short clauses in plain fusha, `[....]` for anything not given, and no disclaimer of its own. The app adds the owner's fixed line «هذا نموذج مبسّط استرشادي، ولا يغني عن عقد احترافي يراجعه محامٍ. وللحصول على عقد احترافي استعن بمحامٍ من نظامي.» and the link `/services/contracts` under every draft and in every copy. Cited articles get the library's verdict, as in L11.
+- **Price:** an admin setting, `simple_contract_price` = `{"points": n}`, 100 until saved (owner q١٢٣: 100 or 150). Edit it at `/dashboard/admin/settings` → «سعر صائغ العقود المبسّط». The screen shows the setting and a changed price refuses the run uncharged.
+- **Ships OFF:** the page says «قريباً» until the tool is switched on. No SQL.
+
+**Steps, after the deploy (never before it):**
+1. In n8n: Workflows → Import from File → `n8n/ai/simple-contract.json`.
+2. Re-select the credentials on every node that asks (Webhook, Model, Callback and each `Progress ·` node), then switch the workflow on.
+3. `https://nezamy.sa/dashboard/admin/ai-usage`: set `simple-contract` to **للمشرفين فقط** (`staff`), press **حفظ**, and test as the admin at `https://nezamy.sa/ai/simple-contract` (a rent contract: a title, short clauses, `[....]` blanks, the «استرشادي» line with its link).
+4. Set it to `live` when satisfied; the first real run's ledger row shows a debit of the set price (and a refund if it failed).
+5. **Required with `live`: an entry link.** Nothing links to `/ai/simple-contract` yet (it shipped off). Add it to the individual and business /ai hub and sidebars, and repoint the client catalog card «صياغة عقد مخصص» (`src/constants/clientServiceCatalog.ts`, `serviceId: "contract-draft"`, today `route: "/ai/contract-drafter"`, the lawyers' tool, with «٥٠٠ نقطة للعقد») to `/ai/simple-contract` with its price; that card's DB row (migrations 20261102_10/11) needs the same change.
 
 ## Wave 5, L11 محترف العقود المختصر: your steps
 

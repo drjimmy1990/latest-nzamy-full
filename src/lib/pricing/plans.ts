@@ -220,14 +220,15 @@ export const INDEPENDENT_CONSULTANT_PLAN: PricingPlan = {
   descAr: "باقة مخصصة للمستشارين القانونيين المستقلين لدراسة الأنظمة وصياغة العقود — لا تشمل الترافع القضائي لغير المرخصين",
   descEn: "Specialized for independent legal consultants for advisory & contracts — excludes court representation for unlicensed practitioners",
   featuresAr: [
-    "الوصول الكامل لمحرك البحث في المكتبة القانونية والأنظمة السعودية",
+    // Q89 (l12): no plan but a library plan or grant opens the library.
+    "المكتبة القانونية باشتراك مستقل",
     "أدوات الصائغ الآلي ومحترف العقود للاستشارات والصياغة",
     "توليد المذكرات الاستشارية والآراء القانونية الموثقة",
     "إدارة العملاء والملفات الاستشارية والتقويم",
     "🚫 حظر ميزات الترافع والتمثيل القضائي أمام المحاكم وفق المادة ١٨ من نظام المحاماة",
   ],
   featuresEn: [
-    "Full access to the Saudi statutory laws & regulations search engine",
+    "Legal library by separate subscription",
     "Automated drafter & contract analyzer tools for advisory work",
     "Generation of legal opinions and consultative memoranda",
     "Client advisory management, document repository & scheduling",

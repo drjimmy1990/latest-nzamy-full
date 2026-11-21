@@ -1,9 +1,9 @@
 "use client";
 // ─── Context: Cross-Examination Questions Generator ───────────────────────────
 // Workflow:
-//   Phase 1 — Quick Scan: user pastes/describes the witness testimony/statement
-//   Phase 2 — Dynamic Questions (3 targeted probes)
-//   Phase 3 — AI builds question battery → Result
+//   Phase 1 — Input: user pastes/describes the witness testimony/statement
+//   Phase 2 — Clarifying questions (a fixed keyword checklist, no AI)
+//   Phase 3 — the composed text goes to the team order (no AI engine yet)
 //
 // Design philosophy (from DYNAMIC_QUESTIONS_BLUEPRINT):
 //   • Ask before analyze — we need context to target the questions
@@ -37,7 +37,9 @@ interface Props {
   onReadyInfo: (info: { witnessRole: string; destroyGoal: string }) => void;
 }
 
-type ScanPhase = "input" | "scanning" | "questions" | "ready";
+// P0-4 (batch l12): no "scanning" phase. A 1.6 s timer used to show «جاري قراءة
+// الشهادة…» before a keyword list; nothing read the testimony.
+type ScanPhase = "input" | "questions" | "ready";
 
 interface DynQ { q: string; placeholder: string; key: string; }
 
@@ -138,7 +140,7 @@ export function ContextCrossExam({
     await attachFiles(fileList);
   }
 
-  async function startScan() {
+  function startScan() {
     if (!hasContent) return;
     // File mode used to fold every filename into `description` as a
     // "=== مستندات الشهادة ===" text block. That block is now redundant —
@@ -148,8 +150,6 @@ export function ContextCrossExam({
     if (inputMode === "file" && attachments.length > 0 && !description.trim()) {
       setDescription("(تم رفع مستندات الشهادة كمرفقات — راجع المرفقات المرفقة بالطلب)");
     }
-    setPhase("scanning");
-    await new Promise(r => setTimeout(r, 1600));
     // Real filenames are still a legitimate signal for this client-side
     // keyword heuristic (buildDynQuestions) even though they no longer get
     // written into the admin-facing description text above.
@@ -329,28 +329,9 @@ export function ContextCrossExam({
               disabled={!hasContent || !witnessRole || !destroyGoal}
               className="flex items-center gap-2 bg-rose-600 text-white font-black px-6 py-2.5 rounded-xl text-[13px] hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-lg shadow-rose-500/20">
               <Funnel size={15} weight="fill" />
-              ابدأ التحليل السريع
+              التالي: أسئلة الاستيضاح
               <ArrowRight size={13} />
             </motion.button>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Phase: SCANNING ── */}
-      {phase === "scanning" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`${card} p-8 flex flex-col items-center gap-4`}>
-          <div className="relative">
-            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 flex items-center justify-center">
-              <UserFocus size={28} className="text-rose-500 animate-pulse" weight="duotone" />
-            </div>
-          </div>
-          <p className={`text-[14px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>جاري قراءة الشهادة...</p>
-          <p className={`text-[12px] ${ts}`}>تحديد نقاط الاستغلال والتناقضات المحتملة</p>
-          <div className="flex gap-1.5">
-            {[0, 1, 2].map(i => (
-              <motion.div key={i} animate={{ scale: [1, 1.3, 1] }} transition={{ repeat: Infinity, delay: i * 0.2, duration: 0.8 }}
-                className="w-2 h-2 rounded-full bg-rose-500/60" />
-            ))}
           </div>
         </motion.div>
       )}
@@ -362,11 +343,11 @@ export function ContextCrossExam({
             <div className="flex items-center gap-2 mb-1">
               <Question size={14} weight="fill" className="text-rose-500" />
               <p className="text-[10px] font-black uppercase tracking-widest text-rose-500">
-                تدقيق في السياق — {dynQuestions.length} أسئلة
+                أسئلة استيضاح — {dynQuestions.length}
               </p>
             </div>
             <p className={`text-[12px] leading-relaxed ${ts}`}>
-              قرأت الشهادة. أحتاج تفاصيل إضافية لأبني أسئلة الاستجواب بدقة جراحية — أجب بالقدر الذي تعرفه:
+              أسئلة استيضاح تساعد الفريق على إعداد أسئلة الاستجواب — أجب بالقدر الذي تعرفه:
             </p>
           </div>
 

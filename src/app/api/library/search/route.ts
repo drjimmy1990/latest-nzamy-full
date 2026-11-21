@@ -44,7 +44,12 @@ import { fetchLawTitleHitsChecked, type LawTitleHitsResult } from './lawTitleHit
 import { fetchBookTitleHits } from './bookTitleHits';
 import { fetchCollectionTitleHits } from './collectionTitleHits';
 import { latestLegislativeEvent, summaryForViewer } from '@/lib/library/legislativeEvent';
+import { decreeTitleForViewer } from '@/lib/library/decreeDisplay';
 import { realPrincipleNumber } from '@/app/laws/principleLink';
+import { summaryShown } from '@/lib/library/summaryReview';
+import { keepAllowed, listItemKey } from '@/lib/library/publicListCap';
+import { spendPublicListItems } from '@/lib/library/publicListCapServer';
+import { readSummariesReviewedOnly } from '@/lib/library/summaryReviewServer';
 
 /** Book-title hits listed above the fiqh passages on page 1. */
 const BOOK_TITLE_HITS_MAX = 3;
@@ -280,7 +285,10 @@ export async function POST(request: Request) {
     } catch {
       userId = null;
     }
-    const { hasFullAccess, whitelistedSlugs, freeItemsByType } = await getLibraryAccessForUser(userId);
+    const [{ hasFullAccess, whitelistedSlugs, freeItemsByType }, summariesReviewedOnly] = await Promise.all([
+      getLibraryAccessForUser(userId),
+      readSummariesReviewedOnly(),
+    ]);
     const freeItems = (type: string): string[] => (freeItemsByType[type] as string[]) ?? [];
     const snippetLen = (isFree: boolean) => (isFree ? 200 : 100);
 
@@ -801,17 +809,37 @@ export async function POST(request: Request) {
         const settled = await settlePage('orders', res as unknown as RowsResult, () => orderQuery(true).abortSignal(signal));
         if (!settled) return { ok: false };
         const orderResults = settled.rows;
+        // Q96 (batch l12): a decree's موجز feeds the snippet only once its
+        // summary is reviewed (library_summaries_reviewed_only). The status
+        // (20261202_50) is read for this page's ids; a failed read or a
+        // missing column = not reviewed (the snippet is then empty).
+        let reviewedDecrees: Set<string> | null = null;
+        if (summariesReviewedOnly && orderResults.length > 0) {
+          reviewedDecrees = new Set();
+          const statuses = await serverOnly
+            .schema('library')
+            .from('decrees_circulars')
+            .select('id, summary_status')
+            .in('id', orderResults.map((r: Record<string, unknown>) => String(r.id)))
+            .abortSignal(signal)
+            .then((x) => (x.error ? [] : (x.data ?? [])), () => []);
+          for (const s of statuses as Array<{ id?: unknown; summary_status?: unknown }>) {
+            if (summaryShown(s.summary_status, true)) reviewedDecrees.add(String(s.id));
+          }
+        }
         const results: SearchResultItem[] = orderResults.map((r: Record<string, unknown>) => {
           const isFree = isFreeLibraryItem({ contentType: 'decrees', itemId: r.id as string, hasFullAccess, freeItemsByType, whitelistedLawSlugs: whitelistedSlugs });
           // Owner ٤٢٤ / ٣٨٠ (the laws' ٣١٩ rule): no decree number or date in a
           // non-subscriber's snippet.
-          const brief = summaryForViewer(r.summary_brief as string || '', hasFullAccess);
+          const brief = reviewedDecrees && !reviewedDecrees.has(String(r.id)) ? '' : summaryForViewer(r.summary_brief as string || '', hasFullAccess);
           // Owner ٤٢٤ / ٣٨٠: a decree's number and date are a subscriber's
           // (hasFullAccess) — '' for everyone else, as on /api/library/init.
           const official = maskDecreeOfficialFields({ ref: r.ref ?? '', date: r.date ?? '' }, hasFullAccess);
           return {
             id: r.id,
             section: 'orders',
+            // The stored title for the de-duplication below (two decrees differ
+            // by their number); masked for the viewer after it (Q101).
             title: r.title,
             snippet: truncateWithHighlight(brief, parsed.plainTerms, snippetLen(isFree)),
             locked: !isFree,
@@ -827,9 +855,13 @@ export async function POST(request: Request) {
         // De-duplication runs after PostgREST counted: when this page is the
         // whole match set, the count is what it lists («الحسابات البنكية» 27).
         const deduped = dedupeResults(results);
+        // Owner Q101 (batch l12): no number or date in a non-subscriber's title.
+        const viewerTitles = new Map(orderResults.map((r: Record<string, unknown>) => [r.id, decreeTitleForViewer({
+          title: r.title, type: r.type, summary: summaryForViewer(r.summary_brief as string || '', hasFullAccess),
+        }, hasFullAccess)]));
         return {
           ok: true,
-          results: deduped.slice(0, size),
+          results: deduped.slice(0, size).map((item) => ({ ...item, title: viewerTitles.get(item.id) ?? decreeTitleForViewer({ title: item.title }, hasFullAccess) })),
           order: relevance?.order ?? 'id',
           ...sectionCount({ estimate: settled.count, offset: from, rawRows: orderResults.length, requested: fetchSizeFor(size), listedWhenComplete: deduped.length }),
         };
@@ -992,6 +1024,19 @@ export async function POST(request: Request) {
 
     const combined = combineSearchOutcomes(section, outcomes, { page, query: parsed.raw }, names);
     if (combined.status !== 200) return searchUnavailableResponse(combined.status);
+    // Q100a (batch l12): the non-subscriber list cap — SHIPPED OFF until the
+    // owner approves the evidence (publicListCapServer.ts; fails open). The
+    // hits are allowed in their order; the counts stay the match counts, and
+    // `listLimit` carries the reader's message when hits were held back.
+    const hits = Array.isArray(combined.body.results) ? (combined.body.results as SearchResultItem[]) : [];
+    const hitKey = (h: SearchResultItem) => listItemKey(String(h.section), h.id);
+    const listCap = await spendPublicListItems(
+      request,
+      { userId, hasFullLibrary: hasFullAccess },
+      hits.map(hitKey).filter((k): k is string => k !== null),
+    );
+    if (listCap.allowed) combined.body.results = keepAllowed(hits, hitKey, listCap.allowed);
+    if (listCap.notice) combined.body.listLimit = listCap.notice;
     // counts.laws already includes these; the separate number lets a client
     // label law-level hits apart from article hits.
     const lawsOk = outcomes.laws?.ok === true;

@@ -14,7 +14,10 @@ import { founderDiscountExpiresIssue, isFounderDiscountBps } from "@/lib/payment
 import { firmExtraSeatPriceIssue } from "@/lib/pricing/firmSeats";
 import { founderRenewalIssue } from "@/lib/membership/founderRenewal";
 import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopupIssue } from "@/lib/points/pointsSettings";
+import { founderBonusRuleIssue, topupBonusIssue } from "@/lib/payments/topupBonus";
+import { draftPricesIssue } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
+import { SIMPLE_CONTRACT_PRICE_KEY, simpleContractPriceIssue } from "@/lib/ai/simpleContract";
 import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
@@ -22,10 +25,19 @@ import {
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
+import { summariesReviewedOnlyIssue } from "@/lib/library/summaryReview";
+import { freeQuestionToolSettingIssue } from "@/lib/ai/freeQuestion";
+import { libraryReaderDisplayIssue } from "@/lib/library/readerDisplaySettings";
+import { loginLockoutSettingIssue } from "@/lib/auth/loginLockout";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 // Batch l11-misc (O22): server-side feature flags.
 import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
 import { clearFeatureFlagsCache } from "@/lib/featureFlags/featureFlagsServer";
+import { draftLimitsIssue } from "@/lib/library/draftExport";
+import { retentionSettingIssue } from "@/lib/ai/aiHistory";
+// Batch l12 firm (20261202_80): firm role scope (Q112) and founder storage fair use (N21).
+import { firmCaseScopeIssue } from "@/lib/firm/firmCaseScope";
+import { founderStorageIssue } from "@/lib/membership/founderStorage";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -66,6 +78,12 @@ const ALLOWED_SETTINGS_KEYS = [
   "gift_valid_days",
   // {"<user_type>": SAR} — the lowest top-up per account type (500; individual 100 since l8);
   "min_topup_by_account_type",
+  // Batch l12 (owner Q88a / ١٥٢ / N6, 20261202_10): {"topup-500": percent} the
+  // top-up bonus (0 = none); {"mode": "higher_only"|"both"} founder discount vs
+  // bonus; {"<draft kind>": points} the legal drafter's prices.
+  "topup_bonus_pct",
+  "founder_bonus_rule",
+  "ai_draft_prices",
   // {"<user_type>": n} — the library assistant's free questions, once per account (10 / 5).
   "free_questions_by_account_type",
   // Batch l8 payref (20261128_10): how long the founder top-up discount runs —
@@ -91,15 +109,42 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
   // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
   "library_min_points_to_browse",
+  // Batch l12-access (file 10 ب23, 20261202_20; src/lib/auth/loginLockout.ts):
+  // {"max_failures": 5, "window_minutes": 15, "lock_minutes": 15} — the sign-in lockout.
+  "auth_login_lockout",
   // Batch l11-misc (O22, 20261201_60; src/lib/featureFlags/featureFlags.ts):
   // {"<flag>": boolean} for the closed list FEATURE_FLAGS (today
   // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
   // one minute; the page posts the whole object.
   "feature_flags",
+  // Batch l12 rules (20261202_50): Q96 {"on": boolean} — only reviewed
+  // summaries are shown in the library (OFF by default; src/lib/library/summaryReview.ts);
+  "library_summaries_reviewed_only",
+  // Q121 {"individual": "quick-answer" | "assistant"} — the tool that carries
+  // an individual's free questions (src/lib/ai/freeQuestion.ts).
+  "free_question_tool_by_account_type",
+  // Batch l12 lib-a (src/lib/library/readerDisplaySettings.ts):
+  // {"decree_free_pages": 0..20 (Q101: 0), "child_name_form": "full"|"short"
+  // (library question 5: full)} — the reader's display choices still open.
+  "library_reader_display",
+  // Batch l12 lib-draft (20261202_40): the library draft's caps (owner file 03
+  // ل2 answer ج) and the months an AI run keeps its question and answer (ل11).
+  "library_draft_limits",
+  "ai_runs_retention",
+  // Batch l12 firm (20261202_80): {"assigned_only_roles": [office roles],
+  // "finance_manager_no_cases": bool} — which firm roles see only their
+  // assigned cases (Q112; src/lib/firm/firmCaseScope.ts, read by the RLS);
+  "firm_case_scope",
+  // {"gb": n, "alert_pct": n} — the founder's internal storage fair use (N21;
+  // src/lib/membership/founderStorage.ts). Never shown on a marketing page.
+  "founder_storage_fair_use",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
   // the footer, the Organization JSON-LD and /llms.txt.
+  // Batch l12 simpledraft (owner ١٢٣; src/lib/ai/simpleContract.ts):
+  // {"points": n} — the simplified contract drafter's price (100 until set).
+  SIMPLE_CONTRACT_PRICE_KEY,
   "license_number",
   "license_issuer",
 ] as const;
@@ -174,6 +219,10 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_plan_points: libraryPlanPointsIssue,
   gift_valid_days: giftValidDaysIssue,
   min_topup_by_account_type: minTopupIssue,
+  // Batch l12: pure, covered by topupBonus.test.ts / draftKinds.test.ts.
+  topup_bonus_pct: topupBonusIssue,
+  founder_bonus_rule: founderBonusRuleIssue,
+  ai_draft_prices: draftPricesIssue,
   free_questions_by_account_type: freeQuestionsIssue,
   // Batch l8 payref: pure, covered by founderDiscount.test.ts / firmSeats.test.ts.
   founder_topup_discount_expires: founderDiscountExpiresIssue,
@@ -186,11 +235,25 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_feqh_free_pages: feqhFreePagesIssue,
   // Batch l9 read: pure, covered by src/lib/library/pointsGate.test.ts.
   library_min_points_to_browse: libraryMinPointsIssue,
+  // Batch l12-access: pure, covered by src/lib/auth/loginLockout.test.ts.
+  auth_login_lockout: loginLockoutSettingIssue,
   // Batch l9 public: pure, covered by src/lib/publicSeo/platformRegistry.test.ts.
   license_number: (value) => licenceSettingIssue("license_number", value),
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),
   // Batch l11-misc (O22): pure, covered by src/lib/featureFlags/featureFlags.test.ts.
   feature_flags: featureFlagsIssue,
+  // Batch l12 rules: pure, covered by summaryReview.test.ts / freeQuestionTool.test.ts.
+  library_summaries_reviewed_only: summariesReviewedOnlyIssue,
+  free_question_tool_by_account_type: freeQuestionToolSettingIssue,
+  // Batch l12 lib-a: pure, covered by src/lib/library/readerDisplaySettings.test.ts.
+  library_reader_display: libraryReaderDisplayIssue,
+  library_draft_limits: draftLimitsIssue,
+  ai_runs_retention: retentionSettingIssue,
+  // Batch l12 firm: pure, covered by firmCaseScope.test.ts / founderStorage.test.ts.
+  firm_case_scope: firmCaseScopeIssue,
+  founder_storage_fair_use: founderStorageIssue,
+  // Batch l12 simpledraft: pure, covered by src/lib/ai/simpleContract.test.ts.
+  [SIMPLE_CONTRACT_PRICE_KEY]: simpleContractPriceIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

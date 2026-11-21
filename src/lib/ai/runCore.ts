@@ -45,7 +45,7 @@
  * Pure: relative imports only (type-only for Supabase), so `node --test` runs it.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
+import { CONSULTANT_BLOCKED_MESSAGE, CONSULTANT_RESERVED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
 import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import {
@@ -75,6 +75,7 @@ import {
 } from "./sectionEdits.ts";
 import { freeQuestionFallsBack, freeQuestionToolFor } from "./freeQuestion.ts";
 import { textPages } from "./textExtract.ts";
+import { readDraftPrices } from "./draftKinds.ts";
 import {
   STEP_LABEL_AR,
   cleanLabel,
@@ -95,6 +96,8 @@ const OUTPUT_ENRICHERS: Readonly<Record<string, (admin: SupabaseClient, output: 
   wargaming: (admin, output) => enrichBriefCheck(admin as never, output),
   "analyze-strength": (admin, output) => enrichBriefCheck(admin as never, output),
   "contract-drafter": (admin, output) => enrichBriefCheck(admin as never, output),
+  // l12 simpledraft: the simplified contract's articles get the same library verdict.
+  "simple-contract": (admin, output) => enrichBriefCheck(admin as never, output),
   // L12: the letter. The consultation needs none: it stands on the library texts it was sent.
   "legal-opinion-letter": (admin, output) => enrichBriefCheck(admin as never, output),
   "contracts-pro": (admin, output) => enrichBriefCheck(admin as never, output),
@@ -122,6 +125,15 @@ export interface RunActor {
   userType: string;
   practiceKind: PracticeKind;
   displayName: string | null;
+  /**
+   * Q121 (batch l12): the tool that carries this account's free questions,
+   * read by the route from the setting (freeQuestion.freeQuestionToolOf).
+   * Absent → freeQuestionToolFor(userType) with the default (quick-answer
+   * for an individual, the library assistant for everyone else).
+   */
+  freeQuestionTool?: string;
+  /** Owner ١٤٦: a consultant's paid term already running at the cut-off (consultantTerm.ts). */
+  consultantPaidTerm?: boolean;
 }
 
 export interface StartRunDeps {
@@ -271,6 +283,30 @@ export async function readAiToolsSetting(admin: SupabaseClient): Promise<unknown
     return null;
   }
   return (data as { value?: unknown } | null)?.value ?? null;
+}
+
+/**
+ * l12 simpledraft (owner ١٢٣): a tool whose price is an admin setting
+ * (AiToolSpec.priceSetting). The parsed points, undefined when the row is
+ * missing or malformed (the tool's default applies), or "error" when the read
+ * failed: the run is then refused uncharged rather than charged a price the
+ * admin may have changed.
+ */
+export async function readPriceSetting(
+  admin: SupabaseClient,
+  setting: { key: string; parse: (value: unknown) => number | null },
+): Promise<number | undefined | "error"> {
+  try {
+    const { data, error } = await admin.from("platform_settings").select("value").eq("key", setting.key).maybeSingle();
+    if (error) {
+      console.error("[ai] price setting read failed:", setting.key, error.code, error.message);
+      return "error";
+    }
+    return setting.parse((data as { value?: unknown } | null)?.value) ?? undefined;
+  } catch (err) {
+    console.error("[ai] price setting read threw:", setting.key, errorName(err));
+    return "error";
+  }
 }
 
 /** The membership credit kind the founder's library points are stored as (20261124_10). */
@@ -523,7 +559,9 @@ export async function startRunWith(
   const refused = toolRoleRefusal(spec, actor);
   if (refused === "role") return { status: 403, body: { error: AI_COPY.role, code: "role" } };
   if (refused === "consultant_blocked") {
-    return { status: 403, body: { error: CONSULTANT_BLOCKED_MESSAGE, code: "consultant_blocked" } };
+    // Owner ١٤٦: a reserved tool that is not pleading names the reservation, not Art. 18.
+    const message = spec.consultantPaidTerm === true ? CONSULTANT_RESERVED_MESSAGE : CONSULTANT_BLOCKED_MESSAGE;
+    return { status: 403, body: { error: message, code: "consultant_blocked" } };
   }
 
   const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));
@@ -693,7 +731,19 @@ export async function startRunWith(
   // above from this user's own runs of this conversation (never the browser's).
   const sectionEdit = !!spec.sectionEdit && !!conversationId && checked.input.phase === spec.sectionEdit.phase;
   const priorSectionEdits: SectionEditCounts | undefined = sectionEdit ? countSectionEdits(prior) : undefined;
-  const price = spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
+  // l12 (owner N6): the drafter's prices are the admin setting ai_draft_prices
+  // (the code defaults when it cannot be read — never 0).
+  const draftPrices = spec.id === "legal-drafter" ? await readDraftPrices(admin) : undefined;
+  // l12 simpledraft: an admin-set price is read here, before the charge.
+  const settingPrice = spec.priceSetting ? await readPriceSetting(admin, spec.priceSetting) : undefined;
+  if (settingPrice === "error") return { status: 503, body: { error: AI_COPY.unavailable, code: "unavailable" } };
+  const price = spec.price(checked.input, {
+    pages,
+    turn,
+    ...(priorSectionEdits ? { priorSectionEdits } : {}),
+    ...(draftPrices ? { draftPrices } : {}),
+    ...(settingPrice !== undefined ? { settingPrice } : {}),
+  });
   // The screen showed a price before the user confirmed: a different one now is
   // refused, uncharged, with the counts to show again.
   if (req.expectedPrice !== undefined && req.expectedPrice !== price) {
@@ -728,7 +778,7 @@ export async function startRunWith(
   // only on the account's own free tool — quick-answer for an individual, the
   // library assistant for everyone else (freeQuestionToolFor, 20261129_60).
   let freeQuestion =
-    !!spec.freeQuestions && spec.id === freeQuestionToolFor(actor.userType) &&
+    !!spec.freeQuestions && spec.id === (actor.freeQuestionTool ?? freeQuestionToolFor(actor.userType)) &&
     !creditKind && !isAdmin && !sectionEdit && price > 0 &&
     !!deps.freeQuestions && (await freeQuestionsLeftSafe(deps.freeQuestions, actor.userId));
   // Owner ٨ / ١٥ / ١٨: a founder's library-assistant question is paid from his

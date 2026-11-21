@@ -192,6 +192,13 @@ export interface CheckoutResponse {
      * `listNet` is then present and listNet − prorationCredit = net.
      */
     prorationCredit?: number;
+    /**
+     * l12 (owner Q88a / ١٦٢): a top-up's points as the order froze them —
+     * its own points plus `bonusPoints` (the admin setting topup_bonus_pct,
+     * 0 by default). The grant credits exactly `topupPoints`.
+     */
+    topupPoints?: number;
+    bonusPoints?: number;
   };
   /**
    * The intent's callback_url, `<NEXT_PUBLIC_SITE_URL>/payments/result?order=<orderId>`

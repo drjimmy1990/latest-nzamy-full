@@ -17,6 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { practiceKindFromRead } from "../auth/courtPracticeDecision.ts";
 import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
 import { readAiToolsSetting } from "./runCore.ts";
+import { readConsultantPaidTerm } from "./consultantTerm.ts";
 import type { AiToolSpec } from "./tools.ts";
 
 export interface ToolStatus {
@@ -38,7 +39,12 @@ export async function toolStatusWith(
       userType === "lawyer" || userType === "firm"
         ? practiceKindFromRead(await rls.from("lawyer_profiles").select("practice_kind").eq("user_id", userId).maybeSingle()).practiceKind
         : "advocate";
-    if (toolRoleRefusal(spec, { userType, practiceKind })) return { usable: false };
+    // Owner ١٤٦: the run path's own read of a consultant's paid term (consultantTerm.ts).
+    const consultantPaidTerm =
+      practiceKind === "consultant" && spec.consultantBlocked && spec.consultantPaidTerm === true
+        ? await readConsultantPaidTerm(admin, userId)
+        : false;
+    if (toolRoleRefusal(spec, { userType, practiceKind, consultantPaidTerm })) return { usable: false };
 
     const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));
     return { usable: toolAvailability(runtime.mode, userType === "admin") === "ok" };

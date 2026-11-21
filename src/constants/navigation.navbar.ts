@@ -46,7 +46,7 @@ export const PUBLIC_NAV: NavItem[] = [
       {
         label: "خدمات المحامين", labelEn: "Lawyer Services", href: "#services-lawyers",
         children: [
-          { label: "عرض خدمات المحامين", labelEn: "View lawyer services", href: "/services/lawyers", icon: "Scales" },
+          { label: "عرض خدمات المحامين", labelEn: "View lawyer services", href: "/services/lawyers", icon: "Gavel" },
           { label: "نظامي ERP",          labelEn: "Nezamy ERP",           href: "/erp",              icon: "Database" },
         ],
       },
@@ -83,7 +83,7 @@ export const LAWYER_NAV: NavItem[] = [
     children: [
       { label: "الصائغ القانوني",   labelEn: "Legal Drafter",    href: "/ai/draft",            icon: "PencilSimple" },
       { label: "محترف العقود",       labelEn: "Contract Pro",     href: "/ai/contracts",        icon: "FileText" },
-      { label: "المحاكي الشامل",    labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales", badge: "مُدمَج" },
+      { label: "المحاكي الشامل",    labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Gavel", badge: "مُدمَج" },
       { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",  href: "/ai/legal-opinion",    icon: "Lightbulb", badge: "احترافي" },
       { label: "المرشد القضائي",     labelEn: "Court Guide",      href: "/ai/procedures",       icon: "Gavel" },
       { label: "السكرتير الذكي",     labelEn: "AI Secretary",     href: "/ai/secretary",        icon: "Robot", badge: "قريباً" },
@@ -221,7 +221,7 @@ export const GOVERNMENT_NAV: NavItem[] = [
     children: [
       { label: "مراجع العقود الحكومية", labelEn: "Contract Review",    href: "/ai/gov/contract-reviewer",    icon: "FileText", badge: "قريباً" },
       { label: "مدقق الامتثال",         labelEn: "Compliance Checker", href: "/ai/gov/compliance-checker",   icon: "ShieldCheck", badge: "قريباً" },
-      { label: "مُرجّح الأحكام",         labelEn: "Judgment Weigher",  href: "/ai/gov/judgment-weigher",     icon: "Scales", badge: "قريباً" },
+      { label: "مُرجّح الأحكام",         labelEn: "Judgment Weigher",  href: "/ai/gov/judgment-weigher",     icon: "Gavel", badge: "قريباً" },
       { label: "صائغ لائحة الاتهام",    labelEn: "Indictment Drafter", href: "/ai/gov/indictment-drafter",  icon: "FileWarning", badge: "قريباً" },
       { label: "محاضر الضبط",           labelEn: "Detention Records",  href: "/ai/gov/detention-records",   icon: "ClipboardText", badge: "قريباً" },
       { label: "مراجع المناقصات",        labelEn: "Procurement",        href: "/ai/gov/procurement-reviewer", icon: "Buildings", badge: "قريباً" },

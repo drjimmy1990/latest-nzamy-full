@@ -101,7 +101,7 @@ export const ARBITRATOR_SIDEBAR: SidebarGroup[] = [
   {
     title: "قضايا التحكيم", titleEn: "Arbitration Cases",
     items: [
-      { label: "كل القضايا",       labelEn: "All Cases",      href: "/dashboard/provider/arbitration/cases",    icon: "Scales",        badge: "قريباً" },
+      { label: "كل القضايا",       labelEn: "All Cases",      href: "/dashboard/provider/arbitration/cases",    icon: "Gavel",        badge: "قريباً" },
       { label: "جلسات التحكيم",   labelEn: "Hearings",       href: "/dashboard/provider/arbitration/hearings",  icon: "CalendarCheck", badge: "قريباً" },
       { label: "الأطراف والوكلاء",labelEn: "Parties",        href: "/dashboard/provider/arbitration/parties",   icon: "Users", badge: "قريباً" },
       { label: "مذكرات وملفات",   labelEn: "Memos & Files",  href: "/dashboard/provider/arbitration/files",     icon: "FolderOpen", badge: "قريباً" },
@@ -176,7 +176,7 @@ export const BAILIFF_ADDON_SECTIONS: SidebarGroup[] = [
     items: [
       { label: "طلبات التعقيب",     labelEn: "Review Requests",    href: "/dashboard/provider/bailiff/requests",   icon: "ClipboardText", badge: "قريباً" },
       { label: "مساعد المعاملات",   labelEn: "Transaction Assist", href: "/ai/consult",                            icon: "Robot",         badge: "قريباً" },
-      { label: "دليل الإجراءات",    labelEn: "Procedure Guide",    href: "/ai/procedures",                         icon: "MapTrifold",    badge: "معقّب" },
+      { label: "دليل الإجراءات",    labelEn: "Procedure Guide",    href: "/ai/procedures",                         icon: "MapTrifold",    badge: "مراجع حكومي" },
     ],
   },
 ];
@@ -188,7 +188,7 @@ export const ARBITRATOR_ADDON_SECTIONS: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,   // مطوية بالافتراضي — تفتحها عند الحاجة
     items: [
-      { label: "قضايا التحكيم",     labelEn: "Arb. Cases",        href: "/dashboard/provider/arbitration/cases",    icon: "Scales",       badge: "قريباً" },
+      { label: "قضايا التحكيم",     labelEn: "Arb. Cases",        href: "/dashboard/provider/arbitration/cases",    icon: "Gavel",       badge: "قريباً" },
       { label: "جلسات التحكيم",    labelEn: "Arb. Hearings",     href: "/dashboard/provider/arbitration/hearings", icon: "CalendarCheck",  badge: "قريباً" },
       { label: "صياغة حكم تحكيم",   labelEn: "Draft Arb. Award",  href: "/ai/draft?mode=arbitration",                icon: "Robot",         badge: "AI" },
     ],
@@ -292,15 +292,15 @@ function filterSidebarByLabels(groups: SidebarGroup[], allowedLabels: Set<string
 // four of these lists. Reusing the string would silently re-open a section the
 // 26 August ruling closed.
 const CORP_ROLE_ALLOWED_ITEMS: Record<string, string[]> = {
-  owner: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "Request a Service", "My Orders", "Consultations", "All Cases", "Circuits & Emails", "Departments", "Team", "Kanban", "HR Contracts", "Reports", "Our Plan", "Contract Drafter", "Deal Intelligence", "Corp Advisor", "Compliance", "Risk Assessment", "Debt Collection", "LegalMail", "HR Advisor", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "My Requests", "Browse Market", "Post Request", "Legal Blog", "Notifications", "Settings"],
-  legal_manager: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "Request a Service", "My Orders", "Consultations", "All Cases", "Circuits & Emails", "Departments", "Kanban", "Contract Drafter", "Corp Advisor", "Compliance", "Risk Assessment", "LegalMail", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "Browse Market", "Legal Blog", "Notifications", "Settings"],
-  legal_staff: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "Request a Service", "My Orders", "Consultations", "All Cases", "Circuits & Emails", "Kanban", "Contract Drafter", "LegalMail", "Doc Analyzer", "New Review", "Dept Reviews", "Legal Blog", "Notifications", "Settings"],
-  department_head: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Departments", "Kanban", "Contract Drafter", "New Review", "Dept Reviews", "My Requests", "Notifications", "Settings"],
-  hr_manager: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Team", "Kanban", "HR Contracts", "Reports", "HR Advisor", "CorpMind", "My Requests", "Notifications", "Settings"],
-  finance_manager: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Reports", "Our Plan", "Deal Intelligence", "Debt Collection", "My Requests", "Notifications", "Settings"],
+  owner: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "Request a Service", "My Orders", "Consultations", "Simple Contract Drafter", "All Cases", "Circuits & Emails", "Departments", "Team", "Kanban", "HR Contracts", "Reports", "Our Plan", "Contract Drafter", "Deal Intelligence", "Corp Advisor", "Compliance", "Risk Assessment", "Debt Collection", "LegalMail", "HR Advisor", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "My Requests", "Browse Market", "Post Request", "Legal Blog", "Notifications", "Settings"],
+  legal_manager: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "Request a Service", "My Orders", "Consultations", "Simple Contract Drafter", "All Cases", "Circuits & Emails", "Departments", "Kanban", "Contract Drafter", "Corp Advisor", "Compliance", "Risk Assessment", "LegalMail", "CorpMind", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "New Review", "Dept Reviews", "Seconded Counsel", "Browse Market", "Legal Blog", "Notifications", "Settings"],
+  legal_staff: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "Request a Service", "My Orders", "Consultations", "Simple Contract Drafter", "All Cases", "Circuits & Emails", "Kanban", "Contract Drafter", "LegalMail", "Doc Analyzer", "New Review", "Dept Reviews", "Legal Blog", "Notifications", "Settings"],
+  department_head: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Simple Contract Drafter", "Departments", "Kanban", "Contract Drafter", "New Review", "Dept Reviews", "My Requests", "Notifications", "Settings"],
+  hr_manager: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Simple Contract Drafter", "Team", "Kanban", "HR Contracts", "Reports", "HR Advisor", "CorpMind", "My Requests", "Notifications", "Settings"],
+  finance_manager: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Simple Contract Drafter", "Reports", "Our Plan", "Deal Intelligence", "Debt Collection", "My Requests", "Notifications", "Settings"],
   compliance_officer: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "All Cases", "Reports", "Compliance", "Risk Assessment", "Law Monitor", "Doc Analyzer", "Health Check 360°", "Governance", "Governance Matrix", "Dept Reviews", "Legal Blog", "Notifications", "Settings"],
   seconded: ["Overview", "Company Data", "Delegations", "Company Contracts", "Appointments", "All Cases", "Seconded Counsel", "Contract Drafter", "Doc Analyzer", "Notifications", "Settings"],
-  employee: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Kanban", "My Requests", "Notifications", "Settings"],
+  employee: ["Overview", "Company Data", "Delegations", "Company Contracts", "Request a Service", "My Orders", "Consultations", "Simple Contract Drafter", "Kanban", "My Requests", "Notifications", "Settings"],
 };
 
 function getCorporateSidebar(businessRole?: string | null): SidebarGroup[] {

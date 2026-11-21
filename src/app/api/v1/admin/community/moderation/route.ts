@@ -1,3 +1,4 @@
+import { COMMUNITY_AI_SETTING_KEY, communityAiConfigured, communityAiReviewOn } from "@/lib/community/aiReview";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/access-control";
@@ -132,6 +133,9 @@ export async function GET(request: NextRequest) {
       admin.from("community_answers").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
       admin.from("platform_settings").select("value").eq("key", COMMUNITY_REVIEW_SETTING_KEY).maybeSingle(),
     ]);
+    // Q131a (l12): the AI pre-publish review switch (20261202_70) and whether
+    // this server can reach the AI workflows at all.
+    const aiSetting = await admin.from("platform_settings").select("value").eq("key", COMMUNITY_AI_SETTING_KEY).maybeSingle();
 
     const items = rows.map((r) => {
       const author = (r.profiles ?? null) as AuthorJoin | null;
@@ -174,6 +178,10 @@ export async function GET(request: NextRequest) {
       // No row = 20261127_60 has not run (it inserts the row): unknown, and
       // nothing is held for review yet.
       prepublishReview: setting.error || !setting.data ? null : prepublishReviewOn(setting.data.value),
+      aiReview: {
+        enabled: aiSetting.error || !aiSetting.data ? null : communityAiReviewOn(aiSetting.data.value),
+        configured: communityAiConfigured(process.env),
+      },
     });
   } catch (err) {
     console.error("[admin/community/moderation GET] unexpected:", err instanceof Error ? err.message : err);

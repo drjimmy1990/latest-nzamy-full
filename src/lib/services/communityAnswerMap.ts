@@ -37,7 +37,7 @@ export interface CommunityAnswerLike {
   created_at?: string;
   is_lawyer_verified?: boolean;
   lawyerSlug?: string | null;
-  /** Owner ٤٢: «مكتب موثّق» — the route's verifiedOffice flag (20261127_60). */
+  /** Owner ٤٢ + N18: «مكتب معتمد» — the route's verifiedOffice flag (20261202_80). */
   verifiedOffice?: boolean;
   /** Owner ٤٢: the author's own answer under review / rejected (route's reviewState). */
   reviewState?: "pending" | "rejected" | null;
@@ -56,7 +56,7 @@ export interface MappedCommunityReply {
   isBest: boolean;
   rating?: number;
   lawyerSlug?: string;
-  /** «مكتب موثّق» (owner ٤٢): a firm with a verified CR and a lawyer whose licence is valid. */
+  /** «مكتب معتمد» (owner ٤٢, N18): a registered law firm with an active office plan. */
   isVerifiedOffice: boolean;
   /** The reader's own answer still under review («بانتظار المراجعة») or rejected. */
   reviewState: "pending" | "rejected" | null;

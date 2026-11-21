@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Storefront, Warning, ChatCircleDots, Brain,
+  Storefront, Warning, ChatCircleDots,
   ArrowLeft, ClipboardText, UserCircle,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
@@ -15,10 +15,9 @@ import { useTheme } from "@/components/ThemeProvider";
 // business gets the general guidance tools every account runs. The other three
 // cases have no engine yet, so they say «قريباً» and open nothing.
 
-/** The general guidance owner ٤١٧ leaves open to every account (tools.ts REGISTERED_ROLES). */
+/** The general guidance owner ٤١٧ leaves open to every account (tools.ts REGISTERED_ROLES). The legal opinion left it with owner ١٢٢ (lawyers and firms only). */
 const GUIDANCE_LINKS = [
   { href: "/ai/quick-answer", icon: ChatCircleDots, title: "سؤال قانوني سريع", desc: "سؤال محدد عن نشاطك — إجابة مستندة إلى الأنظمة السعودية" },
-  { href: "/ai/legal-opinion", icon: Brain, title: "الرأي القانوني", desc: "استشارة مكتوبة أو خطاب قانوني في مسألتك" },
 ];
 
 const SOON_CASES = [

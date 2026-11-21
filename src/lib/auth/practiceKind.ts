@@ -40,3 +40,12 @@ export function isConsultantBlockedPath(pathname: string): boolean {
 
 export const CONSULTANT_BLOCKED_MESSAGE =
   "هذه الأداة للمحامي المرخّص بالترافع؛ المستشار القانوني لا يترافع ولا يدير الجلسات (المادة ١٨ من نظام المحاماة).";
+
+/**
+ * Owner ١٤٦ (register 14 #19, batch l12): the legal opinion and contract
+ * drafting are not pleading, so their refusal does not cite Art. 18. They are
+ * reserved for the licensed advocate and the law firm until the consultant's
+ * account type opens.
+ */
+export const CONSULTANT_RESERVED_MESSAGE =
+  "هذه الأداة مقصورة حالياً على المحامي المرخّص بالترافع ومكتب المحاماة، وتُفتح للمستشار القانوني حين يُفتح نوع حسابه.";
