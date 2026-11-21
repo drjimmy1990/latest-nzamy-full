@@ -66,15 +66,23 @@ test("collectionFallbackLookup: the court and an escaped base-title prefix, only
 });
 
 test("readCollectionSeries: an untagged volume finds its siblings by court + title (LAW-98-1255 shape)", async () => {
-  const rows = [labour("LAW-98-1253", "الأول"), labour("LAW-98-1254", "الثاني"), labour("LAW-98-1255", "الثالث", { part: 3 }), labour("LAW-98-1256", "الرابع")];
+  // The live catalogue (read-only GET, 2026-11-21): four untagged volumes, one
+  // court, the same base title, parts 1-4, 40 + 61 + 64 + 40 = 205 principles.
+  const rows = [
+    labour("LAW-98-1254", "الأول", { part: 1, ruling_count: 40 }),
+    labour("LAW-98-1255", "الثالث", { part: 3, ruling_count: 64 }),
+    labour("LAW-98-1256", "الثاني", { part: 2, ruling_count: 61 }),
+    labour("LAW-98-1257", "الرابع", { part: 4, ruling_count: 40 }),
+  ];
   const { client, calls } = fakeClient(rows);
-  const { series, error } = await readCollectionSeries(client, rows[2]);
+  const { series, error } = await readCollectionSeries(client, rows[1]);
   assert.equal(error, null);
   assert.ok(series);
   assert.equal(series.currentId, "LAW-98-1255");
   assert.deepEqual(series.volumes.map((v) => v.label), ["المجلد الأول", "المجلد الثاني", "المجلد الثالث", "المجلد الرابع"]);
   assert.equal(seriesCurrentVolumeLabel(series), "المجلد الثالث");
-  assert.equal(series.volumes.reduce((n, v) => n + (v.rulingCount ?? 0), 0), 200);
+  assert.deepEqual(series.volumes.map((v) => v.id), ["LAW-98-1254", "LAW-98-1256", "LAW-98-1255", "LAW-98-1257"]);
+  assert.equal(series.volumes.reduce((n, v) => n + (v.rulingCount ?? 0), 0), 205);
   // The request client, catalogue columns only, bounded, by court + LIKE (never by series_id).
   assert.deepEqual(calls.find(([m]) => m === "select")?.[1], [SERIES_SIBLING_COLUMNS]);
   assert.deepEqual(calls.find(([m]) => m === "eq")?.[1], ["court", COURT]);
