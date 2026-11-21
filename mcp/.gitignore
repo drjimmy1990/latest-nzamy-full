@@ -1,0 +1,4 @@
+# The repo root ignores test/ — the MCP packages keep their tests.
+!test/
+!test/**
+dist/
