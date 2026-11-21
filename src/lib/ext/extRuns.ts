@@ -13,12 +13,13 @@ import { createHash } from "node:crypto";
 import { runFailureMessage } from "../ai/runErrors.ts";
 
 /**
- * Tools this door starts today. `brief-check` needs files (v1.1) and `sayegh-v2` has no
- * registry entry yet (owner decision pending), so both answer 422 here, never a silent run.
+ * Tools this door starts today. `brief-check` needs files (v1.1), so it answers 422 here, never
+ * a silent run. `sayegh-v2` is a registry tool of its own (owner decision, 21 Nov 2026) in mode
+ * "staff": runCore lets only admins run it until the owner changes the mode.
  */
-export const EXT_RUN_TOOLS: ReadonlySet<string> = new Set(["legal-drafter", "contract-drafter"]);
+export const EXT_RUN_TOOLS: ReadonlySet<string> = new Set(["legal-drafter", "contract-drafter", "sayegh-v2"]);
 /** Tool ids the client contract names, for the message that tells them apart. */
-const KNOWN_ELSEWHERE: ReadonlySet<string> = new Set(["brief-check", "sayegh-v2"]);
+const KNOWN_ELSEWHERE: ReadonlySet<string> = new Set(["brief-check"]);
 
 export interface ExtRunRequest {
   tool: string;

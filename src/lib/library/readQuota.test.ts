@@ -102,6 +102,7 @@ test("isLibraryAiTool: no other AI tool is locked — contract tools, L9–L11 a
     "wargaming", // L9
     "analyze-strength", // L10
     "legal-drafter",
+    "sayegh-v2",
     "quick-answer",
     "assistant",
     "canvas-card",

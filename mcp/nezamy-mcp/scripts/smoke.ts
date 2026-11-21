@@ -20,7 +20,7 @@ try {
   const { tools } = await client.listTools();
   console.log(`1) tools/list: ${tools.length} tools -> ${tools.map((t) => t.name).join(", ")}`);
   console.log("2) account_standing:\n" + show(await client.callTool({ name: "account_standing", arguments: {} })));
-  const args = { kind: "appeal", client_role: "مستأنف", facts: "وقائع تجريبية طويلة بما يكفي لتجاوز الحد الأدنى للأحرف." };
+  const args = { kind: "appeal", client_role: "plaintiff", facts: "وقائع تجريبية طويلة بما يكفي لتجاوز الحد الأدنى للأحرف." };
   console.log("3) run_sayegh (quote, nothing charged):\n" + show(await client.callTool({ name: "run_sayegh", arguments: args })));
   const started: any = await client.callTool({ name: "run_sayegh", arguments: { ...args, confirm_charge: true } });
   console.log("4) run_sayegh (confirmed):\n" + show(started));

@@ -104,7 +104,7 @@
 - حجم `output` ≤ ~١٠٠ ألف حرف للملاحظات؛ المذكرة عادية.
 
 ## ٦. أداة `sayegh-v2` وربطها بـn8n
-> **القرار (٢٠٢٦-١١-٢١، المالك): الخيار (ب)** — أداة سجل مستقلة `sayegh-v2` بجانب `legal-drafter` دون المساس به؛ `run_sayegh` يبقى كما هو. المتبقي في المنصة: تسجيل الأداة في `aiTools/tools.ts` وإضافتها إلى allowlist مع بوابة المشرفين، ثم حسم `intake`/`dossier` مع جلسة n8n.
+> **القرار (٢٠٢٦-١١-٢١، المالك): الخيار (ب)** — أداة سجل مستقلة `sayegh-v2` بجانب `legal-drafter` دون المساس به؛ `run_sayegh` يبقى كما هو. **نُفِّذ في المنصة**: `src/lib/ai/tools.ts` (`sayegh-v2`، المسار `nzamy-ai/legal-drafter-v2`، `defaultMode: "staff"` أي للمشرفين فقط، السعر بحسب النوع كـlegal-drafter، دور واحد `stage = pipeline | draft`) ومفتوحة في `extRuns.ts`. ما لا يملكه n8n يُرفض ولا يُزوَّر: مرحلة لاحقة وحدها، `intake`، `dossier_id`، `parent_run_id`. **غير مجرَّب على n8n حي**؛ والسعر والفتح لغير المشرفين قرار المالك.
 
 ما هو **مؤكد من n8n** [n8n]: المسار `nzamy-ai/legal-drafter-v2`، حزمة الويب هوك = حزمة L14 + `prompts`/`models`/`input.stages`/`input.on_stage_error`، ومخرجه المذكور في ٥. المراحل داخل n8n: `write` (دائمًا) ثم `extraction`/`adversary`/`refine`/`najiz` (طور `draft` فقط). **لا يوجد** في n8n: `intake`، ولا `dossier`، ولا `parent_run_id`، ولا تشغيل مرحلة لاحقة وحدها على مذكرة موجودة، ولا `unverified` ولا `memo_clean`.
 

@@ -8,9 +8,10 @@ import { namespacedKey, parseExtRunRequest, toExtCitations, toExtRunResponse, to
 const RID = "req_abc";
 const ok = { tool: "legal-drafter", input: { phase: "issues" }, idempotency_key: "abcdefgh12" };
 
-test("request: only the two open tools; brief-check and sayegh-v2 are told apart, others unknown", () => {
+test("request: the open tools (sayegh-v2 included); brief-check and unknown ones are told apart, others unknown", () => {
   assert.equal(parseExtRunRequest(ok, { needKey: true }).ok, true);
-  for (const tool of ["brief-check", "sayegh-v2", "wargaming", ""]) {
+  assert.equal(parseExtRunRequest({ ...ok, tool: "sayegh-v2" }, { needKey: true }).ok, true);
+  for (const tool of ["brief-check", "wargaming", ""]) {
     const r = parseExtRunRequest({ ...ok, tool }, { needKey: true });
     assert.equal(r.ok, false);
     if (!r.ok) assert.equal(r.status, 422);

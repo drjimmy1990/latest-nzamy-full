@@ -528,33 +528,29 @@ const run_sayegh = tool({
   name: "run_sayegh",
   title: "الصائغ القانوني v2 (للمشرفين)",
   description:
-    "Nezamy's legal drafter v2: the full pipeline (intake → draft by kind → extraction from the library → adversarial check → refine → najiz copy) or ONE stage of it, " +
+    "Nezamy's legal drafter v2: the full pipeline (draft by kind → extraction from the library → adversarial check → refine → najiz copy) or only the write stage (stage=draft), " +
     "on the same engine as the website and the Word add-in. Same /ext/ai/runs path: the price is set by the platform per pleading kind and shown by the quote; " +
-    "the lawyer's own points pay. STAFF ONLY for now. Facts come from the lawyer or from the case dossier (dossier_id): never invent facts. " +
-    "To run a later stage alone, pass the dossier_id (and parent_run_id) of the earlier work. Quote first (confirm_charge=false), get the lawyer's explicit yes, " +
+    "the lawyer's own points pay. STAFF ONLY for now. Facts come from the lawyer: never invent facts. " +
+    "A later stage cannot run alone yet. Quote first (confirm_charge=false), get the lawyer's explicit yes, " +
     "then confirm_charge=true. Asynchronous: poll with get_run (heavy runs take minutes). Outputs: a clean memo, a SEPARATE internal lawyer report, and what was not verified.",
   annotations: SPENDS,
   staffOnly: true,
   shape: {
-    stage: z.enum(["pipeline", "intake", "draft", "extraction", "adversary", "refine", "najiz"]).default("pipeline"),
+    stage: z.enum(["pipeline", "draft"]).default("pipeline"),
     kind: z.enum(DRAFT_KINDS).describe(`Pleading kind: ${DRAFT_KINDS.map((k) => `${k}=${KIND_AR[k]}`).join("; ")}`),
-    client_role: z.string().min(2).max(80).describe("The lawyer's client role in Arabic."),
-    facts: z.string().max(20000).default("").describe("Facts as the lawyer gave them. Optional when dossier_id already holds them."),
-    dossier_id: z.string().max(100).optional().describe("Existing case dossier to continue from."),
-    parent_run_id: z.string().max(100).optional().describe("Main run this stage belongs to (stages after the first)."),
+    client_role: z.enum(["plaintiff", "defendant"]).describe("The lawyer's client: plaintiff (المدعي/المستأنف) or defendant (المدعى عليه/المستأنف ضده)."),
+    facts: z.string().min(30).max(12000).describe("Facts as the lawyer gave them (30 to 12000 characters)."),
     notes: z.string().max(4000).default(""),
     on_stage_error: z.enum(["fail", "skip"]).default("fail").describe("fail = a failing later stage fails the run and the whole price is refunded (default). skip = a later stage is skipped and listed in the lawyer report; the write stage is never skipped."),
     confirm_charge: z.boolean().default(false),
     rerun_token: z.string().max(40).optional(),
   },
   run: async (a, { client }) => {
-    if (!a.dossier_id && a.facts.trim().length < FACTS_MIN) return fail("اكتب الوقائع (٣٠ حرفًا على الأقل) أو مرّر dossier_id لملف قضية موجود.");
+    if (a.facts.trim().length < FACTS_MIN) return fail("اكتب الوقائع (٣٠ حرفًا على الأقل).");
     const input: Record<string, unknown> = {
       pipeline: "v2", stage: a.stage, kind: a.kind, client_role: a.client_role, notes: a.notes,
       ...(a.on_stage_error !== "fail" ? { on_stage_error: a.on_stage_error } : {}),
       ...(a.facts.trim() ? { facts: a.facts.trim() } : {}),
-      ...(a.dossier_id ? { dossier_id: a.dossier_id } : {}),
-      ...(a.parent_run_id ? { parent_run_id: a.parent_run_id } : {}),
     };
     if (!a.confirm_charge) {
       const q = await client.quoteRun({ tool: "sayegh-v2", input });
@@ -565,7 +561,7 @@ const run_sayegh = tool({
         { quoted: true, stage: a.stage, price_points: q.price_points, balance: q.balance, can_afford: q.can_afford },
       );
     }
-    const started = await client.startRun({ tool: "sayegh-v2", input, idempotency_key: idempotencyKey("sayegh-v2", input, a.dossier_id, a.rerun_token) });
+    const started = await client.startRun({ tool: "sayegh-v2", input, idempotency_key: idempotencyKey("sayegh-v2", input, undefined, a.rerun_token) });
     return ok(
       `بدأ ${SAYEGH_STAGES_AR[a.stage]}. رقم التشغيل: ${started.run_id}. المخصوم: ${started.charged_points} نقطة.\n` +
         "تابعه بـ get_run (قد يستغرق عدة دقائق). إن فشلت أي مرحلة تُرد النقاط تلقائيًا.",

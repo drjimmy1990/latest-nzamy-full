@@ -19,7 +19,7 @@ before(async () => { mock = await startMock({ pollsBeforeDone: 0 }); });
 after(async () => { await mock.close(); });
 
 const mk = (token: string) => new NezamyClient({ baseUrl: mock.url, token, allowInsecureHttp: true, sleep: async () => {} });
-const ARGS = { kind: "appeal", client_role: "مستأنف", facts: "وقائع تجريبية طويلة بما يكفي لتجاوز الحد الأدنى للأحرف." };
+const ARGS = { kind: "appeal", client_role: "plaintiff", facts: "وقائع تجريبية طويلة بما يكفي لتجاوز الحد الأدنى للأحرف." };
 
 async function inMemory(token: string, guard = new Guard({ staffOnly: true })) {
   const server = buildServer(mk(token), guard);

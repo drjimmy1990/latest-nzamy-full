@@ -15,7 +15,7 @@ const text = (r: any) => r.content[0].text as string;
 before(async () => { mock = await startMock({ pollsBeforeDone: 0 }); });
 after(async () => { await mock.close(); });
 
-const SAYEGH_ARGS = { kind: "appeal", client_role: "مستأنف", facts: "وقائع تجريبية طويلة بما يكفي لتجاوز الحد الأدنى للأحرف." };
+const SAYEGH_ARGS = { kind: "appeal", client_role: "plaintiff", facts: "وقائع تجريبية طويلة بما يكفي لتجاوز الحد الأدنى للأحرف." };
 
 test("staff gate: a normal lawyer's token cannot use the three new tools; a staff token can", async () => {
   const core = new MiniMcp(undefined, new Guard({ staffOnly: true }));
@@ -61,12 +61,12 @@ test("run_sayegh: quote first (price from the platform, no charge), then confirm
   assert.equal(run.structuredContent.status, "succeeded");
 });
 
-test("run_sayegh: needs facts or a dossier", async () => {
+test("run_sayegh: needs facts; a later stage alone is not offered", async () => {
   const core = new MiniMcp(undefined, new Guard({ staffOnly: true }));
-  const r = await callWith(core, mk(STAFF_TOKEN), "run_sayegh", { kind: "reply", client_role: "مدعى عليه" });
+  const r = await callWith(core, mk(STAFF_TOKEN), "run_sayegh", { kind: "reply", client_role: "defendant" });
   assert.equal(r.isError, true);
-  const ok = await callWith(core, mk(STAFF_TOKEN), "run_sayegh", { kind: "reply", client_role: "مدعى عليه", dossier_id: "d1", stage: "adversary" });
-  assert.equal(ok.isError, undefined);
+  const late = await callWith(core, mk(STAFF_TOKEN), "run_sayegh", { ...SAYEGH_ARGS, stage: "adversary" });
+  assert.equal(late.isError, true);
 });
 
 test("read_case_dossier: content is fenced as data and cannot close the fence", async () => {
