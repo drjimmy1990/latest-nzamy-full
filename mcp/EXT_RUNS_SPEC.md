@@ -103,7 +103,9 @@
 - `contract-drafter`: عقد بأقسام مرقّمة وفراغات `[....]`.
 - حجم `output` ≤ ~١٠٠ ألف حرف للملاحظات؛ المذكرة عادية.
 
-## ٦. أداة `sayegh-v2` وربطها بـn8n (قرار مفتوح — أبلغ المنسّقة)
+## ٦. أداة `sayegh-v2` وربطها بـn8n
+> **القرار (٢٠٢٦-١١-٢١، المالك): الخيار (ب)** — أداة سجل مستقلة `sayegh-v2` بجانب `legal-drafter` دون المساس به؛ `run_sayegh` يبقى كما هو. المتبقي في المنصة: تسجيل الأداة في `aiTools/tools.ts` وإضافتها إلى allowlist مع بوابة المشرفين، ثم حسم `intake`/`dossier` مع جلسة n8n.
+
 ما هو **مؤكد من n8n** [n8n]: المسار `nzamy-ai/legal-drafter-v2`، حزمة الويب هوك = حزمة L14 + `prompts`/`models`/`input.stages`/`input.on_stage_error`، ومخرجه المذكور في ٥. المراحل داخل n8n: `write` (دائمًا) ثم `extraction`/`adversary`/`refine`/`najiz` (طور `draft` فقط). **لا يوجد** في n8n: `intake`، ولا `dossier`، ولا `parent_run_id`، ولا تشغيل مرحلة لاحقة وحدها على مذكرة موجودة، ولا `unverified` ولا `memo_clean`.
 
 خياران، والقرار للمنسّقة/المالك:
