@@ -246,7 +246,7 @@ export default function PrivacyPage() {
               {isRTL ? "سياسة الخصوصية" : "Privacy Policy"}
             </h1>
             <p className={`mt-3 text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "آخر تحديث: ٢٠ نوفمبر ٢٠٢٦" : "Last updated: November 20, 2026"}
+              {isRTL ? "آخر تحديث: ٢٢ نوفمبر ٢٠٢٦" : "Last updated: November 22, 2026"}
             </p>
             <div className={`mx-auto mt-3 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium ${isDark ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
               <ShieldCheck size={14} weight="fill" />
