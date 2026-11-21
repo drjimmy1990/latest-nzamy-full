@@ -7,6 +7,11 @@ import { createServiceOrder } from "@/lib/services/serviceOrders";
 import { createClient as createBrowserClient } from "@/lib/supabase/client";
 import { useOrderAttachments } from "@/hooks/useOrderAttachments";
 import { createShare } from "@/lib/services/shareService";
+import { useSessionState } from "@/hooks/useSessionState";
+
+/** P2-3 (batch l12): محترف العقود keeps its mode, step and typed fields for this tab (toolStepState.ts). */
+const CONTRACTS_STEP_TOOL = "contracts-pro";
+const CONTRACT_STEP_KEYS: readonly StepKey[] = Array.from(new Set([...STEPS_DRAFT, ...STEPS_DRAFT_SIMPLE, ...STEPS_REVIEW].map((s) => s.key as StepKey)));
 
 /**
  * Map a thrown submitOrder error to Arabic user-facing copy. Mirrors
@@ -35,36 +40,36 @@ function submitErrorMessageAr(err: unknown): string {
  * knows about.
  */
 export function useContractsState(linkedContract?: { id: string; title: string } | null) {
-  const [step, setStep] = useState<StepKey>("parties");
+  const [step, setStep] = useSessionState<StepKey>(CONTRACTS_STEP_TOOL, "step", "parties", { allowed: CONTRACT_STEP_KEYS });
   const [processing, setProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // B0 — Mode selector
-  const [contractMode, setContractMode] = useState<"draft" | "review" | null>(null);
+  const [contractMode, setContractMode] = useSessionState<"draft" | "review" | null>(CONTRACTS_STEP_TOOL, "contractMode", null, { allowed: ["draft", "review", null] });
 
   // B0.5 — Complexity selector (simple = 1-2 pages, detailed = 5+ pages)
-  const [contractComplexity, setContractComplexity] = useState<"simple" | "detailed" | null>(null);
+  const [contractComplexity, setContractComplexity] = useSessionState<"simple" | "detailed" | null>(CONTRACTS_STEP_TOOL, "contractComplexity", null, { allowed: ["simple", "detailed", null] });
 
   // Step 1 — Parties
-  const [party1Data, setParty1Data] = useState<PartyData>({ ...EMPTY_PARTY, type: "company" });
-  const [party2Data, setParty2Data] = useState<PartyData>({ ...EMPTY_PARTY, type: "individual" });
+  const [party1Data, setParty1Data] = useSessionState<PartyData>(CONTRACTS_STEP_TOOL, "party1Data", { ...EMPTY_PARTY, type: "company" });
+  const [party2Data, setParty2Data] = useSessionState<PartyData>(CONTRACTS_STEP_TOOL, "party2Data", { ...EMPTY_PARTY, type: "individual" });
 
   // Step 2 — Domain
-  const [contractType, setContractType] = useState("");
-  const [contractLanguage, setContractLanguage] = useState<"ar" | "en" | "ar_en" | "custom">("ar");
-  const [customLanguageName, setCustomLanguageName] = useState("");
-  const [customLanguageLayout, setCustomLanguageLayout] = useState<"single" | "dual">("dual");
-  const [customLanguageBase, setCustomLanguageBase] = useState<"ar" | "en">("ar");
+  const [contractType, setContractType] = useSessionState(CONTRACTS_STEP_TOOL, "contractType", "");
+  const [contractLanguage, setContractLanguage] = useSessionState<"ar" | "en" | "ar_en" | "custom">(CONTRACTS_STEP_TOOL, "contractLanguage", "ar");
+  const [customLanguageName, setCustomLanguageName] = useSessionState(CONTRACTS_STEP_TOOL, "customLanguageName", "");
+  const [customLanguageLayout, setCustomLanguageLayout] = useSessionState<"single" | "dual">(CONTRACTS_STEP_TOOL, "customLanguageLayout", "dual");
+  const [customLanguageBase, setCustomLanguageBase] = useSessionState<"ar" | "en">(CONTRACTS_STEP_TOOL, "customLanguageBase", "ar");
 
   // Step 3 — Context
-  const [contractDesc, setContractDesc] = useState("");
-  const [courtType, setCourtType] = useState("");
+  const [contractDesc, setContractDesc] = useSessionState(CONTRACTS_STEP_TOOL, "contractDesc", "");
+  const [courtType, setCourtType] = useSessionState(CONTRACTS_STEP_TOOL, "courtType", "");
 
   // Step 4 — Clauses
-  const [clauses, setClauses] = useState(INITIAL_CLAUSES);
-  const [clauseEdits, setClauseEdits] = useState<Record<number, string>>({});
+  const [clauses, setClauses] = useSessionState(CONTRACTS_STEP_TOOL, "clauses", INITIAL_CLAUSES);
+  const [clauseEdits, setClauseEdits] = useSessionState<Record<number, string>>(CONTRACTS_STEP_TOOL, "clauseEdits", {});
   const [newClause, setNewClause] = useState("");
-  const [additionalClauses, setAdditionalClauses] = useState<string[]>([]);
+  const [additionalClauses, setAdditionalClauses] = useSessionState<string[]>(CONTRACTS_STEP_TOOL, "additionalClauses", []);
 
   // Step 5 — Best practices
   const [bpSearching, setBpSearching] = useState(false);
@@ -83,10 +88,10 @@ export function useContractsState(linkedContract?: { id: string; title: string }
   const [shareError, setShareError] = useState<string | null>(null);
 
   // Review Mode States
-  const [rPartyFocus, setRPartyFocus] = useState("");
-  const [rFears, setRFears] = useState("");
-  const [rOtherParty, setROtherParty] = useState("");
-  const [rContractText, setRContractText] = useState("");
+  const [rPartyFocus, setRPartyFocus] = useSessionState(CONTRACTS_STEP_TOOL, "rPartyFocus", "");
+  const [rFears, setRFears] = useSessionState(CONTRACTS_STEP_TOOL, "rFears", "");
+  const [rOtherParty, setROtherParty] = useSessionState(CONTRACTS_STEP_TOOL, "rOtherParty", "");
+  const [rContractText, setRContractText] = useSessionState(CONTRACTS_STEP_TOOL, "rContractText", "");
   const [rClauseDecisions, setRClauseDecisions] = useState<Record<string, "accept" | "edit" | "reject"> | null>(null);
 
   // Review mode's file upload (Task C3) — real attachment state from
