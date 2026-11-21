@@ -25,6 +25,7 @@ import { extractLawPreambleBlocks, isHollowPreamble, type LawMetadataCard } from
 import { stripMarkdownMarks } from "../text/stripMarkdownMarks.ts";
 import { LEGAL_TAXONOMY } from "../../constants/taxonomies.ts";
 import { SECTION_30, toTaxonomyId } from "../../app/laws/lawsIndexFacets.ts";
+import { publicDocumentTitle } from "./libraryMetadata.ts";
 
 export interface DecreePreambleDisplay {
   /** The preamble to render with MD; '' when nothing but headings and wrappers is left. */
@@ -73,4 +74,26 @@ export function decreeCategoryLabel(code: unknown, isRTL = true): string | null 
   const hit = LEGAL_TAXONOMY.find((c) => c.id === id) ?? (id === SECTION_30.id ? SECTION_30 : null);
   if (!hit) return null;
   return isRTL ? hit.label : hit.labelEn;
+}
+
+/**
+ * Owner Q101 (batch l12): a decree's title carries its number and date
+ * («مرسوم ملكي رقم م/115 وتاريخ 1439/12/05هـ»), which are a subscriber's
+ * (owner ٤٢٤ / ٣٨٠). A subscriber reads the title as stored; anyone else the
+ * public name the page's <title> and JSON-LD already use (publicDocumentTitle:
+ * the number and date gone, the subject from the موجز when only the
+ * instrument is left, the type's label when nothing safe is left). Never empty.
+ * `summary` must be the viewer's copy (summaryForViewer), never the raw one.
+ */
+export function decreeTitleForViewer(
+  row: { title?: unknown; type?: unknown; summary?: unknown },
+  isSubscriber: boolean,
+): string {
+  const title = typeof row.title === "string" ? row.title : "";
+  if (isSubscriber && title.trim()) return title;
+  return publicDocumentTitle("order", {
+    title,
+    type: typeof row.type === "string" ? row.type : null,
+    summary: typeof row.summary === "string" ? row.summary : null,
+  });
 }

@@ -8,6 +8,7 @@ import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets"
 import { maskDecreeOfficialFields, maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
+import { decreeTitleForViewer } from "@/lib/library/decreeDisplay";
 import { mergedNamesForViewer, mergedNamesFromDetails } from "@/lib/library/mergedRegulationNames";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
@@ -529,6 +530,8 @@ export async function GET(request: Request) {
       for (const key of ["summary_brief", "summary"]) {
         if (typeof shaped[key] === "string") shaped[key] = summaryForViewer(shaped[key] as string, hasFullAccess);
       }
+      // Owner Q101 (batch l12): ...and the title loses them too (decreeTitleForViewer).
+      shaped.title = decreeTitleForViewer({ title: row.title, type: row.type, summary: shaped.summary_brief || shaped.summary }, hasFullAccess);
       return { ...maskDecreeOfficialFields(shaped, hasFullAccess), free: isFree, locked: !isFree };
     }) as any;
 

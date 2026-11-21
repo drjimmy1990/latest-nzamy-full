@@ -22,6 +22,7 @@ import {
 } from "@/lib/payments/moyasarConfig";
 import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } from "@/lib/library/publicGuard";
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
+import { libraryReaderDisplayIssue } from "@/lib/library/readerDisplaySettings";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 // Batch l11-misc (O22): server-side feature flags.
 import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
@@ -96,6 +97,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
   // one minute; the page posts the whole object.
   "feature_flags",
+  // Batch l12 lib-a (src/lib/library/readerDisplaySettings.ts):
+  // {"decree_free_pages": 0..20 (Q101: 0), "child_name_form": "full"|"short"
+  // (library question 5: full)} — the reader's display choices still open.
+  "library_reader_display",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -191,6 +196,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),
   // Batch l11-misc (O22): pure, covered by src/lib/featureFlags/featureFlags.test.ts.
   feature_flags: featureFlagsIssue,
+  // Batch l12 lib-a: pure, covered by src/lib/library/readerDisplaySettings.test.ts.
+  library_reader_display: libraryReaderDisplayIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

@@ -86,3 +86,18 @@ test("New 5 lib07: «تصنيف الملف» is the section's name; an unknown c
   assert.equal(decreeCategoryLabel(""), null);
   assert.equal(decreeCategoryLabel(null), null);
 });
+
+test("Q101: a non-subscriber never reads a decree's number or date in its title", async () => {
+  const { decreeTitleForViewer } = await import("./decreeDisplay.ts");
+  const row = { title: "مرسوم ملكي رقم م/115 وتاريخ 1439/12/05ه", type: "royal_decree", summary: "الموضوع: تعديل نظام المرور" };
+  const guest = decreeTitleForViewer(row, false);
+  assert.ok(guest.trim() !== "", "never empty");
+  assert.doesNotMatch(guest, /115|1439|م\/|[٠-٩]{3}/, guest);
+  assert.match(guest, /مرسوم ملكي/);
+  assert.equal(decreeTitleForViewer(row, true), row.title);
+  // nothing safe left → the type label or the generic name, never ''
+  const bare = decreeTitleForViewer({ title: "رقم 4567 وتاريخ 1440/1/1هـ", type: "unknown" }, false);
+  assert.ok(bare.trim() !== "" && !/4567|1440/.test(bare), bare);
+  // a title with no number passes as it is
+  assert.equal(decreeTitleForViewer({ title: "تعميم بشأن الإجراءات", type: "circular" }, false), "تعميم بشأن الإجراءات");
+});

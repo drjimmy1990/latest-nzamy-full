@@ -20,6 +20,7 @@ import { lawArticleCounts } from '@/lib/library/lawCardFields';
 import { stripArticleAuditNotes, stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
 import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
 import { isPreambleEmpty } from '@/app/laws/[slug]/_preamble';
+import { withoutRepealNotice } from '@/app/laws/[slug]/_repealed-article';
 import { buildRegulationIndex, compareRegulationSortKey, type RegulationIndexRow } from './_regulation-index';
 import { LAW_REVIEWED_SUMMARY_COLUMNS, reviewedSummaryFor } from './_reviewed-summary';
 import { LAW_CHILDREN_MAX, lawChildKey, lawChildrenForViewer } from './_children';
@@ -707,7 +708,10 @@ function formatArticleWithPaywall(
     : { text: articleText, heading: null };
 
   if (isLocked) {
-    result.text = preview(lifted.text);
+    // Owner Q101 (batch l12): the repealing instrument and its date are a
+    // subscriber's — «أُلغيت هذه المادة بموجب …» leaves the locked preview here,
+    // not only on screen (withoutRepealNotice).
+    result.text = preview(withoutRepealNotice(lifted.text));
     if (originalText) result.originalText = preview(originalText);
     result.lockedMessage = 'للاطلاع على النص الكامل، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية';
   } else {

@@ -11,6 +11,7 @@ import { getLibraryAccessForUser } from '@/lib/access-control';
 import { isFreeLibraryItem } from '@/lib/library-item-access';
 import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
 import { realPrincipleNumber } from '@/app/laws/principleLink';
+import { decreeTitleForViewer } from '@/lib/library/decreeDisplay';
 
 /**
  * Client-side ceiling. It only ends this route's wait: aborting does not stop
@@ -248,7 +249,8 @@ export async function GET(request: Request) {
       };
     });
     const orderMatches: TopMatch[] = ((topOrders.data ?? []) as Record<string, unknown>[]).map((o) => ({
-      title: o.title as string,
+      // Owner Q101 (batch l12): a non-subscriber's title is masked (decreeTitleForViewer).
+      title: decreeTitleForViewer({ title: o.title, type: o.type }, hasFullAccess),
       section: 'orders',
       slug: o.id as string,
     }));

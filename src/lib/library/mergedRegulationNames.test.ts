@@ -121,12 +121,13 @@ test("before 20261107_10: a 42703 naming merged_regulation_names drops only merg
   ]);
 });
 
-test("fix round 1: decree موجز / summary / search snippet go through summaryForViewer; titles do not", () => {
+test("fix round 1: decree موجز / summary / search snippet go through summaryForViewer; the title through decreeTitleForViewer (Q101)", () => {
   const decree = readFileSync(new URL("../../app/api/library/decrees/[id]/route.ts", import.meta.url), "utf8");
   const search = readFileSync(new URL("../../app/api/library/search/route.ts", import.meta.url), "utf8");
-  assert.match(decree, /summary: typeof decree\.summary === 'string' \? summaryForViewer\(decree\.summary, isSubscriber\) : decree\.summary,/);
-  assert.match(decree, /summary_brief: typeof decree\.summary_brief === 'string' \? summaryForViewer\(decree\.summary_brief, isSubscriber\) : decree\.summary_brief,/);
-  assert.match(decree, /title: decree\.title,/);
+  assert.match(decree, /const viewerSummary = typeof decree\.summary === 'string' \? summaryForViewer\(decree\.summary, isSubscriber\) : decree\.summary;/);
+  assert.match(decree, /const viewerBrief = typeof decree\.summary_brief === 'string' \? summaryForViewer\(decree\.summary_brief, isSubscriber\) : decree\.summary_brief;/);
+  // Owner Q101 (l12): a non-subscriber's title loses its number and date.
+  assert.match(decree, /title: decreeTitleForViewer\(\{ title: decree\.title, type: decree\.type, summary: viewerBrief \|\| viewerSummary \}, isSubscriber\),/);
   assert.match(decree, /officialMetaLocked: !isSubscriber && Boolean\(decree\.ref \|\| decree\.date \|\| decree\.official_url\),/);
   assert.match(INIT, /for \(const key of \["summary_brief", "summary"\]\) \{\s*if \(typeof shaped\[key\] === "string"\) shaped\[key\] = summaryForViewer\(shaped\[key\] as string, hasFullAccess\);/);
   assert.match(search, /const brief = summaryForViewer\(r\.summary_brief as string \|\| '', hasFullAccess\);/);

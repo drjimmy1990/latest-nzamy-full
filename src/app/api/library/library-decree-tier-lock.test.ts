@@ -159,14 +159,15 @@ test("the moved routes still mask per tier exactly as before", () => {
   const decree = read("src/app/api/library/decrees/[id]/route.ts");
   assert.match(decree, /const serverOnly = await createServiceClient\(\);\s*\/\/ Fetch decree metadata[^\n]*\n\s*const \{ data: decree, error: decreeError \} = await serverOnly/);
   assert.match(decree, /const official = maskDecreeOfficialFields\(\s*\{ ref: decree\.ref \|\| '', date: decree\.date \|\| '', official_url: decree\.official_url \|\| '' \},\s*isSubscriber,\s*\);/);
-  assert.match(decree, /summary: typeof decree\.summary === 'string' \? summaryForViewer\(decree\.summary, isSubscriber\) : decree\.summary,/);
-  assert.match(decree, /summary_brief: typeof decree\.summary_brief === 'string' \? summaryForViewer\(decree\.summary_brief, isSubscriber\) : decree\.summary_brief,/);
+  assert.match(decree, /const viewerSummary = typeof decree\.summary === 'string' \? summaryForViewer\(decree\.summary, isSubscriber\) : decree\.summary;/);
+  assert.match(decree, /const viewerBrief = typeof decree\.summary_brief === 'string' \? summaryForViewer\(decree\.summary_brief, isSubscriber\) : decree\.summary_brief;/);
+  assert.match(decree, /summary: viewerSummary,\s*summary_brief: viewerBrief,/);
   assert.match(decree, /officialMetaLocked: !isSubscriber && Boolean\(decree\.ref \|\| decree\.date \|\| decree\.official_url\),/);
   // Auth still reads the cookie session through the request client.
   assert.match(decree, /const \{ data: \{ user \} \} = await supabase\.auth\.getUser\(\);/);
 
   const init = read("src/app/api/library/init/route.ts");
-  assert.match(init, /for \(const key of \["summary_brief", "summary"\]\) \{\s*if \(typeof shaped\[key\] === "string"\) shaped\[key\] = summaryForViewer\(shaped\[key\] as string, hasFullAccess\);\s*\}\s*return \{ \.\.\.maskDecreeOfficialFields\(shaped, hasFullAccess\), free: isFree, locked: !isFree \};/);
+  assert.match(init, /for \(const key of \["summary_brief", "summary"\]\) \{\s*if \(typeof shaped\[key\] === "string"\) shaped\[key\] = summaryForViewer\(shaped\[key\] as string, hasFullAccess\);\s*\}\s*\/\/[^\n]*\n\s*shaped\.title = decreeTitleForViewer\(\{ title: row\.title, type: row\.type, summary: shaped\.summary_brief \|\| shaped\.summary \}, hasFullAccess\);\s*return \{ \.\.\.maskDecreeOfficialFields\(shaped, hasFullAccess\), free: isFree, locked: !isFree \};/);
 
   const search = read("src/app/api/library/search/route.ts");
   assert.match(search, /const orderQuery = \(head = false\) => \{\s*let q = serverOnly\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)/);

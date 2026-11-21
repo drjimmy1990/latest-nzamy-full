@@ -728,7 +728,9 @@ export default function OrderReaderPage() {
                           </span>
                           <div className="mt-3 flex items-center gap-2 text-xs font-bold text-amber-700 dark:text-amber-400">
                             <Lock size={14} weight="fill" />
-                            <span>{isRTL ? "المعاينة المجانية أول صفحتين؛ نص هذه الصفحة متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية." : "The free preview is the first two pages; this page is for library or professional plan subscribers."}</span>
+                            {/* Owner Q101 (l12): the free pages are an admin setting (0 by
+                                default), so the notice names no fixed number of pages. */}
+                            <span>{isRTL ? "نص هذه الصفحة متاح لمشتركي باقة المكتبة القانونية أو الباقة الاحترافية." : "This page is for library or professional plan subscribers."}</span>
                           </div>
                         </div>
                       );

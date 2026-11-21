@@ -44,6 +44,7 @@ import { fetchLawTitleHitsChecked, type LawTitleHitsResult } from './lawTitleHit
 import { fetchBookTitleHits } from './bookTitleHits';
 import { fetchCollectionTitleHits } from './collectionTitleHits';
 import { latestLegislativeEvent, summaryForViewer } from '@/lib/library/legislativeEvent';
+import { decreeTitleForViewer } from '@/lib/library/decreeDisplay';
 import { realPrincipleNumber } from '@/app/laws/principleLink';
 
 /** Book-title hits listed above the fiqh passages on page 1. */
@@ -812,6 +813,8 @@ export async function POST(request: Request) {
           return {
             id: r.id,
             section: 'orders',
+            // The stored title for the de-duplication below (two decrees differ
+            // by their number); masked for the viewer after it (Q101).
             title: r.title,
             snippet: truncateWithHighlight(brief, parsed.plainTerms, snippetLen(isFree)),
             locked: !isFree,
@@ -827,9 +830,13 @@ export async function POST(request: Request) {
         // De-duplication runs after PostgREST counted: when this page is the
         // whole match set, the count is what it lists («الحسابات البنكية» 27).
         const deduped = dedupeResults(results);
+        // Owner Q101 (batch l12): no number or date in a non-subscriber's title.
+        const viewerTitles = new Map(orderResults.map((r: Record<string, unknown>) => [r.id, decreeTitleForViewer({
+          title: r.title, type: r.type, summary: summaryForViewer(r.summary_brief as string || '', hasFullAccess),
+        }, hasFullAccess)]));
         return {
           ok: true,
-          results: deduped.slice(0, size),
+          results: deduped.slice(0, size).map((item) => ({ ...item, title: viewerTitles.get(item.id) ?? decreeTitleForViewer({ title: item.title }, hasFullAccess) })),
           order: relevance?.order ?? 'id',
           ...sectionCount({ estimate: settled.count, offset: from, rawRows: orderResults.length, requested: fetchSizeFor(size), listedWhenComplete: deduped.length }),
         };
