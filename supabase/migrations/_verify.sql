@@ -8025,3 +8025,35 @@ select 'R6: one verified account per mobile — trg_verified_phone_unique on pro
            and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
        and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
 -- <<< verify:l11_sec
+-- >>> verify:l12_firm
+-- Batch l12 firm: run 20261202_80 before or after the deploy; re-run it after any re-run of 20261129_10, 20261127_60 or 20261201_50.
+select 'Q112: firm_case_scoped_member reads the firm_case_scope setting (trainee + secretary always); sessions cannot call the setting reader (run 20261202_80)' as check,
+       to_regprocedure('public.firm_case_scope_roles()') is not null
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.firm_case_scoped_member(uuid)')), 'firm_case_scope_roles') > 0, false)
+       and not has_function_privilege('authenticated', 'public.firm_case_scope_roles()', 'EXECUTE')
+       and exists (select 1 from public.platform_settings where key = 'firm_case_scope') as ok;
+select 'Q112: the finance manager sees no case file — restrictive policy on service_requests (run 20261202_80)' as check,
+       exists (select 1 from pg_catalog.pg_policy
+                where polname = 'firm case: finance manager sees no case files' and not polpermissive
+                  and polrelid = to_regclass('public.service_requests')) as ok;
+select 'Q113 / Q114: company tiers start at 5 seats; the extra firm seat has a price (run 20261202_80)' as check,
+       public.business_plan_seat_cap('biz-sm-basic') = 5 and public.business_plan_seat_cap('dept-sm-basic') = 5
+       and coalesce((select pg_catalog.jsonb_typeof(value -> 'sar') = 'number' from public.platform_settings where key = 'firm_extra_seat_price_sar'), false) as ok;
+select 'N16: the restricted-case open log is append-only and closed to sessions (run 20261202_80)' as check,
+       to_regclass('public.restricted_case_open_log') is not null
+       and not has_table_privilege('authenticated', 'public.restricted_case_open_log', 'SELECT')
+       and has_function_privilege('authenticated', 'public.log_restricted_case_open(text)', 'EXECUTE')
+       and has_function_privilege('authenticated', 'public.restricted_case_open_log_read(text)', 'EXECUTE')
+       and exists (select 1 from pg_catalog.pg_trigger where tgname = 'trg_restricted_case_open_log_append_only' and not tgisinternal) as ok;
+select 'N18: «مكتب معتمد» = a registered law firm with an active office plan (run 20261202_80 after 20261201_50)' as check,
+       case when to_regprocedure('public.community_verified_office_users(uuid[])') is null then false else
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.community_verified_office_users(uuid[])')), 'firm-enterprise') > 0, false)
+       and not has_function_privilege('authenticated', 'public.community_verified_office_users(uuid[])', 'EXECUTE')
+       end as ok;
+select 'N21: founder storage fair use — setting, usage function (service role only), alert marker (run 20261202_80)' as check,
+       exists (select 1 from public.platform_settings where key = 'founder_storage_fair_use')
+       and to_regprocedure('public.founder_storage_usage()') is not null
+       and not has_function_privilege('authenticated', 'public.founder_storage_usage()', 'EXECUTE')
+       and to_regclass('public.founder_storage_alerts') is not null
+       and not has_table_privilege('authenticated', 'public.founder_storage_alerts', 'SELECT') as ok;
+-- <<< verify:l12_firm
