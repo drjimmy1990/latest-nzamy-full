@@ -8025,3 +8025,22 @@ select 'R6: one verified account per mobile — trg_verified_phone_unique on pro
            and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
        and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
 -- <<< verify:l11_sec
+-- >>> verify:l12_lib_draft
+-- Batch l12 lib-draft (L11-log «سجلّي», L2 draft limits): run 20261202_40 any time (before or after the deploy).
+select 'L11-log: ai_runs.user_hidden_at exists, sessions read only that column (never input), retention reads ai_runs_retention (run 20261202_40)' as check,
+       case when to_regclass('public.ai_runs') is null
+              or not exists (select 1 from pg_catalog.pg_attribute
+                              where attrelid = 'public.ai_runs'::regclass and attname = 'user_hidden_at' and not attisdropped)
+            then false else
+       has_column_privilege('authenticated', 'public.ai_runs', 'user_hidden_at', 'SELECT')
+       and not has_column_privilege('authenticated', 'public.ai_runs', 'input', 'SELECT')
+       and not has_column_privilege('anon', 'public.ai_runs', 'user_hidden_at', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.ai_runs', 'UPDATE')
+       and not has_function_privilege('authenticated', 'public.ai_runs_retention()', 'EXECUTE')
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.ai_runs_retention()')), 'ai_runs_retention''') > 0, false)
+       end as ok;
+select 'L11-log / L2: settings ai_runs_retention (months 1–60) and library_draft_limits present (run 20261202_40)' as check,
+       coalesce((select jsonb_typeof(value -> 'months') = 'number' from public.platform_settings where key = 'ai_runs_retention'), false)
+       and coalesce((select jsonb_typeof(value -> 'max_items') = 'number' and jsonb_typeof(value -> 'share_excerpt_chars') = 'number'
+                       from public.platform_settings where key = 'library_draft_limits'), false) as ok;
+-- <<< verify:l12_lib_draft
