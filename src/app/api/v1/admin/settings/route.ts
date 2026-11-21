@@ -28,6 +28,7 @@ import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
 import { summariesReviewedOnlyIssue } from "@/lib/library/summaryReview";
 import { freeQuestionToolSettingIssue } from "@/lib/ai/freeQuestion";
 import { libraryReaderDisplayIssue } from "@/lib/library/readerDisplaySettings";
+import { loginLockoutSettingIssue } from "@/lib/auth/loginLockout";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
 // Batch l11-misc (O22): server-side feature flags.
 import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/featureFlags";
@@ -108,6 +109,9 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l9 read (register 14 item 48, 20261129_40; src/lib/library/pointsGate.ts):
   // {"points": n} — a library subscriber opens full text only with a balance ≥ n (50; 0 = off).
   "library_min_points_to_browse",
+  // Batch l12-access (file 10 ب23, 20261202_20; src/lib/auth/loginLockout.ts):
+  // {"max_failures": 5, "window_minutes": 15, "lock_minutes": 15} — the sign-in lockout.
+  "auth_login_lockout",
   // Batch l11-misc (O22, 20261201_60; src/lib/featureFlags/featureFlags.ts):
   // {"<flag>": boolean} for the closed list FEATURE_FLAGS (today
   // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
@@ -231,6 +235,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_feqh_free_pages: feqhFreePagesIssue,
   // Batch l9 read: pure, covered by src/lib/library/pointsGate.test.ts.
   library_min_points_to_browse: libraryMinPointsIssue,
+  // Batch l12-access: pure, covered by src/lib/auth/loginLockout.test.ts.
+  auth_login_lockout: loginLockoutSettingIssue,
   // Batch l9 public: pure, covered by src/lib/publicSeo/platformRegistry.test.ts.
   license_number: (value) => licenceSettingIssue("license_number", value),
   license_issuer: (value) => licenceSettingIssue("license_issuer", value),

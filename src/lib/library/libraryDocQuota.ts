@@ -24,7 +24,8 @@
  * not counted twice), libraryReadQuotaHit() with its 60-second memo, and
  * quotaRefusal()'s 423 / 429 with `Cache-Control: private, no-store`.
  *
- * Owner ٤٤٧ (N05-L6, 2026-11-17): the 220 / 400 daily cap counts FULL-TEXT
+ * Owner ٤٤٧ (N05-L6, 2026-11-17): the daily cap (50 since l8 item 3.2; the
+ * library_monitor_settings row) counts FULL-TEXT
  * opens only. `fullText` is the route's own entitled full-text flag (the one
  * it passes to enforceLibraryDevice); a preview — the first articles / pages
  * a non-subscriber may read — spends nothing.

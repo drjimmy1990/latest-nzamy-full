@@ -29,6 +29,7 @@ import { useUser } from "@/hooks/useUser";
 import { useLibraryFullAccess } from "@/lib/library/useLibraryFullAccess";
 import { isSupabaseMode } from "@/lib/services/api";
 import InvitationModal from "./InvitationModal";
+import { LIBRARY_INVITES_CLOSED } from "@/lib/library/libraryInvitesClosed";
 
 export default function InvitationBanner() {
   const { isDark } = useTheme();
@@ -40,7 +41,8 @@ export default function InvitationBanner() {
   // Demo mode cannot redeem anything — the endpoint only exists in Supabase
   // mode (see redeemLibraryInvitation's DEMO guard) — so offering the CTA
   // there would be a control that can only fail.
-  const eligible = isLoggedIn && isSupabaseMode && !libraryAccess.loading && !libraryAccess.hasFullAccess;
+  // Owner ٩٣ (batch l12): invitation codes are stopped — no banner at all.
+  const eligible = !LIBRARY_INVITES_CLOSED && isLoggedIn && isSupabaseMode && !libraryAccess.loading && !libraryAccess.hasFullAccess;
 
   if (!eligible || dismissed) {
     return <InvitationModal open={modalOpen} onClose={() => setModalOpen(false)} />;

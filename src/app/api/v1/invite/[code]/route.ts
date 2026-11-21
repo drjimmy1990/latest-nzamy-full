@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { colleagueInviteTrialDays } from "@/lib/libraryAccess";
+import { LIBRARY_INVITES_CLOSED, LIBRARY_INVITES_CLOSED_AR } from "@/lib/library/libraryInvitesClosed";
 
 /**
  * GET /api/v1/invite/[code] — Public invite-code lookup for the
@@ -50,6 +51,10 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ code: string }> },
 ) {
+  // Owner ٩٣ (batch l12): the colleague invitation is stopped — no code is valid.
+  if (LIBRARY_INVITES_CLOSED) {
+    return NextResponse.json({ valid: false, reason: LIBRARY_INVITES_CLOSED_AR });
+  }
   try {
     const { code: rawCode } = await params;
     const code = typeof rawCode === "string" ? rawCode.trim() : "";

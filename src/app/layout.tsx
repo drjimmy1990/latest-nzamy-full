@@ -8,6 +8,7 @@ import SiteAssistantWidget from "@/components/chatbot/SiteAssistantWidget";
 import AnalyticsConsent from "@/components/analytics/AnalyticsConsent";
 import LibraryChallengeHost from "@/components/library/LibraryChallengeHost";
 import SessionIdleGuard from "@/components/auth/SessionIdleGuard";
+import LatinDigitsEverywhere from "@/components/forms/LatinDigitsEverywhere";
 import { densityInitSnippet } from "@/lib/density";
 
 // Self-hosted via next/font (no runtime request to fonts.googleapis.com).
@@ -164,6 +165,8 @@ export default function RootLayout({
           <LibraryChallengeHost />
           {/* T5 (l11): the idle sign-out the user chose in Settings → Security (nothing when unset). */}
           <SessionIdleGuard />
+          {/* File 10 ب24 (l12): Arabic-Indic digits typed in any number field become Latin. */}
+          <LatinDigitsEverywhere />
         </ThemeProvider>
       </body>
     </html>

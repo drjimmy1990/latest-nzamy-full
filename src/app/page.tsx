@@ -60,7 +60,7 @@ export default async function Home() {
       <HomeRedirectGuard />
       <Navbar />
       <div className="flex flex-col">
-        <Hero licenceIssuer={registry.licenceIssuer} />
+        <Hero licence={registry.licence} licenceIssuer={registry.licenceIssuer} />
         {/* A dated campaign only (owner ١٧٩); renders nothing today. */}
         <PromotionalCampaignBanner />
         <UserTypeSelector />

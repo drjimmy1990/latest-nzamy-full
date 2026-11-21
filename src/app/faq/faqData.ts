@@ -53,12 +53,14 @@ export const faqData: readonly FAQItem[] = [
   {
     id: 3,
     category: "all",
-    questionAr: "هل المنصة موثوقة ومرخّصة؟",
-    questionEn: "Is the platform reliable and licensed?",
+    // File 05 #33 (l12): no licence is claimed here; faqWithLicence adds it,
+    // with its number, once license_number is set.
+    questionAr: "هل المنصة موثوقة؟",
+    questionEn: "Is the platform reliable?",
     answerAr:
-      "نعم، نظامي منصة مرخّصة تعمل وفق أنظمة المملكة العربية السعودية وتحت إشراف الجهات التنظيمية المختصة. جميع مزودي الخدمة يخضعون لعملية تحقق صارمة قبل القبول.",
+      "نظامي منصة سعودية تعمل وفق أنظمة المملكة العربية السعودية، وجميع مزودي الخدمة يخضعون لعملية تحقق قبل قبولهم.",
     answerEn:
-      "Yes, Nezamy is a licensed platform operating in accordance with Saudi Arabian regulations under the supervision of relevant regulatory authorities. All service providers undergo a strict verification process before acceptance.",
+      "Nezamy is a Saudi platform operating in accordance with Saudi regulations, and every service provider is verified before acceptance.",
   },
   {
     id: 4,
@@ -206,7 +208,7 @@ export const faqData: readonly FAQItem[] = [
   },
 ];
 
-/** The question «هل المنصة موثوقة ومرخّصة؟» (its answer keeps «منصة مرخّصة»). */
+/** The question «هل المنصة موثوقة؟» — «ومرخّصة» and the licence only once its number is set (file 05 #33). */
 export const LICENCE_FAQ_ID = 3;
 
 /**
@@ -222,13 +224,16 @@ export function faqWithLicence(
   lineEn: string | null,
 ): readonly FAQItem[] {
   if (!lineAr && !lineEn) return items;
+  // File 05 #33 (l12): only now — with the number in hand — does the answer say «مرخّصة».
   return items.map((item) =>
     item.id !== LICENCE_FAQ_ID
       ? item
       : {
           ...item,
-          answerAr: lineAr ? `${item.answerAr} ${lineAr}` : item.answerAr,
-          answerEn: lineEn ? `${item.answerEn} ${lineEn}` : item.answerEn,
+          questionAr: lineAr ? "هل المنصة موثوقة ومرخّصة؟" : item.questionAr,
+          questionEn: lineEn ? "Is the platform reliable and licensed?" : item.questionEn,
+          answerAr: lineAr ? `نعم، نظامي منصة مرخّصة. ${item.answerAr} ${lineAr}` : item.answerAr,
+          answerEn: lineEn ? `Yes, Nezamy is a licensed platform. ${item.answerEn} ${lineEn}` : item.answerEn,
         },
   );
 }

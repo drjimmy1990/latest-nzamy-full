@@ -49,6 +49,8 @@ import {
   isTrackingPageRoute,
   isCouponValidateRoute,
   isMfaRecoverRoute,
+  isSourcePreviewRoute,
+  isAuthSignInRoute,
   isTrackingUnlockRoute,
   isAttachmentsZipRoute,
   isDocumentPreviewRoute,
@@ -172,6 +174,14 @@ const DOCUMENT_PREVIEW_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 10
 // only helps a shared edge. A refusal comes before any charge.
 const AI_RUN_START_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 20 };
 const AI_RUN_START_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 200 };
+// N10 (l12-access): «معاينة المصدر» (GET /api/v1/ai/source-preview) — 60 looks
+// per visitor per 10 minutes (a reader opens a handful per answer), wider per IP.
+const SOURCE_PREVIEW_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 60 };
+const SOURCE_PREVIEW_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 600 };
+// l12-access (file 10 ب23): password sign-ins through POST /api/v1/auth/sign-in —
+// 20 per visitor per 10 minutes (the per-account lock is in the database), wider per IP.
+const AUTH_SIGN_IN_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 20 };
+const AUTH_SIGN_IN_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 10 * 60 * 1000, max: 300 };
 // The printed QR's public card: the tracking page's numbers, for the same reason.
 const LETTERHEAD_VERIFY_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 30 };
 const LETTERHEAD_VERIFY_IP_RATE_LIMIT: RateLimitPolicy = { windowMs: 60 * 1000, max: 300 };
@@ -237,12 +247,15 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
     const isAiRunStartMatch = isAiRunStartRoute(method, pathname);
     const isLetterheadVerifyMatch = isLetterheadVerifyRoute(method, pathname);
     const isMfaRecoverMatch = isMfaRecoverRoute(method, pathname);
+    const isSourcePreviewMatch = isSourcePreviewRoute(method, pathname);
+    const isAuthSignInMatch = isAuthSignInRoute(method, pathname);
     const libraryBuckets = libraryBudgetBuckets(method, pathname);
 
     if (
       !isStrictMatch && !isGeneralMatch && !isLibraryReadMatch && !isTrackingMatch &&
       !isTrackingUnlockMatch && !isAttachmentsZipMatch && !isDocumentPreviewMatch && !isCouponMatch &&
       !isToolStatusMatch && !isAiRunStartMatch && !isLetterheadVerifyMatch && !isMfaRecoverMatch &&
+      !isSourcePreviewMatch && !isAuthSignInMatch &&
       !isAiRunProgressMatch && !isPointsStandingMatch && libraryBuckets.length === 0
     ) return null;
 
@@ -330,6 +343,22 @@ function applyRateLimit(req: NextRequest, pathname: string): NextResponse | null
       if (!perIp.allowed) return rateLimitResponse(perIp);
       const key = libraryReadClientKey((name) => req.headers.get(name), ip);
       const decision = rateLimiter.check("attachments-zip", key, ATTACHMENTS_ZIP_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isSourcePreviewMatch) {
+      const perIp = rateLimiter.check("source-preview-ip", ip, SOURCE_PREVIEW_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("source-preview", key, SOURCE_PREVIEW_RATE_LIMIT);
+      if (!decision.allowed) return rateLimitResponse(decision);
+    }
+
+    if (isAuthSignInMatch) {
+      const perIp = rateLimiter.check("auth-sign-in-ip", ip, AUTH_SIGN_IN_IP_RATE_LIMIT);
+      if (!perIp.allowed) return rateLimitResponse(perIp);
+      const key = libraryReadClientKey((name) => req.headers.get(name), ip);
+      const decision = rateLimiter.check("auth-sign-in", key, AUTH_SIGN_IN_RATE_LIMIT);
       if (!decision.allowed) return rateLimitResponse(decision);
     }
 

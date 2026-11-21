@@ -36,6 +36,7 @@ const ALLOWED: Record<string, string> = {
   "library/scoped-search/route.ts": "a search: POST for the body, reads only",
   "library/folders/titles/route.ts": "a catalogue title lookup: POST for the body (≤ 400 ids), reads only",
   "v1/leads/business-assessment/route.ts": "the public lead form; the session is read only to tag the lead",
+  "v1/auth/sign-in/route.ts": "the password sign-in itself (l12-access lockout): there is no session yet; it creates one and writes no account data",
 };
 
 function routes(dir: string): string[] {

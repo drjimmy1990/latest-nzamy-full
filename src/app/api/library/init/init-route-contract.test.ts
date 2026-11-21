@@ -195,11 +195,12 @@ test("the law reader locks articles on the law API's paywall.hasFullAccess", () 
 test("the redeem CTA and the invitation banner ask GET /api/v1/library/access, and wait for it", () => {
   const subscribe = readRepo("src/app/laws/subscribe/page.tsx");
   assert.match(subscribe, /import \{ useLibraryFullAccess \} from "@\/lib\/library\/useLibraryFullAccess";/);
-  assert.match(subscribe, /const canRedeemCode = isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
+  // owner ٩٣ (l12): both are shut by LIBRARY_INVITES_CLOSED first
+  assert.match(subscribe, /const canRedeemCode = !LIBRARY_INVITES_CLOSED && isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
 
   const banner = readRepo("src/components/InvitationBanner.tsx");
   assert.match(banner, /import \{ useLibraryFullAccess \} from "@\/lib\/library\/useLibraryFullAccess";/);
-  assert.match(banner, /const eligible = isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
+  assert.match(banner, /const eligible = !LIBRARY_INVITES_CLOSED && isLoggedIn && isSupabaseMode && !libraryAccess\.loading && !libraryAccess\.hasFullAccess;/);
 });
 
 test("none of the six sites gates library text on the tier-only can(\"library-full-access\")", () => {

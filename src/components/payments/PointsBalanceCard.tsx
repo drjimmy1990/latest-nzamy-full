@@ -23,7 +23,7 @@ export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBal
             </p>
             {libraryOnly > 0 && (
               <p className="mt-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                منها {arabicDigits(libraryOnly)} نقطة لمساعد المكتبة فقط
+                منها {arabicDigits(libraryOnly)} نقطة لمساعد المكتبة وحده
               </p>
             )}
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">

@@ -28,6 +28,7 @@ import {
   thawEntitlementsWith,
 } from "@/lib/accountSuspension/suspensionServer";
 import { revokeLibraryDevice } from "@/lib/library/deviceLimitServer";
+import { isTestAccountForViewAs } from "@/lib/admin/viewAsTestOnly";
 
 /**
  * GET /api/v1/admin/users/[id] — Fetch single user with full details
@@ -117,6 +118,8 @@ export async function GET(
 
     // A failed balance read shows «—» (null); it never fails the page.
     const pointsBalance = await readAdminBalance(adminClient, userId);
+    // Owner ١٠٨ (l12): «عرض كمستخدم» is offered for a test account only (same predicate as the view-as route).
+    const viewAsAllowed = await isTestAccountForViewAs(adminClient, userId);
     // ── Separate active subscription from history ──────────────────────────
     const activeSubscription =
       subscriptions?.find(
@@ -131,6 +134,7 @@ export async function GET(
         lawyer_profile: lawyerProfile ?? null,
         credit_transactions: creditTransactions ?? [],
         credit_balance: pointsBalance,
+        view_as_allowed: viewAsAllowed,
       },
     });
   } catch (err) {

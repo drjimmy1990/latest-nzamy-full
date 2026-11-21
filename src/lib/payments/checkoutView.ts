@@ -24,6 +24,8 @@ import { VAT_NOTICE } from "../pricing/vatNotice.ts";
 import { BILLING_LABEL_AR, isBilling } from "../pricing/priceBook.ts";
 import { FOUNDER_CREDITS, FOUNDER_LIBRARY_DAYS, FOUNDER_MEMBERSHIP_MONTHS } from "../membership/founderPlan.ts";
 import { libraryExpiryLockLineAr } from "../points/pointsExpiryNotice.ts";
+import { libraryPlanCheckoutGateLineAr } from "../library/pointsGate.ts";
+import { DEFAULT_LIBRARY_PLAN_POINTS } from "../points/pointsSettings.ts";
 
 // ── the buy buttons ─────────────────────────────────────────────────────────
 
@@ -182,7 +184,10 @@ export const POINT_VALUE_LINE_AR = "النقطة = ريال سعودي واحد 
  * The lines the screen shows under the item's name: what the catalog grants
  * and nothing more. Firm plans get no line — their seats are not sold here.
  */
-export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: number | null } = {}): string[] {
+export function checkoutItemNotes(
+  item: PayableItem,
+  ctx: { libraryMinPoints?: number | null; libraryQuestionPoints?: number | null } = {},
+): string[] {
   if (item.kind === "topup") {
     const notes: string[] = [];
     // The label already names the points («شحن ٢٥٠ (٣٠٠ نقطة)»): no second line.
@@ -203,7 +208,18 @@ export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: n
     return notes;
   }
   if (item.kind === "library" && typeof item.libraryDays === "number") {
-    return [`وصول إلى المكتبة القانونية لمدة ${daysAr(item.libraryDays)}`];
+    const notes = [`وصول إلى المكتبة القانونية لمدة ${daysAr(item.libraryDays)}`];
+    // Owner 06 ج6 + ٩٣ (batch l12): the 50-point rule, said before paying —
+    // and, for the quarterly plan whose points equal the minimum, that the
+    // first assistant question locks the full text. Only when the page
+    // passed the minimum (0 = gate off: no line).
+    const gate = libraryPlanCheckoutGateLineAr(
+      DEFAULT_LIBRARY_PLAN_POINTS[item.id] ?? null,
+      ctx.libraryMinPoints ?? null,
+      ctx.libraryQuestionPoints ?? null,
+    );
+    if (gate) notes.push(gate);
+    return notes;
   }
   if (item.kind === "membership") {
     // P3 founder membership: what founder_activate (20261101_10) grants, nothing more

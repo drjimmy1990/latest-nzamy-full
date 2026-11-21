@@ -79,6 +79,8 @@ interface UserData {
   credit_balance: number | null;
   /** S3 (20261125_50): absent before the migration runs. */
   is_demo?: boolean;
+  /** Owner ١٠٨ (l12): the server says this is a test account (public.is_test_account). */
+  view_as_allowed?: boolean;
 }
 
 /**
@@ -1067,11 +1069,14 @@ export default function UserProfilePage() {
             <SpinnerGap size={14} className="animate-spin text-zinc-400" />
           ) : (
             <>
+              {/* Owner ١٠٨ (l12): offered for a test account only; the route refuses any other. */}
+              {U.view_as_allowed === true && (
               <Link href={`/dashboard/admin/users/${encodeURIComponent(userId)}/view-as`}
-                title="عرض للقراءة فقط لما يراه هذا المستخدم، وتُسجَّل كل صفحة في سجل التدقيق"
+                title="عرض للقراءة فقط لما يراه هذا الحساب التجريبي، وتُسجَّل كل صفحة في سجل التدقيق"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors">
                 <UserSwitch size={13}/> عرض كمستخدم
               </Link>
+              )}
               <button onClick={handleDemoToggle} disabled={demoLoading}
                 title="الحساب التجريبي: لا يكتب في الأقسام العامة، لا يدفع ولا يحجز مقعد المؤسس، وحدوده ٥ قضايا و٥ استشارات و١٠ موكلين"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500/20 transition-colors disabled:opacity-50">

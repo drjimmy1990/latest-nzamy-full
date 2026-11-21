@@ -10,6 +10,7 @@ import {
   readViewAsTarget,
   viewAsAuditInput,
 } from "@/lib/admin/viewAsCore";
+import { isTestAccountForViewAs, VIEW_AS_TEST_ONLY_AR, VIEW_AS_TEST_ONLY_CODE } from "@/lib/admin/viewAsTestOnly";
 
 /**
  * GET /api/v1/admin/users/[id]/view-as?page=home|cases|profile[&session=<uuid>]
@@ -25,6 +26,10 @@ import {
  *
  * Gate: requireStaff("users.view_as") — super_admin only (and every admin
  * while platform_staff does not exist, requireStaff's deploy-order rule).
+ *
+ * Owner ١٠٨ (batch l12): TEST ACCOUNTS ONLY. Before anything is read or
+ * audited, public.is_test_account(target) must answer true; otherwise 403
+ * (src/lib/admin/viewAsTestOnly.ts — a failed check is a refusal).
  */
 
 export const dynamic = "force-dynamic";
@@ -48,6 +53,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   try {
     const admin = await createServiceClient();
+    // Owner ١٠٨ (l12): a real user is never viewed — refused before any read or audit row.
+    if (!(await isTestAccountForViewAs(admin, targetId))) {
+      return json({ error: VIEW_AS_TEST_ONLY_AR, code: VIEW_AS_TEST_ONLY_CODE }, 403);
+    }
     const target = await readViewAsTarget(admin, targetId);
     if (!target) return json({ error: "المستخدم غير موجود" }, 404);
 

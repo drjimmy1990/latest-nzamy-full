@@ -31,6 +31,12 @@
  * {code, message, balance, minPoints, topupHref} when this subscriber's
  * balance is below library_min_points_to_browse (src/lib/library/
  * pointsGate.ts), else null. Admins are counted like everyone (file 19).
+ *
+ * Owner 06 ج6 + ٩٣ (batch l12): `pointsLow` — {code, message, balance,
+ * minPoints, questionPoints, topupHref} when this subscriber is gated, still
+ * open, and ONE library-assistant question (its registry price) would take
+ * him below the minimum; the assistant screens show it before he asks
+ * (LibraryPointsLowNotice). Else null. Nothing is refused because of it.
  */
 
 import { NextResponse } from "next/server";
@@ -43,22 +49,39 @@ import { createClient } from "@/lib/supabase/server";
 import { libraryReadQuotaHit } from "@/lib/library/readQuotaServer";
 import { LIBRARY_LOCK_SUPPORT_PATH, LIBRARY_READ_QUOTA, libraryLockMessageAr } from "@/lib/library/readQuota";
 import { libraryFullAccessState } from "@/lib/access-control";
-import type { LibraryPointsLock } from "@/lib/library/pointsGate";
+import { libraryPointsLow, libraryPointsLowBeforeQuestion, type LibraryPointsLock, type LibraryPointsLow } from "@/lib/library/pointsGate";
+import { aiToolPointRange } from "@/lib/ai/toolPointsDisplay";
 import { viewerLibraryAccountLocked } from "@/lib/library/accountAccessServer";
 import { LIBRARY_ACCOUNT_LOCKED_AR } from "@/lib/library/accountAccess";
+
+/** The library assistant's price for one question (the registry's highest, never a typed number); null if unknown. */
+function libraryQuestionPoints(): number | null {
+  try {
+    const n = aiToolPointRange("library-assistant")[1];
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The caller's own lock and today's quota; nulls when unknown (never throws). */
 async function callerReadState() {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { securityLock: null, readQuota: null, pointsLock: null };
+    if (!user) return { securityLock: null, readQuota: null, pointsLock: null, pointsLow: null };
     const [row, full] = await Promise.all([
       libraryReadQuotaHit(user.id, null),
       libraryFullAccessState(user.id).catch(() => null),
     ]);
     const pointsLock: LibraryPointsLock | null = full?.pointsLock ?? null;
-    if (!row || row.status === "exempt") return { securityLock: null, readQuota: null, pointsLock };
+    const gate = full?.pointsGate ?? null;
+    const question = libraryQuestionPoints();
+    const pointsLow: LibraryPointsLow | null =
+      gate && question !== null && libraryPointsLowBeforeQuestion(gate.balance, gate.minPoints, question)
+        ? libraryPointsLow(gate.balance, gate.minPoints, question)
+        : null;
+    if (!row || row.status === "exempt") return { securityLock: null, readQuota: null, pointsLock, pointsLow };
     if (row.status === "locked") {
       return {
         securityLock: {
@@ -69,6 +92,7 @@ async function callerReadState() {
         },
         readQuota: null,
         pointsLock,
+        pointsLow,
       };
     }
     const warnAt = row.warnAt ?? LIBRARY_READ_QUOTA.warnDailyDocs;
@@ -88,9 +112,10 @@ async function callerReadState() {
         weekResetsAt: row.weekResetsAt ?? null,
       },
       pointsLock,
+      pointsLow,
     };
   } catch {
-    return { securityLock: null, readQuota: null, pointsLock: null };
+    return { securityLock: null, readQuota: null, pointsLock: null, pointsLow: null };
   }
 }
 
@@ -130,6 +155,8 @@ export async function GET() {
       accountLock: accountLocked ? { message: LIBRARY_ACCOUNT_LOCKED_AR } : null,
       /** Register 14 item 48: this subscriber's balance is below the library minimum, or null. */
       pointsLock: accountLocked ? null : readState.pointsLock,
+      /** 06 ج6 (l12): one library-assistant question away from the lock, or null. */
+      pointsLow: accountLocked ? null : readState.pointsLow,
     },
     // Per caller now (the lock and the quota): never shared by a cache.
     { headers: { "Cache-Control": "private, no-store, must-revalidate" } },

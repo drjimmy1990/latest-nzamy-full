@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/access-control";
 import { logAdminAction } from "@/lib/auth/adminAudit";
 import { createServiceClient } from "@/lib/supabase/server";
 import { isMissingColumnError } from "@/lib/library/optionalColumn";
+import { LIBRARY_INVITES_CLOSED, LIBRARY_INVITES_CLOSED_STATUS, libraryInvitesClosedBody } from "@/lib/library/libraryInvitesClosed";
 import {
   generateInvitationCode,
   isValidInvitationCodeFormat,
@@ -75,6 +76,10 @@ const MAX_GENERATE_ATTEMPTS = 5;
 export async function POST(request: NextRequest) {
   const gate = await requireStaff("entitlements.grant");
   if (!gate.ok) return gate.response;
+  // Owner ٩٣ (batch l12): no new library invitation code. GET still lists the old ones.
+  if (LIBRARY_INVITES_CLOSED) {
+    return NextResponse.json(libraryInvitesClosedBody(), { status: LIBRARY_INVITES_CLOSED_STATUS });
+  }
 
   let body: Record<string, unknown>;
   try {

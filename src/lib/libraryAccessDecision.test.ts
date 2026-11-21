@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
-import { fullLibraryAccess } from "./libraryAccessDecision.ts";
+import { fullLibraryAccess, tierAtLeastPro } from "./libraryAccessDecision.ts";
 
 const accessControlSource = readFileSync(new URL("./access-control.ts", import.meta.url), "utf8");
 const decisionSource = readFileSync(new URL("./libraryAccessDecision.ts", import.meta.url), "utf8");
@@ -42,44 +42,34 @@ test("the ranking read here is access-control.ts's, and pro sits above ai", () =
 });
 
 // ── 1. the rule ─────────────────────────────────────────────────────────────
+// Owner ٨٩ / ٩٣ (20 Nov 2026, batch l12): a library grant or an admin, never a tier.
 
 test("a free user with an active library grant has the full library", () => {
-  assert.equal(fullLibraryAccess({ tier: "free", isAdmin: false, hasLibraryGrant: true }, RANKS), true);
+  assert.equal(fullLibraryAccess({ isAdmin: false, hasLibraryGrant: true }), true);
 });
 
-test("a platform admin on the free tier has the full library", () => {
-  assert.equal(fullLibraryAccess({ tier: "free", isAdmin: true, hasLibraryGrant: false }, RANKS), true);
+test("a platform admin has the full library", () => {
+  assert.equal(fullLibraryAccess({ isAdmin: true, hasLibraryGrant: false }), true);
 });
 
-test("pro and every tier above it have the full library", () => {
-  for (const tier of ["pro", "max", "corp", "enterprise"]) {
-    assert.equal(fullLibraryAccess({ tier, ...none }, RANKS), true, tier);
-  }
-});
-
-test("ai and shield without a grant do not; free with nothing does not", () => {
-  assert.equal(fullLibraryAccess({ tier: "ai", ...none }, RANKS), false);
-  assert.equal(fullLibraryAccess({ tier: "shield", ...none }, RANKS), false);
-  assert.equal(fullLibraryAccess({ tier: "free", ...none }, RANKS), false);
-});
-
-test("an unknown tier ranks -1, never full — inherited object keys included", () => {
-  for (const tier of ["gold", "", "constructor", "__proto__", "toString", "PRO"]) {
-    assert.equal(fullLibraryAccess({ tier, ...none }, RANKS), false, JSON.stringify(tier));
-  }
-  // A grant or admin still opens it: those do not depend on the tier.
-  assert.equal(fullLibraryAccess({ tier: "gold", isAdmin: false, hasLibraryGrant: true }, RANKS), true);
-  assert.equal(fullLibraryAccess({ tier: "gold", isAdmin: true, hasLibraryGrant: false }, RANKS), true);
+test("owner ٨٩ (l12): no tier opens the library — Pro, the consultant and the firm plans included", () => {
+  assert.equal(fullLibraryAccess(none), false);
+  // The rule takes no tier and no ranking any more.
+  assert.equal(fullLibraryAccess.length, 1);
+  assert.doesNotMatch(decisionSource, /export function fullLibraryAccess\([^)]*tier/);
 });
 
 test("only a literal true counts as admin or grant", () => {
-  const loose = { tier: "free", isAdmin: "yes", hasLibraryGrant: 1 } as unknown as Parameters<typeof fullLibraryAccess>[0];
-  assert.equal(fullLibraryAccess(loose, RANKS), false);
+  const loose = { isAdmin: "yes", hasLibraryGrant: 1 } as unknown as Parameters<typeof fullLibraryAccess>[0];
+  assert.equal(fullLibraryAccess(loose), false);
 });
 
-test("a ranking without pro opens nothing by tier", () => {
-  assert.equal(fullLibraryAccess({ tier: "max", ...none }, { free: 0, max: 4 }), false);
-  assert.equal(fullLibraryAccess({ tier: "max", isAdmin: false, hasLibraryGrant: true }, { free: 0, max: 4 }), true);
+test("tierAtLeastPro (kept for the free-plan approval rule): pro and above; unknown tiers and a ranking without pro never", () => {
+  for (const tier of ["pro", "max", "corp", "enterprise"]) assert.equal(tierAtLeastPro(tier, RANKS), true, tier);
+  for (const tier of ["ai", "shield", "free", "gold", "", "constructor", "__proto__", "PRO", 3]) {
+    assert.equal(tierAtLeastPro(tier, RANKS), false, JSON.stringify(tier));
+  }
+  assert.equal(tierAtLeastPro("max", { free: 0, max: 4 }), false);
 });
 
 test("the rule module stays pure: no alias imports and no TIER_RANK copy", () => {
@@ -117,8 +107,10 @@ test("hasFullLibraryAccess: tier, admin and grants read together, then the one r
   assert.match(accessControlSource, /if \(!usableMemo\(memo, userId\)\) return libraryFullAccessState\(userId\);/);
   const state = fnSource("libraryFullAccessState");
   assert.match(state, /if \(!userId\) return NO_FULL_LIBRARY;/);
-  assert.match(state, /await Promise\.all\(\[\s*knownTier !== undefined \? Promise\.resolve\(knownTier\) : getUserTier\(userId\),\s*isPlatformAdmin\(userId\),\s*activeLibraryGrantPlanRefs\(userId\),?\s*\]\)/);
-  assert.match(state, /fullLibraryAccess\(\{ tier, isAdmin, hasLibraryGrant: grants\.length > 0 \}, TIER_RANK\)/);
+  assert.match(state, /await Promise\.all\(\[\s*isPlatformAdmin\(userId\),\s*activeLibraryGrantPlanRefs\(userId\),?\s*\]\)/);
+  assert.match(state, /fullLibraryAccess\(\{ isAdmin, hasLibraryGrant: grants\.length > 0 \}\)/);
+  // owner ٨٩ (l12): the tier is not read for the library at all
+  assert.doesNotMatch(state, /getUserTier|TIER_RANK|tierIncludesLibrary/);
   assert.match(state, /libraryPointsGateDecision\(/);
 });
 
@@ -126,20 +118,21 @@ test("checkLibraryAccess and getLibraryAccessForUser decide full access by the s
   const check = fnSource("checkLibraryAccess");
   assert.doesNotMatch(check, /TIER_RANK\.pro/);
   assert.match(check, /if \(await fullLibraryAccessForTier\(userId, currentTier, options\.memo\)\) \{\s*return \{\s*allowed: true,\s*isWhitelisted: false,\s*freeLimit: -1,\s*currentTier,/);
-  assert.match(check, /`المادة مقفلة — تتطلب اشتراك المكتبة القانونية أو الباقة الاحترافية فما فوق`/);
+  assert.match(check, /`المادة مقفلة — تتطلب اشتراك المكتبة القانونية`/);
+  assert.doesNotMatch(check, /الباقة الاحترافية/);
   assert.doesNotMatch(check, /يتطلب اشتراك Pro أو أعلى/);
 
   const forUser = fnSource("getLibraryAccessForUser");
   assert.doesNotMatch(forUser, /TIER_RANK\.pro/);
   assert.match(forUser, /const hasFullAccess = await fullLibraryAccessForTier\(userId, tier, memo\);/);
-  assert.match(accessControlSource, /hasFullAccess: boolean; \/\/ Pro\+ tier, an active library grant, or an admin/);
+  assert.match(accessControlSource, /hasFullAccess: boolean; \/\/ an active library grant, or an admin \(never a tier/);
 
   // The shared step: a guest reads nothing more, a Pro+ tier skips the other reads.
   const shared = accessControlSource.slice(accessControlSource.indexOf("async function fullLibraryAccessForTier("));
   assert.match(shared, /return \(await libraryFullAccessState\(userId, tier\)\)\.hasFullAccess;/);
   assert.match(shared, /if \(usableMemo\(memo, userId\)\) return \(await memoFullState\(userId, memo\)\)\.hasFullAccess;/);
   const state = fnSource("libraryFullAccessState");
-  assert.match(state, /if \(knownTier !== undefined && fullLibraryAccess\(\{ tier: knownTier, isAdmin: false, hasLibraryGrant: false \}, TIER_RANK\)\) \{\s*return FULL_LIBRARY;/);
+  assert.doesNotMatch(state, /knownTier !== undefined && fullLibraryAccess/, "a Pro+ tier no longer short-cuts to the full library");
 });
 
 test("access-control imports the rule and the grant read, not a second ranking", () => {
