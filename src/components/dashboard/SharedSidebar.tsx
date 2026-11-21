@@ -21,6 +21,7 @@ import { useClientGroupMembership } from "@/hooks/useClientGroupMembership";
 import { getSidebarByUserType, getRoleLabel, withoutConsultantBlockedItems } from "@/constants/navigation";
 import { comingSoonToolIds } from "@/constants/navigation.comingSoon";
 import { useLiveTools } from "@/hooks/useLiveTools";
+import { withAdminAiGroup } from "@/lib/ai/adminAiTools";
 import { useLibraryAccountLocked } from "@/lib/library/useLibraryFullAccess";
 import { withoutLibraryItems } from "@/lib/library/accountAccess";
 import { isSupabaseMode } from "@/lib/services/api";
@@ -136,7 +137,10 @@ export default function SharedSidebar() {
   // locked for the SESSION's account (the server's answer, not the menu's
   // type: a lawyer member drawn the firm menu keeps it).
   const libraryLock = useLibraryAccountLocked(isSupabaseMode && !loading && isLoggedIn);
-  const groups = libraryLock.locked ? withoutLibraryItems(roleGroups) : roleGroups;
+  const lockedGroups = libraryLock.locked ? withoutLibraryItems(roleGroups) : roleGroups;
+  // N2 (batch l12): a real admin in a working view gets every AI tool, the drafter
+  // and محترف العقود first, untagged (display only: src/lib/ai/adminAiTools.ts).
+  const groups = withAdminAiGroup(lockedGroups, isRealAdmin, userType);
   
   const showCredits = false; // user requested to remove any mention of credits
 
