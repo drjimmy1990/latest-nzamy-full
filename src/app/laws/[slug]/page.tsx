@@ -53,7 +53,7 @@ import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 import { CitationProvider, type CitationReaderContext } from "./_citation-popover";
 import { articlesByNumber } from "./_cite-status";
-import { RefBox, RefBoxProvider, type RefBoxPageContext } from "./_ref-box";
+import { LawRefsBox, RefBox, RefBoxProvider, prefetchLawLinks, type RefBoxPageContext } from "./_ref-box";
 import { isPageNumberedDocument } from "@/lib/library/pageLocator";
 
 /**
@@ -840,8 +840,15 @@ function LawSystemPageContent() {
     };
   }, [law, allArticles, slug, viewerHasFullAccess, isDark, isRTL, cart, addArticle]);
 
+  // Batch l12 (owner L1): the law's links in ONE request, started beside the
+  // law request (never after it), so the list under each article and the side
+  // box draw without a spinner.
+  useEffect(() => {
+    prefetchLawLinks(decodeURIComponent(apiSlug(slug)));
+  }, [slug]);
+
   // Batch l8-refbox (owner item 6): the links box beside the article, its
-  // «عرض الكل» dialog, its text preview and the phone's bottom sheet.
+  // «عرض الكل» dialog and its text preview (l12: and the list under each article).
   const refBoxContext = useMemo<RefBoxPageContext | null>(() => {
     if (!law || allArticles.length === 0) return null;
     return {
@@ -1791,10 +1798,11 @@ function LawSystemPageContent() {
           {/* LEFT COLUMN: AI Tools and related documents */}
           {!isReadingMode && (
             <aside className={`hidden lg:block lg:col-span-3 sticky top-28 z-30 space-y-3 print:hidden max-h-[calc(100vh-8rem)] overflow-y-auto ${READER_ASIDE_FAB_CLEARANCE}`} style={{ overscrollBehavior: 'auto' }}>
-              {/* Owner item 6 (18 Nov): the links of the article in view, beside it — three
-                 sections, owner-matched link types only (_ref-box.tsx). It replaces the
-                 bar under each article and the «وثائق وأنظمة ذات صلة» card. */}
+              {/* Owner item 6 (18 Nov): the links of the article in view, beside it
+                 (_ref-box.tsx). It replaced the «وثائق وأنظمة ذات صلة» card; since l12
+                 the same links also sit under each article, from one cache. */}
               {viewMode !== "regulation" && <RefBox articleId={activeArticle?.id ?? null} />}
+              {viewMode !== "regulation" && <LawRefsBox />}
               <button
                 onClick={() => setShowCommunity(true)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold transition ${

@@ -10,6 +10,7 @@ import {
   buildOwnerEdgeRows,
   evidenceHasFraction,
   formatReport,
+  ownerSample50,
   normalizeArticleNumber,
   ownerEdgeId,
   parseInventory,
@@ -61,7 +62,7 @@ test("his file shapes: {meta,nodes,edges}, an edge array, JSONL; OUR export is r
   assert.throws(() => readOwnerGraph("﻿" + JSON.stringify({ meta: {}, nodes: [] })), /no edges/);
 });
 
-test("a fixed export: rows keep his edge_id, map cites_article only, report every fix", () => {
+test("a fixed export: rows keep his edge_id, map the merged types, report every fix", () => {
   const f = file([
     cite("00000000000000a1"),
     cite("00000000000000a2", { quality: "ok_regulation_block", resolved_by: "regulation_via_parent_system" }, { regulation_ref: "اللائحة التنفيذية لنظام أ" }),
@@ -71,7 +72,7 @@ test("a fixed export: rows keep his edge_id, map cites_article only, report ever
     { type: "related_to", edge_id: "00000000000000b2", from: { doc: "LAW-00-0001" }, to: { doc: "LAW-00-0002" }, quality: "ok" },
   ]);
   const { rows, rejected, report } = buildOwnerEdgeRows(f);
-  assert.deepEqual(rows.map((r) => r.edge_id), ["00000000000000a1", "00000000000000a2", "00000000000000a3", "00000000000000a4"]);
+  assert.deepEqual(rows.map((r) => r.edge_id), ["00000000000000a1", "00000000000000a2", "00000000000000a3", "00000000000000a4", "00000000000000b1"]);
   assert.deepEqual(rows[0], {
     edge_id: "00000000000000a1", type: "cites_article", from_doc: "COLL-1", from_principle: "5", from_article: null,
     from_regulation_ref: null, to_doc: "LAW-00-0001", to_article: "1", to_regulation_ref: null, to_principle: null,
@@ -82,7 +83,12 @@ test("a fixed export: rows keep his edge_id, map cites_article only, report ever
   assert.equal(rows[2].to_article, "23 مكرر");
   assert.equal(rows[3].quality, "flagged");
   assert.match(rows[3].article_check ?? "", /fractional_article_number/);
-  assert.deepEqual(report.skippedTypes, { amended_by: 1, related_to: 1 });
+  assert.deepEqual(report.skippedTypes, { related_to: 1 }, "batch l12 (file 02 #43): amended_by is merged");
+  assert.deepEqual(
+    { type: rows[4].type, from_doc: rows[4].from_doc, from_article: rows[4].from_article, to_doc: rows[4].to_doc, to_article: rows[4].to_article },
+    { type: "amended_by", from_doc: "LAW-00-0001", from_article: "3", to_doc: "LAW-30-0001", to_article: null },
+    "amended_by: the article is on the from side (the amended law)",
+  );
   assert.equal(rejected.length, 0);
   assert.deepEqual(report.fixes.fix1_from_principle, { present: 4, missing: 0 });
   assert.deepEqual(report.fixes.fix4_fraction_flagged, { fractions: 1, flagged_by_owner: 1, not_flagged: 0, cut_in_evidence: 0 });
@@ -170,4 +176,54 @@ test("evidence is flattened and cut to 300 characters; the cut is counted", () =
   const { rows, report } = buildOwnerEdgeRows(file([cite("00000000000000a1", { evidence: { text: long } })]));
   assert.equal(rows[0].evidence?.length, 300);
   assert.equal(report.evidenceCut, 1);
+});
+
+// ── Batch l12 (owner Q132, file 02 #43) ──────────────────────────────────────
+
+test("#43: his amendment, repeal and replacement links are merged; scheduled repeal and related_to stay out", () => {
+  const { rows, report } = buildOwnerEdgeRows(
+    file([
+      { type: "amended_by", edge_id: "00000000000000d1", from: { doc: "LAW-00-0001", article: "14" }, to: { doc: "LAW-00-1113" }, quality: "ok", evidence: { decree: "المرسوم الملكي رقم (م/113)", date: "1443/11/9ه", type: "تعديل" } },
+      { type: "repealed_by", edge_id: "00000000000000d2", from: { doc: "LAW-00-1119" }, to: { doc: "LAW-00-1094" }, quality: "ok", evidence: { field: "repealed_by", value: "LAW-00-1094" } },
+      { type: "superseded_by", edge_id: "00000000000000d3", from: { doc: "LAW-96-6664" }, to: { doc: "LAW-00-0114" }, quality: "ok" },
+      { type: "replaces", edge_id: "00000000000000d4", from: { doc: "LAW-07-12303" }, to: { doc: "LAW-07-12251" }, quality: "ok" },
+      { type: "amends", edge_id: "00000000000000d5", from: { doc: "LAW-96-5307" }, to: { doc: "LAW-96-5460" }, quality: "title_match_unverified" },
+      { type: "scheduled_repeal_by", edge_id: "00000000000000d6", from: { doc: "LAW-00-1" }, to: { doc: "LAW-00-2" }, quality: "ok" },
+      { type: "related_to", edge_id: "00000000000000d7", from: { doc: "LAW-00-1" }, to: { doc: "LAW-00-2" }, quality: "ok" },
+    ]),
+  );
+  assert.deepEqual(rows.map((r) => r.type), ["amended_by", "repealed_by", "superseded_by", "replaces", "amends"]);
+  assert.deepEqual(report.skippedTypes, { scheduled_repeal_by: 1, related_to: 1 });
+  assert.equal(rows[0].from_article, "14");
+  assert.equal(rows[0].evidence, "المرسوم الملكي رقم (م/113) 1443/11/9ه", "his {decree, date} evidence becomes text");
+  assert.equal(rows[1].evidence, "LAW-00-1094", "his {field, value} evidence: the value");
+  assert.equal(rows[1].to_article, null);
+  assert.equal(rows[4].quality, "flagged", "his weaker quality is still recorded (staff only)");
+  assert.equal(report.documentLevel, 1, "amends without an article: document level");
+  assert.deepEqual(report.fixes.fix1_from_principle, { present: 0, missing: 0 }, "fix 1 concerns principle → article links only");
+  assert.deepEqual(report.refusals, [], "a file of amendment links alone is not refused for fix 1");
+});
+
+test("Q132: a principle → article link with no article is kept (it opens the document), not rejected", () => {
+  const { rows, rejected, report } = buildOwnerEdgeRows(file([cite("00000000000000a1", {}, { article: undefined })]));
+  assert.equal(rejected.length, 0);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].to_article, null);
+  assert.equal(report.documentLevel, 1);
+  assert.match(formatReport(report, "a".repeat(64), rows.length), /document-level \(no article to pin; the link opens the target document\): 1/);
+  assert.match(formatReport(report, "a".repeat(64), rows.length), /ordinary links since 20261202_30/);
+});
+
+test("#43: the 50-link sample of his links — half flagged, the same for the same file, a column to tick", () => {
+  const edges = Array.from({ length: 120 }, (_, i) =>
+    cite(i.toString(16).padStart(16, "0"), i % 3 === 0 ? { quality: "flagged" } : {}, { article: String((i % 40) + 1) }),
+  );
+  const { rows } = buildOwnerEdgeRows(file(edges));
+  const tsv = ownerSample50(rows);
+  const lines = tsv.trim().split("\n");
+  assert.equal(lines.length, 51);
+  assert.match(lines[0], /\tصحيح؟$/);
+  assert.equal(lines.slice(1).filter((l) => l.split("\t")[8] === "flagged").length, 25);
+  assert.equal(ownerSample50([...rows].reverse()), tsv, "order of the file does not matter");
+  assert.equal(ownerSample50([]).trim().split("\n").length, 1);
 });
