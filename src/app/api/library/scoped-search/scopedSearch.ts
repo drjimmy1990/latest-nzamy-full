@@ -51,7 +51,16 @@ export interface ScopedRequest {
   query: string;
   page: number;
   limit: number;
+  /**
+   * File 03 L8 (batch l12): the volumes the reader picked, as ids of the
+   * scope's own volumes. Absent = every volume (the default). Ids the scope
+   * does not have are ignored on the server (pickScopeVolumes).
+   */
+  volumes?: string[];
 }
+
+/** At most this many picked volumes (the largest series has a few dozen). */
+export const SCOPED_VOLUMES_MAX = 200;
 
 export type ScopedRequestResult =
   | { ok: true; request: ScopedRequest }
@@ -103,7 +112,35 @@ export function validateScopedRequest(value: unknown): ScopedRequestResult {
       error: `لا يمكن عرض ما بعد أول ${SCOPED_MAX_DEPTH} نتيجة. أضف كلمات أدق لتضييق البحث.`,
     };
   }
-  return { ok: true, request: { kind, id, query, page, limit } };
+  let volumes: string[] | undefined;
+  if (body.volumes !== undefined && body.volumes !== null) {
+    if (!Array.isArray(body.volumes) || body.volumes.length > SCOPED_VOLUMES_MAX) {
+      return { ok: false, code: "invalid_volumes", error: "قائمة المجلدات غير صالحة." };
+    }
+    const picked: string[] = [];
+    for (const v of body.volumes) {
+      if (typeof v !== "string") return { ok: false, code: "invalid_volumes", error: "قائمة المجلدات غير صالحة." };
+      const vid = v.normalize("NFC").trim();
+      if (!vid || vid.length > SCOPE_ID_MAX || CONTROL.test(vid)) {
+        return { ok: false, code: "invalid_volumes", error: "قائمة المجلدات غير صالحة." };
+      }
+      if (!picked.includes(vid)) picked.push(vid);
+    }
+    if (picked.length > 0) volumes = picked;
+  }
+  return { ok: true, request: { kind, id, query, page, limit, ...(volumes ? { volumes } : {}) } };
+}
+
+/**
+ * File 03 L8 (batch l12): the volume ids to search — the scope's volumes the
+ * reader picked, in the scope's order. Nothing picked, or only ids the scope
+ * does not have → every volume (the default «كل المجلدات»), never zero.
+ */
+export function pickScopeVolumes(scopeVolumeIds: readonly string[], picked: readonly string[] | undefined): string[] {
+  if (!picked || picked.length === 0) return [...scopeVolumeIds];
+  const want = new Set(picked);
+  const hit = scopeVolumeIds.filter((id) => want.has(id));
+  return hit.length > 0 ? hit : [...scopeVolumeIds];
 }
 
 /** One volume of the scope, in reading order. */
