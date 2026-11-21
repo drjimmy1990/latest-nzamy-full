@@ -60,11 +60,13 @@ export const LIBRARY_CREDIT_POINTS = 5;
  */
 export const LIBRARY_TOPUP_HREF = "/pricing";
 /**
- * O16 (c), batch l11-misc: the 50-point pack's own checkout (sold to every
- * account type, register 14 item 7). `billing=once` is required —
+ * O16 (c), batch l11-misc: a top-up pack's own checkout. Since l12 (owner
+ * Q87) the 50-point pack is retired (checkout answers 410), so the link is the
+ * smallest pack every library buyer may buy: 500 (library plans are sold to
+ * professional accounts only). `billing=once` is required —
  * parseCheckoutQuery refuses an item without a billing.
  */
-export const LIBRARY_TOPUP_CHECKOUT_HREF = "/checkout?item=topup-50&billing=once";
+export const LIBRARY_TOPUP_CHECKOUT_HREF = "/checkout?item=topup-500&billing=once";
 
 /** The top-up link the lock banner shows: straight to checkout while payment is on, else the price page. */
 export function libraryTopupHref(gatewayAllowsCheckout: boolean): string {
