@@ -5318,7 +5318,10 @@ begin
    where service_id = 'contract-draft' and audience = 'individual';
   if found and (r.base_price is distinct from 0
                 or coalesce(r.metadata ? 'tag', false)
-                or coalesce(r.metadata->>'priceNote', '') not in ('أو ٥٠٠ نقطة للعقد', '٥٠٠ نقطة للعقد')) then
+                or (coalesce(r.metadata->>'priceNote', '') not in ('أو ٥٠٠ نقطة للعقد', '٥٠٠ نقطة للعقد')
+                    -- l12 (Q123a): the card now leads to the simple drafter, priced by an admin setting
+                    and not (coalesce(r.metadata->>'priceNote', '') = 'بالنقاط، ويظهر سعره قبل كتابة العقد'
+                             and coalesce(r.metadata->>'route', '') = '/ai/simple-contract'))) then
     raise exception '_verify: 20261102_10 — contract-draft shows % with the note «%» and the tag «%», not 0 with no tag: run 20261102_10, then 20261102_11 (not run yet, or the 20260518 seed was re-run after it)',
       r.base_price, coalesce(r.metadata->>'priceNote', 'null'), coalesce(r.metadata->>'tag', 'none');
   end if;
@@ -5333,7 +5336,10 @@ begin
   select price_mode, metadata into r from public.admin_pricing_catalog
    where service_id = 'contract-draft' and audience = 'individual';
   if found and (r.price_mode is distinct from 'points'
-                or r.metadata->>'priceNote' is distinct from '٥٠٠ نقطة للعقد'
+                or (r.metadata->>'priceNote' is distinct from '٥٠٠ نقطة للعقد'
+                    -- l12 (Q123a): simple drafter card, price from the admin setting simple_contract_price
+                    and not (coalesce(r.metadata->>'priceNote', '') = 'بالنقاط، ويظهر سعره قبل كتابة العقد'
+                             and coalesce(r.metadata->>'route', '') = '/ai/simple-contract'))
                 or coalesce(r.metadata ? 'includedByPlan', false)) then
     raise exception '_verify: 20261102_11 — contract-draft is price_mode % with the note «%» and includedByPlan %, not points / «٥٠٠ نقطة للعقد»: the card still says «مشمول في الباقة» or «أو …». Run 20261102_11 (AFTER the deploy and after 20261102_10; again after any re-run of 20261102_10 or the 20260518 seed)',
       r.price_mode, coalesce(r.metadata->>'priceNote', 'null'), coalesce(r.metadata->>'includedByPlan', 'none');
