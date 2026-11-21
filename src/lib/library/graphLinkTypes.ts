@@ -27,17 +27,20 @@
  *     EXEMPTS_FROM        استثناء                         → legislation
  *     SUBJECT_TO          مع مراعاة                       → legislation
  *     PENALIZES           عقوبة المخالفة                  → legislation
- *   EXPLORER ONLY: SIMILAR_TO — computed from vectors, not a legal link. Shown
- *     to staff, never presented to a reader as a legal relation (an open owner
- *     question in the batch l9 report).
+ *   READER, OWN SECTION (batch l12, owner Q133 / register 14 item 17):
+ *     SIMILAR_TO — computed from vectors, not a legal link. The reader sees it
+ *     only under its own heading «مواد متقاربة في المعنى (ربط آلي)», never
+ *     among the legal relations, and only while the admin switch
+ *     `library_similar_links` is on (featureFlags.ts; the routes filter it).
  *   OUTLINE / MEANING (explorer only): an article inside its chapter (PART_OF),
  *     the next article (NEXT_ARTICLE), concepts and defined terms (HAS_CONCEPT,
  *     DEFINES_TERM, DECONSTRUCTS_CONCEPT, ESTABLISHES_RULE). The explorer needs
  *     them to walk a law; they are not links between two documents.
  *
  * Sections of the reader's box (owner item 6): التشريعات (green), المبادئ
- * والأحكام القضائية (blue), الآراء الفقهية (amber). No type is fiqh today, so
- * that section stays empty — and an empty section is hidden.
+ * والأحكام القضائية (blue), الآراء الفقهية (amber), and since l12 the
+ * automatic «مواد متقاربة في المعنى (ربط آلي)» (violet, Q133). No type is fiqh
+ * today, so that section stays empty — and an empty section is hidden.
  *
  * Pure (no imports): the reader route, the explorer route, the explorer's
  * client components and `node --test` all load it.
@@ -65,7 +68,7 @@ export const OWNER_GRAPH_TYPES = {
 } as const satisfies Record<string, { category: string; section: LinkSection }>;
 export type OwnerGraphType = keyof typeof OWNER_GRAPH_TYPES;
 
-export const LINK_SECTIONS = ["legislation", "judicial", "fiqh"] as const;
+export const LINK_SECTIONS = ["legislation", "judicial", "fiqh", "similar"] as const;
 export type LinkSection = (typeof LINK_SECTIONS)[number];
 
 /**
@@ -93,14 +96,24 @@ export const READER_LINK_SECTIONS = {
   EXEMPTS_FROM: "legislation",
   SUBJECT_TO: "legislation",
   PENALIZES: "legislation",
+  // Q133 (batch l12): computed, never a legal relation — its own section, behind library_similar_links.
+  SIMILAR_TO: "similar",
 } as const satisfies Record<string, LinkSection>;
 
-/** The link types a reader sees (the box) — every legal link between two documents. */
+/** The link types a reader may see (the box): every legal link between two documents, plus SIMILAR_TO in its own section. */
 export const SHOWN_LINK_TYPES = Object.keys(READER_LINK_SECTIONS) as Array<keyof typeof READER_LINK_SECTIONS>;
 export type ShownLinkType = (typeof SHOWN_LINK_TYPES)[number];
 
-/** Computed links (not legal ones): the staff explorer only. */
-export const EXPLORER_ONLY_LINK_TYPES = ["SIMILAR_TO"] as const;
+/** The automatic meaning links (Q133): shown only while the admin switch is on. */
+export const SIMILAR_LINK_TYPES: readonly ShownLinkType[] = ["SIMILAR_TO"];
+
+/** The reader types for the switch's state: without SIMILAR_TO when it is off. */
+export function readerLinkTypes(similarOn: boolean): ShownLinkType[] {
+  return SHOWN_LINK_TYPES.filter((t) => similarOn || !SIMILAR_LINK_TYPES.includes(t));
+}
+
+/** Computed links the reader never sees: none since Q133 (SIMILAR_TO has its own reader section). */
+export const EXPLORER_ONLY_LINK_TYPES = [] as readonly string[];
 
 /** Outline and meaning links (not between two documents): the staff explorer only. */
 export const OUTLINE_LINK_TYPES = [
@@ -152,6 +165,8 @@ export const SHOWN_LINK_LABELS: Readonly<Record<ShownLinkType, { out: string; in
   EXEMPTS_FROM: { out: "تستثني منها هذه المادة", in: "استثناء من هذه المادة" },
   SUBJECT_TO: { out: "تُطبَّق هذه المادة مع مراعاتها", in: "تُطبَّق مع مراعاة هذه المادة" },
   PENALIZES: { out: "تعاقب هذه المادة على مخالفتها", in: "عقوبة مخالفة هذه المادة" },
+  // A computed link has no direction worth naming: both read the same, and say it is automatic.
+  SIMILAR_TO: { out: "متقاربة في المعنى (ربط آلي)", in: "متقاربة في المعنى (ربط آلي)" },
 };
 
 export function linkLabel(t: unknown, direction: "out" | "in"): string {
@@ -174,4 +189,23 @@ export const READER_QUERY_GROUPS: ReadonlyArray<{ section: LinkSection; types: r
   { section: "legislation", types: ["AMENDS_ARTICLE", "SUPERSEDES_LAW", "PARENT_LAW", "IMPLEMENTED_BY", "REPLACED_BY", "EXEMPTS_FROM", "SUBJECT_TO", "PENALIZES"] },
   { section: "legislation", types: ["CITES_ARTICLE"] },
   { section: "judicial", types: ["INTERPRETS_ARTICLE"] },
+  { section: "similar", types: ["SIMILAR_TO"] },
 ];
+
+/**
+ * «رابط آلي» (batch l12, owner library-Q4 / N12, RAW[56]): a «إحالة» the
+ * system extracted from the text and nobody reviewed — origin auto_watchdog,
+ * not read from the owner's own files (metadata.source owner_links) and not
+ * one of his curated links (owner_curated). His links and the 308 carry no
+ * tag (F01#132). The route shows the tag only while the admin switch
+ * `library_auto_link_tag` is on.
+ */
+export const AUTO_TAGGED_LINK_TYPES: readonly ShownLinkType[] = ["CITES_ARTICLE"];
+export function isUnreviewedAutoLink(edgeType: unknown, origin: unknown, metadataSource: unknown): boolean {
+  return (
+    typeof edgeType === "string" &&
+    (AUTO_TAGGED_LINK_TYPES as readonly string[]).includes(edgeType) &&
+    origin === "auto_watchdog" &&
+    metadataSource !== "owner_links"
+  );
+}

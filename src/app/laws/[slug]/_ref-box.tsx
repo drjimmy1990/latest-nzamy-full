@@ -1,67 +1,83 @@
 "use client";
 
 /**
- * _ref-box.tsx — «الإحالات المرتبطة» beside the article (owner message 18 Nov,
- * item 6; batch l8-refbox). Replaces the folded bar under each article and the
- * «وثائق وأنظمة ذات صلة» card.
+ * _ref-box.tsx — «الإحالات المرتبطة» of the law reader.
  *
- *   1. A fixed side box (the reader's left column, sticky) for the article in
- *      view: three sections with a visual divider — التشريعات (green),
- *      المبادئ والأحكام القضائية (blue), الآراء الفقهية (amber) — each with an
- *      icon, a count and a rule, at most two items and «عرض الكل (n)».
- *   2. «عرض الكل» opens a dialog with one tab per section and coloured bars.
- *   3. Any item (box, dialog, sheet) opens a TEXT PREVIEW first: the text
- *      alone, «نسخ», «إضافة للمسودة», «انتقل إلى» (the exact place), «فتح …
- *      كاملاً». The reader's focus stays where it is.
- *   4. Principles, rulings and fiqh: a non-subscriber sees titles and a
- *      subscribe button; the text never reaches the browser (the preview route
- *      decides, server-side).
- *   5. Phone (and reading mode): the same sections in a bottom sheet, opened
- *      from the article's own «الإحالات» button.
- *   6. A link whose anchor is gone goes to its law or collection, never a 404,
- *      and is never presented as a confirmed article (file 16 §9.7): it is
- *      named by its document, with no status and «غير مؤكَّدة».
- *   7. File 16 §8 / register 14 item 17: an empty section is hidden — never
- *      «لا توجد إحالات» — and the side box is hidden when the article has no
- *      link at all (or is not in the graph yet).
+ * History: batch l8-refbox (owner message 18 Nov, item 6) moved the links from
+ * a folded bar under each article into a side box. Batch l12 (owner file 03
+ * L1, lib02 / lib04, 20 Nov) brings them back UNDER EVERY ARTICLE, and keeps
+ * the side box, both drawn from ONE cache:
  *
- * Data: GET /api/library/laws/[slug]/citations?article=<id> — every legal link
- * type, «إحالة» included (register 14 item 17). Fetched for the article in
- * view after it settles (no request per scrolled article), cached per page.
+ *   1. One request for the whole law (GET …/citations?bulk=1, started by the
+ *      page beside the law request — prefetchLawLinks), not one per article:
+ *      per article its link groups with their true totals and up to three
+ *      items each. The list under each article and the side box then draw
+ *      with no spinner.
+ *      Fallback (the bulk function not installed yet, or it failed): the
+ *      article's own list (?article=) once it comes near the screen, three
+ *      requests at a time at most.
+ *   2. Under each article (ArticleRefsInline): a counter chip that folds and
+ *      unfolds small cards grouped by the relation's words (إحالة، لائحة،
+ *      مقابل ساري، استثناء…), three per group, then «عرض الكل (n)». Nothing
+ *      at all when the article has no link.
+ *   3. The side box (RefBox, desktop): the same sections and groups for the
+ *      article in view.
+ *   4. «عرض الكل» opens a dialog with one tab per section (it asks for the
+ *      article's full list when the cache holds three per group only).
+ *   5. Any item opens a TEXT PREVIEW first: the text alone, «نسخ», «إضافة
+ *      للمسودة», «انتقل إلى», «فتح … كاملاً». Principles, rulings and fiqh: a
+ *      non-subscriber sees titles; the text never reaches the browser (the
+ *      preview route decides, server-side).
+ *   6. Owner Q132 (20 Nov, 22:16 «شغّلهم من غير وسم»): a link whose article
+ *      or principle could not be pinned is an ordinary link to its DOCUMENT —
+ *      named by the document, no status, no "unconfirmed" tag (the l8 one is
+ *      gone); it opens the document directly.
+ *   7. Owner Q133: «مواد متقاربة في المعنى (ربط آلي)» is its own section, after
+ *      the legal ones (admin switch library_similar_links).
+ *   8. Owner library-Q4 / N12: an unreviewed automatic «إحالة» carries a small
+ *      «رابط آلي» tag (admin switch library_auto_link_tag; his links and the
+ *      308 never do).
+ *   9. File 16 §8: an empty section is hidden — never «لا توجد إحالات».
  */
 
-import { createContext, useContext, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
-import { ArrowSquareOut, BookBookmark, Check, Copy, Crosshair, Gavel, LinkSimple, Lock, Plus, Scroll, X } from "@phosphor-icons/react";
+import {
+  ArrowSquareOut,
+  BookBookmark,
+  BookmarkSimple,
+  CaretDown,
+  Check,
+  Copy,
+  Crosshair,
+  Gavel,
+  LinkSimple,
+  Lock,
+  Scroll,
+  Sparkle,
+  X,
+} from "@phosphor-icons/react";
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import { apiSlug } from "@/utils/apiSlug";
+import {
+  expandLawLinks,
+  groupsOfRefs,
+  type ArticleRefsOut,
+  type LawLinks,
+  type RefGroupOut,
+  type RefItemOut,
+} from "@/app/api/library/laws/[slug]/citations/_shape";
 import { buildCitation } from "./_citation";
 import { lawStatusPill, statusPill } from "./_cite-status";
 import { scrollToReaderAnchor } from "./_reader-anchors";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
-type Section = "legislation" | "judicial" | "fiqh";
-const SECTIONS: readonly Section[] = ["legislation", "judicial", "fiqh"];
+type Section = "legislation" | "judicial" | "fiqh" | "similar";
+const SECTIONS: readonly Section[] = ["legislation", "judicial", "fiqh", "similar"];
 
-export interface RefItem {
-  key: string;
-  kind: "article" | "law" | "decree" | "principle" | "feqh";
-  title: string;
-  status: string | null;
-  relation: string;
-  section: Section;
-  docKind: "law" | "collection" | "order" | "book";
-  docId: string;
-  anchorId: string | null;
-  anchorMissing: boolean;
-  href: string;
-  docHref: string;
-}
-type Refs =
-  | { available: false }
-  | { available: true; found: boolean; sections: Record<Section, { total: number; items: RefItem[] }> };
+export type RefItem = RefItemOut;
+type Refs = { available: false } | ({ available: true } & ArticleRefsOut);
 
 interface Preview {
   found: boolean;
@@ -80,23 +96,118 @@ interface Preview {
   docId?: string;
 }
 
+// ── The whole law: one request (batch l12, L1) ──
+
+type BulkState = { status: "loading" } | { status: "done"; data: LawLinks } | { status: "unavailable" | "failed" };
+
+/** Per page view and law: the bulk answer, and whoever waits for it. */
+const bulkStore = new Map<string, BulkState>();
+const bulkListeners = new Set<() => void>();
+function emitBulk() {
+  for (const l of bulkListeners) l();
+}
+function subscribeBulk(l: () => void) {
+  bulkListeners.add(l);
+  return () => {
+    bulkListeners.delete(l);
+  };
+}
+
+/**
+ * Starts the law's links request once per page view. The page calls it beside
+ * its own law request (it never waits for the law), the provider again with the
+ * law's canonical slug.
+ */
+export function prefetchLawLinks(lawSlug: string): void {
+  if (!lawSlug || bulkStore.has(lawSlug)) return;
+  bulkStore.set(lawSlug, { status: "loading" });
+  emitBulk();
+  fetch(`/api/library/laws/${apiSlug(lawSlug)}/citations?bulk=1`)
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((d: { available?: boolean } & Partial<LawLinks>) => {
+      bulkStore.set(
+        lawSlug,
+        d?.available === true && d.items && d.articles
+          ? { status: "done", data: { found: d.found === true, perType: d.perType ?? 3, items: d.items, articles: d.articles } }
+          : { status: "unavailable" },
+      );
+      emitBulk();
+    })
+    .catch(() => {
+      bulkStore.set(lawSlug, { status: "failed" });
+      emitBulk();
+    });
+}
+
+function useBulk(lawSlug: string): BulkState | undefined {
+  return useSyncExternalStore(
+    subscribeBulk,
+    () => bulkStore.get(lawSlug),
+    () => undefined,
+  );
+}
+
+// ── One article's full list (?article=): the fallback, and «عرض الكل» ──
+
 /** Per page view: an article seen twice is fetched once. */
 const refsCache = new Map<string, Refs>();
+/** The fallback asks at most three articles at a time. */
+const MAX_PARALLEL = 3;
+let running = 0;
+const queue: Array<() => void> = [];
+function pump() {
+  while (running < MAX_PARALLEL && queue.length > 0) {
+    running++;
+    queue.shift()!();
+  }
+}
+function fetchArticleRefs(lawSlug: string, articleId: string): Promise<Refs> {
+  return new Promise<Refs>((resolve, reject) => {
+    queue.push(() => {
+      fetch(`/api/library/laws/${apiSlug(lawSlug)}/citations?article=${encodeURIComponent(articleId)}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((d: Refs) => resolve(d))
+        .catch(reject)
+        .finally(() => {
+          running--;
+          pump();
+        });
+    });
+    pump();
+  });
+}
 
 type LoadState = { status: "idle" | "loading" | "done" | "failed"; data?: Refs };
 
-/** The links of one article; `delayMs` lets the side box wait for the scroll to settle. */
-export function useArticleRefs(lawSlug: string, articleId: string | null, delayMs = 0): LoadState {
+/**
+ * The links of one article. From the law's bulk answer when it is there (no
+ * request of its own); else, or when `full` asks for more than three per
+ * group, from ?article= — once `enabled` (the inline list waits until the
+ * article comes near the screen) and after `delayMs` (the side box waits for
+ * the scroll to settle).
+ */
+export function useArticleRefs(
+  lawSlug: string,
+  articleId: string | null,
+  { delayMs = 0, full = false, enabled = true }: { delayMs?: number; full?: boolean; enabled?: boolean } = {},
+): LoadState {
+  const bulk = useBulk(lawSlug);
+  const fromBulk = useMemo<Refs | null>(() => {
+    if (!articleId || bulk?.status !== "done") return null;
+    return { available: true, ...expandLawLinks(bulk.data, articleId) };
+  }, [bulk, articleId]);
+  // The bulk answer is enough, unless «عرض الكل» needs more than it holds.
+  const bulkEnough = !!fromBulk && (!full || (fromBulk.available && fromBulk.groups?.every((g) => g.keys.length >= g.total)));
+  const bulkPending = !bulk || bulk.status === "loading";
   const key = articleId ? `${lawSlug}|${articleId}` : "";
-  // Only the outcome of the last request is state; idle, cached and loading are read off the key.
+  const wantFetch = !!key && enabled && !bulkEnough && (full || !bulkPending);
   const [settled, setSettled] = useState<{ key: string; failed: boolean }>({ key: "", failed: false });
   useEffect(() => {
-    if (!key || !articleId || refsCache.has(key)) return;
+    if (!wantFetch || !articleId || refsCache.has(key)) return;
     let live = true;
     const t = setTimeout(() => {
-      fetch(`/api/library/laws/${apiSlug(lawSlug)}/citations?article=${encodeURIComponent(articleId)}`)
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then((data: Refs) => {
+      fetchArticleRefs(lawSlug, articleId)
+        .then((data) => {
           refsCache.set(key, data);
           if (live) setSettled({ key, failed: false });
         })
@@ -106,10 +217,14 @@ export function useArticleRefs(lawSlug: string, articleId: string | null, delayM
       live = false;
       clearTimeout(t);
     };
-  }, [key, lawSlug, articleId, delayMs]);
+  }, [wantFetch, key, lawSlug, articleId, delayMs]);
   if (!key) return { status: "idle" };
+  if (bulkEnough && fromBulk) return { status: "done", data: fromBulk };
   const cached = refsCache.get(key);
   if (cached) return { status: "done", data: cached };
+  // «عرض الكل» shows the three per group at once while the rest comes.
+  if (fromBulk) return { status: "done", data: fromBulk };
+  if (!wantFetch) return { status: bulkPending ? "loading" : "idle" };
   return { status: settled.key === key && settled.failed ? "failed" : "loading" };
 }
 
@@ -125,10 +240,10 @@ export interface RefBoxPageContext {
   viewerHasFullAccess: boolean | null;
   isDark: boolean;
   isRTL: boolean;
-  /** Reading mode hides the side column: the per-article button then shows on every width. */
+  /** Reading mode hides the side column; the list under each article stays. */
   inlineTrigger: boolean;
   showPaywall: () => void;
-  /** «إضافة للمسودة» for an article of THIS law: the page's own add (same cart entry as its + button). */
+  /** «إضافة للمسودة» for an article of THIS law: the page's own add (same cart entry as its button). */
   addSameLawArticle: (articleId: string) => boolean;
   addEntry: (entry: CartEntry) => void;
   isInCart: (id: string) => boolean;
@@ -137,7 +252,6 @@ export interface RefBoxPageContext {
 }
 
 interface RefBoxContextValue extends RefBoxPageContext {
-  openSheet: (articleId: string) => void;
   openAll: (articleId: string, tab: Section) => void;
   openPreview: (item: RefItem) => void;
 }
@@ -149,15 +263,18 @@ export function useRefBox(): RefBoxContextValue | null {
 }
 
 export function RefBoxProvider({ value, children }: { value: RefBoxPageContext | null; children: ReactNode }) {
-  const [sheet, setSheet] = useState<string | null>(null);
   const [all, setAll] = useState<{ articleId: string; tab: Section } | null>(null);
   const [preview, setPreview] = useState<RefItem | null>(null);
+  const lawSlug = value?.lawSlug ?? "";
+  // The page already asked with the URL's slug; the law's own slug may differ.
+  useEffect(() => {
+    if (lawSlug) prefetchLawLinks(lawSlug);
+  }, [lawSlug]);
   const ctx = useMemo<RefBoxContextValue | null>(
     () =>
       value
         ? {
             ...value,
-            openSheet: (id) => setSheet(id),
             openAll: (articleId, tab) => setAll({ articleId, tab }),
             openPreview: (item) => setPreview(item),
           }
@@ -167,7 +284,6 @@ export function RefBoxProvider({ value, children }: { value: RefBoxPageContext |
   return (
     <RefBoxContext.Provider value={ctx}>
       {children}
-      {ctx && sheet && <RefSheet ctx={ctx} articleId={sheet} onClose={() => setSheet(null)} />}
       {ctx && all && <RefAllDialog ctx={ctx} articleId={all.articleId} initialTab={all.tab} onClose={() => setAll(null)} />}
       {ctx && preview && <RefPreview ctx={ctx} item={preview} onClose={() => setPreview(null)} />}
     </RefBoxContext.Provider>
@@ -198,6 +314,14 @@ const SECTION_META: Record<Section, { title: string; icon: typeof Scroll; bar: s
     text: (d) => (d ? "text-amber-300" : "text-amber-700"),
     chip: (d) => (d ? "bg-amber-500/15 text-amber-300" : "bg-amber-500/10 text-amber-700"),
   },
+  // Owner Q133: its own heading, after the legal sections, named as automatic.
+  similar: {
+    title: "مواد متقاربة في المعنى (ربط آلي)",
+    icon: Sparkle,
+    bar: "bg-violet-500",
+    text: (d) => (d ? "text-violet-300" : "text-violet-700"),
+    chip: (d) => (d ? "bg-violet-500/15 text-violet-300" : "bg-violet-500/10 text-violet-700"),
+  },
 };
 
 /** Principles, rulings and fiqh: titles only for a non-subscriber (item 6 §5). */
@@ -213,11 +337,11 @@ function arDigits(n: number): string {
   return n.toLocaleString("ar-SA");
 }
 
-// ─── Sections (box, sheet) ───────────────────────────────────────────────────
+// ─── Sections and groups (under the article, side box) ───────────────────────
 
 function visibleSections(data: Extract<Refs, { available: true }>): Section[] {
   // File 16 §8 (register 14 item 17): every empty section is hidden, never «لا توجد إحالات».
-  return SECTIONS.filter((s) => data.sections[s].total > 0 && data.sections[s].items.length > 0);
+  return SECTIONS.filter((s) => data.sections[s] && data.sections[s].total > 0 && data.sections[s].items.length > 0);
 }
 
 /** The sections an article shows; [] when it has none (not in the graph, the graph not ready, or no link). */
@@ -227,15 +351,27 @@ function shownSections(state: LoadState): Section[] {
   return visibleSections(data);
 }
 
-function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; articleId: string; state: LoadState; max: number }) {
-  const { isDark } = ctx;
-  const muted = isDark ? "text-zinc-400" : "text-slate-500";
+/** The groups of an article's answer: the bulk answer carries them, a full list is grouped here. */
+function groupsOf(data: Extract<Refs, { available: true }>): RefGroupOut[] {
+  return data.groups ?? groupsOfRefs(data);
+}
+
+function linkCount(state: LoadState): number {
   const data = state.data;
-  if (state.status === "loading" || state.status === "idle") return <p className={`text-[11px] ${muted}`}>جارٍ تحميل الإحالات…</p>;
-  if (state.status === "failed") return <p className={`text-[11px] ${muted}`}>تعذّر تحميل الإحالات الآن.</p>;
-  if (!data || !data.available || !data.found || shownSections(state).length === 0) {
-    return <p className={`text-[11px] ${muted}`}>لا توجد إحالات مرتبطة بهذه المادة.</p>;
-  }
+  if (state.status !== "done" || !data || !data.available) return 0;
+  return shownSections(state).reduce((n, s) => n + data.sections[s].total, 0);
+}
+
+/**
+ * The sections of one article, each with its relation groups and at most
+ * `max` small cards per group, then «عرض الكل (n)». The same component under
+ * the article and in the side box.
+ */
+function RefGroups({ ctx, articleId, data, max }: { ctx: RefBoxContextValue; articleId: string; data: Extract<Refs, { available: true }>; max: number }) {
+  const { isDark } = ctx;
+  const byKey = new Map<string, RefItem>();
+  for (const s of SECTIONS) for (const it of data.sections[s]?.items ?? []) byKey.set(`${s}|${it.linkType}|${it.direction}|${it.key}`, it);
+  const groups = groupsOf(data);
   return (
     <div className="space-y-3">
       {visibleSections(data).map((s, i) => {
@@ -243,6 +379,8 @@ function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; 
         const Icon = meta.icon;
         const sec = data.sections[s];
         const locked = SUBSCRIBER_SECTIONS.has(s) && ctx.viewerHasFullAccess === false;
+        const sectionGroups = groups.filter((g) => g.section === s);
+        const shown = sectionGroups.reduce((n, g) => n + Math.min(max, g.keys.length), 0);
         return (
           <section key={s} aria-label={meta.title} className={i > 0 ? `pt-3 border-t ${isDark ? "border-white/[0.08]" : "border-slate-200"}` : ""}>
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -251,16 +389,34 @@ function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; 
               <h4 className={`flex-1 text-[11px] font-black ${meta.text(isDark)}`}>{meta.title}</h4>
               <span className={`rounded-md px-1.5 text-[10px] font-bold ${meta.chip(isDark)}`}>{arDigits(sec.total)}</span>
             </div>
-            <ul className="space-y-1">
-              {sec.items.slice(0, max).map((it) => (
-                <li key={it.key}>
-                  <ItemButton ctx={ctx} item={it} locked={locked} />
-                </li>
+            <div className="space-y-2">
+              {sectionGroups.map((g) => (
+                <div key={`${g.linkType}|${g.direction}`}>
+                  {s !== "similar" && (
+                    <p className={`mb-1 text-[10px] font-bold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                      {g.relation} <span className="font-normal">({arDigits(g.total)})</span>
+                    </p>
+                  )}
+                  <ul className="space-y-1">
+                    {g.keys.slice(0, max).map((k) => {
+                      const it = byKey.get(`${s}|${g.linkType}|${g.direction}|${k}`) ?? data.sections[s].items.find((x) => x.key === k);
+                      return it ? (
+                        <li key={k}>
+                          <ItemButton ctx={ctx} item={{ ...it, relation: g.relation, linkType: g.linkType, direction: g.direction }} locked={locked} />
+                        </li>
+                      ) : null;
+                    })}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              {sec.total > max && (
-                <button type="button" onClick={() => ctx.openAll(articleId, s)} className={`text-[10.5px] font-bold underline-offset-2 hover:underline ${meta.text(isDark)}`}>
+              {sec.total > shown && (
+                <button
+                  type="button"
+                  onClick={() => ctx.openAll(articleId, s)}
+                  className={`min-h-[44px] sm:min-h-0 text-[10.5px] font-bold underline-offset-2 hover:underline ${meta.text(isDark)}`}
+                >
                   عرض الكل ({arDigits(sec.total)})
                 </button>
               )}
@@ -279,43 +435,125 @@ function RefSections({ ctx, articleId, state, max }: { ctx: RefBoxContextValue; 
 
 function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefItem; locked: boolean }) {
   const { isDark } = ctx;
-  // An unconfirmed anchor (file 16 §9.7) carries no status: it is not a confirmed article.
+  // A link whose article could not be pinned carries no status: it names and opens its document (Q132).
   const pill = item.anchorMissing ? null : pillOf(item);
-  return (
-    <button
-      type="button"
-      onClick={() => ctx.openPreview(item)}
-      className={`w-full text-start rounded-lg border px-2 py-1.5 text-[11px] leading-snug transition ${isDark ? "border-white/[0.07] bg-zinc-900 text-zinc-200 hover:border-white/20" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
-    >
+  const cls = `block w-full text-start rounded-lg border px-2 py-1.5 text-[11px] leading-snug transition ${isDark ? "border-white/[0.07] bg-zinc-900 text-zinc-200 hover:border-white/20" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`;
+  const body = (
+    <>
       <span className="flex items-start gap-1">
         {pill && <span role="img" aria-label={pill.labelAr} title={pill.labelAr} className="flex-shrink-0">{pill.emoji}</span>}
         {locked && <Lock size={11} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-zinc-500" : "text-slate-400"}`} aria-label="للمشتركين" />}
-        <span className="line-clamp-2 font-semibold">{item.title}</span>
+        <span className="line-clamp-2 flex-1 font-semibold">{item.title}</span>
+        {item.auto && (
+          <span
+            title="رابط استخرجه النظام آلياً من النص ولم يراجعه فريق المكتبة بعد"
+            className={`flex-shrink-0 rounded px-1 text-[9px] font-bold ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-slate-100 text-slate-500"}`}
+          >
+            رابط آلي
+          </span>
+        )}
       </span>
-      {(item.relation || item.anchorMissing) && (
-        <span className={`mt-0.5 block text-[9.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-          {item.relation}
-          {item.anchorMissing && ` · ${item.kind === "principle" ? "مبدأ غير مؤكَّد" : "مادة غير مؤكَّدة"}، يفتح المستند كاملاً`}
-        </span>
-      )}
+      {item.relation && <span className={`mt-0.5 block text-[9.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{item.relation}</span>}
+    </>
+  );
+  if (item.anchorMissing) {
+    return (
+      <Link href={item.docHref} className={cls}>
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={() => ctx.openPreview(item)} className={cls}>
+      {body}
     </button>
+  );
+}
+
+function RefsSkeleton({ isDark }: { isDark: boolean }) {
+  const bar = isDark ? "bg-white/[0.06]" : "bg-slate-100";
+  return (
+    <div className="space-y-1.5" aria-busy="true" aria-label="جارٍ تحميل الإحالات">
+      <div className={`h-3 w-1/2 rounded ${bar} animate-pulse`} />
+      <div className={`h-8 rounded-lg ${bar} animate-pulse`} />
+      <div className={`h-8 rounded-lg ${bar} animate-pulse`} />
+    </div>
+  );
+}
+
+// ─── Under each article ──────────────────────────────────────────────────────
+
+/**
+ * Owner L1 (lib02): the links under every article — a counter chip that folds
+ * the cards, open by default. Nothing at all while loading or when the article
+ * has no link (no spinner under hundreds of articles).
+ */
+export function ArticleRefsInline({ articleId }: { articleId: string }) {
+  const ctx = useRefBox();
+  const box = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+  const [open, setOpen] = useState(true);
+  const bulk = useBulk(ctx?.lawSlug ?? "");
+  const needsNear = !!ctx && (bulk?.status === "unavailable" || bulk?.status === "failed");
+  // Fallback only: ask for this article's list once it comes near the screen.
+  useEffect(() => {
+    if (!needsNear || near || !box.current) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setNear(true);
+    }, { rootMargin: "600px 0px" });
+    io.observe(box.current);
+    return () => io.disconnect();
+  }, [needsNear, near]);
+  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, { enabled: near });
+  const total = linkCount(state);
+  if (!ctx) return null;
+  const { isDark } = ctx;
+  const data = state.data;
+  return (
+    <div ref={box} className="mt-3 print:hidden">
+      {total > 0 && data && data.available && (
+        <>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className={`inline-flex min-h-[44px] sm:min-h-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}
+          >
+            <LinkSimple size={12} className="text-[#C8A762]" /> الإحالات المرتبطة
+            <span className={`rounded-md px-1.5 text-[10px] ${isDark ? "bg-white/[0.06] text-zinc-300" : "bg-slate-100 text-slate-600"}`}>{arDigits(total)}</span>
+            <CaretDown size={11} className={`transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+          </button>
+          {open && (
+            <div className={`mt-2 rounded-xl border p-3 ${isDark ? "border-white/[0.07] bg-zinc-900/40" : "border-slate-200 bg-slate-50/60"}`}>
+              <RefGroups ctx={ctx} articleId={articleId} data={data} max={3} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
 // ─── The side box (desktop) ───────────────────────────────────────────────────
 
 /**
- * The box beside the article in view. Waits 350 ms after the article changes,
- * so scrolling past fetches nothing. Hidden once the answer says the article
- * has no link (file 16 §8 — no empty box, no «لا توجد»); while loading it keeps
- * its frame, so the cards under it in the sticky column do not jump.
+ * The box beside the article in view, from the same cache as the list under
+ * it. In the fallback it waits 350 ms after the article changes, so scrolling
+ * past fetches nothing. Hidden once the answer says the article has no link
+ * (file 16 §8); while loading it keeps a skeleton frame, so the cards under it
+ * in the sticky column do not jump.
  */
 export function RefBox({ articleId }: { articleId: string | null }) {
   const ctx = useRefBox();
-  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, 350);
+  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, { delayMs: 350 });
   if (!ctx || !articleId) return null;
-  if (state.status === "done" && shownSections(state).length === 0) return null;
+  if ((state.status === "done" || state.status === "idle") && shownSections(state).length === 0) return null;
   const { isDark } = ctx;
+  const data = state.data;
   return (
     <div className={`p-3.5 rounded-2xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
       <h3 className={`mb-2.5 flex items-center gap-1.5 text-xs font-black ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
@@ -323,58 +561,10 @@ export function RefBox({ articleId }: { articleId: string | null }) {
         <span className="flex-1">الإحالات المرتبطة</span>
         <span className={`truncate max-w-[45%] text-[10px] font-bold ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{ctx.articleLabel(articleId)}</span>
       </h3>
-      <RefSections ctx={ctx} articleId={articleId} state={state} max={2} />
+      {state.status === "loading" && <RefsSkeleton isDark={isDark} />}
+      {state.status === "failed" && <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>تعذّر تحميل الإحالات الآن.</p>}
+      {state.status === "done" && data && data.available && <RefGroups ctx={ctx} articleId={articleId} data={data} max={2} />}
     </div>
-  );
-}
-
-/** The article's own «الإحالات» button: the phone (and reading mode) opens the bottom sheet. */
-export function RefSheetButton({ articleId }: { articleId: string }) {
-  const ctx = useRefBox();
-  if (!ctx) return null;
-  const { isDark } = ctx;
-  return (
-    <button
-      type="button"
-      onClick={() => ctx.openSheet(articleId)}
-      className={`${ctx.inlineTrigger ? "" : "lg:hidden "}inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold print:hidden ${isDark ? "border-white/[0.08] text-zinc-300" : "border-slate-200 text-slate-600"}`}
-    >
-      <LinkSimple size={12} className="text-[#C8A762]" /> الإحالات المرتبطة
-    </button>
-  );
-}
-
-function RefSheet({ ctx, articleId, onClose }: { ctx: RefBoxContextValue; articleId: string; onClose: () => void }) {
-  const state = useArticleRefs(ctx.lawSlug, articleId);
-  const { isDark } = ctx;
-  return (
-    <AnimatePresence>
-      <motion.div key="refsheet-bg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-[10000] bg-black/50 backdrop-blur-[2px] print:hidden" />
-      <motion.div
-        key="refsheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label="الإحالات المرتبطة"
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={{ type: "spring", stiffness: 320, damping: 32 }}
-        className={`fixed inset-x-0 bottom-0 z-[10001] max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-3xl safe-bottom print:hidden lg:mx-auto lg:max-w-xl ${isDark ? "bg-zinc-950" : "bg-white"}`}
-        dir="rtl"
-      >
-        <div className={`sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b ${isDark ? "bg-zinc-950 border-white/10" : "bg-white border-slate-200"}`}>
-          <span className={`text-sm font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-            الإحالات المرتبطة <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{ctx.articleLabel(articleId)}</span>
-          </span>
-          <button type="button" onClick={onClose} aria-label="إغلاق" className={`flex h-11 w-11 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
-            <X size={18} weight="bold" />
-          </button>
-        </div>
-        <div className="p-4">
-          <RefSections ctx={ctx} articleId={articleId} state={state} max={2} />
-        </div>
-      </motion.div>
-    </AnimatePresence>
   );
 }
 
@@ -402,7 +592,7 @@ function Modal({ isDark, label, onClose, children, wide }: { isDark: boolean; la
 }
 
 function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxContextValue; articleId: string; initialTab: Section; onClose: () => void }) {
-  const state = useArticleRefs(ctx.lawSlug, articleId);
+  const state = useArticleRefs(ctx.lawSlug, articleId, { full: true });
   const [picked, setTab] = useState<Section>(initialTab);
   const { isDark } = ctx;
   const data = state.data && state.data.available ? state.data : null;
@@ -417,11 +607,11 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
         <span className={`text-sm font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
           الإحالات المرتبطة <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{ctx.articleLabel(articleId)}</span>
         </span>
-        <button type="button" onClick={onClose} aria-label="إغلاق" className={`flex h-10 w-10 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
+        <button type="button" onClick={onClose} aria-label="إغلاق" className={`flex h-11 w-11 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
           <X size={18} weight="bold" />
         </button>
       </div>
-      <div role="tablist" className={`flex gap-1 px-3 pt-3 border-b ${isDark ? "border-white/10" : "border-slate-200"}`}>
+      <div role="tablist" className={`flex gap-1 overflow-x-auto px-3 pt-3 border-b ${isDark ? "border-white/10" : "border-slate-200"}`}>
         {tabs.map((s) => {
           const meta = SECTION_META[s];
           const active = s === tab;
@@ -432,7 +622,7 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
               aria-selected={active}
               type="button"
               onClick={() => setTab(s)}
-              className={`relative px-3 pb-2 pt-1 text-[11.5px] font-bold ${active ? meta.text(isDark) : isDark ? "text-zinc-500" : "text-slate-500"}`}
+              className={`relative flex-shrink-0 px-3 pb-2 pt-1 text-[11.5px] font-bold ${active ? meta.text(isDark) : isDark ? "text-zinc-500" : "text-slate-500"}`}
             >
               {meta.title} ({arDigits(data?.sections[s].total ?? 0)})
               <span className={`absolute inset-x-1 -bottom-px h-[3px] rounded-full ${active ? meta.bar : "bg-transparent"}`} aria-hidden />
@@ -441,9 +631,9 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
         })}
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        {!data || !sec ? (
-          <RefSections ctx={ctx} articleId={articleId} state={state} max={0} />
-        ) : (
+        {state.status === "loading" && !data && <RefsSkeleton isDark={isDark} />}
+        {state.status === "failed" && !data && <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>تعذّر تحميل الإحالات الآن.</p>}
+        {data && sec && (
           <>
             {locked && (
               <div className={`mb-3 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px] ${isDark ? "border-white/10 text-zinc-300" : "border-slate-200 text-slate-600"}`}>
@@ -455,7 +645,7 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
             )}
             <ul className="space-y-1.5">
               {sec.items.map((it) => (
-                <li key={it.key} className="flex items-stretch gap-2">
+                <li key={`${it.linkType}|${it.key}`} className="flex items-stretch gap-2">
                   <span className={`w-1 flex-shrink-0 rounded-full ${SECTION_META[tab].bar}`} aria-hidden />
                   <div className="flex-1 min-w-0">
                     <ItemButton ctx={ctx} item={it} locked={locked} />
@@ -465,7 +655,7 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
             </ul>
             {sec.total > sec.items.length && (
               <p className={`mt-3 text-[10.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>
-                يُعرض أول {arDigits(sec.items.length)} من {arDigits(sec.total)}.
+                {state.status === "loading" ? "جارٍ تحميل البقية…" : `يُعرض أول ${arDigits(sec.items.length)} من ${arDigits(sec.total)}.`}
               </p>
             )}
           </>
@@ -492,14 +682,11 @@ async function copyText(text: string): Promise<boolean> {
 
 function RefPreview({ ctx, item, onClose }: { ctx: RefBoxContextValue; item: RefItem; onClose: () => void }) {
   const { isDark } = ctx;
-  const [fetched, setState] = useState<{ status: "loading" | "done" | "failed"; data?: Preview; error?: string }>({ status: "loading" });
+  const [state, setState] = useState<{ status: "loading" | "done" | "failed"; data?: Preview; error?: string }>({ status: "loading" });
   const [copied, setCopied] = useState(false);
   const [added, setAdded] = useState(false);
-  // The anchor is gone: nothing to quote — the preview names the item and links to its document.
-  const state: typeof fetched = item.anchorMissing ? { status: "done", data: { found: false, kind: item.kind } } : fetched;
 
   useEffect(() => {
-    if (item.anchorMissing) return;
     let live = true;
     fetch(`/api/library/laws/${apiSlug(ctx.lawSlug)}/citations/preview?key=${encodeURIComponent(item.key)}`)
       .then(async (r) => {
@@ -512,11 +699,11 @@ function RefPreview({ ctx, item, onClose }: { ctx: RefBoxContextValue; item: Ref
     return () => {
       live = false;
     };
-  }, [ctx.lawSlug, item.key, item.kind, item.anchorMissing]);
+  }, [ctx.lawSlug, item.key, item.kind]);
 
   const p = state.data;
   const text = p?.text ? plain(p.text) : "";
-  const meta = SECTION_META[item.section];
+  const meta = SECTION_META[item.section] ?? SECTION_META.legislation;
   const sameLaw = item.kind === "article" && item.docKind === "law" && item.docId === ctx.lawSlug && !!item.anchorId && !item.anchorMissing;
   const href = p?.found && p.href ? p.href : item.href;
   const docHref = p?.found && p.docHref ? p.docHref : item.docHref;
@@ -568,35 +755,31 @@ function RefPreview({ ctx, item, onClose }: { ctx: RefBoxContextValue; item: Ref
     }
   };
   const openWholeLabel = item.docKind === "law" ? "فتح النظام كاملاً" : item.docKind === "collection" ? "فتح الحكم كاملاً" : item.docKind === "order" ? "فتح الأمر كاملاً" : "فتح الكتاب كاملاً";
-  const btn = `inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11.5px] font-bold transition ${isDark ? "border-white/10 text-zinc-200 hover:bg-white/[0.06]" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`;
+  const btn = `inline-flex min-h-[44px] sm:min-h-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11.5px] font-bold transition ${isDark ? "border-white/10 text-zinc-200 hover:bg-white/[0.06]" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`;
 
   return (
     <Modal isDark={isDark} label="معاينة النص" onClose={onClose}>
       <div className={`flex items-start gap-2 px-4 py-3 border-b ${isDark ? "border-white/10" : "border-slate-200"}`}>
         <span className={`mt-1 h-5 w-1 flex-shrink-0 rounded-full ${meta.bar}`} aria-hidden />
         <div className="flex-1 min-w-0">
-          <p className={`text-[10.5px] font-bold ${meta.text(isDark)}`}>{meta.title}{item.relation ? ` · ${item.relation}` : ""}</p>
+          <p className={`text-[10.5px] font-bold ${meta.text(isDark)}`}>{meta.title}{item.relation && item.section !== "similar" ? ` · ${item.relation}` : ""}</p>
           <h3 className={`text-[13px] font-black leading-snug ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>{reference}</h3>
           {p?.found && p.kind === "article" && p.title && p.title !== p.num && (
             <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{p.title}</p>
           )}
         </div>
-        <button type="button" onClick={onClose} aria-label="إغلاق" className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
+        <button type="button" onClick={onClose} aria-label="إغلاق" className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
           <X size={16} weight="bold" />
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {state.status === "loading" && <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>جارٍ تحميل النص…</p>}
+        {state.status === "loading" && <RefsSkeleton isDark={isDark} />}
         {state.status === "failed" && (
           <p className={`text-[12px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>{state.error || "تعذّر تحميل النص الآن."}</p>
         )}
         {state.status === "done" && p && !p.found && (
-          <p className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
-            {item.anchorMissing
-              ? `لم نتحقق من ${item.kind === "principle" ? "المبدأ المحال إليه" : "المادة المحال إليها"} في المكتبة؛ فلا تُعرض هنا ${item.kind === "principle" ? "مبدأً مؤكَّداً" : "مادةً مؤكَّدة"}. يفتح الرابط المستند كاملاً.`
-              : "تعذّر تحديد الموضع الدقيق لهذه الإحالة في المكتبة؛ يفتح الرابط المستند كاملاً."}
-          </p>
+          <p className={`text-[12px] ${isDark ? "text-zinc-300" : "text-slate-600"}`}>يفتح الرابط المستند كاملاً.</p>
         )}
         {state.status === "done" && p?.found && p.locked === "subscribe" && (
           <div className={`rounded-xl border p-3 text-[12px] ${isDark ? "border-white/10 text-zinc-300" : "border-slate-200 text-slate-600"}`}>
@@ -623,11 +806,11 @@ function RefPreview({ ctx, item, onClose }: { ctx: RefBoxContextValue; item: Ref
         </button>
         {(item.kind === "article" || item.kind === "principle") && p?.found && (
           <button type="button" onClick={onAdd} disabled={added || inCart} className={`${btn} disabled:opacity-60`}>
-            {added || inCart ? <Check size={13} /> : p.locked ? <Lock size={13} /> : <Plus size={13} />}
+            {added || inCart ? <Check size={13} /> : p.locked ? <Lock size={13} /> : <BookmarkSimple size={13} />}
             {added || inCart ? "في المسودة" : "إضافة للمسودة"}
           </button>
         )}
-        {!item.anchorMissing && p?.found !== false && (
+        {p?.found !== false && (
           <Link href={href} onClick={onGoTo} className={btn}>
             <Crosshair size={13} /> انتقل إلى
           </Link>

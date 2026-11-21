@@ -46,6 +46,21 @@ export const FEATURE_FLAGS = Object.freeze({
       "نافذة أسئلة الزوار عن المنصة والباقات والأسعار والعروض وطريقة التسجيل. تجيب من بيانات المنصة نفسها، ولا تقدّم استشارة قانونية. إيقافه يخفي النافذة من كل الصفحات خلال دقيقة.",
     defaultOn: true,
   }),
+  // Batch l12 (owner library-Q4, N12 / RAW[56]): read by GET /api/library/laws/[slug]/citations.
+  // Default on, as the question proposes; his links and the 308 never carry it.
+  library_auto_link_tag: Object.freeze({
+    nameAr: "وسم «رابط آلي» على الإحالات غير المراجعة",
+    descriptionAr:
+      "يظهر وسم «رابط آلي» بجانب «الإحالة» التي استخرجها النظام من النصوص ولم يراجعها فريق المكتبة. روابط المالك وروابطه المعلّمة تظهر بلا وسم دائماً. إيقافه يزيل الوسم من مربع الإحالات خلال دقيقة.",
+    defaultOn: true,
+  }),
+  // Batch l12 (owner Q133, register 14 item 17): read by the same route.
+  library_similar_links: Object.freeze({
+    nameAr: "قسم «مواد متقاربة في المعنى (ربط آلي)» للقارئ",
+    descriptionAr:
+      "يعرض تحت كل مادة قسماً مستقلاً بالمواد المتقاربة معها في المعنى من أنظمة أخرى، وهو ربط آلي لا علاقة نظامية. إيقافه يخفي القسم من القارئ خلال دقيقة، ويبقى في مستكشف الجراف للفريق.",
+    defaultOn: true,
+  }),
 } satisfies Record<string, FeatureFlagDef>);
 
 export type FeatureFlagKey = keyof typeof FEATURE_FLAGS;

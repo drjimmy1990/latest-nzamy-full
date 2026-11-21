@@ -34,7 +34,7 @@ import { PreviousVersionText } from "./_word-diff";
 import { OWN_DOCUMENT_REFS_AS_TEXT, linkCitationsHtml } from "./_cite-links";
 import { useCitations } from "./_citation-popover";
 import { articleNumberOf } from "./_cite-status";
-import { RefSheetButton, useRefBox } from "./_ref-box";
+import { ArticleRefsInline, useRefBox } from "./_ref-box";
 import { regulationNameFromRefs } from "@/lib/library/regulationName";
 import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton"; // l6-tools Q485
 
@@ -1199,10 +1199,10 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                 <MD text={article.text} isDark={isDark} isRTL={isRTL} fontClass={fontClass} cite={citeSelf} />
               )
             )}
-            {/* Owner item 6 (18 Nov): the links live in the side box beside the
-                article; on a phone (and in reading mode) this opens the same
-                sections in a bottom sheet (_ref-box.tsx). */}
-            {viewMode !== "regulation" && refBox && <RefSheetButton articleId={article.id} />}
+            {/* Owner L1 (20 Nov, lib02): the links under every article again —
+                a counter chip and small cards per relation, from the law's one
+                links request; the side box reads the same cache (_ref-box.tsx). */}
+            {viewMode !== "regulation" && refBox && <ArticleRefsInline articleId={article.id} />}
 
             {/*
               Amendments toggle (collapsible <details> block, matches the layout/style of parsed details blocks).
