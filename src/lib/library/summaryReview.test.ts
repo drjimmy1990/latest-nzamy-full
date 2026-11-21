@@ -54,8 +54,12 @@ test("wiring: the cards, the decree page and the search apply it; the status nev
   assert.match(init, /\{ key: "summaryStatus", columns: \["summary_status"\] \}/);
   const decree = read("../../app/api/library/decrees/[id]/route.ts");
   assert.match(decree, /const showSummaries = summaryShown\(decreeSummaryStatus, summariesReviewedOnly\);/);
-  assert.match(decree, /summary: !showSummaries \? null :/);
-  assert.match(decree, /summary_brief: !showSummaries \? null :/);
+  // Merged with Q101 (lib-a): the viewer's summaries are null unless shown,
+  // and the masked title is built from them, so it never uses an unreviewed one.
+  assert.match(decree, /const viewerSummary = !showSummaries \? null :/);
+  assert.match(decree, /const viewerBrief = !showSummaries \? null :/);
+  assert.match(decree, /summary: viewerSummary,\s*summary_brief: viewerBrief,/);
+  assert.match(decree, /title: decreeTitleForViewer\(\{ title: decree\.title, type: decree\.type, summary: viewerBrief \|\| viewerSummary \}, isSubscriber\),/);
   const search = read("../../app/api/library/search/route.ts");
   assert.match(search, /if \(summariesReviewedOnly && orderResults\.length > 0\)/);
   const settings = read("../../app/api/v1/admin/settings/route.ts");
