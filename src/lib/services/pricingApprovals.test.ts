@@ -387,7 +387,8 @@ test("task 4: the tool pages print the constant the registry charges", () => {
   assert.match(step, /const spec = DRAFT_KINDS\[kind\]/);
   assert.match(step, /const kindPrice = draftKindPrice\(kind, serverPrices \?\? undefined\)/);
   assert.match(step, /kindPrice\.toLocaleString\("ar-SA"\)/);
-  assert.match(step, /expectedPrice: kindPrice/);
+  assert.match(step, /useCredit: true \} : \{\}\), expectedPrice: kindPrice \}/, "always sent, whatever the screen shows");
+  assert.match(step, /analysis\.code === "price_changed"\) setPricesRead/);
   assert.doesNotMatch(step, /spec\.price\.toLocaleString/);
   for (const kind of Object.keys(DRAFT_KINDS) as Array<keyof typeof DRAFT_KINDS>) {
     assert.equal(AI_TOOLS["legal-drafter"].price({ kind }, { pages: null, turn: 0 }), DRAFT_KINDS[kind].price, kind);

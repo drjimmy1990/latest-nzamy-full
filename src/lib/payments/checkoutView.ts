@@ -272,11 +272,32 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
   if (expiresAt !== null && !isText(expiresAt)) return null;
   // P7: a couponed quote carries listNet / discount / couponCode, all three,
   // and listNet − discount must be the charged net.
-  const hasCoupon = q.discount !== undefined || q.listNet !== undefined || q.couponCode !== undefined;
+  const hasCoupon = q.discount !== undefined || q.couponCode !== undefined;
   if (hasCoupon) {
     if (!isInt(q.listNet) || !isInt(q.discount) || !isText(q.couponCode)) return null;
     if (q.discount <= 0 || q.listNet - q.discount !== q.net) return null;
   }
+  // l12: the server's other optional figures (checkoutCore step 8) were
+  // dropped here, and a founder / upgrade quote — listNet without a coupon —
+  // was refused outright, so its checkout never opened. Each is now kept when
+  // it is a whole non-negative number; listNet alone (no coupon) needs the
+  // founder discount or the upgrade credit beside it.
+  const founderDiscount = q.founderDiscount;
+  const prorationCredit = q.prorationCredit;
+  for (const v of [founderDiscount, prorationCredit, q.launchListNet, q.topupPoints, q.bonusPoints]) {
+    if (v !== undefined && !isInt(v)) return null;
+  }
+  if (!hasCoupon && q.listNet !== undefined) {
+    if (!isInt(q.listNet) || (founderDiscount === undefined && prorationCredit === undefined)) return null;
+  }
+  const extras = {
+    ...(!hasCoupon && isInt(q.listNet) ? { listNet: q.listNet } : {}),
+    ...(isInt(founderDiscount) && founderDiscount > 0 ? { founderDiscount } : {}),
+    ...(isInt(prorationCredit) && prorationCredit > 0 ? { prorationCredit } : {}),
+    ...(isInt(q.launchListNet) ? { launchListNet: q.launchListNet } : {}),
+    ...(isInt(q.topupPoints) ? { topupPoints: q.topupPoints } : {}),
+    ...(isInt(q.bonusPoints) ? { bonusPoints: q.bonusPoints } : {}),
+  };
   return {
     orderId: b.orderId,
     intentId: b.intentId,
@@ -294,8 +315,9 @@ export function parseCheckoutResponse(body: unknown): CheckoutResponse | null {
           listNet: q.listNet as number,
           discount: q.discount as number,
           couponCode: q.couponCode as string,
+          ...extras,
         }
-      : { net: q.net, vat: q.vat, total: q.total, vatMode: q.vatMode },
+      : { net: q.net, vat: q.vat, total: q.total, vatMode: q.vatMode, ...extras },
     callbackUrl: b.callbackUrl,
     expiresAt,
   };

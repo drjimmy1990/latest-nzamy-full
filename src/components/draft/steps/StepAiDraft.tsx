@@ -103,9 +103,11 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
 
   const spec = DRAFT_KINDS[kind];
   // l12 (owner N6): the price is the admin's setting, read from the server;
-  // until it answers, the code default. The price shown is sent as
-  // expectedPrice, so a changed setting is never charged unseen.
+  // until it answers, the code default. The price SHOWN is always sent as
+  // expectedPrice, so a price the lawyer did not see is refused uncharged
+  // (409 price_changed) — and the screen then reads the prices again.
   const [serverPrices, setServerPrices] = useState<Partial<Record<string, number>> | null>(null);
+  const [pricesRead, setPricesRead] = useState(0);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/v1/pricing/draft-prices", { cache: "no-store" })
@@ -120,7 +122,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pricesRead]);
   const kindPrice = draftKindPrice(kind, serverPrices ?? undefined);
   const read = analysis.phase === "done" ? asDraftAnalysis(analysis.output) : null;
   const edited = read ? changes ?? read : null;
@@ -153,6 +155,10 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
       if (counts) setEditCounts(counts);
     }
   }, [editing.phase, editing.output, editing.citations, editing.details]);
+  // l12 (N6): the admin changed the price since this screen read it — read it again
+  useEffect(() => {
+    if (analysis.code === "price_changed") setPricesRead((n) => n + 1);
+  }, [analysis.code]);
   const toolOff = analysis.code === "tool_off" || analysis.code === "library_tier" ? analysis.code : null;
   useEffect(() => { if (toolOff) onToolOff(toolOff); }, [toolOff, onToolOff]);
   // The analysis is fixed while the draft is written and once it exists: the
@@ -177,7 +183,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
     void analysis.start(
       "legal-drafter",
       input,
-      { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}), ...(serverPrices ? { expectedPrice: kindPrice } : {}) },
+      { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}), expectedPrice: kindPrice },
       draftState,
     );
   }

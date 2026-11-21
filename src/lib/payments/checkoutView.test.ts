@@ -424,6 +424,21 @@ test("parseCheckoutResponse: a couponed quote keeps listNet / discount / couponC
   assert.equal(parseCheckoutResponse({ ...couponed, quote: { ...couponed.quote, discount: 0, listNet: net } }), null);
 });
 
+test("l12: parseCheckoutResponse keeps the founder discount, the upgrade credit, the launch price and the top-up points — a founder quote is no longer refused", () => {
+  const founder = { ...RESPONSE, amountHalalas: 48875, quote: { net: 42500, vat: 6375, total: 48875, vatMode: "exclusive", listNet: 50000, founderDiscount: 7500, topupPoints: 500, bonusPoints: 0 } };
+  assert.deepEqual(parseCheckoutResponse(JSON.parse(JSON.stringify(founder))), founder);
+  const bonus = { ...RESPONSE, quote: { ...RESPONSE.quote, topupPoints: 540, bonusPoints: 40 } };
+  assert.deepEqual(parseCheckoutResponse(bonus), bonus);
+  const upgrade = { ...RESPONSE, quote: { ...RESPONSE.quote, listNet: 49900, prorationCredit: 10000 } };
+  assert.deepEqual(parseCheckoutResponse(upgrade), upgrade);
+  const launch = { ...RESPONSE, quote: { ...RESPONSE.quote, launchListNet: 49900 } };
+  assert.deepEqual(parseCheckoutResponse(launch), launch);
+  // a listNet with nothing to explain it, or a figure that is not a whole number, is not this server's answer
+  assert.equal(parseCheckoutResponse({ ...RESPONSE, quote: { ...RESPONSE.quote, listNet: 49900 } }), null);
+  assert.equal(parseCheckoutResponse({ ...RESPONSE, quote: { ...RESPONSE.quote, topupPoints: "540" } }), null);
+  assert.equal(parseCheckoutResponse({ ...RESPONSE, quote: { ...RESPONSE.quote, bonusPoints: -1 } }), null);
+});
+
 test("parseCouponPreview: the validate answer, checked (discount > 0, listNet − discount = net, net + VAT = total)", () => {
   const ok = { code: "NZAMY50", quote: { listNet: 149000, discount: 5000, net: 144000, vat: 21600, total: 165600 } };
   assert.deepEqual(parseCouponPreview(ok), { code: "NZAMY50", listNet: 149000, discount: 5000, net: 144000, vat: 21600, total: 165600 });
