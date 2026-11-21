@@ -650,6 +650,9 @@ const PROTECTED = [
   // each one a lawyer/firm rule, and a rule is read only for a PROTECTED path.
   "/ai/contract-negotiator",
   "/ai/contract-drafter",
+  // l12 simpledraft (owner ١٢٣): the individual's and the business's simplified
+  // contract drafter needs an account; the page itself turns away other types.
+  "/ai/simple-contract",
   "/ai/analyze-strength",
   "/ai/najiz-optimizer",
   "/ai/brief-check",

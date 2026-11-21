@@ -27,6 +27,7 @@ import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 import { PaymentRulesCard } from "./_components/PaymentRulesCard";
 import { PlatformLicenceCard } from "./_components/PlatformLicenceCard";
+import { SimpleContractPriceCard } from "./_components/SimpleContractPriceCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -960,6 +961,9 @@ export default function AdminSettingsPage() {
 
       {/* ── l9 public: the platform licence number + issuer (owner file 20 row 4) ── */}
       <PlatformLicenceCard />
+
+      {/* ── l12 simpledraft: the simplified contract drafter's price (owner ١٢٣, default 100) ── */}
+      <SimpleContractPriceCard />
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* ── Section 4: Legal Library Open/Close ── */}

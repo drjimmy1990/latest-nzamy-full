@@ -69,6 +69,7 @@ export const PRIVATE_PATH_PREFIXES: readonly string[] = Object.freeze([
   "/ai/runs",
   "/ai/contract-negotiator",
   "/ai/contract-drafter",
+  "/ai/simple-contract",
   "/ai/analyze-strength",
   "/ai/najiz-optimizer",
   "/ai/brief-check",

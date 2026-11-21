@@ -438,7 +438,7 @@ function evalCondition(expr: string, webhookBody: Record<string, unknown>): unkn
   };
   return new Function("$", `return (${expr.replace(/^=\{\{\s*/, "").replace(/\s*\}\}$/, "")});`)($);
 }
-for (const tool of ["wargaming", "analyze-strength", "contract-drafter", "contract-negotiator", "legal-opinion-consult", "legal-opinion-letter", "legal-drafter"]) {
+for (const tool of ["wargaming", "analyze-strength", "contract-drafter", "simple-contract", "contract-negotiator", "legal-opinion-consult", "legal-opinion-letter", "legal-drafter"]) {
   test(`${tool} workflow: 202 first, then files → Gemini «Analyze Document», no files → the Agent; every way out calls back`, () => {
     const wf = toWorkflow(def(tool)) as { nodes: Node[]; connections: Record<string, any>; settings: Record<string, unknown> };
     const byName = (n: string) => wf.nodes.find((x) => x.name === n)!;
@@ -796,7 +796,7 @@ test("B10: drafter prompt with a branch quotes it and asks for no inference", ()
 type Wf = { nodes: Node[]; connections: Record<string, any> };
 const READING = "Progress · reading";
 const DRAFTING = "Progress · drafting";
-const CASE_JOBS = ["wargaming", "analyze-strength", "contract-drafter", "contract-negotiator", "legal-opinion-consult", "legal-opinion-letter", "legal-drafter"];
+const CASE_JOBS = ["wargaming", "analyze-strength", "contract-drafter", "simple-contract", "contract-negotiator", "legal-opinion-consult", "legal-opinion-letter", "legal-drafter"];
 const DOC_JOBS = ["case-brief", "brief-check", "contract-review"];
 const JOBS = [...DOC_JOBS, ...CASE_JOBS, "contracts-pro"];
 const wfOf = (tool: string) => toWorkflow(def(tool)) as Wf;
