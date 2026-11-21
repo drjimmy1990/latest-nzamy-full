@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { parseSummariesReviewedOnly, SUMMARIES_REVIEWED_ONLY_KEY } from "@/lib/library/summaryReview";
+import { parseSummariesReviewedOnly, SUMMARIES_REVIEWED_ONLY_DEFAULT, SUMMARIES_REVIEWED_ONLY_KEY } from "@/lib/library/summaryReview";
 import {
   FREE_QUESTION_TOOL_SETTING,
   GENERAL_FREE_QUESTION_TOOL,
@@ -14,12 +14,12 @@ import {
  * rules, 20261202_50). Two platform_settings keys, each saved through PATCH
  * /api/v1/admin/settings (validated and audited there):
  *   - library_summaries_reviewed_only {"on": boolean} — Q96: only a reviewed
- *     summary is shown in the library (ON by default);
+ *     summary is shown in the library (OFF by default);
  *   - free_question_tool_by_account_type {"individual": tool} — Q121: where an
  *     individual's free questions are used (quick-answer by default).
  */
 export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
-  const [reviewedOnly, setReviewedOnly] = useState(true);
+  const [reviewedOnly, setReviewedOnly] = useState(SUMMARIES_REVIEWED_ONLY_DEFAULT);
   const [tool, setTool] = useState<IndividualFreeQuestionTool>(GENERAL_FREE_QUESTION_TOOL);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -80,7 +80,7 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
         <span>
           <span className={label}>إخفاء كل موجز غير مراجَع</span>
           <span className={`text-xs ${muted}`}>
-            يظهر الموجز في صفحة النظام وبطاقات المكتبة والقرارات ونتائج البحث فقط إذا كانت حالته «مراجَع». أطفئه لإظهار الموجزات كما كانت.
+            عند تشغيله يظهر الموجز في صفحة النظام وبطاقات المكتبة والقرارات ونتائج البحث فقط إذا كانت حالته «مراجَع». هو مُطفأ الآن لأن موجزات المراسيم لم تُحدَّد حالتها بعد، فتشغيله يخفيها كلها.
           </span>
         </span>
       </label>

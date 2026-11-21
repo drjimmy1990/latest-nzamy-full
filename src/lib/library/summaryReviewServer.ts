@@ -2,7 +2,7 @@
  * summaryReviewServer.ts — the read behind Q96 (./summaryReview.ts):
  * platform_settings 'library_summaries_reviewed_only'. Memoised 30 seconds
  * per process (the /laws list and search are hot paths); a missing row, a
- * failed read or a missing env reads the default (ON). Never throws.
+ * failed read or a missing env reads the default (OFF). Never throws.
  */
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/server";

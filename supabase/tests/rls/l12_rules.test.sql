@@ -251,8 +251,8 @@ declare
   fn text;
   t  text;
 begin
-  perform pg_temp.expect('T8 reviewed-only ships ON',
-    (select value::text from public.platform_settings where key = 'library_summaries_reviewed_only'), '{"on": true}');
+  perform pg_temp.expect('T8 reviewed-only ships OFF (l12 integration: decree summaries have no status yet)',
+    (select value::text from public.platform_settings where key = 'library_summaries_reviewed_only'), '{"on": false}');
   -- the decree status column: nullable, draft | reviewed only, no session grant
   if to_regclass('library.decrees_circulars') is null then
     raise exception 'T8 SETUP: the chain must start with 20260626_legal_library_schema.sql';

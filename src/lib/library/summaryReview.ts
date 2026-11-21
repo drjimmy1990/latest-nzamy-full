@@ -6,10 +6,12 @@
  * or unknown is left out of the API answer entirely (the key omitted / null),
  * so the page has no empty slot to show.
  *
- * Built as a reversible SETTING (his assistant's default, Tier 2):
- * platform_settings 'library_summaries_reviewed_only' = {"on": true}
- * (20261202_50). ON by default — a missing or malformed row reads ON; the
- * admin switches it off to show today's summaries again.
+ * Built as a reversible SETTING: platform_settings
+ * 'library_summaries_reviewed_only' = {"on": boolean} (20261202_50).
+ * OFF by default (l12 integration): decree summaries have no status yet (the
+ * loader does not write decrees_circulars.summary_status), so ON at deploy
+ * would hide every decree summary. A missing, malformed or unreadable row
+ * reads OFF; the admin switches it on once the statuses are loaded.
  *
  * Statuses: library.laws.summary_status (20261129_70) and
  * library.decrees_circulars.summary_status (20261202_50) — 'reviewed' |
@@ -20,10 +22,10 @@
  */
 
 export const SUMMARIES_REVIEWED_ONLY_KEY = "library_summaries_reviewed_only";
-export const SUMMARIES_REVIEWED_ONLY_DEFAULT = true;
+export const SUMMARIES_REVIEWED_ONLY_DEFAULT = false;
 export const REVIEWED_STATUS = "reviewed";
 
-/** {"on": boolean} → the switch; anything else → the default (ON). */
+/** {"on": boolean} → the switch; anything else → the default (OFF). */
 export function parseSummariesReviewedOnly(value: unknown): boolean {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const on = (value as { on?: unknown }).on;

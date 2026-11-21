@@ -118,7 +118,7 @@ const ALLOWED_SETTINGS_KEYS = [
   // one minute; the page posts the whole object.
   "feature_flags",
   // Batch l12 rules (20261202_50): Q96 {"on": boolean} — only reviewed
-  // summaries are shown in the library (ON by default; src/lib/library/summaryReview.ts);
+  // summaries are shown in the library (OFF by default; src/lib/library/summaryReview.ts);
   "library_summaries_reviewed_only",
   // Q121 {"individual": "quick-answer" | "assistant"} — the tool that carries
   // an individual's free questions (src/lib/ai/freeQuestion.ts).

@@ -55,9 +55,10 @@
 --       when the account's free tool is the library assistant.
 --
 --   Q96 — only REVIEWED summaries are shown, as a SETTING:
---     platform_settings 'library_summaries_reviewed_only' {"on": true}
---       (the owner's rule «يُخفى كل موجز حالته غير مراجَع»; switch it off to
---       show today's summaries again). The app applies it in the library API
+--     platform_settings 'library_summaries_reviewed_only' {"on": false}
+--       (the owner's rule «يُخفى كل موجز حالته غير مراجَع», seeded OFF by the
+--       l12 integration: decree summaries have no status yet, so ON would hide
+--       every one; switch it on once the loader writes the statuses). The app applies it in the library API
 --       (laws reader, /laws cards, decrees, search).
 --     library.decrees_circulars gains summary_status ('draft' | 'reviewed' |
 --       NULL): the decree tables had no status, so with the setting on a
@@ -614,7 +615,7 @@ grant execute on function public.ai_start_free_question(uuid, text, text, text, 
 
 -- ── 4. Q96: reviewed summaries only (a setting) ──────────────────────────────
 insert into public.platform_settings (key, value, description) values
-  ('library_summaries_reviewed_only', '{"on": true}'::jsonb,
+  ('library_summaries_reviewed_only', '{"on": false}'::jsonb,
    'لا يظهر في المكتبة إلا الموجز الذي حالته «مراجَع» (القارئ والبطاقات والقرارات والبحث) — Q96 (20261202_50)')
 on conflict (key) do nothing;
 

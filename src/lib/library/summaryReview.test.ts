@@ -1,6 +1,6 @@
 /**
  * Q96 (batch l12): only a REVIEWED summary is shown — a reversible setting
- * (library_summaries_reviewed_only, ON by default), applied in the library
+ * (library_summaries_reviewed_only, OFF by default), applied in the library
  * API: the law reader, the /laws cards, the decree page and the search
  * snippets.
  */
@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   parseSummariesReviewedOnly,
+  SUMMARIES_REVIEWED_ONLY_DEFAULT,
   summariesReviewedOnlyIssue,
   summaryShown,
   withReviewedSummaries,
@@ -17,9 +18,13 @@ import { readerSummaryFields } from "../../app/api/library/laws/[slug]/_reviewed
 
 const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-test("Q96: the switch — ON by default, a malformed value reads ON, {on:false} turns it off", () => {
-  assert.equal(parseSummariesReviewedOnly(undefined), true);
-  assert.equal(parseSummariesReviewedOnly({ on: "no" }), true);
+test("Q96: the switch — OFF by default (a missing or malformed value reads OFF), {on:true} turns it on", () => {
+  // l12 integration: decree summaries have no status yet, so ON by default
+  // would hide every decree summary at deploy.
+  assert.equal(SUMMARIES_REVIEWED_ONLY_DEFAULT, false);
+  assert.equal(parseSummariesReviewedOnly(undefined), false);
+  assert.equal(parseSummariesReviewedOnly(null), false);
+  assert.equal(parseSummariesReviewedOnly({ on: "no" }), false);
   assert.equal(parseSummariesReviewedOnly({ on: false }), false);
   assert.equal(parseSummariesReviewedOnly({ on: true }), true);
   assert.equal(summariesReviewedOnlyIssue({ on: false }), null);
@@ -71,6 +76,7 @@ test("wiring: the cards, the decree page and the search apply it; the status nev
   assert.match(seo, /const showSummary = await summaryAllowed\("decrees_circulars", "id", /);
   assert.match(seo, /return !error && summaryShown\(/);
   const sql = read("../../../supabase/migrations/20261202_50_l12_rules.sql");
-  assert.match(sql, /\('library_summaries_reviewed_only', '\{"on": true\}'::jsonb,/);
+  // Seeded OFF (l12 integration): ON would hide every decree summary at deploy.
+  assert.match(sql, /\('library_summaries_reviewed_only', '\{"on": false\}'::jsonb,/);
   assert.match(sql, /alter table library\.decrees_circulars add column if not exists summary_status text;/);
 });
