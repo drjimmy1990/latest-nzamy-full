@@ -11,6 +11,10 @@
 --     $M/20261127_60_community_review_devices_freeze.sql $M/20261127_60_community_review_devices_freeze.sql \
 --     $R/l7_community.test.sql
 -- NEGATIVE CONTROL: the same chain without the two 20261127_60 files fails at T0.
+-- FULL CHAIN (batch l12): the same chain with the firm prelude and 20261202_80
+-- appended before this file — R/prelude_l12_firm_badge_storage.sql
+-- M/20261202_80_l12_firm_roles_log_badge_storage.sql — must pass too (T8 takes
+-- the N18 branch: the office plan, not the licence, admits the firm).
 --
 -- Actors (prelude_community_live_schema): L1, L2 verified lawyers; P pending
 -- lawyer; C client. Added here: M admin, F firm owner, D device user.
@@ -155,18 +159,47 @@ insert into public.firm_profiles (id, owner_user_id, name_ar, verification_statu
 insert into public.firm_members (firm_id, user_id, role, status) values
   ('ffffffff-0000-0000-0000-0000000000f1', 'a1000000-0000-0000-0000-000000000001', 'lawyer', 'active');
 update public.lawyer_profiles set license_expiry = current_date + 30 where user_id = 'a1000000-0000-0000-0000-000000000001';
+-- l12 (20261202_80, N18): «مكتب معتمد» needs an ACTIVE office plan
+-- (firm-basic / firm-enterprise) instead of a licensed lawyer member. This file
+-- runs on both chains: n18() says which rule is live, and each assertion that
+-- the new rule changed takes the N18 branch (never a weaker check).
+create or replace function pg_temp.n18() returns boolean language sql stable as $$
+  select coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(
+    'public.community_verified_office_users(uuid[])'::regprocedure), 'firm-basic') > 0, false)
+$$;
+do $$
+begin
+  if pg_temp.n18() then
+    execute $q$insert into public.subscriptions (user_id, status, current_period_end, plan_id)
+               values ('00000000-0000-0000-0000-0000000000ff', 'active', now() + interval '200 days', 'firm-basic')$q$;
+  end if;
+end $$;
 set role service_role;
 select pg_temp.expect('T8 verified office',
   (select string_agg(x::text, ',') from public.community_verified_office_users(array[
      '00000000-0000-0000-0000-0000000000ff', 'c0000000-0000-0000-0000-00000000000c']::uuid[]) x),
   '00000000-0000-0000-0000-0000000000ff');
 reset role;
-update public.lawyer_profiles set license_expiry = current_date - 1 where user_id = 'a1000000-0000-0000-0000-000000000001';
+-- the licence expires (20261127_60) / the office plan ends (N18, 20261202_80)
+do $$
+begin
+  if pg_temp.n18() then
+    execute $q$update public.subscriptions set status = 'cancelled' where user_id = '00000000-0000-0000-0000-0000000000ff' and plan_id = 'firm-basic'$q$;
+  else
+    update public.lawyer_profiles set license_expiry = current_date - 1 where user_id = 'a1000000-0000-0000-0000-000000000001';
+  end if;
+end $$;
 set role service_role;
-select pg_temp.expect('T8 expired licence',
+select pg_temp.expect('T8 expired licence / ended office plan',
   (select count(*)::text from public.community_verified_office_users(array['00000000-0000-0000-0000-0000000000ff']::uuid[])), '0');
 reset role;
 update public.lawyer_profiles set license_expiry = current_date + 30 where user_id = 'a1000000-0000-0000-0000-000000000001';
+do $$
+begin
+  if pg_temp.n18() then
+    execute $q$update public.subscriptions set status = 'active' where user_id = '00000000-0000-0000-0000-0000000000ff' and plan_id = 'firm-basic'$q$;
+  end if;
+end $$;
 update public.firm_profiles set verification_status = 'pending' where id = 'ffffffff-0000-0000-0000-0000000000f1';
 set role service_role;
 select pg_temp.expect('T8 CR not verified',
@@ -180,6 +213,13 @@ begin
 exception when insufficient_privilege then null;
 end $$;
 reset role;
+-- N18: the office plan row is the fixture's own; the freeze part below starts clean.
+do $$
+begin
+  if pg_temp.n18() then
+    execute $q$delete from public.subscriptions where user_id = '00000000-0000-0000-0000-0000000000ff' and plan_id = 'firm-basic'$q$;
+  end if;
+end $$;
 
 -- ═════ B. freeze ═════════════════════════════════════════════════════════════
 insert into public.subscriptions (id, user_id, status, current_period_end) values

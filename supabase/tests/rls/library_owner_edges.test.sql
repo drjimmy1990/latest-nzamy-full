@@ -30,6 +30,14 @@
 --     $M/20261130_30_library_regulation_ref.sql "$B" \
 --     $M/20261130_40_library_owner_edges.sql $M/20261130_40_library_owner_edges.sql \
 --     "$B" $R/library_owner_edges.test.sql
+-- FULL CHAIN (batch l12): the same chain with 20261202_30 appended before this
+-- file must pass too. 20261202_30 (Q132 / 308) replaces the resolver: a flagged
+-- link is no longer held and an article it cannot pin (fraction, not found,
+-- ambiguous, regulation outside an ATTACHED block) links to the target LAW node;
+-- amended_by is merged instruments → article. This fixture's graph has no law
+-- node and no LAW-30-0001 instrument, so those rows read node_missing /
+-- source_doc_unknown (T3, l12 branch); library_links_l12.test.sql proves the
+-- law-node fallback itself. Every other assertion is the same on both chains.
 -- NEGATIVE CONTROL (must FAIL): the same chain without 20261130_30 →
 -- "20261130_40: library.articles.regulation_ref missing — apply 20261130_30 first".
 -- Every assertion RAISES on failure (the harness fails closed on ERROR).
@@ -165,6 +173,21 @@ declare
     ['0000000000000e16', 'type_not_merged']];
   i int;
 begin
+  -- l12 (20261202_30): the resolver that holds nothing flagged and falls back to the law node.
+  if pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.graph_rag_resolve_owner_edges()'::regprocedure), 'resolved_doc') > 0 then
+    want := array[
+      ['00000000000000e1', 'resolved'], ['00000000000000e2', 'resolved'], ['00000000000000e3', 'resolved'],
+      ['00000000000000e4', 'node_missing'], ['00000000000000e5', 'target_doc_unknown'], ['00000000000000e6', 'resolved'],
+      ['00000000000000e7', 'resolved'], ['00000000000000e8', 'source_principle_ambiguous'],
+      ['00000000000000e9', 'source_principle_missing'], ['0000000000000e10', 'node_missing'],
+      ['0000000000000e11', 'node_missing'], ['0000000000000e12', 'node_missing'],
+      ['0000000000000e13', 'resolved'], ['0000000000000e14', 'resolved'], ['0000000000000e15', 'node_missing'],
+      ['0000000000000e16', 'source_doc_unknown']];
+    if exists (select 1 from library_graph.owner_edges where resolve_status = 'held_flagged') then
+      raise exception 'T3 FAIL (l12): a flagged link is still held';
+    end if;
+    raise notice 'T3 (l12 resolver): flagged / unpinned links fall back to the law node — absent from this graph, so node_missing';
+  end if;
   for i in 1 .. array_length(want, 1) loop
     if pg_temp.st(want[i][1]) is distinct from want[i][2] then
       raise exception 'T3 FAIL: % is %, expected %', want[i][1], pg_temp.st(want[i][1]), want[i][2];

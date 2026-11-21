@@ -15,6 +15,10 @@
 --     $R/l11_community_verified_firms.test.sql
 -- NEGATIVE CONTROL: the same chain without the two 20261201_50 files fails at
 -- T1 (the verified firm cannot read the lawyers-only post).
+-- FULL CHAIN (batch l12): the same chain with the firm prelude and 20261202_80
+-- appended before this file — R/prelude_l12_firm_badge_storage.sql
+-- M/20261202_80_l12_firm_roles_log_badge_storage.sql — must pass too (N18
+-- branch: FV and FU hold an active firm-basic plan, FX none; T7 ends FV's plan).
 --
 -- Actors (prelude_community_live_schema): L1, L2 verified lawyers; P pending
 -- lawyer; C client. Post LP = L1's lawyers-only post, answered by L2.
@@ -64,6 +68,26 @@ create or replace function pg_temp.expect(label text, got text, want text) retur
 begin
   if got is distinct from want then
     raise exception '% FAIL: got %, want %', label, got, want;
+  end if;
+end $$;
+
+-- l12 (20261202_80, N18): «مكتب معتمد» needs an ACTIVE office plan
+-- (firm-basic / firm-enterprise) instead of a licensed lawyer member. This file
+-- runs on both chains: n18() says which rule is live, and each assertion that
+-- the new rule changed takes the N18 branch (never a weaker check).
+create or replace function pg_temp.n18() returns boolean language sql stable as $$
+  select coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(
+    'public.community_verified_office_users(uuid[])'::regprocedure), 'firm-basic') > 0, false)
+$$;
+-- N18 fixture: FV (verified) and FU (NOT verified) hold an active office plan;
+-- FX (verified) holds none — so the CR check and the plan check are both proved.
+do $$
+begin
+  if pg_temp.n18() then
+    execute $q$insert into public.subscriptions (user_id, status, current_period_end, plan_id) values
+      ('f1000000-0000-0000-0000-0000000000f1', 'active', now() + interval '200 days', 'firm-basic'),
+      ('f2000000-0000-0000-0000-0000000000f2', 'active', now() + interval '200 days', 'firm-basic')$q$;
+    raise notice 'N18 rule live (20261202_80): office plans for FV and FU, none for FX';
   end if;
 end $$;
 
@@ -209,14 +233,23 @@ select pg_temp.expect('T7 firm out after its CR lost verification (others'' post
     where visibility = 'lawyers_only' and author_id <> 'f1000000-0000-0000-0000-0000000000f1'), '0');
 reset role;
 update public.firm_profiles set verification_status = 'verified' where id = 'f1f1f1f1-0000-0000-0000-0000000000f1';
--- … and when the only lawyer leaves the firm
-update public.firm_members set status = 'removed'
- where firm_id = 'f1f1f1f1-0000-0000-0000-0000000000f1' and user_id = 'a1000000-0000-0000-0000-000000000001';
+-- … and when the only lawyer leaves the firm (20261201_50) / its office plan
+-- ends (N18, 20261202_80)
+do $$
+begin
+  if pg_temp.n18() then
+    execute $q$update public.subscriptions set status = 'cancelled'
+                where user_id = 'f1000000-0000-0000-0000-0000000000f1' and plan_id = 'firm-basic'$q$;
+  else
+    update public.firm_members set status = 'removed'
+     where firm_id = 'f1f1f1f1-0000-0000-0000-0000000000f1' and user_id = 'a1000000-0000-0000-0000-000000000001';
+  end if;
+end $$;
 set role authenticated;
 select set_config('test.uid', 'f1000000-0000-0000-0000-0000000000f1', false);
-select pg_temp.expect('T7 firm out after its only lawyer left',
+select pg_temp.expect('T7 firm out after its only lawyer left / its office plan ended',
   (select public.community_lawyers_space_ok()::text), 'false');
 reset role;
-do $$ begin raise notice 'T7 PASS: losing the CR verification or the licensed lawyer closes the lawyers-only space'; end $$;
+do $$ begin raise notice 'T7 PASS: losing the CR verification or the licensed lawyer (N18: the office plan) closes the lawyers-only space'; end $$;
 
 do $$ begin raise notice 'l11_community_verified_firms: ALL PASS'; end $$;

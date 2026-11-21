@@ -19,6 +19,7 @@
 --   R=supabase/tests/rls; M=supabase/migrations; B=$(mktemp -d)/verify_l12_rules.sql
 --   sed -n '/^-- >>> verify:l12_rules/,/^-- <<< verify:l12_rules/p' $M/_verify.sql > "$B"
 --   bash $R/run.sh \
+--     $M/20260626_legal_library_schema.sql \
 --     $M/20260603_phase1_003_subscriptions_billing.sql $M/20260627_platform_settings.sql \
 --     $M/20261019_10_library_access_grants.sql $M/20261022_10_payments_core.sql \
 --     $R/prelude_points_lots_fixture.sql $M/20261022_20_points_lots.sql \
