@@ -261,3 +261,19 @@ test("rename (owner ١٢٣): the lawyer's short draft no longer calls itself «�
   assert.doesNotMatch(step, /هذا عقد مبسّط|مسوّدة أولية مبسّطة/);
   assert.match(step, /مسوّدة عقد مختصرة/);
 });
+
+test("entry links (l12 integration): hub card and sidebars for individuals and businesses only, «قريباً» until live; the catalogue card opens the tool", async () => {
+  const { readFileSync: read } = await import("node:fs");
+  const src = (rel: string) => read(new URL(`../../${rel}`, import.meta.url), "utf8");
+  const hub = src("app/ai/page.tsx");
+  assert.match(hub, /const SIMPLE_CONTRACT_AUDIENCE: ReadonlySet<string> = new Set\(\["individual", "corporate", "admin"\]\);/);
+  assert.match(hub, /if \(t\.href === SIMPLE_CONTRACT_HREF\) return SIMPLE_CONTRACT_AUDIENCE\.has\(user\.userType\);/);
+  assert.match(hub, /t\.href === SIMPLE_CONTRACT_HREF && !simpleContractLive \? \{ \.\.\.t, badgeAr: "قريباً", badgeEn: "Soon" \} : t/);
+  const row = 'href: "/ai/simple-contract", icon: "PencilSimple", badge: "قريباً", liveToolId: "simple-contract" }';
+  assert.ok(src("constants/navigation.sidebars.primary.ts").includes(row), "individual sidebar");
+  assert.ok(src("constants/navigation.sidebars.business.ts").includes(row), "corporate sidebar");
+  assert.ok(!src("constants/navigation.sidebars.legal.ts").includes("/ai/simple-contract"), "never the lawyer or firm menu");
+  const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
+  const card = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-draft")!;
+  assert.equal(card.route, "/ai/simple-contract");
+});

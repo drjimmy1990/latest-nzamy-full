@@ -297,7 +297,7 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     serviceId: "contract-draft",
     categoryId: "contracts",
     label: "صياغة عقد مخصص",
-    description: "الذكاء الاصطناعي يصيغ عقدك من البداية حسب احتياجاتك الدقيقة",
+    description: "مسوّدة عقد مبسّطة استرشادية يكتبها الذكاء الاصطناعي من بياناتك، ولا تغني عن عقد يراجعه محامٍ",
     // q327 (owner package of 1 Nov 2026): no «ابتداءً من ٩٩ ر.س» — nothing
     // ever charged it (requiresPayment is false; the route is the AI tool).
     // The approved price is the tool's: ٥٠٠ نقطة for a contract (owner guide
@@ -312,10 +312,17 @@ export const CLIENT_SERVICE_CATALOG: ClientServiceCatalogItem[] = [
     // note is the tool's price alone. No includedByPlan. Migration
     // 20261102_11 writes the same row (run it AFTER the deploy: older code
     // has no "points" label).
+    // Owner ١٢٣ (batch l12 integration): the card opens «صائغ العقود المبسّط»
+    // (/ai/simple-contract, individuals and businesses), not the lawyers'
+    // /ai/contract-drafter. Its price is an admin setting (simple_contract_price,
+    // 100 until set), so the note names no number. CODE ONLY: the DB row
+    // (admin_pricing_catalog 'contract-draft', metadata.route / priceNote from
+    // 20260518 / 20261102_11) still wins on /api/client-pricing until the
+    // operator updates it (see the l12 integration report).
     basePrice: 0,
     priceMode: "points",
-    priceNote: "٥٠٠ نقطة للعقد",
-    route: "/ai/contract-drafter",
+    priceNote: "بالنقاط، ويظهر سعره قبل كتابة العقد",
+    route: "/ai/simple-contract",
     icon: "PencilSimple",
     receiverType: "ai_workspace",
     requestType: "ai_draft",

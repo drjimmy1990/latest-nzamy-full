@@ -613,9 +613,12 @@ test("q327: contract review is 600 for individuals; contract drafting says the t
   assert.equal(draft.priceMode, "points");
   assert.equal(draft.includedByPlan, undefined, "no plan includes contract drafting");
   assert.equal(draft.requiresPayment, false);
-  assert.equal(draft.route, "/ai/contract-drafter");
-  // The note names exactly what /ai/contract-drafter debits — no «أو».
-  assert.equal(draft.priceNote, `${display.arabicPoints(CONTRACT_DRAFT_PRICE)} نقطة للعقد`);
+  // Owner ١٢٣ (l12 integration): the card opens the individuals' and
+  // businesses' simple drafter, whose price is an admin setting — so the note
+  // names no number (never the lawyer tool's CONTRACT_DRAFT_PRICE).
+  assert.equal(draft.route, "/ai/simple-contract");
+  assert.doesNotMatch(draft.priceNote ?? "", /[0-9٠-٩]/);
+  assert.ok(CONTRACT_DRAFT_PRICE > 0 && display.arabicPoints(CONTRACT_DRAFT_PRICE).length > 0);
   assert.equal(draft.tag, undefined, "no popularity claim");
 });
 
@@ -674,7 +677,7 @@ test("S6 (q327): migration 20261103_20 inserts the same business variant the cod
   assert.doesNotMatch(code, /\b(?:update|drop|delete|truncate)\b|create (?:or replace )?function|\bpolicy\b/i);
 });
 
-test("task 6 (G): migration 20261102_11 writes contract-draft's mode and note exactly as the code row carries them", async () => {
+test("task 6 (G): migration 20261102_11 writes contract-draft's mode (and the lawyer-tool note the operator replaces in l12)", async () => {
   const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
   const { formatClientServicePrice } = await import("../pricingRepository.ts");
   const row = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-draft")!;
@@ -683,7 +686,9 @@ test("task 6 (G): migration 20261102_11 writes contract-draft's mode and note ex
   const stmt = code.split(";").find((s) => /update public\.admin_pricing_catalog/.test(s));
   assert.ok(stmt && stmt.includes("where service_id = 'contract-draft'"));
   assert.ok(stmt.includes(`set price_mode = '${row.priceMode}',`), "the same mode");
-  assert.ok(stmt.includes(`'priceNote', '${row.priceNote}'`), "the same note");
+  // l12 integration: the code row now names no number (owner ١٢٣); the
+  // historical migration keeps its note until the operator's UPDATE.
+  assert.ok(stmt.includes(`'priceNote', '٥٠٠ نقطة للعقد'`), "the historical note");
   assert.match(stmt, /- 'includedByPlan'/, "the plan claim is removed from the row");
   assert.doesNotMatch(stmt, /base_price/, "riyals untouched (0 since _10)");
   assert.doesNotMatch(code, /\b(?:drop|delete|truncate)\b|create (?:or replace )?function/i);

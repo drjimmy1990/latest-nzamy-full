@@ -72,7 +72,7 @@ test("the group goes in for a real admin in a working view only", () => {
 test("wiring: hub, sidebar, the screen gate and the /ai notice", () => {
   const hub = src("app/ai/page.tsx");
   assert.match(hub, /const adminTools = useAdminToolsView\(\)\.showAll;/);
-  assert.match(hub, /const shownTools = adminTools\s*\? adminAiOrder\(allowedTools\)\.map\(\(t\) => \(\{ \.\.\.t, badge: undefined, badgeAr: undefined, badgeEn: undefined \}\)\)/);
+  assert.match(hub, /const shownTools = adminTools\s*\? adminAiOrder\(withSimpleBadge\)\.map\(\(t\) => \(\{ \.\.\.t, badge: undefined, badgeAr: undefined, badgeEn: undefined \}\)\)/);
   assert.match(src("components/dashboard/SharedSidebar.tsx"), /const groups = withAdminAiGroup\(lockedGroups, isRealAdmin && adminBypassesUiGates\(sessionUserType, adminSim\), userType\);/);
   const hook = src("hooks/useToolUsable.ts");
   assert.match(hook, /const admin = useAdminToolsView\(\)\.showAll;/);

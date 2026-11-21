@@ -34,6 +34,7 @@ import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import { adminAiOrder } from "@/lib/ai/adminAiTools";
 import { useAdminToolsView } from "@/hooks/useAdminToolsView";
+import { useLiveTools } from "@/hooks/useLiveTools";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -590,8 +591,27 @@ const GLOBAL_RESEARCH_CARD: AiToolCard = {
   badgeEn: "Soon",
 };
 
+/**
+ * Owner ١٢٣ (batch l12 simpledraft): «صائغ العقود المبسّط» for individuals and
+ * businesses only (SIMPLE_CONTRACT_ROLES; never the lawyer or the firm). It
+ * ships off: the hub marks it «قريباً» until tool-status says it runs
+ * (useLiveTools), and its page says the same.
+ */
+const SIMPLE_CONTRACT_HREF = "/ai/simple-contract";
+const SIMPLE_CONTRACT_AUDIENCE: ReadonlySet<string> = new Set(["individual", "corporate", "admin"]);
+const SIMPLE_CONTRACT_CARD: AiToolCard = {
+  id: null,
+  href: SIMPLE_CONTRACT_HREF,
+  titleAr: "صائغ العقود المبسّط",
+  titleEn: "Simple Contract Drafter",
+  icon: PencilSimple,
+  descAr: "اختر نوع العقد واكتب بياناته، فتصلك مسوّدة عقد مبسّطة استرشادية بلغة واضحة.",
+  descEn: "Pick the contract type and fill in its details to get a simple, guidance-only draft.",
+};
+
 const AI_TOOLS: AiToolCard[] = [
   GLOBAL_RESEARCH_CARD,
+  SIMPLE_CONTRACT_CARD,
   ...LAWYER_AI_TOOLS.map((tool) => ({
     id: tool.permission,
     href: tool.href,
@@ -663,15 +683,21 @@ function AiHubDashboard() {
     // /ai/consult is open to everyone again, non-Saudi individuals included
     // (owner Q172 default, 2026-10-04): /ai/global is coming-soon, not a substitute.
     if (t.href === "/ai/consult") return true;
+    if (t.href === SIMPLE_CONTRACT_HREF) return SIMPLE_CONTRACT_AUDIENCE.has(user.userType);
     if (!t.id) return true;
     return user.permissions.includes(t.id as UserPermission);
   });
   // N2 (owner F02 §5 #63, batch l12): the admin sees every tool, the drafter then
   // محترف العقود first, with no «قريباً» or price badge. Display only — a tool
   // switched off still refuses his run before any charge (src/lib/ai/adminAiTools.ts).
+  // Owner ١٢٣: the simple contract drafter is «قريباً» until it runs for this account.
+  const simpleContractLive = useLiveTools(["simple-contract"], allowedTools.some((t) => t.href === SIMPLE_CONTRACT_HREF)).has("simple-contract");
+  const withSimpleBadge = allowedTools.map((t) =>
+    t.href === SIMPLE_CONTRACT_HREF && !simpleContractLive ? { ...t, badgeAr: "قريباً", badgeEn: "Soon" } : t,
+  );
   const shownTools = adminTools
-    ? adminAiOrder(allowedTools).map((t) => ({ ...t, badge: undefined, badgeAr: undefined, badgeEn: undefined }))
-    : allowedTools;
+    ? adminAiOrder(withSimpleBadge).map((t) => ({ ...t, badge: undefined, badgeAr: undefined, badgeEn: undefined }))
+    : withSimpleBadge;
 
   return (
     <div className={`p-6 md:p-10 max-w-[1200px] mx-auto min-h-[100dvh]`} dir={isRTL ? "rtl" : "ltr"}>
