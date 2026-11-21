@@ -1,6 +1,6 @@
 # مواصفة للمبرمج: `/api/v1/ext/ai/runs` و`/quote` (وGET للتشغيل)
 
-> الحالة: **مواصفة لم تُبنَ**. المسودات في `platform-patch/routes` فيها `501` وTODO. العقد الملزم هو `nezamy-client/src/schemas.ts` (zod)، والمنصة تنفّذه. الخادم الوهمي `nezamy-client/test/mock-server.ts` هو التنفيذ المرجعي للسلوك، وكل ما تحت مجرّب فعلًا مقابله (العميل 20/20 والخادم 56/56).
+> الحالة (٢٠٢٦-١١-٢١): **المسارات الثلاثة مبنية في المنصة** (`src/app/api/v1/ext/ai/runs` + `quote` + `[id]`، والمنطق الصافي في `src/lib/ext/extRuns.ts` باختبارات ٧/٧، وردودها مُمرَّرة على مخططات zod للعميل). **غير مجرَّبة على منصة حية**: تحتاج تطبيق `mcp/platform-patch/migration.sql` (جدول `api_tokens` والدالة `api_token_lookup`؛ قبله كل نداء = `401` مغلق) وصفحة إنشاء التوكنات. مفتاح الإيقاف: `platform_settings.ext_kill_switch = true`. الأدوات المفتوحة الآن `legal-drafter` و`contract-drafter` فقط؛ `brief-check` (ملفات) و`sayegh-v2` (بلا سجل) يردّان `422`. `daily_remaining` = `null` دائمًا (العدّ داخل `ai_start_run`). العقد الملزم هو `nezamy-client/src/schemas.ts`؛ الخادم الوهمي `nezamy-client/test/mock-server.ts` هو السلوك المرجعي. مسودات `platform-patch/routes` للتشغيل والسعر صارت قديمة (المكتوب في `src/` هو المعتمد)؛ بقيت مسودة مقال المكتبة.
 > علامات: **[عقد]** مأخوذ من الكود المختبَر. **[افتراض]** من عندي ويُؤكَّد. **[n8n]** من `docs/n8n-legal-drafter-v2.md` (جلسة n8n، تصميم staging).
 
 ## ١. ما المطلوب ببساطة
