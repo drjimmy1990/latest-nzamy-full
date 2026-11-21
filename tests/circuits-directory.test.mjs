@@ -175,8 +175,11 @@ test("Owner ٤٢٩: regions and the personal-status category stay applied", asyn
 
   await t.test("category counts, with «محكمة أحوال شخصية» as the ninth", () => {
     assert.deepStrictEqual(count("category"), {
-      "محكمة عامة": 1019, "محكمة جزائية": 318, "محكمة تنفيذ": 256, "كتابة عدل": 195,
-      "محكمة أحوال شخصية": 177, "محاكم ودوائر قضائية": 114, "استئناف": 76,
+      // Q118 (batch l12): the 70 personal-status circuits that sit inside a
+      // general court («… بالمحكمة العامة بـ…») are filed under «محكمة عامة»,
+      // 177 → 107 and 1,019 → 1,089.
+      "محكمة عامة": 1089, "محكمة جزائية": 318, "محكمة تنفيذ": 256, "كتابة عدل": 195,
+      "محكمة أحوال شخصية": 107, "محاكم ودوائر قضائية": 114, "استئناف": 76,
       "إدارة وفروع الوزارة": 36, "محكمة تجارية": 1,
     });
     assert.strictEqual(data.metadata.categoriesCount, 9);
@@ -213,11 +216,19 @@ test("Owner ٤٢٩: regions and the personal-status category stay applied", asyn
     }
   });
 
-  await t.test("every personal-status row names personal status; an ex-general-court circuit is one of them", () => {
+  await t.test("every personal-status row names personal status; a circuit inside a general court is «محكمة عامة» (Q118)", () => {
     const fold = (s) => s.replace(/[أإآ]/g, "ا");
     for (const c of data.circuits.filter((row) => row.category === "محكمة أحوال شخصية")) {
       assert.match(fold(c.name), /احوال الشخصية|احوال شخصية/, c.id);
     }
-    assert.strictEqual(byId.get("moj-cir-0570").category, "محكمة أحوال شخصية");
+    assert.strictEqual(byId.get("moj-cir-0570").category, "محكمة عامة");
+    const fold2 = (s) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه");
+    for (const c of data.circuits.filter((row) => row.category === "محكمة أحوال شخصية")) {
+      assert.ok(!/بالمحكمه العامه/.test(fold2(c.name)), `${c.id} sits in a general court`);
+    }
+    assert.strictEqual(
+      data.circuits.filter((row) => row.category === "محكمة عامة" && /احوال الشخصيه|احوال شخصيه/.test(fold2(row.name))).length,
+      71, // the 70 of Q118 + moj-cir-2042 («… للأحوال الشخصية في بالمحكمة العامة بحائل»), filed there before
+    );
   });
 });
