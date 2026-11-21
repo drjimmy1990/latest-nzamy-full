@@ -25,7 +25,7 @@ import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
-import { lawCardDates, mergedFileBadge, mergedIncludesLine, mergedMoreLabel } from "../catalogueCardLabels";
+import { CARD_SUB_NAMES_SHOWN, cardSubLegislationNames, lawCardDates, mergedFileBadge, subLegislationCountLabel, unnamedSubLegislationCount } from "../catalogueCardLabels";
 import { withSearchQuery } from "@/lib/search/multiColorSearch";
 import { apiSlug } from "@/utils/apiSlug";
 import { Hl } from "@/components/search/MultiColorHighlight";
@@ -49,6 +49,52 @@ import {
  */
 function lawCategoryLabel(id: string): { label: string; labelEn: string } | null {
   return LEGAL_TAXONOMY.find(c => c.id === id) ?? (id === SECTION_30.id ? SECTION_30 : null);
+}
+
+/**
+ * File 03 L3 (batch l12): the sub-legislation names under a /laws card —
+ * two names, then «إظهار المزيد» opens the rest in place; the documents the
+ * API counted but did not name stay a «+N تشريعات فرعية» line. The button
+ * never opens the card (it sits inside the card's click target).
+ */
+function SubLegislationNames({ names, prefix, unnamed, isDark }: { names: string[]; prefix: string; unnamed: number; isDark: boolean }) {
+  const [open, setOpen] = useState(false);
+  const hidden = Math.max(0, names.length - CARD_SUB_NAMES_SHOWN);
+  const shown = open ? names : names.slice(0, CARD_SUB_NAMES_SHOWN);
+  const moreLabel = subLegislationCountLabel((open ? 0 : hidden) + unnamed);
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  return (
+    <div className="mb-2">
+      {shown.length > 0 && (
+        <p
+          className={`text-[11px] font-semibold leading-snug ${open ? "" : "line-clamp-2"} ${isDark ? "text-gray-400" : "text-gray-500"}`}
+          data-testid="law-card-merged-includes"
+        >
+          {prefix} {shown.join(" • ")}
+        </p>
+      )}
+      {(moreLabel || hidden > 0) && (
+        <div className="mt-0.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          {moreLabel && (
+            <span className={`text-[10.5px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`} data-testid="law-card-merged-more">
+              {moreLabel}
+            </span>
+          )}
+          {hidden > 0 && (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={(e) => { stop(e); setOpen((v) => !v); }}
+              onKeyDown={stop}
+              className={`min-h-[32px] px-2 text-[10.5px] font-bold underline decoration-dotted underline-offset-4 rounded-md ${isDark ? "text-[#C8A762] hover:bg-white/5" : "text-[#0B3D2E] hover:bg-gray-100"}`}
+            >
+              {open ? "إظهار أقل" : "إظهار المزيد"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** A search section that failed to read: a notice, never «0 نتيجة». */
@@ -410,35 +456,39 @@ export function LawsTabContent({
                 // Owner 2026-11-07 (screenshot 1): the grey «يشتمل على: A • B»
                 // line under the title — at most two names, none → no line.
                 // Arabic only: the names are Arabic (an English card shows no line).
-                const mergedIncludes = mergedLabel && isRTL ? mergedIncludesLine(sys.title, sys.mergedNames ?? []) : "";
+                // File 03 L3 (batch l12): the merged regulations first, then the
+                // linked documents' titles (sub_legislation_titles), in the form
+                // the admin setting names (full by default; library question 5).
+                const linkedTitles: string[] = Array.isArray(sys.subLegislationTitles) ? sys.subLegislationTitles : [];
+                const subNames = isRTL
+                  ? cardSubLegislationNames(sys.title, mergedLabel ? sys.mergedNames ?? [] : [], linkedTitles, sys.childNameForm === "short" ? "short" : "full")
+                  : [];
+                const mergedIncludes = subNames.length > 0;
                 // Owner file 16 §7: «+N تشريعات فرعية» counts the sub-legislation the
                 // card does not name — the merged names past the two above, plus
                 // (batch l10, library agent §1.8) the documents whose parent_law_id
                 // names this law and are not among them (sub_legislation_count from
                 // /api/library/init). On every card that has any, merged or not.
                 const subLegislationCount = typeof sys.subLegislationCount === "number" ? sys.subLegislationCount : 0;
+                const unnamedSubs = unnamedSubLegislationCount(subLegislationCount, linkedTitles.length);
                 const mergedMore = isRTL
-                  ? mergedMoreLabel(sys.title, mergedIncludes ? sys.mergedNames ?? [] : [], subLegislationCount)
+                  ? subLegislationCountLabel(unnamedSubs)
                   : subLegislationCount > 0 ? `+${subLegislationCount} sub-legislation` : "";
                 const mergedIncludesRow = mergedIncludes || mergedMore ? (
-                  <div className="mb-2">
-                    {mergedIncludes && (
-                      <p
-                        className={`text-[11px] font-semibold leading-snug line-clamp-2 ${isDark ? "text-gray-400" : "text-gray-500"}`}
-                        data-testid="law-card-merged-includes"
-                      >
-                        {mergedIncludes}
-                      </p>
-                    )}
-                    {mergedMore && (
-                      <p
-                        className={`mt-0.5 text-[10.5px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}
-                        data-testid="law-card-merged-more"
-                      >
+                  isRTL ? (
+                    <SubLegislationNames
+                      names={subNames}
+                      prefix={mergedLabel && (sys.mergedNames ?? []).length > 0 ? "يشتمل على:" : "التشريعات الفرعية:"}
+                      unnamed={unnamedSubs}
+                      isDark={isDark}
+                    />
+                  ) : (
+                    <div className="mb-2">
+                      <p className={`mt-0.5 text-[10.5px] font-bold ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`} data-testid="law-card-merged-more">
                         {mergedMore}
                       </p>
-                    )}
-                  </div>
+                    </div>
+                  )
                 ) : null;
                 // Owner note ١٢-٦ / answers ٣١٧–٣١٨: the one public date
                 // («آخر تحديث تشريعي», the date alone, everyone); «صدر» only

@@ -206,6 +206,8 @@ export default function LegalLibraryPage() {
   // library grant, or an admin. The tabs lock a card on it, so a library
   // subscriber is not shown locks by the client's tier-only gate.
   const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
+  // File 03 L3 / library question 5 (batch l12): /api/library/init's display.childNameForm.
+  const [childNameForm, setChildNameForm] = useState<"full" | "short">("full");
 
   // — Feqh filters —
   const [feqhType,    setFeqhType]    = useState<FeqhType>("all");
@@ -578,6 +580,7 @@ export default function LegalLibraryPage() {
         const lawsOwnedByFilter = lawsRequestIdRef.current !== 0;
         setOfficialMetaLocked(data?.officialMetaLocked === true);
         setViewerHasFullAccess(data?.viewer?.hasFullAccess === true);
+        setChildNameForm(data?.display?.childNameForm === "short" ? "short" : "full");
         if (!lawsOwnedByFilter) {
           setDbLaws(data.laws?.data || []);
           lawsKeyRef.current = lawsFilterKey("all", "all");
@@ -966,6 +969,12 @@ export default function LegalLibraryPage() {
         // Library agent §1.8 (l10): documents whose parent_law_id names this law
         // (/api/library/init; absent at 0). This mapping is a whitelist.
         subLegislationCount: typeof law.sub_legislation_count === "number" ? law.sub_legislation_count : 0,
+        // File 03 L3 (batch l12): their first titles, and the name form the
+        // admin setting names (library question 5; full by default).
+        subLegislationTitles: Array.isArray(law.sub_legislation_titles)
+          ? law.sub_legislation_titles.filter((n: unknown): n is string => typeof n === "string" && n.trim() !== "")
+          : [],
+        childNameForm,
         sub_types: law.has_merged_regulation ? ["لائحة تنفيذية"] : [],
         // The row's own type: only 593 of 5,901 are «نظام» (LIB-03).
         doc_type: law.type || "",

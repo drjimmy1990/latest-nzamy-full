@@ -171,6 +171,45 @@ export function childCountsByParent(
   return new Map(Array.from(children.entries(), ([slug, set]) => [slug, set.size]));
 }
 
+/** How many linked-child titles the /laws card receives (L3: 2 shown, the rest behind «إظهار المزيد»). */
+export const CARD_CHILD_TITLES_MAX = 10;
+
+/**
+ * File 03 L3 (batch l12): parent slug → the titles of its linked children,
+ * for the /laws card — the same children childCountsByParent counts (same
+ * rule, merged names left out), executive regulations first, then by title,
+ * at most `max`. Titles are public like the catalogue (no text, no date).
+ */
+export function childTitlesByParent(
+  rows: readonly unknown[] | null | undefined,
+  parents: readonly { slug?: unknown; instrument_id?: unknown; title?: unknown; mergedNames?: readonly unknown[] }[],
+  max = CARD_CHILD_TITLES_MAX,
+): Map<string, string[]> {
+  const byKey = new Map<string, { slug: string; instrument_id: string; title: unknown; mergedNames: readonly unknown[] }>();
+  for (const p of parents) {
+    const key = lawChildKey(p.instrument_id);
+    const slug = str(p.slug);
+    if (key && slug && !byKey.has(key)) byKey.set(key, { slug, instrument_id: key, title: p.title, mergedNames: p.mergedNames ?? [] });
+  }
+  const titles = new Map<string, Map<string, string>>();
+  for (const raw of rows ?? []) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const parent = byKey.get(str(row.parent_law_id));
+    if (!parent || !isLawChildOf(row, parent)) continue;
+    if (childNamedAmongMerged(row.title, parent.title, parent.mergedNames)) continue;
+    const title = str(row.title).replace(/\s+/g, " ");
+    if (!title) continue;
+    if (!titles.has(parent.slug)) titles.set(parent.slug, new Map());
+    titles.get(parent.slug)!.set(str(row.slug), title);
+  }
+  const isExec = (t: string) => t.includes("اللائحة التنفيذية") ? 0 : 1;
+  return new Map(Array.from(titles.entries(), ([slug, bySlug]) => {
+    const list = Array.from(new Set(bySlug.values())).sort((a, b) => isExec(a) - isExec(b) || a.localeCompare(b, "ar"));
+    return [slug, list.slice(0, Math.max(0, max))];
+  }));
+}
+
 export interface LawChildItem {
   slug: string;
   title: string;
