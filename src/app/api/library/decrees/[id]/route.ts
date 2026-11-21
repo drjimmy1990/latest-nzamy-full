@@ -8,6 +8,8 @@ import { libraryGate } from '@/lib/library-gate';
 import { freeDecreePages } from '@/lib/library/freePages';
 import { withCleanCardRows } from '@/lib/library/lawSummaryVisibility';
 import { summaryForViewer } from '@/lib/library/legislativeEvent';
+import { summaryShown } from '@/lib/library/summaryReview';
+import { readSummariesReviewedOnly } from '@/lib/library/summaryReviewServer';
 import { maskDecreeOfficialFields, TIER_SHAPED_CACHE_CONTROL } from '../../laws/[slug]/_official-meta';
 
 /**
@@ -131,6 +133,23 @@ export async function GET(
       return NextResponse.json({ error: 'تعذّر تحميل هذا القرار' }, { status: 500, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const preamble = typeof preambleRow?.preamble === 'string' ? preambleRow.preamble : '';
+    // Q96 (batch l12): the summaries only once reviewed
+    // (library_summaries_reviewed_only; summary_status is 20261202_50's —
+    // before it runs, or on a failed read, the status is unknown: not shown).
+    const [decreeSummaryStatus, summariesReviewedOnly] = await Promise.all([
+      serverOnly
+        .schema('library')
+        .from('decrees_circulars')
+        .select('summary_status')
+        .eq('id', id)
+        .maybeSingle()
+        .then(
+          (r) => (r.error ? null : (r.data as { summary_status?: unknown } | null)?.summary_status ?? null),
+          () => null,
+        ),
+      readSummariesReviewedOnly(),
+    ]);
+    const showSummaries = summaryShown(decreeSummaryStatus, summariesReviewedOnly);
     // How many leading pages carry their text: all (Pro+, whitelisted), an
     // admin override, or the owner's first two pages.
     const free = freeDecreePages(probe, pages.length);
@@ -151,8 +170,8 @@ export async function GET(
       date: official.date,
       // Owner ٤٢٤ / ٣٨٠ (the laws' ٣١٩ rule): a non-subscriber's موجز and
       // summary lose their decree numbers and dates. The title is unchanged.
-      summary: typeof decree.summary === 'string' ? summaryForViewer(decree.summary, isSubscriber) : decree.summary,
-      summary_brief: typeof decree.summary_brief === 'string' ? summaryForViewer(decree.summary_brief, isSubscriber) : decree.summary_brief,
+      summary: !showSummaries ? null : typeof decree.summary === 'string' ? summaryForViewer(decree.summary, isSubscriber) : decree.summary,
+      summary_brief: !showSummaries ? null : typeof decree.summary_brief === 'string' ? summaryForViewer(decree.summary_brief, isSubscriber) : decree.summary_brief,
       cat: decree.category,
       // Owner answer ٢٢١: the text for subscribers; for everyone else nothing,
       // and a lock card when there is a preamble to lock.

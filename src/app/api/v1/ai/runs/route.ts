@@ -9,7 +9,7 @@ import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
-import { freeQuestionStatusWith, freeQuestionToolFor, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
+import { freeQuestionStatusWith, freeQuestionToolOf } from "@/lib/ai/freeQuestion";
 import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
@@ -63,6 +63,10 @@ async function libraryAccess(toolId: string, freeOpensTier?: (toolId: string) =>
   // quick-answer, so while he has some left they open its Pro rule (the
   // library's closed switch still applies) — otherwise a free-tier individual
   // could never use them. Once they are gone the Pro rule is back.
+  // Q121 (batch l12): the same for every account's OWN free tool — a
+  // lawyer's 10 on the library assistant open its professional-plan rule
+  // too (the per-account library lock still applies first). Its sources
+  // stay the locked 100-character preview without the library.
   const gateRefused = await libraryGate({ accountLock: isLibraryAiTool(toolId) });
   const refused = gateRefused ?? ((freeOpensTier && (await freeOpensTier(toolId))) ? null : await libraryAiAccess(toolId));
   if (!refused) return null;
@@ -149,14 +153,19 @@ export async function POST(request: NextRequest) {
             await supabase.from("lawyer_profiles").select("practice_kind").eq("user_id", user.id).maybeSingle(),
           ).practiceKind
         : "advocate";
+    const admin = await createServiceClient();
+    // Q121 (batch l12): the account's free-question tool (an individual's from
+    // the setting free_question_tool_by_account_type; everyone else: the
+    // library assistant).
+    const freeTool = await freeQuestionToolOf(admin, userType);
     const actor: RunActor = {
       userId: user.id,
       userType,
       practiceKind: practice,
       displayName: typeof profile?.display_name === "string" ? profile.display_name : null,
+      freeQuestionTool: freeTool,
     };
 
-    const admin = await createServiceClient();
     const graphOn = graphRagEnabled();
     // Off unless NZAMY_AI_TEXT_FILES is on: .docx, .txt, .md and pasted text are
     // then refused before any charge (aiFiles.ts, runCore.ts).
@@ -170,13 +179,15 @@ export async function POST(request: NextRequest) {
       {
         callbackUrl: callbackUrl(),
         n8n: (call) => callN8n({ ...call, baseUrl: process.env.N8N_AI_BASE_URL, key: process.env.NZAMY_AI_KEY }),
-        // Register 4 / 36 (l9): an e-mail-verified individual with free
-        // questions left passes quick-answer's Pro rule (any read error: no).
+        // Register 4 / 36 (l9) + Q121 (l12): an e-mail-verified account with
+        // free questions left passes its OWN free tool's Pro rule — the
+        // individual's quick-answer, the lawyer's library assistant (any read
+        // error: no).
         // Only while points_enforcement is on: when it is off,
         // ai_start_free_question starts a plain run and spends none of the
         // allowance, so the opener would never close.
         libraryAccess: libraryAccessFor(user.id, async (toolId) => {
-          if (toolId !== GENERAL_FREE_QUESTION_TOOL || freeQuestionToolFor(userType) !== toolId) return false;
+          if (toolId !== freeTool) return false;
           if (!user.email_confirmed_at) return false;
           try {
             const enforcement = await admin.from("platform_settings").select("value").eq("key", "points_enforcement").maybeSingle();

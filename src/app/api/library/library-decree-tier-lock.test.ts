@@ -138,7 +138,7 @@ test("every literal decrees_circulars read in src runs on the service client", (
 test("the reads the scanner cannot see: init and autocomplete pass the service client; the request-client ones name allowed columns", () => {
   const init = read("src/app/api/library/init/route.ts");
   assert.match(init, /const serverOnly = await createServiceClient\(\);/);
-  assert.match(init, /fetchSection\("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", \(q\) => q\.order\("id"\), serverOnly\)/);
+  assert.match(init, /fetchSection\(\s*"decrees_circulars",\s*\(on\) => \(on\.has\("decreeSummaryStatus"\) \? `\$\{DECREE_LIST_COLUMNS\}, summary_status` : DECREE_LIST_COLUMNS\),\s*"decrees",\s*\(q\) => q\.order\("id"\),\s*serverOnly,/);
   const auto = read("src/app/api/library/autocomplete/route.ts");
   assert.match(auto, /count\('decrees_circulars', serverOnly\),/);
   assert.match(auto, /\.textSearch\('fts', ftsQuery/);
@@ -159,8 +159,8 @@ test("the moved routes still mask per tier exactly as before", () => {
   const decree = read("src/app/api/library/decrees/[id]/route.ts");
   assert.match(decree, /const serverOnly = await createServiceClient\(\);\s*\/\/ Fetch decree metadata[^\n]*\n\s*const \{ data: decree, error: decreeError \} = await serverOnly/);
   assert.match(decree, /const official = maskDecreeOfficialFields\(\s*\{ ref: decree\.ref \|\| '', date: decree\.date \|\| '', official_url: decree\.official_url \|\| '' \},\s*isSubscriber,\s*\);/);
-  assert.match(decree, /summary: typeof decree\.summary === 'string' \? summaryForViewer\(decree\.summary, isSubscriber\) : decree\.summary,/);
-  assert.match(decree, /summary_brief: typeof decree\.summary_brief === 'string' \? summaryForViewer\(decree\.summary_brief, isSubscriber\) : decree\.summary_brief,/);
+  assert.match(decree, /summary: (?:!showSummaries \? null : )?typeof decree\.summary === 'string' \? summaryForViewer\(decree\.summary, isSubscriber\) : decree\.summary,/);
+  assert.match(decree, /summary_brief: (?:!showSummaries \? null : )?typeof decree\.summary_brief === 'string' \? summaryForViewer\(decree\.summary_brief, isSubscriber\) : decree\.summary_brief,/);
   assert.match(decree, /officialMetaLocked: !isSubscriber && Boolean\(decree\.ref \|\| decree\.date \|\| decree\.official_url\),/);
   // Auth still reads the cookie session through the request client.
   assert.match(decree, /const \{ data: \{ user \} \} = await supabase\.auth\.getUser\(\);/);
@@ -170,7 +170,8 @@ test("the moved routes still mask per tier exactly as before", () => {
 
   const search = read("src/app/api/library/search/route.ts");
   assert.match(search, /const orderQuery = \(head = false\) => \{\s*let q = serverOnly\s*\.schema\('library'\)\s*\.from\('decrees_circulars'\)/);
-  assert.match(search, /const brief = summaryForViewer\(r\.summary_brief as string \|\| '', hasFullAccess\);/);
+  // Q96 (l12): an unreviewed decree موجز gives an empty snippet first.
+  assert.match(search, /const brief = reviewedDecrees && !reviewedDecrees\.has\(String\(r\.id\)\) \? '' : summaryForViewer\(r\.summary_brief as string \|\| '', hasFullAccess\);/);
   assert.match(search, /const official = maskDecreeOfficialFields\(\{ ref: r\.ref \?\? '', date: r\.date \?\? '' \}, hasFullAccess\);/);
 
   const auto = read("src/app/api/library/autocomplete/route.ts");

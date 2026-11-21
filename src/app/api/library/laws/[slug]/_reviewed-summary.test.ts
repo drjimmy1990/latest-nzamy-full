@@ -6,7 +6,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { reviewedSummaryFor } from "./_reviewed-summary.ts";
+import { readerSummaryFields, reviewedSummaryFor } from "./_reviewed-summary.ts";
 
 test("reviewed → shown; draft, none or no columns → today's موجز (null)", () => {
   assert.equal(reviewedSummaryFor({ summary: " موجز مراجَع ", summary_status: "reviewed" }, true), "موجز مراجَع");
@@ -24,7 +24,9 @@ test("a non-subscriber's reviewed موجز loses decree numbers and dates (٣١�
 test("the law route reads the columns on their own and falls back to today's موجز", () => {
   const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(route, /\.select\(LAW_REVIEWED_SUMMARY_COLUMNS\)/);
-  assert.match(route, /\(r\) => reviewedSummaryFor\(r\.error \? null : r\.data, isSubscriber\),\s*\(\) => null,/);
-  assert.match(route, /reviewedSummary !== null\s*\? \(reviewedSummary \? \{ summary: reviewedSummary \} : \{\}\)\s*: readerExtras\.summary \?/);
+  assert.match(route, /\(r\) => \(r\.error \? null : r\.data\),\s*\(\) => null,/);
+  // Q96 (l12): the موجز keys come from readerSummaryFields with the reviewed-only switch.
+  assert.match(route, /\.\.\.readerSummaryFields\(reviewedSummaryRow, isSubscriber, readerExtras, summariesReviewedOnly\),/);
+  assert.match(route, /readSummariesReviewedOnly\(\)/);
   assert.doesNotMatch(route.match(/const LAW_DETAIL_COLUMNS =\s*'[^']*'/)?.[0] ?? "", /summary/, "never in the main law read (a missing column would fail it)");
 });

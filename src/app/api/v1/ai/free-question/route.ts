@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
-import { FREE_QUESTION_TOOL, freeQuestionStatusWith, freeQuestionToolFor, parseFreeQuestionTool } from "@/lib/ai/freeQuestion";
+import { FREE_QUESTION_TOOL, freeQuestionStatusWith, freeQuestionToolOf, parseFreeQuestionTool } from "@/lib/ai/freeQuestion";
 import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
 /**
@@ -25,6 +25,10 @@ import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
  * `library-assistant` for the library's (everyone else's). The answer is
  * NONE when the tool asked is not the account's own free tool; the library
  * lock applies only to the library assistant's.
+ *
+ * Q121 (batch l12): an individual's tool comes from the setting
+ * free_question_tool_by_account_type (quick-answer by default; `?tool=assistant`
+ * when it is switched to «المساعد المتقدم»).
  */
 
 export const dynamic = "force-dynamic";
@@ -43,7 +47,7 @@ export async function GET(request: Request) {
     if (!asked) return NextResponse.json(NONE, { headers: NO_STORE });
     const admin = await createServiceClient();
     const { data: profile } = await admin.from("profiles").select("user_type").eq("id", auth.user.id).maybeSingle();
-    if (asked !== freeQuestionToolFor(profile?.user_type)) return NextResponse.json(NONE, { headers: NO_STORE });
+    if (asked !== (await freeQuestionToolOf(admin, profile?.user_type))) return NextResponse.json(NONE, { headers: NO_STORE });
     if (asked === FREE_QUESTION_TOOL && !(await readLibraryAccountAccess(auth.user.id)).allowed) {
       return NextResponse.json(NONE, { headers: NO_STORE });
     }

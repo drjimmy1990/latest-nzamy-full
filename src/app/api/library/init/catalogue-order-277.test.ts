@@ -49,7 +49,8 @@ test("٢٧٧ + ٣١٧ browse: /api/library/init orders laws in force → repeale
   assert.match(init, /const LAW_REPEALED_KEY = "catalogue_is_repealed";/);
   // The other sections are not date-ordered (difference 3 above).
   // (The decrees section runs as the service role since 20261108_10.)
-  assert.match(init, /fetchSection\("decrees_circulars", DECREE_LIST_COLUMNS, "decrees", \(q\) => q\.order\("id"\), serverOnly\)/);
+  // Q96 (l12): the decree read also names summary_status when the column exists (never sent).
+  assert.match(init, /fetchSection\(\s*"decrees_circulars",\s*\(on\) => \(on\.has\("decreeSummaryStatus"\) \? `\$\{DECREE_LIST_COLUMNS\}, summary_status` : DECREE_LIST_COLUMNS\),\s*"decrees",\s*\(q\) => q\.order\("id"\),\s*serverOnly,/);
 });
 
 test("٣١٧ / note ١٢ item ٨: repealed-last is a generated boolean from status alone — locked, indexed in the route's order, no trigger", () => {
