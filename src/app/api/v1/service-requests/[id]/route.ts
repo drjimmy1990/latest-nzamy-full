@@ -6,6 +6,7 @@ import { dispatchToN8n } from "@/lib/n8n/dispatch";
 import { buildWebhookPayload } from "@/lib/n8n/payload";
 import { recordNotification } from "@/lib/notify";
 import { stripInternalNotes } from "@/lib/services/internalNotes";
+import { openLogRpcOutcome, shouldLogRestrictedOpen } from "@/lib/firm/restrictedCaseOpenLog";
 import { canRequesterCancel } from "@/lib/services/orderTransitions";
 import { isAuthUnavailable, authUnavailableResponse, frozenAccountResponse } from "@/lib/auth/apiAuth";
 import { staffMfaGate } from "@/lib/auth/staffMfaServer";
@@ -223,6 +224,18 @@ export async function GET(
       { error: "Service request not found" },
       { status: 404 },
     );
+  }
+
+  // N16 (batch l12, 20261202_80): opening a RESTRICTED firm case is recorded
+  // when the caller sees it only by office (firm owner, managing partner,
+  // platform admin); the database function decides who that is and skips the
+  // case's own lawyer and team. Fail-open: a failed write is logged here and
+  // the case still opens (src/lib/firm/restrictedCaseOpenLog.ts).
+  if (shouldLogRestrictedOpen(serviceRequest as { firm_id?: unknown; is_restricted?: unknown })) {
+    const { error: openLogError } = await supabase.rpc("log_restricted_case_open", { p_request: id });
+    if (openLogRpcOutcome(openLogError) === "failed") {
+      console.error("[service-requests GET] restricted-case open log failed:", openLogError?.code);
+    }
   }
 
   // Fetch events for this request.
