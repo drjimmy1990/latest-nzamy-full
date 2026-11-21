@@ -187,7 +187,7 @@ export default function AskQuestionPage() {
           {lawyersOnly && (
             <p className={`text-sm mt-2 flex items-center gap-1.5 ${isDark ? "text-[#C8A762]" : "text-amber-800"}`}>
               <Gavel size={14} weight="fill" />
-              {isRTL ? "يُنشر هذا الموضوع في مجتمع المحامين (للمحامين والمكاتب الموثّقة)." : "This topic is posted to the lawyers' community (verified lawyers and firms)."}
+              {isRTL ? "يُنشر هذا الموضوع في مجتمع المحامين (للمحامين الموثّقين والمكاتب المعتمدة)." : "This topic is posted to the lawyers' community (verified lawyers and firms)."}
             </p>
           )}
         </div>

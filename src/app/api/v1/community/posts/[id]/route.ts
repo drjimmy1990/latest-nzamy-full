@@ -26,7 +26,7 @@ import { LAWYERS_SPACE_REFUSAL_AR, canUseLawyersSpace } from "../_lawyersSpace";
  *      real answer, lawyer or not, could ever have reached mapStoredReply.
  *   2. (Owner ٤٢, 18 Nov 2026: the answers no longer carry `lawyerSlug` —
  *      names are hidden, and a profile slug is a name. Each answer carries
- *      `verifiedOffice` («مكتب موثّق») instead; see below.)
+ *      `verifiedOffice` («مكتب معتمد») instead; see below.)
  *
  * `is_lawyer_verified` itself needs no route change — it is already a real
  * column on every answer row.
@@ -89,9 +89,9 @@ export async function GET(
 
   // Owner ٤٢ (18 Nov): names are hidden — no profile slug is resolved or sent
   // (a slug is a name). What a reader learns about a writer is a badge only:
-  // «محامٍ موثّق» (is_lawyer_verified) or «مكتب موثّق» (a firm with a verified
-  // CR and a lawyer whose licence is valid — community_verified_office_users,
-  // 20261127_60, read with the service role; the author ids never leave here).
+  // «محامٍ موثّق» (is_lawyer_verified) or «مكتب معتمد» (N18: a registered law
+  // firm with an active office plan — community_verified_office_users,
+  // 20261202_80, read with the service role; the author ids never leave here).
   // Before that file runs, or on any error, no answer gets the office badge.
   const officeAuthors = new Set<string>();
   const authorIds = Array.from(
