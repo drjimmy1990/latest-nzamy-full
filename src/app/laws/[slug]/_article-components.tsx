@@ -1095,13 +1095,21 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             )}
 
             {!isLocked && !isRepealed && viewMode !== "regulation" && <SendToDrafterNotesButton text={article.text} sourceLabel={`${lawName} — ${article.numberText || article.num}`} isDark={isDark} className="px-1" />}
-            <button onClick={mainOnCopy} className={`p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
+            {/* File 03 L12: touch targets of at least 44 px, with Arabic names. */}
+            <button
+              onClick={mainOnCopy}
+              aria-label={isRTL ? "نسخ المادة" : "Copy article"}
+              title={isRTL ? "نسخ المادة" : "Copy article"}
+              className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}
+            >
               {mainCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
             </button>
             
             <button
               onClick={mainOnToggleCart}
-              className={`p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
+              aria-label={mainInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
+              title={mainInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
+              className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
             >
               {mainInCart ? <Minus size={12} /> : <Plus size={12} />}
             </button>

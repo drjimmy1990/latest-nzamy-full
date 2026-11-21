@@ -101,3 +101,24 @@ test("Q101: a non-subscriber never reads a decree's number or date in its title"
   // a title with no number passes as it is
   assert.equal(decreeTitleForViewer({ title: "تعميم بشأن الإجراءات", type: "circular" }, false), "تعميم بشأن الإجراءات");
 });
+
+test("the decree reader uses the display helpers: MD preamble, clean snippets, category name, no empty boxes", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../../app/laws/orders/[slug]/page.tsx", import.meta.url), "utf8");
+  const sidebar = readFileSync(new URL("../../app/laws/orders/[slug]/_sidebar.tsx", import.meta.url), "utf8");
+  // L9-a: no more plain-text preamble
+  assert.doesNotMatch(page, /<Hl text=\{order\.preamble\} \/>/);
+  assert.match(page, /const preambleView = useMemo\(\(\) => decreePreambleForDisplay\(order\?\.preamble\), \[order\?\.preamble\]\);/);
+  assert.match(page, /<MD text=\{preambleView\.text\}/);
+  assert.match(page, /hasBlockMarkup\(art\) \? \(/);
+  // L9-b
+  assert.match(page, /: pageSnippet\(art, 45\);/);
+  // New 5
+  assert.match(sidebar, /const categoryLabel = decreeCategoryLabel\(order\.cat, isRTL\);/);
+  assert.doesNotMatch(sidebar, /\{order\.cat\}/);
+  // Q101: no fixed «two pages» promise; Q96: no empty box without pages or موجز
+  assert.doesNotMatch(page, /أول صفحتين/);
+  assert.match(page, /order\.summary\?\.trim\(\)/);
+  // L12: a skeleton while loading, before «not found»
+  assert.ok(page.indexOf("if (!order && orderLoading)") > -1 && page.indexOf("if (!order && orderLoading)") < page.indexOf("لم يتم العثور على المستند المطلوب"));
+});

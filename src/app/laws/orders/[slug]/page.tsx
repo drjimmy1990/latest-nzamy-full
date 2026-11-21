@@ -196,6 +196,9 @@ export default function OrderReaderPage() {
   const border = isDark ? "border-white/[0.07]" : "border-slate-200";
   const card   = `rounded-2xl border ${isDark ? "bg-zinc-900" : "bg-white shadow-sm"}`;
 
+  // File 03 L12: while the decree loads, a skeleton — never «لم يتم العثور» first.
+  const [orderLoading, setOrderLoading] = useState(true);
+
   // ── Load order data (API-backed with demo fallback) ──
   useEffect(() => {
     if (!slug) return;
@@ -254,7 +257,8 @@ export default function OrderReaderPage() {
       }
     }
 
-    loadOrder();
+    setOrderLoading(true);
+    loadOrder().finally(() => setOrderLoading(false));
   }, [slug]);
 
   const [activeArtId, setActiveArtId] = useState<string>("");
@@ -406,6 +410,25 @@ export default function OrderReaderPage() {
   const preambleView = useMemo(() => decreePreambleForDisplay(order?.preamble), [order?.preamble]);
 
   if (deviceRefusal) return <LibraryDeviceLimitPage refusal={deviceRefusal} />;
+
+  if (!order && orderLoading) {
+    return (
+      <div
+        role="status"
+        aria-label={isRTL ? "جارٍ تحميل المستند" : "Loading the document"}
+        className={`min-h-screen px-4 py-24 ${isDark ? "bg-[#0c0f12]" : "bg-gray-50"}`}
+      >
+        <div className="max-w-3xl mx-auto space-y-4 animate-pulse" aria-hidden="true">
+          <div className={`h-7 w-2/3 rounded-lg ${isDark ? "bg-zinc-800" : "bg-slate-200"}`} />
+          <div className={`h-4 w-1/3 rounded ${isDark ? "bg-zinc-800" : "bg-slate-200"}`} />
+          <div className={`h-24 rounded-2xl ${isDark ? "bg-zinc-900" : "bg-white border border-slate-200"}`} />
+          {[0, 1, 2].map((i) => (
+            <div key={i} className={`h-20 rounded-2xl ${isDark ? "bg-zinc-900" : "bg-white border border-slate-200"}`} />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (!order) {
     return (
@@ -790,7 +813,11 @@ export default function OrderReaderPage() {
                   <div className={`p-5 rounded-2xl border ${fontSizeClass} leading-relaxed ${
                     isDark ? "bg-[#0c0f12]/30 border-white/5 text-zinc-300" : "bg-white border-slate-100 text-gray-700 shadow-sm"
                   }`}>
-                    <Hl text={order.summary} />
+                    {/* Owner Q96 (l12): a موجز is drawn only when the API sends one
+                        (reviewed); with none, an honest line — never an empty box. */}
+                    {order.summary?.trim()
+                      ? <Hl text={order.summary} />
+                      : <span className={isDark ? "text-zinc-400" : "text-slate-500"}>{isRTL ? "لا تتوفر صفحات لهذا المستند بعد." : "No pages are available for this document yet."}</span>}
                   </div>
                 )}
               </div>
