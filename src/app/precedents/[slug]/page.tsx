@@ -54,6 +54,7 @@ function getSelectedTextWithin(containerId: string): string {
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 import { JudicialPrinciplesSystem, JudicialPrincipleItem } from "@/app/laws/data";
+import { seriesCurrentVolumeLabel, titleNamesVolume } from "@/lib/library/precedentVolumes";
 import { apiSlug } from '@/utils/apiSlug';
 import { principleHref } from "@/app/laws/principleLink";
 import {
@@ -74,6 +75,17 @@ type WindowResult = "more" | "done" | "error";
 const EMPTY_RUN: CollectionRun = { start: 0, items: [] };
 
 /**
+ * The volume part of a principle's citation line (owner file 11 item 7): in a
+ * series the volume label («، المجلد الثالث») unless the title already names it;
+ * otherwise the stored part as before.
+ */
+function volumeCitation(collection: JudicialPrinciplesSystem | null): string {
+  const label = seriesCurrentVolumeLabel(collection?.series);
+  if (label) return titleNamesVolume(collection?.title) ? "" : `، ${label}`;
+  return collection?.part ? `، الجزء (${collection.part})` : "";
+}
+
+/**
  * The «المرجع» line of a principle: its own reference paragraph or line, else
  * one built from its number, issuer, decision and the collection. Pure, so the
  * legend's per-principle counts (M-4/M-5) can read it outside render.
@@ -87,7 +99,7 @@ function referenceForPrinciple(p: JudicialPrincipleItem, collection: JudicialPri
   if (refLine) return cleanPrincipleText(refLine);
   if (p.reference) return cleanPrincipleText(p.reference);
   const court = courtOrIssuer(p, collection?.court, isRTL);
-  return `${principleLabel(p.number, isRTL, true)}، صادر عن (${court})${p.decision_number ? ` ذي الرقم (${p.decision_number})` : ""}${p.session_date ? ` بتاريخ ${p.session_date}` : ""}${collection?.title ? ` - المنشور في (${collection.title})` : ""}${collection?.part ? `، الجزء (${collection.part})` : ""}`;
+  return `${principleLabel(p.number, isRTL, true)}، صادر عن (${court})${p.decision_number ? ` ذي الرقم (${p.decision_number})` : ""}${p.session_date ? ` بتاريخ ${p.session_date}` : ""}${collection?.title ? ` - المنشور في (${collection.title})` : ""}${volumeCitation(collection)}`;
 }
 
 /** The principle's own issuing body, else the collection's court, else «جهة غير محددة». */

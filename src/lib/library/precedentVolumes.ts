@@ -172,9 +172,41 @@ export function collectionSeriesTitle(title: string): string {
   return base || t;
 }
 
-/** «المجلد N», or the volume's own title when its number is unknown. */
+const ORDINAL_UNITS = ["", "الأول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع"];
+const ORDINAL_TENS: Record<number, string> = { 2: "العشرون", 3: "الثلاثون" };
+
+/**
+ * A volume number as the ordinal word the owner reads (file 11 item 7: «المجلد
+ * الثالث», not «الجزء 1»): 1–39 → «الأول» … «الحادي عشر» … «التاسع والثلاثون»;
+ * anything else → null (the caller keeps the digits).
+ */
+export function arabicVolumeOrdinal(n: number): string | null {
+  if (!Number.isInteger(n) || n < 1 || n > 39) return null;
+  if (n < 10) return ORDINAL_UNITS[n];
+  if (n === 10) return "العاشر";
+  const unit = n % 10;
+  const tens = Math.floor(n / 10);
+  const unitWord = unit === 1 ? "الحادي" : ORDINAL_UNITS[unit];
+  if (tens === 1) return `${unitWord} عشر`;
+  return unit === 0 ? ORDINAL_TENS[tens] : `${unitWord} و${ORDINAL_TENS[tens]}`;
+}
+
+/** «المجلد الثالث» (digits past the 39th), or the volume's own title when its number is unknown. */
 export function collectionVolumeLabel(v: CollectionVolume<CollectionVolumeRow>): string {
-  return v.number !== null ? `المجلد ${v.number}` : String(v.row.title ?? v.row.id);
+  if (v.number === null) return String(v.row.title ?? v.row.id);
+  return `المجلد ${arabicVolumeOrdinal(v.number) ?? v.number}`;
+}
+
+/** The reader's current volume label («المجلد الثالث») from the route's `series`, or null outside a series. */
+export function seriesCurrentVolumeLabel(series: Pick<CollectionSeriesInfo, "currentId" | "volumes"> | null | undefined): string | null {
+  if (!series || !Array.isArray(series.volumes)) return null;
+  const vol = series.volumes.find((v) => v && v.id === series.currentId);
+  return vol && typeof vol.label === "string" && vol.label ? vol.label : null;
+}
+
+/** True when a collection title already names its volume («… - المجلد الثالث»), so a citation need not repeat it. */
+export function titleNamesVolume(title: unknown): boolean {
+  return TITLE_VOLUME.test(String(title ?? ""));
 }
 
 function seriesKey(row: CollectionVolumeRow): string | null {
@@ -215,6 +247,25 @@ export function collectionFallbackKey(row: Pick<CollectionVolumeRow, "title" | "
   const base = foldKey(m[1]);
   if (!base) return null;
   return `${foldKey(String(row.court ?? ""))}\u0000${base}`;
+}
+
+/**
+ * What a sibling lookup needs to find the other volumes of an UNTAGGED
+ * collection (owner file 11 item 7: /precedents/LAW-98-1255 has no series_id,
+ * so the reader showed no volume selector): its issuing court and the title
+ * prefix every volume of the work shares (the raw base title, LIKE-escaped).
+ * The lookup is only a candidate list — buildCollectionSeries still applies
+ * the exact court + folded-title rule — so a loose prefix never joins a
+ * different work. Null when the title has no explicit volume suffix or the
+ * court is empty (no lookup is made).
+ */
+export function collectionFallbackLookup(row: Pick<CollectionVolumeRow, "title" | "court">): { court: string; titleLike: string } | null {
+  const court = String(row.court ?? "").trim();
+  if (!court || collectionFallbackKey(row) === null) return null;
+  const m = EXPLICIT_VOLUME_SUFFIX.exec(String(row.title ?? "").trim());
+  const base = m ? m[1].trim() : "";
+  if (!base) return null;
+  return { court, titleLike: `${base.replace(/[\\%_]/g, (c) => `\\${c}`)}%` };
 }
 
 /**

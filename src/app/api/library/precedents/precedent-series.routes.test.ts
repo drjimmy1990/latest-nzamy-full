@@ -14,14 +14,19 @@ const card = read("../../../laws/components/CollectionSeriesCard.tsx");
 const tab = read("../../../laws/components/PrecedentsTabContent.tsx");
 const selector = read("../../../precedents/[slug]/_volume-selector.tsx");
 const reader = read("../../../precedents/[slug]/page.tsx");
+const helper = read("../../../../lib/library/collectionSeriesLookup.ts");
 
 test("the route reads the series on the request client, catalogue columns only, bounded", () => {
   assert.match(route, /\.select\('id, title, court, year_hijri, part, source_id, series_id, track, description, ruling_count, free'\)/);
-  const lookup = route.slice(route.indexOf("if (seriesId) {"), route.indexOf("// Check user authentication"));
-  assert.match(lookup, /await supabase\s*\.schema\('library'\)\s*\.from\('judicial_collections'\)\s*\.select\('id, title, part, series_id, free, ruling_count'\)\s*\.eq\('series_id', seriesId\)/);
-  assert.match(lookup, /\.limit\(SERIES_MAX_VOLUMES\)/);
+  // Owner file 11 item 7: tagged or by title, through the one shared lookup
+  // (src/lib/library/collectionSeriesLookup.ts; its own test pins the query).
+  const lookup = route.slice(route.indexOf("// N2.4: the other volumes of a series"), route.indexOf("// Check user authentication"));
+  assert.match(lookup, /const lookup = await readCollectionSeries\(supabase, collection\);/);
   assert.doesNotMatch(lookup, /serverOnly|metadata/);
-  assert.match(lookup, /series = buildCollectionSeries\(siblings\.data \?\? \[\], collection\.id\)/);
+  assert.match(lookup, /const series: CollectionSeriesInfo \| null = lookup\.series;/);
+  assert.match(helper, /\.limit\(SERIES_MAX_VOLUMES\)/);
+  assert.match(helper, /supabase\.schema\("library"\)\.from\("judicial_collections"\)\.select\(SERIES_SIBLING_COLUMNS\)/);
+  assert.doesNotMatch(helper, /createServiceClient|metadata/);
   assert.match(route, /seriesId: seriesId \|\| null,\s*series,/);
 });
 

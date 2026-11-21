@@ -11,7 +11,7 @@ import { parseSearchQuery, SearchQuerySyntaxError, LIBRARY_FTS_CONFIG } from '@/
 import { selectAllPages } from '@/lib/supabase/selectAllPages';
 import { BOOK_SERIES_FEATURE, bookVolumeColumns, buildBookSeries, type VolumeRow } from '@/lib/library/bookVolumes';
 import { readWithOptionalFeatures } from '@/lib/library/optionalColumn';
-import { buildCollectionSeries, type CollectionVolumeRow } from '@/lib/library/precedentVolumes';
+import { readCollectionSeries } from '@/lib/library/collectionSeriesLookup';
 import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
 import { isMissingFunctionError } from '../search/searchPlan';
 import {
@@ -49,8 +49,6 @@ const SCOPED_RPC_RETRY_MS = 10 * 60 * 1000;
 let scopedRpcMissingUntil = 0;
 /** The route's own wait; the function's 4s ends the query in the database. */
 const SCOPED_BUDGET_MS = 4500;
-/** A runaway guard on one series' volumes. */
-const SERIES_MAX_VOLUMES = 200;
 
 interface ResolvedScope {
   kind: ScopedKind;
@@ -87,21 +85,13 @@ async function resolveScope(supabase: Client, kind: ScopedKind, id: string): Pro
     if (error || !data) return { scope: null, error };
     let volumes: ScopeVolume[] = [{ id: data.id, label: null }];
     let title: string = data.title ?? '';
-    const seriesId = typeof data.series_id === 'string' ? data.series_id.trim() : '';
-    if (seriesId) {
-      const siblings = await lib()
-        .from('judicial_collections')
-        .select('id, title, part, series_id, free, ruling_count')
-        .eq('series_id', seriesId)
-        .order('part', { ascending: true })
-        .order('id', { ascending: true })
-        .limit(SERIES_MAX_VOLUMES);
-      if (siblings.error) return { scope: null, error: siblings.error };
-      const series = buildCollectionSeries((siblings.data ?? []) as CollectionVolumeRow[], data.id);
-      if (series) {
-        volumes = series.volumes.map((v) => ({ id: v.id, label: v.label }));
-        title = String(title).replace(/\s*[-—–]\s*المجلد\s+.*$/, '').trim() || title;
-      }
+    // Tagged by series_id, or (owner file 11 item 7) untagged with the same
+    // court + base title: the search covers every volume of the work.
+    const lookup = await readCollectionSeries(supabase, data);
+    if (lookup.error) return { scope: null, error: lookup.error };
+    if (lookup.series) {
+      volumes = lookup.series.volumes.map((v) => ({ id: v.id, label: v.label }));
+      title = String(title).replace(/\s*[-—–]\s*المجلد\s+.*$/, '').trim() || title;
     }
     return { scope: { kind, id: data.id, title, detail: data.court ?? null, volumes }, error: null };
   }

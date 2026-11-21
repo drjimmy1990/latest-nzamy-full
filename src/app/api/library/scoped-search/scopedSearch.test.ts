@@ -145,7 +145,8 @@ test("route: gate first, operator-safe parsing, the RPC with an inline fallback,
   assert.match(ROUTE, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
   assert.match(ROUTE, /getLibraryAccessForUser\(userId\)/);
   // the series is resolved on the server from the catalogue (anon allow-list columns)
-  assert.match(ROUTE, /buildCollectionSeries\(/);
+  // Owner file 11 item 7: tagged or by title, the one lookup the reader uses too.
+  assert.match(ROUTE, /readCollectionSeries\(supabase, data\)/);
   assert.match(ROUTE, /buildBookSeries\(/);
   // every hit goes through shapeHit (the paywall); rows never reach the response raw
   assert.match(ROUTE, /rows\.map\(\(row\) => shapeHit\(scope\.kind, row, scope\.volumes, parsed\.plainTerms, access\)\)/);
