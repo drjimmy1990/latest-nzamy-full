@@ -395,7 +395,7 @@ async function finish(
 
   const granted = await grantPurchase(
     deps,
-    { id: order.id, user_id: order.user_id, kind: order.kind, item_id: order.item_id, billing: order.billing },
+    { id: order.id, user_id: order.user_id, kind: order.kind, item_id: order.item_id, billing: order.billing, metadata: order.metadata },
     { paymentMethodId, now },
   );
   if (!granted.ok) {

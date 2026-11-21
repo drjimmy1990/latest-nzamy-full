@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useUser } from "@/hooks/useUser";
 import MoyasarCheckout from "@/components/payments/MoyasarCheckout";
 import { formatHalalas, type PayableItem } from "@/lib/payments/catalog";
-import { checkoutItemNotes, TOPUP_LIBRARY_EXPIRY_GENERIC_AR } from "@/lib/payments/checkoutView";
+import { checkoutItemNotes, POINT_VALUE_LINE_AR, TOPUP_LIBRARY_EXPIRY_GENERIC_AR } from "@/lib/payments/checkoutView";
 import { INSUFFICIENT_POINTS_EVENT, saveTopUpReturn, topUpPacksFor } from "@/lib/payments/topUpDraft";
 
 /**
@@ -120,7 +120,7 @@ export default function TopUpModalHost() {
               </li>
             ))}
             <li className="pt-1 text-xs text-zinc-600 dark:text-zinc-400">
-              الأسعار قبل ضريبة القيمة المضافة (١٥٪)، ويظهر المبلغ النهائي قبل الدفع.
+              {POINT_VALUE_LINE_AR}. الأسعار قبل ضريبة القيمة المضافة (١٥٪)، ويظهر المبلغ النهائي قبل الدفع.
             </li>
           </ul>
         ) : (

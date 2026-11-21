@@ -109,8 +109,15 @@ const LAUNCH_PRICED: Record<string, Record<string, number>> = {
   "firm-enterprise": { yearly: 12665 },
 };
 
-test("no entry is retired or coming soon; the professionals' monthly cycle and the individuals' cancelled cycles are retired; launch prices only where the doc has one", () => {
+test("no entry is retired or coming soon but topup-50 (l12, owner Q87); the professionals' monthly cycle and the individuals' cancelled cycles are retired; launch prices only where the doc has one", () => {
   for (const entry of Object.values(PRICE_BOOK)) {
+    if (entry.id === "topup-50") {
+      // l12 (owner Q87): retired, never deleted — its orders still resolve
+      assert.equal(entry.retired, true);
+      assert.equal(isOnSale(entry), false);
+      assert.throws(() => bookSar("topup-50", "once"), "checkout and every card refuse it");
+      continue;
+    }
     assert.equal(entry.retired, undefined, entry.id);
     assert.equal(entry.comingSoon, undefined, entry.id);
     const launch = entry.launchPrices?.map((lp) => ({ campaignId: lp.campaignId, prices: { ...lp.prices } }));
@@ -206,16 +213,16 @@ test("quarterly / half-yearly prices only on ind-ai (listed, retired) and the tw
 
 test("٣٠٢ / conflict ١١: 100 and 250 for individuals only (3 months); 500 and up for professionals only", () => {
   const want: Record<string, [number, number, readonly string[]]> = {
-    // l9 (register 14 items 7 / 48): 50 points, 3 months, every account type
+    // l9 (register 14 items 7 / 48): 50 points, 3 months, every account type — retired in l12 (Q87)
     "topup-50": [50, 3, [...PROFESSIONAL_BUYERS, ...INDIVIDUAL_BUYERS]],
     "topup-100": [100, 3, INDIVIDUAL_BUYERS],
     "topup-250": [250, 3, INDIVIDUAL_BUYERS],
-    // owner ٤٢٢ (3 Nov 2026): the bonus balances, validity unchanged
-    "topup-500": [700, 3, PROFESSIONAL_BUYERS],
-    "topup-1000": [1500, 6, PROFESSIONAL_BUYERS],
-    "topup-2500": [5000, 12, PROFESSIONAL_BUYERS],
-    "topup-5000": [12500, 12, PROFESSIONAL_BUYERS],
-    "topup-10000": [30000, 12, PROFESSIONAL_BUYERS],
+    // l12 (owner Q88a): owner ٤٢٢'s bonus balances cancelled — points = price, validity unchanged
+    "topup-500": [500, 3, PROFESSIONAL_BUYERS],
+    "topup-1000": [1000, 6, PROFESSIONAL_BUYERS],
+    "topup-2500": [2500, 12, PROFESSIONAL_BUYERS],
+    "topup-5000": [5000, 12, PROFESSIONAL_BUYERS],
+    "topup-10000": [10000, 12, PROFESSIONAL_BUYERS],
   };
   const topups = Object.values(PRICE_BOOK).filter((e) => e.kind === "topup");
   assert.deepEqual(topups.map((e) => e.id).sort(), Object.keys(want).sort());
@@ -361,24 +368,26 @@ test("bookPriceText / bookSar read a sold price and throw for anything else", ()
   assert.throws(() => bookSar("nope", "yearly"));
 });
 
-test("owner ٤٢٢ / R2: each top-up's bonus is points − price, and its label and card text come from those numbers", () => {
-  const bonus: Record<string, number> = {
-    "topup-50": 0, "topup-100": 0, "topup-250": 0,
-    "topup-500": 200, "topup-1000": 500, "topup-2500": 2500, "topup-5000": 7500, "topup-10000": 20000,
-  };
+test("l12 (owner Q88a) / R2: no top-up carries a bonus in the book — points = price; the label and card text come from those numbers", () => {
   for (const e of Object.values(PRICE_BOOK).filter((x) => x.kind === "topup")) {
-    assert.equal(topupBonusPoints(e), bonus[e.id], e.id);
+    assert.equal(topupBonusPoints(e), 0, e.id);
+    assert.equal(e.points, e.prices.once?.sar, `${e.id}: 1 point = 1 SAR`);
     // checkout, Moyasar and receipts print labelAr: it must say what is granted
     assert.equal(e.labelAr, topupLabelAr(e), e.id);
   }
   assert.equal(PRICE_BOOK["topup-100"].labelAr, "شحن ١٠٠ (١٠٠ نقطة)");
   assert.equal(PRICE_BOOK["topup-50"].labelAr, "شحن ٥٠ (٥٠ نقطة)");
-  assert.equal(PRICE_BOOK["topup-1000"].labelAr, "شحن ١٬٠٠٠ — ١٬٥٠٠ نقطة (منها ٥٠٠ نقطة مكافأة)");
-  assert.equal(topupPointsText(PRICE_BOOK["topup-500"], "ar"), "٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)");
-  assert.equal(topupPointsText(PRICE_BOOK["topup-10000"], "en"), "30,000 points (20,000 bonus)");
+  assert.equal(PRICE_BOOK["topup-1000"].labelAr, "شحن ١٬٠٠٠ (١٬٠٠٠ نقطة)");
+  assert.equal(topupPointsText(PRICE_BOOK["topup-500"], "ar"), "٥٠٠ نقطة");
+  assert.equal(topupPointsText(PRICE_BOOK["topup-10000"], "en"), "10,000 points");
   assert.equal(topupPointsText(PRICE_BOOK["topup-250"], "ar"), "٢٥٠ نقطة");
-  assert.equal(topupBonusLabel("topup-2500", "ar"), "+٢٬٥٠٠ نقطة مكافأة");
+  assert.equal(topupBonusLabel("topup-2500", "ar"), null);
   assert.equal(topupBonusLabel("topup-100", "ar"), null);
+  // The helpers still read a bonus when an entry carries one (a fixture, never the book).
+  const withBonus = { id: "fx", kind: "topup", labelAr: "", buyers: "any", points: 700, pointsValidityMonths: 3, prices: { once: { sar: 500 } } } as const;
+  assert.equal(topupBonusPoints(withBonus), 200);
+  assert.equal(topupPointsText(withBonus, "ar"), "٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)");
+  assert.equal(topupLabelAr(withBonus), "شحن ٥٠٠ — ٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)");
   assert.equal(topupBonusPoints(PRICE_BOOK["lawyer-pro"]), 0, "not a top-up");
   assert.throws(() => topupPointsTextById("lawyer-pro", "ar"));
 });

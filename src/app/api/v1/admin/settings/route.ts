@@ -14,6 +14,8 @@ import { founderDiscountExpiresIssue, isFounderDiscountBps } from "@/lib/payment
 import { firmExtraSeatPriceIssue } from "@/lib/pricing/firmSeats";
 import { founderRenewalIssue } from "@/lib/membership/founderRenewal";
 import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopupIssue } from "@/lib/points/pointsSettings";
+import { founderBonusRuleIssue, topupBonusIssue } from "@/lib/payments/topupBonus";
+import { draftPricesIssue } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import {
   billingCompanySettingIssue,
@@ -66,6 +68,12 @@ const ALLOWED_SETTINGS_KEYS = [
   "gift_valid_days",
   // {"<user_type>": SAR} — the lowest top-up per account type (500; individual 100 since l8);
   "min_topup_by_account_type",
+  // Batch l12 (owner Q88a / ١٥٢ / N6, 20261202_10): {"topup-500": percent} the
+  // top-up bonus (0 = none); {"mode": "higher_only"|"both"} founder discount vs
+  // bonus; {"<draft kind>": points} the legal drafter's prices.
+  "topup_bonus_pct",
+  "founder_bonus_rule",
+  "ai_draft_prices",
   // {"<user_type>": n} — the library assistant's free questions, once per account (10 / 5).
   "free_questions_by_account_type",
   // Batch l8 payref (20261128_10): how long the founder top-up discount runs —
@@ -174,6 +182,10 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_plan_points: libraryPlanPointsIssue,
   gift_valid_days: giftValidDaysIssue,
   min_topup_by_account_type: minTopupIssue,
+  // Batch l12: pure, covered by topupBonus.test.ts / draftKinds.test.ts.
+  topup_bonus_pct: topupBonusIssue,
+  founder_bonus_rule: founderBonusRuleIssue,
+  ai_draft_prices: draftPricesIssue,
   free_questions_by_account_type: freeQuestionsIssue,
   // Batch l8 payref: pure, covered by founderDiscount.test.ts / firmSeats.test.ts.
   founder_topup_discount_expires: founderDiscountExpiresIssue,

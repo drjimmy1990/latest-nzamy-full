@@ -2,12 +2,15 @@
  * minTopup.ts — l7 decision 5 (owner 18 Nov §16.10, G28–G33): the lowest
  * top-up an account type may buy, from platform_settings
  * min_topup_by_account_type (SAR, the pack's BASE price — before the founder
- * discount, any coupon and VAT). Batch l9 (owner register 14 item 7): 50 for
- * every account type (was 500 / individual 100). The type is
+ * discount, any coupon and VAT). Batch l9 (owner register 14 item 7) made it
+ * 50 for every account type; batch l12 (owner Q87, RAW[16][50][57]: «الفرد
+ * 100 ثم 250، وغيره 500 فأكثر؛ والـ50 حد فتح المكتبة فقط») sets it back to
+ * individual 100, every other type 500 (20261202_10). The type is
  * profiles.user_type, read on the server by the checkout (never the browser's).
  *
- * A refusal answers «الحد الأدنى للشحن لحسابك ٥٠ نقطة (٥٠ ريال)» — the
- * owner states the rule in points, and 1 point = 1 SAR — and leaves one
+ * A refusal answers «الحد الأدنى للشحن لحسابك ٥٠٠ نقطة (٥٠٠ ريال قبل
+ * الضريبة)» — the owner states the rule in points, and 1 point = 1 SAR
+ * before VAT — and leaves one
  * admin_audit_events row (actor_type 'user', action 'topup_below_minimum').
  * The audit write is best-effort: it never changes the answer.
  * A setting that cannot be read falls back to the code defaults
@@ -25,7 +28,7 @@ function arabicSar(n: number): string {
 
 export function minTopupRefusalAr(minSar: number): string {
   const n = arabicSar(minSar);
-  return `الحد الأدنى للشحن لحسابك ${n} نقطة (${n} ريال)`;
+  return `الحد الأدنى للشحن لحسابك ${n} نقطة (${n} ريال قبل الضريبة)`;
 }
 
 /** The minimum for `userType` (null when it has none), from an already-read map. */

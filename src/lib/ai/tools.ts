@@ -51,8 +51,13 @@ export interface AiToolSpec {
    * The price in points, from the validated input (metered tools read `pages`).
    * `priorSectionEdits`: the memo's section edits so far, read by runCore from
    * the conversation's runs for a `sectionEdit` run only (owner ٤١٠).
+   * `draftPrices`: l12 (owner N6) the admin's ai_draft_prices, read by runCore
+   * for legal-drafter runs; absent → the code defaults (draftKinds.ts).
    */
-  price: (input: Record<string, unknown>, ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts }) => number;
+  price: (
+    input: Record<string, unknown>,
+    ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts; draftPrices?: Readonly<Partial<Record<string, number>>> },
+  ) => number;
   /**
    * Owner ٤١٠ (legal-drafter): a run whose input.phase is `phase` edits one
    * section of the memo. runCore counts the memo's earlier section edits for
@@ -2118,7 +2123,7 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     price: (input, ctx) =>
       input.phase === SECTION_EDIT_PHASE
         ? sectionEditPrice(ctx.priorSectionEdits, input.section_index)
-        : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind) : 0,
+        : (ctx.turn ?? 0) === 0 ? draftKindPrice(input.kind, ctx.draftPrices) : 0,
     // An analysis and its draft are two runs. Section edits are not held to this
     // limit (ai_start_section_edit): the memo's ceiling of 30 bounds them; and
     // since 20261108_41 they are not counted against it either, and the draft

@@ -96,6 +96,8 @@ const sections = {
       title: "٦. السياسة المالية",
       content: [
         "تُعرض الأتعاب كاملة وشاملة للضريبة قبل تأكيد الطلب، ولا يُستحق أي مبلغ لم يُعرض على طالب الخدمة قبل الدفع.",
+        // l12 (owner Q87, RAW[61][64]): the point's value and the minimum top-up
+        "**النقاط**: النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة. وأقل شحنة للفرد ١٠٠ نقطة، ولغيره من أنواع الحسابات ٥٠٠ نقطة، ولكل حزمة مدة صلاحية تُذكر عند الشراء.",
         "تُحصَّل الأتعاب عبر قنوات الدفع المعتمدة في المنصة عند تأكيد الطلب، ويُصرف المستحق لمقدم الخدمة بعد إنجاز الخدمة أو المرحلة المتفق عليها منها.",
         "رسوم المنصة: تُقتطع عمولة الخدمة (تتراوح بين ٥٪ و١٥٪ حسب الخدمة) مباشرة من الأتعاب قبل تحويلها لمقدم الخدمة.",
         "**حق العدول**: لطالب الخدمة الحق في العدول عن الطلب واسترداد ما دفعه وفق المدد والحالات المقررة في نظام التجارة الإلكترونية ولائحته التنفيذية، ما لم يكن تنفيذ الخدمة قد بدأ بموافقته الصريحة أو كان المخرج مُعدّاً خصيصاً له.",
@@ -250,6 +252,7 @@ const sections = {
       title: "6. Financial Policy",
       content: [
         "Fees are displayed in full and inclusive of tax before an order is confirmed; no amount not shown to the service seeker before payment becomes due.",
+        "**Points**: one point equals one Saudi riyal before VAT. The smallest top-up is 100 points for individuals and 500 points for every other account type, and each pack's validity is stated at purchase.",
         "Fees are collected through the platform's approved payment channels upon order confirmation, and are paid out to the service provider after the service — or the agreed milestone of it — has been delivered.",
         "Platform fees: A service commission (ranging from 5% to 15% depending on the service) is deducted directly from fees before transfer to the service provider.",
         "**Right of withdrawal**: Service seekers may withdraw from an order and recover what they paid within the periods and cases set out in the Saudi E-Commerce Law and its Implementing Regulations, unless performance has begun with their express consent or the deliverable was prepared specifically for them.",

@@ -35,18 +35,19 @@ test("the code defaults are what the migration seeds", () => {
   assert.match(sql, /'gift_valid_days', '90'::jsonb/);
   assert.deepEqual(DEFAULT_FREE_QUESTIONS, { lawyer: 10, individual: 5 });
   assert.match(sql, /'free_questions_by_account_type', '\{"lawyer": 10, "individual": 5\}'::jsonb/);
-  // l9 (owner register 14 item 7): 50 for every account type — 20261129_30
-  // UPDATEs the stored map (it overwrites on purpose: the owner's decision)
-  // and inserts the same full map when the row is missing.
-  const l9 = readFileSync(join(ROOT, "supabase", "migrations", "20261129_30_l9_terms_pricing.sql"), "utf8");
+  // l12 (owner Q87): individual 100, every other type 500 — 20261202_10
+  // rewrites every key still at the l9 value 50 and inserts the same full
+  // map when the row is missing (the l9 50-for-everyone is gone).
+  const l12 = readFileSync(join(ROOT, "supabase", "migrations", "20261202_10_l12_money.sql"), "utf8");
   assert.equal(Object.keys(DEFAULT_MIN_TOPUP_SAR).length, 8);
   for (const [t, n] of Object.entries(DEFAULT_MIN_TOPUP_SAR)) {
-    assert.equal(n, 50, t);
-    assert.match(l9, new RegExp(`"${t}": 50`), t);
-    assert.match(l9, new RegExp(`'${t}'`), `${t} is in the UPDATE's key list`);
+    assert.equal(n, t === "individual" ? 100 : 500, t);
+    assert.match(l12, new RegExp(`"${t}": ${n}`), t);
+    assert.match(l12, new RegExp(`'${t}'`), `${t} is in the UPDATE's key list`);
   }
-  assert.match(l9, /jsonb_object_agg\(k\.key, 50\)/);
-  assert.match(l9, /where ps\.key = 'min_topup_by_account_type'/);
+  assert.match(l12, /when k\.key = 'individual' then '100'::jsonb/);
+  assert.match(l12, /else '500'::jsonb/);
+  assert.match(l12, /where ps\.key = 'min_topup_by_account_type'/);
 });
 
 test("validators refuse what would silently misprice", () => {

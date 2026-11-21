@@ -172,6 +172,13 @@ function pointsAr(n: number): string {
 }
 
 /**
+ * l12 (owner Q87, RAW[61][76]): «النقطة = ريال واحد قبل الضريبة» — shown on
+ * the top-up popup and checkout, and in /terms (section ٦). Prices are
+ * VAT-exclusive (answer ٢٥٨), so a point is one riyal before the 15 %.
+ */
+export const POINT_VALUE_LINE_AR = "النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة";
+
+/**
  * The lines the screen shows under the item's name: what the catalog grants
  * and nothing more. Firm plans get no line — their seats are not sold here.
  */
@@ -184,6 +191,10 @@ export function checkoutItemNotes(item: PayableItem, ctx: { libraryMinPoints?: n
     }
     if (typeof item.pointsValidityMonths === "number") {
       notes.push(`صالحة ${monthsAr(item.pointsValidityMonths)} من تاريخ الشراء`);
+    }
+    // l12 (owner Q87, RAW[61]): the point's value, on every top-up screen
+    notes.push(POINT_VALUE_LINE_AR);
+    if (typeof item.pointsValidityMonths === "number") {
       // l11 O7 (register 49, founder terms ١٢): only for a holder of a gated
       // library plan — the page passes the minimum then (0 = gate off: no line)
       const lock = libraryExpiryLockLineAr(ctx.libraryMinPoints, "this_topup");

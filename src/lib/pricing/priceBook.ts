@@ -196,6 +196,11 @@ function plan(
   });
 }
 
+/** An entry no longer sold at all (l12: topup-50); still resolvable for its orders. */
+function retire(entry: BookEntry): BookEntry {
+  return freezeEntry({ ...entry, retired: true });
+}
+
 /** A retired entry whose orders keep the name it was sold under (R3). */
 function soldAs(entry: BookEntry, receiptLabelAr: string): BookEntry {
   return freezeEntry({ ...entry, receiptLabelAr });
@@ -217,7 +222,7 @@ export const PROFESSIONAL_BUYERS: readonly string[] = Object.freeze([
   "provider",
 ]);
 export const INDIVIDUAL_BUYERS: readonly string[] = Object.freeze(["individual"]);
-/** Batch l9: the 50-point pack is sold to every account type (professionals and individuals). */
+/** Batch l9: the 50-point pack's buyers (every account type). Retired in l12 (owner Q87). */
 export const ALL_TOPUP_BUYERS: readonly string[] = Object.freeze([...PROFESSIONAL_BUYERS, ...INDIVIDUAL_BUYERS]);
 
 function library(id: LibraryPlanRef, labelAr: string, sar: number, days: number): BookEntry {
@@ -290,8 +295,9 @@ function membership(id: string, labelAr: string, sar: number, buyers: readonly s
  *   - top-ups (§4هـ, conflict ١١, answer ٣٠٢): 100 and 250 for individuals
  *     only, 1 point a riyal, 3 months; 500 / 1,000 / 2,500 / 5,000 / 10,000
  *     for professionals only, valid 3 / 6 / 12 / 12 / 12 months. Owner ٤٢٢
- *     (3 Nov 2026): those five now grant the bonus balances 700 / 1,500 /
- *     5,000 / 12,500 / 30,000.
+ *     (3 Nov 2026) gave those five bonus balances; batch l12 (owner Q88a,
+ *     20 Nov 2026) cancelled them: points = price, any bonus is the admin
+ *     setting topup_bonus_pct (src/lib/payments/topupBonus.ts).
  * P3 (founder kit r7, 1 Nov 2026): the LAWYER founder membership
  * `lawyer-founder-2026` is in the book — 2,996 before VAT, one payment,
  * lawyers only (advocates only since 20261122_10). Its window (18 Nov → 17 Dec
@@ -354,22 +360,26 @@ export const PRICE_BOOK: Readonly<Record<string, BookEntry>> = Object.freeze({
   "lib-q1": library("lib-q1", "المكتبة القانونية — ربع سنوي", 1990, 90),
   "lib-q2": library("lib-q2", "المكتبة القانونية — نصف سنوي", 3790, 180),
   "lib-annual": library("lib-annual", "المكتبة القانونية — سنوي", 6990, 365),
-  // Batch l9 (owner register 14 items 7 / 48): the minimum top-up is 50 points
-  // for EVERY account type, so a 50-point pack is sold to every buyer type —
-  // 50 points for 50 SAR (1 point = 1 SAR), no bonus, valid 3 months (packs
-  // below 500 are valid 3 months).
-  "topup-50": topup("topup-50", "شحن ٥٠ (٥٠ نقطة)", 50, 50, 3, ALL_TOPUP_BUYERS),
+  // Batch l9 (owner register 14 items 7 / 48) sold a 50-point pack to every
+  // account type. Batch l12 (owner Q87, 20 Nov 2026: «لا باقة بـ50 ريالاً …
+  // وتُحذف المبنية»): RETIRED — checkout refuses it (410); orders already
+  // made still resolve for receipts, refunds and admin. The minimum top-up is
+  // the setting min_topup_by_account_type (individual 100, every other type
+  // 500 — 20261202_10).
+  "topup-50": retire(topup("topup-50", "شحن ٥٠ (٥٠ نقطة)", 50, 50, 3, ALL_TOPUP_BUYERS)),
   "topup-100": topup("topup-100", "شحن ١٠٠ (١٠٠ نقطة)", 100, 100, 3, INDIVIDUAL_BUYERS),
   "topup-250": topup("topup-250", "شحن ٢٥٠ (٢٥٠ نقطة)", 250, 250, 3, INDIVIDUAL_BUYERS),
-  // Owner ٤٢٢ (3 Nov 2026), applied now: the professionals' packs grant the
-  // bonus balances 700 / 1,500 / 5,000 / 12,500 / 30,000 (validity unchanged).
-  // The bonus is points − price (1 point = 1 SAR, ٤١٢): topupBonusPoints. Each
-  // label is topupLabelAr(price, points) — priceBook.test.ts holds them equal.
-  "topup-500": topup("topup-500", "شحن ٥٠٠ — ٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)", 500, 700, 3, PROFESSIONAL_BUYERS),
-  "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ — ١٬٥٠٠ نقطة (منها ٥٠٠ نقطة مكافأة)", 1000, 1500, 6, PROFESSIONAL_BUYERS),
-  "topup-2500": topup("topup-2500", "شحن ٢٬٥٠٠ — ٥٬٠٠٠ نقطة (منها ٢٬٥٠٠ نقطة مكافأة)", 2500, 5000, 12, PROFESSIONAL_BUYERS),
-  "topup-5000": topup("topup-5000", "شحن ٥٬٠٠٠ — ١٢٬٥٠٠ نقطة (منها ٧٬٥٠٠ نقطة مكافأة)", 5000, 12500, 12, PROFESSIONAL_BUYERS),
-  "topup-10000": topup("topup-10000", "شحن ١٠٬٠٠٠ — ٣٠٬٠٠٠ نقطة (منها ٢٠٬٠٠٠ نقطة مكافأة)", 10000, 30000, 12, PROFESSIONAL_BUYERS),
+  // Batch l12 (owner Q88a, 20 Nov 2026: «الجدول الحملي … ملغى الآن ويُحذف كل
+  // أثر له»): owner ٤٢٢'s bonus balances (700 / 1,500 / 5,000 / 12,500 /
+  // 30,000) are gone — every pack grants its price in points (1 point = 1 SAR
+  // before VAT). A bonus, if the owner sets one (١٦٢), is the admin setting
+  // topup_bonus_pct, read at checkout and frozen in the order
+  // (src/lib/payments/topupBonus.ts) — never a number here.
+  "topup-500": topup("topup-500", "شحن ٥٠٠ (٥٠٠ نقطة)", 500, 500, 3, PROFESSIONAL_BUYERS),
+  "topup-1000": topup("topup-1000", "شحن ١٬٠٠٠ (١٬٠٠٠ نقطة)", 1000, 1000, 6, PROFESSIONAL_BUYERS),
+  "topup-2500": topup("topup-2500", "شحن ٢٬٥٠٠ (٢٬٥٠٠ نقطة)", 2500, 2500, 12, PROFESSIONAL_BUYERS),
+  "topup-5000": topup("topup-5000", "شحن ٥٬٠٠٠ (٥٬٠٠٠ نقطة)", 5000, 5000, 12, PROFESSIONAL_BUYERS),
+  "topup-10000": topup("topup-10000", "شحن ١٠٬٠٠٠ (١٠٬٠٠٠ نقطة)", 10000, 10000, 12, PROFESSIONAL_BUYERS),
   "lawyer-founder-2026": membership("lawyer-founder-2026", "باقة المحامي المؤسس", 2996, ["lawyer"]),
 });
 

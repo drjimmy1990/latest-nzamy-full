@@ -8025,3 +8025,23 @@ select 'R6: one verified account per mobile — trg_verified_phone_unique on pro
            and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
        and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
 -- <<< verify:l11_sec
+-- >>> verify:l12_money
+-- Batch l12 money (owner Q87 / Q88a / ١٥٢ / N6, 20 Nov 2026): run 20261202_10 before or after the deploy (before preferred).
+-- It replaces the l9 minimum: the `verify:l9_terms` row «Minimum top-up 50 for every account type» answers f from now on (expected).
+select 'Minimum top-up: individual 100, every other type 500 — no type left at the l9 value 50 (owner Q87; run 20261202_10)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object'
+                        and value ?& array['lawyer', 'firm', 'corporate', 'micro', 'government', 'ngo', 'provider', 'individual']
+                        and not exists (select 1 from pg_catalog.jsonb_each(value) e where e.value = '50'::jsonb)
+                   from public.platform_settings where key = 'min_topup_by_account_type'), false) as ok;
+select 'Top-up bonus is a setting (topup_bonus_pct, whole percent 0–100) and the founder rule is higher_only|both (Q88a / ١٥٢; run 20261202_10)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object'
+                        and not exists (select 1 from pg_catalog.jsonb_each(value) e
+                                         where pg_catalog.jsonb_typeof(e.value) <> 'number' or (e.value)::text::numeric not between 0 and 100)
+                   from public.platform_settings where key = 'topup_bonus_pct'), false)
+       and exists (select 1 from public.platform_settings where key = 'founder_bonus_rule' and value ->> 'mode' in ('higher_only', 'both')) as ok;
+select 'Legal drafter prices are a setting with all 8 kinds, each 1 point or more (N6; run 20261202_10)' as check,
+       coalesce((select value ?& array['claim', 'reply', 'rejoinder', 'supplementary', 'closing', 'appeal', 'cassation', 'petition']
+                        and not exists (select 1 from pg_catalog.jsonb_each(value) e
+                                         where pg_catalog.jsonb_typeof(e.value) <> 'number' or (e.value)::text::numeric < 1)
+                   from public.platform_settings where key = 'ai_draft_prices'), false) as ok;
+-- <<< verify:l12_money

@@ -136,8 +136,8 @@ test("derivation: no card of a price-book id carries a price string in src/const
     }
   }
   // ind-preventive / ind-litigation have no card since q329 (retired in the book)
-  // l9: topup-50 is on the lawyers' AND the individuals' tab (sold to both)
-  assert.equal(cards, 34, "16 book items once in Arabic and once in English, topup-50 on two tabs");
+  // l12 (owner Q87): topup-50 is retired and has no card on any tab
+  assert.equal(cards, 30, "15 book items once in Arabic and once in English");
 });
 
 test("derivation: the price tables read the book too (firms, individuals comparison rows)", () => {

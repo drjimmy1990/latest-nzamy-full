@@ -31,6 +31,7 @@ import {
   INTENT_EXPIRY_MARGIN_MS,
   INTENT_REFRESH_MS,
   billingLabelAr,
+  POINT_VALUE_LINE_AR,
 } from "./checkoutView.ts";
 
 // ── checkoutHref ────────────────────────────────────────────────────────────
@@ -160,23 +161,25 @@ test("task 5 review M5: retired ind-litigation keeps resolving by id, but /check
   assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["ind-litigation"]), []);
 });
 
-test("checkoutItemNotes: each top-up states the validity the catalog grants; the points are in its label already", () => {
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء"]);
-  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء"]);
+test("checkoutItemNotes: each top-up states the validity the catalog grants and the point's value (l12 Q87); the points are in its label already", () => {
+  const V = POINT_VALUE_LINE_AR;
+  assert.equal(V, "النقطة = ريال سعودي واحد قبل ضريبة القيمة المضافة");
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-100"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-250"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-500"]), ["صالحة ٣ أشهر من تاريخ الشراء", V]);
+  assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS["topup-1000"]), ["صالحة ٦ أشهر من تاريخ الشراء", V]);
   for (const id of ["topup-2500", "topup-5000", "topup-10000"]) {
-    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء"], id);
+    assert.deepEqual(checkoutItemNotes(PAYABLE_ITEMS[id]), ["صالحة ١٢ شهراً من تاريخ الشراء", V], id);
   }
-  // every top-up label names its points, so the screen shows them once
+  // every top-up label names its points, so the screen shows them once (l12 Q88a: points = price)
   for (const [id, points] of [
-    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٧٠٠ نقطة"], ["topup-1000", "١٬٥٠٠ نقطة"],
-    ["topup-2500", "٥٬٠٠٠ نقطة"], ["topup-5000", "١٢٬٥٠٠ نقطة"], ["topup-10000", "٣٠٬٠٠٠ نقطة"],
+    ["topup-100", "١٠٠ نقطة"], ["topup-250", "٢٥٠ نقطة"], ["topup-500", "٥٠٠ نقطة"], ["topup-1000", "١٬٠٠٠ نقطة"],
+    ["topup-2500", "٢٬٥٠٠ نقطة"], ["topup-5000", "٥٬٠٠٠ نقطة"], ["topup-10000", "١٠٬٠٠٠ نقطة"],
   ]) {
     assert.ok(PAYABLE_ITEMS[id].labelAr.includes(points), id);
   }
   // a top-up whose label does not name its points still gets the line
-  assert.deepEqual(checkoutItemNotes({ ...PAYABLE_ITEMS["topup-100"], labelAr: "شحن" }), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء"]);
+  assert.deepEqual(checkoutItemNotes({ ...PAYABLE_ITEMS["topup-100"], labelAr: "شحن" }), ["١٠٠ نقطة", "صالحة ٣ أشهر من تاريخ الشراء", V]);
 });
 
 test("checkoutItemNotes: the library states its access length; firm plans promise no seats", () => {

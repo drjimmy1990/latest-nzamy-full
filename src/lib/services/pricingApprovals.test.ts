@@ -46,13 +46,16 @@ test("the lawyer tab is the subscription (no points) plus the five professional 
   assert.match(lawyers, /id: "lawyer-pro"/);
   // Owner ٢٩١ (26 Oct 2026): the subscription comes with no points.
   assert.doesNotMatch(lawyers, /LAWYER_PRO_MONTHLY_POINTS|١٬٥٠٠ نقطة كل شهر|1,500 points every month/);
-  // Owner ٤٢٢ (3 Nov 2026): the bonus balances; ruling R2: «X نقطة (منها Y نقطة مكافأة)», no per-point price.
+  // Owner ٤٢٢'s bonus balances are cancelled (l12, owner Q88a): points = price;
+  // ruling R2: «X نقطة», no per-point price. The 50 pack is retired (Q87).
+  assert.doesNotMatch(lawyers, /id: "topup-50"/, "Q87: no 50-point pack");
+  assert.doesNotMatch(lawyers, /مكافأة|bonus\)/, "Q88a: no bonus wording on a lawyer card");
   const topups: Array<[string, number, string]> = [
-    ["topup-500", 500, "٧٠٠ نقطة (منها ٢٠٠ نقطة مكافأة)"],
-    ["topup-1000", 1000, "١٬٥٠٠ نقطة (منها ٥٠٠ نقطة مكافأة)"],
-    ["topup-2500", 2500, "٥٬٠٠٠ نقطة (منها ٢٬٥٠٠ نقطة مكافأة)"],
-    ["topup-5000", 5000, "١٢٬٥٠٠ نقطة (منها ٧٬٥٠٠ نقطة مكافأة)"],
-    ["topup-10000", 10000, "٣٠٬٠٠٠ نقطة (منها ٢٠٬٠٠٠ نقطة مكافأة)"],
+    ["topup-500", 500, "٥٠٠ نقطة"],
+    ["topup-1000", 1000, "١٬٠٠٠ نقطة"],
+    ["topup-2500", 2500, "٢٬٥٠٠ نقطة"],
+    ["topup-5000", 5000, "٥٬٠٠٠ نقطة"],
+    ["topup-10000", 10000, "١٠٬٠٠٠ نقطة"],
   ];
   const esc = (t: string) => t.replace(/[()]/g, "\\$&");
   for (const [id, price, points] of topups) {
@@ -115,7 +118,7 @@ const nounAr = (n: number): string => (n >= 3 && n <= 10 ? "نقاط" : "نقط�
  * and petition 1,500.
  */
 const TODAY: Record<string, [number, number]> = {
-  "legal-drafter": [500, 1500],
+  "legal-drafter": [200, 1500],
   "contracts-pro": [1000, 1000],
   "contract-drafter": [500, 500],
   wargaming: [75, 150],
@@ -158,8 +161,8 @@ test("task 4: the registry charges today's prices, and the display helper reads 
   assert.equal(display.aiToolPriceText("assistant", "ar"), "٣٠ نقطة لكل محادثة من ١٥ رسالة");
   assert.equal(display.messagesNounAr(5), "رسائل");
   assert.equal(display.messagesNounAr(15), "رسالة");
-  assert.equal(display.aiToolPriceText("legal-drafter", "ar"), `من ${(500).toLocaleString("ar-SA")} إلى ${(1500).toLocaleString("ar-SA")} نقطة`);
-  assert.equal(display.aiToolPriceText("legal-drafter", "en"), "500 to 1,500 points");
+  assert.equal(display.aiToolPriceText("legal-drafter", "ar"), `من ${(200).toLocaleString("ar-SA")} إلى ${(1500).toLocaleString("ar-SA")} نقطة`);
+  assert.equal(display.aiToolPriceText("legal-drafter", "en"), "200 to 1,500 points");
   assert.equal(display.aiToolPriceText("najiz-optimizer", "ar"), "١٥ نقطة");
   assert.equal(display.aiToolPriceText("wargaming", "ar"), "من ٧٥ إلى ١٥٠ نقطة");
   assert.equal(display.aiToolPriceText("analyze-strength", "ar"), "٧٥ نقطة");
@@ -377,10 +380,15 @@ test("task 4: the tool pages print the constant the registry charges", () => {
   assert.match(war, /const aiPrice = wargamingPrice\(Array\.from\(targets\)\)/);
   assert.equal((war.match(/\$\{aiPrice\.toLocaleString\("ar-SA"\)\} نقطة/g) ?? []).length, 2, "both run lines read aiPrice");
   assert.doesNotMatch(war, /WAVE4_PRICE/);
-  // The drafter's step prints the chosen kind's price, which is what the analysis run charges.
+  // The drafter's step prints the chosen kind's price — l12 (N6): the admin's
+  // setting read from the server (code default until it answers), the price
+  // the analysis run charges, sent back as expectedPrice.
   const step = shown("components/draft/steps/StepAiDraft.tsx");
   assert.match(step, /const spec = DRAFT_KINDS\[kind\]/);
-  assert.match(step, /spec\.price\.toLocaleString\("ar-SA"\)/);
+  assert.match(step, /const kindPrice = draftKindPrice\(kind, serverPrices \?\? undefined\)/);
+  assert.match(step, /kindPrice\.toLocaleString\("ar-SA"\)/);
+  assert.match(step, /expectedPrice: kindPrice/);
+  assert.doesNotMatch(step, /spec\.price\.toLocaleString/);
   for (const kind of Object.keys(DRAFT_KINDS) as Array<keyof typeof DRAFT_KINDS>) {
     assert.equal(AI_TOOLS["legal-drafter"].price({ kind }, { pages: null, turn: 0 }), DRAFT_KINDS[kind].price, kind);
   }

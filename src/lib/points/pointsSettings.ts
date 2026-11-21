@@ -34,21 +34,21 @@ export const DEFAULT_LIBRARY_PLAN_POINTS: Readonly<Record<string, number>> = Obj
 });
 export const DEFAULT_GIFT_VALID_DAYS = 90;
 /**
- * Batch l9 (owner register 14 item 7, 19 Nov 2026): 50 for EVERY account
- * type, the founder and the individual included (1 point = 1 SAR; the
- * topup-50 pack is sold to every type). It was 500 for the professional types
- * (l7 decision 5) and 100 for individuals (٥٦, l8); 20261129_30 UPDATEs the
- * stored map to 50 for every key.
+ * Batch l12 (owner Q87, 20 Nov 2026, RAW[16][50][57] — his raw log beats
+ * register 14 item 7): individual 100, every other type 500 (1 point = 1 SAR
+ * before VAT). The 50 of batch l9 is the LIBRARY's opening balance only, never
+ * a top-up minimum; topup-50 is retired. 20261202_10 writes this map (a value
+ * an admin changed after l9 is kept).
  */
 export const DEFAULT_MIN_TOPUP_SAR: Readonly<Record<string, number>> = Object.freeze({
-  lawyer: 50,
-  firm: 50,
-  corporate: 50,
-  micro: 50,
-  government: 50,
-  ngo: 50,
-  provider: 50,
-  individual: 50,
+  lawyer: 500,
+  firm: 500,
+  corporate: 500,
+  micro: 500,
+  government: 500,
+  ngo: 500,
+  provider: 500,
+  individual: 100,
 });
 export const DEFAULT_FREE_QUESTIONS: Readonly<Record<string, number>> = Object.freeze({ lawyer: 10, individual: 5 });
 

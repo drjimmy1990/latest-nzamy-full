@@ -18,7 +18,7 @@ import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { CitedText, SourceList, asCitations } from "@/components/ai/CitedAnswer";
-import { DRAFT_KINDS, type DraftKindId } from "@/lib/ai/draftKinds";
+import { DRAFT_KINDS, draftKindPrice, type DraftKindId } from "@/lib/ai/draftKinds";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { creditKindForRun, founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
 import {
@@ -102,6 +102,26 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
   const pendingEdit = useRef<{ index: number; price: number } | null>(null);
 
   const spec = DRAFT_KINDS[kind];
+  // l12 (owner N6): the price is the admin's setting, read from the server;
+  // until it answers, the code default. The price shown is sent as
+  // expectedPrice, so a changed setting is never charged unseen.
+  const [serverPrices, setServerPrices] = useState<Partial<Record<string, number>> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/pricing/draft-prices", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { prices?: unknown } | null) => {
+        const prices = body?.prices;
+        if (!cancelled && prices && typeof prices === "object" && !Array.isArray(prices)) {
+          setServerPrices(prices as Partial<Record<string, number>>);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const kindPrice = draftKindPrice(kind, serverPrices ?? undefined);
   const read = analysis.phase === "done" ? asDraftAnalysis(analysis.output) : null;
   const edited = read ? changes ?? read : null;
   const sourcesA = asCitations(analysis.citations);
@@ -154,7 +174,12 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
     writing.reset();
     setDraftSent(null);
     resetEdits();
-    void analysis.start("legal-drafter", input, { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}) }, draftState);
+    void analysis.start(
+      "legal-drafter",
+      input,
+      { fileIds, ...(useCredit && creditEligible ? { useCredit: true } : {}), ...(serverPrices ? { expectedPrice: kindPrice } : {}) },
+      draftState,
+    );
   }
 
   function startDraft() {
@@ -218,7 +243,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
             </p>
           </div>
           <span className="rounded-full border border-[#C8A762]/30 bg-[#C8A762]/10 px-3 py-1 text-[11px] font-bold text-[#C8A762]">
-            {paidByCredit ? `${FOUNDER_CREDIT_PRICE_TEXT}، تشمل التحليل والصياغة` : `${spec.price.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة`}
+            {paidByCredit ? `${FOUNDER_CREDIT_PRICE_TEXT}، تشمل التحليل والصياغة` : `${kindPrice.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة`}
           </span>
         </div>
 
@@ -461,8 +486,8 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
               <FileDoc size={14} /> تنزيل Word
             </button>
             <button type="button" onClick={() => { if (window.confirm(analysis.creditUsed
-              ? `صياغة جديدة تبدأ تحليلاً جديداً يُدفع من جديد: بعمل آخر من باقة المؤسس إن بقي لك واخترته، وإلا تُخصم له ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`
-              : `صياغة جديدة تبدأ تحليلاً جديداً وتُخصم لها ${spec.price.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`)) { writing.reset(); analysis.reset(); setSent(null); setChanges(null); setDraftSent(null); resetEdits(); } }}
+              ? `صياغة جديدة تبدأ تحليلاً جديداً يُدفع من جديد: بعمل آخر من باقة المؤسس إن بقي لك واخترته، وإلا تُخصم له ${kindPrice.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`
+              : `صياغة جديدة تبدأ تحليلاً جديداً وتُخصم لها ${kindPrice.toLocaleString("ar-SA")} نقطة. المذكرة الحالية تبقى في سجل الذكاء الاصطناعي. متابعة؟`)) { writing.reset(); analysis.reset(); setSent(null); setChanges(null); setDraftSent(null); resetEdits(); } }}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>
               <ArrowCounterClockwise size={14} /> صياغة جديدة (بخصم جديد)
             </button>

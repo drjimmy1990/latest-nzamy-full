@@ -5,7 +5,10 @@
  * on 18 Nov 2026 (batch l8 payref). Every number is a platform_settings row
  * written through PATCH /api/v1/admin/settings, which validates and audits
  * each write; nothing here is a code constant:
- *   - min_topup_by_account_type   (l9, register 14 item 7: 50 for every account type)
+ *   - min_topup_by_account_type   (l12, owner Q87: individual 100, every other type 500)
+ *   - topup_bonus_pct             (l12, owner Q88a / ١٦٢: bonus % per pack, 0 by default)
+ *   - founder_bonus_rule          (l12, ١٥٢: founder discount vs bonus — the higher only by default)
+ *   - ai_draft_prices             (l12, owner N6: the legal drafter's price per kind)
  *   - founder_topup_discount_bps  (the founder's top-up discount rate, 1500 = 15 %)
  *   - founder_topup_discount_expires (how long it runs: the membership year by default)
  *   - firm_extra_seat_price_sar   (٥٣: stored only, never sold or shown publicly)
@@ -27,6 +30,21 @@ import {
 } from "@/lib/payments/founderDiscount";
 import { FIRM_EXTRA_SEAT_PRICE_KEY, FIRM_PLAN_SEATS, firmExtraSeatPriceSar } from "@/lib/pricing/firmSeats";
 import { FOUNDER_RENEWAL_KEY, FOUNDER_RENEWAL_NOTICE_DAYS, parseFounderRenewal } from "@/lib/membership/founderRenewal";
+import {
+  FOUNDER_BONUS_RULE_KEY,
+  parseFounderBonusMode,
+  parseTopupBonus,
+  TOPUP_BONUS_KEY,
+  TOPUP_BONUS_PACK_IDS,
+  type FounderBonusMode,
+} from "@/lib/payments/topupBonus";
+import { DRAFT_KIND_IDS, DRAFT_KINDS, DRAFT_PRICES_KEY, parseDraftPrices } from "@/lib/ai/draftKinds";
+
+/** «شحن ٥٠٠» for "topup-500" (the admin list only). */
+function packLabel(id: string): string {
+  const n = Number(id.replace("topup-", ""));
+  return `شحن ${Number.isFinite(n) ? n.toLocaleString("ar-SA") : id}`;
+}
 
 const TYPE_LABELS: ReadonlyArray<[string, string]> = [
   ["lawyer", "محامٍ"],
@@ -68,6 +86,9 @@ export function PaymentRulesCard() {
   const [seatPrice, setSeatPrice] = useState("");
   const [renewOn, setRenewOn] = useState(false);
   const [renewPrice, setRenewPrice] = useState("");
+  const [bonus, setBonus] = useState<Record<string, string>>({});
+  const [bonusMode, setBonusMode] = useState<FounderBonusMode>("higher_only");
+  const [draftPrices, setDraftPrices] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>(null);
 
@@ -84,7 +105,15 @@ export function PaymentRulesCard() {
           [FOUNDER_DISCOUNT_EXPIRES_KEY]: s[FOUNDER_DISCOUNT_EXPIRES_KEY] !== undefined,
           [FIRM_EXTRA_SEAT_PRICE_KEY]: s[FIRM_EXTRA_SEAT_PRICE_KEY] !== undefined,
           [FOUNDER_RENEWAL_KEY]: s[FOUNDER_RENEWAL_KEY] !== undefined,
+          [TOPUP_BONUS_KEY]: s[TOPUP_BONUS_KEY] !== undefined,
+          [FOUNDER_BONUS_RULE_KEY]: s[FOUNDER_BONUS_RULE_KEY] !== undefined,
+          [DRAFT_PRICES_KEY]: s[DRAFT_PRICES_KEY] !== undefined,
         });
+        const bonusMap = parseTopupBonus(s[TOPUP_BONUS_KEY]);
+        setBonus(Object.fromEntries(TOPUP_BONUS_PACK_IDS.map((id) => [id, String(bonusMap[id] ?? 0)])));
+        setBonusMode(parseFounderBonusMode(s[FOUNDER_BONUS_RULE_KEY]));
+        const prices = parseDraftPrices(s[DRAFT_PRICES_KEY]);
+        setDraftPrices(Object.fromEntries(DRAFT_KIND_IDS.map((k) => [k, String(prices[k])])));
         const map = (s[MIN_TOPUP_KEY] && typeof s[MIN_TOPUP_KEY] === "object" ? s[MIN_TOPUP_KEY] : DEFAULT_MIN_TOPUP_SAR) as Record<string, unknown>;
         setMinTopup(Object.fromEntries(TYPE_LABELS.map(([t]) => [t, typeof map[t] === "number" ? String(map[t]) : ""])));
         const bps = s[FOUNDER_DISCOUNT_SETTING_KEY];
@@ -160,6 +189,33 @@ export function PaymentRulesCard() {
     void save(FOUNDER_RENEWAL_KEY, { enabled: renewOn, price_sar: raw === "" ? null : (whole(raw) ?? -1) });
   }
 
+  function saveBonus() {
+    const value: Record<string, number> = {};
+    for (const id of TOPUP_BONUS_PACK_IDS) {
+      const raw = bonus[id]?.trim() ?? "";
+      const n = raw === "" ? 0 : whole(raw);
+      if (n === null || n > 100) {
+        setStatus({ key: TOPUP_BONUS_KEY, ok: false, text: "أدخل نسبة صحيحة بين 0 و100 لكل حزمة." });
+        return;
+      }
+      value[id] = n;
+    }
+    void save(TOPUP_BONUS_KEY, value);
+  }
+
+  function saveDraftPrices() {
+    const value: Record<string, number> = {};
+    for (const k of DRAFT_KIND_IDS) {
+      const n = whole(draftPrices[k] ?? "");
+      if (n === null || n < 1) {
+        setStatus({ key: DRAFT_PRICES_KEY, ok: false, text: "أدخل سعراً صحيحاً بالنقاط (١ فأكثر) لكل نوع." });
+        return;
+      }
+      value[k] = n;
+    }
+    void save(DRAFT_PRICES_KEY, value);
+  }
+
   function saveSeatPrice() {
     const raw = seatPrice.trim();
     void save(FIRM_EXTRA_SEAT_PRICE_KEY, { sar: raw === "" ? null : (whole(raw) ?? -1) });
@@ -222,6 +278,74 @@ export function PaymentRulesCard() {
           <p className={`mt-2 ${hint}`}>الحقل الفارغ يعني: لا حد أدنى لهذا النوع غير حزم الشحن المعروضة له.</p>
           <div className="mt-3">{saveButton(MIN_TOPUP_KEY, saveMinTopup)}</div>
           {note(MIN_TOPUP_KEY)}
+        </section>
+
+        <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          <p className={label}>النقاط الإضافية على حزم الشحن (٪ من نقاط الحزمة){notStored(TOPUP_BONUS_KEY)}</p>
+          <p className={`mt-1 ${hint}`}>
+            قرار المالك (٢٠ نوفمبر): أُلغي جدول الشحن الحملي، فكل حزمة تعطي نقاطاً بقدر سعرها (النقطة = ريال قبل الضريبة) ما لم تُضبط هنا نسبة إضافية.
+            تُحسب النسبة عند الدفع وتُثبَّت في الطلب، فلا يغيّر تعديلها ما دُفع قبله. اتركها صفراً حتى يعتمد المالك جدولاً بديلاً.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {TOPUP_BONUS_PACK_IDS.map((id) => (
+              <label key={id} className={`flex flex-col gap-1 ${hint}`}>
+                {packLabel(id)}
+                <input
+                  className={input}
+                  inputMode="numeric"
+                  value={bonus[id] ?? ""}
+                  onChange={(e) => setBonus((p) => ({ ...p, [id]: e.target.value }))}
+                  aria-label={`النقاط الإضافية: ${packLabel(id)}`}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-3">{saveButton(TOPUP_BONUS_KEY, saveBonus)}</div>
+          {note(TOPUP_BONUS_KEY)}
+        </section>
+
+        <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          <p className={label}>خصم المؤسس مع النقاط الإضافية على الشحن{notStored(FOUNDER_BONUS_RULE_KEY)}</p>
+          <p className={`mt-1 ${hint}`}>
+            إذا اجتمع للعضو المؤسس على حزمة واحدة خصم المؤسس ونقاط إضافية: «الأعلى فقط» يعطيه الأكبر قيمةً منهما (النقطة = ريال)، وعند التساوي الخصم؛
+            و«الاثنان معاً» يعطيه كليهما.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className={`flex items-center gap-2 ${hint}`}>
+              <input type="radio" name="founder-bonus-mode" checked={bonusMode === "higher_only"} onChange={() => setBonusMode("higher_only")} />
+              الأعلى فقط
+            </label>
+            <label className={`flex items-center gap-2 ${hint}`}>
+              <input type="radio" name="founder-bonus-mode" checked={bonusMode === "both"} onChange={() => setBonusMode("both")} />
+              الاثنان معاً
+            </label>
+            {saveButton(FOUNDER_BONUS_RULE_KEY, () => void save(FOUNDER_BONUS_RULE_KEY, { mode: bonusMode }))}
+          </div>
+          {note(FOUNDER_BONUS_RULE_KEY)}
+        </section>
+
+        <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
+          <p className={label}>أسعار الصائغ القانوني لكل نوع (نقاط){notStored(DRAFT_PRICES_KEY)}</p>
+          <p className={`mt-1 ${hint}`}>
+            تُخصم مرة واحدة على التحليل، والصياغة بعده مجانية. يرى المحامي السعر الجديد في الصائغ فور الحفظ. صفحة الأسعار العامة تعرض المدى من
+            الأسعار المعتمدة في الكود، فإن غيّرت هنا فاطلب تحديثها معه.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {DRAFT_KIND_IDS.map((k) => (
+              <label key={k} className={`flex flex-col gap-1 ${hint}`}>
+                {DRAFT_KINDS[k].label}
+                <input
+                  className={input}
+                  inputMode="numeric"
+                  value={draftPrices[k] ?? ""}
+                  onChange={(e) => setDraftPrices((p) => ({ ...p, [k]: e.target.value }))}
+                  aria-label={`سعر ${DRAFT_KINDS[k].label}`}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-3">{saveButton(DRAFT_PRICES_KEY, saveDraftPrices)}</div>
+          {note(DRAFT_PRICES_KEY)}
         </section>
 
         <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>

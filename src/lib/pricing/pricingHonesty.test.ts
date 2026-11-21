@@ -703,8 +703,9 @@ function validityAr(months: number): string {
 }
 
 test("٢٤٩: each top-up card states the validity the catalog grants", () => {
-  const topups = Object.values(PAYABLE_ITEMS).filter((item) => item.kind === "topup");
-  assert.equal(topups.length, 8, "eight top-ups in the catalog (owner ٣٠٢ + l9's 50-point pack)");
+  // l12 (owner Q87): the 50-point pack is retired — no card, so only the packs on sale
+  const topups = Object.values(PAYABLE_ITEMS).filter((item) => item.kind === "topup" && item.onSale);
+  assert.equal(topups.length, 7, "seven top-ups on sale (owner ٣٠٢; l9's 50-point pack retired in l12)");
   const lawyers = planLists("constants/pricing/pricing.lawyers.ts").find((l) => l.name === "plansLawyers");
   const individuals = planLists("constants/pricing/pricing.individuals.ts").find((l) => l.name === "plansIndividuals");
   assert.ok(lawyers, "plansLawyers was not found");
@@ -712,8 +713,7 @@ test("٢٤٩: each top-up card states the validity the catalog grants", () => {
   for (const item of topups) {
     const months = item.pointsValidityMonths;
     assert.ok(months, `${item.id} has no validity in the catalog`);
-    // ٣٠٢: 100 / 250 are the individuals' cards, 500 and up the lawyers';
-    // l9: the 50-point pack is sold to both, so it is on both tabs
+    // ٣٠٢: 100 / 250 are the individuals' cards, 500 and up the lawyers'
     const forIndividuals = Array.isArray(item.buyers) && item.buyers.includes("individual");
     const forLawyers = Array.isArray(item.buyers) && item.buyers.includes("lawyer");
     const tabs = [...(forIndividuals ? [individuals] : []), ...(forLawyers ? [lawyers] : [])];

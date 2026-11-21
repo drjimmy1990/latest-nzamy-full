@@ -242,18 +242,69 @@ test("F12: an active founder pays 15 % less for a top-up — 500 SAR → 425 + V
   const r = await startCheckoutWith({ admin, client: m.client, now: () => NOW, ranks: RANKS }, input({ itemId: "topup-500", billing: "once" }));
   assert.equal(r.status, 200);
   if (r.status !== 200) return;
-  assert.deepEqual(r.body.quote, { net: 42500, vat: 6375, total: 48875, vatMode: "exclusive", listNet: 50000, founderDiscount: 7500 });
+  // l12 (Q88a): the quote also names the points the order froze (no bonus by default)
+  assert.deepEqual(r.body.quote, { net: 42500, vat: 6375, total: 48875, vatMode: "exclusive", listNet: 50000, founderDiscount: 7500, topupPoints: 500, bonusPoints: 0 });
   assert.equal(m.intents[0].amountHalalas, 48875);
   const p = inserted(log)!.payload as { item_id: string; metadata: Record<string, unknown> };
   assert.equal(p.item_id, "topup-500");
   assert.deepEqual(p.metadata.founder_discount, { pct: 15, discount_halalas: 7500, list_net_halalas: 50000 });
+  assert.deepEqual(p.metadata.topup, { base_points: 500, bonus_pct: 0, bonus_points: 0, points: 500 });
+});
+
+// ── l12 (owner Q88a / ١٥٢): the admin bonus, frozen in the order; founder discount vs bonus ──
+
+const settingKey = (q: { filters: unknown[] }) =>
+  (q.filters as Array<[string, string, unknown]>).find(([op, col]) => op === "eq" && col === "key")?.[2];
+const withSettings = (values: Record<string, unknown>): FakeHandler => (q) =>
+  q.table === "platform_settings" && typeof settingKey(q) === "string" && Object.hasOwn(values, settingKey(q) as string)
+    ? { data: { value: values[settingKey(q) as string] } }
+    : undefined;
+
+test("l12 (Q88a): a bonus set by the admin is frozen in the order and named in the quote; a non-founder pays the list price", async () => {
+  const a = db("lawyer", { founder: false }, withSettings({ topup_bonus_pct: { "topup-500": 8 } }));
+  const r = await startCheckoutWith({ admin: a.client, client: moyasar().client, now: () => NOW }, input({ itemId: "topup-500", billing: "once" }));
+  assert.equal(r.status, 200);
+  if (r.status === 200) assert.deepEqual(r.body.quote, { net: 50000, vat: 7500, total: 57500, vatMode: "exclusive", topupPoints: 540, bonusPoints: 40 });
+  const meta = (inserted(a.log)!.payload as { metadata: Record<string, unknown> }).metadata;
+  assert.deepEqual(meta.topup, { base_points: 500, bonus_pct: 8, bonus_points: 40, points: 540 });
+});
+
+test("١٥٢ higher_only (default): a founder gets the LARGER of the 15 % discount and the bonus, never both", async () => {
+  // 20 % of 500 = 100 points = 100 SAR > the 75 SAR discount → the bonus, list price
+  const big = db("lawyer", { founder: true }, withSettings({ topup_bonus_pct: { "topup-500": 20 } }));
+  const r1 = await startCheckoutWith({ admin: big.client, client: moyasar().client, now: () => NOW, ranks: RANKS }, input({ itemId: "topup-500", billing: "once" }));
+  assert.equal(r1.status, 200);
+  if (r1.status === 200) assert.deepEqual(r1.body.quote, { net: 50000, vat: 7500, total: 57500, vatMode: "exclusive", topupPoints: 600, bonusPoints: 100 });
+  const m1 = (inserted(big.log)!.payload as { metadata: Record<string, unknown> }).metadata;
+  assert.equal("founder_discount" in m1, false);
+  assert.deepEqual(m1.topup, { base_points: 500, bonus_pct: 20, bonus_points: 100, points: 600 });
+
+  // 10 % = 50 points = 50 SAR < 75 SAR → the discount, no bonus
+  const small = db("lawyer", { founder: true }, withSettings({ topup_bonus_pct: { "topup-500": 10 } }));
+  const r2 = await startCheckoutWith({ admin: small.client, client: moyasar().client, now: () => NOW, ranks: RANKS }, input({ itemId: "topup-500", billing: "once" }));
+  if (r2.status === 200) assert.deepEqual(r2.body.quote, { net: 42500, vat: 6375, total: 48875, vatMode: "exclusive", listNet: 50000, founderDiscount: 7500, topupPoints: 500, bonusPoints: 0 });
+  const m2 = (inserted(small.log)!.payload as { metadata: Record<string, unknown> }).metadata;
+  assert.deepEqual(m2.topup, { base_points: 500, bonus_pct: 0, bonus_points: 0, points: 500 });
+
+  // 15 % = 75 points = 75 SAR = the discount → a tie keeps the discount
+  const tie = db("lawyer", { founder: true }, withSettings({ topup_bonus_pct: { "topup-500": 15 } }));
+  const r3 = await startCheckoutWith({ admin: tie.client, client: moyasar().client, now: () => NOW, ranks: RANKS }, input({ itemId: "topup-500", billing: "once" }));
+  if (r3.status === 200) assert.equal(r3.body.quote.founderDiscount, 7500);
+  if (r3.status === 200) assert.equal(r3.body.quote.bonusPoints, 0);
+});
+
+test("١٥٢ both: with founder_bonus_rule {mode: both} a founder keeps the discount AND the bonus", async () => {
+  const a = db("lawyer", { founder: true }, withSettings({ topup_bonus_pct: { "topup-500": 10 }, founder_bonus_rule: { mode: "both" } }));
+  const r = await startCheckoutWith({ admin: a.client, client: moyasar().client, now: () => NOW, ranks: RANKS }, input({ itemId: "topup-500", billing: "once" }));
+  assert.equal(r.status, 200);
+  if (r.status === 200) assert.deepEqual(r.body.quote, { net: 42500, vat: 6375, total: 48875, vatMode: "exclusive", listNet: 50000, founderDiscount: 7500, topupPoints: 550, bonusPoints: 50 });
 });
 
 test("F12: a non-founder pays the list price; a failed founder read is 503, never the full price to a founder", async () => {
   const a = db("lawyer", { founder: false });
   const r = await startCheckoutWith({ admin: a.client, client: moyasar().client, now: () => NOW }, input({ itemId: "topup-500", billing: "once" }));
   assert.equal(r.status, 200);
-  if (r.status === 200) assert.deepEqual(r.body.quote, { net: 50000, vat: 7500, total: 57500, vatMode: "exclusive" });
+  if (r.status === 200) assert.deepEqual(r.body.quote, { net: 50000, vat: 7500, total: 57500, vatMode: "exclusive", topupPoints: 500, bonusPoints: 0 });
   assert.equal("founder_discount" in (inserted(a.log)!.payload as { metadata: Record<string, unknown> }).metadata, false);
 
   const b = db("lawyer", { founder: "error" });

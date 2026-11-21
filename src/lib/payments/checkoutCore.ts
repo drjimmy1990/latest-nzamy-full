@@ -157,6 +157,7 @@ import {
   founderDiscountMetadata,
   isActiveFounder,
 } from "./founderDiscount.ts";
+import { founderVsBonus, readFounderBonusMode, readTopupBonusPct, topupGrantMeta, type TopupGrantMeta } from "./topupBonus.ts";
 import type { TierRankTable } from "../entitlementGrantRules.ts";
 import { COUPON_ATTEMPTS, RATE_LIMITED_AR, type CouponAttemptBudget } from "./couponAttempts.ts";
 import type { BookEntry } from "../pricing/priceBook.ts";
@@ -602,6 +603,27 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
     }
   }
 
+  // 3e (l12, owner Q88a / ١٥٢). a top-up's points: its own (1 point = 1 SAR)
+  // plus the admin-set bonus (topup_bonus_pct, default 0), frozen in the
+  // order (metadata.topup) so the grant credits exactly what the buyer was
+  // shown. A founder member with both a discount and a bonus gets the larger
+  // one only (founder_bonus_rule, default "higher_only"; a tie keeps the
+  // discount). Top-ups take no coupon (couponRules), so dropping the founder
+  // discount goes back to the listed price.
+  let topupMeta: TopupGrantMeta | null = null;
+  if (q.item.kind === "topup" && typeof q.item.points === "number") {
+    topupMeta = topupGrantMeta(q.item.points, await readTopupBonusPct(admin, q.item.id));
+    if (founderMeta && founderQuote && topupMeta.bonus_points > 0) {
+      const keep = founderVsBonus(await readFounderBonusMode(admin), founderQuote.founderDiscount, topupMeta.bonus_points);
+      if (!keep.keepDiscount) {
+        ({ netHalalas: net, vatHalalas: vat, totalHalalas: total } = q);
+        founderMeta = null;
+        founderQuote = null;
+      }
+      if (!keep.keepBonus) topupMeta = topupGrantMeta(q.item.points, 0);
+    }
+  }
+
   // 3d (l6-pay, Q511). the pro-rata credit off the net before VAT; less than
   // 1 SAR left → refused (Moyasar charges no 0, and the credit would be lost)
   let prorationMeta: Record<string, unknown> | null = null;
@@ -640,6 +662,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
       user_email: user.email ?? null,
       ...(couponMeta ? { coupon: couponMeta } : {}),
       ...(founderMeta ? { founder_discount: founderMeta } : {}),
+      ...(topupMeta ? { topup: topupMeta } : {}),
       ...(prorationMeta ? { proration: prorationMeta } : {}),
       ...(consentMeta ?? {}),
       ...(input.attribution ? { attribution: input.attribution } : {}),
@@ -759,6 +782,7 @@ export async function startCheckoutWith(deps: CheckoutDeps, input: CheckoutInput
         ...(founderQuote ?? {}),
         ...(prorationQuote ?? {}),
         ...(q.launch && !founderQuote ? { launchListNet: q.launch.listNetHalalas } : {}),
+        ...(topupMeta ? { topupPoints: topupMeta.points, bonusPoints: topupMeta.bonus_points } : {}),
       },
       callbackUrl,
       expiresAt: intent.data.expiresAt,

@@ -38,6 +38,7 @@ import {
   WITHDRAWAL_MAX_POINTS_USED_PCT,
 } from "./refundPolicy.ts";
 import { PRICE_BOOK, type BookEntry } from "../pricing/priceBook.ts";
+import { TERMS_LAST_UPDATED_AR } from "../legal/termsVersion.ts";
 import { quote } from "./catalog.ts";
 import { refundDecision, VOID_WINDOW_MS } from "./refundDecision.ts";
 import {
@@ -63,7 +64,8 @@ const visible = (src: string) => src.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*
 test("the owner's numbers", () => {
   assert.equal(INSTANT_CANCEL_MINUTES, 90);
   assert.equal(WITHDRAWAL_DAYS, 14);
-  assert.equal(WITHDRAWAL_MAX_POINTS_USED_PCT, 5);
+  // l12 (owner item 69): a top-up is refundable only while none of its points was spent (was 5 %)
+  assert.equal(WITHDRAWAL_MAX_POINTS_USED_PCT, 0);
   assert.equal(CONSULTATION_CANCEL_HOURS, 24);
   assert.equal(PROMO_POINTS_VALIDITY_DAYS, 90);
   assert.deepEqual(RENEWAL_REMINDER_DAYS, [7, 3]);
@@ -71,7 +73,8 @@ test("the owner's numbers", () => {
 
 test("finding 3: the top-up validity is the price book's on-sale packs — what checkout sells today", () => {
   const packs = topupValidityMonths();
-  assert.deepEqual(packs.map((t) => [t.sar, t.months]), [[50, 3], [100, 3], [250, 3], [500, 3], [1000, 6], [2500, 12], [5000, 12], [10000, 12]]);
+  // l12 (owner Q87): the 50 pack is retired, so the page no longer names it
+  assert.deepEqual(packs.map((t) => [t.sar, t.months]), [[100, 3], [250, 3], [500, 3], [1000, 6], [2500, 12], [5000, 12], [10000, 12]]);
   for (const { sar } of packs) {
     const entry = Object.values(PRICE_BOOK).find((e) => e.kind === "topup" && e.prices.once?.sar === sar)!;
     const q = quote(entry.id, "once");
@@ -122,12 +125,12 @@ test("the 90-minute instant cancel is the refund code's void window — a change
   assert.equal(refundDecision(order, new Date(Date.parse(order.paid_at) + VOID_WINDOW_MS), usage)?.method, "refund");
 });
 
-test("the ≤ 5 % withdrawal rule is the refund code's warning threshold", () => {
+test("a plan's ≤ 5 % points warning stays the refund code's own (l12 moved only the TOP-UP rule to 0)", () => {
   const order = { status: "paid", kind: "plan", paid_at: "2026-10-20T08:00:00Z" };
   const now = new Date("2026-10-26T08:00:00Z");
   const at = (pct: number) => refundDecision(order, now, { pointsUsedFromOrderLot: 0, planPointsUsedPct: pct })?.warnings ?? [];
-  assert.equal(at(WITHDRAWAL_MAX_POINTS_USED_PCT).length, 0);
-  assert.equal(at(WITHDRAWAL_MAX_POINTS_USED_PCT + 0.01).length, 1);
+  assert.equal(at(5).length, 0);
+  assert.equal(at(5.01).length, 1);
 });
 
 test("the page agrees with refundPolicy.ts: new sentences built from it, the owner's verbatim clauses carry the same numbers", () => {
@@ -142,11 +145,12 @@ test("the page agrees with refundPolicy.ts: new sentences built from it, the own
     assert.ok(PAGE.includes(name), name);
   }
   assert.ok(SUBSCRIPTION_REFUND_LINE_AR.includes(`خلال (${arNumber(WITHDRAWAL_DAYS)}) يوماً من الشراء`));
-  assert.ok(TOPUP_REFUND_LINE_AR.includes(`${arNumber(WITHDRAWAL_MAX_POINTS_USED_PCT)}٪ منها`));
+  assert.ok(TOPUP_REFUND_LINE_AR.includes("بشرط ألا يكون قد صُرف شيء من نقاطها"));
+  assert.ok(TOPUP_REFUND_LINE_AR.includes("ولا تُسترد النقاط الإضافية ولا نقاط الهدايا"));
   assert.ok(text.includes(`قبل ${arNumber(CONSULTATION_CANCEL_HOURS)} ساعة من موعد الجلسة الاستشارية`));
   assert.ok(text.includes(`الإلغاء قبل ${arNumber(CONSULTATION_CANCEL_HOURS)} ساعة`));
   assert.ok(SUBSCRIPTION_REFUND_LINE_EN.includes(`within (${WITHDRAWAL_DAYS}) days of purchase`));
-  assert.ok(TOPUP_REFUND_LINE_EN.includes(`no more than ${WITHDRAWAL_MAX_POINTS_USED_PCT}% of that top-up's own points`));
+  assert.ok(TOPUP_REFUND_LINE_EN.includes("provided none of its points has been spent"));
   assert.ok(text.includes(`up to ${CONSULTATION_CANCEL_HOURS} hours before the consultation session`));
   // no other value of these numbers anywhere in the visible text
   for (const other of ["(٧) يوماً", "(٣٠) يوماً", "١٠٪ من رصيد", "قبل ٤٨ ساعة", "(7) days", "(30) days", "up to 48 hours"]) {
@@ -155,8 +159,8 @@ test("the page agrees with refundPolicy.ts: new sentences built from it, the own
 });
 
 test("the sentences the page shows", () => {
-  assert.equal(topupValidityAr(), "حزم ٥٠ و١٠٠ و٢٥٠ و٥٠٠ ر.س: ٣ أشهر؛ حزمة ١٬٠٠٠ ر.س: ٦ أشهر؛ حزم ٢٬٥٠٠ و٥٬٠٠٠ و١٠٬٠٠٠ ر.س: ١٢ شهراً");
-  assert.equal(topupValidityEn(), "SAR 50, 100, 250 and 500: 3 months; SAR 1,000: 6 months; SAR 2,500, 5,000 and 10,000: 12 months");
+  assert.equal(topupValidityAr(), "حزم ١٠٠ و٢٥٠ و٥٠٠ ر.س: ٣ أشهر؛ حزمة ١٬٠٠٠ ر.س: ٦ أشهر؛ حزم ٢٬٥٠٠ و٥٬٠٠٠ و١٠٬٠٠٠ ر.س: ١٢ شهراً");
+  assert.equal(topupValidityEn(), "SAR 100, 250 and 500: 3 months; SAR 1,000: 6 months; SAR 2,500, 5,000 and 10,000: 12 months");
   assert.deepEqual([1, 2, 3, 10, 11, 12].map(monthsAr), ["شهر واحد", "شهران", "٣ أشهر", "١٠ أشهر", "١١ شهراً", "١٢ شهراً"]);
   assert.equal(renewalRemindersAr(), "تذكيراً أول قبل ٧ أيام، وتذكيراً ثانياً قبل ٣ أيام من موعد التجديد");
   assert.equal(arNumber(10000), "١٠٬٠٠٠");
@@ -222,7 +226,9 @@ test("l8 (owner 18 Nov, 1.2 / ج8): ONE founder refund text — /founder-terms i
   const text = visible(PAGE);
   assert.ok(!text.includes("رصيد وحدات الاستخدام"));
   assert.ok(!text.includes("usage units"));
-  assert.ok(text.includes("٢١ نوفمبر ٢٠٢٦"), "the last-update date moved (l9: the one new terms version)");
+  // l12: the date is the terms version's own (termsVersion.ts), so the two never drift
+  assert.ok(PAGE.includes("آخر تحديث: ${TERMS_LAST_UPDATED_AR}"), "the last-update date is the current terms version's");
+  assert.equal(TERMS_LAST_UPDATED_AR, "٢٢ نوفمبر ٢٠٢٦");
 });
 
 test("l9 (register 16 / 44): the 5-full-text rule on the founder and library-including lines; ind-ai says «no refund in practice»; the page shows all three", () => {

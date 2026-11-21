@@ -75,6 +75,7 @@ import {
 } from "./sectionEdits.ts";
 import { freeQuestionFallsBack, freeQuestionToolFor } from "./freeQuestion.ts";
 import { textPages } from "./textExtract.ts";
+import { readDraftPrices } from "./draftKinds.ts";
 import {
   STEP_LABEL_AR,
   cleanLabel,
@@ -693,7 +694,15 @@ export async function startRunWith(
   // above from this user's own runs of this conversation (never the browser's).
   const sectionEdit = !!spec.sectionEdit && !!conversationId && checked.input.phase === spec.sectionEdit.phase;
   const priorSectionEdits: SectionEditCounts | undefined = sectionEdit ? countSectionEdits(prior) : undefined;
-  const price = spec.price(checked.input, { pages, turn, ...(priorSectionEdits ? { priorSectionEdits } : {}) });
+  // l12 (owner N6): the drafter's prices are the admin setting ai_draft_prices
+  // (the code defaults when it cannot be read — never 0).
+  const draftPrices = spec.id === "legal-drafter" ? await readDraftPrices(admin) : undefined;
+  const price = spec.price(checked.input, {
+    pages,
+    turn,
+    ...(priorSectionEdits ? { priorSectionEdits } : {}),
+    ...(draftPrices ? { draftPrices } : {}),
+  });
   // The screen showed a price before the user confirmed: a different one now is
   // refused, uncharged, with the counts to show again.
   if (req.expectedPrice !== undefined && req.expectedPrice !== price) {

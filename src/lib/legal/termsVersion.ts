@@ -15,15 +15,24 @@
  * reservation), Arabic and English; /founder-terms gets the same version
  * (FOUNDER_TERMS_VERSION, which must equal this — founderTerms.test.ts).
  *
+ * Batch l12 (owner answers of 20 Nov 2026): 2026-11-22 — the batch's ONE new
+ * version. /terms section ٦ states the point's value («النقطة = ريال سعودي
+ * واحد قبل ضريبة القيمة المضافة») and the minimum top-up (individual 100,
+ * every other type 500); /refund-policy (part of the terms) refunds a top-up
+ * only while none of its points was spent; /founder-terms item ٥ drops
+ * «بحد أدنى 50 نقطة» (50 is the library's opening balance, not a top-up
+ * minimum) and items ٥ / ١٣ say the founder discount and a top-up bonus never
+ * stack (the higher one). Every account is asked again once (TermsReacceptGate).
+ *
  * Format: YYYY-MM-DD (the migration's CHECK refuses anything else).
  *
  * Pure: no imports, safe in client components and under `node --test`.
  */
-export const CURRENT_TERMS_VERSION = "2026-11-21";
+export const CURRENT_TERMS_VERSION = "2026-11-22";
 
 /** /terms «آخر تحديث» — the same day as CURRENT_TERMS_VERSION. */
-export const TERMS_LAST_UPDATED_AR = "٢١ نوفمبر ٢٠٢٦";
-export const TERMS_LAST_UPDATED_EN = "November 21, 2026";
+export const TERMS_LAST_UPDATED_AR = "٢٢ نوفمبر ٢٠٢٦";
+export const TERMS_LAST_UPDATED_EN = "November 22, 2026";
 
 /** The /terms anchor of the «حماية المنصة ومحتواها» section. */
 export const PLATFORM_PROTECTION_ANCHOR = "platform-protection";

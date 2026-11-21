@@ -226,7 +226,7 @@ test("Task F fix round 1: the result page names the points a top-up's lot credit
   const credited = paymentResultView({ outcome: "granted" }, { ...top, credited_points: 1250 });
   assert.match(credited.body, /«شحن ١٬٠٠٠ — ١٬٢٥٠ نقطة \(منها ٢٥٠ نقطة مكافأة\)»/);
   const unread = paymentResultView({ outcome: "granted" }, top);
-  assert.match(unread.body, /«شحن ١٬٠٠٠ — ١٬٥٠٠ نقطة \(منها ٥٠٠ نقطة مكافأة\)»/);
+  assert.match(unread.body, /«شحن ١٬٠٠٠ \(١٬٠٠٠ نقطة\)»/, "l12 (Q88a): the book label, points = price");
 });
 
 // ── F16: the founder welcome card ────────────────────────────────────────────

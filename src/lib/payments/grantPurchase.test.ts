@@ -190,8 +190,26 @@ test("a top-up credits a purchase lot for the order, expiring after its validity
   const lot = lots(log)[0].payload as Record<string, unknown>;
   assert.deepEqual(
     [lot.p_user, lot.p_points, lot.p_source, lot.p_order, lot.p_expires_at],
-    [USER, 1500, "purchase", ORDER, addMonthsUtc(NOW, 6).toISOString()], // owner ٤٢٢: 1,000 SAR → 1,500 points
+    [USER, 1000, "purchase", ORDER, addMonthsUtc(NOW, 6).toISOString()], // l12 (Q88a): 1,000 SAR → 1,000 points
   );
+});
+
+test("l12 (Q88a / ١٦٢): a top-up credits the points its order froze (pack + admin bonus); a missing or insane value falls back to the pack", async () => {
+  const credited = async (metadata: unknown) => {
+    const { client, log } = fakeDb(() => ({ data: "lot-1" }));
+    const r = await grantPurchase(
+      { admin: client, grantLibrary: noLibrary, ranks: RANKS },
+      { ...order("topup-1000", "topup", "once"), metadata: metadata as Record<string, unknown> | null },
+      { now: NOW },
+    );
+    assert.deepEqual(r, { ok: true, alreadyEntitled: false });
+    return (lots(log)[0].payload as Record<string, unknown>).p_points;
+  };
+  assert.equal(await credited({ topup: { base_points: 1000, bonus_pct: 8, bonus_points: 80, points: 1080 } }), 1080);
+  assert.equal(await credited(null), 1000, "an order from before l12");
+  assert.equal(await credited({ topup: { points: 999 } }), 1000, "never fewer than the pack's own points");
+  assert.equal(await credited({ topup: { points: 2001 } }), 1000, "never more than the 100 % cap");
+  assert.equal(await credited({ topup: { points: "1080" } }), 1000);
 });
 
 test("a library 23505 (the order's grant exists) is already granted → ok; the grant carries the order", async () => {
