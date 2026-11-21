@@ -8025,3 +8025,34 @@ select 'R6: one verified account per mobile — trg_verified_phone_unique on pro
            and tgrelid in (to_regclass('public.profiles'), to_regclass('public.lawyer_profiles'), to_regclass('public.provider_profiles'))) = 3
        and not has_function_privilege('authenticated', 'public.verified_phone_taken(uuid,text)', 'EXECUTE') as ok;
 -- <<< verify:l11_sec
+-- >>> verify:l12_lib_links
+-- Batch l12 lib-links (owner L1, Q132, file 02 #43, file 10 ب34): run 20261202_30 AFTER 20261130_40, before or after the deploy.
+select 'Library links: the law-wide links read, the link check, its run and history are service_role only with an empty search_path; link_checks server-only (run 20261202_30)' as check,
+       case when to_regprocedure('public.graph_rag_law_article_links(text, integer, text[])') is null
+              or to_regprocedure('public.graph_rag_link_check(integer)') is null
+              or to_regprocedure('public.graph_rag_link_check_run(integer)') is null
+              or to_regprocedure('public.graph_rag_link_check_history(integer)') is null
+              or to_regclass('library_graph.link_checks') is null then false else
+       (select pg_catalog.bool_and(p.proconfig @> array['search_path=""']
+                                   and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                                   and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                                   and has_function_privilege('service_role', p.oid, 'EXECUTE'))
+          from pg_catalog.pg_proc p
+         where p.oid in (to_regprocedure('public.graph_rag_law_article_links(text, integer, text[])'),
+                         to_regprocedure('public.graph_rag_link_check(integer)'),
+                         to_regprocedure('public.graph_rag_link_check_run(integer)'),
+                         to_regprocedure('public.graph_rag_link_check_history(integer)')))
+       and (select c.relrowsecurity and c.relforcerowsecurity from pg_catalog.pg_class c where c.oid = to_regclass('library_graph.link_checks'))
+       and not has_table_privilege('anon', 'library_graph.link_checks', 'SELECT')
+       and not has_table_privilege('authenticated', 'library_graph.link_checks', 'SELECT')
+       end as ok;
+select 'Library links: the owner links resolver publishes flagged links and falls back to the document (resolved_doc) (run 20261202_30)' as check,
+       case when to_regprocedure('public.graph_rag_resolve_owner_edges()') is null or to_regclass('library_graph.owner_edges') is null then false else
+       pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_resolve_owner_edges()')) like '%resolved_doc%'
+       and pg_catalog.pg_get_functiondef(to_regprocedure('public.graph_rag_resolve_owner_edges()')) not like '%''held_flagged'' where status is null%'
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conrelid = to_regclass('library_graph.owner_edges') and conname = 'owner_edges_resolve_status_check'
+                      and pg_catalog.pg_get_constraintdef(oid) like '%resolved_doc%')
+       and not has_function_privilege('anon', 'public.graph_rag_resolve_owner_edges()', 'EXECUTE')
+       end as ok;
+-- <<< verify:l12_lib_links

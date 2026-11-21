@@ -14,15 +14,34 @@
  *   fix 3  to.regulation_ref for an article of a merged regulation;
  *   fix 4  a fractional article number («2/59») marked quality: flagged.
  *
- * Only `cites_article` is merged (his answer 2: «دمج روابط المبدأ ← المادة:
- * نعم»); the other known types are counted and skipped. Nothing here touches a
- * database or the network: `node --test` loads it directly.
+ * Merged types (batch l12, owner file 02 #43 «والتعديل (236) والإلغاء (152)
+ * والإحلال (59) معها»): `cites_article`, plus his amendment links (amended_by,
+ * amends) and his repeal / replacement links (repealed_by, superseded_by,
+ * repeals, supersedes, replaces); the resolver (20261202_30) turns them into
+ * AMENDS_ARTICLE / SUPERSEDES_LAW in the graph's own direction. The other known
+ * types are counted and skipped. Q132: a link whose article is not given (or
+ * cannot be pinned later) is kept — it links to the target document. Nothing
+ * here touches a database or the network: `node --test` loads it directly.
  */
 import { createHash } from "node:crypto";
 import { OWNER_GRAPH_TYPES } from "./graphLinkTypes.ts";
 
 /** His type → our edge type, for the types we merge. */
-export const MERGED_OWNER_TYPES: Readonly<Record<string, string>> = { cites_article: "INTERPRETS_ARTICLE" };
+export const MERGED_OWNER_TYPES: Readonly<Record<string, string>> = {
+  cites_article: "INTERPRETS_ARTICLE",
+  amended_by: "AMENDS_ARTICLE",
+  amends: "AMENDS_ARTICLE",
+  repealed_by: "SUPERSEDES_LAW",
+  superseded_by: "SUPERSEDES_LAW",
+  repeals: "SUPERSEDES_LAW",
+  supersedes: "SUPERSEDES_LAW",
+  replaces: "SUPERSEDES_LAW",
+};
+
+/** The article end of a merged type: the target's (to.article) or, for amended_by, the source's (from.article). */
+const ARTICLE_ON_FROM: ReadonlySet<string> = new Set(["amended_by"]);
+/** Law-level types: no article at either end. */
+const LAW_LEVEL_TYPES: ReadonlySet<string> = new Set(["repealed_by", "superseded_by", "repeals", "supersedes", "replaces"]);
 
 /** Every type his export may carry (his 14, plus refers_to_article from the 19 Nov decision). */
 export const KNOWN_OWNER_TYPES: ReadonlySet<string> = new Set(Object.keys(OWNER_GRAPH_TYPES));
@@ -167,6 +186,8 @@ export interface ImportReport {
   flaggedBy: Record<string, number>;
   edgeIdsComputed: number;
   evidenceCut: number;
+  /** Q132: rows with no article to pin (an article-level type): they link to the target document. */
+  documentLevel: number;
   fixes: {
     fix1_from_principle: { present: number; missing: number };
     fix2_to_doc_file_id: { checked: boolean; match: number; mismatch: number; not_in_nodes: number };
@@ -222,6 +243,7 @@ export function buildOwnerEdgeRows(file: OwnerGraphFile, inventory?: Map<string,
     flaggedBy: {},
     edgeIdsComputed: 0,
     evidenceCut: 0,
+    documentLevel: 0,
     fixes: {
       fix1_from_principle: { present: 0, missing: 0 },
       fix2_to_doc_file_id: { checked: Boolean(inventory), match: 0, mismatch: 0, not_in_nodes: 0 },
@@ -261,10 +283,13 @@ export function buildOwnerEdgeRows(file: OwnerGraphFile, inventory?: Map<string,
     const to = (e.to && typeof e.to === "object" ? e.to : {}) as Record<string, unknown>;
     const fromDoc = clean(from.doc ?? from.id ?? (typeof e.from === "string" ? e.from : ""));
     const toDoc = clean(to.doc ?? to.id ?? (typeof e.to === "string" ? e.to : ""));
+    const isCite = type === "cites_article";
     const principle = normalizeArticleNumber(from.principle);
-    const fromPrinciple = principle.text;
-    if (fromPrinciple) report.fixes.fix1_from_principle.present++;
-    else report.fixes.fix1_from_principle.missing++;
+    const fromPrinciple = isCite ? principle.text : null;
+    if (isCite) {
+      if (fromPrinciple) report.fixes.fix1_from_principle.present++;
+      else report.fixes.fix1_from_principle.missing++;
+    }
     if (!fromDoc) {
       reject("missing_from_doc");
       continue;
@@ -287,16 +312,18 @@ export function buildOwnerEdgeRows(file: OwnerGraphFile, inventory?: Map<string,
       if (fileId !== undefined) report.fixes.fix2_to_doc_file_id.match++;
     }
 
-    const art = normalizeArticleNumber(to.article ?? e.article);
-    if (!art.text) {
-      reject("missing_to_article");
-      continue;
-    }
+    // The article end: to.article, or from.article for amended_by; none for a law-level type.
+    const articleSide = ARTICLE_ON_FROM.has(type) ? from : to;
+    const art = LAW_LEVEL_TYPES.has(type)
+      ? normalizeArticleNumber(null)
+      : normalizeArticleNumber(articleSide.article ?? (ARTICLE_ON_FROM.has(type) ? undefined : e.article));
+    // Q132 (batch l12): no article → the link is kept and points at the document.
+    if (!art.text && !LAW_LEVEL_TYPES.has(type)) report.documentLevel++;
 
     // fix 3: a regulation article names its regulation
     const regRef = clean(to.regulation_ref) || null;
     if (regRef) report.fixes.fix3_regulation_ref.present++;
-    else if (REGULATION_HINT(e)) {
+    else if (isCite && REGULATION_HINT(e)) {
       report.fixes.fix3_regulation_ref.missing_where_needed++;
       reject("regulation_ref_missing", clean(e.resolved_by) || clean(e.quality));
       continue;
@@ -304,7 +331,12 @@ export function buildOwnerEdgeRows(file: OwnerGraphFile, inventory?: Map<string,
 
     // quality: his word, then everything that makes the article number doubtful
     const evidenceObj = (e.evidence && typeof e.evidence === "object" ? e.evidence : {}) as Record<string, unknown>;
-    const evidenceText = clean(typeof e.evidence === "string" ? e.evidence : evidenceObj.text);
+    // His amendment / repeal links carry {decree, date} or {field, value}, not text.
+    const evidenceText = clean(
+      typeof e.evidence === "string"
+        ? e.evidence
+        : evidenceObj.text ?? ([clean(evidenceObj.decree), clean(evidenceObj.date)].filter(Boolean).join(" ") || evidenceObj.value),
+    );
     const flags: string[] = [];
     const hisQuality = clean(e.quality);
     const ownerFlagged = hisQuality === "flagged";
@@ -342,10 +374,10 @@ export function buildOwnerEdgeRows(file: OwnerGraphFile, inventory?: Map<string,
       type,
       from_doc: fromDoc,
       from_principle: fromPrinciple,
-      from_article: normalizeArticleNumber(from.article).text,
+      from_article: ARTICLE_ON_FROM.has(type) ? art.text : normalizeArticleNumber(from.article).text,
       from_regulation_ref: clean(from.regulation_ref) || null,
       to_doc: toDoc,
-      to_article: art.text,
+      to_article: ARTICLE_ON_FROM.has(type) ? null : art.text,
       to_regulation_ref: regRef,
       to_principle: normalizeArticleNumber(to.principle).text,
       quality,
@@ -370,7 +402,8 @@ export function buildOwnerEdgeRows(file: OwnerGraphFile, inventory?: Map<string,
     rows.push(row);
   }
 
-  const merged = Object.keys(MERGED_OWNER_TYPES).reduce((n, t) => n + (report.byType[t]?.total ?? 0), 0);
+  // Fix 1 concerns the principle → article links only.
+  const merged = report.byType.cites_article?.total ?? 0;
   if (Object.keys(report.unknownTypes).length) {
     report.refusals.push(`unknown type(s): ${Object.keys(report.unknownTypes).join(", ")} — the owner must name only his known types`);
   }
@@ -380,7 +413,7 @@ export function buildOwnerEdgeRows(file: OwnerGraphFile, inventory?: Map<string,
   if (report.rejects.duplicate_edge_id) {
     report.refusals.push(`${report.rejects.duplicate_edge_id} edge_id(s) name two different links — edge ids must be unique`);
   }
-  if (rows.length === 0) report.refusals.push("no principle → article link to load");
+  if (rows.length === 0) report.refusals.push("no link to load");
   return { rows, rejected, report };
 }
 
@@ -391,10 +424,11 @@ export function formatReport(r: ImportReport, sha256: string, rowsToLoad: number
   out.push("", "type\ttotal\tto load");
   for (const [t, v] of Object.entries(r.byType).sort()) out.push(`${t}\t${v.total}\t${v.merged}`);
   if (Object.keys(r.skippedTypes).length) {
-    out.push("", `skipped — known types the owner did not approve for merging (only cites_article → INTERPRETS_ARTICLE): ${JSON.stringify(r.skippedTypes)}`);
+    out.push("", `skipped — known types not merged (merged: ${Object.keys(MERGED_OWNER_TYPES).join(", ")}): ${JSON.stringify(r.skippedTypes)}`);
   }
   out.push("", `rows to load into library_graph.owner_edges: ${rowsToLoad}`);
-  out.push(`quality: ok ${r.quality.ok}, flagged ${r.quality.flagged} (flagged rows are stored but held out of the graph)`);
+  out.push(`quality: ok ${r.quality.ok}, flagged ${r.quality.flagged} (flagged rows are ordinary links since 20261202_30 — Q132; the quality stays for staff)`);
+  out.push(`document-level (no article to pin; the link opens the target document): ${r.documentLevel}`);
   out.push(`flagged because: ${JSON.stringify(r.flaggedBy)}`);
   out.push(`rejected (not loaded): ${JSON.stringify(r.rejects)}`);
   out.push(`edge ids computed (his missing or malformed): ${r.edgeIdsComputed}; evidence cut to ${EVIDENCE_MAX} chars: ${r.evidenceCut}`);

@@ -7,9 +7,9 @@
  * Reads his graph export (graph_export_* / LEGAL_GRAPH_EDGES_CLEAN.json:
  * {meta, nodes, edges}; an edge array; or JSONL), checks his four fixes
  * (from.principle, to.doc = file id, to.regulation_ref, fractions flagged),
- * refuses unknown types, keeps his edge_id, and maps cites_article →
- * INTERPRETS_ARTICLE. Other known types are counted and skipped (the owner
- * approved only principle → article).
+ * refuses unknown types, keeps his edge_id, and loads cites_article plus his
+ * amendment / repeal / replacement links (l12, file 02 #43; the resolver maps
+ * them, 20261202_30). Other known types are counted and skipped.
  *
  * DRY by default: reads, checks, prints the counts, writes nothing anywhere
  * (and does not read .env.local).
