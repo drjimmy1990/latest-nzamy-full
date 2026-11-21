@@ -49,10 +49,14 @@ const LAWYER_FIRM_TOOLS = [
   "najiz-optimizer", "wargaming",
 ];
 
+/** Owner ١٢٣ (20 Nov 2026, batch l12): the simplified contract drafter, for the individual and the business only. */
+const CLIENT_ONLY_TOOLS = ["simple-contract"];
+
 test("owner ٤١٧ (8 Nov): the role table — general guidance for every account, every other tool for lawyers and firms", () => {
   assert.deepEqual([...LAWYER_FIRM_ROLES], ["lawyer", "firm"]);
   const customer = Object.keys(AI_TOOLS).filter((id) => !NOT_CUSTOMER_TOOLS.has(id)).sort();
-  assert.deepEqual(customer, [...GENERAL_GUIDANCE_TOOLS, ...LAWYER_FIRM_TOOLS].sort(), "a tool joined or left the registry: give it a row here");
+  assert.deepEqual(customer, [...GENERAL_GUIDANCE_TOOLS, ...LAWYER_FIRM_TOOLS, ...CLIENT_ONLY_TOOLS].sort(), "a tool joined or left the registry: give it a row here");
+  for (const id of CLIENT_ONLY_TOOLS) assert.deepEqual([...AI_TOOLS[id].roles], ["individual", "corporate"], id);
   for (const id of GENERAL_GUIDANCE_TOOLS) assert.equal(AI_TOOLS[id].roles, REGISTERED_ROLES, id);
   for (const id of LAWYER_FIRM_TOOLS) assert.deepEqual([...AI_TOOLS[id].roles], ["lawyer", "firm"], id);
 });

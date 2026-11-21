@@ -17,6 +17,7 @@ import { freeQuestionsIssue, giftValidDaysIssue, libraryPlanPointsIssue, minTopu
 import { founderBonusRuleIssue, topupBonusIssue } from "@/lib/payments/topupBonus";
 import { draftPricesIssue } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
+import { SIMPLE_CONTRACT_PRICE_KEY, simpleContractPriceIssue } from "@/lib/ai/simpleContract";
 import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
@@ -137,6 +138,9 @@ const ALLOWED_SETTINGS_KEYS = [
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
   // the footer, the Organization JSON-LD and /llms.txt.
+  // Batch l12 simpledraft (owner ١٢٣; src/lib/ai/simpleContract.ts):
+  // {"points": n} — the simplified contract drafter's price (100 until set).
+  SIMPLE_CONTRACT_PRICE_KEY,
   "license_number",
   "license_issuer",
 ] as const;
@@ -242,6 +246,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l12 firm: pure, covered by firmCaseScope.test.ts / founderStorage.test.ts.
   firm_case_scope: firmCaseScopeIssue,
   founder_storage_fair_use: founderStorageIssue,
+  // Batch l12 simpledraft: pure, covered by src/lib/ai/simpleContract.test.ts.
+  [SIMPLE_CONTRACT_PRICE_KEY]: simpleContractPriceIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

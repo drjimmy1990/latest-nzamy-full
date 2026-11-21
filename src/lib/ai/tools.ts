@@ -19,6 +19,15 @@ import type { RetrievalLimits } from "./retrieval.ts";
 import type { FileRules } from "./aiFiles.ts";
 import { stripCitationMarkers } from "./citationMarkers.ts";
 import {
+  SIMPLE_CONTRACT_DEFAULT_PRICE,
+  SIMPLE_CONTRACT_NOTICE_AR,
+  SIMPLE_CONTRACT_PRICE_KEY,
+  SIMPLE_CONTRACT_ROLES,
+  SIMPLE_CONTRACT_SERVICES_HREF,
+  SIMPLE_CONTRACT_TOOL,
+  simpleContractPriceFrom,
+} from "./simpleContract.ts";
+import {
   SECTION_EDIT_COPY,
   SECTION_EDIT_MAX_PER_MEMO,
   SECTION_EDIT_PHASE,
@@ -64,8 +73,16 @@ export interface AiToolSpec {
    */
   price: (
     input: Record<string, unknown>,
-    ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts; draftPrices?: Readonly<Partial<Record<string, number>>> },
+    ctx: { pages: number | null; turn?: number; priorSectionEdits?: SectionEditCounts; draftPrices?: Readonly<Partial<Record<string, number>>>; settingPrice?: number },
   ) => number;
+  /**
+   * Batch l12 simpledraft (owner ١٢٣): the price is an admin setting. runCore
+   * reads platform_settings `key` right before `price` and hands the parsed
+   * points in as ctx.settingPrice (absent when the row is missing or
+   * malformed: `price` then falls back to its default). A failed read refuses
+   * the run, uncharged.
+   */
+  priceSetting?: { key: string; parse: (value: unknown) => number | null };
   /**
    * Owner ٤١٠ (legal-drafter): a run whose input.phase is `phase` edits one
    * section of the memo. runCore counts the memo's earlier section edits for
@@ -930,6 +947,16 @@ function contractDraftOutput(raw: unknown): Record<string, unknown> | null {
     cited: Array.isArray(raw.cited) ? raw.cited.slice(0, 40) : [],
   };
 }
+/**
+ * l12 simpledraft (owner ١٢٣) «صائغ العقود المبسّط»: the same draft shape as
+ * L11, plus the app's own guidance line and link, so a stored run, its page
+ * and anything copied from it always carry them, whatever the model wrote.
+ */
+function simpleContractOutput(raw: unknown): Record<string, unknown> | null {
+  const draft = contractDraftOutput(raw);
+  return draft ? { ...draft, notice: SIMPLE_CONTRACT_NOTICE_AR, notice_href: SIMPLE_CONTRACT_SERVICES_HREF } : null;
+}
+
 /**
  * L12 الرأي الفصل: consultation and letter, the two output types built first.
  * Owner ٤١٠ (7 Nov 2026): the consultation is 100 points and the letter 50
@@ -2040,6 +2067,25 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     jobDeadlineSeconds: 15 * 60,
     validateInput: contractDraftInput,
     validateOutput: contractDraftOutput,
+  },
+  [SIMPLE_CONTRACT_TOOL]: {
+    id: SIMPLE_CONTRACT_TOOL,
+    n8nPath: `nzamy-ai/${SIMPLE_CONTRACT_TOOL}`,
+    class: "job",
+    tier: "deep",
+    // Owner ١٢٣ (20 Nov 2026, raw log [25]): the individual and the business
+    // only; never the lawyer or the firm (they have «محترف العقود»).
+    roles: SIMPLE_CONTRACT_ROLES,
+    consultantBlocked: false,
+    // q١٢٣ (100 or 150) is open: platform_settings simple_contract_price, 100 until set.
+    price: (_input, ctx) => ctx.settingPrice ?? SIMPLE_CONTRACT_DEFAULT_PRICE,
+    priceSetting: { key: SIMPLE_CONTRACT_PRICE_KEY, parse: simpleContractPriceFrom },
+    dailyLimit: 5,
+    // Off until its n8n workflow (n8n/ai/simple-contract.json) is imported and tested.
+    defaultMode: "off",
+    jobDeadlineSeconds: 15 * 60,
+    validateInput: contractDraftInput,
+    validateOutput: simpleContractOutput,
   },
   "legal-opinion-consult": {
     id: "legal-opinion-consult",

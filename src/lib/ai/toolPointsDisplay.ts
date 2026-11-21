@@ -33,6 +33,9 @@ export const PRICED_AI_TOOL_IDS = [
   // they are usable (q296), and they stay out of /pricing and the hub badges.
   "contract-review",
   "contract-negotiator",
+  // l12 simpledraft (owner ١٢٣): its price is an admin setting (simple_contract_price);
+  // this list knows only the default (100). Its own page shows the setting.
+  "simple-contract",
 ] as const;
 export type PricedAiToolId = (typeof PRICED_AI_TOOL_IDS)[number];
 

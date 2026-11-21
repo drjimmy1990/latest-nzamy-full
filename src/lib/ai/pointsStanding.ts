@@ -35,7 +35,9 @@ export type PointsStandingTool = Exclude<PricedAiToolId, typeof FOUNDER_DRAFTER_
  * Owner q296: the price of these is not shown until they are live, and a "short"
  * reply here carries the price to anyone who asks. Their screens never read it.
  */
-const PRICE_HIDDEN_TOOLS = ["contract-review", "contract-negotiator"] as const;
+// l12 simpledraft: simple-contract's price is an admin setting, which this
+// module (registry prices only) does not read; its 402 opens the top-up instead.
+const PRICE_HIDDEN_TOOLS = ["contract-review", "contract-negotiator", "simple-contract"] as const;
 type PriceHiddenTool = (typeof PRICE_HIDDEN_TOOLS)[number];
 
 export function isPointsStandingTool(v: unknown): v is PointsStandingTool {
