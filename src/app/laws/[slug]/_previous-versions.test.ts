@@ -120,3 +120,28 @@ test("the reader prints «نص غير متوفر» and counts the cards it shows
   assert.match(route, /a\.text_status === 'available' \|\| a\.text_status === 'unavailable' \? \{ textStatus: a\.text_status \} : \{\}/);
   assert.match(src, /الإصدارات السابقة \(\$\{previousVersions\.length\}\)/);
 });
+
+test("L5: «عُدّلت بموجب … بتاريخ …» from the newest card that names its instrument", async () => {
+  const { amendedByLine, decreePageId } = await import("./_previous-versions.ts");
+  const uuid = "0C599A69-4F1F-5CDE-B784-D2F9CA75650F";
+  const cards = visibleAmendments([
+    { source: "المرسوم الملكي رقم (م/115)", date: "1439/12/05هـ", fullText: "نص أحدث", decreeId: uuid },
+    { source: "المرسوم الملكي رقم (م/9)", date: "1430/01/01هـ", fullText: "نص أقدم" },
+  ]);
+  assert.equal(cards[0].decreeId, uuid.toLowerCase());
+  assert.deepEqual(amendedByLine(cards), { kind: "source", text: "عُدّلت بموجب المرسوم الملكي رقم (م/115) بتاريخ 1439/12/05هـ", decreeId: uuid.toLowerCase() });
+  // the date already in the instrument is printed once
+  const once = visibleAmendments([{ source: "المرسوم الملكي رقم (م/5) وتاريخ 1440/1/1هـ", date: "1440/1/1هـ", fullText: "x" }]);
+  assert.deepEqual(amendedByLine(once), { kind: "source", text: "عُدّلت بموجب المرسوم الملكي رقم (م/5) وتاريخ 1440/1/1هـ" });
+  // withheld from a non-subscriber: «عُدّلت» only, no id
+  const locked = visibleAmendments([{ sourceLocked: true, fullText: "نص", decreeId: uuid }]);
+  assert.deepEqual(amendedByLine(locked), { kind: "locked" });
+  assert.equal(locked[0].decreeId, undefined);
+  // no instrument anywhere: no line, nothing guessed
+  assert.equal(amendedByLine(visibleAmendments([{ fullText: "نص قديم" }])), null);
+  assert.equal(amendedByLine([]), null);
+  // only a decrees_circulars uuid becomes a link
+  assert.equal(decreePageId("law-traffic-115"), "");
+  assert.equal(decreePageId(" " + uuid + " "), uuid.toLowerCase());
+  assert.equal(decreePageId(null), "");
+});

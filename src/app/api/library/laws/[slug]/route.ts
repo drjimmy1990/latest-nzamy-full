@@ -794,6 +794,9 @@ function formatArticleWithPaywall(
         // run; before it they are absent and the reader keeps its own order.
         ...(typeof a.position === 'number' ? { position: a.position } : {}),
         ...(a.text_status === 'available' || a.text_status === 'unavailable' ? { textStatus: a.text_status } : {}),
+        // File 03 L5 (batch l12): the amending decree's library id, for the
+        // «عُدّلت بموجب …» link — a subscriber's, like `source` (T28-22).
+        ...(showOfficialMeta && typeof a.decree_id === 'string' && a.decree_id.trim() ? { decreeId: a.decree_id.trim() } : {}),
       }));
     }
   }

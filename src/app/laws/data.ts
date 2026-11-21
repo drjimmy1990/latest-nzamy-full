@@ -40,6 +40,8 @@ export interface AmendmentEntry {
   position?: number;
   /** l9-parser 20261129_70: 'unavailable' = the source keeps no prior text («نص غير متوفر»). */
   textStatus?: "available" | "unavailable";
+  /** File 03 L5 (l12): the amending decree's library id (20261129_70) — a subscriber's, like `source`. */
+  decreeId?: string;
 }
 
 export interface ExecutiveRegulation {

@@ -14,7 +14,7 @@
  * repealed articles un-struck).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Hl } from "@/components/search/MultiColorHighlight";
 import { diffSourceText, diffWords } from "@/lib/library/wordDiff";
 
@@ -24,9 +24,15 @@ export function PreviousVersionText({
   isDark,
   isRTL = true,
   className = "",
+  openDiffSignal = 0,
 }: {
   /** The previous version (an amendment card's fullText). */
   oldText: string;
+  /**
+   * File 03 L5 (batch l12): the «إظهار الفروق» button beside the line under
+   * the article bumps this number; each new value turns the diff on.
+   */
+  openDiffSignal?: number;
   /** The article's current text; no toggle when empty. */
   currentText?: string | null;
   isDark: boolean;
@@ -35,6 +41,9 @@ export function PreviousVersionText({
 }) {
   const [showDiff, setShowDiff] = useState(false);
   const canDiff = !!currentText && diffSourceText(currentText) !== "";
+  useEffect(() => {
+    if (openDiffSignal > 0 && canDiff) setShowDiff(true);
+  }, [openDiffSignal, canDiff]);
   const diff = useMemo(
     () => (showDiff && canDiff ? diffWords(diffSourceText(oldText), diffSourceText(currentText)) : undefined),
     [showDiff, canDiff, oldText, currentText],
