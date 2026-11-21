@@ -17,6 +17,7 @@ export const LAWS_STATIC_SEGMENTS: ReadonlySet<string> = new Set([
   "feqh-preview",
   "my",
   "orders",
+  "research",
   "subscribe",
 ]);
 

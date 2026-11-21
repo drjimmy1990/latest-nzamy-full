@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   arabicOrdinalNumber,
+  arabicVolumeOrdinal,
   buildCollectionSeries,
   collectionCardExcerpt,
   collectionFallbackKey,
@@ -84,10 +85,10 @@ test("each volume keeps its own free flag (a free first volume never unlocks a p
   assert.deepEqual(out[0].volumes.map((v) => v.row.free), [true, false]);
 });
 
-test("collectionVolumeLabel: «المجلد N» when known", () => {
+test("collectionVolumeLabel: «المجلد» + the ordinal word when known (owner file 11 item 7)", () => {
   const out = groupCollectionVolumes([vol("s-v03"), vol("s-v12")]);
   if (out[0].kind !== "series") return assert.fail("series expected");
-  assert.deepEqual(out[0].volumes.map(collectionVolumeLabel), ["المجلد 3", "المجلد 12"]);
+  assert.deepEqual(out[0].volumes.map(collectionVolumeLabel), ["المجلد الثالث", "المجلد الثاني عشر"]);
 });
 
 test("buildCollectionSeries: the reader's selector, or null for a stand-alone collection", () => {
@@ -97,8 +98,8 @@ test("buildCollectionSeries: the reader's selector, or null for a stand-alone co
   assert.equal(series.currentId, "s-v02");
   assert.equal(series.seriesId, "moj-rulings-collection-1434");
   assert.deepEqual(series.volumes, [
-    { id: "s-v01", label: "المجلد 1", number: 1, free: true, rulingCount: 10 },
-    { id: "s-v02", label: "المجلد 2", number: 2, free: false, rulingCount: 7 },
+    { id: "s-v01", label: "المجلد الأول", number: 1, free: true, rulingCount: 10 },
+    { id: "s-v02", label: "المجلد الثاني", number: 2, free: false, rulingCount: 7 },
   ]);
   assert.equal(buildCollectionSeries([vol("s-v01")], "s-v01"), null);
   assert.equal(buildCollectionSeries(rows, "missing"), null);
@@ -127,7 +128,7 @@ test("the owner corpus' two series shapes (2026-10-25) get volumes 1..N, part = 
     assert.equal(entry.kind, "series");
     if (entry.kind !== "series") continue;
     assert.deepEqual(entry.volumes.map((v) => v.number), Array.from({ length: n }, (_, i) => i + 1));
-    assert.equal(collectionVolumeLabel(entry.volumes[n - 1]), `المجلد ${n}`);
+    assert.equal(collectionVolumeLabel(entry.volumes[n - 1]), `المجلد ${arabicVolumeOrdinal(n)}`);
   }
 });
 
@@ -214,7 +215,7 @@ test("note ٠٣: the reader's selector also builds for a title-fallback series",
   const info = buildCollectionSeries(rows, "v2");
   assert.ok(info);
   assert.equal(info.seriesId, "title:v1");
-  assert.deepEqual(info.volumes.map((v) => [v.id, v.label, v.free]), [["v1", "المجلد 1", true], ["v2", "المجلد 2", false]]);
+  assert.deepEqual(info.volumes.map((v) => [v.id, v.label, v.free]), [["v1", "المجلد الأول", true], ["v2", "المجلد الثاني", false]]);
 });
 
 test("note ٠٣ §٢: the card excerpt drops a leading «## ديباجة …» heading and the Markdown marks", () => {
