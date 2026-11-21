@@ -9,7 +9,7 @@ import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
-import { freeQuestionStatusWith, freeQuestionToolOf } from "@/lib/ai/freeQuestion";
+import { freeQuestionStatusWith, freeQuestionToolOf, previewOnlySources } from "@/lib/ai/freeQuestion";
 import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
 import { libraryGate } from "@/lib/library-gate";
@@ -67,8 +67,11 @@ async function libraryAccess(toolId: string, freeOpensTier?: (toolId: string) =>
   // lawyer's 10 on the library assistant open its professional-plan rule
   // too (the per-account library lock still applies first). Its sources
   // stay the locked 100-character preview without the library.
+  // Q121 (l12): the tier rule first; the free questions are asked only when it
+  // refuses, so the opener knows the run is rescued by them (preview only).
   const gateRefused = await libraryGate({ accountLock: isLibraryAiTool(toolId) });
-  const refused = gateRefused ?? ((freeOpensTier && (await freeOpensTier(toolId))) ? null : await libraryAiAccess(toolId));
+  const tierRefused = gateRefused ? null : await libraryAiAccess(toolId);
+  const refused = gateRefused ?? (tierRefused && freeOpensTier && (await freeOpensTier(toolId)) ? null : tierRefused);
   if (!refused) return null;
   const body = (await refused.json().catch(() => ({}))) as Record<string, unknown>;
   const code = typeof body.code === "string" ? body.code : body.libraryClosed ? "library_closed" : "library_tier";
@@ -158,6 +161,11 @@ export async function POST(request: NextRequest) {
     // the setting free_question_tool_by_account_type; everyone else: the
     // library assistant).
     const freeTool = await freeQuestionToolOf(admin, userType);
+    // Q121: set when the account's free questions opened the library
+    // assistant (no plan or grant of its own): its sources are then the locked
+    // 100-character preview — also for a paid fallback if the last free
+    // question was taken meanwhile.
+    let previewOnly = false;
     const actor: RunActor = {
       userId: user.id,
       userType,
@@ -192,7 +200,9 @@ export async function POST(request: NextRequest) {
           try {
             const enforcement = await admin.from("platform_settings").select("value").eq("key", "points_enforcement").maybeSingle();
             if (enforcement.error || (enforcement.data as { value?: unknown } | null)?.value !== true) return false;
-            return (await freeQuestionStatusWith(admin, user.id)).available;
+            const opens = (await freeQuestionStatusWith(admin, user.id)).available;
+            if (opens && isLibraryAiTool(toolId)) previewOnly = true;
+            return opens;
           } catch {
             return false;
           }
@@ -220,7 +230,7 @@ export async function POST(request: NextRequest) {
             pin,
             undefined,
             graphOn ? withGraphCallLog(opts ?? { useGraph: true }, admin, "ai_run") : undefined,
-          ),
+          ).then((r) => (previewOnly ? previewOnlySources(r) : r)),
         resolveFiles: (userId, fileIds, rules) => resolveAiFiles(admin, userId, fileIds, rules, new Date(), textFiles ? { textFiles } : {}),
         // T17a: «قضية محددة» — the caller's OWN case, read on HIS RLS client
         // (never the service role), own rows only (assistantCase.ts).

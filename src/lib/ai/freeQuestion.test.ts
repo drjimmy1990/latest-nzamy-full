@@ -26,6 +26,7 @@ import {
   freeQuestionToolSettingIssue,
   parseFreeQuestionTool,
   parseIndividualFreeQuestionTool,
+  previewOnlySources,
 } from "./freeQuestion.ts";
 
 const USER = "00000000-0000-0000-0000-00000000d001";
@@ -217,7 +218,9 @@ test("a lawyer's question on quick-answer is never free (his are on the library 
 test("source contract (l9 + Q121 l12): an account's free questions open its OWN free tool's Pro rule, nothing else; the library switch still applies", () => {
   const runs = readFileSync("src/app/api/v1/ai/runs/route.ts", "utf8").replace(/\r\n/g, "\n");
   assert.match(runs, /const gateRefused = await libraryGate\(\{ accountLock: isLibraryAiTool\(toolId\) \}\);/);
-  assert.match(runs, /const refused = gateRefused \?\? \(\(freeOpensTier && \(await freeOpensTier\(toolId\)\)\) \? null : await libraryAiAccess\(toolId\)\);/);
+  // Q121 (l12): the tier rule first; the free questions only rescue a refused run.
+  assert.match(runs, /const tierRefused = gateRefused \? null : await libraryAiAccess\(toolId\);/);
+  assert.match(runs, /const refused = gateRefused \?\? \(tierRefused && freeOpensTier && \(await freeOpensTier\(toolId\)\) \? null : tierRefused\);/);
   // Q121 (l12): the individual's quick-answer, the lawyer's library assistant.
   assert.match(runs, /const freeTool = await freeQuestionToolOf\(admin, userType\);/);
   assert.match(runs, /freeQuestionTool: freeTool,/);
@@ -225,7 +228,7 @@ test("source contract (l9 + Q121 l12): an account's free questions open its OWN 
   assert.match(runs, /if \(!user\.email_confirmed_at\) return false;/);
   // only while points are enforced (off: no use row is written, the opener would never close)
   assert.match(runs, /if \(enforcement\.error \|\| \(enforcement\.data as \{ value\?: unknown \} \| null\)\?\.value !== true\) return false;/);
-  assert.match(runs, /return \(await freeQuestionStatusWith\(admin, user\.id\)\)\.available;/);
+  assert.match(runs, /const opens = \(await freeQuestionStatusWith\(admin, user\.id\)\)\.available;/);
 });
 
 // ── Q121 (batch l12, 20261202_50): the individual's tool is a setting ───────
@@ -257,4 +260,15 @@ test("Q121: runCore follows the actor's tool — an individual switched to the a
   assert.match(sql, /p_tool not in \('library-assistant', 'quick-answer', 'assistant'\)/);
   assert.match(sql, /if p_tool is distinct from public\.ai_free_question_tool\(p_user\) then/);
   assert.match(sql, /\('free_question_tool_by_account_type', '\{"individual": "quick-answer"\}'::jsonb,/);
+});
+
+test("Q121: a library question opened only by the free questions sees the sources' 100-character preview, never the full text", () => {
+  const long = "أ".repeat(400);
+  const r = previewOnlySources({ sources: [{ sid: "S1", kind: "article", title: "م", text: long }, { sid: "S2", kind: "article", title: "ق", text: "قصير" }], map: { S1: { kind: "article", id: "a", title: "م", url: "/laws/x" } } } as never);
+  assert.equal(r.sources[0].text.length, 101);
+  assert.equal(r.sources[1].text, "قصير");
+  assert.ok(r.map.S1, "the source map is unchanged");
+  const runs = readFileSync("src/app/api/v1/ai/runs/route.ts", "utf8").replace(/\r\n/g, "\n");
+  assert.match(runs, /if \(opens && isLibraryAiTool\(toolId\)\) previewOnly = true;/);
+  assert.match(runs, /\)\.then\(\(r\) => \(previewOnly \? previewOnlySources\(r\) : r\)\),/);
 });

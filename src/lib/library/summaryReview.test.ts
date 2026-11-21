@@ -61,6 +61,11 @@ test("wiring: the cards, the decree page and the search apply it; the status nev
   const settings = read("../../app/api/v1/admin/settings/route.ts");
   assert.match(settings, /"library_summaries_reviewed_only",/);
   assert.match(settings, /library_summaries_reviewed_only: summariesReviewedOnlyIssue,/);
+  const seo = read("./libraryDocumentSeo.ts");
+  assert.match(seo, /const showSummary = await summaryAllowed\("laws", "slug", lawSlug\);/);
+  assert.match(seo, /publicDescription\("law", showSummary \? str\(/);
+  assert.match(seo, /const showSummary = await summaryAllowed\("decrees_circulars", "id", /);
+  assert.match(seo, /return !error && summaryShown\(/);
   const sql = read("../../../supabase/migrations/20261202_50_l12_rules.sql");
   assert.match(sql, /\('library_summaries_reviewed_only', '\{"on": true\}'::jsonb,/);
   assert.match(sql, /alter table library\.decrees_circulars add column if not exists summary_status text;/);

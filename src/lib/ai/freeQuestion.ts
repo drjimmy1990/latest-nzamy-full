@@ -35,6 +35,8 @@
  * Pure (type-only Supabase import), so `node --test` runs it.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Retrieved } from "./retrieval.ts";
+import { LOCKED_PREVIEW_CHARS } from "./sourcePreview.ts";
 
 export const FREE_QUESTION_TOOL = "library-assistant";
 /** The individual's free-question tool (register 4 / 36): the general assistant. */
@@ -175,3 +177,17 @@ export const FREE_QUESTION_COPY = {
   /** «أسئلتك المجانية المتبقية: ٣ من ١٠» — shown only when the server says some are left. */
   left: (left: number, total: number) => `أسئلتك المجانية المتبقية: ${ar(left)} من ${ar(total)} — تُستخدم قبل النقاط`,
 } as const;
+
+/**
+ * Q121 (batch l12): a library-assistant question opened ONLY by the account's
+ * free questions (no professional plan, no library grant — the lawyer's 10)
+ * answers from the sources' locked preview, never their full text: each
+ * source the model receives is cut to LOCKED_PREVIEW_CHARS (100), the reader's
+ * locked preview. The source map (titles, links) is unchanged.
+ */
+export function previewOnlySources(retrieved: Retrieved, limit = LOCKED_PREVIEW_CHARS): Retrieved {
+  return {
+    ...retrieved,
+    sources: retrieved.sources.map((s) => (s.text.length > limit ? { ...s, text: `${s.text.slice(0, limit)}…` } : s)),
+  };
+}

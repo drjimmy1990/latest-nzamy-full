@@ -173,7 +173,9 @@ test("the library gate itself is untouched: the run route still checks every lib
   // l8 owner item 9.7: the per-account library lock applies to the library assistant only
   // l9 (register 4 / 36): the tier rule is skipped only while an individual has free quick-answer questions left
   assert.ok(route.includes("const gateRefused = await libraryGate({ accountLock: isLibraryAiTool(toolId) });"));
-  assert.ok(route.includes("const refused = gateRefused ?? ((freeOpensTier && (await freeOpensTier(toolId))) ? null : await libraryAiAccess(toolId));"));
+  // l12 (Q121): the tier rule first; the account's free questions only rescue a refused run (preview-only sources).
+  assert.ok(route.includes("const tierRefused = gateRefused ? null : await libraryAiAccess(toolId);"));
+  assert.ok(route.includes("const refused = gateRefused ?? (tierRefused && freeOpensTier && (await freeOpensTier(toolId)) ? null : tierRefused);"));
   assert.ok(route.includes('const code = typeof body.code === "string" ? body.code : body.libraryClosed ? "library_closed" : "library_tier";'));
   const access = src("app/api/ai/_libraryAiAccess.ts");
   assert.ok(access.includes("libraryAiDecision({ signedIn: true, tier, isAdmin, founderMember, libraryGrant }, TIER_RANK)"));
