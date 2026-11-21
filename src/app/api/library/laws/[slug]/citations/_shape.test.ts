@@ -477,7 +477,7 @@ test("Q132: the law's own node ('@law') answers like an article — links on the
 });
 
 test("Q101 (l12 integration): a non-subscriber's links never carry a decree's number in its title", async () => {
-  const { maskDecreeTitlesForViewer } = await import("./_shape.ts");
+  const { maskDecreeTitlesForViewer } = await import("./_decree-titles.ts");
   const answer = {
     items: [
       { key: "decree:d1", kind: "decree", docKind: "order", docId: "d1", title: "مرسوم ملكي رقم م/115 وتاريخ 1439/12/05هـ" },
@@ -496,6 +496,8 @@ test("Q101 (l12 integration): a non-subscriber's links never carry a decree's nu
   assert.equal((route.match(/maskDecreeTitlesForViewer\(/g) ?? []).length, 2, "bulk and per-article answers");
   assert.match(route, /tierJson\(\{ available: true, \.\.\.maskDecreeTitlesForViewer\(shapedLaw, await viewerIsSubscriber\(\)\) \}\)/);
   assert.match(route, /'Cache-Control': TIER_SHAPED_CACHE_CONTROL/);
+  // The client box imports _shape: the decree helpers stay out of it.
+  assert.doesNotMatch(readFileSync(new URL("./_shape.ts", import.meta.url), "utf8"), /decreeDisplay/);
   const preview = readFileSync(new URL("./preview/route.ts", import.meta.url), "utf8");
   assert.match(preview, /decreeTitleForViewer\(\{ title: decree\.title, type: decree\.type \}, isSubscriber\)/);
 });

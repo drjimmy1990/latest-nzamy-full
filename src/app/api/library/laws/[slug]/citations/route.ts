@@ -26,9 +26,9 @@ import {
   shapeLawLinks,
   validArticleId,
   withAutoTags,
-  maskDecreeTitlesForViewer,
   withHrefs,
 } from './_shape';
+import { maskDecreeTitlesForViewer } from './_decree-titles';
 
 /**
  * GET /api/library/laws/[slug]/citations — the law reader's citation data
