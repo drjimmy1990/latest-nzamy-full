@@ -438,8 +438,9 @@ function googleCalUrl(ev: CalEvent): string | null {
   // own calendar zone — wrong for any lawyer whose calendar is set elsewhere.
   // The stamps, the one-hour default block and the all-day fallback live in
   // src/lib/calendar/googleCalendarLink.ts (pure, tested).
-  // P1-37: what leaves the platform is the case title only — no notes, no
-  // client name, no platform line (calendarFeed.ts states the rule).
+  // N14 (l12, replacing P1-37's title-only rule): the case title, the client's
+  // name and the lawyer's notes in full; still no platform line
+  // (calendarFeed.ts states the rule).
   const details = hearingIcsInput(feedHearingOf(ev)).description ?? "";
   return googleCalendarUrl({
     title: ev.title,
@@ -465,6 +466,8 @@ function feedHearingOf(ev: CalEvent): FeedHearing {
     id: ev.id, title: ev.title, date: ev.date, time: ev.time ?? null,
     durationMinutes: ev.durationMinutes ?? null, location: ev.location ?? null,
     type: ev.type, status: ev.status ?? null, caseName: ev.caseName ?? null,
+    // N14 (owner RAW[71]): the client's name and the lawyer's notes in full.
+    clientName: ev.client ?? null, notes: ev.notes ?? null,
   };
 }
 

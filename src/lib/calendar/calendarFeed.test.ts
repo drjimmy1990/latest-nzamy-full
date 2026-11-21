@@ -97,3 +97,12 @@ test("every physical line ≤ 75 octets", () => {
   const { ics } = buildCalendarFeed([{ ...hearing, title: "ج".repeat(200) }], [], now);
   for (const line of ics.split("\r\n")) assert.ok(new TextEncoder().encode(line).length <= 75);
 });
+
+test("N14 wiring (l12 integration): the hearings page hands the client's name and the notes to every calendar file", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../../app/dashboard/lawyer/hearings/page.tsx", import.meta.url), "utf8");
+  const fn = page.slice(page.indexOf("function feedHearingOf"), page.indexOf("function downloadHearingIcs"));
+  assert.match(fn, /clientName: ev\.client \?\? null, notes: ev\.notes \?\? null,/);
+  const bar = readFileSync(new URL("../../app/dashboard/lawyer/hearings/_HearingsExportBar.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(bar, /لا يحمل ملاحظاتك ولا أسماء الموكلين/);
+});

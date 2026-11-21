@@ -102,7 +102,7 @@ export default function HearingsExportBar({ isDark, hearings, tableRows, ready, 
           onClick={() => void downloadAll()}
           disabled={!ready || busy}
           className={button}
-          title="ملف تقويم واحد فيه جلساتك ومهلك المفتوحة بتوقيت الرياض، لتقويم Apple وOutlook وGoogle. لا يحمل ملاحظاتك ولا أسماء الموكلين."
+          title="ملف تقويم واحد فيه جلساتك ومهلك المفتوحة بتوقيت الرياض، لتقويم Apple وOutlook وGoogle، ومع كل جلسة اسم الموكّل وملاحظاتك."
         >
           {busy ? <CircleNotch size={14} className="animate-spin" /> : <DownloadSimple size={14} />} تنزيل كل جلساتي (.ics)
         </button>
