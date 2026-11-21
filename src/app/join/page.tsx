@@ -56,7 +56,7 @@ const providerTypes = [
   },
   {
     icon: UserCheck,
-    ar: "معقّب",
+    ar: "مراجع حكومي",
     en: "Legal Runner",
     descAr: "إنجاز المعاملات الحكومية والرسمية",
     descEn: "Government and official transactions",

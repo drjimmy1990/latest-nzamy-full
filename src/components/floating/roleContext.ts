@@ -60,7 +60,7 @@ export const GOVERNMENT_ROLE_LABELS: Record<GovernmentRole, string> = {
 
 export const PROVIDER_ROLE_LABELS: Record<ProviderRole, string> = {
   notary: "موثق",
-  bailiff: "معقب/مراجع حكومي",
+  bailiff: "مراجع حكومي",
   arbitrator: "محكم",
 };
 

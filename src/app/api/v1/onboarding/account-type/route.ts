@@ -135,8 +135,8 @@ const AR_REFUSAL: Record<AccountTypeClaimRefusal, string> = {
   // the page rather than by anything the user did, so each one asks for the
   // same simple recovery — pick the option again — while staying a distinct
   // sentence, so a support call and a log line can tell them apart.
-  invalid_sub_role: "تخصص مقدّم الخدمة المُرسل غير معروف. يرجى اختيار «موثّق» أو «معقّب» أو «محكّم» من الخيارات المتاحة.",
-  sub_role_missing: "لم يُحدَّد تخصص مقدّم الخدمة. يرجى اختيار «موثّق» أو «معقّب» أو «محكّم» ثم المحاولة مرة أخرى.",
+  invalid_sub_role: "تخصص مقدّم الخدمة المُرسل غير معروف. يرجى اختيار «موثّق» أو «مراجع حكومي» أو «محكّم» من الخيارات المتاحة.",
+  sub_role_missing: "لم يُحدَّد تخصص مقدّم الخدمة. يرجى اختيار «موثّق» أو «مراجع حكومي» أو «محكّم» ثم المحاولة مرة أخرى.",
   sub_role_mismatch: "لا يتطابق التخصص المُرسل مع نوع الحساب المختار. يرجى اختيار نوع الحساب مرة أخرى ثم المتابعة.",
   // Deliberately does NOT say "sign out and sign in again": the profiles row
   // is created by handle_new_user on the auth.users INSERT
