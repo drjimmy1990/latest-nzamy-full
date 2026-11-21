@@ -125,7 +125,7 @@ const userTypeOptions = {
     // so somebody who saw that page and came here through Google reads the same
     // words for the same role.
     { id: "notary",     icon: Stamp,       label: "موثّق",            desc: "توثيق العقود والمحررات الرسمية" },
-    { id: "tracker",    icon: Shield,      label: "معقّب",            desc: "إنجاز المعاملات الحكومية" },
+    { id: "tracker",    icon: Shield,      label: "مراجع حكومي",            desc: "إنجاز المعاملات الحكومية" },
     { id: "arbitrator", icon: Certificate, label: "محكّم",            desc: "التحكيم وفض النزاعات" },
   ],
   en: [
@@ -401,7 +401,7 @@ function S1({
       </p>
       {/* The service-provider options now exist, so the note that used to
           apologise for their absence is gone. What replaces it is the one thing
-          a موثّق, معقّب or محكّم cannot learn from the cards themselves: the
+          a موثّق, مراجع حكومي or محكّم cannot learn from the cards themselves: the
           specialty they pick here is what gets written to
           `provider_profiles.sub_role`, and the sentence above already told them
           the account type is set once. Every clause below is checked:
@@ -422,7 +422,7 @@ function S1({
               second account they do not want. */}
       <p className="mt-2 text-xs text-ink-faint dark:text-gray-500">
         {isAr
-          ? "إن اخترت «موثّق» أو «معقّب» أو «محكّم» فسيُسجَّل تخصصك مع حسابك، ولا يظهر ملفك المهني في نتائج البحث حتى تراجعه إدارة المنصّة."
+          ? "إن اخترت «موثّق» أو «مراجع حكومي» أو «محكّم» فسيُسجَّل تخصصك مع حسابك، ولا يظهر ملفك المهني في نتائج البحث حتى تراجعه إدارة المنصّة."
           : "If you choose “Notary”, “Gov. Agent” or “Arbitrator”, your specialty is recorded with your account, and your professional file does not appear in search results until the platform administrators review it."}
       </p>
     </motion.div>

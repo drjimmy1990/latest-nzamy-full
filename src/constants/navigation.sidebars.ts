@@ -176,7 +176,7 @@ export const BAILIFF_ADDON_SECTIONS: SidebarGroup[] = [
     items: [
       { label: "طلبات التعقيب",     labelEn: "Review Requests",    href: "/dashboard/provider/bailiff/requests",   icon: "ClipboardText", badge: "قريباً" },
       { label: "مساعد المعاملات",   labelEn: "Transaction Assist", href: "/ai/consult",                            icon: "Robot",         badge: "قريباً" },
-      { label: "دليل الإجراءات",    labelEn: "Procedure Guide",    href: "/ai/procedures",                         icon: "MapTrifold",    badge: "معقّب" },
+      { label: "دليل الإجراءات",    labelEn: "Procedure Guide",    href: "/ai/procedures",                         icon: "MapTrifold",    badge: "مراجع حكومي" },
     ],
   },
 ];

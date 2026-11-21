@@ -133,7 +133,7 @@ export function Step2({ isAr, providerType, data, onChange, selectedSpecs, setSe
     lawyer:     { label: isAr ? "رقم الترخيص (وزارة العدل)" : "MOJ License No.",            ph: "12345",        hint: isAr ? "رقم القيد في هيئة المحامين السعوديين"      : "Saudi Bar Association membership" },
     firm:       { label: isAr ? "السجل التجاري للمكتب"        : "Commercial Reg. No.",        ph: "XXXXXXXXXXX",  hint: isAr ? "رقم السجل التجاري من وزارة التجارة"          : "MCI Commercial Registration" },
     notary:     { label: isAr ? "رقم ترخيص التوثيق (وزارة العدل)" : "Notary License No.",   ph: "NOT-XXXXXXXX", hint: isAr ? "رقم القيد في سجل الموثقين"                : "MOJ Notaries Register" },
-    tracker:    { label: isAr ? "رقم هوية المعقّب الرسمي"    : "Gov. Agent ID",              ph: "AGT-XXXXXXXX", hint: isAr ? "الرقم الصادر عن الجهة المرخّصة للتعقيب" : "Issued by licensed bailiff authority" },
+    tracker:    { label: isAr ? "رقم هوية المراجع الحكومي الرسمي"    : "Gov. Agent ID",              ph: "AGT-XXXXXXXX", hint: isAr ? "الرقم الصادر عن الجهة المرخّصة للتعقيب" : "Issued by licensed bailiff authority" },
     arbitrator: { label: isAr ? "رقم الترخيص (مركز التحكيم)" : "Arbitration License No.",   ph: "ARB-XXXXXXXX", hint: isAr ? "رقم القيد في قائمة المحكّمين المعتمدين"  : "Accredited arbitrators registry" },
     // Owner answer ٢١٩ names the document: «رقم الترخيص المهني». The lawyer's
     // hint (Saudi Bar membership) is not said of a consultant.
@@ -602,7 +602,7 @@ export function Step5({ isAr, providerType, selectedPlan, verificationOwnsStatus
     lawyer: isAr ? "محامي" : "Lawyer",
     firm: isAr ? "شركة محاماة" : "Law Firm",
     notary: isAr ? "موثّق" : "Notary",
-    tracker: isAr ? "معقّب" : "Gov. Agent",
+    tracker: isAr ? "مراجع حكومي" : "Gov. Agent",
     arbitrator: isAr ? "محكّم" : "Arbitrator",
     consultant: isAr ? "مستشار قانوني" : "Legal Consultant",
     null: "",

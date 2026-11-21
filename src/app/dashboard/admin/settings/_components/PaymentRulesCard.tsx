@@ -386,10 +386,10 @@ export function PaymentRulesCard() {
         </section>
 
         <section className={`border-t pt-6 ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
-          <p className={label}>سعر المقعد الإضافي للمكاتب (ريال قبل الضريبة){notStored(FIRM_EXTRA_SEAT_PRICE_KEY)}</p>
+          <p className={label}>سعر المقعد الإضافي للمكاتب (ريال سنوياً قبل الضريبة){notStored(FIRM_EXTRA_SEAT_PRICE_KEY)}</p>
           <p className={`mt-1 ${hint}`}>
             المقاعد المشمولة: {FIRM_PLAN_SEATS["firm-basic"]} لمكتب المحاماة و{FIRM_PLAN_SEATS["firm-enterprise"]} لشركة المحاماة. هذا السعر يُحفظ فقط ولا يُعرض
-            علناً ولا يُباع عبر الموقع؛ اتركه فارغاً حتى يحدده المالك.
+            علناً ولا يُباع عبر الموقع حتى يُفعَّل الدفع ويعتمده المالك (مقترح س١١٤: ٢٥٠ ريالاً للمقعد سنوياً).
           </p>
           <div className="mt-3 flex items-center gap-3">
             <input className={input} inputMode="numeric" value={seatPrice} onChange={(e) => setSeatPrice(e.target.value)} aria-label="سعر المقعد الإضافي" />

@@ -127,7 +127,7 @@ export const SERVICE_PAGES: Readonly<Record<string, Entry>> = Object.freeze({
   "/services/tracking": {
     titleAr: "تعقيب المعاملات الحكومية",
     descriptionAr: "نتابع إجراءاتك الحكومية نيابةً عنك، ونُبقيك على اطلاع بكل خطوة حتى الإنجاز.",
-    keywords: ["تعقيب معاملات", "معاملات حكومية", "معقب"],
+    keywords: ["تعقيب معاملات", "معاملات حكومية", "مراجع حكومي"],
   },
 });
 

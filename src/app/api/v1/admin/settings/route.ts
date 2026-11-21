@@ -33,6 +33,9 @@ import { FEATURE_FLAGS_SETTING, featureFlagsIssue } from "@/lib/featureFlags/fea
 import { clearFeatureFlagsCache } from "@/lib/featureFlags/featureFlagsServer";
 import { draftLimitsIssue } from "@/lib/library/draftExport";
 import { retentionSettingIssue } from "@/lib/ai/aiHistory";
+// Batch l12 firm (20261202_80): firm role scope (Q112) and founder storage fair use (N21).
+import { firmCaseScopeIssue } from "@/lib/firm/firmCaseScope";
+import { founderStorageIssue } from "@/lib/membership/founderStorage";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -123,6 +126,13 @@ const ALLOWED_SETTINGS_KEYS = [
   // ل2 answer ج) and the months an AI run keeps its question and answer (ل11).
   "library_draft_limits",
   "ai_runs_retention",
+  // Batch l12 firm (20261202_80): {"assigned_only_roles": [office roles],
+  // "finance_manager_no_cases": bool} — which firm roles see only their
+  // assigned cases (Q112; src/lib/firm/firmCaseScope.ts, read by the RLS);
+  "firm_case_scope",
+  // {"gb": n, "alert_pct": n} — the founder's internal storage fair use (N21;
+  // src/lib/membership/founderStorage.ts). Never shown on a marketing page.
+  "founder_storage_fair_use",
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -229,6 +239,9 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   library_reader_display: libraryReaderDisplayIssue,
   library_draft_limits: draftLimitsIssue,
   ai_runs_retention: retentionSettingIssue,
+  // Batch l12 firm: pure, covered by firmCaseScope.test.ts / founderStorage.test.ts.
+  firm_case_scope: firmCaseScopeIssue,
+  founder_storage_fair_use: founderStorageIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

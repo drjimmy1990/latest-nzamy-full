@@ -1,8 +1,8 @@
 /**
  * review.ts — the pure half of owner decision ٤٢ (18 Nov 2026; batch l7
  * decision 13): community posts AND answers wait for a reviewer before they
- * are public, names stay hidden, and «مكتب موثّق» is a firm with a verified
- * commercial registration and at least one lawyer whose licence is valid.
+ * are public, names stay hidden, and «مكتب معتمد» (N18, batch l12) is a
+ * registered law firm with an active office plan.
  *
  * The database half is supabase/migrations/20261127_60_community_review_devices_freeze.sql:
  * the statuses 'pending_review' / 'rejected', the review trigger (a member's
@@ -147,37 +147,36 @@ export function reviewNotificationAr(
   return null;
 }
 
-// ── «مكتب موثّق» ─────────────────────────────────────────────────────────────
+// ── «مكتب معتمد» (N18, batch l12, 20261202_80) ────────────────────────────────
+// Owner RAW [39]: «تُستبدل كلمة «موثَّق» بـ«معتمد» في شارة المكتب وكل الواجهة.
+// وتعريفه: مكتب محاماة مسجّل في نظامي ومشترك في باقة مكتب سارية» (default:
+// any paid office plan). It replaces the earlier «سجل تجاري موثّق + محامٍ
+// رخصته سارية» rule.
 
-export const VERIFIED_OFFICE_AR = "مكتب موثّق";
+export const VERIFIED_OFFICE_AR = "مكتب معتمد";
 
-export interface OfficeLawyer {
-  /** lawyer_profiles.verification_status */
-  verification: string | null;
-  /** The firm owner himself, or an active member with a practising role. */
-  practising: boolean;
-  /** The registry's expiry when the licence is found there (YYYY-MM-DD), else null. */
-  registryExpiry: string | null;
-  /** The registry row is archived (not in today's list). */
-  registryArchived?: boolean;
-  /** The licence is in the registry at all. */
-  inRegistry: boolean;
-  /** lawyer_profiles.license_expiry (YYYY-MM-DD) */
-  fileExpiry: string | null;
+/** The office plans whose active subscription makes a firm «معتمد» (priceBook firm plans). */
+export const OFFICE_PLAN_IDS: readonly string[] = ["firm-basic", "firm-enterprise"];
+
+export interface OfficeSubscription {
+  planId: string | null;
+  /** subscriptions.status — only "active" counts (a trial does not). */
+  status: string | null;
+  /** subscriptions.current_period_end (ISO), null = open-ended. */
+  periodEnd: string | null;
 }
 
 export interface OfficeInput {
-  /** firm_profiles.verification_status — the commercial registration check. */
+  /** firm_profiles.verification_status — the firm's registration on the platform. */
   firmVerification: string | null;
-  lawyers: OfficeLawyer[];
+  /** The owner's own subscriptions and the firm entity's. */
+  subscriptions: OfficeSubscription[];
 }
 
-/** «سجل تجاري موثّق + محامٍ رخصته سارية» — the same rule as public.community_verified_office_users. today = YYYY-MM-DD in Riyadh. */
-export function isVerifiedOffice(input: OfficeInput, today: string): boolean {
+/** The same rule as public.community_verified_office_users (20261202_80). `now` = the moment of the check. */
+export function isVerifiedOffice(input: OfficeInput, now: Date): boolean {
   if (input.firmVerification !== "verified") return false;
-  return input.lawyers.some((l) => {
-    if (!l.practising || l.verification !== "verified") return false;
-    if (l.inRegistry) return !l.registryArchived && !!l.registryExpiry && l.registryExpiry >= today;
-    return !!l.fileExpiry && l.fileExpiry >= today;
-  });
+  return input.subscriptions.some((s) =>
+    !!s.planId && OFFICE_PLAN_IDS.includes(s.planId) && s.status === "active"
+    && (s.periodEnd === null || new Date(s.periodEnd).getTime() > now.getTime()));
 }

@@ -3,6 +3,7 @@ import { kindToType, urgencyFromDb } from "@/lib/services/hearingVocabulary";
 import { ownRequestsOrFilter } from "@/lib/services/ownRequestsFilter";
 import { namesVisibleTo } from "@/lib/services/taskMetadata";
 import { readFirmMemberIdsAnyStatus, resolveDisplayNames } from "../tasks/_assignees";
+import { caseInfoFromCase, type HearingCaseInfo } from "@/lib/hearings/hearingsTable";
 
 /**
  * Shared by /api/v1/lawyer/hearings (GET/POST) and /api/v1/lawyer/hearings/[id]
@@ -45,7 +46,12 @@ export const HEARINGS_SELECT =
  * only the outcome actions (PATCH refuses the rest). `names` maps user ids to
  * display names already filtered by `hearingNamesFor`.
  */
-export function toDto(row: HearingRow, viewerId?: string, names: Record<string, string> = {}) {
+export function toDto(
+  row: HearingRow,
+  viewerId?: string,
+  names: Record<string, string> = {},
+  caseInfos: Record<string, HearingCaseInfo> = {},
+) {
   const meta = row.metadata ?? {};
   const history = Array.isArray(meta.history) ? meta.history : [];
   return {
@@ -65,6 +71,9 @@ export function toDto(row: HearingRow, viewerId?: string, names: Record<string, 
     durationMinutes: typeof row.duration_minutes === "number" ? row.duration_minutes : null,
     assigneeUserId: row.assignee_user_id ?? null,
     assigneeName: row.assignee_user_id ? names[row.assignee_user_id] ?? null : null,
+    // N13 (batch l12): court / case number / client / circuit of the linked
+    // case for the hearings table export; null when unlinked or unreadable.
+    caseInfo: row.case_request_id ? caseInfos[row.case_request_id] ?? null : null,
     isOwn: viewerId === undefined || row.owner_user_id === undefined || row.owner_user_id === viewerId,
     ownerName: viewerId !== undefined && row.owner_user_id && row.owner_user_id !== viewerId
       ? names[row.owner_user_id] ?? null
@@ -215,4 +224,32 @@ export async function hearingNamesFor(
   if (ids.size === 0) return {};
   const firmMemberIds = await readFirmMemberIdsAnyStatus(supabase, await readCallerHearingFirmId(supabase, userId));
   return resolveDisplayNames(namesVisibleTo({ ids: [...ids], callerId: userId, firmMemberIds }));
+}
+
+/**
+ * N13 (batch l12): the linked cases' table columns (hearingsTable.ts), read
+ * through the CALLER's client, so RLS decides what he may see — a case he
+ * cannot read gives no column. One read for the whole page; a failed read
+ * leaves every case column «—», never a guess.
+ */
+export async function hearingCaseInfosFor(
+  supabase: SupabaseClient,
+  rows: HearingRow[],
+): Promise<Record<string, HearingCaseInfo>> {
+  const ids = [...new Set(rows.map((r) => r.case_request_id).filter((v): v is string => typeof v === "string" && v !== ""))];
+  if (ids.length === 0) return {};
+  const { data, error } = await supabase
+    .from("service_requests")
+    .select("id, requester, metadata")
+    .in("id", ids.slice(0, 500));
+  if (error) {
+    console.error("[lawyer/hearings] case columns read failed:", error.code);
+    return {};
+  }
+  const out: Record<string, HearingCaseInfo> = {};
+  for (const r of (data ?? []) as { id?: unknown; requester?: unknown; metadata?: unknown }[]) {
+    const info = caseInfoFromCase(r);
+    if (info && typeof r.id === "string") out[r.id] = info;
+  }
+  return out;
 }

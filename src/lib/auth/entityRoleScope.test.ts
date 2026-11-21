@@ -20,6 +20,9 @@ import { FIRM_CASE_SCOPED_ROLES } from "../services/ownRequestsFilter.ts";
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
 const SQL = read("supabase/migrations/20261129_10_firm_company_roles_seats.sql");
+// Q112 / Q113 (batch l12): the latest definitions of firm_case_scoped_member
+// and business_plan_seat_cap are in 20261202_80.
+const SQL_L12 = read("supabase/migrations/20261202_80_l12_firm_roles_log_badge_storage.sql");
 
 /** The quoted values of the first `m.role in (...)` after `marker` in the SQL. */
 function sqlRoles(marker: string): string[] {
@@ -30,11 +33,17 @@ function sqlRoles(marker: string): string[] {
   return [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
 }
 
-test("the firm roles narrowed to their assigned cases: trainee and legal_secretary, app = SQL", () => {
+test("the firm roles narrowed to their assigned cases: trainee and legal_secretary always (20261129_10), the rest from the setting (20261202_80)", () => {
   assert.deepEqual([...FIRM_CASE_SCOPED_ROLES], ["trainee", "legal_secretary"]);
   assert.deepEqual(sqlRoles("create or replace function public.firm_case_scoped_member"), [...FIRM_CASE_SCOPED_ROLES]);
+  // 20261202_80 replaces the fixed list by firm_case_scope_roles(), which always starts with these two
+  const fn = SQL_L12.slice(SQL_L12.indexOf("create or replace function public.firm_case_scoped_member"));
+  assert.match(fn.slice(0, fn.indexOf("$$;")), /m\.role = any \(public\.firm_case_scope_roles\(\)\)/);
+  assert.match(SQL_L12, /return array\['trainee', 'legal_secretary'\] \|\| v_extra;/);
   // the owner is never narrowed, whatever his member row says
-  assert.match(SQL, /and not exists \(select 1 from public\.firm_profiles fp\s+where fp\.id = p_firm and fp\.owner_user_id = auth\.uid\(\)\)/);
+  for (const sql of [SQL, SQL_L12]) {
+    assert.match(sql, /and not exists \(select 1 from public\.firm_profiles fp\s+where fp\.id = p_firm and fp\.owner_user_id = auth\.uid\(\)\)/);
+  }
 });
 
 test("company requests: the case roles of the UI are the ones the database lets read every request", () => {
@@ -82,7 +91,8 @@ test("the company seat numbers are the /pricing users row (pricing.companies.com
   const row = cmp.slice(at, cmp.indexOf("}", at));
   const pricing = Object.fromEntries([...row.matchAll(/"((?:biz|dept)-[a-z]+-[a-z]+)": "([^"]+)"/g)].map((x) => [x[1], x[2]]));
   assert.equal(Object.keys(pricing).length, 18);
-  const fn = SQL.slice(SQL.indexOf("create or replace function public.business_plan_seat_cap"));
+  // the latest definition (Q113, 20261202_80: the smallest tiers start at 5)
+  const fn = SQL_L12.slice(SQL_L12.indexOf("create or replace function public.business_plan_seat_cap"));
   const body = fn.slice(0, fn.indexOf("end;"));
   for (const [plan, users] of Object.entries(pricing)) {
     const m = body.match(new RegExp(`when '${plan}'\\s+then (\\d+)`));

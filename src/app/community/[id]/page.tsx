@@ -43,7 +43,7 @@ interface Reply {
   isBest?: boolean;
   /** The reader's own vote on this answer, from the server (0 = none). */
   myVote: -1 | 0 | 1;
-  /** Owner ٤٢: «مكتب موثّق». */
+  /** Owner ٤٢ + N18: «مكتب معتمد». */
   isVerifiedOffice?: boolean;
   /** Owner ٤٢: the reader's own answer under review / rejected. */
   reviewState?: "pending" | "rejected" | null;

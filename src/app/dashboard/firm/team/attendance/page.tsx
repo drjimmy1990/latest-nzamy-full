@@ -35,7 +35,7 @@ const TEAM: TeamMember[] = [
   { name: "أ. عبدالله المالكي", role: "محامي", avatar: "ع" },
   { name: "أ. نايف الحربي", role: "متدرب", avatar: "ن" },
   { name: "ريم الشهري", role: "سكرتيرة قانونية", avatar: "ر" },
-  { name: "خالد العنزي", role: "معقّب", avatar: "خ" },
+  { name: "خالد العنزي", role: "مراجع حكومي", avatar: "خ" },
 ];
 
 const TODAY_RECORDS: DayRecord[] = [

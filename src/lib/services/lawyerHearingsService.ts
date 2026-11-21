@@ -57,6 +57,8 @@ export interface HearingDto {
   isOwn?: boolean;
   /** For a hearing assigned to the caller: who scheduled it. */
   ownerName?: string | null;
+  /** N13: the linked case's columns for the hearings table (null when unlinked / unreadable). */
+  caseInfo?: { reference: string | null; court: string | null; circuit: string | null; client: string | null } | null;
   createdAt?: string;
   updatedAt?: string;
 }

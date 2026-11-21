@@ -52,10 +52,10 @@ export const comparisonCompanies: { ar: ComparisonCategory[]; en: ComparisonCate
     { category: "الفريق والمنصة", icon: Users, rows: [
       { 
         feature: "المستخدمون",
-        "biz-sm-basic": "٣", "biz-sm-pro": "٥", "biz-sm-full": "١٠",
+        "biz-sm-basic": "٥", "biz-sm-pro": "٥", "biz-sm-full": "١٠",
         "biz-md-basic": "٥", "biz-md-pro": "١٥", "biz-md-full": "٢٥",
         "biz-lg-basic": "١٠", "biz-lg-pro": "٣٠", "biz-lg-full": "مخصص",
-        "dept-sm-basic": "٢", "dept-sm-pro": "٥", "dept-sm-full": "١٠",
+        "dept-sm-basic": "٥", "dept-sm-pro": "٥", "dept-sm-full": "١٠",
         "dept-md-basic": "٥", "dept-md-pro": "١٠", "dept-md-full": "٢٠",
         "dept-lg-basic": "١٠", "dept-lg-pro": "٢٥", "dept-lg-full": "٥٠",
       },
@@ -114,10 +114,10 @@ export const comparisonCompanies: { ar: ComparisonCategory[]; en: ComparisonCate
     { category: "Team & Platform", icon: Users, rows: [
       { 
         feature: "Users",
-        "biz-sm-basic": "3", "biz-sm-pro": "5", "biz-sm-full": "10",
+        "biz-sm-basic": "5", "biz-sm-pro": "5", "biz-sm-full": "10",
         "biz-md-basic": "5", "biz-md-pro": "15", "biz-md-full": "25",
         "biz-lg-basic": "10", "biz-lg-pro": "30", "biz-lg-full": "Custom",
-        "dept-sm-basic": "2", "dept-sm-pro": "5", "dept-sm-full": "10",
+        "dept-sm-basic": "5", "dept-sm-pro": "5", "dept-sm-full": "10",
         "dept-md-basic": "5", "dept-md-pro": "10", "dept-md-full": "20",
         "dept-lg-basic": "10", "dept-lg-pro": "25", "dept-lg-full": "50",
       },

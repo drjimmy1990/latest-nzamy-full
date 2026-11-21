@@ -29,7 +29,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
           null,
         ],
         platform: [
-          "٣ مستخدمين",
+          "٥ مستخدمين",
           "طلبات قانونية: ٥/شهر — قريباً",
           "سوق المهنيين (طلب محامٍ خارجي): قريباً",
           "عقود الموظفين (HR): قريباً",
@@ -244,7 +244,7 @@ export const plansCompanies: { ar: Plan[]; en: Plan[] } = {
       companySize: "small", forLegalDept: false, someFeaturesSoon: true,
       features: {
         ai: ["AI tools: coming soon", "Full Legal Library ✅", "Contract expiry alerts: coming soon", null],
-        platform: ["3 users", "Legal requests: 5/mo — coming soon", "Professional Marketplace: coming soon", "Employee contracts (HR): coming soon"],
+        platform: ["5 users", "Legal requests: 5/mo — coming soon", "Professional Marketplace: coming soon", "Employee contracts (HR): coming soon"],
         support: ["Lawyer consultation: ❌", "Litigation: 10% fee discount when needed — coming soon"],
       },
     },

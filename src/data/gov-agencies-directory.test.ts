@@ -79,7 +79,8 @@ test("contacts are well formed: no internal-network links, no invisible characte
   }
   const malformed = agencies.flatMap((a) => a.emails).filter((e) => !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(e));
   assert.deepEqual(malformed, ["info@@pep.gov.sa"]);
-  assert.equal(agencies.filter((a) => a.emails.length).length, 338);
+  // Q119 (batch l12): 41 addresses with no mail server are withheld — 338 → 297.
+  assert.equal(agencies.filter((a) => a.emails.length).length, 297);
   assert.equal(agencies.filter((a) => a.phones.length).length, 344);
 });
 
@@ -106,4 +107,15 @@ test("q386: no prosecution channel publishes an e-mail address", () => {
   assert.ok(pp.channels.length > 0);
   assert.equal(pp.channels.some((c) => c.kind === "email" || c.value.includes("@")), false);
   assert.equal(agencies.some((a) => a.emails.some((e) => /@bip\.gov\.sa$/i.test(e))), false);
+});
+
+test("Q119: no address the owner's mail check found dead is published (parser WITHHELD_EMAILS)", () => {
+  const parser = fs.readFileSync(path.resolve(here, "../../scripts/parsers/parse-gov-agencies-directory.mjs"), "utf8");
+  const block = parser.slice(parser.indexOf("export const WITHHELD_EMAILS = {"), parser.indexOf("};", parser.indexOf("export const WITHHELD_EMAILS = {")));
+  const withheld = [...block.matchAll(/"([^"\s]+@[^"\s]+)"/g)].map((m) => m[1].toLowerCase());
+  assert.equal(withheld.length, 42, "info@bip.gov.sa (q386) + the 41 of Q119");
+  const published = new Set(agencies.flatMap((a) => a.emails.map((e) => e.toLowerCase())));
+  for (const e of withheld) assert.equal(published.has(e), false, e);
+  const raw = fs.readFileSync(path.resolve(here, "gov-agencies-directory.json"), "utf8").toLowerCase();
+  for (const e of withheld) assert.equal(raw.includes(e), false, `${e} still in the shipped file`);
 });

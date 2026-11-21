@@ -2,11 +2,10 @@
  * _lawyersSpace.ts — who may post into, or move a post into, the lawyers-only
  * community (N05-C2, owner ٤٢).
  *
- * A verified lawyer, as before, OR the owner of a «مكتب موثّق»: a firm whose
- * commercial registration is verified AND that has at least one verified
- * lawyer (the owner or an active practising member) whose licence is valid
- * today — the exact rule of public.community_verified_office_users()
- * (20261127_60) and its pure twin isVerifiedOffice() in
+ * A verified lawyer, as before, OR the owner of a «مكتب معتمد»: a law firm
+ * registered on the platform that holds an active office plan (N18, owner RAW
+ * [39]) — the exact rule of public.community_verified_office_users()
+ * (20261202_80; before it 20261127_60) and its pure twin isVerifiedOffice() in
  * src/lib/community/review.ts.
  *
  * The database decides: public.community_lawyers_space_ok() (20261201_50) is
@@ -20,7 +19,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const LAWYERS_SPACE_REFUSAL_AR = "النشر في مجتمع المحامين متاح للمحامين الموثّقين والمكاتب الموثّقة فقط.";
+export const LAWYERS_SPACE_REFUSAL_AR = "النشر في مجتمع المحامين متاح للمحامين الموثّقين والمكاتب المعتمدة فقط.";
 
 /** PostgREST / Postgres codes for "this function does not exist (yet)". */
 const MISSING_FUNCTION_CODES = new Set(["PGRST202", "42883"]);

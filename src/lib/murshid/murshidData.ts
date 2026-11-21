@@ -30,6 +30,7 @@
  */
 
 import { searchRows } from "../../app/ai/procedures/_circuitsSearch.ts";
+import { isNoMailEmail } from "./noMailEmails.ts";
 
 // ─── Raw file shapes (as the owner's package writes them) ────────────────────
 
@@ -367,7 +368,8 @@ export function toPublicCard(card: RawCard): MurshidCard {
     legalBasis: basisList,
     contacts: {
       phones: [...new Set(values(contacts.phones))],
-      emails: [...new Set(values(contacts.emails).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)))],
+      // Q119: an address the owner's mail check found dead is not shown.
+      emails: [...new Set(values(contacts.emails).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && !isNoMailEmail(e)))],
       portals: portals.filter((p, i) => portals.findIndex((q) => q.url === p.url) === i),
     },
     unverified: [...strList(card.unverified_items), ...strList(card.unverified_contacts)],
@@ -454,7 +456,7 @@ export function toPublicChannels(raw: unknown): MurshidChannel[] {
             .filter((p) => p.value)
         : [],
       emails: Array.isArray(c.emails)
-        ? (c.emails as { value?: unknown }[]).map((e) => str(e?.value)).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+        ? (c.emails as { value?: unknown }[]).map((e) => str(e?.value)).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && !isNoMailEmail(e))
         : [],
       portals: Array.isArray(c.portals)
         ? (c.portals as { name?: unknown; url?: unknown }[])

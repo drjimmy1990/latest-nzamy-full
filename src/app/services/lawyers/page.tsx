@@ -214,7 +214,7 @@ const ROLES = [
   {
     id: "courts",
     icon: IdentificationCard,
-    labelAr: "معقّب / مراجع دوائر",
+    labelAr: "مراجع حكومي / مراجع دوائر",
     descAr: "تتبع المعاملات وحافظ على المواعيد الحرجة للعملاء بدون أخطاء مكلفة.",
     color: "text-emerald-600",
     bg: "bg-emerald-500/8",

@@ -174,7 +174,7 @@ export default function SharedSidebar() {
                   ? (<span className="text-[#C8A762]">
                       {active_roles.map(r =>
                         r === "notary"     ? "موثّق" :
-                        r === "bailiff"    ? "معقّب" :
+                        r === "bailiff"    ? "مراجع حكومي" :
                         r === "arbitrator" ? "محكّم" : r
                       ).join(" + ")}
                       {" • "}
