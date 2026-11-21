@@ -10,7 +10,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   BULK_PER_TYPE,
+  LAW_LINKS_ID,
   MAX_ITEMS_PER_SECTION,
+  centerKeyOf,
   READER_LINK_TYPES,
   READER_SECTION_QUERIES,
   applyLiveRows,
@@ -453,4 +455,23 @@ test("route contract (l12): ?bulk=1 reads the two switches and calls the law fun
   assert.match(route, /const types = readerLinkTypes\(flags\?\.library_similar_links \?\? false\);/);
   assert.match(route, /withHrefs\(withAutoTags\(live, autoTagOn\)\)/);
   assert.match(route, /if \(graphFunctionMissing\(error\.code\)\) return json\(\{ available: false \}\);/, "before 20261202_30: the reader falls back to one article at a time");
+});
+
+test("Q132: the law's own node ('@law') answers like an article — links on the whole law", () => {
+  assert.equal(centerKeyOf(LAW_LINKS_ID, "labor"), "law:labor");
+  assert.equal(centerKeyOf("a5", "labor"), "article:a5");
+  const raw = {
+    found: true,
+    nodes: [
+      { node_key: "law:labor", node_type: "law", law_slug: "labor", title: "نظام العمل" },
+      { node_key: "principle:p1", node_type: "principle", title: "مبدأ", url: "/precedents/high#p1" },
+    ],
+    edges: [{ source: "principle:p1", target: "law:labor", edge_type: "INTERPRETS_ARTICLE", origin: "owner_curated", metadata: { source: "owner_edges" } }],
+  };
+  const out = shapeArticleRefs(raw, LAW_LINKS_ID, "labor");
+  assert.equal(out.found, true);
+  assert.deepEqual(out.sections.judicial.items.map((i) => [i.key, i.auto]), [["principle:p1", false]], "his link: no tag");
+  assert.equal(shapeArticleRefs(raw, LAW_LINKS_ID, "civil").found, false);
+  const route = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
+  assert.match(route, /p_node_key: centerKeyOf\(id, slug\),/);
 });

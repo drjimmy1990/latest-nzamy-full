@@ -448,3 +448,29 @@ export function formatReport(r: ImportReport, sha256: string, rowsToLoad: number
   out.push("", r.refusals.length ? `--apply would REFUSE this file:\n  - ${r.refusals.join("\n  - ")}` : "--apply would load this file.");
   return out.join("\n");
 }
+
+/**
+ * File 02 #43 / RAW[19] (batch l12): «لا نشر قبل فحص عيّنة 50 رابطاً» — 50 of
+ * HIS links for his team to tick before --apply: half flagged (his «308» and
+ * our doubts), half ok, spread over types, the same for the same file (rows
+ * sorted by edge_id, every k-th taken). A TSV with an empty «صحيح؟» column.
+ */
+export function ownerSample50(rows: readonly OwnerEdgeRow[], n = 50): string {
+  const byId = [...rows].sort((a, b) => a.edge_id.localeCompare(b.edge_id));
+  const every = (list: OwnerEdgeRow[], k: number) => {
+    if (k <= 0 || list.length === 0) return [];
+    const step = list.length / k;
+    return Array.from({ length: Math.min(k, list.length) }, (_, i) => list[Math.floor(i * step)]);
+  };
+  const flagged = byId.filter((r) => r.quality === "flagged");
+  const ok = byId.filter((r) => r.quality !== "flagged");
+  const half = Math.ceil(n / 2);
+  const pickFlagged = every(flagged, Math.min(half, flagged.length));
+  const picked = [...pickFlagged, ...every(ok, n - pickFlagged.length)];
+  const cell = (v: unknown) => String(v ?? "").replace(/[\t\r\n]+/g, " ");
+  const head = ["edge_id", "type", "from_doc", "from_principle", "from_article", "to_doc", "to_article", "to_regulation_ref", "quality", "article_check", "evidence", "صحيح؟"];
+  const body = picked.map((r) =>
+    [r.edge_id, r.type, r.from_doc, r.from_principle, r.from_article, r.to_doc, r.to_article, r.to_regulation_ref, r.quality, r.article_check, r.evidence, ""].map(cell).join("\t"),
+  );
+  return [head.join("\t"), ...body].join("\n") + "\n";
+}

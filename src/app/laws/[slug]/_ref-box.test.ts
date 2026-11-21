@@ -107,3 +107,15 @@ test("O15 (batch l11): no lock before the entitlement is known — tri-state, lo
   assert.match(PAGE, /partial=\{viewerHasFullAccess === false && /);
   assert.match(PAGE, /viewerHasFullAccess: viewerHasFullAccess === true,/);
 });
+
+test("Q132 (batch l12): the links on the whole law (an unpinned owner link opens the law) in their own box beside the article's", () => {
+  assert.match(PAGE, /\{viewMode !== "regulation" && <LawRefsBox \/>\}/);
+  assert.match(BOX, /expandLawLinks\(bulk\.data, LAW_LINKS_ID\)/);
+  assert.match(BOX, /روابط النظام كله/);
+});
+
+test("fallback (bulk missing or failed): only while the article is on screen, after 600 ms, one request per article", () => {
+  assert.match(BOX, /\{ enabled: near, delayMs: 600 \}/);
+  assert.doesNotMatch(BOX, /rootMargin/, "no prefetch of articles off screen — they count toward the public guard");
+  assert.match(BOX, /const pending = inflight\.get\(id\);\s*if \(pending\) return pending;/);
+});

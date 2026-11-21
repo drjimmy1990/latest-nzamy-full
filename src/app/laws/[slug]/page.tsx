@@ -53,7 +53,7 @@ import { matchArticleJump } from "./articleJump";
 import { HighlightProvider, SearchLegendBar, useHighlight } from "@/components/search/MultiColorHighlight";
 import { CitationProvider, type CitationReaderContext } from "./_citation-popover";
 import { articlesByNumber } from "./_cite-status";
-import { RefBox, RefBoxProvider, prefetchLawLinks, type RefBoxPageContext } from "./_ref-box";
+import { LawRefsBox, RefBox, RefBoxProvider, prefetchLawLinks, type RefBoxPageContext } from "./_ref-box";
 import { isPageNumberedDocument } from "@/lib/library/pageLocator";
 
 /**
@@ -1802,6 +1802,7 @@ function LawSystemPageContent() {
                  (_ref-box.tsx). It replaced the «وثائق وأنظمة ذات صلة» card; since l12
                  the same links also sit under each article, from one cache. */}
               {viewMode !== "regulation" && <RefBox articleId={activeArticle?.id ?? null} />}
+              {viewMode !== "regulation" && <LawRefsBox />}
               <button
                 onClick={() => setShowCommunity(true)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold transition ${

@@ -10,6 +10,7 @@ import { getFeatureFlags } from '@/lib/featureFlags/featureFlagsServer';
 import { articleStatusForDetail } from '../_article-status';
 import {
   BULK_PER_TYPE,
+  centerKeyOf,
   NEIGHBORHOOD_LIMIT,
   READER_SECTION_QUERIES,
   applyLiveRows,
@@ -41,7 +42,8 @@ import {
  *                          node once (graph_rag_law_article_links, 20261202_30).
  *                          The reader fetches it beside the law and draws the
  *                          list under each article and the side box from it.
- *   ?article=<id>          the links box of one article: its sections
+ *   ?article=<id>          the links box of one article (id '@law': the law's own
+ *                          node, LAW_LINKS_ID): its sections
  *                          (legislation / judicial / fiqh / similar), every legal link type
  *   ?name=<title>&n=1,2    a law named in the text, and its articles by number
  *   ?law=<slug>&n=1,2      the same for a known law (a regulation's parent)
@@ -124,7 +126,7 @@ export async function GET(
       const answers = await Promise.all(
         queries.map((q) =>
           serverOnly.rpc('graph_rag_explore_neighborhood', {
-            p_node_key: `article:${id}`,
+            p_node_key: centerKeyOf(id, slug),
             p_depth: 1,
             p_edge_types: q.types,
             p_limit: NEIGHBORHOOD_LIMIT,

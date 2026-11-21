@@ -10,6 +10,7 @@ import {
   buildOwnerEdgeRows,
   evidenceHasFraction,
   formatReport,
+  ownerSample50,
   normalizeArticleNumber,
   ownerEdgeId,
   parseInventory,
@@ -211,4 +212,18 @@ test("Q132: a principle → article link with no article is kept (it opens the d
   assert.equal(report.documentLevel, 1);
   assert.match(formatReport(report, "a".repeat(64), rows.length), /document-level \(no article to pin; the link opens the target document\): 1/);
   assert.match(formatReport(report, "a".repeat(64), rows.length), /ordinary links since 20261202_30/);
+});
+
+test("#43: the 50-link sample of his links — half flagged, the same for the same file, a column to tick", () => {
+  const edges = Array.from({ length: 120 }, (_, i) =>
+    cite(i.toString(16).padStart(16, "0"), i % 3 === 0 ? { quality: "flagged" } : {}, { article: String((i % 40) + 1) }),
+  );
+  const { rows } = buildOwnerEdgeRows(file(edges));
+  const tsv = ownerSample50(rows);
+  const lines = tsv.trim().split("\n");
+  assert.equal(lines.length, 51);
+  assert.match(lines[0], /\tصحيح؟$/);
+  assert.equal(lines.slice(1).filter((l) => l.split("\t")[8] === "flagged").length, 25);
+  assert.equal(ownerSample50([...rows].reverse()), tsv, "order of the file does not matter");
+  assert.equal(ownerSample50([]).trim().split("\n").length, 1);
 });

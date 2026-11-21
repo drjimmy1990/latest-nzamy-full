@@ -95,6 +95,19 @@ export function capTitle(value: unknown): string {
   return s.length > TITLE_CHARS ? `${s.slice(0, TITLE_CHARS)}...` : s;
 }
 
+/**
+ * Batch l12 (Q132): the law's own node in the bulk answer and in ?article= —
+ * the links on the whole law (an owner link whose article could not be
+ * pinned, law-to-law amendment / replacement). Never a library article id
+ * (those never start with «@»).
+ */
+export const LAW_LINKS_ID = "@law";
+
+/** The graph node of a box id: the article's, or the law's for LAW_LINKS_ID. */
+export function centerKeyOf(articleId: string, lawSlug: string): string {
+  return articleId === LAW_LINKS_ID ? `law:${lawSlug}` : `article:${articleId}`;
+}
+
 /** An article id as the reader sends it: library.articles.id (varchar 150), no control characters. */
 export function validArticleId(value: string | null): string | null {
   const s = (value ?? "").trim();
@@ -269,7 +282,7 @@ export function shapeArticleRefs(
   if (!raw || typeof raw !== "object") return empty;
   const r = raw as { found?: unknown; nodes?: unknown; edges?: unknown; truncated?: unknown; center_edge_counts?: unknown };
   if (r.found !== true) return empty;
-  const center = `article:${articleId}`;
+  const center = centerKeyOf(articleId, lawSlug);
   const nodes = new Map<string, RawNode>();
   for (const n of Array.isArray(r.nodes) ? (r.nodes as RawNode[]) : []) {
     if (typeof n?.node_key === "string") nodes.set(n.node_key, n);

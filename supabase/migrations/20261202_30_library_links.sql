@@ -10,7 +10,9 @@
 --        at most p_per_type items each (closest first: weight, then key), and
 --        every linked node ONCE with its title, status and whether its
 --        library row / document still exists (library.articles / laws /
---        principles / judicial_collections / decrees_circulars). The reader's
+--        principles / judicial_collections / decrees_circulars). The law's own
+--        node answers under the id '@law' (links on the whole law: Q132's
+--        document fallback, amendment / replacement). The reader's
 --        route (GET /api/library/laws/[slug]/citations?bulk=1) shapes it
 --        through a whitelist: titles, statuses, links — never article text,
 --        never snippet or evidence (none is selected here either).
@@ -72,8 +74,11 @@
 --       - SQL first: old code never calls the new functions; the resolver is
 --         only called by the importer (--apply) and the watchdog, and its
 --         answer keeps the same keys.
---   * The owner's links reach the graph only after his RE-EXPORT, the 50-link
---     sample (N12 / file 02 #43) and the user's importer --apply.
+--   * The owner's links reach the graph only after his RE-EXPORT, the check of
+--     50 of HIS links (file 02 #43 / RAW[19]; the importer's dry run writes
+--     sample-50.tsv for it) and the user's importer --apply. (N12 / RAW[56] is
+--     a different sample: 50 articles of OUR automatic «إحالة», see
+--     scripts/library-ihala-sample.mjs.)
 --
 -- RUN
 --   docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 \
@@ -141,10 +146,16 @@ begin
                                          'articles', '[]'::jsonb, 'nodes', '[]'::jsonb);
   end if;
 
+  -- every article of the law, and the law itself (id '@law'): Q132's links
+  -- whose article could not be pinned, and law-to-law links, sit on it
   with arts as (
     select n.node_key
       from library_graph.nodes n
      where n.law_slug = p_law_slug and n.node_type = 'article'
+    union
+    select n.node_key
+      from library_graph.nodes n
+     where n.node_key = 'law:' || p_law_slug
   ),
   links as (
     select a.node_key as center, e.edge_type, 'out'::text as dir, e.target_key as other,
@@ -199,7 +210,7 @@ begin
     'articles', coalesce((
       select pg_catalog.jsonb_agg(
                pg_catalog.jsonb_build_object(
-                 'id', pg_catalog.substr(pa.center, 9),
+                 'id', case when pa.center like 'article:%' then pg_catalog.substr(pa.center, 9) else '@law' end,
                  'links', pa.links)
                order by pa.center)
         from per_article pa

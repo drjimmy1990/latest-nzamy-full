@@ -14,14 +14,17 @@
  *      items each. The list under each article and the side box then draw
  *      with no spinner.
  *      Fallback (the bulk function not installed yet, or it failed): the
- *      article's own list (?article=) once it comes near the screen, three
- *      requests at a time at most.
+ *      article's own list (?article=) once it has stayed on screen for 600 ms
+ *      (scrolling past asks nothing — these requests count toward the
+ *      library's public guard), three at a time at most, never twice.
  *   2. Under each article (ArticleRefsInline): a counter chip that folds and
  *      unfolds small cards grouped by the relation's words (إحالة، لائحة،
  *      مقابل ساري، استثناء…), three per group, then «عرض الكل (n)». Nothing
  *      at all when the article has no link.
  *   3. The side box (RefBox, desktop): the same sections and groups for the
- *      article in view.
+ *      article in view; under it LawRefsBox, the links on the whole law (an
+ *      owner link whose article could not be pinned — Q132 — and law-to-law
+ *      amendment / replacement), from the same answer.
  *   4. «عرض الكل» opens a dialog with one tab per section (it asks for the
  *      article's full list when the cache holds three per group only).
  *   5. Any item opens a TEXT PREVIEW first: the text alone, «نسخ», «إضافة
@@ -60,6 +63,7 @@ import {
 import type { CartEntry } from "@/components/laws/DraftDrawer";
 import { apiSlug } from "@/utils/apiSlug";
 import {
+  LAW_LINKS_ID,
   expandLawLinks,
   groupsOfRefs,
   type ArticleRefsOut,
@@ -151,10 +155,11 @@ function useBulk(lawSlug: string): BulkState | undefined {
 
 /** Per page view: an article seen twice is fetched once. */
 const refsCache = new Map<string, Refs>();
-/** The fallback asks at most three articles at a time. */
+/** The fallback asks at most three articles at a time, and one article once. */
 const MAX_PARALLEL = 3;
 let running = 0;
 const queue: Array<() => void> = [];
+const inflight = new Map<string, Promise<Refs>>();
 function pump() {
   while (running < MAX_PARALLEL && queue.length > 0) {
     running++;
@@ -162,7 +167,10 @@ function pump() {
   }
 }
 function fetchArticleRefs(lawSlug: string, articleId: string): Promise<Refs> {
-  return new Promise<Refs>((resolve, reject) => {
+  const id = `${lawSlug}|${articleId}`;
+  const pending = inflight.get(id);
+  if (pending) return pending;
+  const p = new Promise<Refs>((resolve, reject) => {
     queue.push(() => {
       fetch(`/api/library/laws/${apiSlug(lawSlug)}/citations?article=${encodeURIComponent(articleId)}`)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -170,11 +178,14 @@ function fetchArticleRefs(lawSlug: string, articleId: string): Promise<Refs> {
         .catch(reject)
         .finally(() => {
           running--;
+          inflight.delete(id);
           pump();
         });
     });
     pump();
   });
+  inflight.set(id, p);
+  return p;
 }
 
 type LoadState = { status: "idle" | "loading" | "done" | "failed"; data?: Refs };
@@ -495,20 +506,15 @@ export function ArticleRefsInline({ articleId }: { articleId: string }) {
   const [open, setOpen] = useState(true);
   const bulk = useBulk(ctx?.lawSlug ?? "");
   const needsNear = !!ctx && (bulk?.status === "unavailable" || bulk?.status === "failed");
-  // Fallback only: ask for this article's list once it comes near the screen.
+  // Fallback only: ask for this article's list while it is on screen (and
+  // after 600 ms there), so scrolling through a long law asks nothing.
   useEffect(() => {
-    if (!needsNear || near || !box.current) return;
-    if (typeof IntersectionObserver === "undefined") {
-      setNear(true);
-      return;
-    }
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setNear(true);
-    }, { rootMargin: "600px 0px" });
+    if (!needsNear || !box.current || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => setNear(entries.some((e) => e.isIntersecting)));
     io.observe(box.current);
     return () => io.disconnect();
-  }, [needsNear, near]);
-  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, { enabled: near });
+  }, [needsNear]);
+  const state = useArticleRefs(ctx?.lawSlug ?? "", ctx ? articleId : null, { enabled: near, delayMs: 600 });
   const total = linkCount(state);
   if (!ctx) return null;
   const { isDark } = ctx;
@@ -568,6 +574,32 @@ export function RefBox({ articleId }: { articleId: string | null }) {
   );
 }
 
+/**
+ * Q132 (batch l12): the links on the whole law — an owner link whose article
+ * could not be pinned opens the law, so it is listed here, with the law's own
+ * amendment / replacement links. From the bulk answer only; nothing when the
+ * law has none (or before 20261202_30).
+ */
+export function LawRefsBox() {
+  const ctx = useRefBox();
+  const bulk = useBulk(ctx?.lawSlug ?? "");
+  const data = useMemo<Refs | null>(
+    () => (bulk?.status === "done" ? { available: true, ...expandLawLinks(bulk.data, LAW_LINKS_ID) } : null),
+    [bulk],
+  );
+  if (!ctx || !data || !data.available || !data.found) return null;
+  const { isDark } = ctx;
+  return (
+    <div className={`p-3.5 rounded-2xl border print:hidden ${isDark ? "bg-zinc-900 border-white/[0.07]" : "bg-white border-slate-200 shadow-sm"}`}>
+      <h3 className={`mb-2.5 flex items-center gap-1.5 text-xs font-black ${isDark ? "text-zinc-300" : "text-slate-600"}`}>
+        <LinkSimple size={14} className="text-[#C8A762]" />
+        <span className="flex-1">روابط النظام كله</span>
+      </h3>
+      <RefGroups ctx={ctx} articleId={LAW_LINKS_ID} data={data} max={2} />
+    </div>
+  );
+}
+
 // ─── «عرض الكل»: tabs per section ────────────────────────────────────────────
 
 function Modal({ isDark, label, onClose, children, wide }: { isDark: boolean; label: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
@@ -605,7 +637,8 @@ function RefAllDialog({ ctx, articleId, initialTab, onClose }: { ctx: RefBoxCont
     <Modal isDark={isDark} label="كل الإحالات المرتبطة" onClose={onClose} wide>
       <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? "border-white/10" : "border-slate-200"}`}>
         <span className={`text-sm font-bold ${isDark ? "text-white" : "text-[#0B3D2E]"}`}>
-          الإحالات المرتبطة <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{ctx.articleLabel(articleId)}</span>
+          {articleId === LAW_LINKS_ID ? "روابط النظام كله" : "الإحالات المرتبطة"}{" "}
+          <span className={`text-[11px] ${isDark ? "text-zinc-500" : "text-slate-400"}`}>{articleId === LAW_LINKS_ID ? "" : ctx.articleLabel(articleId)}</span>
         </span>
         <button type="button" onClick={onClose} aria-label="إغلاق" className={`flex h-11 w-11 items-center justify-center rounded-xl ${isDark ? "text-zinc-400 hover:bg-white/10" : "text-slate-500 hover:bg-slate-100"}`}>
           <X size={18} weight="bold" />

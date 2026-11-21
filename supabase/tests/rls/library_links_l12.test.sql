@@ -241,6 +241,12 @@ begin
      or exists (select 1 from jsonb_array_elements(a->'links') x where x->>'t' = 'NEXT_ARTICLE') then
     raise exception 'T6 FAIL: the asked types only: %', a->'links';
   end if;
+  -- Q132: the links whose article could not be pinned sit on the law itself ('@law')
+  select x into a from jsonb_array_elements(r->'articles') x where x->>'id' = '@law';
+  if a is null or not exists (select 1 from jsonb_array_elements(a->'links') x
+                               where x->>'t' = 'INTERPRETS_ARTICLE' and x->>'d' = 'in' and (x->>'n')::int = 2) then
+    raise exception 'T6 FAIL: the law''s own links (principle → law) are %', a;
+  end if;
   select x into n from jsonb_array_elements(r->'nodes') x where x->>'node_key' = 'article:law-b__art-gone';
   if n->'lib'->>'anchor' <> 'false' or n->'lib'->>'doc' <> 'true' or n->'lib'->>'doc_status' <> 'repealed' then
     raise exception 'T6 FAIL: the gone article''s library state is %', n;
@@ -259,7 +265,7 @@ begin
     raise exception 'T6 FAIL: an unknown law has no links';
   end if;
   reset role;
-  raise notice 'T6 PASS: one read per law — true totals, three closest items per group, each node once with its library state, asked types only, no text';
+  raise notice 'T6 PASS: one read per law (its articles and the law itself) — true totals, three closest items per group, each node once with its library state, asked types only, no text';
 end $$;
 
 -- ── T7 ب34: the broken-reference check ───────────────────────────────────────
