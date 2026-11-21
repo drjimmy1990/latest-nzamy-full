@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import BetaReviewGate from "@/components/BetaReviewGate";
 import {
-  FileText, WarningCircle, Copy, Check, Scales,
+  FileText, WarningCircle, Copy, Check, Gavel,
   MagicWand, Spinner, ArrowsLeftRight, CheckCircle, Warning, Sparkle
 } from "@phosphor-icons/react";
 import AiResultActions from "@/components/AiResultActions";
@@ -134,7 +134,7 @@ export function ResultView({ isDark, docAName, docBName }: { isDark: boolean; do
             <div className={`${card} p-5 space-y-4`}>
               <div className="flex items-center gap-2.5">
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDark ? "bg-[#C8A762]/10" : "bg-amber-50"}`}>
-                  <Scales size={17} weight="duotone" className="text-[#C8A762]" />
+                  <Gavel size={17} weight="duotone" className="text-[#C8A762]" />
                 </div>
                 <p className={`text-[15px] font-bold ${isDark ? "text-white" : "text-zinc-900"}`}>الحكم المقارن</p>
               </div>

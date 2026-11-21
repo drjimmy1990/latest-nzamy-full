@@ -38,7 +38,7 @@ export const LAWYER_SIDEBAR: SidebarGroup[] = [
       { label: "المجمّع البحثي",   labelEn: "Research Collector",       href: "/ai/collector",    icon: "Tray",         badge: "جديد" },
       { label: "محترف العقود",      labelEn: "Contract Pro",             href: "/ai/contracts",     icon: "FileText" },
       // ٣: الاستراتيجية — للقضايا الكبيرة
-      { label: "المحاكي الشامل",   labelEn: "Litigation Studio",        href: "/ai/wargaming",     icon: "Scales",       divider: true, badge: "مُدمَج" },
+      { label: "المحاكي الشامل",   labelEn: "Litigation Studio",        href: "/ai/wargaming",     icon: "Gavel",       divider: true, badge: "مُدمَج" },
       { label: "الرأي الفصل",       labelEn: "Al-Ra'y Al-Fasl",          href: "/ai/legal-opinion", icon: "Lightbulb" },
       // ٤: المساعدة والمتابعة
       { label: "السكرتير الذكي",    labelEn: "AI Secretary",             href: "/ai/secretary",     icon: "Robot",        divider: true, badge: "قريباً" },
@@ -267,7 +267,7 @@ export const FIRM_SIDEBAR: SidebarGroup[] = [
       { label: "الرأي الفصل",           labelEn: "Al-Ra'y Al-Fasl", href: "/ai/legal-opinion",    icon: "Lightbulb" },
       { label: "منقح ناجز",             labelEn: "Najiz Optimizer",  href: "/ai/najiz-optimizer",  icon: "Broom",        badge: "جديد" },
       // ③ التحليل والاستراتيجية
-      { label: "المحاكي الشامل للقضايا",labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Scales",       divider: true, badge: "مُدمَج" },
+      { label: "المحاكي الشامل للقضايا",labelEn: "Litigation Studio", href: "/ai/wargaming",        icon: "Gavel",       divider: true, badge: "مُدمَج" },
       // ④ البحث والمراقبة
       { label: "المرشد القضائي",        labelEn: "Court Guide",      href: "/ai/procedures",       icon: "MapTrifold",   divider: true },
       { label: "راصد التشريعات",        labelEn: "Law Monitor",      href: "/ai/monitor",          icon: "Bell" },

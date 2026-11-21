@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Robot, PaperPlaneTilt, Microphone, Stop, Copy, Check,
-  ArrowsClockwise, BookOpen, Gavel, FileText, Scales,
-  DownloadSimple, Sparkle, ArrowLeft, X, CaretDown,
+  ArrowsClockwise, BookOpen, Gavel, FileText, DownloadSimple, Sparkle, ArrowLeft, X, CaretDown,
   ChatsCircle, ClockCounterClockwise, Trash, MicrophoneSlash,
   Lightbulb, ShieldCheck, Warning,
 } from "@phosphor-icons/react";
@@ -53,7 +52,7 @@ const CONTEXTS: { id: Context; label: string; icon: React.ElementType }[] = [
 ];
 
 const QUICK_PROMPTS: QuickPrompt[] = [
-  { icon: Scales,    label: "تحليل قانوني",  text: "حلل الوضع القانوني لتقصير صاحب العمل في صرف الراتب بعد إنذار رسمي.",       color: "text-blue-400"    },
+  { icon: Gavel,    label: "تحليل قانوني",  text: "حلل الوضع القانوني لتقصير صاحب العمل في صرف الراتب بعد إنذار رسمي.",       color: "text-blue-400"    },
   { icon: FileText,  label: "صياغة",          text: "اكتب بنوداً احترازية لعقد إيجار تجاري لحماية المؤجر عند التأخر في السداد.", color: "text-emerald-400"  },
   { icon: Gavel,     label: "استراتيجية",    text: "ما أفضل استراتيجية للدفاع في قضية فسخ عقد عمل دون سبب مشروع؟",            color: "text-amber-400"   },
   { icon: BookOpen,  label: "بحث قانوني",    text: "ابحث في أحكام نظام الشركات السعودي بشأن مسؤولية أعضاء مجلس الإدارة.",     color: "text-purple-400"  },

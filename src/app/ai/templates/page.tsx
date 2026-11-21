@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, MagnifyingGlass, Sparkle, ArrowLeft,
   FileText, Seal, ChatCircleText, FileMagnifyingGlass,
-  BookmarksSimple, Scales, ShieldCheck, Buildings,
+  BookmarksSimple, Gavel, ShieldCheck, Buildings,
   Users, Brain, Clock, Download, ArrowUpRight,
   FunnelSimple, X, Crown,
 } from "@phosphor-icons/react";

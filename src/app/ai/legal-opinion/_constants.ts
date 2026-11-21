@@ -1,5 +1,5 @@
 import {
-  Lightbulb, BookOpen, MagnifyingGlass, Scales,
+  Lightbulb, BookOpen, MagnifyingGlass, Gavel,
   FileText, Sparkle, Brain, Globe,
   Database, Funnel, Warning, PencilSimple,
   ChartBar, Envelope, UserFocus,
@@ -33,7 +33,7 @@ export const OUTPUT_TYPES: {
     audience: "محامون · مستشارون · شركات",
   },
   {
-    id: "legal-memo", icon: Scales, title: "مذكرة رأي", titleEn: "Legal Memo",
+    id: "legal-memo", icon: Gavel, title: "مذكرة رأي", titleEn: "Legal Memo",
     desc: "Legal Memo رسمية مع التوصيات والأساس النظامي الكامل",
     depth: "deep", steps: ["type", "context", "settings", "submit"],
     color: "text-[#C8A762]", bg: "bg-[#C8A762]/10", border: "border-[#C8A762]/30",
@@ -173,7 +173,7 @@ export const MOCK_RESULT = {
 // ─── Letter Constants ───────────────────────────────────────────────────────────
 
 export const LETTER_TYPES: { id: string; label: string; Icon: React.ElementType }[] = [
-  { id: "warning",     label: "إنذار قانوني",                 Icon: Scales },
+  { id: "warning",     label: "إنذار قانوني",                 Icon: Gavel },
   { id: "termination", label: "إخطار بفسخ عقد / إنهاء علاقة", Icon: Prohibit },
   { id: "demand",      label: "مطالبة مالية وسداد مستحقات",  Icon: Coins },
   { id: "eviction",    label: "إشعار إخلاء عقار",             Icon: Warning },

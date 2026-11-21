@@ -4,7 +4,7 @@ import GatedToolScreen from "@/components/GatedToolScreen";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Gavel, Scales, MagnifyingGlass, FileText,
+  Gavel, MagnifyingGlass, FileText,
   ArrowLeft, ArrowRight, Sparkle, BookOpen,
   CheckCircle, Warning, CircleNotch, Copy,
   Download, ShareNetwork
@@ -204,7 +204,7 @@ ${weighingReason ? `أسباب الترجيح:\n${weighingReason}` : ""}
             {/* Laws */}
             <div className="space-y-1.5">
               <label className="text-[12px] font-semibold text-zinc-400 flex items-center gap-1.5">
-                <Scales size={13} /> النصوص النظامية للاستناد إليها (اختياري)
+                <Gavel size={13} /> النصوص النظامية للاستناد إليها (اختياري)
               </label>
               <textarea value={lawsText} onChange={e => setLawsText(e.target.value)} rows={2}
                 placeholder="مثال: المادة 30 من نظام الإجراءات الجزائية..."

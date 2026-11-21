@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Gavel, Buildings, Shield, Scales, ClipboardText,
+  Gavel, Buildings, Shield, ClipboardText,
   Copy, Check, Envelope,
 } from "@phosphor-icons/react";
 import { copyToClipboard } from "@/lib/services/publicProfileLink";
@@ -151,7 +151,7 @@ export const PROCEDURE_STEPS: Record<string, { title: string; description: strin
 export const COURTS_LIST = [
   { id: "commercial", name: "المحكمة التجارية", icon: Buildings, color: "text-blue-500", bg: "bg-blue-500/10" },
   { id: "labor", name: "المحكمة العمالية", icon: Shield, color: "text-emerald-500", bg: "bg-emerald-500/10" },
-  { id: "civil", name: "المحكمة العامة", icon: Scales, color: "text-violet-500", bg: "bg-violet-500/10" },
+  { id: "civil", name: "المحكمة العامة", icon: Gavel, color: "text-violet-500", bg: "bg-violet-500/10" },
   { id: "appeal", name: "محكمة الاستئناف", icon: Gavel, color: "text-amber-500", bg: "bg-amber-500/10" },
   { id: "admin", name: "المحكمة الإدارية", icon: ClipboardText, color: "text-purple-500", bg: "bg-purple-500/10" },
 ];

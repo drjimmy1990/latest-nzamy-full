@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowSquareOut, BookOpen, Scales } from "@phosphor-icons/react";
+import { ArrowSquareOut, BookOpen, Gavel } from "@phosphor-icons/react";
 import ModalShell from "@/components/ui/ModalShell";
 import { statusPill } from "@/lib/ai/citationStatus";
 import { mentionLookupUrl, readMentionLookup, splitAnswer, type AnswerPart, type MentionLookup } from "@/lib/ai/answerMentions";
@@ -134,7 +134,7 @@ function CitationSheet({ cite, n, isDark, onClose }: { cite: Citation; n: number
   // The live library status wins; the one stored with the run stands in until it arrives.
   const status = preview ? preview.status : cite.status;
   const muted = isDark ? "text-zinc-400" : "text-zinc-500";
-  const KindIcon = cite.kind === "principle" ? Scales : BookOpen;
+  const KindIcon = cite.kind === "principle" ? Gavel : BookOpen;
 
   return (
     <ModalShell
@@ -423,7 +423,7 @@ export function SourceList({ cites, isDark, compact = false, startAt = 1 }: { ci
             >
               <span className={`mt-0.5 font-black ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>{i + startAt}</span>
               {c.kind === "principle" ? (
-                <Scales size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-amber-500" />
+                <Gavel size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-amber-500" />
               ) : (
                 <BookOpen size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-blue-500" />
               )}

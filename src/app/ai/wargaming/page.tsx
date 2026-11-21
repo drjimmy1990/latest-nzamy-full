@@ -2,9 +2,8 @@
 import { motion, AnimatePresence } from "framer-motion";
 import React, { useState, useRef } from "react";
 import {
-  Sword, Scales, Brain, SpeakerHigh, MagnifyingGlass,
-  FileArrowUp, X, FileText, HandFist, Gavel,
-  Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft,
+  Sword, Gavel, Brain, SpeakerHigh, MagnifyingGlass,
+  FileArrowUp, X, FileText, HandFist, Buildings, User, UserFocus, Briefcase, Notebook, ArrowLeft,
   Check, CaretDown, Warning, ArrowsCounterClockwise,
   Spinner, PaperPlaneTilt, Sparkle,
 } from "@phosphor-icons/react";
@@ -56,7 +55,7 @@ interface CaseContext {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const SIM_TARGETS: { id: SimTarget; label: string; sub: string; icon: typeof Sword; color: string; grad: string }[] = [
   { id:"opponent", label:"محاكاة الخصم",    sub:"هجماته ودفوعه المتوقعة",     icon:HandFist,        color:"text-red-400",    grad:"from-red-700 to-red-500"     },
-  { id:"court",    label:"اتجاه المحكمة",  sub:"ما ستفحصه المحكمة وأسئلتها",  icon:Scales,          color:"text-amber-400",  grad:"from-amber-600 to-amber-400" },
+  { id:"court",    label:"اتجاه المحكمة",  sub:"ما ستفحصه المحكمة وأسئلتها",  icon:Gavel,          color:"text-amber-400",  grad:"from-amber-600 to-amber-400" },
   { id:"critique", label:"نقض المذكرة",    sub:"ثغرات كاشف الصياغة",           icon:MagnifyingGlass, color:"text-purple-400", grad:"from-purple-700 to-purple-500"},
   { id:"plea",     label:"تدريب المرافعة", sub:"سكريبت وأداء الجلسة",          icon:SpeakerHigh,     color:"text-blue-400",   grad:"from-blue-700 to-blue-500"   },
 ];

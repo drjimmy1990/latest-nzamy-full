@@ -101,7 +101,7 @@ export const ARBITRATOR_SIDEBAR: SidebarGroup[] = [
   {
     title: "قضايا التحكيم", titleEn: "Arbitration Cases",
     items: [
-      { label: "كل القضايا",       labelEn: "All Cases",      href: "/dashboard/provider/arbitration/cases",    icon: "Scales",        badge: "قريباً" },
+      { label: "كل القضايا",       labelEn: "All Cases",      href: "/dashboard/provider/arbitration/cases",    icon: "Gavel",        badge: "قريباً" },
       { label: "جلسات التحكيم",   labelEn: "Hearings",       href: "/dashboard/provider/arbitration/hearings",  icon: "CalendarCheck", badge: "قريباً" },
       { label: "الأطراف والوكلاء",labelEn: "Parties",        href: "/dashboard/provider/arbitration/parties",   icon: "Users", badge: "قريباً" },
       { label: "مذكرات وملفات",   labelEn: "Memos & Files",  href: "/dashboard/provider/arbitration/files",     icon: "FolderOpen", badge: "قريباً" },
@@ -188,7 +188,7 @@ export const ARBITRATOR_ADDON_SECTIONS: SidebarGroup[] = [
     collapsible: true,
     defaultOpen: false,   // مطوية بالافتراضي — تفتحها عند الحاجة
     items: [
-      { label: "قضايا التحكيم",     labelEn: "Arb. Cases",        href: "/dashboard/provider/arbitration/cases",    icon: "Scales",       badge: "قريباً" },
+      { label: "قضايا التحكيم",     labelEn: "Arb. Cases",        href: "/dashboard/provider/arbitration/cases",    icon: "Gavel",       badge: "قريباً" },
       { label: "جلسات التحكيم",    labelEn: "Arb. Hearings",     href: "/dashboard/provider/arbitration/hearings", icon: "CalendarCheck",  badge: "قريباً" },
       { label: "صياغة حكم تحكيم",   labelEn: "Draft Arb. Award",  href: "/ai/draft?mode=arbitration",                icon: "Robot",         badge: "AI" },
     ],

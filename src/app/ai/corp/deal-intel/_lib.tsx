@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChartLine, ShieldWarning, Buildings, Handshake,
-  CheckCircle, CaretDown, CaretUp, Warning, Scales,
+  CheckCircle, CaretDown, CaretUp, Warning, Gavel,
   Lightbulb, Globe, TrendUp, Newspaper, Bank,
   FileText, ArrowRight, DownloadSimple, Copy, Check,
   Sparkle, ShareNetwork, Spinner, MagnifyingGlass,
@@ -26,7 +26,7 @@ export const PARTY_TYPES = ["شركة خاصة", "شركة مدرجة", "فرد 
 
 export interface Dimension { id: string; icon: React.ElementType; label: string; desc: string; }
 export const DIMENSIONS: Dimension[] = [
-  { id: "legal",        icon: Scales,         label: "التحليل القانوني والامتثال",         desc: "النصوص النظامية + البنود الإلزامية + الرأي القانوني" },
+  { id: "legal",        icon: Gavel,         label: "التحليل القانوني والامتثال",         desc: "النصوص النظامية + البنود الإلزامية + الرأي القانوني" },
   { id: "commercial",   icon: ChartLine,       label: "الجدوى التجارية والمالية",           desc: "مؤشرات الجدوى + معدلات السوق + التدفق النقدي" },
   { id: "risk",         icon: ShieldWarning,   label: "المخاطر والفجوات",                   desc: "مصفوفة مخاطر مُصنَّفة + حلول مقترحة" },
   { id: "regulatory",   icon: Buildings,       label: "متطلبات التراخيص والجهات الرقابية", desc: "التراخيص المطلوبة + الإجراءات + الجدول الزمني" },
@@ -51,7 +51,7 @@ export const VERDICT_STYLE: Record<Verdict, { Icon: React.ElementType; label: st
 
 export const MOCK_REPORT = {
   legal: {
-    icon: Scales, color: "text-blue-500", title: "التحليل القانوني والامتثال",
+    icon: Gavel, color: "text-blue-500", title: "التحليل القانوني والامتثال",
     texts: [
       { ref: "نظام التجارة السعودي — المادة (١٤)", body: "يُشترط توثيق عقد الشراكة التجارية لدى الغرفة التجارية وإفصاح بنود الربح والخسارة بشكل صريح." },
       { ref: "نظام الشركات — المادة (٢٢٢)", body: "يجب تضمين الاتفاقية آلية فض النزاعات، ويُنصح بالاتفاق على التحكيم وفق نظام التحكيم السعودي لتسريع الفصل." },

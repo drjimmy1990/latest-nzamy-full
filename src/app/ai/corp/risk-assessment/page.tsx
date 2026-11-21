@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldWarning, CaretLeft, CheckCircle, Warning, XCircle, ArrowRight,
   Download, Buildings, MagnifyingGlass, Handshake, FileText, ArrowCounterClockwise,
-  Scales
+  Gavel
 } from "@phosphor-icons/react";
 import Link from "next/link";
 import LawyerToolLink from "@/components/ai/LawyerToolLink";
@@ -313,7 +313,7 @@ function SupplierRiskAssessmentInnerDemo() {
                     <Buildings size={16} /> العودة إلى لوحة الشركة
                   </Link>
                   <LawyerToolLink href="/ai/contracts" className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-[#0B3D2E] text-white text-[12px] font-bold shadow-md hover:bg-[#0B3D2E]/90 transition-all`}>
-                    <Scales size={16} /> الانتقال لصياغة العقد استناداً للتحليل
+                    <Gavel size={16} /> الانتقال لصياغة العقد استناداً للتحليل
                   </LawyerToolLink>
                 </div>
 

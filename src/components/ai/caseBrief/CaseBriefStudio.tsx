@@ -4,10 +4,9 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CloudArrowUp, X, Robot, FileMagnifyingGlass, Warning,
-  CheckCircle, ArrowSquareOut, Scales, BookOpen, Clock,
+  CheckCircle, ArrowSquareOut, Gavel, BookOpen, Clock,
   SealWarning, Lightbulb, ChatCircleDots,
-  FileText, PencilSimple, MagnifyingGlass, Brain, Gavel,
-  ListChecks, Copy, UserCircle, CurrencyCircleDollar, UsersThree,
+  FileText, PencilSimple, MagnifyingGlass, Brain, ListChecks, Copy, UserCircle, CurrencyCircleDollar, UsersThree,
 } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import AiResultActions from "@/components/AiResultActions";
@@ -88,7 +87,7 @@ function asBrief(output: Record<string, unknown> | null): BriefResult | null {
 
 const RELATED_TOOLS = [
   { id: "draft", href: "/ai/draft", label: "الصائغ القانوني", desc: "صياغة مذكرات ولوائح", icon: PencilSimple },
-  { id: "wargaming", href: "/ai/wargaming", label: "محاكي القضايا", desc: "تقييم قوة الموقف", icon: Scales },
+  { id: "wargaming", href: "/ai/wargaming", label: "محاكي القضايا", desc: "تقييم قوة الموقف", icon: Gavel },
   { id: "legal-opinion", href: "/ai/legal-opinion", label: "الرأي الفصل", desc: "دراسة قانونية معمّقة", icon: Brain },
   { id: "quick-answer", href: "/ai/quick-answer", label: "المجيب السريع", desc: "سؤال قانوني فوري", icon: ChatCircleDots },
   { id: "brief-check", href: "/ai/brief-check", label: "فاحص المذكرات", desc: "فحص المذكرة الجاهزة", icon: FileMagnifyingGlass },

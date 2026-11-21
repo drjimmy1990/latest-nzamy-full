@@ -4,7 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentT
 import Link from "next/link";
 import {
   ArrowRight, BookOpen, CaretDown, CaretLeft, Certificate, Check, Copy, HandCoins, HardHat,
-  Info, MagnifyingGlass, PencilLine, Scales, Siren, Storefront, Users, Warning, X,
+  Info, MagnifyingGlass, PencilLine, Gavel, Siren, Storefront, Users, Warning, X,
 } from "@phosphor-icons/react";
 import { Hl } from "@/components/search/MultiColorHighlight";
 import { toArabicDigits } from "@/lib/services/arabicCount";
@@ -56,7 +56,7 @@ const COURT_ICONS: readonly [RegExp, Icon][] = [
   [/التجارية/, Storefront],
   [/العمالية/, HardHat],
   [/الجزائية/, Siren],
-  [/العامة/, Scales],
+  [/العامة/, Gavel],
   [/التنفيذ/, HandCoins],
   [/الإنهاءات/, Certificate],
 ];

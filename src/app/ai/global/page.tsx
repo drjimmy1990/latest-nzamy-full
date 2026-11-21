@@ -20,7 +20,7 @@
  */
 
 import { useState } from "react";
-import { Globe, Gavel, Scales } from "@phosphor-icons/react";
+import { Globe, Gavel } from "@phosphor-icons/react";
 import { useTheme } from "@/components/ThemeProvider";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 
@@ -36,7 +36,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType; soon: string }[
   {
     id: "legislation",
     label: "التشريعات المقارنة",
-    icon: Scales,
+    icon: Gavel,
     soon: "مقارنة التشريعات بين الأنظمة السعودية وأنظمة الدول الأخرى قيد الإعداد والربط بمصادرها الرسمية، ولا توجد نتائج حقيقية لعرضها بعد.",
   },
 ];
