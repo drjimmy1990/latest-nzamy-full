@@ -15,11 +15,18 @@ import type { RouteReply } from "@/lib/ai/runCore";
  * The per-account library lock is not applied: it never applies to the drafter tools
  * (runs/route.ts, owner item 9.7), and the library assistant is not offered through this door.
  */
-export async function extLibraryAccess(userId: string, toolId: string): Promise<RouteReply | null> {
+/** The library's closed switch for a token caller: null = open (or an admin), else the refusal. */
+export async function extLibraryClosed(userId: string): Promise<RouteReply | null> {
   const state = await getLibraryStatus();
   if (state.closed && !(await isPlatformAdmin(userId))) {
     return { status: 503, body: { error: state.message || LIBRARY_CLOSED_DEFAULT_MESSAGE, code: "library_closed" } };
   }
+  return null;
+}
+
+export async function extLibraryAccess(userId: string, toolId: string): Promise<RouteReply | null> {
+  const closed = await extLibraryClosed(userId);
+  if (closed) return closed;
   const reads = libraryAiReads(toolId);
   const [tier, isAdmin, founderMember, libraryGrant] = await Promise.all([
     getUserTier(userId),
