@@ -80,15 +80,14 @@ test("Q112: the admin write accepts only the office roles and a boolean", () => 
   assert.match(route, /  firm_case_scope: firmCaseScopeIssue,\n/);
 });
 
-test("file 05 #28: the case page admits every role the database lets read its assigned cases", () => {
-  for (const role of firmCaseScopedRoles()) {
-    const pageOpen = getFirmRouteDecision("/dashboard/firm/cases", role as never).allowed;
-    // office_admin and hr_manager have no case page; every other narrowed role opens it and sees its own
-    if (role === "office_admin" || role === "hr_manager") continue;
-    assert.equal(pageOpen, true, role);
-  }
-  assert.equal(getFirmRouteDecision("/dashboard/firm/cases", "trainee").allowed, true);
+test("file 05 #28: the case pages and the database agree — narrowed roles on the page see their own; no page for the finance manager", () => {
+  // the compliance manager and the secretary open the cases page; RLS shows them their assigned cases only
+  assert.equal(getFirmRouteDecision("/dashboard/firm/cases", "compliance_manager").allowed, true);
+  assert.equal(firmRoleSeesAssignedCasesOnly("compliance_manager"), true);
+  assert.equal(getFirmRouteDecision("/dashboard/firm/cases", "legal_secretary").allowed, true);
   assert.equal(getFirmRouteDecision("/dashboard/firm/cases", "finance_manager").allowed, false);
+  // the trainee stays off the cases page (it is also the list of who may hand a case to a guest, 20261025_32)
+  assert.equal(getFirmRouteDecision("/dashboard/firm/cases", "trainee").allowed, false);
   assert.equal(getFirmRouteDecision("/dashboard/firm/documents", "trainee").allowed, true);
 });
 

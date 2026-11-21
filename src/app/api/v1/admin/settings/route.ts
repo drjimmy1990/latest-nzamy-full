@@ -99,12 +99,6 @@ const ALLOWED_SETTINGS_KEYS = [
   // site_assistant — the «مساعد نظامي» widget). Read on the server, cached
   // one minute; the page posts the whole object.
   "feature_flags",
-  // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
-  // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
-  // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
-  // the footer, the Organization JSON-LD and /llms.txt.
-  "license_number",
-  "license_issuer",
   // Batch l12 firm (20261202_80): {"assigned_only_roles": [office roles],
   // "finance_manager_no_cases": bool} — which firm roles see only their
   // assigned cases (Q112; src/lib/firm/firmCaseScope.ts, read by the RLS);
@@ -112,6 +106,12 @@ const ALLOWED_SETTINGS_KEYS = [
   // {"gb": n, "alert_pct": n} — the founder's internal storage fair use (N21;
   // src/lib/membership/founderStorage.ts). Never shown on a marketing page.
   "founder_storage_fair_use",
+  // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
+  // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
+  // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
+  // the footer, the Organization JSON-LD and /llms.txt.
+  "license_number",
+  "license_issuer",
 ] as const;
 
 /**
