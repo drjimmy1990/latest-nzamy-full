@@ -65,12 +65,12 @@ const MAX_REDEEM_ATTEMPTS = 5;
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
+  if (libraryLocked) return libraryLocked;
   // Owner ٩٣ (batch l12): library invitation codes are stopped — no redeem at all.
   if (LIBRARY_INVITES_CLOSED) {
     return NextResponse.json(libraryInvitesClosedBody(), { status: LIBRARY_INVITES_CLOSED_STATUS });
   }
-  const libraryLocked = await libraryAccountGate(); // owner item 9 (batch l8)
-  if (libraryLocked) return libraryLocked;
   const auth = await assertRole();
   if (!auth.ok) return auth.response;
   const userId = auth.user.id;

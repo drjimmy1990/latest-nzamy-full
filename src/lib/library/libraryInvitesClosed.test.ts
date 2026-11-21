@@ -28,7 +28,7 @@ test("the doors are shut: 410 with an Arabic reason and a machine code", () => {
 
 test("every invitation route answers the closed body before it reads or writes anything", () => {
   const cases: Array<[string[], string]> = [
-    [["app", "api", "v1", "library", "invitations", "redeem", "route.ts"], "libraryAccountGate()"],
+    [["app", "api", "v1", "library", "invitations", "redeem", "route.ts"], "await assertRole()"],
     [["app", "api", "v1", "admin", "library-invitations", "route.ts"], "await request.json()"],
     [["app", "api", "v1", "invite", "[code]", "accept", "route.ts"], "await params"],
   ];
