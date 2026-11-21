@@ -4,8 +4,10 @@
  * comes back (the browser's back button, a link out and back, a reload).
  *
  *   - Where: sessionStorage, one value per field, under
- *     `nzamy:tool-step:<tool>:<field>` with the time it was saved. This tab
- *     only, gone when the tab closes; nothing is sent anywhere.
+ *     `nzamy:tool-step:<user>:<tool>:<field>` with the time it was saved. This
+ *     tab only, gone when the tab closes; nothing is sent anywhere. The user id
+ *     is part of the key: another account signed in on the same tab never
+ *     reads what the previous one typed.
  *   - How long: STEP_STATE_MAX_AGE_MS; an older value is dropped.
  *   - What: JSON values only. A File, a run's result or a charged run is never
  *     kept: a restored screen shows the form as typed and never starts a run by
@@ -26,13 +28,13 @@ export type StepStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 const PART = /^[a-z0-9][a-z0-9-]{0,63}$/i;
 
-export function stepStateKey(tool: string, field: string): string | null {
-  return PART.test(tool) && PART.test(field) ? `${STEP_STATE_PREFIX}${tool}:${field}` : null;
+export function stepStateKey(user: string, tool: string, field: string): string | null {
+  return PART.test(user) && PART.test(tool) && PART.test(field) ? `${STEP_STATE_PREFIX}${user}:${tool}:${field}` : null;
 }
 
 /** The kept value, or `undefined` when nothing usable is kept (missing, stale, broken, blocked). */
-export function loadStepValue(storage: StepStorage | null | undefined, tool: string, field: string, nowMs: number): unknown {
-  const key = stepStateKey(tool, field);
+export function loadStepValue(storage: StepStorage | null | undefined, user: string, tool: string, field: string, nowMs: number): unknown {
+  const key = stepStateKey(user, tool, field);
   if (!storage || !key) return undefined;
   try {
     const raw = storage.getItem(key);
@@ -50,8 +52,8 @@ export function loadStepValue(storage: StepStorage | null | undefined, tool: str
 }
 
 /** Keep `value`; false when it cannot be kept (not JSON, too large, blocked). */
-export function saveStepValue(storage: StepStorage | null | undefined, tool: string, field: string, value: unknown, nowMs: number): boolean {
-  const key = stepStateKey(tool, field);
+export function saveStepValue(storage: StepStorage | null | undefined, user: string, tool: string, field: string, value: unknown, nowMs: number): boolean {
+  const key = stepStateKey(user, tool, field);
   if (!storage || !key || value === undefined) return false;
   try {
     const raw = JSON.stringify({ savedAt: nowMs, value });
@@ -67,10 +69,10 @@ export function saveStepValue(storage: StepStorage | null | undefined, tool: str
 }
 
 /** Forget every kept field of one tool (a «new draft» / reset). */
-export function clearStepState(storage: StepStorage | null | undefined, tool: string, fields: readonly string[]): void {
+export function clearStepState(storage: StepStorage | null | undefined, user: string, tool: string, fields: readonly string[]): void {
   if (!storage) return;
   for (const field of fields) {
-    const key = stepStateKey(tool, field);
+    const key = stepStateKey(user, tool, field);
     if (!key) continue;
     try {
       storage.removeItem(key);

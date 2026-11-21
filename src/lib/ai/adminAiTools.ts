@@ -22,9 +22,15 @@ import type { SidebarGroup, SidebarItem } from "../../constants/navigation.types
 /** The two tools the owner puts first for the admin, in his order. */
 export const ADMIN_AI_FIRST: readonly string[] = ["/ai/draft", "/ai/contracts"];
 
-/** Is this a resolved admin session (the only one the admin display applies to)? */
-export function adminSeesTool(loading: boolean, userType: string | null | undefined): boolean {
-  return !loading && userType === "admin";
+/**
+ * Does the admin display apply? A real admin, not previewing a role's limits
+ * («محاكاة القيود», adminSimulation.ts: then he must see what that role sees),
+ * and working in the lawyer or the firm workspace (an admin drawn as an
+ * individual or a company sees that account's tools). The hook is
+ * src/hooks/useAdminToolsView.ts.
+ */
+export function adminToolsShown(realAdmin: boolean, bypassesUiGates: boolean, drawnView: string | null | undefined): boolean {
+  return realAdmin && bypassesUiGates && (drawnView === "lawyer" || drawnView === "firm");
 }
 
 /** The admin's order: the drafter, then محترف العقود, then the rest as listed. Stable. */
@@ -81,11 +87,12 @@ export function adminAiSidebarGroup(): SidebarGroup {
 }
 
 /**
- * The menu drawn for a real admin in a working view (not the console): his own
- * AI group goes first after the overview. Any other session's menu is returned
+ * The menu drawn for a real admin (not previewing a role's limits) in the
+ * lawyer or the firm workspace: his own AI group goes first after the overview.
+ * Any other menu — the console, another account type's dashboard — is returned
  * as it is.
  */
-export function withAdminAiGroup(groups: SidebarGroup[], isRealAdmin: boolean, drawnType: string | null | undefined): SidebarGroup[] {
-  if (!isRealAdmin || !drawnType || drawnType === "admin" || groups.length === 0) return groups;
+export function withAdminAiGroup(groups: SidebarGroup[], showAdminTools: boolean, drawnType: string | null | undefined): SidebarGroup[] {
+  if (!adminToolsShown(showAdminTools, true, drawnType) || groups.length === 0) return groups;
   return [groups[0], adminAiSidebarGroup(), ...groups.slice(1)];
 }

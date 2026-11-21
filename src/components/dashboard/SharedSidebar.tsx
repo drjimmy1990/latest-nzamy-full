@@ -36,7 +36,7 @@ import { OffersNavItem } from "@/components/offers/OffersNavItem";
 import { useAdminView } from "@/hooks/useAdminView";
 import { useAdminSimulation } from "@/hooks/useAdminSimulation";
 import { resolveNavUserType, adminViewSuffix, switchCurrentView } from "@/lib/nav/shellContext";
-import { simulatedNavIdentity } from "@/lib/nav/adminSimulation";
+import { adminBypassesUiGates, simulatedNavIdentity } from "@/lib/nav/adminSimulation";
 
 import {
   SidebarSection,
@@ -140,7 +140,7 @@ export default function SharedSidebar() {
   const lockedGroups = libraryLock.locked ? withoutLibraryItems(roleGroups) : roleGroups;
   // N2 (batch l12): a real admin in a working view gets every AI tool, the drafter
   // and محترف العقود first, untagged (display only: src/lib/ai/adminAiTools.ts).
-  const groups = withAdminAiGroup(lockedGroups, isRealAdmin, userType);
+  const groups = withAdminAiGroup(lockedGroups, isRealAdmin && adminBypassesUiGates(sessionUserType, adminSim), userType);
   
   const showCredits = false; // user requested to remove any mention of credits
 

@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useUser } from "@/hooks/useUser";
-import { adminSeesTool } from "@/lib/ai/adminAiTools";
+import { useAdminToolsView } from "@/hooks/useAdminToolsView";
 
 /**
  * N2 (batch l12): the admin sees every AI tool's screen open, a switched-off
@@ -11,8 +10,7 @@ import { adminSeesTool } from "@/lib/ai/adminAiTools";
  * costs nothing, until it is switched on for staff or for everyone.
  */
 export default function AdminToolsNotice() {
-  const user = useUser();
-  if (!adminSeesTool(user.loading, user.userType)) return null;
+  if (!useAdminToolsView().showAll) return null;
   return (
     <p
       role="note"

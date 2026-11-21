@@ -33,6 +33,7 @@ import { getLawyerAiBadge } from "@/constants/lawyerAiBadges";
 import { isConsultantBlockedPath } from "@/lib/auth/practiceKind";
 import { canSeeLawyerTools, isLawyerOnlyAiHref } from "@/lib/ai/lawyerOnlyTools";
 import { adminAiOrder } from "@/lib/ai/adminAiTools";
+import { useAdminToolsView } from "@/hooks/useAdminToolsView";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -635,6 +636,7 @@ function AiHubDashboard() {
   const user = useUser();
   const isRTL = lang === "ar";
   const isDark = theme === "dark";
+  const adminTools = useAdminToolsView().showAll;
   // Same condition as src/app/ai/analyze/page.tsx (cannedOutputGate.test.ts).
   const seesLawyerAnalyzer = user.userType === "lawyer" || user.userType === "firm" || user.userType === "admin";
   const hubTools = seesLawyerAnalyzer
@@ -667,7 +669,7 @@ function AiHubDashboard() {
   // N2 (owner F02 §5 #63, batch l12): the admin sees every tool, the drafter then
   // محترف العقود first, with no «قريباً» or price badge. Display only — a tool
   // switched off still refuses his run before any charge (src/lib/ai/adminAiTools.ts).
-  const shownTools = user.userType === "admin"
+  const shownTools = adminTools
     ? adminAiOrder(allowedTools).map((t) => ({ ...t, badge: undefined, badgeAr: undefined, badgeEn: undefined }))
     : allowedTools;
 

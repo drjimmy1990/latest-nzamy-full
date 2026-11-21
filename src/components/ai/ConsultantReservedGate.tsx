@@ -7,6 +7,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import { readToolUsable } from "@/lib/ai/toolStatusClient";
+import { useAdminToolsView } from "@/hooks/useAdminToolsView";
 import { CONSULTANT_RESERVED_MESSAGE } from "@/lib/auth/practiceKind";
 
 /**
@@ -22,7 +23,10 @@ import { CONSULTANT_RESERVED_MESSAGE } from "@/lib/auth/practiceKind";
  */
 export default function ConsultantReservedGate({ tool, children }: { tool: string; children: React.ReactNode }) {
   const { practiceKind, loading, userType } = useUser();
+  // An admin previewing «مستشار (م ١٨)» with limits on meets the lock, as in ConsultantGate.
+  const { simulatesConsultant } = useAdminToolsView();
   if (loading) return null;
+  if (simulatesConsultant) return <ReservedLock />;
   if (userType === "admin" || practiceKind !== "consultant") return <>{children}</>;
   return <ConsultantCheck tool={tool}>{children}</ConsultantCheck>;
 }
@@ -34,6 +38,11 @@ function ConsultantCheck({ tool, children }: { tool: string; children: React.Rea
     return <p role="status" dir="rtl" className={`py-16 text-center text-[12px] ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>جارٍ التحقق…</p>;
   }
   if (usable) return <>{children}</>;
+  return <ReservedLock />;
+}
+
+function ReservedLock() {
+  const { isDark } = useTheme();
   return (
     <div className="max-w-2xl mx-auto py-16 px-4 text-center" dir="rtl">
       <div className={`mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl ${isDark ? "bg-[#C8A762]/10" : "bg-[#0B3D2E]/5"}`}>
@@ -62,6 +71,7 @@ function ConsultantCheck({ tool, children }: { tool: string; children: React.Rea
  */
 export function useConsultantReserved(tool: string): boolean | null {
   const { practiceKind, loading, userType } = useUser();
+  const { simulatesConsultant } = useAdminToolsView();
   const [answer, setAnswer] = useState<boolean | null>(null);
   const asks = !loading && userType !== "admin" && practiceKind === "consultant";
   useEffect(() => {
@@ -75,5 +85,6 @@ export function useConsultantReserved(tool: string): boolean | null {
     };
   }, [asks, tool]);
   if (loading) return null;
+  if (simulatesConsultant) return true;
   return asks ? answer : false;
 }

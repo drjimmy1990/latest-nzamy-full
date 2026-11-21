@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { readToolUsable } from "@/lib/ai/toolStatusClient";
-import { useUser } from "@/hooks/useUser";
-import { adminSeesTool } from "@/lib/ai/adminAiTools";
+import { useAdminToolsView } from "@/hooks/useAdminToolsView";
 
 /**
  * useToolUsable — may the signed-in user run this tool now? null until the server
@@ -18,8 +17,8 @@ import { adminSeesTool } from "@/lib/ai/adminAiTools";
  */
 export function useToolUsable(tool: string): boolean | null {
   const [usable, setUsable] = useState<boolean | null>(null);
-  const user = useUser();
-  const admin = adminSeesTool(user.loading, user.userType);
+  // An admin previewing a role's limits, or in another account type's dashboard, gets the real answer.
+  const admin = useAdminToolsView().showAll;
 
   useEffect(() => {
     if (admin) return;

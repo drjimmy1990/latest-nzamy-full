@@ -340,7 +340,7 @@ export function useContractsState(linkedContract?: { id: string; title: string }
     // last step), so moving on is immediate — the 1.4 s "معالجة..." delay
     // after the parties and clauses steps was theatre and is gone.
     setStep(currentSteps[idx + 1].key);
-  }, [currentStepIndex, currentSteps]);
+  }, [currentStepIndex, currentSteps, setStep]);
 
   function prevStep() {
     if (currentStepIndex <= 0) return;

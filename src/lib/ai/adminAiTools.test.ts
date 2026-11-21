@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { adminAiOrder, adminAiSidebarGroup, adminSeesTool, withAdminAiGroup, ADMIN_AI_FIRST } from "./adminAiTools.ts";
+import { adminAiOrder, adminAiSidebarGroup, adminToolsShown, withAdminAiGroup, ADMIN_AI_FIRST } from "./adminAiTools.ts";
 import { toolAvailability, toolAccessFor } from "./aiToolsConfig.ts";
 import { AI_TOOLS } from "./tools.ts";
 import { LAWYER_AI_TOOLS } from "../../constants/lawyerAiCatalog.ts";
@@ -26,10 +26,18 @@ test("the cost rule is unchanged: «off» refuses the admin; «staff» and «liv
   assert.match(src("lib/ai/runCore.ts"), /if \(toolAvailability\(runtime\.mode, isAdmin\) === "tool_off"\) \{\n?\r?\n?\s*return \{ status: 423/);
 });
 
-test("only a resolved admin session gets the admin display", () => {
-  assert.equal(adminSeesTool(false, "admin"), true);
-  assert.equal(adminSeesTool(true, "admin"), false);
-  for (const t of ["lawyer", "firm", "individual", "", null, undefined]) assert.equal(adminSeesTool(false, t), false, String(t));
+test("the admin display: a real admin, not previewing a role's limits, in the lawyer or firm workspace", () => {
+  assert.equal(adminToolsShown(true, true, "lawyer"), true);
+  assert.equal(adminToolsShown(true, true, "firm"), true);
+  assert.equal(adminToolsShown(true, false, "lawyer"), false, "«محاكاة القيود»: he sees what the role sees");
+  assert.equal(adminToolsShown(false, true, "lawyer"), false);
+  for (const v of ["individual", "corporate", "admin", null, undefined]) assert.equal(adminToolsShown(true, true, v), false, String(v));
+  const hook = src("hooks/useAdminToolsView.ts");
+  assert.match(hook, /const bypass = isRealAdmin && adminBypassesUiGates\(userType, adminSim\);/);
+  assert.match(hook, /adminSimulatesConsultant\(userType, adminSim, drawnView\)/);
+  const gate = src("components/ai/ConsultantReservedGate.tsx");
+  assert.match(gate, /if \(simulatesConsultant\) return <ReservedLock \/>;/);
+  assert.match(gate, /if \(simulatesConsultant\) return true;/);
 });
 
 test("the order: the drafter, then محترف العقود, then the rest as listed (stable)", () => {
@@ -55,6 +63,7 @@ test("the group goes in for a real admin in a working view only", () => {
   const base = [{ items: [{ label: "نظرة عامة", labelEn: "Overview", href: "/dashboard/lawyer", icon: "SquaresFour" }] }, { title: "x", items: [] }];
   assert.equal(withAdminAiGroup(base, false, "lawyer"), base);
   assert.equal(withAdminAiGroup(base, true, "admin"), base, "the admin console keeps its own menu");
+  assert.equal(withAdminAiGroup(base, true, "individual"), base, "another account type's dashboard keeps its menu");
   const shown = withAdminAiGroup(base, true, "lawyer");
   assert.equal(shown.length, 3);
   assert.equal(shown[1].title, "كل أدوات الذكاء (للإدارة)");
@@ -62,10 +71,11 @@ test("the group goes in for a real admin in a working view only", () => {
 
 test("wiring: hub, sidebar, the screen gate and the /ai notice", () => {
   const hub = src("app/ai/page.tsx");
-  assert.match(hub, /const shownTools = user\.userType === "admin"\s*\? adminAiOrder\(allowedTools\)\.map\(\(t\) => \(\{ \.\.\.t, badge: undefined, badgeAr: undefined, badgeEn: undefined \}\)\)/);
-  assert.match(src("components/dashboard/SharedSidebar.tsx"), /const groups = withAdminAiGroup\(lockedGroups, isRealAdmin, userType\);/);
+  assert.match(hub, /const adminTools = useAdminToolsView\(\)\.showAll;/);
+  assert.match(hub, /const shownTools = adminTools\s*\? adminAiOrder\(allowedTools\)\.map\(\(t\) => \(\{ \.\.\.t, badge: undefined, badgeAr: undefined, badgeEn: undefined \}\)\)/);
+  assert.match(src("components/dashboard/SharedSidebar.tsx"), /const groups = withAdminAiGroup\(lockedGroups, isRealAdmin && adminBypassesUiGates\(sessionUserType, adminSim\), userType\);/);
   const hook = src("hooks/useToolUsable.ts");
-  assert.match(hook, /const admin = adminSeesTool\(user\.loading, user\.userType\);/);
+  assert.match(hook, /const admin = useAdminToolsView\(\)\.showAll;/);
   assert.match(hook, /return admin \? true : usable;/);
   assert.match(src("components/ai/AdminToolsNotice.tsx"), /الأداة المتوقفة لا تعمل ولا تُحتسب لها تكلفة/);
 });
