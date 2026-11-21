@@ -152,6 +152,17 @@ if (!st) {
     policy: i.on_stage_error === 'skip' ? 'skip' : 'fail',
   };
 }
+const done = st.last || null;
+st.last = null;
+// Time guard: once the write stage has run, a stage that cannot finish before the
+// run's deadline is skipped (reason «deadline») and the run closes with what
+// already reached the lawyer. body.deadline_at (ISO) and body.reserve_ms (default 180000) are optional.
+const deadline = Date.parse(b.deadline_at || '');
+const reserve = Number.isFinite(Number(b.reserve_ms)) && Number(b.reserve_ms) >= 0 ? Number(b.reserve_ms) : 180000;
+if (st.idx > 0 && st.idx < st.stages.length && Number.isFinite(deadline) && deadline - Date.now() < reserve) {
+  for (const s of st.stages.slice(st.idx)) st.skipped.push({ stage: s, reason: 'deadline' });
+  st.idx = st.stages.length;
+}
 const stage = st.stages[st.idx];
 const modelOf = (s) => {
   const raw = b.models && typeof b.models === 'object' ? (b.models[s] ?? (s === 'write' ? b.models.draft : undefined)) : undefined;
@@ -220,7 +231,7 @@ if (stage === 'write') {
   content = base('najiz', ['الحد الأقصى ' + NAJIZ_MAX + ' حرفاً.', '<memo_text>\n' + esc(flat(current())) + '\n</memo_text>', 'الشكل: {"text":""}']);
 }
 st.models.push(model);
-const out = { json: { state: st, stage, step, progress, model, system: SYSTEM, content, read: false } };
+const out = { json: { state: st, stage, step, progress, model, system: SYSTEM, content, read: false, done } };
 const first = $input.first();
 if (stage === 'write' && st.idx === 0 && first && first.json && first.json.fields) {
   out.json.read = true; out.json.fields = first.json.fields; out.json.prompt = content; out.binary = first.binary;
@@ -236,6 +247,7 @@ const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', o
 const soft = (code, message) => {
   if (stage === 'write' || st.policy !== 'skip') return fail(code, message);
   st.skipped.push({ stage, reason: message });
+  st.last = { stage, skipped: true, reason: message };
   return [{ json: { state: st } }];
 };
 const parts = $json.content && Array.isArray($json.content.parts) ? $json.content.parts : null;
@@ -287,6 +299,7 @@ if (stage === 'write') {
   const src = JSON.stringify(st.out.refine || st.out.write);
   st.out.najiz = { text, chars: text.length, over_limit: text.length > @@NAJIZ@@, markers_kept: count(text) >= count(src) };
 }
+st.last = { stage, output: stage === 'write' ? st.out.write : stage === 'najiz' ? st.out.najiz : stage === 'refine' ? { memo: st.out.refine, ...st.notes.refine } : st.notes[stage] };
 return [{ json: { state: st } }];`;
 
 const PREPARE = String.raw`const b = $('Webhook').first().json.body;
@@ -388,7 +401,7 @@ export function toLegalDrafterV2Workflow() {
     post("v17", "Callback", [2000, 300], "={{ JSON.stringify($json) }}", 30000),
     {
       ...post("v18", "Progress · stage", [1980, 480],
-        `={{ JSON.stringify({ run_id: ${bodyOf}.run_id, status: "progress", step: $json.step, kind: "note", detail: $json.progress }) }}`, 5000),
+        `={{ JSON.stringify({ run_id: ${bodyOf}.run_id, status: "progress", step: $json.step, kind: "note", detail: $json.progress, ...($json.done ? { stage_done: $json.done } : {}) }) }}`, 5000),
       onError: "continueRegularOutput",
     },
     {

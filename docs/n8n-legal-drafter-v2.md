@@ -34,6 +34,11 @@ Next stage → Final? ─ نعم → Callback                                   
 
 طورا `issues` و`section` يمرّان بمرحلة `write` وحدها: السلوك والمخرج كما L14 تمامًا.
 
+## تسليم كل مرحلة فور انتهائها (منفَّذ في n8n، ينتظر قبول التطبيق)
+مع كل نداء تقدم (`status: "progress"`) يضيف n8n الحقل `stage_done` = مخرج **المرحلة التي انتهت للتو**: `{ stage, output }` أو `{ stage, skipped: true, reason }`. شكل `output`: `write` المذكرة أو التحليل كما هي؛ `extraction` و`adversary` الملاحظات بعد الفحص؛ `refine` `{ memo, changes, requests_changed }`؛ `najiz` `{ text, chars, over_limit, markers_kept }`. مخرج آخر مرحلة يصل في الـCallback النهائي. **عقد جديد على التطبيق:** أن يحفظ `stage_done` ويعرضه للمحامي فورًا ويحاسب على المراحل المسلَّمة (مواصفة `mcp/EXT_RUNS_SPEC.md`).
+
+**حارس الوقت:** اختياري عبر `body.deadline_at` (ISO) و`body.reserve_ms` (الافتراضي ١٨٠٠٠٠). بعد `write`، إن بقي للمهلة أقل من الاحتياطي تُتخطى المراحل المتبقية بسبب `deadline` وتُسجَّل في `lawyer_notes.skipped` وتنتهي الجولة `succeeded` بما أُنجز؛ ما وصل المحامي يبقى معه. المطلوب من التطبيق: إرسال `deadline_at` ورد سعر المراحل المتخطاة فقط (مقترح، غير مفعَّل).
+
 ## حزمة الويب هوك (ما يضيفه التطبيق على حزمة L14)
 - `prompts`: `{ draft?, extraction, adversary, refine, najiz }` نصوص من جدول `ai_prompts`. `draft` = برومبت النوع (03–08)؛ إن غاب، برومبت L14 المدمج. تُرسل كرسالة المستخدم لا كرسالة نظام (LangChain يقرأ `{}` متغيرات).
 - `models` (اختياري): `{ <stage>: "gemini-…" }` لكل مرحلة؛ معرّف غير صالح يُتجاهل. **غير مُثبت على n8n حي**: عقدة Model تقرأه بتعبير `$('Next stage').last().json.model`.

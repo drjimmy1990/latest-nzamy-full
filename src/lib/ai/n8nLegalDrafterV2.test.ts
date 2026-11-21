@@ -46,7 +46,7 @@ const codeOf = (name: string) => wf.nodes.find((n) => n.name === name)!.paramete
 /** Drives the loop. `reply(stage, content)` is the fake model; null = the model fails. */
 function run(body: Record<string, any>, reply: Reply, first: Record<string, any> = { body }, binary?: Record<string, unknown>) {
   let lastNext: Item | null = null;
-  const log: { stage: string; content: string; model: string; step: string }[] = [];
+  const log: { stage: string; content: string; model: string; step: string; done: any }[] = [];
   const $ = (name: string) => {
     if (name === "Webhook") return { first: () => ({ json: { body } }) };
     if (name === "Next stage") return { last: () => lastNext! };
@@ -58,7 +58,7 @@ function run(body: Record<string, any>, reply: Reply, first: Record<string, any>
     const n = next[0];
     if (n.json.status) return { final: n.json, log, next: n };
     lastNext = n;
-    log.push({ stage: n.json.stage, content: n.json.content, model: n.json.model, step: n.json.step });
+    log.push({ stage: n.json.stage, content: n.json.content, model: n.json.model, step: n.json.step, done: n.json.done });
     const text = reply(n.json.stage, n.json.content);
     const absorbIn = text === null ? { error: "Service unavailable" } : { output: text };
     if (text === null) return { final: runCode(CODE.modelError, body, absorbIn, $)[0].json, log, next: n };
@@ -298,4 +298,30 @@ test("prices the app charges for the pleadings (draftKinds.ts), for the staging 
     Object.fromEntries(Object.entries(DRAFT_KINDS).map(([k, v]) => [k, v.price])),
     { claim: 500, reply: 500, rejoinder: 500, supplementary: 500, closing: 500, appeal: 800, cassation: 1500, petition: 1500 },
   );
+});
+
+test("each finished stage's output rides the next progress call; the Progress node sends it as stage_done", () => {
+  const r = run(pkg(DRAFT_INPUT), good);
+  assert.equal(r.log[0].done, null);
+  assert.deepEqual(r.log.slice(1).map((l) => l.done.stage), ["write", "extraction", "adversary", "refine"]);
+  assert.equal(r.log[1].done.output.title, MEMO.title);
+  assert.equal(r.log[2].done.output.items[0].sid, "S1");
+  assert.equal(r.log[4].done.output.memo.title, "لائحة منقحة");
+  const progress = wf.nodes.find((n) => n.name === "Progress · stage")!;
+  assert.ok(progress.parameters.jsonBody.includes("stage_done: $json.done"));
+});
+
+test("deadline guard: with too little time left the later stages are skipped as «deadline» and the run closes with what was done", () => {
+  const body = pkg(DRAFT_INPUT, { deadline_at: new Date(Date.now() + 60_000).toISOString() });
+  const r = run(body, good);
+  assert.deepEqual(r.log.map((l) => l.stage), ["write"]);
+  assert.equal(r.final.status, "succeeded");
+  assert.deepEqual(r.final.output.lawyer_notes.skipped.map((x: any) => [x.stage, x.reason]), V2_STAGES.map((s) => [s, "deadline"]));
+  assert.equal(r.final.output.title, MEMO.title);
+});
+
+test("deadline guard: plenty of time (or no deadline) changes nothing", () => {
+  const far = run(pkg(DRAFT_INPUT, { deadline_at: new Date(Date.now() + 3_600_000).toISOString() }), good);
+  assert.equal(far.log.length, 5);
+  assert.equal(far.final.output.lawyer_notes.skipped.length, 0);
 });
