@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   cleanDetailsSummary,
   isAmendmentDetails,
+  isPreambleToggle,
   isOpenDetailsTag,
   splitDetailsMarkup,
 } from "./_details-block.ts";
@@ -131,4 +132,37 @@ test("splitDetailsMarkup: a multi-line summary is joined; comments and bare tags
   assert.deepEqual(splitDetailsMarkup("أ\n<!-- ملاحظة\nداخلية -->\n<div align=\"center\">\nب\n</div>\n\nج"), ["أ", "", "", "ب", "", "", "ج"]);
   // a line without details markup is untouched
   assert.deepEqual(splitDetailsMarkup("**المادة (1):** نص\n- بند"), ["**المادة (1):** نص", "- بند"]);
+});
+
+test("file 03 L4 (lib06): the corpus's «📜 ديباجة …» toggle is the current preamble, not «سابق»", () => {
+  const preamble = [
+    "# نظام المرور",
+    "",
+    "<details>",
+    "<summary>📜 ديباجة نظام المرور</summary>",
+    "",
+    "بعون الله تعالى، نحن عبدالله بن عبدالعزيز آل سعود، ملك المملكة العربية السعودية، بعد الاطلاع على …",
+    "</details>",
+  ].join("\n");
+  const [block] = blocksOf(preamble);
+  assert.equal(block.summary, "📜 ديباجة نظام المرور");
+  assert.equal(isPreambleToggle(block.summary, block.content), true);
+  assert.equal(isAmendmentDetails(block.summary, block.content), false);
+  for (const s of ["📜 ديباجة النظام", "📜 ديباجة اللائحة", "ديباجة النظام", "📜 الديباجة", "📜 ديباجة"]) {
+    assert.equal(isAmendmentDetails(s, "بعون الله تعالى"), false, s);
+  }
+});
+
+test("file 03 L4: a superseded ديباجة, a bare «📜» and other words stay «سابق»", () => {
+  // the summary says it is the old wording
+  assert.equal(isAmendmentDetails("📜 ديباجة النظام قبل التعديل", "بعون الله تعالى"), true);
+  assert.equal(isAmendmentDetails("📜 الديباجة — النص السابق", "بعون الله تعالى"), true);
+  // a «before» label in the body
+  assert.equal(isAmendmentDetails("📜 ديباجة النظام", "**ونص المادة قبل التعديل:**\nنص قديم"), true);
+  assert.equal(isAmendmentDetails("📜 ديباجة النظام", "الديباجة قبل التعديل:\nنص قديم"), true);
+  // the amendment fallback label and a bare scroll remain history
+  assert.equal(isAmendmentDetails("📜 النص قبل التعديل وتفاصيل قرار/مرسوم التعديل", "نص"), true);
+  assert.equal(isAmendmentDetails("📜", "نص"), true);
+  // «ديباجة» inside another word or later in the summary is not the toggle
+  assert.equal(isPreambleToggle("📜 نص الديباجة السابقة", "نص"), false);
 });

@@ -8,6 +8,7 @@ import { EXEC_REGULATION_TYPE, toSectionCode } from "@/app/laws/lawsIndexFacets"
 import { maskDecreeOfficialFields, maskListOfficialFields, TIER_SHAPED_CACHE_CONTROL } from "@/app/api/library/laws/[slug]/_official-meta";
 import { lawSummaryVisible } from "@/lib/library/lawSummaryVisibility";
 import { latestLegislativeEvent, summaryForViewer } from "@/lib/library/legislativeEvent";
+import { decreeTitleForViewer } from "@/lib/library/decreeDisplay";
 import { mergedNamesForViewer, mergedNamesFromDetails } from "@/lib/library/mergedRegulationNames";
 import { readWithOptionalFeatures, type OptionalFeature } from "@/lib/library/optionalColumn";
 import { summaryShown } from "@/lib/library/summaryReview";
@@ -17,7 +18,8 @@ import { readSummariesReviewedOnly } from "@/lib/library/summaryReviewServer";
 import { BOOK_SERIES_FEATURE, bookVolumeColumns } from "@/lib/library/bookVolumes";
 import { SUCCESSOR_READ_MAX_ROWS, readSuccessorRows, successorsBySupersededSlug } from "@/lib/library/lawSuccessors";
 import { isRepealedLawStatus } from "@/app/laws/law-status";
-import { childCountsByParent, childKeyChunks } from "@/app/api/library/laws/[slug]/_children";
+import { childCountsByParent, childKeyChunks, childTitlesByParent } from "@/app/api/library/laws/[slug]/_children";
+import { loadLibraryReaderDisplay } from "@/lib/library/readerDisplaySettingsServer";
 
 /**
  * Card columns only (LIB-16). `select('*')` shipped every list row's `fts`
@@ -448,6 +450,8 @@ export async function GET(request: Request) {
     // parent_law_id are on the anon allow-list of 20261004_01, so the request
     // client reads them. Supplementary: a failed read only means no counter.
     let childCounts = new Map<string, number>();
+    // File 03 L3 (batch l12): the first linked-child titles for the card.
+    let childTitles = new Map<string, string[]>();
     const childChunks = childKeyChunks(lawsRows);
     if (childChunks.length > 0) {
       try {
@@ -477,15 +481,20 @@ export async function GET(request: Request) {
         ));
         const failed = reads.find((r) => r.error);
         if (failed) console.warn("[Library Init API] children count failed:", failed.error?.message);
-        else childCounts = childCountsByParent(reads.flatMap((r) => r.data), lawsRows.map((row) => ({
-          slug: row.slug,
-          instrument_id: row.instrument_id,
-          title: row.title,
-          mergedNames: [true, false].flatMap((subscriber) => [
-            ...mergedNamesFromDetails(row[LAW_MERGED_DETAILS_COLUMN], subscriber),
-            ...mergedNamesForViewer(row[LAW_MERGED_NAMES_COLUMN], subscriber),
-          ]),
-        })));
+        else {
+          const childRows = reads.flatMap((r) => r.data);
+          const parents = lawsRows.map((row) => ({
+            slug: row.slug,
+            instrument_id: row.instrument_id,
+            title: row.title,
+            mergedNames: [true, false].flatMap((subscriber) => [
+              ...mergedNamesFromDetails(row[LAW_MERGED_DETAILS_COLUMN], subscriber),
+              ...mergedNamesForViewer(row[LAW_MERGED_NAMES_COLUMN], subscriber),
+            ]),
+          }));
+          childCounts = childCountsByParent(childRows, parents);
+          childTitles = childTitlesByParent(childRows, parents);
+        }
       } catch (e) {
         console.warn("[Library Init API] children count threw:", e);
       }
@@ -535,6 +544,8 @@ export async function GET(request: Request) {
         ...(replacedBy ? { replaced_by: replacedBy } : {}),
         // §1.8 (l10): how many documents name this one in parent_law_id; absent at 0.
         ...(childCount > 0 ? { sub_legislation_count: childCount } : {}),
+        // File 03 L3 (batch l12): their first titles (public, like the catalogue).
+        ...((childTitles.get(slug)?.length ?? 0) > 0 ? { sub_legislation_titles: childTitles.get(slug) } : {}),
         free: isFree,
         locked: !isFree,
       };
@@ -557,6 +568,8 @@ export async function GET(request: Request) {
       for (const key of ["summary_brief", "summary"]) {
         if (typeof shaped[key] === "string") shaped[key] = summaryForViewer(shaped[key] as string, hasFullAccess);
       }
+      // Owner Q101 (batch l12): ...and the title loses them too (decreeTitleForViewer).
+      shaped.title = decreeTitleForViewer({ title: row.title, type: row.type, summary: shaped.summary_brief || shaped.summary }, hasFullAccess);
       return { ...maskDecreeOfficialFields(shaped, hasFullAccess), free: isFree, locked: !isFree };
     }) as any;
 
@@ -619,6 +632,9 @@ export async function GET(request: Request) {
         viewer: { hasFullAccess },
         // Q100a: present only when the list cap held items back.
         ...(listCap.notice ? { listLimit: listCap.notice } : {}),
+        // File 03 L3 / library question 5 (batch l12): a sub-legislation's
+        // name under a card in full or short (admin setting library_reader_display).
+        display: { childNameForm: (await loadLibraryReaderDisplay()).child_name_form },
       },
       // Tier-shaped (paywall + official metadata): never from a shared cache.
       { headers: { "Cache-Control": TIER_SHAPED_CACHE_CONTROL } },

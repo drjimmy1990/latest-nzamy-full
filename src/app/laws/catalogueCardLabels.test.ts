@@ -49,7 +49,8 @@ test("file 16 §7: «+N تشريعات فرعية» counts the sub-legislation t
   assert.equal(mergedMoreLabel(base, ["أ", "ب", "ج", "د", "هـ", "و"]), "+4 تشريعات فرعية");
   assert.equal(mergedMoreLabel(base, Array.from({ length: 14 }, (_, i) => `ل${i}`)), "+12 تشريعًا فرعيًا");
   // Batch l10: the card adds the linked children the API counted (sub_legislation_count).
-  assert.match(cards, /\? mergedMoreLabel\(sys\.title, mergedIncludes \? sys\.mergedNames \?\? \[\] : \[\], subLegislationCount\)/);
+  // Batch l12 (file 03 L3): the named ones are listed (SubLegislationNames); «+N» counts the rest.
+  assert.match(cards, /const unnamedSubs = unnamedSubLegislationCount\(subLegislationCount, linkedTitles\.length\);/);
   assert.match(cards, /data-testid="law-card-merged-more"/);
 });
 
@@ -92,11 +93,35 @@ test("source: no fixed «مُحدّث» badge; the card reads latest_legislative
   // and the grey «يشتمل على» line sits under the title in both views.
   assert.doesNotMatch(cards, /\{mergedBadge && <div className="mb-2\.5">\{mergedBadge\}<\/div>\}/);
   assert.match(cards, /\{mergedBadge\}\s*\{isUnlocked \? \(/);
-  assert.match(cards, /mergedIncludesLine\(sys\.title, sys\.mergedNames \?\? \[\]\)/);
+  // Batch l12 (file 03 L3): merged names, then linked titles, in the admin's name form.
+  assert.match(cards, /cardSubLegislationNames\(sys\.title, mergedLabel \? sys\.mergedNames \?\? \[\] : \[\], linkedTitles, /);
   // Arabic only (fix round 1): an English card (titleEn) shows no Arabic names.
-  assert.match(cards, /const mergedIncludes = mergedLabel && isRTL \? mergedIncludesLine\(/);
+  assert.match(cards, /const subNames = isRTL\s*\? cardSubLegislationNames\(/);
   assert.equal((cards.match(/<\/h3>\s*\{mergedIncludesRow\}/g) || []).length, 2);
   assert.doesNotMatch(cards.slice(cards.indexOf("const mergedIncludesRow"), cards.indexOf("const mergedIncludesRow") + 400), /text-gray-(?:100|200)\b/);
   // a repealed law keeps its red frame: the red classes still come first
   assert.match(cards, /isRepealedLaw\s*\?\s*`hover:border-red-500/);
+});
+
+test("file 03 L3 (l12): the card names merged regulations then linked documents, full form by default", async () => {
+  const { cardSubLegislationNames, unnamedSubLegislationCount, CARD_SUB_NAMES_SHOWN } = await import("./catalogueCardLabels.ts");
+  const base = "نظام المرور";
+  const merged = ["اللائحة التنفيذية لنظام المرور"];
+  const linked = ["لائحة الأحكام المنظمة لإنشاء وتشغيل مدارس لتعليم قيادة المركبات لعام 1443هـ"];
+  assert.deepEqual(cardSubLegislationNames(base, merged, linked), [...merged, ...linked]);
+  assert.deepEqual(cardSubLegislationNames(base, merged, linked, "short"), ["اللائحة التنفيذية", linked[0]]);
+  // a linked document that is the merged regulation again is named once
+  assert.deepEqual(cardSubLegislationNames(base, merged, ["اللائحة التنفيذية لنظام المرور", "اللائحة التنفيذية"]), merged);
+  // blanks and the base title itself are no names
+  assert.deepEqual(cardSubLegislationNames(base, ["", "  ", base], []), []);
+  assert.equal(CARD_SUB_NAMES_SHOWN, 2);
+  assert.equal(unnamedSubLegislationCount(12, 10), 2);
+  assert.equal(unnamedSubLegislationCount(1, 1), 0);
+  assert.equal(unnamedSubLegislationCount("3", 0), 0);
+  // the card: two names, then «إظهار المزيد» in place; the button never opens the card
+  assert.match(cards, /names\.slice\(0, CARD_SUB_NAMES_SHOWN\)/);
+  assert.match(cards, /\{open \? "إظهار أقل" : "إظهار المزيد"\}/);
+  assert.match(cards, /onClick=\{\(e\) => \{ stop\(e\); setOpen/);
+  assert.match(page, /subLegislationTitles: Array\.isArray\(law\.sub_legislation_titles\)/);
+  assert.match(page, /setChildNameForm\(data\?\.display\?\.childNameForm === "short" \? "short" : "full"\);/);
 });

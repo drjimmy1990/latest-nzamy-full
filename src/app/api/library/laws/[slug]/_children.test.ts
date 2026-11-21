@@ -176,7 +176,9 @@ test("source: /api/library/init counts the page's children in chunked in (…) r
   assert.match(init, /const LAW_LIST_COLUMNS =\n\s*"[^"]*\binstrument_id";/);
   assert.match(init, /const childChunks = childKeyChunks\(lawsRows\);/);
   assert.match(init, /\.select\("slug,title,parent_law_id", \{ count: "exact" \}\)\s*\.in\("parent_law_id", keys\)/);
-  assert.match(init, /childCounts = childCountsByParent\(reads\.flatMap\(\(r\) => r\.data\), lawsRows\.map\(\(row\) => \(\{/);
+  // l12 (L3): one parents list feeds the count and the titles.
+  assert.match(init, /const childRows = reads\.flatMap\(\(r\) => r\.data\);\s*const parents = lawsRows\.map\(\(row\) => \(\{/);
+  assert.match(init, /childCounts = childCountsByParent\(childRows, parents\);\s*childTitles = childTitlesByParent\(childRows, parents\);/);
   // merged names in both forms, so a guest and a subscriber get the same number
   assert.match(init, /mergedNames: \[true, false\]\.flatMap\(\(subscriber\) => \[\s*\.\.\.mergedNamesFromDetails\(row\[LAW_MERGED_DETAILS_COLUMN\], subscriber\),\s*\.\.\.mergedNamesForViewer\(row\[LAW_MERGED_NAMES_COLUMN\], subscriber\),/);
   assert.match(init, /delete shaped\.instrument_id;/, "stripped from every card");
@@ -201,4 +203,27 @@ test("source: the law page keeps subLegislation through its whitelist and mounts
   assert.match(section, /`التشريعات الفرعية \(\$\{entries\.length\}\)`/);
   assert.match(section, /href=\{`\/laws\/\$\{encodeURIComponent\(child\.slug\)\}`\}/);
   assert.doesNotMatch(section, /text-gray-(?:100|200)\b/, "dark-mode gray-token trap");
+});
+
+test("file 03 L3 (l12): childTitlesByParent — the card's linked titles, same rule as the count", async () => {
+  const { childTitlesByParent, childCountsByParent } = await import("./_children.ts");
+  const parents = [
+    { slug: "law-traffic", instrument_id: "SA-TRAFFIC", title: "نظام المرور", mergedNames: ["اللائحة التنفيذية لنظام المرور"] },
+    { slug: "law-other", instrument_id: "", title: "نظام آخر" },
+  ];
+  const rows = [
+    { slug: "driving-schools", title: "لائحة مدارس تعليم القيادة", parent_law_id: "SA-TRAFFIC" },
+    { slug: "traffic-exec", title: "اللائحة التنفيذية لنظام المرور", parent_law_id: "SA-TRAFFIC" }, // a merged name: left out
+    { slug: "fines", title: "  جدول   المخالفات ", parent_law_id: "SA-TRAFFIC" },
+    { slug: "law-traffic", title: "نظام المرور", parent_law_id: "SA-TRAFFIC" }, // itself
+    { slug: "stray", title: "x", parent_law_id: "" },
+  ];
+  const titles = childTitlesByParent(rows, parents);
+  assert.deepEqual(titles.get("law-traffic"), ["جدول المخالفات", "لائحة مدارس تعليم القيادة"]);
+  assert.equal(titles.has("law-other"), false);
+  assert.equal(childCountsByParent(rows, parents).get("law-traffic"), titles.get("law-traffic")!.length);
+  assert.deepEqual(childTitlesByParent(rows, parents, 1).get("law-traffic"), ["جدول المخالفات"]);
+  // an executive regulation that is not merged comes first
+  const exec = childTitlesByParent([...rows, { slug: "e2", title: "اللائحة التنفيذية للفحص الدوري", parent_law_id: "SA-TRAFFIC" }], parents);
+  assert.equal(exec.get("law-traffic")![0], "اللائحة التنفيذية للفحص الدوري");
 });

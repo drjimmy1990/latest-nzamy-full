@@ -19,11 +19,13 @@ import {
   GENERAL_DETAILS_FALLBACK_SUMMARY,
   cleanDetailsSummary,
   isAmendmentDetails,
+  isPreambleToggle,
   isOpenDetailsTag,
   splitDetailsMarkup,
 } from "./_details-block";
 import { READER_SCROLL_MARGIN_TOP } from "./_reader-anchors";
-import { visibleAmendments } from "./_previous-versions";
+import { amendedByLine, visibleAmendments } from "./_previous-versions";
+import Link from "next/link";
 import { diffCandidates, mergeLiftedVersions, pickDiffTarget } from "./_amendment-split";
 import { isPreambleEmpty } from "./_preamble";
 import { OfficialMetaLockedRow } from "../components/OfficialMetaLockedRow";
@@ -430,7 +432,9 @@ export function MD({ text, isDark, isRTL = true, fontClass = "text-[13px]", high
             );
           }
           return (
-            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open || block.open === true}>
+            // File 03 L4: the preamble's own «📜 ديباجة …» toggle is the text
+            // itself, not a fold — it opens on load.
+            <GeneralToggleDetails key={index} summary={summaryText || GENERAL_DETAILS_FALLBACK_SUMMARY} isDark={isDark} defaultOpen={open || block.open === true || isPreambleToggle(summaryText, block.content)}>
               {body}
             </GeneralToggleDetails>
           );
@@ -864,6 +868,17 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
   // O12: what each previous wording is compared with — the current text, one of
   // its paragraphs, or a paragraph of this article's regulation (pickDiffTarget).
   const diffTargets = useMemo(() => diffCandidates(article.text, mergedReg?.text ?? ""), [article.text, mergedReg?.text]);
+  // File 03 L5 (batch l12): «عُدّلت بموجب … بتاريخ …» under the article, outside
+  // the fold, and «إظهار الفروق» beside it — it opens the history on the newest
+  // card's coloured diff (a bump of diffSignal), when that card can be compared.
+  const amendedLine = useMemo(() => (isAmended ? amendedByLine(previousVersions) : null), [isAmended, previousVersions]);
+  const newestDiffable = useMemo(() => {
+    const first = previousVersions[0];
+    if (!first) return false;
+    const texts = first.parts ? first.parts.map((p) => p.text) : first.fullText ? [first.fullText] : [];
+    return texts.some((t) => !!pickDiffTarget(t, diffTargets));
+  }, [previousVersions, diffTargets]);
+  const [diffSignal, setDiffSignal] = useState(0);
   const historyHasHit = useTextHasHighlight(historyHay);
   const historicRegHasHit = useTextHasHighlight(article.historicRegulationText);
   const inCart      = !!entry && entry.isArticleAdded;
@@ -1080,13 +1095,21 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
             )}
 
             {!isLocked && !isRepealed && viewMode !== "regulation" && <SendToDrafterNotesButton text={article.text} sourceLabel={`${lawName} — ${article.numberText || article.num}`} isDark={isDark} className="px-1" />}
-            <button onClick={mainOnCopy} className={`p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-500" : "hover:bg-slate-100 text-slate-400"}`}>
+            {/* File 03 L12: touch targets of at least 44 px, with Arabic names. */}
+            <button
+              onClick={mainOnCopy}
+              aria-label={isRTL ? "نسخ المادة" : "Copy article"}
+              title={isRTL ? "نسخ المادة" : "Copy article"}
+              className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition flex-shrink-0 ${isDark ? "hover:bg-white/[0.06] text-zinc-400" : "hover:bg-slate-100 text-slate-500"}`}
+            >
               {mainCopied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
             </button>
             
             <button
               onClick={mainOnToggleCart}
-              className={`p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
+              aria-label={mainInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
+              title={mainInCart ? (isRTL ? "إزالة من المسودة" : "Remove from draft") : (isRTL ? "إضافة للمسودة" : "Add to draft")}
+              className={`min-w-11 min-h-11 inline-flex items-center justify-center p-2 rounded-lg transition flex-shrink-0 ${mainInCart ? isDark ? "bg-red-900/20 text-red-400" : "bg-red-50 text-red-500" : isDark ? "bg-[#C8A762]/10 text-[#C8A762]" : "bg-amber-50 text-amber-600"}`}
             >
               {mainInCart ? <Minus size={12} /> : <Plus size={12} />}
             </button>
@@ -1214,6 +1237,46 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
               have it duplicated by an amendment fullText. Showing both would
               print the same superseded text twice on every one of them.
             */}
+            {viewMode !== "regulation" && amendedLine && (
+              <div
+                data-testid="article-amended-by"
+                className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] font-bold ${isDark ? "text-amber-300" : "text-amber-800"}`}
+              >
+                {amendedLine.kind === "locked" ? (
+                  <span>
+                    {isRTL ? "عُدّلت هذه المادة" : "This article was amended"}
+                    <span className={`ms-2 text-[10.5px] font-semibold ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
+                      🔒 {isRTL ? "أداة التعديل وتاريخه متاحان للمشتركين" : "The amending instrument and its date are for subscribers"}
+                    </span>
+                  </span>
+                ) : amendedLine.decreeId ? (
+                  <Link href={`/laws/orders/${encodeURIComponent(amendedLine.decreeId)}`} className="underline decoration-dotted underline-offset-4 hover:decoration-solid">
+                    <Hl text={amendedLine.text} />
+                  </Link>
+                ) : (
+                  <span><Hl text={amendedLine.text} /></span>
+                )}
+                {newestDiffable && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = historyRef.current;
+                      if (d) {
+                        d.open = true;
+                        d.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                      }
+                      setDiffSignal((n) => n + 1);
+                    }}
+                    className={`inline-flex items-center min-h-[32px] text-[10.5px] font-bold px-2.5 py-1 rounded-lg border transition ${
+                      isDark ? "border-amber-400/30 text-amber-300 hover:bg-amber-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-100"
+                    }`}
+                  >
+                    {isRTL ? "إظهار الفروق" : "Show changes"}
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* O12: also for a version lifted out of the text when the status does not say «معدّلة»
                 — the lifted wording must land somewhere, never vanish. */}
             {viewMode !== "regulation" && (isAmended || (article.liftedVersions?.length ?? 0) > 0) && previousVersions.length > 0 && (
@@ -1263,6 +1326,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                               currentText={pickDiffTarget(part.text, diffTargets)}
                               isDark={isDark}
                               isRTL={isRTL}
+                              openDiffSignal={i === 0 ? diffSignal : 0}
                             />
                           </div>
                         ))
@@ -1272,6 +1336,7 @@ export function ArticleBlock({ article, lawName, lawType, isDark, entry, onAddAr
                           currentText={pickDiffTarget(amend.fullText, diffTargets)}
                           isDark={isDark}
                           isRTL={isRTL}
+                          openDiffSignal={i === 0 ? diffSignal : 0}
                           className={`${amend.summary || amend.sourceLocked || amend.source || amend.date ? "pt-2 border-t" : ""} ${isDark ? "border-amber-700/15" : "border-amber-200"}`}
                         />
                       )}

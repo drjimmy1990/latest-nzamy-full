@@ -20,7 +20,8 @@ test("init reads summary + summary_brief for the decree cards and strips only th
 
 test("the decree route keeps its page paywall and its subscriber-only preamble", () => {
   const route = read("src/app/api/library/decrees/[id]/route.ts");
-  assert.match(route, /const free = freeDecreePages\(probe, pages\.length\);/);
+  // Owner Q101 (l12): the free pages are the admin setting (0 by default).
+  assert.match(route, /const free = freeDecreePages\(probe, pages\.length, \(await loadLibraryReaderDisplay\(\)\)\.decree_free_pages\);/);
   assert.match(route, /preamble: isSubscriber \? withCleanCardRows\(preamble\) : '',/);
 });
 

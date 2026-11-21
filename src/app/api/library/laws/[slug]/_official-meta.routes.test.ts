@@ -24,7 +24,7 @@ test("init: law rows are masked for non-subscribers and the envelope says so", (
   // (a count of public rows), absent at 0.
   assert.match(
     initSource,
-    /return \{\s*\.\.\.maskListOfficialFields\(shaped, hasFullAccess\),\s*\.\.\.\(event \? \{ latest_legislative_update: event\.dateHijri \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(replacedBy \? \{ replaced_by: replacedBy \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(childCount > 0 \? \{ sub_legislation_count: childCount \} : \{\}\),\s*free: isFree,\s*locked: !isFree,\s*\};/,
+    /return \{\s*\.\.\.maskListOfficialFields\(shaped, hasFullAccess\),\s*\.\.\.\(event \? \{ latest_legislative_update: event\.dateHijri \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(replacedBy \? \{ replaced_by: replacedBy \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(childCount > 0 \? \{ sub_legislation_count: childCount \} : \{\}\),\s*(?:\/\/[^\n]*\n\s*)*\.\.\.\(\(childTitles\.get\(slug\)\?\.length \?\? 0\) > 0 \? \{ sub_legislation_titles: childTitles\.get\(slug\) \} : \{\}\),\s*free: isFree,\s*locked: !isFree,\s*\};/,
   );
   assert.match(initSource, /const replacedBy = isRepealedLawStatus\(row\.status\) \? successors\.get\(slug\) : undefined;/);
   assert.match(initSource, /\.select\("slug,title,supersedes_law_slug"\)\s*\.not\("supersedes_law_slug", "is", null\)/);

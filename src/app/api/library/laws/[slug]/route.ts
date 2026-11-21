@@ -20,6 +20,7 @@ import { lawArticleCounts } from '@/lib/library/lawCardFields';
 import { stripArticleAuditNotes, stripAuditNotes, stripPipelineNotes } from '@/lib/library/lawPreambleBlocks';
 import { liftRegulationHeading, regulationRefForViewer } from './_regulation-heading';
 import { isPreambleEmpty } from '@/app/laws/[slug]/_preamble';
+import { withoutRepealNotice } from '@/app/laws/[slug]/_repealed-article';
 import { buildRegulationIndex, compareRegulationSortKey, type RegulationIndexRow } from './_regulation-index';
 import { LAW_REVIEWED_SUMMARY_COLUMNS, readerSummaryFields } from './_reviewed-summary';
 import { readSummariesReviewedOnly } from '@/lib/library/summaryReviewServer';
@@ -712,7 +713,10 @@ function formatArticleWithPaywall(
     : { text: articleText, heading: null };
 
   if (isLocked) {
-    result.text = preview(lifted.text);
+    // Owner Q101 (batch l12): the repealing instrument and its date are a
+    // subscriber's — «أُلغيت هذه المادة بموجب …» leaves the locked preview here,
+    // not only on screen (withoutRepealNotice).
+    result.text = preview(withoutRepealNotice(lifted.text));
     if (originalText) result.originalText = preview(originalText);
     result.lockedMessage = 'للاطلاع على النص الكامل، اشترك في باقة المكتبة القانونية أو الباقة الاحترافية';
   } else {
@@ -795,6 +799,9 @@ function formatArticleWithPaywall(
         // run; before it they are absent and the reader keeps its own order.
         ...(typeof a.position === 'number' ? { position: a.position } : {}),
         ...(a.text_status === 'available' || a.text_status === 'unavailable' ? { textStatus: a.text_status } : {}),
+        // File 03 L5 (batch l12): the amending decree's library id, for the
+        // «عُدّلت بموجب …» link — a subscriber's, like `source` (T28-22).
+        ...(showOfficialMeta && typeof a.decree_id === 'string' && a.decree_id.trim() ? { decreeId: a.decree_id.trim() } : {}),
       }));
     }
   }

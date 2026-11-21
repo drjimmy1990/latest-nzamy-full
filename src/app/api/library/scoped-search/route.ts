@@ -16,6 +16,7 @@ import { TIER_SHAPED_CACHE_CONTROL } from '../laws/[slug]/_official-meta';
 import { isMissingFunctionError } from '../search/searchPlan';
 import {
   SCOPED_MAX_DEPTH,
+  pickScopeVolumes,
   shapeHit,
   validateScopedRequest,
   type ScopedKind,
@@ -230,7 +231,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'لم يُعثر على هذا المستند.', code: 'scope_not_found' }, { status: 404, headers: { 'Cache-Control': TIER_SHAPED_CACHE_CONTROL } });
     }
     const scope = resolved.scope;
-    const ids = scope.volumes.map((vol) => vol.id);
+    // File 03 L8 (batch l12): the reader's volume picker narrows the series;
+    // the quota key below stays the scope (scopedSearchDocKey).
+    const ids = pickScopeVolumes(scope.volumes.map((vol) => vol.id), req.volumes);
 
     // ── Paywall: the global search's rules (guests → free tier).
     let userId: string | null = null;

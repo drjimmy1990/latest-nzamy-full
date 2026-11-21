@@ -62,7 +62,8 @@ test("decree reader: title, preamble and pages coloured; ?q= read; summary keeps
   assert.match(ORDERS, /setUrlQuery\(readerArrival\(window\.location\.search, ""\)\.query\);/);
   assert.match(ORDERS, /<HighlightProvider query=\{highlightQuery\}>/);
   assert.match(ORDERS, /<Hl text=\{order\.title\} \/>/);
-  assert.match(ORDERS, /<Hl text=\{order\.preamble\} \/>/);
+  // l12 L9-a: the preamble is drawn by MD, which colours through the same HighlightProvider.
+  assert.match(ORDERS, /<MD text=\{preambleView\.text\}/);
   assert.match(ORDERS, /<BoldHl text=\{art\} \/>/);
   assert.doesNotMatch(ORDERS, /formatBold\(art\)/);
   assert.match(ORDERS, /<SearchLegendBar onClear=\{clearHighlight\}/);

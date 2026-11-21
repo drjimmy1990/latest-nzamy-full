@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { libraryGate } from "@/lib/library-gate";
 import { hasFullLibraryAccess } from "@/lib/access-control";
+import { decreeTitleForViewer } from "@/lib/library/decreeDisplay";
 import {
   buildLatest,
   buildRecentlyEffective,
@@ -116,7 +117,12 @@ export async function GET() {
 
     const effectiveRows = (effectiveRes.data ?? []) as MonitorLawRow[];
     const latestLawRows = (latestLawsRes.data ?? []) as MonitorLawRow[];
-    const orderRows = ordersRes.error ? [] : ((ordersRes.data ?? []) as MonitorOrderRow[]);
+    // Owner Q101 (batch l12): a decree's title carries its number and date —
+    // a non-subscriber reads the masked name (decreeTitleForViewer).
+    const orderRows = ordersRes.error ? [] : ((ordersRes.data ?? []) as MonitorOrderRow[]).map((row) => ({
+      ...row,
+      title: decreeTitleForViewer({ title: row.title }, isSubscriber),
+    }));
 
     return NextResponse.json(
       {

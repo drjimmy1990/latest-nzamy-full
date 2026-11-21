@@ -92,3 +92,15 @@ test("heading helpers: «~~…~~» struck, «[ملغاة]» taken out for a badg
   assert.deepEqual(splitRepealedMarker("المادة الأولى (ملغى)"), { text: "المادة الأولى", repealed: true });
   assert.deepEqual(splitRepealedMarker("المادة الأولى [معدّلة]"), { text: "المادة الأولى [معدّلة]", repealed: false });
 });
+
+test("Q101: a locked repealed preview loses «أُلغيت هذه المادة بموجب …», keeps the heading and the old wording", async () => {
+  const { withoutRepealNotice } = await import("./_repealed-article.ts");
+  const text = "### المادة الخامسة\n\nأُلغيت هذه المادة بموجب المرسوم الملكي رقم (م/5) وتاريخ 1440/1/1هـ.\n\nنص المادة قبل الإلغاء: على كل سائق أن …";
+  const out = withoutRepealNotice(text);
+  assert.doesNotMatch(out, /بموجب|م\/5|1440/);
+  assert.match(out, /^### المادة الخامسة/);
+  assert.match(out, /على كل سائق أن/);
+  const plain = "على كل سائق أن يحمل رخصة.";
+  assert.equal(withoutRepealNotice(plain), plain);
+  assert.equal(withoutRepealNotice(null), "");
+});

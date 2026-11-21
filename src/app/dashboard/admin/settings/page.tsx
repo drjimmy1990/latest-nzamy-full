@@ -24,6 +24,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { LibraryPublicGuardSettings } from "./_library-public-guard";
 import { LibraryPointsGateSettings } from "./_library-points-gate";
 import { LibraryRulesSettings } from "./_library-rules";
+import { LibraryReaderDisplaySettings } from "./_library-reader-display";
 import { isBillingCompanyComplete } from "@/lib/payments/moyasarConfig";
 import type { GatewayDiagnostic, KeyMode } from "@/lib/payments/gatewayDiagnostic";
 import { PaymentRulesCard } from "./_components/PaymentRulesCard";
@@ -575,6 +576,9 @@ export default function AdminSettingsPage() {
           {/* ── Reviewed summaries + the individual's free-question tool (batch l12 rules, Q96 / Q121) ── */}
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
           <LibraryRulesSettings isDark={isDark} />
+          {/* ── Library display choices still open (batch l12: Q101, library question 5) ── */}
+          <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
+          <LibraryReaderDisplaySettings isDark={isDark} />
 
           {/* ── Divider ── */}
           <div className={`border-t ${isDark ? "border-white/[0.06]" : "border-slate-100"}`} />
