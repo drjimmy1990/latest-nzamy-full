@@ -9,7 +9,7 @@ import {
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 import { isDemoMode } from "@/lib/runtimeMode";
-import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
+import FirmHearingsLive from "./_FirmHearingsLive";
 
 // ─── Modals ───────────────────────────────────────────────────────────────────
 
@@ -245,19 +245,11 @@ function FirmHearingsPageDemo() {
 }
 
 /**
- * Owner decision ١١٥ (demo fully separated from production): everything on
- * this screen is a fixture — no API call backs it — so it renders in demo mode
- * only. A production firm sees the honest gate instead of invented rows.
+ * Owner decision ١١٥ (demo fully separated from production): the fixture
+ * screen above renders in demo mode only. Production (N13, batch l12) shows
+ * the real «جلساتي / كل جلسات المكتب» from the database (_FirmHearingsLive).
  */
 export default function FirmHearingsPage() {
-  if (!isDemoMode) {
-    return (
-      <DashboardComingSoon
-        title="جلسات المكتب"
-        description="جلسات كل قضية متاحة في ملف القضية نفسه. الجدول المجمّع لجلسات المكتب يُعرض هنا حين يُربط بها."
-        backHref="/dashboard/firm"
-      />
-    );
-  }
+  if (!isDemoMode) return <FirmHearingsLive />;
   return <FirmHearingsPageDemo />;
 }

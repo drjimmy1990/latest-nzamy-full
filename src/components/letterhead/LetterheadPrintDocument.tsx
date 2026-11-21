@@ -37,6 +37,9 @@ function isSheetReady(root: HTMLElement): boolean {
 const paragraphStyle = { whiteSpace: "pre-wrap", margin: "0 0 2mm" } as const;
 const listStyle = { margin: "0 0 2mm", paddingInlineStart: "7mm" } as const;
 
+const tableCellStyle = (head: boolean) =>
+  ({ border: "1px solid #999999", padding: "1.5mm 2mm", textAlign: "center", fontWeight: head ? 700 : 400, background: head ? "#F1F1F1" : undefined }) as const;
+
 export function Block({ block }: { block: DocBlock }) {
   switch (block.kind) {
     case "title":
@@ -53,6 +56,21 @@ export function Block({ block }: { block: DocBlock }) {
       );
     case "signature":
       return <div style={{ marginTop: "10mm" }}>{block.lines.map((line, i) => <p key={i} style={paragraphStyle}>{line}</p>)}</div>;
+    case "table":
+      return (
+        <table dir="rtl" style={{ width: "100%", borderCollapse: "collapse", fontSize: "10pt", margin: "0 0 4mm" }}>
+          <thead style={{ display: "table-header-group" }}>
+            <tr>{block.header.map((h, i) => <th key={i} style={tableCellStyle(true)}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {block.rows.map((row, r) => (
+              <tr key={r} style={{ breakInside: "avoid" }}>
+                {block.header.map((_, c) => <td key={c} style={tableCellStyle(false)}>{row[c] ?? ""}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
   }
 }
 

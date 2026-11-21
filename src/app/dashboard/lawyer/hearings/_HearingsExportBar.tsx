@@ -10,7 +10,9 @@
  *    court location, «القضية: …» — never notes or client names.
  * 2. The printout: the list on screen (the filters the lawyer chose) on his
  *    own letterhead, through LetterheadExportBar (print / PDF / Word) — the
- *    same bar the AI documents use, shown to lawyers and firms only.
+ *    same bar the AI documents use, shown to lawyers and firms only. N13
+ *    (batch l12): one six-column table — التاريخ، الوقت، المحكمة، رقم القضية،
+ *    الموكّل، الدائرة (src/lib/hearings/hearingsTable.ts).
  *
  * Built in the browser from rows already read; nothing is stored.
  */
@@ -20,18 +22,14 @@ import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import type { DocBlock } from "@/lib/docx/ooxml";
 import { buildCalendarFeed, CALENDAR_FEED_FILENAME, type FeedDeadline, type FeedHearing } from "@/lib/calendar/calendarFeed";
 import { downloadIcsFile } from "@/lib/calendar/downloadIcs";
-
-export interface PrintGroup {
-  heading: string;
-  lines: string[];
-}
+import { HEARINGS_TABLE_TITLE, hearingsTableBlocks, type HearingsTableRow } from "@/lib/hearings/hearingsTable";
 
 interface Props {
   isDark: boolean;
   /** Every hearing read (the feed is the whole diary, not the filtered view). */
   hearings: FeedHearing[];
-  /** The list as filtered on screen, grouped by day, already worded. */
-  printGroups: PrintGroup[];
+  /** The list as filtered on screen, one row per hearing (N13 table). */
+  tableRows: HearingsTableRow[];
   /** False while the read is in flight or failed: nothing to export yet. */
   ready: boolean;
   /** The server holds more hearings than the page read: the file says so. */
@@ -65,16 +63,11 @@ async function readOpenDeadlines(): Promise<{ rows: FeedDeadline[]; truncated: b
   }
 }
 
-export function hearingsPrintBlocks(groups: PrintGroup[]): DocBlock[] {
-  const blocks: DocBlock[] = [{ kind: "title", text: "جدول الجلسات والمواعيد" }];
-  for (const g of groups) {
-    if (g.lines.length === 0) continue;
-    blocks.push({ kind: "heading", text: g.heading }, { kind: "list", items: g.lines, ordered: false });
-  }
-  return blocks;
+export function hearingsPrintBlocks(rows: HearingsTableRow[]): DocBlock[] {
+  return hearingsTableBlocks(rows);
 }
 
-export default function HearingsExportBar({ isDark, hearings, printGroups, ready, hearingsTruncated }: Props) {
+export default function HearingsExportBar({ isDark, hearings, tableRows, ready, hearingsTruncated }: Props) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -98,7 +91,7 @@ export default function HearingsExportBar({ isDark, hearings, printGroups, ready
     setBusy(false);
   }
 
-  const blocks = hearingsPrintBlocks(printGroups);
+  const blocks = hearingsPrintBlocks(tableRows);
   const button = `flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold disabled:opacity-50 ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`;
 
   return (
@@ -115,7 +108,7 @@ export default function HearingsExportBar({ isDark, hearings, printGroups, ready
         </button>
         {ready && blocks.length > 1 && (
           <div className="min-w-0 flex-1">
-            <LetterheadExportBar title="جدول الجلسات والمواعيد" blocks={blocks} filename="hearings" />
+            <LetterheadExportBar title={HEARINGS_TABLE_TITLE} blocks={blocks} filename="hearings" />
           </div>
         )}
       </div>

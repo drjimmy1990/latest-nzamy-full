@@ -10,7 +10,7 @@ import {
 } from "@/lib/services/hearingVocabulary";
 import { recordNotification } from "@/lib/notify";
 import {
-  HEARINGS_SELECT, hearingNamesFor, parseHearingAssignee, readCallerHearingFirmId, resolveOwnCase, toDto, type HearingRow,
+  HEARINGS_SELECT, hearingCaseInfosFor, hearingNamesFor, parseHearingAssignee, readCallerHearingFirmId, resolveOwnCase, toDto, type HearingRow,
 } from "./_shared";
 import { validateHearingDuration } from "@/lib/services/item59Labels";
 import { DEADLINE_HEARING_KIND, hearingDurationMinutes, hearingStartMs } from "@/lib/services/scheduleClash";
@@ -101,8 +101,8 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = (data ?? []) as HearingRow[];
-    const names = await hearingNamesFor(supabase, user.id, rows);
-    return NextResponse.json({ data: rows.map((row) => toDto(row, user.id, names)), total: count ?? rows.length });
+    const [names, caseInfos] = await Promise.all([hearingNamesFor(supabase, user.id, rows), hearingCaseInfosFor(supabase, rows)]);
+    return NextResponse.json({ data: rows.map((row) => toDto(row, user.id, names, caseInfos)), total: count ?? rows.length });
   } catch (err) {
     console.error("[lawyer/hearings GET] Unexpected error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
