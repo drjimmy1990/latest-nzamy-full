@@ -82,7 +82,7 @@ const ROLE_CONTENT: Record<RoleKey, RoleContent> = {
     body: "تابع قضايا الجهة، واطلب الرأي القانوني، بكفاءة وشفافية.",
     actions: [
       { label: "لوحة القضايا", href: "/dashboard/government/cases", primary: true },
-      { label: "الرأي القانوني", href: "/ai/legal-opinion" },
+      { label: "سؤال قانوني سريع", href: "/ai/quick-answer" },
     ],
   },
   ngo: {
@@ -91,7 +91,7 @@ const ROLE_CONTENT: Record<RoleKey, RoleContent> = {
     actions: [
       { label: "إضافة متطوع", href: "/dashboard/ngo/volunteers/new", primary: true },
       { label: "التقارير الدورية", href: "/dashboard/ngo/reports" },
-      { label: "الرأي القانوني", href: "/ai/legal-opinion" },
+      { label: "سؤال قانوني سريع", href: "/ai/quick-answer" },
     ],
   },
   provider: {
@@ -109,7 +109,6 @@ const ROLE_CONTENT: Record<RoleKey, RoleContent> = {
     actions: [
       { label: "قائمة الاشتراطات", href: "/dashboard/micro/requirements", primary: true },
       { label: "استشارة سريعة", href: "/ai/quick-answer" },
-      { label: "الرأي القانوني", href: "/ai/legal-opinion" },
     ],
   },
 };

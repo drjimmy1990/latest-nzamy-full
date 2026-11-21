@@ -9,6 +9,7 @@ import { withGraphCallLog } from "@/lib/ai/graphCallLog";
 import { resolveAiFiles } from "@/lib/ai/aiFiles";
 import { aiTextFilesConfig, pastedFileUrlFrom } from "@/lib/ai/textFilesConfig";
 import { startRunWith, type RouteReply, type RunActor } from "@/lib/ai/runCore";
+import { readConsultantPaidTerm } from "@/lib/ai/consultantTerm";
 import { freeQuestionStatusWith, freeQuestionToolFor, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
 import { progressSink } from "@/lib/ai/progressEvents";
 import { runForViewer, viewerIsAdmin } from "@/lib/ai/runVisibility";
@@ -149,14 +150,16 @@ export async function POST(request: NextRequest) {
             await supabase.from("lawyer_profiles").select("practice_kind").eq("user_id", user.id).maybeSingle(),
           ).practiceKind
         : "advocate";
+    const admin = await createServiceClient();
     const actor: RunActor = {
       userId: user.id,
       userType,
       practiceKind: practice,
       displayName: typeof profile?.display_name === "string" ? profile.display_name : null,
+      // Owner ١٤٦: read for a consultant only (consultantTerm.ts).
+      ...(practice === "consultant" ? { consultantPaidTerm: await readConsultantPaidTerm(admin, user.id) } : {}),
     };
 
-    const admin = await createServiceClient();
     const graphOn = graphRagEnabled();
     // Off unless NZAMY_AI_TEXT_FILES is on: .docx, .txt, .md and pasted text are
     // then refused before any charge (aiFiles.ts, runCore.ts).

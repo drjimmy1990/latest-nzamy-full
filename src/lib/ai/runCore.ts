@@ -45,7 +45,7 @@
  * Pure: relative imports only (type-only for Supabase), so `node --test` runs it.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CONSULTANT_BLOCKED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
+import { CONSULTANT_BLOCKED_MESSAGE, CONSULTANT_RESERVED_MESSAGE, type PracticeKind } from "../auth/practiceKind.ts";
 import { resolveToolRuntime, toolAvailability, toolRoleRefusal } from "./aiToolsConfig.ts";
 import type { N8nCall, N8nOutcome } from "./n8nClient.ts";
 import {
@@ -122,6 +122,8 @@ export interface RunActor {
   userType: string;
   practiceKind: PracticeKind;
   displayName: string | null;
+  /** Owner ١٤٦: a consultant's paid term already running at the cut-off (consultantTerm.ts). */
+  consultantPaidTerm?: boolean;
 }
 
 export interface StartRunDeps {
@@ -523,7 +525,9 @@ export async function startRunWith(
   const refused = toolRoleRefusal(spec, actor);
   if (refused === "role") return { status: 403, body: { error: AI_COPY.role, code: "role" } };
   if (refused === "consultant_blocked") {
-    return { status: 403, body: { error: CONSULTANT_BLOCKED_MESSAGE, code: "consultant_blocked" } };
+    // Owner ١٤٦: a reserved tool that is not pleading names the reservation, not Art. 18.
+    const message = spec.consultantPaidTerm === true ? CONSULTANT_RESERVED_MESSAGE : CONSULTANT_BLOCKED_MESSAGE;
+    return { status: 403, body: { error: message, code: "consultant_blocked" } };
   }
 
   const runtime = resolveToolRuntime(spec, await readAiToolsSetting(admin));

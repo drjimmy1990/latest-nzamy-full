@@ -24,6 +24,8 @@ const src = (rel: string) => readFileSync(join(process.cwd(), "src", rel), "utf8
 /** The two test tools and the library's own assistant keep their own lists. */
 const NOT_CUSTOMER_TOOLS = new Set(["echo-fast", "echo-job", "library-assistant"]);
 const PLEADING_TOOLS = ["analyze-strength", "brief-check", "legal-drafter", "najiz-optimizer", "wargaming"];
+/** Owner ١٤٦ (batch l12): reserved for the advocate and the firm, not pleading; a paid consultant keeps them to his term's end. */
+const RESERVED_TOOLS = ["contracts-pro", "legal-opinion-consult", "legal-opinion-letter"];
 const OUTSIDERS = ["", "client", "arbitrator", "translator"];
 const KINDS = ["advocate", "consultant", null] as const;
 
@@ -35,11 +37,16 @@ test("REGISTERED_ROLES is profiles.user_type without admin", () => {
   assert.deepEqual([...REGISTERED_ROLES].sort(), types.sort());
 });
 
-/** The controller's table for owner ٤١٧ (8 Nov 2026): general guidance for every account, the rest for lawyers and firms. */
-const GENERAL_GUIDANCE_TOOLS = ["legal-opinion-consult", "legal-opinion-letter", "quick-answer"];
+/**
+ * The controller's table for owner ٤١٧ (8 Nov 2026): general guidance for every
+ * account, the rest for lawyers and firms. Owner ١٢٢ (batch l12) moved the two
+ * legal-opinion types to lawyers and firms.
+ */
+const GENERAL_GUIDANCE_TOOLS = ["quick-answer"];
 const LAWYER_FIRM_TOOLS = [
   "analyze-strength", "assistant", "brief-check", "canvas-card", "case-brief", "communicate", "contract-drafter",
-  "contract-negotiator", "contract-review", "contracts-pro", "legal-drafter", "najiz-optimizer", "wargaming",
+  "contract-negotiator", "contract-review", "contracts-pro", "legal-drafter", "legal-opinion-consult", "legal-opinion-letter",
+  "najiz-optimizer", "wargaming",
 ];
 
 test("owner ٤١٧ (8 Nov): the role table — general guidance for every account, every other tool for lawyers and firms", () => {
@@ -50,8 +57,8 @@ test("owner ٤١٧ (8 Nov): the role table — general guidance for every accoun
   for (const id of LAWYER_FIRM_TOOLS) assert.deepEqual([...AI_TOOLS[id].roles], ["lawyer", "firm"], id);
 });
 
-test("government reaches the legal opinion; the library assistant and the test tools keep their lists", () => {
-  for (const id of ["legal-opinion-consult", "legal-opinion-letter"]) assert.ok(AI_TOOLS[id].roles.includes("government"), id);
+test("owner ١٢٢: government no longer reaches the legal opinion; the library assistant and the test tools keep their lists", () => {
+  for (const id of ["legal-opinion-consult", "legal-opinion-letter"]) assert.ok(!AI_TOOLS[id].roles.includes("government"), id);
   assert.deepEqual(
     [...AI_TOOLS["library-assistant"].roles],
     ["individual", "lawyer", "firm", "corporate", "provider", "micro", "government", "ngo"],
@@ -60,9 +67,11 @@ test("government reaches the legal opinion; the library assistant and the test t
   for (const id of ["echo-fast", "echo-job"]) assert.deepEqual([...AI_TOOLS[id].roles], ["lawyer", "firm"], id);
 });
 
-test("the consultant lock is on exactly the pleading tools (Art. 18, decision 407, ruling R1)", () => {
+test("the consultant lock is on the pleading tools (Art. 18, decision 407, ruling R1) and the owner ١٤٦ reserved tools", () => {
   const blocked = Object.values(AI_TOOLS).filter((t) => t.consultantBlocked).map((t) => t.id).sort();
-  assert.deepEqual(blocked, PLEADING_TOOLS);
+  assert.deepEqual(blocked, [...PLEADING_TOOLS, ...RESERVED_TOOLS].sort());
+  const reserved = Object.values(AI_TOOLS).filter((t) => t.consultantPaidTerm === true).map((t) => t.id).sort();
+  assert.deepEqual(reserved, RESERVED_TOOLS);
 });
 
 test("the matrix: each tool × each account type × the consultant flag", () => {
@@ -95,12 +104,12 @@ test("the matrix: each tool × each account type × the consultant flag", () => 
       assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType, practiceKind: "advocate" }), null, `${userType} runs ${id}`);
     }
   }
-  for (const id of PLEADING_TOOLS) {
+  for (const id of [...PLEADING_TOOLS, ...RESERVED_TOOLS]) {
     assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "consultant" }), "consultant_blocked", id);
     assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "advocate" }), null, id);
   }
-  // A consultant keeps the advice tools.
-  for (const id of ["quick-answer", "legal-opinion-consult", "contracts-pro", "assistant"]) {
+  // A consultant keeps the other advice tools (owner ١٤٦ took the legal opinion and contracts-pro).
+  for (const id of ["quick-answer", "contract-review", "assistant"]) {
     assert.equal(toolRoleRefusal(AI_TOOLS[id], { userType: "lawyer", practiceKind: "consultant" }), null, id);
   }
 });
@@ -220,10 +229,11 @@ test("Q443: the links lead to tools the role may run", () => {
   assert.doesNotMatch(labor, /استشارة مجانية — بدون التزام|أجب على ٤ أسئلة فقط/, "no free consultation is promised");
   const banner = src("components/OnboardingBanner.tsx");
   assert.match(banner, /\{ label: "استشارة سريعة", href: "\/ai\/quick-answer" \}/);
-  assert.match(banner, /\{ label: "الرأي القانوني", href: "\/ai\/legal-opinion" \}/);
+  // Owner ١٢٢: the legal opinion is lawyer-only, so the banner offers the quick answer instead.
+  assert.doesNotMatch(banner, /href: "\/ai\/legal-opinion"/);
   assert.ok(!AI_TOOLS["analyze-strength"].roles.includes("individual"), "owner ٤١٧ (8 Nov): lawyers and firms only");
   assert.ok(AI_TOOLS["quick-answer"].roles.includes("micro"));
-  assert.ok(AI_TOOLS["legal-opinion-consult"].roles.includes("government"));
+  assert.ok(!AI_TOOLS["legal-opinion-consult"].roles.includes("government"));
 });
 
 test("no AI tool page still says it is for lawyers only", () => {
@@ -243,15 +253,17 @@ test("a short table of named cases (tool × account type × practice kind)", () 
     ["case-brief", "firm", null, null],
     ["quick-answer", "", null, "role"],
     ["wargaming", "admin", "consultant", null],
-    ["legal-opinion-consult", "government", null, null],
+    ["legal-opinion-consult", "government", null, "role"],
     // library-assistant is open to every type (LIBRARY_ROLES; its gate is the tier rule): an unknown type is refused.
     ["library-assistant", "individual", null, null],
     ["library-assistant", "client", null, "role"],
     ["echo-fast", "individual", null, "role"],
     ["najiz-optimizer", "lawyer", "consultant", "consultant_blocked"],
-    ["contracts-pro", "lawyer", "consultant", null],
+    ["contracts-pro", "lawyer", "consultant", "consultant_blocked"],
+    ["contract-review", "lawyer", "consultant", null],
     ["analyze-strength", "micro", "advocate", "role"],
-    ["legal-opinion-letter", "individual", null, null],
+    ["legal-opinion-letter", "individual", null, "role"],
+    ["legal-opinion-letter", "firm", "consultant", "consultant_blocked"],
     ["quick-answer", "corporate", null, null],
     ["brief-check", "firm", "consultant", "consultant_blocked"],
   ];

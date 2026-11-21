@@ -9,6 +9,8 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useContractsState } from "@/hooks/useContractsState";
 import { useAiRun } from "@/hooks/useAiRun";
 import { useToolUsable } from "@/hooks/useToolUsable";
+import { useConsultantReserved } from "@/components/ai/ConsultantReservedGate";
+import { CONSULTANT_RESERVED_MESSAGE } from "@/lib/auth/practiceKind";
 import { useToolDraft } from "@/hooks/useToolDraft";
 import { draftChoice, draftText as draftField, draftTextList, draftTextMap } from "@/lib/payments/topUpDraft";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
@@ -177,6 +179,8 @@ function AIContractsPageInner() {
   // (q296): until then the page's copy and the last step stay the team order. The
   // run lives here so that leaving the step cannot lose a charged run from the screen.
   const reviewUsable = useToolUsable("contract-review");
+  // Owner ١٤٦: true only for a consultant the server refuses contracts-pro.
+  const draftReserved = useConsultantReserved("contracts-pro");
   const reviewRun = useAiRun();
   const review = reviewRun.phase === "done" ? asContractReview(reviewRun.output) : null;
   const reviewSource = contractReviewSource(s.attachments, s.rContractText, AI_TEXT_FILES_ON);
@@ -306,8 +310,10 @@ function AIContractsPageInner() {
           <div className="grid grid-cols-2 gap-4">
             {/* Draft Mode — goes to B0.5 */}
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-              onClick={() => { s.setContractMode("draft"); s.setStep("parties"); }}
-              className={`rounded-2xl border-2 p-6 text-center transition-all ${isDark ? "border-[#0B3D2E]/60 bg-[#0B3D2E]/15 hover:border-[#0B3D2E]/80 hover:bg-[#0B3D2E]/25" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5 hover:border-[#0B3D2E]/50 hover:bg-[#0B3D2E]/10"}`}>
+              onClick={() => { if (draftReserved) return; s.setContractMode("draft"); s.setStep("parties"); }}
+              disabled={draftReserved === true}
+              aria-describedby={draftReserved ? "contracts-draft-reserved" : undefined}
+              className={`rounded-2xl border-2 p-6 text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed ${isDark ? "border-[#0B3D2E]/60 bg-[#0B3D2E]/15 hover:border-[#0B3D2E]/80 hover:bg-[#0B3D2E]/25" : "border-[#0B3D2E]/30 bg-[#0B3D2E]/5 hover:border-[#0B3D2E]/50 hover:bg-[#0B3D2E]/10"}`}>
               <div className={`h-14 w-14 mx-auto mb-3 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#0B3D2E]/40" : "bg-[#0B3D2E]/10"}`}>
                 <PencilSimple size={26} weight="duotone" className={isDark ? "text-emerald-300" : "text-[#0B3D2E]"} />
               </div>
@@ -338,6 +344,12 @@ function AIContractsPageInner() {
               </div>
             </motion.button>
           </div>
+          {/* Owner ١٤٦: contract drafting is reserved; a consultant keeps the review. */}
+          {draftReserved && (
+            <p id="contracts-draft-reserved" role="note" className={`text-center text-[12px] leading-relaxed ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+              صياغة العقود: {CONSULTANT_RESERVED_MESSAGE}
+            </p>
+          )}
           <p className={`text-center text-[11px] flex justify-center items-center gap-1.5 ${isDark ? "text-zinc-600" : "text-zinc-400"}`}><LockKey size={14} weight="bold" /> الاختيار قابل للتغيير في أي وقت من أعلى الصفحة</p>
         </motion.div>
       )}
