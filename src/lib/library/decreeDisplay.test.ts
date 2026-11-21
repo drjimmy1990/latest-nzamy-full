@@ -122,3 +122,13 @@ test("the decree reader uses the display helpers: MD preamble, clean snippets, c
   // L12: a skeleton while loading, before «not found»
   assert.ok(page.indexOf("if (!order && orderLoading)") > -1 && page.indexOf("if (!order && orderLoading)") < page.indexOf("لم يتم العثور على المستند المطلوب"));
 });
+
+test("Q101: every decree-title path lib-a owns masks it for a non-subscriber", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+  assert.match(src("../../app/api/library/decrees/[id]/route.ts"), /title: decreeTitleForViewer\(/);
+  assert.match(src("../../app/api/library/init/route.ts"), /shaped\.title = decreeTitleForViewer\(/);
+  assert.match(src("../../app/api/library/search/route.ts"), /decreeTitleForViewer\(\{\s*title: r\.title, type: r\.type/);
+  assert.match(src("../../app/api/library/autocomplete/route.ts"), /title: decreeTitleForViewer\(\{ title: o\.title, type: o\.type \}, hasFullAccess\)/);
+  assert.match(src("../../app/api/library/monitor/route.ts"), /title: decreeTitleForViewer\(\{ title: row\.title \}, isSubscriber\)/);
+});

@@ -141,7 +141,7 @@ export async function GET(
     }
     const preamble = typeof preambleRow?.preamble === 'string' ? preambleRow.preamble : '';
     // How many leading pages carry their text: all (Pro+, whitelisted), an
-    // admin override, or the owner's first two pages.
+    // admin per-item override, or the admin setting decree_free_pages (Q101, 0).
     const free = freeDecreePages(probe, pages.length, (await loadLibraryReaderDisplay()).decree_free_pages);
     const unlockedCount = free === -1 ? pages.length : Math.min(free, pages.length);
 
