@@ -53,6 +53,9 @@ const sections = {
         "نحتفظ ببياناتك طالما حسابك نشط أو بالقدر اللازم لتقديم الخدمات.",
         "بعد إغلاق الحساب، تُحتفظ ببيانات المعاملات لمدة ٧ سنوات وفق متطلبات الأنظمة المالية والقضائية السعودية.",
         "سجلات النظام لدينا تُحتفظ بها ٩٠ يوماً كحد أقصى.",
+        // l12 (L11-log): the admin setting ai_runs_retention (default 12 months,
+        // public.ai_runs_retention). Raising it above 12 needs this line changed.
+        "أسئلتك إلى أدوات الذكاء الاصطناعي وأجوبتها تُحفظ في «سجلّي» مدة أقصاها ١٢ شهراً، ولك حذف أي منها قبل ذلك، ثم يُمسح نصها ولا يبقى إلا قيد العملية وتاريخها ونقاطها.",
         "بيانات أداتي قياس الزيارات (إن فُعّلتا ووافقت عليهما) تُحفظ لدى مزوّديهما: تحفظ Google Analytics بيانات الأحداث التفصيلية شهرين، وتحفظ Microsoft Clarity تسجيلات التصفح ٣٠ يوماً وقد تُبقي عيّنة منها حتى ٩ أشهر، وتبقى لديهما تقارير إحصائية مجمّعة لا تحدد هويتك.",
         "يمكنك طلب حذف بياناتك التي لا يوجد التزام قانوني بالاحتفاظ بها عبر نموذج طلب الحذف.",
       ],
@@ -153,6 +156,7 @@ const sections = {
         "We retain your data as long as your account is active or as needed to provide services.",
         "After account closure, transaction data is retained for 7 years per Saudi financial and judicial regulations.",
         "Our own system logs are retained for 90 days at most.",
+        "Your questions to the AI tools and their answers are kept in «My history» for 12 months at most, and you may delete any of them sooner; after that their text is erased and only the record of the run, its date and its points remain.",
         "Visitor analytics data (only if those tools are switched on and you agreed) is kept by the providers: Google Analytics keeps detailed event data for 2 months, Microsoft Clarity keeps session recordings for 30 days and may keep a sample for up to 9 months, and both keep aggregated statistics that do not identify you.",
         "You can request deletion of data with no legal retention obligation through the deletion request form.",
       ],

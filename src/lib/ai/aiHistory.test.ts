@@ -111,3 +111,14 @@ test("L11-log (l12 integration): the single-screen lawyer tools show their own l
     assert.ok(page.includes(`<AiHistoryList isDark={isDark} tool="${tool}" recent />`), tool);
   }
 });
+
+
+test("L11-log (l12 integration): /privacy states the AI history retention the setting defaults to (12 months at most)", async () => {
+  const { AI_RETENTION_DEFAULT_MONTHS } = await import("./aiHistory.ts");
+  assert.equal(AI_RETENTION_DEFAULT_MONTHS, 12);
+  const privacy = readFileSync(new URL("../../app/privacy/page.tsx", import.meta.url), "utf8");
+  assert.ok(privacy.includes("أسئلتك إلى أدوات الذكاء الاصطناعي وأجوبتها تُحفظ في «سجلّي» مدة أقصاها ١٢ شهراً، ولك حذف أي منها قبل ذلك، ثم يُمسح نصها ولا يبقى إلا قيد العملية وتاريخها ونقاطها."));
+  assert.ok(privacy.includes("kept in «My history» for 12 months at most"));
+  const sql = readFileSync(new URL("../../../supabase/migrations/20261202_40_l12_ai_history_draft_limits.sql", import.meta.url), "utf8");
+  assert.match(sql, /v_months int := 12;/, "the SQL default the page states");
+});
