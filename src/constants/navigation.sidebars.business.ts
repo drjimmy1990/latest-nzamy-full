@@ -119,8 +119,8 @@ export const CORPORATE_SIDEBAR: SidebarGroup[] = [
       { label: "اطلب خدمة جديدة", labelEn: "Request a Service", href: "/dashboard/client/services",     icon: "Plus", badge: "ابدأ هنا" },
       { label: "طلباتي",          labelEn: "My Orders",         href: "/dashboard/client/requests",     icon: "ListChecks" },
       { label: "استشاراتي",       labelEn: "Consultations",     href: "/dashboard/client/consultation", icon: "ChatDots" },
-      // Owner ١٢٣ (batch l12): the business's «صائغ العقود المبسّط»; «قريباً» until the tool is live (liveToolId).
-      { label: "صائغ العقود المبسّط", labelEn: "Simple Contract Drafter", href: "/ai/simple-contract", icon: "PencilSimple", badge: "قريباً", liveToolId: "simple-contract" },
+      // Owner ١٢٣ (batch l12): the business's «صائغ العقود المبسّط»; «قيد التفعيل» until the tool is live (liveToolId).
+      { label: "صائغ العقود المبسّط", labelEn: "Simple Contract Drafter", href: "/ai/simple-contract", icon: "PencilSimple", badge: "قيد التفعيل", liveToolId: "simple-contract" },
     ],
   },
   {

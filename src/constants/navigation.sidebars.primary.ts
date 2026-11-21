@@ -98,8 +98,8 @@ export const INDIVIDUAL_SIDEBAR: SidebarGroup[] = [
     items: [
       { label: "المستشار الذكي",       labelEn: "AI Consultant",      href: "/ai/consult",               icon: "Brain", badge: "قريباً" },
       // Owner ٤١٧ / ٤٤٣ (8 Nov 2026): «محترف العقود المختصر» (/ai/contract-drafter) is a lawyer and firm tool — no row here.
-      // Owner ١٢٣ (batch l12): the individual's own «صائغ العقود المبسّط»; «قريباً» until the tool is live (liveToolId).
-      { label: "صائغ العقود المبسّط", labelEn: "Simple Contract Drafter", href: "/ai/simple-contract", icon: "PencilSimple", badge: "قريباً", liveToolId: "simple-contract" },
+      // Owner ١٢٣ (batch l12): the individual's own «صائغ العقود المبسّط»; «قيد التفعيل» until the tool is live (liveToolId).
+      { label: "صائغ العقود المبسّط", labelEn: "Simple Contract Drafter", href: "/ai/simple-contract", icon: "PencilSimple", badge: "قيد التفعيل", liveToolId: "simple-contract" },
       { label: "الفاحص الذكي",        labelEn: "Doc Analyzer",       href: "/ai/analyze",              icon: "Scan", badge: "قريباً" },
       { label: "صائغ الخطابات",       labelEn: "Letter Drafter",     href: "/dashboard/client/letters", icon: "PencilLine" },
     ],

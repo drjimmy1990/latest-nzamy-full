@@ -77,7 +77,7 @@ test('the corporate sidebar links to nothing that renders fabricated data', () =
     '/dashboard/client/requests',
     '/dashboard/client/consultation',
     // Owner ١٢٣ (batch l12): the business's simple contract drafter — a real
-    // tool page that says «قريباً» while the tool is switched off.
+    // tool page that is «قيد التفعيل» while the tool is switched off.
     '/ai/simple-contract',
     '/notifications',
     '/blog',

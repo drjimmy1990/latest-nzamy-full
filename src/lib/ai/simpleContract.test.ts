@@ -262,18 +262,32 @@ test("rename (owner ١٢٣): the lawyer's short draft no longer calls itself «�
   assert.match(step, /مسوّدة عقد مختصرة/);
 });
 
-test("entry links (l12 integration): hub card and sidebars for individuals and businesses only, «قريباً» until live; the catalogue card opens the tool", async () => {
+test("entry links (l12 integration): hub card and sidebars for individuals and businesses only, «قيد التفعيل» until live; the catalogue card opens the tool", async () => {
   const { readFileSync: read } = await import("node:fs");
   const src = (rel: string) => read(new URL(`../../${rel}`, import.meta.url), "utf8");
   const hub = src("app/ai/page.tsx");
   assert.match(hub, /const SIMPLE_CONTRACT_AUDIENCE: ReadonlySet<string> = new Set\(\["individual", "corporate", "admin"\]\);/);
   assert.match(hub, /if \(t\.href === SIMPLE_CONTRACT_HREF\) return SIMPLE_CONTRACT_AUDIENCE\.has\(user\.userType \?\? ""\);/);
-  assert.match(hub, /t\.href === SIMPLE_CONTRACT_HREF && !simpleContractLive \? \{ \.\.\.t, badgeAr: "قريباً", badgeEn: "Soon" \} : t/);
-  const row = 'href: "/ai/simple-contract", icon: "PencilSimple", badge: "قريباً", liveToolId: "simple-contract" }';
+  assert.match(hub, /t\.href === SIMPLE_CONTRACT_HREF && !simpleContractLive \? \{ \.\.\.t, badgeAr: "قيد التفعيل", badgeEn: "Activating soon" \} : t/);
+  const row = 'href: "/ai/simple-contract", icon: "PencilSimple", badge: "قيد التفعيل", liveToolId: "simple-contract" }';
   assert.ok(src("constants/navigation.sidebars.primary.ts").includes(row), "individual sidebar");
   assert.ok(src("constants/navigation.sidebars.business.ts").includes(row), "corporate sidebar");
   assert.ok(!src("constants/navigation.sidebars.legal.ts").includes("/ai/simple-contract"), "never the lawyer or firm menu");
   const { CLIENT_SERVICE_CATALOG } = await import("../../constants/clientServiceCatalog.ts");
   const card = CLIENT_SERVICE_CATALOG.find((s) => s.serviceId === "contract-draft")!;
   assert.equal(card.route, "/ai/simple-contract");
+});
+
+
+test("«قيد التفعيل» rows (l12): asked about like «قريباً», badge dropped once live, never moved into the «قريباً» section", async () => {
+  const { comingSoonToolIds, withLiveToolBadges, withComingSoonLast, PENDING_ACTIVATION_BADGE } = await import("../../constants/navigation.comingSoon.ts");
+  const groups = [{ title: "x", items: [
+    { label: "a", href: "/a", icon: "X" },
+    { label: "b", href: "/ai/simple-contract", icon: "X", badge: PENDING_ACTIVATION_BADGE, liveToolId: "simple-contract" },
+  ] }];
+  assert.deepEqual(comingSoonToolIds(groups as never), ["simple-contract"]);
+  const live = withLiveToolBadges(groups as never, new Set(["simple-contract"]));
+  assert.equal(live[0].items[1].badge, undefined);
+  assert.equal(withLiveToolBadges(groups as never, new Set(["other"]))[0].items[1].badge, PENDING_ACTIVATION_BADGE);
+  assert.equal(withComingSoonLast(groups as never).length, 1, "not grouped with «قريباً»");
 });
