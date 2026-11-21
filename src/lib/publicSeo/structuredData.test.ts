@@ -119,7 +119,7 @@ test("the home page prints the Organization from the builder (escaped)", () => {
   // Batch l9: from the admin settings (platformRegistryServer), not constants.
   assert.match(home, /const registry = await loadPlatformRegistry\(\);/);
   assert.match(home, /const organizationJsonLd = buildOrganizationJsonLd\(registry\);/);
-  assert.match(home, /<Hero licenceIssuer=\{registry\.licenceIssuer\} \/>/);
+  assert.match(home, /<Hero licence=\{registry\.licence\} licenceIssuer=\{registry\.licenceIssuer\} \/>/);
   assert.match(home, /__html: serializeJsonLd\(organizationJsonLd\)/);
 });
 

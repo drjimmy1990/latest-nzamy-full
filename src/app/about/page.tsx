@@ -12,7 +12,6 @@ import {
   ArrowLeft,
   Scales,
   CalendarBlank,
-  Star,
 } from "@phosphor-icons/react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -24,14 +23,16 @@ import { useLibraryStats } from "@/lib/library/useLibraryStats";
 
 // أُزيلت هنا ثلاث "إحصاءات" مُختلَقة: «٣٠٠+ محامٍ ومستشار» (عدد المحامين
 // المنشورين في الدليل صفر)، «١٥ ألف+ طلب استشارة»، «١٣ منطقة مغطاة».
-// ما بقي محسوبٌ فعلاً: سنة الإطلاق كما ترويها فقرة «كيف بدأت قصتنا» أدناه،
-// وأعداد المكتبة القانونية. هذه الأعداد لا تُكتب هنا حرفياً (٢٠٢٦-٠٩-٢٥): الشيفرة
+// ما بقي محسوبٌ فعلاً: أعداد المكتبة القانونية. هذه الأعداد لا تُكتب هنا حرفياً (٢٠٢٦-٠٩-٢٥): الشيفرة
 // نفسها تعمل على قاعدة السحابة (٣٨٦ وثيقة) وعلى الخادم الذاتي (٥٬٩٠١)، فأي رقم
 // ثابت خاطئ على إحداهما. تُقرأ من GET /api/library/stats (عدٌّ فعلي، مخزّن ~٢٤
 // ساعة) وتُعرض أرضياتٍ بقواعد src/lib/library/libraryStats.ts، كما في
 // LegalLibraryBanner.tsx. أثناء التحميل عنصر نائب بلا رقم، وعند الفشل تُحذف.
 // لا تُعِد رقماً هنا ما لم يكن محسوباً من بيانات حقيقية.
-const launchStat = { valueAr: "٢٠٢٥", valueEn: "2025", labelAr: "الإطلاق الرسمي", labelEn: "Official Launch" };
+// Owner ١٠٧ (default «تُحذف الجملة، إلا إن كان التاريخ صحيحاً», batch l12): the
+// launch year was never confirmed, so the «٢٠٢٥ — الإطلاق الرسمي» tile, the
+// matching timeline step and the «وفي عام ٢٠٢٥، أطلقنا…» sentence were removed
+// together (the same claim in three places). Only counted numbers remain.
 const LIBRARY_COUNTER_KEYS = ["laws", "articles", "principles"] as const;
 
 const values = [
@@ -94,15 +95,6 @@ const timeline = [
     descEn: "Attracting elite licensed lawyers and consultants to ensure exceptional quality.",
     icon: UsersThree,
   },
-  {
-    year: "٢٠٢٥",
-    yearEn: "2025",
-    titleAr: "الإطلاق الرسمي للمنصة",
-    titleEn: "Official Launch",
-    descAr: "إطلاق نظامي لتقديم أذكى تجربة قانونية مدمجة بالتقنية في المملكة.",
-    descEn: "Launching Nezamy to provide the smartest tech-integrated legal experience in the Kingdom.",
-    icon: Star,
-  },
 ];
 
 // ─── Animated Counter ─────────────────────────────────────────────────────────
@@ -125,7 +117,6 @@ export default function AboutPage() {
   const library = useLibraryStats();
   // null value = still loading → placeholder. A failed count drops the tile.
   const counterStats: { value: string | null; label: string }[] = [
-    { value: isRTL ? launchStat.valueAr : launchStat.valueEn, label: isRTL ? launchStat.labelAr : launchStat.labelEn },
     ...(library.status === "error"
       ? []
       : LIBRARY_COUNTER_KEYS.map((key) => ({
@@ -228,11 +219,6 @@ export default function AboutPage() {
                   {isRTL
                     ? "على مدار خمس سنوات من البحث والتطوير، وبناء بنية تحتية تقنية متينة تعتمد على أحدث نماذج الذكاء الاصطناعي، تبلورت الرؤية وتأسست الشراكات الاستراتيجية مع نخبة المحامين والمستشارين."
                     : "Over five years of R&D, building a robust tech infrastructure powered by the latest AI models, our vision crystallized and strategic partnerships were formed with elite lawyers."}
-                </p>
-                <p>
-                  {isRTL
-                    ? "وفي عام ٢٠٢٥، أطلقنا «نظامي» رسمياً لتكون المنصة القانونية الرقمية الأذكى والأكثر تطوراً في المملكة، مقدمين تجربة سلسة تجمع بين حكمة المحامي الممارس ودقة الآلة."
-                    : "In 2025, we officially launched 'Nezamy' as the smartest digital legal platform in the Kingdom, delivering a seamless experience that combines a lawyer's wisdom with machine precision."}
                 </p>
               </div>
             </motion.div>

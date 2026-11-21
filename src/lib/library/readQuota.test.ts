@@ -188,7 +188,7 @@ test("hasSupabaseAuthCookie: the session cookie or a chunk of it; nothing else",
 });
 
 const row = (over: Partial<Record<string, unknown>>) => [{
-  status: "ok", used_today: 3, day_limit: 220, used_hour: 1, hour_limit: 120, refused_today: 0,
+  status: "ok", used_today: 3, day_limit: 50, used_hour: 1, hour_limit: 120, refused_today: 0,
   lock_reference: null, locked_until: null, resets_at: "2026-10-30T21:00:00+00:00", ...over,
 }];
 

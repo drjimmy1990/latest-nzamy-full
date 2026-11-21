@@ -479,7 +479,12 @@ test("l8: saleGatewayPaused — off, the stub and a refused test mode are paused
   assert.match(cards, /saleGatewayPaused\(payments\)/);
   assert.match(cards, /SALE_PAUSED_REQUEST_NOTE_AR : SALE_PAUSED_LINE_AR/);
   const hero = readFileSync(join(root, "src/app/founder/_components/HeroMeter.tsx"), "utf8");
-  assert.match(hero, /saleGatewayPaused\(usePaymentsStatus\(\)\) && view\.phase === "live"/);
+  // Owner 06 أ1 (l12): the countdown keeps ticking while payment is paused; the
+  // paused line is at the buy button (founderCard.ts), not in place of the timer.
+  assert.doesNotMatch(hero, /saleGatewayPaused|SALE_PAUSED_LINE_AR/);
+  assert.match(hero, /const parts = view\.remainingMs === null \? null : splitRemaining\(view\.remainingMs\);/);
+  const card = readFileSync(join(root, "src/lib/pricing/founderCard.ts"), "utf8");
+  assert.match(card, /if \(!href\) return \{ kind: "unavailable", label: FOUNDER_GATEWAY_PAUSED_TEXT/);
 });
 
 test("l11 O7: a top-up bought by a library subscriber says its expiry may lock the library (founder terms ١٢)", () => {

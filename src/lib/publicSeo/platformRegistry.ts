@@ -15,6 +15,9 @@
  * owner placeholder «[[…]]» can never reach a visitor (the validator refuses
  * it). The home badge says «منصة مرخّصة» and names an issuer only when one is
  * set (it used to say «مرخّص من وزارة العدل», an issuer the owner never gave).
+ * File 05 #33 (batch l12-access): «منصة مرخّصة» is said ONLY once the licence
+ * number is set — the badge is hidden and the /faq answer says no licence
+ * until then.
  *
  * Pure: no imports, so `node --test` loads it and client code may import it.
  */
@@ -109,8 +112,13 @@ export function licenceLineEn(reg: PlatformRegistry): string | null {
   return issuer ? `Licence number: ${number}, issued by: ${issuer}.` : `Licence number: ${number}.`;
 }
 
-/** The home page's trust badge: «منصة مرخّصة», naming the issuer only once it is set. */
-export function licenceBadge(reg: PlatformRegistry, isAr: boolean): string {
+/**
+ * The home page's trust badge: «منصة مرخّصة», naming the issuer only once it
+ * is set — and null (no badge at all) while the licence NUMBER is empty
+ * (file 05 #33, l12): a licence is never claimed without its number.
+ */
+export function licenceBadge(reg: PlatformRegistry, isAr: boolean): string | null {
+  if (!clean(reg.licence, MAX_LEN[LICENSE_NUMBER_KEY])) return null;
   const issuer = clean(reg.licenceIssuer, MAX_LEN[LICENSE_ISSUER_KEY]);
   if (isAr) return issuer ? `مرخّص من ${issuer}` : "منصة مرخّصة";
   return "Licensed platform";
