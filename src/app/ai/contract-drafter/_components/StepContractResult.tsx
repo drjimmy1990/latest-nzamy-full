@@ -64,7 +64,8 @@ export default function StepContractResult({
           {isRTL ? "مسوّدة عقدك جاهزة ✓" : "Your contract draft is ready ✓"}
         </h2>
         <p className={`text-[15px] max-w-lg mx-auto font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-          {isRTL ? "هذا عقد مبسّط للاستخدام الأولي فقط — غير موثّق ولا يُعدّ حجة قانونية كاملة" : "This is a simplified draft for preliminary use only — not notarized and not a complete legal instrument"}
+          {/* l12 (owner ١٢٣): «عقد مبسّط» is now the individual's tool (/ai/simple-contract); this is the lawyer's short draft. */}
+          {isRTL ? "هذه مسوّدة عقد مختصرة للاستخدام الأولي فقط — غير موثّقة ولا تُعدّ حجة قانونية كاملة" : "This is a short draft for preliminary use only — not notarized and not a complete legal instrument"}
         </p>
         {savedId && (
           <p className="mt-3 text-[12px] font-bold px-3 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-full inline-block">
@@ -169,8 +170,8 @@ export default function StepContractResult({
           <Warning size={20} weight="duotone" className="text-amber-500 flex-shrink-0 mt-0.5" />
           <p className={`text-[13px] leading-relaxed font-medium ${isDark ? "text-amber-500/80" : "text-amber-800/80"}`}>
             {isRTL
-              ? "هذا العقد أُعدّ بشكل آلي للمساعدة، وهو مسوّدة أولية مبسّطة فقط. لا تُوقّع عليه دون مراجعة محامٍ مرخّص للتأكد من توافقه مع الأنظمة السعودية."
-              : "This contract was automatically generated for assistance only. It is a simplified preliminary draft. Do not sign it without a licensed lawyer's review to ensure compliance with Saudi regulations."}
+              ? "هذا العقد أُعدّ بشكل آلي للمساعدة، وهو مسوّدة أولية مختصرة فقط. لا تُوقّع عليه دون مراجعة محامٍ مرخّص للتأكد من توافقه مع الأنظمة السعودية."
+              : "This contract was automatically generated for assistance only. It is a short preliminary draft. Do not sign it without a licensed lawyer's review to ensure compliance with Saudi regulations."}
           </p>
         </div>
       </div>
