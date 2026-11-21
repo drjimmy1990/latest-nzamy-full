@@ -60,7 +60,10 @@ test("lawOptions: laws only, deduplicated, capped; articleFound reads the lookup
     { slug: "labor-reg", title: "اللائحة التنفيذية لنظام العمل", lawType: null },
   ]);
   assert.deepEqual(lawOptions(null), []);
-  assert.equal(articleCheckUrl("labor", 80), "/api/library/laws/labor/citations?law=labor&n=80");
+  // N11 (l12): the tool's own lookup, not the reader's citations route.
+  assert.equal(articleCheckUrl("labor", 80), "/api/v1/ai/article-ref?law=labor&n=80");
+  assert.deepEqual(lawOptions({ laws: [{ slug: "labor", title: " نظام العمل ", lawType: "نظام" }, { slug: "", title: "x" }] }),
+    [{ slug: "labor", title: "نظام العمل", lawType: "نظام" }]);
   assert.equal(articleFound({ articles: [{ id: "a", number: 80 }] }, 80), true);
   assert.equal(articleFound({ articles: [] }, 80), false);
 });
@@ -75,7 +78,8 @@ test("the memo, contract and case editors carry the shortcut next to «إدرا�
     assert.match(src, new RegExp(`<ArticleRefAssist isDark=\\{isDark\\} targetRef=\\{${ref}\\}`), path);
   }
   const c = read("src/components/ai/ArticleRefAssist.tsx");
-  assert.match(c, /\/api\/library\/autocomplete\?q=/);
+  assert.match(c, /fetch\(lawSearchUrl\(lawQuery\)/);
+  assert.doesNotMatch(c, /\/api\/library\//, "N11: no library route (they carry the account lock)");
   assert.match(c, /articleCheckUrl\(/);
   assert.match(c, /fitsLimit\(/);
 });
