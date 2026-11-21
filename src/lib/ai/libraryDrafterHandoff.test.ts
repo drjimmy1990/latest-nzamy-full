@@ -63,6 +63,9 @@ test("the drafter consumes ?from=library into the notes field and discards it ot
   assert.ok(page.includes("consumeLibraryHandoff(sessionStorageOrNull())"));
   assert.ok(page.includes("discardLibraryHandoff(sessionStorageOrNull())"));
   assert.ok(/setNotesText\(\(prev\) => notesWithLibraryText\(prev, handoff\)\)/.test(page));
+  // Researcher V3: the tab's answers carry the shared action strip.
   const tab = readFileSync(join(process.cwd(), "src/app/laws/components/AiTabContent.tsx"), "utf8");
-  assert.ok(tab.includes("<SendToDrafterNotesButton"));
+  assert.ok(tab.includes("<ResearchTurnView"));
+  const actions = readFileSync(join(process.cwd(), "src/app/laws/research/_components/ResearchAnswerActions.tsx"), "utf8");
+  assert.ok(actions.includes("<SendToDrafterNotesButton"));
 });

@@ -18,41 +18,46 @@
  * box and no price until GET /api/v1/ai/tool-status says he may run the tool
  * (useToolUsable), and «قيد التفعيل» when it says no.
  *
- * Each question is sent on its own (the tool keeps no conversation), so the
- * screen does not pretend to remember earlier questions. The search covers the
- * law and regulation articles and the judicial principles (lib/ai/retrieval.ts);
- * it has no scope filter, so the screen offers none.
+ * Owner Q458: the questions of one session share the server's conversation
+ * (it reads the last six turns itself). The scope chips choose the part of the
+ * library searched (T14-Q485).
+ *
+ * Researcher V3 (owner file 11, phases A2-A4/A6): the session, the live stage
+ * card, each answer with its folded «خطوات البحث», its sources (opening the side
+ * panel), its action strip, the selection toolbar and the tour are the studio
+ * page's own components (src/app/laws/research/_components), so the tab and
+ * /laws/research behave the same. No guidance line sits inside an answer; the
+ * tour explains the screen.
  */
 
 import Link from "next/link";
 import { memo, useEffect, useRef, useState } from "react";
-import LibraryScopeChips, { scopeField, type LibraryScopeChoice } from "@/components/ai/LibraryScopeChips";
+import LibraryScopeChips, { type LibraryScopeChoice } from "@/components/ai/LibraryScopeChips";
 import {
-  ArrowCounterClockwise,
+  ArrowSquareOut,
   BookOpenText,
-  CheckCircle,
-  Copy,
+  NotePencil,
   PaperPlaneTilt,
-  Sparkle,
+  Question,
   WarningDiamond,
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { FREE_QUESTION_COPY } from "@/lib/ai/freeQuestion";
-import { asCitations, CitedText, SourceList, stripCitationMarkers, type Citation } from "@/components/ai/CitedAnswer";
-import { askLibrary, LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
-import type { LibraryAiAction } from "../[slug]/_ai-reply";
-import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton";
-import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
-import { aiToolLabelAr } from "@/lib/ai/toolLabels";
+import type { Citation } from "@/components/ai/CitedAnswer";
+import { LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
+import { QUESTION_MAX, useLibraryResearch } from "../research/_components/useLibraryResearch";
+import { ResearchTurnView } from "../research/_components/ResearchTurn";
+import { ResearchRefDrawer } from "../research/_components/ResearchRefDrawer";
+import { ResearchTour } from "../research/_components/ResearchTour";
+import { ResearchSelectionBar } from "../research/_components/ResearchSelectionBar";
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const ROYAL = "#0B3D2E";
 const GOLD = "#C8A762";
 
 const TOOL = "library-assistant";
-const QUESTION_MAX = 2000;
 
 /**
  * Four research questions the library can answer (owner note 02 §2.3). They
@@ -113,18 +118,6 @@ export const LiteMarkdown = memo(function LiteMarkdown({ text }: { text: string 
 });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Turn {
-  id: string;
-  question: string;
-  /** null while the run is in flight. */
-  answer: null | {
-    text: string;
-    cites: Citation[];
-    action?: LibraryAiAction;
-    refused: boolean;
-  };
-}
-
 type Access = "checking" | "guest" | "soon" | "open";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -149,13 +142,13 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
   const [input, setInput] = useState("");
   // l11-ai T14-Q485: which part of the library the assistant searches.
   const [scope, setScope] = useState<LibraryScopeChoice>("all");
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const running = turns.some(t => t.answer === null);
+  // Researcher V3: the session (askLibrary + live progress), shared with /laws/research.
+  const { turns, running, send, reset } = useLibraryResearch();
+  const [openCite, setOpenCite] = useState<{ cite: Citation; n: number } | null>(null);
+  const [tourOpen, setTourOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const conversationRef = useRef<string | null>(null);
-  // P1-27: when the running question was sent (the stage shows the real elapsed time).
-  const [startedAt, setStartedAt] = useState<number | null>(null);
   // Owner ٣٠ (l7): the account's free questions left, as the server counts
   // them; null (nothing shown) until it answers or when none are left.
   const [free, setFree] = useState<{ left: number; total: number } | null>(null);
@@ -177,27 +170,23 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
     if (turns.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [turns]);
 
-  async function send() {
-    const q = input.trim().slice(0, QUESTION_MAX);
+  async function submit() {
+    const q = input.trim();
     if (!q || running || access !== "open") return;
     setInput("");
-    const id = `t-${Date.now()}`;
-    setTurns(prev => [...prev, { id, question: q, answer: null }]);
-    setStartedAt(Date.now());
-    // The server's reply and citations, or the refusal it gave (askLibrary).
-    // Owner Q458: a follow-up carries this tab's conversation (the server adds
-    // its last six turns).
-    const res = await askLibrary({ message: q, conversationId: conversationRef.current, ...scopeField(scope) }, window.location.pathname + window.location.search);
-    if (res.conversationId) conversationRef.current = res.conversationId;
-    setTurns(prev => prev.map(t => t.id === id
-      ? { ...t, answer: { text: res.text, cites: asCitations(res.citations), action: res.action, refused: res.refused === true } }
-      : t));
+    // The server's reply and citations, or the refusal it gave (useLibraryResearch → askLibrary).
+    await send(q, scope);
   }
 
   function fillExample(prompt: string) {
-    setInput(prompt);
+    setInput(prompt.slice(0, QUESTION_MAX));
+    setOpenCite(null);
     requestAnimationFrame(() => inputRef.current?.focus());
   }
+
+  const headerBtn = `inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold border transition-[colors,transform] motion-safe:active:scale-[0.97] ${
+    isDark ? "border-white/10 text-zinc-300 hover:text-white" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E] hover:border-[#0B3D2E]"
+  }`;
 
   const muted = isDark ? "text-zinc-400" : "text-slate-500";
   const strong = isDark ? "text-white" : "text-[#0B3D2E]";
@@ -211,7 +200,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
       <div className={`flex items-start justify-between gap-3 px-5 pt-5 pb-4 border-b ${isDark ? "border-white/[0.06]" : "border-slate-100"}`}>
         <div className="flex items-start gap-3">
           <div className="mt-0.5 h-10 w-10 flex-shrink-0 rounded-xl flex items-center justify-center" style={{ background: ROYAL }}>
-            <Sparkle size={18} weight="duotone" style={{ color: GOLD }} />
+            <BookOpenText size={18} weight="duotone" style={{ color: GOLD }} />
           </div>
           <div>
             <h2 className={`text-base font-bold ${strong}`} style={{ fontFamily: "var(--font-brand)" }}>باحث المكتبة الذكي</h2>
@@ -220,30 +209,33 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
             </p>
           </div>
         </div>
-        {turns.length > 0 && (
-          <button
-            onClick={() => { conversationRef.current = null; setTurns([]); }}
-            disabled={running}
-            className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-semibold border transition-colors disabled:opacity-40 ${
-              isDark ? "border-white/10 text-zinc-300 hover:text-white" : "border-slate-200 text-slate-600 hover:text-[#0B3D2E] hover:border-[#0B3D2E]"
-            }`}
-          >
-            <ArrowCounterClockwise size={13} /> بحث جديد
+        <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {turns.length > 0 && (
+            <button onClick={reset} disabled={running} className={`${headerBtn} disabled:opacity-40`}>
+              <NotePencil size={13} style={{ color: GOLD }} /> بحث جديد
+            </button>
+          )}
+          <button onClick={() => setTourOpen(true)} className={headerBtn}>
+            <Question size={13} style={{ color: GOLD }} /> جولة في الواجهة
           </button>
-        )}
+          <Link href="/laws/research" className={headerBtn}>
+            الصفحة الكاملة <ArrowSquareOut size={12} />
+          </Link>
+        </div>
       </div>
 
       {/* Thread */}
       {turns.length > 0 && (
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-5 space-y-6">
-          {turns.map(t => <TurnView key={t.id} turn={t} isDark={isDark} />)}
-          {running && (
-            <AiThinkingStage
-              run={{ phase: "running", step: null, events: [], startedAt, runId: null, code: null, stale: false }}
+        <div ref={threadRef} className="max-h-[60vh] overflow-y-auto px-5 py-5 space-y-6">
+          {turns.map(t => (
+            <ResearchTurnView
+              key={t.id}
+              turn={t}
               isDark={isDark}
-              toolLabel={aiToolLabelAr(TOOL)}
+              onOpenCite={(cite, n) => setOpenCite({ cite, n })}
+              renderPlain={(text) => <LiteMarkdown text={text} />}
             />
-          )}
+          ))}
           <div ref={bottomRef} />
         </div>
       )}
@@ -281,7 +273,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
         )}
 
         {access === "open" && (
-          <>
+          <div data-research="composer">
             <div className="mb-2">
               <LibraryScopeChips value={scope} onChange={setScope} isDark={isDark} disabled={running} />
             </div>
@@ -294,7 +286,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
                 ref={inputRef}
                 value={input}
                 onChange={e => setInput(e.target.value.slice(0, QUESTION_MAX))}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(); } }}
                 placeholder="اكتب سؤالك عن نص نظامي أو مبدأ قضائي…"
                 aria-label="سؤالك لباحث المكتبة"
                 rows={2}
@@ -305,10 +297,10 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
                 style={{ maxHeight: 160 }}
               />
               <button
-                onClick={() => void send()}
+                onClick={() => void submit()}
                 disabled={!input.trim() || running}
                 aria-label="إرسال السؤال"
-                className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl text-white transition-opacity disabled:opacity-35"
+                className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl text-white transition-[opacity,transform] motion-safe:active:scale-[0.95] disabled:opacity-35"
                 style={{ background: ROYAL }}
               >
                 <PaperPlaneTilt size={15} weight="fill" />
@@ -316,14 +308,14 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
             </div>
             <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px] ${muted}`}>
               <span>
-                {aiToolPriceText(TOOL, "ar")} للسؤال · كل سؤال يُجاب مستقلاً
+                {aiToolPriceText(TOOL, "ar")} للسؤال
                 {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
               </span>
               <span className="inline-flex items-center gap-1">
                 <WarningDiamond size={11} /> الإجابات استرشادية ولا تُعدّ استشارة قانونية رسمية
               </span>
             </div>
-          </>
+          </div>
         )}
 
         {/* Examples: before the first question only; they fill the box, they are not answers. */}
@@ -360,80 +352,12 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
           </div>
         )}
       </div>
-    </div>
-  );
-}
 
-// ─── One question and its answer ──────────────────────────────────────────────
-function TurnView({ turn, isDark }: { turn: Turn; isDark: boolean }) {
-  const [copied, setCopied] = useState(false);
-  const a = turn.answer;
-  return (
-    <div className="space-y-3">
-      {/* Question */}
-      <div className="flex justify-start">
-        <p className="max-w-[85%] rounded-2xl rounded-tr-sm px-4 py-2.5 text-[13.5px] leading-relaxed text-white whitespace-pre-wrap" style={{ background: ROYAL }}>
-          {turn.question}
-        </p>
-      </div>
-
-      {/* Running */}
-      {a === null && (
-        <div role="status" className={`flex items-center gap-2.5 text-[12.5px] ${isDark ? "text-zinc-400" : "text-slate-500"}`}>
-          <span className="flex gap-1">
-            {[0, 1, 2].map(i => (
-              <span key={i} className="h-1.5 w-1.5 rounded-full animate-bounce" style={{ background: GOLD, animationDelay: `${i * 150}ms` }} />
-            ))}
-          </span>
-          يبحث في نصوص المكتبة ويكتب الجواب…
-        </div>
+      {openCite && (
+        <ResearchRefDrawer cite={openCite.cite} n={openCite.n} isDark={isDark} onClose={() => setOpenCite(null)} onAsk={fillExample} />
       )}
-
-      {/* Refusal / closed / error: the server's own wording and the way forward */}
-      {a?.refused && (
-        <div className={`rounded-xl border px-4 py-3 text-[13px] leading-relaxed ${
-          isDark ? "border-amber-500/25 bg-amber-500/[0.07] text-amber-100" : "border-amber-200 bg-amber-50 text-amber-900"
-        }`}>
-          <p className="whitespace-pre-line">{a.text}</p>
-          {a.action && (
-            <Link href={a.action.href} className="inline-block mt-2.5 rounded-lg px-3 py-1.5 text-[12px] font-bold text-white hover:opacity-90" style={{ background: ROYAL }}>
-              {a.action.label}
-            </Link>
-          )}
-        </div>
-      )}
-
-      {/* The assistant's answer with its sources */}
-      {a && !a.refused && (
-        <div className={`rounded-2xl border px-4 py-4 ${isDark ? "border-white/[0.07] bg-white/[0.02] text-zinc-100" : "border-slate-200 bg-slate-50/60 text-slate-800"}`}>
-          <p className="text-[11px] font-bold mb-2" style={{ color: isDark ? GOLD : ROYAL }}>باحث المكتبة</p>
-          {a.cites.length > 0
-            ? <CitedText text={a.text} cites={a.cites} isDark={isDark} className="text-[13.5px] leading-[1.85]" />
-            : <div className="text-[13.5px] leading-[1.85]"><LiteMarkdown text={a.text} /></div>}
-          {a.cites.length > 0 && (
-            <div className="mt-4">
-              <p className={`text-[11.5px] font-bold mb-1.5 ${isDark ? "text-zinc-400" : "text-slate-500"}`}>المصادر — اضغط مصدراً لمعاينة نصه هنا</p>
-              <SourceList cites={a.cites} isDark={isDark} compact />
-            </div>
-          )}
-          <div className="mt-3 flex flex-wrap items-start justify-end gap-4">
-            {/* Q485 / P1-13: lawyers and firms only (the button decides). */}
-            <SendToDrafterNotesButton text={a.text} sourceLabel="باحث المكتبة" isDark={isDark} />
-            <button
-              onClick={() => {
-                void navigator.clipboard?.writeText(stripCitationMarkers(a.text)).then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                }).catch(() => {});
-              }}
-              className={`inline-flex items-center gap-1 text-[11.5px] font-semibold ${isDark ? "text-zinc-400 hover:text-white" : "text-slate-500 hover:text-[#0B3D2E]"}`}
-            >
-              {copied ? <CheckCircle size={12} className="text-emerald-500" /> : <Copy size={12} />}
-              {copied ? "نُسخ" : "نسخ الجواب"}
-            </button>
-          </div>
-        </div>
-      )}
+      <ResearchSelectionBar containerRef={threadRef} onPrefill={fillExample} />
+      <ResearchTour open={tourOpen} onClose={() => setTourOpen(false)} isDark={isDark} />
     </div>
   );
 }
