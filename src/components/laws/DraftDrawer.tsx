@@ -18,6 +18,7 @@ import {
   draftEntryPath,
   draftShareLinks,
   draftShareMessage,
+  itemsPhraseAr,
   parseDraftLimits,
   type DraftLimits,
 } from "@/lib/library/draftExport";
@@ -48,6 +49,19 @@ export interface CartEntry {
  *   إرسال        to المجمّع البحثي (as before) and to الصائغ القانوني (the same
  *                one-shot handoff as «أرسل إلى الصائغ», lawyer and firm only).
  */
+
+/** The admin's caps, read once per page load (each read is one more /api/library request). */
+let limitsOnce: Promise<DraftLimits> | null = null;
+function loadDraftLimits(): Promise<DraftLimits> {
+  limitsOnce ??= fetch("/api/library/draft-export", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((body) => parseDraftLimits(body && typeof body === "object" ? (body as { limits?: unknown }).limits : null))
+    .catch(() => {
+      limitsOnce = null; // try again on the next open
+      return DRAFT_LIMITS_DEFAULT;
+    });
+  return limitsOnce;
+}
 
 type WordState =
   | { kind: "idle" }
@@ -80,14 +94,9 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
   // The admin's caps (GET answers the defaults when the setting is missing).
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/library/draft-export", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body) => {
-        if (!cancelled && body && typeof body === "object") setLimits(parseDraftLimits((body as { limits?: unknown }).limits));
-      })
-      .catch(() => {
-        /* the defaults stay */
-      });
+    void loadDraftLimits().then((l) => {
+      if (!cancelled) setLimits(l);
+    });
     return () => {
       cancelled = true;
     };
@@ -152,7 +161,7 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
     const text = kept.map(e => buildEntryText(e, isRTL)).join("\n\n" + "─".repeat(40) + "\n\n");
     navigator.clipboard.writeText(text);
     setCopyNote(left > 0
-      ? (isRTL ? `نُسخ أول ${limits.maxItems} عنصراً، وهو حد النسخ؛ حدّد الباقي وانسخه على دفعة ثانية.` : `Copied the first ${limits.maxItems} items (the copy limit).`)
+      ? (isRTL ? `نُسخ أول ${itemsPhraseAr(limits.maxItems)}، وهو حد النسخ؛ حدّد الباقي وانسخه على دفعة ثانية.` : `Copied the first ${limits.maxItems} items (the copy limit).`)
       : null);
     setCopied(true); setTimeout(() => setCopied(false), 2200);
   };
@@ -170,7 +179,7 @@ export function DraftDrawer({ cart, onRemoveArticle, onClearAll, onClose, isDark
   const handleWord = async () => {
     if (!scope.length || word.kind === "busy") return;
     if (scope.length > limits.maxItems) {
-      setWord({ kind: "failed", message: isRTL ? `يتسع ملف Word لـ ${limits.maxItems} عنصراً على الأكثر؛ حدّد بعض العناصر ثم نزّلها.` : `A Word file holds at most ${limits.maxItems} items.` });
+      setWord({ kind: "failed", message: isRTL ? `يتسع ملف Word لـ${itemsPhraseAr(limits.maxItems)} على الأكثر؛ حدّد بعض العناصر ثم نزّلها.` : `A Word file holds at most ${limits.maxItems} items.` });
       return;
     }
     setWord({ kind: "busy" });

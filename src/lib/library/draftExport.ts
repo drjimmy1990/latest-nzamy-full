@@ -20,6 +20,7 @@
  */
 import { stripCitationMarkers } from "../ai/citationMarkers.ts";
 import type { DocBlock } from "../docx/ooxml.ts";
+import { countPhraseAr } from "../services/arabicCount.ts";
 
 // ─── the admin limits (answer ج) ──────────────────────────────────────────────
 
@@ -33,7 +34,8 @@ export interface DraftLimits {
 }
 
 export const DRAFT_LIMITS_DEFAULT: Readonly<DraftLimits> = Object.freeze({ maxItems: 30, shareExcerptChars: 200 });
-export const DRAFT_MAX_ITEMS_RANGE = Object.freeze({ min: 1, max: 200 });
+// ≤ 50: the Word route reads the items with one `.in("id", …)`, and every id rides in the request URL.
+export const DRAFT_MAX_ITEMS_RANGE = Object.freeze({ min: 1, max: 50 });
 export const DRAFT_EXCERPT_RANGE = Object.freeze({ min: 50, max: 500 });
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -48,6 +50,11 @@ export function parseDraftLimits(value: unknown): DraftLimits {
     shareExcerptChars:
       intIn(v.share_excerpt_chars, DRAFT_EXCERPT_RANGE.min, DRAFT_EXCERPT_RANGE.max) ?? DRAFT_LIMITS_DEFAULT.shareExcerptChars,
   };
+}
+
+/** «٣٠ عنصراً» / «٥ عناصر» / «عنصر واحد» — the cap as a sentence reads it. */
+export function itemsPhraseAr(n: number): string {
+  return countPhraseAr(n, { zero: "لا عناصر", one: "عنصر واحد", two: "عنصران", few: "عناصر", many: "عنصراً" }) ?? "";
 }
 
 /** PATCH /api/v1/admin/settings validator: null = acceptable. */
@@ -95,7 +102,7 @@ export function parseDraftExportBody(json: unknown, limits: DraftLimits): Parsed
   const raw = isObj(json) && Array.isArray(json.items) ? json.items : null;
   if (!raw || raw.length === 0) return { ok: false, status: 400, error: "المسودة فارغة" };
   if (raw.length > limits.maxItems) {
-    return { ok: false, status: 413, error: `يتسع ملف Word لـ ${limits.maxItems} عنصراً على الأكثر؛ حدّد بعض العناصر ثم نزّلها` };
+    return { ok: false, status: 413, error: `يتسع ملف Word لـ${itemsPhraseAr(limits.maxItems)} على الأكثر؛ حدّد بعض العناصر ثم نزّلها` };
   }
   const items: DraftExportItem[] = [];
   const seen = new Set<string>();
@@ -160,6 +167,8 @@ export interface ResolvedDraftEntry {
 export const DRAFT_DOC_TITLE = "مسودة التجميع — مكتبة نظامي";
 export const DRAFT_GUIDANCE_LINE = "استرشادي: هذا الملف للاطلاع والبحث، والمرجع عند الاختلاف هو النص الرسمي المنشور.";
 export const DRAFT_LOCKED_LINE = "النص الكامل لهذه المادة متاح لمشتركي باقة المكتبة.";
+/** The source line of a text the server did NOT re-read (a subscriber's own cart text: an order page, a principle, a book page). */
+export const DRAFT_CART_SOURCE_PREFIX = "المصدر: من المسودة كما ظهرت للقارئ (غير مطابقة مع النص الرسمي في هذا الملف)";
 
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 const ar = (s: string): string => s.replace(/[0-9]/g, (d) => ARABIC_DIGITS[Number(d)]);
@@ -215,7 +224,13 @@ export function draftDocBlocks(entries: ReadonlyArray<ResolvedDraftEntry>, now: 
         blocks.push(...textParas(e.execReg.text));
       }
       const where = `${origin}/laws/${e.lawSlug.split("/").map(encodeURIComponent).join("/")}`;
-      blocks.push({ kind: "para", text: `المصدر: ${[e.lawName, e.label].filter(Boolean).join(" — ")} — ${where}` });
+      const named = [e.lawName, e.label].filter(Boolean).join(" — ");
+      blocks.push({
+        kind: "para",
+        text: e.source === "cart" && e.text !== null
+          ? `${DRAFT_CART_SOURCE_PREFIX} — ${named} — ${where}`
+          : `المصدر: ${named} — ${where}`,
+      });
     }
   }
   return blocks;

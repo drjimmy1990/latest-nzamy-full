@@ -9,8 +9,9 @@ import { runAiSweep } from "@/lib/ai/aiSweep";
  *   (default)         ai_sweep_runs: every run still `running` past its
  *                     deadline fails as `timeout` and gets its points back.
  *                     Every 10 minutes.
- *   ?task=retention   ai_runs_retention: clears input / output older than 90
- *                     days, keeping the money facts (owner decision D6). Then
+ *   ?task=retention   ai_runs_retention: clears input / output older than the
+ *                     admin's ai_runs_retention months (default 12, owner file
+ *                     03 ل11, 20261202_40; was 90 days, D6), keeping the money facts. Then
  *                     progress_events_prune: events older than 7 days
  *                     (20261103_31). Daily.
  *

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  DRAFT_CART_SOURCE_PREFIX,
   DRAFT_GUIDANCE_LINE,
   DRAFT_LIMITS_DEFAULT,
   DRAFT_LOCKED_LINE,
@@ -53,7 +54,10 @@ test("the request: shapes checked, duplicates once, over the cap refused with a 
   const bad = parseDraftExportBody({ items: [{ ...item(), articleId: "<script>" }] }, DRAFT_LIMITS_DEFAULT);
   assert.ok(!bad.ok);
   const many = parseDraftExportBody({ items: Array.from({ length: 3 }, (_, i) => item({ articleId: `a-${i}` })) }, { maxItems: 2, shareExcerptChars: 200 });
-  assert.ok(!many.ok && many.status === 413 && /2/.test(many.error));
+  assert.ok(!many.ok && many.status === 413 && many.error.includes("عنصران"), "the cap reads as Arabic («لـعنصران»)");
+  const five = parseDraftExportBody({ items: Array.from({ length: 6 }, (_, i) => item({ articleId: `a-${i}` })) }, { maxItems: 5, shareExcerptChars: 200 });
+  assert.ok(!five.ok && five.error.includes("٥ عناصر"));
+  assert.deepEqual(parseDraftLimits({ max_items: 51, share_excerpt_chars: 200 }).maxItems, DRAFT_LIMITS_DEFAULT.maxItems, "≤ 50 (ids ride in the URL)");
   const order = parseDraftExportBody({ items: [item({ lawSlug: "orders/abc", articleId: "order-abc-art-0" })] }, DRAFT_LIMITS_DEFAULT);
   assert.ok(order.ok, "a royal order's slug orders/<id> is accepted");
 });
@@ -115,6 +119,17 @@ test("the Word body: «استرشادي» header, the download date, a source li
   assert.ok(flat.includes("النص") && !flat.includes("**") && !flat.includes("[S1]"));
   assert.equal(blocks.filter((b) => b.kind === "heading" && b.text === "نظام العمل").length, 1, "one heading per law");
   assert.equal(riyadhDateAr(new Date("2026-01-05T00:00:00Z")), "٢٠٢٦/٠١/٠٥");
+});
+
+test("a text the server did not re-read carries its own source line in the file", () => {
+  const now = new Date("2026-11-21T10:00:00Z");
+  const base = { lawName: "أمر ملكي", lawSlug: "orders/abc", label: "الصفحة ١", title: "", execReg: null };
+  const cart = draftDocBlocks([{ ...base, text: "نص من السلة", source: "cart" }], now, "https://nezamy.sa");
+  const lib = draftDocBlocks([{ ...base, text: "نص رسمي", source: "library" }], now, "https://nezamy.sa");
+  const line = (bs: typeof cart) => bs.map((b) => ("text" in b ? b.text : "")).find((t) => t.startsWith("المصدر"))!;
+  assert.ok(line(cart).startsWith(DRAFT_CART_SOURCE_PREFIX));
+  assert.ok(!line(lib).startsWith(DRAFT_CART_SOURCE_PREFIX));
+  assert.notEqual(line(cart), line(lib));
 });
 
 test("answer ج / the share: title, a short excerpt and the link — never the full text", () => {

@@ -126,7 +126,7 @@ grant execute on function public.ai_runs_retention() to service_role;
 -- ── 3. the draft limits ──────────────────────────────────────────────────────
 insert into public.platform_settings (key, value, description) values
   ('library_draft_limits', '{"max_items": 30, "share_excerpt_chars": 200}'::jsonb,
-   'L2 (20261202_40, owner file 03 ل2 answer ج): items one «نسخ المسودة كاملة» or one Word file of the library draft may hold (1–200), and the characters of text a share carries (50–500; title and page link on top).')
+   'L2 (20261202_40, owner file 03 ل2 answer ج): items one «نسخ المسودة كاملة» or one Word file of the library draft may hold (1–50), and the characters of text a share carries (50–500; title and page link on top).')
 on conflict (key) do nothing;
 
 -- ── 4. verify ────────────────────────────────────────────────────────────────
