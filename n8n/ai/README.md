@@ -167,6 +167,7 @@ Wave 1 has no SQL and no new server variables.
 2. Re-select the credentials on every node that asks (Webhook, Model, Callback and each `Progress ·` node), then switch the workflow on.
 3. `https://nezamy.sa/dashboard/admin/ai-usage`: set `simple-contract` to **للمشرفين فقط** (`staff`), press **حفظ**, and test as the admin at `https://nezamy.sa/ai/simple-contract` (a rent contract: a title, short clauses, `[....]` blanks, the «استرشادي» line with its link).
 4. Set it to `live` when satisfied; the first real run's ledger row shows a debit of the set price (and a refund if it failed).
+5. **Required with `live`: an entry link.** Nothing links to `/ai/simple-contract` yet (it shipped off). Add it to the individual and business /ai hub and sidebars, and repoint the client catalog card «صياغة عقد مخصص» (`src/constants/clientServiceCatalog.ts`, `serviceId: "contract-draft"`, today `route: "/ai/contract-drafter"`, the lawyers' tool, with «٥٠٠ نقطة للعقد») to `/ai/simple-contract` with its price; that card's DB row (migrations 20261102_10/11) needs the same change.
 
 ## Wave 5, L11 محترف العقود المختصر: your steps
 
