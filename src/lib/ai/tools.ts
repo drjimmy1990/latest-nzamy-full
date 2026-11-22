@@ -1831,6 +1831,64 @@ function legalDrafterTurn(
   return null;
 }
 
+/**
+ * Sayegh v2 (owner decision, 21 Nov 2026: a registry tool of its own beside legal-drafter). One run
+ * is the whole pipeline on the n8n workflow legal-drafter-v2: a single turn, no analysis screen.
+ * What that workflow does not have is refused here, not faked: a later stage alone, an intake, a
+ * case dossier or a parent run. `stage` is `pipeline` (every stage) or `draft` (the write stage only);
+ * it reaches n8n as `input.stages`.
+ */
+function sayeghV2Input(raw: unknown): InputCheck {
+  if (!isPlainObject(raw)) return { ok: false, error: "المدخلات غير صالحة" };
+  const stage = raw.stage === undefined || raw.stage === null ? "pipeline" : raw.stage;
+  if (stage !== "pipeline" && stage !== "draft") return { ok: false, error: "هذه المرحلة غير متاحة منفردة بعد — شغّل المسار كاملاً أو مرحلة الكتابة فقط" };
+  if (raw.dossier_id !== undefined || raw.parent_run_id !== undefined || raw.intake !== undefined) return { ok: false, error: "ملف القضية والتشغيل الأب غير متاحين بعد" };
+  if (!isDraftKind(raw.kind)) return { ok: false, error: DRAFT_COPY.kind };
+  if (!(DRAFT_ROLES as readonly unknown[]).includes(raw.client_role)) return { ok: false, error: DRAFT_COPY.role };
+  const facts = typeof raw.facts === "string" ? raw.facts.trim() : "";
+  if (facts.length > DRAFT_FACTS_MAX) return { ok: false, error: DRAFT_COPY.factsLong };
+  if (facts.length < DRAFT_FACTS_MIN) return { ok: false, error: DRAFT_COPY.facts };
+  const notes = optionalField(raw.notes, 3000);
+  if (notes === null) return { ok: false, error: DRAFT_COPY.tooLong("ملاحظاتك") };
+  const onError = raw.on_stage_error === undefined || raw.on_stage_error === null ? "fail" : raw.on_stage_error;
+  if (onError !== "fail" && onError !== "skip") return { ok: false, error: "المدخلات غير صالحة" };
+  const search = facts.slice(0, DRAFT_SEARCH_MAX);
+  return {
+    ok: true,
+    input: {
+      pipeline: "v2",
+      kind: raw.kind,
+      client_role: raw.client_role,
+      facts,
+      ...(notes ? { notes } : {}),
+      on_stage_error: onError,
+      ...(stage === "draft" ? { stages: [] } : {}),
+      search_text: search,
+    },
+  };
+}
+
+/** The v2 output: the memo exactly as legal-drafter's draft, plus the lawyer's report and the najiz copy, kept apart. */
+function sayeghV2Output(raw: unknown): Record<string, unknown> | null {
+  const memo = legalDrafterOutput(raw, { phase: "draft" });
+  if (!memo || !isPlainObject(raw)) return null;
+  const out: Record<string, unknown> = { ...memo, pipeline: "v2" };
+  if (isPlainObject(raw.lawyer_notes) && JSON.stringify(raw.lawyer_notes).length <= 100_000) out.lawyer_notes = raw.lawyer_notes;
+  if (isPlainObject(raw.najiz)) {
+    const text = boundedText(raw.najiz.text, 20000);
+    if (text) {
+      out.najiz = {
+        text,
+        ...(typeof raw.najiz.chars === "number" ? { chars: raw.najiz.chars } : {}),
+        ...(typeof raw.najiz.over_limit === "boolean" ? { over_limit: raw.najiz.over_limit } : {}),
+      };
+    }
+  }
+  const preamble = boundedText(raw.preamble, 4000);
+  if (preamble) out.preamble = preamble;
+  return out;
+}
+
 export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
   "echo-fast": {
     id: "echo-fast",
@@ -2210,6 +2268,24 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     filesRequired: (input) => input.phase === "issues" && input.facts_in_files === true,
     validateInput: legalDrafterInput,
     validateOutput: legalDrafterOutput,
+  },
+  "sayegh-v2": {
+    id: "sayegh-v2",
+    n8nPath: "nzamy-ai/legal-drafter-v2",
+    class: "job",
+    tier: "deep",
+    roles: LAWYER_FIRM_ROLES,
+    consultantBlocked: true,
+    // One run, one price by pleading kind (the same as legal-drafter's work), refunded whole if a stage fails.
+    price: (input) => draftKindPrice(input.kind),
+    dailyLimit: 10,
+    // Staff only until the owner opens it: admins run it on production first.
+    defaultMode: "staff",
+    jobDeadlineSeconds: 20 * 60,
+    files: DRAFTER_FILES,
+    retrieval: { from: "search_text", laws: 8, principles: 4 },
+    validateInput: sayeghV2Input,
+    validateOutput: sayeghV2Output,
   },
 };
 

@@ -5,15 +5,15 @@ import { extError, extJson, requireExtCaller } from "../../_extAuth";
 
 /**
  * POST /api/v1/ext/cases/sync — مزامنة سحبة قضية من إضافة كروم (العقد: docs/plans/2026-11-21-ext-cases-sync-contract.md).
- * تعتمد على باب `/ext` (_extAuth.ts) الموجود على فرع MCP فقط، وعلى نطاق `cases:sync` (يُضاف إلى Scope وإلى
- * check الجدول api_tokens في migration_v2.sql هناك)، وعلى SQL_batch_2026-11-21_ext_cases_sync.
+ * تعتمد على باب `/ext` (_extAuth.ts) ونطاق `cases:sync` (مضاف إلى Scope وإلى
+ * check الجدول api_tokens في migration_v2.sql)، وعلى SQL_batch_2026-11-21_ext_cases_sync.
  * المستخدم يُستخلص من التوكن فقط. لا يُسجَّل نص الحزمة؛ أعداد فقط.
  */
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
-  const caller = await requireExtCaller(request, "cases:sync" as never);
+  const caller = await requireExtCaller(request, "cases:sync");
   if (caller instanceof NextResponse) return caller;
   const rid = caller.requestId;
 

@@ -31,6 +31,7 @@ export const AI_TOOL_LABELS_AR: Readonly<Record<string, string>> = {
   "legal-opinion-consult": "الرأي الفصل — استشارة",
   "legal-opinion-letter": "الرأي الفصل — خطاب",
   "legal-drafter": "الصائغ القانوني",
+  "sayegh-v2": "الصائغ القانوني — الإصدار ٢",
 };
 
 export const AI_TOOL_PAGES: Readonly<Record<string, string | null>> = {
@@ -54,6 +55,7 @@ export const AI_TOOL_PAGES: Readonly<Record<string, string | null>> = {
   "legal-opinion-consult": "/ai/legal-opinion",
   "legal-opinion-letter": "/ai/legal-opinion",
   "legal-drafter": "/ai/draft",
+  "sayegh-v2": null,
 };
 
 export function aiToolLabelAr(id: string): string {

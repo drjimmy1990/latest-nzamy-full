@@ -29,6 +29,7 @@ export const PRICED_AI_TOOL_IDS = [
   "legal-opinion-letter",
   "contracts-pro",
   "legal-drafter",
+  "sayegh-v2",
   // Listed for the checks and the admin table only. No screen prices them before
   // they are usable (q296), and they stay out of /pricing and the hub badges.
   "contract-review",
@@ -51,7 +52,7 @@ export type PricedAiToolRef = PricedAiToolId | readonly PricedAiToolId[];
 function chargedPrices(id: PricedAiToolId): number[] {
   const tool = AI_TOOLS[id];
   const inputs: Record<string, unknown>[] =
-    id === "legal-drafter"
+    id === "legal-drafter" || id === "sayegh-v2"
       ? DRAFT_KIND_IDS.map((kind) => ({ kind }))
       : id === "wargaming"
         ? [{ targets: WARGAMING_TARGETS.slice(0, 1) }, { targets: [...WARGAMING_TARGETS] }]

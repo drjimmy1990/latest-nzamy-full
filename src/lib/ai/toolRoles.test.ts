@@ -23,7 +23,7 @@ const src = (rel: string) => readFileSync(join(process.cwd(), "src", rel), "utf8
 
 /** The two test tools and the library's own assistant keep their own lists. */
 const NOT_CUSTOMER_TOOLS = new Set(["echo-fast", "echo-job", "library-assistant"]);
-const PLEADING_TOOLS = ["analyze-strength", "brief-check", "legal-drafter", "najiz-optimizer", "wargaming"];
+const PLEADING_TOOLS = ["analyze-strength", "brief-check", "legal-drafter", "najiz-optimizer", "sayegh-v2", "wargaming"];
 /** Owner ١٤٦ (batch l12): reserved for the advocate and the firm, not pleading; a paid consultant keeps them to his term's end. */
 const RESERVED_TOOLS = ["contracts-pro", "legal-opinion-consult", "legal-opinion-letter"];
 const OUTSIDERS = ["", "client", "arbitrator", "translator"];
@@ -46,7 +46,7 @@ const GENERAL_GUIDANCE_TOOLS = ["quick-answer"];
 const LAWYER_FIRM_TOOLS = [
   "analyze-strength", "assistant", "brief-check", "canvas-card", "case-brief", "communicate", "contract-drafter",
   "contract-negotiator", "contract-review", "contracts-pro", "legal-drafter", "legal-opinion-consult", "legal-opinion-letter",
-  "najiz-optimizer", "wargaming",
+  "najiz-optimizer", "sayegh-v2", "wargaming",
 ];
 
 /** Owner ١٢٣ (20 Nov 2026, batch l12): the simplified contract drafter, for the individual and the business only. */
@@ -196,7 +196,7 @@ test("the library gate itself is untouched: the run route still checks every lib
 
 test("each library tool's screen maps the gate's refusal to its own words", () => {
   const library = Object.values(AI_TOOLS).filter((t) => t.retrieval).map((t) => t.id).sort();
-  assert.deepEqual(library, ["assistant", "canvas-card", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
+  assert.deepEqual(library, ["assistant", "canvas-card", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer", "sayegh-v2"]);
   assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType\)/);
   assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المساعد المتقدم", input\.userType \?\? null\)/);
   assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType, mode, caseId: context === "case" \? caseId \|\| null : null \}\)/);

@@ -66,7 +66,7 @@ test("/pricing disclaimer: the unlisted tools really are charged and really are 
   assert.ok(listed.size >= 8, `parsed only ${listed.size} priced rows`);
   const unlisted = PRICED_AI_TOOL_IDS.filter((id) => !listed.has(id));
   // l12: simple-contract is the individual's / business's tool, never a row of the lawyers' table.
-  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "contract-negotiator", "contract-review", "quick-answer", "simple-contract"]);
+  assert.deepEqual([...unlisted].sort(), ["analyze-strength", "canvas-card", "case-brief", "communicate", "contract-drafter", "contract-negotiator", "contract-review", "quick-answer", "sayegh-v2", "simple-contract"]);
 });
 
 // ── item B: no comparative-law tool exists ───────────────────────────────────

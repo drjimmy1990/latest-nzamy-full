@@ -88,7 +88,7 @@ test("the lawyer tab is the subscription (no points) plus the five professional 
 function serverCharges(id: string): number[] {
   const tool = AI_TOOLS[id];
   assert.ok(tool, `${id} is not in the AI registry`);
-  if (id === "legal-drafter") return Object.keys(DRAFT_KINDS).map((kind) => tool.price({ kind }, { pages: null, turn: 0 }));
+  if (id === "legal-drafter" || id === "sayegh-v2") return Object.keys(DRAFT_KINDS).map((kind) => tool.price({ kind }, { pages: null, turn: 0 }));
   // R1: one target, two, and all four.
   if (id === "wargaming") return [["court"], ["opponent", "court"], ["opponent", "court", "critique", "plea"]].map((targets) => tool.price({ targets }, { pages: 1, turn: 0 }));
   if (id === "case-brief") return [1, 5, 6, 30].map((pages) => tool.price({}, { pages, turn: 0 }));
@@ -119,6 +119,7 @@ const nounAr = (n: number): string => (n >= 3 && n <= 10 ? "نقاط" : "نقط�
  */
 const TODAY: Record<string, [number, number]> = {
   "legal-drafter": [200, 1500],
+  "sayegh-v2": [200, 1500],
   "contracts-pro": [1000, 1000],
   "contract-drafter": [500, 500],
   wargaming: [75, 150],
