@@ -1,0 +1,797 @@
+{
+ "updatedAt": "2026-06-29T02:55:07.915Z",
+ "createdAt": "2026-06-29T02:55:07.915Z",
+ "id": "rtj1TC9rd6Ule7am",
+ "name": "NZAMY · AI Legal Tools",
+ "description": null,
+ "active": false,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "hdr_sticky",
+   "name": "HEADER",
+   "parameters": {
+    "content": "# NZAMY · AI Legal Tools (18 tools)\n\nAll 18 AI legal tools, one webhook per tool (matches `N8N_WEBHOOK_AI_*` registry).\n\n**Pattern per branch:** Webhook → Auth → Supabase profile+tier → credits check → Context → LLM (Arabic) → post-process → log `ai_usage_log` → deduct credit → **Respond to Webhook**.\n\n⚠️ Each branch needs a `Respond to Webhook` node (switch webhook responseMode to `responseNode` when building). **LLM key lives ONLY in n8n credentials.**\n\nCredits: draft=1, contracts=1, contract-review=1, direction-support=1, wargaming=2, analyze-strength=1, secretary=0, research=1, quick-answer=0(free), translate=1, case-brief=1, fee-calculator=0, letter=0, case-insight=0(cached), corp=1, gov=1, micro=0, ngo=0.",
+    "height": 320,
+    "width": 1000
+   },
+   "position": [
+    -80,
+    -220
+   ],
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1
+  },
+  {
+   "id": "wh_draft",
+   "name": "WH: /ai/draft",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/draft",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    0
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "c6e6aa65-6372-4bc9-ac4a-eec5d3ff0cd8"
+  },
+  {
+   "id": "wh_contracts",
+   "name": "WH: /ai/contracts",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/contracts",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    180
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "745ba960-fb12-47ff-be1b-4c399a306abf"
+  },
+  {
+   "id": "wh_creview",
+   "name": "WH: /ai/contract-review",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/contract-review",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    360
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "a7142134-d586-40bb-b0cd-c5c6afb7717f"
+  },
+  {
+   "id": "wh_direction",
+   "name": "WH: /ai/direction-support",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/direction-support",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    540
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "7238dafa-d973-4f93-a24b-f6099c5d2db2"
+  },
+  {
+   "id": "wh_wargaming",
+   "name": "WH: /ai/wargaming",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/wargaming",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    720
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "e9659453-946e-41cf-b4f7-e448ce53fe49"
+  },
+  {
+   "id": "wh_strength",
+   "name": "WH: /ai/analyze-strength",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/analyze-strength",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    900
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "c9d0fd9b-f4e1-4859-851a-b4a721cbd921"
+  },
+  {
+   "id": "wh_secretary",
+   "name": "WH: /ai/secretary",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/secretary",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    1080
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "1e561df7-c606-4209-aa9f-c96dfd156743"
+  },
+  {
+   "id": "wh_research",
+   "name": "WH: /ai/research",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/research",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    1260
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "8155f1ae-399f-4ad2-80dc-31e33874b647"
+  },
+  {
+   "id": "wh_quick",
+   "name": "WH: /ai/quick-answer",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/quick-answer",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    1440
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "322a60b9-1ef8-4f69-b1cb-f304f2d97301"
+  },
+  {
+   "id": "wh_translate",
+   "name": "WH: /ai/translate",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/translate",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    1620
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "5f312ad4-2b78-4d7f-a84e-e2e77c2f8e08"
+  },
+  {
+   "id": "wh_brief",
+   "name": "WH: /ai/case-brief",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/case-brief",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    1800
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "d2471167-2b8f-4e2f-aab7-ab504849033c"
+  },
+  {
+   "id": "wh_fee",
+   "name": "WH: /ai/fee-calculator",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/fee-calculator",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    1980
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "2426f297-d3e6-4603-890b-a074d3d73232"
+  },
+  {
+   "id": "wh_letter",
+   "name": "WH: /ai/letter",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/letter",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    2160
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "0a6d2e35-2ef7-4ade-988c-3ccc02eb42df"
+  },
+  {
+   "id": "wh_insight",
+   "name": "WH: /ai/case-insight",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/case-insight",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    2340
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "76f93097-d2b5-46a1-802d-331b94c819d1"
+  },
+  {
+   "id": "wh_corp",
+   "name": "WH: /ai/corp",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/corp",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    2520
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "ab257d21-6d08-4656-8f50-ad397fb41da0"
+  },
+  {
+   "id": "wh_gov",
+   "name": "WH: /ai/gov",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/gov",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    2700
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "bfab5f6b-253c-4d33-af7a-c82973641864"
+  },
+  {
+   "id": "wh_micro",
+   "name": "WH: /ai/micro",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/micro",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    2880
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "2cb79388-d653-4674-8d99-f9891ecb1982"
+  },
+  {
+   "id": "wh_ngo",
+   "name": "WH: /ai/ngo",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "ai/ngo",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    3060
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "6a946f16-3a84-455c-86a7-322bc9fe63f7"
+  },
+  {
+   "id": "ai_draft",
+   "name": "6.1 الصائغ القانوني — Legal Drafter (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    0
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_contracts",
+   "name": "6.2 محترف العقود — Contract Generator (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    180
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_creview",
+   "name": "6.3 مراجع العقود — Contract Reviewer (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    360
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_direction",
+   "name": "6.4 داعم الاتجاه — Direction Support (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    540
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_wargaming",
+   "name": "6.5 محاكي الخصم — Wargaming (2cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    720
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_strength",
+   "name": "6.6 محلل قوة الموقف — Strength Analyzer (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    900
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_secretary",
+   "name": "6.7 السكرتير الذكي — Smart Secretary (0cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    1080
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_research",
+   "name": "6.8 الباحث القانوني — Research Engine (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    1260
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_quick",
+   "name": "6.9 المستشار القانوني — Quick Answer (0cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    1440
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_translate",
+   "name": "6.10 المترجم القانوني — Legal Translation (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    1620
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_brief",
+   "name": "6.11 ملخص القضية — Case Brief (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    1800
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_fee",
+   "name": "6.12 حاسبة الأتعاب — Fee Calculator (0cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    1980
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_letter",
+   "name": "6.13 صياغة الخطابات — Letter Drafter (0cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    2160
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_insight",
+   "name": "6.14 تحليل القضية — Case Insight (0cr cached) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    2340
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_corp",
+   "name": "6.15 المستشار المؤسسي — Corporate Advisor (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    2520
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_gov",
+   "name": "6.16 المستشار الحكومي — Government Advisor (1cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    2700
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_micro",
+   "name": "6.17 مستشار المؤسسات الصغيرة — Micro Advisor (0cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    2880
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "ai_ngo",
+   "name": "6.18 مستشار الجمعيات — NGO Advisor (0cr) BUILD",
+   "parameters": {},
+   "position": [
+    560,
+    3060
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  }
+ ],
+ "connections": {
+  "WH: /ai/analyze-strength": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.6 محلل قوة الموقف — Strength Analyzer (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/case-brief": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.11 ملخص القضية — Case Brief (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/case-insight": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.14 تحليل القضية — Case Insight (0cr cached) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/contract-review": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.3 مراجع العقود — Contract Reviewer (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/contracts": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.2 محترف العقود — Contract Generator (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/corp": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.15 المستشار المؤسسي — Corporate Advisor (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/direction-support": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.4 داعم الاتجاه — Direction Support (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/draft": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.1 الصائغ القانوني — Legal Drafter (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/fee-calculator": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.12 حاسبة الأتعاب — Fee Calculator (0cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/gov": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.16 المستشار الحكومي — Government Advisor (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/letter": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.13 صياغة الخطابات — Letter Drafter (0cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/micro": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.17 مستشار المؤسسات الصغيرة — Micro Advisor (0cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/ngo": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.18 مستشار الجمعيات — NGO Advisor (0cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/quick-answer": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.9 المستشار القانوني — Quick Answer (0cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/research": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.8 الباحث القانوني — Research Engine (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/secretary": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.7 السكرتير الذكي — Smart Secretary (0cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/translate": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.10 المترجم القانوني — Legal Translation (1cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /ai/wargaming": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "6.5 محاكي الخصم — Wargaming (2cr) BUILD",
+      "type": "main"
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": null,
+ "pinData": null,
+ "versionId": "50a4333f-fa15-4113-8f58-dde8b41018b6",
+ "activeVersionId": null,
+ "versionCounter": 1,
+ "triggerCount": 0,
+ "shared": [
+  {
+   "updatedAt": "2026-06-29T02:55:07.915Z",
+   "createdAt": "2026-06-29T02:55:07.915Z",
+   "role": "workflow:owner",
+   "workflowId": "rtj1TC9rd6Ule7am",
+   "projectId": "UOkkMfwjI7zdLjhM",
+   "project": {
+    "updatedAt": "2025-12-16T02:49:28.147Z",
+    "createdAt": "2025-12-16T02:16:32.813Z",
+    "id": "UOkkMfwjI7zdLjhM",
+    "name": "mohamed gamal <dr.gimy@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "projectRelations": [
+     {
+      "updatedAt": "2025-12-16T02:16:32.813Z",
+      "createdAt": "2025-12-16T02:16:32.813Z",
+      "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+      "projectId": "UOkkMfwjI7zdLjhM",
+      "user": {
+       "updatedAt": "2026-11-20T22:37:11.706Z",
+       "createdAt": "2025-12-16T02:16:28.988Z",
+       "id": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+       "email": "dr.gimy@gmail.com",
+       "firstName": "mohamed",
+       "lastName": "gamal",
+       "personalizationAnswers": {
+        "version": "v4",
+        "personalization_survey_submitted_at": "2025-12-16T03:06:35.472Z",
+        "personalization_survey_n8n_version": "2.0.2"
+       },
+       "settings": {
+        "userActivated": true,
+        "easyAIWorkflowOnboarded": true,
+        "firstSuccessfulWorkflowId": "MSU2ng86zFknerL0",
+        "userActivatedAt": 1765917220079,
+        "npsSurvey": {
+         "responded": true,
+         "lastShownAt": 1791934610324
+        }
+       },
+       "disabled": false,
+       "mfaEnabled": false,
+       "lastActiveAt": "2026-11-21",
+       "isPending": false
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": null
+}

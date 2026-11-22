@@ -1,0 +1,418 @@
+{
+ "updatedAt": "2026-07-06T01:43:00.638Z",
+ "createdAt": "2026-06-29T02:54:09.828Z",
+ "id": "Y8SnEGaXTC3dboGA",
+ "name": "NZAMY · Communication",
+ "description": null,
+ "active": false,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "hdr_sticky",
+   "name": "HEADER",
+   "parameters": {
+    "content": "# NZAMY · Communication\n\n• **4.1** WhatsApp triage (`/whatsapp-incoming`) ✅ keyword classify (LLM optional later) → DUMMY reply\n• **4.2** Consultation reminder (cron 30min) ✅ Supabase getAll due → filter 24h → resolve → DUMMY → **mark reminder_sent**\n• **4.3** Hearing reminder ⬜ deferred — hearings live in service_requests.metadata (JSONB), no date column\n\nNeeds migration `20260706_reminder_flags.sql` (adds consultations.reminder_sent). Supabase cred `nzamy`.",
+    "height": 280,
+    "width": 820
+   },
+   "position": [
+    -80,
+    -200
+   ],
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1
+  },
+  {
+   "id": "wh_whatsapp",
+   "name": "WH: /whatsapp-incoming",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "whatsapp-incoming",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    0
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "f10084fa-28e2-4b85-a97a-4f0d4e51a950"
+  },
+  {
+   "id": "cron_consult",
+   "name": "Cron: 30min (consultation)",
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 30
+      }
+     ]
+    }
+   },
+   "position": [
+    200,
+    260
+   ],
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2
+  },
+  {
+   "id": "cron_hearing",
+   "name": "Cron: 30min (hearing)",
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 30
+      }
+     ]
+    }
+   },
+   "position": [
+    200,
+    520
+   ],
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2
+  },
+  {
+   "id": "wf41_triage",
+   "name": "4.1 Triage (keyword)",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const text = (p.message || p.text || (p.data && p.data.message) || '').toString();\n  const rules = [\n    { id: 'labor', kw: ['عمل','راتب','فصل','موظف','نهاية خدمة'] },\n    { id: 'rent', kw: ['إيجار','عقار','مستأجر','مؤجر','شقة'] },\n    { id: 'family', kw: ['طلاق','حضانة','نفقة','زواج','ميراث'] },\n    { id: 'criminal', kw: ['جنائي','جريمة','حكم','عقوبة','نيابة'] },\n    { id: 'commercial', kw: ['شركة','تجاري','عقد','بيع','شراء'] }\n  ];\n  let intent = 'other';\n  for (const r of rules) { if (r.kw.some(k => text.includes(k))) { intent = r.id; break; } }\n  return { json: {\n    branch: '4.1_whatsapp_triage', channel: 'whatsapp',\n    from: p.from || p.phone || (p.data && p.data.from) || null,\n    intent,\n    reply_ar: 'شكراً لتواصلك مع نظامي. صُنّف طلبك ضمن: ' + intent + '. سيتواصل معك فريقنا قريباً.',\n    _todo: 'For richer intent add an LLM node; this is a deterministic keyword fallback. Reply via Evolution API.',\n    _payload: p\n  }};\n});"
+   },
+   "position": [
+    540,
+    0
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf41_deliver",
+   "name": "4.1 Reply DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    900,
+    0
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf42_query",
+   "name": "4.2 Query due",
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "consultations",
+    "returnAll": false,
+    "limit": 100,
+    "filterType": "manual",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "reminder_sent",
+       "condition": "eq",
+       "keyValue": "false"
+      }
+     ]
+    }
+   },
+   "position": [
+    540,
+    260
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf42_filter",
+   "name": "4.2 Filter 24h",
+   "parameters": {
+    "jsCode": "const now = Date.now();\nconst in24h = now + 24*60*60*1000;\nconst due = $input.all().filter(it => {\n  const s = it.json.scheduled_at;\n  if (!s) return false;\n  const t = new Date(s).getTime();\n  return t > now && t <= in24h;\n});\nreturn due.map(it => {\n  const c = it.json;\n  return { json: {\n    consultation_id: c.id,\n    to_user_id: c.requester_user_id,\n    scheduled_at: c.scheduled_at,\n    subject_ar: 'تذكير: لديك استشارة قريباً',\n    body_ar: 'نذكّرك باستشارتك المجدولة بتاريخ ' + c.scheduled_at + '. نتمنّى لك موعداً موفقاً.'\n  }};\n});"
+   },
+   "position": [
+    800,
+    260
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf42_resolve",
+   "name": "4.2 Resolve client",
+   "parameters": {
+    "operation": "get",
+    "tableId": "profiles",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "id",
+       "condition": "eq",
+       "keyValue": "={{ $json.to_user_id }}"
+      }
+     ]
+    }
+   },
+   "position": [
+    1060,
+    260
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf42_deliver",
+   "name": "4.2 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ to_email: $json.email, to_phone: $json.phone, subject_ar: $('4.2 Filter 24h').item.json.subject_ar, body_ar: $('4.2 Filter 24h').item.json.body_ar, consultation_id: $('4.2 Filter 24h').item.json.consultation_id }) }}",
+    "options": {}
+   },
+   "position": [
+    1320,
+    260
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf42_mark",
+   "name": "4.2 Mark sent",
+   "parameters": {
+    "operation": "update",
+    "tableId": "consultations",
+    "filterType": "manual",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "id",
+       "condition": "eq",
+       "keyValue": "={{ $('4.2 Filter 24h').item.json.consultation_id }}"
+      }
+     ]
+    },
+    "dataToSend": "defineBelow",
+    "fieldsUi": {
+     "fieldValues": [
+      {
+       "fieldId": "reminder_sent",
+       "fieldValue": "true"
+      }
+     ]
+    }
+   },
+   "position": [
+    1580,
+    260
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf43",
+   "name": "WF 4.3 — Hearing Reminder (deferred: hearings in JSONB)",
+   "parameters": {},
+   "position": [
+    540,
+    520
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  }
+ ],
+ "connections": {
+  "WH: /whatsapp-incoming": {
+   "main": [
+    [
+     {
+      "node": "4.1 Triage (keyword)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "4.1 Triage (keyword)": {
+   "main": [
+    [
+     {
+      "node": "4.1 Reply DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Cron: 30min (consultation)": {
+   "main": [
+    [
+     {
+      "node": "4.2 Query due",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "4.2 Query due": {
+   "main": [
+    [
+     {
+      "node": "4.2 Filter 24h",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "4.2 Filter 24h": {
+   "main": [
+    [
+     {
+      "node": "4.2 Resolve client",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "4.2 Resolve client": {
+   "main": [
+    [
+     {
+      "node": "4.2 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "4.2 Deliver DUMMY": {
+   "main": [
+    [
+     {
+      "node": "4.2 Mark sent",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Cron: 30min (hearing)": {
+   "main": [
+    [
+     {
+      "node": "WF 4.3 — Hearing Reminder (deferred: hearings in JSONB)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": null,
+ "pinData": null,
+ "versionId": "5a85f017-0f69-4a1d-911c-8c0d84a9d162",
+ "activeVersionId": null,
+ "versionCounter": 3,
+ "triggerCount": 0,
+ "shared": [
+  {
+   "updatedAt": "2026-06-29T02:54:09.828Z",
+   "createdAt": "2026-06-29T02:54:09.828Z",
+   "role": "workflow:owner",
+   "workflowId": "Y8SnEGaXTC3dboGA",
+   "projectId": "UOkkMfwjI7zdLjhM",
+   "project": {
+    "updatedAt": "2025-12-16T02:49:28.147Z",
+    "createdAt": "2025-12-16T02:16:32.813Z",
+    "id": "UOkkMfwjI7zdLjhM",
+    "name": "mohamed gamal <dr.gimy@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "projectRelations": [
+     {
+      "updatedAt": "2025-12-16T02:16:32.813Z",
+      "createdAt": "2025-12-16T02:16:32.813Z",
+      "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+      "projectId": "UOkkMfwjI7zdLjhM",
+      "user": {
+       "updatedAt": "2026-11-20T22:37:11.706Z",
+       "createdAt": "2025-12-16T02:16:28.988Z",
+       "id": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+       "email": "dr.gimy@gmail.com",
+       "firstName": "mohamed",
+       "lastName": "gamal",
+       "personalizationAnswers": {
+        "version": "v4",
+        "personalization_survey_submitted_at": "2025-12-16T03:06:35.472Z",
+        "personalization_survey_n8n_version": "2.0.2"
+       },
+       "settings": {
+        "userActivated": true,
+        "easyAIWorkflowOnboarded": true,
+        "firstSuccessfulWorkflowId": "MSU2ng86zFknerL0",
+        "userActivatedAt": 1765917220079,
+        "npsSurvey": {
+         "responded": true,
+         "lastShownAt": 1791934610324
+        }
+       },
+       "disabled": false,
+       "mfaEnabled": false,
+       "lastActiveAt": "2026-11-21",
+       "isPending": false
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": null
+}

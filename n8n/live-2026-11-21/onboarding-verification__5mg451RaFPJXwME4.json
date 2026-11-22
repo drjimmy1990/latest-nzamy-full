@@ -1,0 +1,506 @@
+{
+ "updatedAt": "2026-07-06T01:42:58.750Z",
+ "createdAt": "2026-06-29T02:53:38.680Z",
+ "id": "5mg451RaFPJXwME4",
+ "name": "NZAMY · Onboarding & Verification",
+ "description": null,
+ "active": false,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "hdr_sticky",
+   "name": "HEADER",
+   "parameters": {
+    "content": "# NZAMY · Onboarding & Verification\n\n• **1.1** Welcome (`/new-user`) ✅ • **1.2a** Notify admin: new lawyer (`/verification`) ✅\n• **1.2b** Approval callback (`/lawyer-approval` GET) ✅ **token-guarded** Supabase update\n• **1.3** Firm (`/new-firm`) ✅ • **1.4** Provider (`/new-provider`) ✅\n\n1.2b: append `?user_id=<uuid>&token=<secret>`; token must equal n8n env `NZAMY_APPROVAL_SECRET` (interim guard — use a per-record HMAC before production). Signup `/new-user` still needs a Supabase DB webhook to fire.",
+    "height": 300,
+    "width": 820
+   },
+   "position": [
+    -80,
+    -220
+   ],
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1
+  },
+  {
+   "id": "deliver_sticky",
+   "name": "DELIVERY NOTE",
+   "parameters": {
+    "content": "## ⚠️ DUMMY delivery\nDeliver nodes POST to `$env.NZAMY_DELIVERY_URL` (placeholder) with `onError: continueRegularOutput`.\n\n**Go live:** point at Evolution WhatsApp / email; resolve recipient email/phone from `to_user_id` via a Supabase lookup.",
+    "height": 220,
+    "width": 360
+   },
+   "position": [
+    1220,
+    -220
+   ],
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1
+  },
+  {
+   "id": "wh_new_user",
+   "name": "WH: /new-user",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "new-user",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    0
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "ac021e89-d2fc-4ad5-9390-7e48c97271f2"
+  },
+  {
+   "id": "wh_verification",
+   "name": "WH: /verification",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "verification",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    240
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "32f06e0b-9fe8-4e06-8100-f097ef722a0c"
+  },
+  {
+   "id": "wh_lawyer_approval",
+   "name": "WH: /lawyer-approval (GET)",
+   "parameters": {
+    "httpMethod": "GET",
+    "options": {},
+    "path": "lawyer-approval",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    420
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "8ec53495-7241-4964-8057-746c55bcb3b3"
+  },
+  {
+   "id": "wh_new_firm",
+   "name": "WH: /new-firm",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "new-firm",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    600
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "c604d2ae-157b-4ce3-a6be-c2ada89abe40"
+  },
+  {
+   "id": "wh_new_provider",
+   "name": "WH: /new-provider",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "new-provider",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    780
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "6956a980-11ee-4e9d-8a46-85e88e2087ec"
+  },
+  {
+   "id": "wf11_compose",
+   "name": "1.1 Compose welcome",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const name = p.display_name || p.name || (p.data && p.data.display_name) || 'عميلنا العزيز';\n  return { json: {\n    branch: '1.1_welcome', notify: 'new_user',\n    to_user_id: p.id || p.user_id || null,\n    to_email: p.email || null, to_phone: p.phone || null,\n    role: p.user_type || p.role || null,\n    subject_ar: 'مرحباً بك في نظامي',\n    body_ar: 'أهلاً ' + name + '! سعداء بانضمامك إلى منصة نظامي القانونية. يمكنك الآن طلب استشارة أو خدمة قانونية بسهولة.',\n    _payload: p\n  }};\n});"
+   },
+   "position": [
+    540,
+    0
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf11_deliver",
+   "name": "1.1 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    900,
+    0
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf12a_compose",
+   "name": "1.2a Compose notify admin",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const name = p.display_name || p.name || (p.data && p.data.display_name) || 'محامٍ جديد';\n  return { json: {\n    branch: '1.2a_notify_admin_new_lawyer', notify: 'admin',\n    lawyer_user_id: p.user_id || p.id || null,\n    subject_ar: 'طلب توثيق محامٍ جديد',\n    body_ar: 'قدّم المحامي ' + name + ' طلب توثيق حساب. يرجى المراجعة والاعتماد من لوحة الإدارة.',\n    _payload: p\n  }};\n});"
+   },
+   "position": [
+    540,
+    240
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf12a_deliver",
+   "name": "1.2a Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    900,
+    240
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf12b_guard",
+   "name": "1.2b Check token",
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "tok",
+       "leftValue": "={{ $json.query.token }}",
+       "rightValue": "CHANGE-ME-APPROVAL-SECRET",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ]
+    },
+    "options": {}
+   },
+   "position": [
+    540,
+    420
+   ],
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf12b_verify",
+   "name": "1.2b Verify lawyer",
+   "parameters": {
+    "operation": "update",
+    "tableId": "lawyer_profiles",
+    "filterType": "manual",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "user_id",
+       "condition": "eq",
+       "keyValue": "={{ $json.query.user_id }}"
+      }
+     ]
+    },
+    "dataToSend": "defineBelow",
+    "fieldsUi": {
+     "fieldValues": [
+      {
+       "fieldId": "verification_status",
+       "fieldValue": "verified"
+      }
+     ]
+    }
+   },
+   "position": [
+    880,
+    420
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf13_compose",
+   "name": "1.3 Compose firm",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const name = p.display_name || p.name || (p.data && p.data.name) || 'مكتب محاماة';\n  return { json: {\n    branch: '1.3_firm_onboarding', notify: 'new_firm',\n    to_user_id: p.user_id || p.id || null,\n    subject_ar: 'مرحباً بمكتبكم في نظامي',\n    body_ar: 'أهلاً بمكتب ' + name + ' في منصة نظامي. (ميزة المكاتب ضمن مرحلة لاحقة.)',\n    _post_beta: true, _payload: p\n  }};\n});"
+   },
+   "position": [
+    540,
+    600
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf13_deliver",
+   "name": "1.3 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    900,
+    600
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf14_compose",
+   "name": "1.4 Compose provider",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const name = p.display_name || p.name || 'مزوّد خدمة';\n  return { json: {\n    branch: '1.4_provider_verification', notify: 'admin',\n    provider_user_id: p.user_id || p.id || null,\n    subject_ar: 'طلب توثيق مزوّد خدمة',\n    body_ar: 'قدّم مزوّد الخدمة ' + name + ' طلب توثيق. (ميزة المزوّدين ضمن مرحلة لاحقة.)',\n    _post_beta: true, _payload: p\n  }};\n});"
+   },
+   "position": [
+    540,
+    780
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf14_deliver",
+   "name": "1.4 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    900,
+    780
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  }
+ ],
+ "connections": {
+  "WH: /new-user": {
+   "main": [
+    [
+     {
+      "node": "1.1 Compose welcome",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "1.1 Compose welcome": {
+   "main": [
+    [
+     {
+      "node": "1.1 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WH: /verification": {
+   "main": [
+    [
+     {
+      "node": "1.2a Compose notify admin",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "1.2a Compose notify admin": {
+   "main": [
+    [
+     {
+      "node": "1.2a Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WH: /lawyer-approval (GET)": {
+   "main": [
+    [
+     {
+      "node": "1.2b Check token",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "1.2b Check token": {
+   "main": [
+    [
+     {
+      "node": "1.2b Verify lawyer",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    []
+   ]
+  },
+  "WH: /new-firm": {
+   "main": [
+    [
+     {
+      "node": "1.3 Compose firm",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "1.3 Compose firm": {
+   "main": [
+    [
+     {
+      "node": "1.3 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WH: /new-provider": {
+   "main": [
+    [
+     {
+      "node": "1.4 Compose provider",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "1.4 Compose provider": {
+   "main": [
+    [
+     {
+      "node": "1.4 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": null,
+ "pinData": null,
+ "versionId": "50c544c2-bf04-457e-98c6-32b075b1fa0e",
+ "activeVersionId": null,
+ "versionCounter": 4,
+ "triggerCount": 0,
+ "shared": [
+  {
+   "updatedAt": "2026-06-29T02:53:38.680Z",
+   "createdAt": "2026-06-29T02:53:38.680Z",
+   "role": "workflow:owner",
+   "workflowId": "5mg451RaFPJXwME4",
+   "projectId": "UOkkMfwjI7zdLjhM",
+   "project": {
+    "updatedAt": "2025-12-16T02:49:28.147Z",
+    "createdAt": "2025-12-16T02:16:32.813Z",
+    "id": "UOkkMfwjI7zdLjhM",
+    "name": "mohamed gamal <dr.gimy@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "projectRelations": [
+     {
+      "updatedAt": "2025-12-16T02:16:32.813Z",
+      "createdAt": "2025-12-16T02:16:32.813Z",
+      "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+      "projectId": "UOkkMfwjI7zdLjhM",
+      "user": {
+       "updatedAt": "2026-11-20T22:37:11.706Z",
+       "createdAt": "2025-12-16T02:16:28.988Z",
+       "id": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+       "email": "dr.gimy@gmail.com",
+       "firstName": "mohamed",
+       "lastName": "gamal",
+       "personalizationAnswers": {
+        "version": "v4",
+        "personalization_survey_submitted_at": "2025-12-16T03:06:35.472Z",
+        "personalization_survey_n8n_version": "2.0.2"
+       },
+       "settings": {
+        "userActivated": true,
+        "easyAIWorkflowOnboarded": true,
+        "firstSuccessfulWorkflowId": "MSU2ng86zFknerL0",
+        "userActivatedAt": 1765917220079,
+        "npsSurvey": {
+         "responded": true,
+         "lastShownAt": 1791934610324
+        }
+       },
+       "disabled": false,
+       "mfaEnabled": false,
+       "lastActiveAt": "2026-11-21",
+       "isPending": false
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": null
+}

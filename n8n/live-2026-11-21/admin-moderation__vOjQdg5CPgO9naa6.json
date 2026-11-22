@@ -1,0 +1,346 @@
+{
+ "updatedAt": "2026-07-06T01:43:03.473Z",
+ "createdAt": "2026-06-29T02:54:13.489Z",
+ "id": "vOjQdg5CPgO9naa6",
+ "name": "NZAMY · Admin & Moderation",
+ "description": null,
+ "active": false,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "hdr_sticky",
+   "name": "HEADER",
+   "parameters": {
+    "content": "# NZAMY · Admin & Moderation\n\n• **5.1** Daily digest (cron 8am) ✅ Supabase getAll requests → count by status → DUMMY to admin\n• **5.2** Security alert (`/auth-failed`) ✅ compose alert → DUMMY (app must POST failed-login events)\n• **5.3** Moderation (`/new-post`) ✅ keyword pre-filter → DUMMY (add LLM node for nuance)\n\nSupabase cred `nzamy`. Delivery = DUMMY until Evolution/email wired.",
+    "height": 260,
+    "width": 820
+   },
+   "position": [
+    -80,
+    -200
+   ],
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1
+  },
+  {
+   "id": "cron_digest",
+   "name": "Cron: daily 8am",
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "expression": "0 8 * * *",
+       "field": "cronExpression"
+      }
+     ]
+    }
+   },
+   "position": [
+    200,
+    0
+   ],
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2
+  },
+  {
+   "id": "wh_auth_failed",
+   "name": "WH: /auth-failed",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "auth-failed",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    260
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "e3cd3c46-97df-46c6-a2f2-3d3b386029c6"
+  },
+  {
+   "id": "wh_new_post",
+   "name": "WH: /new-post",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "new-post",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    480
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "8d2c89ad-698c-44df-b273-c0dd0afc10f6"
+  },
+  {
+   "id": "wf51_query",
+   "name": "5.1 Query requests",
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "service_requests",
+    "returnAll": false,
+    "limit": 200,
+    "filterType": "none"
+   },
+   "position": [
+    540,
+    0
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf51_compose",
+   "name": "5.1 Compose digest",
+   "parameters": {
+    "jsCode": "const rows = $input.all().map(i => i.json);\nconst byStatus = {};\nfor (const r of rows) { const s = r.status || 'unknown'; byStatus[s] = (byStatus[s]||0)+1; }\nconst lines = Object.keys(byStatus).map(s => '• ' + s + ': ' + byStatus[s]).join('\\n');\nreturn [{ json: {\n  branch: '5.1_daily_digest', notify: 'admin',\n  subject_ar: 'ملخص نظامي اليومي',\n  body_ar: 'إجمالي الطلبات (آخر ' + rows.length + '):\\n' + lines,\n  counts: byStatus\n}}];"
+   },
+   "position": [
+    820,
+    0
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf51_deliver",
+   "name": "5.1 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    1100,
+    0
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf52_compose",
+   "name": "5.2 Compose alert",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  return { json: {\n    branch: '5.2_security_alert', notify: 'admin',\n    subject_ar: 'تنبيه أمني: محاولات دخول فاشلة',\n    body_ar: 'رُصدت محاولات دخول فاشلة. البريد: ' + (p.email || 'غير معروف') + '، المحاولات: ' + (p.attempts || '؟') + '، IP: ' + (p.ip || 'غير معروف') + '.',\n    _payload: p\n  }};\n});"
+   },
+   "position": [
+    540,
+    260
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf52_deliver",
+   "name": "5.2 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    820,
+    260
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf53_moderate",
+   "name": "5.3 Moderate (keyword)",
+   "parameters": {
+    "jsCode": "const banned = ['spam','احتيال','نصب','خداع','إعلان ممنوع'];\nreturn $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const content = (p.content || p.text || (p.data && p.data.content) || '').toString().toLowerCase();\n  const hits = banned.filter(b => content.includes(b));\n  return { json: {\n    branch: '5.3_moderation', notify: 'admin',\n    post_id: p.id || p.post_id || null,\n    flagged: hits.length > 0, matched: hits,\n    subject_ar: hits.length ? 'محتوى يحتاج مراجعة' : 'محتوى جديد (سليم)',\n    body_ar: hits.length ? ('تم وسم منشور لاحتوائه على: ' + hits.join('، ')) : 'منشور جديد اجتاز الفحص الآلي.',\n    _todo: 'For nuanced moderation add an LLM node; this is a keyword pre-filter.',\n    _payload: p\n  }};\n});"
+   },
+   "position": [
+    540,
+    480
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf53_deliver",
+   "name": "5.3 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    820,
+    480
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  }
+ ],
+ "connections": {
+  "Cron: daily 8am": {
+   "main": [
+    [
+     {
+      "node": "5.1 Query requests",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "5.1 Query requests": {
+   "main": [
+    [
+     {
+      "node": "5.1 Compose digest",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "5.1 Compose digest": {
+   "main": [
+    [
+     {
+      "node": "5.1 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WH: /auth-failed": {
+   "main": [
+    [
+     {
+      "node": "5.2 Compose alert",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "5.2 Compose alert": {
+   "main": [
+    [
+     {
+      "node": "5.2 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WH: /new-post": {
+   "main": [
+    [
+     {
+      "node": "5.3 Moderate (keyword)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "5.3 Moderate (keyword)": {
+   "main": [
+    [
+     {
+      "node": "5.3 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": null,
+ "pinData": null,
+ "versionId": "0881cb82-af96-4259-9015-d83996b4a6ac",
+ "activeVersionId": null,
+ "versionCounter": 3,
+ "triggerCount": 0,
+ "shared": [
+  {
+   "updatedAt": "2026-06-29T02:54:13.489Z",
+   "createdAt": "2026-06-29T02:54:13.489Z",
+   "role": "workflow:owner",
+   "workflowId": "vOjQdg5CPgO9naa6",
+   "projectId": "UOkkMfwjI7zdLjhM",
+   "project": {
+    "updatedAt": "2025-12-16T02:49:28.147Z",
+    "createdAt": "2025-12-16T02:16:32.813Z",
+    "id": "UOkkMfwjI7zdLjhM",
+    "name": "mohamed gamal <dr.gimy@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "projectRelations": [
+     {
+      "updatedAt": "2025-12-16T02:16:32.813Z",
+      "createdAt": "2025-12-16T02:16:32.813Z",
+      "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+      "projectId": "UOkkMfwjI7zdLjhM",
+      "user": {
+       "updatedAt": "2026-11-20T22:37:11.706Z",
+       "createdAt": "2025-12-16T02:16:28.988Z",
+       "id": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+       "email": "dr.gimy@gmail.com",
+       "firstName": "mohamed",
+       "lastName": "gamal",
+       "personalizationAnswers": {
+        "version": "v4",
+        "personalization_survey_submitted_at": "2025-12-16T03:06:35.472Z",
+        "personalization_survey_n8n_version": "2.0.2"
+       },
+       "settings": {
+        "userActivated": true,
+        "easyAIWorkflowOnboarded": true,
+        "firstSuccessfulWorkflowId": "MSU2ng86zFknerL0",
+        "userActivatedAt": 1765917220079,
+        "npsSurvey": {
+         "responded": true,
+         "lastShownAt": 1791934610324
+        }
+       },
+       "disabled": false,
+       "mfaEnabled": false,
+       "lastActiveAt": "2026-11-21",
+       "isPending": false
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": null
+}

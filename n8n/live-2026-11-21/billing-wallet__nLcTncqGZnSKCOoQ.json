@@ -1,0 +1,335 @@
+{
+ "updatedAt": "2026-06-29T02:54:20.671Z",
+ "createdAt": "2026-06-29T02:54:20.671Z",
+ "id": "nLcTncqGZnSKCOoQ",
+ "name": "NZAMY · Billing & Wallet",
+ "description": null,
+ "active": false,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "hdr_sticky",
+   "name": "HEADER",
+   "parameters": {
+    "content": "# NZAMY · Billing & Wallet\n\nGroups the 6 alike billing/wallet workflows.\n\n⏸️ **BLOCKED** on payment gateway decision (Moyasar / Tap / HyperPay). Admin-gated via `platform_settings.payments_gateway`.\n\n• **WF 3.1** Payment Success — receipt email + WhatsApp (webhook `/payment`)\n• **WF 3.4** Invoice Generation — HTML→PDF → Supabase Storage (webhook `/invoice-generate`)\n• **WF 3.2** Subscription Renewal Reminder (cron daily 9 AM)\n• **WF 3.3** Credit Expiry Warning (cron daily 9 AM)\n• **Wallet** Balance Sync + low-balance alert (webhook `/wallet-tx`)\n• **Referral** Reward Processing (webhook `/referral-complete`)\n\nEmail templates needed: payment-receipt, subscription-expiring, credit-low. Credentials: Supabase, Resend, Evolution API, Payment Gateway.",
+    "height": 300,
+    "width": 820
+   },
+   "position": [
+    -80,
+    -240
+   ],
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1
+  },
+  {
+   "id": "wh_payment",
+   "name": "WH: /payment",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "payment",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    0
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "c5a053e4-d7ae-418a-9a74-43801dde8d21"
+  },
+  {
+   "id": "wh_invoice",
+   "name": "WH: /invoice-generate",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "invoice-generate",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    200
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "0b6e6615-3394-42a9-8c34-bdf02823cb4e"
+  },
+  {
+   "id": "cron_sub",
+   "name": "Cron: daily 9am (subscription)",
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "expression": "0 9 * * *",
+       "field": "cronExpression"
+      }
+     ]
+    }
+   },
+   "position": [
+    200,
+    400
+   ],
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2
+  },
+  {
+   "id": "cron_credit",
+   "name": "Cron: daily 9am (credit)",
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "expression": "0 9 * * *",
+       "field": "cronExpression"
+      }
+     ]
+    }
+   },
+   "position": [
+    200,
+    580
+   ],
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2
+  },
+  {
+   "id": "wh_wallet",
+   "name": "WH: /wallet-tx",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "wallet-tx",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    760
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "52e256b4-f283-46b2-b63f-f3ee493e7d50"
+  },
+  {
+   "id": "wh_referral",
+   "name": "WH: /referral-complete",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "referral-complete",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    940
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "dedb6977-1efc-4e3e-9e17-f909b6e1fe69"
+  },
+  {
+   "id": "wf31",
+   "name": "WF 3.1 — Payment Success receipt (BUILD HERE)",
+   "parameters": {},
+   "position": [
+    560,
+    0
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "wf34",
+   "name": "WF 3.4 — Invoice Generation PDF (BUILD HERE)",
+   "parameters": {},
+   "position": [
+    560,
+    200
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "wf32",
+   "name": "WF 3.2 — Subscription Renewal Reminder (BUILD HERE)",
+   "parameters": {},
+   "position": [
+    560,
+    400
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "wf33",
+   "name": "WF 3.3 — Credit Expiry Warning (BUILD HERE)",
+   "parameters": {},
+   "position": [
+    560,
+    580
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "wf_wallet",
+   "name": "Wallet — Balance Sync & low-balance alert (BUILD HERE)",
+   "parameters": {},
+   "position": [
+    560,
+    760
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  },
+  {
+   "id": "wf_referral",
+   "name": "Referral — Reward Processing (BUILD HERE)",
+   "parameters": {},
+   "position": [
+    560,
+    940
+   ],
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1
+  }
+ ],
+ "connections": {
+  "Cron: daily 9am (credit)": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "WF 3.3 — Credit Expiry Warning (BUILD HERE)",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "Cron: daily 9am (subscription)": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "WF 3.2 — Subscription Renewal Reminder (BUILD HERE)",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /invoice-generate": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "WF 3.4 — Invoice Generation PDF (BUILD HERE)",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /payment": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "WF 3.1 — Payment Success receipt (BUILD HERE)",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /referral-complete": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "Referral — Reward Processing (BUILD HERE)",
+      "type": "main"
+     }
+    ]
+   ]
+  },
+  "WH: /wallet-tx": {
+   "main": [
+    [
+     {
+      "index": 0,
+      "node": "Wallet — Balance Sync & low-balance alert (BUILD HERE)",
+      "type": "main"
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": null,
+ "pinData": null,
+ "versionId": "ffcda0fd-7dea-4850-aeca-3fa39ed53c2a",
+ "activeVersionId": null,
+ "versionCounter": 1,
+ "triggerCount": 0,
+ "shared": [
+  {
+   "updatedAt": "2026-06-29T02:54:20.671Z",
+   "createdAt": "2026-06-29T02:54:20.671Z",
+   "role": "workflow:owner",
+   "workflowId": "nLcTncqGZnSKCOoQ",
+   "projectId": "UOkkMfwjI7zdLjhM",
+   "project": {
+    "updatedAt": "2025-12-16T02:49:28.147Z",
+    "createdAt": "2025-12-16T02:16:32.813Z",
+    "id": "UOkkMfwjI7zdLjhM",
+    "name": "mohamed gamal <dr.gimy@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "projectRelations": [
+     {
+      "updatedAt": "2025-12-16T02:16:32.813Z",
+      "createdAt": "2025-12-16T02:16:32.813Z",
+      "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+      "projectId": "UOkkMfwjI7zdLjhM",
+      "user": {
+       "updatedAt": "2026-11-20T22:37:11.706Z",
+       "createdAt": "2025-12-16T02:16:28.988Z",
+       "id": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+       "email": "dr.gimy@gmail.com",
+       "firstName": "mohamed",
+       "lastName": "gamal",
+       "personalizationAnswers": {
+        "version": "v4",
+        "personalization_survey_submitted_at": "2025-12-16T03:06:35.472Z",
+        "personalization_survey_n8n_version": "2.0.2"
+       },
+       "settings": {
+        "userActivated": true,
+        "easyAIWorkflowOnboarded": true,
+        "firstSuccessfulWorkflowId": "MSU2ng86zFknerL0",
+        "userActivatedAt": 1765917220079,
+        "npsSurvey": {
+         "responded": true,
+         "lastShownAt": 1791934610324
+        }
+       },
+       "disabled": false,
+       "mfaEnabled": false,
+       "lastActiveAt": "2026-11-21",
+       "isPending": false
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": null
+}

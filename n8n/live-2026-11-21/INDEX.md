@@ -1,0 +1,32 @@
+# Live NZAMY workflows exported 2026-11-21 (read-only, no secrets)
+
+| file | state | updated | note |
+|---|---|---|---|
+| ai-schedules__8Skwnqn9WIPOxcml.json | ON | 2026-10-27 | ok |
+| ai-analyze-strength__MwONm9eg0IOGRRzt.json | ON | 2026-11-07 | ok |
+| ai-library-assistant__P2wLRQW3ZjlXgNhe.json | ON | 2026-11-20 | ok |
+| ai-quick-answer__ZigypMIWBhyPHrp7.json | ON | 2026-11-07 | ok |
+| ai-contract-negotiator__I2bW9Pg8vF45E72j.json | ON | 2026-11-07 | ok |
+| onboarding-verification__5mg451RaFPJXwME4.json | off | 2026-07-06 | ok |
+| ai-wargaming__5CFEwAsuT0lRZRlK.json | ON | 2026-11-07 | ok |
+| ai-canvas-card__1g4hsswaWsaafkN5.json | ON | 2026-10-27 | ok |
+| communication__Y8SnEGaXTC3dboGA.json | off | 2026-07-06 | ok |
+| service-requests__YkvR5SI8ljcSOfuC.json | off | 2026-07-06 | ok |
+| ai-echo-job__9qqzoHhFfhY3Esdj.json | ON | 2026-10-30 | ok |
+| billing-wallet__nLcTncqGZnSKCOoQ.json | off | 2026-06-29 | ok |
+| ai-najiz-optimizer__b3SSd5YoQmIjCgna.json | ON | 2026-11-07 | ok |
+| ai-case-brief__snPDkKndPA9wjIKr.json | ON | 2026-11-07 | ok |
+| ai-brief-check__bu9guzNEhaLbyAPd.json | ON | 2026-11-07 | ok |
+| admin-moderation__vOjQdg5CPgO9naa6.json | off | 2026-07-06 | ok |
+| ai-contracts-pro__mMekAog89HsgLz3o.json | ON | 2026-11-07 | ok |
+| ai-legal-opinion-letter__wIdLCC7dIj64b6Rz.json | ON | 2026-11-07 | ok |
+| ai-contract-review__dGl5rF6FgLHhMSRN.json | ON | 2026-11-07 | ok |
+| ai-communicate__z9IsIwKfr40hEE4e.json | ON | 2026-10-27 | ok |
+| ai-assistant__iPXmJCQQ1QGzrIRf.json | ON | 2026-11-20 | ok |
+| ai-legal-drafter__hhmOLkcaPj3bojmh.json | ON | 2026-11-20 | ok |
+| ai-lib-queries__s8MAOg4WTtt1yIUW.json | ON | 2026-10-30 | ok |
+| ai-echo-fast__m8vLkLlOrmWj6qeO.json | ON | 2026-10-30 | ok |
+| ai-contract-drafter__r2s0JBMr8Q5Ti80O.json | ON | 2026-11-07 | ok |
+| ai-legal-opinion-consult__jnejnjYKUcYwhNkR.json | ON | 2026-11-20 | ok |
+| daily-jobs__uIJyxHM0wZh10JKo.json | ON | 2026-11-20 | ok |
+| ai-legal-tools__rtj1TC9rd6Ule7am.json | off | 2026-06-29 | ok |

@@ -1,0 +1,508 @@
+{
+ "updatedAt": "2026-07-06T01:42:54.497Z",
+ "createdAt": "2026-06-29T02:53:33.628Z",
+ "id": "YkvR5SI8ljcSOfuC",
+ "name": "NZAMY · Service Requests",
+ "description": null,
+ "active": false,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "hdr_sticky",
+   "name": "HEADER",
+   "parameters": {
+    "content": "# NZAMY · Service Requests\n\nClient↔lawyer notifications (app-side push). Supabase cred `nzamy` resolves recipient email/phone.\n\n• **2.1** New request → notify Nzamy (`/new-request`)\n• **2.2** Assigned → Compose → **Resolve client (Supabase)** → notify client (`/request-assigned`)\n• **2.3** Completed → Compose → **Resolve client** → review (`/request-completed`)\n• **2.4** 48h SLA → **Supabase getAll stale** → filter → notify admin (cron)\n\nDelivery = DUMMY (POST $env.NZAMY_DELIVERY_URL) until Evolution/email wired.",
+    "height": 300,
+    "width": 820
+   },
+   "position": [
+    -80,
+    -220
+   ],
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1
+  },
+  {
+   "id": "wh_new_request",
+   "name": "WH: /new-request",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "new-request",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    0
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "59b21059-3930-47f9-b6c8-530e4a1e20c1"
+  },
+  {
+   "id": "wh_request_assigned",
+   "name": "WH: /request-assigned",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "request-assigned",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    220
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "d1d50666-6732-4602-8f02-0e7ceb6c8456"
+  },
+  {
+   "id": "wh_request_completed",
+   "name": "WH: /request-completed",
+   "parameters": {
+    "httpMethod": "POST",
+    "options": {},
+    "path": "request-completed",
+    "responseMode": "onReceived"
+   },
+   "position": [
+    200,
+    440
+   ],
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "webhookId": "7754e7c4-3ea0-4f98-85c5-a5e9c5bbad16"
+  },
+  {
+   "id": "cron_escalation",
+   "name": "Cron: hourly",
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "hours",
+       "hoursInterval": 1
+      }
+     ]
+    }
+   },
+   "position": [
+    200,
+    660
+   ],
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2
+  },
+  {
+   "id": "wf21_compose",
+   "name": "2.1 Compose new",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const d = p.data || {};\n  return { json: {\n    branch: '2.1_new_request', notify: 'assignee_or_queue',\n    to_user_id: (p.recipient && p.recipient.id) || d.assignedTo || null,\n    to_role: (p.recipient && p.recipient.role) || d.receiver || null,\n    subject_ar: 'طلب خدمة جديد بانتظار الإسناد',\n    body_ar: ('وصل طلب خدمة جديد: \"' + (d.title || 'بدون عنوان') + '\".\\n' + (d.description || '')).trim(),\n    entity_id: (p.entity && p.entity.id) || null, _payload: p\n  }};\n});"
+   },
+   "position": [
+    520,
+    0
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf21_deliver",
+   "name": "2.1 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    860,
+    0
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf22_compose",
+   "name": "2.2 Compose assigned",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const d = p.data || {};\n  return { json: {\n    branch: '2.2_assigned', notify: 'client',\n    to_user_id: d.requesterUserId || (p.recipient && p.recipient.id) || null,\n    subject_ar: 'تم إسناد طلبك إلى محامٍ',\n    body_ar: 'تم إسناد طلبك \"' + (d.title || '') + '\" إلى محامٍ من نظامي، وسيتواصل معك قريباً.',\n    entity_id: (p.entity && p.entity.id) || null, _payload: p\n  }};\n});"
+   },
+   "position": [
+    520,
+    220
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf22_resolve",
+   "name": "2.2 Resolve client",
+   "parameters": {
+    "operation": "get",
+    "tableId": "profiles",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "id",
+       "condition": "eq",
+       "keyValue": "={{ $json.to_user_id }}"
+      }
+     ]
+    }
+   },
+   "position": [
+    820,
+    220
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf22_deliver",
+   "name": "2.2 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ to_email: $json.email, to_phone: $json.phone, to_name: $json.display_name, subject_ar: $('2.2 Compose assigned').item.json.subject_ar, body_ar: $('2.2 Compose assigned').item.json.body_ar, entity_id: $('2.2 Compose assigned').item.json.entity_id }) }}",
+    "options": {}
+   },
+   "position": [
+    1120,
+    220
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf23_compose",
+   "name": "2.3 Compose completed",
+   "parameters": {
+    "jsCode": "return $input.all().map(item => {\n  const p = (item.json.body ?? item.json) || {};\n  const d = p.data || {};\n  return { json: {\n    branch: '2.3_completed_review', notify: 'client',\n    to_user_id: d.requesterUserId || (p.recipient && p.recipient.id) || null,\n    subject_ar: 'اكتمل طلبك — نودّ معرفة رأيك',\n    body_ar: 'اكتمل طلبك \"' + (d.title || '') + '\". يسعدنا تقييمك للخدمة عبر الرابط الذي سنرسله إليك.',\n    entity_id: (p.entity && p.entity.id) || null, _payload: p\n  }};\n});"
+   },
+   "position": [
+    520,
+    440
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf23_resolve",
+   "name": "2.3 Resolve client",
+   "parameters": {
+    "operation": "get",
+    "tableId": "profiles",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "id",
+       "condition": "eq",
+       "keyValue": "={{ $json.to_user_id }}"
+      }
+     ]
+    }
+   },
+   "position": [
+    820,
+    440
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf23_deliver",
+   "name": "2.3 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ to_email: $json.email, to_phone: $json.phone, to_name: $json.display_name, subject_ar: $('2.3 Compose completed').item.json.subject_ar, body_ar: $('2.3 Compose completed').item.json.body_ar, entity_id: $('2.3 Compose completed').item.json.entity_id }) }}",
+    "options": {}
+   },
+   "position": [
+    1120,
+    440
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf24_query",
+   "name": "2.4 Query stale",
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "service_requests",
+    "returnAll": false,
+    "limit": 100,
+    "filterType": "manual",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "status",
+       "condition": "eq",
+       "keyValue": "pending_assignment"
+      }
+     ]
+    }
+   },
+   "position": [
+    520,
+    660
+   ],
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "credentials": {
+    "supabaseApi": {
+     "id": "6D0tPh1noqoLzL6T",
+     "name": "nzamy"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "wf24_compose",
+   "name": "2.4 Compose escalation",
+   "parameters": {
+    "jsCode": "// keep only requests older than 48h\nconst cutoff = Date.now() - 48*60*60*1000;\nconst stale = $input.all().filter(it => {\n  const c = it.json.created_at;\n  return c && new Date(c).getTime() < cutoff;\n});\nreturn stale.map(it => {\n  const r = it.json;\n  return { json: {\n    branch: '2.4_sla_escalation', notify: 'admin',\n    entity_id: r.id,\n    subject_ar: 'تنبيه SLA: طلب لم يُسنَد خلال 48 ساعة',\n    body_ar: 'الطلب \"' + (r.title || r.id) + '\" ما زال بانتظار الإسناد منذ أكثر من 48 ساعة. يرجى المتابعة.',\n    created_at: r.created_at\n  }};\n});"
+   },
+   "position": [
+    820,
+    660
+   ],
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2
+  },
+  {
+   "id": "wf24_deliver",
+   "name": "2.4 Deliver DUMMY",
+   "parameters": {
+    "method": "POST",
+    "url": "https://REPLACE-WITH-EVOLUTION-OR-EMAIL.example/send",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {}
+   },
+   "position": [
+    1120,
+    660
+   ],
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "onError": "continueRegularOutput"
+  }
+ ],
+ "connections": {
+  "WH: /new-request": {
+   "main": [
+    [
+     {
+      "node": "2.1 Compose new",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "2.1 Compose new": {
+   "main": [
+    [
+     {
+      "node": "2.1 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WH: /request-assigned": {
+   "main": [
+    [
+     {
+      "node": "2.2 Compose assigned",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "2.2 Compose assigned": {
+   "main": [
+    [
+     {
+      "node": "2.2 Resolve client",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "2.2 Resolve client": {
+   "main": [
+    [
+     {
+      "node": "2.2 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WH: /request-completed": {
+   "main": [
+    [
+     {
+      "node": "2.3 Compose completed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "2.3 Compose completed": {
+   "main": [
+    [
+     {
+      "node": "2.3 Resolve client",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "2.3 Resolve client": {
+   "main": [
+    [
+     {
+      "node": "2.3 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Cron: hourly": {
+   "main": [
+    [
+     {
+      "node": "2.4 Query stale",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "2.4 Query stale": {
+   "main": [
+    [
+     {
+      "node": "2.4 Compose escalation",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "2.4 Compose escalation": {
+   "main": [
+    [
+     {
+      "node": "2.4 Deliver DUMMY",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": null,
+ "pinData": null,
+ "versionId": "32a84997-731a-4288-aa17-a9792150eb04",
+ "activeVersionId": null,
+ "versionCounter": 4,
+ "triggerCount": 0,
+ "shared": [
+  {
+   "updatedAt": "2026-06-29T02:53:33.628Z",
+   "createdAt": "2026-06-29T02:53:33.628Z",
+   "role": "workflow:owner",
+   "workflowId": "YkvR5SI8ljcSOfuC",
+   "projectId": "UOkkMfwjI7zdLjhM",
+   "project": {
+    "updatedAt": "2025-12-16T02:49:28.147Z",
+    "createdAt": "2025-12-16T02:16:32.813Z",
+    "id": "UOkkMfwjI7zdLjhM",
+    "name": "mohamed gamal <dr.gimy@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "projectRelations": [
+     {
+      "updatedAt": "2025-12-16T02:16:32.813Z",
+      "createdAt": "2025-12-16T02:16:32.813Z",
+      "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+      "projectId": "UOkkMfwjI7zdLjhM",
+      "user": {
+       "updatedAt": "2026-11-20T22:37:11.706Z",
+       "createdAt": "2025-12-16T02:16:28.988Z",
+       "id": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+       "email": "dr.gimy@gmail.com",
+       "firstName": "mohamed",
+       "lastName": "gamal",
+       "personalizationAnswers": {
+        "version": "v4",
+        "personalization_survey_submitted_at": "2025-12-16T03:06:35.472Z",
+        "personalization_survey_n8n_version": "2.0.2"
+       },
+       "settings": {
+        "userActivated": true,
+        "easyAIWorkflowOnboarded": true,
+        "firstSuccessfulWorkflowId": "MSU2ng86zFknerL0",
+        "userActivatedAt": 1765917220079,
+        "npsSurvey": {
+         "responded": true,
+         "lastShownAt": 1791934610324
+        }
+       },
+       "disabled": false,
+       "mfaEnabled": false,
+       "lastActiveAt": "2026-11-21",
+       "isPending": false
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": null
+}

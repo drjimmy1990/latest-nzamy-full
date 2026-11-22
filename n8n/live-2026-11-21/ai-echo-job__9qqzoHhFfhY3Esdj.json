@@ -1,0 +1,740 @@
+{
+ "updatedAt": "2026-10-30T18:32:40.323Z",
+ "createdAt": "2026-10-26T22:56:15.773Z",
+ "id": "9qqzoHhFfhY3Esdj",
+ "name": "NZAMY · AI · echo-job (wave 0 test)",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "j1",
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.2,
+   "position": [
+    0,
+    300
+   ],
+   "webhookId": "6f1d2c0e-ai00-4e11-9a01-ec0fa5700002",
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "nzamy-ai/echo-job",
+    "authentication": "headerAuth",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "credentials": {
+    "httpHeaderAuth": {
+     "id": "T8LjmjhlZf6mNVeC",
+     "name": "NZAMY AI · inbound"
+    }
+   }
+  },
+  {
+   "id": "j2",
+   "name": "Accepted 202",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.5,
+   "position": [
+    220,
+    300
+   ],
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "={{ JSON.stringify({ accepted: true, run_id: $json.body.run_id }) }}",
+    "options": {
+     "responseCode": 202
+    }
+   }
+  },
+  {
+   "id": "j3",
+   "name": "Use model?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    440,
+    300
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "c1",
+       "leftValue": "={{ $('Webhook').first().json.body.input.use_model === true }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "j4",
+   "name": "Echo",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    680,
+    420
+   ],
+   "parameters": {
+    "jsCode": "const b = $('Webhook').first().json.body;\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output: { echo: String(b.input?.text ?? '') }, citations: [], usage: { model: null, input_tokens: 0, output_tokens: 0 }, error: null } }];"
+   }
+  },
+  {
+   "id": "j5",
+   "name": "Build prompt",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    680,
+    200
+   ],
+   "parameters": {
+    "jsCode": "const b = $('Webhook').first().json.body;\n// Wave 0 connectivity test, moved from the retired Anthropic key to the Gemini model every tool uses (owner test 29 Oct: model_error 401).\nreturn [{ json: { system: 'You are a connectivity test for the Nzamy platform. Reply with the user text exactly, nothing else.', content: String(b.input?.text ?? '').slice(0, 2000) } }];"
+   }
+  },
+  {
+   "id": "j6",
+   "name": "Write",
+   "type": "@n8n/n8n-nodes-langchain.agent",
+   "typeVersion": 3,
+   "position": [
+    920,
+    200
+   ],
+   "onError": "continueErrorOutput",
+   "parameters": {
+    "promptType": "define",
+    "text": "={{ $json.content }}",
+    "options": {
+     "systemMessage": "={{ $json.system }}"
+    }
+   },
+   "credentials": {
+    "httpHeaderAuth": {
+     "id": "PJV8iDPVPFc8zhg9",
+     "name": "NZAMY Anthropic (x-api-key)"
+    }
+   }
+  },
+  {
+   "id": "j10",
+   "name": "Model",
+   "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+   "typeVersion": 1,
+   "position": [
+    920,
+    420
+   ],
+   "parameters": {
+    "modelName": "models/gemini-3.1-flash-lite",
+    "options": {
+     "maxOutputTokens": 1000,
+     "temperature": 0
+    }
+   },
+   "credentials": {
+    "googlePalmApi": {
+     "id": "5p0YKMLaCVAAMklV",
+     "name": "Google Gemini(PaLM) Api account"
+    }
+   }
+  },
+  {
+   "id": "j7",
+   "name": "Parse result",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1160,
+    140
+   ],
+   "parameters": {
+    "jsCode": "const b = $('Webhook').first().json.body;\nconst t = String(typeof $json.output === 'string' ? $json.output : ($json.text ?? '')).trim();\nif (!t) return [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code: 'schema_invalid', message: 'the model returned no text' } } }];\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output: { echo: t }, citations: [], usage: { model: 'gemini-3.1-flash-lite', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];"
+   }
+  },
+  {
+   "id": "j8",
+   "name": "Model error",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1160,
+    300
+   ],
+   "parameters": {
+    "jsCode": "const b = $('Webhook').first().json.body;\nconst e = $json.error;\nconst msg = String((typeof e === 'string' ? e : e?.message) ?? $json.message ?? 'model call failed').slice(0, 300);\nreturn [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code: 'model_error', message: msg } } }];"
+   }
+  },
+  {
+   "id": "j9",
+   "name": "Callback",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1400,
+    300
+   ],
+   "retryOnFail": true,
+   "maxTries": 5,
+   "waitBetweenTries": 5000,
+   "parameters": {
+    "method": "POST",
+    "url": "={{ $('Webhook').first().json.body.respond.callback_url }}",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpHeaderAuth",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "credentials": {
+    "httpHeaderAuth": {
+     "id": "S29iidQ71jpn1rQD",
+     "name": "NZAMY AI · callback"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "Accepted 202",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Accepted 202": {
+   "main": [
+    [
+     {
+      "node": "Use model?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Use model?": {
+   "main": [
+    [
+     {
+      "node": "Build prompt",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Echo",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build prompt": {
+   "main": [
+    [
+     {
+      "node": "Write",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Model": {
+   "ai_languageModel": [
+    [
+     {
+      "node": "Write",
+      "type": "ai_languageModel",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write": {
+   "main": [
+    [
+     {
+      "node": "Parse result",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Model error",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse result": {
+   "main": [
+    [
+     {
+      "node": "Callback",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Model error": {
+   "main": [
+    [
+     {
+      "node": "Callback",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Echo": {
+   "main": [
+    [
+     {
+      "node": "Callback",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "saveDataErrorExecution": "all",
+  "saveDataSuccessExecution": "all",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": false
+ },
+ "staticData": null,
+ "meta": null,
+ "pinData": null,
+ "versionId": "fb3b6896-5c5e-492d-8f76-ddf8578a6971",
+ "activeVersionId": "fb3b6896-5c5e-492d-8f76-ddf8578a6971",
+ "versionCounter": 15,
+ "triggerCount": 1,
+ "shared": [
+  {
+   "updatedAt": "2026-10-26T22:56:15.773Z",
+   "createdAt": "2026-10-26T22:56:15.773Z",
+   "role": "workflow:owner",
+   "workflowId": "9qqzoHhFfhY3Esdj",
+   "projectId": "UOkkMfwjI7zdLjhM",
+   "project": {
+    "updatedAt": "2025-12-16T02:49:28.147Z",
+    "createdAt": "2025-12-16T02:16:32.813Z",
+    "id": "UOkkMfwjI7zdLjhM",
+    "name": "mohamed gamal <dr.gimy@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "projectRelations": [
+     {
+      "updatedAt": "2025-12-16T02:16:32.813Z",
+      "createdAt": "2025-12-16T02:16:32.813Z",
+      "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+      "projectId": "UOkkMfwjI7zdLjhM",
+      "user": {
+       "updatedAt": "2026-11-20T22:37:11.706Z",
+       "createdAt": "2025-12-16T02:16:28.988Z",
+       "id": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3",
+       "email": "dr.gimy@gmail.com",
+       "firstName": "mohamed",
+       "lastName": "gamal",
+       "personalizationAnswers": {
+        "version": "v4",
+        "personalization_survey_submitted_at": "2025-12-16T03:06:35.472Z",
+        "personalization_survey_n8n_version": "2.0.2"
+       },
+       "settings": {
+        "userActivated": true,
+        "easyAIWorkflowOnboarded": true,
+        "firstSuccessfulWorkflowId": "MSU2ng86zFknerL0",
+        "userActivatedAt": 1765917220079,
+        "npsSurvey": {
+         "responded": true,
+         "lastShownAt": 1791934610324
+        }
+       },
+       "disabled": false,
+       "mfaEnabled": false,
+       "lastActiveAt": "2026-11-21",
+       "isPending": false
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-10-30T18:32:40.328Z",
+  "createdAt": "2026-10-30T18:32:40.328Z",
+  "versionId": "fb3b6896-5c5e-492d-8f76-ddf8578a6971",
+  "workflowId": "9qqzoHhFfhY3Esdj",
+  "nodes": [
+   {
+    "id": "j1",
+    "name": "Webhook",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 2.2,
+    "position": [
+     0,
+     300
+    ],
+    "webhookId": "6f1d2c0e-ai00-4e11-9a01-ec0fa5700002",
+    "parameters": {
+     "httpMethod": "POST",
+     "path": "nzamy-ai/echo-job",
+     "authentication": "headerAuth",
+     "responseMode": "responseNode",
+     "options": {}
+    },
+    "credentials": {
+     "httpHeaderAuth": {
+      "id": "T8LjmjhlZf6mNVeC",
+      "name": "NZAMY AI · inbound"
+     }
+    }
+   },
+   {
+    "id": "j2",
+    "name": "Accepted 202",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.5,
+    "position": [
+     220,
+     300
+    ],
+    "parameters": {
+     "respondWith": "json",
+     "responseBody": "={{ JSON.stringify({ accepted: true, run_id: $json.body.run_id }) }}",
+     "options": {
+      "responseCode": 202
+     }
+    }
+   },
+   {
+    "id": "j3",
+    "name": "Use model?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     440,
+     300
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "c1",
+        "leftValue": "={{ $('Webhook').first().json.body.input.use_model === true }}",
+        "rightValue": true,
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    }
+   },
+   {
+    "id": "j4",
+    "name": "Echo",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     680,
+     420
+    ],
+    "parameters": {
+     "jsCode": "const b = $('Webhook').first().json.body;\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output: { echo: String(b.input?.text ?? '') }, citations: [], usage: { model: null, input_tokens: 0, output_tokens: 0 }, error: null } }];"
+    }
+   },
+   {
+    "id": "j5",
+    "name": "Build prompt",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     680,
+     200
+    ],
+    "parameters": {
+     "jsCode": "const b = $('Webhook').first().json.body;\n// Wave 0 connectivity test, moved from the retired Anthropic key to the Gemini model every tool uses (owner test 29 Oct: model_error 401).\nreturn [{ json: { system: 'You are a connectivity test for the Nzamy platform. Reply with the user text exactly, nothing else.', content: String(b.input?.text ?? '').slice(0, 2000) } }];"
+    }
+   },
+   {
+    "id": "j6",
+    "name": "Write",
+    "type": "@n8n/n8n-nodes-langchain.agent",
+    "typeVersion": 3,
+    "position": [
+     920,
+     200
+    ],
+    "onError": "continueErrorOutput",
+    "parameters": {
+     "promptType": "define",
+     "text": "={{ $json.content }}",
+     "options": {
+      "systemMessage": "={{ $json.system }}"
+     }
+    },
+    "credentials": {
+     "httpHeaderAuth": {
+      "id": "PJV8iDPVPFc8zhg9",
+      "name": "NZAMY Anthropic (x-api-key)"
+     }
+    }
+   },
+   {
+    "id": "j10",
+    "name": "Model",
+    "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+    "typeVersion": 1,
+    "position": [
+     920,
+     420
+    ],
+    "parameters": {
+     "modelName": "models/gemini-3.1-flash-lite",
+     "options": {
+      "maxOutputTokens": 1000,
+      "temperature": 0
+     }
+    },
+    "credentials": {
+     "googlePalmApi": {
+      "id": "5p0YKMLaCVAAMklV",
+      "name": "Google Gemini(PaLM) Api account"
+     }
+    }
+   },
+   {
+    "id": "j7",
+    "name": "Parse result",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1160,
+     140
+    ],
+    "parameters": {
+     "jsCode": "const b = $('Webhook').first().json.body;\nconst t = String(typeof $json.output === 'string' ? $json.output : ($json.text ?? '')).trim();\nif (!t) return [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code: 'schema_invalid', message: 'the model returned no text' } } }];\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output: { echo: t }, citations: [], usage: { model: 'gemini-3.1-flash-lite', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];"
+    }
+   },
+   {
+    "id": "j8",
+    "name": "Model error",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1160,
+     300
+    ],
+    "parameters": {
+     "jsCode": "const b = $('Webhook').first().json.body;\nconst e = $json.error;\nconst msg = String((typeof e === 'string' ? e : e?.message) ?? $json.message ?? 'model call failed').slice(0, 300);\nreturn [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code: 'model_error', message: msg } } }];"
+    }
+   },
+   {
+    "id": "j9",
+    "name": "Callback",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1400,
+     300
+    ],
+    "retryOnFail": true,
+    "maxTries": 5,
+    "waitBetweenTries": 5000,
+    "parameters": {
+     "method": "POST",
+     "url": "={{ $('Webhook').first().json.body.respond.callback_url }}",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpHeaderAuth",
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify($json) }}",
+     "options": {
+      "timeout": 30000
+     }
+    },
+    "credentials": {
+     "httpHeaderAuth": {
+      "id": "S29iidQ71jpn1rQD",
+      "name": "NZAMY AI · callback"
+     }
+    }
+   }
+  ],
+  "connections": {
+   "Webhook": {
+    "main": [
+     [
+      {
+       "node": "Accepted 202",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Accepted 202": {
+    "main": [
+     [
+      {
+       "node": "Use model?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Use model?": {
+    "main": [
+     [
+      {
+       "node": "Build prompt",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Echo",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Build prompt": {
+    "main": [
+     [
+      {
+       "node": "Write",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Model": {
+    "ai_languageModel": [
+     [
+      {
+       "node": "Write",
+       "type": "ai_languageModel",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Write": {
+    "main": [
+     [
+      {
+       "node": "Parse result",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Model error",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Parse result": {
+    "main": [
+     [
+      {
+       "node": "Callback",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Model error": {
+    "main": [
+     [
+      {
+       "node": "Callback",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Echo": {
+    "main": [
+     [
+      {
+       "node": "Callback",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "authors": "mohamed gamal",
+  "name": null,
+  "description": null,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-10-30T18:32:40.553Z",
+    "id": 365,
+    "workflowId": "9qqzoHhFfhY3Esdj",
+    "versionId": "fb3b6896-5c5e-492d-8f76-ddf8578a6971",
+    "event": "activated",
+    "userId": "1c9e822e-30f1-4849-8ba0-d27f46e3d1e3"
+   }
+  ]
+ }
+}
