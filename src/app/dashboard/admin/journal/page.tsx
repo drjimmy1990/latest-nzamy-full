@@ -214,7 +214,7 @@ export default function AdminJournalPage() {
           : `أُرسلت دفعة: ${d?.sent ?? 0} رسالة، تعذّر ${d?.failed ?? 0}، وتُرك ${d?.skippedAccounts ?? 0} حساباً بلا بريد صالح أو موقوفاً. اضغط «إرسال» مجدداً للدفعة التالية حتى يكتمل.`,
       });
     } else {
-      setNotice({ ok: true, text: action === "approve" ? "اعتُمد العدد. يمكنك الآن إرساله." : "عاد العدد مسودة." });
+      setNotice({ ok: true, text: action === "approve" ? "اعتُمد العدد. يُرسل الآن بزر «إرسال»، أو مع الإرسال التلقائي التالي متى جُدول. ولإيقافه قبل ذلك أعده إلى مسودة." : "عاد العدد مسودة." });
     }
     await load();
   }
@@ -225,7 +225,7 @@ export default function AdminJournalPage() {
   const input = `w-full rounded-xl border px-3 py-2 text-sm ${isDark ? "bg-black/30 border-white/10 text-white" : "bg-white border-slate-300 text-slate-900"}`;
   const btn = "px-3 py-1.5 rounded-xl text-sm font-bold disabled:opacity-50";
   const btnMain = `${btn} bg-[#0B3D2E] text-white`;
-  const btnSoft = `${btn} border ${isDark ? "border-white/15 text-slate-200" : "border-slate-300 text-slate-700"}`;
+  const btnSoft = `${btn} border ${isDark ? "border-white/15 text-gray-300" : "border-slate-300 text-slate-700"}`;
 
   return (
     <div className="p-6 md:p-10 space-y-8 max-w-[1200px] mx-auto pb-32" dir="rtl">
@@ -354,7 +354,7 @@ export default function AdminJournalPage() {
                     {row.effective_on ? ` · النفاذ: ${dateAr(row.effective_on)}` : ""}
                   </p>
                 </div>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${row.status === "approved" ? "border-emerald-500/40 text-emerald-500" : isDark ? "border-white/15 text-slate-300" : "border-slate-300 text-slate-600"}`}>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${row.status === "approved" ? "border-emerald-500/40 text-emerald-500" : isDark ? "border-white/15 text-gray-300" : "border-slate-300 text-slate-600"}`}>
                   {row.status === "approved" ? "معتمد" : "مسودة"}
                   {inIssue ? (locked ? " · في عدد معتمد" : " · في عدد قيد المراجعة") : ""}
                 </span>
@@ -387,7 +387,7 @@ export default function AdminJournalPage() {
           </label>
           <button type="button" disabled={busy || !month} onClick={() => void buildIssue(month)} className={btnMain}>بناء العدد من الأخبار المعتمدة</button>
           <p className={`text-xs ${muted} basis-full`}>
-            يُبنى العدد تلقائياً أول كل شهر ميلادي عن الشهر السابق، ويبقى بانتظار اعتمادك قبل الإرسال. إعادة البناء متاحة ما دام العدد لم يُعتمد.
+            يُبنى العدد تلقائياً أول كل شهر ميلادي عن الشهر السابق، ويبقى بانتظار اعتمادك. الاعتماد إذنٌ بالإرسال: يُرسل العدد المعتمد بزر «إرسال» أو مع الإرسال التلقائي التالي. إعادة البناء متاحة ما دام العدد لم يُعتمد.
           </p>
         </div>
         {issues && issues.length === 0 && <p className={`text-sm ${muted}`}>لم يُبنَ أي عدد بعد.</p>}
@@ -445,7 +445,7 @@ function StatusLine({ ok, isDark, children }: { ok: boolean; isDark: boolean; ch
       ) : (
         <WarningCircle size={18} weight="fill" className={`${isDark ? "text-amber-300" : "text-amber-600"} mt-0.5 flex-shrink-0`} />
       )}
-      <span className={isDark ? "text-slate-200" : "text-slate-800"}>{children}</span>
+      <span className={isDark ? "text-gray-300" : "text-slate-800"}>{children}</span>
     </p>
   );
 }

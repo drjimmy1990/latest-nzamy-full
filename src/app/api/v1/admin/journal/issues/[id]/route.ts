@@ -13,13 +13,18 @@ import { isJournalSchemaMissing, loadIssue, sendIssueBatch } from "@/lib/journal
  *   {action: "approve"}    draft → approved. Refused when the issue is empty
  *                          or carries an entry that is no longer approved.
  *   {action: "unapprove"}  approved → draft, only before any e-mail went out.
- *   {action: "send"}       approved / sending → e-mails one batch to the
+ *   Approval IS the permission to send: once the cron is scheduled it sends
+ *   every approved issue on its next run, even if nobody presses «إرسال».
+ *   {action: "send"}       approved / sending → e-mails one batch (10) to the
  *                          accounts with «النشرة» on (sendIssueBatch); press
  *                          again (or let the cron run) for the next batch.
  *                          Refused while the journal switch is off or e-mail
  *                          is not set up — said plainly, nothing is sent.
  */
 export const dynamic = "force-dynamic";
+
+/** E-mails per «إرسال» press (the cron sends SEND_BATCH = 40 per run). */
+const ADMIN_SEND_BATCH = 10;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -45,7 +50,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const db = await createServiceClient();
 
     if (action === "send") {
-      const report = await sendIssueBatch(db, id);
+      // A smaller batch than the cron's: this answers a browser request, which
+      // must end before the reverse proxy's read timeout.
+      const report = await sendIssueBatch(db, id, ADMIN_SEND_BATCH);
       if (report.skipped) return NextResponse.json({ error: SKIP_AR[report.skipped] ?? "لم يُرسل شيء", data: report }, { status: 409 });
       if (!report.ok) {
         console.error("[admin/journal/issues/[id] send]", report.error ?? "error");
