@@ -360,9 +360,18 @@ test("Q181: the window's words — the owner's count line, the offer, the honest
   assert.match(FREE_QUESTION_COPY.floatingOffer(2, 5), /بقي لك ٢ من ٥/);
   assert.match(FREE_QUESTION_COPY.floatingUsed(5), /٥ من ٥/);
   assert.match(FREE_QUESTION_COPY.floatingUsed(5), /المجيب القانوني السريع/);
+  assert.equal(FREE_QUESTION_COPY.floatingElsewhere(2, 5), "لديك ٢ من ٥ أسئلة قانونية مجانية في «مساعد نظامي» — افتحه من صفحة الأدوات");
   for (const t of [FREE_QUESTION_COPY.floatingOffer(1, 5), FREE_QUESTION_COPY.floatingUsed(5), FREE_QUESTION_COPY.floatingNone]) {
     assert.doesNotMatch(t, /[A-Za-z]/, "no technical words in the Arabic copy");
   }
+});
+
+test("Q181 source contract: the status route promises floating questions only when a run would go through (tool open, points enforced)", () => {
+  const src = readFileSync("src/app/api/v1/ai/free-question/route.ts", "utf8").replace(/\r\n/g, "\n");
+  assert.match(src, /if \(asked === FLOATING_FREE_QUESTION_TOOL && !\(await floatingRunsNow\(admin\)\)\) return NextResponse\.json\(NONE/);
+  assert.match(src, /if \(enforcement\.error \|\| \(enforcement\.data as \{ value\?: unknown \} \| null\)\?\.value !== true\) return false;/);
+  assert.match(src, /resolveToolRuntime\(AI_TOOLS\[FLOATING_FREE_QUESTION_TOOL\], await readAiToolsSetting\(admin\)\)/);
+  assert.match(src, /return toolAvailability\(runtime\.mode, false\) === "ok";/);
 });
 
 test("Q181 source contract: the SQL re-creates both functions with 'floating' and flips the default once", () => {

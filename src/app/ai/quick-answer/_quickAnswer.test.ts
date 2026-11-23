@@ -75,6 +75,10 @@ test("٤١٢: 10 points, every registered role (٤١٧); an individual's free qu
   assert.match(shown, /fetch\(`\/api\/v1\/ai\/free-question\?tool=\$\{GENERAL_FREE_QUESTION_TOOL\}`/);
   // Q181 (l13): asked for every individual; the route answers NONE unless the setting names quick-answer.
   assert.match(shown, /const freeHere = user\.userType === "individual";/);
+  // Q181 (l13): his free questions in «مساعد نظامي» are named here before he pays, server-counted.
+  assert.match(shown, /fetch\(`\/api\/v1\/ai\/free-question\?tool=\$\{FLOATING_FREE_QUESTION_TOOL\}`/);
+  assert.match(shown, /\{floatingFree && \(/);
+  assert.match(shown, /FREE_QUESTION_COPY\.floatingElsewhere\(floatingFree\.left, floatingFree\.total\)/);
   assert.match(shown, /\{free && <> · <span[^>]*>\{FREE_QUESTION_COPY\.left\(free\.left, free\.total\)\}<\/span><\/>\}/);
 });
 

@@ -7783,7 +7783,7 @@ select 'Every test account has a current test batch (run 20261129_90)' as check,
 
 -- >>> verify:l9_public
 -- Batch l9-public (owner register 4 / 36): an individual's free questions on the general assistant (quick-answer), every other type's on the library assistant. Run 20261129_60 any time after 20261128_20.
-select 'Free questions per account type: ai_start_free_question takes quick-answer for an individual, one overload, service role only (run 20261129_60)' as check,
+select 'Free questions per account type: ai_start_free_question still accepts quick-answer (an individual''s tool when the setting names it; floating by default since 20261203_50) and the library assistant, one overload, service role only (run 20261129_60)' as check,
        coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''quick-answer''') > 0
                         and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''library-assistant''') > 0
                         and p.prosecdef and p.proconfig @> array['search_path=""']

@@ -15,7 +15,7 @@ import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
-import { FREE_QUESTION_COPY, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
+import { FLOATING_FREE_QUESTION_TOOL, FREE_QUESTION_COPY, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
@@ -99,6 +99,7 @@ function QuickAnswerTool() {
   // Register 4 / 36 (l9): an individual's free questions left on this tool, as
   // the server counts them; null (nothing shown) until it answers or when none.
   const [free, setFree] = useState<{ left: number; total: number } | null>(null);
+  const [floatingFree, setFloatingFree] = useState<{ left: number; total: number } | null>(null);
   // Q181 (l13): the individual's tool is a setting (the floating window by
   // default), so the server decides: it answers NONE unless this is his tool.
   const freeHere = user.userType === "individual";
@@ -113,6 +114,16 @@ function QuickAnswerTool() {
         setFree(s && s.available === true && typeof s.left === "number" && typeof s.total === "number" ? { left: s.left, total: s.total } : null);
       })
       .catch(() => { if (live) setFree(null); });
+    // Q181: his free questions in «مساعد نظامي» (the default), so he is told
+    // before paying here — the server's count, shown only when some are left.
+    fetch(`/api/v1/ai/free-question?tool=${FLOATING_FREE_QUESTION_TOOL}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: unknown) => {
+        const s = j as { available?: unknown; left?: unknown; total?: unknown } | null;
+        if (!live) return;
+        setFloatingFree(s && s.available === true && typeof s.left === "number" && typeof s.total === "number" ? { left: s.left, total: s.total } : null);
+      })
+      .catch(() => { if (live) setFloatingFree(null); });
     return () => { live = false; };
   }, [freeHere, asking, run.phase]);
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
@@ -207,6 +218,14 @@ function QuickAnswerTool() {
           <span className={`text-[11px] ${muted}`}>
             {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · {`${aiToolPriceText("quick-answer", "ar")} للسؤال`}
             {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
+            {floatingFree && (
+              <>
+                {" · "}
+                <Link href="/ai" className={`font-bold underline ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+                  {FREE_QUESTION_COPY.floatingElsewhere(floatingFree.left, floatingFree.total)}
+                </Link>
+              </>
+            )}
           </span>
           <motion.button
             whileHover={{ scale: 1.03 }}

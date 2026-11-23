@@ -208,6 +208,9 @@ export const FREE_QUESTION_COPY = {
   floatingOffer: (left: number, total: number) =>
     `سؤالك قانوني، ويمكنني الإجابة عنه من نصوص المكتبة القانونية ضمن أسئلتك المجانية (بقي لك ${ar(left)} من ${ar(total)}). الإجابة إرشادية وليست استشارة قانونية.`,
   floatingAsk: "أجب عن سؤالي (سؤال مجاني)",
+  /** Q181: on the quick answer's page (where they are no longer spent), pointing to the window on /ai. */
+  floatingElsewhere: (left: number, total: number) =>
+    `لديك ${ar(left)} من ${ar(total)} أسئلة قانونية مجانية في «مساعد نظامي» — افتحه من صفحة الأدوات`,
   /** Q181: after the last one — honest, with the paid ways (the window adds the links). */
   floatingUsed: (total: number) =>
     `استخدمت أسئلتك القانونية المجانية كلها (${ar(total)} من ${ar(total)}). لأسئلتك القانونية الآن استعمل «المجيب القانوني السريع» بالنقاط، أو اطلب خدمة من محامٍ عبر المنصة.`,
