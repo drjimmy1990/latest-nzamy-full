@@ -16,6 +16,8 @@ import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { COMMUNICATE_TONES, type CommunicateType } from "@/lib/ai/tools";
 import ToolUsableGate from "@/components/ai/ToolUsableGate";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
+import { aiToolPointRange, aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 
 // ─── Communication types ──────────────────────────────────────────────────────
 
@@ -156,6 +158,10 @@ function AICommunicatePage() {
               <Sparkle size={14} weight="fill" className="text-[#C8A762]" />
               {generating ? "جارٍ الكتابة..." : "اكتب الرسالة"}
             </motion.button>
+            <p className={`text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+              {aiToolPriceText("communicate", "ar")}
+              <ToolPointsAvailable tool="communicate" price={aiToolPointRange("communicate")[0]} leading=" · " recheck={run.phase} />
+            </p>
             {run.phase === "error" && run.error && (
               <p role="alert" className={`text-[12px] leading-relaxed ${isDark ? "text-red-400" : "text-red-600"}`}>{run.error}</p>
             )}

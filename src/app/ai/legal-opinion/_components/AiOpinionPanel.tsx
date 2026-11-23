@@ -26,6 +26,7 @@ import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_
 import {
   AI_OPINION_TOOL, aiOpinionErrorText, asConsultAnswer, asLetterDraft, letterDraftBlocks, consultAnswerBlocks, consultAnswerText, type AiOpinionKind,
 } from "./aiOpinion";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 interface Props {
   kind: AiOpinionKind;
@@ -99,6 +100,7 @@ export function AiOpinionPanel({ kind, run, input, draftState, blocked, price, i
             <Sparkle size={14} weight="fill" />
             {run.busy ? "جارٍ التوليد..." : useCredit ? `${c.button} (${FOUNDER_CREDIT_PRICE_TEXT})` : `${c.button} — ${price.toLocaleString("ar-SA")} نقطة`}
           </button>
+          {!useCredit && <p className="text-[11px]"><ToolPointsAvailable tool={AI_OPINION_TOOL[kind]} price={price} recheck={run.phase} /></p>}
           {!run.busy && blocked && <p className="text-[11px] text-amber-500">{blocked}</p>}
           <AiThinkingStage run={run} isDark={isDark} toolLabel={aiToolLabelAr(AI_OPINION_TOOL[kind])} />
           {run.phase === "review" && (

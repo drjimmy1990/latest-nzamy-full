@@ -8237,3 +8237,28 @@ begin
   raise notice '_verify: 20261203_90 OK — market acceptance mode is % (Q151: instant; an admin may switch it back)', coalesce(v, 'unset');
 end $$;
 -- <<< verify:l13_market_instant
+-- >>> verify:l13_points — supabase/tests/rls/points_soonest_first_l13.test.sql
+-- 2026-11-23 — 20261203_10_points_soonest_first.sql (batch l13, owner ١٦٥ ب):
+-- debit_points spends the soonest-expiring eligible lot first whatever its
+-- type (the library wallet stays the library assistant's only), and
+-- points_available_for_tool («المتاح لهذه العملية»). Run before or after the
+-- deploy; re-run it after any re-run of 20261127_40 or 20261022_20.
+-- Read-only, safe to repeat. Every row must say ok = true (false = run 20261203_10).
+select 'debit_points: soonest-expiring eligible lot first, no type preference, wallet rule kept (run 20261203_10)' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) ~* 'order\s+by\s+pl\.expires_at\s*,\s*pl\.created_at\s*,\s*pl\.id\s+for\s+update'
+                        and pg_get_functiondef(p.oid) !~* 'case\s+when\s+pl\.(wallet_scope|source)'
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), 'plan_monthly') = 0
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), '(pl.wallet_scope = ''general'' or (v_lib and pl.wallet_scope = ''library_agent''))') > 0
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_proc p where p.oid = to_regprocedure('public.debit_points(uuid,int,text,text)')), false) as ok;
+select 'points_available_for_tool: same wallet rule, definer, search_path '''', authenticated (own) + service role, never anon (run 20261203_10)' as check_name,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), '(pl.wallet_scope = ''general'' or (v_lib and pl.wallet_scope = ''library_agent''))') > 0
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), '42501') > 0
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                   from pg_proc p where p.oid = to_regprocedure('public.points_available_for_tool(uuid,text)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'points_available_for_tool') = 1 as ok;
+-- <<< verify:l13_points

@@ -26,6 +26,7 @@ import {
 import { contractTypes, type ContractType } from "@/app/ai/contract-drafter/_components/contractTypes";
 import { asContractDraft, contractDraftFields } from "@/app/ai/contract-drafter/_components/contractDraft";
 import type { SimpleContractAudience } from "../_audience";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 /**
  * «صائغ العقود المبسّط» (owner ١٢٣): one screen — the contract's type, its
@@ -264,6 +265,7 @@ function SimpleContractForm({ price }: { price: number | null }) {
           ) : (
             <p className={`text-[13px] ${muted}`}>
               التكلفة: <strong>{arabicPoints(price)} {pointsNounAr(price)}</strong>، وتُعاد إليك إن لم تكتمل الصياغة.
+              <ToolPointsAvailable tool="simple-contract" price={price} leading=" " />
             </p>
           )}
           {run.phase === "error" && run.error && (

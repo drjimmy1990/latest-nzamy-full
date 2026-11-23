@@ -19,9 +19,10 @@ import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import LetterheadExportBar from "@/components/letterhead/LetterheadExportBar";
 import { documentParagraphs } from "@/lib/docx/exportPolicy";
-import { aiToolPriceText, arabicPoints } from "@/lib/ai/toolPointsDisplay";
+import { aiToolPointRange, aiToolPriceText, arabicPoints } from "@/lib/ai/toolPointsDisplay";
 import { NAJIZ_TARGET_CHARS } from "@/lib/ai/tools";
 import { markBlankFields } from "./_blankFields";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 // ─── Najiz Optimizer Core Logic ───────────────────────────────────────────────
 // Implements: Najiz_Legal_Memo_Optimizer_v5
@@ -361,6 +362,7 @@ function NajizOptimizerPage() {
                         <Sparkle size={13} weight="fill" className="text-[#C8A762]" />
                         {ai.busy ? "جارٍ الاختصار…" : `اختصر بالذكاء الاصطناعي (${aiToolPriceText("najiz-optimizer", "ar")})`}
                       </button>
+                      <p className="text-[11px]"><ToolPointsAvailable tool="najiz-optimizer" price={aiToolPointRange("najiz-optimizer")[0]} recheck={ai.phase} /></p>
                       {/* P1-27: the run's real progress and elapsed time while it works. */}
                       <AiThinkingStage run={ai} isDark={isDark} toolLabel={aiToolLabelAr("najiz-optimizer")} />
                       {ai.phase === "error" && ai.error && (

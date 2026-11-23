@@ -5,6 +5,10 @@
 -- repeat), the free library questions ONCE per account by type, and the
 -- grants. The migration runs TWICE (it must be re-runnable), and the l7_points
 -- block of _verify.sql runs after it.
+-- NOTE (batch l13): 20261203_10 replaces the spend order proved by T1–T3
+-- (owner ١٦٥ ب: soonest-expiring eligible lot first, whatever its type); this
+-- chain stops at 20261127_40 on purpose. The new order is proved by
+-- points_soonest_first_l13.test.sql.
 --
 -- CHAIN (run.sh, postgres:16; stubs.sql loads first by itself). From the repo
 -- root, in Git Bash:

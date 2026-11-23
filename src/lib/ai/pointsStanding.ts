@@ -54,7 +54,7 @@ export interface PointsFacts {
   enforced: boolean;
   /** An admin: runCore's only exempt caller. */
   exempt: boolean;
-  /** points_balance(user); null when it could not be read. */
+  /** The points this tool may spend (points_available_for_tool, l13); null when it could not be read. */
   balance: number | null;
   /** The cheapest run of the tool, from the registry that charges it. */
   price: number;
@@ -72,9 +72,94 @@ export type PointsStanding = { short: false } | { short: true; balance: number; 
 const NOT_SHORT: PointsStanding = { short: false };
 
 /**
- * The signed-in user's standing for one tool.
- * `rls` is the user's client (own profile row, points_balance for auth.uid());
+ * Owner ١٦٥ (batch l13): the tools whose screen shows «المتاح لهذه العملية»
+ * beside the price — every priced tool but the two whose price is not shown
+ * before they are live (q296). The answer carries no price, so a founder-credit
+ * tool or simple-contract (admin-set price) may ask too.
+ */
+export type PointsAvailableTool = Exclude<PricedAiToolId, "contract-review" | "contract-negotiator">;
+
+export function isPointsAvailableTool(v: unknown): v is PointsAvailableTool {
+  return isPricedAiToolId(v) && v !== "contract-review" && v !== "contract-negotiator";
+}
+
+/**
+ * What one tool can spend for the signed-in user now.
+ *   charged   — false when this run charges no points at all (an admin, or
+ *               points_enforcement off): ai_start_run's own rule;
+ *   available — the points the tool may spend: points_available_for_tool
+ *               (20261203_10), which applies debit_points' wallet rule (a
+ *               library-assistant lot only for the library assistant). Null
+ *               when it could not be read, or when nothing is charged.
+ */
+export interface ToolPoints {
+  charged: boolean;
+  available: number | null;
+}
+
+/** PostgREST / Postgres "no such function": the migration has not run yet. */
+function isMissingFunction(code: unknown): boolean {
+  return code === "PGRST202" || code === "42883";
+}
+
+const isPointCount = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
+
+/**
+ * points_available_for_tool for the user's own lots (the user's client). Before
+ * 20261203_10 runs it falls back to points_balance (the whole balance). Null
+ * on any other failure: the screen then shows nothing rather than a guess.
+ */
+export async function pointsAvailableFor(rls: SupabaseClient, userId: string, tool: string): Promise<number | null> {
+  const read = await rls.rpc("points_available_for_tool", { p_user: userId, p_tool: tool });
+  if (!read.error) return isPointCount(read.data) ? read.data : null;
+  if (!isMissingFunction(read.error.code)) return null;
+  const balance = await rls.rpc("points_balance", { p_user: userId });
+  return !balance.error && isPointCount(balance.data) ? balance.data : null;
+}
+
+/**
+ * The signed-in user's points for one tool, or null when the profile or the
+ * setting could not be read.
+ * `rls` is the user's client (own profile row, own points);
  * `admin` the service client, for the platform setting only.
+ */
+export async function toolPointsWith(
+  rls: SupabaseClient,
+  admin: SupabaseClient,
+  userId: string,
+  tool: PointsAvailableTool,
+): Promise<ToolPoints | null> {
+  try {
+    const profile = await rls.from("profiles").select("user_type").eq("id", userId).maybeSingle();
+    if (profile.error) return null;
+    const exempt = (profile.data as { user_type?: unknown } | null)?.user_type === "admin";
+    if (exempt) return { charged: false, available: null };
+
+    const setting = await admin.from("platform_settings").select("value").eq("key", "points_enforcement").maybeSingle();
+    if (setting.error) return null;
+    // `value = 'true'::jsonb` in the SQL: only a JSON true is on.
+    const enforced = (setting.data as { value?: unknown } | null)?.value === true;
+    if (!enforced) return { charged: false, available: null };
+
+    return { charged: true, available: await pointsAvailableFor(rls, userId, tool) };
+  } catch {
+    return null;
+  }
+}
+
+/** The SQL's charge rule against the points THIS tool may spend (not the whole balance). */
+export function standingFrom(points: ToolPoints | null, tool: PointsStandingTool): PointsStanding {
+  if (!points) return NOT_SHORT;
+  const price = aiToolPointRange(tool)[0];
+  const facts: PointsFacts = { enforced: points.charged, exempt: false, balance: points.available, price };
+  return pointsShort(facts) ? { short: true, balance: facts.balance as number, price } : NOT_SHORT;
+}
+
+/**
+ * The signed-in user's standing for one tool. Since batch l13 the "balance" is
+ * what this tool may spend (a general tool cannot spend library-assistant
+ * points), so the banner no longer says "enough" to a user the start refuses.
+ * `rls` is the user's client; `admin` the service client (the setting only).
  */
 export async function pointsStandingWith(
   rls: SupabaseClient,
@@ -82,25 +167,5 @@ export async function pointsStandingWith(
   userId: string,
   tool: PointsStandingTool,
 ): Promise<PointsStanding> {
-  try {
-    const profile = await rls.from("profiles").select("user_type").eq("id", userId).maybeSingle();
-    if (profile.error) return NOT_SHORT;
-    const exempt = (profile.data as { user_type?: unknown } | null)?.user_type === "admin";
-    if (exempt) return NOT_SHORT;
-
-    const setting = await admin.from("platform_settings").select("value").eq("key", "points_enforcement").maybeSingle();
-    if (setting.error) return NOT_SHORT;
-    // `value = 'true'::jsonb` in the SQL: only a JSON true is on.
-    const enforced = (setting.data as { value?: unknown } | null)?.value === true;
-    if (!enforced) return NOT_SHORT;
-
-    const balance = await rls.rpc("points_balance", { p_user: userId });
-    if (balance.error || !Number.isSafeInteger(balance.data)) return NOT_SHORT;
-
-    const price = aiToolPointRange(tool)[0];
-    const facts: PointsFacts = { enforced, exempt, balance: balance.data as number, price };
-    return pointsShort(facts) ? { short: true, balance: facts.balance as number, price } : NOT_SHORT;
-  } catch {
-    return NOT_SHORT;
-  }
+  return standingFrom(await toolPointsWith(rls, admin, userId, tool), tool);
 }

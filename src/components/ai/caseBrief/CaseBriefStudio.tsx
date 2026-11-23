@@ -24,6 +24,7 @@ import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import { CASE_BRIEF_FILES, CASE_BRIEF_PRICES, CASE_BRIEF_SMALL_PAGES } from "@/lib/ai/tools";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -327,7 +328,7 @@ function CaseBriefTool() {
               ابدأ الإحاطة
             </motion.button>
             <p className={`text-[11px] leading-relaxed text-center ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              {CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_SMALL_PAGES.toLocaleString("ar-SA")} صفحات، و{CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_FILES.maxPages.toLocaleString("ar-SA")} صفحة · تُحفظ الملفات في مستنداتك، وتُرسل نسخة منها إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
+              {CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_SMALL_PAGES.toLocaleString("ar-SA")} صفحات، و{CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_FILES.maxPages.toLocaleString("ar-SA")} صفحة<ToolPointsAvailable tool="case-brief" price={CASE_BRIEF_PRICES.small} leading=" · " /> · تُحفظ الملفات في مستنداتك، وتُرسل نسخة منها إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
             </p>
             </>)}
           </motion.div>

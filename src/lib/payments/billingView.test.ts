@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { receiptView, creditNoteView, NOT_TAX_INVOICE_AR, TAX_INVOICE_TITLE_AR, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, cardBrandAr, cardTitleAr, billingItemAr, billingOrderItemAr, orderBillingAr } from "./billingView.ts";
+import { receiptView, creditNoteView, NOT_TAX_INVOICE_AR, TAX_INVOICE_TITLE_AR, cardLabel, orderStatusAr, hasReceipt, parseBillingResponse, pointsSummary, pointsByType, pointsLotType, POINTS_TYPE_AR, POINTS_SPEND_ORDER_AR, cardBrandAr, cardTitleAr, billingItemAr, billingOrderItemAr, orderBillingAr } from "./billingView.ts";
 import { buildCatalog, orderLabelWithPointsAr, PAYABLE_ITEMS } from "./catalog.ts";
 import { PRICE_BOOK } from "../pricing/priceBook.ts";
 import { decodeZatcaQr } from "./zatcaQr.ts";
@@ -199,4 +199,45 @@ test("l7: the credit note references the original invoice and reverses the full 
   assert.match(creditNoteView({ ...note, live: false }, null)!.testNotice ?? "", /تجريبي/);
   assert.equal(creditNoteView({ ...note, total_halalas: 1 }, company), null);
   assert.equal(creditNoteView(null, company), null);
+});
+
+// ── owner ١٦٥ (batch l13): the balance by kind ──────────────────────────────
+test("pointsLotType: the library wallet first, then the source; unknown → other", () => {
+  assert.equal(pointsLotType({ source: "plan", wallet_scope: "library_agent" }), "library");
+  assert.equal(pointsLotType({ source: "gift", wallet_scope: "library_agent" }), "library");
+  assert.equal(pointsLotType({ source: "plan", wallet_scope: "general" }), "plan");
+  assert.equal(pointsLotType({ source: "plan_monthly" }), "plan");
+  assert.equal(pointsLotType({ source: "purchase" }), "topup");
+  assert.equal(pointsLotType({ source: "topup" }), "topup");
+  assert.equal(pointsLotType({ source: "bonus" }), "bonus");
+  assert.equal(pointsLotType({ source: "gift" }), "gift");
+  assert.equal(pointsLotType({ source: "grant" }), "granted");
+  assert.equal(pointsLotType({ source: "admin" }), "granted");
+  assert.equal(pointsLotType({ source: "refund_restore" }), "restored");
+  assert.equal(pointsLotType({ source: "migrated" }), "migrated");
+  assert.equal(pointsLotType({ source: "something-new" }), "other");
+  for (const label of Object.values(POINTS_TYPE_AR)) assert.doesNotMatch(label, /[A-Za-z_]/, label);
+});
+test("pointsByType: kinds and lots in spend order (soonest end first), totals per kind, empty and undated lots left out", () => {
+  const groups = pointsByType([
+    { id: "p1", points_left: 120, points_total: 120, expires_at: "2027-05-01T00:00:00Z", source: "plan" },
+    { id: "t1", points_left: 250, points_total: 250, expires_at: "2027-02-01T00:00:00Z", source: "purchase" },
+    { id: "l1", points_left: 40, points_total: 50, expires_at: "2027-01-10T00:00:00Z", source: "plan", wallet_scope: "library_agent" },
+    { id: "t2", points_left: 30, points_total: 100, expires_at: "2027-03-01T00:00:00Z", source: "topup" },
+    { id: "g0", points_left: 0, points_total: 20, expires_at: "2026-12-01T00:00:00Z", source: "gift" },
+    { id: "x", points_left: 9, points_total: 9, expires_at: "not a date", source: "gift" },
+  ]);
+  assert.deepEqual(groups.map(g => [g.type, g.points, g.nearestExpiry]), [
+    ["library", 40, "2027-01-10T00:00:00Z"],
+    ["topup", 280, "2027-02-01T00:00:00Z"],
+    ["plan", 120, "2027-05-01T00:00:00Z"],
+  ]);
+  assert.deepEqual(groups[1].lots.map(l => [l.id, l.points]), [["t1", 250], ["t2", 30]]);
+  assert.equal(groups[0].label, "نقاط مساعد المكتبة");
+  assert.equal(groups[1].label, "نقاط مشحونة");
+  assert.deepEqual(pointsByType([]), []);
+});
+test("the spend rule the points screens state is the owner's ١٦٥ (ب)", () => {
+  assert.match(POINTS_SPEND_ORDER_AR, /الأقرب انتهاءً أولاً أيّاً كان نوعها/);
+  assert.match(POINTS_SPEND_ORDER_AR, /مساعد المكتبة/);
 });

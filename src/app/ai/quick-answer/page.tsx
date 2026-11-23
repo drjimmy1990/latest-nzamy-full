@@ -14,7 +14,7 @@ import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
-import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { aiToolPointRange, aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { FREE_QUESTION_COPY, freeQuestionToolFor, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
@@ -29,6 +29,7 @@ import {
   QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, QUICK_ANSWER_UNGROUNDED_LABEL,
   isUngroundedAnswer, quickAnswerExportText, quickAnswerRefusalText,
 } from "./_quickAnswer";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 /**
  * سؤال قانوني سريع (plan §5 L3): one question → a short answer written only
@@ -202,6 +203,7 @@ function QuickAnswerTool() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className={`text-[11px] ${muted}`}>
             {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · {`${aiToolPriceText("quick-answer", "ar")} للسؤال`}
+            <ToolPointsAvailable tool="quick-answer" price={aiToolPointRange("quick-answer")[0]} leading=" · " />
             {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
           </span>
           <motion.button

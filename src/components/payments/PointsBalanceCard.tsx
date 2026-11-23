@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Coins } from "@phosphor-icons/react";
-import { arabicDigits, billingDateAr, pointsSummary, type BillingData } from "@/lib/payments/billingView";
+import { arabicDigits, billingDateAr, pointsByType, pointsSummary, POINTS_SPEND_ORDER_AR, type BillingData } from "@/lib/payments/billingView";
 
 /**
  * PointsBalanceCard — the points balance and the nearest expiry, for the
@@ -9,7 +9,8 @@ import { arabicDigits, billingDateAr, pointsSummary, type BillingData } from "@/
  * /dashboard/billing, which the card links to.
  */
 export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBalance" | "lots"> }) {
-  const { balance, nearestExpiry, libraryOnly } = pointsSummary(data);
+  const { balance, nearestExpiry } = pointsSummary(data);
+  const groups = pointsByType(data.lots);
   return (
     <div className="rounded-[2rem] border border-slate-200/50 bg-white/80 px-6 py-6 shadow-[0_20px_40px_-15px_rgba(11,61,46,0.04)] backdrop-blur-xl dark:border-white/[0.06] dark:bg-[#161b22]/80">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -21,11 +22,6 @@ export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBal
             <p className="text-2xl font-extrabold text-zinc-900 dark:text-zinc-100">
               {arabicDigits(balance)} <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">نقطة</span>
             </p>
-            {libraryOnly > 0 && (
-              <p className="mt-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                منها {arabicDigits(libraryOnly)} نقطة لمساعد المكتبة وحده
-              </p>
-            )}
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
               {nearestExpiry ? `أقرب انتهاء: ${billingDateAr(nearestExpiry)}` : "لا توجد نقاط صالحة للاستخدام حالياً."}
             </p>
@@ -35,6 +31,20 @@ export function PointsBalanceCard({ data }: { data: Pick<BillingData, "pointsBal
           تفاصيل النقاط
         </Link>
       </div>
+      {/* Owner ١٦٥ (l13): the balance by kind, each with its soonest end, in spend order. */}
+      {groups.length > 0 && (<>
+        <ul className="mt-4 space-y-1 border-t border-slate-200/60 pt-3 dark:border-white/[0.06] text-xs text-zinc-600 dark:text-zinc-300" aria-label="الرصيد حسب نوع النقاط">
+          {groups.map(group => (
+            <li key={group.type} className="flex flex-wrap justify-between gap-2">
+              <span className="font-bold">{group.label}: {arabicDigits(group.points)} نقطة</span>
+              <span className="text-zinc-500 dark:text-zinc-400">
+                {group.lots.length > 1 ? "أقربها تنتهي في" : "تنتهي في"} {billingDateAr(group.nearestExpiry)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">{POINTS_SPEND_ORDER_AR}</p>
+      </>)}
     </div>
   );
 }

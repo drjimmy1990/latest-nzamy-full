@@ -241,6 +241,74 @@ export function pointsSummary(data: Pick<BillingData, "pointsBalance" | "lots">)
   }
   return { balance: data.pointsBalance, nearestExpiry: nearest, libraryOnly };
 }
+
+/** Owner ١٦٥ (ب), 20261203_10: the spend rule, as the points screens state it. */
+export const POINTS_SPEND_ORDER_AR = "تُصرف النقاط الأقرب انتهاءً أولاً أيّاً كان نوعها، ونقاط مساعد المكتبة لا يصرفها إلا مساعد المكتبة.";
+/** Owner ١٦٥ (batch l13): the kinds of points the balance is shown by. */
+export type PointsTypeKey = "library" | "plan" | "topup" | "bonus" | "gift" | "granted" | "restored" | "migrated" | "other";
+export const POINTS_TYPE_AR: Readonly<Record<PointsTypeKey, string>> = {
+  library: "نقاط مساعد المكتبة",
+  plan: "نقاط الباقة",
+  topup: "نقاط مشحونة",
+  bonus: "نقاط إضافية",
+  gift: "نقاط مهداة",
+  granted: "نقاط ممنوحة من المنصة",
+  restored: "نقاط أُعيدت من عملية لم تكتمل",
+  migrated: "رصيد سابق منقول",
+  other: "نقاط أخرى",
+};
+/**
+ * A lot's kind, from its wallet then its source (points_lots_source_check,
+ * 20261127_40). The library assistant's wallet comes first: those points are
+ * spendable by it alone, whatever their source.
+ */
+export function pointsLotType(lot: Pick<BillingLot, "source" | "wallet_scope">): PointsTypeKey {
+  if (lot.wallet_scope === "library_agent") return "library";
+  switch (lot.source) {
+    case "plan": case "plan_monthly": return "plan";
+    case "purchase": case "topup": return "topup";
+    case "bonus": return "bonus";
+    case "gift": return "gift";
+    case "grant": case "admin": return "granted";
+    case "refund_restore": return "restored";
+    case "migrated": return "migrated";
+    default: return "other";
+  }
+}
+export interface PointsTypeGroup {
+  type: PointsTypeKey;
+  label: string;
+  points: number;
+  /** The soonest end among this kind's lots. */
+  nearestExpiry: string;
+  /** Each lot of this kind, soonest end first. */
+  lots: Array<{ id: string; points: number; expires_at: string }>;
+}
+/**
+ * The balance by kind (owner ١٦٥): only lots that still hold points and have
+ * a readable end date; the kinds and the lots inside each ordered by the
+ * soonest end — the order the points are spent in (20261203_10: soonest
+ * expiry first whatever the kind; the library assistant's points by it alone).
+ */
+export function pointsByType(lots: readonly BillingLot[]): PointsTypeGroup[] {
+  const groups = new Map<PointsTypeKey, PointsTypeGroup & { at: number }>();
+  const live = lots
+    .map(lot => ({ lot, at: Date.parse(lot.expires_at) }))
+    .filter(({ lot, at }) => Number.isSafeInteger(lot.points_left) && lot.points_left > 0 && Number.isFinite(at))
+    .sort((a, b) => a.at - b.at || a.lot.id.localeCompare(b.lot.id));
+  for (const { lot, at } of live) {
+    const type = pointsLotType(lot);
+    let group = groups.get(type);
+    if (!group) {
+      group = { type, label: POINTS_TYPE_AR[type], points: 0, nearestExpiry: lot.expires_at, lots: [], at };
+      groups.set(type, group);
+    }
+    group.points += lot.points_left;
+    group.lots.push({ id: lot.id, points: lot.points_left, expires_at: lot.expires_at });
+  }
+  return [...groups.values()].sort((a, b) => a.at - b.at)
+    .map(g => ({ type: g.type, label: g.label, points: g.points, nearestExpiry: g.nearestExpiry, lots: g.lots }));
+}
 const BRANDS_AR: Record<string, string> = { mada: "مدى", visa: "فيزا", master: "ماستركارد", mastercard: "ماستركارد", amex: "أمريكان إكسبريس" };
 /** The card network in Arabic, or null for one we do not know. */
 export function cardBrandAr(brand: unknown): string | null {

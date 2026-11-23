@@ -6,7 +6,7 @@ import { DeleteCardButton } from "@/components/payments/BillingControls";
 import { CurrentPlanCard } from "@/components/payments/CurrentPlanCard";
 import { createClient } from "@/lib/supabase/server";
 import { BILLING_UNAVAILABLE_AR, getBillingWith } from "@/lib/payments/billingCore";
-import { arabicDigits, billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr, type BillingData } from "@/lib/payments/billingView";
+import { arabicDigits, billingDateAr, billingOrderItemAr, cardTitleAr, hasReceipt, orderStatusAr, pointsByType, POINTS_SPEND_ORDER_AR, type BillingData } from "@/lib/payments/billingView";
 import { formatHalalas } from "@/lib/payments/catalog";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +23,7 @@ export default async function BillingPage() {
     const result = await getBillingWith(supabase, user.id);
     if (result.status === 200) data = result.body as BillingData;
   } catch { /* The page keeps a useful unavailable state while configuration is missing. */ }
+  const groups = data ? pointsByType(data.lots) : [];
   return <>
     <Navbar />
     <main dir="rtl" className="min-h-[75dvh] bg-zinc-50 px-4 pb-20 pt-32 text-zinc-900 dark:bg-[#0A0A0A] dark:text-zinc-100">
@@ -41,8 +42,12 @@ export default async function BillingPage() {
           <section className={PANEL}>
             <h2 className="text-xl font-bold">رصيد النقاط</h2>
             <p className="mt-3 text-3xl font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{arabicDigits(data.pointsBalance)} <span className="text-base">نقطة</span></p>
-            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">تُستخدم النقاط الأقرب انتهاءً أولاً. النقاط مخصصة لاستخدام أدوات الذكاء الاصطناعي ولا تُحوّل إلى نقد.</p>
-            {data.lots.length ? <ul className="mt-5 divide-y divide-zinc-200 dark:divide-zinc-800">{data.lots.map(lot => <li key={lot.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm"><span>{arabicDigits(lot.points_left)} نقطة متبقية من {arabicDigits(lot.points_total)}{lot.wallet_scope === "library_agent" && <span className="ms-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">لمساعد المكتبة وحده</span>}</span><span className="text-zinc-500 dark:text-zinc-400">تنتهي في {billingDateAr(lot.expires_at)}</span></li>)}</ul> : <p className="mt-5 text-sm text-zinc-500">لا توجد نقاط صالحة للاستخدام حالياً.</p>}
+            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{POINTS_SPEND_ORDER_AR} النقاط مخصصة لاستخدام أدوات الذكاء الاصطناعي ولا تُحوّل إلى نقد.</p>
+            {/* Owner ١٦٥ (l13): the balance by kind, each lot with its end date, in spend order. */}
+            {groups.length ? <ul className="mt-5 space-y-4">{groups.map(group => <li key={group.type} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+              <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">{group.label}{group.type === "library" && <span className="ms-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">لمساعد المكتبة وحده</span>}</h3><span className="font-extrabold text-[#0B3D2E] dark:text-[#C8A762]">{arabicDigits(group.points)} نقطة</span></div>
+              <ul className="mt-2 divide-y divide-zinc-200 dark:divide-zinc-800">{group.lots.map(lot => { const full = data.lots.find(l => l.id === lot.id); return <li key={lot.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{arabicDigits(lot.points)} نقطة متبقية{full ? <> من {arabicDigits(full.points_total)}</> : null}</span><span className="text-zinc-500 dark:text-zinc-400">تنتهي في {billingDateAr(lot.expires_at)}</span></li>; })}</ul>
+            </li>)}</ul> : <p className="mt-5 text-sm text-zinc-500">لا توجد نقاط صالحة للاستخدام حالياً.</p>}
           </section>
           <section className={PANEL}>
             <h2 className="text-xl font-bold">البطاقات المحفوظة</h2>
