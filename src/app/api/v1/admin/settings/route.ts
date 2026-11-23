@@ -18,6 +18,7 @@ import { founderBonusRuleIssue, topupBonusIssue } from "@/lib/payments/topupBonu
 import { draftPricesIssue } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import { SIMPLE_CONTRACT_PRICE_KEY, simpleContractPriceIssue } from "@/lib/ai/simpleContract";
+import { SECTION_EDITS_SETTING_KEY, sectionEditsIncludedIssue } from "@/lib/ai/sectionEdits";
 import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
@@ -145,6 +146,9 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l12 simpledraft (owner ١٢٣; src/lib/ai/simpleContract.ts):
   // {"points": n} — the simplified contract drafter's price (100 until set).
   SIMPLE_CONTRACT_PRICE_KEY,
+  // Batch l13 aiadmin (owner ١٦٦): {"included": 0..30} — the legal drafter's
+  // section edits included in a memo's price (5 until saved; src/lib/ai/sectionEdits.ts).
+  SECTION_EDITS_SETTING_KEY,
   "license_number",
   "license_issuer",
 ] as const;
@@ -254,6 +258,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   founder_storage_fair_use: founderStorageIssue,
   // Batch l12 simpledraft: pure, covered by src/lib/ai/simpleContract.test.ts.
   [SIMPLE_CONTRACT_PRICE_KEY]: simpleContractPriceIssue,
+  // Batch l13 aiadmin: pure, covered by src/lib/ai/sectionEdits.test.ts.
+  [SECTION_EDITS_SETTING_KEY]: sectionEditsIncludedIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

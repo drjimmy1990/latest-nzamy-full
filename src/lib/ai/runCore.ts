@@ -66,11 +66,9 @@ import { detectExtraction, isExtractionRefusalReply, leaksPrompt } from "./extra
 import { FILE_TEXT_TTL_MS } from "./fileTextToken.ts";
 import {
   SECTION_EDIT_COPY,
-  SECTION_EDIT_FREE_PER_MEMO,
-  SECTION_EDIT_FREE_PER_SECTION,
-  SECTION_EDIT_MAX_PER_MEMO,
-  SECTION_EDIT_PRICE,
   countSectionEdits,
+  readSectionEditsIncluded,
+  sectionEditLimitText,
   type SectionEditCounts,
 } from "./sectionEdits.ts";
 import { freeQuestionFallsBack, freeQuestionToolFor } from "./freeQuestion.ts";
@@ -390,6 +388,28 @@ function sanitizeUsage(raw: unknown): Record<string, unknown> | null {
   };
 }
 
+/** Owner ١٥٦ (l13): did this usage report any token? (Every run before l13 reported 0 / 0.) */
+function usageHasTokens(u: Record<string, unknown> | null): boolean {
+  return !!u && ((u.input_tokens as number) > 0 || (u.output_tokens as number) > 0);
+}
+
+/**
+ * Owner ١٥٦ (l13): two sanitized usages added up — the library search writer's
+ * call (lib-queries, stored on the run at dispatch) and the tool's own — so the
+ * admin AI usage page bills the whole run. The tool's model names the run.
+ */
+export function mergeUsage(a: Record<string, unknown> | null, b: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!a || !usageHasTokens(a)) return b;
+  if (!b || !usageHasTokens(b)) return { ...a, model: (b?.model as string | null | undefined) ?? a.model };
+  const add = (k: string) => ((a[k] as number) || 0) + ((b[k] as number) || 0);
+  return {
+    model: (b.model as string | null) ?? (a.model as string | null) ?? null,
+    input_tokens: add("input_tokens"),
+    output_tokens: add("output_tokens"),
+    cache_read_tokens: add("cache_read_tokens"),
+  };
+}
+
 /**
  * A success is always stored as "succeeded" and shown. There is no way to
  * store "review" (held from the user) until Wave 3 builds the money-safe gate
@@ -398,15 +418,34 @@ function sanitizeUsage(raw: unknown): Record<string, unknown> | null {
  */
 export async function settleRunWith(
   admin: SupabaseClient,
-  ctx: { spec: AiToolSpec; runId: string; sources: SourceMap; input: Record<string, unknown> },
+  ctx: {
+    spec: AiToolSpec;
+    runId: string;
+    sources: SourceMap;
+    input: Record<string, unknown>;
+    /** Owner ١٥٦ (l13): tokens already spent on this run (the library search writer), added to the reply's. */
+    priorUsage?: unknown;
+  },
   raw: unknown,
 ): Promise<SettleOutcome> {
+  let spent: Record<string, unknown> | null = null;
   const fail = async (code: string, message: string): Promise<SettleOutcome> => {
+    // Owner ١٥٦ (l13): the model was called and billed even when its answer is
+    // refused here (shape, citations, canary): its tokens stay on the run for
+    // the admin AI usage page. Best effort, never in the way of the refund.
+    if (spent && usageHasTokens(spent)) {
+      try {
+        await admin.from("ai_runs").update({ usage: spent, model: (spent.model as string | null) ?? null }).eq("id", ctx.runId).eq("status", "running");
+      } catch (err) {
+        console.error("[ai] storing a failed run's usage threw for", ctx.runId, errorName(err));
+      }
+    }
     await failRun(admin, ctx.runId, code, message);
     return { kind: "failed", code };
   };
 
   if (!isPlainObject(raw) || raw.run_id !== ctx.runId) return fail("bad_reply", "the result does not name this run");
+  spent = mergeUsage(sanitizeUsage(ctx.priorUsage), sanitizeUsage(raw.usage));
   if (raw.status === "failed") {
     const err = isPlainObject(raw.error) ? raw.error : {};
     const code = typeof err.code === "string" && N8N_ERROR_CODES.has(err.code) ? err.code : "model_error";
@@ -449,7 +488,7 @@ export async function settleRunWith(
     }
     output = { ...output, ungrounded: true };
   }
-  const usage = sanitizeUsage(raw.usage);
+  const usage = spent;
   const status = "succeeded";
   const { data, error } = await admin
     .from("ai_runs")
@@ -661,8 +700,13 @@ export async function startRunWith(
     }
   }
   // A tool whose turns are different steps refuses one out of order, uncharged.
+  // Owner ١٦٦ (l13): a section edit is one of the memo's included revisions —
+  // the admin's number (drafter_revisions_per_memo, 5) bounds the turn check,
+  // the price (always 0) and the start under the lock alike.
+  const sectionEditsIncluded =
+    spec.sectionEdit && checked.input.phase === spec.sectionEdit.phase ? await readSectionEditsIncluded(admin) : undefined;
   if (spec.checkTurn) {
-    const refusal = spec.checkTurn(checked.input, turn, prior);
+    const refusal = spec.checkTurn(checked.input, turn, prior, sectionEditsIncluded !== undefined ? { sectionEditsIncluded } : undefined);
     if (refusal) return { status: 409, body: { error: refusal, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
   }
   // What the stored runs already hold is taken from them, never from the
@@ -816,11 +860,13 @@ export async function startRunWith(
     ...(creditKind ? { p_credit_kind: creditKind } : libraryCredit ? { p_credit_kind: FOUNDER_LIBRARY_CREDIT_KIND } : {}),
     ...(sectionEdit
       ? {
+          // Owner ١٦٦: every edit up to N is free (price 0), edit N+1 is refused
+          // (section_edit_limit) under the lock; there is no paid edit.
           p_section_index: checked.input.section_index,
-          p_free_per_memo: SECTION_EDIT_FREE_PER_MEMO,
-          p_free_per_section: SECTION_EDIT_FREE_PER_SECTION,
-          p_paid_price: SECTION_EDIT_PRICE,
-          p_max_per_memo: SECTION_EDIT_MAX_PER_MEMO,
+          p_free_per_memo: sectionEditsIncluded,
+          p_free_per_section: sectionEditsIncluded,
+          p_paid_price: 0,
+          p_max_per_memo: sectionEditsIncluded,
         }
       : {}),
   });
@@ -870,7 +916,7 @@ export async function startRunWith(
         return { status: 409, body: { error: SECTION_EDIT_COPY.priceChanged, code: "price_changed", ...again } };
       }
       if (error.message === "section_edit_limit") {
-        return { status: 409, body: { error: SECTION_EDIT_COPY.limit, code: "turn_refused", ...again } };
+        return { status: 409, body: { error: sectionEditLimitText(sectionEditsIncluded), code: "turn_refused", ...again } };
       }
       if (error.message === "section_no_draft") {
         return { status: 409, body: { error: SECTION_EDIT_COPY.waitDraft, code: "turn_refused", ...again } };
@@ -967,6 +1013,8 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
   const clock = deps.clock ?? (() => Date.now());
   const charged = chargedBody(run, conversationId);
   let sources: SourceMap = {};
+  // Owner ١٥٦ (l13): the library search writer's tokens, billed with the run.
+  let searchUsage: Record<string, unknown> | null = null;
 
   // Charged first, so the daily limit and the balance hold for the searches
   // too; every way out below refunds.
@@ -1009,6 +1057,9 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
       reply && reply.run_id === run.run_id && reply.status === "succeeded" && isPlainObject(reply.output)
         ? cleanQueries(reply.output.queries)
         : [];
+    // Owner ١٥٦ (l13): the search writer is a model call of this run too.
+    const libUsage = reply && reply.run_id === run.run_id ? sanitizeUsage(reply.usage) : null;
+    if (usageHasTokens(libUsage)) searchUsage = libUsage;
     report(deps.progress, run.run_id, actor.userId, queryEvents(queries));
     // An open article, one the question names, or a semantic GraphRAG query
     // embedding is a source path even when the keyword writer found nothing.
@@ -1046,7 +1097,11 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
     if (found.sources.length > 0) {
       sources = found.map as SourceMap;
       pkgSources = found.sources;
-      const stored = await admin.from("ai_runs").update({ source_ids: sources }).eq("id", run.run_id).eq("status", "running");
+      const stored = await admin
+        .from("ai_runs")
+        .update(searchUsage ? { source_ids: sources, usage: searchUsage } : { source_ids: sources })
+        .eq("id", run.run_id)
+        .eq("status", "running");
       if (stored.error) {
         console.error("[ai] storing the sources failed for", run.run_id, stored.error.code, stored.error.message);
         await failRun(admin, run.run_id, "store_failed", "the sources could not be stored");
@@ -1109,7 +1164,7 @@ export async function dispatchRunWith(admin: SupabaseClient, deps: StartRunDeps,
 
   // A job tool must answer 202; callN8n never returns a result for async.
   // Nothing is held for review (a stored "review" runs as "staff"; Wave 3).
-  const settled = await settleRunWith(admin, { spec, runId: run.run_id, sources, input: checked.input }, outcome.result);
+  const settled = await settleRunWith(admin, { spec, runId: run.run_id, sources, input: checked.input, priorUsage: searchUsage }, outcome.result);
   if (settled.kind === "succeeded") {
     const verified = verifyEvent(settled.output);
     if (verified) report(deps.progress, run.run_id, actor.userId, [verified]);
@@ -1146,7 +1201,7 @@ export async function callbackWith(
   const runId = body.run_id;
   const { data, error } = await admin
     .from("ai_runs")
-    .select("id, user_id, tool, status, class, source_ids, input")
+    .select("id, user_id, tool, status, class, source_ids, input, usage")
     .eq("id", runId)
     .maybeSingle();
   if (error) {
@@ -1154,7 +1209,7 @@ export async function callbackWith(
     return { status: 503, body: { error: "unavailable" } };
   }
   const run = data as
-    | { id: string; user_id: string; tool: string; status: string; class: string; source_ids: unknown; input: unknown }
+    | { id: string; user_id: string; tool: string; status: string; class: string; source_ids: unknown; input: unknown; usage?: unknown }
     | null;
   if (!run) return { status: 404, body: { error: "unknown run" } };
 
@@ -1185,7 +1240,8 @@ export async function callbackWith(
   // while its tool was stored as "review" settles as succeeded and is shown.
   const sources = (isPlainObject(run.source_ids) ? run.source_ids : {}) as SourceMap;
   const input = (isPlainObject(run.input) ? run.input : {}) as Record<string, unknown>;
-  const settled = await settleRunWith(admin, { spec, runId, sources, input }, body);
+  // Owner ١٥٦ (l13): the search writer's tokens stored at dispatch join the job's own.
+  const settled = await settleRunWith(admin, { spec, runId, sources, input, priorUsage: run.usage ?? null }, body);
   if (settled.kind === "succeeded") {
     const verified = verifyEvent(settled.output);
     if (verified) report(deps.progress, runId, run.user_id, [verified]);
