@@ -94,8 +94,6 @@ import DeadlineCard from "../../../lawyer/_components/DeadlineCard";
 import RecordStageOutcomeModal from "../../../lawyer/_components/RecordStageOutcomeModal";
 import LegalCanvas from "./LegalCanvas";
 import dynamic from "next/dynamic";
-// Owner ١٨٩ (ب), batch l13: the free board «لوحة», a tab beside the map (the map is unchanged).
-const CaseFreeBoard = dynamic(() => import("@/components/dashboard/caseBoard/CaseFreeBoard"), { ssr: false });
 import CaseArchivePanel from "@/components/dashboard/caseArchive/CaseArchivePanel";
 import {
   getCaseNotes,
@@ -115,6 +113,9 @@ import {
 } from "@/components/dashboard/caseNotes/NoteScope";
 import CaseRestrictionToggle from "@/components/dashboard/caseNotes/CaseRestrictionToggle";
 import CaseTimeExpensesSection from "@/components/dashboard/financeLedger/CaseTimeExpensesSection";
+
+// Owner ١٨٩ (ب), batch l13: the free board «لوحة», a tab beside the map (the map is unchanged).
+const CaseFreeBoard = dynamic(() => import("@/components/dashboard/caseBoard/CaseFreeBoard"), { ssr: false });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

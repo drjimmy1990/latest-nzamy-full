@@ -56,6 +56,26 @@ test("lines to a missing card, to the same card, repeated (either way) or with a
   assert.deepEqual(r.board.links.map((l) => l.id), ["l1", "l5"]);
 });
 
+test("a board over the byte cap is refused with a plain Arabic reason (never sent, never retried)", async () => {
+  // 240 cards × 2,000 Arabic letters ≈ 960 KB of UTF-8 — under the card and text caps, over the board cap.
+  const big = Array.from({ length: 240 }, (_, i) => card(`c-${i}`, { text: "ع".repeat(FREE_BOARD_LIMITS.text) }));
+  const r = checkFreeBoard({ cards: big, links: [] });
+  assert.ok(!r.ok && /امتلأت اللوحة/.test(r.error));
+  assert.ok(!r.ok && !/[0-9]/.test(r.error));
+  _resetFreeBoardVersions();
+  const seen: Seen[] = [];
+  const f = fakeFetch([{ status: 200, body: { data: null } }], seen);
+  await getFreeBoard("SR-big", f);
+  await assert.rejects(saveFreeBoard("SR-big", { cards: big as never, links: [] }, f),
+    (e: unknown) => e instanceof GraphSaveError && e.kind === "fatal" && /امتلأت/.test(e.message));
+  assert.equal(seen.length, 1, "only the read went out");
+});
+
+test("limit messages use Arabic digits", () => {
+  const r = checkFreeBoard({ cards: [card("c-1", { title: "x".repeat(FREE_BOARD_LIMITS.title + 1) })], links: [] });
+  assert.ok(!r.ok && r.error.includes("١٢٠") && !/[0-9]/.test(r.error));
+});
+
 test("new ids pass the id rule", () => {
   const r = checkFreeBoard({ cards: [card(newFreeBoardId("c")), card(newFreeBoardId("c"))], links: [] });
   assert.ok(r.ok);
@@ -144,6 +164,9 @@ test("the route asks the case's rule, uses the caller's RLS client, checks every
   assert.match(route, /const checked = checkFreeBoard\(body\)/);
   assert.doesNotMatch(route, /createAdminClient|service_role|SERVICE_ROLE|upsert\(/);
   assert.match(route, /\.eq\("updated_at", baseUpdatedAt\)/, "compare-and-set on the version");
+  assert.equal((route.match(/code === "23514"\) return NextResponse\.json\(TOO_BIG, \{ status: 400 \}\)/g) ?? []).length, 2,
+    "a database size refusal is a 400 with a reason (update and insert), never a retryable 500");
+  assert.doesNotMatch(route, /caseId required|must be a string/, "no English text reaches the lawyer");
 });
 
 test("the board: no AI, no sample content, an honest empty state, saved only after a read", () => {

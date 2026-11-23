@@ -39,6 +39,10 @@ async function canOpen(supabase: Supa, caseId: string): Promise<boolean | null> 
   return data === true;
 }
 
+const BAD_REQUEST = { error: "تعذّر حفظ اللوحة. أعد تحميل الصفحة وحاول مرة أخرى." };
+/** the table's own checks (23514): the board is over a database limit — say so, never "retry". */
+const TOO_BIG = { error: "امتلأت اللوحة: اختصر نصوص بعض البطاقات أو احذف بعضها ثم تُحفظ.", code: "board_too_big" };
+
 function validCaseId(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && v.length <= 200;
 }
@@ -49,7 +53,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ca
     if (!auth.ok) return auth.response;
     const { supabase } = auth;
     const { caseId } = await context.params;
-    if (!validCaseId(caseId)) return NextResponse.json({ error: "caseId required" }, { status: 400 });
+    if (!validCaseId(caseId)) return NextResponse.json(OPEN_FAILED, { status: 404 });
 
     const open = await canOpen(supabase, caseId);
     if (open === null) return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
@@ -79,13 +83,13 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ cas
     if (!auth.ok) return auth.response;
     const { user, supabase } = auth;
     const { caseId } = await context.params;
-    if (!validCaseId(caseId)) return NextResponse.json({ error: "caseId required" }, { status: 400 });
+    if (!validCaseId(caseId)) return NextResponse.json(OPEN_FAILED, { status: 404 });
 
     const body = (await request.json().catch(() => null)) as { cards?: unknown; links?: unknown; baseUpdatedAt?: unknown } | null;
-    if (!body || typeof body !== "object") return NextResponse.json({ error: "صيغة اللوحة غير صحيحة." }, { status: 400 });
+    if (!body || typeof body !== "object") return NextResponse.json(BAD_REQUEST, { status: 400 });
     const { baseUpdatedAt } = body;
     if (baseUpdatedAt !== null && typeof baseUpdatedAt !== "string") {
-      return NextResponse.json({ error: "baseUpdatedAt must be a string or null" }, { status: 400 });
+      return NextResponse.json(BAD_REQUEST, { status: 400 });
     }
     const checked = checkFreeBoard(body);
     if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
@@ -110,6 +114,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ cas
       if (error) {
         console.error("[case-board PUT] update failed:", error.message, error.code);
         if (error.code === "42501") return NextResponse.json(OPEN_FAILED, { status: 404 });
+        if (error.code === "23514") return NextResponse.json(TOO_BIG, { status: 400 });
         return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
       }
       if (!updated || updated.length === 0) {
@@ -133,6 +138,7 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ cas
       if (insertError.code === "23505") return conflict();
       console.error("[case-board PUT] insert failed:", insertError.message, insertError.code);
       if (insertError.code === "42501") return NextResponse.json(OPEN_FAILED, { status: 404 });
+      if (insertError.code === "23514") return NextResponse.json(TOO_BIG, { status: 400 });
       return NextResponse.json({ error: DB_ERROR_AR }, { status: 500 });
     }
     return NextResponse.json({ success: true, updatedAt: (inserted as { updated_at: string }).updated_at });

@@ -211,4 +211,6 @@ $verify$;
 
 commit;
 
+notify pgrst, 'reload schema';
+
 select '20261203_60 case_free_boards: the «لوحة» tab beside the case map, case workers who can open the case only' as migration, true;

@@ -30,7 +30,17 @@ export const FREE_BOARD_LIMITS = {
   text: 2000,
   /** a card's position is kept within ±coord on both axes */
   coord: 20000,
+  /** the whole board as UTF-8 JSON — under the database's 1 MB check (20261203_60) */
+  bytes: 900_000,
 } as const;
+
+const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+const ar = (n: number) => String(n).replace(/\d/g, (d) => AR_DIGITS[Number(d)]);
+
+function utf8Bytes(s: string): number {
+  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s).length;
+  return s.length * 3;
+}
 
 export interface FreeCard {
   id: string;
@@ -82,21 +92,21 @@ export function checkFreeBoard(input: unknown): CheckResult {
     return { ok: false, error: "صيغة اللوحة غير صحيحة." };
   }
   const L = FREE_BOARD_LIMITS;
-  if (body.cards.length > L.cards) return { ok: false, error: `اللوحة تتسع لـ ${L.cards} بطاقة على الأكثر.` };
-  if (body.links.length > L.links) return { ok: false, error: `اللوحة تتسع لـ ${L.links} خط على الأكثر.` };
+  if (body.cards.length > L.cards) return { ok: false, error: `اللوحة تتسع لـ ${ar(L.cards)} بطاقة على الأكثر.` };
+  if (body.links.length > L.links) return { ok: false, error: `اللوحة تتسع لـ ${ar(L.links)} خط على الأكثر.` };
 
   const cards: FreeCard[] = [];
   const ids = new Set<string>();
   for (const raw of body.cards) {
     const c = raw as Partial<Record<keyof FreeCard, unknown>> | null;
     if (!c || typeof c !== "object" || typeof c.id !== "string" || !ID_RE.test(c.id)) {
-      return { ok: false, error: "في اللوحة بطاقة بلا معرّف صحيح." };
+      return { ok: false, error: "تعذّر حفظ إحدى البطاقات. أعد تحميل الصفحة وحاول مرة أخرى." };
     }
-    if (ids.has(c.id)) return { ok: false, error: "في اللوحة بطاقتان بمعرّف واحد." };
+    if (ids.has(c.id)) return { ok: false, error: "تعذّر حفظ اللوحة: بطاقتان متطابقتان. أعد تحميل الصفحة وحاول مرة أخرى." };
     const title = typeof c.title === "string" ? c.title : "";
     const text = typeof c.text === "string" ? c.text : "";
-    if (title.length > L.title) return { ok: false, error: `عنوان البطاقة حتى ${L.title} حرفًا.` };
-    if (text.length > L.text) return { ok: false, error: `نص البطاقة حتى ${L.text} حرف.` };
+    if (title.length > L.title) return { ok: false, error: `عنوان البطاقة حتى ${ar(L.title)} حرفًا.` };
+    if (text.length > L.text) return { ok: false, error: `نص البطاقة حتى ${ar(L.text)} حرف.` };
     if (!isFreeBoardColor(c.color)) return { ok: false, error: "لون البطاقة غير معروف." };
     const x = coord(c.x);
     const y = coord(c.y);
@@ -118,6 +128,9 @@ export function checkFreeBoard(input: unknown): CheckResult {
     seenPairs.add(pair);
     seenLinkIds.add(l.id);
     links.push({ id: l.id, from: l.from, to: l.to });
+  }
+  if (utf8Bytes(JSON.stringify({ cards, links })) > L.bytes) {
+    return { ok: false, error: "امتلأت اللوحة: اختصر نصوص بعض البطاقات أو احذف بعضها ثم تُحفظ." };
   }
   return { ok: true, board: { cards, links } };
 }

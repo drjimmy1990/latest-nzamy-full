@@ -11,7 +11,7 @@
 
 import { isDemoMode } from "../runtimeMode.ts";
 import { GraphSaveError, canonicalJson, kindForStatus } from "./caseGraphAutosave.ts";
-import type { FreeBoardPayload } from "./caseFreeBoard.ts";
+import { checkFreeBoard, type FreeBoardPayload } from "./caseFreeBoard.ts";
 
 export interface FreeBoardData extends FreeBoardPayload {
   updatedAt: string;
@@ -63,7 +63,7 @@ export async function getFreeBoard(caseId: string, fetchImpl: FetchLike = fetch)
   }
   const json = await readJson(res);
   if (!res.ok) {
-    throw new FreeBoardReadError(typeof json?.error === "string" ? json.error : `API error: ${res.status}`, res.status);
+    throw new FreeBoardReadError(typeof json?.error === "string" ? json.error : "تعذّرت قراءة اللوحة.", res.status);
   }
   const board = json?.data == null ? null : asBoard(json.data);
   if (json?.data != null && !board) throw new FreeBoardReadError("وصلت اللوحة بصيغة غير متوقعة.", 500);
@@ -84,6 +84,10 @@ export async function saveFreeBoard(caseId: string, board: FreeBoardPayload, fet
     // never read → never write (the board would overwrite what it never saw)
     throw new GraphSaveError("لم تُقرأ اللوحة المحفوظة بعد.", "fatal");
   }
+  // The server's own check, first: a board it would refuse is never sent, and
+  // the reason is shown at once (a refusal never turns into endless retries).
+  const checked = checkFreeBoard(board);
+  if (!checked.ok) throw new GraphSaveError(checked.error, "fatal");
   const url = freeBoardUrl(caseId);
   let res: Response;
   try {
@@ -110,7 +114,10 @@ export async function saveFreeBoard(caseId: string, board: FreeBoardPayload, fet
       return;
     }
   }
-  throw new GraphSaveError(typeof json?.error === "string" ? json.error : `API error: ${res.status}`, kindForStatus(res.status));
+  const fallback = res.status === 413
+    ? "امتلأت اللوحة: اختصر نصوص بعض البطاقات أو احذف بعضها ثم تُحفظ."
+    : "تعذّر حفظ اللوحة.";
+  throw new GraphSaveError(typeof json?.error === "string" ? json.error : fallback, kindForStatus(res.status));
 }
 
 /** Test seam: forget what this page read. */
