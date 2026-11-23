@@ -8219,3 +8219,21 @@ select 'l12 test kinds (owner 109): test_accounts.kind present, caps and mail si
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.demo_guard_sandbox_row()')), 'test_account_kind(v_u)') > 0, false)
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.test_mail_sink_check(text,uuid[],text,text,text)')), 'u is distinct from v_own') > 0, false) as ok;
 -- <<< verify:l12_access
+
+-- >>> verify:l13_market_instant
+-- 20261203_90 (owner Q151 ب): market acceptance is instant. The admin may switch it back on the
+-- market settings page, so this only REPORTS the current mode (NOTICE) and never fails on it;
+-- it raises only when the setting row itself is missing.
+do $$
+declare v text;
+begin
+  if to_regclass('public.platform_settings') is null then
+    raise notice '_verify: 20261203_90 — public.platform_settings is missing'; return;
+  end if;
+  select value ->> 'accept_mode' into v from public.platform_settings where key = 'marketplace_market';
+  if not found then
+    raise exception '_verify: 20261203_90 — no marketplace_market setting: run 20261202_70, then 20261203_90';
+  end if;
+  raise notice '_verify: 20261203_90 OK — market acceptance mode is % (Q151: instant; an admin may switch it back)', coalesce(v, 'unset');
+end $$;
+-- <<< verify:l13_market_instant
