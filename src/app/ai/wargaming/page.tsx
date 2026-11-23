@@ -37,6 +37,7 @@ import { asSimResult } from "./_simResult";
 import SimResultView from "./_SimResultView";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT } from "@/lib/membership/founderPlan";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 const WARGAMING_FILE_ACCEPT = withTextAccept(".pdf,.doc,.docx,.jpg,.png", AI_TEXT_FILES_ON);
 
@@ -825,7 +826,7 @@ function AIWargamingPage() {
               <p className={`text-[12px] font-bold ${D?"text-zinc-200":"text-zinc-800"}`}>أو: محاكاة فورية بالذكاء الاصطناعي</p>
               <p className={`text-[11px] leading-relaxed ${D?"text-zinc-400":"text-zinc-500"}`}>
                 تُجري المحاكاة على الأهداف المختارة الآن وتعرض النتيجة هنا، وتتحقق المنصة من كل مادة تستند إليها في مكتبة الأنظمة ·
-                {" "}{useCredit ? FOUNDER_CREDIT_PRICE_TEXT : `${aiPrice.toLocaleString("ar-SA")} نقطة`} · تُرسل نسخة من الملخص والمرفقات إلى مزوّد ذكاء اصطناعي خارج المملكة.
+                {" "}{useCredit ? FOUNDER_CREDIT_PRICE_TEXT : <>{`${aiPrice.toLocaleString("ar-SA")} نقطة`}<ToolPointsAvailable tool="wargaming" price={aiPrice} leading=" · " recheck={ai.phase} /></>} · تُرسل نسخة من الملخص والمرفقات إلى مزوّد ذكاء اصطناعي خارج المملكة.
               </p>
               {aiSkipped.length > 0 && (
                 <p className="text-[11px] text-amber-500">

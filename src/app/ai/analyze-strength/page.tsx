@@ -46,6 +46,7 @@ import Navbar from "@/components/Navbar";
 import { useToolDraft } from "@/hooks/useToolDraft";
 import { draftText } from "@/lib/payments/topUpDraft";
 import AssistIndicatorNote from "@/components/ai/AssistIndicatorNote";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 type TabKey = "strength" | "opponent" | "risks" | "devil";
 const TABS: { key: TabKey; label: string; icon: typeof Gauge }[] = [
@@ -235,6 +236,7 @@ export default function AIStrengthPage() {
               <Sparkle size={15} weight="fill" />
               {ai.busy ? "جارٍ التحليل… (دقيقة أو أكثر)" : `حلّل الموقف الآن (${ANALYZE_STRENGTH_PRICE.toLocaleString("ar-SA")} نقطة)`}
             </button>
+            <p className={hint}><ToolPointsAvailable tool="analyze-strength" price={ANALYZE_STRENGTH_PRICE} recheck={ai.phase} /></p>
             <p className={hint}>
               تُرسل نسخة من الملخص والمستندات إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها. تحليل مبدئي؛ القرار للمحامي.
             </p>

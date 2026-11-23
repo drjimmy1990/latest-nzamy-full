@@ -66,6 +66,7 @@ import {
   memoFileRejection, validateBriefReviewForm, buildBriefReviewOrderBody, briefReviewSubmitErrorAr,
   type BriefClientRoleId, type BriefReviewScopeId,
 } from "@/lib/services/briefReviewOrder";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -422,7 +423,7 @@ function AIBriefCheckPage() {
             <div className={`rounded-2xl border p-4 space-y-2 ${isDark ? "border-[#C8A762]/20 bg-[#C8A762]/[0.04]" : "border-[#0B3D2E]/15 bg-[#0B3D2E]/[0.03]"}`}>
               <p className={`text-[12px] font-bold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>أو: تقرير فوري بالذكاء الاصطناعي</p>
               <p className={hint}>
-                يقرأ المذكرة الآن ويعرض ثغراتها هنا، وتتحقق المنصة من كل مادة تستشهد بها في مكتبة الأنظمة · {BRIEF_CHECK_PRICE.toLocaleString("ar-SA")} نقطة · {AI_TEXT_FILES_ON ? "PDF أو Word (.docx) أو نص ملصق" : "PDF فقط"} ·
+                يقرأ المذكرة الآن ويعرض ثغراتها هنا، وتتحقق المنصة من كل مادة تستشهد بها في مكتبة الأنظمة · {BRIEF_CHECK_PRICE.toLocaleString("ar-SA")} نقطة<ToolPointsAvailable tool="brief-check" price={BRIEF_CHECK_PRICE} leading=" · " /> · {AI_TEXT_FILES_ON ? "PDF أو Word (.docx) أو نص ملصق" : "PDF فقط"} ·
                 تُرسل نسخة من المذكرة إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
               </p>
               {!pasting && memo && !memoIsReadable && (

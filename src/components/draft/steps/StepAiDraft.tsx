@@ -32,6 +32,7 @@ import {
 } from "@/lib/ai/sectionEdits";
 import { aiSkippedNote } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 /**
  * StepAiDraft — L14 الصائغ القانوني (plan §5 wave 5; owner LIVE-F02 and
@@ -251,6 +252,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
           <span className="rounded-full border border-[#C8A762]/30 bg-[#C8A762]/10 px-3 py-1 text-[11px] font-bold text-[#C8A762]">
             {paidByCredit ? `${FOUNDER_CREDIT_PRICE_TEXT}، تشمل التحليل والصياغة` : `${kindPrice.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة`}
           </span>
+          {!paidByCredit && <ToolPointsAvailable tool="legal-drafter" price={kindPrice} className="text-[11px]" />}
         </div>
 
         {/* ── 1. the analysis ─────────────────────────────────────────── */}

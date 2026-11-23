@@ -19,6 +19,7 @@ import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import ToolUsableGate from "@/components/ai/ToolUsableGate";
 import { useUser } from "@/hooks/useUser";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type Role = "user" | "assistant";
@@ -553,6 +554,7 @@ function AssistantPage() {
         {/* Footer hint */}
         <p className={`text-center text-[10px] mt-2 ${isDark ? "text-zinc-600" : "text-slate-400"}`}>
           {ASSISTANT_CONVERSATION_PRICE.toLocaleString("ar-SA")} نقطة لكل محادثة من {ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")} {messagesNounAr(ASSISTANT_MESSAGES_PER_CONVERSATION)}
+          {!hasChat && <ToolPointsAvailable tool="assistant" price={ASSISTANT_CONVERSATION_PRICE} leading=" · " />}
           {hasChat && <> · الرسالة {Math.min(answered + 1, ASSISTANT_MESSAGES_PER_CONVERSATION).toLocaleString("ar-SA")} من {ASSISTANT_MESSAGES_PER_CONVERSATION.toLocaleString("ar-SA")}</>}
           {charged > 0 && <> · خُصمت {charged.toLocaleString("ar-SA")} نقطة</>}
           {answered >= ASSISTANT_MESSAGES_PER_CONVERSATION && (

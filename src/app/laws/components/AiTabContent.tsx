@@ -43,7 +43,7 @@ import {
 } from "@phosphor-icons/react";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
-import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { aiToolPointRange, aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { FREE_QUESTION_COPY } from "@/lib/ai/freeQuestion";
 import type { Citation } from "@/components/ai/CitedAnswer";
 import { LIBRARY_AI_SOON } from "../[slug]/_library-assistant";
@@ -53,6 +53,7 @@ import { ResearchRefDrawer } from "../research/_components/ResearchRefDrawer";
 import { ResearchTour } from "../research/_components/ResearchTour";
 import { ResearchSelectionBar } from "../research/_components/ResearchSelectionBar";
 import LibraryPointsLowNotice from "@/components/library/LibraryPointsLowNotice";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 const ROYAL = "#0B3D2E";
@@ -312,6 +313,7 @@ function Shell({ isDark, access }: { isDark: boolean; access: Access }) {
             <div className={`mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px] ${muted}`}>
               <span>
                 {aiToolPriceText(TOOL, "ar")} للسؤال
+                <ToolPointsAvailable tool={TOOL} price={aiToolPointRange(TOOL)[0]} leading=" · " recheck={turns.length} />
                 {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
               </span>
               <span className="inline-flex items-center gap-1">
