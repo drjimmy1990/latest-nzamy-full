@@ -178,6 +178,9 @@ test("owner Q172 (ب) (l13): the full name stays when the short one would mislea
   assert.equal(shortSubLegislationName("نظام العمل", "اللائحة التنفيذية للمادة 77 من نظام العمل"), null);
   // a longer law whose title merely begins with this one
   assert.equal(shortSubLegislationName("نظام المرور", "اللائحة التنفيذية لنظام المرور البحري"), null);
+  // a masculine tail describes the LAW, not the regulation: cut, it would mislead
+  assert.equal(shortSubLegislationName("نظام المرور", "اللائحة التنفيذية لنظام المرور الصادر بالمرسوم الملكي رقم (م/85)"), null);
+  assert.equal(shortSubLegislationName("نظام المرور", "اللائحة التنفيذية لنظام المرور المعدل لعام 1442هـ"), null);
   // a short name ending on a word that waits for the lost title
   assert.equal(shortSubLegislationName("نظام المرور", "قواعد التنسيق بين الجهات في لنظام المرور"), null);
   // the bare title, blanks and non-text

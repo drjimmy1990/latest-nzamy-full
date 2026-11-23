@@ -184,8 +184,14 @@ function baseTitleForms(base: string): string[] {
   return forms.filter((f) => f.length > 0);
 }
 
-/** What may follow the repeated title and still be kept: a year, «المعدلة», «الصادرة …», a bracket. */
-const KEPT_TAIL = /^(?:\s+(?:لعام|المعدلة|المعدل|الصادرة|الصادر)(?:\s|$)|\s*\()/;
+/**
+ * What may follow the repeated title and still be kept: a year, «المعدلة»,
+ * «الصادرة …», a bracket — words that agree with the regulation (feminine).
+ * A masculine «الصادر» / «المعدل» agrees with the LAW («… لنظام المرور الصادر
+ * بالمرسوم…»): cut, it would say the regulation came by the law's decree, so
+ * such a name stays full.
+ */
+const KEPT_TAIL = /^(?:\s+(?:لعام|المعدلة|الصادرة)(?:\s|$)|\s*\()/;
 /** A word that names a law: the short name would point at another law, so the full one stays. */
 const NAMES_A_LAW = /(?:^|\s)و?(?:لل|[بل]?(?:ال)?)(?:نظام|نظامي|تنظيم|قانون)(?=\s|$|[،,)])/;
 /** A short name may not end on a word that waits for the title it lost. */
