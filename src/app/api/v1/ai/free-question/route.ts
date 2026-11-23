@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireApiUser } from "@/lib/auth/apiAuth";
-import { FREE_QUESTION_TOOL, freeQuestionStatusWith, freeQuestionToolOf, parseFreeQuestionTool } from "@/lib/ai/freeQuestion";
+import {
+  FLOATING_FREE_QUESTION_TOOL,
+  FREE_QUESTION_TOOL,
+  freeQuestionStatusWith,
+  freeQuestionToolOf,
+  parseFreeQuestionTool,
+} from "@/lib/ai/freeQuestion";
+import { readAiToolsSetting } from "@/lib/ai/runCore";
+import { resolveToolRuntime, toolAvailability } from "@/lib/ai/aiToolsConfig";
+import { AI_TOOLS } from "@/lib/ai/tools";
 import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
 
 /**
@@ -29,6 +38,12 @@ import { readLibraryAccountAccess } from "@/lib/library/accountAccessServer";
  * Q121 (batch l12): an individual's tool comes from the setting
  * free_question_tool_by_account_type (quick-answer by default; `?tool=assistant`
  * when it is switched to «المساعد المتقدم»).
+ *
+ * Q181 (batch l13): `?tool=floating` — «مساعد نظامي», the individual's default.
+ * The window offers a free answer only on this reply, so it is NONE unless
+ * the run would really go through: the tool is open for users (ai_tools mode)
+ * and points_enforcement is on (off, the runs route does not let the free
+ * questions open the library's tier rule, and no use is counted).
  */
 
 export const dynamic = "force-dynamic";
@@ -36,6 +51,18 @@ export const runtime = "nodejs";
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 const NONE = { available: false, left: 0, total: 0 };
+
+/** Q181: would a floating run start for a user now? Any read error → no. */
+async function floatingRunsNow(admin: Awaited<ReturnType<typeof createServiceClient>>): Promise<boolean> {
+  try {
+    const enforcement = await admin.from("platform_settings").select("value").eq("key", "points_enforcement").maybeSingle();
+    if (enforcement.error || (enforcement.data as { value?: unknown } | null)?.value !== true) return false;
+    const runtime = resolveToolRuntime(AI_TOOLS[FLOATING_FREE_QUESTION_TOOL], await readAiToolsSetting(admin));
+    return toolAvailability(runtime.mode, false) === "ok";
+  } catch {
+    return false;
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -51,6 +78,7 @@ export async function GET(request: Request) {
     if (asked === FREE_QUESTION_TOOL && !(await readLibraryAccountAccess(auth.user.id)).allowed) {
       return NextResponse.json(NONE, { headers: NO_STORE });
     }
+    if (asked === FLOATING_FREE_QUESTION_TOOL && !(await floatingRunsNow(admin))) return NextResponse.json(NONE, { headers: NO_STORE });
     const status = await freeQuestionStatusWith(admin, auth.user.id);
     return NextResponse.json(status, { headers: NO_STORE });
   } catch (err) {

@@ -7783,7 +7783,7 @@ select 'Every test account has a current test batch (run 20261129_90)' as check,
 
 -- >>> verify:l9_public
 -- Batch l9-public (owner register 4 / 36): an individual's free questions on the general assistant (quick-answer), every other type's on the library assistant. Run 20261129_60 any time after 20261128_20.
-select 'Free questions per account type: ai_start_free_question takes quick-answer for an individual, one overload, service role only (run 20261129_60)' as check,
+select 'Free questions per account type: ai_start_free_question still accepts quick-answer (an individual''s tool when the setting names it; floating by default since 20261203_50) and the library assistant, one overload, service role only (run 20261129_60)' as check,
        coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''quick-answer''') > 0
                         and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''library-assistant''') > 0
                         and p.prosecdef and p.proconfig @> array['search_path=""']
@@ -8398,3 +8398,31 @@ select 'l13 free board: case_free_boards with RLS, 4 policies on case_board_open
        and has_table_privilege('authenticated', 'public.case_free_boards', 'SELECT')
        end as ok;
 -- <<< verify:l13_canvas
+-- >>> verify:l13_assistant
+-- Batch l13 assistant (owner Q181 ب / Q182): run 20261203_50 AFTER 20261202_50 and AFTER the l13 deploy. The older Q121 / l9 / l7 checks above stay valid: the bodies keep 'library-assistant', 'quick-answer', ai_free_question_uses, ai_free_question_tool and «is distinct from 'individual'».
+select 'Q181: ai_free_question_tool accepts floating and defaults to it (individual), service role only (run 20261203_50; a re-run of 20261202_50 after it brings back quick-answer — re-run 20261203_50)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'then v_tool else ''floating'' end') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'is distinct from ''individual''') > 0
+                        and p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.ai_free_question_tool(uuid)')), false) as ok;
+select 'Q181: ai_start_free_question takes floating only as the account''s own tool, one overload, service role only (run 20261203_50)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''assistant'', ''floating'')') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'p_tool is distinct from public.ai_free_question_tool(p_user)') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'ai_free_question_uses') > 0
+                        and p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
+select 'Q181 + Q182: the individual''s tool setting is valid and names Q181; listen_voice present (run 20261203_50)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object' and value ->> 'individual' in ('floating', 'quick-answer', 'assistant')
+                        and coalesce(description, '') like '%Q181%'
+                   from public.platform_settings where key = 'free_question_tool_by_account_type'), false)
+       and coalesce((select pg_catalog.jsonb_typeof(value -> 'voice') = 'string' from public.platform_settings where key = 'listen_voice'), false) as ok;
+-- <<< verify:l13_assistant

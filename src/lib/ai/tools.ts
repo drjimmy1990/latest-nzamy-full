@@ -108,6 +108,14 @@ export interface AiToolSpec {
    * is charged the normal price it showed.
    */
   freeQuestions?: boolean;
+  /**
+   * Q181 (ب, batch l13): a tool that runs ONLY as one of the account's free
+   * questions («مساعد نظامي», `floating`). runCore refuses it, uncharged,
+   * when no free question applies (none left, not the account's free tool,
+   * not verified), and when ai_start_free_question refuses it never falls
+   * back to a paid start. Admins run it free. Needs `freeQuestions`.
+   */
+  freeQuestionsOnly?: true;
   /** Runs per user per Riyadh day while nothing else limits them (plan §1.2). */
   dailyLimit: number;
   /** The mode until an admin sets one in platform_settings.ai_tools. */
@@ -1910,6 +1918,34 @@ export const AI_TOOLS: Readonly<Record<string, AiToolSpec>> = {
     // labelled and charged (runCore settleRunWith); the refusal sentence is not.
     retrieval: { from: "question", laws: 8, principles: 4, allowUngrounded: { field: "answer" } },
     // Owner ١٣: every AI agent is hardened against instruction extraction.
+    promptGuard: { field: "question", replyField: "answer" },
+    validateInput: quickAnswerInput,
+    validateOutput: quickAnswerOutput,
+  },
+  // Q181 (ب, batch l13): «مساعد نظامي», the site's floating help window,
+  // answers an INDIVIDUAL's free legal questions (the individual's default
+  // free tool since 20261203_50; freeQuestion.ts). The same workflow, search
+  // and guards as quick-answer, under its own id so the free-question
+  // accounting (ai_free_question_tool = 'floating') and the run log tell the
+  // two apart. Free questions only: price 0 and `freeQuestionsOnly`, so it is
+  // never charged — after the last one the window points to the paid tools.
+  floating: {
+    id: "floating",
+    n8nPath: "nzamy-ai/quick-answer",
+    class: "fast",
+    tier: "fast",
+    roles: ["individual"],
+    consultantBlocked: false,
+    price: () => 0,
+    freeQuestions: true,
+    freeQuestionsOnly: true,
+    // The allowance (5) is the real cap; this only stops a burst.
+    dailyLimit: 10,
+    // Off until switched on; 20261203_50 copies quick-answer's stored mode
+    // into platform_settings.ai_tools.floating once, so it opens wherever
+    // the general assistant is already open.
+    defaultMode: "off",
+    retrieval: { from: "question", laws: 8, principles: 4, allowUngrounded: { field: "answer" } },
     promptGuard: { field: "question", replyField: "answer" },
     validateInput: quickAnswerInput,
     validateOutput: quickAnswerOutput,

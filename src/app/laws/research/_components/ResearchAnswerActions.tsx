@@ -6,12 +6,14 @@
  * «تم النسخ» for two seconds), «تصدير Word» (the plain .docx every AI result
  * uses, lib/docx/plainDocx.ts, with «جارٍ تجهيز ملف Word…» while it builds),
  * and «أرسل إلى الصائغ» for the accounts the drafter is open to. Every button
- * presses in (motion-safe). Listening to the answer is phase C (not built).
+ * presses in (motion-safe). Owner Q182 (batch l13): «استمع للإجابة», free,
+ * the browser's speech synthesis (ListenButton; the voice is an admin setting).
  */
 import { useState } from "react";
 import { CheckCircle, Copy, FileDoc, SpinnerGap } from "@phosphor-icons/react";
 import { stripCitationMarkers } from "@/lib/ai/citationMarkers";
 import SendToDrafterNotesButton from "@/components/draft/SendToDrafterNotesButton";
+import ListenButton from "@/components/ai/ListenButton";
 
 export const COPY_CONFIRM_MS = 2000;
 
@@ -74,6 +76,8 @@ export function ResearchAnswerActions({ text, question, isDark }: { text: string
           {wordBusy ? <SpinnerGap size={13} className="motion-safe:animate-spin" /> : <FileDoc size={13} />}
           {wordBusy ? "جارٍ تجهيز ملف Word…" : "تصدير Word"}
         </button>
+        {/* Q182: free — read aloud in the browser, nothing charged. */}
+        <ListenButton text={text} isDark={isDark} />
         {/* Q485 / P1-13: lawyers and firms only (the button decides). */}
         <SendToDrafterNotesButton text={text} sourceLabel="باحث المكتبة" isDark={isDark} className="px-1" />
       </div>

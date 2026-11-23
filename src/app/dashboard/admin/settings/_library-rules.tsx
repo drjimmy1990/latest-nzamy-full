@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { parseSummariesReviewedOnly, SUMMARIES_REVIEWED_ONLY_DEFAULT, SUMMARIES_REVIEWED_ONLY_KEY } from "@/lib/library/summaryReview";
 import {
+  DEFAULT_INDIVIDUAL_FREE_QUESTION_TOOL,
   FREE_QUESTION_TOOL_SETTING,
-  GENERAL_FREE_QUESTION_TOOL,
   parseIndividualFreeQuestionTool,
   type IndividualFreeQuestionTool,
 } from "@/lib/ai/freeQuestion";
+import { arabicVoices, LISTEN_VOICE_DEFAULT, LISTEN_VOICE_SETTING, parseListenVoice, pickVoice } from "@/lib/ai/listenVoice";
 
 /**
  * «قواعد المكتبة والأسئلة المجانية» on the admin settings page (batch l12
@@ -16,11 +17,18 @@ import {
  *   - library_summaries_reviewed_only {"on": boolean} — Q96: only a reviewed
  *     summary is shown in the library (OFF by default);
  *   - free_question_tool_by_account_type {"individual": tool} — Q121: where an
- *     individual's free questions are used (quick-answer by default).
+ *     individual's free questions are used (Q181, batch l13: «مساعد نظامي»,
+ *     the floating window, by default);
+ *   - listen_voice {"voice": name} — Q182 (batch l13): the voice «استمع
+ *     للإجابة» reads with ("" = the browser's first ar-SA voice). The list is
+ *     this admin's own browser's Arabic voices; a visitor whose browser lacks
+ *     the chosen one hears the first ar-SA voice of his own.
  */
 export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
   const [reviewedOnly, setReviewedOnly] = useState(SUMMARIES_REVIEWED_ONLY_DEFAULT);
-  const [tool, setTool] = useState<IndividualFreeQuestionTool>(GENERAL_FREE_QUESTION_TOOL);
+  const [tool, setTool] = useState<IndividualFreeQuestionTool>(DEFAULT_INDIVIDUAL_FREE_QUESTION_TOOL);
+  const [voice, setVoice] = useState(LISTEN_VOICE_DEFAULT);
+  const [voiceNames, setVoiceNames] = useState<string[]>([]);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -33,6 +41,7 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
         if (cancelled) return;
         setReviewedOnly(parseSummariesReviewedOnly(data[SUMMARIES_REVIEWED_ONLY_KEY]));
         setTool(parseIndividualFreeQuestionTool(data[FREE_QUESTION_TOOL_SETTING]));
+        setVoice(parseListenVoice(data[LISTEN_VOICE_SETTING]));
       })
       .catch(() => {
         /* the defaults stay on screen */
@@ -41,6 +50,30 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
       cancelled = true;
     };
   }, []);
+
+  // Q182: this browser's Arabic voices (the list fills in after `voiceschanged`).
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const synth = window.speechSynthesis;
+    const read = () => setVoiceNames(arabicVoices(synth.getVoices()).map((v) => v.name));
+    read();
+    synth.addEventListener("voiceschanged", read);
+    return () => synth.removeEventListener("voiceschanged", read);
+  }, []);
+
+  function tryVoice() {
+    try {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance("هذا مثال لقراءة الإجابة بصوت نظامي.");
+      const v = pickVoice(synth.getVoices(), voice);
+      u.lang = v?.lang ?? "ar-SA";
+      if (v) u.voice = v;
+      synth.speak(u);
+    } catch {
+      /* no speech in this browser */
+    }
+  }
 
   async function patch(key: string, value: unknown): Promise<string | null> {
     const res = await fetch("/api/v1/admin/settings", {
@@ -59,7 +92,8 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
     try {
       const err =
         (await patch(SUMMARIES_REVIEWED_ONLY_KEY, { on: reviewedOnly })) ??
-        (await patch(FREE_QUESTION_TOOL_SETTING, { individual: tool }));
+        (await patch(FREE_QUESTION_TOOL_SETTING, { individual: tool })) ??
+        (await patch(LISTEN_VOICE_SETTING, { voice }));
       setStatus(err ? { ok: false, text: err } : { ok: true, text: "حُفظت القواعد. تسري خلال دقيقة." });
     } catch {
       setStatus({ ok: false, text: "تعذّر الحفظ. حاول مرة أخرى." });
@@ -74,7 +108,7 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
 
   return (
     <div dir="rtl">
-      <h3 className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>قواعد المكتبة والأسئلة المجانية</h3>
+      <h3 className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>قواعد المكتبة والأسئلة المجانية والاستماع</h3>
       <label className="mt-3 flex items-start gap-2">
         <input type="checkbox" className="mt-1" checked={reviewedOnly} onChange={(e) => setReviewedOnly(e.target.checked)} />
         <span>
@@ -87,12 +121,33 @@ export function LibraryRulesSettings({ isDark }: { isDark: boolean }) {
       <label className="mt-4 block max-w-sm">
         <span className={label}>الأداة التي يستخدم فيها الفرد أسئلته المجانية</span>
         <select value={tool} onChange={(e) => setTool(parseIndividualFreeQuestionTool({ individual: e.target.value }))} className={input}>
-          <option value="quick-answer">المجيب القانوني السريع (الحالي)</option>
+          <option value="floating">مساعد نظامي العائم (قرار المالك — الافتراضي)</option>
+          <option value="quick-answer">المجيب القانوني السريع</option>
           <option value="assistant">المساعد المتقدم (بعد فتحه للأفراد)</option>
         </select>
         <span className={`mt-1 block text-xs ${muted}`}>
           أسئلة المحامي المجانية في مساعد المكتبة دائماً، مع معاينة مختصرة للمصادر لمن ليس لديه اشتراك مكتبة.
         </span>
+      </label>
+      <label className="mt-4 block max-w-sm">
+        <span className={label}>صوت «استمع للإجابة»</span>
+        <select value={voice} onChange={(e) => setVoice(e.target.value)} className={input}>
+          <option value="">أول صوت عربي سعودي في متصفح الزائر (الافتراضي)</option>
+          {voice && !voiceNames.includes(voice) && <option value={voice}>{voice} (غير موجود في متصفحك)</option>}
+          {voiceNames.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+        <span className={`mt-1 block text-xs ${muted}`}>
+          القراءة الصوتية مجانية وتتم في متصفح الزائر. القائمة هي الأصوات العربية في متصفحك أنت، وتختلف من جهاز لآخر؛ إن لم يجد متصفح الزائر الصوت المختار قرأ بأول صوت عربي سعودي لديه.
+        </span>
+        {voiceNames.length > 0 && (
+          <button type="button" onClick={tryVoice} className={`mt-2 text-xs font-bold underline ${isDark ? "text-[#C8A762]" : "text-[#0B3D2E]"}`}>
+            جرّب الصوت المختار
+          </button>
+        )}
       </label>
       {status && (
         <p role={status.ok ? "status" : "alert"} className={`mt-3 text-xs font-bold ${status.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>

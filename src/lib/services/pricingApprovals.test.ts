@@ -142,9 +142,11 @@ const TODAY: Record<string, [number, number]> = {
 test("task 4: the registry charges today's prices, and the display helper reads exactly that", () => {
   // Every tool a screen may price is pinned here, and every registry tool but
   // the two echo tests is one a screen may price: a new tool cannot skip the pin.
+  // Q181 (l13): a free-questions-only tool (`floating`) has no price to show.
   assert.deepEqual(Object.keys(TODAY).sort(), [...display.PRICED_AI_TOOL_IDS].sort(), "TODAY and PRICED_AI_TOOL_IDS differ");
+  assert.equal(AI_TOOLS.floating.price({}, { pages: null }), 0, "the floating window is never charged");
   assert.deepEqual(
-    Object.keys(AI_TOOLS).filter((id) => !id.startsWith("echo-")).sort(),
+    Object.keys(AI_TOOLS).filter((id) => !id.startsWith("echo-") && AI_TOOLS[id].freeQuestionsOnly !== true).sort(),
     [...display.PRICED_AI_TOOL_IDS].sort(),
     "a registry tool is missing from PRICED_AI_TOOL_IDS (or the list names a tool the registry lacks)",
   );
