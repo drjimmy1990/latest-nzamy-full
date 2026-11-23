@@ -8449,3 +8449,14 @@ select 'l13 journal: 4 tables, RLS on, no anon privilege, admin-only policies, s
                     where conname = 'journal_issues_approved_stamp' and conrelid = to_regclass('public.journal_issues'))
        end as ok;
 -- <<< verify:l13_journal
+
+-- >>> verify:l13_case_graph_insert
+-- 20261203_95: a case map (public.case_graphs, one row per case) is created only by someone who
+-- works on the case (restrictive insert policy using public.case_board_open). Read-only.
+select 'Case map insert limited to the case''s workers (run 20261203_95)' as check,
+       exists (select 1 from pg_catalog.pg_policies
+                where schemaname = 'public' and tablename = 'case_graphs'
+                  and policyname = 'case graph insert: case workers only'
+                  and permissive = 'RESTRICTIVE' and cmd = 'INSERT'
+                  and coalesce(with_check, '') like '%case_board_open%') as ok;
+-- <<< verify:l13_case_graph_insert
