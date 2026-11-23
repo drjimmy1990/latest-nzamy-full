@@ -50,7 +50,7 @@ const INTERNAL_PATHS: Record<string, string> = {
   "community-review": COMMUNITY_REVIEW_PATH,
 };
 
-test("every workflow matches its registry path, has a unique webhook id, and wires the model into the agent", () => {
+test("every workflow matches its registry path, has a unique webhook id, and calls Gemini with the raw reply (owner ١٥٦)", () => {
   const paths = new Set<string>();
   const ids = new Set<string>();
   for (const d of AI_WORKFLOWS) {
@@ -66,11 +66,9 @@ test("every workflow matches its registry path, has a unique webhook id, and wir
     if (d.kind === "clauseJob") continue; // contractsPro.test.ts
     const write = wf.nodes.find((n) => n.name === "Write")!;
     assert.equal(write.onError, "continueErrorOutput", "a model failure must still answer the app");
-    assert.equal(write.parameters.promptType, "define");
-    const model = wf.nodes.find((n) => n.name === "Model")!;
-    assert.equal(model.type, MODEL.type);
-    assert.ok(model.credentials[MODEL.credentialKey].id, "the model node has a credential");
-    assert.deepEqual(wf.connections.Model.ai_languageModel[0][0], { node: "Write", type: "ai_languageModel", index: 0 });
+    assertGeminiCall(write);
+    assert.equal(wf.nodes.some((n) => n.name === "Model" || String(n.type).includes("agent") || String(n.type).includes("lmChat")), false, "no Agent / chat-model pair left");
+    assert.equal(Object.values(wf.connections).some((c: any) => c.ai_languageModel), false);
     assert.equal(wf.connections.Write.main.length, 2, "success and error outputs");
   }
 });
@@ -103,7 +101,7 @@ test("najiz: the references to keep go first, the memo cannot open a second tag,
   assert.match(out.system, /أبقِ كل واحدة منها في موضعها بحرفها مع القوسين/);
   assert.equal(out.content.split("<memo").length, 2);
   assert.ok(def("najiz-optimizer").maxOutputTokens >= 6000);
-  assert.equal(nodes("najiz-optimizer").find((n) => n.name === "Model")!.parameters.options.maxOutputTokens, def("najiz-optimizer").maxOutputTokens);
+  assert.equal(nodes("najiz-optimizer").find((n) => n.name === "Write")!.parameters.options.maxOutputTokens, def("najiz-optimizer").maxOutputTokens);
 });
 
 test("parse: the agent's text becomes the tool's output; a Markdown fence is stripped; no text fails cleanly", () => {
@@ -139,7 +137,7 @@ test("lib-queries: the question is data inside <question>, and the reply's lines
   const r = runCode(def("lib-queries").parse, body, { output: "1. مكافأة نهاية الخدمة\n- «استقالة العامل»\n\n٣) المادة الخامسة والثمانون\nأ" })[0].json;
   assert.equal(r.status, "succeeded");
   assert.deepEqual(r.output, { queries: ["مكافأة نهاية الخدمة", "استقالة العامل", "المادة الخامسة والثمانون"] });
-  assert.equal(nodes("lib-queries").find((n) => n.name === "Model")!.parameters.options.temperature, 0);
+  assert.equal(nodes("lib-queries").find((n) => n.name === "Write")!.parameters.options.temperature, 0);
 
   const none = runCode(def("lib-queries").parse, body, { output: "-\n1." })[0].json;
   assert.equal(none.status, "failed");
@@ -284,7 +282,7 @@ test("canvas-card: the selected cards and the sources in their tags; «S3 | why�
   assert.ok(!/[{}]/.test(out.system));
   assert.equal(out.content.split("<card type=").length, 3, "a card's text cannot open another card");
   assert.match(out.content, /<card type="ملاحظة">\nالمستأجر\n<\/card>/, "an unknown type reads as a note");
-  assert.equal(nodes("canvas-card").find((n) => n.name === "Model")!.parameters.options.temperature, 0);
+  assert.equal(nodes("canvas-card").find((n) => n.name === "Write")!.parameters.options.temperature, 0);
 
   const r = runCode(def("canvas-card").parse, body, { output: "S1 | تجيز للمؤجر طلب الفسخ [S1].\n- [S4]: تعويض\nS1 | مكرر\nكلام آخر\nS2 — ثالث\nS5 | رابع" })[0].json;
   assert.deepEqual(r.output, { cards: [{ sid: "S1", why: "تجيز للمؤجر طلب الفسخ ." }, { sid: "S4", why: "تعويض" }, { sid: "S2", why: "ثالث" }] });
@@ -310,6 +308,20 @@ test("canvas-card input: 1–8 titled cards, an unknown type kept as custom, the
 });
 
 /** Code that reads several items (n8n's $input.all()) and the webhook body. */
+/** Owner ١٥٦ (l13): one Gemini «Message a model» call, raw reply (usageMetadata kept), the item's system + content. */
+function assertGeminiCall(n: Node) {
+  assert.equal(n.type, MODEL.type);
+  assert.equal(MODEL.type, "@n8n/n8n-nodes-langchain.googleGemini");
+  assert.equal(n.parameters.resource, "text");
+  assert.equal(n.parameters.operation, "message");
+  assert.equal(n.parameters.simplify, false, "the raw reply keeps usageMetadata");
+  assert.equal(n.parameters.modelId.value, MODEL.modelName);
+  assert.deepEqual(n.parameters.messages, { values: [{ content: "={{ $json.content }}" }] });
+  assert.equal(n.parameters.options.systemMessage, "={{ $json.system }}");
+  assert.ok(n.parameters.options.maxOutputTokens > 0);
+  assert.ok(n.credentials[MODEL.credentialKey].id, "the call has a credential");
+}
+
 function runAll(code: string, webhookBody: Record<string, unknown>, items: Item[]): Item[] {
   const $ = (name: string) => {
     assert.equal(name, "Webhook");
@@ -444,16 +456,17 @@ function evalCondition(expr: string, webhookBody: Record<string, unknown>): unkn
   return new Function("$", `return (${expr.replace(/^=\{\{\s*/, "").replace(/\s*\}\}$/, "")});`)($);
 }
 for (const tool of ["wargaming", "analyze-strength", "contract-drafter", "simple-contract", "contract-negotiator", "legal-opinion-consult", "legal-opinion-letter", "legal-drafter"]) {
-  test(`${tool} workflow: 202 first, then files → Gemini «Analyze Document», no files → the Agent; every way out calls back`, () => {
+  test(`${tool} workflow: 202 first, then files → Gemini «Analyze Document», no files → Gemini «Message a model»; every way out calls back`, () => {
     const wf = toWorkflow(def(tool)) as { nodes: Node[]; connections: Record<string, any>; settings: Record<string, unknown> };
     const byName = (n: string) => wf.nodes.find((x) => x.name === n)!;
     assert.equal(new Set(wf.nodes.map((n) => n.name)).size, wf.nodes.length, "node names are unique");
     assert.equal(new Set(wf.nodes.map((n) => n.id)).size, wf.nodes.length, "node ids are unique");
     assert.equal(wf.connections["Accepted 202"].main[0][0].node, "Has files?");
     assert.equal(wf.connections["Has files?"].main[0][0].node, "Files", "true: the document path");
-    assert.equal(wf.connections["Has files?"].main[1][0].node, "Build prompt", "false: the Agent path");
+    assert.equal(wf.connections["Has files?"].main[1][0].node, "Build prompt", "false: the text path");
     assert.equal(wf.connections["Build prompt"].main[0][0].node, "Write");
-    assert.deepEqual(wf.connections.Model.ai_languageModel[0][0], { node: "Write", type: "ai_languageModel", index: 0 });
+    assertGeminiCall(byName("Write"));
+    assert.equal(byName("Read").parameters.simplify, false, "owner ١٥٦: the document reply keeps usageMetadata");
     for (const from of ["Read", "Write"]) {
       assert.equal(wf.connections[from].main[0][0].node, "Parse result", from);
       assert.equal(wf.connections[from].main[1][0].node, "Model error", from);
@@ -963,7 +976,7 @@ test("request-summary build: the client's text is data inside <request>, the rul
   // An odd max_chars falls back to 100.
   const odd = runCode(def("request-summary").build, { ...summaryBody("نص"), max_chars: 5000 })[0].json;
   assert.match(odd.system, /لا تزيد على 100 حرفاً/);
-  const model = nodes("request-summary").find((n) => n.name === "Model")!;
+  const model = nodes("request-summary").find((n) => n.name === "Write")!;
   assert.equal(model.parameters.options.temperature, 0);
   assert.ok(model.parameters.options.maxOutputTokens <= 200);
 });
@@ -1011,7 +1024,7 @@ test("community-review build: the member's text is data inside <post>, no braces
   assert.ok(built.content.startsWith(["<kind>سؤال</kind>", "<post>", "العنوان: فصل تعسفي", ""].join(NL)));
   const answer = runCode(def("community-review").build, reviewBody("answer", "", "جواب"))[0].json;
   assert.ok(answer.content.startsWith(["<kind>إجابة</kind>", "<post>", "جواب"].join(NL)));
-  const model = nodes("community-review").find((n) => n.name === "Model")!;
+  const model = nodes("community-review").find((n) => n.name === "Write")!;
   assert.equal(model.parameters.options.temperature, 0);
   assert.ok(model.parameters.options.maxOutputTokens <= 200);
 });
@@ -1038,3 +1051,49 @@ test("community-review: the JSON a user imports matches the source", () => {
   assert.equal(file.nodes.find((n: Node) => n.name === "Webhook").credentials.httpHeaderAuth.name, "NZAMY AI · inbound");
   assert.equal(file.settings.saveDataSuccessExecution, "none");
 });
+
+// ── owner ١٥٦ (batch l13): the real token counts ─────────────────────────────
+
+const rawGemini = (text: string, meta: Record<string, number> = { promptTokenCount: 1200, candidatesTokenCount: 300, thoughtsTokenCount: 40, cachedContentTokenCount: 200 }) => ({
+  candidates: [{ content: { role: "model", parts: [{ text: "خطوات تفكير", thought: true }, { text }] }, finishReason: "STOP" }],
+  usageMetadata: { ...meta, totalTokenCount: 9999 },
+  modelVersion: "gemini-3.1-flash-lite",
+});
+
+test("owner ١٥٦: every parse step sends Gemini's real counts from the raw reply, and the old shapes still parse (counts 0)", () => {
+  const real = { model: "gemini-3.1-flash-lite", input_tokens: 1200, output_tokens: 340, cache_read_tokens: 200 };
+  const zero = { model: "gemini-3.1-flash-lite", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+  // A text tool (parse()).
+  const body = pkg("communicate", {});
+  const r = runCode(def("communicate").parse, body, rawGemini("السلام عليكم"))[0].json;
+  assert.equal(r.status, "succeeded");
+  assert.ok(JSON.stringify(r.output).includes("السلام عليكم"));
+  assert.ok(!JSON.stringify(r.output).includes("خطوات تفكير"), "a thinking part is never the answer");
+  assert.deepEqual(r.usage, real);
+  assert.deepEqual(runCode(def("communicate").parse, body, { output: "السلام عليكم" })[0].json.usage, zero, "the Agent's shape: counts 0, run kept");
+  // A document / case job (DOC_PARSE, CASE_PARSE) and the drafter.
+  for (const tool of ["case-brief", "wargaming", "legal-drafter", "legal-opinion-consult"]) {
+    const t = runCode(def(tool).parse, pkg(tool, {}), rawGemini('{"a":1}'))[0].json;
+    assert.equal(t.status, "succeeded", tool);
+    assert.deepEqual(t.usage, real, tool);
+    const simplified = runCode(def(tool).parse, pkg(tool, {}), { content: { parts: [{ text: '{"a":1}' }] } })[0].json;
+    assert.equal(simplified.status, "succeeded", `${tool}: a simplified reply still parses`);
+    assert.deepEqual(simplified.usage, zero, tool);
+  }
+  // The search writer (its tokens join the run in the app) and the internal tools.
+  assert.deepEqual(runCode(def("lib-queries").parse, pkg("lib-queries", {}), rawGemini("مكافأة نهاية الخدمة"))[0].json.usage, real);
+  // No usageMetadata at all, or junk in it: 0, never NaN, never a failed run.
+  const junk = runCode(def("communicate").parse, body, { candidates: [{ content: { parts: [{ text: "نص" }] } }], usageMetadata: { promptTokenCount: "x", candidatesTokenCount: -5 } })[0].json;
+  assert.equal(junk.status, "succeeded");
+  assert.deepEqual(junk.usage, zero);
+});
+
+test("owner ١٥٦: no exported workflow keeps a hard-coded 0 / 0 or an Agent node", () => {
+  for (const d of AI_WORKFLOWS) {
+    const file = readFileSync(new URL(`../../../n8n/ai/${d.tool}.json`, import.meta.url), "utf8");
+    assert.doesNotMatch(file, /usage: \{ model: '[^']*', input_tokens: 0/, `${d.tool}.json still sends 0 / 0`);
+    assert.ok(!file.includes("n8n-nodes-langchain.agent") && !file.includes("lmChatGoogleGemini"), `${d.tool}.json still has the Agent pair`);
+    assert.deepEqual(JSON.parse(file), JSON.parse(JSON.stringify(toWorkflow(d))), `${d.tool}.json is not the export of workflows.mjs (run node scripts/n8n-ai-export.mjs)`);
+  }
+});
+

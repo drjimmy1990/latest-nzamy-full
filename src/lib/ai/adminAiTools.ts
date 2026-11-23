@@ -4,11 +4,10 @@
  * drafter first and محترف العقود second, and tools still being built open and
  * untagged (no «قريباً», no price badge).
  *
- * DISPLAY ONLY. Nothing here opens a run: the server's mode switch still
- * decides (aiToolsConfig.toolAvailability), so a tool in mode "off" refuses the
- * admin with 423 before any charge and only a tool switched on for staff (or
- * live) spends AI cost. Owner question ١٥٦ (whether a switched-off tool should
- * really run for him) is open; until it is answered «staff» is the switch.
+ * DISPLAY ONLY. Nothing here opens a run: the server decides
+ * (aiToolsConfig.toolAvailability). Owner ١٥٦ (أ), batch l13: there the admin
+ * really runs every tool, a switched-off one included, exempt from the charge
+ * and logged with its tokens (the AI usage page shows the real cost).
  *
  * Not opened for him either: the canned golden steps (Q-T1 open, owner ١١٥),
  * GatedToolScreen, and the «قريباً» pages, which have nothing behind them —
