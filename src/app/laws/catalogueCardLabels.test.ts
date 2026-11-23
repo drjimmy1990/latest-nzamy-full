@@ -103,15 +103,15 @@ test("source: no fixed «مُحدّث» badge; the card reads latest_legislative
   assert.match(cards, /isRepealedLaw\s*\?\s*`hover:border-red-500/);
 });
 
-test("file 03 L3 (l12): the card names merged regulations then linked documents, full form by default", async () => {
+test("file 03 L3 (l12): the card names merged regulations then linked documents (admin forces full / short)", async () => {
   const { cardSubLegislationNames, unnamedSubLegislationCount, CARD_SUB_NAMES_SHOWN } = await import("./catalogueCardLabels.ts");
   const base = "نظام المرور";
   const merged = ["اللائحة التنفيذية لنظام المرور"];
   const linked = ["لائحة الأحكام المنظمة لإنشاء وتشغيل مدارس لتعليم قيادة المركبات لعام 1443هـ"];
-  assert.deepEqual(cardSubLegislationNames(base, merged, linked), [...merged, ...linked]);
+  assert.deepEqual(cardSubLegislationNames(base, merged, linked, "full"), [...merged, ...linked]);
   assert.deepEqual(cardSubLegislationNames(base, merged, linked, "short"), ["اللائحة التنفيذية", linked[0]]);
   // a linked document that is the merged regulation again is named once
-  assert.deepEqual(cardSubLegislationNames(base, merged, ["اللائحة التنفيذية لنظام المرور", "اللائحة التنفيذية"]), merged);
+  assert.deepEqual(cardSubLegislationNames(base, merged, ["اللائحة التنفيذية لنظام المرور", "اللائحة التنفيذية"], "full"), merged);
   // blanks and the base title itself are no names
   assert.deepEqual(cardSubLegislationNames(base, ["", "  ", base], []), []);
   assert.equal(CARD_SUB_NAMES_SHOWN, 2);
@@ -123,5 +123,97 @@ test("file 03 L3 (l12): the card names merged regulations then linked documents,
   assert.match(cards, /\{open \? "إظهار أقل" : "إظهار المزيد"\}/);
   assert.match(cards, /onClick=\{\(e\) => \{ stop\(e\); setOpen/);
   assert.match(page, /subLegislationTitles: Array\.isArray\(law\.sub_legislation_titles\)/);
-  assert.match(page, /setChildNameForm\(data\?\.display\?\.childNameForm === "short" \? "short" : "full"\);/);
+  assert.match(page, /setChildNameForm\(subNameFormOf\(data\?\.display\?\.childNameForm\)\);/);
+});
+
+test("owner Q172 (ب) (l13): short «اللائحة التنفيذية» when the name only repeats the law's title", async () => {
+  const { cardSubLegislationNames, shortSubLegislationName } = await import("./catalogueCardLabels.ts");
+  // the default form is "auto"
+  assert.deepEqual(cardSubLegislationNames("نظام المرور", ["اللائحة التنفيذية لنظام المرور"], []), ["اللائحة التنفيذية"]);
+  assert.equal(shortSubLegislationName("نظام الضمان الاجتماعي", "اللائحة التنفيذية لنظام الضمان الاجتماعي"), "اللائحة التنفيذية");
+  assert.equal(shortSubLegislationName("تنظيم الدعم السكني", "اللائحة التنفيذية لتنظيم الدعم السكني"), "اللائحة التنفيذية");
+  // the law's title spelt «و المشتريات» on the card and «والمشتريات» in the regulation's name
+  assert.equal(shortSubLegislationName("نظام المنافسات و المشتريات الحكومية", "اللائحة التنفيذية لنظام المنافسات والمشتريات الحكومية"), "اللائحة التنفيذية");
+  // a card title that carries «ولائحته التنفيذية» or a year the regulation's name does not
+  assert.equal(shortSubLegislationName("نظام مراقبة شركات التمويل ولائحته التنفيذية", "اللائحة التنفيذية لنظام مراقبة شركات التمويل"), "اللائحة التنفيذية");
+  assert.equal(
+    shortSubLegislationName("نظام (قانون) التنظيم الصناعي الموحد لدول مجلس التعاون لدول الخليج العربية لعام 1447هـ", "اللائحة التنفيذية لنظام (قانون) التنظيم الصناعي الموحد لدول مجلس التعاون لدول الخليج العربية"),
+    "اللائحة التنفيذية",
+  );
+  // a year, «المعدلة» or «الصادرة …» after the repeated title is kept: it tells two regulations apart
+  assert.equal(shortSubLegislationName("نظام تصنيف المقاولين", "اللائحة التنفيذية لنظام تصنيف المقاولين لعام 1445هـ"), "اللائحة التنفيذية لعام 1445هـ");
+  assert.equal(shortSubLegislationName("نظام الاستثمار التعديني", "اللائحة التنفيذية لنظام الاستثمار التعديني المعدلة لعام 1444هـ"), "اللائحة التنفيذية المعدلة لعام 1444هـ");
+  assert.equal(
+    shortSubLegislationName("نظام وثائق السفر", "اللائحة التنفيذية لنظام وثائق السفر الصادرة بالقرار الوزاري رقم 4903 لعام 1447هـ"),
+    "اللائحة التنفيذية الصادرة بالقرار الوزاري رقم 4903 لعام 1447هـ",
+  );
+  // harakat are kept as written
+  assert.equal(
+    shortSubLegislationName("نظام التنفيذ أمام ديوان المظالم", "اللائحة التنفيذية لنظام التنفيذ أمام ديوان المظالم الصادرة بقرار رقم (2/ 1445/ عاشراً)"),
+    "اللائحة التنفيذية الصادرة بقرار رقم (2/ 1445/ عاشراً)",
+  );
+  // the real card: three regulations of نظام تصنيف المقاولين stay three distinct short names
+  assert.deepEqual(
+    cardSubLegislationNames("نظام تصنيف المقاولين", ["اللائحة التنفيذية لنظام تصنيف المقاولين"], [
+      "اللائحة التنفيذية لنظام تصنيف المقاولين لعام 1443هـ",
+      "اللائحة التنفيذية لنظام تصنيف المقاولين لعام 1445هـ",
+    ]),
+    ["اللائحة التنفيذية", "اللائحة التنفيذية لعام 1443هـ", "اللائحة التنفيذية لعام 1445هـ"],
+  );
+});
+
+test("owner Q172 (ب) (l13): the full name stays when the short one would mislead", async () => {
+  const { cardSubLegislationNames, shortSubLegislationName } = await import("./catalogueCardLabels.ts");
+  // the name does not repeat the title: nothing to shorten
+  assert.equal(shortSubLegislationName("نظام المرور", "لائحة الأحكام المنظمة لإنشاء وتشغيل مدارس لتعليم قيادة المركبات لعام 1443هـ"), null);
+  assert.equal(shortSubLegislationName("نظام الدفاع المدني", "لائحة شروط السلامة والحماية من الحريق في الصيدليات ومستودعات الأدوية"), null);
+  // the name names another law (it is shared by two laws)
+  assert.equal(shortSubLegislationName("نظام القضاء", "آلية العمل التنفيذية لنظام القضاء ونظام ديوان المظالم"), null);
+  assert.equal(shortSubLegislationName("نظام ديوان المظالم", "آلية العمل التنفيذية لنظام القضاء ونظام ديوان المظالم"), null);
+  assert.equal(shortSubLegislationName("نظام التأمينات الاجتماعية", "اللائحة المشتركة لنظام التقاعد المدني ولنظام التأمينات الاجتماعية"), null);
+  // an older, shorter title of the law: that names a different law, so the full name stays
+  assert.equal(shortSubLegislationName("نظام رسوم الأراضي البيضاء والعقارات الشاغرة", "اللائحة التنفيذية لنظام رسوم الأراضي البيضاء"), null);
+  // the title appears without «ل» (as an object of another word): never cut
+  assert.equal(shortSubLegislationName("نظام الكهرباء", "لائحة ضبط وإثبات مخالفات أحكام نظام الكهرباء والفصل فيها"), null);
+  assert.equal(shortSubLegislationName("نظام العمل", "اللائحة التنفيذية للمادة 77 من نظام العمل"), null);
+  // a longer law whose title merely begins with this one
+  assert.equal(shortSubLegislationName("نظام المرور", "اللائحة التنفيذية لنظام المرور البحري"), null);
+  // a short name ending on a word that waits for the lost title
+  assert.equal(shortSubLegislationName("نظام المرور", "قواعد التنسيق بين الجهات في لنظام المرور"), null);
+  // the bare title, blanks and non-text
+  assert.equal(shortSubLegislationName("نظام المرور", "نظام المرور"), null);
+  assert.equal(shortSubLegislationName("نظام المرور", ""), null);
+  assert.equal(shortSubLegislationName("", "اللائحة التنفيذية لنظام المرور"), null);
+  assert.equal(shortSubLegislationName("نظام المرور", 7), null);
+  // two names shortening to one text: both stay in full
+  assert.deepEqual(
+    cardSubLegislationNames("نظام الزراعة", ["اللائحة التنفيذية لنظام الزراعة لعام 1444هـ"], ["اللائحة التنفيذية لعام 1444هـ"]),
+    ["اللائحة التنفيذية لنظام الزراعة لعام 1444هـ", "اللائحة التنفيذية لعام 1444هـ"],
+  );
+  // …while the other names on the same card are still shortened
+  assert.deepEqual(
+    cardSubLegislationNames("نظام الزراعة", ["اللائحة التنفيذية لنظام الزراعة", "اللائحة التنفيذية لنظام الزراعة لعام 1444هـ"], ["اللائحة التنفيذية لعام 1444هـ"]),
+    ["اللائحة التنفيذية", "اللائحة التنفيذية لنظام الزراعة لعام 1444هـ", "اللائحة التنفيذية لعام 1444هـ"],
+  );
+  // the same regulation listed twice (spacing differs) is named once, short
+  assert.deepEqual(
+    cardSubLegislationNames("نظام المنافسات و المشتريات الحكومية", ["اللائحة التنفيذية لنظام المنافسات والمشتريات الحكومية"], ["اللائحة التنفيذية لنظام المنافسات و المشتريات الحكومية"]),
+    ["اللائحة التنفيذية"],
+  );
+  // the admin forces full: nothing shortened
+  assert.deepEqual(
+    cardSubLegislationNames("نظام المرور", ["اللائحة التنفيذية لنظام المرور"], [], "full"),
+    ["اللائحة التنفيذية لنظام المرور"],
+  );
+});
+
+test("owner Q172 (l13): the card follows the API's form, unknown → automatic", async () => {
+  const { subNameFormOf } = await import("./catalogueCardLabels.ts");
+  assert.equal(subNameFormOf("full"), "full");
+  assert.equal(subNameFormOf("short"), "short");
+  assert.equal(subNameFormOf("auto"), "auto");
+  assert.equal(subNameFormOf(undefined), "auto");
+  assert.equal(subNameFormOf("FULL"), "auto");
+  assert.match(cards, /cardSubLegislationNames\(sys\.title, mergedLabel \? sys\.mergedNames \?\? \[\] : \[\], linkedTitles, subNameFormOf\(sys\.childNameForm\)\)/);
+  assert.match(page, /useState<SubNameForm>\("auto"\)/);
 });

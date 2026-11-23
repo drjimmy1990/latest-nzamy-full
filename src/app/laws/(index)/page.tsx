@@ -18,6 +18,7 @@ import { courtBadge } from "../principleCardFields";
 import { collectionCardExcerpt } from "@/lib/library/precedentVolumes";
 import { realPrincipleNumber } from "../principleLink";
 import { highlightSearchHtml as highlightText } from "../highlightSearchHtml";
+import { subNameFormOf, type SubNameForm } from "../catalogueCardLabels";
 import {
   MagnifyingGlass, Faders, CaretDown, Check,
 } from "@phosphor-icons/react";
@@ -206,8 +207,8 @@ export default function LegalLibraryPage() {
   // library grant, or an admin. The tabs lock a card on it, so a library
   // subscriber is not shown locks by the client's tier-only gate.
   const [viewerHasFullAccess, setViewerHasFullAccess] = useState(false);
-  // File 03 L3 / library question 5 (batch l12): /api/library/init's display.childNameForm.
-  const [childNameForm, setChildNameForm] = useState<"full" | "short">("full");
+  // File 03 L3 (batch l12) / owner Q172 (ب) (batch l13): /api/library/init's display.childNameForm.
+  const [childNameForm, setChildNameForm] = useState<SubNameForm>("auto");
 
   // — Feqh filters —
   const [feqhType,    setFeqhType]    = useState<FeqhType>("all");
@@ -580,7 +581,7 @@ export default function LegalLibraryPage() {
         const lawsOwnedByFilter = lawsRequestIdRef.current !== 0;
         setOfficialMetaLocked(data?.officialMetaLocked === true);
         setViewerHasFullAccess(data?.viewer?.hasFullAccess === true);
-        setChildNameForm(data?.display?.childNameForm === "short" ? "short" : "full");
+        setChildNameForm(subNameFormOf(data?.display?.childNameForm));
         if (!lawsOwnedByFilter) {
           setDbLaws(data.laws?.data || []);
           lawsKeyRef.current = lawsFilterKey("all", "all");
@@ -970,7 +971,7 @@ export default function LegalLibraryPage() {
         // (/api/library/init; absent at 0). This mapping is a whitelist.
         subLegislationCount: typeof law.sub_legislation_count === "number" ? law.sub_legislation_count : 0,
         // File 03 L3 (batch l12): their first titles, and the name form the
-        // admin setting names (library question 5; full by default).
+        // admin setting names (owner Q172 (ب), batch l13: automatic by default).
         subLegislationTitles: Array.isArray(law.sub_legislation_titles)
           ? law.sub_legislation_titles.filter((n: unknown): n is string => typeof n === "string" && n.trim() !== "")
           : [],
