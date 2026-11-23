@@ -16,6 +16,8 @@ export const AI_TOOL_LABELS_AR: Readonly<Record<string, string>> = {
   communicate: "المتحدث الذكي",
   "najiz-optimizer": "منقح ناجز",
   "quick-answer": "سؤال قانوني سريع",
+  // Q181 (batch l13): the floating help window's free legal questions.
+  floating: "مساعد نظامي — سؤال قانوني مجاني",
   "library-assistant": "مساعد المكتبة",
   assistant: "المساعد المتقدم",
   "canvas-card": "بطاقة الكانفاس الذكية",
@@ -39,6 +41,8 @@ export const AI_TOOL_PAGES: Readonly<Record<string, string | null>> = {
   communicate: "/ai/communicate",
   "najiz-optimizer": "/ai/najiz-optimizer",
   "quick-answer": "/ai/quick-answer",
+  // A window on the site's pages, not a page of its own.
+  floating: null,
   "library-assistant": null,
   assistant: "/ai/assistant",
   "canvas-card": null,

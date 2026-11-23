@@ -15,7 +15,7 @@ import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
 import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
-import { FREE_QUESTION_COPY, freeQuestionToolFor, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
+import { FREE_QUESTION_COPY, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
@@ -49,6 +49,8 @@ import {
  * general assistant, before any points; the line «أسئلتك المجانية المتبقية»
  * shows only while the server says some are left. Everyone else pays the
  * registry price here (a lawyer's 10 are on the library assistant).
+ * Q181 (batch l13): only while the admin setting names quick-answer; by
+ * default an individual's 5 are in «مساعد نظامي», the floating window.
  *
  * The page reads tool-status first (src/hooks/useToolUsable.ts): the tool's mode is
  * "off" by default, and a run would answer 423, so no price and no form until the
@@ -97,7 +99,9 @@ function QuickAnswerTool() {
   // Register 4 / 36 (l9): an individual's free questions left on this tool, as
   // the server counts them; null (nothing shown) until it answers or when none.
   const [free, setFree] = useState<{ left: number; total: number } | null>(null);
-  const freeHere = freeQuestionToolFor(user.userType) === GENERAL_FREE_QUESTION_TOOL;
+  // Q181 (l13): the individual's tool is a setting (the floating window by
+  // default), so the server decides: it answers NONE unless this is his tool.
+  const freeHere = user.userType === "individual";
   useEffect(() => {
     if (!freeHere || asking) return;
     let live = true;

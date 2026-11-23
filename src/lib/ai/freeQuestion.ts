@@ -32,6 +32,12 @@
  * rule (runs/route.ts), and its sources stay the 100-character preview for
  * an account without the library (source-preview).
  *
+ * Q181 (ب, batch l13, 20261203_50): the owner put an individual's 5 in the
+ * site's floating help window, «مساعد نظامي» (SiteAssistantWidget): the
+ * setting gains 'floating' and it is the individual's DEFAULT. The window
+ * runs the registry tool `floating` (tools.ts: the quick-answer workflow,
+ * free questions ONLY — runCore never charges it, `freeQuestionsOnly`).
+ *
  * Pure (type-only Supabase import), so `node --test` runs it.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -39,75 +45,95 @@ import type { Retrieved } from "./retrieval.ts";
 import { LOCKED_PREVIEW_CHARS } from "./sourcePreview.ts";
 
 export const FREE_QUESTION_TOOL = "library-assistant";
-/** The individual's free-question tool (register 4 / 36): the general assistant. */
+/** The general assistant (register 4 / 36): the individual's tool until Q181, now a choice. */
 export const GENERAL_FREE_QUESTION_TOOL = "quick-answer";
 /** Q121's other choice for an individual: «المساعد المتقدم» (journal question 7, open). */
 export const ADVANCED_FREE_QUESTION_TOOL = "assistant";
+/** Q181 (ب, batch l13): «مساعد نظامي», the floating help window — the individual's default. */
+export const FLOATING_FREE_QUESTION_TOOL = "floating";
 
-export type FreeQuestionTool = typeof FREE_QUESTION_TOOL | typeof GENERAL_FREE_QUESTION_TOOL | typeof ADVANCED_FREE_QUESTION_TOOL;
-export type IndividualFreeQuestionTool = typeof GENERAL_FREE_QUESTION_TOOL | typeof ADVANCED_FREE_QUESTION_TOOL;
+export type FreeQuestionTool =
+  | typeof FREE_QUESTION_TOOL
+  | typeof GENERAL_FREE_QUESTION_TOOL
+  | typeof ADVANCED_FREE_QUESTION_TOOL
+  | typeof FLOATING_FREE_QUESTION_TOOL;
+export type IndividualFreeQuestionTool =
+  | typeof GENERAL_FREE_QUESTION_TOOL
+  | typeof ADVANCED_FREE_QUESTION_TOOL
+  | typeof FLOATING_FREE_QUESTION_TOOL;
+/** The individual's tool when the setting is missing, unreadable or malformed (Q181: the floating window). */
+export const DEFAULT_INDIVIDUAL_FREE_QUESTION_TOOL: IndividualFreeQuestionTool = FLOATING_FREE_QUESTION_TOOL;
 
 /**
  * Q121 (batch l12, 20261202_50): WHICH tool carries an individual's free
  * questions is a setting — platform_settings 'free_question_tool_by_account_type'
- * = {"individual": "quick-answer" | "assistant"}. Default: quick-answer (today's
- * tool, kept until the owner answers journal question 7). Every other type:
- * the library assistant (a lawyer's 10), not a setting.
+ * = {"individual": "floating" | "quick-answer" | "assistant"}. Default since
+ * Q181 (batch l13): "floating" («مساعد نظامي»). Every other type: the library
+ * assistant (a lawyer's 10), not a setting.
  */
 export const FREE_QUESTION_TOOL_SETTING = "free_question_tool_by_account_type";
 export const INDIVIDUAL_FREE_QUESTION_TOOLS: readonly IndividualFreeQuestionTool[] = Object.freeze([
+  FLOATING_FREE_QUESTION_TOOL,
   GENERAL_FREE_QUESTION_TOOL,
   ADVANCED_FREE_QUESTION_TOOL,
 ]);
 
-/** The stored setting → the individual's tool; anything else → quick-answer. */
+/** The stored setting → the individual's tool; anything else → the default (floating). */
 export function parseIndividualFreeQuestionTool(value: unknown): IndividualFreeQuestionTool {
   const t = value && typeof value === "object" && !Array.isArray(value) ? (value as { individual?: unknown }).individual : undefined;
-  return (INDIVIDUAL_FREE_QUESTION_TOOLS as readonly unknown[]).includes(t) ? (t as IndividualFreeQuestionTool) : GENERAL_FREE_QUESTION_TOOL;
+  return (INDIVIDUAL_FREE_QUESTION_TOOLS as readonly unknown[]).includes(t)
+    ? (t as IndividualFreeQuestionTool)
+    : DEFAULT_INDIVIDUAL_FREE_QUESTION_TOOL;
 }
 
-/** The admin settings validator: exactly {"individual": "quick-answer" | "assistant"}. */
+/** The admin settings validator: exactly {"individual": "floating" | "quick-answer" | "assistant"}. */
 export function freeQuestionToolSettingIssue(value: unknown): string | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return 'قيمة free_question_tool_by_account_type يجب أن تكون كائناً بالشكل {"individual":"quick-answer"}';
+    return 'قيمة free_question_tool_by_account_type يجب أن تكون كائناً بالشكل {"individual":"floating"}';
   }
   const keys = Object.keys(value as Record<string, unknown>);
   const t = (value as { individual?: unknown }).individual;
   if (keys.length !== 1 || keys[0] !== "individual" || !(INDIVIDUAL_FREE_QUESTION_TOOLS as readonly unknown[]).includes(t)) {
-    return 'الأداة المسموحة لأسئلة الفرد المجانية: "quick-answer" (المجيب القانوني السريع) أو "assistant" (المساعد المتقدم)';
+    return 'الأداة المسموحة لأسئلة الفرد المجانية: "floating" (مساعد نظامي العائم) أو "quick-answer" (المجيب القانوني السريع) أو "assistant" (المساعد المتقدم)';
   }
   return null;
 }
 
 /**
  * The one tool that gives this account type its free questions — the same
- * rule as public.ai_free_question_tool (20261202_50): individual → the
- * setting's tool (quick-answer by default), every other type →
+ * rule as public.ai_free_question_tool (20261203_50): individual → the
+ * setting's tool (floating by default since Q181), every other type →
  * library-assistant.
  */
 export function freeQuestionToolFor(
   userType: unknown,
-  individualTool: IndividualFreeQuestionTool = GENERAL_FREE_QUESTION_TOOL,
+  individualTool: IndividualFreeQuestionTool = DEFAULT_INDIVIDUAL_FREE_QUESTION_TOOL,
 ): FreeQuestionTool {
   return userType === "individual" ? individualTool : FREE_QUESTION_TOOL;
 }
 
 /** A ?tool= value of GET /api/v1/ai/free-question, or null. */
 export function parseFreeQuestionTool(value: unknown): FreeQuestionTool | null {
-  return value === FREE_QUESTION_TOOL || value === GENERAL_FREE_QUESTION_TOOL || value === ADVANCED_FREE_QUESTION_TOOL ? value : null;
+  return value === FREE_QUESTION_TOOL ||
+    value === GENERAL_FREE_QUESTION_TOOL ||
+    value === ADVANCED_FREE_QUESTION_TOOL ||
+    value === FLOATING_FREE_QUESTION_TOOL
+    ? value
+    : null;
 }
 
 /**
  * The individual's tool from the setting, read with the service client. Any
- * error, a missing row or a bad value → quick-answer (today's tool).
+ * error, a missing row or a bad value → the default (floating, as the SQL's
+ * ai_free_question_tool answers since 20261203_50).
  */
 export async function readIndividualFreeQuestionTool(admin: SupabaseClient): Promise<IndividualFreeQuestionTool> {
   try {
     const { data, error } = await admin.from("platform_settings").select("value").eq("key", FREE_QUESTION_TOOL_SETTING).maybeSingle();
-    if (error) return GENERAL_FREE_QUESTION_TOOL;
+    if (error) return DEFAULT_INDIVIDUAL_FREE_QUESTION_TOOL;
     return parseIndividualFreeQuestionTool((data as { value?: unknown } | null)?.value);
   } catch {
-    return GENERAL_FREE_QUESTION_TOOL;
+    return DEFAULT_INDIVIDUAL_FREE_QUESTION_TOOL;
   }
 }
 
@@ -176,6 +202,18 @@ const ar = (n: number) => String(n).replace(/[0-9]/g, (d) => AR_DIGITS[Number(d)
 export const FREE_QUESTION_COPY = {
   /** «أسئلتك المجانية المتبقية: ٣ من ١٠» — shown only when the server says some are left. */
   left: (left: number, total: number) => `أسئلتك المجانية المتبقية: ${ar(left)} من ${ar(total)} — تُستخدم قبل النقاط`,
+  /** Q181: the floating window's count, the owner's wording «بقي لك X من ٥ أسئلة مجانية». */
+  floatingLeft: (left: number, total: number) => `بقي لك ${ar(left)} من ${ar(total)} أسئلة مجانية`,
+  /** Q181: the offer under a legal question while some are left (nothing is spent before the press). */
+  floatingOffer: (left: number, total: number) =>
+    `سؤالك قانوني، ويمكنني الإجابة عنه من نصوص المكتبة القانونية ضمن أسئلتك المجانية (بقي لك ${ar(left)} من ${ar(total)}). الإجابة إرشادية وليست استشارة قانونية.`,
+  floatingAsk: "أجب عن سؤالي (سؤال مجاني)",
+  /** Q181: after the last one — honest, with the paid ways (the window adds the links). */
+  floatingUsed: (total: number) =>
+    `استخدمت أسئلتك القانونية المجانية كلها (${ar(total)} من ${ar(total)}). لأسئلتك القانونية الآن استعمل «المجيب القانوني السريع» بالنقاط، أو اطلب خدمة من محامٍ عبر المنصة.`,
+  /** The run refused as not free (none left, or the setting moved them elsewhere): never charged. */
+  floatingNone:
+    "لا تتوفر لك أسئلة مجانية في مساعد نظامي الآن. لأسئلتك القانونية استعمل «المجيب القانوني السريع» بالنقاط، أو اطلب خدمة من محامٍ عبر المنصة.",
 } as const;
 
 /**

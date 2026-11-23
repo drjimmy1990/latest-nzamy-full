@@ -3,8 +3,9 @@
  * (owner file 11 item 1, V3 phase A5). A speech engine reads «م/77» as "meem
  * slash seventy-seven" and «١٤٣٦/٠٦/٠٥هـ» as three numbers; a lawyer says
  * «المادة السابعة والسبعين» and «الخامس من جمادى الآخرة عام ...». This module
- * only rewrites the text; the listening feature itself (POST /api/ai/tts and
- * the speechSynthesis fallback) is phase C and not built yet.
+ * only rewrites the text. Owner Q182 (batch l13): «استمع للإجابة» reads it with
+ * the browser's speechSynthesis (listenVoice.ts, components/ai/ListenButton);
+ * a server voice (POST /api/ai/tts) waits for the owner's choice of voice.
  *
  * Rules (each one tested in arabicLegalTtsNormalizer.test.ts):
  *  - «م/77», «م / ٧٧», «المادة (77)», «المادة 77» → «المادة السابعة والسبعين»

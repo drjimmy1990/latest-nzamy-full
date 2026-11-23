@@ -73,7 +73,8 @@ test("٤١٢: 10 points, every registered role (٤١٧); an individual's free qu
   // no hard-coded promise: the only free wording is the server-counted line
   assert.doesNotMatch(shown, /مجاني|سؤال يومي|free daily/i);
   assert.match(shown, /fetch\(`\/api\/v1\/ai\/free-question\?tool=\$\{GENERAL_FREE_QUESTION_TOOL\}`/);
-  assert.match(shown, /freeQuestionToolFor\(user\.userType\) === GENERAL_FREE_QUESTION_TOOL/);
+  // Q181 (l13): asked for every individual; the route answers NONE unless the setting names quick-answer.
+  assert.match(shown, /const freeHere = user\.userType === "individual";/);
   assert.match(shown, /\{free && <> · <span[^>]*>\{FREE_QUESTION_COPY\.left\(free\.left, free\.total\)\}<\/span><\/>\}/);
 });
 

@@ -27,6 +27,7 @@ import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } 
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
 import { summariesReviewedOnlyIssue } from "@/lib/library/summaryReview";
 import { freeQuestionToolSettingIssue } from "@/lib/ai/freeQuestion";
+import { listenVoiceSettingIssue } from "@/lib/ai/listenVoice";
 import { libraryReaderDisplayIssue } from "@/lib/library/readerDisplaySettings";
 import { loginLockoutSettingIssue } from "@/lib/auth/loginLockout";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
@@ -121,8 +122,12 @@ const ALLOWED_SETTINGS_KEYS = [
   // summaries are shown in the library (OFF by default; src/lib/library/summaryReview.ts);
   "library_summaries_reviewed_only",
   // Q121 {"individual": "quick-answer" | "assistant"} — the tool that carries
-  // an individual's free questions (src/lib/ai/freeQuestion.ts).
+  // an individual's free questions (src/lib/ai/freeQuestion.ts); Q181 (batch
+  // l13, 20261203_50) adds "floating", «مساعد نظامي», the default.
   "free_question_tool_by_account_type",
+  // Q182 (batch l13): {"voice": "<name>"} — the voice «استمع للإجابة» reads
+  // with ("" = the browser's first ar-SA voice; src/lib/ai/listenVoice.ts).
+  "listen_voice",
   // Batch l12 lib-a (src/lib/library/readerDisplaySettings.ts):
   // {"decree_free_pages": 0..20 (Q101: 0), "child_name_form": "full"|"short"
   // (library question 5: full)} — the reader's display choices still open.
@@ -245,6 +250,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l12 rules: pure, covered by summaryReview.test.ts / freeQuestionTool.test.ts.
   library_summaries_reviewed_only: summariesReviewedOnlyIssue,
   free_question_tool_by_account_type: freeQuestionToolSettingIssue,
+  // Batch l13 assistant: pure, covered by src/lib/ai/listenVoice.test.ts.
+  listen_voice: listenVoiceSettingIssue,
   // Batch l12 lib-a: pure, covered by src/lib/library/readerDisplaySettings.test.ts.
   library_reader_display: libraryReaderDisplayIssue,
   library_draft_limits: draftLimitsIssue,

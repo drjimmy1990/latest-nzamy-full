@@ -51,12 +51,15 @@ const LAWYER_FIRM_TOOLS = [
 
 /** Owner ١٢٣ (20 Nov 2026, batch l12): the simplified contract drafter, for the individual and the business only. */
 const CLIENT_ONLY_TOOLS = ["simple-contract"];
+/** Q181 (batch l13): «مساعد نظامي»'s free legal questions — the individual's 5 only. */
+const INDIVIDUAL_ONLY_TOOLS = ["floating"];
 
 test("owner ٤١٧ (8 Nov): the role table — general guidance for every account, every other tool for lawyers and firms", () => {
   assert.deepEqual([...LAWYER_FIRM_ROLES], ["lawyer", "firm"]);
   const customer = Object.keys(AI_TOOLS).filter((id) => !NOT_CUSTOMER_TOOLS.has(id)).sort();
-  assert.deepEqual(customer, [...GENERAL_GUIDANCE_TOOLS, ...LAWYER_FIRM_TOOLS, ...CLIENT_ONLY_TOOLS].sort(), "a tool joined or left the registry: give it a row here");
+  assert.deepEqual(customer, [...GENERAL_GUIDANCE_TOOLS, ...LAWYER_FIRM_TOOLS, ...CLIENT_ONLY_TOOLS, ...INDIVIDUAL_ONLY_TOOLS].sort(), "a tool joined or left the registry: give it a row here");
   for (const id of CLIENT_ONLY_TOOLS) assert.deepEqual([...AI_TOOLS[id].roles], ["individual", "corporate"], id);
+  for (const id of INDIVIDUAL_ONLY_TOOLS) assert.deepEqual([...AI_TOOLS[id].roles], ["individual"], id);
   for (const id of GENERAL_GUIDANCE_TOOLS) assert.equal(AI_TOOLS[id].roles, REGISTERED_ROLES, id);
   for (const id of LAWYER_FIRM_TOOLS) assert.deepEqual([...AI_TOOLS[id].roles], ["lawyer", "firm"], id);
 });
@@ -196,7 +199,9 @@ test("the library gate itself is untouched: the run route still checks every lib
 
 test("each library tool's screen maps the gate's refusal to its own words", () => {
   const library = Object.values(AI_TOOLS).filter((t) => t.retrieval).map((t) => t.id).sort();
-  assert.deepEqual(library, ["assistant", "canvas-card", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
+  assert.deepEqual(library, ["assistant", "canvas-card", "floating", "legal-drafter", "legal-opinion-consult", "library-assistant", "quick-answer"]);
+  // Q181 (l13): the floating window says the gate's refusal in its own name.
+  assert.match(src("components/chatbot/SiteAssistantWidget.tsx"), /libraryToolRefusal\(code, NAME_AR, "individual"\)/);
   assert.match(src("app/ai/quick-answer/page.tsx"), /libraryToolRefusal\(run\.code, "سؤال قانوني سريع", user\.userType\)/);
   assert.match(src("app/ai/assistant/_assistant-client.ts"), /libraryToolRefusal\(code, "المساعد المتقدم", input\.userType \?\? null\)/);
   assert.match(src("app/ai/assistant/page.tsx"), /askAssistant\(\{ message: content, context, conversationId, userType, mode, caseId: context === "case" \? caseId \|\| null : null \}\)/);

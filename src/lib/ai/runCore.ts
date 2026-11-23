@@ -73,7 +73,7 @@ import {
   countSectionEdits,
   type SectionEditCounts,
 } from "./sectionEdits.ts";
-import { freeQuestionFallsBack, freeQuestionToolFor } from "./freeQuestion.ts";
+import { FREE_QUESTION_COPY, freeQuestionFallsBack, freeQuestionToolFor } from "./freeQuestion.ts";
 import { textPages } from "./textExtract.ts";
 import { readDraftPrices } from "./draftKinds.ts";
 import {
@@ -128,7 +128,7 @@ export interface RunActor {
   /**
    * Q121 (batch l12): the tool that carries this account's free questions,
    * read by the route from the setting (freeQuestion.freeQuestionToolOf).
-   * Absent → freeQuestionToolFor(userType) with the default (quick-answer
+   * Absent → freeQuestionToolFor(userType) with the default (floating since Q181,
    * for an individual, the library assistant for everyone else).
    */
   freeQuestionTool?: string;
@@ -777,10 +777,16 @@ export async function startRunWith(
   // below to the founder credit, else the price shown. Register 4 / 36 (l9):
   // only on the account's own free tool — quick-answer for an individual, the
   // library assistant for everyone else (freeQuestionToolFor, 20261129_60).
+  // Q181 (batch l13): a free-questions-only tool (`floating`, price 0) asks too.
+  const freeOnly = spec.freeQuestionsOnly === true && !!spec.freeQuestions;
   let freeQuestion =
     !!spec.freeQuestions && spec.id === (actor.freeQuestionTool ?? freeQuestionToolFor(actor.userType)) &&
-    !creditKind && !isAdmin && !sectionEdit && price > 0 &&
+    !creditKind && !isAdmin && !sectionEdit && (price > 0 || freeOnly) &&
     !!deps.freeQuestions && (await freeQuestionsLeftSafe(deps.freeQuestions, actor.userId));
+  // Q181: such a tool runs only as a free question (an admin runs it free):
+  // none applies → refused here, before anything is started or charged.
+  const freeOnlyRefusal: RouteReply = { status: 402, body: { error: FREE_QUESTION_COPY.floatingNone, code: "free_questions_none" } };
+  if (freeOnly && !isAdmin && !freeQuestion) return freeOnlyRefusal;
   // Owner ٨ / ١٥ / ١٨: a founder's library-assistant question is paid from his
   // 100 library points (20 'library_question' credits) from the first
   // question, with no opt-in; once they are gone (or before 20261124_10 runs:
@@ -829,6 +835,8 @@ export async function startRunWith(
   // written, so the same request goes the normal way: the founder's library
   // credit when he holds one, else the price the screen showed.
   if (error && freeQuestion && freeQuestionFallsBack(error)) {
+    // Q181: a free-questions-only tool never falls back to a paid start.
+    if (freeOnly) return freeOnlyRefusal;
     freeQuestion = false;
     libraryCredit =
       !creditKind && !isAdmin && spec.id === FOUNDER_LIBRARY_TOOL &&
