@@ -341,6 +341,7 @@ test("pipeline: the 3rd edit of a section and the 5th of the memo are free; the 
   assert.equal(refused.body.code, "turn_refused");
   assert.equal(refused.body.error, sectionEditLimitText(5));
   assert.equal(rpc(five.log), undefined, "nothing started, nothing charged");
+  assert.deepEqual((refused.body.details as Record<string, unknown>).sectionEdits, { total: 5, freeMemo: 5, freeBySection: { 0: 2, 1: 2, 2: 1 } }, "the screen resyncs its tally");
 
   // A failed (refunded) edit is not read back: its edit is available again.
   const c = db(memo(editRow(0, 0)));

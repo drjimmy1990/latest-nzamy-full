@@ -707,7 +707,11 @@ export async function startRunWith(
     spec.sectionEdit && checked.input.phase === spec.sectionEdit.phase ? await readSectionEditsIncluded(admin) : undefined;
   if (spec.checkTurn) {
     const refusal = spec.checkTurn(checked.input, turn, prior, sectionEditsIncluded !== undefined ? { sectionEditsIncluded } : undefined);
-    if (refusal) return { status: 409, body: { error: refusal, code: "turn_refused", ...(conversationId ? { conversationId } : {}) } };
+    if (refusal) {
+      // Owner ١٦٦ (l13): a section edit's refusal carries the memo's counts, so the screen's tally resyncs.
+      const counts = sectionEditsIncluded !== undefined ? { details: { sectionEdits: countSectionEdits(prior) } } : {};
+      return { status: 409, body: { error: refusal, code: "turn_refused", ...(conversationId ? { conversationId } : {}), ...counts } };
+    }
   }
   // What the stored runs already hold is taken from them, never from the
   // browser (owner ٤١٠: the section's text and whether it cited).
@@ -916,7 +920,10 @@ export async function startRunWith(
         return { status: 409, body: { error: SECTION_EDIT_COPY.priceChanged, code: "price_changed", ...again } };
       }
       if (error.message === "section_edit_limit") {
-        return { status: 409, body: { error: sectionEditLimitText(sectionEditsIncluded), code: "turn_refused", ...again } };
+        return {
+          status: 409,
+          body: { error: sectionEditLimitText(sectionEditsIncluded), code: "turn_refused", ...again, ...(priorSectionEdits ? { details: { sectionEdits: priorSectionEdits } } : {}) },
+        };
       }
       if (error.message === "section_no_draft") {
         return { status: 409, body: { error: SECTION_EDIT_COPY.waitDraft, code: "turn_refused", ...again } };
