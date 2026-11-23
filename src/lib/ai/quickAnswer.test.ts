@@ -208,9 +208,9 @@ test("٤١٣: a cited answer carries no ungrounded flag", async () => {
   assert.equal((r.body.output as Record<string, unknown>).ungrounded, undefined);
 });
 
-test("٤١٣: only quick-answer opts out of the refund; every other library tool keeps it", () => {
+test("٤١٣: only quick-answer (and the floating window that runs its workflow, Q181) opts out of the refund; every other library tool keeps it", () => {
   const loose = Object.values(AI_TOOLS).filter((t) => t.retrieval?.allowUngrounded).map((t) => t.id);
-  assert.deepEqual(loose, ["quick-answer"]);
+  assert.deepEqual(loose, ["quick-answer", "floating"]);
 });
 
 test("the answer's wait is what the searches left of the fast budget, never under 15 s", async () => {

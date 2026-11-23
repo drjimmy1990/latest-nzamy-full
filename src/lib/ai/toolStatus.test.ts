@@ -51,7 +51,8 @@ test("usable or not, for each kind of caller", async () => {
   assert.deepEqual((await ask(OPEN, { userType: "lawyer", mode: "staff" })).answer, { usable: false });
   assert.deepEqual((await ask(OPEN, { userType: "lawyer", mode: "off" })).answer, { usable: false });
   assert.deepEqual((await ask(OPEN, { userType: "admin", mode: "staff" })).answer, { usable: true });
-  assert.deepEqual((await ask(OPEN, { userType: "admin", mode: "off" })).answer, { usable: false });
+  // Owner ١٥٦ (أ): the admin runs a switched-off tool too (exempt, logged).
+  assert.deepEqual((await ask(OPEN, { userType: "admin", mode: "off" })).answer, { usable: true });
   assert.deepEqual((await ask(BLOCKED, { userType: "lawyer", practiceKind: "consultant", mode: "live" })).answer, { usable: false });
   assert.deepEqual((await ask(BLOCKED, { userType: "lawyer", practiceKind: "advocate", mode: "live" })).answer, { usable: true });
 });

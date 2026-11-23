@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   DECREE_FREE_PAGES_MAX,
   LIBRARY_READER_DISPLAY_KEY,
+  childNamesValue,
   parseLibraryReaderDisplay,
   type LibraryReaderDisplay,
 } from "@/lib/library/readerDisplaySettings";
@@ -14,8 +15,9 @@ import {
  * (library_reader_display), saved through PATCH /api/v1/admin/settings
  * (validated and audited there):
  *   - decree_free_pages: pages of a decree a non-subscriber reads (Q101; 0);
- *   - child_name_form: a sub-legislation's name under a /laws card, full or
- *     short (library question 5; full).
+ *   - child_names: a sub-legislation's name under a /laws card — automatic
+ *     (owner Q172 (ب), the default: short when it only repeats the law's
+ *     title, full when ambiguous), or forced full / short by the admin.
  */
 export function LibraryReaderDisplaySettings({ isDark }: { isDark: boolean }) {
   const [value, setValue] = useState<LibraryReaderDisplay>(parseLibraryReaderDisplay(null));
@@ -69,7 +71,7 @@ export function LibraryReaderDisplaySettings({ isDark }: { isDark: boolean }) {
     <div dir="rtl">
       <h3 className={`text-sm font-bold mb-1 ${isDark ? "text-zinc-200" : "text-slate-700"}`}>عرض المكتبة</h3>
       <p className={`text-xs mb-4 ${muted}`}>
-        خيارات عرض لم يُحسم أمرها بعد: صفحات المراسيم المتاحة لغير المشترك، وصيغة اسم التشريع الفرعي تحت بطاقة النظام في صفحة المكتبة.
+        صفحات المراسيم المتاحة لغير المشترك، وصيغة اسم التشريع الفرعي تحت بطاقة النظام في صفحة المكتبة.
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block">
@@ -86,12 +88,13 @@ export function LibraryReaderDisplaySettings({ isDark }: { isDark: boolean }) {
         <label className="block">
           <span className={label}>اسم التشريع الفرعي تحت بطاقة النظام</span>
           <select
-            value={value.child_name_form}
-            onChange={(e) => setValue({ ...value, child_name_form: e.target.value === "short" ? "short" : "full" })}
+            value={value.child_names}
+            onChange={(e) => setValue({ ...value, child_names: childNamesValue(e.target.value) ?? "auto" })}
             className={input}
           >
-            <option value="full">كاملاً: «اللائحة التنفيذية لنظام المرور»</option>
-            <option value="short">مختصراً: «اللائحة التنفيذية»</option>
+            <option value="auto">تلقائياً (المعتمد): مختصراً إن كرّر اسم النظام، وكاملاً عند الالتباس</option>
+            <option value="full">كاملاً دائماً: «اللائحة التنفيذية لنظام المرور»</option>
+            <option value="short">مختصراً دائماً: «اللائحة التنفيذية»</option>
           </select>
         </label>
       </div>

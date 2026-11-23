@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Robot, ArrowClockwise, CheckCircle, XCircle, Play, Graph, Lightning } from "@phosphor-icons/react";
 import { useAiRun } from "@/hooks/useAiRun";
 import type { AdminGraphRagStatusPayload } from "@/lib/ai/adminGraphRagCore";
+import { sarText, type CostWindow } from "@/lib/ai/aiCost";
 
 /**
  * /dashboard/admin/ai-usage — «تشغيلات الذكاء الاصطناعي» (AI wave 0, plan §5).
@@ -73,15 +74,27 @@ export default function AdminAIUsagePage() {
   const [graphStatus, setGraphStatus] = useState<AdminGraphRagStatusPayload | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string>("gemini-embedding-2-768");
   const [graphBusy, setGraphBusy] = useState(false);
+  // Owner ١٥٦ (batch l13): the real cost per tool, 7 / 30 days (GET /api/v1/admin/ai-cost).
+  const [cost, setCost] = useState<{ windows: CostWindow[]; truncated: boolean } | null>(null);
+  const [costError, setCostError] = useState(false);
+  const [costDays, setCostDays] = useState<7 | 30>(7);
   const run = useAiRun();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [res, graphRes] = await Promise.all([
+      const [res, graphRes, costRes] = await Promise.all([
         fetch("/api/v1/admin/ai-runs", { cache: "no-store" }),
         fetch("/api/v1/admin/graph-rag", { cache: "no-store" }).catch(() => null),
+        fetch("/api/v1/admin/ai-cost", { cache: "no-store" }).catch(() => null),
       ]);
+      if (costRes && costRes.ok) {
+        const c = await costRes.json().catch(() => null);
+        setCost(c && Array.isArray(c.windows) ? { windows: c.windows, truncated: c.truncated === true } : null);
+        setCostError(!c || !Array.isArray(c.windows));
+      } else {
+        setCostError(true);
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "تعذّر تحميل التشغيلات");
       setTools(json.tools ?? []);
@@ -193,7 +206,11 @@ export default function AdminAIUsagePage() {
       )}
 
       <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
-        <h2 className="mb-3 text-[14px] font-black text-white">الأدوات</h2>
+        <h2 className="mb-1 text-[14px] font-black text-white">الأدوات</h2>
+        {/* Owner ١٥٦ (أ), batch l13: the switch decides for users only. */}
+        <p className="mb-3 text-[12px] text-zinc-500">
+          الحالة تحدد من يشغّل الأداة من المستخدمين. حساب الإدارة يشغّل كل الأدوات في كل الحالات، حتى «متوقفة»، دون خصم نقاط منه، ويظهر كل تشغيل له مع تكلفته أدناه.
+        </p>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
             <thead className="text-zinc-500">
@@ -239,6 +256,8 @@ export default function AdminAIUsagePage() {
           {saving ? "جارٍ الحفظ…" : "حفظ"}
         </button>
       </section>
+
+      <AiCostSection cost={cost} error={costError} loading={loading} days={costDays} setDays={setCostDays} />
 
       {graphStatus && (
         <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
@@ -465,9 +484,10 @@ export default function AdminAIUsagePage() {
                       {r.charged ? `${r.charged_points}${r.refunded_at ? " (أُعيدت)" : ""}` : `— (${r.price_points})`}
                     </td>
                     <td className="font-mono text-red-300">{r.error_code ?? ""}</td>
-                    {/* n8n's AI Agent node does not report Gemini's token counts, so the
-                        workflows send 0 / 0: show that as unknown, not as a free run. */}
-                    <td title={r.usage && !r.usage.input_tokens && !r.usage.output_tokens ? "المزوّد لا يُرجع عدد الرموز عبر n8n" : undefined}>
+                    {/* Before batch l13 the workflows sent 0 / 0 (n8n's AI Agent node does not
+                        report Gemini's token counts): show that as unknown, not as a free run.
+                        The l13 workflows report Gemini's usageMetadata. */}
+                    <td title={r.usage && !r.usage.input_tokens && !r.usage.output_tokens ? "لم يُرسل مسار هذه الأداة عدد الرموز" : undefined}>
                       {!r.usage ? "" : !r.usage.input_tokens && !r.usage.output_tokens ? "غير متاح" : `${r.usage.input_tokens ?? 0} / ${r.usage.output_tokens ?? 0}`}
                     </td>
                     <td>{r.duration_ms !== null ? `${(r.duration_ms / 1000).toFixed(1)} ث` : ""}</td>
@@ -478,6 +498,106 @@ export default function AdminAIUsagePage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Owner ١٥٦ (batch l13): «التكلفة الحقيقية لكل أداة». Tokens × the one price
+ * table (src/lib/ai/modelPrices.ts); a run with no token count or no model
+ * price is counted apart, never as free.
+ */
+function AiCostSection({
+  cost,
+  error,
+  loading,
+  days,
+  setDays,
+}: {
+  cost: { windows: CostWindow[]; truncated: boolean } | null;
+  error: boolean;
+  loading: boolean;
+  days: 7 | 30;
+  setDays: (d: 7 | 30) => void;
+}) {
+  const w = cost?.windows.find((x) => x.days === days) ?? null;
+  const n = (x: number) => x.toLocaleString("ar-SA");
+  return (
+    <section className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-950/60 p-4">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-[14px] font-black text-white">التكلفة الحقيقية لكل أداة</h2>
+        <div className="flex gap-1">
+          {([7, 30] as const).map((d) => (
+            <button key={d} onClick={() => setDays(d)}
+              className={`rounded-lg border px-3 py-1 text-[12px] font-bold ${d === days ? "border-[#C8A762] text-[#C8A762]" : "border-zinc-700 text-zinc-400"}`}>
+              آخر {n(d)} {d === 7 ? "أيام" : "يوماً"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="mb-3 text-[12px] text-zinc-500">
+        ما دفعته المنصة لمزوّد الذكاء: عدد الرموز المُرسلة والمُستلمة في كل تشغيل مضروباً في سعر النموذج، بالريال. تُحسب التشغيلات الفاشلة أيضاً لأن المزوّد يحتسبها. والتشغيل الذي لم يُرسل عدد رموزه لا يُحسب مجانياً، بل يظهر في عمود «بلا عدد رموز».
+      </p>
+      {loading && !cost ? (
+        <p className="text-[12px] text-zinc-500">جارٍ التحميل…</p>
+      ) : error || !w ? (
+        <p className="text-[12px] text-red-300">تعذّر تحميل التكلفة.</p>
+      ) : w.tools.length === 0 ? (
+        <p className="text-[12px] text-zinc-500">لا توجد تشغيلات في هذه المدة.</p>
+      ) : (
+        <>
+          {cost?.truncated && (
+            <p className="mb-2 text-[12px] text-amber-300">التشغيلات أكثر من حد القراءة، فالمجاميع جزئية.</p>
+          )}
+          <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <CostTile label="التكلفة المعروفة" value={sarText(w.total.costSar)} />
+            <CostTile label="منها تشغيلات الإدارة" value={sarText(w.total.adminCostSar)} />
+            <CostTile label="التشغيلات" value={n(w.total.runs)} />
+            <CostTile label="بلا عدد رموز (تكلفة غير معروفة)" value={n(w.total.noUsageRuns + w.total.unpricedRuns)} />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead className="text-zinc-500">
+                <tr className="text-right">
+                  <th className="py-2">الأداة</th>
+                  <th>التشغيلات</th>
+                  <th>الإدارة / المستخدمون</th>
+                  <th>الرموز (مُرسلة / مُستلمة)</th>
+                  <th>التكلفة</th>
+                  <th>تكلفة الإدارة</th>
+                  <th>بلا عدد رموز</th>
+                  <th>بلا سعر نموذج</th>
+                </tr>
+              </thead>
+              <tbody className="text-zinc-200">
+                {w.tools.map((t) => (
+                  <tr key={t.tool} className="border-t border-zinc-800/70">
+                    <td className="py-2 font-mono">{t.tool}</td>
+                    <td>{n(t.runs)}{t.failedRuns > 0 ? ` (فشل ${n(t.failedRuns)})` : ""}</td>
+                    <td>{n(t.adminRuns)} / {n(t.userRuns)}</td>
+                    <td>{t.pricedRuns + t.unpricedRuns > 0 ? `${n(t.inputTokens)} / ${n(t.outputTokens)}` : "غير متاح"}</td>
+                    <td>{t.pricedRuns > 0 ? sarText(t.costSar) : "غير معروفة"}</td>
+                    <td>{t.adminRuns > 0 && t.pricedRuns > 0 ? sarText(t.adminCostSar) : "—"}</td>
+                    <td className={t.noUsageRuns > 0 ? "text-amber-300" : ""}>{n(t.noUsageRuns)}</td>
+                    <td className={t.unpricedRuns > 0 ? "text-amber-300" : ""} title={t.unpricedRuns > 0 ? `النموذج: ${t.models.join("، ")} — أضف سعره في جدول الأسعار` : undefined}>
+                      {t.unpricedRuns > 0 ? `${n(t.unpricedRuns)} — سعر النموذج غير مضبوط` : "٠"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function CostTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-800/80 bg-black/30 p-3">
+      <div className="text-[11px] text-zinc-500">{label}</div>
+      <div className="mt-1 text-base font-black text-white">{value}</div>
     </div>
   );
 }

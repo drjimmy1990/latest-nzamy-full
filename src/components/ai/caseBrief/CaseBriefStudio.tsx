@@ -24,6 +24,7 @@ import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { RUN_STILL_RUNNING_CODE } from "@/lib/ai/aiRunClient";
 import { uploadDocumentFile } from "@/lib/services/documentService";
 import { CASE_BRIEF_FILES, CASE_BRIEF_PRICES, CASE_BRIEF_SMALL_PAGES } from "@/lib/ai/tools";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,8 @@ interface BriefResult {
   };
   story: string;
   highlights: Array<{ kind: "error" | "warning" | "info"; text: string }>;
-  assessment: "strong" | "medium" | "weak";
+  /** null: the brief gave no assessment (owner ١٧٤ — never a made-up «متوسط»). */
+  assessment: "strong" | "medium" | "weak" | null;
   assessmentReason: string;
   // No link comes from the model: the server's shape has none (tools.ts caseBriefOutput).
   options: Array<{ label: string; requires: string }>;
@@ -101,6 +103,7 @@ const ASSESS_CFG = {
   medium: { label: "متوسط", color: "text-amber-500", bg: "bg-amber-500/10", border: "border-amber-500/20" },
   weak:   { label: "ضعيف", color: "text-red-500",  bg: "bg-red-500/10",  border: "border-red-500/20"  },
 };
+const UNRATED_ASSESS = { label: "لم يُحدَّد في التحليل", color: "text-zinc-500", bg: "bg-zinc-500/10", border: "border-zinc-500/20" };
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -190,7 +193,7 @@ function CaseBriefTool() {
     });
   }
 
-  const assess = result ? ASSESS_CFG[result.assessment] : null;
+  const assess = result ? (result.assessment && ASSESS_CFG[result.assessment]) || UNRATED_ASSESS : null;
 
   return (
     <div className={`max-w-4xl mx-auto p-5 md:p-8 space-y-6 ${isDark ? "text-zinc-100" : "text-zinc-900"}`} dir="rtl">
@@ -327,7 +330,7 @@ function CaseBriefTool() {
               ابدأ الإحاطة
             </motion.button>
             <p className={`text-[11px] leading-relaxed text-center ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              {CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_SMALL_PAGES.toLocaleString("ar-SA")} صفحات، و{CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_FILES.maxPages.toLocaleString("ar-SA")} صفحة · تُحفظ الملفات في مستنداتك، وتُرسل نسخة منها إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
+              {CASE_BRIEF_PRICES.small.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_SMALL_PAGES.toLocaleString("ar-SA")} صفحات، و{CASE_BRIEF_PRICES.large.toLocaleString("ar-SA")} نقطة حتى {CASE_BRIEF_FILES.maxPages.toLocaleString("ar-SA")} صفحة<ToolPointsAvailable tool="case-brief" price={CASE_BRIEF_PRICES.small} leading=" · " /> · تُحفظ الملفات في مستنداتك، وتُرسل نسخة منها إلى مزوّد ذكاء اصطناعي خارج المملكة لقراءتها.
             </p>
             </>)}
           </motion.div>

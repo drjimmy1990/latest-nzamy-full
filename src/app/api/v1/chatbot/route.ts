@@ -18,7 +18,11 @@ import { loadAssistantFeed, type FeedViewer } from "@/lib/siteAssistant/feedServ
  *        viewer's open offers, the founder campaign, the payment switch and
  *        the library's account-type switch (who may subscribe). No
  *        outside model, no legal advice, no library text. Nothing is stored:
- *        the message is answered and forgotten.
+ *        the message is answered and forgotten. `reply.intent` tells the
+ *        window what was recognised: Q181 (batch l13) — for a legal question
+ *        («legal_advice») the window offers a signed-in individual one of his
+ *        free questions, which it asks through the AI run route (tool
+ *        `floating`), never through this route.
  *
  * Abuse friction: per address, 12 messages a minute and 120 an hour (the
  * process-local limiter, src/lib/rateLimit.ts), on top of the proxy's general
@@ -85,7 +89,7 @@ export async function POST(request: NextRequest) {
     const feed = await loadAssistantFeed(viewer, needs);
     const reply = answerMessage(message, feed);
     return NextResponse.json(
-      { reply: { text: reply.text, links: reply.links, suggestions: reply.suggestions } },
+      { reply: { text: reply.text, links: reply.links, suggestions: reply.suggestions, intent: reply.intent } },
       { headers: NO_STORE },
     );
   } catch (err) {

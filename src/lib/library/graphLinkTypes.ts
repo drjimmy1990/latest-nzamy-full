@@ -29,7 +29,7 @@
  *     PENALIZES           عقوبة المخالفة                  → legislation
  *   READER, OWN SECTION (batch l12, owner Q133 / register 14 item 17):
  *     SIMILAR_TO — computed from vectors, not a legal link. The reader sees it
- *     only under its own heading «مواد متقاربة في المعنى (ربط آلي)», never
+ *     only under its own heading «مواد متقاربة في المعنى», never
  *     among the legal relations, and only while the admin switch
  *     `library_similar_links` is on (featureFlags.ts; the routes filter it).
  *   OUTLINE / MEANING (explorer only): an article inside its chapter (PART_OF),
@@ -39,7 +39,8 @@
  *
  * Sections of the reader's box (owner item 6): التشريعات (green), المبادئ
  * والأحكام القضائية (blue), الآراء الفقهية (amber), and since l12 the
- * automatic «مواد متقاربة في المعنى (ربط آلي)» (violet, Q133). No type is fiqh
+ * computed «مواد متقاربة في المعنى» (violet, Q133; owner Q171, batch l13: no
+ * «(ربط آلي)» label in the heading). No type is fiqh
  * today, so that section stays empty — and an empty section is hidden.
  *
  * Pure (no imports): the reader route, the explorer route, the explorer's
@@ -165,8 +166,8 @@ export const SHOWN_LINK_LABELS: Readonly<Record<ShownLinkType, { out: string; in
   EXEMPTS_FROM: { out: "تستثني منها هذه المادة", in: "استثناء من هذه المادة" },
   SUBJECT_TO: { out: "تُطبَّق هذه المادة مع مراعاتها", in: "تُطبَّق مع مراعاة هذه المادة" },
   PENALIZES: { out: "تعاقب هذه المادة على مخالفتها", in: "عقوبة مخالفة هذه المادة" },
-  // A computed link has no direction worth naming: both read the same, and say it is automatic.
-  SIMILAR_TO: { out: "متقاربة في المعنى (ربط آلي)", in: "متقاربة في المعنى (ربط آلي)" },
+  // A computed link has no direction worth naming: both read the same (owner Q171: no «(ربط آلي)» label).
+  SIMILAR_TO: { out: "متقاربة في المعنى", in: "متقاربة في المعنى" },
 };
 
 export function linkLabel(t: unknown, direction: "out" | "in"): string {
@@ -193,12 +194,13 @@ export const READER_QUERY_GROUPS: ReadonlyArray<{ section: LinkSection; types: r
 ];
 
 /**
- * «رابط آلي» (batch l12, owner library-Q4 / N12, RAW[56]): a «إحالة» the
- * system extracted from the text and nobody reviewed — origin auto_watchdog,
- * not read from the owner's own files (metadata.source owner_links) and not
- * one of his curated links (owner_curated). His links and the 308 carry no
- * tag (F01#132). The route shows the tag only while the admin switch
- * `library_auto_link_tag` is on.
+ * An unreviewed automatic link (batch l12, owner library-Q4 / N12, RAW[56]):
+ * a «إحالة» the system extracted from the text and nobody reviewed — origin
+ * auto_watchdog, not read from the owner's own files (metadata.source
+ * owner_links) and not one of his curated links (owner_curated). Owner Q171
+ * (22 Nov, batch l13): the reader shows NO label for it — the citations route
+ * always clears the flag; the library team's «الإحالة» sample still counts
+ * these links (ihalaSample.ts).
  */
 export const AUTO_TAGGED_LINK_TYPES: readonly ShownLinkType[] = ["CITES_ARTICLE"];
 export function isUnreviewedAutoLink(edgeType: unknown, origin: unknown, metadataSource: unknown): boolean {

@@ -10,7 +10,8 @@ export type SimSource = "opponent" | "court" | "critique" | "plea";
 
 export interface SimResultPoint {
   source: SimSource;
-  severity: "high" | "medium" | "low";
+  /** null: the simulation gave no severity (owner ١٧٤ — never a made-up «خطر متوسط»). */
+  severity: "high" | "medium" | "low" | null;
   title: string;
   detail: string;
   counter: string;
@@ -30,6 +31,9 @@ export const SOURCE_LABEL: Record<SimSource, string> = {
   plea: "تدريب المرافعة",
 };
 export const SEVERITY_LABEL = { high: "خطر عالٍ", medium: "خطر متوسط", low: "تحسين" } as const;
+/** Owner ١٧٤: the words for a point the simulation did not rate. */
+export const UNRATED_SEVERITY_LABEL = "بلا تصنيف";
+export const severityLabel = (s: SimResultPoint["severity"]): string => (s ? SEVERITY_LABEL[s] : UNRATED_SEVERITY_LABEL);
 const ORDER: SimSource[] = ["opponent", "court", "critique", "plea"];
 const RANK = { high: 0, medium: 1, low: 2 } as const;
 
@@ -47,7 +51,7 @@ export function asSimResult(output: Record<string, unknown> | null): SimResult |
 export function groupPoints(points: readonly SimResultPoint[]): { source: SimSource; points: SimResultPoint[] }[] {
   return ORDER.map((source) => ({
     source,
-    points: points.filter((p) => p.source === source).sort((a, b) => (RANK[a.severity] ?? 1) - (RANK[b.severity] ?? 1)),
+    points: points.filter((p) => p.source === source).sort((a, b) => (a.severity ? RANK[a.severity] : 3) - (b.severity ? RANK[b.severity] : 3)),
   })).filter((g) => g.points.length > 0);
 }
 
@@ -57,7 +61,7 @@ export function simResultText(r: SimResult): string {
     "",
     ...groupPoints(r.points).flatMap((g) => [
       `${SOURCE_LABEL[g.source]}:`,
-      ...g.points.map((p) => `• [${SEVERITY_LABEL[p.severity] ?? "خطر متوسط"}] ${p.title} — ${p.detail}${p.counter ? `\n  ما تفعله: ${p.counter}` : ""}`),
+      ...g.points.map((p) => `• [${severityLabel(p.severity)}] ${p.title} — ${p.detail}${p.counter ? `\n  ما تفعله: ${p.counter}` : ""}`),
       "",
     ]),
     ...(r.plea_script ? ["سكريبت المرافعة:", r.plea_script] : []),

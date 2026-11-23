@@ -13,6 +13,12 @@
  *     at someone else's file must stop here.
  * Each of those is the same 404, and only then is the service client used.
  *
+ * A PDF or image link is handed out only after the stored object itself says
+ * so (inlineSafety.ts, batch l13 vault): the row's mime_type and the type the
+ * uploader's browser declared are both the client's word, and the modal opens
+ * the link inside an <iframe>. An object served as anything else gets no
+ * preview ("none") — it is still downloadable from the document list.
+ *
  * Nothing is stored. Logs carry an error code at most, never a name or text.
  *
  * Pure: relative imports only (type-only for Supabase), so `node --test` runs it.
@@ -21,6 +27,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractText, textKindOf, TEXT_SOURCE_MAX_BYTES } from "../ai/textExtract.ts";
 import { fileFolderOwner, isPathInOwnerFolder } from "../storagePathOwnership.ts";
 import { READ_LINK_SECONDS, readCapped } from "./cappedRead.ts";
+import { inlineKindOf, probeObjectHead } from "./inlineSafety.ts";
 import { previewKindOf } from "./previewKind.ts";
 
 export const PREVIEW_TEXT_MAX_CHARS = 20_000;
@@ -78,6 +85,11 @@ export async function previewAttachment(clients: PreviewClients, id: string): Pr
   if (kind === "pdf" || kind === "image") {
     const signed = await clients.admin.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
     if (signed.error || !signed.data?.signedUrl) return { status: 503 };
+    // What the Storage server will actually send for this link, read before
+    // anyone may open it inline.
+    const probe = await probeObjectHead(signed.data.signedUrl, clients.fetch);
+    if (!probe.ok) return { status: 503 };
+    if (inlineKindOf(probe.contentType, probe.head) !== kind) return { status: 200, body: { kind: "none", name } };
     return { status: 200, body: { kind, name, url: signed.data.signedUrl } };
   }
 

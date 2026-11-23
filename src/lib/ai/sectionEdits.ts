@@ -1,43 +1,43 @@
 /**
- * sectionEdits.ts — owner ٤١٠ «عدّل هذا القسم» in «الصائغ القانوني» (legal-drafter).
+ * sectionEdits.ts — «عدّل هذا القسم» (the revisions, «التنقيح») in «الصائغ القانوني» (legal-drafter).
  *
- * Owner: «يُمنح المستخدم ٥ تعديلات مجانية على المذكرة ككل، بسقف تعديلين كحد أقصى
- * للقسم الواحد، وما زاد يكون بـ 10 نقاط لكل تعديل قسم إضافي (توليد جزئي للقسم
- * المستهدف فقط).»
+ * Owner ١٦٦ (22 Nov 2026, batch l13): «التنقيح مشمول في سعر المذكرة، حتى ٥
+ * تعديلات». A memo (one drafter conversation) takes up to N section edits, all
+ * included in the price already paid for the memo (price 0); edit N+1 is
+ * refused with a clear message (start a new memo). N is the admin setting
+ * `drafter_revisions_per_memo` = {"included": N}, 5 until saved.
  *
- * Controller ruling (batch 2026-11-08, B3): an edit is FREE while the memo (one
- * drafter conversation) has used fewer than 5 free edits AND that section has
- * used fewer than 2 free edits. Every other edit costs 10 points, debited at
- * start and refunded only on a technical failure, like any other run. There is
- * no hard stop per section (asked of the owner); a memo takes at most 30 section
- * edits in all (a technical ceiling).
+ * This replaces owner ٤١٠ (batch 2026-11-08 B3: 5 free per memo, at most 2
+ * free per section, then 10 points per edit): there is no paid edit and no
+ * per-section cap any more.
  *
  * The counts come from the conversation's own runs, read on the server
  * (runCore), never from the browser: a run that failed (and was refunded) is not
- * read, so it does not use a free edit. A run is a free edit when it was priced
- * 0 (ai_runs.price_points, recorded whether or not points are enforced). The
- * same rule is applied again under the start lock in SQL
- * (public.ai_start_section_edit, 20261108_40), so two edits at once cannot both
- * take the last free one.
+ * read, so it does not use an edit. The same ceiling is applied again under the
+ * start lock in SQL (public.ai_start_section_edit, 20261108_40, called with
+ * free-per-memo = free-per-section = max-per-memo = N and a paid price of 0), so
+ * two edits at once cannot both take the last one.
  *
  * Pure: `node --test` runs it, and the draft screen reads the same quote.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const SECTION_EDIT_PHASE = "section";
-export const SECTION_EDIT_FREE_PER_MEMO = 5;
-export const SECTION_EDIT_FREE_PER_SECTION = 2;
-export const SECTION_EDIT_PRICE = 10;
-/** Technical ceiling (not the owner's): section edits per memo, free and paid together. */
+/** Technical ceiling (not the owner's): the setting's highest value, and the conversation window (tools.ts). */
 export const SECTION_EDIT_MAX_PER_MEMO = 30;
+/** Owner ١٦٦: revisions included in the memo price, until the admin saves another number. */
+export const SECTION_EDITS_INCLUDED_DEFAULT = 5;
+/** The admin setting that holds N. */
+export const SECTION_EDITS_SETTING_KEY = "drafter_revisions_per_memo";
 /** The edit instruction the lawyer types. */
 export const SECTION_INSTRUCTION_MAX = 1000;
 
 export interface SectionEditCounts {
   /** Section edits of the memo that did not fail (running or succeeded). */
   total: number;
-  /** Of those, the free ones. */
+  /** Of those, the ones priced 0 (kept for the server's 409 details; owner ٤١٠ history). */
   freeMemo: number;
-  /** Free edits per section index. */
+  /** Price-0 edits per section index (same). */
   freeBySection: Record<number, number>;
 }
 
@@ -45,6 +45,42 @@ export const NO_SECTION_EDITS: SectionEditCounts = Object.freeze({ total: 0, fre
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
+
+// ── the admin setting ───────────────────────────────────────────────────────
+
+/** {"included": N} → N (0..30); anything else → the default 5. */
+export function sectionEditsIncludedFrom(value: unknown): number {
+  if (!isPlainObject(value)) return SECTION_EDITS_INCLUDED_DEFAULT;
+  const n = value.included;
+  return Number.isInteger(n) && (n as number) >= 0 && (n as number) <= SECTION_EDIT_MAX_PER_MEMO ? (n as number) : SECTION_EDITS_INCLUDED_DEFAULT;
+}
+
+/** The admin settings validator: an error string, or null. */
+export function sectionEditsIncludedIssue(value: unknown): string | null {
+  const ok =
+    isPlainObject(value) &&
+    Object.keys(value).length === 1 &&
+    Number.isInteger(value.included) &&
+    (value.included as number) >= 0 &&
+    (value.included as number) <= SECTION_EDIT_MAX_PER_MEMO;
+  return ok ? null : `قيمة ${SECTION_EDITS_SETTING_KEY} يجب أن تكون بالشكل {"included": عدد صحيح من 0 إلى ${SECTION_EDIT_MAX_PER_MEMO}}`;
+}
+
+/** N from platform_settings; a failed read gives the default (every edit is free either way). */
+export async function readSectionEditsIncluded(admin: SupabaseClient): Promise<number> {
+  try {
+    const { data, error } = await admin.from("platform_settings").select("value").eq("key", SECTION_EDITS_SETTING_KEY).maybeSingle();
+    if (error) return SECTION_EDITS_INCLUDED_DEFAULT;
+    return sectionEditsIncludedFrom((data as { value?: unknown } | null)?.value);
+  } catch {
+    return SECTION_EDITS_INCLUDED_DEFAULT;
+  }
+}
+
+const included = (n: unknown) =>
+  Number.isInteger(n) && (n as number) >= 0 && (n as number) <= SECTION_EDIT_MAX_PER_MEMO ? (n as number) : SECTION_EDITS_INCLUDED_DEFAULT;
+
+// ── the counts and the quote ────────────────────────────────────────────────
 
 /** A section index as stored in a run's input, or null. */
 export function sectionIndexOf(input: unknown): number | null {
@@ -55,9 +91,9 @@ export function sectionIndexOf(input: unknown): number | null {
 
 /**
  * The memo's section edits so far, from its runs as runCore reads them (only
- * running / review / succeeded rows; a failed run is never passed in). A row
- * whose price is unknown counts as free: the count can then only make the next
- * edit dearer, never give one away.
+ * running / review / succeeded rows; a failed run is never passed in). Every
+ * such edit counts toward the memo's included revisions, paid ones from before
+ * owner ١٦٦ included.
  */
 export function countSectionEdits(
   prior: ReadonlyArray<{ input: unknown; status: string; price_points?: unknown; output?: unknown }>,
@@ -78,38 +114,39 @@ export function countSectionEdits(
   return { total, freeMemo, freeBySection };
 }
 
+/** Has this memo used all its included revisions? Unknown counts → yes (never an edit by mistake). */
+export function sectionEditsExhausted(counts: SectionEditCounts | null | undefined, includedPerMemo: number = SECTION_EDITS_INCLUDED_DEFAULT): boolean {
+  return !counts || counts.total >= included(includedPerMemo);
+}
+
 export interface SectionEditQuote {
+  /** Always true when allowed: the edit is included in the memo price. */
   free: boolean;
+  /** Always 0: an edit is never charged (owner ١٦٦). */
   price: number;
-  /** Free edits left on the memo, 0..5. */
-  memoFreeLeft: number;
-  /** Free edits left on this section, 0..2 (never more than the memo's). */
-  sectionFreeLeft: number;
-  /** The technical ceiling is reached: no edit at any price. */
+  /** Included revisions left on the memo. */
+  left: number;
+  /** The memo's included revisions (the admin setting). */
+  included: number;
+  /** All of them are used: the edit is refused. */
   limitReached: boolean;
 }
 
-/** What editing section `index` costs now. Unknown counts → paid (never a free edit by mistake). */
-export function sectionEditQuote(counts: SectionEditCounts | null | undefined, index: number): SectionEditQuote {
-  if (!counts) {
-    return { free: false, price: SECTION_EDIT_PRICE, memoFreeLeft: 0, sectionFreeLeft: 0, limitReached: false };
-  }
-  const memoFreeLeft = Math.max(0, SECTION_EDIT_FREE_PER_MEMO - counts.freeMemo);
-  const sectionFreeLeft = Math.min(memoFreeLeft, Math.max(0, SECTION_EDIT_FREE_PER_SECTION - (counts.freeBySection[index] ?? 0)));
-  const free = sectionFreeLeft > 0;
-  return {
-    free,
-    price: free ? 0 : SECTION_EDIT_PRICE,
-    memoFreeLeft,
-    sectionFreeLeft,
-    limitReached: counts.total >= SECTION_EDIT_MAX_PER_MEMO,
-  };
+/** What editing a section of this memo means now. */
+export function sectionEditQuote(
+  counts: SectionEditCounts | null | undefined,
+  _index: number,
+  includedPerMemo: number = SECTION_EDITS_INCLUDED_DEFAULT,
+): SectionEditQuote {
+  const n = included(includedPerMemo);
+  const used = counts ? counts.total : n;
+  const left = Math.max(0, n - used);
+  return { free: left > 0, price: 0, left, included: n, limitReached: left === 0 };
 }
 
-/** The price `price()` charges; missing counts are paid. */
-export function sectionEditPrice(counts: SectionEditCounts | null | undefined, index: unknown): number {
-  if (!Number.isInteger(index) || (index as number) < 0) return SECTION_EDIT_PRICE;
-  return sectionEditQuote(counts, index as number).price;
+/** The price `price()` charges for a section edit: always 0, it is included in the memo price (owner ١٦٦). */
+export function sectionEditPrice(_counts?: SectionEditCounts | null, _index?: unknown): number {
+  return 0;
 }
 
 /** The counts after one more edit of `index` at `price` (the screen's own tally between server reads). */
@@ -136,14 +173,22 @@ export function asSectionEditCounts(v: unknown): SectionEditCounts | null {
 
 const ar = (n: number) => n.toLocaleString("ar-SA");
 
-/** «تعديلات مجانية متبقية: ٣ من ٥ — هذا القسم: ١ من ٢» */
+/** «التعديلات المشمولة في سعر المذكرة: بقي ٣ من ٥» */
 export function sectionEditAllowanceText(q: SectionEditQuote): string {
-  return `تعديلات مجانية متبقية: ${ar(q.memoFreeLeft)} من ${ar(SECTION_EDIT_FREE_PER_MEMO)} — هذا القسم: ${ar(q.sectionFreeLeft)} من ${ar(SECTION_EDIT_FREE_PER_SECTION)}`;
+  return `التعديلات المشمولة في سعر المذكرة: بقي ${ar(q.left)} من ${ar(q.included)}`;
 }
 
-/** The price line shown before the lawyer confirms. */
+/** The line shown before the lawyer confirms. */
 export function sectionEditPriceText(q: SectionEditQuote): string {
-  return q.free ? "هذا التعديل مجاني" : `هذا التعديل بـ ${ar(q.price)} نقاط`;
+  return q.limitReached ? sectionEditLimitText(q.included) : "هذا التعديل مشمول في سعر المذكرة، دون نقاط إضافية";
+}
+
+/** The refusal of edit N+1. */
+export function sectionEditLimitText(includedPerMemo: number = SECTION_EDITS_INCLUDED_DEFAULT): string {
+  const n = included(includedPerMemo);
+  return n === 0
+    ? "تعديل الأقسام غير متاح على هذه المذكرة — ابدأ صياغة جديدة"
+    : `استُخدمت التعديلات المشمولة في سعر هذه المذكرة كلها (${ar(n)}) — ابدأ صياغة جديدة لمذكرة أخرى`;
 }
 
 export const SECTION_EDIT_COPY = {
@@ -151,9 +196,8 @@ export const SECTION_EDIT_COPY = {
   waitDraft: "لم تكتمل كتابة المذكرة بعد — انتظرها ثم عدّل أقسامها",
   draftDone: "المذكرة مكتوبة — عدّل قسماً منها أو ابدأ صياغة جديدة",
   badSection: "القسم المطلوب غير موجود في هذه المذكرة",
-  limit: `بلغت هذه المذكرة الحد الأقصى لتعديل الأقسام (${ar(SECTION_EDIT_MAX_PER_MEMO)} تعديلاً) — ابدأ صياغة جديدة`,
   instruction: `اكتب ما تريد تعديله في القسم (حتى ${ar(SECTION_INSTRUCTION_MAX)} حرف)`,
   section: "نص القسم غير صالح",
-  priceChanged: "تغيّر سعر هذا التعديل (استُخدم تعديل مجاني في طلب آخر) — راجع السعر وأكّد من جديد",
+  priceChanged: "تغيّر عدد التعديلات المتبقية على هذه المذكرة (استُخدم تعديل في طلب آخر) — راجعه وأكّد من جديد",
   unavailable: "تعديل الأقسام غير متاح بعد — حاول لاحقاً",
 } as const;

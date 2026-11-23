@@ -25,7 +25,7 @@ import { OfficialMetaLockedRow } from "./OfficialMetaLockedRow";
 import { ResultsSkeleton } from "./ResultsSkeleton";
 import { ClampedSummary } from "./ClampedSummary";
 import { lawCardSummaryText } from "./summaryClamp";
-import { CARD_SUB_NAMES_SHOWN, cardSubLegislationNames, lawCardDates, mergedFileBadge, subLegislationCountLabel, unnamedSubLegislationCount } from "../catalogueCardLabels";
+import { CARD_SUB_NAMES_SHOWN, cardSubLegislationNames, lawCardDates, mergedFileBadge, subLegislationCountLabel, subNameFormOf, unnamedSubLegislationCount } from "../catalogueCardLabels";
 import { withSearchQuery } from "@/lib/search/multiColorSearch";
 import { apiSlug } from "@/utils/apiSlug";
 import { Hl } from "@/components/search/MultiColorHighlight";
@@ -458,10 +458,12 @@ export function LawsTabContent({
                 // Arabic only: the names are Arabic (an English card shows no line).
                 // File 03 L3 (batch l12): the merged regulations first, then the
                 // linked documents' titles (sub_legislation_titles), in the form
-                // the admin setting names (full by default; library question 5).
+                // the admin setting names (owner Q172 (ب), batch l13: "auto" by
+                // default — short when the name only repeats the law's title,
+                // full when that would be ambiguous).
                 const linkedTitles: string[] = Array.isArray(sys.subLegislationTitles) ? sys.subLegislationTitles : [];
                 const subNames = isRTL
-                  ? cardSubLegislationNames(sys.title, mergedLabel ? sys.mergedNames ?? [] : [], linkedTitles, sys.childNameForm === "short" ? "short" : "full")
+                  ? cardSubLegislationNames(sys.title, mergedLabel ? sys.mergedNames ?? [] : [], linkedTitles, subNameFormOf(sys.childNameForm))
                   : [];
                 const mergedIncludes = subNames.length > 0;
                 // Owner file 16 §7: «+N تشريعات فرعية» counts the sub-legislation the

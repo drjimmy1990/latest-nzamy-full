@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sha256Hex } from "@/lib/services/shareSecrets";
 import { isShareServable } from "@/lib/storagePathOwnership";
+import { openableLink } from "@/lib/attachments/inlineSafety";
 import { isValidAttachmentId } from "../../../documents/_shared";
 
 /**
@@ -155,13 +156,24 @@ export async function POST(
       return NextResponse.json({ error: "تعذر فتح المستند" }, { status: 500 });
     }
 
+    // The share page opens this link in a new tab. Inline only for a PDF or an
+    // image the stored object really is (inlineSafety.ts, batch l13 vault);
+    // anything else — or an object the probe could not read — is handed over
+    // as a download, never rendered.
+    const url = await openableLink(signed.signedUrl, () =>
+      supabase.storage.from("documents").createSignedUrl(documentPath, 300, { download: true }));
+    if (!url) {
+      console.error("[share verify POST] createSignedUrl (download) failed");
+      return NextResponse.json({ error: "تعذر فتح المستند" }, { status: 500 });
+    }
+
     await countShareView(supabase, sha256Hex(token));
 
     return NextResponse.json({
       success: true,
       data: {
         title: share.title ?? null,
-        url: signed.signedUrl,
+        url,
       },
     });
   } catch (err) {

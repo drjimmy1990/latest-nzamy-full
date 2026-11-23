@@ -11,7 +11,8 @@ import type { DocBlock } from "../../../../lib/docx/ooxml.ts";
 
 export type AiOpinionKind = "consult" | "letter";
 
-export const AI_OPINION_TOOL: Record<AiOpinionKind, string> = {
+// l13: the literal ids (not just string), so a tool-typed prop accepts them.
+export const AI_OPINION_TOOL: Record<AiOpinionKind, "legal-opinion-consult" | "legal-opinion-letter"> = {
   consult: "legal-opinion-consult",
   letter: "legal-opinion-letter",
 };

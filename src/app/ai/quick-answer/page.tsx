@@ -14,8 +14,8 @@ import { AiThinkingStage } from "@/components/ai/AiThinkingStage";
 import { aiToolLabelAr } from "@/lib/ai/toolLabels";
 import { RUN_HELD_MESSAGE_AR } from "@/lib/ai/runPageView";
 import { QUICK_ANSWER_QUESTION_MAX } from "@/lib/ai/tools";
-import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
-import { FREE_QUESTION_COPY, freeQuestionToolFor, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
+import { aiToolPointRange, aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { FLOATING_FREE_QUESTION_TOOL, FREE_QUESTION_COPY, GENERAL_FREE_QUESTION_TOOL } from "@/lib/ai/freeQuestion";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
@@ -29,6 +29,7 @@ import {
   QUICK_ANSWER_EXAMPLES, QUICK_ANSWER_FOLLOW_UPS, QUICK_ANSWER_UNGROUNDED_LABEL,
   isUngroundedAnswer, quickAnswerExportText, quickAnswerRefusalText,
 } from "./_quickAnswer";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 /**
  * سؤال قانوني سريع (plan §5 L3): one question → a short answer written only
@@ -49,6 +50,8 @@ import {
  * general assistant, before any points; the line «أسئلتك المجانية المتبقية»
  * shows only while the server says some are left. Everyone else pays the
  * registry price here (a lawyer's 10 are on the library assistant).
+ * Q181 (batch l13): only while the admin setting names quick-answer; by
+ * default an individual's 5 are in «مساعد نظامي», the floating window.
  *
  * The page reads tool-status first (src/hooks/useToolUsable.ts): the tool's mode is
  * "off" by default, and a run would answer 423, so no price and no form until the
@@ -97,7 +100,10 @@ function QuickAnswerTool() {
   // Register 4 / 36 (l9): an individual's free questions left on this tool, as
   // the server counts them; null (nothing shown) until it answers or when none.
   const [free, setFree] = useState<{ left: number; total: number } | null>(null);
-  const freeHere = freeQuestionToolFor(user.userType) === GENERAL_FREE_QUESTION_TOOL;
+  const [floatingFree, setFloatingFree] = useState<{ left: number; total: number } | null>(null);
+  // Q181 (l13): the individual's tool is a setting (the floating window by
+  // default), so the server decides: it answers NONE unless this is his tool.
+  const freeHere = user.userType === "individual";
   useEffect(() => {
     if (!freeHere || asking) return;
     let live = true;
@@ -109,6 +115,16 @@ function QuickAnswerTool() {
         setFree(s && s.available === true && typeof s.left === "number" && typeof s.total === "number" ? { left: s.left, total: s.total } : null);
       })
       .catch(() => { if (live) setFree(null); });
+    // Q181: his free questions in «مساعد نظامي» (the default), so he is told
+    // before paying here — the server's count, shown only when some are left.
+    fetch(`/api/v1/ai/free-question?tool=${FLOATING_FREE_QUESTION_TOOL}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: unknown) => {
+        const s = j as { available?: unknown; left?: unknown; total?: unknown } | null;
+        if (!live) return;
+        setFloatingFree(s && s.available === true && typeof s.left === "number" && typeof s.total === "number" ? { left: s.left, total: s.total } : null);
+      })
+      .catch(() => { if (live) setFloatingFree(null); });
     return () => { live = false; };
   }, [freeHere, asking, run.phase]);
   const answer = run.phase === "done" && typeof run.output?.answer === "string" ? run.output.answer : null;
@@ -202,7 +218,16 @@ function QuickAnswerTool() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className={`text-[11px] ${muted}`}>
             {question.length.toLocaleString("ar-SA")} / {QUICK_ANSWER_QUESTION_MAX.toLocaleString("ar-SA")} · {`${aiToolPriceText("quick-answer", "ar")} للسؤال`}
+            <ToolPointsAvailable tool="quick-answer" price={aiToolPointRange("quick-answer")[0]} leading=" · " />
             {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
+            {floatingFree && (
+              <>
+                {" · "}
+                <Link href="/ai" className={`font-bold underline ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>
+                  {FREE_QUESTION_COPY.floatingElsewhere(floatingFree.left, floatingFree.total)}
+                </Link>
+              </>
+            )}
           </span>
           <motion.button
             whileHover={{ scale: 1.03 }}

@@ -83,7 +83,11 @@ test("a gate-only page shows the gate first: its default export is GatedToolScre
     assert.equal((page.match(/^export default /gm) ?? []).length, 1, route);
   }
   const screen = read("components/GatedToolScreen.tsx");
-  assert.match(screen, /if \(!BETA_REVIEW_MODE \|\| user\.isDemoBypass\) return <>\{children\}<\/>;/);
+  assert.match(screen, /if \(!BETA_REVIEW_MODE \|\| user\.isDemoBypass\) \{/);
+  // Owner ١٧٤ (l13): the canned page renders in a demo build only; elsewhere «قيد التفعيل».
+  assert.match(screen, /if \(isDemoMode\) return <>\{children\}<\/>;/);
+  assert.match(screen, /قيد التفعيل/);
+  assert.equal((screen.match(/<>\{children\}<\/>/g) ?? []).length, 1, "children render on one path only");
   assert.match(screen, /<BetaReviewGate toolId=\{toolId\} toolName=\{toolName\} reviewScope="legal-data">\s*\{null\}/);
 });
 

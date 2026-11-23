@@ -146,6 +146,7 @@
         "text": "={{ $json.prompt }}",
         "inputType": "binary",
         "binaryPropertyName": "={{ $json.fields }}",
+        "simplify": false,
         "options": {
           "maxOutputTokens": 8000
         }
@@ -167,7 +168,7 @@
         120
       ],
       "parameters": {
-        "jsCode": "const b = $('Webhook').first().json.body;\nconst fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];\nconst parts = $json.content && Array.isArray($json.content.parts) ? $json.content.parts : null;\nlet t = parts ? parts.map((p) => (typeof p.text === 'string' ? p.text : '')).join('') : (typeof $json.text === 'string' ? $json.text : '');\nt = t.trim().replace(/^```[A-Za-z]*[ \\t]*\\n?/, '').replace(/\\n?```\\s*$/, '').trim();\nconst start = t.indexOf('{');\nconst end = t.lastIndexOf('}');\nif (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in the reply');\nlet output;\ntry { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: 'gemini-3.1-flash-lite', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];"
+        "jsCode": "const b = $('Webhook').first().json.body;\nconst fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];\nconst textOf = (j) => {\n  const c = j && Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const parts = c && c.content && Array.isArray(c.content.parts) ? c.content.parts : (j && j.content && Array.isArray(j.content.parts) ? j.content.parts : null);\n  if (parts) return parts.filter((p) => p && !p.thought).map((p) => (typeof p.text === 'string' ? p.text : '')).join('');\n  return j && typeof j.output === 'string' ? j.output : (j && typeof j.text === 'string' ? j.text : '');\n};\nconst usageOf = (j) => {\n  const m = j && j.usageMetadata && typeof j.usageMetadata === 'object' ? j.usageMetadata : {};\n  const n = (v) => (typeof v === 'number' && v > 0 ? Math.round(v) : 0);\n  return { input_tokens: n(m.promptTokenCount) + n(m.toolUsePromptTokenCount), output_tokens: n(m.candidatesTokenCount) + n(m.thoughtsTokenCount), cache_read_tokens: n(m.cachedContentTokenCount) };\n};\nlet t = textOf($json);\nt = t.trim().replace(/^```[A-Za-z]*[ \\t]*\\n?/, '').replace(/\\n?```\\s*$/, '').trim();\nconst start = t.indexOf('{');\nconst end = t.lastIndexOf('}');\nif (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in the reply');\nlet output;\ntry { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }\nreturn [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: 'gemini-3.1-flash-lite', ...usageOf($json) }, error: null } }];"
       }
     },
     {

@@ -247,8 +247,13 @@ test("workflow: 202 first, the outline, one call per clause, every way out reach
   assert.equal(new Set(wf.nodes.map((n) => n.id)).size, wf.nodes.length);
   assert.equal(wf.connections.Webhook.main[0][0].node, "Accepted 202");
   assert.equal(wf.connections["Accepted 202"].main[0][0].node, "Build outline");
-  assert.deepEqual(wf.connections.Model.ai_languageModel[0][0], { node: "Outline", type: "ai_languageModel", index: 0 });
-  assert.deepEqual(wf.connections["Clause model"].ai_languageModel[0][0], { node: "Write clause", type: "ai_languageModel", index: 0 });
+  // Owner ١٥٦ (l13): both calls are Gemini nodes with the raw reply (usageMetadata kept), no Agent / chat-model pair.
+  for (const name of ["Outline", "Write clause"]) {
+    assert.equal(byName(name).type, "@n8n/n8n-nodes-langchain.googleGemini", name);
+    assert.equal(byName(name).parameters.simplify, false, name);
+    assert.equal(byName(name).parameters.options.systemMessage, "={{ $json.system }}", name);
+  }
+  assert.equal(Object.values(wf.connections).some((c: any) => c.ai_languageModel), false);
   assert.equal(byName("Outline").onError, "continueErrorOutput");
   assert.equal(wf.connections.Outline.main[1][0].node, "Model error");
   assert.equal(byName("Write clause").onError, "continueRegularOutput", "a failed clause reaches Assemble, so only one callback goes out");
@@ -313,6 +318,27 @@ test("plan: the outline becomes one item per clause, each with its own prompt; a
   const biItems = run(def.plan, bi, { json: outlineReply(biOutline) });
   assert.equal(biItems.length, 3);
   assert.match(biItems[0].json.content, /"body_alt":""/);
+});
+
+test("owner ١٥٦ (l13): the contract's tokens are the outline call's plus every clause call's, from Gemini's raw replies", () => {
+  const i = checked(input);
+  const body = pkg(i);
+  const raw = (text: string, prompt: number, out: number, thoughts = 0) => ({
+    candidates: [{ content: { parts: [{ text: "تفكير", thought: true }, { text }] } }],
+    usageMetadata: { promptTokenCount: prompt, candidatesTokenCount: out, thoughtsTokenCount: thoughts, totalTokenCount: prompt + out + thoughts },
+  });
+  const plan = run(def.plan, body, { json: raw("```json\n" + JSON.stringify(outline) + "\n```", 1000, 200, 50) });
+  assert.equal(plan[0].json.ok, true, "the raw outline reply parses (the thinking part is not the answer)");
+  assert.deepEqual(plan[0].json.outline_usage, { input_tokens: 1000, output_tokens: 250, cache_read_tokens: 0 });
+  assert.equal(plan[1].json.outline_usage, null);
+  const clause = (b: string) => ({ json: raw(JSON.stringify({ body: b, cited: [] }), 2000, 300) });
+  const r = run(def.assemble, body, { items: [clause("أ."), clause("ب."), clause("ج.")], nodes: { "Plan clauses": plan } })[0].json;
+  assert.equal(r.status, "succeeded");
+  assert.deepEqual(r.usage, { model: "gemini-3.1-flash-lite", input_tokens: 7000, output_tokens: 1150, cache_read_tokens: 0 });
+  // The old Agent shape still parses; its counts are simply 0.
+  const old = run(def.assemble, body, { items: [{ json: { output: JSON.stringify({ body: "أ", cited: [] }) } }, { json: { output: JSON.stringify({ body: "ب", cited: [] }) } }, { json: { output: JSON.stringify({ body: "ج", cited: [] }) } }], nodes: { "Plan clauses": run(def.plan, body, { json: outlineReply(outline) }) } })[0].json;
+  assert.equal(old.status, "succeeded");
+  assert.deepEqual(old.usage, { model: "gemini-3.1-flash-lite", input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 });
 });
 
 test("assemble: the clauses in the outline's order become a contract the app accepts; one failed clause fails it all", () => {

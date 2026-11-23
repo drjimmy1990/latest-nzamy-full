@@ -35,11 +35,11 @@
  *      or principle could not be pinned is an ordinary link to its DOCUMENT —
  *      named by the document, no status, no "unconfirmed" tag (the l8 one is
  *      gone); it opens the document directly.
- *   7. Owner Q133: «مواد متقاربة في المعنى (ربط آلي)» is its own section, after
- *      the legal ones (admin switch library_similar_links).
- *   8. Owner library-Q4 / N12: an unreviewed automatic «إحالة» carries a small
- *      «رابط آلي» tag (admin switch library_auto_link_tag; his links and the
- *      308 never do).
+ *   7. Owner Q133: «مواد متقاربة في المعنى» is its own section, after the
+ *      legal ones (admin switch library_similar_links).
+ *   8. Owner Q171 (22 Nov, batch l13): no «رابط آلي» label anywhere — not on
+ *      an unreviewed automatic «إحالة» (l12's tag is gone) and not in the
+ *      similar-meaning heading (it was «… (ربط آلي)»).
  *   9. File 16 §8: an empty section is hidden — never «لا توجد إحالات».
  */
 
@@ -326,9 +326,9 @@ const SECTION_META: Record<Section, { title: string; icon: typeof Scroll; bar: s
     text: (d) => (d ? "text-amber-300" : "text-amber-700"),
     chip: (d) => (d ? "bg-amber-500/15 text-amber-300" : "bg-amber-500/10 text-amber-700"),
   },
-  // Owner Q133: its own heading, after the legal sections, named as automatic.
+  // Owner Q133: its own heading, after the legal sections (Q171: no «(ربط آلي)» label).
   similar: {
-    title: "مواد متقاربة في المعنى (ربط آلي)",
+    title: "مواد متقاربة في المعنى",
     icon: Sparkle,
     bar: "bg-violet-500",
     text: (d) => (d ? "text-violet-300" : "text-violet-700"),
@@ -456,14 +456,6 @@ function ItemButton({ ctx, item, locked }: { ctx: RefBoxContextValue; item: RefI
         {pill && <span role="img" aria-label={pill.labelAr} title={pill.labelAr} className="flex-shrink-0">{pill.emoji}</span>}
         {locked && <Lock size={11} className={`mt-0.5 flex-shrink-0 ${isDark ? "text-zinc-500" : "text-slate-400"}`} aria-label="للمشتركين" />}
         <span className="line-clamp-2 flex-1 font-semibold">{item.title}</span>
-        {item.auto && (
-          <span
-            title="رابط استخرجه النظام آلياً من النص ولم يراجعه فريق المكتبة بعد"
-            className={`flex-shrink-0 rounded px-1 text-[9px] font-bold ${isDark ? "bg-white/[0.06] text-zinc-400" : "bg-slate-100 text-slate-500"}`}
-          >
-            رابط آلي
-          </span>
-        )}
       </span>
       {item.relation && <span className={`mt-0.5 block text-[9.5px] ${isDark ? "text-zinc-500" : "text-slate-500"}`}>{item.relation}</span>}
     </>

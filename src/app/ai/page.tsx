@@ -310,7 +310,8 @@ function AiLandingPage() {
               {isRTL ? "شاهد ذكاء نظامي في العمل" : "See Nezamy AI in Action"}
             </h2>
             <p className={`text-sm ${isDark ? "text-gray-400" : "text-slate-500"}`}>
-              {isRTL ? "محادثة حقيقية حول نظام العمل السعودي" : "A real conversation about Saudi labor law"}
+              {/* Owner ١١٥ / ١٧٤ (l13): a written example, not a recorded conversation. */}
+              {isRTL ? "مثال توضيحي لمحادثة حول نظام العمل السعودي" : "An illustrative example about Saudi labor law"}
             </p>
           </motion.div>
 

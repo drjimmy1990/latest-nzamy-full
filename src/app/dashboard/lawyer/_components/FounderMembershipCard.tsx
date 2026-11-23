@@ -12,6 +12,7 @@ import {
   type FounderVerification,
 } from "@/lib/pricing/founderCard";
 import { founderDashboardCardView } from "./founderMembershipCardView";
+import FounderInvitesCard from "./FounderInvitesCard";
 import { founderOfferCopyFromApi, type FounderOfferCopy } from "@/lib/offers/offerRules";
 
 /**
@@ -153,6 +154,8 @@ export default function FounderMembershipCard({
           {view.note}
         </p>
       )}
+      {/* l13 (owner Q144 أ): the founder's monthly invites; renders nothing for a non-founder */}
+      <FounderInvitesCard isDark={isDark} />
     </section>
   );
 }

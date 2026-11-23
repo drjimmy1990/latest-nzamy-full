@@ -9,11 +9,10 @@ import { useAdminToolsView } from "@/hooks/useAdminToolsView";
  * answers, so a page shows no price and no form while it does not know.
  *
  * N2 (owner F02 §5 #63, batch l12): a platform admin sees every tool's screen
- * open, a switched-off one included, so for him the answer is the SCREEN's
- * (always yes) while the server's own answer still decides every run — a tool
- * in mode "off" refuses him with 423 before any charge, and only a tool
- * switched on for staff (or live) spends AI cost (aiToolsConfig.toolAvailability).
- * The /ai layout tells him so (AdminToolsNotice).
+ * open, a switched-off one included, so for him the answer is always yes.
+ * Owner ١٥٦ (أ), batch l13: the server agrees — the admin really runs every
+ * tool, in any mode, exempt from the charge and logged
+ * (aiToolsConfig.toolAvailability). The /ai layout tells him so (AdminToolsNotice).
  */
 export function useToolUsable(tool: string): boolean | null {
   const [usable, setUsable] = useState<boolean | null>(null);

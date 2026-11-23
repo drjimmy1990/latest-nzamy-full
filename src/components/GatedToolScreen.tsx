@@ -13,13 +13,20 @@
  *
  * Same decision as <BetaReviewGate reviewScope="legal-data">: gated while
  * BETA_REVIEW_MODE is on, except for a demo-bypass account, which sees the
- * page exactly as before (its inner gates pass through too). Beta mode off →
- * the page renders as before, zero side effects.
+ * page exactly as before (its inner gates pass through too).
+ *
+ * Owner ١٧٤ (ب) / ١١٥ (batch l13): the pages behind this gate are canned (no
+ * engine behind them). Outside demo mode they never render, whatever
+ * BETA_REVIEW_MODE says — beta mode off shows «قيد التفعيل», not the mock —
+ * for every account, the admin included. Demo mode (a demo build) keeps the
+ * old behaviour.
  */
 
 import type { ReactNode } from "react";
 import BetaReviewGate from "@/components/BetaReviewGate";
+import DashboardComingSoon from "@/components/ui/DashboardComingSoon";
 import { useUser } from "@/hooks/useUser";
+import { isDemoMode } from "@/lib/runtimeMode";
 
 // ── Safe import, as in BetaReviewGate.tsx: if betaConfig is deleted (its
 // "Option C"), beta mode is OFF and every page renders as before ──────────────
@@ -44,7 +51,17 @@ export default function GatedToolScreen({
   children: ReactNode;
 }) {
   const user = useUser();
-  if (!BETA_REVIEW_MODE || user.isDemoBypass) return <>{children}</>;
+  if (!BETA_REVIEW_MODE || user.isDemoBypass) {
+    // Owner ١٧٤: a canned page is shown only in a demo build.
+    if (isDemoMode) return <>{children}</>;
+    return (
+      <DashboardComingSoon
+        title={`${toolName} — قيد التفعيل`}
+        description="هذه الأداة قيد التفعيل: لم تُربط بعد بمحركها الحقيقي، فلا تُعرض هنا نتائج جاهزة مكان نتيجة حقيقية."
+        backHref="/ai"
+      />
+    );
+  }
   return (
     <div className="mx-auto w-full max-w-xl px-4 py-10">
       <BetaReviewGate toolId={toolId} toolName={toolName} reviewScope="legal-data">

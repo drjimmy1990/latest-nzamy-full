@@ -632,9 +632,11 @@ export async function GET(request: Request) {
         viewer: { hasFullAccess },
         // Q100a: present only when the list cap held items back.
         ...(listCap.notice ? { listLimit: listCap.notice } : {}),
-        // File 03 L3 / library question 5 (batch l12): a sub-legislation's
-        // name under a card in full or short (admin setting library_reader_display).
-        display: { childNameForm: (await loadLibraryReaderDisplay()).child_name_form },
+        // File 03 L3 (batch l12) / owner Q172 (ب) (batch l13): how a
+        // sub-legislation is named under a card — "auto" (short when it only
+        // repeats the law's title, full when ambiguous), "full" or "short"
+        // (admin setting library_reader_display.child_names).
+        display: { childNameForm: (await loadLibraryReaderDisplay()).child_names },
       },
       // Tier-shaped (paywall + official metadata): never from a shared cache.
       { headers: { "Cache-Control": TIER_SHAPED_CACHE_CONTROL } },

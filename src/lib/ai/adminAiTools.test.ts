@@ -15,15 +15,18 @@ import { LAWYER_AI_TOOLS } from "../../constants/lawyerAiCatalog.ts";
 
 const src = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");
 
-test("the cost rule is unchanged: «off» refuses the admin; «staff» and «live» run for him", () => {
-  assert.equal(toolAvailability("off", true), "tool_off");
+test("owner ١٥٦ (أ): the admin runs every tool, «off» included, exempt from the charge; «off»/«staff» still refuse everyone else", () => {
+  assert.equal(toolAvailability("off", true), "ok");
   assert.equal(toolAvailability("staff", true), "ok");
   assert.equal(toolAvailability("live", true), "ok");
+  assert.equal(toolAvailability("off", false), "tool_off");
   assert.equal(toolAvailability("staff", false), "tool_off");
-  assert.equal(toolAccessFor(AI_TOOLS["legal-drafter"], { userType: "admin", practiceKind: null }, { mode: "off" }), "tool_off");
-  // The run path and tool-status were not given an admin bypass of the mode.
-  assert.doesNotMatch(src("lib/ai/aiToolsConfig.ts"), /isAdmin\s*\)\s*return\s*"ok"/);
+  assert.equal(toolAccessFor(AI_TOOLS["legal-drafter"], { userType: "admin", practiceKind: null }, { mode: "off" }), "ok");
+  assert.equal(toolAccessFor(AI_TOOLS["legal-drafter"], { userType: "lawyer", practiceKind: "advocate" }, { mode: "off" }), "tool_off");
+  // One rule for the run path and tool-status (R5); the refusal still comes before any charge.
   assert.match(src("lib/ai/runCore.ts"), /if \(toolAvailability\(runtime\.mode, isAdmin\) === "tool_off"\) \{\n?\r?\n?\s*return \{ status: 423/);
+  // The admin is never debited: ai_start_run gets p_exempt for him.
+  assert.match(src("lib/ai/runCore.ts"), /p_exempt: isAdmin,/);
 });
 
 test("the admin display: a real admin, not previewing a role's limits, in the lawyer or firm workspace", () => {
@@ -77,5 +80,9 @@ test("wiring: hub, sidebar, the screen gate and the /ai notice", () => {
   const hook = src("hooks/useToolUsable.ts");
   assert.match(hook, /const admin = useAdminToolsView\(\)\.showAll;/);
   assert.match(hook, /return admin \? true : usable;/);
-  assert.match(src("components/ai/AdminToolsNotice.tsx"), /الأداة المتوقفة لا تعمل ولا تُحتسب لها تكلفة/);
+  // Owner ١٥٦ (أ): the notice says the tools really run for him, free of points, at a real provider cost.
+  const notice = src("components/ai/AdminToolsNotice.tsx");
+  assert.match(notice, /أدوات الذكاء كلها تعمل لك فعلاً، حتى المتوقفة للمستخدمين/);
+  assert.match(notice, /تكلفة حقيقية لدى مزوّد الذكاء/);
+  assert.doesNotMatch(notice, /الأداة المتوقفة لا تعمل/);
 });

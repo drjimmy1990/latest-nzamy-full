@@ -27,7 +27,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { useUser } from "@/hooks/useUser";
 import { useToolUsable } from "@/hooks/useToolUsable";
 import { useDraftCart } from "@/hooks/useDraftCart";
-import { aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
+import { aiToolPointRange, aiToolPriceText } from "@/lib/ai/toolPointsDisplay";
 import { FREE_QUESTION_COPY } from "@/lib/ai/freeQuestion";
 import LibraryScopeChips, { type LibraryScopeChoice } from "@/components/ai/LibraryScopeChips";
 import { VoiceInput } from "@/components/ui/VoiceInput";
@@ -40,6 +40,7 @@ import { ResearchRefDrawer } from "./ResearchRefDrawer";
 import { readTourHidden, ResearchTour } from "./ResearchTour";
 import { ResearchSelectionBar } from "./ResearchSelectionBar";
 import { arabicDigits } from "./researchStages";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 const ROYAL = "#0B3D2E";
 const GOLD = "#C8A762";
@@ -326,6 +327,7 @@ function Studio({ access }: { access: Access }) {
                   <div className={`flex flex-wrap items-center justify-between gap-2 text-[11.5px] ${muted}`}>
                     <span>
                       {aiToolPriceText(TOOL, "ar")} للسؤال
+                      <ToolPointsAvailable tool={TOOL} price={aiToolPointRange(TOOL)[0]} leading=" · " />
                       {free && <> · <span className={`font-bold ${isDark ? "text-emerald-400" : "text-emerald-700"}`}>{FREE_QUESTION_COPY.left(free.left, free.total)}</span></>}
                     </span>
                     <span className="inline-flex items-center gap-1">

@@ -27,11 +27,12 @@ import {
   type DraftAnalysis, type EditedSection, type WizardFacts,
 } from "@/components/draft/legalDraft";
 import {
-  NO_SECTION_EDITS, SECTION_EDIT_COPY, SECTION_INSTRUCTION_MAX, asSectionEditCounts, sectionEditAllowanceText, sectionEditPriceText,
-  sectionEditQuote, withSectionEdit, type SectionEditCounts,
+  NO_SECTION_EDITS, SECTION_EDITS_INCLUDED_DEFAULT, SECTION_INSTRUCTION_MAX, asSectionEditCounts, sectionEditAllowanceText, sectionEditLimitText,
+  sectionEditPriceText, sectionEditQuote, sectionEditsIncludedFrom, withSectionEdit, type SectionEditCounts,
 } from "@/lib/ai/sectionEdits";
 import { aiSkippedNote } from "@/components/ai/aiReadable";
 import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 /**
  * StepAiDraft — L14 الصائغ القانوني (plan §5 wave 5; owner LIVE-F02 and
@@ -52,10 +53,11 @@ import { AI_TEXT_FILES_ON } from "@/lib/ai/aiTextFilesFlag";
  * a kind that spends a work; the draft (turn 1) never sends useCredit.
  *
  * Owner ٤١٠ «عدّل هذا القسم»: once written, each section may be rewritten on
- * its own (a later run of the same conversation). 5 free edits per memo, 2 per
- * section, then 10 points each (src/lib/ai/sectionEdits.ts); the screen shows
- * the price before the lawyer confirms and sends it as `expectedPrice`, so the
- * server never charges a price he was not shown. Never a founder credit.
+ * its own (a later run of the same conversation). Owner ١٦٦ (batch l13): the
+ * edits are included in the memo price up to the admin's number (5), and the
+ * next one is refused (src/lib/ai/sectionEdits.ts); the screen shows how many
+ * are left, read with the prices from /api/v1/pricing/draft-prices, and sends
+ * the price (0) as `expectedPrice`. Never a founder credit.
  */
 
 interface Props {
@@ -108,11 +110,16 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
   // (409 price_changed) — and the screen then reads the prices again.
   const [serverPrices, setServerPrices] = useState<Partial<Record<string, number>> | null>(null);
   const [pricesRead, setPricesRead] = useState(0);
+  // Owner ١٦٦ (l13): the memo's included edits, the admin setting; the code default until the server answers.
+  const [revisionsIncluded, setRevisionsIncluded] = useState(SECTION_EDITS_INCLUDED_DEFAULT);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/v1/pricing/draft-prices", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((body: { prices?: unknown } | null) => {
+      .then((body: { prices?: unknown; revisions_included?: unknown } | null) => {
+        if (!cancelled && body && body.revisions_included !== undefined) {
+          setRevisionsIncluded(sectionEditsIncludedFrom({ included: body.revisions_included }));
+        }
         const prices = body?.prices;
         if (!cancelled && prices && typeof prices === "object" && !Array.isArray(prices)) {
           setServerPrices(prices as Partial<Record<string, number>>);
@@ -210,7 +217,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
     if (!pleading || !draftSent || !analysis.conversationId || editing.busy) return;
     const text = instruction.trim();
     if (!text) return;
-    const quote = sectionEditQuote(editCounts, index);
+    const quote = sectionEditQuote(editCounts, index, revisionsIncluded);
     if (quote.limitReached) return;
     pendingEdit.current = { index, price: quote.price };
     void editing.start("legal-drafter", sectionEditInput(draftSent, pleading, index, text), {
@@ -251,6 +258,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
           <span className="rounded-full border border-[#C8A762]/30 bg-[#C8A762]/10 px-3 py-1 text-[11px] font-bold text-[#C8A762]">
             {paidByCredit ? `${FOUNDER_CREDIT_PRICE_TEXT}، تشمل التحليل والصياغة` : `${kindPrice.toLocaleString("ar-SA")} نقطة — تشمل التحليل والصياغة`}
           </span>
+          {!paidByCredit && <ToolPointsAvailable tool="legal-drafter" price={kindPrice} className="text-[11px]" />}
         </div>
 
         {/* ── 1. the analysis ─────────────────────────────────────────── */}
@@ -410,8 +418,11 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
       {pleading && (
         <div className={`${card} p-5 space-y-4`}>
           <h2 className={`text-center text-[17px] font-black ${isDark ? "text-white" : "text-zinc-900"}`}>{pleading.title}</h2>
+          {sectionEditQuote(editCounts, 0, revisionsIncluded).limitReached && (
+            <p role="status" className={`text-center text-[11px] ${muted}`}>{sectionEditLimitText(revisionsIncluded)}</p>
+          )}
           {pleading.sections.map((s, n) => {
-            const quote = sectionEditQuote(editCounts, n);
+            const quote = sectionEditQuote(editCounts, n, revisionsIncluded);
             const open = editOpen === n;
             return (
               <section key={n} className="space-y-1.5">
@@ -439,7 +450,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
                     </label>
                     <p className={`text-[11px] ${isDark ? "text-zinc-400" : "text-zinc-600"}`}>{sectionEditAllowanceText(quote)}</p>
                     <p className={`text-[12px] font-bold ${quote.free ? (isDark ? "text-emerald-400" : "text-emerald-700") : "text-[#C8A762]"}`}>
-                      {quote.limitReached ? SECTION_EDIT_COPY.limit : sectionEditPriceText(quote)}
+                      {sectionEditPriceText(quote)}
                     </p>
                     <RunStatus isDark={isDark} run={editing} />
                     {editing.code !== RUN_STILL_RUNNING_CODE && (
@@ -447,7 +458,7 @@ export function StepAiDraft({ isDark, kind, draftState, facts, fileIds, skippedF
                         <button type="button" onClick={() => startEdit(n)}
                           disabled={editing.busy || !instruction.trim() || quote.limitReached}
                           className="flex items-center gap-1.5 rounded-xl bg-[#0B3D2E] px-4 py-2 text-[12px] font-bold text-white disabled:opacity-40">
-                          <Sparkle size={13} /> {editing.busy ? "جارٍ التعديل..." : quote.free ? "أكّد التعديل — مجاني" : `أكّد التعديل — ${quote.price.toLocaleString("ar-SA")} نقاط`}
+                          <Sparkle size={13} /> {editing.busy ? "جارٍ التعديل..." : "أكّد التعديل"}
                         </button>
                         <button type="button" disabled={editing.busy} onClick={() => { setEditOpen(null); setInstruction(""); }}
                           className={`rounded-xl border px-3 py-2 text-[12px] font-semibold disabled:opacity-40 ${isDark ? "border-white/[0.07] text-zinc-300" : "border-zinc-200 text-zinc-600"}`}>

@@ -85,6 +85,9 @@ export const ADMIN_PAGE_ACTION: Readonly<Record<string, StaffAction>> = Object.f
   "/dashboard/admin/subscriptions/coupons": "settings.write",
   "/dashboard/admin/content/laws": "settings.write",
   "/dashboard/admin/content/articles": "content.delete",
+  // l13 (owner Q194/Q195): «المجلة التشريعية» — entry writes are content.delete,
+  // building / approving / sending an issue broadcasts.send (both super admin today).
+  "/dashboard/admin/journal": "content.delete",
   "/dashboard/admin/entitlements": "entitlements.grant",
   "/dashboard/admin/library-invitations": "entitlements.grant",
   "/dashboard/admin/library-subscriptions": "entitlements.grant",

@@ -2,6 +2,19 @@
 
 One self-contained workflow per AI tool. The plan is `docs/plans/2026-10-26-ai-services-n8n-plan.md`.
 
+## Batch l13 (owner ١٥٦): real token counts — re-apply every workflow
+
+Every workflow file changed: the AI Agent + **Model** pair became one **Google Gemini** node (Simplify Output off), the document jobs' **Read** node got Simplify Output off, and every parse step now sends Gemini's real `usageMetadata` instead of 0 / 0. The parse steps still read the old reply shapes, so the app keeps working whichever version runs on n8n; a workflow not re-applied only goes on reporting 0 / 0 (shown as «بلا عدد رموز» on the admin page, never as free).
+
+**Before pasting:** open the workflow's version history on n8n and compare. Pasting replaces the live workflow, and some were changed live or created through the API.
+
+**Order:**
+1. Apply `communicate` first (steps under «Updating an existing workflow from its file» below), re-select the Gemini credential on the new **Write** node, save.
+2. Run المتحدث الذكي once as the admin, then open `/dashboard/admin/ai-usage`: the last run must show non-zero tokens and a cost in «التكلفة الحقيقية لكل أداة».
+3. Only then apply the rest, re-selecting the Gemini credential on each new Gemini node (`Write`, or `Outline` and `Write clause` in contracts-pro; the document jobs keep `Read`).
+
+All 21: communicate, najiz-optimizer, lib-queries, quick-answer, library-assistant, assistant, canvas-card, case-brief, brief-check, contract-review, wargaming, analyze-strength, contract-drafter, simple-contract, contract-negotiator, legal-opinion-consult, legal-opinion-letter, contracts-pro, legal-drafter, request-summary, community-review (ids in the table below where known; otherwise find the workflow by its name).
+
 ## Prices from 7 Nov 2026 (owner ٤٠٩–٤١٦)
 
 The app charges these; `src/lib/ai/tools.ts` and `src/lib/ai/draftKinds.ts` are the source. Older prices further down this file are history. 1 point = 1.00 SAR.
@@ -81,17 +94,13 @@ The five wave-2 workflows were switched **on** on 2026-10-28, after a live test 
 
 Library tools also pass the library's closed switch and the assistant's tier rule (Pro or higher, or an admin) before anything is charged.
 
-**The model.** Each workflow calls the model through an **AI Agent** node (no tools, one call) with a chat-model sub-node named **Model**.
-- Today that is **Google Gemini** (`models/gemini-3.1-flash-lite`), on the instance's existing credential `Google Gemini(PaLM) Api account`.
+**The model.** Since batch l13 (owner ١٥٦) each workflow calls the model through Google's own **Google Gemini** node, operation **Message a model** (the document jobs: **Analyze document**), with **Simplify Output** off. The old **AI Agent** node with a chat-model sub-node named **Model** never reported Gemini's token counts, so every run sent 0 / 0 and the admin AI usage page could not show a cost.
+- The model is `models/gemini-3.1-flash-lite`, on the instance's existing credential `Google Gemini(PaLM) Api account`.
 - The other credential is `NZAMY AI · inbound`, on the Webhook.
 - **No Anthropic key is needed.**
+- The parse step reads Gemini's `usageMetadata` and sends `usage: { model, input_tokens, output_tokens, cache_read_tokens }` (thinking tokens count as output). The app prices it with `src/lib/ai/modelPrices.ts`.
 
-**Switching to Claude later** takes one node, with no app change:
-1. Delete the **Model** node.
-2. Add an **Anthropic Chat Model** node with an Anthropic credential.
-3. Connect it to the Agent's *Chat Model* input.
-
-To make that permanent, change `MODEL` in `n8n/ai/workflows.mjs` and re-export.
+**Switching to another provider** is no longer a one-node swap. Change `MODEL` and `geminiCall` in `n8n/ai/workflows.mjs`, then the two `REPLY` helpers (`textOf`, `usageOf`) to read that provider's reply, add its price to `src/lib/ai/modelPrices.ts`, and re-export.
 
 Gemini, like Claude, processes the text outside the Kingdom, so decision D10 applies the same way.
 

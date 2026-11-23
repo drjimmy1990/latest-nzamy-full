@@ -18,6 +18,7 @@ import { founderBonusRuleIssue, topupBonusIssue } from "@/lib/payments/topupBonu
 import { draftPricesIssue } from "@/lib/ai/draftKinds";
 import { AI_TOOLS } from "@/lib/ai/tools";
 import { SIMPLE_CONTRACT_PRICE_KEY, simpleContractPriceIssue } from "@/lib/ai/simpleContract";
+import { SECTION_EDITS_SETTING_KEY, sectionEditsIncludedIssue } from "@/lib/ai/sectionEdits";
 import {
   billingCompanySettingIssue,
   isBillingCompanyComplete,
@@ -27,6 +28,7 @@ import { feqhFreePagesIssue, libraryPublicProtectionIssue, publicRulingsIssue } 
 import { libraryMinPointsIssue } from "@/lib/library/pointsGate";
 import { summariesReviewedOnlyIssue } from "@/lib/library/summaryReview";
 import { freeQuestionToolSettingIssue } from "@/lib/ai/freeQuestion";
+import { listenVoiceSettingIssue } from "@/lib/ai/listenVoice";
 import { libraryReaderDisplayIssue } from "@/lib/library/readerDisplaySettings";
 import { loginLockoutSettingIssue } from "@/lib/auth/loginLockout";
 import { licenceSettingIssue } from "@/lib/publicSeo/platformRegistry";
@@ -38,6 +40,8 @@ import { retentionSettingIssue } from "@/lib/ai/aiHistory";
 // Batch l12 firm (20261202_80): firm role scope (Q112) and founder storage fair use (N21).
 import { firmCaseScopeIssue } from "@/lib/firm/firmCaseScope";
 import { founderStorageIssue } from "@/lib/membership/founderStorage";
+// Batch l13 founder (20261203_20, owner Q144 أ): the founder monthly invites.
+import { FOUNDER_INVITES_KEY, founderInvitesIssue } from "@/lib/founder/founderInvites";
 
 /** Allowlisted setting keys that admins can modify */
 const ALLOWED_SETTINGS_KEYS = [
@@ -121,11 +125,15 @@ const ALLOWED_SETTINGS_KEYS = [
   // summaries are shown in the library (OFF by default; src/lib/library/summaryReview.ts);
   "library_summaries_reviewed_only",
   // Q121 {"individual": "quick-answer" | "assistant"} — the tool that carries
-  // an individual's free questions (src/lib/ai/freeQuestion.ts).
+  // an individual's free questions (src/lib/ai/freeQuestion.ts); Q181 (batch
+  // l13, 20261203_50) adds "floating", «مساعد نظامي», the default.
   "free_question_tool_by_account_type",
+  // Q182 (batch l13): {"voice": "<name>"} — the voice «استمع للإجابة» reads
+  // with ("" = the browser's first ar-SA voice; src/lib/ai/listenVoice.ts).
+  "listen_voice",
   // Batch l12 lib-a (src/lib/library/readerDisplaySettings.ts):
-  // {"decree_free_pages": 0..20 (Q101: 0), "child_name_form": "full"|"short"
-  // (library question 5: full)} — the reader's display choices still open.
+  // {"decree_free_pages": 0..20 (Q101: 0), "child_names": "auto"|"full"|"short"
+  // (owner Q172 (ب), batch l13: auto)} — the reader's display choices.
   "library_reader_display",
   // Batch l12 lib-draft (20261202_40): the library draft's caps (owner file 03
   // ل2 answer ج) and the months an AI run keeps its question and answer (ل11).
@@ -138,6 +146,10 @@ const ALLOWED_SETTINGS_KEYS = [
   // {"gb": n, "alert_pct": n} — the founder's internal storage fair use (N21;
   // src/lib/membership/founderStorage.ts). Never shown on a marketing page.
   "founder_storage_fair_use",
+  // Batch l13 founder (20261203_20, owner Q144 أ): {"monthly", "trial_days",
+  // "points", "points_scope": "library_agent"|"general", "valid_days"} — the
+  // founder's monthly invites (src/lib/founder/founderInvites.ts).
+  FOUNDER_INVITES_KEY,
   // Batch l9 public (owner file 20 row 4, file 15 rows 11 / 45;
   // src/lib/publicSeo/platformRegistry.ts): the platform's licence number and
   // its issuer, as plain strings. Empty → the licence line is hidden on /faq,
@@ -145,6 +157,9 @@ const ALLOWED_SETTINGS_KEYS = [
   // Batch l12 simpledraft (owner ١٢٣; src/lib/ai/simpleContract.ts):
   // {"points": n} — the simplified contract drafter's price (100 until set).
   SIMPLE_CONTRACT_PRICE_KEY,
+  // Batch l13 aiadmin (owner ١٦٦): {"included": 0..30} — the legal drafter's
+  // section edits included in a memo's price (5 until saved; src/lib/ai/sectionEdits.ts).
+  SECTION_EDITS_SETTING_KEY,
   "license_number",
   "license_issuer",
 ] as const;
@@ -245,6 +260,8 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l12 rules: pure, covered by summaryReview.test.ts / freeQuestionTool.test.ts.
   library_summaries_reviewed_only: summariesReviewedOnlyIssue,
   free_question_tool_by_account_type: freeQuestionToolSettingIssue,
+  // Batch l13 assistant: pure, covered by src/lib/ai/listenVoice.test.ts.
+  listen_voice: listenVoiceSettingIssue,
   // Batch l12 lib-a: pure, covered by src/lib/library/readerDisplaySettings.test.ts.
   library_reader_display: libraryReaderDisplayIssue,
   library_draft_limits: draftLimitsIssue,
@@ -252,8 +269,12 @@ const SETTINGS_VALUE_VALIDATORS: Record<string, SettingValidator> = {
   // Batch l12 firm: pure, covered by firmCaseScope.test.ts / founderStorage.test.ts.
   firm_case_scope: firmCaseScopeIssue,
   founder_storage_fair_use: founderStorageIssue,
+  // Batch l13 founder: pure, covered by src/lib/founder/founderInvites.test.ts.
+  [FOUNDER_INVITES_KEY]: founderInvitesIssue,
   // Batch l12 simpledraft: pure, covered by src/lib/ai/simpleContract.test.ts.
   [SIMPLE_CONTRACT_PRICE_KEY]: simpleContractPriceIssue,
+  // Batch l13 aiadmin: pure, covered by src/lib/ai/sectionEdits.test.ts.
+  [SECTION_EDITS_SETTING_KEY]: sectionEditsIncludedIssue,
 };
 
 /** A read error or a missing row counts as incomplete, so live stays refused. */

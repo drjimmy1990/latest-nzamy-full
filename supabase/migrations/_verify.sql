@@ -7783,7 +7783,7 @@ select 'Every test account has a current test batch (run 20261129_90)' as check,
 
 -- >>> verify:l9_public
 -- Batch l9-public (owner register 4 / 36): an individual's free questions on the general assistant (quick-answer), every other type's on the library assistant. Run 20261129_60 any time after 20261128_20.
-select 'Free questions per account type: ai_start_free_question takes quick-answer for an individual, one overload, service role only (run 20261129_60)' as check,
+select 'Free questions per account type: ai_start_free_question still accepts quick-answer (an individual''s tool when the setting names it; floating by default since 20261203_50) and the library assistant, one overload, service role only (run 20261129_60)' as check,
        coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''quick-answer''') > 0
                         and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''library-assistant''') > 0
                         and p.prosecdef and p.proconfig @> array['search_path=""']
@@ -8219,3 +8219,244 @@ select 'l12 test kinds (owner 109): test_accounts.kind present, caps and mail si
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.demo_guard_sandbox_row()')), 'test_account_kind(v_u)') > 0, false)
        and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.test_mail_sink_check(text,uuid[],text,text,text)')), 'u is distinct from v_own') > 0, false) as ok;
 -- <<< verify:l12_access
+
+-- >>> verify:l13_market_instant
+-- 20261203_90 (owner Q151 ب): market acceptance is instant. The admin may switch it back on the
+-- market settings page, so this only REPORTS the current mode (NOTICE) and never fails on it;
+-- it raises only when the setting row itself is missing.
+do $$
+declare v text;
+begin
+  if to_regclass('public.platform_settings') is null then
+    raise notice '_verify: 20261203_90 — public.platform_settings is missing'; return;
+  end if;
+  select value ->> 'accept_mode' into v from public.platform_settings where key = 'marketplace_market';
+  if not found then
+    raise exception '_verify: 20261203_90 — no marketplace_market setting: run 20261202_70, then 20261203_90';
+  end if;
+  raise notice '_verify: 20261203_90 OK — market acceptance mode is % (Q151: instant; an admin may switch it back)', coalesce(v, 'unset');
+end $$;
+-- <<< verify:l13_market_instant
+-- >>> verify:l13_points — supabase/tests/rls/points_soonest_first_l13.test.sql
+-- 2026-11-23 — 20261203_10_points_soonest_first.sql (batch l13, owner ١٦٥ ب):
+-- debit_points spends the soonest-expiring eligible lot first whatever its
+-- type (the library wallet stays the library assistant's only), and
+-- points_available_for_tool («المتاح لهذه العملية»). Run before or after the
+-- deploy; re-run it after any re-run of 20261127_40 or 20261022_20.
+-- Read-only, safe to repeat. Every row must say ok = true (false = run 20261203_10).
+select 'debit_points: soonest-expiring eligible lot first, no type preference, wallet rule kept (run 20261203_10)' as check_name,
+       coalesce((select pg_get_functiondef(p.oid) ~* 'order\s+by\s+pl\.expires_at\s*,\s*pl\.created_at\s*,\s*pl\.id\s+for\s+update'
+                        and pg_get_functiondef(p.oid) !~* 'case\s+when\s+pl\.(wallet_scope|source)'
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), 'plan_monthly') = 0
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), '(pl.wallet_scope = ''general'' or (v_lib and pl.wallet_scope = ''library_agent''))') > 0
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_proc p where p.oid = to_regprocedure('public.debit_points(uuid,int,text,text)')), false) as ok;
+select 'points_available_for_tool: same wallet rule, definer, search_path '''', authenticated (own) + service role, never anon (run 20261203_10)' as check_name,
+       coalesce((select p.prosecdef and p.proconfig @> array['search_path=""']
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), '(pl.wallet_scope = ''general'' or (v_lib and pl.wallet_scope = ''library_agent''))') > 0
+                        and pg_catalog.strpos(pg_get_functiondef(p.oid), '42501') > 0
+                        and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                   from pg_proc p where p.oid = to_regprocedure('public.points_available_for_tool(uuid,text)')), false)
+       and (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'points_available_for_tool') = 1 as ok;
+-- <<< verify:l13_points
+-- >>> verify:l13_founder
+-- Batch l13 founder: run 20261203_20 BEFORE the l13 deploy (the invite routes answer «قيد التفعيل» without it).
+select 'l13 founder (owner ٣): an unpaid founder hold is free at exactly reserved_until in reserve / activate / summary; the sweep is a tidy-up (pinned by 20261203_20)' as check,
+       coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_reserve_seat(uuid, uuid)')), 'reserved_until > now()') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_activate(uuid)')), 'reserved_until > now()') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_seat_summary()')), 'reserved_until > now()') > 0, false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_reserve_seat(uuid, uuid)')) !~ 'reserved_until\s*(>=|>\s*\(?\s*now\(\)\s*[-+])', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_activate(uuid)')) !~ 'reserved_until\s*(>=|>\s*\(?\s*now\(\)\s*[-+])', false)
+       and coalesce(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_seat_summary()')) !~ 'reserved_until\s*(>=|>\s*\(?\s*now\(\)\s*[-+])', false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_release_expired()')), 'reserved_until <= now()') > 0, false) as ok;
+select 'l13 founder (Q144 أ): founder invites — setting, server-only table (RLS on, no policy), create / redeem service role only, redeem gives lib-trial + points (run 20261203_20)' as check,
+       case when to_regclass('public.founder_invites') is null
+              or to_regprocedure('public.founder_invite_create(uuid)') is null
+              or to_regprocedure('public.founder_invite_redeem(uuid, text)') is null then false else
+       exists (select 1 from public.platform_settings where key = 'founder_invites')
+       and coalesce((select relrowsecurity from pg_catalog.pg_class where oid = 'public.founder_invites'::regclass), false)
+       and not exists (select 1 from pg_catalog.pg_policies where schemaname = 'public' and tablename = 'founder_invites')
+       and not has_table_privilege('anon', 'public.founder_invites', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.founder_invites', 'SELECT')
+       and not has_function_privilege('authenticated', 'public.founder_invite_create(uuid)', 'EXECUTE')
+       and not has_function_privilege('authenticated', 'public.founder_invite_redeem(uuid, text)', 'EXECUTE')
+       and not has_function_privilege('anon', 'public.founder_invite_redeem(uuid, text)', 'EXECUTE')
+       and has_function_privilege('service_role', 'public.founder_invite_redeem(uuid, text)', 'EXECUTE')
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_invite_redeem(uuid, text)')), '''lib-trial''') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.founder_invite_redeem(uuid, text)')), 'credit_wallet_points') > 0, false)
+       and coalesce((select s.monthly between 1 and 20 and s.points_scope in ('general', 'library_agent')
+                       from public.founder_invite_settings() s), false)
+       end as ok;
+-- <<< verify:l13_founder
+-- >>> verify:l13_vault — supabase/tests/rls/vault_document_session_columns.test.sql
+-- 2026-11-23 — batch l13 vault (owner Q167). Read-only. (1) 20261203_80: a
+-- session changes only the bin and the legal hold of a document row. (2) The
+-- office's uploaded stationery (20261030_14, which had no block here): read by
+-- the vault's managers only, written by the server only, its bucket private
+-- and reached by no session Storage policy.
+do $$
+declare c text; n int;
+begin
+  -- (1) attachments: the session column guard
+  if to_regclass('public.attachments') is not null then
+    if to_regprocedure('public.guard_attachment_session_columns()') is null then
+      raise notice '_verify: 20261203_80 is not applied yet — a session can still rename / retype a document row it may update. Run 20261203_80_vault_document_session_columns.sql (any time, before or after the deploy)';
+    else
+      if not exists (select 1 from pg_trigger
+                      where tgrelid = 'public.attachments'::regclass
+                        and tgname = 'trg_02_attachments_session_columns' and tgenabled <> 'D'
+                        and tgfoid = 'public.guard_attachment_session_columns()'::regprocedure) then
+        raise exception '_verify: 20261203_80 — the session column guard on attachments is missing or disabled (re-run 20261203_80)';
+      end if;
+      if coalesce((select prosecdef from pg_proc where oid = 'public.guard_attachment_session_columns()'::regprocedure), true) then
+        raise exception '_verify: 20261203_80 — guard_attachment_session_columns is SECURITY DEFINER; it would let every session through (re-run 20261203_80)';
+      end if;
+      if coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.guard_attachment_session_columns()'::regprocedure),
+                                    'deleted_at'', ''deleted_by'', ''legal_hold'', ''hold_reason'''), 0) = 0 then
+        raise exception '_verify: 20261203_80 — guard_attachment_session_columns no longer lists the four session columns (re-run 20261203_80)';
+      end if;
+    end if;
+  end if;
+
+  -- (2) branding_assets + bucket branding-files (20261030_14)
+  if to_regclass('public.branding_assets') is null then
+    raise notice '_verify: 20261030_14 is not applied — the vault''s stationery upload says «يتطلب تحديث قاعدة البيانات»; nothing to check';
+  else
+    if not coalesce((select relrowsecurity from pg_class where oid = 'public.branding_assets'::regclass), false) then
+      raise exception '_verify: RLS is off on branding_assets (re-run 20261030_14)';
+    end if;
+    select count(*) into n from pg_policy where polrelid = 'public.branding_assets'::regclass;
+    if coalesce(n, 0) <> 1
+       or exists (select 1 from pg_policy where polrelid = 'public.branding_assets'::regclass and polcmd <> 'r') then
+      raise exception '_verify: branding_assets must carry exactly the one SELECT policy of 20261030_14 (found %)', n;
+    end if;
+    foreach c in array array['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE'] loop
+      if exists (select 1 from pg_roles where rolname = 'authenticated')
+         and has_table_privilege('authenticated', 'public.branding_assets', c) then
+        raise exception '_verify: sessions hold % on branding_assets — its rows are the server''s only (re-run 20261030_14)', c;
+      end if;
+    end loop;
+    foreach c in array array['SELECT', 'INSERT', 'UPDATE', 'DELETE'] loop
+      if exists (select 1 from pg_roles where rolname = 'anon')
+         and has_table_privilege('anon', 'public.branding_assets', c) then
+        raise exception '_verify: guests hold % on branding_assets (re-run 20261030_14)', c;
+      end if;
+    end loop;
+    if not exists (select 1 from pg_trigger where tgrelid = 'public.branding_assets'::regclass
+                    and tgname = 'trg_branding_assets_guard' and tgenabled <> 'D') then
+      raise exception '_verify: the folder guard of branding_assets is missing or disabled (re-run 20261030_14)';
+    end if;
+    if to_regclass('storage.buckets') is not null then
+      if not exists (select 1 from storage.buckets where id = 'branding-files') then
+        raise warning '_verify: 20261030_14 — the bucket «branding-files» is missing; stationery uploads fail. Create it private (5 MB; pdf, docx, png, webp) as supabase_admin';
+      elsif exists (select 1 from storage.buckets where id = 'branding-files'
+                      and (coalesce(public, true) or coalesce(file_size_limit, 0) = 0 or file_size_limit > 5242880
+                           or allowed_mime_types is null
+                           or not (allowed_mime_types <@ array['application/pdf',
+                                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                                     'image/png', 'image/webp']))) then
+        raise exception '_verify: bucket «branding-files» is public, has no 5 MB limit, or accepts more than pdf/docx/png/webp (re-run 20261030_14)';
+      end if;
+    end if;
+    if to_regclass('storage.objects') is not null then
+      if exists (select 1 from pg_policy
+                  where polrelid = 'storage.objects'::regclass
+                    and pg_catalog.strpos(coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
+                                          coalesce(pg_get_expr(polwithcheck, polrelid), ''), 'branding-files') > 0) then
+        raise exception '_verify: a Storage policy names bucket «branding-files» — only the server (service role) may reach the vault''s stationery; drop it';
+      end if;
+      if exists (select 1 from pg_policy
+                  where polrelid = 'storage.objects'::regclass
+                    and pg_catalog.strpos(coalesce(pg_get_expr(polqual, polrelid), '') || ' ' ||
+                                          coalesce(pg_get_expr(polwithcheck, polrelid), ''), 'bucket_id') = 0) then
+        raise warning '_verify: a Storage policy names no bucket — it also reaches «branding-files». Run supabase/storage_policies_branding.sql as supabase_admin (it drops such policies)';
+      end if;
+    end if;
+  end if;
+  raise notice '_verify: l13_vault OK — document rows: sessions change only the bin and the legal hold (if 20261203_80 ran); stationery rows server-written, bucket branding-files private and session-free';
+end $$;
+-- <<< verify:l13_vault
+-- >>> verify:l13_canvas
+-- Batch l13-canvas (owner ١٨٩ (ب), the «لوحة» tab beside the case map): run 20261203_60 BEFORE the deploy.
+select 'l13 free board: case_free_boards with RLS, 4 policies on case_board_open (invoker + is_case_worker), no guest grant, no session delete or move (run 20261203_60)' as check,
+       case when to_regclass('public.case_free_boards') is null or to_regprocedure('public.case_board_open(text)') is null then false else
+       coalesce((select relrowsecurity from pg_catalog.pg_class where oid = to_regclass('public.case_free_boards')), false)
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy where polrelid = to_regclass('public.case_free_boards')) = 4
+       and (select pg_catalog.count(*) from pg_catalog.pg_policy
+             where polrelid = to_regclass('public.case_free_boards') and polpermissive
+               and coalesce(pg_catalog.pg_get_expr(polqual, polrelid), pg_catalog.pg_get_expr(polwithcheck, polrelid), '') ilike '%case_board_open(case_request_id)%') = 3
+       and not coalesce((select p.prosecdef from pg_catalog.pg_proc p where p.oid = to_regprocedure('public.case_board_open(text)')), true)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_board_open(text)')), 'is_case_worker') > 0, false)
+       and coalesce(pg_catalog.strpos(pg_catalog.pg_get_functiondef(to_regprocedure('public.case_board_open(text)')), 'service_requests') > 0, false)
+       and not has_table_privilege('anon', 'public.case_free_boards', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.case_free_boards', 'DELETE')
+       and not has_column_privilege('authenticated', 'public.case_free_boards', 'case_request_id', 'UPDATE')
+       and not has_column_privilege('authenticated', 'public.case_free_boards', 'created_by', 'UPDATE')
+       and has_table_privilege('authenticated', 'public.case_free_boards', 'SELECT')
+       end as ok;
+-- <<< verify:l13_canvas
+-- >>> verify:l13_assistant
+-- Batch l13 assistant (owner Q181 ب / Q182): run 20261203_50 AFTER 20261202_50 and AFTER the l13 deploy. The older Q121 / l9 / l7 checks above stay valid: the bodies keep 'library-assistant', 'quick-answer', ai_free_question_uses, ai_free_question_tool and «is distinct from 'individual'».
+select 'Q181: ai_free_question_tool accepts floating and defaults to it (individual), service role only (run 20261203_50; a re-run of 20261202_50 after it brings back quick-answer — re-run 20261203_50)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'then v_tool else ''floating'' end') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'is distinct from ''individual''') > 0
+                        and p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                        and has_function_privilege('service_role', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.ai_free_question_tool(uuid)')), false) as ok;
+select 'Q181: ai_start_free_question takes floating only as the account''s own tool, one overload, service role only (run 20261203_50)' as check,
+       coalesce((select pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), '''assistant'', ''floating'')') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'p_tool is distinct from public.ai_free_question_tool(p_user)') > 0
+                        and pg_catalog.strpos(pg_catalog.pg_get_functiondef(p.oid), 'ai_free_question_uses') > 0
+                        and p.prosecdef and p.proconfig @> array['search_path=""']
+                        and not has_function_privilege('anon', p.oid, 'EXECUTE')
+                        and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                   from pg_catalog.pg_proc p
+                  where p.oid = to_regprocedure('public.ai_start_free_question(uuid,text,text,text,int,int,text,timestamptz,boolean,jsonb,text[],int,uuid,jsonb)')), false)
+       and (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = 'ai_start_free_question') = 1 as ok;
+select 'Q181 + Q182: the individual''s tool setting is valid and names Q181; listen_voice present (run 20261203_50)' as check,
+       coalesce((select pg_catalog.jsonb_typeof(value) = 'object' and value ->> 'individual' in ('floating', 'quick-answer', 'assistant')
+                        and coalesce(description, '') like '%Q181%'
+                   from public.platform_settings where key = 'free_question_tool_by_account_type'), false)
+       and coalesce((select pg_catalog.jsonb_typeof(value -> 'voice') = 'string' from public.platform_settings where key = 'listen_voice'), false) as ok;
+-- <<< verify:l13_assistant
+-- >>> verify:l13_journal
+-- Batch l13-journal (owner Q190–Q195): run 20261203_70 any time, before or after the deploy.
+select 'l13 journal: 4 tables, RLS on, no anon privilege, admin-only policies, send log not writable by sessions (run 20261203_70)' as check,
+       case when to_regclass('public.journal_entries') is null or to_regclass('public.journal_issues') is null
+                 or to_regclass('public.journal_issue_entries') is null or to_regclass('public.journal_issue_sends') is null then false else
+       coalesce((select bool_and(relrowsecurity) from pg_catalog.pg_class
+                  where oid in (to_regclass('public.journal_entries'), to_regclass('public.journal_issues'),
+                                to_regclass('public.journal_issue_entries'), to_regclass('public.journal_issue_sends'))), false)
+       and not has_table_privilege('anon', 'public.journal_entries', 'SELECT')
+       and not has_table_privilege('anon', 'public.journal_issues', 'SELECT')
+       and not has_table_privilege('anon', 'public.journal_issue_sends', 'SELECT')
+       and not has_table_privilege('authenticated', 'public.journal_issue_sends', 'INSERT')
+       and not has_table_privilege('authenticated', 'public.journal_issue_sends', 'UPDATE')
+       and has_table_privilege('service_role', 'public.journal_issue_sends', 'INSERT')
+       and coalesce((select count(*) from pg_catalog.pg_policies
+                      where schemaname = 'public' and tablename like 'journal\_%'
+                        and coalesce(qual, '') not ilike '%is_admin()%'), 1) = 0
+       and coalesce((select count(*) from pg_catalog.pg_policies
+                      where schemaname = 'public' and tablename like 'journal\_%'), 0) = 4
+       and exists (select 1 from pg_catalog.pg_constraint
+                    where conname = 'journal_issues_approved_stamp' and conrelid = to_regclass('public.journal_issues'))
+       end as ok;
+-- <<< verify:l13_journal
+
+-- >>> verify:l13_case_graph_insert
+-- 20261203_95: a case map (public.case_graphs, one row per case) is created only by someone who
+-- works on the case (restrictive insert policy using public.case_board_open). Read-only.
+select 'Case map insert limited to the case''s workers (run 20261203_95)' as check,
+       exists (select 1 from pg_catalog.pg_policies
+                where schemaname = 'public' and tablename = 'case_graphs'
+                  and policyname = 'case graph insert: case workers only'
+                  and permissive = 'RESTRICTIVE' and cmd = 'INSERT'
+                  and coalesce(with_check, '') like '%case_board_open%') as ok;
+-- <<< verify:l13_case_graph_insert

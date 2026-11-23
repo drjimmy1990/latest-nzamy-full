@@ -13,6 +13,7 @@ import type { ContractsProDraft } from "@/components/contracts/contractsProRun";
 import type { AiRunPhase } from "@/hooks/useAiRun";
 import FounderCreditChoice from "@/components/membership/FounderCreditChoice";
 import { founderCreditChoiceKey, FOUNDER_CREDIT_PRICE_TEXT, FOUNDER_CREDIT_USED_TEXT } from "@/lib/membership/founderPlan";
+import ToolPointsAvailable from "@/components/payments/ToolPointsAvailable";
 
 /**
  * L13 محترف العقود — the draft path's last step (LIVE-F03 / NOTE-22-C04).
@@ -134,6 +135,7 @@ export function StepGenerate({
             }
             onSubmit={onGenerate}
           />
+          {!useCredit && <p className="text-[11px]"><ToolPointsAvailable tool="contracts-pro" price={price} recheck={phase} /></p>}
           <p className={`flex items-start gap-1.5 text-[11px] leading-relaxed ${muted}`}>
             <Info size={13} className="shrink-0 mt-0.5" />
             يكتب العقد من معرفته بالأنظمة ثم تتحقق المنصة من المواد التي استشهد بها؛ لا يقرأ نصوص المكتبة قبل الكتابة بعد.

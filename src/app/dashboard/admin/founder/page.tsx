@@ -24,6 +24,7 @@ import {
   type WebhookProblemDto,
 } from "@/lib/membership/founderSaleStats";
 import TestSeatsRelease from "./TestSeatsRelease";
+import FounderInvitesSettings from "./FounderInvitesSettings";
 
 /**
  * «حملة المؤسس» (P3 Task 10) — the founder campaign at a glance and its two
@@ -346,6 +347,9 @@ export default function FounderCampaignPage() {
 
           {/* l7 decision 3: free the seats test accounts took (preview, then confirm) */}
           {data.canManage ? <TestSeatsRelease onDone={() => void load()} /> : null}
+
+          {/* l13 (owner Q144 أ): the founder monthly invites setting (settings.write is checked by the route) */}
+          {data.canManage ? <FounderInvitesSettings /> : null}
 
           {data.saleHidden ? (
             <p className="rounded-xl border border-white/[0.06] bg-zinc-900/60 px-4 py-3 text-[12px] text-zinc-400">

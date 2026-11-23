@@ -46,20 +46,23 @@ export const FEATURE_FLAGS = Object.freeze({
       "نافذة أسئلة الزوار عن المنصة والباقات والأسعار والعروض وطريقة التسجيل. تجيب من بيانات المنصة نفسها، ولا تقدّم استشارة قانونية. إيقافه يخفي النافذة من كل الصفحات خلال دقيقة.",
     defaultOn: true,
   }),
-  // Batch l12 (owner library-Q4, N12 / RAW[56]): read by GET /api/library/laws/[slug]/citations.
-  // Default on, as the question proposes; his links and the 308 never carry it.
-  library_auto_link_tag: Object.freeze({
-    nameAr: "وسم «رابط آلي» على الإحالات غير المراجعة",
+  // Batch l12 (owner Q133, register 14 item 17): read by GET /api/library/laws/[slug]/citations.
+  // (Batch l12's library_auto_link_tag switch is gone: owner Q171, 22 Nov — no such label at all.
+  // A stored value for it is ignored on read; the admin page writes known flags only.)
+  library_similar_links: Object.freeze({
+    nameAr: "قسم «مواد متقاربة في المعنى» للقارئ",
     descriptionAr:
-      "يظهر وسم «رابط آلي» بجانب «الإحالة» التي استخرجها النظام من النصوص ولم يراجعها فريق المكتبة. روابط المالك وروابطه المعلّمة تظهر بلا وسم دائماً. إيقافه يزيل الوسم من مربع الإحالات خلال دقيقة.",
+      "يعرض تحت كل مادة قسماً مستقلاً بالمواد المتقاربة معها في المعنى من أنظمة أخرى. يقترحها النظام حسب المعنى، وليست علاقة نظامية بين المادتين. إيقافه يخفي القسم من القارئ خلال دقيقة، ويبقى في مستكشف الجراف للفريق.",
     defaultOn: true,
   }),
-  // Batch l12 (owner Q133, register 14 item 17): read by the same route.
-  library_similar_links: Object.freeze({
-    nameAr: "قسم «مواد متقاربة في المعنى (ربط آلي)» للقارئ",
+  // Batch l13 (owner Q190–Q195): read by /journal, its issue page and PDF, and
+  // the journal cron. Default OFF — the journal opens after 17 Dec; the admin
+  // page /dashboard/admin/journal works while it is off, to prepare entries.
+  legislative_journal_enabled: Object.freeze({
+    nameAr: "«المجلة التشريعية»",
     descriptionAr:
-      "يعرض تحت كل مادة قسماً مستقلاً بالمواد المتقاربة معها في المعنى من أنظمة أخرى، وهو ربط آلي لا علاقة نظامية. إيقافه يخفي القسم من القارئ خلال دقيقة، ويبقى في مستكشف الجراف للفريق.",
-    defaultOn: true,
+      "صفحة المجلة التشريعية للزوار والمشتركين، والعدد الشهري وإرساله بالبريد لمن فعّل «النشرة الإخبارية». وهي مطفأة حتى تُفتح المجلة. إيقافها يخفي الصفحة ويوقف الإرسال خلال دقيقة، ويبقى إدخال الأخبار واعتمادها متاحاً للإدارة.",
+    defaultOn: false,
   }),
 } satisfies Record<string, FeatureFlagDef>);
 

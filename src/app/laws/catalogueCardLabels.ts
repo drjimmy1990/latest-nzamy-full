@@ -142,34 +142,130 @@ export function lawCardDates(latestUpdate: unknown, issueDate: unknown, official
 }
 
 /**
+ * How a sub-legislation is named under a /laws card — the admin setting
+ * library_reader_display.child_names (readerDisplaySettings.ts):
+ *   "auto"  (owner Q172 (ب), 22 Nov, the default): short («اللائحة التنفيذية»)
+ *           when the name only repeats the law's title, full when the short
+ *           one would be ambiguous (shortSubLegislationName + the collision
+ *           check in cardSubLegislationNames);
+ *   "full"  the admin forces the full name («اللائحة التنفيذية لنظام المرور»);
+ *   "short" the admin forces the old short form (subsidiaryNamesUnderBase).
+ */
+export type SubNameForm = "auto" | "full" | "short";
+
+/** The API's display.childNameForm → the form; anything unknown (an older server, a missing field) is "auto". */
+export function subNameFormOf(v: unknown): SubNameForm {
+  return v === "full" || v === "short" ? v : "auto";
+}
+
+/**
+ * A name in one comparable form: spaces collapsed and a detached «و »
+ * joined to its word («المنافسات و المشتريات» → «المنافسات والمشتريات», as
+ * the owner's titles spell it both ways). Harakat are kept: the short name
+ * is cut from this form and shown as it is («عاشراً» stays «عاشراً»).
+ */
+export function normalizeLegislationName(v: unknown): string {
+  return text(v)
+    .normalize("NFC")
+    .replace(/(^|\s)و\s+/g, "$1و")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The base title's forms a sub-legislation may repeat: as is, without «ولائحته التنفيذية», without a trailing «لعام 1447ه». */
+function baseTitleForms(base: string): string[] {
+  const forms = [base];
+  const noRegulation = base.replace(/\s+ولائحته التنفيذية$/, "").trim();
+  if (noRegulation && noRegulation !== base) forms.push(noRegulation);
+  for (const f of [...forms]) {
+    const noYear = f.replace(/\s+لعام\s+[\d٠-٩]{3,4}\s*هـ?(?:\s*\([^)]*\))?$/, "").trim();
+    if (noYear && noYear !== f && !forms.includes(noYear)) forms.push(noYear);
+  }
+  return forms.filter((f) => f.length > 0);
+}
+
+/**
+ * What may follow the repeated title and still be kept: a year, «المعدلة»,
+ * «الصادرة …», a bracket — words that agree with the regulation (feminine).
+ * A masculine «الصادر» / «المعدل» agrees with the LAW («… لنظام المرور الصادر
+ * بالمرسوم…»): cut, it would say the regulation came by the law's decree, so
+ * such a name stays full.
+ */
+const KEPT_TAIL = /^(?:\s+(?:لعام|المعدلة|الصادرة)(?:\s|$)|\s*\()/;
+/** A word that names a law: the short name would point at another law, so the full one stays. */
+const NAMES_A_LAW = /(?:^|\s)و?(?:لل|[بل]?(?:ال)?)(?:نظام|نظامي|تنظيم|قانون)(?=\s|$|[،,)])/;
+/** A short name may not end on a word that waits for the title it lost. */
+const DANGLING_END = /(?:^|\s)(?:و|أو|في|على|من|عن|إلى|الى|مع|بشأن|ب|ل)$/;
+
+/**
+ * Owner Q172 (ب): the short name of a sub-legislation under its law's card,
+ * or null when it must stay full. Short only when the name repeats the law's
+ * title after «ل» («اللائحة التنفيذية لنظام المرور» → «اللائحة التنفيذية»;
+ * a year or «المعدلة» after the title is kept: «… لعام 1443ه» → «اللائحة
+ * التنفيذية لعام 1443ه»). Null — the full name — when the title is not
+ * repeated that way, when what is left still names a law («آلية العمل
+ * التنفيذية لنظام القضاء ونظام ديوان المظالم»), or when it would end on a
+ * dangling word. Ambiguity between two names is cardSubLegislationNames'.
+ */
+export function shortSubLegislationName(baseTitle: unknown, name: unknown): string | null {
+  const base = normalizeLegislationName(baseTitle);
+  const full = normalizeLegislationName(name);
+  if (!base || !full || full === base) return null;
+  for (const form of baseTitleForms(base)) {
+    const needle = ` ل${form}`;
+    const at = full.lastIndexOf(needle);
+    if (at <= 0) continue;
+    const tail = full.slice(at + needle.length);
+    if (tail && !KEPT_TAIL.test(tail)) continue;
+    const head = full.slice(0, at).trim();
+    const short = tail ? `${head} ${tail.trim()}` : head;
+    if (NAMES_A_LAW.test(short) || DANGLING_END.test(head)) return null;
+    return short;
+  }
+  return null;
+}
+
+/**
  * File 03 L3 (batch l12): the sub-legislation names under a /laws card —
  * the regulations merged into the file first, then the linked documents
- * (/api/library/init `sub_legislation_titles`), duplicates once. `form`
- * is the admin setting library_reader_display.child_name_form (library
- * question 5): "full" keeps «اللائحة التنفيذية لنظام المرور», "short" drops
- * the repeated base title («اللائحة التنفيذية», as before).
+ * (/api/library/init `sub_legislation_titles`), duplicates once (compared
+ * without the repeated base title, as the server's dedupe in _children.ts).
+ * `form` is the admin setting library_reader_display.child_names:
+ *   "auto"  (owner Q172 (ب), default) — each name short when it only repeats
+ *           the law's title (shortSubLegislationName), but in full when its
+ *           short form would read like another name on the same card (two
+ *           sub-legislations shortening to one text, or a short form equal
+ *           to another document's own title);
+ *   "full"  every name in full;
+ *   "short" the old short form, the repeated title dropped (subsidiaryNamesUnderBase).
  */
 export function cardSubLegislationNames(
   baseTitle: unknown,
   mergedNames: readonly unknown[] = [],
   childTitles: readonly unknown[] = [],
-  form: "full" | "short" = "full",
+  form: SubNameForm = "auto",
 ): string[] {
   const base = text(baseTitle);
   const all = [...(Array.isArray(mergedNames) ? mergedNames : []), ...(Array.isArray(childTitles) ? childTitles : [])];
   if (form === "short") return subsidiaryNamesUnderBase(base, all);
+  const normBase = normalizeLegislationName(base);
   const seen = new Set<string>();
-  const out: string[] = [];
+  const names: string[] = [];
   for (const raw of all) {
     const name = text(raw);
-    if (!name || name === base) continue;
+    if (!name || normalizeLegislationName(name) === normBase) continue;
     // Compared in the short form, so «اللائحة التنفيذية» and «اللائحة التنفيذية لنظام X» are one.
-    const [key] = subsidiaryNamesUnderBase(base, [name]);
+    const [key] = subsidiaryNamesUnderBase(normBase, [normalizeLegislationName(name)]);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    out.push(name);
+    names.push(name);
   }
-  return out;
+  if (form === "full") return names;
+  const shorts = names.map((n) => shortSubLegislationName(base, n));
+  const shownAs = names.map((n, i) => shorts[i] ?? normalizeLegislationName(n));
+  const uses = new Map<string, number>();
+  for (const s of shownAs) uses.set(s, (uses.get(s) ?? 0) + 1);
+  return names.map((n, i) => (shorts[i] !== null && (uses.get(shownAs[i]) ?? 0) === 1 ? shorts[i]! : n));
 }
 
 /** The names shown before «إظهار المزيد» (owner file 03 L3: «لائحة أو لائحتان»). */

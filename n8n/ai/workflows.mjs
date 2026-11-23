@@ -5,12 +5,12 @@
  * our own n8n, where workflow ids change.
  *
  *   Webhook (Header Auth «NZAMY AI · inbound», respond with node)
- *    → Build prompt (Code) → Write (AI Agent, error output) → Parse → Respond 200
- *                              ↑ Model (chat-model sub-node)    └─ Model error → Respond 200
+ *    → Build prompt (Code) → Write (Google Gemini «Message a model», error output) → Parse → Respond 200
+ *                                                                   └─ Model error → Respond 200
  *
- * The model is a plug-in sub-node of the Agent: today Google Gemini (the
- * credential already on the instance), later Claude or any other provider by
- * swapping that one node. The Agent has no tools: it is one model call.
+ * Batch l13 (owner ١٥٦): the call is Google's own Gemini node with «Simplify
+ * Output» off (geminiCall), so the reply carries the real token counts; it
+ * replaced the AI Agent + chat-model pair, which reported none. One model call.
  *
  * The app has already checked the user, the role, the input and the points
  * before the webhook; n8n only writes. Every reply is a result body (§2.3), so
@@ -31,15 +31,69 @@ export const CREDENTIALS = {
   gemini: { id: "5p0YKMLaCVAAMklV", name: "Google Gemini(PaLM) Api account" },
 };
 
-/** The chat model every tool uses today (the instance's working Gemini credential). */
+/**
+ * The model every tool uses today (the instance's working Gemini credential).
+ *
+ * Owner ١٥٦ (batch l13): every model call is Google's own «Google Gemini» node
+ * (text → «Message a model»; files → «Analyze document») with «Simplify
+ * Output» OFF, so its reply keeps Gemini's `usageMetadata` and the parse step
+ * sends the run's REAL token counts. The AI Agent + chat-model pair used before
+ * never reported them, so every run sent 0 / 0 and the admin AI usage page
+ * could not show a cost. Switching provider is no longer a one-node swap: the
+ * call node and the two REPLY helpers below follow the provider's reply shape.
+ */
 export const MODEL = {
-  type: "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+  type: "@n8n/n8n-nodes-langchain.googleGemini",
   typeVersion: 1,
   modelName: "models/gemini-3.1-flash-lite",
   credentialKey: "googlePalmApi",
   credential: CREDENTIALS.gemini,
 };
 const MODEL_ID = MODEL.modelName.replace(/^models\//, "");
+
+/**
+ * One model call: the system text and the user's content from the item
+ * (`$json.system`, `$json.content`), the raw Gemini reply out (usageMetadata
+ * kept). The system text is Gemini's systemInstruction, not a LangChain
+ * template any more, but the rules still carry no braces (tested).
+ */
+export function geminiCall(id, name, position, { maxOutputTokens, temperature = 0.2, onError }) {
+  return {
+    id, name, type: MODEL.type, typeVersion: MODEL.typeVersion, position,
+    ...(onError ? { onError } : {}),
+    parameters: {
+      resource: "text",
+      operation: "message",
+      modelId: { __rl: true, mode: "id", value: MODEL.modelName },
+      messages: { values: [{ content: "={{ $json.content }}" }] },
+      simplify: false,
+      options: { systemMessage: "={{ $json.system }}", maxOutputTokens, temperature },
+    },
+    credentials: { [MODEL.credentialKey]: MODEL.credential },
+  };
+}
+
+/**
+ * Owner ١٥٦: the reply's text and its token counts, whatever shape it has —
+ * the raw Gemini reply (candidates[0].content.parts, usageMetadata), a
+ * simplified one (content.parts) or the old Agent's `output` — so a workflow
+ * re-applied on n8n before or after the app never fails a run on shape (only
+ * its counts read 0). Thinking parts are not the answer. Counts (modelPrices.ts):
+ *   input_tokens = promptTokenCount + toolUsePromptTokenCount (cached part included)
+ *   cache_read_tokens = cachedContentTokenCount
+ *   output_tokens = candidatesTokenCount + thoughtsTokenCount (both billed as output)
+ */
+export const REPLY = String.raw`const textOf = (j) => {
+  const c = j && Array.isArray(j.candidates) ? j.candidates[0] : null;
+  const parts = c && c.content && Array.isArray(c.content.parts) ? c.content.parts : (j && j.content && Array.isArray(j.content.parts) ? j.content.parts : null);
+  if (parts) return parts.filter((p) => p && !p.thought).map((p) => (typeof p.text === 'string' ? p.text : '')).join('');
+  return j && typeof j.output === 'string' ? j.output : (j && typeof j.text === 'string' ? j.text : '');
+};
+const usageOf = (j) => {
+  const m = j && j.usageMetadata && typeof j.usageMetadata === 'object' ? j.usageMetadata : {};
+  const n = (v) => (typeof v === 'number' && v > 0 ? Math.round(v) : 0);
+  return { input_tokens: n(m.promptTokenCount) + n(m.toolUsePromptTokenCount), output_tokens: n(m.candidatesTokenCount) + n(m.thoughtsTokenCount), cache_read_tokens: n(m.cachedContentTokenCount) };
+};`;
 
 /**
  * Owner ١٣ / ٢٢: a token planted in the library assistant's prompt that the
@@ -56,10 +110,11 @@ export const PROMPT_CANARY = "NZQ7K4LIBGUARD";
 // sent as the result's citations.
 const parse = (shape, { before = "", citations = "[]" } = {}) => String.raw`const b = $('Webhook').first().json.body;
 const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];
-let t = typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : '');
+${REPLY}
+let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 if (!t) return fail('schema_invalid', 'the model returned no text');
-${before ? `${before}\n` : ""}return [{ json: { run_id: b.run_id, status: 'succeeded', output: ${shape}, citations: ${citations}, usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
+${before ? `${before}\n` : ""}return [{ json: { run_id: b.run_id, status: 'succeeded', output: ${shape}, citations: ${citations}, usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
 
 // The AI Agent's error output carries the error as a string (Gemini's
 // «Service unavailable…»); other nodes carry an object with a message.
@@ -356,15 +411,15 @@ return [{ json: { ready: true, prompt, fields: Object.keys(binary).join(',') }, 
 /** Gemini's reply → the JSON object in it (fences and stray text around it dropped). */
 const DOC_PARSE = String.raw`const b = $('Webhook').first().json.body;
 const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];
-const parts = $json.content && Array.isArray($json.content.parts) ? $json.content.parts : null;
-let t = parts ? parts.map((p) => (typeof p.text === 'string' ? p.text : '')).join('') : (typeof $json.text === 'string' ? $json.text : '');
+${REPLY}
+let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 const start = t.indexOf('{');
 const end = t.lastIndexOf('}');
 if (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in the reply');
 let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
 
 // ── L7 عصارة المرفقات (its only name, owner ٤٤١) ─────────────────────────────
 // The lawyer's role note and the files → a BriefResult. The app rebuilds the
@@ -595,15 +650,15 @@ return [{ json: { system: 'أنت محامٍ سعودي خبير. اتبع ال�
 /** Either reply → the JSON object in it: Gemini's document parts, or the Agent's output text. */
 const CASE_PARSE = String.raw`const b = $('Webhook').first().json.body;
 const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];
-const parts = $json.content && Array.isArray($json.content.parts) ? $json.content.parts : null;
-let t = parts ? parts.map((p) => (typeof p.text === 'string' ? p.text : '')).join('') : (typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : ''));
+${REPLY}
+let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 const start = t.indexOf('{');
 const end = t.lastIndexOf('}');
 if (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in the reply');
 let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
 
 // ── L13 محترف العقود ─────────────────────────────────────────────────────────
 // Drafted the way a lawyer drafts: first the outline (title, preamble, the
@@ -661,7 +716,8 @@ const i = b.input || {};
 const esc = (s) => String(s ?? '').replace(/</g, '＜');
 const fail = (code, message) => [{ json: { ok: false, result: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } } }];
 ${CONTRACTS_FRAME}
-let t = typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : '');
+${REPLY}
+let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 const start = t.indexOf('{');
 const end = t.lastIndexOf('}');
@@ -694,6 +750,8 @@ return sections.map((s, k) => ({
     ok: true,
     k,
     outline: k === 0 ? outline : null,
+    // Owner ١٥٦: the outline call's tokens, summed with every clause's in «Assemble».
+    outline_usage: k === 0 ? usageOf($json) : null,
     system: SYSTEM,
     content: [
       'أنت محامٍ سعودي خبير في صياغة العقود وفق الأنظمة السعودية النافذة، وتكتب «' + esc(i.type_name) + '» بنداً بنداً.',
@@ -710,8 +768,13 @@ return sections.map((s, k) => ({
 /** Every clause's reply, in the outline's order → the contract; one failed or empty clause fails it all. */
 const CONTRACTS_ASSEMBLE = String.raw`const b = $('Webhook').first().json.body;
 const i = b.input || {};
+${REPLY}
+// Owner ١٥٦: the whole contract's tokens — the outline call plus every clause call.
+const total = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 };
+const addUsage = (u) => { if (!u) return; for (const k of Object.keys(total)) total[k] += typeof u[k] === 'number' && u[k] > 0 ? u[k] : 0; };
 const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];
 const plan = $('Plan clauses').all().map((x) => x.json);
+addUsage(plan[0] && plan[0].outline_usage);
 const outline = plan[0] && plan[0].outline;
 const replies = $input.all();
 if (!outline || replies.length !== plan.length) return fail('schema_invalid', 'drafted ' + replies.length + ' of ' + plan.length + ' clauses');
@@ -725,7 +788,8 @@ for (let k = 0; k < plan.length; k++) {
     const e = r.error;
     return fail('model_error', 'clause ' + (k + 1) + ': ' + String((typeof e === 'string' ? e : e && e.message) || 'model call failed').slice(0, 280));
   }
-  let t = typeof r.output === 'string' ? r.output : (typeof r.text === 'string' ? r.text : '');
+  addUsage(usageOf(r));
+  let t = textOf(r);
   t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
   const start = t.indexOf('{');
   const end = t.lastIndexOf('}');
@@ -744,7 +808,7 @@ for (let k = 0; k < plan.length; k++) {
 }
 const output = { title: outline.title, preamble: outline.preamble, sections, cited: cited.slice(0, 40) };
 if (alt) { output.title_alt = outline.title_alt; output.preamble_alt = outline.preamble_alt; }
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: [], usage: { model: '${MODEL_ID}', ...total }, error: null } }];`;
 
 /** The [S1] markers in the text, in order, each once. */
 const CITED_IDS = String.raw`const cited = [...new Set([...t.matchAll(/\[(S\d{1,3})\]/g)].map((m) => m[1]))];`;
@@ -832,8 +896,8 @@ const prompt = [...frame, ...task, ...rules, sourcesXml(b.sources)].filter(Boole
 /** CASE_PARSE, with the [S…] markers in the reply sent as the result's citations (the app keeps those it sent). */
 const DRAFTER_PARSE = String.raw`const b = $('Webhook').first().json.body;
 const fail = (code, message) => [{ json: { run_id: b.run_id, status: 'failed', output: null, citations: [], usage: null, error: { code, message } } }];
-const parts = $json.content && Array.isArray($json.content.parts) ? $json.content.parts : null;
-let t = parts ? parts.map((p) => (typeof p.text === 'string' ? p.text : '')).join('') : (typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : ''));
+${REPLY}
+let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 const start = t.indexOf('{');
 const end = t.lastIndexOf('}');
@@ -841,7 +905,7 @@ if (start < 0 || end <= start) return fail('schema_invalid', 'no JSON object in 
 let output;
 try { output = JSON.parse(t.slice(start, end + 1)); } catch (e) { return fail('schema_invalid', 'the reply is not valid JSON'); }
 ${CITED_IDS}
-return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: cited, usage: { model: '${MODEL_ID}', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 }, error: null } }];`;
+return [{ json: { run_id: b.run_id, status: 'succeeded', output, citations: cited, usage: { model: '${MODEL_ID}', ...usageOf($json) }, error: null } }];`;
 
 // ── request-summary: the public line of an open request (owner ١٩, batch 3) ─
 // App-internal, no points: src/lib/services/requestPublicSummaryModel.ts calls it
@@ -868,11 +932,12 @@ return [{ json: { system, content } }];`;
 
 // The reply the app reads is { summary }, not the tools' result body: the first
 // non-empty line, without a fence, list mark or quotes. The app clamps and checks it.
-const REQUEST_SUMMARY_PARSE = String.raw`let t = typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : '');
+const REQUEST_SUMMARY_PARSE = String.raw`${REPLY}
+let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 const line = (t.split(/[\r\n]+/).map((s) => s.trim()).find((s) => s.length > 0) || '').replace(/^[-*•\s«"']+|[»"'\s]+$/g, '').trim();
 if (!line) return [{ json: { summary: null, status: 'failed', error: { code: 'schema_invalid', message: 'the model returned no text' } } }];
-return [{ json: { summary: line, status: 'succeeded', usage: { model: '${MODEL_ID}' } } }];`;
+return [{ json: { summary: line, status: 'succeeded', usage: { model: '${MODEL_ID}', ...usageOf($json) } } }];`;
 
 // ── community-review: the AI pre-publish review of the community (l12 Q131a) ─
 // App-internal, no points: src/lib/community/aiReviewServer.ts calls it after a
@@ -901,7 +966,8 @@ const system = [
 const content = '<kind>' + kind + '</kind>\n<post>\n' + (i.title ? 'العنوان: ' + esc(i.title) + '\n' : '') + esc(i.body) + '\n</post>';
 return [{ json: { system, content } }];`;
 
-const COMMUNITY_REVIEW_PARSE = String.raw`let t = typeof $json.output === 'string' ? $json.output : (typeof $json.text === 'string' ? $json.text : '');
+const COMMUNITY_REVIEW_PARSE = String.raw`${REPLY}
+let t = textOf($json);
 t = t.trim().replace(/^${"```"}[A-Za-z]*[ \t]*\n?/, '').replace(/\n?${"```"}\s*$/, '').trim();
 const CATS = ['spam', 'advertising', 'offensive', 'off_topic', 'unlawful', 'personal_data'];
 const start = t.indexOf('{');
@@ -913,7 +979,7 @@ const c = o && typeof o.category === 'string' ? o.category.trim().toLowerCase() 
 let decision = 'hold';
 if (d === 'approve') decision = 'approve';
 else if (d === 'reject' && CATS.includes(c)) decision = 'reject';
-return [{ json: { decision, category: decision === 'approve' ? null : (CATS.includes(c) ? c : null), status: 'succeeded', usage: { model: '${MODEL_ID}' } } }];`;
+return [{ json: { decision, category: decision === 'approve' ? null : (CATS.includes(c) ? c : null), status: 'succeeded', usage: { model: '${MODEL_ID}', ...usageOf($json) } } }];`;
 
 export const AI_WORKFLOWS = [
   {
@@ -1214,6 +1280,8 @@ return (Array.isArray(b.files) ? b.files : []).map((f) => ({ json: { url: f.url,
           text: "={{ $json.prompt }}",
           inputType: "binary",
           binaryPropertyName: "={{ $json.fields }}",
+          // Owner ١٥٦: the raw reply, so usageMetadata reaches the parse step.
+          simplify: false,
           options: { maxOutputTokens: def.maxOutputTokens },
         },
         credentials: { [MODEL.credentialKey]: MODEL.credential },
@@ -1296,21 +1364,11 @@ function toCaseJobWorkflow(def) {
       id: "j13", name: "Build prompt", type: "n8n-nodes-base.code", typeVersion: 2, position: [880, 600],
       parameters: { jsCode: def.build },
     },
-    {
-      id: "j14", name: "Write", type: "@n8n/n8n-nodes-langchain.agent", typeVersion: 3, position: [1540, 600],
-      onError: "continueErrorOutput",
-      parameters: { promptType: "define", text: "={{ $json.content }}", options: { systemMessage: "={{ $json.system }}" } },
-    },
-    {
-      id: "j15", name: "Model", type: MODEL.type, typeVersion: MODEL.typeVersion, position: [1540, 800],
-      parameters: { modelName: MODEL.modelName, options: { maxOutputTokens: def.maxOutputTokens, temperature: 0.2 } },
-      credentials: { [MODEL.credentialKey]: MODEL.credential },
-    },
+    geminiCall("j14", "Write", [1540, 600], { maxOutputTokens: def.maxOutputTokens, onError: "continueErrorOutput" }),
   );
   wf.connections["Accepted 202"] = { main: [[{ node: "Has files?", type: "main", index: 0 }]] };
   wf.connections["Has files?"] = { main: [[{ node: "Files", type: "main", index: 0 }], [{ node: "Build prompt", type: "main", index: 0 }]] };
   wf.connections["Build prompt"] = { main: [[{ node: "Write", type: "main", index: 0 }]] };
-  wf.connections.Model = { ai_languageModel: [[{ node: "Write", type: "ai_languageModel", index: 0 }]] };
   wf.connections.Write = { main: [[{ node: "Parse result", type: "main", index: 0 }], [{ node: "Model error", type: "main", index: 0 }]] };
   return wf;
 }
@@ -1323,15 +1381,6 @@ function toCaseJobWorkflow(def) {
  * output), so one callback answers either way, never two.
  */
 function toClauseJobWorkflow(def) {
-  const agent = (id, name, position, onError) => ({
-    id, name, type: "@n8n/n8n-nodes-langchain.agent", typeVersion: 3, position, onError,
-    parameters: { promptType: "define", text: "={{ $json.content }}", options: { systemMessage: "={{ $json.system }}" } },
-  });
-  const model = (id, name, position, maxOutputTokens) => ({
-    id, name, type: MODEL.type, typeVersion: MODEL.typeVersion, position,
-    parameters: { modelName: MODEL.modelName, options: { maxOutputTokens, temperature: 0.2 } },
-    credentials: { [MODEL.credentialKey]: MODEL.credential },
-  });
   const code = (id, name, position, jsCode) => ({ id, name, type: "n8n-nodes-base.code", typeVersion: 2, position, parameters: { jsCode } });
   return {
     name: def.name,
@@ -1351,8 +1400,7 @@ function toClauseJobWorkflow(def) {
         },
       },
       code("c3", "Build outline", [440, 300], def.build),
-      agent("c4", "Outline", [660, 300], "continueErrorOutput"),
-      model("c5", "Model", [660, 520], def.outlineTokens),
+      geminiCall("c4", "Outline", [660, 300], { maxOutputTokens: def.outlineTokens, onError: "continueErrorOutput" }),
       code("c6", "Plan clauses", [900, 220], def.plan),
       {
         id: "c7", name: "Outline ok?", type: "n8n-nodes-base.if", typeVersion: 2.2, position: [1120, 220],
@@ -1368,8 +1416,7 @@ function toClauseJobWorkflow(def) {
         },
       },
       // One call per clause item; a failed call continues as an item with `error`.
-      agent("c8", "Write clause", [1340, 120], "continueRegularOutput"),
-      model("c9", "Clause model", [1340, 340], def.clauseTokens),
+      geminiCall("c8", "Write clause", [1340, 120], { maxOutputTokens: def.clauseTokens, onError: "continueRegularOutput" }),
       code("c10", "Assemble", [1580, 120], def.assemble),
       code("c11", "Outline failed", [1340, 520], "return [{ json: $json.result }];"),
       code("c12", "Model error", [900, 440], MODEL_ERROR),
@@ -1393,11 +1440,9 @@ function toClauseJobWorkflow(def) {
       Webhook: { main: [[{ node: "Accepted 202", type: "main", index: 0 }]] },
       "Accepted 202": { main: [[{ node: "Build outline", type: "main", index: 0 }]] },
       "Build outline": { main: [[{ node: "Outline", type: "main", index: 0 }]] },
-      Model: { ai_languageModel: [[{ node: "Outline", type: "ai_languageModel", index: 0 }]] },
       Outline: { main: [[{ node: "Plan clauses", type: "main", index: 0 }], [{ node: "Model error", type: "main", index: 0 }]] },
       "Plan clauses": { main: [[{ node: "Outline ok?", type: "main", index: 0 }]] },
       "Outline ok?": { main: [[{ node: "Write clause", type: "main", index: 0 }], [{ node: "Outline failed", type: "main", index: 0 }]] },
-      "Clause model": { ai_languageModel: [[{ node: "Write clause", type: "ai_languageModel", index: 0 }]] },
       "Write clause": { main: [[{ node: "Assemble", type: "main", index: 0 }]] },
       Assemble: { main: [[{ node: "Callback", type: "main", index: 0 }]] },
       "Outline failed": { main: [[{ node: "Callback", type: "main", index: 0 }]] },
@@ -1473,22 +1518,9 @@ export function toWorkflow(def) {
         id: "w2", name: "Build prompt", type: "n8n-nodes-base.code", typeVersion: 2, position: [240, 300],
         parameters: { jsCode: def.build },
       },
-      {
-        id: "w3", name: "Write", type: "@n8n/n8n-nodes-langchain.agent", typeVersion: 3, position: [480, 300],
-        // A model failure goes to the error output, so the app still gets an answer.
-        // No retry: a second try would outlast the app's 50 s wait.
-        onError: "continueErrorOutput",
-        parameters: {
-          promptType: "define",
-          text: "={{ $json.content }}",
-          options: { systemMessage: "={{ $json.system }}" },
-        },
-      },
-      {
-        id: "w4", name: "Model", type: MODEL.type, typeVersion: MODEL.typeVersion, position: [480, 520],
-        parameters: { modelName: MODEL.modelName, options: { maxOutputTokens: def.maxOutputTokens, temperature: def.temperature ?? 0.2 } },
-        credentials: { [MODEL.credentialKey]: MODEL.credential },
-      },
+      // A model failure goes to the error output, so the app still gets an answer.
+      // No retry: a second try would outlast the app's 50 s wait.
+      geminiCall("w3", "Write", [480, 300], { maxOutputTokens: def.maxOutputTokens, temperature: def.temperature ?? 0.2, onError: "continueErrorOutput" }),
       {
         id: "w5", name: "Parse result", type: "n8n-nodes-base.code", typeVersion: 2, position: [760, 220],
         parameters: { jsCode: def.parse },
@@ -1505,7 +1537,6 @@ export function toWorkflow(def) {
     connections: {
       Webhook: { main: [[{ node: "Build prompt", type: "main", index: 0 }]] },
       "Build prompt": { main: [[{ node: "Write", type: "main", index: 0 }]] },
-      Model: { ai_languageModel: [[{ node: "Write", type: "ai_languageModel", index: 0 }]] },
       Write: { main: [[{ node: "Parse result", type: "main", index: 0 }], [{ node: "Model error", type: "main", index: 0 }]] },
       "Parse result": { main: [[{ node: "Respond", type: "main", index: 0 }]] },
       "Model error": { main: [[{ node: "Respond", type: "main", index: 0 }]] },
