@@ -74,7 +74,8 @@ export function getPrivacyToggles(userType: string | null): PrivacyToggleDef[] {
     {
       key: "newsletter",
       label: "النشرة الإخبارية",
-      description: "نشرة نظامي الدورية بمستجدات المنصة والمحتوى القانوني",
+      // l13 (owner Q191 أ): this switch is the opt-in for the legislative journal's monthly issue e-mail.
+      description: "يصلك العدد الشهري لمجلة نظامي التشريعية بالبريد الإلكتروني أول كل شهر",
     },
   ];
 }

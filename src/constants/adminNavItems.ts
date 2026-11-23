@@ -89,6 +89,8 @@ export const ADMIN_NAV_SECTIONS: readonly AdminNavSection[] = [
       { href: "/dashboard/admin/content/laws", label: "المكتبة القانونية", labelEn: "Library", icon: "BookOpen" },
       { href: "/dashboard/admin/library-issue-reports", label: "بلاغات المكتبة", labelEn: "Library Reports", icon: "Flag" },
       { href: "/dashboard/admin/content/articles", label: "المدونة القانونية", labelEn: "Articles", icon: "Article" },
+      // l13 (owner Q190–Q195): «المجلة التشريعية» — entries, approval, the monthly issue
+      { href: "/dashboard/admin/journal", label: "المجلة التشريعية", labelEn: "Legislative Journal", icon: "Article" },
       { href: "/dashboard/admin/community/moderation", label: "إشراف المجتمع", labelEn: "Community Moderation", icon: "Flag" },
       { href: "/dashboard/admin/community/reports", label: "بلاغات المجتمع", labelEn: "Community Reports", icon: "Flag" },
       { href: "/dashboard/admin/marketplace/orders", label: "طلبات السوق", labelEn: "Marketplace Orders", icon: "Storefront" },
